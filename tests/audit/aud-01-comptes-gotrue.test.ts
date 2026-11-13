@@ -15,6 +15,11 @@
  *           20261031000002_lot1a_failles_sans_privilege.sql:32-42) et prend des billets gratuits : la limite « par
  *           compte » (claim_free_user, app/api/tickets/claim-free/route.ts) ne borne plus rien.
  *
+ * Contre-vérification du lot 9 quater : le second test d'AUD-02 et le test d'AUD-03 ne supposent plus la faille ouverte.
+ * Un refus de GoTrue (changement direct du mot de passe, inscription publique) compte comme preuve de fermeture, à
+ * condition qu'il n'ait rien changé (le mot de passe en place ouvre toujours le compte, aucun compte public n'existe) ;
+ * si GoTrue accepte, la faille est vérifiée comme avant (alerte PASSWORD_CHANGED, billets gratuits refusés).
+ *
  * Montage par le service_role (événement, catégories, lecture des résultats) ; l'attaque n'utilise que la clé anon,
  * GoTrue et les routes de l'application, comme un visiteur.
  */
@@ -90,22 +95,38 @@ describe('AUD-02 — changement de mot de passe direct chez GoTrue sans mot de p
     test('un changement de mot de passe fait avec le seul jeton d’une session prévient toujours le titulaire', async () => {
         const victim = await newBuyer('aud-mdp-alerte');
         const alerts = async () => (await outboxRows({ type: 'PASSWORD_CHANGED', userId: victim.userId })).length;
+        const opens = async (password: string) => !(await anon().auth.signInWithPassword({ email: victim.email, password })).error;
+        // Mot de passe réellement en place : un refus de GoTrue ne compte comme fermeture que s'il n'a rien changé
+        let current = STRONG_PASSWORD;
 
-        // Témoin (précondition) : un changement direct émet bien l'alerte
-        const plain = await gotrueUpdateUser(victim.accessToken, { password: `Direct#${randomBytes(6).toString('hex')}A1` });
+        // Témoin : changement direct. Accepté (faille ouverte) → l'alerte doit partir ; refusé (fermé) → rien n'a changé
+        const pw1 = `Direct#${randomBytes(6).toString('hex')}A1`;
+        const plain = await gotrueUpdateUser(victim.accessToken, { password: pw1 });
         const afterPlain = await alerts();
         console.log(`[AUD-02] témoin : PUT {password} HTTP ${plain.status} ; lignes PASSWORD_CHANGED : ${afterPlain}`);
-        assert.equal(plain.status, 200, `précondition : changement direct accepté (sinon voir le premier test) : ${plain.text}`);
-        assert.ok(afterPlain > 0, 'précondition : le changement direct émet l’alerte PASSWORD_CHANGED');
+        if (plain.status === 200) {
+            current = pw1;
+            assert.ok(afterPlain > 0, 'changement direct accepté par GoTrue sans alerte PASSWORD_CHANGED');
+        } else {
+            assert.ok(await opens(STRONG_PASSWORD), `GoTrue répond ${plain.status} mais l'ancien mot de passe n'ouvre plus le compte : le changement a eu lieu`);
+            assert.ok(!(await opens(pw1)), `GoTrue répond ${plain.status} mais le nouveau mot de passe ouvre le compte`);
+        }
 
         // Attaque : marque « compte coquille » posée par l'utilisateur lui-même, puis nouveau mot de passe
+        const pw2 = `Vole#${randomBytes(6).toString('hex')}A1`;
         const flag = await gotrueUpdateUser(victim.accessToken, { data: { is_temporary_controller_account: true } });
-        const change = await gotrueUpdateUser(victim.accessToken, { password: `Vole#${randomBytes(6).toString('hex')}A1` });
+        const change = await gotrueUpdateUser(victim.accessToken, { password: pw2 });
         const afterAttack = await alerts();
         console.log(`[AUD-02] PUT {data:{is_temporary_controller_account:true}} : HTTP ${flag.status} ; PUT {password} : HTTP ${change.status} ; lignes PASSWORD_CHANGED : ${afterPlain} → ${afterAttack}`);
-        assert.equal(change.status, 200, `précondition : second changement accepté : ${change.text}`);
-        assert.ok(afterAttack > afterPlain,
-            `mot de passe changé par PUT /auth/v1/user après la marque is_temporary_controller_account posée par le titulaire de la session : aucune alerte PASSWORD_CHANGED (${afterPlain} → ${afterAttack})`);
+        if (change.status === 200) {
+            // Faille ouverte : le changement est passé, l'alerte doit quand même partir
+            assert.ok(afterAttack > afterPlain,
+                `mot de passe changé par PUT /auth/v1/user après la marque is_temporary_controller_account posée par le titulaire de la session : aucune alerte PASSWORD_CHANGED (${afterPlain} → ${afterAttack})`);
+        } else {
+            // Fermeture : refus réel, le mot de passe en place ouvre toujours le compte, celui de l'attaquant non
+            assert.ok(await opens(current), `GoTrue répond ${change.status} mais le mot de passe en place n'ouvre plus le compte : le changement a eu lieu`);
+            assert.ok(!(await opens(pw2)), `GoTrue répond ${change.status} mais le mot de passe de l'attaquant ouvre le compte`);
+        }
     });
 });
 
@@ -119,7 +140,16 @@ describe('AUD-03 — compte de l\'inscription publique (sans numéro vérifié) 
             const client = anon();
             const password = `Public#${randomBytes(6).toString('hex')}A1`;
             const signed = await client.auth.signUp({ email, password });
-            assert.equal(signed.error, null, `signUp public ${i} : ${signed.error?.message}`);
+            if (signed.error) {
+                // Fermeture : GoTrue refuse l'inscription publique (et non une panne), et aucun compte n'existe
+                console.log(`[AUD-03] signUp public ${i} refusé : ${signed.error.code ?? ''} ${signed.error.message}`);
+                assert.match(`${signed.error.code ?? ''} ${signed.error.message}`, /signup_disabled|signups not allowed/i,
+                    `signUp public ${i} refusé pour une autre raison que l'inscription fermée : ${signed.error.message}`);
+                const probe = await anon().auth.signInWithPassword({ email, password });
+                assert.ok(probe.error, `signUp public ${i} refusé, mais le compte existe et ouvre une session`);
+                taken.push(403);
+                continue;
+            }
             const token = signed.data.session?.access_token
                 ?? (await client.auth.signInWithPassword({ email, password })).data.session?.access_token;
             assert.ok(token, `session du compte public ${i}`);
