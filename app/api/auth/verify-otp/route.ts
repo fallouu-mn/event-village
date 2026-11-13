@@ -7,7 +7,7 @@ import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
-import { controllerNotActivatedResponse, isControllerActivationPending } from '@/lib/auth/controller-activation';
+import { activationPendingResponse } from '@/lib/auth/account-activation';
 import { suspendedAccountMessage } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
@@ -132,7 +132,9 @@ export async function POST(req: NextRequest) {
                     { status: 503 }
                 );
             }
-            if (isControllerActivationPending(authRow.user)) return controllerNotActivatedResponse();
+            // Lot 9 quinquies (A2) : compte créé par un admin pas encore activé, même refus
+            const pending = activationPendingResponse(authRow.user);
+            if (pending) return pending;
             authEmail = authRow.user.email ?? null;
 
             // Confirmer le téléphone dans auth.users (H3: partenaire OTP), comme avant le lot.

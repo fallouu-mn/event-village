@@ -11,6 +11,8 @@ import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
 import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
+import { randomBytes } from 'node:crypto';
+import { ACCOUNT_ACTIVATION_KEY, activationStates, issueAndSendActivation, type ActivationSmsState } from '@/lib/auth/account-activation';
 
 /** Forme minimale d'une adresse saisie (la contrainte users_email_pending_chk de M10 refait le contrôle). */
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -96,9 +98,11 @@ export async function GET(req: NextRequest) {
 
         if (error) return apiFailure('GET /api/admin/users', error, USERS_FALLBACK);
 
+        // Lot 9 quinquies (A2) : « Activation en attente » (lien valable) ou lien expiré, pour les comptes créés par un admin
+        const states = await activationStates((users ?? []).map((u) => String(u.id)));
         return NextResponse.json({
             success: true,
-            users: users || [],
+            users: (users ?? []).map((u) => ({ ...u, activation: states.get(String(u.id)) ?? null })),
             total: users?.length || 0,
         });
     } catch (err: unknown) {
@@ -122,10 +126,19 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
         }
 
-        const { firstName, lastName, phone, email, password, role } = body;
+        const { firstName, lastName, phone, email, role } = body;
 
-        if (!firstName || !lastName || !phone || !password) {
-            return NextResponse.json({ error: 'Nom, prénom, téléphone et mot de passe requis.' }, { status: 400 });
+        // Lot 9 quinquies (A2 : AUTH-02, T2) : l'admin ne saisit plus de mot de passe ; le titulaire le choisit par le lien
+        // d'activation reçu par SMS. Un mot de passe envoyé est refusé, rien n'est créé.
+        if (body && typeof body === 'object' && 'password' in body && body.password !== undefined && body.password !== null && body.password !== '') {
+            return NextResponse.json({
+                error: 'Le mot de passe est choisi par le titulaire : il reçoit un lien d’activation par SMS.',
+                code: 'PASSWORD_NOT_ALLOWED',
+                field: 'password',
+            }, { status: 400 });
+        }
+        if (!firstName || !lastName || !phone) {
+            return NextResponse.json({ error: 'Nom, prénom et téléphone requis.' }, { status: 400 });
         }
 
         const targetRole = (role || 'CLIENT') as UserRoleType;
@@ -154,16 +167,18 @@ export async function POST(req: NextRequest) {
 
         // 1. Création dans Supabase Auth
         //    phone au niveau racine → auth.users.phone renseigné pour récupération SMS
+        //    Lot 9 quinquies (A2) : mot de passe aléatoire jamais montré ni stocké, marque d'activation (service_role seul)
         const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
             email: effectiveEmail,
             phone: normalizedPhone,
-            password: password,
+            password: randomBytes(32).toString('base64url'),
             email_confirm: true,
             phone_confirm: true,
             user_metadata: {
                 first_name: firstName.trim(),
                 last_name: lastName.trim(),
             },
+            app_metadata: { [ACCOUNT_ACTIVATION_KEY]: true },
         });
 
         if (authErr) {
@@ -216,6 +231,16 @@ export async function POST(req: NextRequest) {
             metadata: { created_by: auth.user!.role },
         });
 
+        // 3 bis. Lot 9 quinquies (A2) : lien d'activation (24 h, usage unique) envoyé par SMS au titulaire. Le compte est créé
+        //        quoi qu'il arrive ; un lien non enregistré ou un SMS non parti est dit dans la réponse (renvoi possible).
+        let activation: ActivationSmsState;
+        try {
+            activation = await issueAndSendActivation(userId, normalizedPhone, auth.user!.id);
+        } catch (actErr) {
+            console.error(`[API /api/admin/users POST] lien d'activation du compte ${userId} :`, actErr instanceof Error ? actErr.message : String(actErr));
+            activation = 'NOT_SENT';
+        }
+
         // 4. Lien de vérification de l'adresse saisie, au mieux : le compte est créé quoi qu'il arrive ; un échec est
         //    journalisé et dit dans la réponse (email_verification NOT_SENT), le lien se renvoie depuis le profil.
         let emailVerification: EmailVerificationState | null = null;
@@ -233,7 +258,10 @@ export async function POST(req: NextRequest) {
             userId,
             email_pending: typedEmail || null,
             ...(emailVerification ? { email_verification: emailVerification } : {}),
-            message: `Utilisateur avec le rôle ${targetRole} créé avec succès.`,
+            activation,
+            message: activation === 'SENT'
+                ? 'Compte créé. Le titulaire reçoit par SMS un lien pour choisir son mot de passe (valable 24 heures).'
+                : 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste des comptes.',
         });
     } catch (err: unknown) {
         return apiFailure('POST /api/admin/users', err, USER_SAVE_FALLBACK);

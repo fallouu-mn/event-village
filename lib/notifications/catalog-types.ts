@@ -48,7 +48,9 @@ export type AdminPermission =
     | 'events.read' | 'partners.read' | 'refunds.manage' | 'payments.read' | 'notifications.read';
 
 /** Types journalisés seulement (OTP et invitation d'un contrôleur) : le code n'est jamais stocké. */
-export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE';
+export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE'
+    /** Lot 9 quinquies : lien d'activation d'un compte créé par un admin (A2) ; code administrateur (A3). */
+    | 'ACCOUNT_ACTIVATION' | 'OTP_ADMIN';
 
 /** Lot 9 bis (11.1 N26) : email synchrone, journal seulement ; le jeton du lien n'est jamais stocké. */
 export type EmailSyncType = 'EMAIL_VERIFICATION';
@@ -183,6 +185,8 @@ export interface TemplateData {
     OTP_PHONE_CHANGE: { purpose?: string };
     OTP_AUTH_HOOK: { purpose?: string };
     CONTROLLER_INVITE: { purpose?: string };
+    ACCOUNT_ACTIVATION: { purpose?: string };
+    OTP_ADMIN: { purpose?: string };
 
     // ── Lot 9 bis (contrat 11.1, N1 à N26) ──
     REFUND_DELAYED: OptionalEventData & { cashout_id: string; amount: number };

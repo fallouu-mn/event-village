@@ -65,6 +65,10 @@ const PUBLIC_EXACT_ROUTES = [
     '/controller/setup',
     // Lot 9 bis (R87, fix(9b.48-SB)) : page du lien de vérification de l'email, ouverte depuis la boîte de réception
     '/verify-email',
+    // Lot 9 quinquies (A2 : AUTH-02) : page du lien d'activation d'un compte créé par un admin, ouverte depuis le SMS
+    '/activation',
+    // Lot 9 quinquies (B1 : AUTH-06) : page publique d'aide et de contact du support
+    '/aide',
 ];
 
 const USER_ID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

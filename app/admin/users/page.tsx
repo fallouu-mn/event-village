@@ -14,15 +14,12 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle2,
-  Lock,
   Phone,
   Mail,
   Sliders,
   XCircle,
   CheckCircle,
   Key,
-  Eye,
-  EyeOff,
   User,
   QrCode,
   Sparkles,
@@ -52,6 +49,8 @@ interface UserItem {
   status: 'ACTIF' | 'EN_ATTENTE' | 'SUSPENDU' | 'SUPPRIME';
   referral_status: 'STANDARD' | 'AMBASSADEUR';
   created_at: string;
+  /** Lot 9 quinquies (A2) : compte créé par un admin pas encore activé (lien valable ou expiré). */
+  activation?: 'PENDING' | 'EXPIRED' | null;
 }
 
 /** Message français d'une réponse en échec (`{ error }` de la route), sinon le repli donné. */
@@ -97,8 +96,7 @@ export default function AdminUsersManagementPage() {
   const [newLastName, setNewLastName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
   const [newRole, setNewRole] = useState<'ADMIN' | 'SUPERADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
   const [isCreating, setIsCreating] = useState(false);
 
@@ -183,7 +181,6 @@ export default function AdminUsersManagementPage() {
           lastName: newLastName.trim(),
           phone: newPhone.trim(),
           email: newEmail.trim().toLowerCase() || undefined,
-          password: newPassword,
           role: newRole,
         }),
       });
@@ -191,19 +188,46 @@ export default function AdminUsersManagementPage() {
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
 
-      toast.success(`Le compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} a été créé avec succès.`);
+      // Lot 9 quinquies (A2) : le titulaire choisit son mot de passe par le lien reçu par SMS
+      const reply = (data ?? {}) as { activation?: string; message?: string };
+      if (reply.activation === 'SENT') {
+        toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).`);
+      } else {
+        toast.error(reply.message ?? 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste.');
+      }
       setIsCreateModalOpen(false);
       setNewFirstName('');
       setNewLastName('');
       setNewPhone('');
       setNewEmail('');
-      setNewPassword('');
       await fetchUsers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la création.';
       toast.error(msg);
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  // Lot 9 quinquies (A2) : renvoi du lien d'activation (le précédent n'est plus valable)
+  const handleResendActivation = async (user: UserItem) => {
+    setResendingId(user.id);
+    try {
+      const res = await fetch('/api/admin/users/activation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(refusalOf(data, 'Le lien n’a pas pu être renvoyé.'));
+      const reply = (data ?? {}) as { activation?: string; message?: string };
+      if (reply.activation === 'SENT') toast.success(`Nouveau lien d’activation envoyé à ${user.first_name} ${user.last_name}.`);
+      else toast.error(reply.message ?? 'Le SMS n’est pas parti. Réessayez dans un instant.');
+      await fetchUsers();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Le lien n’a pas pu être renvoyé.');
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -479,6 +503,12 @@ export default function AdminUsersManagementPage() {
                         {isDeleted ? ERASED_ACCOUNT_LABEL : accountStatusLabel(user.status)}
                       </span>
 
+                      {user.activation && !isDeleted && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                          {user.activation === 'PENDING' ? 'Activation en attente' : 'Activation en attente (lien expiré)'}
+                        </span>
+                      )}
+
                       {user.referral_status === 'AMBASSADEUR' && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                           Ambassadeur
@@ -510,6 +540,18 @@ export default function AdminUsersManagementPage() {
                       >
                         <Key size={13} className="mr-1" />
                         Permissions
+                      </Button>
+                    )}
+
+                    {/* Lot 9 quinquies (A2) : renvoi du lien d'activation d'un compte créé par un admin */}
+                    {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        isLoading={resendingId === user.id}
+                        onClick={() => void handleResendActivation(user)}
+                      >
+                        Renvoyer le lien
                       </Button>
                     )}
 
@@ -646,7 +688,7 @@ export default function AdminUsersManagementPage() {
             </div>
           </div>
 
-          {/* Email & Mot de Passe sur 2 colonnes pour économiser de la hauteur */}
+          {/* Email et note d'activation sur 2 colonnes pour économiser de la hauteur */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
@@ -664,29 +706,10 @@ export default function AdminUsersManagementPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Mot de passe temporaire <span className="text-[#FF5722]">*</span>
-              </label>
-              <div className="relative">
-                <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="••••••••••••"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full h-10 pl-9 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-bold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-white transition-colors"
-                  aria-label={showPassword ? 'Masquer' : 'Afficher'}
-                >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
+            <div className="rounded-xl border border-border bg-surface-sunken p-3 text-xs text-fg-muted">
+              {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
+              <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+              <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures, où il choisit lui-même son mot de passe.</p>
             </div>
           </div>
 

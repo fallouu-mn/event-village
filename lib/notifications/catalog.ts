@@ -1745,6 +1745,9 @@ const CATALOG = {
     OTP_PHONE_CHANGE: defineSync('OTP_PHONE_CHANGE', 'Code de changement de numéro'),
     OTP_AUTH_HOOK: defineSync('OTP_AUTH_HOOK', 'Code de connexion (Supabase)'),
     CONTROLLER_INVITE: defineSync('CONTROLLER_INVITE', 'Invitation d’un contrôleur'),
+    // Lot 9 quinquies (A2, A3)
+    ACCOUNT_ACTIVATION: defineSync('ACCOUNT_ACTIVATION', 'Lien d’activation d’un compte créé par un administrateur'),
+    OTP_ADMIN: defineSync('OTP_ADMIN', 'Code administrateur'),
     // N26 (tâche 48) : lien de vérification d'une adresse email, seul envoi vers une adresse non vérifiée.
     EMAIL_VERIFICATION: defineSyncEmail('EMAIL_VERIFICATION', 'Vérification de l’adresse email'),
 } satisfies { readonly [T in NotificationType]: NotificationTemplate<TemplateData[T]> };
@@ -1865,7 +1868,13 @@ export function renderNotification(type: NotificationType | string, channel: Cha
  * unique « Event Village : », code de retrait dédié, invitation d'un contrôleur sur un segment (prénom translittéré et
  * borné à 9 septets). Le code n'est passé qu'ici, au moment de l'envoi : il n'est jamais stocké.
  */
-export function renderSyncSms(type: SyncType, data: { code: string; firstName?: string; setupLink?: string }): string {
+export function renderSyncSms(type: SyncType, data: { code?: string; firstName?: string; setupLink?: string }): string {
+    // Lot 9 quinquies (A2) : le lien d'activation d'un compte créé par un admin n'a pas de code (le jeton est dans le lien)
+    if (type === 'ACCOUNT_ACTIVATION') {
+        const link = typeof data?.setupLink === 'string' ? data.setupLink.trim() : '';
+        if (!/^https?:\/\/\S+\/activation\?t=[A-Za-z0-9_-]{16,64}$/.test(link)) throw new TemplateDataError('setupLink', 'absent ou illisible');
+        return `${SMS_PREFIX}votre compte est créé. Choisissez votre mot de passe sous 24 h : ${link}`;
+    }
     const code = typeof data?.code === 'string' ? data.code.trim() : '';
     if (!/^\d{4,8}$/.test(code)) throw new TemplateDataError('code', 'absent ou illisible');
     switch (type) {
@@ -1878,6 +1887,9 @@ export function renderSyncSms(type: SyncType, data: { code: string; firstName?: 
             return `${SMS_PREFIX}votre code de retrait est ${code}. Valable 10 minutes. Ne le donnez à personne.`;
         case 'OTP_PASSWORD_RESET':
             return `${SMS_PREFIX}votre code de réinitialisation du mot de passe est ${code}. Valable 10 minutes.`;
+        // Lot 9 quinquies (A3 : AUTH-05) : texte du chef de projet
+        case 'OTP_ADMIN':
+            return `${SMS_PREFIX}code administrateur ${code}. Ne le donnez à personne. Valable 10 minutes.`;
         case 'CONTROLLER_INVITE': {
             const link = typeof data.setupLink === 'string' ? data.setupLink.trim() : '';
             if (!/^https?:\/\//.test(link)) throw new TemplateDataError('setupLink', 'absent ou illisible');

@@ -8,7 +8,7 @@ import { storeOtp } from '@/lib/auth/otp-store';
 import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
-import { controllerActivationPendingById, controllerNotActivatedResponse } from '@/lib/auth/controller-activation';
+import { activationPendingResponse } from '@/lib/auth/account-activation';
 import { suspendedAccountMessage } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
@@ -92,7 +92,11 @@ export async function POST(req: NextRequest) {
         // code « Mot de passe oublié » : son activation passe par le lien reçu par SMS (/controller/setup).
         if (userRecord && otpPurpose !== 'REGISTER') {
             try {
-                if (await controllerActivationPendingById(String(userRecord.id))) return controllerNotActivatedResponse();
+                // Lot 9 quinquies (A2) : compte créé par un admin pas encore activé, même refus
+                const { data: authRow, error: authErr } = await supabase.auth.admin.getUserById(String(userRecord.id));
+                if (authErr || !authRow?.user) throw new Error(`compte d’authentification ${userRecord.id} illisible : ${authErr?.message ?? 'absent'}`);
+                const pending = activationPendingResponse(authRow.user);
+                if (pending) return pending;
             } catch (pendingErr) {
                 return apiFailure('POST /api/auth/send-otp, compte d’authentification', pendingErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
             }

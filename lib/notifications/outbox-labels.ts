@@ -176,6 +176,8 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     OTP_PHONE_CHANGE: 'Code de changement de numéro',
     OTP_AUTH_HOOK: 'Code de connexion (authentification)',
     CONTROLLER_INVITE: "Invitation d'un contrôleur",
+    ACCOUNT_ACTIVATION: "Lien d'activation d'un compte",
+    OTP_ADMIN: 'Code administrateur',
     // Lot 9 bis (contrat 11.1, N1 à N26)
     REFUND_DELAYED: 'Remboursement retardé',
     WITHDRAWAL_DELAYED: 'Retrait retardé',
