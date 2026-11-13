@@ -147,6 +147,15 @@ async function ensureUser(key: FixtureUserKey): Promise<string> {
         .upsert(spec.roles.map((role) => ({ user_id: userId, role })), { onConflict: 'user_id,role' });
     if (rolesErr) fail(`user_roles.upsert(${key})`, rolesErr);
 
+    // Lot 9 quater (B5 : AUD-37) : l'ADMIN des fixtures lit les réglages avec la permission « Lire les réglages »
+    // (settings.read), exigée désormais par GET /api/admin/finance-settings et /api/admin/pricing (signalé au rapport).
+    if ((spec.roles as readonly string[]).includes('ADMIN')) {
+        const { error: permErr } = await supabase
+            .from('admin_permissions')
+            .upsert([{ user_id: userId, permission: 'settings.read' }], { onConflict: 'user_id,permission' });
+        if (permErr) fail(`admin_permissions.upsert(${key})`, permErr);
+    }
+
     const { error: pruneErr } = await supabase
         .from('user_roles')
         .delete()

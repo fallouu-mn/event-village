@@ -224,6 +224,8 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), //
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROCESSED', ['/tickets?tab=historique'], 'Remboursement versé'),
     ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B', 'SECURITY', ['/profile'], 'Mot de passe modifié'),
     ess('PHONE_CHANGED', [S, M], 'ANY', 'A', null, ['/profile'], null), // lot 9 : SMS à l'ancien numéro ; lot 9 bis (11.2 M22) : + EMAIL au compte
+    // Lot 9 quater (A9 : AUD-34) : type ajouté (modification signalée au rapport)
+    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S], 'ANY', 'B', 'SECURITY', ['/profile'], 'Adresse email validée par un autre compte'),
     ess('PUSH_TEST', [P], 'ANY', 'B', 'SYSTEM', ['/profile/notifications'], null),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement validé'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement non validé'),
@@ -777,6 +779,8 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['REFUND_PAID', { amount: 5000, operator: 'ORANGE_MONEY' }, NO_EVENT_KEYS, 'Event Village : remboursement de 5 000 F CFA versé sur votre compte Orange Money.'],
             ['PASSWORD_CHANGED', {}, [], 'Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.'],
             ['PHONE_CHANGED', {}, [], 'Event Village : le numéro de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.'],
+            // Lot 9 quater (A9 : AUD-34) : type ajouté (modification signalée au rapport)
+            ['EMAIL_CLAIMED_ELSEWHERE', {}, [], 'Event Village : l\'adresse email en attente sur votre compte a été validée par un autre compte. Si c\'est votre adresse, contactez le support.'],
             ['EVENT_VALIDATED', ev, [], `Event Village : votre événement Gala Dakar est validé. Publiez-le depuis votre espace : ${U}/partner/events`],
             ['EVENT_REJECTED', { ...ev, reason: 'Affiche illisible' }, [], `Event Village : événement Gala Dakar non validé. Motif : Affiche illisible. ${U}/partner/events`],
             ['EVENT_SUSPENDED', { ...ev, reason: 'Signalement en cours' }, [], `Event Village : événement Gala Dakar suspendu. Motif : Signalement en cours. ${U}/partner/events`],
