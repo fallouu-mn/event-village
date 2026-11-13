@@ -28,6 +28,7 @@ import { reserveQuota, type QuotaRule } from '@/lib/security/quota';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import type { SmsSendResult } from '@/lib/integrations/types';
 import { formatMTargetPhoneNumber } from './mtarget-http.adapter';
+import { contactSupport } from '@/lib/support-contact';
 
 const DAY = 86400;
 
@@ -178,7 +179,7 @@ export async function reserveSms(to: string, ctx: SmsContext = {}): Promise<SmsR
             ok: false,
             refusal: {
                 code: 'SMS_DAILY_CAP_REACHED',
-                message: "L'envoi de SMS est momentanément suspendu. Réessayez plus tard ou contactez le support.",
+                message: `L'envoi de SMS est momentanément suspendu. Réessayez plus tard ou ${contactSupport(false)}`,
                 retryAfterSeconds: result.retryAfterSeconds,
             },
         };
@@ -188,7 +189,7 @@ export async function reserveSms(to: string, ctx: SmsContext = {}): Promise<SmsR
             ok: false,
             refusal: {
                 code: 'SMS_ACCOUNT_LIMIT_REACHED',
-                message: 'Limite quotidienne de SMS de votre compte atteinte. Réessayez demain ou contactez le support.',
+                message: `Limite quotidienne de SMS de votre compte atteinte. Réessayez demain ou ${contactSupport(false)}`,
                 retryAfterSeconds: result.retryAfterSeconds,
             },
         };

@@ -9,6 +9,7 @@ import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { normalizePhoneNumber, phoneStorageForms } from '@/lib/validations/auth';
 import { activationPendingResponse } from '@/lib/auth/account-activation';
+import { suspendedAccountMessage } from '@/lib/support-contact';
 import { beginLoginAttempt, endLoginAttempt, loginBucket, loginLockedResponse } from '@/lib/auth/login-guard';
 
 export const dynamic = 'force-dynamic';
@@ -36,8 +37,6 @@ function refusalResponse(code: string): NextResponse {
     switch (code) {
         case 'email_not_confirmed':
             return NextResponse.json({ error: 'Votre adresse email n’est pas encore confirmée.', code: 'EMAIL_NOT_CONFIRMED' }, { status: 403 });
-        case 'user_banned':
-            return NextResponse.json({ error: 'Ce compte n’est plus actif. Veuillez contacter le support.', code: 'ACCOUNT_NOT_ACTIVE' }, { status: 403 });
         case 'over_request_rate_limit':
             return NextResponse.json({ error: 'Trop de tentatives. Patientez quelques instants avant de réessayer.', code: 'LOGIN_RATE_LIMITED' }, { status: 429 });
         default:
@@ -142,6 +141,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         }
         await endLoginAttempt(attemptId, signIn.ok ? 'SUCCESS' : 'ABORTED', attemptUser);
         attemptId = null;
+        // Lot 9 quinquies (A5, B1) : compte bloqué chez GoTrue (SUSPENDU) : même refus que la demande de code, avec le contact
+        if (!signIn.ok && signIn.code === 'user_banned') {
+            const refusal = await suspendedAccountMessage();
+            return NextResponse.json({ error: refusal.error, code: 'ACCOUNT_SUSPENDED', support: refusal.support }, { status: 403 });
+        }
         if (!signIn.ok) return refusalResponse(signIn.code);
         return applySessionCookies(NextResponse.json({ ok: true }), signIn.cookies);
     } catch (err) {

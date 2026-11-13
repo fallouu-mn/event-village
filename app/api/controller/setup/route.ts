@@ -11,6 +11,7 @@ import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { AdminService } from '@/lib/admin/admin.service';
 import { addUserRole } from '@/lib/auth/roles';
+import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
         }
         if ((matches ?? []).length > 1) {
-            return NextResponse.json({ error: 'Plusieurs comptes correspondent à ce numéro. Contactez le support.', code: 'AMBIGUOUS_PHONE' }, { status: 409 });
+            return NextResponse.json({ error: `Plusieurs comptes correspondent à ce numéro. ${contactSupport()}`, code: 'AMBIGUOUS_PHONE' }, { status: 409 });
         }
         const profile = (matches ?? [])[0] ?? null;
 

@@ -876,9 +876,12 @@ const CATALOG = {
         link: () => '/profile',
         inApp: () => ({
             title: 'Mot de passe modifié',
-            content: 'Le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.',
+            // Lot 9 quinquies (B1 : AUTH-06) : action immédiate (« Mot de passe oublié ») et page d'aide pour le support
+            content: 'Le mot de passe de votre compte a été modifié. Si ce n\'est pas vous : utilisez « Mot de passe oublié » sur la page de connexion, puis ouvrez la page Aide pour joindre le support.',
         }),
-        sms: () => `${SMS_PREFIX}le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous, contactez le support.`,
+        // Lot 9 quinquies (B1) : texte du chef de projet ; « défini ou » retiré (163 septets sinon), l'activation d'un compte
+        // ne produit plus cet avis (A2)
+        sms: (_d, ctx) => `${SMS_PREFIX}le mot de passe de votre compte a été modifié. Si ce n'est pas vous : Mot de passe oublié sur ${appLink(ctx, '/forgot-password')}`,
         sample: {},
     }),
     // Lot 9 (9.2, L30) : SMS à l'ancien numéro, sans lien ni compte. Lot 9 bis (11.2 M22, G.49) : + EMAIL au compte
@@ -888,9 +891,9 @@ const CATALOG = {
         link: () => '/profile',
         inApp: () => ({
             title: 'Numéro de téléphone modifié',
-            content: 'Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.',
+            content: 'Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, ouvrez la page Aide pour joindre le support.',
         }),
-        sms: () => `${SMS_PREFIX}le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support.`,
+        sms: (_d, ctx) => `${SMS_PREFIX}le numéro de votre compte a été modifié. Si ce n'est pas vous : ${appLink(ctx, '/aide')}`,
         sample: {},
     }),
     // Lot 9 quater (A9 : AUD-34) : l'adresse en attente sur ce compte vient d'être validée par un autre compte ; elle
@@ -900,9 +903,9 @@ const CATALOG = {
         link: () => '/profile',
         inApp: () => ({
             title: 'Adresse email validée par un autre compte',
-            content: 'L’adresse email en attente sur votre compte vient d’être validée par un autre compte Event Village. Si c’est votre adresse, ne cliquez sur aucun lien que vous n’avez pas demandé et contactez le support.',
+            content: 'L’adresse email en attente sur votre compte vient d’être validée par un autre compte Event Village. Si c’est votre adresse, ne cliquez sur aucun lien que vous n’avez pas demandé et ouvrez la page Aide pour joindre le support.',
         }),
-        sms: () => `${SMS_PREFIX}l'adresse email en attente sur votre compte a été validée par un autre compte. Si c'est votre adresse, contactez le support.`,
+        sms: (_d, ctx) => `${SMS_PREFIX}l'adresse email en attente sur votre compte a été validée par un autre compte. Si c'est votre adresse : ${appLink(ctx, '/aide')}`,
         sample: {},
     }),
     PUSH_TEST: define('PUSH_TEST', {
@@ -1051,8 +1054,9 @@ const CATALOG = {
     PARTNER_SUSPENDED: define('PARTNER_SUSPENDED', {
         label: 'Compte partenaire suspendu', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'KYC',
         link: () => '/partner/dashboard',
-        inApp: (d) => ({ title: 'Compte suspendu', content: `Votre compte partenaire est suspendu. Motif : ${sentence(text(d, 'reason'))} Contactez le support.` }),
-        sms: (d) => `${SMS_PREFIX}votre compte partenaire est suspendu. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 60))} Contactez le support.`,
+        inApp: (d) => ({ title: 'Compte suspendu', content: `Votre compte partenaire est suspendu. Motif : ${sentence(text(d, 'reason'))} Ouvrez la page Aide pour joindre le support.` }),
+        // Lot 9 quinquies (B1) : lien de la page d'aide au lieu de « Contactez le support. » ; motif ramené à 40 septets
+        sms: (d, ctx) => `${SMS_PREFIX}votre compte partenaire est suspendu. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 40))} Aide : ${appLink(ctx, '/aide')}`,
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events', reason: 'Signalements de fraude en cours d’examen.' },
     }),
     PARTNER_REACTIVATED: define('PARTNER_REACTIVATED', {
@@ -1613,9 +1617,11 @@ const CATALOG = {
         link: () => '/billet/hors-ligne',
         inApp: (d) => ({
             title: 'Compte suspendu',
-            content: `Votre compte est suspendu. Motif : ${sentence(text(d, 'reason'))} Vos billets payés restent valables à l'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d'identité. Contactez le support.`,
+            content: `Votre compte est suspendu. Motif : ${sentence(text(d, 'reason'))} Vos billets payés restent valables à l'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d'identité. Ouvrez la page Aide pour joindre le support.`,
         }),
-        sms: (d) => `${SMS_PREFIX}votre compte est suspendu. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 35))} Vos billets payés restent valables à l'entrée. Contactez le support.`,
+        // Lot 9 quinquies (B1) : lien de la page d'aide au lieu de « Contactez le support. » ; « Billets payés valables à
+        // l'entrée. » (plus court) pour garder un motif de 33 septets dans un segment
+        sms: (d, ctx) => `${SMS_PREFIX}votre compte est suspendu. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 33))} Billets payés valables à l'entrée. Aide : ${appLink(ctx, '/aide')}`,
         sample: { reason: 'Paiements contestés' },
     }),
     // N20 (R59) : réactivation du compte.

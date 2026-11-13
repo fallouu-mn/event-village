@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import type { ServerUser } from './session';
+import { contactSupport } from '@/lib/support-contact';
 
 export type InactiveRefusalAction = 'CONTROLLER_INVITE_REFUSED_INACTIVE' | 'CONTROLLER_ASSIGNMENT_REFUSED_INACTIVE';
 
@@ -33,7 +34,7 @@ export async function refuseInactiveAccount(params: {
     const verb = params.action === 'CONTROLLER_INVITE_REFUSED_INACTIVE' ? 'invité' : 'affecté';
     return NextResponse.json(
         {
-            error: `Ce numéro ne peut pas être ${verb} pour le moment. Contactez le support si besoin.`,
+            error: `Ce numéro ne peut pas être ${verb} pour le moment. Si besoin, ${contactSupport(false)}`,
             code: 'ACCOUNT_NOT_ACTIVE',
         },
         { status: 409 }

@@ -275,7 +275,7 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         chip: null,
         tone: 'failed',
         title: 'Le paiement n’a pas abouti',
-        description: `${label ?? 'L’opérateur'} n’a pas confirmé le paiement de ${amount}. Vous pouvez réessayer ; si votre compte a tout de même été débité, contactez le support avec la référence ci-\u2060dessous.`,
+        description: `${label ?? 'L’opérateur'} n’a pas confirmé le paiement de ${amount}. Vous pouvez réessayer ; si votre compte a tout de même été débité, contactez le support (page Aide : /aide) avec la référence ci-\u2060dessous.`,
         icon: XCircle,
       };
     case 'CANCELLED':
@@ -331,7 +331,7 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
         chip: null,
         tone: 'unknown',
         title: 'Statut à vérifier',
-        description: 'Le statut de ce paiement n’a pas pu être interprété. Si la situation persiste, contactez le support avec la référence ci-\u2060dessous.',
+        description: 'Le statut de ce paiement n’a pas pu être interprété. Si la situation persiste, contactez le support (page Aide : /aide) avec la référence ci-\u2060dessous.',
         icon: AlertTriangle,
       };
   }

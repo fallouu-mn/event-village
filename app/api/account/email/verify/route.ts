@@ -12,6 +12,7 @@ import { EmailService } from '@/lib/email/email.service';
 import { renderEmailChangedOld } from '@/lib/notifications/catalog';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { getServerEnv } from '@/lib/env';
+import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,8 +26,9 @@ const REFUSALS: Readonly<Record<string, PublicError>> = {
     EMAIL_TAKEN: new PublicError('Cette adresse est déjà vérifiée sur un autre compte Event Village.', 'EMAIL_TAKEN', 409),
     EMAIL_CONFLICT: new PublicError('Votre profil a été modifié entre-temps. Demandez un nouveau lien depuis votre profil.', 'EMAIL_CONFLICT', 409),
 };
-const SYNC_FAILED = new PublicError(
-    'La vérification n’a pas pu aboutir. Réessayez avec le même lien ; si le problème persiste, contactez le support.',
+// Lot 9 quinquies (B1 : AUTH-06) : « contactez le support » donne le lien de la page d'aide (calculé à la requête)
+const SYNC_FAILED = (): PublicError => new PublicError(
+    `La vérification n’a pas pu aboutir. Réessayez avec le même lien ; si le problème persiste, ${contactSupport(false)}`,
     'ACCOUNT_SYNC_FAILED',
     500,
 );
@@ -104,7 +106,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
                 // Profil libéré entre la relecture et la RPC : public.users a pu recevoir l'adresse, auth.users est
                 // ramené sur public.users (même compensation que l'échec de la RPC).
                 if ((released as FinalizeReply | null)?.ok === true) {
-                    return (await compensateAuthIdentity(userId, 'email-verify', 'email')) ? NextResponse.json({ ok: true }) : refuse(SYNC_FAILED);
+                    return (await compensateAuthIdentity(userId, 'email-verify', 'email')) ? NextResponse.json({ ok: true }) : refuse(SYNC_FAILED());
                 }
             }
             return refuse(REFUSALS.EMAIL_TAKEN);
@@ -132,7 +134,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         const reply = data as FinalizeReply | null;
         if (error || reply?.ok !== true) {
             console.error(`[${CONTEXT}] validation refusée pour le compte ${userId} :`, error ? error.message : (reply?.code ?? 'réponse vide'));
-            if (authUpdate && !(await compensateAuthIdentity(userId, 'email-verify', 'email'))) return refuse(SYNC_FAILED);
+            if (authUpdate && !(await compensateAuthIdentity(userId, 'email-verify', 'email'))) return refuse(SYNC_FAILED());
             const refusal = reply?.code ? REFUSALS[reply.code] : undefined;
             if (refusal) return refuse(refusal);
             return NextResponse.json({ error: FALLBACK.message, code: FALLBACK.code }, { status: 500 });

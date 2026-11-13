@@ -4,6 +4,7 @@ import { type UserRoleType } from '@/lib/auth/roles';
 import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 import { getClientIp } from '@/lib/security/client-ip';
 import { adminStepUpRefusal } from '@/lib/admin/step-up';
+import { contactSupport } from '@/lib/support-contact';
 
 export interface AdminAuthResult {
     authorized: boolean;
@@ -159,7 +160,7 @@ export async function verifyAdminAuth(
             return {
                 authorized: false,
                 errorResponse: NextResponse.json(
-                    { error: 'Votre compte n\'est pas actif. Contactez le support.', code: 'ACCOUNT_NOT_ACTIVE' },
+                    { error: `Votre compte n'est pas actif. ${contactSupport()}`, code: 'ACCOUNT_NOT_ACTIVE' },
                     { status: 403 }
                 ),
             };

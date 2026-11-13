@@ -3,6 +3,7 @@ import { getServiceRoleClient, getAuthenticatedUser } from '../supabase/server';
 import { type UserRoleType } from './roles';
 import { partnerFicheRefusal } from './partner-fiche-guard';
 import { adminStepUpRefusal, isAdminAccount } from '../admin/step-up';
+import { contactSupport } from '../support-contact';
 
 export interface ServerUser {
     id: string;
@@ -74,7 +75,7 @@ export async function requireActiveSession(
         console.warn(`[requireActiveSession] accès refusé à ${new URL(req.url).pathname} : compte ${user.id} au statut ${user.status}`);
         return {
             response: NextResponse.json(
-                { error: "Votre compte n'est pas actif. Contactez le support.", code: 'ACCOUNT_NOT_ACTIVE' },
+                { error: `Votre compte n'est pas actif. ${contactSupport()}`, code: 'ACCOUNT_NOT_ACTIVE' },
                 { status: 403 }
             ),
         };

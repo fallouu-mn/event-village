@@ -71,7 +71,8 @@ async function main() {
         impossible(read.message);
         return;
     }
-    const { lines, code } = report(read.reply);
+    // Lot 9 quinquies (B1, A4) : contact du support (champ de la RPC) et inactivité de l'administration (variable du poste)
+    const { lines, code } = report(read.reply, process.env);
     for (const line of lines) console.log(line);
     process.exitCode = code;
 }

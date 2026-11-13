@@ -11,6 +11,7 @@ import { apiErrorOf, errorMessage, fetchJson } from '@/components/partner/fetch-
 import { formatFcfa } from '@/lib/format';
 import { ticketStatusLabel } from '@/lib/tickets/ticket-status';
 import { PilotageSection } from './PilotageBlocks';
+import Link from 'next/link';
 
 /**
  * Lot 8, anomalie A4 (contrat 3.11, 13.4) — remboursement d'un billet depuis l'onglet Ventes. Le partenaire
@@ -100,7 +101,7 @@ const REFUSAL_MESSAGES: Record<string, string> = {
     PAYMENT_NOT_REFUNDABLE: 'Le paiement de ce billet ne peut pas être remboursé.',
     ALREADY_REFUNDED: 'Ce paiement est déjà entièrement remboursé.',
     // Lot 9 bis (R11, B21, contrat 4.1) : après la fin, seul Event Village (refunds.manage) rembourse.
-    REFUND_CLOSED_AFTER_EVENT: 'L’événement est terminé : seul Event Village peut encore rembourser ce billet. Contactez le support.',
+    REFUND_CLOSED_AFTER_EVENT: 'L’événement est terminé : seul Event Village peut encore rembourser ce billet. Contactez le support (page Aide : /aide).',
     FORBIDDEN: 'Remboursement réservé à l’organisateur ou à un administrateur habilité.',
 };
 
@@ -300,7 +301,7 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
                             </>
                         ) : sheet.refund_closed_reason && sheet.status === 'VALIDE' ? (
                             <StatusBanner tone="info" title="Remboursement réservé à Event Village">
-                                {CLOSED_REASON_MESSAGES[sheet.refund_closed_reason]} Le client peut contacter le support Event Village.
+                                {CLOSED_REASON_MESSAGES[sheet.refund_closed_reason]} Le client peut <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">contacter le support Event Village</Link>.
                             </StatusBanner>
                         ) : (
                             <StatusBanner tone="neutral" title="Ce billet n’est pas remboursable">

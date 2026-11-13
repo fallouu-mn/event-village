@@ -54,6 +54,7 @@ import { cn } from '@/components/ui/cn';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { formatDate, formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import type { PartnerActivityItem, PartnerDashboardData, PartnerEventBreakdown } from '@/lib/partner/partner-dashboard.service';
+import Link from 'next/link';
 
 const ClosingReportModal = dynamic(
     () => import('@/components/partner/ClosingReportModal').then((m) => m.ClosingReportModal),
@@ -471,13 +472,13 @@ export default function PartnerDashboardPage() {
                             {partner.rejectionReason ? <>Motif : {partner.rejectionReason}</> : 'Aucun motif n’a été précisé.'}{' '}
                             {canCompleteDossier
                                 ? 'Vous pouvez compléter votre dossier une fois : il repasse alors en vérification.'
-                                : 'Votre dossier a déjà été complété une fois. Contactez le support pour la suite.'}
+                                : <>Votre dossier a déjà été complété une fois. Pour la suite, <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">contactez le support</Link>.</>}
                         </StatusBanner>
                     )}
                     {partner?.status === 'SUSPENDU' && (
                         <StatusBanner tone="suspended" title="Compte partenaire suspendu">
                             {partner.suspendedReason ? <>Motif : {partner.suspendedReason}. </> : null}
-                            Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu’à la réactivation du compte. Contactez le support Event Village.
+                            Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu’à la réactivation du compte. <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">Contactez le support Event Village</Link>.
                         </StatusBanner>
                     )}
 

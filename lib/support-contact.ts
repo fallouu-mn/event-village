@@ -57,6 +57,14 @@ export async function getSupportContact(): Promise<SupportContact> {
     };
 }
 
+/**
+ * Lot 9 quinquies (B1) : fin de phrase « contactez le support » qui donne le lien de la page d'aide (contact du support
+ * et réponses courtes). Pour un message rendu par le serveur ; un écran met un lien vers /aide.
+ */
+export function contactSupport(capital = true): string {
+    return `${capital ? 'Contactez' : 'contactez'} le support : ${helpUrl()}`;
+}
+
 /** Numéro +221XXXXXXXXX affiché « 77 123 45 67 » ; un autre format est rendu tel quel. */
 export function displayPhone(e164: string): string {
     const m = /^\+221(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(e164);

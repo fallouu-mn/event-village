@@ -108,7 +108,31 @@ function eventList(events) {
  * @param {any} reply réponse lue par readReply
  * @returns {{ lines: string[], code: number }}
  */
-export function report(reply) {
+/**
+ * Lot 9 quinquies (B1 : AUTH-06 ; A4 : AUTH-04) — points de configuration avant une séance réelle : au moins un contact du
+ * support renseigné (champ `support.filled` de la RPC, migration 20261112000009) ; délai d'inactivité de l'administration
+ * au plus 30 minutes (ADMIN_IDLE_TIMEOUT_MINUTES n'est relevé que pour l'e2e). Rend { lines, points }.
+ */
+export function configReport(reply, env) {
+    const lines = [];
+    let points = 0;
+    const filled = Number(reply?.support?.filled);
+    if (!Number.isInteger(filled)) {
+        points += 1;
+        lines.push('Contact du support non contrôlé : appliquez la migration 20261112000009 (lot 9 quinquies).');
+    } else if (filled === 0) {
+        points += 1;
+        lines.push('Contact du support absent : renseignez au moins un réglage (WhatsApp, téléphone ou email du support) dans Administration > Réglages > Contact du support.');
+    }
+    const idle = String(env?.ADMIN_IDLE_TIMEOUT_MINUTES ?? '').trim();
+    if (idle !== '' && !(Number.isInteger(Number(idle)) && Number(idle) <= 30)) {
+        points += 1;
+        lines.push(`ADMIN_IDLE_TIMEOUT_MINUTES=${idle.slice(0, 6)} : au plus 30 en réel (le mot de passe de l'administration est redemandé après 30 minutes sans activité). Retirez la variable.`);
+    }
+    return { lines, points };
+}
+
+export function report(reply, env = {}) {
     const lines = [];
     let points = 0;
 
@@ -134,6 +158,11 @@ export function report(reply) {
     if (seed.total > 0) {
         lines.push(`Pour information : ${seed.total} événement(s) de démonstration encore en vente, sans effet sur ce contrôle : ${eventList(seed.events)}. En réel, leurs messages restent retenus (compte de démonstration).`);
     }
+
+    // Lot 9 quinquies (B1, A4) : configuration avant le réel
+    const config = configReport(reply, env);
+    lines.push(...config.lines);
+    points += config.points;
 
     if (points === 0) {
         lines.push(CLEAR_TEXT);

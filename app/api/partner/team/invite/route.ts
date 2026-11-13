@@ -20,6 +20,7 @@ import { createControllerInvitation } from '../controller-invitation';
 import { adminTeamRefusal } from '../team-access';
 import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { CONTROLLER_ACTIVATION_KEY, isControllerActivationPending } from '@/lib/auth/controller-activation';
+import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest) {
             // Lot 9 quater (A9 : AUD-33) : numéro masqué dans le journal
             console.error(`[invite-controller] plusieurs comptes portent le numéro ${maskPhone(normalizedPhone)}`);
             return NextResponse.json({
-                error: 'Plusieurs comptes correspondent à ce numéro. Contactez le support.',
+                error: `Plusieurs comptes correspondent à ce numéro. ${contactSupport()}`,
                 code: 'AMBIGUOUS_PHONE',
             }, { status: 409 });
         }
@@ -356,7 +357,7 @@ export async function POST(req: NextRequest) {
                 // prise de contrôle d'un compte tiers et réactivation. Refus explicite.
                 console.warn(`[invite-controller] compte d'authentification existant ${matchingAuthUser.id} : invitation refusée`);
                 return NextResponse.json({
-                    error: 'Un compte existe déjà avec cet email ou ce numéro. Invitez-le par le numéro de téléphone de son profil, ou contactez le support.',
+                    error: `Un compte existe déjà avec cet email ou ce numéro. Invitez-le par le numéro de téléphone de son profil, ou ${contactSupport(false)}`,
                     code: 'ACCOUNT_ALREADY_EXISTS',
                 }, { status: 409 });
             } else {

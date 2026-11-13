@@ -32,7 +32,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { formatDateTime } from '@/lib/format';
 import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
 
-type Kind = 'percent' | 'integer' | 'boolean' | 'choice';
+type Kind = 'percent' | 'integer' | 'boolean' | 'choice' | 'text';
 
 interface SettingMeta {
   label: string;
@@ -94,6 +94,10 @@ const META: Record<string, SettingMeta> = {
   'notif.free_ticket_reminder_sms': { label: 'SMS des rappels pour les billets gratuits', help: 'Pour un porteur qui ne détient que des billets gratuits ou des invitations de l’événement. Les rappels arrivent toujours dans l’application et en notification push.', kind: 'choice', options: FREE_REMINDER_SMS_LABELS },
   'features.halls_enabled': { label: 'Salles de fête', help: 'Réservation de salles par les clients et gestion des salles par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
   'features.tables_enabled': { label: 'Réservation de tables', help: 'Réservation de tables dans les restaurants et gestion des tables par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
+  // Lot 9 quinquies (B1 : AUTH-06) : contact du support, montré sur /aide et dans chaque message « contactez le support »
+  'support.whatsapp': { label: 'Numéro WhatsApp du support', help: 'Format international, par exemple +221771234567. Laissez vide si aucun. Au moins un moyen de contact est exigé avant une séance réelle.', kind: 'text' },
+  'support.phone': { label: 'Téléphone du support', help: 'Format international, par exemple +221338000000. Laissez vide si aucun.', kind: 'text' },
+  'support.email': { label: 'Email du support', help: 'Adresse lue par l’équipe du support. Laissez vide si aucune.', kind: 'text' },
   'features.orders_enabled': { label: 'Commandes de repas', help: 'Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés.', kind: 'boolean' },
 };
 
@@ -105,6 +109,7 @@ const rank = (key: string) => (META_ORDER.includes(key) ? META_ORDER.indexOf(key
 const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: LucideIcon }> = [
   { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
   { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet, seuil de stock affiché au public et alerte de refus à une porte.', icon: ScanLine },
+  { prefix: 'support.', title: 'Contact du support', help: 'Moyens de joindre le support, affichés sur la page publique Aide et dans les messages de sécurité. Au moins un est exigé avant une séance réelle.', icon: Bell },
   { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels, alerte sur les SMS indispensables et rappels des billets gratuits.', icon: Bell },
   // Lot 9 quater (B1 : E-08, AUD-22, G-01) : les trois services ne sont pas prêts pour le public (paiements non audités)
   { prefix: 'features.', title: 'Services en préparation', help: 'Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER.', icon: ToggleRight },
@@ -153,6 +158,7 @@ function displayValue(key: string, value: unknown): string {
   if (v === null || v === undefined) return '—';
   if (meta?.kind === 'boolean') return v === true ? 'Activé' : 'Désactivé';
   if (meta?.kind === 'choice') return meta.options?.[String(v)] ?? 'Valeur non répertoriée';
+  if (meta?.kind === 'text') return String(v).trim() === '' ? 'Non renseigné' : String(v);
   if (typeof v === 'number') return `${v.toLocaleString('fr-FR')}${meta?.unit ? ` ${meta.unit}` : ''}`;
   return String(v);
 }
@@ -260,7 +266,7 @@ export default function AdminFinanceSettingsPage() {
     const meta = META[key];
     let value: number | boolean | string;
     if (meta?.kind === 'boolean') value = draft === 'true';
-    else if (meta?.kind === 'choice') value = draft;
+    else if (meta?.kind === 'choice' || meta?.kind === 'text') value = draft.trim();
     else {
       const parsed = Number(draft.replace(',', '.'));
       if (draft.trim() === '' || !Number.isFinite(parsed)) {
@@ -401,6 +407,13 @@ export default function AdminFinanceSettingsPage() {
                                 value={draft}
                                 onChange={(e) => setDraft(e.target.value)}
                                 options={Object.entries(meta.options ?? {}).map(([value, optionLabel]) => ({ value, label: optionLabel }))}
+                              />
+                            ) : meta?.kind === 'text' ? (
+                              <TextInput
+                                label="Nouvelle valeur (vide : aucun)"
+                                type="text"
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
                               />
                             ) : (
                               <TextInput

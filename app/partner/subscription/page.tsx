@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { cn } from '@/components/ui/cn';
 import { formatDate, formatFcfa, formatInteger } from '@/lib/format';
+import Link from 'next/link';
 
 interface PlanFeature {
     key: string;
@@ -155,7 +156,7 @@ export default function PartnerSubscriptionPage() {
                     {/* Essai terminé */}
                     {sub.trialEndsAt && !sub.trialActive && (
                         <StatusBanner tone="warning" title="Période d’essai terminée" icon={<Clock size={20} />}>
-                            Terminée le <time dateTime={sub.trialEndsAt}>{formatDate(sub.trialEndsAt)}</time>. Contactez le support pour choisir une offre.
+                            Terminée le <time dateTime={sub.trialEndsAt}>{formatDate(sub.trialEndsAt)}</time>. <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">Contactez le support</Link> pour choisir une offre.
                         </StatusBanner>
                     )}
 

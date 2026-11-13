@@ -17,6 +17,7 @@ import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
 import { PhoneChangeConfirmSchema } from '@/lib/validations/account';
 import { phoneStorageForms } from '@/lib/validations/auth';
+import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,8 @@ const CONTEXT = 'POST /api/account/phone/confirm';
 const FALLBACK = { message: 'Votre numéro n’a pas pu être changé. Réessayez dans un instant.', code: 'PHONE_CHANGE_FAILED' };
 const PHONE_TAKEN = new PublicError('Ce numéro est déjà associé à un compte.', 'PHONE_TAKEN', 409);
 const PHONE_CONFLICT = new PublicError('Votre numéro a été modifié entre-temps. Recommencez le changement.', 'PHONE_CONFLICT', 409);
-const SYNC_FAILED = new PublicError('Le changement n’a pas pu aboutir. Réessayez avec le même numéro ; si le problème persiste, contactez le support.', 'ACCOUNT_SYNC_FAILED', 500);
+// Lot 9 quinquies (B1 : AUTH-06) : « contactez le support » donne le lien de la page d'aide (calculé à la requête)
+const SYNC_FAILED = (): PublicError => new PublicError(`Le changement n’a pas pu aboutir. Réessayez avec le même numéro ; si le problème persiste, ${contactSupport(false)}`, 'ACCOUNT_SYNC_FAILED', 500);
 const OTP_REFUSAL_CODE = { INVALID: 'INVALID_CODE', EXPIRED: 'CODE_EXPIRED', TOO_MANY_ATTEMPTS: 'TOO_MANY_ATTEMPTS' } as const;
 
 const refuse = (err: unknown): NextResponse => apiFailure(CONTEXT, err, FALLBACK);
@@ -110,7 +112,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         const reply = data as { ok?: boolean; code?: string } | null;
         if (error || reply?.ok !== true) {
             console.error(`[${CONTEXT}] finalisation refusée :`, error ? error.message : (reply?.code ?? 'réponse vide'));
-            if (!(await compensateAuthIdentity(user.id, 'phone_change', 'phone_email'))) return refuse(SYNC_FAILED);
+            if (!(await compensateAuthIdentity(user.id, 'phone_change', 'phone_email'))) return refuse(SYNC_FAILED());
             if (reply?.code === 'PHONE_TAKEN') return refuse(PHONE_TAKEN);
             if (reply?.code === 'PHONE_CONFLICT') return refuse(PHONE_CONFLICT);
             return NextResponse.json({ error: FALLBACK.message, code: FALLBACK.code }, { status: 500 });

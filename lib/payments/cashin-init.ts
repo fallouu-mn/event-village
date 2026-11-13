@@ -15,6 +15,7 @@ import { samirPayClient } from '@/lib/samirpay/client';
 import { isSamirPayError, type SamirPayDirectInitRequest, type SamirPayDirectInitResult } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { rpcWithRetry } from './rpc';
+import { contactSupport } from '@/lib/support-contact';
 
 export type CashinInitOutcome =
     | { kind: 'INITIATED'; init: SamirPayDirectInitResult }
@@ -22,6 +23,10 @@ export type CashinInitOutcome =
 
 /** Lot 9 bis (H8, contrat 4.5) : texte d'une erreur 5xx de SamirPay à l'initialisation. */
 export const PROVIDER_INTERNAL_MESSAGE = 'Le paiement n’a pas pu être lancé. Réessayez dans quelques minutes ; si le problème continue, contactez le support.';
+/** Lot 9 quinquies (B1 : AUTH-06) : même texte, avec le lien de la page d'aide (calculé à la requête). */
+export function providerInternalMessage(): string {
+    return PROVIDER_INTERNAL_MESSAGE.replace('contactez le support.', contactSupport(false));
+}
 
 export interface InitFailure {
     /** Motif posé sur le paiement par payment_release (FAILED). */
@@ -38,7 +43,7 @@ export interface InitFailure {
 export function initFailureOf(err: unknown): InitFailure | null {
     if (!isSamirPayError(err)) return null;
     if (err.httpStatus !== undefined && err.httpStatus >= 500) {
-        return { reason: 'INIT_PROVIDER_INTERNAL', code: 'PAYMENT_PROVIDER_INTERNAL', message: PROVIDER_INTERNAL_MESSAGE };
+        return { reason: 'INIT_PROVIDER_INTERNAL', code: 'PAYMENT_PROVIDER_INTERNAL', message: providerInternalMessage() };
     }
     return {
         reason: `INIT_${err.kind}`,

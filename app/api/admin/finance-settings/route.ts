@@ -9,7 +9,8 @@ import { rpcWithRetry } from '@/lib/payments/rpc';
 export const dynamic = 'force-dynamic';
 
 /** Préfixes des réglages exposés par cette route (validation des valeurs : finance_setting_set). */
-const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%';
+// Lot 9 quinquies (B1) : + support.* (contact du support)
+const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%';
 
 /**
  * Lot 3 — réglages financiers (clés finance.*), lot 4 — réglages du contrôle d'accès (clés access.*),
@@ -50,8 +51,8 @@ export async function GET(req: NextRequest) {
 }
 
 const PutSchema = z.object({
-    key: z.string().regex(/^(finance|access|notif|features)\.[A-Za-z0-9_.]+$/),
-    value: z.union([z.number(), z.boolean(), z.string()]),
+    key: z.string().regex(/^(finance|access|notif|features|support)\.[A-Za-z0-9_.]+$/),
+    value: z.union([z.number(), z.boolean(), z.string().max(254)]),
     reason: z.string().trim().min(3).max(300),
 });
 
@@ -66,7 +67,7 @@ export async function PUT(req: NextRequest) {
     }
     const parsed = PutSchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.*, notif.* ou features.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
+        return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.*, notif.*, features.* ou support.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
     }
     const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>('finance_setting_set', {
         p_key: parsed.data.key,

@@ -8,6 +8,7 @@ import { getClientIp } from '@/lib/security/client-ip';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +84,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         return failure();
     }
     if (profile.status !== 'ACTIF') {
-        return NextResponse.json({ error: 'Ce compte n’est pas actif : l’activation est impossible. Contactez le support.', code: 'ACCOUNT_NOT_ACTIVE' }, { status: 403 });
+        return NextResponse.json({ error: `Ce compte n’est pas actif : l’activation est impossible. ${contactSupport()}`, code: 'ACCOUNT_NOT_ACTIVE' }, { status: 403 });
     }
 
     // Mot de passe d'abord, pendant que la marque est encore posée (notif_on_password_changed : aucun avis pour

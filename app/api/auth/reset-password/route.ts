@@ -6,6 +6,7 @@ import { requireActiveSession } from '@/lib/auth/session';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
 import { ServerPasswordSchema } from '@/lib/auth/password-policy.server'; // lot 9 quinquies (A7)
+import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,7 +124,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // Révocation explicite et journalisée (jetons de rafraîchissement compris), en plus de celle de GoTrue
     if (!(await revokeUserSessions(user.id, { reason: 'PASSWORD_RESET', actorId: user.id }))) {
         return NextResponse.json(
-            { error: 'Mot de passe modifié, mais les autres appareils n’ont pas pu être déconnectés. Contactez le support.', code: 'PASSWORD_SESSIONS_NOT_REVOKED' },
+            { error: `Mot de passe modifié, mais les autres appareils n’ont pas pu être déconnectés. ${contactSupport()}`, code: 'PASSWORD_SESSIONS_NOT_REVOKED' },
             { status: 500 },
         );
     }

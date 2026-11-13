@@ -14,6 +14,7 @@ import { isTechnicalAddress } from '@/lib/notifications/channels';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AccountProfileSchema } from '@/lib/validations/account';
 import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
+import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,8 @@ const CONTEXT = 'PATCH /api/account/profile';
 const FALLBACK = { message: 'Votre profil n’a pas pu être enregistré. Réessayez dans un instant.', code: 'PROFILE_SAVE_FAILED' };
 const EMAIL_TAKEN = new PublicError('Cette adresse email est déjà associée à un compte.', 'EMAIL_TAKEN', 409);
 const EMAIL_CONFLICT = new PublicError('Votre profil a été modifié entre-temps. Rechargez la page et recommencez.', 'EMAIL_CONFLICT', 409);
-const SYNC_FAILED = new PublicError('L’enregistrement n’a pas pu aboutir. Réessayez avec la même adresse ; si le problème persiste, contactez le support.', 'ACCOUNT_SYNC_FAILED', 500);
+// Lot 9 quinquies (B1 : AUTH-06) : « contactez le support » donne le lien de la page d'aide (calculé à la requête)
+const SYNC_FAILED = (): PublicError => new PublicError(`L’enregistrement n’a pas pu aboutir. Réessayez avec la même adresse ; si le problème persiste, ${contactSupport(false)}`, 'ACCOUNT_SYNC_FAILED', 500);
 
 const refuse = (err: unknown): NextResponse => apiFailure(CONTEXT, err, FALLBACK);
 
@@ -95,7 +97,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         const reply = data as FinalizeReply | null;
         if (error || reply?.ok !== true) {
             console.error(`[${CONTEXT}] finalisation refusée :`, error ? error.message : (reply?.code ?? 'réponse vide'));
-            if (authChange && !(await compensateAuthIdentity(user.id, 'profile', 'email'))) return refuse(SYNC_FAILED);
+            if (authChange && !(await compensateAuthIdentity(user.id, 'profile', 'email'))) return refuse(SYNC_FAILED());
             if (reply?.code === 'EMAIL_TAKEN') return refuse(EMAIL_TAKEN);
             if (reply?.code === 'EMAIL_CONFLICT') return refuse(EMAIL_CONFLICT);
             return NextResponse.json({ error: FALLBACK.message, code: FALLBACK.code }, { status: 500 });
