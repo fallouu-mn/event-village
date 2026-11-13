@@ -19,8 +19,8 @@ import { normalizePhoneNumber } from '@/lib/validations/auth';
  *  - la page reçoit `searchParams` en prop : plus de useSearchParams sous Suspense, le formulaire est dans le
  *    premier rendu (motif retiré de la connexion au lot 6, course de e2e/auth.setup.ts). Aucun nouveau fichier
  *    .tsx n'est permis par le contrat (section 12) : la page reste un composant client, sans repli ;
- *  - D67 : la règle affichée est celle du serveur (app/api/controller/setup/route.ts, PASSWORD_REGEX : 8
- *    caractères, une majuscule, une minuscule, un chiffre), pas la liste du client qui exige un caractère spécial ;
+ *  - D67 : la règle affichée est celle du serveur (app/api/controller/setup/route.ts ; lot 9 quater : règle commune, 8
+ *    caractères, une majuscule, un chiffre, un caractère spécial) ;
  *  - un compte déjà activé mène à /login?message=already_configured (message affiché par LoginForm) ;
  *  - lot 9 bis (R58, B36, contrat 5.14) : connexion automatique par POST /api/auth/login (numéro et mot de passe, même
  *    chemin que la connexion ; la correspondance numéro → compte reste côté serveur), puis la session posée en cookies
@@ -32,11 +32,13 @@ interface ControllerSetupPageProps {
     searchParams?: Record<string, string | string[] | undefined>;
 }
 
+// Lot 9 quater (A5 : G-31) : règle commune du mot de passe (StrongPasswordSchema, lib/validations/auth.ts), la même que
+// celle du serveur de l'activation
 const PASSWORD_RULES: Array<{ key: string; label: string; test: (p: string) => boolean }> = [
     { key: 'length', label: 'Au moins 8 caractères', test: (p) => p.length >= 8 },
     { key: 'upper', label: 'Une majuscule (A-Z)', test: (p) => /[A-Z]/.test(p) },
-    { key: 'lower', label: 'Une minuscule (a-z)', test: (p) => /[a-z]/.test(p) },
-    { key: 'digit', label: 'Un chiffre (0-9)', test: (p) => /\d/.test(p) },
+    { key: 'digit', label: 'Un chiffre (0-9)', test: (p) => /[0-9]/.test(p) },
+    { key: 'special', label: 'Un caractère spécial (!@#$…)', test: (p) => /[^A-Za-z0-9]/.test(p) },
 ];
 
 function firstParam(value: string | string[] | undefined): string {
@@ -111,7 +113,7 @@ export default function ControllerSetupPage({ searchParams }: ControllerSetupPag
             return;
         }
         if (!passwordValid) {
-            setError('Le mot de passe doit comporter au moins 8 caractères, une majuscule, une minuscule et un chiffre.');
+            setError('Le mot de passe doit comporter au moins 8 caractères, une majuscule, un chiffre et un caractère spécial.');
             return;
         }
         if (password !== confirmPwd) {
@@ -212,7 +214,7 @@ export default function ControllerSetupPage({ searchParams }: ControllerSetupPag
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                hint="8 caractères au moins, avec une majuscule, une minuscule et un chiffre."
+                                hint="8 caractères au moins, avec une majuscule, un chiffre et un caractère spécial."
                                 fieldClassName="min-w-0 flex-1"
                             />
                             <IconButton
