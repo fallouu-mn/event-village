@@ -202,7 +202,7 @@ function sync(type: string): ExpectedType {
 }
 
 const PE = '/partner/events/:event';
-const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types
+const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ...lot9quinquiesExpected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types ; lot 9 quinquies (D1)
     ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A', 'TICKET', ['/tickets'], 'Achat confirmé'),
     ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B', 'TICKET', ['/tickets'], 'Billets confirmés'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A', null, null, null),
@@ -391,6 +391,8 @@ function variants(type: string, base: Data): Data[] {
     if (type === 'CONTROLLER_REMINDER' || type === 'CONTROLLER_ASSIGNED') {
         return [{ ...base, can_accept_cash: false }, { ...base, can_accept_cash: true }, { ...base, entry_point: null }];
     }
+    // Lot 9 quinquies (D1) : texte nominatif (une candidature) et texte regroupé au pire cas (99 et 99).
+    if (type === 'ADMIN_REVIEW_SMS') return [base, dataFrom(base, { partner_count: 99, event_count: 99 }, ['company']), dataFrom(base, { partner_count: 0, event_count: 99 }, ['company'])];
     return type === 'ADMIN_EVENT_CHANGED' ? adminChangeVariants(base) : [base]; // lot 9 ter (B.7 T-B3) : parties PRICE et CHANNELS
 }
 
@@ -813,6 +815,15 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             // Lot 9 ter (9t.2, contrat 11.1 et 11.2 N1) : détenteur actuel d'un billet transféré, texte de la consigne 0.2 mot pour mot.
             ['TICKET_REFUNDED_HOLDER', { ...ev, ticket_id: '5d1f0c3e-8a2b-4c6d-9e0f-1a2b3c4d5e6f', category: 'VIP' }, [],
                 'Event Village : votre billet VIP pour Gala Dakar a été annulé. Le remboursement est versé à l\'acheteur d\'origine.'],
+            // Lot 9 quinquies (D1) : textes du chef de projet (« » hors GSM-7 : guillemets droits), partie à zéro omise.
+            ['ADMIN_REVIEW_SMS', { partner_count: 1, event_count: 0, company: 'Sabar Events' }, [],
+                `Event Village : nouvelle demande de partenaire "Sabar Events". Vérifiez son dossier : ${U}/admin/dashboard`],
+            ['ADMIN_REVIEW_SMS', { partner_count: 3, event_count: 2 }, ['company'],
+                `Event Village : 3 demande(s) de partenaire et 2 événement(s) attendent votre validation : ${U}/admin/dashboard`],
+            ['ADMIN_REVIEW_SMS', { partner_count: 2, event_count: 0 }, ['company'],
+                `Event Village : 2 demande(s) de partenaire attendent votre validation : ${U}/admin/dashboard`],
+            ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 1 }, ['company'],
+                `Event Village : 1 événement(s) attendent votre validation : ${U}/admin/dashboard`],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).
@@ -1140,6 +1151,16 @@ function lot9terExpected(): ExpectedType[] {
         ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement publié par l\'organisateur', 'events.read'),
         ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Soumission retirée par l\'organisateur', 'events.read'),
         ess('SCAN_REFUSALS_ALERT', [I, P, M], 'PARTNER', 'B', 'ALERT', ['/partner/events/:event?tab=entrees'], 'Refus en série à une porte'),
+    ];
+}
+
+/**
+ * Lot 9 quinquies (D1) : SMS aux administrateurs pour ce qui attend leur action (migration 20261112000001) ; SMS seul,
+ * indispensable, destinataires choisis par notif_admin_review_sms (aucune permission au registre). Ajout signalé au rapport.
+ */
+function lot9quinquiesExpected(): ExpectedType[] {
+    return [
+        ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B', null, ['/admin/dashboard'], null),
     ];
 }
 
