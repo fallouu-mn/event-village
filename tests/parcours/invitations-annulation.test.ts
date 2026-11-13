@@ -123,7 +123,7 @@ async function claim(user: Buyer, transferId: string): Promise<RouteResult> {
 }
 
 async function verifiedAccount(label: string): Promise<Buyer> {
-    const account = await newBuyer(`annul-${label}`, { firstName: 'Fatou', lastName: 'Invitee' });
+    const account = await newBuyer(`annul-${label}`, { firstName: 'Fatou', lastName: 'Invitee', phoneVerified: false });
     await markPhoneVerified(account.userId);
     return account;
 }
@@ -166,7 +166,7 @@ describe('9.0 Annulation : effets (5.1, L11)', () => {
 
     test('acceptation après annulation : 409 TRANSFER_NOT_PENDING, absente de « Reçus », billet resté annulé', async () => {
         const ev = await newEvent('acceptation');
-        const invitee = await newBuyer('annul-acc', { firstName: 'Awa', lastName: 'Invitee' });
+        const invitee = await newBuyer('annul-acc', { firstName: 'Awa', lastName: 'Invitee', phoneVerified: false });
         const tickets = await inviteOk(ev, invitee.phoneE164);
         const ticketId = String(tickets[0].id);
         const transferId = await pendingTransferId(ticketId);
@@ -186,7 +186,7 @@ describe('9.0 Annulation : effets (5.1, L11)', () => {
 
     test('après réclamation : billet au compte annulé, transfert CLAIMED conservé, stock rendu, seul avis : TICKET_CANCELLED au compte (R22)', async () => {
         const ev = await newEvent('reclamee');
-        const invitee = await newBuyer('annul-recl', { firstName: 'Khady', lastName: 'Invitee' });
+        const invitee = await newBuyer('annul-recl', { firstName: 'Khady', lastName: 'Invitee', phoneVerified: false });
         const tickets = await inviteOk(ev, invitee.phoneE164);
         const ticketId = String(tickets[0].id);
         const transferId = await pendingTransferId(ticketId);

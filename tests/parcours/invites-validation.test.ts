@@ -124,7 +124,7 @@ describe('9t.17 Validation par la liste des invités', () => {
     test('2. liste puis scan du même billet : Déjà utilisé (consigne 6)', async () => {
         const ev = await newEvent('deja-utilise');
         const ctrl = await newController(partner, ev.eventId, { label: 'val-deja' });
-        const account = await newBuyer('val-deja-compte', { firstName: 'Awa', lastName: 'Diop' });
+        const account = await newBuyer('val-deja-compte', { firstName: 'Awa', lastName: 'Diop', phoneVerified: false });
         const inv = await pendingInvitation(ev, { phone: account.phoneE164 });
         expectResult(await guestAdmit(ctrl, ev.eventId, inv.ticketId), 'valid', 'première validation');
         expectResult(await guestAdmit(ctrl, ev.eventId, inv.ticketId), 'already_used', 'seconde validation par la liste');

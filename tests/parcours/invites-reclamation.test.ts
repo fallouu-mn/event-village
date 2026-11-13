@@ -61,7 +61,7 @@ interface Admitted { account: Buyer; ticketId: string; transferId: string; befor
 
 /** Invitation vers un compte au numéro non vérifié (en attente), validée par la liste ; le numéro reste non vérifié. */
 async function admittedInvitation(ev: SaleEvent, label: string): Promise<Admitted> {
-    const account = await newBuyer(`inv-recl-${label}`, { firstName: 'Awa', lastName: 'Diop' });
+    const account = await newBuyer(`inv-recl-${label}`, { firstName: 'Awa', lastName: 'Diop', phoneVerified: false });
     const sent = await sendInvitations(partner, ev.eventId, { category_id: ev.categories[VIP].id, phones: [account.phoneE164], quantity: 1, guest_names: ['Awa Diop'] });
     assert.equal(sent.status, 200, `invitation : ${show(sent)}`);
     const { data, error } = await service.from('ticket_transfers').select('id, ticket_id').eq('to_phone_or_email', account.phoneE164).eq('status', 'PENDING');
@@ -142,7 +142,7 @@ describe('9t.17 Réclamation d’une invitation déjà validée par la liste', (
         assert.equal(declined.status, 409, `un billet déjà utilisé ne se refuse pas : ${show(declined)}`);
         assert.equal((await transferRow(adm.transferId)).status, 'ADMITTED', 'transfert inchangé par le refus');
 
-        const stranger = await newBuyer('inv-recl-tiers');
+        const stranger = await newBuyer('inv-recl-tiers', { phoneVerified: false });
         await markPhoneVerified(stranger.userId);
         const other = await claim(stranger, adm.transferId);
         const unknown = await claim(stranger, randomUUID());

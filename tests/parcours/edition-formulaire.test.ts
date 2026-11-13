@@ -177,7 +177,8 @@ async function postEvent(user: Buyer, body: Row): Promise<RouteResult> {
 function createBody(label: string, overrides: Row = {}): Row {
     const d = dakarDay(10);
     return {
-        title: `TEST Édition ${label} ${Date.now()}`,
+        // Lot 9 quater (D3 : AUD-26) : 13 chiffres d'affilée ressemblent à un numéro ; horodatage en base 36 (modification signalée)
+        title: `TEST Édition ${label} ${Date.now().toString(36)}`,
         category: 'CONCERT',
         description: 'Concert de test du lot 5 (édition).',
         start_date: d,

@@ -99,7 +99,7 @@ interface Pending { ticketId: string; transferId: string; invitee: Buyer }
 
 /** Invitation en attente pour un compte au numéro non vérifié (AR15), puis numéro vérifié : réclamable. */
 async function pendingInvitation(ev: SaleEvent, label: string): Promise<Pending> {
-    const invitee = await newBuyer(`course-${label}`, { firstName: 'Mariama', lastName: 'Invitee' });
+    const invitee = await newBuyer(`course-${label}`, { firstName: 'Mariama', lastName: 'Invitee', phoneVerified: false });
     const { data, error } = await service.rpc('ticket_invitation_create', {
         p: { actor_id: partner.userId, event_id: ev.eventId, category_id: ev.categories[STANDARD].id, phones: [invitee.phoneE164], quantity: 1, limits: LIMITS },
     });

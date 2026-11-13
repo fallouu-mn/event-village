@@ -199,18 +199,21 @@ describe('C2 — clôture de caisse par la route', () => {
         assert.equal(s.pinCosigned, false, 'aucune co-signature sans écart');
     });
 
-    test('clôture avec écart justifié et PIN : CLOTURE, écart = déclaré − attendu, justification, co-signature, une alerte in-app sans emoji', async () => {
+    // Lot 9 quater (C7 : AUD-16) : plus de PIN régisseur à la clôture ; l'écart attend la validation de l'organisatrice
+    // depuis sa session (tests/parcours/lot9quater-argent.test.ts). Trois tests réécrits, modification signalée au rapport.
+    test('clôture avec écart justifié, sans PIN (lot 9 quater) : CLOTURE, écart = déclaré − attendu, justification, écart en attente de validation, une alerte in-app sans emoji', async () => {
         const c = await newCashier('cl-ecart-justifie');
         const before = await partnerNotificationIds();
         const declared = c.expected + 2500;
-        const res = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: declared, justification: JUSTIFICATION, regisseurPin: pin });
+        const res = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: declared, justification: JUSTIFICATION });
         assert.equal(res.status, 200, `clôture avec écart justifié : ${show(res)}`);
+        assert.equal(res.body.discrepancy_pending, true, `écart en attente de validation : ${show(res)}`);
         const s = await closedState(c.shiftId);
         assert.equal(s.status, 'CLOTURE', 'caisse CLOTURE');
         assert.equal(s.declared, declared, 'declared_cash_total = montant déclaré');
         assert.equal(s.difference, 2500, 'écart = déclaré − attendu');
         assert.equal(s.justification, JUSTIFICATION, 'justification enregistrée');
-        assert.equal(s.pinCosigned, true, 'co-signature par le PIN régisseur');
+        assert.equal(s.pinCosigned, false, 'aucune co-signature par PIN à la clôture');
         assert.equal(s.closedBy, c.ctrl.userId, 'closed_by = contrôleur de la caisse');
         const alerts = await newPartnerNotifications(before);
         assert.equal(alerts.length, 1, `une alerte in-app au partenaire propriétaire (trouvé ${alerts.length}) : ${JSON.stringify(alerts)}`);
@@ -230,21 +233,18 @@ describe('C2 — clôture de caisse par la route', () => {
         }
     });
 
-    test('garde-fou : écart justifié avec un PIN faux → 401 PIN_INVALID ; sans PIN → 400 PIN_REQUIRED ; caisse OUVERT', async () => {
+    test('lot 9 quater : un PIN envoyé à la clôture (même faux) n’est plus lu ; écart justifié clôturé, en attente de validation, sans co-signature', async () => {
         const c = await newCashier('cl-pin-faux');
         const wrong = pin === '000000' ? '111111' : '000000';
-        const bad = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: c.expected + 1000, justification: JUSTIFICATION, regisseurPin: wrong });
-        assert.equal(bad.status, 401, `PIN faux : ${show(bad)}`);
-        assert.equal(bad.body.code, 'PIN_INVALID', `PIN faux : code PIN_INVALID : ${show(bad)}`);
-        await assertStillOpen(c.shiftId, 'PIN faux');
-        const none = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: c.expected + 1000, justification: JUSTIFICATION });
-        assert.equal(none.status, 400, `écart sans PIN : ${show(none)}`);
-        assert.equal(none.body.code, 'PIN_REQUIRED', `écart sans PIN : code PIN_REQUIRED : ${show(none)}`);
-        assertGap(none, c.expected, c.expected + 1000, 'écart sans PIN');
-        await assertStillOpen(c.shiftId, 'écart sans PIN');
+        const res = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: c.expected + 1000, justification: JUSTIFICATION, regisseurPin: wrong });
+        assert.equal(res.status, 200, `écart justifié, PIN faux ignoré : ${show(res)}`);
+        assert.equal(res.body.discrepancy_pending, true, `écart en attente de validation : ${show(res)}`);
+        const s = await closedState(c.shiftId);
+        assert.equal(s.status, 'CLOTURE', 'caisse CLOTURE');
+        assert.equal(s.pinCosigned, false, 'aucune co-signature');
     });
 
-    test('écart négatif (espèces manquantes) : JUSTIFICATION_REQUIRED puis PIN_REQUIRED portent expected, declared et discrepancy = −1000 ; caisse OUVERT', async () => {
+    test('écart négatif (espèces manquantes) : JUSTIFICATION_REQUIRED porte expected, declared et discrepancy = −1000 ; justifié (sans PIN, lot 9 quater) : clôturé, écart −1000 en attente', async () => {
         const c = await newCashier('cl-ecart-negatif');
         // Un total attendu positif ne vient que d'une vente réelle au guichet (invariant (h) : somme des paiements rattachés)
         const sold = await withAccessSettings({ 'access.counter_sale_enabled': true }, async () => {
@@ -265,12 +265,11 @@ describe('C2 — clôture de caisse par la route', () => {
         assertGap(noReason, expected, declared, 'écart négatif sans justification');
         assert.equal(noReason.body.discrepancy, -1000, 'écart négatif : signe de la RPC (déclaré − attendu)');
 
-        const noPin = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: declared, justification: JUSTIFICATION });
-        assert.equal(noPin.status, 400, `écart négatif sans PIN : ${show(noPin)}`);
-        assert.equal(noPin.body.code, 'PIN_REQUIRED', `écart négatif sans PIN : ${show(noPin)}`);
-        assertGap(noPin, expected, declared, 'écart négatif sans PIN');
-        assert.equal(noPin.body.discrepancy, -1000, 'écart négatif : signe de la RPC (déclaré − attendu)');
-        await assertStillOpen(c.shiftId, 'écart négatif');
+        await assertStillOpen(c.shiftId, 'écart négatif sans justification');
+        const closed = await closeByRoute(c.ctrl, { shiftId: c.shiftId, declaredCashTotal: declared, justification: JUSTIFICATION });
+        assert.equal(closed.status, 200, `écart négatif justifié, sans PIN : ${show(closed)}`);
+        assert.equal(closed.body.discrepancy_pending, true, `écart en attente de validation : ${show(closed)}`);
+        assert.equal((await closedState(c.shiftId)).difference, -1000, 'écart négatif : signe de la RPC (déclaré − attendu)');
     });
 
     test('double clôture simultanée sans écart : une 200, une 409 SHIFT_NOT_OPEN ; une seule clôture journalisée', async () => {

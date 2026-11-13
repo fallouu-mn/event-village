@@ -172,7 +172,7 @@ describe('9t.17 Courses de la liste des invités', () => {
         await assertGuestListSchema();
         const ev = await newEvent('acceptation');
         const ctrl = await newController(partner, ev.eventId, { label: 'course-accept' });
-        const invitee = await newBuyer('course-invitee', { firstName: 'Awa', lastName: 'Diop' });
+        const invitee = await newBuyer('course-invitee', { firstName: 'Awa', lastName: 'Diop', phoneVerified: false });
         const inv = await pendingInvitation(ev, invitee.phoneE164);
         await markPhoneVerified(invitee.userId);
         const acceptor = await openConcurrentClient({ applicationName: 'ev-test-invites-acceptation' });

@@ -53,7 +53,7 @@ describe('F2 — dépôts de pièces et images', () => {
         const old = new Date(Date.now() - 25 * 3600_000).toISOString();
         const ins = await service.from('partner_document_uploads').insert([
             { object_path: oldPath, doc_type: 'id_card', mime_type: 'application/pdf', size_bytes: 14, token_hash: randomBytes(32).toString('hex'), expires_at: old, created_at: old },
-            { object_path: newPath, doc_type: 'id_card', mime_type: 'application/pdf', size_bytes: 14, token_hash: randomBytes(32).toString('hex'), expires_at: new Date(Date.now() + 3600_000).toISOString() },
+            { object_path: newPath, doc_type: 'id_card', mime_type: 'application/pdf', size_bytes: 14, token_hash: randomBytes(32).toString('hex'), expires_at: new Date(Date.now() + 3600_000).toISOString(), created_at: new Date().toISOString() },
         ]);
         assert.equal(ins.error, null, ins.error?.message);
         const { purgeUnclaimedUploads } = await importModule('../../lib/partners/documents') as { purgeUnclaimedUploads: () => Promise<number> };

@@ -209,7 +209,8 @@ describe('runSeedDev : premier passage, subscription_plans vide', () => {
             assert.match(String(u.phone), ACCOUNT_PHONE, `${String(u.email)} : numéro hors de la plage fictive`);
             const { data, error } = await service.auth.admin.getUserById(String(u.id));
             assert.equal(error, null, `compte ${String(u.email)} : ${error?.message}`);
-            assert.equal(data.user?.user_metadata?.is_essai_fixture, true, `${String(u.email)} : marque is_essai_fixture absente`);
+            // Lot 9 quater (A3) : marque dans app_metadata (service_role seul), plus dans user_metadata (modification signalée)
+            assert.equal(data.user?.app_metadata?.is_essai_fixture, true, `${String(u.email)} : marque is_essai_fixture absente`);
         }
         // Lot 9 bis (I1, T63) : chaque compte du seed porte aussi la marque lue par la garde des envois (users.demo_account).
         const { data: marks, error: markErr } = await service.from('users').select('id, email, demo_account').in('id', s.users.map((u) => String(u.id)));

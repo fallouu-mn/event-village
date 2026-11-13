@@ -16,7 +16,7 @@ import {
     cart, checkout, deliverWebhook, importModule, newBuyer, paymentById, providerSays, service, type Buyer, type PaymentRow,
 } from './paiement-helpers';
 import { buyConfirmed, createPartnerEvent, newPartner } from './finance-helpers';
-import { authed, newController, openShift, type RouteResult } from './acces-helpers';
+import { authed, createTimedEvent, newController, openShift, type RouteResult } from './acces-helpers';
 import { newAdminWith } from './terrain-helpers';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
@@ -190,7 +190,8 @@ describe('C6 — limite des billets gratuits', () => {
 describe('C7 — écart de caisse validé par l’organisatrice', () => {
     test('clôture avec écart sans PIN ; validation par la partenaire seule, mot de passe récent exigé', async () => {
         const partner = await newPartner('q-c7');
-        const ev = await createPartnerEvent(partner.partnerId, 'q c7', [{ name: 'Standard', price: 1_000, total: 10 }]);
+        // Événement dans la fenêtre du contrôle (ouverture de caisse possible)
+        const ev = await createTimedEvent(partner.partnerId, 'q c7', [{ name: 'Standard', price: 1_000, total: 10 }]);
         const ctrl = await newController(partner, ev.eventId, { canAcceptCash: true, label: 'q-c7' });
         const opened = await openShift(ctrl, ev.eventId, 0);
         assert.equal(opened.status, 200, show(opened));
@@ -219,8 +220,9 @@ describe('C7 — écart de caisse validé par l’organisatrice', () => {
     });
 
     test('écran : bouton « Valider l’écart » dans l’onglet Caisse, plus de PIN à la clôture', () => {
-        const block = fs.readFileSync('components/partner/pilotage/DiscrepancyValidation.tsx', 'utf8');
+        const block = fs.readFileSync('components/partner/pilotage/CashTab.tsx', 'utf8');
         assert.match(block, /Valider l’écart/);
+        assert.match(block, /discrepancy_validated_at/, 'caisses lues dans les données du pilotage (pilotage_compute_cash)');
         const modals = fs.readFileSync('components/shifts/ShiftModals.tsx', 'utf8');
         const close = modals.slice(modals.indexOf('export function CloseShiftModal'), modals.indexOf('interface ZSummaryModalProps'));
         assert.doesNotMatch(close, /regisseurPin/, 'aucun PIN envoyé à la clôture');

@@ -44,7 +44,12 @@ export interface Buyer {
     lastName: string;
 }
 
-export async function newBuyer(label: string, opts: { firstName?: string; lastName?: string } = {}): Promise<Buyer> {
+/**
+ * Lot 9 quater (A2) : numéro prouvé par défaut (achat, billet gratuit, transfert, retrait l'exigent) ;
+ * `phoneVerified: false` rend le compte d'avant le lot (numéro non prouvé : destinataire d'une invitation ou d'un
+ * transfert en attente, AR15). Modification signalée au rapport.
+ */
+export async function newBuyer(label: string, opts: { firstName?: string; lastName?: string; phoneVerified?: boolean } = {}): Promise<Buyer> {
     const email = randomEmail(`pay-${label}`);
     const phoneE164 = randomSenegalPhone('77');
     const firstName = opts.firstName ?? 'Awa';
@@ -57,7 +62,7 @@ export async function newBuyer(label: string, opts: { firstName?: string; lastNa
     const userId = data.user!.id;
     const { error: upErr } = await service.from('users')
         // Lot 9 quater (A2) : numéro prouvé, comme après l'inscription par code (achat, billet gratuit, transfert, retrait)
-        .update({ phone: phoneE164, first_name: firstName, last_name: lastName, status: 'ACTIF', phone_verified_at: new Date().toISOString() })
+        .update({ phone: phoneE164, first_name: firstName, last_name: lastName, status: 'ACTIF', phone_verified_at: opts.phoneVerified === false ? null : new Date().toISOString() })
         .eq('id', userId);
     assert.equal(upErr, null, `profil de l'acheteur : ${upErr?.message}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });

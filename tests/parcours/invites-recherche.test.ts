@@ -130,7 +130,7 @@ describe('9t.17 Liste des invités : recherche', () => {
         const ev = await newEvent(partner, 'exclus');
         const ctrl = await newController(partner, ev.eventId, { label: 'rech-exclus' });
 
-        const claimedAccount = await newBuyer('rech-reclame', { firstName: 'Fatou', lastName: 'Reclamante' });
+        const claimedAccount = await newBuyer('rech-reclame', { firstName: 'Fatou', lastName: 'Reclamante', phoneVerified: false });
         await markPhoneVerified(claimedAccount.userId);
         await invite(partner, ev, [claimedAccount.phoneE164], 1, ['Fatou Reclamante']);
 
@@ -147,7 +147,7 @@ describe('9t.17 Liste des invités : recherche', () => {
         const c = await invoke(cancel, authed(`/api/partner/events/${ev.eventId}/invitations/${cancelledId}/cancel`, 'POST', partner), routeContext({ id: ev.eventId, ticketId: cancelledId }));
         assert.equal(c.status, 200, `annulation : ${show(c)}`);
 
-        const declining = await newBuyer('rech-refus', { firstName: 'Awa', lastName: 'Refus' });
+        const declining = await newBuyer('rech-refus', { firstName: 'Awa', lastName: 'Refus', phoneVerified: false });
         await invite(partner, ev, [declining.phoneE164], 1, ['Invité refusant']);
         await markPhoneVerified(declining.userId);
         const { data: tr, error: trErr } = await service.from('ticket_transfers').select('id').eq('to_phone_or_email', declining.phoneE164).eq('status', 'PENDING').single();

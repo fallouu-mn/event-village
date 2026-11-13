@@ -183,7 +183,7 @@ describe('R104 — billets reçus : kind INVITATION ou TRANSFER (ticket_transfer
     test('une invitation de la partenaire → kind INVITATION ; un transfert d’un client → kind TRANSFER', async () => {
         const ev = await createDraftEvent(partner, 'textes-r104-recus', [{ name: 'Gratuit', price: 0, total: 20 }], { startsInHours: 72 });
         await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: partner.userId });
-        const recipient = await newBuyer('r104-destinataire');
+        const recipient = await newBuyer('r104-destinataire', { phoneVerified: false }); // lot 9 quater : numéro non prouvé (signalé)
         // Numéro vérifié APRÈS l'invitation (patron messages-sms-9bis.test.ts:239) : un numéro déjà rattaché à un compte
         // vérifié reçoit le billet directement, sans transfert (ticket_invitation_create, v_account IS NULL seulement).
 

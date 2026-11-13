@@ -165,7 +165,7 @@ async function legacyTransfer(ticketId: string, target: string, token = randomBy
 }
 
 async function verifiedRecipient(label: string): Promise<Buyer> {
-    const b = await newBuyer(`transf-${label}`, { firstName: 'Fatou', lastName: 'Ndiaye' });
+    const b = await newBuyer(`transf-${label}`, { firstName: 'Fatou', lastName: 'Ndiaye', phoneVerified: false });
     await markPhoneVerified(b.userId);
     return b;
 }
@@ -221,7 +221,7 @@ describe('6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amen
     });
 
     test('numéro sans vérification : SMS au numéro seulement (aucune in-app à un compte non prouvé)', async () => {
-        const to = await newBuyer('transf-non-verifie');
+        const to = await newBuyer('transf-non-verifie', { phoneVerified: false });
         const { id } = await initiateOk(owner, takeTicket(), to.phoneE164);
         const rows = await outboxRows({ type: 'TRANSFER_OFFERED', keyPrefix: `TRANSFER_OFFERED:${id}:` });
         assert.deepEqual(channelsOf(rows), ['SMS'], `canaux : ${JSON.stringify(rows.map((r) => r.channel))}`);
@@ -253,7 +253,7 @@ describe('6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amen
 describe('6.7 Transfert — liste entrante (B3 ticket_transfers_incoming, B4)', () => {
     test('vérifié → l’élément ; non vérifié → phoneVerificationRequired sans détail ; autre compte → rien ; ancien transfert vers un email → rien', async () => {
         const verified = await verifiedRecipient('liste-ok');
-        const unverified = await newBuyer('transf-liste-nv');
+        const unverified = await newBuyer('transf-liste-nv', { phoneVerified: false });
         const stranger = await verifiedRecipient('liste-tiers');
         const emailTarget = await verifiedRecipient('liste-email');
         const t1 = await initiateOk(owner, takeTicket(), verified.phoneE164);
@@ -338,7 +338,7 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
     });
 
     test('refus : 404 identique (inconnu, transfert d’un autre, ancien transfert vers un email), 403 PHONE_NOT_VERIFIED, 410 TRANSFER_EXPIRED, 400 SELF_TRANSFER ; billet inchangé', async () => {
-        const unverified = await newBuyer('transf-refus-nv');
+        const unverified = await newBuyer('transf-refus-nv', { phoneVerified: false });
         const stranger = await verifiedRecipient('refus-tiers');
         const target = await verifiedRecipient('refus-cible');
         const emailTarget = await verifiedRecipient('refus-email');
@@ -429,7 +429,7 @@ describe('6.7 Transfert — ancien lien /tickets/claim/<jeton> retiré (B4, déc
 
 describe('6.7 Transfert — verify-otp pose phone_verified_at (B1)', () => {
     test('code de connexion vérifié : phone_verified_at posé une fois (conservé ensuite) ; le transfert qui attendait devient visible', async () => {
-        const holder = await newBuyer('transf-verif-otp');
+        const holder = await newBuyer('transf-verif-otp', { phoneVerified: false });
         const t = await initiateOk(owner, takeTicket(), holder.phoneE164);
         const pending = await incoming(holder);
         assert.equal(pending.body.phoneVerificationRequired, true, `avant vérification : ${show(pending)}`);

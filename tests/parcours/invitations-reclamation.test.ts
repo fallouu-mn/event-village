@@ -105,14 +105,14 @@ async function registerOn(phone: string): Promise<Buyer> {
 }
 
 async function verifiedAccount(label: string): Promise<Buyer> {
-    const account = await newBuyer(`recl-${label}`, { firstName: 'Fatou', lastName: 'Tiers' });
+    const account = await newBuyer(`recl-${label}`, { firstName: 'Fatou', lastName: 'Tiers', phoneVerified: false });
     await markPhoneVerified(account.userId);
     return account;
 }
 
 /** Compte déjà présent au numéro, non vérifié : l'invitation part en attente (AR15). */
 function unverifiedAccount(label: string): Promise<Buyer> {
-    return newBuyer(`recl-nv-${label}`, { firstName: 'Awa', lastName: 'Nonverifiee' });
+    return newBuyer(`recl-nv-${label}`, { firstName: 'Awa', lastName: 'Nonverifiee', phoneVerified: false });
 }
 
 // ── Scénarios ──────────────────────────────────────────────────────────────

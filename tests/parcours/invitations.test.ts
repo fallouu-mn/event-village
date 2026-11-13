@@ -89,7 +89,7 @@ function newEvent(label: string, categories: CategorySpec[] = CATEGORIES): Promi
 }
 
 async function verifiedAccount(label: string): Promise<Buyer> {
-    const account = await newBuyer(`inv-${label}`, { firstName: 'Fatou', lastName: 'Invitee' });
+    const account = await newBuyer(`inv-${label}`, { firstName: 'Fatou', lastName: 'Invitee', phoneVerified: false });
     await markPhoneVerified(account.userId);
     return account;
 }
@@ -406,7 +406,7 @@ describe('9.0 Invitations : billet créé et attribution (L3, L6, AR15)', () => 
 
     test('compte au numéro non vérifié ou compte suspendu : attente (AR15), jamais attribué', async () => {
         const ev = await newEvent('non-verifie');
-        const unverified = await newBuyer('inv-non-verifie');
+        const unverified = await newBuyer('inv-non-verifie', { phoneVerified: false });
         const suspended = await verifiedAccount('suspendu');
         const { error } = await service.from('users').update({ status: 'SUSPENDU' }).eq('id', suspended.userId);
         assert.equal(error, null, `compte suspendu : ${error?.message}`);

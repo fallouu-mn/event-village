@@ -135,7 +135,7 @@ async function lookup(ticketNumber: string): Promise<RouteResult> {
 
 /** Destinataire avec un compte au numéro vérifié (identité MATCH à l'acceptation). */
 async function verifiedRecipient(label: string): Promise<Buyer> {
-    const user = await newBuyer(label);
+    const user = await newBuyer(label, { phoneVerified: false });
     await markPhoneVerified(user.userId);
     return user;
 }
@@ -259,7 +259,7 @@ describe('R63 — le destinataire change de numéro : transfert annulé, expédi
     });
 
     test('invitation sans expéditeur vers l’ancien numéro : transfert CANCELLED, billet ANNULE, place rendue, aucun avis', async () => {
-        const invitee = await newBuyer('r63-invite');
+        const invitee = await newBuyer('r63-invite', { phoneVerified: false });
         const soldBefore = await categorySold(ev.categories.Gratuit.id);
         const inv = await pendingInvitation(invitee.phoneE164);
         assert.equal(await categorySold(ev.categories.Gratuit.id), soldBefore + 1, 'précondition : place prise par l’invitation');
@@ -291,7 +291,7 @@ describe('R46 — le destinataire refuse le billet', () => {
     });
 
     test('refus d’une invitation : billet ANNULE, place rendue, liste partenaire « Refusée »', async () => {
-        const invitee = await newBuyer('r46-invite');
+        const invitee = await newBuyer('r46-invite', { phoneVerified: false });
         const soldBefore = await categorySold(ev.categories.Gratuit.id);
         const inv = await pendingInvitation(invitee.phoneE164);
         await markPhoneVerified(invitee.userId);

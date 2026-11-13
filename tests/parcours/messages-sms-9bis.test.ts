@@ -230,7 +230,7 @@ describe('9b.40 ex-10.0 d : le message d\'une invitation expirée ne parle plus 
     test('acceptation d\'une invitation échue : 410 TRANSFER_EXPIRED, « Ce billet ne peut plus être accepté : le délai est dépassé. »', async () => {
         const partner = await suitePartner();
         const ev = await publishedEvent('Invit echue', `Invitation ${randomBytes(2).toString('hex')}`);
-        const invitee = await newBuyer('sms-echue', { firstName: 'Awa', lastName: 'Invitee' });
+        const invitee = await newBuyer('sms-echue', { firstName: 'Awa', lastName: 'Invitee', phoneVerified: false });
         const inviteRoute = await routeHandler('../../app/api/partner/events/[id]/invitations/route', 'POST', 'POST /api/partner/events/[id]/invitations (lot 9)');
         const sent = await invoke(inviteRoute, authed(`/api/partner/events/${ev.eventId}/invitations`, 'POST', partner,
             { category_id: ev.categories[STANDARD].id, phones: [invitee.phoneE164], quantity: 1 }), routeContext({ id: ev.eventId }));
