@@ -270,6 +270,8 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), //
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Volume de SMS indispensables élevé', 'notifications.read'), // 11.2 M6
     ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Plafond de SMS atteint', 'notifications.read'), // G.49
     ess('ADMIN_SMS_CAP_NON_OTP', [I, M], 'ADMIN', 'B', 'SMS_NON_OTP_SHARE_REACHED', ['/admin/notifications'], 'Quota de SMS hors code atteint', 'notifications.read'), // G.49
+    // Lot 9 quater (A8 : AUD-05) : type ajouté (modification signalée au rapport)
+    ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Codes d’inscription : part du jour atteinte', 'notifications.read'),
     // Lot 7, tâche 7.0 a (contrat 4.1, M2.1, D15) : alerte à 80 % du plafond optionnel et prévision de la veille.
     ess('ADMIN_SMS_OPTIONAL_80', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'SMS optionnels : 80 % du plafond', 'notifications.read'),
     ess('ADMIN_SMS_FORECAST', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Budget SMS de demain insuffisant', 'notifications.read'),

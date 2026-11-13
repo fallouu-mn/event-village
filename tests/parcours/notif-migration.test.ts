@@ -458,7 +458,9 @@ const INVENTORY: Insertion[] = [
 ];
 
 /** Types sans point d'insertion SQL littéral : appelés par TypeScript (OTP, invitation, plafond SMS ; lot 9 bis : lien de vérification d'email, synchrone, T37). */
-const TS_TYPES = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK', 'OTP_PHONE_CHANGE', 'CONTROLLER_INVITE', 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP', 'EMAIL_VERIFICATION'];
+const TS_TYPES = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_AUTH_HOOK', 'OTP_PHONE_CHANGE', 'CONTROLLER_INVITE', 'ADMIN_SMS_CAP_GLOBAL', 'ADMIN_SMS_CAP_NON_OTP', 'EMAIL_VERIFICATION',
+    // Lot 9 quater (A8) : alerte de la part des codes d'inscription (sms-guard), modification signalée au rapport
+    'ADMIN_SMS_CAP_NEW_NUMBERS'];
 
 describe('6.7 K1 — inventaire : chaque envoi migré a son type au registre et son point d’insertion en base', () => {
     let registry: Set<string> | null = null;

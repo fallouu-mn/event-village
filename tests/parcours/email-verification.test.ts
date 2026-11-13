@@ -281,9 +281,16 @@ function freshIp(): Record<string, string> {
     return { 'x-forwarded-for': `198.18.${(process.pid % 200) + 1}.${(ipSeq % 250) + 1}` };
 }
 
+/** Ancienne adresse technique tirée du numéro (domaine réservé, refusée à la saisie). */
 function technical(phone: string): string {
     return `${phone.replace('+', '')}@eventvillage.sn`;
 }
+
+/**
+ * Lot 9 quater (A4 : AUD-19) : adresse technique d'un compte à numéro, aléatoire sous .invalid, jamais tirée du numéro
+ * (modification signalée au rapport : les égalités à technical(numéro) deviennent ce motif).
+ */
+const TECH_RE = /^u[0-9a-f]{32}@comptes\.eventvillage\.invalid$/;
 
 function sha256(token: string): string {
     return createHash('sha256').update(token).digest('hex');
@@ -430,8 +437,8 @@ describe('9b.48 R87 — inscription : l’adresse saisie attend sa vérification
         const address = randomEmail('r87a');
         const since = mailsTo(address).length;
         const flow = await registerClientFlow({ email: address, headers: freshIp() });
-        const tech = technical(flow.phone);
-        assert.equal(await authEmail(flow.userId!), tech,
+        const tech = String(await authEmail(flow.userId!));
+        assert.match(tech, TECH_RE,
             'R87 : auth.users.email doit rester l’adresse technique tant que X n’est pas vérifiée (aujourd’hui X, register/route.ts:114, :142-147)');
         assert.deepEqual([flow.register!.body.email, flow.register!.body.email_pending, flow.register!.body.email_verification], [tech, address, 'SENT'],
             `réponse : email technique (connexion de l’écran), email_pending, email_verification (contrat 4.6) : ${JSON.stringify(flow.register!.body)}`);
@@ -463,9 +470,10 @@ describe('9b.48 R87 — inscription : l’adresse saisie attend sa vérification
         assert.equal(reg.first.status, 200, `appel 1 : HTTP ${reg.first.status} ${JSON.stringify(reg.first.body)}`);
         assert.equal(reg.second?.status, 201, `appel 2 : HTTP ${reg.second?.status} ${JSON.stringify(reg.second?.body)}`);
         const userId = await userIdByPhone(phone);
-        assert.equal(await authEmail(userId), technical(phone), 'R87 : auth.users.email technique (aujourd’hui X, partner/register/route.ts:116-120)');
+        const techP = String(await authEmail(userId));
+        assert.match(techP, TECH_RE, 'R87 : auth.users.email technique (aujourd’hui X, partner/register/route.ts:116-120)');
         const acc = await accountOf(userId);
-        assert.deepEqual([acc.email, acc.email_pending, acc.email_verified_at], [technical(phone), address, null]);
+        assert.deepEqual([acc.email, acc.email_pending, acc.email_verified_at], [techP, address, null]);
         assert.deepEqual(mailsTo(address).slice(since).map((m) => m.subject), [VERIFY_MAIL.subject], 'un seul email à X : le lien de vérification');
     });
 
@@ -479,10 +487,11 @@ describe('9b.48 R87 — inscription : l’adresse saisie attend sa vérification
             { firstName: 'Moussa', lastName: 'Cree', phone, email: address, password: STRONG_PASSWORD, role: 'CLIENT' })));
         assert.equal(res.status, 200, show(res));
         const userId = String(res.body.userId);
-        assert.equal(await authEmail(userId), technical(phone), 'R87 : auth.users.email technique (aujourd’hui X, admin/users/route.ts:136-140)');
+        const techA = String(await authEmail(userId));
+        assert.match(techA, TECH_RE, 'R87 : auth.users.email technique (aujourd’hui X, admin/users/route.ts:136-140)');
         assert.deepEqual([res.body.email_pending, res.body.email_verification], [address, 'SENT'], `réponse (contrat 4.6) : ${show(res)}`);
         const acc = await accountOf(userId);
-        assert.deepEqual([acc.email, acc.email_pending, acc.email_verified_at], [technical(phone), address, null]);
+        assert.deepEqual([acc.email, acc.email_pending, acc.email_verified_at], [techA, address, null]);
         assert.deepEqual(mailsTo(address).slice(since).map((m) => m.subject), [VERIFY_MAIL.subject], 'un seul email à X : le lien de vérification');
     });
 });
@@ -672,7 +681,7 @@ describe('9b.48 G53-6, G53-7 — adresses techniques (B100)', () => {
 
     test('G53-7 adresse technique d’un autre numéro, ou d’un sous-domaine, à l’inscription : 400 INVALID_FIELD sur email, aucun compte ; le titulaire s’inscrit ensuite', async () => {
         const owner = randomSenegalPhone('77');
-        for (const email of [technical(owner), `${randomUUID()}@deleted.eventvillage.sn`]) {
+        for (const email of [technical(owner), `u${randomUUID().replace(/-/g, '')}@comptes.eventvillage.invalid`, `${randomUUID()}@deleted.eventvillage.sn`]) {
             const squat = await registerClientFlow({ email, headers: freshIp() }, { expectOk: false });
             assert.equal(squat.register?.status, 400, `${email} : HTTP ${squat.register?.status} ${JSON.stringify(squat.register?.body)} (aujourd’hui accepté, lib/validations/auth.ts:112)`);
             assert.deepEqual([squat.register?.body.code, squat.register?.body.field], ['INVALID_FIELD', 'email'], JSON.stringify(squat.register?.body));
@@ -682,7 +691,7 @@ describe('9b.48 G53-6, G53-7 — adresses techniques (B100)', () => {
         }
         const flow = await registerClientFlow({ phone: owner, headers: freshIp() });
         assert.ok(flow.userId, 'le titulaire du numéro s’inscrit');
-        assert.equal(await authEmail(flow.userId!), technical(owner), 'son adresse technique est la sienne');
+        assert.match(String(await authEmail(flow.userId!)), TECH_RE, 'son adresse technique est la sienne (lot 9 quater : tirée au hasard, sans le numéro)');
     });
 });
 
@@ -707,7 +716,7 @@ describe('9b.48 G53-11, G53-12 — renvoi du lien, jeton', () => {
     test('renvoi sans adresse à vérifier (adresse technique, rien en attente) : 400 NO_EMAIL_TO_VERIFY, aucun email', async () => {
         const flow = await registerClientFlow({ headers: freshIp() });
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { data, error } = await anon.auth.signInWithPassword({ email: technical(flow.phone), password: STRONG_PASSWORD });
+        const { data, error } = await anon.auth.signInWithPassword({ email: String(await authEmail(flow.userId!)), password: STRONG_PASSWORD });
         assert.equal(error, null, `connexion du compte : ${error?.message}`);
         const before = getFakes().email.sent.length;
         const r = await resend({ accessToken: data.session!.access_token });

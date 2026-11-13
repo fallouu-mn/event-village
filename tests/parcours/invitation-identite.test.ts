@@ -149,7 +149,8 @@ describe('Invitation : identité des comptes existants', () => {
         const userId = body.assignment?.user_id ?? body.assignments?.[0]?.user_id;
         assert.ok(userId, `compte créé : ${JSON.stringify(body)}`);
         const { data: auth } = await getServiceRoleClient().auth.admin.getUserById(userId);
-        assert.equal(auth.user?.email, `${phone.replace(/\D/g, '')}@eventvillage.sn`, 'email de connexion synthétique, lié au numéro');
+        // Lot 9 quater (A4 : AUD-19) : adresse synthétique aléatoire sous .invalid, plus jamais tirée du numéro (modification signalée)
+        assert.match(String(auth.user?.email), /^u[0-9a-f]{32}@comptes\.eventvillage\.invalid$/, 'email de connexion synthétique, sans le numéro');
     });
 });
 

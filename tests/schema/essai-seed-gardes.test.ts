@@ -44,7 +44,7 @@ interface SeedInput {
 }
 interface Core {
     MAX_REAL_ACCOUNTS: number;
-    countRealAccounts(users: Array<{ email?: string | null; user_metadata?: Record<string, unknown> | null }>): number;
+    countRealAccounts(users: Array<{ email?: string | null; app_metadata?: Record<string, unknown> | null; user_metadata?: Record<string, unknown> | null }>): number;
     assertSeedAllowed(input: SeedInput): { ref: string; url: string };
 }
 
@@ -194,8 +194,9 @@ describe('countRealAccounts : les comptes du seed ne comptent pas', () => {
         ]), 3);
         assert.equal(core.countRealAccounts([
             { email: `partenaire@${SEED_DOMAIN}`, user_metadata: {} },
-            { email: 'marque@example.org', user_metadata: { is_essai_fixture: true } },
-            { email: `client@${SEED_DOMAIN}`, user_metadata: { is_essai_fixture: true } },
+            // Lot 9 quater (A3) : marque lue dans app_metadata (modification signalée au rapport)
+            { email: 'marque@example.org', app_metadata: { is_essai_fixture: true } },
+            { email: `client@${SEED_DOMAIN}`, app_metadata: { is_essai_fixture: true } },
         ]), 0);
     });
 
@@ -204,8 +205,10 @@ describe('countRealAccounts : les comptes du seed ne comptent pas', () => {
         assert.equal(core.countRealAccounts([
             { email: `x@${SEED_DOMAIN}.evil.example`, user_metadata: {} },
             { email: `x@faux${SEED_DOMAIN}`, user_metadata: {} },
-            { email: 'marque-fausse@example.org', user_metadata: { is_essai_fixture: false } },
-        ]), 3);
+            { email: 'marque-fausse@example.org', app_metadata: { is_essai_fixture: false } },
+            // Lot 9 quater (A3) : une marque posée par l'utilisateur lui-même (user_metadata) ne compte plus
+            { email: 'marque-utilisateur@example.org', user_metadata: { is_essai_fixture: true } },
+        ]), 4);
     });
 
     test('26 comptes réels parmi 40 : refus ; 25 parmi 40 : accepté', async () => {

@@ -521,7 +521,7 @@ describe('6.0 e — connexion : composant serveur et formulaire client (A5)', ()
 
 describe('6.0 e — inscription, mot de passe oublié, réinitialisation, OtpInput (A5)', () => {
     const PAGES: Array<{ file: string; title: string; keep: Array<[string, RegExp]> }> = [
-        { file: REGISTER_PAGE, title: 'Créer un compte', keep: [['/api/auth/register', /\/api\/auth\/register/], ['email technique @eventvillage.sn', /@eventvillage\.sn/]] },
+        { file: REGISTER_PAGE, title: 'Créer un compte', keep: [['/api/auth/register', /\/api\/auth\/register/], ['connexion avec l’adresse rendue par la route (lot 9 quater, A4)', /result\.body\?\.email/]] },
         {
             file: FORGOT_PAGE,
             title: 'Mot de passe oublié',

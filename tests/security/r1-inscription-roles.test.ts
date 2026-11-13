@@ -56,7 +56,10 @@ describe('R1 — inscription : aucune élévation de rôle par les métadonnées
         const attacker = await signUpAttacker('phone-squat', { phone: claimed });
         const { data: me, error } = await attacker.client.from('users').select('phone').eq('id', attacker.userId).single();
         assert.equal(error, null, `lecture de son propre profil : ${error?.message}`);
-        assert.equal(me.phone, null, `users.phone doit rester vide (métadonnée non vérifiée), obtenu ${me.phone}`);
+        // Lot 9 quater (A2) : le compte de l'attaquant est ouvert par l'inscription de l'application, avec SON numéro
+        // prouvé par code ; le numéro revendiqué en métadonnée ne le remplace jamais (modification signalée au rapport).
+        assert.notEqual(me.phone, claimed, `users.phone ne doit jamais devenir le numéro revendiqué en métadonnée, obtenu ${me.phone}`);
+        assert.notEqual(me.phone, null, 'le compte garde le numéro prouvé à l’inscription');
     });
 
     test('régression : deux comptes sans téléphone se créent sans erreur', async () => {
