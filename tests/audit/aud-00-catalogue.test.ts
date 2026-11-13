@@ -48,6 +48,7 @@ async function section(c: Client, title: string, sql: string): Promise<Row[]> {
 
 describe('Audit — inventaire du catalogue (base locale, lecture seule)', () => {
     const relations: Row[] = [];
+    const helpers: Row[] = [];
 
     before(async () => {
         await inspect(async (c) => {
@@ -61,12 +62,12 @@ describe('Audit — inventaire du catalogue (base locale, lecture seule)', () =>
                    AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
                  ORDER BY 1, 2, 3`);
 
-            await section(c, 'Définition des aides exécutables de public', `
+            helpers.push(...await section(c, 'Définition des aides exécutables de public', `
                 SELECT p.proname AS name, pg_get_functiondef(p.oid) AS def
                   FROM pg_proc p
                  WHERE p.pronamespace = 'public'::regnamespace
                    AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
-                 ORDER BY 1`);
+                 ORDER BY 1`));
 
             await section(c, 'Politiques RLS (public, storage, realtime)', `
                 SELECT schemaname AS schema, tablename AS rel, policyname AS policy, permissive, roles::text AS roles, cmd,
@@ -159,7 +160,15 @@ describe('Audit — inventaire du catalogue (base locale, lecture seule)', () =>
         })));
     });
 
-    test('inventaire imprimé : relations de public lues dans le catalogue', () => {
-        assert.ok(relations.some((r) => r.schema === 'public'), 'aucune relation de public lue');
+    /**
+     * AUD-06 (cause) — une aide RLS exécutable par anon/authenticated qui accorde un droit selon l'appelant doit tenir
+     * compte du statut du compte (comme is_admin() depuis 20261110000001_lot9ter_rls.sql:116-117). Rouge aujourd'hui :
+     * has_role (20260906000004_user_roles_multi_role.sql:192-197), is_controller (même fichier:214-216), auth_user_role
+     * (même fichier:220) et is_partner_owner (0003_rls.sql:33-38) ne lisent jamais users.status.
+     */
+    test('AUD-06 : chaque aide RLS exécutable par les rôles API tient compte du statut du compte', () => {
+        assert.ok(helpers.length > 0, 'précondition : définitions des aides lues dans le catalogue');
+        const offenders = helpers.filter((h) => !/\bstatus\b/.test(String(h.def))).map((h) => String(h.name)).sort();
+        assert.deepEqual(offenders, [], `aides RLS qui ignorent le statut du compte (SUSPENDU, SUPPRIME) : ${offenders.join(', ')}`);
     });
 });
