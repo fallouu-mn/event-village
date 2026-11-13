@@ -242,7 +242,7 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('WITHDRAWAL_UNCERTAIN', [I, S, P, M], 'ANY', 'A', 'WITHDRAWAL_PENDING_CHECK', ['/partner/finance', '/wallet'], 'Retrait en vérification'), // G.49
     ess('CANCEL_REFUNDS_DONE', [I, M, P], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements terminés'),
     ess('CANCEL_REFUNDS_BLOCKED', [I, M, P], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements en attente'),
-    ess('PARTNER_REGISTERED_ACK', [I, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Inscription reçue'),
+    ess('PARTNER_REGISTERED_ACK', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Inscription reçue'), // lot 9 quinquies (C3) : + SMS
     ess('PARTNER_VALIDATED', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Compte partenaire validé'),
     ess('PARTNER_REJECTED', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Demande refusée'),
     ess('PARTNER_SUSPENDED', [I, S, M], 'PARTNER', 'A', 'KYC', ['/partner/dashboard'], 'Compte suspendu'),
@@ -824,6 +824,9 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : 2 demande(s) de partenaire attendent votre validation : ${U}/admin/dashboard`],
             ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 1 }, ['company'],
                 `Event Village : 1 événement(s) attendent votre validation : ${U}/admin/dashboard`],
+            // Lot 9 quinquies (C2 : AUTH-09 ; C3 : AUTH-12, « enregistrée » : ç hors GSM-7)
+            ['EMAIL_ADDED', {}, [], `Event Village : une adresse email a été ajoutée à votre compte. Si ce n'est pas vous : ${U}/aide`],
+            ['PARTNER_REGISTERED_ACK', { company: 'Sabar Events' }, [], 'Event Village : votre demande de compte partenaire Sabar Events est enregistrée. Réponse sous 48 h.'],
             // Lot 9 quinquies (A1 : AUTH-01) : 160 septets avec l'URL de 27 caractères (texte de la consigne : 169, deux segments).
             ['ACCOUNT_LOGIN_FAILURES', {}, [],
                 `Event Village : plusieurs connexions ont échoué sur votre compte. Si ce n'est pas vous, changez votre mot de passe : ${U}/forgot-password`],
@@ -1168,6 +1171,7 @@ function lot9quinquiesExpected(): ExpectedType[] {
         ess('ACCOUNT_LOGIN_FAILURES', [S, M], 'ANY', 'B', null, ['/forgot-password'], null), // A1 (AUTH-01)
         sync('ACCOUNT_ACTIVATION'), // A2 (AUTH-02) : lien d'activation d'un compte créé par un admin, journal seulement
         sync('OTP_ADMIN'), // A3 (AUTH-05) : code administrateur, journal seulement
+        ess('EMAIL_ADDED', [S, M], 'ANY', 'B', null, ['/aide'], null), // C2 (AUTH-09)
     ];
 }
 
