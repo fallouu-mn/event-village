@@ -22,7 +22,8 @@
 --   recopies (changement indiqué au-dessus de chacune) : payment_confirm (20261106000003:84-254),
 --     notif_cashouts_notify (20261109000007:320-587), checkout_create_payment (20261109000007:693-806),
 --     free_tickets_claim (20261105000007:205-275), calculate_referral_commissions (20261109000007:813-895),
---     shift_close (20261109000008:792-940).
+--     shift_close (20261109000008:792-940), pilotage_compute_cash (20261102000005:303-372 : discrepancy_validated_at par
+--     caisse, pour l'onglet Caisse du pilotage).
 -- Aucun BEGIN ni COMMIT ; rejouable. Nouvelles fonctions : SECURITY DEFINER, search_path fixé, service_role seul.
 -- ============================================================================
 
@@ -149,7 +150,7 @@ GRANT EXECUTE ON FUNCTION public.refund_request_withheld(uuid, text, numeric) TO
 -- ----------------------------------------------------------------------------
 -- 3. payment_confirm (recopie de 20261106000003_lot8_paiement.sql:84-254)
 --    Changement : branche du doublon : rang du doublon sur 30 jours ; au-delà de 2, refund_request_withheld et retenue
---    dans payments.metadata ; alerte aux admins avec rang et retenue.
+--    dans payments.metadata ; alerte aux admins avec rang et retenue ; aggregator_fee lu avec le paiement.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.payment_confirm(p_payment_id uuid, p_source text)
 RETURNS jsonb
@@ -190,7 +191,7 @@ BEGIN
     END IF;
 
     SELECT id, status::text AS status, client_id, payment_target::text AS payment_target,
-           amount, service_fee, facial_amount, payer_phone
+           amount, service_fee, facial_amount, payer_phone, aggregator_fee
       INTO v_pay FROM public.payments WHERE id = p_payment_id FOR UPDATE;
     IF NOT FOUND THEN
         RETURN jsonb_build_object('result', 'NOT_FOUND');
@@ -1146,3 +1147,83 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.shift_discrepancy_validate(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.shift_discrepancy_validate(jsonb) TO service_role;
+
+
+-- ----------------------------------------------------------------------------
+-- Recopie : pilotage_compute_cash (20261102000005_lot5_pilotage.sql:303-372). Seul changement : chaque caisse porte
+-- discrepancy_validated_at (C7 : AUD-16), lu par l'onglet Caisse du pilotage pour proposer « Valider l'écart » sans
+-- relire l'ancienne route des caisses. Signature, droits (service_role seul) et autres champs inchangés.
+-- ----------------------------------------------------------------------------
+-- pilotage_compute_cash(event_id) → { shifts[], by_controller[], totals } (contrat U) ; espèces d'une
+-- caisse = Σ des paiements hors plateforme SUCCESS rattachés (égal à expected_cash_total, invariant (h)).
+CREATE OR REPLACE FUNCTION public.pilotage_compute_cash(p_event uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    WITH sh AS (
+        SELECT s.id, s.controller_id, s.status::text AS status, s.opened_at, s.closed_at,
+               s.opening_float_amount, s.expected_cash_total, s.declared_cash_total, s.discrepancy_amount,
+               s.discrepancy_justification, s.closing_confirmed_by_pin, s.discrepancy_validated_at,
+               public.pilotage_display_name(u.first_name, u.last_name) AS controller_name,
+               COALESCE(p.collected, 0) AS collected,
+               COALESCE(p.scan_n, 0) AS scan_n, COALESCE(p.scan_amount, 0) AS scan_amount,
+               COALESCE(p.counter_n, 0) AS counter_n, COALESCE(p.counter_amount, 0) AS counter_amount
+          FROM public.controller_shifts s
+          LEFT JOIN public.users u ON u.id = s.controller_id
+          LEFT JOIN LATERAL (
+              SELECT sum(pay.amount) AS collected,
+                     count(*) FILTER (WHERE pay.metadata->>'source' = 'COUNTER_SALE') AS counter_n,
+                     COALESCE(sum(pay.amount) FILTER (WHERE pay.metadata->>'source' = 'COUNTER_SALE'), 0) AS counter_amount,
+                     count(*) FILTER (WHERE pay.metadata->>'source' IS DISTINCT FROM 'COUNTER_SALE') AS scan_n,
+                     COALESCE(sum(pay.amount) FILTER (WHERE pay.metadata->>'source' IS DISTINCT FROM 'COUNTER_SALE'), 0) AS scan_amount
+                FROM public.payments pay
+               WHERE pay.shift_id = s.id AND NOT pay.is_platform_payment AND pay.status::text = 'SUCCESS'
+          ) p ON TRUE
+         WHERE s.event_id = p_event
+    )
+    SELECT jsonb_build_object(
+        'shifts', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                       'id', sh.id,
+                       'controller_id', sh.controller_id,
+                       'controller_name', sh.controller_name,
+                       'status', sh.status,
+                       'opened_at', sh.opened_at,
+                       'closed_at', sh.closed_at,
+                       'opening_float', sh.opening_float_amount,
+                       'cash_collected', sh.collected,
+                       'expected', sh.expected_cash_total,
+                       'declared', CASE WHEN sh.status = 'OUVERT' THEN NULL ELSE sh.declared_cash_total END,
+                       'difference', CASE WHEN sh.status = 'OUVERT' THEN NULL ELSE sh.discrepancy_amount END,
+                       'justification', sh.discrepancy_justification,
+                       'pin_cosigned', COALESCE(sh.closing_confirmed_by_pin, false),
+                       'discrepancy_validated_at', sh.discrepancy_validated_at,
+                       'scan_count', sh.scan_n,
+                       'scan_amount', sh.scan_amount,
+                       'counter_count', sh.counter_n,
+                       'counter_amount', sh.counter_amount)
+                   ORDER BY sh.opened_at, sh.id)
+              FROM sh), '[]'::jsonb),
+        'by_controller', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                       'controller_id', x.controller_id,
+                       'name', x.name,
+                       'cash_collected', x.collected,
+                       'shifts', x.n,
+                       'open_shifts', x.open_n)
+                   ORDER BY x.collected DESC, x.controller_id)
+              FROM (SELECT controller_id, max(controller_name) AS name, sum(collected) AS collected, count(*) AS n,
+                           count(*) FILTER (WHERE status = 'OUVERT') AS open_n
+                      FROM sh GROUP BY controller_id) x), '[]'::jsonb),
+        'totals', jsonb_build_object(
+            'cash_collected', COALESCE((SELECT sum(collected) FROM sh), 0),
+            'open', (SELECT count(*) FROM sh WHERE status = 'OUVERT'),
+            'closed', (SELECT count(*) FROM sh WHERE status <> 'OUVERT'),
+            'difference', COALESCE((SELECT sum(discrepancy_amount) FROM sh WHERE status <> 'OUVERT'), 0)))
+$$;
+
+REVOKE ALL ON FUNCTION public.pilotage_compute_cash(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.pilotage_compute_cash(uuid) TO service_role;

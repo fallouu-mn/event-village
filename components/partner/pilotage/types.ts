@@ -242,6 +242,8 @@ export interface CashShift {
     difference: number | null;
     justification: string | null;
     pin_cosigned: boolean;
+    /** Lot 9 quater (C7 : AUD-16) : écart validé par l'organisatrice (null : en attente, ou aucun écart). */
+    discrepancy_validated_at?: string | null;
     scan_count: number;
     scan_amount: number;
     counter_count: number;
