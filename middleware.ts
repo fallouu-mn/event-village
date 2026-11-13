@@ -67,6 +67,19 @@ const PUBLIC_EXACT_ROUTES = [
     '/verify-email',
 ];
 
+const USER_ID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `sub` d'un jeton que GoTrue a validé puis déclaré bloqué (lot 9 quater, A6) ; null s'il est illisible. */
+function jwtSubject(accessToken: string): string | null {
+    try {
+        const part = (accessToken.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/');
+        const claims = JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), '='))) as { sub?: unknown };
+        return typeof claims.sub === 'string' && USER_ID_FORMAT.test(claims.sub) ? claims.sub : null;
+    } catch {
+        return null;
+    }
+}
+
 function hasRole(roles: string[], role: string): boolean {
     return roles.includes(role);
 }
@@ -153,7 +166,16 @@ export async function middleware(req: NextRequest) {
         }
     );
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user: validatedUser }, error: userError } = await supabase.auth.getUser();
+    // Lot 9 quater (A6 : AUD-06) : un compte SUSPENDU ou SUPPRIME est bloqué chez GoTrue, qui répond « compte bloqué »
+    // après avoir vérifié la signature et l'échéance du jeton. Le compte du jeton est alors gardé pour que les contrôles
+    // ci-dessous (statut en base) le refusent avec leur message habituel, au lieu de renvoyer vers la connexion.
+    let user: { id: string } | null = validatedUser;
+    if (!user && userError && (userError as { code?: string }).code === 'user_banned') {
+        const { data: { session } } = await supabase.auth.getSession();
+        const sub = session ? jwtSubject(session.access_token) : null;
+        if (sub) user = { id: sub };
+    }
 
     function redirect(url: URL) {
         const redirectResponse = NextResponse.redirect(url);

@@ -6,12 +6,22 @@
 import '../helpers/env';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertDenied, signInFixture, signUpAttacker, uniqueSuffix } from './helpers';
+import { openConcurrentClient } from '../helpers/db';
+import { assertDenied, signUpAttacker, uniqueSuffix } from './helpers';
 import { randomSenegalPhone } from '../parcours/helpers';
 
 describe('R7 — colonnes protégées de public.users', () => {
     test('compte SUSPENDU qui tente status = ACTIF → refusé, statut inchangé', async () => {
-        const suspended = await signInFixture('SUSPENDED');
+        // Lot 9 quater (A6 : AUD-06) : un compte SUSPENDU ne se connecte plus (bloqué chez GoTrue) ; le compte est suspendu
+        // en base locale après sa connexion, sa session reste valable (comme r6). Modification signalée au rapport.
+        const suspended = await signUpAttacker('r7-susp');
+        const db = await openConcurrentClient({ applicationName: 'ev-test-r7' });
+        try {
+            await db.query(`UPDATE public.users SET status = 'SUSPENDU' WHERE id = $1`, [suspended.userId]);
+            await db.commit();
+        } finally {
+            await db.close();
+        }
         const { error } = await suspended.client.from('users').update({ status: 'ACTIF' }).eq('id', suspended.userId).select('status');
         assertDenied(error, 'réactivation de son propre compte (status)');
         const { data: after, error: readErr } = await suspended.client.from('users').select('status').eq('id', suspended.userId).single();

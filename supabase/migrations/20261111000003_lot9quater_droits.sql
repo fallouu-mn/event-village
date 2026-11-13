@@ -3,16 +3,17 @@
 -- ============================================================================
 -- A6 (AUD-06) : les quatre aides de droits exécutables par anon et authenticated qui ignoraient le statut du compte
 --   (is_partner_owner, 0003_rls.sql:33-38 ; has_role, is_controller, auth_user_role,
---   20260906000004_user_roles_multi_role.sql:192-228) exigent désormais un compte ACTIF, comme is_admin
+--   20260906000004_user_roles_multi_role.sql:192-228) exigent désormais un compte ni SUSPENDU ni SUPPRIME (ACTIF, ou
+--   EN_ATTENTE : partenaire dont la fiche attend validation, qui garde son espace ; is_admin reste ACTIF seul)
 --   (20261110000001_lot9ter_rls.sql:116-117). Un partenaire suspendu ne lit plus les paiements de ses acheteurs, même avec
 --   un jeton encore valable. À la suspension (ou à la suppression), le compte est bloqué chez GoTrue (banned_until) :
 --   aucun jeton neuf, ni par mot de passe, ni par rafraîchissement ; à la réactivation, il est débloqué. Le blocage suit
 --   users.status par un trigger : tout chemin (RPC user_status_set, partner_status_set, anonymisation, écriture du
 --   service_role) est couvert. La révocation des sessions existante reste dans les RPC.
 -- Objets :
---   recopies (signature, droits et comportement pour un compte ACTIF inchangés ; changement : test du statut ACTIF,
+--   recopies (signature, droits et comportement pour un compte ACTIF inchangés ; changement : test du statut ACTIF ou EN_ATTENTE,
 --   search_path fixé, noms qualifiés) : is_partner_owner(uuid), has_role(user_role), is_controller(), auth_user_role()
---   (NULL pour un compte non ACTIF : toute comparaison de politique est fausse) ;
+--   (NULL pour un compte SUSPENDU ou SUPPRIME : toute comparaison de politique est fausse) ;
 --   nouvelles : users_status_sync_auth_ban() (trigger) et trigger trg_users_status_auth_ban sur public.users ;
 --   reprise : comptes déjà SUSPENDU ou SUPPRIME bloqués, comptes ACTIF débloqués (sauf compte anonymisé).
 -- Aucun BEGIN ni COMMIT ; rejouable.
@@ -20,7 +21,7 @@
 
 
 -- ----------------------------------------------------------------------------
--- 1. Aides de droits : compte ACTIF exigé
+-- 1. Aides de droits : compte ni SUSPENDU ni SUPPRIME (ACTIF ou EN_ATTENTE)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.has_role(p_role user_role)
 RETURNS boolean
@@ -35,7 +36,7 @@ AS $$
           JOIN public.users u ON u.id = r.user_id
          WHERE r.user_id = auth.uid()
            AND r.role = p_role
-           AND u.status::text = 'ACTIF'
+           AND u.status::text IN ('ACTIF', 'EN_ATTENTE')
     );
 $$;
 
@@ -47,7 +48,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     SELECT COALESCE((public.has_role('CONTROLEUR') OR public.has_role('ADMIN') OR public.has_role('SUPERADMIN'))
-                    AND EXISTS (SELECT 1 FROM public.users u WHERE u.id = auth.uid() AND u.status::text = 'ACTIF'), FALSE);
+                    AND EXISTS (SELECT 1 FROM public.users u WHERE u.id = auth.uid() AND u.status::text IN ('ACTIF', 'EN_ATTENTE')), FALSE);
 $$;
 
 CREATE OR REPLACE FUNCTION public.auth_user_role()
@@ -58,7 +59,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     SELECT CASE
-        WHEN NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = auth.uid() AND u.status::text = 'ACTIF') THEN NULL
+        WHEN NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = auth.uid() AND u.status::text IN ('ACTIF', 'EN_ATTENTE')) THEN NULL
         WHEN public.has_role('SUPERADMIN') THEN 'SUPERADMIN'::user_role
         WHEN public.has_role('ADMIN')      THEN 'ADMIN'::user_role
         WHEN public.has_role('PARTENAIRE') THEN 'PARTENAIRE'::user_role
@@ -80,18 +81,18 @@ AS $$
           JOIN public.users u ON u.id = p.user_id
          WHERE p.id = p_partner_id
            AND p.user_id = auth.uid()
-           AND u.status::text = 'ACTIF'
+           AND u.status::text IN ('ACTIF', 'EN_ATTENTE')
     );
 $$;
 
 COMMENT ON FUNCTION public.has_role(user_role) IS
-    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Vrai si le compte appelant porte ce rôle (user_roles) ET est ACTIF.';
+    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Vrai si le compte appelant porte ce rôle (user_roles) ET est ACTIF ou EN_ATTENTE (jamais SUSPENDU ni SUPPRIME).';
 COMMENT ON FUNCTION public.is_controller() IS
-    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Vrai pour un CONTROLEUR, ADMIN ou SUPERADMIN dont le compte est ACTIF.';
+    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Vrai pour un CONTROLEUR, ADMIN ou SUPERADMIN dont le compte est ACTIF ou EN_ATTENTE.';
 COMMENT ON FUNCTION public.auth_user_role() IS
-    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Rôle prioritaire du compte appelant s''il est ACTIF ; NULL sinon (toute comparaison est fausse).';
+    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Rôle prioritaire du compte appelant s''il est ACTIF ou EN_ATTENTE ; NULL sinon (toute comparaison est fausse).';
 COMMENT ON FUNCTION public.is_partner_owner(uuid) IS
-    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Vrai si la fiche partenaire appartient au compte appelant ET que ce compte est ACTIF.';
+    'Lot 9 quater (A6, AUD-06) : aide RLS du groupe a. Vrai si la fiche partenaire appartient au compte appelant ET que ce compte est ACTIF ou EN_ATTENTE.';
 
 -- Groupe a (20261031000002:123) : droits inchangés par CREATE OR REPLACE, répétés explicitement.
 GRANT EXECUTE ON FUNCTION public.has_role(user_role) TO anon, authenticated, service_role;

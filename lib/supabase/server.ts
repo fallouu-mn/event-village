@@ -24,21 +24,70 @@ export function getServiceRoleClient() {
     });
 }
 
+const USER_ID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Réponse de GoTrue « compte bloqué » (banned_until dans le futur). */
+function isBannedError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+    const e = error as { code?: unknown; message?: unknown };
+    return e.code === 'user_banned' || (typeof e.message === 'string' && /user is banned/i.test(e.message));
+}
+
+/** `sub` de la charge d'un jeton, ou null. N'est lu QUE pour un jeton que GoTrue a validé puis déclaré bloqué. */
+function subOf(accessToken: string): string | null {
+    try {
+        const claims = JSON.parse(Buffer.from(accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { sub?: unknown };
+        return typeof claims.sub === 'string' && USER_ID_FORMAT.test(claims.sub) ? claims.sub : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Lot 9 quater (A6 : AUD-06) : compte d'un jeton d'accès. Un compte SUSPENDU ou SUPPRIME est bloqué chez GoTrue
+ * (trigger trg_users_status_auth_ban) : connexion et rafraîchissement refusés. GoTrue ne répond « compte bloqué »
+ * qu'après avoir vérifié la signature et l'échéance du jeton ; le compte est alors rendu (sans adresse) pour que la
+ * route applique son contrôle de statut habituel (403 ACCOUNT_NOT_ACTIVE, rien d'écrit) au lieu d'un 401 trompeur.
+ */
+async function userOfToken(token: string): Promise<{ id: string; email?: string } | null> {
+    const { data, error } = await getServiceRoleClient().auth.getUser(token);
+    if (!error && data?.user) return { id: data.user.id, email: data.user.email };
+    if (isBannedError(error)) {
+        const id = subOf(token);
+        if (id) return { id };
+    }
+    return null;
+}
+
+/** Jeton d'accès des cookies de session, ou null. */
+async function cookieAccessToken(req: NextRequest): Promise<string | null> {
+    const { data, error } = await cookieClient(req).auth.getSession();
+    if (error) {
+        console.error('[session] session des cookies illisible :', error.message);
+        return null;
+    }
+    return data.session?.access_token ?? null;
+}
+
 /**
  * Extrait l'utilisateur authentifie depuis une NextRequest.
- * Gere les cookies chunkes de @supabase/ssr et le header Authorization Bearer.
+ * Gere les cookies chunkes de @supabase/ssr et le header Authorization Bearer. Le jeton est toujours validé par
+ * GoTrue (userOfToken), y compris celui des cookies.
  */
 export async function getAuthenticatedUser(req: NextRequest): Promise<{ id: string; email?: string } | null> {
     const authHeader = req.headers.get('authorization');
     if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        const supabase = getServiceRoleClient();
-        const { data, error } = await supabase.auth.getUser(token);
-        if (!error && data?.user) return { id: data.user.id, email: data.user.email };
+        const user = await userOfToken(authHeader.substring(7));
+        if (user) return user;
     }
 
-    const { data: { user } } = await cookieClient(req).auth.getUser();
-    return user ? { id: user.id, email: user.email } : null;
+    const token = await cookieAccessToken(req);
+    return token ? userOfToken(token) : null;
+}
+
+/** Lot 9 quater (A6) : identifiant du compte d'une requête (Bearer, sinon cookies), compte bloqué compris. */
+export async function getAuthenticatedUserId(req: NextRequest): Promise<string | null> {
+    return (await getAuthenticatedUser(req))?.id ?? null;
 }
 
 function cookieClient(req: NextRequest) {
@@ -82,31 +131,26 @@ function sessionIdOf(accessToken: string): string | null {
  * totale par défaut.
  */
 export async function getAuthenticatedSession(req: NextRequest): Promise<AuthenticatedSession | null> {
-    const supabase = getServiceRoleClient();
     const authHeader = req.headers.get('authorization');
     let accessToken: string | undefined;
     let userId: string | undefined;
 
     if (authHeader?.startsWith('Bearer ')) {
         const bearer = authHeader.substring(7);
-        const { data, error } = await supabase.auth.getUser(bearer);
-        if (!error && data?.user) {
+        const user = await userOfToken(bearer);
+        if (user) {
             accessToken = bearer;
-            userId = data.user.id;
+            userId = user.id;
         }
     }
 
     if (!accessToken) {
-        const { data, error } = await cookieClient(req).auth.getSession();
-        if (error) {
-            console.error('[getAuthenticatedSession] session des cookies illisible :', error.message);
-            return null;
-        }
-        if (!data.session) return null;
-        const validated = await supabase.auth.getUser(data.session.access_token);
-        if (validated.error || !validated.data?.user) return null;
-        accessToken = data.session.access_token;
-        userId = validated.data.user.id;
+        const token = await cookieAccessToken(req);
+        if (!token) return null;
+        const user = await userOfToken(token);
+        if (!user) return null;
+        accessToken = token;
+        userId = user.id;
     }
 
     const sessionId = sessionIdOf(accessToken);

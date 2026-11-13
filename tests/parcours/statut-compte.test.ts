@@ -41,12 +41,18 @@ async function newAccount(label: string, opts: { roles?: ('PARTENAIRE' | 'CONTRO
     const { data, error } = await service.auth.admin.createUser({ email, phone, password: STRONG_PASSWORD, email_confirm: true, phone_confirm: true });
     assert.equal(error, null, `création du compte ${label} : ${error?.message}`);
     const userId = data.user!.id;
-    const { error: upErr } = await service.from('users').update({ phone, status: opts.status ?? 'ACTIF' }).eq('id', userId);
+    const { error: upErr } = await service.from('users').update({ phone, status: 'ACTIF' }).eq('id', userId);
     assert.equal(upErr, null, `profil ${label} : ${upErr?.message}`);
     if (opts.roles?.length) await grantUserRoles(userId, opts.roles);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: session, error: signErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
     assert.equal(signErr, null, `connexion ${label} : ${signErr?.message}`);
+    // Lot 9 quater (A6 : AUD-06) : un compte SUSPENDU ne se connecte plus (bloqué chez GoTrue) ; la session est ouverte
+    // avant la suspension, comme celle d'un compte suspendu pendant qu'il est connecté (modification signalée).
+    if (opts.status && opts.status !== 'ACTIF') {
+        const { error: stErr } = await service.from('users').update({ status: opts.status }).eq('id', userId);
+        assert.equal(stErr, null, `statut ${label} : ${stErr?.message}`);
+    }
     return { userId, email, phone, token: session.session!.access_token };
 }
 
@@ -178,8 +184,9 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
     });
 
     test('client SUSPENDU → /api/tickets/[id]/live-code refusé (ACCOUNT_NOT_ACTIVE)', async () => {
-        const suspended = await signInAs('SUSPENDED');
-        const res = await liveCode(getRequest(`/api/tickets/${ZERO_UUID}/live-code`, bearer(suspended.accessToken)), routeContext({ id: ZERO_UUID }));
+        // Lot 9 quater (A6) : le compte SUSPENDED du seed ne se connecte plus ; compte suspendu après connexion (signalé)
+        const suspended = await newAccount('susp-live', { status: 'SUSPENDU' });
+        const res = await liveCode(getRequest(`/api/tickets/${ZERO_UUID}/live-code`, bearer(suspended.token)), routeContext({ id: ZERO_UUID }));
         const body = await res.json();
         assert.equal(res.status, 403, `HTTP ${res.status} ${JSON.stringify(body)}`);
         assert.equal(body.code, 'ACCOUNT_NOT_ACTIVE');

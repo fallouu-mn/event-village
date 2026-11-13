@@ -71,12 +71,30 @@ after(async () => {
     }
 });
 
+/** Lot 9 quater (A6) : blocage GoTrue levé le temps de `fn`, puis reposé (100 ans, comme le trigger du statut). */
+async function withBanLifted(userId: string, fn: () => Promise<void>): Promise<void> {
+    const { error } = await service.auth.admin.updateUserById(userId, { ban_duration: 'none' });
+    assert.equal(error, null, `déblocage temporaire : ${error?.message}`);
+    try {
+        await fn();
+    } finally {
+        const { error: banErr } = await service.auth.admin.updateUserById(userId, { ban_duration: '876000h' });
+        assert.equal(banErr, null, `blocage reposé : ${banErr?.message}`);
+    }
+}
+
 /** Nouvelle connexion par mot de passe avec la clé anon seule : précondition explicite qu'elle réussit. */
 async function signIn(user: Pick<Buyer, 'email' | 'userId'>, who: string): Promise<Signed> {
     const c = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
-    const { data, error } = await c.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    let { data, error } = await c.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    if (error && /banned/i.test(error.message)) {
+        // Lot 9 quater (A6 : AUD-06) : GoTrue refuse maintenant toute connexion d'un compte suspendu (constaté ici). Pour
+        // éprouver la RLS avec un jeton encore valable (session ouverte avant la suspension), le blocage est levé le temps
+        // de la connexion puis reposé ; users.status reste SUSPENDU. Modification signalée au rapport.
+        await withBanLifted(user.userId, async () => { ({ data, error } = await c.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD })); });
+    }
     assert.equal(error, null, `précondition : nouvelle connexion de ${who} réussie : ${error?.message}`);
     assert.ok(data.session, `précondition : session ouverte pour ${who}`);
     return { client: c, userId: user.userId };

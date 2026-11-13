@@ -501,7 +501,7 @@ function partnerTargets(): Record<TableKey | 'control', RealtimeTarget> {
 }
 
 async function partnerBundle(label: string): Promise<Bundle<TableKey | 'control'>> {
-    const client = await signedInClient({ email: partner.email });
+    const client = await signedInClient({ email: partner.email }, { liftBan: true }); // lot 9 quater (A6), signalé
     opened.push(client);
     const bundle = subscribeBundle(client, label, partnerTargets());
     await bundle.ready;
@@ -612,7 +612,7 @@ describe('6.0 a — admin suspendu (PATCH /api/admin/users) : rien sur admin_sig
         };
         const isSignal = (ids: string[]) => (e: ReceivedChange): boolean => e.new.kind === 'PARTNER_REGISTERED' && ids.includes(String(e.new.ref_id));
         const bundleOf = async (label: string, who: { email: string } | 'ADMIN'): Promise<Bundle<'signals' | 'control'>> => {
-            const c = await signedInClient(who);
+            const c = await signedInClient(who, { liftBan: true }); // lot 9 quater (A6), signalé
             clients.push(c);
             const b = subscribeBundle(c, label, { control: controlTarget(), signals: { table: 'admin_signals' } });
             await b.ready;
@@ -662,7 +662,7 @@ describe('6.0 a — contrôleur suspendu (PATCH /api/admin/users) : rien sur sa 
         const shiftTarget: RealtimeTarget = { table: 'controller_shifts', filter: `id=eq.${ownShift}` };
         const matches = (at: string) => (e: ReceivedChange): boolean => e.new.id === ownShift && sameInstant(e.new.updated_at, at);
         const bundleOf = async (label: string, who: { email: string } | 'ADMIN'): Promise<Bundle<'shift' | 'control'>> => {
-            const c = await signedInClient(who);
+            const c = await signedInClient(who, { liftBan: true }); // lot 9 quater (A6), signalé
             clients.push(c);
             const b = subscribeBundle(c, label, { control: controlTarget(), shift: shiftTarget });
             await b.ready;

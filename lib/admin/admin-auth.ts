@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { getServiceRoleClient } from '@/lib/supabase/server';
-import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
+import { getAuthenticatedUserId, getServiceRoleClient } from '@/lib/supabase/server';
 import { type UserRoleType } from '@/lib/auth/roles';
 import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 import { getClientIp } from '@/lib/security/client-ip';
@@ -98,37 +96,9 @@ export async function verifyAdminAuth(
     try {
         const supabase = getServiceRoleClient();
 
-        // 1. Extraction de l'utilisateur via @supabase/ssr (gere les cookies chunkes)
-        let userId: string | undefined;
-
-        const authHeader = req.headers.get('authorization');
-        if (authHeader?.startsWith('Bearer ')) {
-            const token = authHeader.substring(7);
-            const { data: userData, error } = await supabase.auth.getUser(token);
-            if (!error && userData?.user) {
-                userId = userData.user.id;
-            }
-        }
-
-        if (!userId) {
-            const ssrClient = createServerClient(
-                process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-                {
-                    cookies: {
-                        getAll() {
-                            return req.cookies.getAll();
-                        },
-                        setAll() {},
-                    },
-                    global: { fetch: noStoreFetch },
-                }
-            );
-            const { data: { user } } = await ssrClient.auth.getUser();
-            if (user) {
-                userId = user.id;
-            }
-        }
+        // 1. Compte de la requête (Bearer, sinon cookies de @supabase/ssr), validé par GoTrue. Lot 9 quater (A6) : un
+        //    compte bloqué chez GoTrue (SUSPENDU, SUPPRIME) est rendu pour recevoir le 403 ACCOUNT_NOT_ACTIVE de l'étape 2.
+        const userId = (await getAuthenticatedUserId(req)) ?? undefined;
 
         if (!userId) {
             return {

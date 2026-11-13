@@ -70,11 +70,29 @@ export interface Credentials {
  * TEST_PASSWORD) ou compte créé par le test (Buyer, TestPartner ou { email, password }).
  * La session est transmise à Realtime par supabase-js au moment de l'abonnement.
  */
-export async function signedInClient(who: FixtureUserKey | Credentials): Promise<SupabaseClient> {
+export async function signedInClient(who: FixtureUserKey | Credentials, opts: { liftBan?: boolean } = {}): Promise<SupabaseClient> {
     const email = typeof who === 'string' ? FIXTURE_USERS[who].email : who.email;
     const password = typeof who === 'string' ? TEST_PASSWORD : (who.password ?? STRONG_PASSWORD);
     const client = newClient();
-    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    let { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error && opts.liftBan && /banned/i.test(error.message)) {
+        // Lot 9 quater (A6 : AUD-06) : GoTrue refuse maintenant toute connexion d'un compte suspendu (constaté ici). Pour
+        // éprouver la RLS du temps réel avec un jeton encore valable (session ouverte avant la suspension), le blocage
+        // est levé le temps de la connexion puis reposé ; users.status reste SUSPENDU. Modification signalée au rapport.
+        const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        });
+        const { data: found, error: findErr } = await admin.from('users').select('id').eq('email', email).single();
+        assert.equal(findErr, null, `compte de ${email} : ${findErr?.message}`);
+        const { error: liftErr } = await admin.auth.admin.updateUserById(String(found.id), { ban_duration: 'none' });
+        assert.equal(liftErr, null, `déblocage temporaire de ${email} : ${liftErr?.message}`);
+        try {
+            ({ data, error } = await client.auth.signInWithPassword({ email, password }));
+        } finally {
+            const { error: banErr } = await admin.auth.admin.updateUserById(String(found.id), { ban_duration: '876000h' });
+            assert.equal(banErr, null, `blocage reposé de ${email} : ${banErr?.message}`);
+        }
+    }
     assert.equal(error, null, `connexion de ${email} : ${error?.message}`);
     assert.ok(data.session, `connexion de ${email} : session absente`);
     return client;

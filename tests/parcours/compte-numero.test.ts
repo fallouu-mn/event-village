@@ -374,6 +374,7 @@ describe('POST /api/account/phone/start', () => {
         assert.equal(anon.status, 401, anon.text);
         assert.equal(anon.body.code, 'AUTH_REQUIRED', anon.text);
         const a = await newBuyer('num-susp');
+        await ensureRecentPassword(a); // lot 9 quater (A6) : avant la suspension, qui bloque la connexion (signalé)
         const { error } = await service.from('users').update({ status: 'SUSPENDU' }).eq('id', a.userId);
         assert.equal(error, null, `suspension : ${error?.message}`);
         const suspended = await postStart(a, { phone: next });
@@ -476,6 +477,7 @@ describe('POST /api/account/phone/confirm — le code', () => {
         assert.equal(anon.status, 401, anon.text);
         assert.equal(anon.body.code, 'AUTH_REQUIRED', anon.text);
         const a = await newBuyer('num-conf-susp');
+        await ensureRecentPassword(a); // lot 9 quater (A6) : avant la suspension, qui bloque la connexion (signalé)
         const { error } = await service.from('users').update({ status: 'SUSPENDU' }).eq('id', a.userId);
         assert.equal(error, null, `suspension : ${error?.message}`);
         const suspended = await postConfirm(a, { phone: next, code: '123456' });
