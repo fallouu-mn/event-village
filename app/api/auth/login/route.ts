@@ -9,6 +9,7 @@ import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { normalizePhoneNumber, phoneStorageForms } from '@/lib/validations/auth';
 import { controllerNotActivatedResponse, isControllerActivationPending } from '@/lib/auth/controller-activation';
+import { beginLoginAttempt, endLoginAttempt, loginBucket, loginLockedResponse } from '@/lib/auth/login-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,15 +50,15 @@ function refusalResponse(code: string): NextResponse {
  * Identifiant de connexion de Supabase Auth pour un numéro saisi : lu côté serveur, jamais rendu. `null` si aucun
  * compte ne porte ce numéro.
  */
-type LoginIdentity = ({ email: string } | { phone: string }) & { pendingController: boolean };
+type LoginIdentity = ({ email: string } | { phone: string }) & { pendingController: boolean; userId: string | null };
 
 /** Lit le compte d'authentification ; null s'il n'a ni adresse ni numéro. */
 async function loginIdentityOfUser(userId: string): Promise<LoginIdentity | null> {
     const { data: authData, error: authErr } = await getServiceRoleClient().auth.admin.getUserById(userId);
     if (authErr || !authData?.user) throw new PasswordCheckUnavailable(`compte de connexion illisible : ${authErr?.message ?? 'aucun compte'}`);
     const pendingController = isControllerActivationPending(authData.user);
-    if (authData.user.email) return { email: authData.user.email, pendingController };
-    if (authData.user.phone) return { phone: authData.user.phone, pendingController };
+    if (authData.user.email) return { email: authData.user.email, pendingController, userId };
+    if (authData.user.phone) return { phone: authData.user.phone, pendingController, userId };
     return null;
 }
 
@@ -74,9 +75,9 @@ async function loginIdentityOfPhone(raw: string): Promise<LoginIdentity | null> 
 async function loginIdentityOfEmail(email: string): Promise<LoginIdentity | null> {
     const { data, error } = await getServiceRoleClient().from('users').select('id').eq('email', email).limit(1).maybeSingle();
     if (error) throw new PasswordCheckUnavailable(`compte de l’adresse illisible : ${error.message}`);
-    if (!data) return { email, pendingController: false };
+    if (!data) return { email, pendingController: false, userId: null };
     const identity = await loginIdentityOfUser(String(data.id));
-    return identity ? { email, pendingController: identity.pendingController } : { email, pendingController: false };
+    return identity ? { email, pendingController: identity.pendingController, userId: identity.userId } : { email, pendingController: false, userId: String(data.id) };
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {
@@ -105,19 +106,51 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
     const { identifier, password } = parsed.data;
 
+    let attemptId: string | null = null;
+    let attemptUser: string | null = null;
     try {
-        const identity = identifier.includes('@')
+        const isEmail = identifier.includes('@');
+        const identity = isEmail
             ? await loginIdentityOfEmail(identifier.toLowerCase())
             : await loginIdentityOfPhone(identifier);
-        if (!identity) return invalidCredentials();
+        // Lot 9 quinquies (A1 : AUTH-01) : essai réservé sur le compte (ou l'empreinte de l'identifiant inconnu) avant
+        // toute vérification ; 10 échecs par 15 minutes, puis le même 429 pour un compte connu et un identifiant inconnu.
+        attemptUser = identity?.userId ?? null;
+        const attempt = await beginLoginAttempt(loginBucket(attemptUser, isEmail ? identifier.toLowerCase() : normalizePhoneNumber(identifier)));
+        if (!attempt.allowed) return loginLockedResponse(attempt.retryAfterSeconds);
+        attemptId = attempt.attemptId;
+
+        if (!identity) {
+            await endLoginAttempt(attemptId, 'FAILURE', null);
+            attemptId = null;
+            return invalidCredentials();
+        }
         // Lot 9 quater (A5 : G-97) : compte contrôleur invité pas encore activé : aucune connexion avant l'activation
-        if (identity.pendingController) return controllerNotActivatedResponse();
+        if (identity.pendingController) {
+            await endLoginAttempt(attemptId, 'ABORTED', attemptUser);
+            attemptId = null;
+            return controllerNotActivatedResponse();
+        }
 
         const signIn = await serverPasswordSignIn(req, 'email' in identity ? { email: identity.email } : { phone: identity.phone }, password);
-        if (!signIn.ok) return signIn.reason === 'INVALID_CREDENTIALS' ? invalidCredentials() : refusalResponse(signIn.code);
+        if (!signIn.ok && signIn.reason === 'INVALID_CREDENTIALS') {
+            await endLoginAttempt(attemptId, 'FAILURE', attemptUser);
+            attemptId = null;
+            return invalidCredentials();
+        }
+        await endLoginAttempt(attemptId, signIn.ok ? 'SUCCESS' : 'ABORTED', attemptUser);
+        attemptId = null;
+        if (!signIn.ok) return refusalResponse(signIn.code);
         return applySessionCookies(NextResponse.json({ ok: true }), signIn.cookies);
     } catch (err) {
         console.error(`[${CONTEXT}]`, err instanceof Error ? err.message : String(err));
+        // Panne après la réservation : l'essai est rendu (une panne ne compte pas comme un échec) ; un échec de ce rendu
+        // est journalisé, la réponse reste 503.
+        if (attemptId) {
+            await endLoginAttempt(attemptId, 'ABORTED', attemptUser).catch((endErr: unknown) => {
+                console.error(`[${CONTEXT}] essai ${attemptId} non rendu :`, endErr instanceof Error ? endErr.message : String(endErr));
+            });
+        }
         return unavailable();
     }
 }

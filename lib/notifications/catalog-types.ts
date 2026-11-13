@@ -233,6 +233,8 @@ export interface TemplateData {
      * a plus d'un élément), `refs` = références déjà comptées.
      */
     ADMIN_REVIEW_SMS: { partner_count: number; event_count: number; company?: string | null; refs?: string[] };
+    /** Lot 9 quinquies (A1 : AUTH-01) : 10e échec de mot de passe sur le compte, une fois par jour (`day` de Dakar). */
+    ACCOUNT_LOGIN_FAILURES: { day?: string };
 }
 
 export type NotificationType = keyof TemplateData;

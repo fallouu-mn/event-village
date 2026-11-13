@@ -1725,6 +1725,19 @@ const CATALOG = {
         sms: (d, ctx) => adminReviewSms(d, ctx),
         sample: { partner_count: 1, event_count: 0, company: 'Association culturelle Sabar Events Dakar Plateau' },
     }),
+    // Lot 9 quinquies (A1 : AUTH-01) : 10e échec de mot de passe en 15 minutes, une fois par jour. SMS de la consigne
+    // ramené à 160 septets avec l'URL de 27 caractères : « plusieurs connexions ont échoué » (au lieu de « plusieurs
+    // essais de connexion ont échoué », 169 septets, deux segments).
+    ACCOUNT_LOGIN_FAILURES: define('ACCOUNT_LOGIN_FAILURES', {
+        label: 'Essais de connexion échoués', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: null,
+        link: () => '/forgot-password',
+        inApp: () => ({
+            title: 'Essais de connexion échoués',
+            content: 'Plusieurs essais de connexion ont échoué sur votre compte. Si ce n’est pas vous, changez votre mot de passe avec « Mot de passe oublié ».',
+        }),
+        sms: (_d, ctx) => `${SMS_PREFIX}plusieurs connexions ont échoué sur votre compte. Si ce n'est pas vous, changez votre mot de passe : ${appLink(ctx, '/forgot-password')}`,
+        sample: { day: '2026-11-13' },
+    }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),

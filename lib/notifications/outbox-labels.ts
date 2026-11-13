@@ -210,6 +210,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     SCAN_REFUSALS_ALERT: 'Refus en série à une porte',
     // Lot 9 quinquies (D1)
     ADMIN_REVIEW_SMS: 'SMS aux administrateurs : à valider',
+    ACCOUNT_LOGIN_FAILURES: 'Essais de connexion échoués',
 };
 
 export function outboxStatusLabel(status: string): string {
