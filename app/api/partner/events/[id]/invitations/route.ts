@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PublicError } from '@/lib/api/public-error';
-import { requireActiveSession } from '@/lib/auth/session';
+import { requireActiveSession, requireVerifiedPhone, serverIsAdmin } from '@/lib/auth/session';
 import { routeParam, UUID_RE, type RouteParams } from '@/lib/events/pilotage.service';
 import { createInvitations, InvitationRefusal, invitationFailure, listInvitations } from '@/lib/tickets/invitation.service';
 import { CreateInvitationsSchema } from '@/lib/validations/invitation';
@@ -43,6 +43,12 @@ export async function POST(request: NextRequest, ctx: RouteParams<{ id: string }
     const context = 'POST /api/partner/events/[id]/invitations';
     const session = await requireActiveSession(request);
     if (session.response) return session.response;
+    // Lot 9 quater (A2 : AUD-03, G-36) : numéro prouvé par un code SMS exigé avant toute action qui donne quelque chose
+    //   (un administrateur qui agit pour l'organisateur en est dispensé)
+    if (!serverIsAdmin(session.user)) {
+        const unverified = requireVerifiedPhone(session.user);
+        if (unverified) return unverified;
+    }
     try {
         const eventId = await routeParam(ctx, 'id');
         if (!UUID_RE.test(eventId)) throw eventNotFound();

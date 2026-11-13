@@ -10,6 +10,7 @@ import { maskPersonName } from '@/lib/security/mask';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { createControllerInvitation } from '../controller-invitation';
 import { adminTeamRefusal } from '../team-access';
+import { isControllerActivationPending } from '@/lib/auth/controller-activation';
 
 export const dynamic = 'force-dynamic';
 
@@ -176,7 +177,8 @@ export async function PATCH(req: NextRequest) {
                 console.error('[PATCH team/assignments] lecture du compte d’authentification :', authErr?.message ?? 'compte absent');
                 return NextResponse.json({ error: 'Impossible de lire le compte du contrôleur.' }, { status: 500 });
             }
-            const pendingActivation = authRow.user.user_metadata?.is_temporary_controller_account === true;
+            // Lot 9 quater (A3 : AUD-02) : marque lue dans app_metadata (service_role seul)
+            const pendingActivation = isControllerActivationPending(authRow.user);
 
             if (!pendingActivation) {
                 // Lot 9 bis (R37, B62) : le titulaire d'un compte établi accepte lui-même ; rien n'est posé ici.
@@ -252,7 +254,7 @@ export async function PATCH(req: NextRequest) {
                 return NextResponse.json({ error: 'Impossible de lire le compte du contrôleur.' }, { status: 500 });
             }
             let needsConsent = false;
-            if (authRow.user.user_metadata?.is_temporary_controller_account !== true) {
+            if (!isControllerActivationPending(authRow.user)) {
                 const partnerIds = Array.from(new Set(added.map((id) => (partnerEventMap.get(id)?.partner_id ?? null) as string | null)));
                 for (const ownerId of partnerIds) {
                     const { data: known, error: knownErr } = await supabase.rpc('partner_controller_known', {

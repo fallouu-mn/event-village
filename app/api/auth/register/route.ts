@@ -3,7 +3,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { RegisterWithCodeSchema, toSenegaleseE164 } from '@/lib/validations/auth';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { findExistingAccount } from '@/lib/auth/existing-account';
-import { technicalEmailOf } from '@/lib/auth/account-sync';
+import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
@@ -117,15 +117,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Le code de vérification comporte 6 chiffres.', code: 'INVALID_CODE' }, { status: 400 });
     }
 
-    // Lot 9 bis (R87, B96, contrat 4.6) : GoTrue et users.email reçoivent l'adresse technique du numéro ; l'adresse
+    // Lot 9 bis (R87, B96, contrat 4.6) : GoTrue et users.email reçoivent l'adresse technique du compte ; l'adresse
     // saisie attend son lien de vérification dans users.email_pending (jamais identifiant de connexion avant).
+    // Lot 9 quater (A4 : AUD-19) : adresse technique aléatoire sous .invalid, plus jamais tirée du numéro.
     const typedEmail = (email ?? '').trim().toLowerCase();
-    const technicalEmail = technicalEmailOf(phone);
+    const technicalEmail = newTechnicalEmail();
     const supabase = getServiceRoleClient();
 
     try {
         // 3. Compte existant (aucun essai de code consommé)
-        if (await findExistingAccount(phone, typedEmail || technicalEmail)) {
+        if (await findExistingAccount(phone, typedEmail || null)) {
             return NextResponse.json({ error: ACCOUNT_EXISTS_MESSAGE, code: 'ACCOUNT_ALREADY_EXISTS' }, { status: 409 });
         }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
-import { requireActiveSession } from '@/lib/auth/session';
+import { requireActiveSession, requireVerifiedPhone } from '@/lib/auth/session';
 import { startTicketCheckout } from '@/lib/payments/checkout.service';
 import { PaymentInputError, paymentService } from '@/lib/payments/payment.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -26,6 +26,9 @@ const SERVICE_FEATURE: Record<CreatePaymentInput['targetType'], Feature | null> 
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
+    // Lot 9 quater (A2 : AUD-03, G-36) : numéro prouvé par un code SMS exigé avant toute action qui donne quelque chose
+    const unverified = requireVerifiedPhone(session.user);
+    if (unverified) return unverified;
     let body: unknown;
     try {
         body = await req.json();

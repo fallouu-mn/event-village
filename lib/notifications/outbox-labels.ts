@@ -165,6 +165,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_SMS_DAILY_THRESHOLD: 'Volume de SMS indispensables élevé',
     ADMIN_SMS_CAP_GLOBAL: 'Plafond de SMS atteint',
     ADMIN_SMS_CAP_NON_OTP: 'Quota de SMS hors codes atteint',
+    ADMIN_SMS_CAP_NEW_NUMBERS: 'Codes d’inscription : part du jour atteinte',
     ADMIN_SMS_OPTIONAL_80: 'SMS optionnels à 80 % du plafond',
     ADMIN_SMS_FORECAST: 'Rappels de demain au-delà du budget SMS',
     OTP_LOGIN: 'Code de connexion',

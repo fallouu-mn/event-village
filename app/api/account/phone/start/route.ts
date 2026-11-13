@@ -66,7 +66,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
             });
         }
 
-        const reserved = await reserveSms(phone, { category: 'OTP', ip: getClientIp(req) });
+        const reserved = await reserveSms(phone, { category: 'OTP', audience: 'ACCOUNT', ip: getClientIp(req) });
         if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
         const code = randomInt(100000, 1000000).toString();

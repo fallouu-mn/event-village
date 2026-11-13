@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { noStore } from '@/lib/auth/account-sync';
-import { PasswordCheckUnavailable, verifyAccountPassword } from '@/lib/auth/password-confirm';
+import { applySessionCookies, PasswordCheckUnavailable, serverPasswordSignIn, verifyAccountPassword, type SessionCookie } from '@/lib/auth/password-confirm';
+import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
@@ -64,6 +65,15 @@ async function updateOwnPassword(accessToken: string, password: string): Promise
     return { code, message: `HTTP ${res.status} ${message}` };
 }
 
+/** Identifiant de connexion du compte (adresse, sinon numéro), relu chez GoTrue. */
+async function loginIdentityOf(userId: string): Promise<{ email: string } | { phone: string }> {
+    const { data, error } = await getServiceRoleClient().auth.admin.getUserById(userId);
+    if (error || !data?.user) throw new PasswordCheckUnavailable(`compte de connexion illisible : ${error?.message ?? 'absent'}`);
+    if (data.user.email) return { email: data.user.email };
+    if (data.user.phone) return { phone: data.user.phone };
+    throw new PasswordCheckUnavailable('compte de connexion sans identifiant');
+}
+
 async function handle(req: NextRequest): Promise<NextResponse> {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
@@ -119,7 +129,28 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         }
 
         const supabase = getServiceRoleClient();
-        const updateErr = await updateOwnPassword(current.accessToken, newPassword);
+        // Lot 9 quater (A3 : AUD-02) : la base refuse tout changement de mot de passe sans permis posé par une route qui
+        // a vérifié l'ancien (ici, juste au-dessus).
+        await grantAuthWritePermit(user.id, 'PASSWORD');
+        let keepSessionId = current.sessionId;
+        let freshCookies: SessionCookie[] | null = null;
+        let updateErr = await updateOwnPassword(current.accessToken, newPassword);
+        if (updateErr?.code === 'reauthentication_needed') {
+            // secure_password_change (lot 9 quater) : une session ouverte depuis plus de 24 h ne change plus le mot de
+            // passe par GoTrue. L'ancien vient d'être vérifié : l'API d'administration le pose (elle ferme toutes les
+            // sessions), puis une session neuve est ouverte côté serveur avec le nouveau, et seule celle-ci est gardée.
+            const { error: adminErr } = await supabase.auth.admin.updateUserById(user.id, { password: newPassword });
+            updateErr = adminErr ? { code: adminErr.code, message: adminErr.message } : null;
+            if (!updateErr) {
+                const identity = await loginIdentityOf(user.id);
+                const signIn = await serverPasswordSignIn(req, identity, newPassword);
+                if (!signIn.ok) {
+                    return apiFailure(CONTEXT, new Error(`session neuve après le changement de ${user.id} : ${signIn.reason}`), FALLBACK);
+                }
+                keepSessionId = signIn.sessionId;
+                freshCookies = signIn.cookies;
+            }
+        }
         if (updateErr) {
             if (updateErr.code === 'weak_password') {
                 return NextResponse.json(
@@ -131,7 +162,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         }
 
         const { data, error } = await supabase.rpc('account_password_finalize', {
-            p: { user_id: user.id, keep_session_id: current.sessionId },
+            p: { user_id: user.id, keep_session_id: keepSessionId },
         });
         const reply = data as { ok?: boolean; code?: string } | null;
         if (error || reply?.ok !== true) {
@@ -140,7 +171,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
             return apiFailure(CONTEXT, SESSIONS_NOT_REVOKED, FALLBACK);
         }
 
-        return NextResponse.json({ ok: true, message: SUCCESS_TEXT });
+        const okResponse = NextResponse.json({ ok: true, message: SUCCESS_TEXT });
+        return freshCookies ? applySessionCookies(okResponse, freshCookies) : okResponse;
     } catch (err: unknown) {
         if (err instanceof PasswordCheckUnavailable) {
             console.error(`[${CONTEXT}]`, err.message);

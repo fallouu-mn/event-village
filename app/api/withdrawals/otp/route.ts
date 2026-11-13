@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomInt } from 'crypto';
 import { z } from 'zod';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
-import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner, requireVerifiedPhone } from '@/lib/auth/session';
 import { storeOtp } from '@/lib/auth/otp-store';
 import { mTargetService } from '@/lib/sms/mtarget.service';
 import { reserveSms } from '@/lib/sms/sms-guard';
@@ -75,6 +75,9 @@ async function quoteOrRefusal(userId: string, account: string, amount: number): 
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
+    // Lot 9 quater (A2 : AUD-03, G-36) : numéro prouvé par un code SMS exigé avant toute action qui donne quelque chose
+    const unverified = requireVerifiedPhone(session.user);
+    if (unverified) return unverified;
     let body: unknown;
     try {
         body = await req.json();
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
 
     const phone = normalizePhoneNumber(session.user.phone);
 
-    const reserved = await reserveSms(phone, { category: 'OTP', ip: getClientIp(req) });
+    const reserved = await reserveSms(phone, { category: 'OTP', audience: 'ACCOUNT', ip: getClientIp(req) });
     if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
     const code = randomInt(100000, 1000000).toString();

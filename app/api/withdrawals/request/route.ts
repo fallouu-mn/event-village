@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
+import { requireActiveSession, serverIsPartner, requireVerifiedPhone } from '@/lib/auth/session';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
@@ -43,6 +43,9 @@ const REFUSAL_STATUS: Record<string, number> = {
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
+    // Lot 9 quater (A2 : AUD-03, G-36) : numéro prouvé par un code SMS exigé avant toute action qui donne quelque chose
+    const unverified = requireVerifiedPhone(session.user);
+    if (unverified) return unverified;
     const key = req.headers.get('idempotency-key')?.trim() ?? '';
     if (!IDEMPOTENCY_KEY.test(key)) {
         return NextResponse.json({ error: 'En-tête Idempotency-Key obligatoire.', code: 'IDEMPOTENCY_KEY_REQUIRED' }, { status: 400 });

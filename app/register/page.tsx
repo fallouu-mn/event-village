@@ -27,7 +27,7 @@ import { safeInternalPath } from '@/lib/auth/safe-redirect';
  *     visible (lot 9 bis, G.47) ; le code de parrainage seul reste sous « Plus d'options ». Renvoi du code après le
  *     délai servi par le serveur (resend_after).
  * Puis connexion par signInWithPassword avec l'email du compte rendu par la route : l'adresse technique
- * `<numéro>@eventvillage.sn` (lot 9 bis, R87 : l'adresse saisie attend sa vérification dans users.email_pending et
+ * une adresse technique (lot 9 quater : « u…@comptes.eventvillage.invalid », jamais tirée du numéro ; lot 9 bis, R87 : l'adresse saisie attend sa vérification dans users.email_pending et
  * n'est jamais identifiant de connexion avant), et redirection vers ?redirect= (chemin interne seulement, jamais
  * « //… »), conservé depuis la connexion.
  * Adresse saisie : la page ne redirige pas tout de suite, elle dit le sort du lien de vérification (envoyé, valable
@@ -282,9 +282,13 @@ export default function RegisterPage() {
 
             // Compte créé (numéro vérifié) : ouverture de la session avec l'email du compte, l'adresse technique tant
             // que l'adresse saisie n'est pas vérifiée (R87).
-            const accountEmail = typeof result.body?.email === 'string' && result.body.email
-                ? result.body.email
-                : `${confirmedPhone.replace('+', '')}@eventvillage.sn`;
+            // Lot 9 quater (A4 : AUD-19) : l'adresse technique n'est plus tirée du numéro ; elle vient de la réponse.
+            const accountEmail = typeof result.body?.email === 'string' && result.body.email ? result.body.email : null;
+            if (!accountEmail) {
+                console.error('[RegisterPage] réponse d’inscription sans identifiant de connexion');
+                setSignInFailed(true);
+                return;
+            }
             const pendingEmail = typeof result.body?.email_pending === 'string' && result.body.email_pending ? result.body.email_pending : null;
             const notice = pendingEmail ? emailNoticeOf(result.body?.email_verification, pendingEmail) : null;
             setEmailNotice(notice);

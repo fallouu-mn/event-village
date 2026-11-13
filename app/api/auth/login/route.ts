@@ -8,6 +8,7 @@ import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { normalizePhoneNumber, phoneStorageForms } from '@/lib/validations/auth';
+import { controllerNotActivatedResponse, isControllerActivationPending } from '@/lib/auth/controller-activation';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,17 +49,34 @@ function refusalResponse(code: string): NextResponse {
  * Identifiant de connexion de Supabase Auth pour un numéro saisi : lu côté serveur, jamais rendu. `null` si aucun
  * compte ne porte ce numéro.
  */
-async function loginIdentityOfPhone(raw: string): Promise<{ email: string } | { phone: string } | null> {
+type LoginIdentity = ({ email: string } | { phone: string }) & { pendingController: boolean };
+
+/** Lit le compte d'authentification ; null s'il n'a ni adresse ni numéro. */
+async function loginIdentityOfUser(userId: string): Promise<LoginIdentity | null> {
+    const { data: authData, error: authErr } = await getServiceRoleClient().auth.admin.getUserById(userId);
+    if (authErr || !authData?.user) throw new PasswordCheckUnavailable(`compte de connexion illisible : ${authErr?.message ?? 'aucun compte'}`);
+    const pendingController = isControllerActivationPending(authData.user);
+    if (authData.user.email) return { email: authData.user.email, pendingController };
+    if (authData.user.phone) return { phone: authData.user.phone, pendingController };
+    return null;
+}
+
+async function loginIdentityOfPhone(raw: string): Promise<LoginIdentity | null> {
     const phone = normalizePhoneNumber(raw);
     const supabase = getServiceRoleClient();
     const { data, error } = await supabase.from('users').select('id').in('phone', phoneStorageForms(phone)).limit(1).maybeSingle();
     if (error) throw new PasswordCheckUnavailable(`compte du numéro illisible : ${error.message}`);
     if (!data) return null;
-    const { data: authData, error: authErr } = await supabase.auth.admin.getUserById(String(data.id));
-    if (authErr || !authData?.user) throw new PasswordCheckUnavailable(`compte de connexion illisible : ${authErr?.message ?? 'aucun compte'}`);
-    if (authData.user.email) return { email: authData.user.email };
-    if (authData.user.phone) return { phone: authData.user.phone };
-    return null;
+    return loginIdentityOfUser(String(data.id));
+}
+
+/** Identifiant saisi sous forme d'adresse : compte relu dans public.users (adresse réelle vérifiée). */
+async function loginIdentityOfEmail(email: string): Promise<LoginIdentity | null> {
+    const { data, error } = await getServiceRoleClient().from('users').select('id').eq('email', email).limit(1).maybeSingle();
+    if (error) throw new PasswordCheckUnavailable(`compte de l’adresse illisible : ${error.message}`);
+    if (!data) return { email, pendingController: false };
+    const identity = await loginIdentityOfUser(String(data.id));
+    return identity ? { email, pendingController: identity.pendingController } : { email, pendingController: false };
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {
@@ -89,11 +107,13 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
     try {
         const identity = identifier.includes('@')
-            ? { email: identifier.toLowerCase() }
+            ? await loginIdentityOfEmail(identifier.toLowerCase())
             : await loginIdentityOfPhone(identifier);
         if (!identity) return invalidCredentials();
+        // Lot 9 quater (A5 : G-97) : compte contrôleur invité pas encore activé : aucune connexion avant l'activation
+        if (identity.pendingController) return controllerNotActivatedResponse();
 
-        const signIn = await serverPasswordSignIn(req, identity, password);
+        const signIn = await serverPasswordSignIn(req, 'email' in identity ? { email: identity.email } : { phone: identity.phone }, password);
         if (!signIn.ok) return signIn.reason === 'INVALID_CREDENTIALS' ? invalidCredentials() : refusalResponse(signIn.code);
         return applySessionCookies(NextResponse.json({ ok: true }), signIn.cookies);
     } catch (err) {

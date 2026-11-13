@@ -257,12 +257,29 @@ export default function ResetPasswordPage() {
         setIsLoading(true);
 
         try {
+            // Lot 9 quater (A3 : G-04) : le mot de passe est posé par le serveur (POST /api/auth/reset-password), qui
+            // n'accepte qu'une session de récupération, applique la règle commune, révoque toutes les sessions et fait
+            // partir l'avis « mot de passe modifié ». L'appareil se détache des notifications push AVANT, tant que la
+            // session authentifie encore le retrait (erreur journalisée par detachPushSubscription).
             const supabase = getBrowserClient();
-            const { error } = await supabase.auth.updateUser({ password });
-
-            if (error) {
-                console.error('[ResetPassword] mise à jour refusée par Supabase Auth :', error.code ?? error.status, error.message);
-                recordFailedAttempt(passwordUpdateRefusalMessage(error.name === 'AuthSessionMissingError' ? 'session_not_found' : error.code));
+            const currentSession = (await supabase.auth.getSession()).data.session;
+            if (!currentSession?.access_token) {
+                recordFailedAttempt(passwordUpdateRefusalMessage('session_not_found'));
+                return;
+            }
+            await detachPushSubscription();
+            const res = await fetch('/api/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentSession.access_token}` },
+                body: JSON.stringify({ password }),
+            });
+            const body = await res.json().catch(() => ({})) as { error?: string; code?: string };
+            if (!res.ok) {
+                console.error('[ResetPassword] mise à jour refusée :', res.status, body.code ?? '');
+                const code = body.code === 'WEAK_PASSWORD' ? 'weak_password'
+                    : (res.status === 401 || body.code === 'RECOVERY_SESSION_REQUIRED') ? 'session_not_found'
+                    : res.status === 429 ? 'over_request_rate_limit' : undefined;
+                recordFailedAttempt(passwordUpdateRefusalMessage(code));
                 return;
             }
 
@@ -282,20 +299,8 @@ export default function ResetPasswordPage() {
                 storageWarning('effacement du verrou', err);
             }
 
-            // Lot 6 (contrat F4) : l'appareil ne reçoit plus les notifications push du compte après la
-            // déconnexion. Détaché AVANT la révocation globale, tant que la session authentifie encore le
-            // retrait côté serveur (erreur journalisée par detachPushSubscription, la déconnexion continue).
-            await detachPushSubscription();
-
-            // Révoquer TOUTES les sessions (tous appareils) via admin API
-            const currentSession = (await supabase.auth.getSession()).data.session;
-            if (currentSession?.access_token) {
-                await fetch('/api/auth/sign-out-global', {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${currentSession.access_token}` },
-                });
-            }
-            await supabase.auth.signOut();
+            // Toutes les sessions sont déjà révoquées par le serveur : on ferme la session locale du navigateur.
+            await supabase.auth.signOut({ scope: 'local' });
 
             toast.success('Mot de passe mis à jour avec succès. Veuillez vous connecter.');
 

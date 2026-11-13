@@ -5,16 +5,15 @@
  */
 import { NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { isTechnicalAddress } from '@/lib/notifications/channels';
+import { technicalEmailFor } from '@/lib/auth/technical-email';
 
-const TECHNICAL_EMAIL = /^[0-9]+@eventvillage\.sn$/;
-
+/**
+ * Adresse technique (lot 9 quater, A4 : ancien domaine eventvillage.sn et domaine réservé .invalid). L'adresse
+ * technique n'est plus tirée du numéro : lib/auth/technical-email.ts.
+ */
 export function isTechnicalEmail(email: string): boolean {
-    return TECHNICAL_EMAIL.test(email);
-}
-
-/** Email technique d'un numéro, celui d'une inscription sans adresse (app/api/auth/register/route.ts). */
-export function technicalEmailOf(phone: string): string {
-    return `${phone.replace('+', '')}@eventvillage.sn`;
+    return isTechnicalAddress(email);
 }
 
 /** Toute réponse des routes du compte est hors cache (contrat 4). */
@@ -86,7 +85,7 @@ export async function compensateAuthIdentity(userId: string, label: string, fiel
     if (readErr) return compensationFailed(userId, label, `relecture du profil : ${readErr.message}`);
     if (!row) return compensationFailed(userId, label, 'profil absent à la relecture');
     const phone = row.phone as string | null;
-    const email = (row.email as string | null) ?? (phone ? technicalEmailOf(phone) : null);
+    const email = (row.email as string | null) ?? technicalEmailFor(userId);
     if (fields === 'phone_email' && !phone) return compensationFailed(userId, label, 'numéro NULL à la relecture : non restituable par l’API');
     if (!email) return compensationFailed(userId, label, 'email NULL à la relecture');
 

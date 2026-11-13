@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
+import { phoneStorageForms, StrongPasswordSchema, toSenegaleseE164 } from '@/lib/validations/auth';
+import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
+import { CONTROLLER_ACTIVATION_KEY, isControllerActivationPending } from '@/lib/auth/controller-activation';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
@@ -11,13 +13,11 @@ import { addUserRole } from '@/lib/auth/roles';
 
 export const dynamic = 'force-dynamic';
 
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
-
+// Lot 9 quater (A5 : G-31) : l'activation applique la règle commune du mot de passe (StrongPasswordSchema)
 const SetupSchema = z.object({
     phone:        z.string().min(8, 'Numéro de téléphone requis.'),
     otp_code:     z.string().length(6, 'Le code doit comporter 6 chiffres.'),
-    new_password: z.string().min(8, 'Le mot de passe doit comporter au moins 8 caractères.')
-        .regex(PASSWORD_REGEX, 'Le mot de passe doit contenir au moins une majuscule, une minuscule et un chiffre.'),
+    new_password: z.string().max(200, 'Mot de passe trop long.').pipe(StrongPasswordSchema),
 });
 
 // POST /api/controller/setup
@@ -123,7 +123,8 @@ export async function POST(req: NextRequest) {
         // Si le compte n'est pas un compte temporaire ("coquille") créé lors d'une première invitation,
         // c'est un compte utilisateur établi qui possède déjà ses propres identifiants.
         // /controller/setup refuse d'écraser le mot de passe existant et invite à se connecter.
-        const isTemporaryShellAccount = authUser.user_metadata?.is_temporary_controller_account === true;
+        // Lot 9 quater (A3 : AUD-02) : marque lue dans app_metadata (service_role seul), jamais dans user_metadata
+        const isTemporaryShellAccount = isControllerActivationPending(authUser);
         if (!isTemporaryShellAccount) {
             return NextResponse.json({
                 error: 'Ce compte possède déjà un mot de passe actif. Veuillez vous connecter avec vos identifiants existants.',
@@ -154,12 +155,20 @@ export async function POST(req: NextRequest) {
         //    Lot 9 bis (R29, reste S3) : deux appels, le mot de passe d'abord, pendant que le compte est encore marqué
         //    coquille : le trigger notif_on_password_changed (M09) n'émet pas PASSWORD_CHANGED pour cette activation.
         //    Un échec du second appel laisse le compte coquille (une nouvelle activation reste possible) et est dit.
+        //    Lot 9 quater (A3) : permis PASSWORD posé avant (la base refuse tout changement de mot de passe sans lui) ;
+        //    marque retirée de app_metadata (service_role seul).
+        try {
+            await grantAuthWritePermit(profile.id, 'PASSWORD');
+        } catch (permitErr) {
+            console.error(`[controller/setup] permis du mot de passe (code ${otpCheck.id} déjà consommé) :`, permitErr instanceof Error ? permitErr.message : String(permitErr));
+            return NextResponse.json({
+                error: 'Impossible de définir le mot de passe. Demandez une nouvelle invitation à votre organisateur.',
+                code: 'PASSWORD_SET_FAILED',
+            }, { status: 500 });
+        }
         const { error: pwdErr } = await supabase.auth.admin.updateUserById(profile.id, { password: new_password })
             .then(async (first) => first.error ? first : supabase.auth.admin.updateUserById(profile.id, {
-                user_metadata: {
-                    ...(authUser.user_metadata || {}),
-                    is_temporary_controller_account: false,
-                },
+                app_metadata: { [CONTROLLER_ACTIVATION_KEY]: false },
             }));
 
         if (pwdErr) {

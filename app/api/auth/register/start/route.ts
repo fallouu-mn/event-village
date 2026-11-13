@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
         // Réservation anti-abus (numéro, IP, plafond global) avant d'enregistrer le code : un refus ne remplace
         // pas le code en attente du titulaire.
-        const reserved = await reserveSms(phone, { category: 'OTP', ip: getClientIp(req) });
+        const reserved = await reserveSms(phone, { category: 'OTP', audience: 'NEW_NUMBER', ip: getClientIp(req) });
         if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
         const code = randomInt(100000, 1000000).toString();

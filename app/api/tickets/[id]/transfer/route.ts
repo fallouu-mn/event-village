@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireRecentPassword } from '@/lib/auth/password-confirm';
-import { requireActiveSession } from '@/lib/auth/session';
+import { requireActiveSession, requireVerifiedPhone } from '@/lib/auth/session';
 import { normalizeRecipient } from '@/lib/validations/transfer';
 import { TicketTransferService, TRANSFER_PHONE, type TransferRefusal } from '@/lib/tickets/ticket-transfer.service';
 
@@ -27,6 +27,9 @@ export async function POST(
 ) {
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
+    // Lot 9 quater (A2 : AUD-03, G-36) : numéro prouvé par un code SMS exigé avant toute action qui donne quelque chose
+    const unverified = requireVerifiedPhone(activeSession.user);
+    if (unverified) return unverified;
     const user = activeSession.user;
     // Lot 9 bis (R57, B35) : mot de passe saisi depuis moins de 10 minutes sur cette session, avant tout verrou ou SMS.
     const recent = await requireRecentPassword(req, user.id);

@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
-import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { z } from 'zod';
-import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
+import { getServerSessionUser, requireActiveSession, serverHasAnyRole } from '@/lib/auth/session';
+import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
+import { PasswordCheckUnavailable, verifyAccountPassword } from '@/lib/auth/password-confirm';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
+import { quotaRefusalResponse } from '@/lib/security/quota-http';
+import { StrongPasswordSchema } from '@/lib/validations/auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 
@@ -73,23 +78,22 @@ export async function GET(req: NextRequest) {
     }
 }
 
+// Lot 9 quater (A7 : AUD-12) : même règle que « Changer mon mot de passe » (règle commune, 200 caractères au plus)
 const ChangePasswordSchema = z.object({
-    current_password: z.string().min(1, 'Mot de passe actuel requis.'),
-    new_password: z
-        .string()
-        .min(8, 'Le mot de passe doit comporter au moins 8 caractères.')
-        .regex(
-            /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/,
-            'Le mot de passe doit contenir au moins une majuscule, une minuscule et un chiffre.'
-        ),
+    current_password: z.string().min(1, 'Mot de passe actuel requis.').max(200, 'Mot de passe trop long.'),
+    new_password: z.string().max(200, 'Mot de passe trop long.').pipe(StrongPasswordSchema),
 });
 
 // PATCH /api/controller/profile
-// Changement de mot de passe — valide l'ancien avant de mettre à jour
+// Changement de mot de passe — valide l'ancien avant de mettre à jour.
+// Lot 9 quater (A7 : AUD-12) : compte ACTIF exigé (requireActiveSession), même quota par compte que
+// /api/account/password (password_confirm_account, PASSWORD_CONFIRM_PER_ACCOUNT_15MIN, chaque essai compte), ancien mot
+// de passe vérifié sans session laissée (verifyAccountPassword), permis PASSWORD avant la mise à jour.
 export async function PATCH(req: NextRequest) {
     try {
-        const user = await getServerSessionUser(req);
-        if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
+        const session = await requireActiveSession(req);
+        if (session.response) return session.response;
+        const { user } = session;
         if (!serverHasAnyRole(user, [...ALLOWED_ROLES])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
@@ -106,50 +110,33 @@ export async function PATCH(req: NextRequest) {
         const { current_password, new_password } = parse.data;
         const supabase = getServiceRoleClient();
 
-        // 1. Récupérer le numéro de téléphone pour la vérification de l'ancien mot de passe
-        const { data: profile, error: profileErr } = await supabase
-            .from('users')
-            .select('phone')
-            .eq('id', user.id)
-            .maybeSingle();
-
-        // Lot 8 (L56) : même règle que GET, une panne n'est pas un profil absent.
-        if (profileErr) return apiFailure('PATCH /api/controller/profile, profil', profileErr, PROFILE_FALLBACK);
-        if (!profile?.phone) {
-            return NextResponse.json({ error: 'Profil introuvable.' }, { status: 404 });
-        }
-
-        // 2. Résoudre l'email Supabase Auth depuis le numéro de téléphone
-        const { data: authUser, error: authUserErr } = await supabase.auth.admin.getUserById(user.id);
-        if (authUserErr) {
-            return apiFailure('PATCH /api/controller/profile, compte de connexion', authUserErr, {
-                message: 'Impossible de vérifier l\'identité.',
-                code: 'IDENTITY_UNAVAILABLE',
+        const quota = await reserveQuota(
+            [{ scope: 'password_confirm_account', bucket: user.id, windowSecs: 900, max: getServerEnv().PASSWORD_CONFIRM_PER_ACCOUNT_15MIN }],
+            'changement du mot de passe (contrôleur)',
+        );
+        if (!quota.allowed) {
+            return quotaRefusalResponse(quota, {
+                error: 'Trop de tentatives. Réessayez dans quelques minutes.',
+                code: 'PASSWORD_CONFIRM_RATE_LIMITED',
             });
         }
-        const loginEmail = authUser?.user?.email;
 
-        if (!loginEmail) {
-            return NextResponse.json({ error: 'Impossible de vérifier l\'identité.' }, { status: 500 });
+        let ok: boolean;
+        try {
+            ok = await verifyAccountPassword(user.id, current_password);
+        } catch (err) {
+            if (err instanceof PasswordCheckUnavailable) {
+                console.error('[PATCH /api/controller/profile]', err.message);
+                return NextResponse.json({ error: 'Impossible de vérifier l’identité.', code: 'IDENTITY_UNAVAILABLE' }, { status: 503 });
+            }
+            throw err;
         }
-
-        // 3. Valider l'ancien mot de passe via signInWithPassword (vrai check côté Supabase Auth)
-        const { createClient } = await import('@supabase/supabase-js');
-        const anonClient = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            { global: { fetch: noStoreFetch }, auth: { persistSession: false, autoRefreshToken: false } }
-        );
-        const { error: signInErr } = await anonClient.auth.signInWithPassword({
-            email: loginEmail,
-            password: current_password,
-        });
-
-        if (signInErr) {
+        if (!ok) {
             return NextResponse.json({ error: 'Mot de passe actuel incorrect.' }, { status: 400 });
         }
 
-        // 4. Mettre à jour avec le nouveau mot de passe
+        // Mise à jour avec le nouveau mot de passe (permis exigé par la base, lot 9 quater A3)
+        await grantAuthWritePermit(user.id, 'PASSWORD');
         const { error: updateErr } = await supabase.auth.admin.updateUserById(user.id, {
             password: new_password,
         });

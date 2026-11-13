@@ -94,12 +94,14 @@ export function seedPassword({ fileEnv, shellEnv }: Pick<SeedPreconditions, 'fil
 
 interface AuthUserLike {
     email?: string | null;
+    /** Lot 9 quater (A3) : la marque du seed est lue dans app_metadata (service_role seul), jamais dans user_metadata. */
+    app_metadata?: Record<string, unknown> | null;
     user_metadata?: Record<string, unknown> | null;
 }
 
-/** Compte réel : sans la marque du seed et hors de son domaine. */
+/** Compte réel : sans la marque du seed (app_metadata) et hors de son domaine. */
 export function countRealAccounts(users: AuthUserLike[]): number {
-    return users.filter((u) => u.user_metadata?.is_essai_fixture !== true && !(u.email ?? '').toLowerCase().endsWith(`@${SEED_DOMAIN}`)).length;
+    return users.filter((u) => u.app_metadata?.is_essai_fixture !== true && !(u.email ?? '').toLowerCase().endsWith(`@${SEED_DOMAIN}`)).length;
 }
 
 /**
@@ -221,7 +223,8 @@ async function ensureAccount(client: SupabaseClient, spec: AccountSeed, password
     }
     const created = await client.auth.admin.createUser({
         email: spec.email, password, email_confirm: true, phone: spec.phone, phone_confirm: true,
-        user_metadata: { first_name: spec.firstName, last_name: spec.lastName, phone: spec.phone, is_essai_fixture: true },
+        user_metadata: { first_name: spec.firstName, last_name: spec.lastName, phone: spec.phone },
+        app_metadata: { is_essai_fixture: true },
     });
     if (created.error || !created.data.user) throw new Error(`compte ${spec.email} : ${created.error?.message ?? 'utilisateur absent'}`);
     const userId = created.data.user.id;

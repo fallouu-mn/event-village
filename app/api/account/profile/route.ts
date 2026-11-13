@@ -5,8 +5,8 @@ import {
     compensateAuthIdentity,
     identityTaken,
     noStore,
-    technicalEmailOf,
 } from '@/lib/auth/account-sync';
+import { technicalEmailFor } from '@/lib/auth/technical-email';
 import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
 import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
@@ -53,8 +53,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     if (!typedEmail && !user.phone) {
         return NextResponse.json({ error: 'Saisissez une adresse email : aucun numéro n’est associé à votre compte.', code: 'INVALID_FIELD', field: 'email' }, { status: 400 });
     }
-    const email = typedEmail || technicalEmailOf(user.phone as string);
     const currentEmail = user.email ?? null;
+    // Lot 9 quater (A4 : AUD-19) : adresse vidée → adresse technique actuelle du compte si elle l'est déjà, sinon
+    // l'adresse technique tirée de son identifiant (jamais du numéro).
+    const email = typedEmail
+        || (currentEmail && isTechnicalAddress(currentEmail) ? currentEmail.toLowerCase() : technicalEmailFor(user.id));
     // Lot 9 bis (R87) : seule l'adresse vidée (technique) s'écrit tout de suite dans auth.users ; une adresse saisie
     // attend sa vérification (users.email_pending) et n'atteint auth.users qu'à la validation du lien.
     const authChange = !typedEmail && (currentEmail ?? '').toLowerCase() !== email;

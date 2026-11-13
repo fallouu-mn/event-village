@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession } from '@/lib/auth/session';
+import { requireActiveSession, requireVerifiedPhone } from '@/lib/auth/session';
 import { startTicketCheckout } from '@/lib/payments/checkout.service';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +14,9 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
+    // Lot 9 quater (A2 : AUD-03, G-36) : numéro prouvé par un code SMS exigé avant toute action qui donne quelque chose
+    const unverified = requireVerifiedPhone(session.user);
+    if (unverified) return unverified;
     let body: unknown;
     try {
         body = await req.json();

@@ -1287,6 +1287,16 @@ const CATALOG = {
         }),
         sample: { day: '2026-11-02', cap: 1_000, limit: 700 },
     }),
+    // Lot 9 quater (A8 : AUD-05) : part quotidienne des codes vers un numéro sans compte (inscriptions) atteinte.
+    ADMIN_SMS_CAP_NEW_NUMBERS: define('ADMIN_SMS_CAP_NEW_NUMBERS', {
+        label: 'Codes d’inscription : part du jour atteinte', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
+        link: () => '/admin/notifications',
+        inApp: (d) => ({
+            title: 'Codes d’inscription : part du jour atteinte',
+            content: `Les ${formatInteger(count(d, 'limit'))} codes du jour vers des numéros sans compte sont partis : plus aucune inscription ne reçoit de code jusqu'à minuit (UTC, heure de Dakar). Les codes des comptes existants partent toujours. Vérifiez s'il s'agit d'inscriptions en masse.`,
+        }),
+        sample: { day: '2026-11-13', cap: 1_000, limit: 90 },
+    }),
     // Lot 7 (7.0 a, D15) : alerte à 80 % du budget des SMS optionnels (notif.sms_optional_daily_cap), une fois par
     // jour de Dakar, mise en file par notification_daily_checks.
     ADMIN_SMS_OPTIONAL_80: define('ADMIN_SMS_OPTIONAL_80', {

@@ -32,8 +32,12 @@ export function emailChannelAvailable(): boolean {
     return false;
 }
 
-/** Lot 9 bis (B100) : adresse technique, jamais destinataire ni saisissable (domaine eventvillage.sn et sous-domaines). */
-export const TECHNICAL_EMAIL_RE = /@([a-z0-9-]+\.)*eventvillage\.sn$/i;
+/**
+ * Lot 9 bis (B100) : adresse technique, jamais destinataire ni saisissable (domaine eventvillage.sn et sous-domaines).
+ * Lot 9 quater (A4 : AUD-19) : aussi tout domaine réservé `.invalid` (adresse technique des comptes à numéro,
+ * « u…@comptes.eventvillage.invalid », et comptes de démonstration) ; même règle que is_technical_email en base.
+ */
+export const TECHNICAL_EMAIL_RE = /@(([a-z0-9-]+\.)*eventvillage\.sn|([a-z0-9-]+\.)*invalid)$/i;
 
 /** true pour une adresse technique (B100). */
 export function isTechnicalAddress(address: string): boolean {

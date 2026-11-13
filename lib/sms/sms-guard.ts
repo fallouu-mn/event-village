@@ -47,6 +47,14 @@ export interface SmsContext {
      * quota par caisse et par jour (COUNTER_RECEIPT_PER_SHIFT_DAY) au lieu de la limite par compte du vendeur.
      */
     shiftId?: string | null;
+    /**
+     * Lot 9 quater (A8 : AUD-05), catégorie OTP : destinataire qui a un compte (connexion, retrait, changement de
+     * numéro, mot de passe) ou numéro SANS compte (inscription, connexion d'un numéro inconnu). Absent : NEW_NUMBER
+     * (la part la plus étroite). Un code vers un numéro sans compte tire sur son propre compteur quotidien
+     * (SMS_OTP_NEW_NUMBER_DAILY_CAP), jamais sur le plafond global : des inscriptions en masse ne bloquent plus les
+     * codes des comptes existants.
+     */
+    audience?: 'ACCOUNT' | 'NEW_NUMBER';
     /** Réservation obtenue plus tôt (routes OTP : réserver avant d'enregistrer le code). */
     reservation?: SmsReservation;
     /**
@@ -85,7 +93,9 @@ function rulesFor(recipient: string, ctx: SmsContext): QuotaRule[] {
     const env = getServerEnv();
     if ((ctx.category ?? 'TRANSACTIONAL') === 'OTP') {
         const rules: QuotaRule[] = [
-            { scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: env.SMS_GLOBAL_DAILY_CAP },
+            (ctx.audience ?? 'NEW_NUMBER') === 'ACCOUNT'
+                ? { scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: env.SMS_GLOBAL_DAILY_CAP }
+                : { scope: 'sms_otp_new_number', bucket: 'all', windowSecs: DAY, max: env.SMS_OTP_NEW_NUMBER_DAILY_CAP },
             { scope: 'sms_otp_phone', bucket: recipient, windowSecs: 900, max: env.SMS_OTP_PER_PHONE_15MIN },
             { scope: 'sms_otp_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_OTP_PER_PHONE_DAY },
         ];
@@ -115,7 +125,7 @@ function rulesFor(recipient: string, ctx: SmsContext): QuotaRule[] {
     return rules;
 }
 
-type CapKind = 'GLOBAL' | 'NON_OTP_SHARE';
+type CapKind = 'GLOBAL' | 'NON_OTP_SHARE' | 'NEW_NUMBER_SHARE';
 
 /**
  * Alerte de plafond, une fois par jour UTC et par type : journal d'audit (audit_logs) puis mise en file
@@ -124,13 +134,14 @@ type CapKind = 'GLOBAL' | 'NON_OTP_SHARE';
  * Lot 6 (J2.13) : plus aucune écriture directe de notification. L'alerte ne part jamais par SMS.
  */
 async function raiseCapAlert(kind: CapKind, context: Record<string, unknown>): Promise<void> {
-    const bucket = kind === 'GLOBAL' ? 'global_cap' : 'non_otp_share';
+    const bucket = kind === 'GLOBAL' ? 'global_cap' : kind === 'NON_OTP_SHARE' ? 'non_otp_share' : 'new_number_share';
     const first = await reserveQuota([{ scope: 'sms_alert', bucket, windowSecs: DAY, max: 1 }], 'alerte plafond SMS');
     if (!first.allowed) return; // déjà signalé aujourd'hui (ou garde indisponible, déjà journalisé)
     const env = getServerEnv();
     const cap = env.SMS_GLOBAL_DAILY_CAP;
-    const limit = kind === 'GLOBAL' ? cap : nonOtpGlobalCap();
-    const action = kind === 'GLOBAL' ? 'SMS_GLOBAL_DAILY_CAP_REACHED' : 'SMS_NON_OTP_DAILY_SHARE_REACHED';
+    const limit = kind === 'GLOBAL' ? cap : kind === 'NON_OTP_SHARE' ? nonOtpGlobalCap() : env.SMS_OTP_NEW_NUMBER_DAILY_CAP;
+    const action = kind === 'GLOBAL' ? 'SMS_GLOBAL_DAILY_CAP_REACHED'
+        : kind === 'NON_OTP_SHARE' ? 'SMS_NON_OTP_DAILY_SHARE_REACHED' : 'SMS_NEW_NUMBER_DAILY_SHARE_REACHED';
     console.error(`[SMS_QUOTA] ${action} (${limit} SMS sur un plafond de ${cap})`);
     const supabase = getServiceRoleClient();
     const { error: auditErr } = await supabase.from('audit_logs').insert({
@@ -141,7 +152,7 @@ async function raiseCapAlert(kind: CapKind, context: Record<string, unknown>): P
     });
     if (auditErr) console.error('[SMS_QUOTA] journalisation de l’alerte impossible :', auditErr.message);
     const day = new Date().toISOString().slice(0, 10);
-    const type = kind === 'GLOBAL' ? 'ADMIN_SMS_CAP_GLOBAL' : 'ADMIN_SMS_CAP_NON_OTP';
+    const type = kind === 'GLOBAL' ? 'ADMIN_SMS_CAP_GLOBAL' : kind === 'NON_OTP_SHARE' ? 'ADMIN_SMS_CAP_NON_OTP' : 'ADMIN_SMS_CAP_NEW_NUMBERS';
     const { data, error } = await supabase.rpc('notification_admin_alert', {
         p: { type, ref: day, data: { ...context, day, cap, limit } },
     });
@@ -161,8 +172,8 @@ export async function reserveSms(to: string, ctx: SmsContext = {}): Promise<SmsR
     if (result.reason === 'UNAVAILABLE') {
         return { ok: false, refusal: { code: 'SMS_GUARD_UNAVAILABLE', message: 'Service SMS momentanément indisponible.' } };
     }
-    if (result.scope === 'sms_global') {
-        await raiseCapAlert(category === 'OTP' ? 'GLOBAL' : 'NON_OTP_SHARE', { category });
+    if (result.scope === 'sms_global' || result.scope === 'sms_otp_new_number') {
+        await raiseCapAlert(result.scope === 'sms_otp_new_number' ? 'NEW_NUMBER_SHARE' : category === 'OTP' ? 'GLOBAL' : 'NON_OTP_SHARE', { category });
         return {
             ok: false,
             refusal: {

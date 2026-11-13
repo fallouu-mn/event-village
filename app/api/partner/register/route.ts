@@ -15,7 +15,7 @@ import { getClientIp } from '@/lib/security/client-ip';
 import { findExistingAccount } from '@/lib/auth/existing-account';
 import { resolveRegistrationUploads } from '@/lib/partners/documents';
 import { grantUserRoles } from '@/lib/auth/roles';
-import { technicalEmailOf } from '@/lib/auth/account-sync';
+import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
 import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
         if (TECHNICAL_EMAIL_RE.test(effectiveEmail)) {
             return NextResponse.json({ error: RESERVED_EMAIL_MESSAGE, code: 'INVALID_FIELD', field: 'email' }, { status: 400 });
         }
-        const technicalEmail = technicalEmailOf(normalizedPhone);
+        const technicalEmail = newTechnicalEmail();
         const ninea = data.ninea?.trim() || null;
         const rccm = data.rccm?.trim() || null;
         if ((ninea && ninea.length > REGISTRY_ID_MAX) || (rccm && rccm.length > REGISTRY_ID_MAX)) {
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
         }
         if (otpCode === null) {
             // Appel 1 (R53) : code SMS au numéro ; rien n'est créé ni annoncé.
-            const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: clientIp });
+            const reserved = await reserveSms(normalizedPhone, { category: 'OTP', audience: 'NEW_NUMBER', ip: clientIp });
             if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
             const sentCode = randomInt(100000, 1000000).toString();

@@ -314,7 +314,8 @@ export default function ForgotPasswordPage() {
             const res = await fetch('/api/auth/verify-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: normalizedPhone, otpCode }),
+                // Lot 9 quater (A3) : objet du code dit au serveur, qui ouvre l'autorisation de récupération (15 min)
+                body: JSON.stringify({ phone: normalizedPhone, otpCode, purpose: 'PASSWORD_RESET' }),
             });
 
             const data = await res.json();

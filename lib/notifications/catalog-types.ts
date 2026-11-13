@@ -170,6 +170,7 @@ export interface TemplateData {
     ADMIN_SMS_DAILY_THRESHOLD: { day: string; count: number; threshold: number };
     ADMIN_SMS_CAP_GLOBAL: { day?: string; cap: number };
     ADMIN_SMS_CAP_NON_OTP: { day?: string; cap: number; limit: number };
+    ADMIN_SMS_CAP_NEW_NUMBERS: { day?: string; cap: number; limit: number };
     /** Lot 7 (7.0 a, D15) : 80 % du budget des SMS optionnels du jour de Dakar atteint. */
     ADMIN_SMS_OPTIONAL_80: { day: string; used: number; cap: number; threshold: number; percent: number };
     /** Lot 7 (7.0 a, D16) : rappels SMS prévus pour le lendemain au-delà du budget restant. */

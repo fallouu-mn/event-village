@@ -6,6 +6,11 @@ import { ACCOUNT_OTP_PURPOSES, otpFailureMessage, verifyStoredOtp, type OtpPurpo
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
+import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
+import { controllerNotActivatedResponse, isControllerActivationPending } from '@/lib/auth/controller-activation';
+
+/** Lot 9 quater (A3 : G-04) : durée de l'autorisation de choisir un nouveau mot de passe après le code SMS. */
+const RECOVERY_GRANT_MS = 15 * 60 * 1000;
 
 export const dynamic = 'force-dynamic';
 
@@ -101,22 +106,53 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Confirmer le téléphone dans auth.users si pas encore fait (H3: partenaire OTP)
+        // Lot 9 quater (A5 : G-97) : un compte contrôleur invité qui n'a pas encore été activé ne s'ouvre pas par code
+        // (connexion ni « Mot de passe oublié ») ; son activation passe par /controller/setup (lien reçu par SMS).
+        let authEmail: string | null = null;
         if (userProfile?.id) {
-            try {
+            const { data: authRow, error: authRowErr } = await supabase.auth.admin.getUserById(userProfile.id);
+            if (authRowErr || !authRow?.user) {
+                console.error('[API verify-otp] compte d’authentification illisible :', authRowErr?.message ?? 'absent');
+                return NextResponse.json(
+                    { error: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'PHONE_VERIFY_FAILED' },
+                    { status: 503 }
+                );
+            }
+            if (isControllerActivationPending(authRow.user)) return controllerNotActivatedResponse();
+            authEmail = authRow.user.email ?? null;
+
+            // Confirmer le téléphone dans auth.users si pas encore fait (H3: partenaire OTP)
+            if (!authRow.user.phone_confirmed_at) {
                 // Lot 9 (L40) : l'erreur est rendue sans être levée ; journalisée, réponse inchangée.
                 const { error: confirmError } = await supabase.auth.admin.updateUserById(userProfile.id, { phone_confirm: true });
                 if (confirmError) console.error('[API verify-otp] phone_confirm non enregistré :', confirmError.message);
-            } catch (confirmErr) {
-                console.warn('[API verify-otp] Impossible de confirmer phone_confirm:', confirmErr);
             }
         }
 
-        let tokenHash: string | undefined;
-        const targetEmail = userProfile?.email || `${normalizedPhone.replace('+', '')}@eventvillage.sn`;
+        // Lot 9 quater (A3 : G-04) : un code « Mot de passe oublié » ouvre une autorisation de 15 minutes, seule clé de
+        // POST /api/auth/reset-password (avec le lien email de récupération).
+        if (userProfile?.id && requested === 'PASSWORD_RESET') {
+            const { error: grantErr } = await supabase.from('account_recovery_grants').upsert({
+                user_id: userProfile.id,
+                expires_at: new Date(Date.now() + RECOVERY_GRANT_MS).toISOString(),
+            });
+            if (grantErr) {
+                console.error('[API verify-otp] autorisation de récupération non enregistrée :', grantErr.message);
+                return NextResponse.json(
+                    { error: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'PHONE_VERIFY_FAILED' },
+                    { status: 503 }
+                );
+            }
+        }
 
-        if (userProfile) {
+        // Lot 9 quater (A4 : AUD-19) : l'adresse du compte est relue (jamais tirée du numéro) ; la base n'accepte le lien
+        // de session vers une adresse technique qu'avec le permis EMAIL_LINK posé juste avant.
+        let tokenHash: string | undefined;
+        const targetEmail = authEmail ?? (userProfile?.email as string | null | undefined) ?? null;
+
+        if (userProfile && targetEmail) {
             try {
+                await grantAuthWritePermit(String(userProfile.id), 'EMAIL_LINK');
                 const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
                     type: 'magiclink',
                     email: targetEmail,

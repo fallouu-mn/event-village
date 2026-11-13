@@ -11,6 +11,21 @@ export interface ServerUser {
     status: string;
     firstName?: string;
     lastName?: string;
+    /** Lot 9 quater (A2) : date à laquelle le numéro a été prouvé par un code SMS ; null si jamais prouvé. */
+    phoneVerifiedAt?: string | null;
+}
+
+/** Lot 9 quater (A2 : AUD-03, G-36) : texte du refus d'une action qui donne quelque chose sans numéro vérifié. */
+export const PHONE_NOT_VERIFIED_MESSAGE = 'Confirmez d’abord votre numéro de téléphone.';
+
+/**
+ * Lot 9 quater (A2 : AUD-03, G-36) — défense en profondeur : billet gratuit, achat, transfert, invitation, parrainage et
+ * retrait exigent un compte dont le numéro a été prouvé par un code SMS (users.phone_verified_at non nul). Rend la
+ * réponse 403 PHONE_NOT_VERIFIED à renvoyer, ou null si le numéro est vérifié.
+ */
+export function requireVerifiedPhone(user: ServerUser): NextResponse | null {
+    if (user.phoneVerifiedAt) return null;
+    return NextResponse.json({ error: PHONE_NOT_VERIFIED_MESSAGE, code: 'PHONE_NOT_VERIFIED' }, { status: 403 });
 }
 
 export function serverHasRole(user: ServerUser, role: UserRoleType): boolean {
@@ -75,7 +90,7 @@ export async function getServerSessionUser(req: NextRequest): Promise<ServerUser
         const [{ data: profile, error: profErr }, { data: userRoles, error: rolesErr }] = await Promise.all([
             supabase
                 .from('users')
-                .select('id, email, phone, role, status, first_name, last_name')
+                .select('id, email, phone, role, status, first_name, last_name, phone_verified_at')
                 .eq('id', authUser.id)
                 .single(),
             supabase
@@ -105,6 +120,7 @@ export async function getServerSessionUser(req: NextRequest): Promise<ServerUser
             status: profile.status,
             firstName: profile.first_name,
             lastName: profile.last_name,
+            phoneVerifiedAt: (profile.phone_verified_at as string | null) ?? null,
         };
     } catch (err) {
         console.error('[getServerSessionUser] Erreur session:', err);

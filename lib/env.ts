@@ -64,6 +64,10 @@ const serverEnvSchema = z.object({
     SMS_PER_ACCOUNT_DAY: limit(30),
     // Lot 4 : part du plafond global réservée à l'OTP ; les SMS non OTP s'arrêtent à (100 − part) %
     SMS_GLOBAL_OTP_RESERVED_PERCENT: z.coerce.number().int().min(0).max(100).default(30),
+    // Lot 9 quater (A8 : AUD-05) : codes vers un numéro SANS compte (inscription, connexion d'un numéro inconnu), par
+    // jour, compteur propre qui ne tire pas sur le plafond global : des inscriptions en masse ne bloquent plus les codes
+    // des comptes existants. Défaut 90 = 30 % de la part des codes (30 % de 1 000).
+    SMS_OTP_NEW_NUMBER_DAILY_CAP: limit(90),
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Lot 2 : chaîne paiement → billet

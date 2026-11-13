@@ -8,6 +8,7 @@ import { storeOtp } from '@/lib/auth/otp-store';
 import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
+import { controllerActivationPendingById, controllerNotActivatedResponse } from '@/lib/auth/controller-activation';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,20 +57,21 @@ export async function POST(req: NextRequest) {
 
         const supabase = getServiceRoleClient();
 
+        // Compte du numéro, lu pour tout objet (lot 9 quater : part du plafond, contrôleur non activé).
+        const { data: userRecord, error: userRecordErr } = await supabase
+            .from('users')
+            .select('id, email, phone')
+            .eq('phone', normalizedPhone)
+            .maybeSingle();
+
+        // Lot 9 (A34) : une panne n'est pas un compte absent, et aucun SMS ne part.
+        if (userRecordErr) {
+            return apiFailure('POST /api/auth/send-otp, lecture du compte', userRecordErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
+        }
+
         // Si demande de réinitialisation de mot de passe, vérifier l'existence du compte
         let resetUserId: string | null = null;
         if (purpose === 'PASSWORD_RESET') {
-            const { data: userRecord, error: userRecordErr } = await supabase
-                .from('users')
-                .select('id, email, phone')
-                .eq('phone', normalizedPhone)
-                .maybeSingle();
-
-            // Lot 9 (A34) : une panne n'est pas un compte absent, et aucun SMS ne part.
-            if (userRecordErr) {
-                return apiFailure('POST /api/auth/send-otp, lecture du compte', userRecordErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
-            }
-
             // Lot 9 bis (R84, B86, D2) : même réponse neutre que la récupération par email ; un numéro sans compte ne
             // reçoit ni code ni SMS, et la réponse ne dit pas si un compte existe.
             if (!userRecord) {
@@ -78,9 +80,25 @@ export async function POST(req: NextRequest) {
             resetUserId = String(userRecord.id);
         }
 
+        // Lot 9 quater (A5 : G-97) : un compte contrôleur invité, pas encore activé, ne reçoit ni code de connexion ni
+        // code « Mot de passe oublié » : son activation passe par le lien reçu par SMS (/controller/setup).
+        if (userRecord && otpPurpose !== 'REGISTER') {
+            try {
+                if (await controllerActivationPendingById(String(userRecord.id))) return controllerNotActivatedResponse();
+            } catch (pendingErr) {
+                return apiFailure('POST /api/auth/send-otp, compte d’authentification', pendingErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
+            }
+        }
+
         // 0. Lot 1C.9 : réservation anti-abus (numéro, IP, plafond global) AVANT d'enregistrer le
         //    code : un refus ne doit pas remplacer le code en attente du titulaire du numéro.
-        const reserved = await reserveSms(normalizedPhone, { category: 'OTP', ip: getClientIp(req) });
+        //    Lot 9 quater (A8 : AUD-05) : un numéro sans compte tire sur la part des inscriptions, jamais sur le plafond
+        //    global des codes des comptes existants.
+        const reserved = await reserveSms(normalizedPhone, {
+            category: 'OTP',
+            audience: userRecord ? 'ACCOUNT' : 'NEW_NUMBER',
+            ip: getClientIp(req),
+        });
         if (!reserved.ok) return smsRefusalResponse(reserved.refusal);
 
         // 1. Génération du code OTP à 6 chiffres

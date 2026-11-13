@@ -120,6 +120,13 @@ async function main(): Promise<void> {
     const second = await readHidden('Confirmez le mot de passe : ');
     if (first !== second) throw new Error('Les deux saisies diffèrent : aucune modification.');
 
+    // Lot 9 quater (A3) : la base refuse tout changement de mot de passe sans permis à usage unique (60 s) posé juste avant
+    const { data: permit, error: permitErr } = await admin.rpc('auth_write_permit_grant', { p: { user_id: userId, kind: 'PASSWORD' } });
+    if (permitErr || (permit as { ok?: boolean } | null)?.ok !== true) {
+        const detail = permitErr?.message ?? JSON.stringify(permit);
+        writeJournal(buildJournalEntry({ projectRef: target.ref, userId, email, outcome: 'FAILED', sessionsRevoked: false, operator, detail: `permis refusé : ${detail}` }));
+        throw new Error(`Permis de changement de mot de passe refusé (migration 20261111000001 appliquée ?) : ${detail}`);
+    }
     const { error: updErr } = await admin.auth.admin.updateUserById(userId, { password: first });
     if (updErr) {
         writeJournal(buildJournalEntry({ projectRef: target.ref, userId, email, outcome: 'FAILED', sessionsRevoked: false, operator, detail: updErr.message }));

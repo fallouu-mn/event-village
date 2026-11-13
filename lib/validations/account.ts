@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
+import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 
 /** Lot 9 (9.2, contrat 4.3) : corps des routes /api/account/*. Tout identifiant du corps est ignoré : le compte vient de la session. */
 
@@ -16,7 +17,8 @@ const profileEmailSchema = z
     .toLowerCase()
     .max(254, 'Adresse email trop longue.')
     .refine((value) => value === '' || z.string().email().safeParse(value).success, 'Adresse email invalide.')
-    .refine((value) => !value.endsWith('@eventvillage.sn'), 'Cette adresse est réservée. Saisissez votre propre adresse email.');
+    // Lot 9 quater (A4) : domaine technique ancien et nouveau (.invalid), même règle que TECHNICAL_EMAIL_RE
+    .refine((value) => !TECHNICAL_EMAIL_RE.test(value), 'Cette adresse est réservée. Saisissez votre propre adresse email.');
 
 export const AccountProfileSchema = z.object({
     first_name: nameSchema('Prénom'),

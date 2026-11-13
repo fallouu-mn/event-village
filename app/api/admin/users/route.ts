@@ -7,7 +7,7 @@ import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { RoleChangeError, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
-import { technicalEmailOf } from '@/lib/auth/account-sync';
+import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
 import { emailVerificationState, sendEmailVerification, type EmailVerificationState } from '@/lib/email/verification';
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
         if (typedEmail && TECHNICAL_EMAIL_RE.test(typedEmail)) {
             return NextResponse.json({ error: RESERVED_EMAIL_MESSAGE, code: 'INVALID_FIELD', field: 'email' }, { status: 400 });
         }
-        const effectiveEmail = technicalEmailOf(normalizedPhone);
+        const effectiveEmail = newTechnicalEmail();
         const supabase = getServiceRoleClient();
 
         // 1. Création dans Supabase Auth
