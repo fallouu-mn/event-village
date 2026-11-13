@@ -87,7 +87,7 @@ Règles communes à tout le fichier :
 
      Le restant = quantité mise en vente − vendues − retenues ; il n'est jamais donné au-dessus du seuil
      (`app/api/events/[id]/route.ts:120-132`). Le seuil est commun à toute la plateforme (réponse détaillée :
-     06.2 et `reponses-W6`).
+     06.2).
    - **Achetable ?** Le module d'achat (« Choisissez vos billets », « Places et disponibilités mises à jour en direct. »)
      n'apparaît que si l'événement est Publié, pas encore fini (fin saisie, sinon début + 6 h) et qu'au moins une
      formule est en vente avec des places (`app/api/events/[id]/route.ts:93`, `:123`, `:149-150`,
@@ -157,7 +157,7 @@ Règles communes à tout le fichier :
 4. **Messages envoyés.** Aucun.
 5. **Ce que voient les autres rôles.** Identique pour tous.
 6. **Refus.** Sans objet.
-7. **Preuves et essai.** Fichiers cités ; réponse complète dans `S/guide/reponses-W6.md`. Recette : essais 3, 4, 64, 79
+7. **Preuves et essai.** Fichiers cités ; c'est la réponse aux questions « Dernières places » et « À partir de Gratuit » de la recette (00-index.md). Recette : essais 3, 4, 64, 79
    (`docs/recette-billetterie.md:355-387`, `:1419-1434`, `:1702-1721`).
 
 ## 06.3 Composer son panier : quantités, limites, total calculé par le serveur, visiteur non connecté
