@@ -135,7 +135,7 @@ describe('A2 — inscription publique de GoTrue fermée, numéro prouvé exigé'
         const { newAdminWith } = await import('./terrain-helpers');
         const admin = await newAdminWith(['users.write'], { label: 'q-a2-admin' });
         const created = await call('../../app/api/admin/users/route', authed('/api/admin/users', 'POST', admin, {
-            firstName: 'Cree', lastName: 'ParAdmin', phone: randomSenegalPhone('76'), password: STRONG_PASSWORD, role: 'CLIENT',
+            firstName: 'Cree', lastName: 'ParAdmin', phone: randomSenegalPhone('76'), role: 'CLIENT', // lot 9 quinquies (A2) : sans mot de passe
         }));
         assert.equal(created.status, 200, `création par un admin : ${show(created)}`);
     });

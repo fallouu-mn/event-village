@@ -17,7 +17,7 @@ import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLot9bisInvariants } from '../helpers/lot9bis-invariants';
-import { randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
+import { randomEmail, randomSenegalPhone } from './helpers';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { jsonRequest } from './finance-helpers';
 import type { RouteResult } from './acces-helpers';
@@ -74,7 +74,8 @@ async function accountsFor(phone: string, email: string): Promise<number> {
 }
 
 function newUserBody(role: string): Record<string, unknown> {
-    return { firstName: 'Mame', lastName: 'Diarra', phone: randomSenegalPhone('76'), email: randomEmail('r71'), password: STRONG_PASSWORD, role };
+    // Lot 9 quinquies (A2, modification signalée) : plus de mot de passe saisi par l'admin (lien d'activation par SMS)
+    return { firstName: 'Mame', lastName: 'Diarra', phone: randomSenegalPhone('76'), email: randomEmail('r71'), role };
 }
 
 function assertSuperOnly(res: RouteResult, what: string): void {

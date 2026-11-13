@@ -484,7 +484,7 @@ describe('9b.48 R87 — inscription : l’adresse saisie attend sa vérification
         const since = mailsTo(address).length;
         const POST = await routeFn(ADMIN_USERS_ROUTE, 'POST', 'POST /api/admin/users');
         const res = await reply(await POST(authed('/api/admin/users', 'POST', admin,
-            { firstName: 'Moussa', lastName: 'Cree', phone, email: address, password: STRONG_PASSWORD, role: 'CLIENT' })));
+            { firstName: 'Moussa', lastName: 'Cree', phone, email: address, role: 'CLIENT' }))); // lot 9 quinquies (A2) : sans mot de passe
         assert.equal(res.status, 200, show(res));
         const userId = String(res.body.userId);
         const techA = String(await authEmail(userId));

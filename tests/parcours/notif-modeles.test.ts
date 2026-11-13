@@ -1165,6 +1165,8 @@ function lot9quinquiesExpected(): ExpectedType[] {
     return [
         ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B', null, ['/admin/dashboard'], null),
         ess('ACCOUNT_LOGIN_FAILURES', [S, M], 'ANY', 'B', null, ['/forgot-password'], null), // A1 (AUTH-01)
+        sync('ACCOUNT_ACTIVATION'), // A2 (AUTH-02) : lien d'activation d'un compte créé par un admin, journal seulement
+        sync('OTP_ADMIN'), // A3 (AUTH-05) : code administrateur, journal seulement
     ];
 }
 

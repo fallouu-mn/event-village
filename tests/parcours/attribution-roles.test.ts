@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { bearer, loadFixtures, signInAs } from '../helpers/fixtures';
+import { getFakes } from '../fakes';
 // Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
 import { POST as adminCreateUser } from '../../app/api/admin/users/route';
 import { POST as inviteController } from '../../app/api/partner/team/invite/route';
@@ -73,16 +74,23 @@ describe('Attribution des rôles par les routes serveur', () => {
     test('création d\'un compte CONTROLEUR par un SUPERADMIN → CONTROLEUR dans user_roles et pour la session', async () => {
         const superadmin = await signInAs('SUPERADMIN');
         const email = randomEmail('cree-par-admin');
+        const createdPhone = randomSenegalPhone('76');
+        // Lot 9 quinquies (A2, modification signalée) : plus de mot de passe saisi par l'admin ; le titulaire active son
+        // compte par le lien reçu par SMS (POST /api/auth/activate), puis se connecte.
         const res = await adminCreateUser(jsonRequest('/api/admin/users', {
             firstName: 'Ibrahima',
             lastName: 'CreeParAdmin',
-            phone: randomSenegalPhone('76'),
+            phone: createdPhone,
             email,
-            password: STRONG_PASSWORD,
             role: 'CONTROLEUR',
         }, bearer(superadmin.accessToken)));
         const body = await res.json();
         assert.equal(res.status, 200, `création par admin : HTTP ${res.status} ${JSON.stringify(body)}`);
+        const link = /\/activation\?t=([A-Za-z0-9_-]+)$/.exec(getFakes().sms.messagesTo(createdPhone).at(-1)?.message ?? '');
+        assert.ok(link, 'lien d’activation reçu par SMS');
+        const { POST: activate } = await import('../../app/api/auth/activate/route');
+        const activated = await activate(jsonRequest('/api/auth/activate', { token: link[1], password: STRONG_PASSWORD }));
+        assert.equal(activated.status, 200, `activation : ${JSON.stringify(await activated.json())}`);
         assert.ok((await rolesOf(body.userId)).includes('CONTROLEUR'), 'user_roles doit contenir CONTROLEUR');
         const { data: authUser, error: authErr } = await service.auth.admin.getUserById(body.userId); assert.equal(authErr, null, authErr?.message); await assertSessionRole(String(authUser.user?.email ?? email), STRONG_PASSWORD, 'CONTROLEUR'); // lot 9 bis (R87-c, contrat 4.6) : GoTrue porte l'adresse technique
     });
