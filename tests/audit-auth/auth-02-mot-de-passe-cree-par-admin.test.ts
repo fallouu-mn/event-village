@@ -10,27 +10,30 @@
  * (StrongPasswordSchema, lib/validations/auth.ts:93-97) s'applique à l'inscription, à la réinitialisation et au
  * changement depuis le profil, pas ici. Le lot 9 quater (A5) l'applique à l'activation d'un contrôleur, pas à ce chemin.
  *
- * Test ROUGE tant que la faille existe : un SUPERADMIN qui crée un compte avec « abc123 » doit être refusé (400, champ
- * password), comme toute autre pose de mot de passe.
+ * Test ROUGE tant que la faille existe : un SUPERADMIN qui crée un compte avec un mot de passe de 6 caractères minuscules et
+ * chiffres, tiré au hasard (aucune majuscule ni caractère spécial), doit être refusé (400, champ password), comme toute
+ * autre pose de mot de passe. Valeur générée : aucune valeur littérale (tests/schema/secrets-codes-en-dur.test.ts).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { BASE_URL, randomSenegalPhone } from '../parcours/helpers';
 import { bearer, signInAs } from '../helpers/fixtures';
 
 describe('AUTH-02 — mot de passe d\'un compte créé par un admin', () => {
-    test('POST /api/admin/users avec le mot de passe « abc123 » : refusé comme trop faible (400)', async () => {
+    test('POST /api/admin/users avec un mot de passe de 6 minuscules et chiffres : refusé comme trop faible (400)', async () => {
         const superadmin = await signInAs('SUPERADMIN');
+        const weak = randomBytes(3).toString('hex');
         const { POST } = await import('../../app/api/admin/users/route');
         const res = await POST(new NextRequest(`${BASE_URL}/api/admin/users`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', ...bearer(superadmin.accessToken) },
-            body: JSON.stringify({ firstName: 'Audit', lastName: 'Faible', phone: randomSenegalPhone('77'), password: 'abc123', role: 'CLIENT' }),
+            body: JSON.stringify({ firstName: 'Audit', lastName: 'Faible', phone: randomSenegalPhone('77'), password: weak, role: 'CLIENT' }),
         }));
         const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-        console.log(`[AUTH-02] création avec « abc123 » : HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
-        assert.equal(res.status, 400, `compte créé avec le mot de passe « abc123 » (HTTP ${res.status}) : aucune règle de mot de passe sur ce chemin`);
+        console.log(`[AUTH-02] création avec un mot de passe de 6 minuscules et chiffres : HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
+        assert.equal(res.status, 400, `compte créé avec un mot de passe de 6 minuscules et chiffres (HTTP ${res.status}) : aucune règle de mot de passe sur ce chemin`);
     });
 });

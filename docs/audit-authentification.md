@@ -162,7 +162,7 @@ Gravité pour la sécurité (CRITIQUE, ÉLEVÉE, MOYENNE, FAIBLE) ; priorité po
 
 ### AUTH-02 — Un admin choisit librement le mot de passe d'un autre compte
 - **Catégorie :** sécurité, **ÉLEVÉE**, P1, effort M. ASVS V2.1.1, V2.3.1.
-- **Preuve :** `tests/audit-auth/auth-02-mot-de-passe-cree-par-admin.test.ts` (rouge : « abc123 » accepté). Code : `app/api/admin/users/route.ts:125-130` (présence seule), `:157-160` (`createUser` tel quel) ; écran « Mot de passe temporaire » (`app/admin/users/page.tsx:649`), rien ne le rend temporaire. Le lot 9 quater (A5) applique la règle à l'activation d'un contrôleur, pas à ce chemin.
+- **Preuve :** `tests/audit-auth/auth-02-mot-de-passe-cree-par-admin.test.ts` (rouge : un mot de passe de 6 minuscules et chiffres tiré au hasard est accepté, HTTP 200 au run 158). Code : `app/api/admin/users/route.ts:125-130` (présence seule), `:157-160` (`createUser` tel quel) ; écran « Mot de passe temporaire » (`app/admin/users/page.tsx:649`), rien ne le rend temporaire. Le lot 9 quater (A5) applique la règle à l'activation d'un contrôleur, pas à ce chemin.
 - **Risque :** comptes ADMIN créés avec des mots de passe faibles ou réutilisés, connus d'une autre personne pour toujours, transmis par un canal non défini.
 - **Proposition :** pas de mot de passe saisi par l'admin. Le compte est créé sans mot de passe utilisable, et le titulaire reçoit un SMS avec un lien d'activation à usage unique (même parcours que le contrôleur invité), où il choisit son mot de passe selon la règle commune. À défaut : règle commune côté serveur et changement imposé à la première connexion.
 - **Critère :** `auth-02` vert ; aucun compte ne peut être créé avec un mot de passe connu d'un autre que son titulaire ; le titulaire reçoit un SMS d'activation.
@@ -329,4 +329,15 @@ Le plan (consigne `lot9quater-spec.md`, contrat de travail de la session du lot)
 
 ## 6. Run CI de la branche
 
-À compléter : run de `5c07019` (tests seuls) et de la pointe du rapport.
+**Run 158** (`5c07019`, tests seuls ; `runs/158-43463648066` sur `origin/ci-results`) : job 3 244 s ; verify **346 suites vertes sur 350** ; build, budget JS et **e2e verts dans leurs 10 phases** (connexion, captures, emails, dev-page, fumée, terrain, PWA, fake-prod, perf, recette).
+
+Les 4 suites rouges :
+
+| Suite | Raison | Bonne raison ? |
+|---|---|---|
+| `tests/audit-auth/auth-01-connexion-essais-par-compte.test.ts` | « aucun refus par compte après 20 mauvais mots de passe venus de 20 adresses » : les 20 essais répondent `401/INVALID_CREDENTIALS` | oui (AUTH-01) |
+| `tests/audit-auth/auth-02-mot-de-passe-cree-par-admin.test.ts` | « compte créé avec le mot de passe… (HTTP 200) : aucune règle de mot de passe sur ce chemin » ; réponse `{"success":true, …, "message":"Utilisateur avec le rôle CLIENT créé avec succès."}` | oui (AUTH-02) |
+| `tests/audit-auth/auth-03-delai-attente-affiche.test.ts` | 3 écrans lisent `remainingSeconds` (LoginForm, forgot-password, partner/register) ; le contrôle « aucune route ne rend remainingSeconds » passe | oui (AUTH-03) |
+| `tests/schema/secrets-codes-en-dur.test.ts` | « mots de passe littéraux : tests/audit-auth/auth-02-mot-de-passe-cree-par-admin.test.ts:30 » : la première version d'AUTH-02 écrivait le mot de passe faible en clair | **non : défaut de mon test**, corrigé (valeur tirée au hasard, `randomBytes(3)`) ; suite verte en local (3/3) |
+
+Le run de la pointe (correctif du test et ce rapport) doit montrer exactement les 3 suites `tests/audit-auth/` rouges, et tout le reste vert : voir la ligne ajoutée ci-dessous.
