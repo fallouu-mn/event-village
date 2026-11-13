@@ -664,7 +664,7 @@ Message automatique d'Event Village, merci de ne pas y répondre. Support : supp
 | | |
 |---|---|
 | Destinataires | Chaque numéro invité (SMS, sans compte) ; si le numéro appartient à un compte vérifié, ce compte reçoit aussi application, push et email. |
-| Déclencheur | L’organisatrice envoie des invitations (fonction ticket_invitation_create). |
+| Déclencheur | La partenaire envoie des invitations (fonction ticket_invitation_create). |
 | Canaux | SMS, cloche (application), push, email |
 | Indispensable ou optionnel | indispensable |
 | Regroupement | Un message par numéro et par envoi, avec le nombre d’invitations de ce numéro. |
@@ -1966,7 +1966,7 @@ Message automatique d'Event Village, merci de ne pas y répondre. Support : supp
 | Preuves | déclencheur : M/20261109000008_lot9bis_cycle.sql:918-930 ; catalogue : lib/notifications/catalog.ts:1167 ; registre : M/20261109000003_lot9bis_registre.sql:115 |
 | Scénario détaillé | 05-equipe-controle-acces.md |
 
-**Variante : fermée par l’organisatrice**
+**Variante : fermée par la partenaire**
 
 - Cloche — titre : `Caisse fermée` ; texte : `Votre caisse pour « {titre} » a été fermée par l'organisateur. Montant déclaré : {montant déclaré}.` ; lien : `/controller/scanner`
   - Exemple : `Caisse fermée` — `Votre caisse pour « Concert Test » a été fermée par l'organisateur. Montant déclaré : 47 500 F CFA.`
@@ -2778,7 +2778,7 @@ Message automatique d'Event Village, merci de ne pas y répondre. Support : supp
 | Déclencheur | Billet gratuit, invitation ou billet payé en espèces annulé hors annulation de l’événement (remboursement d’un billet, annulation d’une invitation). |
 | Canaux | cloche (application), SMS, email |
 | Indispensable ou optionnel | indispensable |
-| Regroupement | Un message par billet. La personne qui annule (organisatrice) est le « compte déclencheur » du SMS dans le remboursement d’un billet. |
+| Regroupement | Un message par billet. La personne qui annule (partenaire) est le « compte déclencheur » du SMS dans le remboursement d’un billet. |
 | Heures calmes (22 h–8 h) | aucun effet : envoyé à toute heure sur tous ses canaux |
 | Plafond quotidien | SMS : aucun plafond global ; 30 par numéro et par jour, 30 par compte déclencheur s’il y en a un |
 | Compte suspendu | envoyé quand même |
