@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { requireActiveSession, serverIsAdmin, serverIsPartner, serverHasRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController } from '@/lib/events/event-status';
 import { dakarInstant } from '@/lib/validations/event';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { maskPersonName } from '@/lib/security/mask';
-import { adminTeamRefusal } from '../team-access';
+import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -327,12 +327,27 @@ export async function DELETE(req: NextRequest) {
         if (!controllerId) {
             return NextResponse.json({ error: 'controllerId requis.' }, { status: 400 });
         }
+        // Lot 9 quater (B8 : N-01, E-09) : un admin agit sur l'équipe d'UN organisateur, nommé par partnerId ; sans lui,
+        // 400 et rien n'est supprimé (avant : retrait chez tous les organisateurs, SMS compris).
+        const partnerParam = req.nextUrl.searchParams.get('partnerId');
+        if (partnerParam !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(partnerParam)) {
+            return NextResponse.json({ error: 'Identifiant d’organisateur invalide.', code: 'INVALID_REQUEST' }, { status: 400 });
+        }
 
         const supabase = getServiceRoleClient();
 
         // 1. Résoudre le partner_id
         let partnerId: string | null = null;
-        if (serverHasRole(user, 'PARTENAIRE')) {
+        if (serverIsAdmin(user) && partnerParam) {
+            const foreign = await adminForeignTeamRefusal(user, 'events.write', [partnerParam]);
+            if (foreign) return foreign;
+            partnerId = partnerParam;
+        } else if (serverIsAdmin(user) && !serverHasRole(user, 'PARTENAIRE')) {
+            return NextResponse.json({
+                error: 'Choisissez l’organisateur dont vous gérez l’équipe.',
+                code: 'PARTNER_SCOPE_REQUIRED',
+            }, { status: 400 });
+        } else if (serverHasRole(user, 'PARTENAIRE')) {
             const { data: p, error: pErr } = await supabase
                 .from('partners')
                 .select('id')
@@ -348,13 +363,15 @@ export async function DELETE(req: NextRequest) {
         // 2-3. Affectations de ce contrôleur, limitées aux événements du partenaire par une jointure (lot 9 bis,
         //      reste S3 : la liste de tous les identifiants d'événements passée en filtre `in` dépassait la longueur
         //      d'URL de PostgREST pour un admin, « URI too long », 500) ; un admin agit sur toutes les équipes.
-        let assignmentsQuery = supabase
+        // Lot 9 quater (B8) : jamais de retrait sans organisateur résolu
+        if (!partnerId) {
+            return NextResponse.json({ error: 'Choisissez l’organisateur dont vous gérez l’équipe.', code: 'PARTNER_SCOPE_REQUIRED' }, { status: 400 });
+        }
+        const assignmentsQuery = supabase
             .from('event_controllers')
             .select('id, event_id, events!inner(partner_id)')
-            .eq('user_id', controllerId);
-        if (partnerId) {
-            assignmentsQuery = assignmentsQuery.eq('events.partner_id', partnerId);
-        }
+            .eq('user_id', controllerId)
+            .eq('events.partner_id', partnerId);
         const { data: assignmentsToDelete, error: aErr } = await assignmentsQuery;
 
         if (aErr) {

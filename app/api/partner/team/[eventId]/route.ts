@@ -4,7 +4,7 @@ import { requireActiveSession, serverIsAdmin, serverIsPartner, serverHasRole } f
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
-import { adminTeamRefusal } from '../team-access';
+import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -125,6 +125,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { eventId: 
         const { data: event, error: eventErr } = await supabase.from('events').select('id, title, partner_id').eq('id', eventId).maybeSingle();
         if (eventErr) throw new Error(`lecture de l'événement : ${eventErr.message}`);
         if (!event) return assignmentNotFound();
+        // Lot 9 quater (B3 : AUD-24) : un ADMIN-PARTENAIRE hors de sa fiche passe par la permission events.write
+        const foreign = await adminForeignTeamRefusal(user, 'events.write', [event.partner_id as string | null]);
+        if (foreign) return foreign;
         if (!serverIsAdmin(user)) {
             const { data: partnerRec, error: partnerErr } = await supabase.from('partners').select('id').eq('user_id', user.id).maybeSingle();
             if (partnerErr) throw new Error(`lecture du profil partenaire : ${partnerErr.message}`);

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { adminTeamRefusal } from '../team-access';
+import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +39,7 @@ export async function PATCH(req: NextRequest) {
     const supabase = getServiceRoleClient();
     const { data: event, error: evErr } = await supabase
         .from('events')
-        .select('id, partners!inner(user_id)')
+        .select('id, partner_id, partners!inner(user_id)')
         .eq('id', parsed.data.eventId)
         .maybeSingle();
     if (evErr) {
@@ -50,6 +50,9 @@ export async function PATCH(req: NextRequest) {
     if (!event || (!serverIsAdmin(user) && ownerId !== user.id)) {
         return NextResponse.json({ error: 'Événement introuvable.' }, { status: 404 });
     }
+    // Lot 9 quater (B3 : AUD-24) : un ADMIN-PARTENAIRE hors de sa fiche passe par la permission events.write
+    const foreign = await adminForeignTeamRefusal(user, 'events.write', [event.partner_id as string | null]);
+    if (foreign) return foreign;
     const { count: zoneCount, error: zonesErr } = await supabase
         .from('event_zones')
         .select('id', { count: 'exact', head: true })

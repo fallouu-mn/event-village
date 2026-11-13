@@ -191,6 +191,13 @@ function EventChecklist({ legend, choices, selectedIds, onToggle, name }: {
 /* ──────────────────────────────── Page ──────────────────────────────── */
 
 export default function PartnerTeamPage() {
+    // Lot 9 quater (B8 : E-09) : organisateur nommé par ?partnerId= (admin qui gère l'équipe d'un organisateur), lu dans le
+    // navigateur seulement ; passé au retrait de tous les événements.
+    const [scopePartnerId, setScopePartnerId] = useState<string | null>(null);
+    useEffect(() => {
+        const value = new URLSearchParams(window.location.search).get('partnerId');
+        setScopePartnerId(value && /^[0-9a-f-]{36}$/i.test(value) ? value : null);
+    }, []);
     const toast = useToast();
 
     // Temps réel (lot 5, contrat O3) : statuts des événements du partenaire, par leur historique (publié, RLS
@@ -641,7 +648,8 @@ export default function PartnerTeamPage() {
                 isOpen={!!confirmRemoveAll}
                 onClose={() => setConfirmRemoveAll(null)}
                 onConfirm={() => confirmRemoveAll && void runAction(
-                    `/api/partner/team/all?controllerId=${encodeURIComponent(confirmRemoveAll.controllerId)}`,
+                    // Lot 9 quater (B8 : E-09) : l'organisateur de la page (?partnerId=, admin) est passé à la route
+                    `/api/partner/team/all?controllerId=${encodeURIComponent(confirmRemoveAll.controllerId)}${scopePartnerId ? `&partnerId=${encodeURIComponent(scopePartnerId)}` : ''}`,
                     'Contrôleur retiré de tous vos événements.',
                     'Le retrait n’a pas pu être fait.',
                     () => setConfirmRemoveAll(null),

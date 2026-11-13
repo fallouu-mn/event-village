@@ -1,6 +1,7 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PublicError } from '@/lib/api/public-error';
 import { revokeUserSessions } from '@/lib/auth/sessions';
+import { isTechnicalAddress } from '@/lib/notifications/channels';
 
 export interface FinancialReconciliationItem {
     paymentId: string;
@@ -325,8 +326,33 @@ export class AdminService {
             throw new Error(`Erreur recherche utilisateur: ${findErr.message}`);
         }
 
-        if (targetUser?.role === 'SUPERADMIN' && actor.role !== 'SUPERADMIN') {
-            throw new PublicError('Seul un Superadmin peut supprimer un compte SUPERADMIN.');
+        // Lot 9 quater (B2 : AUD-23, G-02) : rôles lus dans user_roles (jamais l'ancienne colonne users.role), pour la
+        // cible comme pour l'appelant ; un compte ADMIN, SUPERADMIN ou PARTENAIRE n'est anonymisé que par un SUPERADMIN.
+        const rolesOf = async (userId: string): Promise<string[]> => {
+            const { data, error } = await supabase.from('user_roles').select('role').eq('user_id', userId);
+            if (error) throw new Error(`Lecture des rôles de ${userId} impossible : ${error.message}`);
+            return (data ?? []).map((r) => String(r.role));
+        };
+        const [targetRoles, actorRoles] = await Promise.all([rolesOf(targetUserId), rolesOf(actor.id)]);
+        if (targetRoles.some((r) => ['SUPERADMIN', 'ADMIN', 'PARTENAIRE'].includes(r)) && !actorRoles.includes('SUPERADMIN')) {
+            throw new PublicError('Seul un Superadmin peut supprimer un compte administrateur ou partenaire.', 'SUPERADMIN_REQUIRED', 403);
+        }
+
+        // Lot 9 quater (A9 : AUD-33) : journal d'audit pseudonymisé AVANT l'effacement du profil (valeurs d'origine) :
+        // numéros (forme à 9 chiffres), nom, prénom et adresse réelle remplacés par « [anonymisé] ».
+        if (targetUser) {
+            const phoneCore = String(targetUser.phone ?? '').replace(/\D/g, '').slice(-9);
+            const realEmail = targetUser.email && !isTechnicalAddress(String(targetUser.email)) ? String(targetUser.email) : null;
+            const { data: pseudo, error: pseudoErr } = await supabase.rpc('audit_logs_pseudonymize', {
+                p: {
+                    user_id: targetUserId,
+                    phones: [phoneCore, realEmail].filter((t): t is string => Boolean(t && t.length >= 3)),
+                    names: [targetUser.first_name, targetUser.last_name].filter((t): t is string => typeof t === 'string' && t.trim().length >= 3),
+                },
+            });
+            if (pseudoErr || (pseudo as { ok?: boolean } | null)?.ok !== true) {
+                throw new Error(`Pseudonymisation du journal impossible : ${pseudoErr?.message ?? JSON.stringify(pseudo)}`);
+            }
         }
 
         const anonymizedEmail = `${targetUserId}@deleted.eventvillage.sn`;

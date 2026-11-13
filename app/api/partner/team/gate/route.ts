@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { adminTeamRefusal } from '../team-access';
+import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +48,12 @@ export async function PATCH(req: NextRequest) {
         }
         const parsed = BodySchema.safeParse(raw);
         if (!parsed.success) throw new PublicError('Affectation invalide : événement, contrôleur et porte requis.', 'INVALID_BODY', 400);
+
+        // Lot 9 quater (B3 : AUD-24) : un ADMIN-PARTENAIRE hors de sa fiche passe par la permission events.write
+        const { data: ev, error: evErr } = await getServiceRoleClient().from('events').select('partner_id').eq('id', parsed.data.eventId).maybeSingle();
+        if (evErr) throw new Error(`lecture de l'événement : ${evErr.message}`);
+        const foreign = await adminForeignTeamRefusal(session.user, 'events.write', [(ev?.partner_id as string | null | undefined) ?? null]);
+        if (foreign) return foreign;
 
         const { data, error } = await getServiceRoleClient().rpc('event_controller_gate_set', {
             p: {

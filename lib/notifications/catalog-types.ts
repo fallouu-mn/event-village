@@ -123,6 +123,7 @@ export interface TemplateData {
     PASSWORD_CHANGED: Record<string, never>;
     /** Lot 9 (9.2, L30) : SMS à l'ancien numéro, aucune donnée. */
     PHONE_CHANGED: Record<string, never>;
+    EMAIL_CLAIMED_ELSEWHERE: Record<string, never>;
     PUSH_TEST: Record<string, never>;
     EVENT_VALIDATED: EventData;
     EVENT_REJECTED: EventData & { reason: string };

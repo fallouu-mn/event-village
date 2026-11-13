@@ -4,6 +4,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { type UserRoleType } from '@/lib/auth/roles';
 import { permissionMissingMessage } from '@/lib/admin/permission-labels';
+import { getClientIp } from '@/lib/security/client-ip';
 
 export interface AdminAuthResult {
     authorized: boolean;
@@ -39,6 +40,10 @@ export const ADMIN_PERMISSIONS = [
     'notifications.write',
     // Lot 7 (7.0 c, contrat 3.7) : lecture des écarts de caisse consolidés (GET /api/admin/shifts/audit)
     'shifts.read',
+    // Lot 9 quater (B4 : AUD-15) : scanner les billets et tenir une caisse sur un événement (ADMIN)
+    'access.operate',
+    // Lot 9 quater (B5 : AUD-37) : lire les réglages de la plateforme et les tarifs
+    'settings.read',
 ] as const;
 
 export type AdminPermission = typeof ADMIN_PERMISSIONS[number];
@@ -194,7 +199,8 @@ export async function verifyAdminAuth(
                 user_role: role,
                 action: 'UNAUTHORIZED_ACCESS_ATTEMPT',
                 object_type: 'admin_api',
-                metadata: { path: req.nextUrl.pathname, ip: req.headers.get('x-forwarded-for') || 'local' },
+                // Lot 9 quater (A9 : AUD-33) : IP lue par getClientIp (règle unique de l'application), jamais l'en-tête brut
+                metadata: { path: req.nextUrl.pathname, ip: getClientIp(req) ?? 'inconnue' },
             });
 
             return {

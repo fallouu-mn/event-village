@@ -18,6 +18,14 @@ export async function GET(req: NextRequest) {
 
     const supabase = getServiceRoleClient();
 
+    // Lot 9 quater (B5 : AUD-37) : les permissions d'un autre admin ne se lisent que par le SUPERADMIN
+    if (targetAdminId && targetAdminId !== auth.user!.id && !auth.user!.roles.includes('SUPERADMIN')) {
+        return NextResponse.json(
+            { error: 'Seul un Superadmin peut consulter les permissions d’un autre administrateur.', code: 'SUPERADMIN_REQUIRED' },
+            { status: 403 }
+        );
+    }
+
     if (!targetAdminId) {
         // Renvoie toutes les permissions attribuables
         return NextResponse.json({

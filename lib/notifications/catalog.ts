@@ -893,6 +893,18 @@ const CATALOG = {
         sms: () => `${SMS_PREFIX}le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support.`,
         sample: {},
     }),
+    // Lot 9 quater (A9 : AUD-34) : l'adresse en attente sur ce compte vient d'être validée par un autre compte ; elle
+    // reste en attente ici jusqu'à la confirmation par le titulaire (son lien répond alors « adresse déjà utilisée »).
+    EMAIL_CLAIMED_ELSEWHERE: define('EMAIL_CLAIMED_ELSEWHERE', {
+        label: 'Adresse email validée par un autre compte', channels: ['IN_APP', 'SMS'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
+        link: () => '/profile',
+        inApp: () => ({
+            title: 'Adresse email validée par un autre compte',
+            content: 'L’adresse email en attente sur votre compte vient d’être validée par un autre compte Event Village. Si c’est votre adresse, ne cliquez sur aucun lien que vous n’avez pas demandé et contactez le support.',
+        }),
+        sms: () => `${SMS_PREFIX}l'adresse email en attente sur votre compte a été validée par un autre compte. Si c'est votre adresse, contactez le support.`,
+        sample: {},
+    }),
     PUSH_TEST: define('PUSH_TEST', {
         label: 'Notification d’essai', channels: ['PUSH'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SYSTEM',
         link: () => '/profile/notifications',

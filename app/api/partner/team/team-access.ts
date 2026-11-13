@@ -8,9 +8,28 @@ import type { NextResponse } from 'next/server';
 import type { AdminPermission } from '@/lib/admin/admin-auth';
 import { requireAdminPermission } from '@/lib/auth/event-access';
 import { serverHasRole, serverIsAdmin, type ServerUser } from '@/lib/auth/session';
+import { getServiceRoleClient } from '@/lib/supabase/server';
 
 /** Refus à rendre pour un admin (sans rôle partenaire) qui n'a pas `permission` ; null sinon. */
 export async function adminTeamRefusal(user: ServerUser, permission: AdminPermission): Promise<NextResponse | null> {
     if (!serverIsAdmin(user) || serverHasRole(user, 'PARTENAIRE')) return null;
+    return requireAdminPermission(user, permission);
+}
+
+/**
+ * Lot 9 quater (B3 : AUD-24) — un ADMIN qui porte aussi le rôle PARTENAIRE n'échappe à la permission admin que sur les
+ * ressources de SA fiche partenaire. Dès qu'une ressource (événement, équipe d'un organisateur) appartient à une autre
+ * fiche, ou que la fiche n'est pas connue, la permission est vérifiée comme pour un admin. null : rien à refuser.
+ */
+export async function adminForeignTeamRefusal(
+    user: ServerUser,
+    permission: AdminPermission,
+    resourcePartnerIds: ReadonlyArray<string | null | undefined>,
+): Promise<NextResponse | null> {
+    if (!serverIsAdmin(user) || !serverHasRole(user, 'PARTENAIRE')) return null;
+    const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', user.id).maybeSingle();
+    if (error) throw new Error(`lecture de la fiche partenaire de ${user.id} : ${error.message}`);
+    const own = data ? String(data.id) : null;
+    if (own && resourcePartnerIds.length > 0 && resourcePartnerIds.every((id) => id === own)) return null;
     return requireAdminPermission(user, permission);
 }

@@ -121,6 +121,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     REFUND_PAID: 'Remboursement versé',
     PASSWORD_CHANGED: 'Mot de passe modifié',
     PHONE_CHANGED: 'Numéro de téléphone modifié',
+    EMAIL_CLAIMED_ELSEWHERE: 'Adresse email validée par un autre compte',
     PUSH_TEST: "Notification d'essai",
     EVENT_VALIDATED: 'Événement validé',
     EVENT_REJECTED: 'Événement non validé',

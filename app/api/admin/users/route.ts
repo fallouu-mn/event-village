@@ -357,7 +357,8 @@ export async function PATCH(req: NextRequest) {
         //       SUPERADMIN (la RPC user_roles_set refait le contrôle des rôles en base).
         if (!actorIsSuperadmin) {
             const adminChanged = targetRoles !== null && targetRoles.includes('ADMIN') !== targetCurrentRoles.includes('ADMIN');
-            const adminStatus = status !== undefined && targetCurrentRoles.includes('ADMIN');
+            // Lot 9 quater (B2 : AUD-23, G-02) : statut d'un compte ADMIN ou PARTENAIRE (rôles de user_roles) réservé au SUPERADMIN
+            const adminStatus = status !== undefined && (targetCurrentRoles.includes('ADMIN') || targetCurrentRoles.includes('PARTENAIRE'));
             if (adminChanged || adminStatus) return adminRoleSuperadminOnly();
         }
 

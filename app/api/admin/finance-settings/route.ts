@@ -20,7 +20,8 @@ const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif
  *       (finance_setting_set) : la route ne fait aucun calcul et n'a aucune valeur par défaut.
  */
 export async function GET(req: NextRequest) {
-    const auth = await verifyAdminAuth(req);
+    // Lot 9 quater (B5 : AUD-37) : lecture des réglages avec la permission « Lire les réglages »
+    const auth = await verifyAdminAuth(req, { requiredPermission: 'settings.read' });
     if (!auth.authorized) return auth.errorResponse!;
     const supabase = getServiceRoleClient();
     const [{ data: settings, error }, { data: history, error: histErr }] = await Promise.all([

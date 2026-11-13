@@ -106,7 +106,8 @@ const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: Lucid
   { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
   { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet, seuil de stock affiché au public et alerte de refus à une porte.', icon: ScanLine },
   { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels, alerte sur les SMS indispensables et rappels des billets gratuits.', icon: Bell },
-  { prefix: 'features.', title: 'Fonctionnalités', help: 'Services proposés en plus de la billetterie. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires.', icon: ToggleRight },
+  // Lot 9 quater (B1 : E-08, AUD-22, G-01) : les trois services ne sont pas prêts pour le public (paiements non audités)
+  { prefix: 'features.', title: 'Services en préparation', help: 'Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER.', icon: ToggleRight },
 ];
 
 interface Setting {
@@ -212,6 +213,8 @@ export default function AdminFinanceSettingsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<string>('');
   const [reason, setReason] = useState('');
+  // Lot 9 quater (B1 : E-08) : activer un service en préparation exige de taper ACTIVER
+  const [activationWord, setActivationWord] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -249,6 +252,7 @@ export default function AdminFinanceSettingsPage() {
     setEditing(setting.key);
     setDraft(v === null || v === undefined ? '' : String(v));
     setReason('');
+    setActivationWord('');
     setSaveError(null);
   };
 
@@ -267,6 +271,10 @@ export default function AdminFinanceSettingsPage() {
     }
     if (reason.trim().length < 3) {
       setSaveError('Indiquez le motif de la modification (3 caractères au moins).');
+      return;
+    }
+    if (key.startsWith('features.') && value === true && activationWord.trim() !== 'ACTIVER') {
+      setSaveError('Ce service n’est pas prêt pour le public. Pour l’activer quand même, tapez ACTIVER.');
       return;
     }
     setIsSaving(true);
@@ -350,6 +358,9 @@ export default function AdminFinanceSettingsPage() {
                         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
                           <div className="min-w-0 space-y-0.5">
                             <p className="text-sm font-semibold text-fg">{label}</p>
+                            {s.key.startsWith('features.') && (
+                              <p className="text-sm font-medium text-warning-fg">Pas prêt pour le public</p>
+                            )}
                             {meta?.help && <p className="text-sm text-fg-muted">{meta.help}</p>}
                             <p className="text-sm text-fg-muted">
                               Modifié le <time dateTime={s.updatedAt ?? undefined}>{formatDateTime(s.updatedAt)}</time>
@@ -399,6 +410,16 @@ export default function AdminFinanceSettingsPage() {
                                 value={draft}
                                 onChange={(e) => setDraft(e.target.value)}
                                 className="tabular-nums"
+                              />
+                            )}
+                            {s.key.startsWith('features.') && draft === 'true' && (
+                              <TextInput
+                                label="Tapez ACTIVER pour confirmer"
+                                required
+                                value={activationWord}
+                                autoComplete="off"
+                                onChange={(e) => setActivationWord(e.target.value)}
+                                hint="Le service sera ouvert aux clients et aux partenaires alors qu’il n’est pas prêt pour le public."
                               />
                             )}
                             <TextInput

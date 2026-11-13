@@ -5,7 +5,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { revokeUserSessions } from '@/lib/auth/sessions';
-import { adminTeamRefusal } from '../../team-access';
+import { adminForeignTeamRefusal, adminTeamRefusal } from '../../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +75,10 @@ export async function DELETE(
                 code: 'PARTNER_SCOPE_REQUIRED',
             }, { status: 400 });
         }
+
+        // Lot 9 quater (B3 : AUD-24) : un ADMIN-PARTENAIRE hors de sa fiche passe par la permission events.write
+        const foreign = await adminForeignTeamRefusal(user, 'events.write', [partnerId]);
+        if (foreign) return foreign;
 
         // 2. Retrait atomique (verrou consultatif + profil FOR UPDATE)
         const { data: rpcResult, error: rpcErr } = await supabase.rpc('atomic_partner_remove_controller', {

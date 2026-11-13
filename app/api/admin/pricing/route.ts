@@ -9,11 +9,19 @@ export const dynamic = 'force-dynamic';
 const PRICING_SAVE_FALLBACK = { message: 'Réglage non enregistré. Réessayez.', code: 'PRICING_SAVE_FAILED' };
 
 /**
+ * Lot 9 quater (B1 : AUD-22, G-01) : seules les clés tarifaires de cette route sont écrites (liste blanche). Toute autre
+ * clé de platform_settings, dont les interrupteurs features.* (salles, tables, commandes), passe par
+ * /api/admin/finance-settings (SUPERADMIN, valeur validée, motif et historique).
+ */
+const PRICING_KEYS: readonly string[] = ['subscription_packs', 'aggregator_fees', 'communication_tariffs'];
+
+/**
  * GET /api/admin/pricing
  * Récupère l'ensemble des grilles tarifaires et paramètres de la plateforme (§117, §118, §119, §126)
  */
 export async function GET(req: NextRequest) {
-    const auth = await verifyAdminAuth(req);
+    // Lot 9 quater (B5 : AUD-37) : lecture des réglages avec la permission « Lire les réglages »
+    const auth = await verifyAdminAuth(req, { requiredPermission: 'settings.read' });
     if (!auth.authorized) return auth.errorResponse!;
 
     const supabase = getServiceRoleClient();
@@ -65,6 +73,12 @@ export async function POST(req: NextRequest) {
         }
         if (String(key).startsWith('notif.')) {
             return NextResponse.json({ error: 'Réglage des notifications : utilisez /api/admin/finance-settings (SUPERADMIN).', code: 'NOTIF_SETTING' }, { status: 403 });
+        }
+        if (!PRICING_KEYS.includes(String(key))) {
+            return NextResponse.json({
+                error: 'Ce réglage ne se change pas ici : utilisez les Réglages de la plateforme (SUPERADMIN).',
+                code: 'PRICING_KEY_NOT_ALLOWED',
+            }, { status: 403 });
         }
 
         const supabase = getServiceRoleClient();

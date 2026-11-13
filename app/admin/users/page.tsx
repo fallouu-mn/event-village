@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import Link from 'next/link';
 import {
   ChevronLeft,
@@ -39,6 +40,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/admin-auth';
 import { permissionLabel } from '@/lib/admin/permission-labels';
 import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
+import { isDeliverableEmail } from '@/lib/notifications/channels';
 
 interface UserItem {
   id: string;
@@ -109,6 +111,9 @@ export default function AdminUsersManagementPage() {
   const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
   const [isPermModalOpen, setIsPermModalOpen] = useState(false);
   const [isSavingPerms, setIsSavingPerms] = useState(false);
+  // Lot 9 quater (B7 : N-07, E-12) : état de la lecture des droits ; la grille n'affiche jamais les cases d'un autre admin
+  const [permsState, setPermsState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const permsRequestFor = useRef<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
@@ -241,23 +246,34 @@ export default function AdminUsersManagementPage() {
 
   // Ouverture de la modal des permissions
   const handleOpenPermissions = async (adminUser: UserItem) => {
+    // Lot 9 quater (B7 : N-07) : grille vidée et « Chargement… » AVANT la lecture ; une réponse arrivée pour un autre
+    // admin (fenêtre rouverte entre-temps) est ignorée ; un échec rend la grille illisible et « Enregistrer » inactif.
+    permsRequestFor.current = adminUser.id;
+    setAdminPermissions([]);
+    setPermsState('loading');
     setSelectedAdmin(adminUser);
     setIsPermModalOpen(true);
 
     try {
-      const res = await fetch(`/api/admin/permissions?adminId=${adminUser.id}`);
+      const res = await fetch(`/api/admin/permissions?adminId=${adminUser.id}`, { cache: 'no-store' });
       const data = await res.json();
-      if (res.ok) {
-        setAdminPermissions(data.assignedPermissions || []);
+      if (permsRequestFor.current !== adminUser.id) return;
+      if (!res.ok || !Array.isArray(data?.assignedPermissions)) {
+        console.error('[admin/users] droits illisibles :', res.status, data);
+        setPermsState('error');
+        return;
       }
-    } catch {
-      setAdminPermissions([]);
+      setAdminPermissions(data.assignedPermissions as string[]);
+      setPermsState('ready');
+    } catch (err) {
+      console.error('[admin/users] lecture des droits impossible :', err);
+      if (permsRequestFor.current === adminUser.id) setPermsState('error');
     }
   };
 
   // Sauvegarde des permissions
   const handleSavePermissions = async () => {
-    if (!selectedAdmin) return;
+    if (!selectedAdmin || permsState !== 'ready') return;
     setIsSavingPerms(true);
 
     try {
@@ -477,7 +493,8 @@ export default function AdminUsersManagementPage() {
                       </span>
                       <span className="flex items-center gap-1">
                         <Mail size={12} />
-                        <span>{user.email || 'Non renseigné'}</span>
+                        {/* Lot 9 quater (A4) : une adresse technique n'est jamais affichée */}
+                        <span>{isDeliverableEmail(user.email) ? user.email : 'Non renseigné'}</span>
                       </span>
                     </div>
                   </div>
@@ -531,6 +548,8 @@ export default function AdminUsersManagementPage() {
                           {isSuspended ? 'Réactiver' : 'Suspendre'}
                         </Button>
                         )}
+                        {/* Lot 9 quater (B2 : E-39, AUD-23) : aucune suppression depuis une ligne de partenaire */}
+                        {!isPartner && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -541,6 +560,7 @@ export default function AdminUsersManagementPage() {
                           <Trash2 size={13} />
                           <span>Supprimer</span>
                         </Button>
+                        )}
                       </>
                     )}
 
@@ -848,6 +868,15 @@ export default function AdminUsersManagementPage() {
               Sélectionnez les permissions spécifiques que cet administrateur est autorisé à exercer au quotidien.
             </p>
 
+            {permsState === 'loading' && (
+              <p role="status" className="py-6 text-center text-sm text-slate-500 dark:text-zinc-400">Chargement…</p>
+            )}
+            {permsState === 'error' && (
+              <StatusBanner tone="danger" announce="alert" title="Droits illisibles">
+                Droits illisibles : fermez et rouvrez.
+              </StatusBanner>
+            )}
+            {permsState === 'ready' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto p-1">
               {ADMIN_PERMISSIONS.map((perm) => {
                 const isChecked = adminPermissions.includes(perm);
@@ -874,6 +903,7 @@ export default function AdminUsersManagementPage() {
                 );
               })}
             </div>
+            )}
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
               <Button
@@ -890,6 +920,7 @@ export default function AdminUsersManagementPage() {
                 size="md"
                 onClick={handleSavePermissions}
                 isLoading={isSavingPerms}
+                disabled={permsState !== 'ready'}
                 leftIcon={<ShieldCheck size={16} />}
                 className="rounded-xl px-6 font-black bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
               >
