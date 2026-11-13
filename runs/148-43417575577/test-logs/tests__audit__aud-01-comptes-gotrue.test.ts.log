@@ -1,0 +1,138 @@
+TAP version 13
+[AUD-01] signUp(221776817933@eventvillage.sn) : erreur=Signups not allowed for this instance utilisateur=aucun
+[AUD-01] public.users après le signUp : null
+[AUD-01] register/start : HTTP 200 {"ok":true,"phone":"+221776817933","expires_in":600,"resend_after":60} ; SMS reçus : 1
+[AUD-01] register : HTTP 200 {"success":true,"userId":"c8f186ce-5c9f-4b6c-b380-2bda0a392fb9","phone":"+221776817933","email":"ub29a5f55ec0e62c3e5165d7f8356046e@comptes.eventvillage.invalid","email_pending":null,"message":"Compte créé : votre numéro est vérifié."}
+# Subtest: AUD-01 — inscription publique GoTrue : squat de l'adresse technique d'un numéro
+    # Subtest: le titulaire d'un numéro dont l'adresse technique a été prise par un visiteur peut encore s'inscrire
+    ok 1 - le titulaire d'un numéro dont l'adresse technique a été prise par un visiteur peut encore s'inscrire
+      ---
+      duration_ms: 304.683788
+      type: 'test'
+      ...
+    1..1
+ok 1 - AUD-01 — inscription publique GoTrue : squat de l'adresse technique d'un numéro
+  ---
+  duration_ms: 305.40759
+  type: 'suite'
+  ...
+[AUD-02] PUT /auth/v1/user {password} sans mot de passe actuel : HTTP 500 {"code":500,"error_code":"unexpected_failure","msg":"Error during password storage","error_id":"7b32e52b-ba3a-4ff8-93cd-
+# Subtest: AUD-02 — changement de mot de passe direct chez GoTrue sans mot de passe actuel, alerte supprimée
+    # Subtest: GoTrue refuse un nouveau mot de passe présenté avec le seul jeton d’une session (sans le mot de passe actuel)
+    ok 1 - GoTrue refuse un nouveau mot de passe présenté avec le seul jeton d’une session (sans le mot de passe actuel)
+      ---
+      duration_ms: 280.822695
+      type: 'test'
+      ...
+[AUD-02] témoin : PUT {password} HTTP 500 ; lignes PASSWORD_CHANGED : 0
+    # Subtest: un changement de mot de passe fait avec le seul jeton d’une session prévient toujours le titulaire
+    not ok 2 - un changement de mot de passe fait avec le seul jeton d’une session prévient toujours le titulaire
+      ---
+      duration_ms: 255.55007
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:2:5007'
+      failureType: 'testCodeFailure'
+      error: |-
+        précondition : changement direct accepté (sinon voir le premier test) : {"code":500,"error_code":"unexpected_failure","msg":"Error during password storage","error_id":"8cda7f49-45d2-4f67-803e-61207717643e"}
+        
+        500 !== 200
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 200
+      actual: 500
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:98:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..2
+not ok 2 - AUD-02 — changement de mot de passe direct chez GoTrue sans mot de passe actuel, alerte supprimée
+  ---
+  duration_ms: 536.616416
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:2:4175'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: AUD-03 — compte de l'inscription publique (sans numéro vérifié) et billets gratuits
+    # Subtest: un compte ouvert sans numéro ni code ne prend pas de billets gratuits
+    not ok 1 - un compte ouvert sans numéro ni code ne prend pas de billets gratuits
+      ---
+      duration_ms: 69.111064
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:2:6878'
+      failureType: 'testCodeFailure'
+      error: |-
+        signUp public 0 : Signups not allowed for this instance
+        + actual - expected
+        
+        + AuthApiError: Signups not allowed for this instance
+        +     at handleError (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:145:9)
+        +     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        +     at async _handleRequest (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:239:5)
+        +     at async _request (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:200:16)
+        +     at async SupabaseAuthClient.signUp (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:1036:15)
+        +     at async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:121:28)
+        +     at async Test.run (node:internal/test_runner/test:1054:7)
+        +     at async Promise.all (index 0)
+        +     at async Suite.run (node:internal/test_runner/test:1442:7)
+        +     at async Test.processPendingSubtests (node:internal/test_runner/test:744:7) {
+        +   __isAuthError: true,
+        +   code: 'signup_disabled',
+        +   status: 422
+        + }
+        - null
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: ~
+      actual:
+        __isAuthError: true
+        name: 'AuthApiError'
+        status: 422
+      error: 'Signups not allowed for this instance'
+      code: 'signup_disabled'
+      name: 'AuthApiError'
+      stack: |-
+        handleError (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:145:9)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async _handleRequest (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:239:5)
+        async _request (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:200:16)
+        async SupabaseAuthClient.signUp (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:1036:15)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:121:28)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:122:20)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 3 - AUD-03 — compte de l'inscription publique (sans numéro vérifié) et billets gratuits
+  ---
+  duration_ms: 69.237832
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/aud-01-comptes-gotrue.test.ts:2:6747'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..3
+# tests 4
+# suites 3
+# pass 2
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 915.967049
