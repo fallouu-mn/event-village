@@ -25,7 +25,7 @@
 | 07.10 | Transfert non accepté en 48 h : expiration |
 | 07.11 | Le destinataire change de numéro pendant le transfert |
 | 07.12 | Transfert puis remboursement (transfert en attente, ou déjà accepté) |
-| 07.13 | Invitations : envoi par l'organisatrice, nom de l'invité |
+| 07.13 | Invitations : envoi par la partenaire, nom de l'invité |
 | 07.14 | Invitation reçue par un numéro qui a un compte vérifié |
 | 07.15 | Invitation reçue par un numéro sans compte : réclamation après inscription |
 | 07.16 | Modifier le nom d'un invité |
@@ -423,7 +423,7 @@ Règles communes à tout le fichier :
 6. **Refus.** Ceux du remboursement (08).
 7. **Preuves et essai.** Fichiers cités. Recette : essai 83 (`docs/recette-billetterie.md:1788-1804`).
 
-## 07.13 Invitations : envoi par l'organisatrice, nom de l'invité
+## 07.13 Invitations : envoi par la partenaire, nom de l'invité
 
 1. **Qui, où.** La partenaire propriétaire (ou un admin ayant `events.write`, ou le SUPERADMIN), compte actif, événement
    **Validé ou Publié** : « Mes événements » → l'événement → onglet « Invitations », bloc « Inviter par SMS » /
@@ -510,7 +510,7 @@ Règles communes à tout le fichier :
      numéro (`M/20261110000008_lot9ter_invites.sql:572-597`, `components/tickets/IncomingTransfers.tsx:303-334`, `:358-366`).
    - Après la fin de l'événement, l'invitation ne peut plus être acceptée (délai dépassé).
 4. **Messages envoyés.** Le SMS de 07.13 à l'envoi ; à l'acceptation, cloche, push, email `TRANSFER_RECEIVED` (07.7) ;
-   aucun avis à l'organisatrice.
+   aucun avis à la partenaire.
 5. **Ce que voient les autres rôles.** La partenaire : « Envoyée », puis « Entrée validée » après le contrôle.
 6. **Refus.** Ceux de 07.7.
 7. **Preuves et essai.** Fichiers cités. Recette : essais 63, 78 (`docs/recette-billetterie.md:1401-1418`, `:1680-1701`).
@@ -545,7 +545,7 @@ Règles communes à tout le fichier :
      l'événement non contrôlé ; toast « Invitation annulée : la place revient au stock. »
      (`M/20261109000009_lot9bis_messages.sql:977-1077`, `InvitationsTab.tsx:479`).
    - Refus par l'invité : billet « Annulé », place rendue, statut « Refusée » dans l'historique, toast « Invitation
-     refusée. » ; **aucun avis** à l'organisatrice (`M/20261109000008_lot9bis_cycle.sql:1388-1395`).
+     refusée. » ; **aucun avis** à la partenaire (`M/20261109000008_lot9bis_cycle.sql:1388-1395`).
 4. **Messages envoyés** (annulation seulement).
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
