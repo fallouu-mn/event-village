@@ -178,8 +178,11 @@ Règles communes à tout le fichier :
    l'adresse sans prénom ; avec une adresse de 27 caractères, 141 (sans prénom) à 160 (prénom coupé « Mariam... ») :
    toujours 1 segment ; avec une adresse plus longue, le SMS passe à 2 segments (le lien n'est jamais coupé) — mesure faite sur le rendu du code (`smsSegments`,
    `lib/notifications/sms-format.ts:73-85`). Question A3 de la recette : voir `00-index.md`.
-5. **Ce que voient les autres rôles.** Le contrôleur ne peut rien faire avant l'activation (05.3) : son compte n'a pas
-   de mot de passe connu. L'admin `notifications.read` voit l'envoi dans `/admin/notifications` (type « Invitation d'un
+5. **Ce que voient les autres rôles.** Avant l'activation (05.3), le compte du contrôleur n'a pas de mot de passe connu
+   (mot de passe aléatoire, `app/api/partner/team/invite/route.ts:331`, `:360`) ; il est pourtant déjà `ACTIF` avec ce
+   numéro (`:380-392`), et rien ne refuse un compte jamais activé à la connexion par code : « Recevoir un code de
+   connexion » sur `/login` lui ouvre une session (`app/api/auth/send-otp/route.ts:55-95`,
+   `app/api/auth/verify-otp/route.ts:81-129`), de même que « Mot de passe oublié ». L'admin `notifications.read` voit l'envoi dans `/admin/notifications` (type « Invitation d'un
    contrôleur », statut, motif), sans le code (`lib/notifications/outbox-labels.ts:176`,
    `M/20261103000008_lot6_supervision.sql:127-130` ; voir `11-admin-superadmin.md`).
 6. **Refus.**

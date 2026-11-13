@@ -241,3 +241,75 @@ W4-11 (commission gelée affichée « disponible ») est fusionné dans G-17 : l
 06, 07 et 09 utilisent une autre adresse fictive que 10 (voir « Les preuves »).
 
 ## Vérification finale
+
+Faite par un agent qui n'a pas écrit le guide, le 13/11/2026, sur la branche `docs/guide-complet` à `7064e0e3`, dans le
+code seulement (pas dans les autres documents), sans base ni `.env.local`.
+
+**Tirage.** Script hors dépôt `<scratchpad>/verif/tirage.py` (Python, `random.Random(graine)`), **graine `20261113`**.
+Il lit `01` à `14` ligne par ligne, écarte les titres, citations d'en-tête, séparateurs de tableau, lignes de moins de
+40 caractères et lignes « Preuves », puis range chaque ligne dans l'un de deux viviers : **textes de messages** (lignes
+« Cloche — », « SMS — », « Email — », « Exemple : » du catalogue, corps d'email, lignes qui recopient un texte après
+« cloche », « titre », « texte », « Objet », « SMS », « sujet », « push » ou « Event Village : ») — 752 lignes ; **autres
+faits** — 7 342 lignes. Il tire 30 lignes du premier et 40 du second dans un ordre fixé par la graine ; on garde, dans
+cet ordre, les 15 premières qui recopient vraiment un message (SMS, cloche, push, email) et les 25 premières qui portent
+un fait vérifiable dans le code. Écartées au passage, dans la numérotation du script : M06, M10, M14, M16, M19 (textes
+d'écran, pas des messages) ; F03, F11, F17, F21 (renvoi ou preuve seule, sans affirmation), F28 (texte de message, déjà
+couvert par l'autre vivier). Pour une ligne coupée, l'affirmation vérifiée est la phrase entière qui la contient.
+Numéros de ligne : ceux du tirage, avant les corrections. Le tableau renumérote les 40 retenues.
+
+**Résultat : 40 affirmations, 36 justes, 4 fausses** (messages : 14 justes, 1 fausse ; autres faits : 22 justes, 3
+fausses). Aucune des quatre ne touche un texte tel que le code l'envoie, un montant, un délai ou une limite.
+
+| N° | Guide (fichier:ligne) | Affirmation résumée | Verdict | Preuve dans le code |
+|---|---|---|---|---|
+| M01 | `10-notifications.md:746` | `TRANSFER_EXPIRED`, cloche « Transfert expiré » / « Votre billet pour « {titre} » n'a pas été accepté à temps : il reste dans vos billets. », lien `/tickets` | juste | `lib/notifications/catalog.ts:725-729` |
+| M02 | `02-comptes.md:521` | `PHONE_CHANGED`, SMS à l'ancien numéro « Event Village : le numéro de votre compte a été modifié. Si ce n'est pas vous, contactez le support. », 100 caractères, indispensable, envoyé même compte suspendu | juste | `lib/notifications/catalog.ts:886-894` (`suspendedPolicy: 'ALLOW'`) ; longueur recomptée : 100 |
+| M03 | `10-notifications.md:200` | Email de vérification : sujet, titre, texte, bouton « Vérifier mon adresse » vers `/verify-email?t={jeton}`, note des 24 heures | juste | `lib/notifications/catalog.ts:1822-1847` |
+| M04 | `10-notifications.md:1462` | `SHIFT_DISCREPANCY`, email : sujet « Écart de caisse — Event Village », bouton vers `/partner/events/{id}?tab=caisse` | juste | `lib/notifications/catalog.ts:337` (sujet = titre + « — Event Village »), `:387`, `:966-977` ; `lib/notifications/email-layout.ts:134` |
+| M05 | `10-notifications.md:2739` | `CONTROLLER_EVENT_CHANGED`, fin seule : « « {titre} » : nouvelle fin : {nouvelle fin}. Votre affectation est maintenue. », lien `/controller/scanner` | juste | `lib/notifications/catalog.ts:522-533`, `:1533-1535` |
+| M06 | `10-notifications.md:1907` | `CONTROLLER_UNASSIGNED`, email : sujet « Affectation retirée — Event Village », bouton vers `/controller/scanner` | juste | `lib/notifications/catalog.ts:1138-1141`, `:337` |
+| M07 | `04-evenement-cycle.md:777` | `EVENT_CLOSED_HOLDER` aux porteurs de billets valables ou utilisés : SMS « … est clos après sa suspension, sans annulation ni remboursement automatique. {lien}/tickets » (135 car.), cloche « Événement clos » et son texte, 4 canaux, indispensable | juste | `lib/notifications/catalog.ts:1398-1407` ; `M/20261109000009_lot9bis_messages.sql:346-355` ; longueur recomptée : 135 |
+| M08 | `10-notifications.md:2206` | `ADMIN_SMS_DAILY_THRESHOLD`, exemple « Volume de SMS indispensables élevé » — « 2 150 SMS indispensables envoyés aujourd'hui (seuil d'alerte : 2 000). Ils n'ont pas de plafond : vérifiez leur origine dans la supervision. » | juste | `lib/notifications/catalog.ts:1263-1270` |
+| M09 | `06-achat-paiement.md:447` | `PURCHASE_CONFIRMED`, SMS au numéro du payeur, modèle (titre 19 car.) et exemple de 141 caractères, envoyé même compte suspendu | juste | `lib/notifications/catalog.ts:648-657` ; `M/20261106000003_lot8_paiement.sql:224-235` ; longueur recomptée : 141 |
+| M10 | `03-partenaire.md:749` | `WITHDRAWAL_REJECTED` : « SMS identique [à la cloche] préfixé « Event Village : » » | **faux** (mineur) | `lib/notifications/catalog.ts:990` : le SMS dit « votre retrait de {montant}… » (minuscule, montant à espace simple) ; ce n'est pas un texte recopié. La longueur de 113 est juste |
+| M11 | `10-notifications.md:1599` | `PARTNER_REGISTERED_ACK`, exemple « Inscription reçue » — « Votre demande de compte partenaire « Fatou Diop Events » est en cours d'examen. » | juste | `lib/notifications/catalog.ts:1012-1015` |
+| M12 | `10-notifications.md:2402` | `PAYMENT_REFUND_STARTED`, cloche « Remboursement de votre paiement » et texte « … aucun billet n'a pu être émis… », lien `/tickets?tab=historique` | juste | `lib/notifications/catalog.ts:1365-1377` |
+| M13 | `10-notifications.md:2612` | `CONTROLLER_INVITATION`, SMS deux événements « … vous invite à scanner les billets de {titre}, et 1 autre. Répondez sur {URL}/invitations » | juste | `lib/notifications/catalog.ts:1477-1481`, `:571-574` |
+| M14 | `10-notifications.md:1180` | `REFUND_PAID` sans événement : SMS « Event Village : remboursement de {montant} versé sur votre compte {opérateur}. » | juste | `lib/notifications/catalog.ts:868-871` |
+| M15 | `10-notifications.md:1169` | `REFUND_PAID`, exemple « 5 000 F CFA vous ont été remboursés sur votre compte Wave pour « Concert Test ». » | juste | `lib/notifications/catalog.ts:861-866` |
+| F01 | `11-admin-superadmin.md:577` | Campagne : trois destinataires (« Tous les clients inscrits » par défaut), canaux SMS (coché par défaut) et Email, message de 1000 caractères avec compteur et aide de modération | juste | `app/admin/communications/page.tsx:36-50`, `:118-119`, `:280-286` |
+| F02 | `02-comptes.md:140` | Parrainage à l'inscription : relation client à client aux taux du barème actif du statut du parrain ; une erreur est journalisée sans bloquer | juste | `app/api/auth/register/route.ts:20-64`, `:217-223` |
+| F03 | `13-limites-quotas-securite.md:78` | Refus « Limite quotidienne de SMS de votre compte atteinte. Réessayez demain ou contactez le support. » | juste | `lib/sms/sms-guard.ts:180` |
+| F04 | `11-admin-superadmin.md:125` | Créer un compte : `users.write` ou SUPERADMIN, menu « Gestion » > « Utilisateurs », bouton « Créer un Compte / Admin », fenêtre « Créer un Compte Métier » et son sous-titre | juste | `app/admin/users/page.tsx:76`, `:352-363`, `:565-568` ; `components/layout/AppLayout.tsx:213-216` |
+| F05 | `06-achat-paiement.md:358` | SamirPay ne rend pas de lien web pour Orange Money : lien d'application `urls.OM`, à défaut `urls.MAXIT`, et QR base64 converti en image | juste | `lib/samirpay/http-client.ts:213-223`, `:254-261` ; `lib/samirpay/types.ts:46-54` |
+| F06 | `05-equipe-controle-acces.md:887` | « Vérification impossible » : six textes (session expirée, non autorisé, trop de vérifications, réseau lent, réseau indisponible, hors ligne) | juste | `components/scan/scan-client.ts:279-319` |
+| F07 | `10-notifications.md:1774` | `HALL_RESERVATION_CONFIRMED` : un message par confirmation ; « Module non construit (lot 10) » | **faux** (mineur) | Un message par réservation : juste (`M/20261103000006_lot6_pros_admin.sql:1024-1030`) ; mais le module existe (écrans, routes, déclencheur), fermé par `features.halls_enabled` à false (`M/20261105000001_lot7_reglages.sql:34` ; `app/halls/`, `app/partner/halls/`), comme le dit 14.2 |
+| F08 | `10-notifications.md:2682` | `CONTROLLER_EVENT_CANCELLED` : heures calmes sans effet | juste | type indispensable (`lib/notifications/catalog.ts:1522-1523`) ; la nuit ne retient que les SMS `OPTIONAL` (`M/20261109000010_lot9bis_email.sql:487-500`) |
+| F09 | `05-equipe-controle-acces.md:345` | Toast « Droits mis à jour sur l'événement. Aucune nouvelle affectation : aucun SMS n'est envoyé. » | juste | `app/api/partner/team/invite/route.ts:538-550` |
+| F10 | `11-admin-superadmin.md:604` | Les SMS immédiats (codes, invitation d'un nouveau contrôleur) apparaissent dans la supervision, origine « Envoi immédiat journalisé (code à usage unique ou invitation) » | juste | `lib/notifications/sync-log.ts:1-8` ; `app/admin/notifications/[id]/page.tsx:476` |
+| F11 | `03-partenaire.md:675` | Retrait : minimum 5 000 F (0 à 10 000 000), frais 1 % (0 à 10 %) arrondis au franc supérieur, payés par la partenaire (net = montant − frais) | juste | `M/20261101000002_lot3_reglages.sql:69-70` ; `M/20261110000002_lot9ter_reglages.sql:84-85` ; `M/20261110000005_lot9ter_argent.sql:396-397` |
+| F12 | `13-limites-quotas-securite.md:226` | Inscriptions d'appareils au push : 20 par heure et par compte, refus « Trop d’inscriptions d’appareils en une heure. Réessayez plus tard. » | juste | `lib/env.ts:143` ; `app/api/push/subscriptions/route.ts:85-89` |
+| F13 | `14-non-implemente.md:99` | Menu client « Restaurants et tables » vers `/restaurants/rest-terrou-bi/tables` ; partenaire « Tables & Zones » | juste | `components/layout/AppLayout.tsx:140` ; `app/partner/tables/page.tsx:366` |
+| F14 | `02-comptes.md:423` | Changement de mot de passe : bouton « Afficher les mots de passe » et six messages de champ | juste | `components/profile/PasswordChangeDialog.tsx:43`, `:115-124`, `:167` |
+| F15 | `07-billets.md:592` | Transferts en attente vers un client suspendu invisibles (identité exigeant un compte actif) | juste | `M/20261103000002_lot6_outbox.sql:446-460` (`status = 'ACTIF'`) ; `M/20261110000008_lot9ter_invites.sql:701-703` |
+| F16 | `10-notifications.md:3217` | Le nombre de segments d'un SMS immédiat n'est pas conservé dans la supervision | juste | `M/20261108000004_lot9_compte.sql:94-102` (décision sans `delivery`) ; `app/admin/notifications/[id]/page.tsx:188-192` |
+| F17 | `11-admin-superadmin.md:538` | Clés anciennes : la page Tarification l'écrit pour les trois premières ; `ticketing_fee_config` relu seulement par la migration du lot 3 | juste | `app/admin/pricing/page.tsx:6-11` ; seules occurrences : `M/0012_platform_financial_settings.sql`, `M/20261101000002_lot3_reglages.sql` |
+| F18 | `05-equipe-controle-acces.md:181` | « Le contrôleur ne peut rien faire avant l'activation : son compte n'a pas de mot de passe connu » | **faux** | Mot de passe aléatoire : juste (`app/api/partner/team/invite/route.ts:331`, `:360`) ; mais le compte est `ACTIF` avec ce numéro (`:380-392`) et la connexion par code ne regarde pas `is_temporary_controller_account` (`app/api/auth/send-otp/route.ts:55-95`, `app/api/auth/verify-otp/route.ts:81-129`) : il peut ouvrir une session avant l'activation |
+| F19 | `11-admin-superadmin.md:427` | `/admin/finance` : titre, deux boutons, dix cartes nommées | juste | `app/admin/finance/page.tsx:158-174`, `:178`, `:190`, `:227-248` |
+| F20 | `06-achat-paiement.md:365` | Orange Money sans QR : « Validez la demande dans Orange Money, sur le téléphone du payeur. » | juste | `app/paiement/[id]/page.tsx:899-904` (`label` = libellé de l'opérateur) |
+| F21 | `05-equipe-controle-acces.md:686` | Contrôle refusé : Annulé → `event_cancelled`, Suspendu → `event_suspended` | juste | `M/20261110000007_lot9ter_evenements.sql:136-137` (dernière définition de `scan_event_problem`) |
+| F22 | `08-argent.md:524` | Renvoi refusé « Le prénom ou le nom du bénéficiaire manque encore : complétez son profil, puis renvoyez le versement. » | juste | `M/20261109000007_lot9bis_versements.sql:274` |
+| F23 | `02-comptes.md:175` | Inscription d'un compte existant : message exact, bouton « Recevoir un code de connexion » | juste | `app/api/auth/register/route.ts:14`, `:128-130` ; `app/register/page.tsx:283`, `:359-366` |
+| F24 | `07-billets.md:116` | Partage d'un billet : message « {titre} sur Event Village : {adresse}/events/{id} », toasts « Lien de l’événement copié. » / « Copie impossible sur cet appareil. » | juste | `components/tickets/TicketCard.tsx:350-374` |
+| F25 | `10-notifications.md:1309` | `EVENT_SUSPENDED` (partenaire) : exemple 130 caractères, pire cas 153, adresse ≤ 34, titre ≤ 25, motif ≤ 40 | juste | `lib/notifications/catalog.ts:920` ; recompté : 130, et 16 + 10 + 25 + 19 + 40 + 1 + 27 + 15 = 153 |
+
+**Corrections faites au guide** (en place, même format) :
+
+| Fichier | Correction |
+|---|---|
+| `03-partenaire.md` (03.22, ligne de `WITHDRAWAL_REJECTED`) | « SMS identique préfixé « Event Village : » » → texte exact du SMS « Event Village : votre retrait de {montant} a été refusé par l'opérateur. Le montant est revenu sur votre solde. » |
+| `05-equipe-controle-acces.md` (05.2, point 5) | « ne peut rien faire avant l'activation » → le compte n'a pas de mot de passe connu, mais il est actif et peut ouvrir une session par code SMS (ou « Mot de passe oublié ») avant l'activation, avec les preuves |
+| `10-notifications.md` (`HALL_RESERVATION_CONFIRMED` et `HALL_RESERVATION_CANCELLED`) | « Module non construit (lot 10) » → « Module des salles présent mais fermé par défaut (`features.halls_enabled` à false), à terminer au lot 10 (14.2) » ; la même phrase figurait deux fois |
+
+**Point à reprendre hors de ce tirage.** La connexion par code d'un contrôleur jamais activé (F18) n'a pas de constat
+dans `15-constats.md` : à ajouter à la prochaine passe.

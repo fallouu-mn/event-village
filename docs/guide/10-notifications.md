@@ -1771,7 +1771,7 @@ Message automatique d'Event Village, merci de ne pas y répondre. Support : supp
 | Déclencheur | Réservation de salle passée à « Confirmée ». |
 | Canaux | cloche (application), email |
 | Indispensable ou optionnel | indispensable |
-| Regroupement | Un message par confirmation. Module non construit (lot 10). |
+| Regroupement | Un message par confirmation. Module des salles présent mais fermé par défaut (`features.halls_enabled` à false, M/20261105000001_lot7_reglages.sql:34), à terminer au lot 10 (14.2). |
 | Heures calmes (22 h–8 h) | aucun effet : envoyé à toute heure sur tous ses canaux |
 | Plafond quotidien | aucun (pas de SMS) |
 | Compte suspendu | non envoyé (motif « Compte suspendu ») |
@@ -1790,7 +1790,7 @@ Message automatique d'Event Village, merci de ne pas y répondre. Support : supp
 | Déclencheur | Réservation de salle passée à « Annulée ». |
 | Canaux | cloche (application), email |
 | Indispensable ou optionnel | indispensable |
-| Regroupement | Un message par destinataire. Module non construit (lot 10). |
+| Regroupement | Un message par destinataire. Module des salles présent mais fermé par défaut (`features.halls_enabled` à false, M/20261105000001_lot7_reglages.sql:34), à terminer au lot 10 (14.2). |
 | Heures calmes (22 h–8 h) | aucun effet : envoyé à toute heure sur tous ses canaux |
 | Plafond quotidien | aucun (pas de SMS) |
 | Compte suspendu | non envoyé (motif « Compte suspendu ») |
