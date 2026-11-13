@@ -1,0 +1,87 @@
+TAP version 13
+# Subtest: R32 — report de plus de 24 h : remboursement total depuis Mes billets
+    # Subtest: GET /api/tickets : postponementRefund { amount = prix + frais, until = nouveau début, toOriginalBuyer } sur un billet ouvert ; null pour un billet acheté après le report
+    ok 1 - GET /api/tickets : postponementRefund { amount = prix + frais, until = nouveau début, toOriginalBuyer } sur un billet ouvert ; null pour un billet acheté après le report
+      ---
+      duration_ms: 61.136756
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-beb160d6-3a86-4a8e-b172-b81cd2a52964 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-3891bd81-369d-4aa0-a55e-47a18ab12ade indisponible : Transaction introuvable (simulation)
+    # Subtest: R32 reproduit : report de 48 h, POST /api/tickets/[id]/refund → 200, versement TICKET_REFUND = prix + frais de service vers le payeur, billet REMBOURSEMENT_EN_COURS
+    ok 2 - R32 reproduit : report de 48 h, POST /api/tickets/[id]/refund → 200, versement TICKET_REFUND = prix + frais de service vers le payeur, billet REMBOURSEMENT_EN_COURS
+      ---
+      duration_ms: 57.738507
+      type: 'test'
+      ...
+    # Subtest: SMS EVENT_CHANGED du porteur : texte exact de la variante « report » (contrat 11.2, M1), un seul SMS
+    ok 3 - SMS EVENT_CHANGED du porteur : texte exact de la variante « report » (contrat 11.2, M1), un seul SMS
+      ---
+      duration_ms: 71.368119
+      type: 'test'
+      ...
+    # Subtest: refus : billet acheté après le report ; billet gratuit ; billet d’un autre compte (403 ou 404) — aucun versement
+    ok 4 - refus : billet acheté après le report ; billet gratuit ; billet d’un autre compte (403 ou 404) — aucun versement
+      ---
+      duration_ms: 46.982462
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-beb160d6-3a86-4a8e-b172-b81cd2a52964 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-3891bd81-369d-4aa0-a55e-47a18ab12ade indisponible : Transaction introuvable (simulation)
+    # Subtest: billet reçu par transfert : le détenteur demande, l’argent va à l’acheteur d’origine (to_original_buyer, bénéficiaire et numéro du payeur)
+    ok 5 - billet reçu par transfert : le détenteur demande, l’argent va à l’acheteur d’origine (to_original_buyer, bénéficiaire et numéro du payeur)
+      ---
+      duration_ms: 115.675434
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-beb160d6-3a86-4a8e-b172-b81cd2a52964 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-3891bd81-369d-4aa0-a55e-47a18ab12ade indisponible : Transaction introuvable (simulation)
+    # Subtest: B24 : billet en cours de transfert → demande acceptée, transfert CANCELLED, destinataire averti (TRANSFER_REVOKED par SMS à son numéro)
+    ok 6 - B24 : billet en cours de transfert → demande acceptée, transfert CANCELLED, destinataire averti (TRANSFER_REVOKED par SMS à son numéro)
+      ---
+      duration_ms: 59.36576
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-beb160d6-3a86-4a8e-b172-b81cd2a52964 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-3891bd81-369d-4aa0-a55e-47a18ab12ade indisponible : Transaction introuvable (simulation)
+    # Subtest: report de 23 h : 409 POSTPONEMENT_REFUND_CLOSED ; deux reports de 13 h (cumul 26 h) : droit ouvert, 200
+    ok 7 - report de 23 h : 409 POSTPONEMENT_REFUND_CLOSED ; deux reports de 13 h (cumul 26 h) : droit ouvert, 200
+      ---
+      duration_ms: 702.284059
+      type: 'test'
+      ...
+    # Subtest: après le nouveau début : 409 POSTPONEMENT_REFUND_CLOSED (droit de 48 h, mais l’événement a commencé)
+    ok 8 - après le nouveau début : 409 POSTPONEMENT_REFUND_CLOSED (droit de 48 h, mais l’événement a commencé)
+      ---
+      duration_ms: 356.538388
+      type: 'test'
+      ...
+    1..8
+ok 1 - R32 — report de plus de 24 h : remboursement total depuis Mes billets
+  ---
+  duration_ms: 3181.824926
+  type: 'suite'
+  ...
+[INVARIANT] lot9bis-report — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] lot9bis-report — purge des réservations échues : {"expired":0}
+[INVARIANT] lot9bis-report — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] lot9bis-report — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] lot9bis-report — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] lot9bis-report — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] lot9bis-report — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] lot9bis-report — envoyeur : 995 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] lot9bis-report — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] lot9bis-report — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] lot9bis-report — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] lot9bis-report — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] lot9bis-report — (w) : 0 violation(s)
+1..1
+# tests 8
+# suites 1
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5269.44622

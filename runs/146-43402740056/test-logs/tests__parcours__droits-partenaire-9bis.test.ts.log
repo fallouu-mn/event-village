@@ -1,0 +1,238 @@
+TAP version 13
+# Subtest: R2 — lectures réservées à la propriétaire ou à un admin events.read
+    # Subtest: pilotage (six onglets) : admin sans permission et admin sans events.read → 403 PERMISSION_MISSING ; events.read et SUPERADMIN → 200
+    ok 1 - pilotage (six onglets) : admin sans permission et admin sans events.read → 403 PERMISSION_MISSING ; events.read et SUPERADMIN → 200
+      ---
+      duration_ms: 648.596945
+      type: 'test'
+      ...
+    # Subtest: GET …/cancellation (impact) : events.read
+    ok 2 - GET …/cancellation (impact) : events.read
+      ---
+      duration_ms: 67.019395
+      type: 'test'
+      ...
+    # Subtest: GET …/invitations : events.read
+    ok 3 - GET …/invitations : events.read
+      ---
+      duration_ms: 61.304349
+      type: 'test'
+      ...
+    # Subtest: GET …/shifts : events.read
+    ok 4 - GET …/shifts : events.read
+      ---
+      duration_ms: 61.767839
+      type: 'test'
+      ...
+    # Subtest: GET …/promotion : events.read
+    ok 5 - GET …/promotion : events.read
+      ---
+      duration_ms: 63.589462
+      type: 'test'
+      ...
+    # Subtest: GET /api/partner/events/[id] (fiche) : events.read
+    ok 6 - GET /api/partner/events/[id] (fiche) : events.read
+      ---
+      duration_ms: 69.241915
+      type: 'test'
+      ...
+    # Subtest: GET /api/partner/team/[eventId] (équipe et téléphones) : events.read
+    ok 7 - GET /api/partner/team/[eventId] (équipe et téléphones) : events.read
+      ---
+      duration_ms: 206.884691
+      type: 'test'
+      ...
+    # Subtest: GET /api/partner/team/all : events.read ; la partenaire B ne lit que sa propre équipe
+    ok 8 - GET /api/partner/team/all : events.read ; la partenaire B ne lit que sa propre équipe
+      ---
+      duration_ms: 256.895451
+      type: 'test'
+      ...
+    # Subtest: GET …/tickets/lookup (fiche d’un billet à rembourser) : refunds.manage ; events.read et events.write ne suffisent pas
+    ok 9 - GET …/tickets/lookup (fiche d’un billet à rembourser) : refunds.manage ; events.read et events.write ne suffisent pas
+      ---
+      duration_ms: 336.385592
+      type: 'test'
+      ...
+    # Subtest: POST …/participants-export sans contacts : events.read ; chaque export accordé est journalisé, aucun pour un refus
+    ok 10 - POST …/participants-export sans contacts : events.read ; chaque export accordé est journalisé, aucun pour un refus
+      ---
+      duration_ms: 96.601839
+      type: 'test'
+      ...
+    # Subtest: POST …/participants-export AVEC contacts : events.read + partners.read ; events.read seul → 403 permission partners.read
+    ok 11 - POST …/participants-export AVEC contacts : events.read + partners.read ; events.read seul → 403 permission partners.read
+      ---
+      duration_ms: 226.144471
+      type: 'test'
+      ...
+    1..11
+ok 1 - R2 — lectures réservées à la propriétaire ou à un admin events.read
+  ---
+  duration_ms: 2992.356672
+  type: 'suite'
+  ...
+# Subtest: R2 — écritures réservées à la propriétaire ou à un admin events.write
+    # Subtest: POST …/transition {to:SUSPENDU} (reproduction la plus forte) : admin sans events.write refusé, événement toujours PUBLIE ; events.write suspend, SUPERADMIN réactive
+    ok 1 - POST …/transition {to:SUSPENDU} (reproduction la plus forte) : admin sans events.write refusé, événement toujours PUBLIE ; events.write suspend, SUPERADMIN réactive
+      ---
+      duration_ms: 391.21374
+      type: 'test'
+      ...
+    # Subtest: POST …/cancel : admin sans events.write refusé, événement toujours PUBLIE ; events.write et SUPERADMIN annulent
+    ok 2 - POST …/cancel : admin sans events.write refusé, événement toujours PUBLIE ; events.write et SUPERADMIN annulent
+      ---
+      duration_ms: 195.807439
+      type: 'test'
+      ...
+    # Subtest: POST …/regisseur-pin {confirm:true} : events.write ; un refus laisse le PIN tel quel
+    ok 3 - POST …/regisseur-pin {confirm:true} : events.write ; un refus laisse le PIN tel quel
+      ---
+      duration_ms: 85.900408
+      type: 'test'
+      ...
+    # Subtest: DELETE /api/partner/team/[eventId]?assignmentId= : events.write ; un refus laisse l’affectation
+    ok 4 - DELETE /api/partner/team/[eventId]?assignmentId= : events.write ; un refus laisse l’affectation
+      ---
+      duration_ms: 359.485604
+      type: 'test'
+      ...
+    # Subtest: DELETE /api/partner/team/all?controllerId= : events.write ; la partenaire B n’agit que sur sa propre équipe
+    not ok 5 - DELETE /api/partner/team/all?controllerId= : events.write ; la partenaire B n’agit que sur sa propre équipe
+      ---
+      duration_ms: 328.256719
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/droits-partenaire-9bis.test.ts:2:21509'
+      failureType: 'testCodeFailure'
+      error: |-
+        DELETE /api/partner/team/all, ADMIN events.write : HTTP 400 {"error":"Choisissez l’organisateur dont vous gérez l’équipe.","code":"PARTNER_SCOPE_REQUIRED"}
+        
+        400 !== 200
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 200
+      actual: 400
+      operator: 'strictEqual'
+      stack: |-
+        runMatrix (/home/runner/work/event-village/event-village/tests/parcours/droits-partenaire-9bis.test.ts:199:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/droits-partenaire-9bis.test.ts:408:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: PATCH /api/partner/team/assignments (format assignments[] du contrat 4.3) : events.write
+    ok 6 - PATCH /api/partner/team/assignments (format assignments[] du contrat 4.3) : events.write
+      ---
+      duration_ms: 223.188819
+      type: 'test'
+      ...
+    # Subtest: PATCH /api/partner/team/assignments/[id] {canAcceptCash} : events.write (aujourd’hui OWNER_ONLY pour tout admin)
+    ok 7 - PATCH /api/partner/team/assignments/[id] {canAcceptCash} : events.write (aujourd’hui OWNER_ONLY pour tout admin)
+      ---
+      duration_ms: 242.260032
+      type: 'test'
+      ...
+    # Subtest: DELETE /api/partner/team/controller/[controllerId]?partnerId= : events.write
+    ok 8 - DELETE /api/partner/team/controller/[controllerId]?partnerId= : events.write
+      ---
+      duration_ms: 415.931619
+      type: 'test'
+      ...
+    # Subtest: PATCH /api/partner/team/entry-point : events.write
+    ok 9 - PATCH /api/partner/team/entry-point : events.write
+      ---
+      duration_ms: 295.026343
+      type: 'test'
+      ...
+    # Subtest: POST /api/partner/team/invite (numéro sans compte) : events.write ; un refus ne crée aucun compte et n’envoie aucun SMS
+    ok 10 - POST /api/partner/team/invite (numéro sans compte) : events.write ; un refus ne crée aucun compte et n’envoie aucun SMS
+      ---
+      duration_ms: 535.195516
+      type: 'test'
+      ...
+    1..10
+not ok 2 - R2 — écritures réservées à la propriétaire ou à un admin events.write
+  ---
+  duration_ms: 3072.897345
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/droits-partenaire-9bis.test.ts:2:16642'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[cashout] statut de l'envoi REFUND-TKT-beb160d6-3a86-4a8e-b172-b81cd2a52964 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-3891bd81-369d-4aa0-a55e-47a18ab12ade indisponible : Transaction introuvable (simulation)
+# Subtest: R2 — remboursement réservé à la propriétaire ou à un admin refunds.manage
+    # Subtest: POST …/tickets/[ticketId]/refund : events.read et events.write ne suffisent pas ; refunds.manage et SUPERADMIN remboursent
+    ok 1 - POST …/tickets/[ticketId]/refund : events.read et events.write ne suffisent pas ; refunds.manage et SUPERADMIN remboursent
+      ---
+      duration_ms: 211.458321
+      type: 'test'
+      ...
+    1..1
+ok 3 - R2 — remboursement réservé à la propriétaire ou à un admin refunds.manage
+  ---
+  duration_ms: 211.575814
+  type: 'suite'
+  ...
+# Subtest: R2 — RPC directes (acteur en paramètre)
+    # Subtest: event_transition et event_cancel : un admin sans events.write est refusé sans effet ; events.write passe
+    ok 1 - event_transition et event_cancel : un admin sans events.write est refusé sans effet ; events.write passe
+      ---
+      duration_ms: 67.200828
+      type: 'test'
+      ...
+    # Subtest: pilotage_access : PERMISSION_MISSING sans events.read, NULL (accès) avec events.read
+    ok 2 - pilotage_access : PERMISSION_MISSING sans events.read, NULL (accès) avec events.read
+      ---
+      duration_ms: 4.724003
+      type: 'test'
+      ...
+    # Subtest: event_actions : refusée à un admin sans permission
+    ok 3 - event_actions : refusée à un admin sans permission
+      ---
+      duration_ms: 2.600296
+      type: 'test'
+      ...
+    # Subtest: participants_export : avec contacts, events.read seul → PERMISSION_MISSING sans journal ; sans contacts, admin sans permission refusé
+    ok 4 - participants_export : avec contacts, events.read seul → PERMISSION_MISSING sans journal ; sans contacts, admin sans permission refusé
+      ---
+      duration_ms: 8.874166
+      type: 'test'
+      ...
+    # Subtest: event_controller_set_cash : admin sans permission → PERMISSION_MISSING ; admin events.write → accordé
+    ok 5 - event_controller_set_cash : admin sans permission → PERMISSION_MISSING ; admin events.write → accordé
+      ---
+      duration_ms: 147.441686
+      type: 'test'
+      ...
+    1..5
+ok 4 - R2 — RPC directes (acteur en paramètre)
+  ---
+  duration_ms: 231.10575
+  type: 'suite'
+  ...
+[INVARIANT] droits-partenaire-9bis — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] droits-partenaire-9bis — purge des réservations échues : {"expired":0}
+[INVARIANT] droits-partenaire-9bis — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] droits-partenaire-9bis — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] droits-partenaire-9bis — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] droits-partenaire-9bis — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] droits-partenaire-9bis — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] droits-partenaire-9bis — envoyeur : 503 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] droits-partenaire-9bis — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] droits-partenaire-9bis — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] droits-partenaire-9bis — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] droits-partenaire-9bis — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] droits-partenaire-9bis — (w) : 0 violation(s)
+1..4
+# tests 27
+# suites 4
+# pass 26
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7703.352811
