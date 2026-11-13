@@ -31,6 +31,31 @@ function supabaseStoragePatterns() {
 }
 
 /** @type {import('next').NextConfig} */
+// Lot 9 quater (F4 : AUD-11) : politique visée, observée en mode rapport seulement (rien n'est bloqué)
+const SUPABASE_ORIGIN = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').origin;
+  } catch {
+    return '';
+  }
+})();
+const SUPABASE_WS = SUPABASE_ORIGIN.replace(/^http/, 'ws');
+const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  `connect-src 'self' ${SUPABASE_ORIGIN} ${SUPABASE_WS}`.trim(),
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+  'report-uri /api/csp-report',
+].join('; ');
+
 const nextConfig = {
   reactStrictMode: true,
   // instrumentation.ts : avertissement unique au démarrage si le canal email est désactivé (lot 1C.8)
@@ -87,6 +112,12 @@ const nextConfig = {
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // Lot 9 quater (F4 : AUD-11) : HSTS (deux ans, sous-domaines), fonctions du navigateur limitées (caméra du
+          // scanner et position de la carte pour le site seul), CSP en mode rapport seulement (violations envoyées à
+          // /api/csp-report et relevées dans next-start.log de la CI) ; la CSP bloquante est pour le lot de mise en ligne.
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), interest-cohort=()' },
+          { key: 'Content-Security-Policy-Report-Only', value: CSP_REPORT_ONLY },
         ],
       },
     ];

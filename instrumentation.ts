@@ -22,4 +22,11 @@ export async function register() {
         process.exit(1);
     }
     if (real.banner) console.warn(REAL_BANNER);
+    // Lot 9 quater (F3 : AUD-39) : en production réelle, aucune origine push en http ni sur un hôte local
+    const { pushOriginsStartupProblem } = await import('./lib/push/endpoints');
+    const pushProblem = pushOriginsStartupProblem(process.env);
+    if (pushProblem) {
+        console.error(pushProblem);
+        process.exit(1);
+    }
 }

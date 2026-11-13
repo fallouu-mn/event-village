@@ -146,3 +146,31 @@ export function legacyDocumentPath(partner: { id_card_url?: string | null; busin
     const value = docType === 'id_card' ? partner.id_card_url : partner.business_doc_url;
     return typeof value === 'string' && value.startsWith(LEGACY_UPLOAD_PREFIX) && !value.includes('..') ? value : null;
 }
+
+/** Lot 9 quater (F2 : AUD-25) : âge au-delà duquel un dépôt anonyme jamais rattaché à un dossier est purgé. */
+export const UNCLAIMED_UPLOAD_MAX_AGE_HOURS = 24;
+const PURGE_BATCH = 200;
+
+/**
+ * Lot 9 quater (F2 : AUD-25) — purge des pièces déposées par la route publique et jamais rattachées à un dossier
+ * partenaire depuis plus de 24 h : fichier du stockage puis ligne de partner_document_uploads, par lots de 200. Appelée
+ * par la tâche planifiée horaire (app/api/cron/stock-reservations). Lève une erreur si le stockage ou la base refuse.
+ */
+export async function purgeUnclaimedUploads(now: Date = new Date()): Promise<number> {
+    const supabase = getServiceRoleClient();
+    const before = new Date(now.getTime() - UNCLAIMED_UPLOAD_MAX_AGE_HOURS * 3_600_000).toISOString();
+    const { data, error } = await supabase.from('partner_document_uploads')
+        .select('id, object_path')
+        .is('claimed_partner_id', null)
+        .lt('created_at', before)
+        .order('created_at', { ascending: true })
+        .limit(PURGE_BATCH);
+    if (error) throw new Error(`lecture des dépôts à purger : ${error.message}`);
+    const rows = (data ?? []) as Array<{ id: string; object_path: string }>;
+    if (rows.length === 0) return 0;
+    const { error: rmErr } = await supabase.storage.from(PARTNER_DOCUMENTS_BUCKET).remove(rows.map((r) => r.object_path));
+    if (rmErr) throw new Error(`suppression des pièces non rattachées : ${rmErr.message}`);
+    const { error: delErr } = await supabase.from('partner_document_uploads').delete().in('id', rows.map((r) => r.id));
+    if (delErr) throw new Error(`suppression des dépôts non rattachés : ${delErr.message}`);
+    return rows.length;
+}

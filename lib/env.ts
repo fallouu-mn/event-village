@@ -73,6 +73,10 @@ const serverEnvSchema = z.object({
     TRANSFER_PER_ACCOUNT_DAY: limit(10),
     // Lot 9 quater (D2 : AUD-32) : numéros invités (liste des invités) par compte et par jour
     INVITATION_PER_ACCOUNT_DAY: limit(50),
+    // Lot 9 quater (F2 : AUD-25, AUD-36) : dépôts publics de pièces, tous visiteurs confondus, par jour ; images de la
+    // partenaire (POST /api/partner/upload) par compte et par heure
+    DOCUMENT_UPLOADS_GLOBAL_DAY: limit(500),
+    PARTNER_IMAGE_UPLOADS_PER_ACCOUNT_HOUR: limit(30),
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Lot 2 : chaîne paiement → billet

@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { sniffImage } from '@/lib/images/sniff';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getServerEnv } from '@/lib/env';
+import { reserveQuota } from '@/lib/security/quota';
+import { quotaRefusalResponse } from '@/lib/security/quota-http';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +28,34 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Accès réservé aux organisateurs.', code: 'FORBIDDEN' }, { status: 403 });
     }
 
+    // Lot 9 quater (F2 : AUD-36) : taille annoncée contrôlée avant toute lecture du corps
+    const announced = Number(req.headers.get('content-length') ?? '');
+    if (Number.isFinite(announced) && announced > MAX_FILE_SIZE_BYTES + 64 * 1024) {
+        return NextResponse.json({ error: 'Le fichier dépasse la taille maximale autorisée (5 Mo).', code: 'FILE_TOO_LARGE' }, { status: 413 });
+    }
+
+    // Lot 9 quater (F2 : AUD-36) : fiche partenaire VALIDE exigée (une fiche refusée ou en attente garde un compte ACTIF),
+    // puis quota par compte, avant la lecture du fichier
+    const supabase = getServiceRoleClient();
+    const { data: partner, error: partnerErr } = await supabase.from('partners').select('id, status').eq('user_id', user.id).maybeSingle();
+    if (partnerErr) {
+        console.error(`[upload] partenaire du compte ${user.id} illisible : ${partnerErr.message}`);
+        return NextResponse.json({ error: 'Dépôt impossible pour le moment.', code: 'UPLOAD_FAILED' }, { status: 500 });
+    }
+    if (!partner) {
+        return NextResponse.json({ error: 'Un profil d’organisateur est nécessaire pour déposer une image.', code: 'PARTNER_NOT_FOUND' }, { status: 403 });
+    }
+    if (String(partner.status) !== 'VALIDE') {
+        return NextResponse.json({ error: 'Votre dossier d’organisateur doit être validé avant de déposer des images.', code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });
+    }
+    const quota = await reserveQuota(
+        [{ scope: 'partner_image_upload', bucket: user.id, windowSecs: 3600, max: getServerEnv().PARTNER_IMAGE_UPLOADS_PER_ACCOUNT_HOUR }],
+        'dépôt d’image',
+    );
+    if (!quota.allowed) {
+        return quotaRefusalResponse(quota, { error: 'Trop d’images déposées dans l’heure. Réessayez plus tard.', code: 'UPLOAD_RATE_LIMITED' });
+    }
+
     let formData: FormData;
     try {
         formData = await req.formData();
@@ -40,16 +71,6 @@ export async function POST(req: NextRequest) {
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
         return NextResponse.json({ error: 'Le fichier dépasse la taille maximale autorisée (5 Mo).', code: 'FILE_TOO_LARGE' }, { status: 400 });
-    }
-
-    const supabase = getServiceRoleClient();
-    const { data: partner, error: partnerErr } = await supabase.from('partners').select('id').eq('user_id', user.id).maybeSingle();
-    if (partnerErr) {
-        console.error(`[upload] partenaire du compte ${user.id} illisible : ${partnerErr.message}`);
-        return NextResponse.json({ error: 'Dépôt impossible pour le moment.', code: 'UPLOAD_FAILED' }, { status: 500 });
-    }
-    if (!partner) {
-        return NextResponse.json({ error: 'Un profil d’organisateur est nécessaire pour déposer une image.', code: 'PARTNER_NOT_FOUND' }, { status: 403 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());

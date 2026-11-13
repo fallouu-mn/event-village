@@ -41,9 +41,44 @@ function sameHex(a: string, b: string): boolean {
     return ba.length === 32 && bb.length === 32 && timingSafeEqual(ba, bb);
 }
 
+/** Lot 9 quater (F1 : AUD-04) : taille maximale du corps d'un webhook SamirPay (un vrai webhook en fait moins de 1 Ko). */
+export const WEBHOOK_MAX_BODY_BYTES = 16 * 1024;
+
+function bodyTooLarge(): NextResponse {
+    return NextResponse.json({ received: false, error: 'Corps trop volumineux.' }, { status: 413 });
+}
+
+/**
+ * Corps lu par morceaux, arrêté dès qu'il dépasse `max` octets (un en-tête content-length absent ou faux ne suffit pas à
+ * faire lire un corps énorme). null : trop gros, rien n'est gardé.
+ */
+async function readBoundedBody(req: NextRequest, max: number): Promise<Buffer | null> {
+    if (!req.body) return Buffer.alloc(0);
+    const reader = req.body.getReader();
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > max) {
+            await reader.cancel('corps trop volumineux');
+            return null;
+        }
+        chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
+}
+
 export async function handleSamirPayWebhook(req: NextRequest): Promise<NextResponse> {
+    // Lot 9 quater (F1 : AUD-04) : tout corps de plus de 16 Ko est refusé AVANT sa lecture et avant tout journal
+    // (content-length annoncé, puis lecture bornée). Rien n'est écrit dans payment_webhook_events.
+    const announced = Number(req.headers.get('content-length') ?? '');
+    if (Number.isFinite(announced) && announced > WEBHOOK_MAX_BODY_BYTES) return bodyTooLarge();
     // Lot 9 bis (H3) : corps lu en octets, tels que signés ; le texte n'en est que le décodage UTF-8.
-    const bytes = Buffer.from(await req.arrayBuffer());
+    const bounded = await readBoundedBody(req, WEBHOOK_MAX_BODY_BYTES);
+    if (!bounded) return bodyTooLarge();
+    const bytes = bounded;
     const raw = bytes.toString('utf8');
     const token = new URL(req.url).searchParams.get('t');
     const signatureHeader = req.headers.get(SAMIRPAY_SIGNATURE_HEADER);

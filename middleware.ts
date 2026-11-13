@@ -14,6 +14,8 @@ const PUBLIC_PREFIXES = [
     '/api/events',
     // Lot 2 : tâches planifiées (Vercel Cron, pg_cron) sans session ; chaque route exige CRON_SECRET.
     '/api/cron',
+    // Lot 9 quater (F4 : AUD-11) : rapports de violation de la CSP (mode rapport seulement), envoyés par le navigateur
+    '/api/csp-report',
     '/branding',
     '/favicon.ico',
     '/icon-192x192.png',

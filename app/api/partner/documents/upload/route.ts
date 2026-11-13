@@ -30,8 +30,17 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 Mo
 export async function POST(req: NextRequest) {
     try {
         const ip = getClientIp(req) ?? 'unknown';
+        // Lot 9 quater (F2 : AUD-25) : taille annoncée contrôlée avant toute lecture ; quota global par jour en plus du
+        // quota par IP (les dépôts non rattachés sont purgés après 24 h par la tâche horaire).
+        const announced = Number(req.headers.get('content-length') ?? '');
+        if (Number.isFinite(announced) && announced > MAX_FILE_SIZE_BYTES + 64 * 1024) {
+            return NextResponse.json({ error: 'Le fichier est vide ou dépasse la taille maximale autorisée (10 Mo).' }, { status: 413 });
+        }
         const quota = await reserveQuota(
-            [{ scope: 'upload_ip', bucket: ip, windowSecs: 3600, max: getServerEnv().DOCUMENT_UPLOADS_PER_IP_HOUR }],
+            [
+                { scope: 'upload_ip', bucket: ip, windowSecs: 3600, max: getServerEnv().DOCUMENT_UPLOADS_PER_IP_HOUR },
+                { scope: 'upload_global', bucket: 'all', windowSecs: 86_400, max: getServerEnv().DOCUMENT_UPLOADS_GLOBAL_DAY },
+            ],
             'dépôt de pièce'
         );
         if (!quota.allowed) {

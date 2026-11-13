@@ -14,6 +14,7 @@
  * Un point d'arrivée avec identifiants (`user@hôte`), un port non prévu ou un hôte voisin est refusé :
  * la comparaison porte sur l'origine analysée par `URL`, jamais sur un préfixe de chaîne.
  */
+import { isRealRun } from '@/lib/integrations/real-mode';
 
 export const DEFAULT_PUSH_ORIGINS: readonly string[] = [
     'https://fcm.googleapis.com',
@@ -38,7 +39,7 @@ function warnIgnored(entry: string, why: string): void {
     console.warn(`[push] PUSH_ENDPOINT_ALLOWED_ORIGINS : entrée « ${entry} » ignorée (${why}).`);
 }
 
-function parseRule(entry: string): OriginRule | null {
+function parseRule(entry: string, env: NodeJS.ProcessEnv = process.env): OriginRule | null {
     const wildcard = /^https:\/\/\*\.([a-z0-9.-]+)$/i.exec(entry);
     if (wildcard) {
         const suffix = wildcard[1].toLowerCase();
@@ -59,6 +60,11 @@ function parseRule(entry: string): OriginRule | null {
         warnIgnored(entry, 'une origine seule est attendue (schéma, hôte et port)');
         return null;
     }
+    // Lot 9 quater (F3 : AUD-39) : en production réelle, ni http ni hôte local, quelle que soit la variable
+    if (strictPushOrigins(env) && (url.protocol !== 'https:' || LOCAL_HOSTS.has(url.hostname))) {
+        warnIgnored(entry, 'en production, https seulement et jamais un hôte local');
+        return null;
+    }
     if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) {
         warnIgnored(entry, 'http admis seulement pour 127.0.0.1 et localhost');
         return null;
@@ -70,14 +76,42 @@ function parseRule(entry: string): OriginRule | null {
     return { kind: 'exact', origin: url.origin };
 }
 
-function rules(): OriginRule[] {
-    const raw = process.env.PUSH_ENDPOINT_ALLOWED_ORIGINS?.trim();
+/**
+ * Lot 9 quater (F3 : AUD-39) — production réelle : serveur de production (NODE_ENV=production) en mode réel
+ * (lib/integrations/real-mode.ts, ni simulation ni faux adaptateurs). Les essais de bout en bout (production, faux
+ * adaptateurs) gardent leur service push local.
+ */
+export function strictPushOrigins(env: NodeJS.ProcessEnv = process.env): boolean {
+    return env.NODE_ENV === 'production' && isRealRun(env);
+}
+
+/** Contrôle du démarrage : texte du refus si PUSH_ENDPOINT_ALLOWED_ORIGINS porte http ou un hôte local en production réelle. */
+export function pushOriginsStartupProblem(env: NodeJS.ProcessEnv = process.env): string | null {
+    if (!strictPushOrigins(env)) return null;
+    const raw = env.PUSH_ENDPOINT_ALLOWED_ORIGINS?.trim();
+    if (!raw) return null;
+    const bad = raw.split(',').map((s) => s.trim()).filter(Boolean).filter((entry) => {
+        if (/^https:\/\/\*\./i.test(entry)) return false;
+        try {
+            const url = new URL(entry);
+            return url.protocol !== 'https:' || LOCAL_HOSTS.has(url.hostname);
+        } catch {
+            return false; // illisible : déjà ignorée et signalée par parseRule
+        }
+    });
+    return bad.length === 0 ? null
+        : `[push] Refus de démarrer : en production, PUSH_ENDPOINT_ALLOWED_ORIGINS n'admet ni http ni hôte local (${bad.join(', ')}).`;
+}
+
+function rules(env: NodeJS.ProcessEnv = process.env): OriginRule[] {
+    const raw = env.PUSH_ENDPOINT_ALLOWED_ORIGINS?.trim();
     const entries = raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [...DEFAULT_PUSH_ORIGINS];
-    return entries.map(parseRule).filter((r): r is OriginRule => r !== null);
+    return entries.map((e) => parseRule(e, env)).filter((r): r is OriginRule => r !== null);
 }
 
 /** true si l'adresse est un point d'arrivée d'un service push autorisé (liste blanche courante). */
-export function isAllowedPushEndpoint(endpoint: unknown): boolean {
+/** `env` : environnement lu (process.env par défaut ; un test passe le sien). */
+export function isAllowedPushEndpoint(endpoint: unknown, env: NodeJS.ProcessEnv = process.env): boolean {
     if (typeof endpoint !== 'string' || endpoint.length === 0 || endpoint.length > MAX_PUSH_ENDPOINT_LENGTH) return false;
     let url: URL;
     try {
@@ -87,7 +121,8 @@ export function isAllowedPushEndpoint(endpoint: unknown): boolean {
     }
     if (url.username || url.password) return false;
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
-    for (const rule of rules()) {
+    if (strictPushOrigins(env) && (url.protocol !== 'https:' || LOCAL_HOSTS.has(url.hostname))) return false;
+    for (const rule of rules(env)) {
         if (rule.kind === 'exact') {
             if (url.origin === rule.origin) return true;
         } else if (url.protocol === 'https:' && url.port === '' && url.hostname.toLowerCase().endsWith(`.${rule.suffix}`)) {
