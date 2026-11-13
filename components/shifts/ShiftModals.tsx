@@ -17,7 +17,7 @@ import React, { useEffect, useId, useState } from 'react';
 import { Banknote, Printer, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { Field, TextInput, Textarea } from '@/components/ui/Field';
+import { TextInput, Textarea } from '@/components/ui/Field';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { formatDateTime, formatFcfa } from '@/lib/format';
 import type { Shift, ShiftSummary } from '@/lib/shifts/shift.service';
@@ -176,11 +176,9 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
     const formId = useId();
     const countId = useId();
     const justificationId = useId();
-    const pinId = useId();
     const [counted, setCounted] = useState('');
     const [justification, setJustification] = useState('');
-    const [regisseurPin, setRegisseurPin] = useState('');
-    /** Écart constaté par le serveur : justification et PIN du régisseur demandés. */
+    /** Écart constaté par le serveur : justification demandée (lot 9 quater, C7 : plus de PIN à la clôture). */
     const [cosign, setCosign] = useState<{ discrepancy: number | null } | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -190,7 +188,6 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
         if (!isOpen) return;
         setCounted('');
         setJustification('');
-        setRegisseurPin('');
         setCosign(null);
         setError('');
         setFieldError('');
@@ -213,7 +210,7 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
                 body: JSON.stringify({
                     shiftId: shift.id,
                     declaredCashTotal: declared,
-                    ...(cosign ? { justification: justification.trim(), regisseurPin: regisseurPin.trim() } : {}),
+                    ...(cosign ? { justification: justification.trim() } : {}),
                 }),
             });
             const data = await readJson(res, 'clôture');
@@ -223,10 +220,10 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
                 return;
             }
             const code = typeof data.code === 'string' ? data.code : '';
-            if (code === 'JUSTIFICATION_REQUIRED' || code === 'PIN_REQUIRED') {
+            if (code === 'JUSTIFICATION_REQUIRED') {
                 const served = Number(data.discrepancy);
                 setCosign({ discrepancy: Number.isFinite(served) ? served : null });
-                setError(cosign ? errorText(data, 'Justification ou code PIN manquant.') : '');
+                setError(cosign ? errorText(data, 'Justification manquante.') : '');
                 return;
             }
             setError(errorText(data, 'La caisse n’a pas pu être clôturée.'));
@@ -295,7 +292,7 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
                             {cosign.discrepancy !== null
                                 ? `Écart de ${formatFcfa(cosign.discrepancy)} avec les encaissements enregistrés. `
                                 : 'Le montant compté ne correspond pas aux encaissements enregistrés. '}
-                            Justifiez l’écart&nbsp;; le régisseur co-signe la clôture avec son code PIN.
+                            Justifiez l’écart&nbsp;; l’organisateur le validera depuis son espace.
                         </StatusBanner>
                         <Textarea
                             id={justificationId}
@@ -307,23 +304,6 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
                             onChange={(e) => setJustification(e.target.value)}
                             required
                         />
-                        <Field label="Code PIN du régisseur" hint="Le régisseur saisit lui-même son code." required id={pinId}>
-                            {(control) => (
-                                <input
-                                    id={control.id}
-                                    aria-describedby={control['aria-describedby']}
-                                    aria-invalid={control['aria-invalid']}
-                                    aria-required={control['aria-required']}
-                                    type="password"
-                                    inputMode="numeric"
-                                    autoComplete="off"
-                                    maxLength={8}
-                                    value={regisseurPin}
-                                    onChange={(e) => setRegisseurPin(e.target.value)}
-                                    className="min-h-11 w-full rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-center text-base tracking-widest text-fg focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                />
-                            )}
-                        </Field>
                     </>
                 )}
             </form>
@@ -381,8 +361,15 @@ export function ZSummaryModal({ isOpen, onClose, summary }: ZSummaryModalProps) 
                     <span className="font-semibold">Justification : </span>{summary.discrepancy_justification}
                 </p>
             )}
+            {/* Lot 9 quater (C7 : AUD-16) : l'écart est validé par l'organisateur depuis son espace, plus par le PIN */}
             <p className="mt-3 text-sm text-fg-muted">
-                {summary.closing_confirmed_by_pin ? 'Clôture co-signée par le code PIN du régisseur.' : 'Clôture sans co-signature (aucun écart).'}
+                {!discrepancy
+                    ? 'Clôture sans écart.'
+                    : summary.discrepancy_validated_at
+                        ? 'Écart validé par l’organisateur.'
+                        : summary.closing_confirmed_by_pin
+                            ? 'Clôture co-signée par le code PIN du régisseur.'
+                            : 'Écart en attente de validation par l’organisateur'}
             </p>
         </Modal>
     );

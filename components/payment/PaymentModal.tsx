@@ -757,6 +757,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
             <p id={phoneHelpId} className={cn('mt-1.5 text-sm leading-relaxed', phoneError ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
               {phoneError ?? phoneHelp}
             </p>
+            {/* Lot 9 quater (C3 : AUD-27) : numéro payeur différent de celui du compte, dit avant l'envoi de la demande */}
+            {payerPhone && !phoneRejected && normalizePayerPhone(profile?.phone) !== null && normalizePayerPhone(profile?.phone) !== payerPhone && (
+              <p role="status" className="mt-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-sm font-medium text-warning-fg">
+                Le paiement sera demandé au <span className="whitespace-nowrap tabular-nums">+221 {formatLocalPhone(payerPhone)}</span>.
+              </p>
+            )}
           </div>
 
           {/* Ce qui va se passer */}

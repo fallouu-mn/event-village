@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdminPermission } from '@/lib/auth/event-access';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
-import { asShiftRefusal, ShiftService } from '@/lib/shifts/shift.service';
+import { asShiftRefusal, ShiftService, DISCREPANCY_PENDING_MESSAGE } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,9 +70,11 @@ export async function POST(req: NextRequest) {
             discrepancy: result.discrepancy,
             pin_cosigned: result.pinCosigned,
             alert_queued: result.alertQueued,
+            // Lot 9 quater (C7 : AUD-16) : l'écart attend la validation de l'organisatrice depuis sa session
+            discrepancy_pending: result.discrepancyPending,
             message: result.discrepancy === 0
                 ? 'Session de caisse clôturée sans écart.'
-                : 'Session de caisse clôturée avec un écart. L’organisateur a été alerté.',
+                : `Session de caisse clôturée avec un écart. ${DISCREPANCY_PENDING_MESSAGE}.`,
         });
     } catch (err: unknown) {
         const refusal = asShiftRefusal(err);

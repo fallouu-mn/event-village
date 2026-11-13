@@ -9,6 +9,8 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 
 const MAX_ITEMS = 100;
+/** Lot 9 quater (C4) : durée de signalement d'un paiement échoué sans identifiant SamirPay. */
+const UNCONFIRMED_WINDOW_HOURS = 48;
 
 type ResumeState = 'ECHOUE' | 'INCERTAIN' | 'BLOQUE' | 'EN_ATTENTE' | 'ENVOYE_NON_CONFIRME';
 
@@ -241,7 +243,35 @@ export async function GET(request: NextRequest) {
             }];
         });
 
-        return NextResponse.json({ items, total: listed.count });
+        // Lot 9 quater (C4 : AUD-29) : un paiement passé FAILED sans identifiant SamirPay (initialisation deux fois hors
+        // délai) n'est pas relu par la réconciliation : le statut de l'API v1.2 ne se lit que par l'identifiant SamirPay
+        // (§4.3), aucune lecture par orderId. Il est signalé ici pendant 48 h, avec la consigne de vérification.
+        const since = new Date(Date.now() - UNCONFIRMED_WINDOW_HOURS * 3_600_000).toISOString();
+        const unconfirmed = rowsOf<{ id: string; amount: number | string; created_at: string; external_order_id: string | null; payer_phone: string | null }>(
+            'paiements sans identifiant SamirPay',
+            await supabase.from('payments')
+                .select('id, amount, created_at, external_order_id, payer_phone')
+                .eq('status', 'FAILED').is('external_transaction_id', null).gt('created_at', since)
+                .order('created_at', { ascending: true }).limit(MAX_ITEMS));
+        const unconfirmedItems = unconfirmed.map((p) => ({
+            id: p.id,
+            kind: 'PAYMENT_UNCONFIRMED',
+            kind_label: 'Paiement sans identifiant SamirPay',
+            state: 'A_VERIFIER',
+            state_label: 'À vérifier chez SamirPay',
+            since: p.created_at,
+            amount: Number(p.amount),
+            beneficiary: p.payer_phone ? maskPhone(p.payer_phone) : null,
+            event_title: null,
+            block_label: null,
+            can_resend: false,
+            can_mark_paid: false,
+            can_mark_not_sent: false,
+            advice: `Le paiement ${p.external_order_id ?? p.id} a échoué sans identifiant SamirPay : le client a peut-être été débité. `
+                + 'Cherchez cette référence dans le tableau de bord SamirPay. S’il a été débité, remboursez-le depuis le tableau de bord SamirPay et notez la référence du remboursement ; sinon, rien à faire.',
+        }));
+
+        return NextResponse.json({ items: [...items, ...unconfirmedItems], total: listed.count + unconfirmedItems.length });
     } catch (err) {
         return apiFailure('GET /api/admin/refunds', err, { message: 'Liste des versements à reprendre momentanément indisponible.', code: 'REFUNDS_UNAVAILABLE' });
     }

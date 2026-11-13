@@ -163,7 +163,7 @@ export interface TemplateData {
     ADMIN_PARTNER_REGISTERED: { partner_id: string; company: string };
     ADMIN_REFUND_TO_RETRY: { cashout_id: string; amount: number; cashout_status: 'ECHOUE' | 'BLOQUE' | string; blocked_reason?: string | null };
     /** Lot 8 (8.2 a, L32) : second paiement réussi d'un même panier. */
-    ADMIN_DUPLICATE_PAYMENT: { payment_id: string; duplicate_of: string; amount: number };
+    ADMIN_DUPLICATE_PAYMENT: { payment_id: string; duplicate_of: string; amount: number; duplicate_rank?: number; withheld?: number };
     ADMIN_CASHOUT_UNCERTAIN: { cashout_id: string; amount: number };
     ADMIN_WITHDRAWAL_REJECTED: { cashout_id: string; amount: number };
     ADMIN_FINANCE_DEBT: { debt_id: string; amount: number; debt: number; account_kind: AccountKind | string; entry_type?: string };
@@ -191,7 +191,7 @@ export interface TemplateData {
         cashout_id: string; amount: number; kind: 'REFUND' | 'EVENT_CANCELLATION_REFUND' | 'TICKET_REFUND' | 'WITHDRAWAL' | string;
         cause: 'DELAYED' | 'BLOCKED' | string; blocked_reason?: string | null;
     };
-    PAYMENT_REFUND_STARTED: OptionalEventData & { payment_id: string; amount: number; operator?: OperatorCode | string | null; duplicate_of?: string | null };
+    PAYMENT_REFUND_STARTED: OptionalEventData & { payment_id: string; amount: number; operator?: OperatorCode | string | null; duplicate_of?: string | null; withheld?: number | null; refund_amount?: number | null };
     ADMIN_PARTNER_RESUBMITTED: { partner_id: string; company: string };
     EVENT_CLOSED_HOLDER: EventData;
     EVENT_CLOSED_BY_ADMIN: EventData & { reason: string };

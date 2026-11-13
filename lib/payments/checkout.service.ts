@@ -127,6 +127,8 @@ export function paymentDeadlineOf(p: { created_at?: unknown }): string | null {
 }
 
 export const PAYMENT_PENDING_MESSAGE = 'Un paiement est déjà en attente pour cet événement.';
+/** Lot 9 quater (C2, C3) : refus du 4e paiement en attente vers un même numéro payeur dans l'heure. */
+export const PAYER_PENDING_MESSAGE = 'Un paiement est déjà en attente pour ce numéro. Terminez-le ou attendez quelques minutes.';
 
 /** Lot 7 (D4, contrat 3.5) : corps du refus 409 d'un second paiement en attente. */
 export function pendingPaymentRefusal(paymentId: string): Record<string, unknown> {
@@ -289,6 +291,10 @@ export async function startTicketCheckout(params: {
         // n'est créé ni réservé, SamirPay n'est pas appelé, l'interface conduit vers le suivi du premier.
         if (created?.code === 'PAYMENT_PENDING' && created.payment_id) {
             return { status: 409, body: pendingPaymentRefusal(created.payment_id) };
+        }
+        // Lot 9 quater (C2 : AUD-21, C3 : AUD-27) : 3 paiements en attente au plus par numéro payeur et par heure
+        if (created?.code === 'PAYER_PENDING_LIMIT') {
+            return { status: 409, body: { error: PAYER_PENDING_MESSAGE, code: 'PAYER_PENDING_LIMIT' } };
         }
         if (!created?.problems?.length) {
             throw new Error(`Création du paiement refusée sans motif exploitable : ${JSON.stringify(created).slice(0, 300)}`);

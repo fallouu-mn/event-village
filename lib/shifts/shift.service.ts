@@ -40,6 +40,8 @@ export interface Shift {
     discrepancy_justification: string | null;
     closed_at: string | null;
     closing_confirmed_by_pin: boolean;
+    /** Lot 9 quater (C7) : validation de l'écart par l'organisatrice. */
+    discrepancy_validated_at?: string | null;
     closed_by?: string | null;
     created_at: string;
     updated_at: string;
@@ -63,6 +65,8 @@ export interface ShiftSummary {
     discrepancy_justification: string | null;
     status: ShiftStatus;
     closing_confirmed_by_pin: boolean;
+    /** Lot 9 quater (C7) : validation de l'écart par l'organisatrice ; null et écart non nul = en attente. */
+    discrepancy_validated_at: string | null;
 }
 
 export interface ShiftViewer {
@@ -99,7 +103,7 @@ export interface PinCheck {
 // Colonnes exposées : jamais regisseur_pin_used (ancienne copie du haché, vidée par la migration du lot 4)
 const SHIFT_COLUMNS = 'id, controller_id, event_id, partner_id, opening_float_amount, opened_at, opening_confirmed_by_pin, status, '
     + 'expected_cash_total, declared_cash_total, discrepancy_amount, discrepancy_justification, closed_at, closed_by, closing_confirmed_by_pin, '
-    + 'created_at, updated_at';
+    + 'discrepancy_validated_at, created_at, updated_at';
 const SHIFT_WITH_PEOPLE = `${SHIFT_COLUMNS}, events(id, title, partner_id), users:controller_id(id, first_name, last_name, phone)`;
 
 const PIN_WINDOW_SECONDS = 15 * 60;
@@ -216,7 +220,12 @@ export interface ShiftCloseResult {
     discrepancy: number;
     pinCosigned: boolean;
     alertQueued: boolean;
+    /** Lot 9 quater (C7 : AUD-16) : écart non nul en attente de la validation de l'organisatrice. */
+    discrepancyPending: boolean;
 }
+
+/** Lot 9 quater (C7) : texte montré au contrôleur après une clôture avec écart. */
+export const DISCREPANCY_PENDING_MESSAGE = 'Écart en attente de validation par l’organisateur';
 
 const EVENT_PROBLEM_MESSAGES: Record<string, string> = {
     event_cancelled: 'Cet événement est annulé.',
@@ -404,16 +413,16 @@ export class ShiftService {
         const justification = (input.justification ?? input.discrepancyJustification ?? '').trim();
         const pin = (input.regisseurPin ?? '').trim();
 
-        let pinProof: { pin_salt: string; pin_hash: string } | null = null;
         const expected = Number(shift.expected_cash_total);
         if (declared !== expected) {
             // Lot 8 (8.2 f, contrat 3.6) : écart rendu à l'écran avec le refus. Chiffre lu sans verrou, pour
             // l'affichage seulement : shift_close recontrôle sous verrou et rend le sien. Signe de la RPC.
             const gap = { expected, declared, discrepancy: declared - expected };
             if (justification.length < 10) throw new ShiftError(400, 'JUSTIFICATION_REQUIRED', SHIFT_CLOSE_REFUSALS.JUSTIFICATION_REQUIRED[1], gap);
-            if (!pin) throw new ShiftError(400, 'PIN_REQUIRED', SHIFT_CLOSE_REFUSALS.PIN_REQUIRED[1], gap);
-            pinProof = await this.regisseurPinProof(shift.event_id, pin, `shift:${shift.id}`);
+            // Lot 9 quater (C7 : AUD-16) : plus de PIN régisseur saisi sur le téléphone du contrôleur pour un écart ;
+            // l'écart attend la validation de l'organisatrice depuis sa session (un PIN envoyé est ignoré).
         }
+        void pin;
 
         const { data, error } = await rpcWithRetry<Record<string, unknown> & { ok?: boolean; code?: string }>('shift_close', {
             p: {
@@ -421,7 +430,6 @@ export class ShiftService {
                 actor_id: userId,
                 declared_cash_total: declared,
                 justification: justification || null,
-                ...(pinProof ?? {}),
             },
         });
         if (error || !data) throw new Error(`shift_close : ${error?.message ?? 'réponse vide'}`);
@@ -445,6 +453,7 @@ export class ShiftService {
             discrepancy,
             pinCosigned: data.pin_cosigned === true,
             alertQueued: data.alert_queued === true,
+            discrepancyPending: data.discrepancy_pending === true,
         };
     }
 
@@ -493,6 +502,7 @@ export class ShiftService {
             discrepancy_justification: shift.discrepancy_justification,
             status: shift.status,
             closing_confirmed_by_pin: shift.closing_confirmed_by_pin === true,
+            discrepancy_validated_at: shift.discrepancy_validated_at ?? null,
         };
     }
 

@@ -1231,7 +1231,10 @@ const CATALOG = {
     ADMIN_DUPLICATE_PAYMENT: define('ADMIN_DUPLICATE_PAYMENT', {
         label: 'Paiement en double remboursé', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
         link: () => '/admin/finance',
-        inApp: (d) => ({ title: 'Paiement en double remboursé', content: `Un second paiement de ${money(d, 'amount')} a été encaissé pour le même panier : son remboursement au client est lancé.` }),
+        // Lot 9 quater (C1 : AUD-20) : à partir du 3e doublon du compte en 30 jours, remboursé moins les frais SamirPay
+        inApp: (d) => (Number(d.withheld ?? 0) > 0
+            ? { title: 'Paiements en double répétés', content: `Un ${formatInteger(num(d, 'duplicate_rank'))}e paiement en double de ${money(d, 'amount')} en 30 jours pour le même client : il est remboursé moins les frais SamirPay (${money(d, 'withheld')}). Vérifiez s'il s'agit d'un abus.` }
+            : { title: 'Paiement en double remboursé', content: `Un second paiement de ${money(d, 'amount')} a été encaissé pour le même panier : son remboursement au client est lancé.` }),
         sample: { payment_id: SAMPLE_ID.payment, duplicate_of: SAMPLE_ID.keptPayment, amount: 21_000 },
     }),
     ADMIN_CASHOUT_UNCERTAIN: define('ADMIN_CASHOUT_UNCERTAIN', {
@@ -1393,7 +1396,10 @@ const CATALOG = {
             const op = operatorLabel(field(d, 'operator'));
             return {
                 title: 'Remboursement de votre paiement',
-                content: optText(d, 'duplicate_of')
+                // Lot 9 quater (C1 : AUD-20) : au-delà de 2 doublons en 30 jours, frais de l'opérateur retenus
+                content: optText(d, 'duplicate_of') && Number(d.withheld ?? 0) > 0
+                    ? `Un nouveau paiement de ${money(d, 'amount')}${what} a été encaissé en double pour le même panier. C'est le troisième en 30 jours : il vous est remboursé moins les frais de l'opérateur (${money(d, 'withheld')}), soit ${money(d, 'refund_amount')}, sur votre compte ${op} ; vos billets restent valables.`
+                    : optText(d, 'duplicate_of')
                     ? `Un second paiement de ${money(d, 'amount')}${what} a été encaissé pour le même panier. Il vous est remboursé sur votre compte ${op} ; vos billets restent valables.`
                     : `Votre paiement de ${money(d, 'amount')}${what} a été reçu, mais aucun billet n'a pu être émis. Il vous est remboursé sur votre compte ${op} : vous serez prévenu du versement.`,
             };
@@ -1402,6 +1408,9 @@ const CATALOG = {
             const title = optText(d, 'title');
             const amount = smsAmount(num(d, 'amount'));
             const op = operatorLabel(field(d, 'operator'));
+            if (optText(d, 'duplicate_of') && Number(d.withheld ?? 0) > 0) {
+                return `${SMS_PREFIX}paiement en double de ${amount}, remboursé moins ${smsAmount(num(d, 'withheld'))} de frais sur votre compte ${op}. Vos billets restent valables.`;
+            }
             if (optText(d, 'duplicate_of')) {
                 return `${SMS_PREFIX}paiement en double de ${amount}${title ? ` ("${smsVar(title, 28)}")` : ''}, remboursé sur votre compte ${op}. Vos billets restent valables.`;
             }

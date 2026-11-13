@@ -17,6 +17,7 @@ import { useServerData } from '@/components/partner/useServerData';
 import { DefinitionRow, KpiAmount, PilotageSection } from './PilotageBlocks';
 import type { ShiftSummary } from '@/lib/shifts/shift.service';
 import { shiftStatusLabel, type CashShift, type PilotageCash } from './types';
+import { DiscrepancyValidation } from './DiscrepancyValidation';
 
 // Fenêtres de clôture et de Z (lot 9 bis, R17) chargées à l'ouverture seulement : même route que le scanner
 const CloseShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CloseShiftModal), { ssr: false });
@@ -160,7 +161,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
 
             <PilotageSection
                 title="Code PIN régisseur"
-                description="Le PIN est exigé à l’ouverture de chaque caisse et co-signe une clôture avec écart. Il n’est affiché qu’une fois, à sa génération."
+                description="Le PIN est exigé à l’ouverture de chaque caisse. Un écart de clôture se valide ici, depuis votre compte, et non plus par le PIN. Il n’est affiché qu’une fois, à sa génération."
             >
                 <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                     <p className="flex items-start gap-3 text-sm text-fg">
@@ -177,7 +178,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                                 .
                             </span>
                         ) : (
-                            <span>Aucun code PIN : vos contrôleurs ne peuvent ni ouvrir ni clôturer de caisse.</span>
+                            <span>Aucun code PIN : vos contrôleurs ne peuvent pas ouvrir de caisse.</span>
                         )}
                     </p>
                     <Button variant={data.pin.hasPin ? 'secondary' : 'primary'} leftIcon={<KeyRound size={18} />} onClick={() => setPinStep({ step: 'confirm' })}>
@@ -213,6 +214,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 />
             </PilotageSection>
 
+            {/* Lot 9 quater (C7 : AUD-16) : l'organisatrice valide elle-même les écarts de clôture */}
+            {!hasAnyRole(['ADMIN', 'SUPERADMIN']) && <DiscrepancyValidation eventId={eventId} signal={signal} />}
+
             <ConfirmDialog
                 isOpen={pinStep !== null}
                 onClose={() => {
@@ -223,8 +227,8 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 message={
                     pinStep?.step === 'open_shifts'
                         ? (pinStep.count > 1
-                            ? `${formatInteger(pinStep.count)} caisses sont ouvertes : leurs contrôleurs devront utiliser le nouveau code pour clôturer.`
-                            : 'Une caisse est ouverte : son contrôleur devra utiliser le nouveau code pour clôturer.')
+                            ? `${formatInteger(pinStep.count)} caisses sont ouvertes : le nouveau code servira aux prochaines ouvertures de caisse.`
+                            : 'Une caisse est ouverte : le nouveau code servira aux prochaines ouvertures de caisse.')
                         : 'L’ancien code cesse aussitôt d’être valable. Le nouveau code ne sera affiché qu’une seule fois.'
                 }
                 confirmLabel={pinStep?.step === 'open_shifts' ? 'Générer quand même' : 'Générer le code'}
