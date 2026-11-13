@@ -34,6 +34,7 @@ import { flushNotifications, markEmailVerified, markPhoneVerified, outboxRows, s
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { issueFreeTicket, newAdminWith } from './terrain-helpers';
 import type { RouteResult } from './acces-helpers';
+import { technicalEmailFor } from '../../lib/auth/technical-email';
 
 type Row = Record<string, unknown>;
 
@@ -75,9 +76,13 @@ async function holderAccount(label: string, firstName: string): Promise<Buyer> {
     return b;
 }
 
-/** Adresse technique du compte (« <chiffres>@eventvillage.sn ») : aucune adresse réelle, l'email part SKIPPED NO_REAL_EMAIL. */
+/**
+ * Adresse technique du compte : aucune adresse réelle, l'email part SKIPPED NO_REAL_EMAIL. Lot 9 quater (A4 : AUD-19) :
+ * forme actuelle « u…@comptes.eventvillage.invalid » (technical_email_for), l'ancienne « <chiffres>@eventvillage.sn »
+ * n'existe plus après la reprise et reste interdite par l'invariant (q1) (modification signalée au rapport).
+ */
 async function withoutRealEmail(b: Buyer): Promise<void> {
-    const { error } = await service.from('users').update({ email: `${b.phoneE164.replace(/\D/g, '')}@eventvillage.sn` }).eq('id', b.userId);
+    const { error } = await service.from('users').update({ email: technicalEmailFor(b.userId) }).eq('id', b.userId);
     assert.equal(error, null, `adresse technique du compte : ${error?.message}`);
 }
 

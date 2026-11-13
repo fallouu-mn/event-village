@@ -418,9 +418,11 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
         assert.equal(emailWarnings.length, 1, `un seul avertissement par processus : ${JSON.stringify(emailWarnings)}`);
     });
 
-    test('adresse factice (<chiffres>@eventvillage.sn) du compte ou du destinataire : SKIPPED NO_REAL_EMAIL, aucun appel', async () => {
+    test('adresse technique du compte (u…@comptes.eventvillage.invalid) ou adresse factice <chiffres>@eventvillage.sn du destinataire : SKIPPED NO_REAL_EMAIL, aucun appel', async () => {
         const buyer = await newBuyer('canaux-mail-factice');
-        const fake = `${buyer.phoneE164.replace(/\D/g, '')}@eventvillage.sn`;
+        // Lot 9 quater (A4 : AUD-19) : adresse technique d'un compte sous sa forme actuelle (technical_email_for) ; l'ancienne
+        // forme tirée du numéro n'existe plus dans public.users (invariant (q1)), elle reste éprouvée en destinataire explicite.
+        const fake = `u${buyer.userId.replace(/-/g, '')}@comptes.eventvillage.invalid`;
         const { error } = await service.from('users').update({ email: fake }).eq('id', buyer.userId);
         assert.equal(error, null, `email factice du compte : ${error?.message}`);
         const explicit = `221${String(Date.now()).slice(-9)}@eventvillage.sn`; const deleted = `${randomUUID()}@deleted.eventvillage.sn`; // lot 9 bis (B100, T53) : adresse « deleted. » technique
