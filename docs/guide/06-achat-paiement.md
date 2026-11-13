@@ -13,7 +13,7 @@
 
 | N° | Scénario |
 |---|---|
-| 06.1 | La fiche publique d'un événement : bandeaux, formules, états de stock, mise à jour en direct |
+| 06.1 | La fiche publique d'un événement : bandeaux, catégories, états de stock, mise à jour en direct |
 | 06.2 | Les cartes du catalogue : « À partir de », « Gratuit », badges « Dernières places » et « Complet » |
 | 06.3 | Composer son panier : quantités, limites, total calculé par le serveur, visiteur non connecté |
 | 06.4 | Panier entièrement gratuit : réservation sans paiement, limite par compte |
@@ -53,7 +53,7 @@ Règles communes à tout le fichier :
 
 ---
 
-## 06.1 La fiche publique d'un événement : bandeaux, formules, états de stock, mise à jour en direct
+## 06.1 La fiche publique d'un événement : bandeaux, catégories, états de stock, mise à jour en direct
 
 1. **Qui, où.** Tout le monde, connecté ou non : `/events/{id}` (route publique, `middleware.ts:108-111`). On y arrive
    depuis une carte de l'accueil ou d'« Explorer » (06.2), ou par un lien partagé (bouton « Partager l’événement »).
@@ -73,7 +73,7 @@ Règles communes à tout le fichier :
      | Terminé | « Événement terminé » | « Cet événement a eu lieu. La billetterie est fermée. » |
 
      Le motif interne d'une annulation n'est jamais montré (`app/api/events/[id]/route.ts:158-174`).
-   - **Formules affichées** : seulement les catégories **actives ET vendues en ligne** ; une catégorie « guichet seul » ou
+   - **Catégories affichées** : seulement les catégories **actives ET vendues en ligne** ; une catégorie « guichet seul » ou
      « invitations seulement » n'apparaît pas (`app/api/events/[id]/route.ts:113`). Pour chacune : nom, prix
      (« Gratuit » pour 0, sinon ex. « 5 000 F CFA »), description, et un état (`app/events/[id]/page.tsx:266-284`) :
 
@@ -90,7 +90,7 @@ Règles communes à tout le fichier :
      06.2).
    - **Achetable ?** Le module d'achat (« Choisissez vos billets », « Places et disponibilités mises à jour en direct. »)
      n'apparaît que si l'événement est Publié, pas encore fini (fin saisie, sinon début + 6 h) et qu'au moins une
-     formule est en vente avec des places (`app/api/events/[id]/route.ts:93`, `:123`, `:149-150`,
+     catégorie est en vente avec des places (`app/api/events/[id]/route.ts:93`, `:123`, `:149-150`,
      `app/events/[id]/page.tsx:1012-1017`). Sinon, la colonne s'appelle « Billetterie » et dit pourquoi
      (`app/events/[id]/page.tsx:1151-1163`) :
      - suspendu, annulé ou terminé : « La vente de billets est fermée pour cet événement. » ;
@@ -99,7 +99,7 @@ Règles communes à tout le fichier :
        cours de paiement. Des places peuvent se libérer : cette page se met à jour d’elle-même. » ; sans place retenue :
        « Toutes les places ont été vendues. » ;
      - sinon : « Aucune catégorie n’est en vente pour le moment. Revenez bientôt : cette page se met à jour d’elle-même. »
-     puis la liste des formules (sans état si l'événement a un bandeau) et « Voir d’autres événements ».
+     puis la liste des catégories (sans état si l'événement a un bandeau) et « Voir d’autres événements ».
    - **Infos** : « Date et heure » (ex. « Samedi 5 décembre 2026 à 20:00 », fin seulement si une date de fin est saisie,
      ex. « Jusqu’à 23:00 »), « Lieu », « À propos de l’événement », « Programme », « Lieu et accès » (carte, « Voir
      l’itinéraire », « Accès et transports », « Stationnement », « Contact de l’organisateur », « Règlement et
@@ -164,15 +164,15 @@ Règles communes à tout le fichier :
 
 1. **Qui, où.** Toute personne sur la fiche d'un événement achetable, colonne « Choisissez vos billets » (sur téléphone,
    une barre d'achat apparaît en bas dès qu'un billet est choisi) (`app/events/[id]/page.tsx:1015-1016`, `:1206-1220`).
-2. **Ce qu'il saisit.** Les boutons « - » et « + » de chaque formule (« Retirer un billet {formule} », « Ajouter un
-   billet {formule} »). Limite par formule : le maximum par commande de la catégorie (10 si non renseigné, 50 au plus en
+2. **Ce qu'il saisit.** Les boutons « - » et « + » de chaque catégorie (« Retirer un billet {catégorie} », « Ajouter un
+   billet {catégorie} »). Limite par catégorie : le maximum par commande de la catégorie (10 si non renseigné, 50 au plus en
    base) et, quand le restant est affiché, ce restant ; « + » se grise à la limite (`app/events/[id]/page.tsx:576-590`,
    `:1040-1062`, `lib/payments/checkout.service.ts:31-32`). Sans billet : « Choisissez au moins un billet avec le
    bouton « + ». » (`:1144-1146`).
 3. **Ce que fait le système.**
    - **Devis du serveur** dès qu'un billet payant est dans le panier (un court délai de 250 ms regroupe les clics) :
      lignes, prix des billets, frais de service, total (`app/events/[id]/page.tsx:612-662`,
-     `app/api/checkout/quote/route.ts:13-59`, `M/20261101000003_lot3_moteur.sql:122-147`). Affichage : sous chaque formule
+     `app/api/checkout/quote/route.ts:13-59`, `M/20261101000003_lot3_moteur.sql:122-147`). Affichage : sous chaque catégorie
      « {n} × {prix} : {montant de la ligne} », ex. « 2 × 5 000 F CFA : 10 000 F CFA » ; récapitulatif « Billets »,
      « Frais de service », « Total ({n} billets) » ; bouton « Acheter {n} billet(s) ({total}) », ex. « Acheter 3 billets
      (23 625 F CFA) » (barre du téléphone : « Acheter (23 625 F CFA) ») ; tant que le devis manque : « Calcul du
@@ -200,7 +200,7 @@ Règles communes à tout le fichier :
 
 ## 06.4 Panier entièrement gratuit : réservation sans paiement, limite par compte
 
-1. **Qui, où.** Client connecté, compte actif, fiche d'un événement achetable ; panier composé uniquement de formules à
+1. **Qui, où.** Client connecté, compte actif, fiche d'un événement achetable ; panier composé uniquement de catégories à
    0 F. Bouton « Réserver {n} billet(s) gratuit(s) », ex. « Réserver 2 billets gratuits » (barre du téléphone :
    « Réserver (2) ») ; total « Gratuit » (`app/events/[id]/page.tsx:785-792`, `:1097-1098`).
 2. **Ce qu'il saisit.** Les quantités (06.3). Aucun opérateur, aucun numéro.
@@ -246,7 +246,7 @@ Règles communes à tout le fichier :
 
 ## 06.5 Panier mixte (gratuits et payants)
 
-1. **Qui, où.** Client connecté ; panier avec au moins une formule payante et au moins une gratuite (ex. 2 « Standard »,
+1. **Qui, où.** Client connecté ; panier avec au moins une catégorie payante et au moins une gratuite (ex. 2 « Standard »,
    1 « VIP », 1 « Enfant »).
 2. **Ce qu'il saisit.** Comme 06.6 : tout le panier part en un seul paiement.
 3. **Ce que fait le système.**
@@ -274,7 +274,7 @@ Règles communes à tout le fichier :
 
    | Élément (libellé exact) | Obligatoire | Aide, limites, erreurs exactes | Preuve |
    |---|---|---|---|
-   | « Récapitulatif » : titre « {événement} ({n} × {formule} + …) », « Prix des billets », « Frais de service ({taux} %) », « Total à payer » | — | ex. « Concert Test (2 × Standard + 1 × VIP + 1 × Enfant) », « Frais de service (5 %) » | `PaymentModal.tsx:557-589`, `app/events/[id]/page.tsx:1233` |
+   | « Récapitulatif » : titre « {événement} ({n} × {catégorie} + …) », « Prix des billets », « Frais de service ({taux} %) », « Total à payer » | — | ex. « Concert Test (2 × Standard + 1 × VIP + 1 × Enfant) », « Frais de service (5 %) » | `PaymentModal.tsx:557-589`, `app/events/[id]/page.tsx:1233` |
    | « Moyen de paiement » : « Wave » ou « Orange Money » (sous-titre « Mobile Money ») | oui, rien n'est présélectionné | « Choisissez l’opérateur avec lequel vous allez payer. » | `PaymentModal.tsx:649-710` |
    | « Numéro {Wave, Orange Money ou Mobile Money} du payeur », préfixe « +221 », exemple « 77 123 45 67 », 20 caractères au plus | oui | aide « Mobile sénégalais, avec ou sans +221. La demande de paiement sera liée à ce numéro. » ; prérempli avec le numéro du profil : « Numéro de votre profil. Modifiez-le si un autre compte {opérateur} paie. » ; vide : « Le numéro du payeur est obligatoire. » ; mal formé : « Numéro invalide : mobile sénégalais de 9 chiffres commençant par 70, 75, 76, 77 ou 78. » | `PaymentModal.tsx:275-300`, `:712-760`, `lib/payments/payer-phone.ts:1-13` |
 
@@ -316,7 +316,7 @@ Règles communes à tout le fichier :
    | Session expirée | « Session expirée » | « Votre session a expiré : reconnectez-vous pour continuer. » + bouton « Se reconnecter » |
    | Quota | « Trop de tentatives » | « Trop de tentatives d’achat. Réessayez dans {délai}. » (bouton « Réessayer dans {délai} ») |
    | Paiement déjà en attente | « Un paiement est déjà en attente » | « Un paiement est déjà en attente pour cet événement : suivez-le avant d’en lancer un autre. » + « Suivre le paiement » |
-   | Stock | « Plus assez de places » | « {formule} : Plus assez de places « {formule} » disponibles. » |
+   | Stock | « Plus assez de places » | « {catégorie} : Plus assez de places « {catégorie} » disponibles. » |
    | Autres contrôles | « Panier à ajuster » | une ligne par problème : « Cet événement n'est pas ouvert à la vente. », « Cet événement est terminé. », « La catégorie « {nom} » n'est plus en vente. », « La catégorie « {nom} » n'est pas vendue en ligne. », « La vente de « {nom} » n'est pas encore ouverte. », « La vente de « {nom} » est close. », « Au plus {n} billet(s) « {nom} » par commande. », « Le prix a changé : rechargez la page. », « Une catégorie apparaît plusieurs fois dans le panier. » (`M/20261106000001_lot8_canaux.sql:225-273`, `M/20261109000007_lot9bis_versements.sql:754`) |
    | Opérateur absent | « Paiement non lancé » | « Choisissez Wave ou Orange Money. » |
    | Numéro refusé | « Paiement non lancé » | « Numéro du payeur invalide (mobile sénégalais, 9 chiffres). » (aussi sous le champ) |
@@ -398,7 +398,7 @@ Règles communes à tout le fichier :
      jusque-là. » ; « Annuler ce paiement » devient le bouton principal (`:236-244`, `:779-784`, `:861-868`, `:966-977`).
    - **« Ce que vous allez recevoir »** (`components/payment/PaymentWaitingInfo.tsx:34-127`) : l'événement et sa date,
      « {n} billets, avec leur QR code, dans Mes billets » (ou « 1 billet, avec son QR code, dans Mes billets ») et la
-     liste « {n} × {formule} » ; « Dès la confirmation : » suivi des canaux réellement prévus : « Un SMS de confirmation
+     liste « {n} × {catégorie} » ; « Dès la confirmation : » suivi des canaux réellement prévus : « Un SMS de confirmation
      au {numéro masqué} » (ex. « 77*****00 »), « Un email de confirmation, avec le détail de l’achat » (seulement si
      l'email est activé et l'adresse vérifiée), « Une notification dans Event Village »
      (`app/api/payments/[transactionId]/status/route.ts:90-108`, `lib/payments/payer-phone.ts:15-20`) ; encadré :
@@ -446,7 +446,7 @@ Règles communes à tout le fichier :
    |---|---|---|---|---|
    | Acheteuse (au **numéro du payeur**) | SMS | Indispensable, envoyé même si le compte est suspendu | File d'attente, minute suivante | « Event Village : achat confirmé, {n} billet(s) {titre, 19 car.}. Frais de service {frais}, total payé {total}. {adresse}/tickets » — ex. « Event Village : achat confirmé, 4 billets Concert Test. Frais de service 1 125 F CFA, total payé 23 625 F CFA. https://app.exemple.sn/tickets » (141 caractères, 1 segment) |
    | Acheteuse | Cloche | Indispensable | Idem | « Achat confirmé » / « 4 billets pour « Concert Test » le sam. 5 déc. 2026 à 20:00. Total payé : 23 625 F CFA. Vos billets sont dans Mes billets. » |
-   | Acheteuse, si adresse vérifiée | Email | Indispensable | Idem | Événement, billets par formule, « Montant payé » « {total}, dont frais de service {frais} », numéros (10 au plus), bouton « Voir mes billets » (10) |
+   | Acheteuse, si adresse vérifiée | Email | Indispensable | Idem | Événement, billets par catégorie, « Montant payé » « {total}, dont frais de service {frais} », numéros (10 au plus), bouton « Voir mes billets » (10) |
    | Partenaire | Cloche | Optionnel (sujet « activité pro ») | À **chaque** vente confirmée | « Nouvelle commande » / « {n} billets vendus pour « {titre} » ({prix des billets, hors frais}). » — ex. « 4 billets vendus pour « Concert Test » (22 500 F CFA). » |
    | Partenaire | Cloche, push, SMS, email | Optionnel | **Une seule fois par événement**, au premier billet payé ou vendu au guichet ; SMS perdu en heures calmes (10) | `FIRST_TICKET_SOLD` : « Event Village : premier billet vendu pour Concert Test. Suivez vos ventes : https://app.exemple.sn/partner/events » (113 caractères) ; cloche « Premier billet vendu » / « Le premier billet de « Concert Test » est vendu. » |
    | Partenaire | Cloche, push, SMS, email | Optionnel | Quand une catégorie, puis tout l'événement, est épuisée | `CATEGORY_SOLD_OUT`, `EVENT_SOLD_OUT` (textes : 10) |
@@ -722,7 +722,7 @@ Une réponse 502 donne une nouvelle clé au prochain essai : un nouveau paiement
      son compte « Vente en ligne » dès la confirmation, **disponible** à la fin de l'événement + 48 h (réglages
      `finance.payout_hold_enabled` et `finance.payout_delay_hours` ; fin = fin saisie, sinon début + 6 h)
      (`M/20261101000004_lot3_grand_livre.sql:107-131`, `:263-301`, `M/20261102000003_lot5_cycle.sql` `fin_event_end`) ;
-     elle la retire ensuite moyennant des frais de retrait (1 %, minimum 5 000 F, 03.19) ;
+     elle la retire ensuite moyennant des frais de retrait (1 % ; retrait de 5 000 F CFA au moins, 03.19) ;
    - **revenu brut d'Event Village** = frais de service ; **revenu net** = frais de service − frais SamirPay ; les
      commissions de parrainage sont prises sur ce revenu net (09.5) ;
    - un **abonnement** n'a pas de frais de service et revient entièrement à Event Village ; une **vente au guichet en
