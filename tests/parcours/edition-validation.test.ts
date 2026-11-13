@@ -531,11 +531,11 @@ describe('F1 — même schéma côté serveur (routes) et côté formulaire', ()
     });
 
     test('POST : début passé → EVENT_START_PAST ; affiche externe → IMAGE_ORIGIN_INVALID ; aucun événement créé', async () => {
-        const past = base(partner.partnerId, { title: `TEST Validation passé ${randomUUID()}` });
+        const past = base(partner.partnerId, { title: `TEST Validation passé ${randomUUID().slice(0, 8)}` });
         const yesterday = dakarDay(-1);
         Object.assign(past, { start_date: yesterday, end_date: yesterday });
         past.ticket_categories = [{ name: 'Standard', price: 5000, total_quantity: 100, max_per_order: 10 }];
-        const external = base(partner.partnerId, { title: `TEST Validation affiche ${randomUUID()}`, image_url: 'https://images.unsplash.com/photo-1.jpg' });
+        const external = base(partner.partnerId, { title: `TEST Validation affiche ${randomUUID().slice(0, 8)}`, image_url: 'https://images.unsplash.com/photo-1.jpg' });
         for (const [label, body, codeExpected, field] of [
             ['début hier', past, 'EVENT_START_PAST', null],
             ['affiche externe', external, 'IMAGE_ORIGIN_INVALID', 'image_url'],
@@ -555,7 +555,7 @@ describe('F1 — même schéma côté serveur (routes) et côté formulaire', ()
         const e = dakarParts(start + 3 * HOUR_MS);
         const saleEnd = dakarParts(start + HOUR_MS);
         const body = base(partner.partnerId, {
-            title: `TEST Validation fuseau ${randomUUID()}`,
+            title: `TEST Validation fuseau ${randomUUID().slice(0, 8)}`, // lot 9 quater (D3) : un UUID entier peut aligner 10 chiffres
             start_date: s.date, start_time: s.time, end_date: e.date, end_time: e.time,
             ticket_categories: [{ name: 'Standard', price: 5000, total_quantity: 100, max_per_order: 10, sale_end: `${saleEnd.date}T${saleEnd.time}` }],
         });
