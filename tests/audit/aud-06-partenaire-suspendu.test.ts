@@ -1,0 +1,93 @@
+/**
+ * Audit de sécurité du module événements — AUD-06 : les aides RLS is_partner_owner(), has_role(), is_controller() et
+ * auth_user_role() ignorent le statut du compte ; impact mesuré sur un partenaire SUSPENDU.
+ *
+ * is_partner_owner (0003_rls.sql:33-38) : `partners.id = p AND user_id = auth.uid()`, sans statut du compte ni du
+ * partenaire. Politiques qui s'en servent sans autre condition de statut : payments_read (0003_rls.sql:274),
+ * refunds_read (0003_rls.sql:287), event_cancellations_select (20261031000005:34),
+ * participant_exports_owner_admin_select (20261102000005:51), events_read_public (20261110000007:221, brouillons
+ * compris). tickets_read, elle, ajoute un test de statut (20261103000001_lot6_dette.sql:118-140) : le billet est bien
+ * protégé, le paiement non. La suspension (partner_status_set) passe users.status à SUSPENDU et révoque les sessions,
+ * mais un jeton d'accès déjà émis reste accepté par PostgREST jusqu'à son expiration (jwt_expiry = 3600 s,
+ * supabase/config.toml) ; et le compte n'est pas banni chez GoTrue : il se reconnecte (second test).
+ * À comparer : is_admin() exige ACTIF depuis le lot 9 ter (20261110000001_lot9ter_rls.sql:116-117).
+ *
+ * Tests ROUGES tant que la faille existe : après la suspension du partenaire par la RPC de l'administration, ni son
+ * ancien jeton ni un jeton neuf ne lisent les paiements (numéro du payeur compris) de ses acheteurs.
+ */
+import '../helpers/env';
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createClient } from '@supabase/supabase-js';
+import { newBuyer, service } from '../parcours/paiement-helpers';
+import { STRONG_PASSWORD } from '../parcours/helpers';
+import { buyConfirmed, createPartnerEvent, newPartner, superadminId } from '../parcours/finance-helpers';
+
+function asUser(accessToken: string) {
+    return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
+}
+
+describe('AUD-06 — partenaire suspendu : lectures REST qui ignorent le statut (is_partner_owner)', () => {
+    test('le jeton d\'un partenaire suspendu ne lit plus les billets ni les paiements de ses acheteurs', async () => {
+        const partner = await newPartner('aud-susp');
+        const ev = await createPartnerEvent(partner.partnerId, 'aud suspendu', [{ name: 'Std', price: 1_000, total: 5 }]);
+        const buyer = await newBuyer('aud-susp-acheteur');
+        const purchase = await buyConfirmed(buyer, ev, [['Std', 1]]);
+        assert.equal(purchase.tickets.length, 1, 'précondition : un billet vendu');
+
+        const before = await asUser(partner.accessToken).from('tickets').select('id').eq('event_id', ev.eventId);
+        assert.equal(before.error, null, `précondition : lecture des billets par le partenaire actif : ${before.error?.message}`);
+        assert.equal(before.data?.length, 1, 'précondition : le partenaire actif lit le billet de son événement');
+
+        const { data: reply, error } = await service.rpc('partner_status_set', {
+            p: { partner_id: partner.partnerId, actor_id: await superadminId(), status: 'SUSPENDU', reason: 'Audit de sécurité AUD-06' },
+        });
+        assert.equal(error, null, `suspension : ${error?.message}`);
+        assert.equal((reply as { ok?: boolean }).ok, true, `suspension refusée : ${JSON.stringify(reply)}`);
+        const { data: u } = await service.from('users').select('status').eq('id', partner.userId).single();
+        const { data: p } = await service.from('partners').select('status').eq('id', partner.partnerId).single();
+        console.log(`[AUD-06] après partner_status_set : users.status=${u?.status} partners.status=${p?.status} réponse=${JSON.stringify(reply).slice(0, 200)}`);
+        assert.equal(u?.status, 'SUSPENDU', 'précondition : compte du partenaire suspendu');
+
+        const client = asUser(partner.accessToken);
+        // Colonnes que le rôle authenticated a le droit de lire (un select('*') bute sur les droits de colonne, pas sur la RLS)
+        const tickets = await client.from('tickets').select('id, ticket_number, user_id, status').eq('event_id', ev.eventId);
+        const payments = await client.from('payments').select('*').eq('id', purchase.payment.id);
+        const leaked = (payments.data ?? []).map((row) => Object.fromEntries(Object.entries(row as Record<string, unknown>)
+            .filter(([k]) => /phone|client_id|amount|status/.test(k))));
+        console.log(`[AUD-06] jeton du partenaire suspendu : billets lus=${tickets.data?.length ?? 0} (erreur ${tickets.error?.message ?? 'aucune'}) ; paiements lus=${payments.data?.length ?? 0} (erreur ${payments.error?.message ?? 'aucune'}) ; colonnes : ${JSON.stringify(leaked)}`);
+        assert.deepEqual({ tickets: tickets.data?.length ?? 0, payments: payments.data?.length ?? 0 }, { tickets: 0, payments: 0 },
+            'un partenaire SUSPENDU lit encore, avec son jeton, les paiements de ses acheteurs, numéro du payeur compris (payments_read repose sur is_partner_owner, qui ignore le statut)');
+    });
+
+    /**
+     * La suspension ne bannit pas le compte chez GoTrue (user_status_set et partner_status_set révoquent les sessions
+     * seulement : 20261109000004_lot9bis_droits.sql:505-509 ; le bannissement n'existe qu'à l'anonymisation,
+     * lib/admin/admin.service.ts:348) et la connexion ne lit pas users.status (app/api/auth/login/route.ts:96 ne traite
+     * que les refus de GoTrue). Un compte suspendu obtient donc un jeton neuf : la fenêtre n'est pas d'une heure.
+     */
+    test('un partenaire suspendu ne peut pas obtenir un nouveau jeton qui lit encore les paiements de ses acheteurs', async () => {
+        const partner = await newPartner('aud-susp-relog');
+        const ev = await createPartnerEvent(partner.partnerId, 'aud suspendu reconnexion', [{ name: 'Std', price: 1_000, total: 5 }]);
+        const buyer = await newBuyer('aud-susp-relog-acheteur');
+        const purchase = await buyConfirmed(buyer, ev, [['Std', 1]]);
+        const { data: reply, error } = await service.rpc('partner_status_set', {
+            p: { partner_id: partner.partnerId, actor_id: await superadminId(), status: 'SUSPENDU', reason: 'Audit de sécurité AUD-06 (reconnexion)' },
+        });
+        assert.equal(error, null, `suspension : ${error?.message}`);
+        assert.equal((reply as { ok?: boolean }).ok, true, `suspension refusée : ${JSON.stringify(reply)}`);
+
+        const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        });
+        const relog = await anon.auth.signInWithPassword({ email: partner.email, password: STRONG_PASSWORD });
+        const fresh = relog.data.session?.access_token;
+        const payments = fresh ? await asUser(fresh).from('payments').select('id, payer_phone, amount, status').eq('id', purchase.payment.id) : null;
+        console.log(`[AUD-06] reconnexion du partenaire suspendu : ${relog.error ? `refusée (${relog.error.message})` : 'acceptée'} ; paiements lus avec le jeton neuf : ${JSON.stringify(payments?.data ?? [])}`);
+        assert.equal(payments?.data?.length ?? 0, 0,
+            'un partenaire SUSPENDU se reconnecte et relit, avec un jeton neuf, les paiements de ses acheteurs, numéro du payeur compris (aucun bannissement, aucun contrôle du statut)');
+    });
+});
