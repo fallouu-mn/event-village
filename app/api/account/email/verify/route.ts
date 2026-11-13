@@ -59,9 +59,39 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         if (!userId || !email) return refuse(new Error('email_verification_check : réponse incomplète'));
         const authUpdate = check.auth_update === true;
 
+        // Lot 9 quater (A9 : AUD-34) : l'adresse a été validée entre-temps par un autre profil. L'attente de ce compte
+        // n'est plus retirée par l'autre validation ; son titulaire la retire en cliquant son lien : la RPC de validation,
+        // qui voit l'adresse prise dans public.users, refuse EMAIL_TAKEN, vide l'attente et use le lien. Adresse prise
+        // dans auth.users seulement : la RPC ne la verrait pas (elle validerait), refus simple sans RPC (AM1).
+        const takenByProfile = async (): Promise<boolean> => {
+            const pattern = email.replace(/[\\%_]/g, (c) => `\\${c}`);
+            const { data: rows, error: readErr } = await supabase.from('users').select('id').neq('id', userId).ilike('email', pattern).limit(1);
+            if (readErr) {
+                console.error(`[${CONTEXT}] relecture des profils impossible pour le compte ${userId} :`, readErr.message);
+                return false;
+            }
+            return (rows ?? []).length > 0;
+        };
+        const takenElsewhere = async (): Promise<NextResponse> => {
+            if (!(await takenByProfile())) return refuse(REFUSALS.EMAIL_TAKEN);
+            const { data: released, error: releaseErr } = await supabase.rpc('email_verification_finalize', {
+                p: { token_hash: tokenHash, expected_email: check.current_email ?? null },
+            });
+            const code = (released as FinalizeReply | null)?.code;
+            if (releaseErr || code !== 'EMAIL_TAKEN') {
+                console.error(`[${CONTEXT}] attente non retirée pour le compte ${userId} :`, releaseErr ? releaseErr.message : (code ?? 'réponse vide'));
+                // Profil libéré entre la relecture et la RPC : public.users a pu recevoir l'adresse, auth.users est
+                // ramené sur public.users (même compensation que l'échec de la RPC).
+                if ((released as FinalizeReply | null)?.ok === true) {
+                    return (await compensateAuthIdentity(userId, 'email-verify', 'email')) ? NextResponse.json({ ok: true }) : refuse(SYNC_FAILED);
+                }
+            }
+            return refuse(REFUSALS.EMAIL_TAKEN);
+        };
+
         // 2. Ordre AR2 : identité libre (AM1), puis auth.users, puis la RPC de validation, compensation en cas d'échec.
         if (authUpdate) {
-            if ((await identityTaken(userId, email, null)).emailTaken) return refuse(REFUSALS.EMAIL_TAKEN);
+            if ((await identityTaken(userId, email, null)).emailTaken) return takenElsewhere();
             const { error } = await supabase.auth.admin.updateUserById(userId, { email, email_confirm: true });
             if (error) {
                 if (await authUpdateRefusedAsTaken(error, userId, email, null)) return refuse(REFUSALS.EMAIL_TAKEN);
