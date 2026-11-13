@@ -114,7 +114,8 @@ describe('Audit — inventaire du catalogue (base locale, lecture seule)', () =>
         });
 
         // Lignes visibles, table par table, pour un visiteur puis pour des comptes du seed (aucune écriture).
-        const readable = relations.filter((r) => r.schema === 'public' && (r.anon_select || r.auth_select)).map((r) => String(r.rel));
+        // Droit de table OU droit sur au moins une colonne (count(*) n'exige qu'une colonne lisible)
+        const readable = relations.filter((r) => r.schema === 'public' && (r.anon_select || r.auth_select || r.anon_cols || r.auth_cols)).map((r) => String(r.rel));
         const ids = await inspect(async (c) => rows(c, `SELECT id, email FROM public.users WHERE email = ANY($1::text[])`,
             [AS_USERS.map((k) => FIXTURE_USERS[k].email)]));
         const total = await inspect(async (c) => {
