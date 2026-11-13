@@ -1,6 +1,7 @@
 'use client';
 
 import { createBrowserClient } from '@supabase/ssr';
+import { supabaseCookieOptions } from './cookie-options';
 
 let browserClient: ReturnType<typeof createBrowserClient> | null = null;
 
@@ -14,7 +15,8 @@ export function getBrowserClient() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-    browserClient = createBrowserClient(supabaseUrl, anonKey);
+    // Lot 9 quinquies (A4) : cookie de session Secure en production (HTTPS)
+    browserClient = createBrowserClient(supabaseUrl, anonKey, { cookieOptions: supabaseCookieOptions() });
 
     return browserClient;
 }

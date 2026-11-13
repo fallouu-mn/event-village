@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { supabaseCookieOptions } from '@/lib/supabase/cookie-options';
 
 const PUBLIC_PREFIXES = [
     '/_next',
@@ -153,6 +154,7 @@ export async function middleware(req: NextRequest) {
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
+            cookieOptions: supabaseCookieOptions(), // lot 9 quinquies (A4) : Secure en production
             cookies: {
                 getAll() {
                     return req.cookies.getAll();

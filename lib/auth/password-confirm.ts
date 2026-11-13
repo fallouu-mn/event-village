@@ -17,6 +17,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
+import { supabaseCookieOptions } from '@/lib/supabase/cookie-options';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
 
 /** Durée de validité d'une saisie du mot de passe (contrat B35). */
@@ -108,6 +109,7 @@ export async function serverPasswordSignIn(
 ): Promise<ServerSignIn> {
     const collected = new Map<string, SessionCookie>();
     const client = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+        cookieOptions: supabaseCookieOptions(), // lot 9 quinquies (A4) : Secure en production
         cookies: {
             getAll() {
                 return req.cookies.getAll();

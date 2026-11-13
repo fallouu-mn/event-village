@@ -3,6 +3,7 @@ import { getAuthenticatedUserId, getServiceRoleClient } from '@/lib/supabase/ser
 import { type UserRoleType } from '@/lib/auth/roles';
 import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 import { getClientIp } from '@/lib/security/client-ip';
+import { adminStepUpRefusal } from '@/lib/admin/step-up';
 
 export interface AdminAuthResult {
     authorized: boolean;
@@ -91,6 +92,8 @@ export async function verifyAdminAuth(
     options?: {
         requireSuperadmin?: boolean;
         requiredPermission?: AdminPermission;
+        /** Lot 9 quinquies (A3, A4) : routes de l'étape de sécurité elles-mêmes (mot de passe, code SMS) seulement. */
+        skipStepUp?: boolean;
     }
 ): Promise<AdminAuthResult> {
     try {
@@ -220,6 +223,14 @@ export async function verifyAdminAuth(
                     errorResponse: permissionMissingResponse(options.requiredPermission),
                 };
             }
+        }
+
+        // Lot 9 quinquies (A3 : AUTH-05, A4 : AUTH-04) : code SMS sur un nouvel appareil et après 12 h, mot de passe de la
+        // session de moins de 12 h, mot de passe redemandé après 30 min sans activité ; après les refus de rôle et de
+        // permission (leurs codes ne changent pas).
+        if (!options?.skipStepUp) {
+            const stepUp = await adminStepUpRefusal(req, userId, 'ADMIN');
+            if (stepUp) return { authorized: false, errorResponse: stepUp };
         }
 
         return {

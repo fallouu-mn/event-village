@@ -16,6 +16,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { loadFixtures } from '../helpers/fixtures';
+import { stepUpTestSession } from '../helpers/admin-step-up';
 import { getFakes } from '../fakes';
 import { BASE_URL, randomEmail, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
 import { POST as checkoutRoute } from '../../app/api/checkout/route';
@@ -68,6 +69,8 @@ export async function newBuyer(label: string, opts: { firstName?: string; lastNa
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: s, error: signErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
     assert.equal(signErr, null, `connexion de l'acheteur : ${signErr?.message}`);
+    // Lot 9 quinquies (A3, A4 ; aide modifiée, signalée au rapport) : session valant mot de passe et code administrateur saisis
+    await stepUpTestSession(s.session!.access_token);
     return { userId, accessToken: s.session!.access_token, email, phoneE164, phone9: phoneE164.slice(4), firstName, lastName };
 }
 

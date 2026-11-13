@@ -7,6 +7,7 @@
 import './env';
 import { createClient } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '../../lib/supabase/server';
+import { stepUpTestSession } from './admin-step-up';
 
 import {
     CONTROLLER_A_EVENT,
@@ -112,6 +113,8 @@ export async function signInAs(key: FixtureUserKey): Promise<SignedInUser> {
     if (error || !data.session) {
         throw new Error(`signInAs(${key}) : ${error?.message || 'session absente'} — ${SEED_HINT}`);
     }
+    // Lot 9 quinquies (A3, A4 ; aide modifiée, signalée au rapport) : session valant mot de passe et code administrateur saisis
+    await stepUpTestSession(data.session.access_token);
     return { userId: data.user.id, accessToken: data.session.access_token, refreshToken: data.session.refresh_token };
 }
 
