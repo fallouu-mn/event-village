@@ -80,14 +80,14 @@ ensemble (`supabase/ops/schedule-crons.sql:87`).
      (il devient « incertain »), les autres canaux repartent (`M/20261109000010_lot9bis_email.sql:347-372`). Une ligne en
      échec repart au plus tôt 1 minute après (`:595`).
    - Puis fait le contrôle du jour : compte les SMS du jour, alerte les admins à 80 % du budget des SMS optionnels et au
-     seuil des SMS indispensables (une fois par jour), et prévient l'organisatrice quand toutes les recettes en ligne d'un
+     seuil des SMS indispensables (une fois par jour), et prévient la partenaire quand toutes les recettes en ligne d'un
      événement terminé sont disponibles (une fois par événement, dans les 30 jours après la fin)
      (`lib/notifications/dispatcher.ts:641-655`, `M/20261109000009_lot9bis_messages.sql:1243-1370`).
    - Réponse : nombre de lignes réservées, envoyées, relancées, en échec, ignorées, incertaines, annulées, SMS du jour
      (`lib/notifications/dispatcher.ts:573-575`, `app/api/cron/notifications-dispatch/route.ts:17-18`).
 4. **Messages envoyés.** Tous ceux de la boîte d'envoi (catalogue complet : `10-notifications.md`), plus ceux que le
    contrôle du jour crée : `ADMIN_SMS_OPTIONAL_80`, `ADMIN_SMS_DAILY_THRESHOLD` (admins), `FUNDS_AVAILABLE`
-   (organisatrice : « Recettes disponibles » / « Les recettes de « {titre} » sont disponibles sur votre solde : vous pouvez
+   (partenaire : « Recettes disponibles » / « Les recettes de « {titre} » sont disponibles sur votre solde : vous pouvez
    demander un retrait. ») (`M/20261109000009_lot9bis_messages.sql:1296-1364`, `lib/notifications/catalog.ts:1634-1640`).
    Les envois « synchrones » (codes à usage unique, invitation d'un contrôleur, vérification d'email) **ne passent pas**
    par cette tâche (`lib/notifications/catalog.ts:22-23`, `:231-237`).
@@ -167,7 +167,7 @@ ensemble (`supabase/ops/schedule-crons.sql:87`).
    jamais public (`app/api/cron/events-finish/route.ts:7-33`, `M/20261110000007_lot9ter_evenements.sql:80-114`,
    `M/20261109000008_lot9bis_cycle.sql:476-486`). Les Suspendus ne sont jamais pris (04.18). Détail : `04-evenement-cycle.md`
    scénario 04.21.
-4. **Messages envoyés.** À l'organisatrice d'un événement venu de Publié : `EVENT_FINISHED` (« Événement terminé ») ou,
+4. **Messages envoyés.** À la partenaire d'un événement venu de Publié : `EVENT_FINISHED` (« Événement terminé ») ou,
    si une caisse est encore ouverte, `SHIFT_OPEN_AT_END` ; rien pour un Validé jamais publié ; rien aux détenteurs
    (`M/20261109000009_lot9bis_messages.sql:334-373`).
 5. **Ce que voient les autres rôles.** L'événement apparaît « Terminé » dans les listes et sur la fiche publique.
