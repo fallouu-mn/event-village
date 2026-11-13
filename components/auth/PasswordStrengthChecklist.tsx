@@ -6,7 +6,7 @@ import { cn } from '@/components/ui/cn';
 import { obviousPasswordReason, PASSWORD_CRITERIA_LABELS, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@/lib/auth/password-rules';
 
 // Lot 9 quinquies (A7 : AUTH-11) : la liste suit la règle commune (lib/auth/password-rules.ts) : 10 caractères au moins,
-// 64 au plus, pas un mot de passe évident ; plus aucune majuscule, aucun chiffre ni caractère spécial exigés. La liste des
+// 64 au plus, pas un mot de passe évident ; plus aucune règle de composition (casse, chiffres, signes). La liste des
 // 10 000 mots de passe courants n'est vérifiée qu'à l'envoi, par le serveur (budget JS du navigateur).
 const PASSWORD_CRITERIA = [
     { key: 'length', label: PASSWORD_CRITERIA_LABELS.length, test: (p: string) => p.length >= PASSWORD_MIN_LENGTH },
