@@ -60,7 +60,7 @@ type Row = Record<string, unknown>;
 const CAP = 700;
 const THRESHOLD = 560; // ceil(0,8 × 700)
 const FREE_CATEGORY = 'Entree libre';
-const PASSWORD_SMS = "Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous, contactez le support.";
+const PASSWORD_SMS = `Event Village : le mot de passe de votre compte a été modifié. Si ce n'est pas vous : Mot de passe oublié sur ${(process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '')}/forgot-password`; // lot 9 quinquies (B1), modification signalée
 
 /** Réglages des rappels et du budget au défaut du contrat, billets à 0 F traités comme payants (7.0 b). */
 const BUDGET_SETTINGS: Partial<Record<NotifSettingKey, unknown>> = {

@@ -603,7 +603,8 @@ describe('6.3 Catalogue : in-app, push et email (contrat G4, F3)', () => {
             ['TRANSFER_CLAIMED_SENDER', SHORT_EVENT, 'Billet accepté', 'Votre billet pour « Gala Dakar » a été accepté par son destinataire.'],
             ['FIRST_TICKET_SOLD', SHORT_EVENT, 'Premier billet vendu', 'Le premier billet de « Gala Dakar » est vendu.'],
             ['EVENT_SOLD_OUT', SHORT_EVENT, 'Événement complet', 'Toutes les catégories de « Gala Dakar » sont vendues.'],
-            ['PASSWORD_CHANGED', {}, 'Mot de passe modifié', 'Le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.'],
+            // Lot 9 quinquies (B1 : AUTH-06, modification signalée) : action immédiate et page Aide
+            ['PASSWORD_CHANGED', {}, 'Mot de passe modifié', 'Le mot de passe de votre compte a été modifié. Si ce n\'est pas vous : utilisez « Mot de passe oublié » sur la page de connexion, puis ouvrez la page Aide pour joindre le support.'],
             ['CONTROLLER_ACTIVATED', {}, 'Compte activé', 'Votre compte est activé : vous pouvez scanner les billets.'],
         ];
         for (const [type, over, title, content, drop] of cases) {
@@ -779,10 +780,11 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['REMINDER_H3', ev, [], `Event Village : Gala Dakar à 20:00. Ouvrez votre billet avant d'arriver : QR renouvelé toutes les 20 s. ${U}/tickets`],
             ['REFUND_PAID', { ...ev, amount: 5000, operator: 'WAVE' }, [], 'Event Village : remboursement de 5 000 F CFA versé sur votre compte Wave (Gala Dakar).'],
             ['REFUND_PAID', { amount: 5000, operator: 'ORANGE_MONEY' }, NO_EVENT_KEYS, 'Event Village : remboursement de 5 000 F CFA versé sur votre compte Orange Money.'],
-            ['PASSWORD_CHANGED', {}, [], 'Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.'],
-            ['PHONE_CHANGED', {}, [], 'Event Village : le numéro de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.'],
+            // Lot 9 quinquies (B1 : AUTH-06, modification signalée) : contact par la page d'aide ; « Mot de passe oublié »
+            ['PASSWORD_CHANGED', {}, [], `Event Village : le mot de passe de votre compte a été modifié. Si ce n'est pas vous : Mot de passe oublié sur ${U}/forgot-password`],
+            ['PHONE_CHANGED', {}, [], `Event Village : le numéro de votre compte a été modifié. Si ce n'est pas vous : ${U}/aide`],
             // Lot 9 quater (A9 : AUD-34) : type ajouté (modification signalée au rapport)
-            ['EMAIL_CLAIMED_ELSEWHERE', {}, [], 'Event Village : l\'adresse email en attente sur votre compte a été validée par un autre compte. Si c\'est votre adresse, contactez le support.'],
+            ['EMAIL_CLAIMED_ELSEWHERE', {}, [], `Event Village : l'adresse email en attente sur votre compte a été validée par un autre compte. Si c'est votre adresse : ${U}/aide`],
             ['EVENT_VALIDATED', ev, [], `Event Village : votre événement Gala Dakar est validé. Publiez-le depuis votre espace : ${U}/partner/events`],
             ['EVENT_REJECTED', { ...ev, reason: 'Affiche illisible' }, [], `Event Village : événement Gala Dakar non validé. Motif : Affiche illisible. ${U}/partner/events`],
             ['EVENT_SUSPENDED', { ...ev, reason: 'Signalement en cours' }, [], `Event Village : événement Gala Dakar suspendu. Motif : Signalement en cours. ${U}/partner/events`],
@@ -801,7 +803,7 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 'Event Village : votre retrait de 25 000 F CFA est en vérification auprès de l\'opérateur. Aucune action de votre part.'],
             ['PARTNER_VALIDATED', { company: 'Sabar Events' }, [], `Event Village : votre compte partenaire Sabar Events est validé. Connectez-vous : ${U}/login`],
             ['PARTNER_REJECTED', { reason: 'Pieces illisibles' }, [], 'Event Village : votre demande de compte partenaire n\'est pas acceptée. Motif : Pieces illisibles.'],
-            ['PARTNER_SUSPENDED', { reason: 'Fraude signalee' }, [], 'Event Village : votre compte partenaire est suspendu. Motif : Fraude signalee. Contactez le support.'],
+            ['PARTNER_SUSPENDED', { reason: 'Fraude signalee' }, [], `Event Village : votre compte partenaire est suspendu. Motif : Fraude signalee. Aide : ${U}/aide`],
             ['PARTNER_REACTIVATED', {}, [], `Event Village : votre compte partenaire est réactivé. Connectez-vous : ${U}/login`],
             // Lot 9 bis (R31, T51) : TRIAL_STARTED n'a plus de SMS, son texte exact est retiré (couverture par type SMS ci-dessous).
             ['CONTROLLER_ASSIGNED', { ...ev, entry_point: null }, ['events'], `Event Village : affectation à l'entrée de Gala Dakar, sam. 14 nov. à 20:00. ${U}/login`],
@@ -1043,7 +1045,8 @@ const LOT9BIS_SMS_PATTERNS: Record<string, RegExp[]> = {
         fixedText('Event Village : votre billet gratuit pour {titre} du {date} est annulé par l\'organisateur.'),
         fixedText('Event Village : votre billet pour {titre} du {date} est annulé. Remboursement par l\'organisateur.'),
     ],
-    ACCOUNT_SUSPENDED: [fixedText('Event Village : votre compte est suspendu. Motif : {motif}. Vos billets payés restent valables à l\'entrée. Contactez le support.')],
+    // Lot 9 quinquies (B1 : AUTH-06, modification signalée) : lien de la page d'aide
+    ACCOUNT_SUSPENDED: [fixedText('Event Village : votre compte est suspendu. Motif : {motif}. Billets payés valables à l\'entrée. Aide : {url}/aide')],
     ACCOUNT_REACTIVATED: [fixedText('Event Village : votre compte est réactivé. Vous pouvez de nouveau vous connecter : {url}/login')],
 };
 
@@ -1080,7 +1083,7 @@ const LOT9BIS_IN_APP_PATTERNS: Record<string, RegExp[]> = {
         fixedText('Votre billet gratuit pour « {titre} » du {date} est annulé par l\'organisateur.'),
         fixedText('Votre billet pour « {titre} » du {date} est annulé. Le remboursement se fait auprès de l\'organisateur.'),
     ],
-    ACCOUNT_SUSPENDED: [fixedText('Votre compte est suspendu. Motif : {motif} Vos billets payés restent valables à l\'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d\'identité. Contactez le support.')],
+    ACCOUNT_SUSPENDED: [fixedText('Votre compte est suspendu. Motif : {motif} Vos billets payés restent valables à l\'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d\'identité. Ouvrez la page Aide pour joindre le support.')],
     ACCOUNT_REACTIVATED: [fixedText('Votre compte est réactivé : vous pouvez de nouveau vous connecter.')],
     ADMIN_EVENT_CHANGED: [fixedText('« {titre} » de {société} : {changements} après validation. Vérifiez la fiche.')],
     EVENT_SUBMITTED_ACK: [fixedText('« {titre} » est envoyé à l\'équipe Event Village pour validation. Vous serez prévenu de la décision.')],
@@ -1091,7 +1094,7 @@ const LOT9BIS_IN_APP_PATTERNS: Record<string, RegExp[]> = {
     INVITATION_RECEIVED: [/^\d+ invitations? pour « .+ » le .+ : vos billets sont dans Mes billets\.$/],
     ADMIN_SMS_DAILY_THRESHOLD: [fixedText('{count} SMS indispensables envoyés aujourd\'hui (seuil d\'alerte : {threshold}). Ils n\'ont pas de plafond : vérifiez leur origine dans la supervision.')],
     PARTNER_REJECTED: [/^.+ Vous pouvez compléter votre dossier une fois depuis votre tableau de bord\.$/],
-    PHONE_CHANGED: [fixedText('Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.')],
+    PHONE_CHANGED: [fixedText('Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, ouvrez la page Aide pour joindre le support.')],
 };
 
 describe('Lot 9 bis (T51) : textes fixes des types nouveaux et modifiés (contrat 11.1, 11.2)', () => {

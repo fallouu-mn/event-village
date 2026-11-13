@@ -67,6 +67,8 @@ interface CheckReel {
     cashouts: { total: number; examples: Array<Record<string, unknown>> };
     tickets: { total: number; events: Array<Record<string, unknown>> };
     seed_events_on_sale: { total: number; events: Array<Record<string, unknown>> };
+    /** Lot 9 quinquies (B1, modification signalée) : nombre de réglages du contact du support renseignés. */
+    support: { filled: number };
 }
 
 function emptyReply(): CheckReel {
@@ -77,6 +79,7 @@ function emptyReply(): CheckReel {
         cashouts: { total: 0, examples: [] },
         tickets: { total: 0, events: [] },
         seed_events_on_sale: { total: 0, events: [] },
+        support: { filled: 1 },
     };
 }
 

@@ -49,7 +49,8 @@ const CONFIRM_PATH = '/api/account/phone/confirm';
 const SENTINEL = 'SENTINELLE_NUMERO';
 const CODE_RE = /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const PHONE_CHANGED_TEXT = 'Event Village : le numéro de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.';
+// Lot 9 quinquies (B1 : AUTH-06, modification signalée) : lien de la page d'aide au lieu de « contactez le support »
+const PHONE_CHANGED_TEXT = `Event Village : le numéro de votre compte a été modifié. Si ce n'est pas vous : ${(process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '')}/aide`;
 const TEN_MINUTES = 10 * 60 * 1000;
 
 /** Alphabet GSM-7 de base et extension : calcul indépendant du code testé (GSM 03.38). */

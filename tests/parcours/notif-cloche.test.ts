@@ -553,7 +553,7 @@ describe('6.10 Temps réel : une notification livrée par l’envoyeur arrive au
                 'notification livrée par l’envoyeur reçue par son destinataire, sans recharger');
             assert.equal(got.new.type, 'SECURITY', `type in-app du catalogue (G2), reçu ${JSON.stringify(got.new.type)}`);
             assert.equal(got.new.title, 'Mot de passe modifié', 'titre du catalogue (G4)');
-            assert.equal(got.new.content, "Le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous, contactez le support.", 'contenu du catalogue (G4)');
+            assert.equal(got.new.content, "Le mot de passe de votre compte a été modifié. Si ce n'est pas vous : utilisez « Mot de passe oublié » sur la page de connexion, puis ouvrez la page Aide pour joindre le support.", 'contenu du catalogue (G4, lot 9 quinquies B1)');
             assert.equal(got.new.channel, 'IN_APP', 'canal IN_APP');
             assert.equal((got.new.metadata as Row).actionUrl, '/profile', 'lien du catalogue dans metadata.actionUrl');
 

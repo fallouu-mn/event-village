@@ -35,7 +35,8 @@ const CATEGORY_ROUTE = '../../app/api/partner/events/[id]/categories/[categoryId
 /** Texte du contrat 4.3 pour un minimum de {min} F CFA. */
 const belowMinimum = (min: string): string => `Le prix d’un billet payant est d’au moins ${min} F CFA. Pour un billet gratuit, indiquez 0.`;
 /** Texte du contrat 4.5 (500 SamirPay à l'initialisation). */
-const PROVIDER_INTERNAL_TEXT = 'Le paiement n’a pas pu être lancé. Réessayez dans quelques minutes ; si le problème continue, contactez le support.';
+// Lot 9 quinquies (B1 : AUTH-06, modification signalée) : le lien de la page d'aide suit « contactez le support »
+const PROVIDER_INTERNAL_TEXT = `Le paiement n’a pas pu être lancé. Réessayez dans quelques minutes ; si le problème continue, contactez le support : ${(process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '')}/aide`;
 
 let partner: TestPartner;
 let draft: DraftEvent;

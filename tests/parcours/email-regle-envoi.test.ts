@@ -387,7 +387,7 @@ describe('9b.51 G.51 — contenu des emails (rendu du catalogue, sans base)', ()
         assert.equal(tpl.link!(tpl.sample), '/profile', 'bouton vers le profil');
         const body = tpl.inApp!(tpl.sample);
         assert.deepEqual([plain(body.title), plain(body.content)],
-            ['Numéro de téléphone modifié', 'Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, contactez le support.'], 'titre et fond de l’email');
+            ['Numéro de téléphone modifié', 'Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, ouvrez la page Aide pour joindre le support.'] /* lot 9 quinquies (B1) */, 'titre et fond de l’email');
         assert.equal(plain(tpl.email!(tpl.sample, { appUrl: RENDER_APP }).subject), 'Numéro de téléphone modifié — Event Village', 'sujet');
         assert.deepEqual(emailFaults('PHONE_CHANGED'), []);
     });

@@ -714,7 +714,8 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.ok(rows.every((r) => r.status === 'PENDING'), `avis de suspension non bloqué (politique ALLOW, décision 41) : ${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))}`);
         let mark = smsMark(p.phoneE164);
         let sent = await deliver(rows, new Date());
-        assertSms(sent, p.phoneE164, mark, `Event Village : votre compte partenaire est suspendu. Motif : ${reason}. Contactez le support.`);
+        // Lot 9 quinquies (B1 : AUTH-06, modification signalée) : lien de la page d'aide
+        assertSms(sent, p.phoneE164, mark, `Event Village : votre compte partenaire est suspendu. Motif : ${reason}. Aide : ${APP_URL}/aide`);
         await assertInApp(sent, { userId: p.userId, title: 'Compte suspendu', contains: [reason], actionUrl: '/partner/dashboard' });
 
         await rpcOk('partner_status_set', { partner_id: p.partnerId, actor_id: admin, status: 'VALIDE', reason: 'Plaintes traitées, compte rétabli' }, 'réactivation'); // lot 9 bis (B37, T25)

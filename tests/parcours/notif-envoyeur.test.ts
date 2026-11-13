@@ -22,8 +22,8 @@
  *    notif.sms_daily_alert) → une seule alerte par jour ;
  *  - route /api/cron/notifications-dispatch : 503, 401, 200 (rapport, envoi réel) ; contrôles statiques E5.
  * Texte vérifié (catalogue G3/G4, type PASSWORD_CHANGED, sans variable) :
- *  SMS « Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous,
- *  contactez le support. » ; in-app « Mot de passe modifié ».
+ *  SMS « Event Village : le mot de passe de votre compte a été modifié. Si ce n'est pas vous : Mot de passe oublié
+ *  sur {lien}/forgot-password » (lot 9 quinquies, B1) ; in-app « Mot de passe modifié ».
  *
  * Rouge avant correctif : lib/notifications/dispatcher.ts, les RPC notification_outbox_claim /
  * notification_outbox_mark / notification_daily_checks, la table notification_outbox et la route
@@ -54,9 +54,9 @@ after(async () => {
 
 // ── Textes du catalogue (G3, G4) ───────────────────────────────────────────
 
-const PASSWORD_SMS = "Event Village : le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous, contactez le support.";
+const PASSWORD_SMS = `Event Village : le mot de passe de votre compte a été modifié. Si ce n'est pas vous : Mot de passe oublié sur ${(process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '')}/forgot-password`; // lot 9 quinquies (B1), modification signalée
 const PASSWORD_IN_APP_TITLE = 'Mot de passe modifié';
-const PASSWORD_IN_APP_CONTENT = "Le mot de passe de votre compte a été défini ou modifié. Si ce n'est pas vous, contactez le support.";
+const PASSWORD_IN_APP_CONTENT = "Le mot de passe de votre compte a été modifié. Si ce n'est pas vous : utilisez « Mot de passe oublié » sur la page de connexion, puis ouvrez la page Aide pour joindre le support.";
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;

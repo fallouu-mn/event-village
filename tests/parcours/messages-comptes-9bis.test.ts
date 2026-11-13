@@ -247,7 +247,8 @@ describe('9b.34 R59 : client suspendu ou réactivé prévenu par SMS avec motif 
         const sSms = (await outboxRows({ type: 'ACCOUNT_SUSPENDED', userId: client.userId, channel: 'SMS' }));
         assert.deepEqual(sSms.map((r) => [r.status, r.reason]), [['SENT', null]], `SMS envoyé malgré la suspension (politique ALLOW) : ${describeRows(sSms)}`);
         assert.deepEqual(smsTo(client.phoneE164, mark).map((m) => m.message),
-            [`Event Village : votre compte est suspendu. Motif : ${SUSPEND_REASON}. Vos billets payés restent valables à l'entrée. Contactez le support.`],
+            // Lot 9 quinquies (B1 : AUTH-06, modification signalée) : lien de la page d'aide
+            [`Event Village : votre compte est suspendu. Motif : ${SUSPEND_REASON}. Billets payés valables à l'entrée. Aide : ${APP_URL}/aide`],
             'SMS exact (11.1 N19)');
 
         const second = smsMark(client.phoneE164);

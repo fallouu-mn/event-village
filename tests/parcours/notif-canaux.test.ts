@@ -228,7 +228,7 @@ describe('6.2 IN_APP : la cloche est écrite par le marquage de l\'envoyeur (con
             { type: n.type, title: norm(n.title), content: norm(n.content), channel: n.channel, status: n.status },
             {
                 type: 'SECURITY', title: 'Mot de passe modifié',
-                content: 'Le mot de passe de votre compte a été défini ou modifié. Si ce n\'est pas vous, contactez le support.',
+                content: "Le mot de passe de votre compte a été modifié. Si ce n'est pas vous : utilisez « Mot de passe oublié » sur la page de connexion, puis ouvrez la page Aide pour joindre le support.", // lot 9 quinquies (B1)
                 channel: 'IN_APP', status: 'SENT',
             }, 'notification IN_APP du catalogue (G4)');
         assert.equal(n.metadata?.actionUrl, '/profile', 'metadata.actionUrl = lien du catalogue');

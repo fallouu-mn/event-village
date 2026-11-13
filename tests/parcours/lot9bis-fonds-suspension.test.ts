@@ -458,7 +458,9 @@ describe('Bandeau de la partenaire suspendue', () => {
             .replace(/\{' '\}/g, ' ')
             .replace(/\s+/g, ' ');
         assert.ok(src.includes('Compte partenaire suspendu'), 'titre du bandeau');
-        assert.ok(src.includes('Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu\'à la réactivation du compte. Contactez le support Event Village.'),
+        // Lot 9 quinquies (B1, modification signalée) : « Contactez le support Event Village » devient un lien vers /aide
+        assert.ok(src.includes('Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu\'à la réactivation du compte. <Link href="/aide"')
+            && src.includes('>Contactez le support Event Village</Link>.'),
             'texte du bandeau (contrat 5.2, E-B) : « Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu’à la réactivation du compte. Contactez le support Event Village. »');
         assert.ok(!src.includes('ne sont plus visibles du public'), 'ancien texte faux retiré');
     });

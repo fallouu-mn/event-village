@@ -220,15 +220,16 @@ describe('9b.47 G.47, R87 — profil : aide, état de l’adresse, renvoi du lie
         assert.ok(!src.includes(norm('Facultative. Laissez ce champ vide si vous n’en avez pas.')), 'ancienne aide encore présente (ProfileForm.tsx:150)');
     });
 
-    test('état de l’adresse : badges « Email vérifié » et « Email non vérifié »', () => {
+    // Lot 9 quinquies (B5, modification signalée) : bandeau « Adresse email non vérifiée » et « Recevoir le lien de vérification »
+    test('état de l’adresse : badge « Email vérifié » et bandeau « Adresse email non vérifiée »', () => {
         const src = profileSources();
         assertText(src, 'Email vérifié', 'badge d’une adresse vérifiée');
-        assertText(src, 'Email non vérifié', 'badge d’une adresse en attente (R87)');
+        assertText(src, 'Adresse email non vérifiée', 'bandeau d’une adresse en attente (R87, B5)');
     });
 
-    test('« Renvoyer le lien » présent et appelle POST /api/account/email/resend ; texte « Lien envoyé à … Il est valable 24 heures. »', () => {
+    test('« Recevoir le lien de vérification » présent et appelle POST /api/account/email/resend ; texte « Lien envoyé à … Il est valable 24 heures. »', () => {
         const src = profileSources();
-        assertText(src, 'Renvoyer le lien', 'bouton de renvoi (R87)');
+        assertText(src, 'Recevoir le lien de vérification', 'bouton de renvoi (R87, B5)');
         assert.match(src, /["'`]\/api\/account\/email\/resend["'`]/, 'le profil n’appelle pas /api/account/email/resend');
         assertText(src, 'Lien envoyé à', 'renvoi réussi');
         assertText(src, 'Il est valable 24 heures.', 'renvoi réussi');
