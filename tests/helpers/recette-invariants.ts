@@ -7,7 +7,8 @@
  *      remboursements). Un paiement sans commission n'est pas comparé (L39) ;
  *  (s) aucun paiement réussi en double conservé pour un même panier (s1, oracle écrit à part : la fonction
  *      payment_duplicate_of n'est jamais appelée ici) ; tout paiement marqué `duplicate_of` est remboursé
- *      en entier, sans billet et sans crédit au grand livre (s2). Un cashout ECHOUE n'est pas une violation :
+ *      en entier, sans billet et sans crédit au grand livre (s2) ; lot 9 quater (C1) : ou du total moins la retenue
+ *      enregistrée (duplicate_fee_withheld), au plus les frais de l'opérateur du paiement. Un cashout ECHOUE n'est pas une violation :
  *      il a son alerte et sa relance (L40) ;
  *  (t) aucun billet sans décision de vente (t0) ; aucun billet ONLINE ou FREE d'une catégorie non vendue en
  *      ligne au moment de l'achat (t1, FREE compris : L9) ; aucun billet COUNTER d'une catégorie non vendue
@@ -73,7 +74,12 @@ s2 AS (
      WHERE EXISTS (SELECT 1 FROM public.tickets t WHERE t.payment_id = d.id)
     UNION ALL SELECT 's', d.id::text, 'paiement en double sans remboursement du total' FROM doubles d
      WHERE NOT EXISTS (SELECT 1 FROM public.refunds r JOIN public.cashouts c ON c.refund_id = r.id
-                        WHERE r.payment_id = d.id AND r.settlement = 'PLATEFORME' AND r.amount = d.amount)
+                        WHERE r.payment_id = d.id AND r.settlement = 'PLATEFORME'
+                          -- Lot 9 quater (C1 : AUD-20, décision du prompt) : au-delà de 2 doublons du compte sur 30 jours,
+                          -- remboursement du total moins la retenue enregistrée, jamais plus que les frais de l'opérateur.
+                          AND r.amount = d.amount - COALESCE((d.metadata->>'duplicate_fee_withheld')::numeric, 0)
+                          AND COALESCE((d.metadata->>'duplicate_fee_withheld')::numeric, 0)
+                              BETWEEN 0 AND COALESCE(d.aggregator_fee, 0))
     UNION ALL SELECT 's', d.id::text, 'paiement en double crédité' FROM doubles d
      WHERE EXISTS (SELECT 1 FROM public.finance_ledger l WHERE l.source_key = 'VENTE-' || d.id::text)
         OR EXISTS (SELECT 1 FROM public.referral_commissions c WHERE c.payment_id = d.id AND c.status <> 'CANCELLED')
