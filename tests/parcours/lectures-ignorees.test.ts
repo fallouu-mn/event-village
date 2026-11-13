@@ -113,7 +113,8 @@ function savePricing(admin: Buyer, key: string, value: unknown): Promise<Respons
 describe('A34 — POST /api/admin/pricing', () => {
     test('panne de lecture de l’ancienne valeur : 500 PRICING_SAVE_FAILED, pas d’upsert, pas d’audit', async () => {
         const admin = await newAdminWith(['pricing.manage'], { label: 'pricing9-panne' });
-        const key = `lot9.panne_${token()}`;
+        // Lot 9 quater (B1) : la route n'écrit plus qu'une clé tarifaire de sa liste blanche (modification signalée)
+        const key = 'communication_tariffs';
         try {
             const { result, logged } = await during(tableWhere('platform_settings', 'key', key), async () => reply(await savePricing(admin, key, { montant: 1 })));
             assert.equal(result.status, 500, `panne présentée comme un succès : ${show(result)}`);
@@ -129,7 +130,8 @@ describe('A34 — POST /api/admin/pricing', () => {
 
     test('témoin : sans panne, réglage écrit et audit avec l’ancienne valeur (vert dès l’écriture)', async () => {
         const admin = await newAdminWith(['pricing.manage'], { label: 'pricing9-ok' });
-        const key = `lot9.temoin_${token()}`;
+        // Lot 9 quater (B1) : clé tarifaire de la liste blanche (modification signalée)
+        const key = 'subscription_packs';
         try {
             const first = await reply(await savePricing(admin, key, { montant: 1 }));
             assert.equal(first.status, 200, show(first));

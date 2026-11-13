@@ -9,7 +9,7 @@
  *  (q5) A6 : tout compte SUSPENDU ou SUPPRIME est bloqué chez GoTrue (banned_until dans le futur), tout compte ACTIF
  *       ne l'est pas (sauf compte anonymisé) ;
  *  (q6) A6 : toute aide exécutable par anon ou authenticated dans public (hors extensions) lit le statut du compte ;
- *  (q7) B6 : platform_settings n'est lisible ni par anon ni par authenticated (vue publique seule) ;
+ *  (q7) B6 : platform_settings illisible par anon, aucune politique de lecture ouverte à tous (vue publique seule) ;
  *  (q8) A3, A4 : le trigger auth_users_guard_writes est posé sur auth.users.
  * Sortie brute `[INVARIANT-LOT9QUATER]`. Échec explicite qui nomme chaque objet du lot absent (jamais d'erreur Postgres
  * brute, jamais de faux vert).
@@ -59,11 +59,13 @@ SELECT * FROM (
        AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
        AND pg_get_functiondef(p.oid) !~ '\\mstatus\\M'
     UNION ALL
-    SELECT 'q7', 'public.platform_settings', r.rol || ' peut lire la table'
-      FROM (VALUES ('anon'), ('authenticated')) AS r(rol)
-     WHERE has_table_privilege(r.rol, 'public.platform_settings', 'SELECT')
-       AND EXISTS (SELECT 1 FROM pg_policies pp WHERE pp.schemaname = 'public' AND pp.tablename = 'platform_settings'
-                     AND pp.cmd IN ('SELECT', 'ALL') AND (pp.roles::text[] && ARRAY[r.rol, 'public']::text[]))
+    SELECT 'q7', 'public.platform_settings', 'anon peut lire la table'
+     WHERE has_table_privilege('anon', 'public.platform_settings', 'SELECT')
+    UNION ALL
+    SELECT 'q7', 'public.platform_settings.' || pp.policyname, 'politique de lecture ouverte à tous : ' || COALESCE(pp.qual, '(aucune clause)')
+      FROM pg_policies pp
+     WHERE pp.schemaname = 'public' AND pp.tablename = 'platform_settings' AND pp.cmd IN ('SELECT', 'ALL')
+       AND (pp.qual IS NULL OR btrim(lower(pp.qual)) IN ('true', '(true)'))
     UNION ALL
     SELECT 'q8', 'auth.users', 'trigger on_auth_user_guard_writes absent'
      WHERE NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'auth.users'::regclass AND t.tgname = 'on_auth_user_guard_writes'

@@ -397,7 +397,7 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
         }
     });
 
-    test('page /admin/finance-settings : 11 libellés exacts, choix en français, section « Notifications », section « Fonctionnalités » (contrôle statique)', () => {
+    test('page /admin/finance-settings : 11 libellés exacts, choix en français, section « Notifications », section « Services en préparation » (contrôle statique)', () => {
         const page = readFileSync(path.join(process.cwd(), 'app/admin/finance-settings/page.tsx'), 'utf8');
         const apostrophe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, "(?:'|’|\\\\')");
         const labels: Record<NotifSettingKey, { label: string; kind: string; unit?: string }> = {
@@ -436,7 +436,10 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
             assert.match(entry[1], /kind:\s*['"]boolean['"]/, `${key} : interrupteur affiché en booléen`);
             assert.match(entry[1], /label:\s*['"`][^'"`]{3,}['"`]/, `${key} : libellé`);
         }
-        assert.match(page, /prefix:\s*['"]features\.['"]\s*,\s*title:\s*['"]Fonctionnalités['"]/, 'section « Fonctionnalités » (préfixe features.)');
+        // Lot 9 quater (B1 : E-08) : la section des interrupteurs features.* devient « Services en préparation » (modification signalée)
+        assert.match(page, /prefix:\s*['"]features\.['"]\s*,\s*title:\s*['"]Services en préparation['"]/, 'section « Services en préparation » (préfixe features.)');
+        assert.match(page, /Pas prêt pour le public/, 'mention « Pas prêt pour le public »');
+        assert.match(page, /ACTIVER/, 'activation en tapant ACTIVER');
         assert.match(page, /prefix:\s*['"]notif\.['"]\s*,\s*title:\s*['"]Notifications['"][^}]*icon:\s*Bell\b/, 'section « Notifications » (préfixe notif., icône Bell)');
         assert.match(page, /import\s*\{[^}]*\bBell\b[^}]*\}\s*from\s*['"]lucide-react['"]/, 'icône Bell importée de lucide-react');
     });
