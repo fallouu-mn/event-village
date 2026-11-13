@@ -384,7 +384,7 @@ export default function ResetPasswordPage() {
                                 type={showPassword ? 'text' : 'password'}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="8 caractères au moins"
+                                placeholder="10 caractères au moins"
                                 autoComplete="new-password"
                                 required
                                 disabled={isLockedOut || isLoading}

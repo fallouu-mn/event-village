@@ -523,7 +523,7 @@ export default function RegisterPage() {
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="8 caractères au moins"
+                                        placeholder="10 caractères au moins"
                                         autoComplete="new-password"
                                         required
                                         className={cn('pr-14', password.length > 0 && (allPasswordCriteriaMet(password) ? 'border-success' : 'border-warning'))}

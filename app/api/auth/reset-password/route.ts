@@ -5,7 +5,7 @@ import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { requireActiveSession } from '@/lib/auth/session';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
-import { StrongPasswordSchema } from '@/lib/validations/auth';
+import { ServerPasswordSchema } from '@/lib/auth/password-policy.server'; // lot 9 quinquies (A7)
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ const RECOVERY_MAX_AGE_SECONDS = 15 * 60;
 const BodySchema = z.object({
     password: z.string({ required_error: 'Saisissez le nouveau mot de passe.' })
         .max(200, 'Mot de passe trop long.')
-        .pipe(StrongPasswordSchema),
+        .pipe(ServerPasswordSchema),
 }).strict();
 
 /** Réponse neuve à chaque appel (un corps de réponse ne se lit qu'une fois). */

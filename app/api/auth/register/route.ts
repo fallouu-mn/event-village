@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { RegisterWithCodeSchema, toSenegaleseE164 } from '@/lib/validations/auth';
+import { serverPasswordRuleMessage } from '@/lib/auth/password-policy.server';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { findExistingAccount } from '@/lib/auth/existing-account';
 import { newTechnicalEmail } from '@/lib/auth/technical-email';
@@ -100,6 +101,11 @@ export async function POST(req: NextRequest) {
         );
     }
     const { firstName, lastName, phone: rawPhone, email, password, referralCode } = parsed.data;
+    // Lot 9 quinquies (A7 : AUTH-11) : liste des mots de passe courants, au serveur seulement (avant tout effet)
+    const passwordRefusal = serverPasswordRuleMessage(password);
+    if (passwordRefusal) {
+        return NextResponse.json({ error: passwordRefusal, code: 'INVALID_FIELD', field: 'password' }, { status: 400 });
+    }
     const phone = toSenegaleseE164(rawPhone);
     if (!phone) {
         return NextResponse.json({ error: 'Numéro de téléphone sénégalais invalide.', code: 'INVALID_PHONE' }, { status: 400 });

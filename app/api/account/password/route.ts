@@ -9,7 +9,7 @@ import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
-import { StrongPasswordSchema } from '@/lib/validations/auth';
+import { ServerPasswordSchema } from '@/lib/auth/password-policy.server'; // lot 9 quinquies (A7)
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +31,7 @@ const BodySchema = z.object({
         .max(200, 'Mot de passe trop long.'),
     new_password: z.string({ required_error: 'Saisissez le nouveau mot de passe.' })
         .max(200, 'Mot de passe trop long.')
-        .pipe(StrongPasswordSchema),
+        .pipe(ServerPasswordSchema),
 }).strict();
 
 /**

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { obviousPasswordReason, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_TOO_COMMON, PASSWORD_TOO_LONG, PASSWORD_TOO_SHORT } from '@/lib/auth/password-rules';
 import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 
 /** Lot 9 bis (B100) : refus d'une adresse du domaine technique, à l'inscription comme au profil. */
@@ -87,14 +88,15 @@ export const SenegalesePhoneSchema = z.string().refine((val) => {
 });
 
 /**
- * Politique de mot de passe unique — appliquée à TOUS les flux (inscription, reset, admin)
- * 8+ caractères, 1 majuscule, 1 chiffre, 1 caractère spécial
+ * Politique de mot de passe unique — appliquée à TOUS les flux (inscription, reset, admin).
+ * Lot 9 quinquies (A7 : AUTH-11, décision du chef de projet) : 10 caractères au moins, 64 au plus, sans obligation de
+ * majuscule, de chiffre ni de caractère spécial, mots de passe évidents refusés (lib/auth/password-rules.ts). Le serveur
+ * ajoute la liste des 10 000 mots de passe courants (ServerPasswordSchema, lib/auth/password-policy.server.ts).
  */
 export const StrongPasswordSchema = z.string()
-    .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
-    .regex(/[A-Z]/, 'Le mot de passe doit contenir au moins une majuscule')
-    .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre')
-    .regex(/[^A-Za-z0-9]/, 'Le mot de passe doit contenir au moins un caractère spécial (!@#$...)');
+    .min(PASSWORD_MIN_LENGTH, PASSWORD_TOO_SHORT)
+    .max(PASSWORD_MAX_LENGTH, PASSWORD_TOO_LONG)
+    .refine((p) => p.length < PASSWORD_MIN_LENGTH || p.length > PASSWORD_MAX_LENGTH || obviousPasswordReason(p) === null, PASSWORD_TOO_COMMON);
 
 /**
  * Schéma de Connexion (Email ou Téléphone + Mot de passe ou OTP)
@@ -116,7 +118,7 @@ export const RegisterClientSchema = z.object({
     phone: SenegalesePhoneSchema,
     email: z.string().email('Adresse email invalide').optional().or(z.literal('')),
     password: StrongPasswordSchema,
-    confirmPassword: z.string().min(8, 'Veuillez confirmer votre mot de passe'),
+    confirmPassword: z.string().min(1, 'Veuillez confirmer votre mot de passe'),
     referralCode: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
     message: 'Les mots de passe ne correspondent pas',
@@ -183,7 +185,7 @@ export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
  */
 export const ResetPasswordSchema = z.object({
     password: StrongPasswordSchema,
-    confirmPassword: z.string().min(8, 'Veuillez confirmer le mot de passe'),
+    confirmPassword: z.string().min(1, 'Veuillez confirmer le mot de passe'),
 }).refine((data) => data.password === data.confirmPassword, {
     message: 'Les mots de passe ne correspondent pas',
     path: ['confirmPassword'],
@@ -223,7 +225,7 @@ export const RegisterPartnerSchema = z.object({
     phone: SenegalesePhoneSchema,
     email: z.string().email('Adresse email professionnelle requise'),
     password: StrongPasswordSchema,
-    confirmPassword: z.string().min(8, 'Veuillez confirmer le mot de passe'),
+    confirmPassword: z.string().min(1, 'Veuillez confirmer le mot de passe'),
 
     // Identifiants légaux optionnels
     ninea: z.string().optional(),

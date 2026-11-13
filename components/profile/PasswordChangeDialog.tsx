@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/auth/PasswordStrengthChecklist';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
+import { PASSWORD_HINT } from '@/lib/auth/password-rules';
 
 /**
  * Lot 9 bis, tâche 42 (R85 ; contrat 4.4, 5.42, B89) — « Changer mon mot de passe » une fois connecté.
@@ -40,7 +41,8 @@ export interface PasswordChangeDialogProps {
 type FieldName = 'current' | 'next' | 'confirm';
 type FieldErrors = Partial<Record<FieldName, string>>;
 
-const STRENGTH_HINT = '8 caractères au moins, dont une majuscule, un chiffre et un caractère spécial.';
+// Lot 9 quinquies (A7) : aide de la règle commune (lib/auth/password-rules.ts)
+const STRENGTH_HINT = PASSWORD_HINT;
 const SUCCESS_FALLBACK = 'Mot de passe modifié. Vos autres appareils sont déconnectés.';
 
 /** Message de la route ; délai d'attente ajouté quand le serveur le donne (429). */

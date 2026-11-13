@@ -13,6 +13,7 @@ import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { normalizePhoneNumber } from '@/lib/validations/auth';
+import { obviousPasswordReason, PASSWORD_CRITERIA_LABELS, PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@/lib/auth/password-rules';
 
 /**
  * Activation d'un compte contrôleur (lien de l'invitation : /controller/setup?phone=…). Lot 7 (7.0 f) :
@@ -34,11 +35,11 @@ interface ControllerSetupPageProps {
 
 // Lot 9 quater (A5 : G-31) : règle commune du mot de passe (StrongPasswordSchema, lib/validations/auth.ts), la même que
 // celle du serveur de l'activation
+// Lot 9 quinquies (A7 : AUTH-11) : règle commune (lib/auth/password-rules.ts), la même que celle du serveur
 const PASSWORD_RULES: Array<{ key: string; label: string; test: (p: string) => boolean }> = [
-    { key: 'length', label: 'Au moins 8 caractères', test: (p) => p.length >= 8 },
-    { key: 'upper', label: 'Une majuscule (A-Z)', test: (p) => /[A-Z]/.test(p) },
-    { key: 'digit', label: 'Un chiffre (0-9)', test: (p) => /[0-9]/.test(p) },
-    { key: 'special', label: 'Un caractère spécial (!@#$…)', test: (p) => /[^A-Za-z0-9]/.test(p) },
+    { key: 'length', label: PASSWORD_CRITERIA_LABELS.length, test: (p) => p.length >= PASSWORD_MIN_LENGTH },
+    { key: 'max', label: PASSWORD_CRITERIA_LABELS.max, test: (p) => p.length <= PASSWORD_MAX_LENGTH },
+    { key: 'common', label: PASSWORD_CRITERIA_LABELS.common, test: (p) => p.length > 0 && obviousPasswordReason(p) === null },
 ];
 
 function firstParam(value: string | string[] | undefined): string {
@@ -113,7 +114,7 @@ export default function ControllerSetupPage({ searchParams }: ControllerSetupPag
             return;
         }
         if (!passwordValid) {
-            setError('Le mot de passe doit comporter au moins 8 caractères, une majuscule, un chiffre et un caractère spécial.');
+            setError(`Le mot de passe doit comporter au moins ${PASSWORD_MIN_LENGTH} caractères et ne pas être un mot de passe trop courant.`);
             return;
         }
         if (password !== confirmPwd) {
@@ -214,7 +215,7 @@ export default function ControllerSetupPage({ searchParams }: ControllerSetupPag
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                hint="8 caractères au moins, avec une majuscule, un chiffre et un caractère spécial."
+                                hint={PASSWORD_HINT}
                                 fieldClassName="min-w-0 flex-1"
                             />
                             <IconButton

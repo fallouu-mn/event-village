@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { randomInt } from 'crypto';
 import { RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
+import { serverPasswordRuleMessage } from '@/lib/auth/password-policy.server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
@@ -77,6 +78,11 @@ export async function POST(req: NextRequest) {
         }
 
         const data = parseResult.data;
+        // Lot 9 quinquies (A7 : AUTH-11) : liste des mots de passe courants, au serveur seulement (avant tout effet)
+        const passwordRefusal = serverPasswordRuleMessage(data.password);
+        if (passwordRefusal) {
+            return NextResponse.json({ error: passwordRefusal, code: 'INVALID_FIELD', field: 'password' }, { status: 400 });
+        }
         const normalizedPhone = normalizePhoneNumber(data.phone.trim());
         const effectiveEmail = data.email.trim().toLowerCase();
         if (TECHNICAL_EMAIL_RE.test(effectiveEmail)) {

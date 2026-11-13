@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { phoneStorageForms, StrongPasswordSchema, toSenegaleseE164 } from '@/lib/validations/auth';
+import { phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
+import { ServerPasswordSchema } from '@/lib/auth/password-policy.server'; // lot 9 quinquies (A7)
 import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { CONTROLLER_ACTIVATION_KEY, isControllerActivationPending } from '@/lib/auth/controller-activation';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic';
 const SetupSchema = z.object({
     phone:        z.string().min(8, 'Numéro de téléphone requis.'),
     otp_code:     z.string().length(6, 'Le code doit comporter 6 chiffres.'),
-    new_password: z.string().max(200, 'Mot de passe trop long.').pipe(StrongPasswordSchema),
+    new_password: z.string().max(200, 'Mot de passe trop long.').pipe(ServerPasswordSchema),
 });
 
 // POST /api/controller/setup

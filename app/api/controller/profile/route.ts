@@ -7,7 +7,7 @@ import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
-import { StrongPasswordSchema } from '@/lib/validations/auth';
+import { ServerPasswordSchema } from '@/lib/auth/password-policy.server'; // lot 9 quinquies (A7)
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
 // Lot 9 quater (A7 : AUD-12) : même règle que « Changer mon mot de passe » (règle commune, 200 caractères au plus)
 const ChangePasswordSchema = z.object({
     current_password: z.string().min(1, 'Mot de passe actuel requis.').max(200, 'Mot de passe trop long.'),
-    new_password: z.string().max(200, 'Mot de passe trop long.').pipe(StrongPasswordSchema),
+    new_password: z.string().max(200, 'Mot de passe trop long.').pipe(ServerPasswordSchema),
 });
 
 // PATCH /api/controller/profile

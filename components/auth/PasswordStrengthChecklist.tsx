@@ -3,12 +3,15 @@
 import React from 'react';
 import { Check, X } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
+import { obviousPasswordReason, PASSWORD_CRITERIA_LABELS, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@/lib/auth/password-rules';
 
+// Lot 9 quinquies (A7 : AUTH-11) : la liste suit la règle commune (lib/auth/password-rules.ts) : 10 caractères au moins,
+// 64 au plus, pas un mot de passe évident ; plus aucune majuscule, aucun chiffre ni caractère spécial exigés. La liste des
+// 10 000 mots de passe courants n'est vérifiée qu'à l'envoi, par le serveur (budget JS du navigateur).
 const PASSWORD_CRITERIA = [
-    { key: 'length',  label: 'Au moins 8 caractères',                    test: (p: string) => p.length >= 8 },
-    { key: 'upper',   label: 'Au moins une majuscule (A-Z)',             test: (p: string) => /[A-Z]/.test(p) },
-    { key: 'digit',   label: 'Au moins un chiffre (0-9)',                test: (p: string) => /[0-9]/.test(p) },
-    { key: 'special', label: 'Au moins un caractère spécial (!@#$...)',  test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+    { key: 'length', label: PASSWORD_CRITERIA_LABELS.length, test: (p: string) => p.length >= PASSWORD_MIN_LENGTH },
+    { key: 'max',    label: PASSWORD_CRITERIA_LABELS.max,    test: (p: string) => p.length <= PASSWORD_MAX_LENGTH },
+    { key: 'common', label: PASSWORD_CRITERIA_LABELS.common, test: (p: string) => p.length > 0 && obviousPasswordReason(p) === null },
 ];
 
 export function getPasswordCriteriaStatus(password: string) {

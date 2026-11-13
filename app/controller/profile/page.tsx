@@ -14,11 +14,12 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { formatDate, formatEventDateTime } from '@/lib/format';
+import { obviousPasswordReason, PASSWORD_CRITERIA_LABELS, PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@/lib/auth/password-rules';
 
 /**
  * Profil du contrôleur (GET / PATCH /api/controller/profile). Lot 7 (7.0 f) : migré sur le système de design ;
  * erreur de chargement en ErrorState (plus de page vide après un simple toast) ; dates à Dakar (lib/format) ;
- * D67 : règle du mot de passe affichée telle que le serveur l'applique (8 caractères, une majuscule, une minuscule,
+ * D67 : règle du mot de passe affichée telle que le serveur l'applique (lot 9 quinquies, A7 : lib/auth/password-rules.ts ; avant : 8 caractères, une majuscule, une minuscule,
  * un chiffre), sans le caractère spécial de la liste du client. Thème sombre forcé par app/controller/layout.tsx.
  */
 
@@ -38,11 +39,11 @@ interface ControllerProfile {
     createdAt: string | null;
 }
 
+// Lot 9 quinquies (A7 : AUTH-11) : règle commune (lib/auth/password-rules.ts), la même que celle du serveur
 const PASSWORD_RULES: Array<{ key: string; label: string; test: (p: string) => boolean }> = [
-    { key: 'length', label: 'Au moins 8 caractères', test: (p) => p.length >= 8 },
-    { key: 'upper', label: 'Une majuscule (A-Z)', test: (p) => /[A-Z]/.test(p) },
-    { key: 'lower', label: 'Une minuscule (a-z)', test: (p) => /[a-z]/.test(p) },
-    { key: 'digit', label: 'Un chiffre (0-9)', test: (p) => /\d/.test(p) },
+    { key: 'length', label: PASSWORD_CRITERIA_LABELS.length, test: (p) => p.length >= PASSWORD_MIN_LENGTH },
+    { key: 'max', label: PASSWORD_CRITERIA_LABELS.max, test: (p) => p.length <= PASSWORD_MAX_LENGTH },
+    { key: 'common', label: PASSWORD_CRITERIA_LABELS.common, test: (p) => p.length > 0 && obviousPasswordReason(p) === null },
 ];
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -151,7 +152,7 @@ export default function ControllerProfilePage() {
             return;
         }
         if (!rules.every((r) => r.passed)) {
-            setPwdError('Le nouveau mot de passe doit comporter au moins 8 caractères, une majuscule, une minuscule et un chiffre.');
+            setPwdError(`Le nouveau mot de passe doit comporter au moins ${PASSWORD_MIN_LENGTH} caractères et ne pas être un mot de passe trop courant.`);
             return;
         }
         if (newPwd !== confirmPwd) {
@@ -320,7 +321,7 @@ export default function ControllerProfilePage() {
                         required
                         value={newPwd}
                         onChange={(e) => setNewPwd(e.target.value)}
-                        hint="8 caractères au moins, avec une majuscule, une minuscule et un chiffre."
+                        hint={PASSWORD_HINT}
                     />
                     <ul className="space-y-1.5 rounded-2xl border border-border bg-surface-sunken p-3" aria-label="Règles du mot de passe">
                         {rules.map((r) => (
