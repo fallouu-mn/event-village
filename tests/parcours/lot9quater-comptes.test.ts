@@ -27,7 +27,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
-import { inRolledBackTransaction, inspect } from '../helpers/db';
+import { inRolledBackTransaction, inspect, openConcurrentClient } from '../helpers/db';
 import { assertLot9quaterInvariants } from '../helpers/lot9quater-invariants';
 import { BASE_URL, jsonRequest, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
 import { createSaleEvent, importModule, newBuyer, service, type Buyer } from './paiement-helpers';
@@ -182,6 +182,15 @@ describe('A3 — mot de passe : jamais avec le seul jeton, avis toujours, /reset
         console.log(`[A3] avis PASSWORD_CHANGED : ${before} → ${afterRows.length} (${afterRows.map((x) => x.channel).join(', ')})`);
         assert.ok(afterRows.length > before, 'aucun avis après un changement de mot de passe');
         assert.ok(afterRows.some((x) => x.channel === 'SMS'), 'avis par SMS');
+        // Fixture retirée : la marque écrite par l'utilisateur (sans effet, prouvé ci-dessus) n'est pas laissée à
+        // l'invariant (q2), qui vérifie la reprise et ce que l'application écrit. Modification signalée au rapport.
+        const db = await openConcurrentClient({ applicationName: 'ev-test-q-a3-marque' });
+        try {
+            await db.query(`UPDATE auth.users SET raw_user_meta_data = raw_user_meta_data - 'is_temporary_controller_account' - 'controller_activation_pending' WHERE id = $1`, [victim.userId]);
+            await db.commit();
+        } finally {
+            await db.close();
+        }
     });
 
     test('/api/auth/reset-password : refusé avec une session ordinaire ; après le code « Mot de passe oublié » : règle commune, sessions révoquées, avis', async () => {
@@ -309,6 +318,9 @@ describe('A4 — adresse technique non routable, aucun code email', () => {
         });
         const expected = `u${id.replace(/-/g, '')}@comptes.eventvillage.invalid`;
         console.log(`[A4] reprise : ${legacy} → ${JSON.stringify(after)}`);
+        // Fixture retirée : le compte d'avant le lot (sans autre donnée) n'est pas laissé à l'invariant (q1).
+        const { error: delErr } = await service.auth.admin.deleteUser(id);
+        assert.equal(delErr, null, `retrait du compte d'avant le lot : ${delErr?.message}`);
         assert.deepEqual([after.auth, after.users, after.left], [expected, expected, 0]);
         assert.ok(after.identities.every((e) => e === expected), `identités : ${JSON.stringify(after.identities)}`);
     });
