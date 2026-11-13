@@ -8,6 +8,7 @@ import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { controllerNotActivatedResponse, isControllerActivationPending } from '@/lib/auth/controller-activation';
+import { suspendedAccountMessage } from '@/lib/support-contact';
 
 /** Lot 9 quater (A3 : G-04) : durée de l'autorisation de choisir un nouveau mot de passe après le code SMS. */
 const RECOVERY_GRANT_MS = 15 * 60 * 1000;
@@ -68,6 +69,21 @@ export async function POST(req: NextRequest) {
 
         const supabase = getServiceRoleClient();
 
+        // Lot 9 quinquies (A5 : T1) : compte suspendu : refus AVANT toute écriture et tout lien de session, avec le contact
+        // du support (le code reste consommé). Lecture en échec : 503, jamais un passage.
+        const { data: statusRow, error: statusErr } = await supabase.from('users').select('status').eq('phone', normalizedPhone).maybeSingle();
+        if (statusErr) {
+            console.error('[API verify-otp] lecture du statut du compte impossible :', statusErr.message);
+            return NextResponse.json(
+                { error: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'PHONE_VERIFY_FAILED' },
+                { status: 503 }
+            );
+        }
+        if (statusRow && String(statusRow.status) === 'SUSPENDU') {
+            const refusal = await suspendedAccountMessage();
+            return NextResponse.json({ error: refusal.error, code: 'ACCOUNT_SUSPENDED', support: refusal.support }, { status: 403 });
+        }
+
         // Lot 6 (contrat B1) : un code SMS vérifié prouve la possession du numéro ; la première date est
         // conservée (équivalent de COALESCE). Seule preuve utilisée pour recevoir un billet transféré.
         const { error: verifiedErr } = await supabase
@@ -84,9 +100,10 @@ export async function POST(req: NextRequest) {
         }
 
         // 3. Récupération du profil utilisateur et génération de session
+        // Lot 9 quinquies (A6 : AUTH-14) : seules les colonnes utiles sont lues ; aucune n'est rendue au navigateur.
         const { data: userProfile, error: userProfileErr } = await supabase
             .from('users')
-            .select('*')
+            .select('id, email')
             .eq('phone', normalizedPhone)
             .maybeSingle();
 
@@ -162,14 +179,13 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Lot 9 quinquies (A6 : AUTH-14, T4) : seulement le jeton de session et l'identifiant du compte ; jamais l'adresse
+        // (technique ou non), le numéro ni la ligne du compte.
         return NextResponse.json({
             success: true,
             verified: true,
-            user: userProfile,
             token_hash: tokenHash,
-            email: targetEmail,
-            phone: normalizedPhone,
-            message: 'Numéro de téléphone vérifié avec succès.',
+            user: userProfile ? { id: String(userProfile.id) } : null,
         });
     } catch (error: unknown) {
         return apiFailure('POST /api/auth/verify-otp', error, { message: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'OTP_VERIFY_FAILED' });

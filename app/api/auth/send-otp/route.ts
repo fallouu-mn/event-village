@@ -9,6 +9,7 @@ import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
 import { controllerActivationPendingById, controllerNotActivatedResponse } from '@/lib/auth/controller-activation';
+import { suspendedAccountMessage } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,13 +61,20 @@ export async function POST(req: NextRequest) {
         // Compte du numéro, lu pour tout objet (lot 9 quater : part du plafond, contrôleur non activé).
         const { data: userRecord, error: userRecordErr } = await supabase
             .from('users')
-            .select('id, email, phone')
+            .select('id, email, phone, status')
             .eq('phone', normalizedPhone)
             .maybeSingle();
 
         // Lot 9 (A34) : une panne n'est pas un compte absent, et aucun SMS ne part.
         if (userRecordErr) {
             return apiFailure('POST /api/auth/send-otp, lecture du compte', userRecordErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
+        }
+
+        // Lot 9 quinquies (A5 : T1) : compte suspendu (connexion ou « Mot de passe oublié ») : refus AVANT toute réservation
+        // et tout SMS, avec le contact du support ; le numéro d'un compte est déjà dit par /api/auth/resolve-phone (AUD-07).
+        if (userRecord && otpPurpose !== 'REGISTER' && String(userRecord.status) === 'SUSPENDU') {
+            const refusal = await suspendedAccountMessage();
+            return NextResponse.json({ error: refusal.error, code: 'ACCOUNT_SUSPENDED', support: refusal.support }, { status: 403 });
         }
 
         // Si demande de réinitialisation de mot de passe, vérifier l'existence du compte
