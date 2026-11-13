@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient, getAuthenticatedUser } from '../supabase/server';
 import { type UserRoleType } from './roles';
+import { partnerFicheRefusal } from './partner-fiche-guard';
 
 export interface ServerUser {
     id: string;
@@ -77,6 +78,10 @@ export async function requireActiveSession(
             ),
         };
     }
+    // Lot 9 quinquies (A9) : une partenaire n'agit que si sa FICHE le permet (VALIDE ; EN_ATTENTE et REJETE : lectures et
+    // complément de dossier seulement), sur toutes les routes /api/partner/* et le scan de ses événements.
+    const ficheRefusal = await partnerFicheRefusal(user, req.method, new URL(req.url).pathname);
+    if (ficheRefusal) return { response: ficheRefusal };
     return { user };
 }
 
