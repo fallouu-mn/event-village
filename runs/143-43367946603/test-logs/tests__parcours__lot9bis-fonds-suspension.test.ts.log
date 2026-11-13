@@ -1,0 +1,116 @@
+TAP version 13
+# Subtest: R4 — les fonds d’un événement SUSPENDU ne sont pas retirables
+    # Subtest: R4 reproduit : événement suspendu par l’admin, withdrawal_request de 5 000 F → FUNDS_FROZEN, aucun retrait ni versement
+    ok 1 - R4 reproduit : événement suspendu par l’admin, withdrawal_request de 5 000 F → FUNDS_FROZEN, aucun retrait ni versement
+      ---
+      duration_ms: 609.988434
+      type: 'test'
+      ...
+    # Subtest: solde : frozen = 10 000, withdrawable = 0, available inchangé (10 000) ; GET /api/finance/balance sert frozen et withdrawable
+    ok 2 - solde : frozen = 10 000, withdrawable = 0, available inchangé (10 000) ; GET /api/finance/balance sert frozen et withdrawable
+      ---
+      duration_ms: 530.706859
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-97d445cf-2ad9-439c-a883-d0fd0312b392 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-a3732efa-7699-476f-b9c1-c3185e8927f0 indisponible : Transaction introuvable (simulation)
+    # Subtest: réactivation de l’événement : frozen = 0, withdrawable = 10 000, retrait de 5 000 F accepté
+    ok 3 - réactivation de l’événement : frozen = 0, withdrawable = 10 000, retrait de 5 000 F accepté
+      ---
+      duration_ms: 548.979578
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-97d445cf-2ad9-439c-a883-d0fd0312b392 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-a3732efa-7699-476f-b9c1-c3185e8927f0 indisponible : Transaction introuvable (simulation)
+    # Subtest: trois événements : seul le net de l’événement suspendu est gelé ; le net négatif d’un autre suspendu ne réduit pas le gel
+    ok 4 - trois événements : seul le net de l’événement suspendu est gelé ; le net négatif d’un autre suspendu ne réduit pas le gel
+      ---
+      duration_ms: 1154.717397
+      type: 'test'
+      ...
+    # Subtest: devis et retrait rendent le même code : withdrawal_quote, route du code (409, aucun SMS) et withdrawal_request → FUNDS_FROZEN
+    ok 5 - devis et retrait rendent le même code : withdrawal_quote, route du code (409, aucun SMS) et withdrawal_request → FUNDS_FROZEN
+      ---
+      duration_ms: 563.702663
+      type: 'test'
+      ...
+    # Subtest: témoin (vert dès l’écriture) : retrait demandé par une partenaire suspendue refusé (ACCOUNT_NOT_ACTIVE), aucun retrait
+    ok 6 - témoin (vert dès l’écriture) : retrait demandé par une partenaire suspendue refusé (ACCOUNT_NOT_ACTIVE), aucun retrait
+      ---
+      duration_ms: 523.144744
+      type: 'test'
+      ...
+    1..6
+ok 1 - R4 — les fonds d’un événement SUSPENDU ne sont pas retirables
+  ---
+  duration_ms: 3932.644579
+  type: 'suite'
+  ...
+# Subtest: R5 — partenaire suspendue : cascade sur ses événements
+    # Subtest: R5 reproduit : suspension par la route → l’événement PUBLIE passe SUSPENDU (motif, rôle ADMIN), une trace de cascade, aucun EVENT_SUSPENDED à la partenaire, porteurs avisés en in-app sans SMS
+    ok 1 - R5 reproduit : suspension par la route → l’événement PUBLIE passe SUSPENDU (motif, rôle ADMIN), une trace de cascade, aucun EVENT_SUSPENDED à la partenaire, porteurs avisés en in-app sans SMS
+      ---
+      duration_ms: 570.616296
+      type: 'test'
+      ...
+[confirmation] paiement 481c4b74-86de-409d-96f4-20091e5f56c7 encaissé mais non honorable (événement suspendu (Standard)) : remboursement
+[webhook SamirPay] événement 09e5858e-a269-43e1-81bd-c07a74675a10 : REFUND_REQUIRED
+    # Subtest: paiement ouvert avant la suspension, succès après : aucune VENTE ni billet, paiement remboursé (REFUND_REQUIRED)
+    ok 2 - paiement ouvert avant la suspension, succès après : aucune VENTE ni billet, paiement remboursé (REFUND_REQUIRED)
+      ---
+      duration_ms: 507.922818
+      type: 'test'
+      ...
+    # Subtest: réactivation : seul l’événement cascadé intact revient PUBLIE (« Organisateur réactivé ») ; suspendu avant, terminé ou annulé pendant : traces LEFT_ENDED, LEFT_CHANGED ; aucun avis par événement à la partenaire
+    ok 3 - réactivation : seul l’événement cascadé intact revient PUBLIE (« Organisateur réactivé ») ; suspendu avant, terminé ou annulé pendant : traces LEFT_ENDED, LEFT_CHANGED ; aucun avis par événement à la partenaire
+      ---
+      duration_ms: 621.000617
+      type: 'test'
+      ...
+    # Subtest: B18 : l’admin ne republie pas l’événement d’une partenaire suspendue (RPC et route : PARTNER_SUSPENDED), le statut reste SUSPENDU
+    ok 4 - B18 : l’admin ne republie pas l’événement d’une partenaire suspendue (RPC et route : PARTNER_SUSPENDED), le statut reste SUSPENDU
+      ---
+      duration_ms: 295.828337
+      type: 'test'
+      ...
+    1..4
+ok 2 - R5 — partenaire suspendue : cascade sur ses événements
+  ---
+  duration_ms: 1995.831834
+  type: 'suite'
+  ...
+# Subtest: Bandeau de la partenaire suspendue
+    # Subtest: app/partner/dashboard/page.tsx : « Compte partenaire suspendu », texte vrai (événements suspendus, fonds gelés), plus « ne sont plus visibles du public »
+    ok 1 - app/partner/dashboard/page.tsx : « Compte partenaire suspendu », texte vrai (événements suspendus, fonds gelés), plus « ne sont plus visibles du public »
+      ---
+      duration_ms: 0.716129
+      type: 'test'
+      ...
+    1..1
+ok 3 - Bandeau de la partenaire suspendue
+  ---
+  duration_ms: 0.796929
+  type: 'suite'
+  ...
+[INVARIANT] lot9bis-fonds-suspension — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] lot9bis-fonds-suspension — purge des réservations échues : {"expired":0}
+[INVARIANT] lot9bis-fonds-suspension — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] lot9bis-fonds-suspension — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] lot9bis-fonds-suspension — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] lot9bis-fonds-suspension — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] lot9bis-fonds-suspension — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] lot9bis-fonds-suspension — envoyeur : 992 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] lot9bis-fonds-suspension — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] lot9bis-fonds-suspension — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] lot9bis-fonds-suspension — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] lot9bis-fonds-suspension — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] lot9bis-fonds-suspension — (w) : 0 violation(s)
+1..3
+# tests 11
+# suites 3
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8436.273765
