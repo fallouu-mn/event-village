@@ -1,0 +1,101 @@
+TAP version 13
+[cashin] ORD-EV-1794578142608-42D429BC : délai dépassé sans réponse (Délai dépassé après la création de la transaction (simulation)), relance unique au même orderId
+[cashin] paiement 1eda9aad-7e58-4cb6-bccb-3379f4bd1fb0 : transaction SamirPay existante adoptée (eb8993d3-1fb0-413e-9499-69dd0e71ebd1), paiement rendu et surveillé
+# Subtest: H4 — initialisation : une seule relance au même orderId, identifiant repris (contrat 5.57, B105)
+    # Subtest: a. délai dépassé après la création, relance → 409 DUPLICATE avec identifiant : CANCELLED avec l’identifiant, provider_final faux, réservation rendue
+    ok 1 - a. délai dépassé après la création, relance → 409 DUPLICATE avec identifiant : CANCELLED avec l’identifiant, provider_final faux, réservation rendue
+      ---
+      duration_ms: 205.10385
+      type: 'test'
+      ...
+[cashin] ORD-EV-1794578142804-6462E89D : délai dépassé sans réponse (Délai dépassé une fois (simulation)), relance unique au même orderId
+    # Subtest: b. délai dépassé une fois, rien de créé, relance → succès : paiement PENDING avec son lien
+    ok 2 - b. délai dépassé une fois, rien de créé, relance → succès : paiement PENDING avec son lien
+      ---
+      duration_ms: 190.018559
+      type: 'test'
+      ...
+[cashin] ORD-EV-1794578142990-B98C5E03 : délai dépassé sans réponse (Délai dépassé (simulation)), relance unique au même orderId
+[checkout] cashin refusé pour le paiement 5b0b959e-fb49-4c8f-9751-7ce2b75510f4 (INIT_UNCERTAIN) : Délai dépassé (simulation)
+    # Subtest: c. délai dépassé à chaque appel : 2 appels exactement, FAILED INIT_UNCERTAIN, provider_final faux, réservation rendue
+    ok 3 - c. délai dépassé à chaque appel : 2 appels exactement, FAILED INIT_UNCERTAIN, provider_final faux, réservation rendue
+      ---
+      duration_ms: 184.779698
+      type: 'test'
+      ...
+[cashin] ORD-EV-1794578143174-3003135F : délai dépassé sans réponse (Délai dépassé après la création de la transaction (simulation)), relance unique au même orderId
+[checkout] cashin refusé pour le paiement e03d80ff-31cc-46d3-a9ef-04123053ab9a (INIT_UNCERTAIN) : Délai dépassé, transaction déjà créée (simulation)
+[webhook SamirPay] événement da0eff39-19b0-43cf-881d-4c696b180c27 : ADOPTED_THEN_CONFIRMED
+    # Subtest: d. PO6 : transaction créée sans réponse aux deux appels, le client paie : le webhook au jeton valide adopte l’identifiant, billets émis
+    ok 4 - d. PO6 : transaction créée sans réponse aux deux appels, le client paie : le webhook au jeton valide adopte l’identifiant, billets émis
+      ---
+      duration_ms: 212.637342
+      type: 'test'
+      ...
+[checkout] cashin refusé pour le paiement d320c6f3-a037-4c5a-b5d4-d32d15ddf984 (INIT_REJECTED) : Paiement refusé par l’opérateur (simulation)
+    # Subtest: e. garde : refus explicite de l’opérateur → un seul appel, aucune relance
+    ok 5 - e. garde : refus explicite de l’opérateur → un seul appel, aucune relance
+      ---
+      duration_ms: 188.009317
+      type: 'test'
+      ...
+    1..5
+ok 1 - H4 — initialisation : une seule relance au même orderId, identifiant repris (contrat 5.57, B105)
+  ---
+  duration_ms: 1209.941928
+  type: 'suite'
+  ...
+[INVARIANT] paiement-init-relance — avant purge (held = réservations ACTIVE) : 1 violation(s)
+[INVARIANT]   (a) 8c33b0d7-5aa6-402a-9c94-393cdd9ef88b : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+[INVARIANT] paiement-init-relance — purge des réservations échues : {"expired":0}
+[INVARIANT] paiement-init-relance — après purge (held = réservations non échues) : 1 violation(s)
+[INVARIANT]   (a) 8c33b0d7-5aa6-402a-9c94-393cdd9ef88b : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/paiement-init-relance.test.ts
+  ---
+  duration_ms: 57.391634
+  location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-init-relance.test.ts:2:1366'
+  failureType: 'hookFailed'
+  error: |-
+    invariant violé avant purge :
+    (a) 8c33b0d7-5aa6-402a-9c94-393cdd9ef88b : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)',
+    +     objet: '8c33b0d7-5aa6-402a-9c94-393cdd9ef88b',
+    +     regle: 'a'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'a'
+      objet: '8c33b0d7-5aa6-402a-9c94-393cdd9ef88b'
+      detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertPaymentInvariants (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:84:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertFinanceInvariants (/home/runner/work/event-village/event-village/tests/helpers/finance-invariants.ts:105:5)
+    async assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:67:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async assertNotificationInvariants (/home/runner/work/event-village/event-village/tests/helpers/notification-invariants.ts:214:5)
+    async assertTerrainInvariants (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:151:5)
+    async assertRecetteInvariants (/home/runner/work/event-village/event-village/tests/helpers/recette-invariants.ts:195:5)
+    async assertLot9Invariants (/home/runner/work/event-village/event-village/tests/helpers/lot9-invariants.ts:220:5)
+    async assertLot9bisInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:357:5)
+  ...
+1..1
+# tests 5
+# suites 1
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1277.11291

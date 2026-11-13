@@ -1,0 +1,83 @@
+TAP version 13
+# Subtest: Route de statut
+    # Subtest: sans session → 401 ; autre compte → 404 sans donnée ; propriétaire → statut, opérateur, échéance
+    ok 1 - sans session → 401 ; autre compte → 404 sans donnée ; propriétaire → statut, opérateur, échéance
+      ---
+      duration_ms: 380.748235
+      type: 'test'
+      ...
+    # Subtest: identifiant non UUID (injection) → 400
+    ok 2 - identifiant non UUID (injection) → 400
+      ---
+      duration_ms: 150.612704
+      type: 'test'
+      ...
+    # Subtest: sondage qui voit SUCCESS chez SamirPay avant le webhook : billets émis exactement une fois, puis webhook idempotent
+    ok 3 - sondage qui voit SUCCESS chez SamirPay avant le webhook : billets émis exactement une fois, puis webhook idempotent
+      ---
+      duration_ms: 236.412819
+      type: 'test'
+      ...
+    # Subtest: la route ne passe jamais elle-même un paiement en SUCCESS (lecture seule, réconciliation par RPC)
+    ok 4 - la route ne passe jamais elle-même un paiement en SUCCESS (lecture seule, réconciliation par RPC)
+      ---
+      duration_ms: 0.374832
+      type: 'test'
+      ...
+    1..4
+ok 1 - Route de statut
+  ---
+  duration_ms: 993.207976
+  type: 'suite'
+  ...
+[INVARIANT] paiement-statut — avant purge (held = réservations ACTIVE) : 1 violation(s)
+[INVARIANT]   (a) 8c33b0d7-5aa6-402a-9c94-393cdd9ef88b : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+[INVARIANT] paiement-statut — purge des réservations échues : {"expired":0}
+[INVARIANT] paiement-statut — après purge (held = réservations non échues) : 1 violation(s)
+[INVARIANT]   (a) 8c33b0d7-5aa6-402a-9c94-393cdd9ef88b : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts
+  ---
+  duration_ms: 55.83859
+  location: '/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:2:1330'
+  failureType: 'hookFailed'
+  error: |-
+    invariant violé avant purge :
+    (a) 8c33b0d7-5aa6-402a-9c94-393cdd9ef88b : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)',
+    +     objet: '8c33b0d7-5aa6-402a-9c94-393cdd9ef88b',
+    +     regle: 'a'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'a'
+      objet: '8c33b0d7-5aa6-402a-9c94-393cdd9ef88b'
+      detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertPaymentInvariants (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:84:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/paiement-statut.test.ts:24:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..1
+# tests 4
+# suites 1
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1057.666898

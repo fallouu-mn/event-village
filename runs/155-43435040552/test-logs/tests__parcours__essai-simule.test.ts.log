@@ -1,0 +1,205 @@
+TAP version 13
+[SONDE-REQUEST-HEADERS] postgrest=16.5 avec={"cles":["accept","accept-encoding","accept-language","apikey","authorization","connection","content-length","content-profile","content-type","host","sec-fetch-mode","user-agent","x-client-info","x-ev-simulation","x-forwarded-for","x-forwarded-host","x-forwarded-path","x-forwarded-port","x-forwarded-prefix","x-forwarded-proto","x-real-ip"],"valeur":"1","present":true} sans={"cles":["accept","accept-encoding","accept-language","apikey","authorization","cache-control","connection","content-length","content-profile","content-type","host","pragma","sec-fetch-mode","user-agent","x-client-info","x-forwarded-for","x-forwarded-host","x-forwarded-path","x-forwarded-port","x-forwarded-prefix","x-forwarded-proto","x-real-ip"],"valeur":null,"present":true} zero={"cles":["accept","accept-encoding","accept-language","apikey","authorization","connection","content-length","content-profile","content-type","host","sec-fetch-mode","user-agent","x-client-info","x-ev-simulation","x-forwarded-for","x-forwarded-host","x-forwarded-path","x-forwarded-port","x-forwarded-prefix","x-forwarded-proto","x-real-ip"],"valeur":"0","present":true}
+# Subtest: SUPPOSÉ 2.5 : PostgREST expose request.headers sous la CLI 2.122.0
+    # Subtest: sonde indépendante de M2, puis ev_request_simulated de bout en bout
+    ok 1 - sonde indépendante de M2, puis ev_request_simulated de bout en bout
+      ---
+      duration_ms: 398.812261
+      type: 'test'
+      ...
+    1..1
+ok 1 - SUPPOSÉ 2.5 : PostgREST expose request.headers sous la CLI 2.122.0
+  ---
+  duration_ms: 738.267103
+  type: 'suite'
+  ...
+# Subtest: marquage à la création, en base
+    # Subtest: en-tête présent : refund_request crée un cashout simulé, sur un paiement réel
+    ok 1 - en-tête présent : refund_request crée un cashout simulé, sur un paiement réel
+      ---
+      duration_ms: 317.816728
+      type: 'test'
+      ...
+    # Subtest: en-tête présent : ticket_refund_request crée un cashout simulé
+    ok 2 - en-tête présent : ticket_refund_request crée un cashout simulé
+      ---
+      duration_ms: 247.116716
+      type: 'test'
+      ...
+    # Subtest: en-tête présent : withdrawal_request crée un cashout simulé
+    ok 3 - en-tête présent : withdrawal_request crée un cashout simulé
+      ---
+      duration_ms: 523.609926
+      type: 'test'
+      ...
+    # Subtest: paiement marqué, cashout créé sans en-tête : hérite
+    ok 4 - paiement marqué, cashout créé sans en-tête : hérite
+      ---
+      duration_ms: 220.46241
+      type: 'test'
+      ...
+    # Subtest: solde issu d’un paiement simulé, retrait sans en-tête : hérite
+    ok 5 - solde issu d’un paiement simulé, retrait sans en-tête : hérite
+      ---
+      duration_ms: 511.921668
+      type: 'test'
+      ...
+    # Subtest: témoin : solde réel, retrait sans en-tête : réel
+    ok 6 - témoin : solde réel, retrait sans en-tête : réel
+      ---
+      duration_ms: 509.108629
+      type: 'test'
+      ...
+    # Subtest: la valeur reçue à l’INSERT est écrasée, dans les deux sens
+    ok 7 - la valeur reçue à l’INSERT est écrasée, dans les deux sens
+      ---
+      duration_ms: 158.716077
+      type: 'test'
+      ...
+    1..7
+ok 2 - marquage à la création, en base
+  ---
+  duration_ms: 2489.687006
+  type: 'suite'
+  ...
+# Subtest: envoi refusé dans le code
+    # Subtest: cashoutSendRefusal : les 4 cas
+    ok 1 - cashoutSendRefusal : les 4 cas
+      ---
+      duration_ms: 3.893209
+      type: 'test'
+      ...
+    # Subtest: simulationHeaders vide et isSimulationRun faux en NODE_ENV=test, malgré EV_INTEGRATIONS=fake
+    ok 2 - simulationHeaders vide et isSimulationRun faux en NODE_ENV=test, malgré EV_INTEGRATIONS=fake
+      ---
+      duration_ms: 1.218714
+      type: 'test'
+      ...
+    # Subtest: serveur réel, cashout simulé : ni getSolde ni sendCashout, blocked_reason = SIMULATED, skipped = SIMULATED
+    ok 3 - serveur réel, cashout simulé : ni getSolde ni sendCashout, blocked_reason = SIMULATED, skipped = SIMULATED
+      ---
+      duration_ms: 259.651218
+      type: 'test'
+      ...
+    # Subtest: libellé du motif pour les administrateurs : clair, sans code technique
+    ok 4 - libellé du motif pour les administrateurs : clair, sans code technique
+      ---
+      duration_ms: 0.823243
+      type: 'test'
+      ...
+    # Subtest: décision « Renvoyer » d’un cashout simulé bloqué : refusée, aucun appel, reste bloqué
+    ok 5 - décision « Renvoyer » d’un cashout simulé bloqué : refusée, aucun appel, reste bloqué
+      ---
+      duration_ms: 258.181578
+      type: 'test'
+      ...
+    # Subtest: décision « Renvoyer » d’un cashout simulé ECHOUE : remis à envoyer puis bloqué, aucun appel
+    ok 6 - décision « Renvoyer » d’un cashout simulé ECHOUE : remis à envoyer puis bloqué, aucun appel
+      ---
+      duration_ms: 283.69491
+      type: 'test'
+      ...
+    # Subtest: cron de reprise : le cashout simulé n’est pas repris, le réel l’est
+    ok 7 - cron de reprise : le cashout simulé n’est pas repris, le réel l’est
+      ---
+      duration_ms: 447.90183
+      type: 'test'
+      ...
+[cashout] statut de l'envoi REFUND-TKT-496a801b-2864-4865-b7b2-e8afa0148402 indisponible : Transaction introuvable (simulation)
+[cashout] statut de l'envoi REFUND-f1d09cd3-586f-4f67-b096-7b7c3160b201 indisponible : Transaction introuvable (simulation)
+    # Subtest: confirmSent ne relit pas le statut d’un cashout simulé
+    ok 8 - confirmSent ne relit pas le statut d’un cashout simulé
+      ---
+      duration_ms: 241.566543
+      type: 'test'
+      ...
+    # Subtest: sendBatch : la ligne simulée sort du total et n’est pas envoyée, la réelle part
+    ok 9 - sendBatch : la ligne simulée sort du total et n’est pas envoyée, la réelle part
+      ---
+      duration_ms: 474.573718
+      type: 'test'
+      ...
+    # Subtest: témoin : cashout sans en-tête, envoyé normalement
+    ok 10 - témoin : cashout sans en-tête, envoyé normalement
+      ---
+      duration_ms: 225.648672
+      type: 'test'
+      ...
+[cashout] envoi réel REFUND-d6a9115d-b70e-4e17-ab74-8a727f04c536 refusé par un serveur d'essai : rien n'est écrit, rien ne part
+    # Subtest: serveur d’essai, ligne réelle : aucune écriture, aucun appel, skipped = REAL_IN_SIMULATION
+    ok 11 - serveur d’essai, ligne réelle : aucune écriture, aucun appel, skipped = REAL_IN_SIMULATION
+      ---
+      duration_ms: 210.423677
+      type: 'test'
+      ...
+    # Subtest: serveur d’essai, ligne simulée : envoyée au faux service, la garde en base l’accepte
+    ok 12 - serveur d’essai, ligne simulée : envoyée au faux service, la garde en base l’accepte
+      ---
+      duration_ms: 228.649318
+      type: 'test'
+      ...
+    1..12
+ok 3 - envoi refusé dans le code
+  ---
+  duration_ms: 2636.934277
+  type: 'suite'
+  ...
+# Subtest: refus en base (trg_cashouts_simulation_guard)
+    # Subtest: UPDATE send_started_at direct d’un cashout simulé sans en-tête : EV403
+    ok 1 - UPDATE send_started_at direct d’un cashout simulé sans en-tête : EV403
+      ---
+      duration_ms: 215.635169
+      type: 'test'
+      ...
+    # Subtest: UPDATE send_started_at d’un cashout réel avec l’en-tête : EV403
+    ok 2 - UPDATE send_started_at d’un cashout réel avec l’en-tête : EV403
+      ---
+      duration_ms: 247.684509
+      type: 'test'
+      ...
+    # Subtest: témoin : cashout simulé réservé avec l’en-tête
+    ok 3 - témoin : cashout simulé réservé avec l’en-tête
+      ---
+      duration_ms: 219.33017
+      type: 'test'
+      ...
+    1..3
+ok 4 - refus en base (trg_cashouts_simulation_guard)
+  ---
+  duration_ms: 682.909185
+  type: 'suite'
+  ...
+# Subtest: marque immuable
+    # Subtest: UPDATE simulated refusé sur payments et cashouts, dans les deux sens
+    ok 1 - UPDATE simulated refusé sur payments et cashouts, dans les deux sens
+      ---
+      duration_ms: 432.021209
+      type: 'test'
+      ...
+    1..1
+ok 5 - marque immuable
+  ---
+  duration_ms: 432.141625
+  type: 'suite'
+  ...
+[INVARIANT] essai-simule — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] essai-simule — purge des réservations échues : {"expired":0}
+[INVARIANT] essai-simule — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] essai-simule — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] essai-simule — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] essai-simule — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] essai-simule — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] essai-simule — envoyeur : 923 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] essai-simule — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] essai-simule — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] essai-simule — (r)(s)(t) : 0 violation(s)
+1..5
+# tests 24
+# suites 5
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8649.101892
