@@ -1,6 +1,7 @@
 import { Logo } from '@/components/ui/Logo';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoginForm } from '@/components/auth/LoginForm';
+import { safeInternalPath } from '@/lib/auth/safe-redirect';
 
 /**
  * Connexion (lot 6, contrat A5) : composant serveur. Les paramètres d'URL (`error`, `message`, `reset`, `redirect`)
@@ -19,7 +20,8 @@ function firstParam(value: string | string[] | undefined): string | null {
 }
 
 export default function LoginPage({ searchParams }: LoginPageProps) {
-    const redirectUrl = firstParam(searchParams?.redirect) || '/';
+    // Lot 9 quater (A1 : AUD-17, G-03) : seul un chemin interne du site est transmis au formulaire, sinon « / »
+    const redirectUrl = safeInternalPath(firstParam(searchParams?.redirect)) ?? '/';
     const errorParam = firstParam(searchParams?.error);
     const messageParam = firstParam(searchParams?.message);
     const resetParam = firstParam(searchParams?.reset);

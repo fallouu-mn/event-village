@@ -25,6 +25,7 @@ import { detachPushSubscription } from '@/lib/push/client';
 import { INVALID_SN_PHONE_MESSAGE, normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { resolvePostLoginRoute } from '@/lib/auth/resolve-post-login-route';
+import { isForwardableRedirect } from '@/lib/auth/safe-redirect';
 
 /**
  * Formulaire de connexion (lot 6, contrat A5). Rendu par app/login/page.tsx, composant serveur qui lit
@@ -88,11 +89,6 @@ const INFO_MESSAGES: Record<string, string> = {
 const RESET_MESSAGES: Record<string, string> = {
     success: 'Mot de passe modifié : connectez-vous avec le nouveau.',
 };
-
-/** Destination transmise à l'inscription (D61) : chemin interne seulement (« / » au début, pas « // »), hors accueil. */
-function isForwardableRedirect(redirectUrl: string): boolean {
-    return redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') && redirectUrl !== '/';
-}
 
 /** Stockage du navigateur indisponible (navigation privée, quota) : le verrou local est un confort, on le signale. */
 function storageWarning(action: string, err: unknown): void {
@@ -489,7 +485,8 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                 await handlePostLoginRedirect(userId);
             } else {
                 clearLockoutState();
-                window.location.href = redirectUrl || '/';
+                // Lot 9 quater (A1 : AUD-17) : jamais la valeur brute de ?redirect= ; chemin interne ou espace du compte
+                window.location.href = resolvePostLoginRoute([], redirectUrl);
             }
         } catch (err: unknown) {
             console.error('[LoginForm] Erreur validation OTP:', err);

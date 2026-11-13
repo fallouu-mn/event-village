@@ -16,6 +16,7 @@ import { PasswordStrengthChecklist, allPasswordCriteriaMet } from '@/components/
 import { getBrowserClient } from '@/lib/supabase/client';
 import { RegisterStartSchema, RegisterWithCodeSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { safeInternalPath } from '@/lib/auth/safe-redirect';
 
 /**
  * Inscription d'un client — lot 7 (7.3, D1, D61, contrat 3.6) : « numéro d'abord ».
@@ -40,13 +41,6 @@ type Step = 'phone' | 'profile';
 /** Longueur admise par RegisterWithCodeSchema : un lien trafiqué ne bloque pas l'inscription sur un refus de validation. */
 const REFERRAL_CODE_MAX = 64;
 
-/** Destination interne (?redirect=) : commence par « / », jamais « // » ni « /\ » (redirection ouverte). */
-function safeInternalPath(raw: string | null): string | null {
-    if (!raw) return null;
-    const value = raw.trim();
-    if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null;
-    return value;
-}
 
 interface ApiResult {
     ok: boolean;
