@@ -118,7 +118,9 @@ describe('H3 — comparaison en temps constant (statique)', () => {
 
     test(`${SERVICE_FILE} : corps lu en octets (arrayBuffer) et vérifié par verifySamirPaySignature`, () => {
         const text = parse(SERVICE_FILE).getText();
-        assert.match(text, /\.arrayBuffer\(\)/, 'corps brut lu en octets : la signature porte sur les octets reçus (contrat 4.5)');
+        // Lot 9 quater (F1 : AUD-04) : lecture bornée par morceaux (getReader, octets bruts) au lieu de arrayBuffer()
+        // (modification signalée au rapport)
+        assert.match(text, /\.arrayBuffer\(\)|\.getReader\(\)/, 'corps brut lu en octets : la signature porte sur les octets reçus (contrat 4.5)');
         assert.match(text, /\bverifySamirPaySignature\s*\(/, 'verifySamirPaySignature non appelée par le webhook');
         assert.match(text, /REJECTED_SIGNATURE/, 'résultat REJECTED_SIGNATURE absent du journal');
     });
