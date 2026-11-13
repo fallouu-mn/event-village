@@ -480,7 +480,8 @@ describe('6.0 e — connexion : composant serveur et formulaire client (A5)', ()
             ['LOCKOUT_DURATION_SECONDS = 60', /\bLOCKOUT_DURATION_SECONDS\s*=\s*60\b/.test(code)],
             ['clé ev_login_lockout_until', /["'`]ev_login_lockout_until["'`]/.test(code)],
             ['clé ev_login_failed_attempts', /["'`]ev_login_failed_attempts["'`]/.test(code)],
-            ['429 serveur lu (remainingSeconds)', /\bremainingSeconds\b/.test(code)],
+            // Lot 9 quinquies (B3 : AUTH-03, modification signalée) : le serveur envoie retryAfterSeconds, jamais remainingSeconds
+            ['429 serveur lu (retryAfterSeconds)', /\bretryAfterOf\(/.test(code) && !/\bremainingSeconds\b/.test(code)],
             ['résolution du téléphone (/api/auth/resolve-phone)', /\/api\/auth\/resolve-phone/.test(code)],
             ['mot de passe par POST /api/auth/login { identifier, password } (lot 9 bis, R58, B36 : remplace signInWithPassword)', /fetch\(\s*['"`]\/api\/auth\/login['"`]/.test(code) && /\bidentifier\b/.test(code) && /\bpassword\b/.test(code)],
             ['OTP : /api/auth/send-otp et /api/auth/verify-otp', /\/api\/auth\/send-otp/.test(code) && /\/api\/auth\/verify-otp/.test(code)],
