@@ -201,7 +201,8 @@ describe('R85 — écran du profil (statique)', () => {
         for (const label of ['Mot de passe actuel', 'Nouveau mot de passe', 'Confirmer le nouveau mot de passe']) {
             assert.ok(src.includes(label), `champ « ${label} » absent`);
         }
-        assert.ok(src.includes('8 caractères au moins, dont une majuscule, un chiffre et un caractère spécial.'), 'aide de robustesse absente');
+        // Lot 9 quinquies (A7, modification signalée au rapport) : aide de la règle commune (PASSWORD_HINT, lib/auth/password-rules.ts)
+        assert.ok(src.includes('PASSWORD_HINT'), 'aide de robustesse absente');
         assert.ok(src.includes('/api/account/password'), 'appel de /api/account/password absent');
     });
 });
