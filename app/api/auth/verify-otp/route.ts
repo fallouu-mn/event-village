@@ -10,9 +10,6 @@ import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { controllerNotActivatedResponse, isControllerActivationPending } from '@/lib/auth/controller-activation';
 import { suspendedAccountMessage } from '@/lib/support-contact';
 
-/** Lot 9 quater (A3 : G-04) : durée de l'autorisation de choisir un nouveau mot de passe après le code SMS. */
-const RECOVERY_GRANT_MS = 15 * 60 * 1000;
-
 export const dynamic = 'force-dynamic';
 
 /**
@@ -144,15 +141,13 @@ export async function POST(req: NextRequest) {
             if (confirmError) console.error('[API verify-otp] phone_confirm non enregistré :', confirmError.message);
         }
 
-        // Lot 9 quater (A3 : G-04) : un code « Mot de passe oublié » ouvre une autorisation de 15 minutes, seule clé de
-        // POST /api/auth/reset-password (avec le lien email de récupération).
+        // Lot 9 quater (A3 : G-04) : un code « Mot de passe oublié » ouvre une autorisation, seule clé de
+        // POST /api/auth/reset-password. Lot 9 quinquies (A8) : 10 minutes, réservée à une session ouverte APRÈS ce code
+        // (celle du jeton rendu ici), usage unique (account_recovery_open, migration 20261112000004).
         if (userProfile?.id && requested === 'PASSWORD_RESET') {
-            const { error: grantErr } = await supabase.from('account_recovery_grants').upsert({
-                user_id: userProfile.id,
-                expires_at: new Date(Date.now() + RECOVERY_GRANT_MS).toISOString(),
-            });
-            if (grantErr) {
-                console.error('[API verify-otp] autorisation de récupération non enregistrée :', grantErr.message);
+            const { data: grantReply, error: grantErr } = await supabase.rpc('account_recovery_open', { p: { user_id: userProfile.id } });
+            if (grantErr || (grantReply as { ok?: boolean } | null)?.ok !== true) {
+                console.error('[API verify-otp] autorisation de récupération non enregistrée :', grantErr?.message ?? JSON.stringify(grantReply));
                 return NextResponse.json(
                     { error: 'Vérification momentanément impossible. Demandez un nouveau code.', code: 'PHONE_VERIFY_FAILED' },
                     { status: 503 }

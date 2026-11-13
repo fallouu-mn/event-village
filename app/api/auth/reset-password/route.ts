@@ -20,13 +20,16 @@ const BodySchema = z.object({
         .pipe(StrongPasswordSchema),
 }).strict();
 
-const NOT_RECOVERY = NextResponse.json(
-    {
-        error: 'Cette page sert seulement après « Mot de passe oublié ». Demandez un nouveau code, ou changez votre mot de passe depuis votre profil.',
-        code: 'RECOVERY_SESSION_REQUIRED',
-    },
-    { status: 403 },
-);
+/** Réponse neuve à chaque appel (un corps de réponse ne se lit qu'une fois). */
+function notRecovery(): NextResponse {
+    return NextResponse.json(
+        {
+            error: 'Cette page sert seulement après « Mot de passe oublié ». Demandez un nouveau code, ou changez votre mot de passe depuis votre profil.',
+            code: 'RECOVERY_SESSION_REQUIRED',
+        },
+        { status: 403 },
+    );
+}
 
 function failure(): NextResponse {
     return NextResponse.json(
@@ -78,20 +81,25 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
 
     const supabase = getServiceRoleClient();
-    // Session de récupération : autorisation ouverte par le code SMS « Mot de passe oublié » (verify-otp, 15 min,
-    // consommée ici), ou lien email de récupération de GoTrue (méthode « recovery » du jeton). Toute autre session
-    // (connexion par mot de passe ou par code) est refusée : elle passe par « Changer mon mot de passe » (ancien exigé).
-    const { data: grant, error: grantErr } = await supabase
-        .from('account_recovery_grants')
-        .delete()
-        .eq('user_id', user.id)
-        .gt('expires_at', new Date().toISOString())
-        .select('user_id');
-    if (grantErr) {
-        console.error(`[${CONTEXT}] autorisation de récupération illisible pour ${user.id} :`, grantErr.message);
-        return failure();
+    // Session de récupération : autorisation ouverte par le code SMS « Mot de passe oublié » (verify-otp), ou lien email
+    // de récupération de GoTrue (méthode « recovery » du jeton). Lot 9 quinquies (A8) : l'autorisation du code ne sert
+    // qu'à une session ouverte APRÈS la vérification du code (une session volée, plus ancienne, est refusée), 10 minutes,
+    // une seule fois (account_recovery_consume). Toute autre session passe par « Changer mon mot de passe » (ancien exigé).
+    if (!isRecentEmailRecovery(current.accessToken)) {
+        const { data: consumed, error: grantErr } = await supabase.rpc('account_recovery_consume', {
+            p: { user_id: user.id, session_id: current.sessionId },
+        });
+        if (grantErr) {
+            console.error(`[${CONTEXT}] autorisation de récupération illisible pour ${user.id} :`, grantErr.message);
+            return failure();
+        }
+        const reply = consumed as { ok?: boolean; code?: string } | null;
+        if (reply?.ok !== true) {
+            if (reply?.code === 'NO_GRANT' || reply?.code === 'OTHER_SESSION') return notRecovery();
+            console.error(`[${CONTEXT}] autorisation de récupération refusée pour ${user.id} :`, JSON.stringify(consumed));
+            return failure();
+        }
     }
-    if ((grant ?? []).length === 0 && !isRecentEmailRecovery(current.accessToken)) return NOT_RECOVERY;
 
     try {
         await grantAuthWritePermit(user.id, 'PASSWORD');
