@@ -1,0 +1,126 @@
+TAP version 13
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+# Subtest: 6.5 Rappels annulés par la transition de l’événement (contrat I4)
+    # Subtest: suspension : rappels PENDING → CANCELLED EVENT_SUSPENDU dans la même transaction ; réactivation dans la tolérance → pas recréés, rien envoyé
+    ok 1 - suspension : rappels PENDING → CANCELLED EVENT_SUSPENDU dans la même transaction ; réactivation dans la tolérance → pas recréés, rien envoyé
+      ---
+      duration_ms: 478.901242
+      type: 'test'
+      ...
+    # Subtest: annulation (event_cancel) : CANCELLED EVENT_ANNULE et EVENT_CHANGED NO_LONGER_RELEVANT dans la transaction de l’annulation
+    ok 2 - annulation (event_cancel) : CANCELLED EVENT_ANNULE et EVENT_CHANGED NO_LONGER_RELEVANT dans la transaction de l’annulation
+      ---
+      duration_ms: 254.339683
+      type: 'test'
+      ...
+    # Subtest: fin (TERMINE) : REMINDER_H3 et CONTROLLER_REMINDER PENDING → CANCELLED EVENT_TERMINE, EVENT_CHANGED → NO_LONGER_RELEVANT
+    ok 3 - fin (TERMINE) : REMINDER_H3 et CONTROLLER_REMINDER PENDING → CANCELLED EVENT_TERMINE, EVENT_CHANGED → NO_LONGER_RELEVANT
+      ---
+      duration_ms: 235.931138
+      type: 'test'
+      ...
+    1..3
+ok 1 - 6.5 Rappels annulés par la transition de l’événement (contrat I4)
+  ---
+  duration_ms: 1165.685933
+  type: 'suite'
+  ...
+# Subtest: 6.5 Rappels annulés par un changement de date (contrat I4, I2)
+    # Subtest: event_update (début déplacé d’un jour) : CANCELLED EVENT_RESCHEDULED dans la transaction de l’édition ; nouvelle clé au passage suivant, un seul SMS
+    ok 1 - event_update (début déplacé d’un jour) : CANCELLED EVENT_RESCHEDULED dans la transaction de l’édition ; nouvelle clé au passage suivant, un seul SMS
+      ---
+      duration_ms: 393.045625
+      type: 'test'
+      ...
+    # Subtest: UPDATE du service_role : un UPDATE sans changement du début ne touche rien ; l’heure de début changée → CANCELLED EVENT_RESCHEDULED ; nouvelle clé dans la tolérance
+    ok 2 - UPDATE du service_role : un UPDATE sans changement du début ne touche rien ; l’heure de début changée → CANCELLED EVENT_RESCHEDULED ; nouvelle clé dans la tolérance
+      ---
+      duration_ms: 262.09252
+      type: 'test'
+      ...
+    1..2
+ok 2 - 6.5 Rappels annulés par un changement de date (contrat I4, I2)
+  ---
+  duration_ms: 655.445679
+  type: 'suite'
+  ...
+# Subtest: 6.5 Billet transféré : rappels de l’ancien et du nouveau porteur (contrat I4, B3)
+    # Subtest: ancien porteur sans autre billet → CANCELLED NO_LONGER_HOLDER (transaction de l’acceptation) ; porteur qui garde un billet → intact ; nouveaux porteurs → rappels à venir
+    ok 1 - ancien porteur sans autre billet → CANCELLED NO_LONGER_HOLDER (transaction de l’acceptation) ; porteur qui garde un billet → intact ; nouveaux porteurs → rappels à venir
+      ---
+      duration_ms: 991.220689
+      type: 'test'
+      ...
+    1..1
+ok 3 - 6.5 Billet transféré : rappels de l’ancien et du nouveau porteur (contrat I4, B3)
+  ---
+  duration_ms: 991.470187
+  type: 'suite'
+  ...
+# Subtest: 6.5 Garde-fous de détection (transaction annulée)
+    # Subtest: trigger de transition désactivé → la suspension laisse les rappels PENDING et le contrôle le relève ; idem pour la date ; trigger actif → contrôle vide
+    ok 1 - trigger de transition désactivé → la suspension laisse les rappels PENDING et le contrôle le relève ; idem pour la date ; trigger actif → contrôle vide
+      ---
+      duration_ms: 240.109107
+      type: 'test'
+      ...
+    1..1
+ok 4 - 6.5 Garde-fous de détection (transaction annulée)
+  ---
+  duration_ms: 240.404043
+  type: 'suite'
+  ...
+[INVARIANT] notif-rappels-annulation — avant purge (held = réservations ACTIVE) : 1 violation(s)
+[INVARIANT]   (a) a782d4a6-794a-4f57-b9a0-7a02ee24e526 : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+[INVARIANT] notif-rappels-annulation — purge des réservations échues : {"expired":0}
+[INVARIANT] notif-rappels-annulation — après purge (held = réservations non échues) : 1 violation(s)
+[INVARIANT]   (a) a782d4a6-794a-4f57-b9a0-7a02ee24e526 : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+not ok 5 - /home/runner/work/event-village/event-village/tests/parcours/notif-rappels-annulation.test.ts
+  ---
+  duration_ms: 38.691752
+  location: '/home/runner/work/event-village/event-village/tests/parcours/notif-rappels-annulation.test.ts:2:1830'
+  failureType: 'hookFailed'
+  error: |-
+    invariant violé avant purge :
+    (a) a782d4a6-794a-4f57-b9a0-7a02ee24e526 : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)',
+    +     objet: 'a782d4a6-794a-4f57-b9a0-7a02ee24e526',
+    +     regle: 'a'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'a'
+      objet: 'a782d4a6-794a-4f57-b9a0-7a02ee24e526'
+      detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertPaymentInvariants (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:84:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertFinanceInvariants (/home/runner/work/event-village/event-village/tests/helpers/finance-invariants.ts:105:5)
+    async assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:67:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async assertNotificationInvariants (/home/runner/work/event-village/event-village/tests/helpers/notification-invariants.ts:214:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/notif-rappels-annulation.test.ts:71:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+  ...
+1..4
+# tests 7
+# suites 4
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3102.918039

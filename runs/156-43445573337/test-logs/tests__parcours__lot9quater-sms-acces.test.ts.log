@@ -1,0 +1,111 @@
+TAP version 13
+[D1] {"stolen":"403 NOT_OWNER","first":"200 ","sameTicket":"429 TRANSFER_RATE_LIMITED","otherTicket":"429 TRANSFER_RATE_LIMITED"}
+# Subtest: D1 — transferts offerts par billet et par compte
+    # Subtest: au-delà de la limite par billet puis par compte : 429 TRANSFER_RATE_LIMITED, aucun SMS ; une offre refusée rend ses unités
+    ok 1 - au-delà de la limite par billet puis par compte : 429 TRANSFER_RATE_LIMITED, aucun SMS ; une offre refusée rend ses unités
+      ---
+      duration_ms: 463.268252
+      type: 'test'
+      ...
+    1..1
+ok 1 - D1 — transferts offerts par billet et par compte
+  ---
+  duration_ms: 732.368328
+  type: 'suite'
+  ...
+[D2] HTTP 200 {"ok":true,"ticket_count":2,"phone_count":2,"message":"Invitations envoyées."} ; HTTP 429 {"error":"Limite d'invitations atteinte pour votre compte aujourd'hui (50 numéros par jour). Réessayez demain.","code":"QUOTA_EXCEEDED","retry_after_seconds":32549}
+# Subtest: D2 — numéros invités par compte et par jour
+    # Subtest: au-delà de la limite du compte : refus, aucun billet ni SMS
+    ok 1 - au-delà de la limite du compte : refus, aucun billet ni SMS
+      ---
+      duration_ms: 27.813211
+      type: 'test'
+      ...
+    1..1
+ok 2 - D2 — numéros invités par compte et par jour
+  ---
+  duration_ms: 27.942997
+  type: 'suite'
+  ...
+[E1] sans nom, 4 chiffres : HTTP 200 {"items":[],"truncated":false} ; complet : HTTP 200 {"items":[{"category":"Simple","guest_name":null,"ticket_ids":["c9797264-f495-44ee-85f6-2bb1572cf997"],"ticket_count":1}],"truncated":false} ; nommée, 4 chiffres : HTTP 200 {"items":[{"category":"Simple","guest_name":"Awa Diop","ticket_ids":["9aa51653-0047-45f0-a2d1-24e23cc9ad33"],"ticket_count":1}],"truncated":false}
+# Subtest: E1 — invitation sans nom : numéro complet exigé
+    # Subtest: 4 derniers chiffres : seules les invitations nommées ; numéro complet : l’invitation sans nom
+    ok 1 - 4 derniers chiffres : seules les invitations nommées ; numéro complet : l’invitation sans nom
+      ---
+      duration_ms: 185.161054
+      type: 'test'
+      ...
+    1..1
+ok 3 - E1 — invitation sans nom : numéro complet exigé
+  ---
+  duration_ms: 185.400977
+  type: 'suite'
+  ...
+[E2] second passage : HTTP 200 {"gate":{"id":"6bcb717a-b157-42e6-9408-5347419c68aa","name":"Accès carré"},"zone":{"id":"46c70c7d-d1aa-4ce2-9d75-0f1149e4eabc","kind":"CONTROLE","name":"Carré VIP","implicit":false},"result":"zone_already_passed","ticket":{"id":"3432dfb9-1332-44c0-b0f6-674629622951","price":5000,"holder":"Awa Achete
+# Subtest: E2 — contrôle de zone repassé
+    # Subtest: « Déjà passé à Carré VIP à HH:MM » sans ligne ; confirmé : passage compté, visible dans l’onglet Entrées
+    ok 1 - « Déjà passé à Carré VIP à HH:MM » sans ligne ; confirmé : passage compté, visible dans l’onglet Entrées
+      ---
+      duration_ms: 556.023013
+      type: 'test'
+      ...
+    1..1
+ok 4 - E2 — contrôle de zone repassé
+  ---
+  duration_ms: 556.267984
+  type: 'suite'
+  ...
+[INVARIANT] lot9quater-sms-acces — avant purge (held = réservations ACTIVE) : 1 violation(s)
+[INVARIANT]   (a) a782d4a6-794a-4f57-b9a0-7a02ee24e526 : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+[INVARIANT] lot9quater-sms-acces — purge des réservations échues : {"expired":0}
+[INVARIANT] lot9quater-sms-acces — après purge (held = réservations non échues) : 1 violation(s)
+[INVARIANT]   (a) a782d4a6-794a-4f57-b9a0-7a02ee24e526 : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+not ok 5 - /home/runner/work/event-village/event-village/tests/parcours/lot9quater-sms-acces.test.ts
+  ---
+  duration_ms: 43.084652
+  location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quater-sms-acces.test.ts:2:1874'
+  failureType: 'hookFailed'
+  error: |-
+    invariant violé avant purge :
+    (a) a782d4a6-794a-4f57-b9a0-7a02ee24e526 : paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)',
+    +     objet: 'a782d4a6-794a-4f57-b9a0-7a02ee24e526',
+    +     regle: 'a'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'a'
+      objet: 'a782d4a6-794a-4f57-b9a0-7a02ee24e526'
+      detail: 'paiement PARTIAL : 0 billet(s) émis pour 1 réservé(s)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertPaymentInvariants (/home/runner/work/event-village/event-village/tests/helpers/payment-invariants.ts:84:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertFinanceInvariants (/home/runner/work/event-village/event-village/tests/helpers/finance-invariants.ts:105:5)
+    async assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:67:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async assertNotificationInvariants (/home/runner/work/event-village/event-village/tests/helpers/notification-invariants.ts:214:5)
+    async assertTerrainInvariants (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:151:5)
+    async assertRecetteInvariants (/home/runner/work/event-village/event-village/tests/helpers/recette-invariants.ts:195:5)
+    async assertLot9Invariants (/home/runner/work/event-village/event-village/tests/helpers/lot9-invariants.ts:220:5)
+    async assertLot9bisInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:357:5)
+  ...
+1..4
+# tests 4
+# suites 4
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1555.888237
