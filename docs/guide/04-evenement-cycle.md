@@ -2,7 +2,7 @@
 
 > Guide complet de l'application Event Village, état de `main` à `0889df6` (lots 1 à 9 ter). Source de vérité : le code.
 > Chaque fait porte sa preuve `fichier:ligne` (chemins relatifs au dépôt ; `M/` = `supabase/migrations/`).
-> Ce qui n'a pas pu être établi est marqué **NON VÉRIFIÉ**. Données d'exemple fictives : organisatrice « Fatou Diop »
+> Ce qui n'a pas pu être établi est marqué **NON VÉRIFIÉ**. Données d'exemple fictives : partenaire « Fatou Diop »
 > (structure « Fatou Diop Events »), événement « Concert Test » au « Grand Théâtre National », Dakar, le samedi
 > 5 décembre 2026 à 20:00 ; adresse de l'application `https://app.exemple.sn`.
 > Les messages (canaux, plafonds, préférences) sont détaillés dans `10-notifications.md` par leur type ; les tâches
@@ -28,10 +28,10 @@
 | 04.5 | Étape 4 « Billetterie » à la création ; « Enregistrer le brouillon » |
 | 04.6 | Supprimer un brouillon jamais soumis |
 | 04.7 | Soumettre à la validation (et la liste des manques) |
-| 04.8 | Retirer de la validation (organisatrice) |
+| 04.8 | Retirer de la validation (partenaire) |
 | 04.9 | Refuser avec un motif (administration) |
 | 04.10 | Valider (administration) |
-| 04.11 | Publier : par l'organisatrice, par l'administration |
+| 04.11 | Publier : par la partenaire, par l'administration |
 | 04.12 | Modifier un événement : ce qui est permis selon le statut, verrous, conflit |
 | 04.13 | Modification après publication : messages aux détenteurs, regroupement sur 10 minutes |
 | 04.14 | Report de plus de 24 h : droit au remboursement total |
@@ -39,7 +39,7 @@
 | 04.16 | Suspendre (administration) |
 | 04.17 | Réactiver (administration) |
 | 04.18 | Clore un événement suspendu (administration) |
-| 04.19 | Annuler : par l'organisatrice, par l'administration |
+| 04.19 | Annuler : par la partenaire, par l'administration |
 | 04.20 | Terminer à la main (administration) |
 | 04.21 | Fin automatique : passage à Terminé (Publié, et Validé jamais publié) |
 | 04.22 | Suspension et réactivation d'une partenaire : effet sur ses événements |
@@ -70,23 +70,23 @@ statut, acteur, rôle, motif, canal) (`M/20261102000003_lot5_cycle.sql:223-226`)
 ### Les 17 transitions permises (table `event_status_transitions`)
 
 La table de départ compte 16 lignes (`M/20261102000003_lot5_cycle.sql:48-65`) ; le lot 9 bis ajoute la clôture d'un
-suspendu et retire l'annulation d'un suspendu par l'organisatrice (`M/20261109000008_lot9bis_cycle.sql:203-209`) ; le
+suspendu et retire l'annulation d'un suspendu par la partenaire (`M/20261109000008_lot9bis_cycle.sql:203-209`) ; le
 lot 9 ter ajoute la fin automatique d'un Validé (`M/20261110000007_lot9ter_evenements.sql:232-234`).
 
 | De | Vers | Qui | Motif obligatoire | Libellé du bouton | Scénario |
 |---|---|---|---|---|---|
-| Brouillon | En attente | Organisatrice | non | « Soumettre à la validation » | 04.7 |
-| En attente | Brouillon | Organisatrice | non | « Retirer de la validation » | 04.8 |
+| Brouillon | En attente | Partenaire | non | « Soumettre à la validation » | 04.7 |
+| En attente | Brouillon | Partenaire | non | « Retirer de la validation » | 04.8 |
 | En attente | Brouillon | Administration | **oui** (3 caractères) | « Refuser » | 04.9 |
 | En attente | Validé | Administration | non | « Valider » | 04.10 |
-| Validé | Publié | Organisatrice | non | « Publier » | 04.11 |
+| Validé | Publié | Partenaire | non | « Publier » | 04.11 |
 | Validé | Publié | Administration | non | « Publier » | 04.11 |
 | Publié | Suspendu | Administration | **oui** | « Suspendre » | 04.16 |
 | Suspendu | Publié | Administration | non | « Réactiver » | 04.17 |
 | Suspendu | Terminé | Administration | **oui** | « Clore l’événement » | 04.18 |
-| Publié | Annulé | Organisatrice | avis et motif (voir 04.19) | « Annuler l’événement » | 04.19 |
+| Publié | Annulé | Partenaire | avis et motif (voir 04.19) | « Annuler l’événement » | 04.19 |
 | Publié | Annulé | Administration | avis et motif | « Annuler l’événement » | 04.19 |
-| Validé | Annulé | Organisatrice | avis et motif | « Annuler l’événement » | 04.19 |
+| Validé | Annulé | Partenaire | avis et motif | « Annuler l’événement » | 04.19 |
 | Validé | Annulé | Administration | avis et motif | « Annuler l’événement » | 04.19 |
 | Suspendu | Annulé | Administration seule | avis et motif | « Annuler l’événement » | 04.19 |
 | Publié | Terminé | Système (tâche planifiée) | non | « Terminer automatiquement » | 04.21 |
@@ -324,7 +324,7 @@ W4-01).
 
 ## 04.6 Supprimer un brouillon jamais soumis
 
-1. **Qui, où.** Organisatrice, « Mes événements », carte d'un brouillon, bouton « Supprimer le brouillon »
+1. **Qui, où.** Partenaire, « Mes événements », carte d'un brouillon, bouton « Supprimer le brouillon »
    (`components/partner/events-list/PartnerEventCard.tsx:147-151`). Le bouton n'existe que pour un brouillon **jamais
    soumis** (`M/20261109000008_lot9bis_cycle.sql:439-442`).
 2. **Ce qu'il saisit.** Confirmation « Supprimer ce brouillon ? » : « « {titre} » et ses catégories de billets seront
@@ -343,7 +343,7 @@ W4-01).
 
 ## 04.7 Soumettre à la validation
 
-1. **Qui, où.** Organisatrice, « Mes événements », carte d'un brouillon, bouton « Soumettre à la validation »
+1. **Qui, où.** Partenaire, « Mes événements », carte d'un brouillon, bouton « Soumettre à la validation »
    (`components/partner/events-list/PartnerEventCard.tsx:119-131`). Pas de fenêtre de confirmation
    (`app/partner/events/page.tsx:169-181`).
 2. **Ce qu'il saisit.** Rien.
@@ -359,13 +359,13 @@ W4-01).
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
-   | Organisatrice | cloche, email | indispensable | file, passage suivant de l'envoyeur (chaque minute) | `EVENT_SUBMITTED_ACK` : « Événement envoyé en validation » / « « {titre} » est envoyé à l'équipe Event Village pour validation. Vous serez prévenu de la décision. » — ex. « « Concert Test » est envoyé à l'équipe Event Village pour validation. Vous serez prévenu de la décision. » |
+   | Partenaire | cloche, email | indispensable | file, passage suivant de l'envoyeur (chaque minute) | `EVENT_SUBMITTED_ACK` : « Événement envoyé en validation » / « « {titre} » est envoyé à l'équipe Event Village pour validation. Vous serez prévenu de la décision. » — ex. « « Concert Test » est envoyé à l'équipe Event Village pour validation. Vous serez prévenu de la décision. » |
    | Admins munis de `events.read` et SUPERADMIN | cloche, push, email | indispensable | file | `ADMIN_EVENT_SUBMITTED` : « Événement à valider » / « « {titre} » de {société} attend votre validation. » — ex. « « Concert Test » de Fatou Diop Events attend votre validation. » |
 
    Preuves : `M/20261109000009_lot9bis_messages.sql:138-147`, `lib/notifications/catalog.ts:1610-1618`, `:1189-1197`.
    Détail des canaux : `10-notifications.md`.
 5. **Ce que voient les autres rôles.** La liste de l'administration (onglet « En attente de validation », ouvert par
-   défaut) se recharge en direct (`app/admin/events/page.tsx:40-42`, `:165-171`). La liste de l'organisatrice aussi
+   défaut) se recharge en direct (`app/admin/events/page.tsx:40-42`, `:165-171`). La liste de la partenaire aussi
    (`app/partner/events/page.tsx:131-135`).
 6. **Refus.** Manques : fenêtre « Soumission impossible : il manque des informations », texte « Corrigez ces points,
    puis soumettez de nouveau l’événement : » suivi de la liste, boutons « Fermer » et « Compléter l’événement »
@@ -376,9 +376,9 @@ W4-01).
    avant de soumettre ou de publier un événement. » (`:305-309`).
 7. **Preuves et essai.** Recette : essais 12 et 13 (`docs/recette-billetterie.md:518-551`).
 
-## 04.8 Retirer de la validation (organisatrice)
+## 04.8 Retirer de la validation (partenaire)
 
-1. **Qui, où.** Organisatrice, carte d'un événement « En attente de validation », bouton « Retirer de la validation ».
+1. **Qui, où.** Partenaire, carte d'un événement « En attente de validation », bouton « Retirer de la validation ».
 2. **Ce qu'il saisit.** Rien, pas de confirmation.
 3. **Ce que fait le système.** Retour en Brouillon ; message « Événement retiré de la validation : vous pouvez de nouveau
    le modifier. » (`app/partner/events/page.tsx:67`). L'événement reste « déjà soumis » : il ne pourra plus être
@@ -411,11 +411,11 @@ W4-01).
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
-   | Organisatrice | SMS, cloche, push, email | indispensable | file | `EVENT_REJECTED` — SMS : « Event Village : événement {titre, 25 car.} non validé. Motif : {motif, 40 car.}. {lien}/partner/events » — ex. « Event Village : événement Concert Test non validé. Motif : Affiche illisible, merci d'en déposer... https://app.exemple.sn/partner/events » (137 caractères, 1 segment) ; cloche « Événement non validé » / « « {titre} » n'est pas validé. Motif : {motif}. » |
+   | Partenaire | SMS, cloche, push, email | indispensable | file | `EVENT_REJECTED` — SMS : « Event Village : événement {titre, 25 car.} non validé. Motif : {motif, 40 car.}. {lien}/partner/events » — ex. « Event Village : événement Concert Test non validé. Motif : Affiche illisible, merci d'en déposer... https://app.exemple.sn/partner/events » (137 caractères, 1 segment) ; cloche « Événement non validé » / « « {titre} » n'est pas validé. Motif : {motif}. » |
 
    Preuves : `M/20261109000009_lot9bis_messages.sql:149-155`, `lib/notifications/catalog.ts:909-915`. Le motif est
    coupé à 40 caractères dans le SMS (`lib/notifications/catalog.ts:913`).
-5. **Ce que voient les autres rôles.** L'organisatrice voit sur sa carte et dans le pilotage l'encadré « Refusé par
+5. **Ce que voient les autres rôles.** La partenaire voit sur sa carte et dans le pilotage l'encadré « Refusé par
    l’équipe Event Village », le motif (ou « Aucun motif communiqué. ») et « Le {date} »
    (`components/partner/events-list/PartnerEventCard.tsx:104-116`, `M/20261109000008_lot9bis_cycle.sql:418-431`).
    L'administration voit « Motif du refus » et « Communiqué à l’organisateur le {date}. » (`app/admin/events/[id]/page.tsx:568-579`).
@@ -436,35 +436,35 @@ W4-01).
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
-   | Organisatrice | SMS, cloche, push, email | indispensable | file | `EVENT_VALIDATED` — SMS : « Event Village : votre événement {titre, 30 car.} est validé. Publiez-le depuis votre espace : {lien}/partner/events » — ex. « Event Village : votre événement Concert Test est validé. Publiez-le depuis votre espace : https://app.exemple.sn/partner/events » (127 caractères, 1 segment) ; cloche « Événement validé » / « « {titre} » est validé. Vous pouvez le publier depuis votre espace. » |
+   | Partenaire | SMS, cloche, push, email | indispensable | file | `EVENT_VALIDATED` — SMS : « Event Village : votre événement {titre, 30 car.} est validé. Publiez-le depuis votre espace : {lien}/partner/events » — ex. « Event Village : votre événement Concert Test est validé. Publiez-le depuis votre espace : https://app.exemple.sn/partner/events » (127 caractères, 1 segment) ; cloche « Événement validé » / « « {titre} » est validé. Vous pouvez le publier depuis votre espace. » |
 
    Preuves : `M/20261109000009_lot9bis_messages.sql:157-162`, `lib/notifications/catalog.ts:902-908`.
-5. **Ce que voient les autres rôles.** L'organisatrice voit le bouton « Publier » sur sa carte (04.11).
+5. **Ce que voient les autres rôles.** La partenaire voit le bouton « Publier » sur sa carte (04.11).
 6. **Refus.** Communs (04.0).
 7. **Preuves et essai.** Recette : essais 13 et 90 (`docs/recette-billetterie.md:535-551`, `:1919-1936`).
 
-## 04.11 Publier : par l'organisatrice, par l'administration
+## 04.11 Publier : par la partenaire, par l'administration
 
 1. **Qui, où.**
-   - Organisatrice : carte d'un événement Validé ou en-tête du pilotage, bouton « Publier »
+   - Partenaire : carte d'un événement Validé ou en-tête du pilotage, bouton « Publier »
      (`components/partner/events-list/PartnerEventCard.tsx:119-131`, `app/partner/events/[id]/page.tsx:205-216`).
    - Administration (`events.write`) : fiche `/admin/events/{id}`, bouton « Publier ».
-2. **Ce qu'il saisit.** Organisatrice : fenêtre « Publier l’événement ? » : « La page publique sera visible de tous et la
+2. **Ce qu'il saisit.** Partenaire : fenêtre « Publier l’événement ? » : « La page publique sera visible de tous et la
    billetterie ouverte selon les dates de vente de chaque catégorie. Après la publication, les changements de date, de
    lieu ou de titre seront notifiés aux acheteurs. », boutons « Pas maintenant » et « Publier »
    (`app/partner/events/page.tsx:306-339`, `app/partner/events/[id]/page.tsx:268-301`). Administration : « Publier
    l’événement ? » : « La page publique devient visible de tous et la billetterie s’ouvre selon les dates de vente. »
    (`app/admin/events/[id]/page.tsx:213-218`).
 3. **Ce que fait le système.** Statut Publié : la fiche publique existe, la vente s'ouvre selon les dates de chaque
-   catégorie. Message : organisatrice « Événement publié : la page publique est en ligne et la billetterie est
+   catégorie. Message : partenaire « Événement publié : la page publique est en ligne et la billetterie est
    ouverte. » depuis la liste, « Statut de l’événement mis à jour. » depuis le pilotage (`app/partner/events/page.tsx:66`,
    `app/partner/events/[id]/page.tsx:114`) ; administration « Événement publié. ».
 4. **Messages envoyés.**
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
-   | Admins `events.read` et SUPERADMIN (publication par l'organisatrice) | cloche, email | indispensable | file | `ADMIN_EVENT_PUBLISHED` : « Événement publié par l'organisateur » / « « {titre} » de {société} est publié par l'organisateur : sa page publique est en ligne. » |
-   | Organisatrice (publication par l'administration) | cloche, push, email | indispensable | file | `EVENT_PUBLISHED_BY_ADMIN` : « Événement publié » / « « {titre} » a été publié par l'administration. » |
+   | Admins `events.read` et SUPERADMIN (publication par la partenaire) | cloche, email | indispensable | file | `ADMIN_EVENT_PUBLISHED` : « Événement publié par l'organisateur » / « « {titre} » de {société} est publié par l'organisateur : sa page publique est en ligne. » |
+   | Partenaire (publication par l'administration) | cloche, push, email | indispensable | file | `EVENT_PUBLISHED_BY_ADMIN` : « Événement publié » / « « {titre} » a été publié par l'administration. » |
 
    Preuves : `M/20261110000006_lot9ter_equipe_messages.sql:116-121`, `M/20261109000009_lot9bis_messages.sql:164-169`,
    `lib/notifications/catalog.ts:1653-1664`, `:930-935`.
@@ -479,7 +479,7 @@ W4-01).
 
 ## 04.12 Modifier un événement : ce qui est permis selon le statut
 
-1. **Qui, où.** Organisatrice seule. Bouton « Modifier » de la carte ou du pilotage (`components/partner/events-list/PartnerEventCard.tsx:137-141`,
+1. **Qui, où.** Partenaire seule. Bouton « Modifier » de la carte ou du pilotage (`components/partner/events-list/PartnerEventCard.tsx:137-141`,
    `app/partner/events/[id]/page.tsx:217-221`), page `/partner/events/{id}/edit`. En-tête : badge du statut, titre
    « Modifier l’événement », sous-titre = titre de l'événement (`components/events/EventForm.tsx:744-752`). Le bouton
    n'existe que pour Brouillon, Validé, Publié et Suspendu (`M/20261109000008_lot9bis_cycle.sql:438`).
@@ -547,7 +547,7 @@ W4-01).
 
 ## 04.13 Modification après publication : messages aux détenteurs, regroupement sur 10 minutes
 
-1. **Qui, où.** Organisatrice, `/partner/events/{id}/edit` d'un événement Validé, Publié ou Suspendu, bouton
+1. **Qui, où.** Partenaire, `/partner/events/{id}/edit` d'un événement Validé, Publié ou Suspendu, bouton
    « Enregistrer les modifications ».
 2. **Ce qu'il saisit.** Titre, date ou heure de début ou de fin, lieu, ville, adresse précise.
 3. **Ce que fait le système.**
@@ -593,7 +593,7 @@ W4-01).
 
 ## 04.14 Report de plus de 24 h : droit au remboursement total
 
-1. **Qui, où.** Déclenché par l'organisatrice qui recule le début (04.12). Le client agit dans « Mes billets »
+1. **Qui, où.** Déclenché par la partenaire qui recule le début (04.12). Le client agit dans « Mes billets »
    (`/tickets`), sur la carte du billet.
 2. **Ce qu'il saisit.** Le client : bouton « Me faire rembourser », puis fenêtre « Me faire rembourser ? » :
    « Remboursement de {montant}, frais de service compris, sur le compte Mobile Money qui a payé. Votre billet sera
@@ -622,7 +622,7 @@ W4-01).
 
    Preuves : `lib/notifications/catalog.ts:433-438`, `:458-465`. Les numéros sans compte (invitation non réclamée,
    guichet) reçoivent la forme ordinaire, sans remboursement (`M/20261109000009_lot9bis_messages.sql:861-869`).
-5. **Ce que voient les autres rôles.** L'organisatrice voit le remboursement dans son pilotage (voir 08).
+5. **Ce que voient les autres rôles.** La partenaire voit le remboursement dans son pilotage (voir 08).
 6. **Refus.** « Ce billet n’ouvre pas de remboursement : l’événement n’a pas été reporté de plus de 24 h, ou il a
    commencé. » (`M/20261109000006_lot9bis_argent.sql:1033-1037`) ; sans confirmation : « Confirmez la demande de
    remboursement. » ; billet d'un autre compte : « Billet introuvable. » ; billet déjà annulé : « Ce billet ne peut plus
@@ -631,7 +631,7 @@ W4-01).
 
 ## 04.15 Billetterie d'un événement déjà créé
 
-1. **Qui, où.** Organisatrice, `/partner/events/{id}/edit`, étape « Billets » (Brouillon, Validé, Publié, Suspendu).
+1. **Qui, où.** Partenaire, `/partner/events/{id}/edit`, étape « Billets » (Brouillon, Validé, Publié, Suspendu).
    Texte : « Chaque catégorie s’enregistre séparément. Le prix ne change plus dès qu’un billet est vendu ou réservé ; la
    quantité ne descend jamais sous les ventes. » (`components/events/EventTicketing.tsx:649-651`). Sans catégorie :
    « Aucune catégorie de billets. Ajoutez-en une pour pouvoir soumettre l’événement. » (`:653-658`).
@@ -713,12 +713,12 @@ W4-01).
    visent que les Publiés, `M/20261105000002_lot7_sms.sql:616-622`). Les recettes déjà disponibles de cet événement et
    les commissions de parrainage qui s'y rattachent sont gelées (non retirables) tant qu'il est Suspendu, sans écriture :
    elles se dégèlent dès qu'il quitte ce statut (`M/20261110000005_lot9ter_argent.sql:282-306` ; voir 08 et 09).
-   L'organisatrice peut encore modifier l'événement mais ne peut plus l'annuler (04.19).
+   La partenaire peut encore modifier l'événement mais ne peut plus l'annuler (04.19).
 4. **Messages envoyés.**
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
-   | Organisatrice | SMS, cloche, push, email | indispensable | file | `EVENT_SUSPENDED` — SMS « Event Village : événement {titre, 25} suspendu. Motif : {motif, 40}. {lien}/partner/events » — ex. « Event Village : événement Concert Test suspendu. Motif : Signalement en cours d'examen. https://app.exemple.sn/partner/events » (125 car., 1 segment) ; cloche « Événement suspendu » / « « {titre} » est suspendu par l'administration. Motif : {motif}. » |
+   | Partenaire | SMS, cloche, push, email | indispensable | file | `EVENT_SUSPENDED` — SMS « Event Village : événement {titre, 25} suspendu. Motif : {motif, 40}. {lien}/partner/events » — ex. « Event Village : événement Concert Test suspendu. Motif : Signalement en cours d'examen. https://app.exemple.sn/partner/events » (125 car., 1 segment) ; cloche « Événement suspendu » / « « {titre} » est suspendu par l'administration. Motif : {motif}. » |
    | Détenteurs (billet valable ou utilisé) | cloche, push, email ; **pas de SMS** | optionnel (sujet « actualités des événements ») | file | `EVENT_SUSPENDED_HOLDER` : « Événement suspendu » / « « {titre} » est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite. » |
    | Contrôleurs affectés | cloche, email | indispensable | file | `CONTROLLER_EVENT_STATUS` : « Événement suspendu » / « « {titre} » est suspendu : le contrôle d'accès est fermé jusqu'à nouvel avis. » |
 
@@ -727,7 +727,7 @@ W4-01).
 5. **Ce que voient les autres rôles.** Fiche publique : encadré « Événement suspendu » : « La billetterie est
    momentanément fermée par l’organisation. Les billets déjà achetés restent valables ; vous serez informé de la
    suite. » (`app/api/events/[id]/route.ts:15-18`). « Mes billets » : le QR disparaît, remplacé par « Événement suspendu :
-   l’entrée n’est pas possible pour le moment. » (`M/20261109000008_lot9bis_cycle.sql:1812-1813`). Organisatrice :
+   l’entrée n’est pas possible pour le moment. » (`M/20261109000008_lot9bis_cycle.sql:1812-1813`). Partenaire :
    encadré « Suspendu par l’équipe Event Village » avec le motif et la date (`components/partner/events-list/PartnerEventCard.tsx:104-116`).
 6. **Refus.** Motif trop court (04.0).
 7. **Preuves et essai.** Recette : essai 70 (`docs/recette-billetterie.md:1525-1541`).
@@ -745,7 +745,7 @@ W4-01).
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
-   | Organisatrice | SMS, cloche, push, email | indispensable | file | `EVENT_REACTIVATED` — SMS « Event Village : votre événement {titre, 30} est de nouveau en ligne. {lien}/partner/events » — ex. « Event Village : votre événement Concert Test est de nouveau en ligne. https://app.exemple.sn/partner/events » (107 car., 1 segment) ; cloche « Événement réactivé » / « « {titre} » est de nouveau en ligne. » |
+   | Partenaire | SMS, cloche, push, email | indispensable | file | `EVENT_REACTIVATED` — SMS « Event Village : votre événement {titre, 30} est de nouveau en ligne. {lien}/partner/events » — ex. « Event Village : votre événement Concert Test est de nouveau en ligne. https://app.exemple.sn/partner/events » (107 car., 1 segment) ; cloche « Événement réactivé » / « « {titre} » est de nouveau en ligne. » |
    | Détenteurs | cloche, push, email ; pas de SMS | optionnel | file | `EVENT_REACTIVATED_HOLDER` : « Événement de nouveau en ligne » / « « {titre} » reprend comme prévu. Vos billets restent valables. » |
    | Contrôleurs affectés | cloche, email | indispensable | file | `CONTROLLER_EVENT_STATUS` : « Événement de nouveau en ligne » / « « {titre} » reprend : votre affectation est maintenue. » |
 
@@ -775,8 +775,8 @@ W4-01).
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
    | Détenteurs (billet valable ou utilisé) | SMS, cloche, push, email | indispensable | file | `EVENT_CLOSED_HOLDER` — SMS « Event Village : {titre, 30} est clos après sa suspension, sans annulation ni remboursement automatique. {lien}/tickets » — ex. 135 car., 1 segment ; cloche « Événement clos » / « « {titre} » est clos par l'équipe Event Village après sa suspension. Il n'est pas annulé : aucun remboursement automatique. » |
-   | Organisatrice | SMS, cloche, push, email | indispensable | file | `EVENT_CLOSED_BY_ADMIN` — SMS « Event Village : {titre, 30} est clos par l'équipe Event Village après sa suspension. Motif : {motif, 40}. » — ex. « Event Village : Concert Test est clos par l'équipe Event Village après sa suspension. Motif : Organisateur injoignable. » (119 car., 1 segment) ; cloche « Événement clos par l'administration » / « « {titre} » du {date} est clos par l'administration, sans annulation. Motif : {motif}. » |
-   | Organisatrice, si une caisse est encore ouverte | SMS, cloche, push, email | indispensable | file | `SHIFT_OPEN_AT_END` (texte en 04.21) |
+   | Partenaire | SMS, cloche, push, email | indispensable | file | `EVENT_CLOSED_BY_ADMIN` — SMS « Event Village : {titre, 30} est clos par l'équipe Event Village après sa suspension. Motif : {motif, 40}. » — ex. « Event Village : Concert Test est clos par l'équipe Event Village après sa suspension. Motif : Organisateur injoignable. » (119 car., 1 segment) ; cloche « Événement clos par l'administration » / « « {titre} » du {date} est clos par l'administration, sans annulation. Motif : {motif}. » |
+   | Partenaire, si une caisse est encore ouverte | SMS, cloche, push, email | indispensable | file | `SHIFT_OPEN_AT_END` (texte en 04.21) |
 
    Preuves : `M/20261109000009_lot9bis_messages.sql:334-373`, `lib/notifications/catalog.ts:1398-1419`.
 5. **Ce que voient les autres rôles.** Fiche publique : encadré « Événement terminé » : « Cet événement a eu lieu. La
@@ -786,10 +786,10 @@ W4-01).
    (`M/20261109000008_lot9bis_cycle.sql:340-344`) ; motif trop court (04.0).
 7. **Preuves et essai.** Recette : essai 93 (`docs/recette-billetterie.md:1974-1990`).
 
-## 04.19 Annuler : par l'organisatrice, par l'administration
+## 04.19 Annuler : par la partenaire, par l'administration
 
 1. **Qui, où.**
-   - Organisatrice : événement **Validé ou Publié** ; bouton « Annuler l’événement » de la carte ou du pilotage
+   - Partenaire : événement **Validé ou Publié** ; bouton « Annuler l’événement » de la carte ou du pilotage
      (`components/partner/events-list/PartnerEventCard.tsx:142-146`, `app/partner/events/[id]/page.tsx:222-226`). Elle ne
      peut pas annuler un Suspendu (`M/20261109000008_lot9bis_cycle.sql:207-209`).
    - Administration (`events.write`) : Validé, Publié ou Suspendu ; bouton « Annuler l’événement » de la fiche
@@ -814,7 +814,7 @@ W4-01).
    Boutons « Confirmer l’annulation » (grisé tant que tout n'est pas rempli) et « Garder l’événement » (`:164-170`).
 3. **Ce que fait le système.** En une seule opération : avis public et motif interne enregistrés, statut Annulé,
    transferts en attente révoqués, un remboursement créé par paiement en ligne, billets gratuits et invitations
-   annulés, billets payés au guichet laissés au remboursement par l'organisatrice, plus aucun billet valable
+   annulés, billets payés au guichet laissés au remboursement par la partenaire, plus aucun billet valable
    (`M/20261106000003_lot8_paiement.sql:266-414`). Puis les remboursements partent vers SamirPay ; le message affiché est
    « Événement annulé. {n} remboursement(s) envoyé(s)[, {m} en attente ou à vérifier]. » — ex. « Événement annulé. 3
    remboursement(s) envoyé(s), 1 en attente ou à vérifier. » (`lib/events/event-cancellation.service.ts:111-159`,
@@ -827,8 +827,8 @@ W4-01).
    |---|---|---|---|---|
    | Détenteurs et acheteurs d'origine (compte) | SMS, cloche, email, push | indispensable | file | `EVENT_CANCELLED` — SMS « Event Village : {titre, 30} du {date} est annulé. » + selon le cas « Remboursement automatique en cours. {lien}/tickets » (acheteur en ligne), « Remboursement à l'acheteur d'origine. {lien}/tickets » (billet reçu d'un autre), « Remboursement par l'organisateur. {lien}/tickets » (guichet), « Détails : {lien}/tickets » (gratuit, invitation) — ex. « Event Village : Concert Test du sam. 5 déc. à 20:00 est annulé. Remboursement automatique en cours. https://app.exemple.sn/tickets » (130 car., 1 segment) ; cloche « Événement annulé » / « « {titre} » du {date} est annulé. {avis public}. {Votre remboursement est en cours. / Le remboursement se fait auprès de l'organisateur. / Le remboursement va à l'acheteur d'origine du billet.} » |
    | Numéros sans compte (invitation non réclamée, acheteur au guichet, destinataire d'un transfert révoqué) | SMS, sans lien | indispensable | file | « Event Village : {titre, 30} du {date} est annulé. Remboursement par l'organisateur. » (guichet, ex. 97 car.) ou « … est annulé. Le billet qui vous était destiné n'est plus valable. » (ex. 116 car.) |
-   | Organisatrice (annulation par l'administration) | SMS, cloche, email | indispensable | file | `EVENT_CANCELLED_BY_ADMIN` — SMS « Event Village : {titre, 25} annulé par l'administration. Motif : {avis public, 35}. {lien}/partner/events » (ex. 140 car.) ; cloche « Événement annulé par l'administration » / « « {titre} » du {date} est annulé par l'administration. Motif : {avis public}. Les remboursements en ligne sont lancés : suivez-les dans l'onglet Clôture. » (jamais le motif interne) |
-   | Admins `events.read` et SUPERADMIN (annulation par l'organisatrice) | cloche, email | indispensable | file | `ADMIN_EVENT_CANCELLED` : « Événement annulé par l'organisateur » / « « {titre} » de {société} est annulé par l'organisateur. Motif interne : {motif}. » |
+   | Partenaire (annulation par l'administration) | SMS, cloche, email | indispensable | file | `EVENT_CANCELLED_BY_ADMIN` — SMS « Event Village : {titre, 25} annulé par l'administration. Motif : {avis public, 35}. {lien}/partner/events » (ex. 140 car.) ; cloche « Événement annulé par l'administration » / « « {titre} » du {date} est annulé par l'administration. Motif : {avis public}. Les remboursements en ligne sont lancés : suivez-les dans l'onglet Clôture. » (jamais le motif interne) |
+   | Admins `events.read` et SUPERADMIN (annulation par la partenaire) | cloche, email | indispensable | file | `ADMIN_EVENT_CANCELLED` : « Événement annulé par l'organisateur » / « « {titre} » de {société} est annulé par l'organisateur. Motif interne : {motif}. » |
    | Contrôleurs affectés | SMS, cloche, email | indispensable | file | `CONTROLLER_EVENT_CANCELLED` — SMS « Event Village : {titre, 30} du {date} est annulé. Votre affectation à l'entrée est retirée. » (ex. 105 car.) ; cloche « Contrôle annulé » |
    | Acheteurs remboursés | SMS, cloche, email, push | indispensable | au versement | `REFUND_PAID` (voir 08) |
 
@@ -858,7 +858,7 @@ W4-01).
    possible jusqu’à la fermeture de la fenêtre de scan. » (`app/admin/events/[id]/page.tsx:219-225`).
 3. **Ce que fait le système.** Statut Terminé ; message « Événement terminé. ». La vente s'arrête (seul un Publié se
    vend) ; le contrôle reste ouvert jusqu'à fin + 6 h (`M/20261110000007_lot9ter_evenements.sql:138-143`).
-4. **Messages envoyés.** Comme la fin automatique (04.21) : `EVENT_FINISHED` ou `SHIFT_OPEN_AT_END` à l'organisatrice ;
+4. **Messages envoyés.** Comme la fin automatique (04.21) : `EVENT_FINISHED` ou `SHIFT_OPEN_AT_END` à la partenaire ;
    rien aux détenteurs (`M/20261109000009_lot9bis_messages.sql:334-344`).
 5. **Ce que voient les autres rôles.** Fiche publique « Événement terminé ».
 6. **Refus.** Événement pas commencé : « Un événement qui n'a pas commencé ne se termine pas : suspendez-le ou
@@ -883,10 +883,10 @@ W4-01).
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |
    |---|---|---|---|---|
-   | Organisatrice (depuis Publié, aucune caisse ouverte) | cloche, email | indispensable | file | `EVENT_FINISHED` : « Événement terminé » / « « {titre} » est terminé. Le rapport de clôture est prêt dans l'onglet Clôture. » |
-   | Organisatrice (au moins une caisse ouverte, à la place du précédent) | SMS, cloche, push, email | indispensable | file | `SHIFT_OPEN_AT_END` — SMS « Event Village : {titre, 25} est terminé et 1 caisse reste ouverte. Fermez-la dans le pilotage : {lien}/partner/events » (ex. 134 car.) ou « … et {n} caisses restent ouvertes. Fermez-les dans le pilotage : … » (ex. 139 car.) ; cloche « Caisse encore ouverte » / « « {titre} » est terminé et 1 caisse reste ouverte. Fermez-la dans l'onglet Caisse du pilotage. » |
-   | Organisatrice, à la fermeture de la dernière caisse | cloche, email | indispensable | file | `CLOSING_REPORT_READY` : « Rapport de clôture prêt » / « Toutes les caisses de « {titre} » sont fermées : le rapport de clôture est prêt. » |
-   | Organisatrice, quand toutes les recettes en ligne sont disponibles (une fois, dans les 30 jours après la fin) | cloche, email | indispensable | contrôle du jour de l'envoyeur | `FUNDS_AVAILABLE` : « Recettes disponibles » / « Les recettes de « {titre} » sont disponibles sur votre solde : vous pouvez demander un retrait. » |
+   | Partenaire (depuis Publié, aucune caisse ouverte) | cloche, email | indispensable | file | `EVENT_FINISHED` : « Événement terminé » / « « {titre} » est terminé. Le rapport de clôture est prêt dans l'onglet Clôture. » |
+   | Partenaire (au moins une caisse ouverte, à la place du précédent) | SMS, cloche, push, email | indispensable | file | `SHIFT_OPEN_AT_END` — SMS « Event Village : {titre, 25} est terminé et 1 caisse reste ouverte. Fermez-la dans le pilotage : {lien}/partner/events » (ex. 134 car.) ou « … et {n} caisses restent ouvertes. Fermez-les dans le pilotage : … » (ex. 139 car.) ; cloche « Caisse encore ouverte » / « « {titre} » est terminé et 1 caisse reste ouverte. Fermez-la dans l'onglet Caisse du pilotage. » |
+   | Partenaire, à la fermeture de la dernière caisse | cloche, email | indispensable | file | `CLOSING_REPORT_READY` : « Rapport de clôture prêt » / « Toutes les caisses de « {titre} » sont fermées : le rapport de clôture est prêt. » |
+   | Partenaire, quand toutes les recettes en ligne sont disponibles (une fois, dans les 30 jours après la fin) | cloche, email | indispensable | contrôle du jour de l'envoyeur | `FUNDS_AVAILABLE` : « Recettes disponibles » / « Les recettes de « {titre} » sont disponibles sur votre solde : vous pouvez demander un retrait. » |
    | Validé jamais publié | — | — | — | **aucun message** |
 
    Preuves : `M/20261109000009_lot9bis_messages.sql:334-373`, `:1342-1364`, `lib/notifications/catalog.ts:1420-1437`,
@@ -915,7 +915,7 @@ W4-01).
 
 ## 04.23 Rapport de clôture et export des participants
 
-1. **Qui, où.** Organisatrice (ou admin `events.read`, par « Ouvrir le pilotage », `app/admin/events/[id]/page.tsx:554-558`),
+1. **Qui, où.** Partenaire (ou admin `events.read`, par « Ouvrir le pilotage », `app/admin/events/[id]/page.tsx:554-558`),
    pilotage `/partner/events/{id}`, onglet « Clôture » (`app/partner/events/[id]/page.tsx:51-61`, `:264`). Aussi :
    tableau de bord partenaire, colonne « Rapports », bouton « Clôture » qui ouvre la fenêtre « Rapport de clôture »,
    avec « Export CSV / Excel » et « Télécharger le PDF » (`app/partner/dashboard/page.tsx:371-386`, `:680`,
