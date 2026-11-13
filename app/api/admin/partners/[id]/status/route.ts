@@ -71,16 +71,17 @@ export async function PATCH(
         const effectiveReason = (body.reason ?? body.rejectionReason)?.trim() || null;
 
         const permission = (newStatus as TargetStatus) === 'SUSPENDU' ? 'partners.suspend' : 'partners.validate';
-        // Lot 9 quater (B2 : AUD-23, G-02) : suspendre une partenaire est réservé au SUPERADMIN (rôles de user_roles)
+        if (!(auth.permissions ?? []).includes(permission)) {
+            // Lot 9 bis (R51, B34) : 403 PERMISSION_MISSING en français, permission nommée dans le corps.
+            return permissionMissingResponse(permission);
+        }
+        // Lot 9 quater (B2 : AUD-23, G-02) : suspendre une partenaire est réservé au SUPERADMIN (rôles de user_roles),
+        // même pour un ADMIN qui a partners.suspend
         if ((newStatus as TargetStatus) === 'SUSPENDU' && !(auth.user?.roles ?? []).includes('SUPERADMIN')) {
             return NextResponse.json(
                 { error: 'Seul un Superadmin peut suspendre une partenaire.', code: 'SUPERADMIN_REQUIRED' },
                 { status: 403 }
             );
-        }
-        if (!(auth.permissions ?? []).includes(permission)) {
-            // Lot 9 bis (R51, B34) : 403 PERMISSION_MISSING en français, permission nommée dans le corps.
-            return permissionMissingResponse(permission);
         }
 
         const supabase = getServiceRoleClient();

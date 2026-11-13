@@ -95,9 +95,15 @@ async function settingRow(key: string): Promise<Record<string, unknown> | null> 
     return data;
 }
 
-async function dropSetting(key: string): Promise<void> {
-    const { error } = await service.from('platform_settings').delete().eq('key', key);
-    assert.equal(error, null, `retrait du réglage de la suite : ${error?.message}`);
+/** Lot 9 quater (B1) : les clés de la liste blanche existent ; la suite remet la ligne d'origine au lieu de la retirer. */
+async function restoreSetting(key: string, original: Record<string, unknown> | null): Promise<void> {
+    if (!original) {
+        const { error } = await service.from('platform_settings').delete().eq('key', key);
+        assert.equal(error, null, `retrait du réglage de la suite : ${error?.message}`);
+        return;
+    }
+    const { error } = await service.from('platform_settings').update({ value: original.value }).eq('key', key);
+    assert.equal(error, null, `restauration du réglage : ${error?.message}`);
 }
 
 async function pricingAudits(key: string): Promise<Array<{ old_value: unknown; new_value: unknown }>> {
@@ -115,16 +121,18 @@ describe('A34 — POST /api/admin/pricing', () => {
         const admin = await newAdminWith(['pricing.manage'], { label: 'pricing9-panne' });
         // Lot 9 quater (B1) : la route n'écrit plus qu'une clé tarifaire de sa liste blanche (modification signalée)
         const key = 'communication_tariffs';
+        const original = await settingRow(key);
+        const audits0 = (await pricingAudits(key)).length;
         try {
             const { result, logged } = await during(tableWhere('platform_settings', 'key', key), async () => reply(await savePricing(admin, key, { montant: 1 })));
             assert.equal(result.status, 500, `panne présentée comme un succès : ${show(result)}`);
             assertClean(result, 'admin/pricing');
             assert.equal(result.body.code, 'PRICING_SAVE_FAILED', show(result));
             assert.ok(logged.length >= 1, 'panne non journalisée');
-            assert.equal(await settingRow(key), null, 'upsert écrit alors que la lecture a échoué');
-            assert.deepEqual(await pricingAudits(key), [], 'aucun audit');
+            assert.deepEqual(await settingRow(key), original, 'upsert écrit alors que la lecture a échoué');
+            assert.equal((await pricingAudits(key)).length, audits0, 'aucun audit');
         } finally {
-            await dropSetting(key);
+            await restoreSetting(key, original);
         }
     });
 
@@ -132,6 +140,8 @@ describe('A34 — POST /api/admin/pricing', () => {
         const admin = await newAdminWith(['pricing.manage'], { label: 'pricing9-ok' });
         // Lot 9 quater (B1) : clé tarifaire de la liste blanche (modification signalée)
         const key = 'subscription_packs';
+        const original = await settingRow(key);
+        const audits0 = (await pricingAudits(key)).length;
         try {
             const first = await reply(await savePricing(admin, key, { montant: 1 }));
             assert.equal(first.status, 200, show(first));
@@ -139,10 +149,10 @@ describe('A34 — POST /api/admin/pricing', () => {
             assert.equal(second.status, 200, show(second));
             assert.deepEqual((await settingRow(key))?.value, { montant: 2 }, 'dernière valeur');
             const audits = await pricingAudits(key);
-            assert.equal(audits.length, 2, 'deux audits');
+            assert.equal(audits.length, audits0 + 2, 'deux audits');
             assert.ok(audits.some((a) => JSON.stringify(a.old_value) === JSON.stringify({ montant: 1 })), `ancienne valeur au journal : ${JSON.stringify(audits)}`);
         } finally {
-            await dropSetting(key);
+            await restoreSetting(key, original);
         }
     });
 });

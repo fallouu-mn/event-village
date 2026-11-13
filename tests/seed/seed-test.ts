@@ -152,7 +152,8 @@ async function ensureUser(key: FixtureUserKey): Promise<string> {
     if ((spec.roles as readonly string[]).includes('ADMIN')) {
         const { error: permErr } = await supabase
             .from('admin_permissions')
-            .upsert([{ user_id: userId, permission: 'settings.read' }], { onConflict: 'user_id,permission' });
+            // Lot 9 quater (B4 : AUD-15) : et access.operate, exigée d'un ADMIN pour scanner ou tenir une caisse (signalé)
+            .upsert([{ user_id: userId, permission: 'settings.read' }, { user_id: userId, permission: 'access.operate' }], { onConflict: 'user_id,permission' });
         if (permErr) fail(`admin_permissions.upsert(${key})`, permErr);
     }
 

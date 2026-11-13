@@ -43,6 +43,9 @@ async function newAdmin(label: string): Promise<Buyer> {
     const user = await newBuyer(`admin-${label}`, { firstName: 'Aminata', lastName: 'Administratrice' });
     const { error } = await service.from('user_roles').upsert([{ user_id: user.userId, role: 'ADMIN' }], { onConflict: 'user_id,role' });
     assert.equal(error, null, `rôle ADMIN : ${error?.message}`);
+    // Lot 9 quater (B4 : AUD-15) : un ADMIN tient une caisse avec la permission access.operate (modification signalée)
+    const { error: pErr } = await service.from('admin_permissions').upsert({ user_id: user.userId, permission: 'access.operate' }, { onConflict: 'user_id,permission' });
+    assert.equal(pErr, null, `permission access.operate : ${pErr?.message}`);
     return user;
 }
 

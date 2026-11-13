@@ -95,7 +95,8 @@ describe('ex-10.0 c — rôles, statuts et permissions', () => {
     });
 
     test('PATCH /api/admin/partners/[id]/status (suspension) : journal refusé → échec, fiche et compte inchangés', async () => {
-        const admin = await newAdminWith(['partners.suspend', 'partners.validate'], { label: 'audit-statut' });
+        // Lot 9 quater (B2 : AUD-23) : suspendre une partenaire est réservé au SUPERADMIN (modification signalée)
+        const admin = await newAdminWith(['partners.suspend', 'partners.validate'], { label: 'audit-statut', role: 'SUPERADMIN' });
         const p = await newPartner('audit-statut');
         const res = await withAuditRefused(noAuditAbout([p.partnerId, p.userId]), async () => invoke(
             await routeHandler('../../app/api/admin/partners/[id]/status/route', 'PATCH', 'PATCH /api/admin/partners/[id]/status'),

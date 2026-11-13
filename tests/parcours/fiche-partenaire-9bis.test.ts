@@ -123,7 +123,8 @@ describe('R55, R6 — routes de l’admin', () => {
     }
 
     test('PATCH …/status : VALIDE → REJETE → 409 TRANSITION_NOT_ALLOWED ; réactivation sans motif → 400 REASON_REQUIRED', async () => {
-        const admin = await newAdminWith(['partners.validate', 'partners.suspend'], { label: 'r55-route' });
+        // Lot 9 quater (B2 : AUD-23) : suspendre une partenaire est réservé au SUPERADMIN (modification signalée)
+        const admin = await newAdminWith(['partners.validate', 'partners.suspend'], { label: 'r55-route', role: 'SUPERADMIN' });
         const p = await newPartner('r55-route');
         const refuse = await patchStatus(admin.accessToken, p, { status: 'REJETE', reason: REASON });
         assert.equal(refuse.status, 409, `R55 : refus d’une partenaire validée : ${show(refuse)}`);

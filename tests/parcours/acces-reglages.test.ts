@@ -160,14 +160,17 @@ describe('Réglages access.* (contrat A du lot 4)', () => {
             { user_id: admin.userId, permission: 'pricing.manage' }, { onConflict: 'user_id,permission' });
         assert.equal(permErr, null, `permission pricing.manage : ${permErr?.message}`);
 
-        const witnessKey = `test.lot4_reglages_${admin.userId.slice(0, 8)}`;
+        // Lot 9 quater (B1 : AUD-22) : la route n'écrit plus qu'une clé tarifaire de sa liste blanche ; le témoin réécrit
+        // la valeur actuelle de aggregator_fees, inchangée, et n'est pas supprimé (modification signalée au rapport).
+        const witnessKey = 'aggregator_fees';
+        const { data: witnessRow } = await service.from('platform_settings').select('value').eq('key', witnessKey).single();
         const created = 'access.cle_creee_par_pricing_lot4';
         const key: AccessSettingKey = 'access.scan_window_before_hours';
         const saved = await getAccessSetting(key);
         const count0 = (await historyOf(key)).length;
         try {
             // Témoin : la permission pricing.manage est bien effective pour ce compte.
-            const control = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: witnessKey, value: { value: 1 } }));
+            const control = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: witnessKey, value: witnessRow?.value }));
             assert.equal(control.status, 200, `témoin (clé ordinaire par un ADMIN pricing.manage) : HTTP ${control.status} ${JSON.stringify(await control.json())}`);
 
             const denied = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key, value: { value: 48 } }));
@@ -182,7 +185,7 @@ describe('Réglages access.* (contrat A du lot 4)', () => {
             assert.deepEqual(data, [], 'aucune clé access.* créée');
         } finally {
             await restore(key, saved);
-            const { error: cleanErr } = await service.from('platform_settings').delete().in('key', [witnessKey, created]);
+            const { error: cleanErr } = await service.from('platform_settings').delete().in('key', [created]);
             assert.equal(cleanErr, null, `nettoyage des clés du test : ${cleanErr?.message}`);
         }
     });

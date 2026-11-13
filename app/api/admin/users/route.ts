@@ -357,8 +357,7 @@ export async function PATCH(req: NextRequest) {
         //       SUPERADMIN (la RPC user_roles_set refait le contrôle des rôles en base).
         if (!actorIsSuperadmin) {
             const adminChanged = targetRoles !== null && targetRoles.includes('ADMIN') !== targetCurrentRoles.includes('ADMIN');
-            // Lot 9 quater (B2 : AUD-23, G-02) : statut d'un compte ADMIN ou PARTENAIRE (rôles de user_roles) réservé au SUPERADMIN
-            const adminStatus = status !== undefined && (targetCurrentRoles.includes('ADMIN') || targetCurrentRoles.includes('PARTENAIRE'));
+            const adminStatus = status !== undefined && targetCurrentRoles.includes('ADMIN');
             if (adminChanged || adminStatus) return adminRoleSuperadminOnly();
         }
 
@@ -370,6 +369,9 @@ export async function PATCH(req: NextRequest) {
             if (partnerRow) {
                 return NextResponse.json({ error: PARTNER_VIA_SHEET, code: 'PARTNER_STATUS_VIA_PARTNER_SHEET', partner_id: partnerRow.id }, { status: 409 });
             }
+            // Lot 9 quater (B2 : AUD-23, G-02) : statut d'un compte ADMIN (3 bis) ou PARTENAIRE (rôles de user_roles)
+            // réservé au SUPERADMIN ; une partenaire qui a une fiche est d'abord renvoyée à sa fiche (R6, ci-dessus).
+            if (!actorIsSuperadmin && targetCurrentRoles.includes('PARTENAIRE')) return adminRoleSuperadminOnly();
             if (status === 'SUSPENDU' && targetUser.status !== 'SUSPENDU' && reason.length < 3) {
                 return NextResponse.json({ error: 'Indiquez le motif de la suspension (3 caractères au moins).', code: 'REASON_REQUIRED', field: 'reason' }, { status: 400 });
             }

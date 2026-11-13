@@ -364,7 +364,10 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
     test('POST /api/admin/pricing : un ADMIN qui a pricing.manage n’écrit ni ne crée de clé notif.* (403 NOTIF_SETTING, sans effet)', async () => {
         const { POST: pricing } = (await importModule('../../app/api/admin/pricing/route')) as { POST: Handler };
         const admin = await newAdmin('reglages-pricing', ['pricing.manage']);
-        const witnessKey = `test.lot6_reglages_${admin.userId.slice(0, 8)}`;
+        // Lot 9 quater (B1 : AUD-22) : la route n'écrit plus qu'une clé tarifaire de sa liste blanche ; le témoin réécrit
+        // la valeur actuelle de aggregator_fees, inchangée, et n'est pas supprimé (modification signalée au rapport).
+        const witnessKey = 'aggregator_fees';
+        const { data: witnessRow } = await service.from('platform_settings').select('value').eq('key', witnessKey).single();
         const created = 'notif.cle_creee_par_pricing_lot6';
         const key: NotifSettingKey = 'notif.reminder_h3_hours';
         const existed = await keyExists(key);
@@ -372,7 +375,7 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
         const count0 = (await historyOf(key)).length;
         try {
             // Témoin : la permission pricing.manage est bien effective pour ce compte.
-            const control = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: witnessKey, value: { value: 1 } }));
+            const control = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: witnessKey, value: witnessRow?.value }));
             assert.equal(control.status, 200, `témoin (clé ordinaire par un ADMIN pricing.manage) : HTTP ${control.status} ${JSON.stringify(await control.json())}`);
 
             const denied = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key, value: { value: 12 } }));
@@ -388,7 +391,7 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
             assert.equal(create.status, 403, `création de ${created} par /api/admin/pricing : HTTP ${create.status}`);
             assert.equal(await keyExists(created), false, 'aucune clé notif.* créée');
         } finally {
-            const leftovers = [witnessKey, created];
+            const leftovers = [created];
             if (!existed && (await keyExists(key))) leftovers.push(key);
             await dropKeys(leftovers);
             if (existed && JSON.stringify(await getNotifSetting(key)) !== JSON.stringify(saved)) {

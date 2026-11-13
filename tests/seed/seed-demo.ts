@@ -1196,8 +1196,9 @@ async function main(): Promise<void> {
         accounts[key] = await createAccount(p, p.roles, p.primaryRole, key.startsWith('controleur'));
     }
     const { error: permErr } = await service.from('admin_permissions').upsert(
-        // Lot 7 (7.0 f) : communications.manage pour la page des campagnes (/admin/communications)
-        ['events.read', 'events.write', 'notifications.read', 'notifications.write', 'communications.manage'].map((permission) => ({ user_id: accounts.admin.userId, permission })), { onConflict: 'user_id,permission' });
+        // Lot 7 (7.0 f) : communications.manage pour la page des campagnes (/admin/communications) ; lot 9 quater (B5 :
+        // AUD-37) : settings.read, « Lire les réglages », exigée pour lire les réglages de la plateforme (signalé au rapport)
+        ['events.read', 'events.write', 'notifications.read', 'notifications.write', 'communications.manage', 'settings.read'].map((permission) => ({ user_id: accounts.admin.userId, permission })), { onConflict: 'user_id,permission' });
     if (permErr) fail('permissions de l’administrateur de démonstration', permErr);
     const buyers: Account[] = [];
     for (const p of buyerPeople()) buyers.push(await createAccount(p, ['CLIENT'], 'CLIENT', false));

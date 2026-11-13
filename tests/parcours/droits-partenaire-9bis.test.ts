@@ -404,7 +404,8 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
     test('DELETE /api/partner/team/all?controllerId= : events.write ; la partenaire B n’agit que sur sa propre équipe', async () => {
         const c1 = await newController(partnerA, evA.eventId, { label: 'dp9-tout-1' });
         const c2 = await newController(partnerA, evA.eventId, { label: 'dp9-tout-2' });
-        const del = (u: Buyer): Call => (t) => call('team/all', 'DELETE', `/api/partner/team/all?controllerId=${u.userId}`, t, {});
+        // Lot 9 quater (B8 : N-01) : un admin nomme l'organisateur (partnerId), ignoré pour une partenaire (modification signalée)
+        const del = (u: Buyer): Call => (t) => call('team/all', 'DELETE', `/api/partner/team/all?controllerId=${u.userId}&partnerId=${partnerA.partnerId}`, t, {});
         await runMatrix({
             name: 'DELETE /api/partner/team/all', permission: 'events.write', allowed: await adminWith(['events.write']),
             other: await adminWith(['events.read', 'refunds.manage', 'partners.read']), refused: del(c1), bOwnScope: true,
