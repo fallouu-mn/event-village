@@ -20,6 +20,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { newBuyer, service } from '../parcours/paiement-helpers';
+import { STRONG_PASSWORD } from '../parcours/helpers';
 import { buyConfirmed, createPartnerEvent, newPartner, superadminId } from '../parcours/finance-helpers';
 
 function asUser(accessToken: string) {
@@ -59,5 +60,33 @@ describe('AUD-06 — partenaire suspendu : lectures REST qui ignorent le statut 
         console.log(`[AUD-06] jeton du partenaire suspendu : billets lus=${tickets.data?.length ?? 0} (erreur ${tickets.error?.message ?? 'aucune'}) ; paiements lus=${payments.data?.length ?? 0} (erreur ${payments.error?.message ?? 'aucune'}) ; colonnes : ${JSON.stringify(leaked)}`);
         assert.deepEqual({ tickets: tickets.data?.length ?? 0, payments: payments.data?.length ?? 0 }, { tickets: 0, payments: 0 },
             'un partenaire SUSPENDU lit encore, avec son jeton, les billets et les paiements de ses acheteurs (is_partner_owner ignore le statut)');
+    });
+
+    /**
+     * La suspension ne bannit pas le compte chez GoTrue (user_status_set et partner_status_set révoquent les sessions
+     * seulement : 20261109000004_lot9bis_droits.sql:505-509 ; le bannissement n'existe qu'à l'anonymisation,
+     * lib/admin/admin.service.ts:348) et la connexion ne lit pas users.status (app/api/auth/login/route.ts:96 ne traite
+     * que les refus de GoTrue). Un compte suspendu obtient donc un jeton neuf : la fenêtre n'est pas d'une heure.
+     */
+    test('un partenaire suspendu ne peut pas obtenir un nouveau jeton qui lit encore les billets de ses acheteurs', async () => {
+        const partner = await newPartner('aud-susp-relog');
+        const ev = await createPartnerEvent(partner.partnerId, 'aud suspendu reconnexion', [{ name: 'Std', price: 1_000, total: 5 }]);
+        const buyer = await newBuyer('aud-susp-relog-acheteur');
+        await buyConfirmed(buyer, ev, [['Std', 1]]);
+        const { data: reply, error } = await service.rpc('partner_status_set', {
+            p: { partner_id: partner.partnerId, actor_id: await superadminId(), status: 'SUSPENDU', reason: 'Audit de sécurité AUD-06 (reconnexion)' },
+        });
+        assert.equal(error, null, `suspension : ${error?.message}`);
+        assert.equal((reply as { ok?: boolean }).ok, true, `suspension refusée : ${JSON.stringify(reply)}`);
+
+        const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        });
+        const relog = await anon.auth.signInWithPassword({ email: partner.email, password: STRONG_PASSWORD });
+        const fresh = relog.data.session?.access_token;
+        const tickets = fresh ? await asUser(fresh).from('tickets').select('id').eq('event_id', ev.eventId) : null;
+        console.log(`[AUD-06] reconnexion du partenaire suspendu : ${relog.error ? `refusée (${relog.error.message})` : 'acceptée'} ; billets lus avec le jeton neuf : ${tickets?.data?.length ?? 0}`);
+        assert.equal(tickets?.data?.length ?? 0, 0,
+            'un partenaire SUSPENDU se reconnecte et lit de nouveau, avec un jeton neuf, les billets de ses acheteurs (aucun bannissement, aucun contrôle du statut)');
     });
 });
