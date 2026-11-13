@@ -824,6 +824,9 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : 2 demande(s) de partenaire attendent votre validation : ${U}/admin/dashboard`],
             ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 1 }, ['company'],
                 `Event Village : 1 événement(s) attendent votre validation : ${U}/admin/dashboard`],
+            // Lot 9 quinquies (A1 : AUTH-01) : 160 septets avec l'URL de 27 caractères (texte de la consigne : 169, deux segments).
+            ['ACCOUNT_LOGIN_FAILURES', {}, [],
+                `Event Village : plusieurs connexions ont échoué sur votre compte. Si ce n'est pas vous, changez votre mot de passe : ${U}/forgot-password`],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).
@@ -1161,6 +1164,7 @@ function lot9terExpected(): ExpectedType[] {
 function lot9quinquiesExpected(): ExpectedType[] {
     return [
         ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B', null, ['/admin/dashboard'], null),
+        ess('ACCOUNT_LOGIN_FAILURES', [S, M], 'ANY', 'B', null, ['/forgot-password'], null), // A1 (AUTH-01)
     ];
 }
 
