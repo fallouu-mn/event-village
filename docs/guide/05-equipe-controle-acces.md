@@ -2,7 +2,7 @@
 
 > Guide complet de l'application Event Village, état de `main` à `0889df6` (lots 1 à 9 ter). Source de vérité : le code.
 > Chaque fait porte sa preuve `fichier:ligne` (chemins relatifs au dépôt ; `M/` = `supabase/migrations/`).
-> Ce qui n'a pas pu être établi est marqué **NON VÉRIFIÉ**. Données d'exemple fictives : organisatrice « Concert Test
+> Ce qui n'a pas pu être établi est marqué **NON VÉRIFIÉ**. Données d'exemple fictives : partenaire « Concert Test
 > Prod » (gérante « Fatou Diop »), contrôleur « Moussa Sow » (numéro `77 000 00 00`, forme enregistrée `+221770000000`),
 > événement « Concert Test », adresse de l'application `https://app.eventvillage.sn` (celle des tests, 27 caractères).
 > Les messages (canaux, heures calmes, plafonds) sont détaillés dans `10-notifications.md` ; les quotas chiffrés dans
@@ -1231,7 +1231,8 @@ Règles communes à tout le fichier :
 ## 05.29 Scan par la partenaire (`/partner/scan`) et par l'administration
 
 1. **Qui, où.** Partenaire : menu « Scanner les billets », `/partner/scan` « Contrôle des entrées » (voir 01) ;
-   administration : scanner de l'admin (voir `11-admin-superadmin.md`).
+   administration : scanner de l'admin (voir `11-admin-superadmin.md`, 11.18 : il ne liste que les événements de la
+   fiche partenaire du compte, donc un admin sans fiche ni affectation de contrôleur ne peut rien y scanner, constat W1-07).
 2. **Ce qu'il saisit.** L'un de ses événements dont le contrôle est ouvert ; sur un événement à zones, une « Porte de
    contrôle » dans la liste ; caméra ou saisie manuelle (`app/partner/scan/page.tsx:1-40`).
 3. **Ce que fait le système.** Même voie que le contrôleur (`/api/controller/scan`), mêmes règles et résultats ; carte de
