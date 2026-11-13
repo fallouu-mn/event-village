@@ -34,6 +34,7 @@ import { createSaleEvent, newBuyer, service } from '../parcours/paiement-helpers
 import { lastSmsCode, registerStart, registerSubmit } from '../parcours/terrain-helpers';
 import { outboxRows } from '../parcours/notif-helpers';
 import { getFakes } from '../fakes';
+import { openConcurrentClient } from '../helpers/db';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -115,8 +116,23 @@ describe('AUD-02 — changement de mot de passe direct chez GoTrue sans mot de p
         // Attaque : marque « compte coquille » posée par l'utilisateur lui-même, puis nouveau mot de passe
         const pw2 = `Vole#${randomBytes(6).toString('hex')}A1`;
         const flag = await gotrueUpdateUser(victim.accessToken, { data: { is_temporary_controller_account: true } });
-        const change = await gotrueUpdateUser(victim.accessToken, { password: pw2 });
-        const afterAttack = await alerts();
+        let change: { status: number; text: string };
+        let afterAttack: number;
+        try {
+            change = await gotrueUpdateUser(victim.accessToken, { password: pw2 });
+            afterAttack = await alerts();
+        } finally {
+            // Fixture retirée : la marque écrite par l'attaquant n'est pas laissée à l'invariant (q2) du lot 9 quater
+            // (aucune marque dans raw_user_meta_data), qui ferait échouer les suites suivantes ; même retrait que
+            // tests/parcours/lot9quater-comptes.test.ts (« marque coquille écrite par l'utilisateur »).
+            const db = await openConcurrentClient({ applicationName: 'ev-test-aud-02-marque' });
+            try {
+                await db.query(`UPDATE auth.users SET raw_user_meta_data = raw_user_meta_data - 'is_temporary_controller_account' WHERE id = $1`, [victim.userId]);
+                await db.commit();
+            } finally {
+                await db.close();
+            }
+        }
         console.log(`[AUD-02] PUT {data:{is_temporary_controller_account:true}} : HTTP ${flag.status} ; PUT {password} : HTTP ${change.status} ; lignes PASSWORD_CHANGED : ${afterPlain} → ${afterAttack}`);
         if (change.status === 200) {
             // Faille ouverte : le changement est passé, l'alerte doit quand même partir
