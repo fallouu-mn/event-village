@@ -1,0 +1,384 @@
+TAP version 13
+# Subtest: POST /api/account/phone/start
+    # Subtest: un code de 6 chiffres au nouveau numéro, objet PHONE_CHANGE, aucun SMS à l’ancien, journal sans le code, compte inchangé
+    ok 1 - un code de 6 chiffres au nouveau numéro, objet PHONE_CHANGE, aucun SMS à l’ancien, journal sans le code, compte inchangé
+      ---
+      duration_ms: 304.195611
+      type: 'test'
+      ...
+    # Subtest: numéro déjà pris sous la forme +221… puis 221… : 409 PHONE_TAKEN sans aucun SMS
+    ok 2 - numéro déjà pris sous la forme +221… puis 221… : 409 PHONE_TAKEN sans aucun SMS
+      ---
+      duration_ms: 425.924622
+      type: 'test'
+      ...
+    # Subtest: même numéro : 400 PHONE_UNCHANGED sans SMS
+    ok 3 - même numéro : 400 PHONE_UNCHANGED sans SMS
+      ---
+      duration_ms: 186.693055
+      type: 'test'
+      ...
+    # Subtest: mauvais format, numéro absent : 400 INVALID_FIELD ; corps illisible : 400 INVALID_BODY
+    ok 4 - mauvais format, numéro absent : 400 INVALID_FIELD ; corps illisible : 400 INVALID_BODY
+      ---
+      duration_ms: 216.034003
+      type: 'test'
+      ...
+    # Subtest: quota du compte, numéros différents : au-delà de 2, 429 PHONE_CHANGE_RATE_LIMITED et aucun SMS
+    ok 5 - quota du compte, numéros différents : au-delà de 2, 429 PHONE_CHANGE_RATE_LIMITED et aucun SMS
+      ---
+      duration_ms: 240.91007
+      type: 'test'
+      ...
+[requireActiveSession] accès refusé à /api/account/phone/start : compte ddb8f941-bb43-4544-b3e1-fde077ce19bc au statut SUSPENDU
+    # Subtest: sans session : 401 AUTH_REQUIRED ; compte suspendu : 403 ACCOUNT_NOT_ACTIVE ; aucun SMS
+    ok 6 - sans session : 401 AUTH_REQUIRED ; compte suspendu : 403 ACCOUNT_NOT_ACTIVE ; aucun SMS
+      ---
+      duration_ms: 193.912455
+      type: 'test'
+      ...
+    1..6
+ok 1 - POST /api/account/phone/start
+  ---
+  duration_ms: 1568.660091
+  type: 'suite'
+  ...
+# Subtest: POST /api/account/phone/confirm — le code
+    # Subtest: code d’un autre objet (LOGIN) : 400 INVALID_CODE, non consommé, rien de changé
+    ok 1 - code d’un autre objet (LOGIN) : 400 INVALID_CODE, non consommé, rien de changé
+      ---
+      duration_ms: 226.991088
+      type: 'test'
+      ...
+    # Subtest: un code PHONE_CHANGE n’ouvre aucune session par /api/auth/verify-otp et n’y est pas consommé
+    ok 2 - un code PHONE_CHANGE n’ouvre aucune session par /api/auth/verify-otp et n’y est pas consommé
+      ---
+      duration_ms: 209.003156
+      type: 'test'
+      ...
+    # Subtest: code faux : 400 INVALID_CODE, essai compté ; expiré : 400 CODE_EXPIRED ; format : 400 INVALID_FIELD non compté
+    ok 3 - code faux : 400 INVALID_CODE, essai compté ; expiré : 400 CODE_EXPIRED ; format : 400 INVALID_FIELD non compté
+      ---
+      duration_ms: 278.196069
+      type: 'test'
+      ...
+    # Subtest: 5 essais : le 5e faux répond 429 TOO_MANY_ATTEMPTS, le bon code est ensuite refusé
+    ok 4 - 5 essais : le 5e faux répond 429 TOO_MANY_ATTEMPTS, le bon code est ensuite refusé
+      ---
+      duration_ms: 326.493739
+      type: 'test'
+      ...
+    # Subtest: quota de vérification par numéro : 429 OTP_VERIFY_RATE_LIMITED
+    ok 5 - quota de vérification par numéro : 429 OTP_VERIFY_RATE_LIMITED
+      ---
+      duration_ms: 318.016044
+      type: 'test'
+      ...
+    # Subtest: même numéro à la confirmation : 400 PHONE_UNCHANGED, code non consommé
+    ok 6 - même numéro à la confirmation : 400 PHONE_UNCHANGED, code non consommé
+      ---
+      duration_ms: 190.559909
+      type: 'test'
+      ...
+[requireActiveSession] accès refusé à /api/account/phone/confirm : compte 02fd9b11-c540-4267-8125-1a67741201f7 au statut SUSPENDU
+    # Subtest: sans session : 401 AUTH_REQUIRED ; compte suspendu : 403 ACCOUNT_NOT_ACTIVE
+    ok 7 - sans session : 401 AUTH_REQUIRED ; compte suspendu : 403 ACCOUNT_NOT_ACTIVE
+      ---
+      duration_ms: 186.735635
+      type: 'test'
+      ...
+    1..7
+ok 2 - POST /api/account/phone/confirm — le code
+  ---
+  duration_ms: 1736.643626
+  type: 'suite'
+  ...
+# Subtest: POST /api/account/phone/confirm — succès
+    # Subtest: les deux tables à jour, phone_verified_at remis à maintenant, billets inchangés, audit masqué
+    ok 1 - les deux tables à jour, phone_verified_at remis à maintenant, billets inchangés, audit masqué
+      ---
+      duration_ms: 415.722056
+      type: 'test'
+      ...
+    # Subtest: appel à l’API : phone et phone_confirm, sans email pour un compte à email réel ; email inchangé partout
+    ok 2 - appel à l’API : phone et phone_confirm, sans email pour un compte à email réel ; email inchangé partout
+      ---
+      duration_ms: 227.018184
+      type: 'test'
+      ...
+    # Subtest: connexion : le nouveau numéro et le mot de passe ouvrent une session, l’ancien numéro répond 404
+    ok 3 - connexion : le nouveau numéro et le mot de passe ouvrent une session, l’ancien numéro répond 404
+      ---
+      duration_ms: 287.959908
+      type: 'test'
+      ...
+    # Subtest: email technique : inchangé par le changement de numéro (lot 9 quater, A4), connexion par le nouveau numéro
+    ok 4 - email technique : inchangé par le changement de numéro (lot 9 quater, A4), connexion par le nouveau numéro
+      ---
+      duration_ms: 349.307971
+      type: 'test'
+      ...
+    # Subtest: email technique : l’ancien numéro peut de nouveau s’inscrire (D-cpt C3)
+    ok 5 - email technique : l’ancien numéro peut de nouveau s’inscrire (D-cpt C3)
+      ---
+      duration_ms: 295.422792
+      type: 'test'
+      ...
+    # Subtest: users.email NULL et email d’authentification technique : le profil reprend l’adresse technique du compte
+    ok 6 - users.email NULL et email d’authentification technique : le profil reprend l’adresse technique du compte
+      ---
+      duration_ms: 278.912343
+      type: 'test'
+      ...
+    # Subtest: A ne change que son numéro : user_id et id du corps ignorés
+    ok 7 - A ne change que son numéro : user_id et id du corps ignorés
+      ---
+      duration_ms: 316.073559
+      type: 'test'
+      ...
+    # Subtest: rejeu du même code après succès : 400 PHONE_UNCHANGED, un seul SMS et un seul audit
+    ok 8 - rejeu du même code après succès : 400 PHONE_UNCHANGED, un seul SMS et un seul audit
+      ---
+      duration_ms: 236.649487
+      type: 'test'
+      ...
+    1..8
+ok 3 - POST /api/account/phone/confirm — succès
+  ---
+  duration_ms: 2407.534137
+  type: 'suite'
+  ...
+# Subtest: Révocation des autres sessions (AR2)
+    # Subtest: depuis S1 : S2 et la session d’origine révoquées, S1 gardée et toujours rafraîchissable
+    ok 1 - depuis S1 : S2 et la session d’origine révoquées, S1 gardée et toujours rafraîchissable
+      ---
+      duration_ms: 372.044751
+      type: 'test'
+      ...
+    # Subtest: session par cookies (navigateur) : la session courante est reconnue et gardée
+    ok 2 - session par cookies (navigateur) : la session courante est reconnue et gardée
+      ---
+      duration_ms: 422.005815
+      type: 'test'
+      ...
+    # Subtest: jeton validé avec session_id absent : 401 SESSION_REQUIRED avant la consommation du code, aucune révocation, rien d’écrit
+    ok 3 - jeton validé avec session_id absent : 401 SESSION_REQUIRED avant la consommation du code, aucune révocation, rien d’écrit
+      ---
+      duration_ms: 337.318081
+      type: 'test'
+      ...
+    # Subtest: jeton validé avec session_id qui n’est pas un uuid : 401 SESSION_REQUIRED avant la consommation du code, aucune révocation, rien d’écrit
+    ok 4 - jeton validé avec session_id qui n’est pas un uuid : 401 SESSION_REQUIRED avant la consommation du code, aucune révocation, rien d’écrit
+      ---
+      duration_ms: 362.852824
+      type: 'test'
+      ...
+    1..4
+ok 4 - Révocation des autres sessions (AR2)
+  ---
+  duration_ms: 1494.522296
+  type: 'suite'
+  ...
+# Subtest: SMS PHONE_CHANGED (L30)
+    # Subtest: une ligne vers l’ancien numéro, sans compte ni acteur ; texte exact, un segment GSM-7 ; rien au nouveau numéro
+    ok 1 - une ligne vers l’ancien numéro, sans compte ni acteur ; texte exact, un segment GSM-7 ; rien au nouveau numéro
+      ---
+      duration_ms: 272.476313
+      type: 'test'
+      ...
+    # Subtest: ancien numéro absent : changement accepté, aucun SMS, sms_queued faux
+    ok 2 - ancien numéro absent : changement accepté, aucun SMS, sms_queued faux
+      ---
+      duration_ms: 232.801384
+      type: 'test'
+      ...
+    # Subtest: ancien numéro hors format : changement accepté, aucun SMS, sms_queued faux
+    ok 3 - ancien numéro hors format : changement accepté, aucun SMS, sms_queued faux
+      ---
+      duration_ms: 242.579015
+      type: 'test'
+      ...
+    1..3
+ok 5 - SMS PHONE_CHANGED (L30)
+  ---
+  duration_ms: 748.160961
+  type: 'suite'
+  ...
+# Subtest: Numéro pris et courses
+    # Subtest: numéro pris entre start et confirm : 409 PHONE_TAKEN avant l’API (AM1), sans appel, ni compensation, ni RPC, code consommé
+    ok 1 - numéro pris entre start et confirm : 409 PHONE_TAKEN avant l’API (AM1), sans appel, ni compensation, ni RPC, code consommé
+      ---
+      duration_ms: 339.539358
+      type: 'test'
+      ...
+    # Subtest: numéro présent seulement dans auth.users, pris après la vérification préalable : start passe, l’API échoue, 409 PHONE_TAKEN sans compensation ni RPC (AM1)
+    ok 2 - numéro présent seulement dans auth.users, pris après la vérification préalable : start passe, l’API échoue, 409 PHONE_TAKEN sans compensation ni RPC (AM1)
+      ---
+      duration_ms: 345.606465
+      type: 'test'
+      ...
+    # Subtest: numéro présent seulement dans public.users après start : 409 PHONE_TAKEN par la RPC, API rappelée, tables alignées
+    ok 3 - numéro présent seulement dans public.users après start : 409 PHONE_TAKEN par la RPC, API rappelée, tables alignées
+      ---
+      duration_ms: 333.416216
+      type: 'test'
+      ...
+    # Subtest: deux confirmations simultanées vers deux numéros : un seul gagnant, 409 PHONE_CONFLICT, un SMS, auth aligné sur le gagnant
+    ok 4 - deux confirmations simultanées vers deux numéros : un seul gagnant, 409 PHONE_CONFLICT, un SMS, auth aligné sur le gagnant
+      ---
+      duration_ms: 281.240831
+      type: 'test'
+      ...
+    1..4
+ok 6 - Numéro pris et courses
+  ---
+  duration_ms: 1300.1137
+  type: 'suite'
+  ...
+# Subtest: Pannes de la confirmation (AR2, L28)
+    # Subtest: lecture de l’API en panne : 500 PHONE_CHANGE_FAILED, code non consommé, rien d’écrit
+    ok 1 - lecture de l’API en panne : 500 PHONE_CHANGE_FAILED, code non consommé, rien d’écrit
+      ---
+      duration_ms: 218.092513
+      type: 'test'
+      ...
+    # Subtest: écriture de l’API en panne : 500 PHONE_CHANGE_FAILED, public.users inchangé, code consommé, RPC non appelée
+    ok 2 - écriture de l’API en panne : 500 PHONE_CHANGE_FAILED, public.users inchangé, code consommé, RPC non appelée
+      ---
+      duration_ms: 226.395589
+      type: 'test'
+      ...
+    # Subtest: RPC en panne, email réel : 500 PHONE_CHANGE_FAILED, API rappelée vers les anciennes valeurs, sessions et SMS intacts
+    ok 3 - RPC en panne, email réel : 500 PHONE_CHANGE_FAILED, API rappelée vers les anciennes valeurs, sessions et SMS intacts
+      ---
+      duration_ms: 337.98008
+      type: 'test'
+      ...
+    # Subtest: compensation en échec, email réel : 500 ACCOUNT_SYNC_FAILED, ACCOUNT_AUTH_DESYNC, ni audit ni SMS ; un nouvel essai vers le même numéro répare
+    ok 4 - compensation en échec, email réel : 500 ACCOUNT_SYNC_FAILED, ACCOUNT_AUTH_DESYNC, ni audit ni SMS ; un nouvel essai vers le même numéro répare
+      ---
+      duration_ms: 516.12669
+      type: 'test'
+      ...
+    # Subtest: RPC en panne, email technique : 500 PHONE_CHANGE_FAILED, API rappelée vers les anciennes valeurs, sessions et SMS intacts
+    ok 5 - RPC en panne, email technique : 500 PHONE_CHANGE_FAILED, API rappelée vers les anciennes valeurs, sessions et SMS intacts
+      ---
+      duration_ms: 316.839035
+      type: 'test'
+      ...
+    # Subtest: compensation en échec, email technique : 500 ACCOUNT_SYNC_FAILED, ACCOUNT_AUTH_DESYNC, ni audit ni SMS ; un nouvel essai vers le même numéro répare
+    ok 6 - compensation en échec, email technique : 500 ACCOUNT_SYNC_FAILED, ACCOUNT_AUTH_DESYNC, ni audit ni SMS ; un nouvel essai vers le même numéro répare
+      ---
+      duration_ms: 482.844489
+      type: 'test'
+      ...
+    # Subtest: numéro relu NULL à la compensation : traité comme un échec, 500 ACCOUNT_SYNC_FAILED et ACCOUNT_AUTH_DESYNC
+    ok 7 - numéro relu NULL à la compensation : traité comme un échec, 500 ACCOUNT_SYNC_FAILED et ACCOUNT_AUTH_DESYNC
+      ---
+      duration_ms: 222.8304
+      type: 'test'
+      ...
+    1..7
+ok 7 - Pannes de la confirmation (AR2, L28)
+  ---
+  duration_ms: 2321.652617
+  type: 'suite'
+  ...
+# Subtest: Transferts en attente
+    # Subtest: transfert vers l’ancien numéro : plus visible et non reciblé ; vers le nouveau : visible après le changement
+    ok 1 - transfert vers l’ancien numéro : plus visible et non reciblé ; vers le nouveau : visible après le changement
+      ---
+      duration_ms: 581.40323
+      type: 'test'
+      ...
+    1..1
+ok 8 - Transferts en attente
+  ---
+  duration_ms: 581.514287
+  type: 'suite'
+  ...
+# Subtest: Middleware (rappel A41)
+    # Subtest: /api/account/phone/start : 401 sans session (déjà vrai, garde-fou)
+    ok 1 - /api/account/phone/start : 401 sans session (déjà vrai, garde-fou)
+      ---
+      duration_ms: 1.322245
+      type: 'test'
+      ...
+    # Subtest: /api/account/phone/start : une session passe (déjà vrai, garde-fou)
+    ok 2 - /api/account/phone/start : une session passe (déjà vrai, garde-fou)
+      ---
+      duration_ms: 168.602259
+      type: 'test'
+      ...
+    # Subtest: /api/account/phone/confirm : 401 sans session (déjà vrai, garde-fou)
+    ok 3 - /api/account/phone/confirm : 401 sans session (déjà vrai, garde-fou)
+      ---
+      duration_ms: 0.486174
+      type: 'test'
+      ...
+    # Subtest: /api/account/phone/confirm : une session passe (déjà vrai, garde-fou)
+    ok 4 - /api/account/phone/confirm : une session passe (déjà vrai, garde-fou)
+      ---
+      duration_ms: 165.265236
+      type: 'test'
+      ...
+    1..4
+ok 9 - Middleware (rappel A41)
+  ---
+  duration_ms: 335.950368
+  type: 'suite'
+  ...
+# Subtest: Hypothèses de GoTrue (SUPPOSÉ du contrat, section 13)
+    # Subtest: SUPPOSÉ : le JWT porte session_id, uuid d’une ligne de auth.sessions du compte
+    ok 1 - SUPPOSÉ : le JWT porte session_id, uuid d’une ligne de auth.sessions du compte
+      ---
+      duration_ms: 116.81374
+      type: 'test'
+      ...
+    # Subtest: constat AM1 : updateUserById vers un numéro pris échoue et laisse auth.users inchangé, sans figer le code d’erreur
+    ok 2 - constat AM1 : updateUserById vers un numéro pris échoue et laisse auth.users inchangé, sans figer le code d’erreur
+      ---
+      duration_ms: 240.636725
+      type: 'test'
+      ...
+    1..2
+ok 10 - Hypothèses de GoTrue (SUPPOSÉ du contrat, section 13)
+  ---
+  duration_ms: 357.645158
+  type: 'suite'
+  ...
+# Subtest: Écran du changement de numéro (contrat 5.3)
+    # Subtest: PhoneChangeDialog : les deux routes, le code, le libellé figé pour l’e2e
+    ok 1 - PhoneChangeDialog : les deux routes, le code, le libellé figé pour l’e2e
+      ---
+      duration_ms: 0.330339
+      type: 'test'
+      ...
+    1..1
+ok 11 - Écran du changement de numéro (contrat 5.3)
+  ---
+  duration_ms: 0.380174
+  type: 'suite'
+  ...
+[INVARIANT] compte-numero — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] compte-numero — purge des réservations échues : {"expired":0}
+[INVARIANT] compte-numero — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] compte-numero — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] compte-numero — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] compte-numero — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] compte-numero — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] compte-numero — envoyeur : 126 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] compte-numero — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] compte-numero — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] compte-numero — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] compte-numero — (t)(u)(v) : 0 violation(s)
+1..11
+# tests 47
+# suites 11
+# pass 47
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 13280.210949
