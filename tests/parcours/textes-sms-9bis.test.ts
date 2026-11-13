@@ -151,12 +151,13 @@ describe('R73 — envois synchrones : préfixe « Event Village : », GSM-7 de b
     test('codes de vérification (M11 à M14) et de réinitialisation (M15) : textes exacts de la section 11', () => {
         for (const type of ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PHONE_CHANGE', 'OTP_AUTH_HOOK'] as const) {
             const text = renderSyncSms(type, { code: CODE });
-            assert.equal(text, `Event Village : votre code de vérification est ${CODE}. Valable 10 minutes.`, `${type} (M11 à M14)`);
-            assert.deepEqual(measure(text), { encoding: 'GSM7', length: 74, segments: 1 }, `${type} : 74 septets`);
+            // Lot 9 quinquies (C1 : AUTH-10, modification signalée) : « Ne le donnez à personne. »
+            assert.equal(text, `Event Village : votre code est ${CODE}. Ne le donnez à personne. Valable 10 minutes.`, `${type} (M11 à M14, C1)`);
+            assert.deepEqual(measure(text), { encoding: 'GSM7', length: 83, segments: 1 }, `${type} : 83 septets`);
         }
         const reset = renderSyncSms('OTP_PASSWORD_RESET', { code: CODE });
-        assert.equal(reset, `Event Village : votre code de réinitialisation du mot de passe est ${CODE}. Valable 10 minutes.`, 'OTP_PASSWORD_RESET (M15)');
-        assert.deepEqual(measure(reset), { encoding: 'GSM7', length: 94, segments: 1 }, 'OTP_PASSWORD_RESET : 94 septets');
+        assert.equal(reset, `Event Village : votre code de réinitialisation est ${CODE}. Ne le donnez à personne. Valable 10 minutes.`, 'OTP_PASSWORD_RESET (M15, C1)');
+        assert.deepEqual(measure(reset), { encoding: 'GSM7', length: 103, segments: 1 }, 'OTP_PASSWORD_RESET : 103 septets');
     });
 
     test('invitation d’un contrôleur (M17) : texte exact, avec et sans prénom, lien inchangé', () => {

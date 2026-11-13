@@ -846,18 +846,19 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
     test('OTP et invitation (renderSyncSms) : textes du lot 9 bis, le code n\'est jamais stocké ; l\'invitation sur un segment', async () => {
         const { renderSyncSms } = await catalogModule();
         const code = '483920';
-        const otp = `Event Village : votre code de vérification est ${code}. Valable 10 minutes.`;
+        // Lot 9 quinquies (C1 : AUTH-10, modification signalée) : « Ne le donnez à personne. »
+        const otp = `Event Village : votre code est ${code}. Ne le donnez à personne. Valable 10 minutes.`;
         for (const type of ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_AUTH_HOOK', 'OTP_PHONE_CHANGE']) {
             const text = renderSyncSms(type, { code });
             assert.equal(text, otp, `${type} : texte du contrat (11.2 M11 à M14)`);
-            assert.deepEqual(measureSms(text), { encoding: 'GSM7', length: 74, segments: 1 }, `${type} : un SMS GSM-7`);
+            assert.deepEqual(measureSms(text), { encoding: 'GSM7', length: 83, segments: 1 }, `${type} : un SMS GSM-7`);
         }
         const withdrawal = renderSyncSms('OTP_WITHDRAWAL', { code });
         assert.equal(withdrawal, `Event Village : votre code de retrait est ${code}. Valable 10 minutes. Ne le donnez à personne.`, 'OTP_WITHDRAWAL : texte dédié (11.2 M16, R107)');
         assert.deepEqual(measureSms(withdrawal), { encoding: 'GSM7', length: 94, segments: 1 });
         const reset = renderSyncSms('OTP_PASSWORD_RESET', { code });
-        assert.equal(reset, `Event Village : votre code de réinitialisation du mot de passe est ${code}. Valable 10 minutes.`, 'OTP_PASSWORD_RESET : texte du contrat (11.2 M15)');
-        assert.deepEqual(measureSms(reset), { encoding: 'GSM7', length: 94, segments: 1 });
+        assert.equal(reset, `Event Village : votre code de réinitialisation est ${code}. Ne le donnez à personne. Valable 10 minutes.`, 'OTP_PASSWORD_RESET : lot 9 quinquies (C1)');
+        assert.deepEqual(measureSms(reset), { encoding: 'GSM7', length: 103, segments: 1 });
 
         const setupLink = `${APP_URL}/controller/setup?phone=221771234567`;
         const invite = renderSyncSms('CONTROLLER_INVITE', { code, firstName: 'Awa', setupLink });
