@@ -208,6 +208,8 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_EVENT_PUBLISHED: 'Événement publié par l’organisateur',
     ADMIN_EVENT_WITHDRAWN: 'Soumission retirée par l’organisateur',
     SCAN_REFUSALS_ALERT: 'Refus en série à une porte',
+    // Lot 9 quinquies (D1)
+    ADMIN_REVIEW_SMS: 'SMS aux administrateurs : à valider',
 };
 
 export function outboxStatusLabel(status: string): string {

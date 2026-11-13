@@ -225,6 +225,14 @@ export interface TemplateData {
     ADMIN_EVENT_PUBLISHED: EventData & { company?: string | null };
     ADMIN_EVENT_WITHDRAWN: EventData & { company?: string | null };
     SCAN_REFUSALS_ALERT: EventData & { gate_name: string; zone_name?: string | null; refused_count: number; window_minutes: number; threshold: number };
+
+    // ── Lot 9 quinquies (D1) ──
+    /**
+     * SMS regroupé aux admins qui peuvent agir (migration 20261112000001) : `partner_count` = candidatures et dossiers
+     * complétés, `event_count` = événements soumis, `company` = société de l'unique candidature nouvelle (absente dès qu'il y
+     * a plus d'un élément), `refs` = références déjà comptées.
+     */
+    ADMIN_REVIEW_SMS: { partner_count: number; event_count: number; company?: string | null; refs?: string[] };
 }
 
 export type NotificationType = keyof TemplateData;

@@ -1716,6 +1716,15 @@ const CATALOG = {
         }),
         sample: { ...SAMPLE_EVENT, gate_name: 'Porte B', zone_name: 'Entrée générale', refused_count: 12, window_minutes: 5, threshold: 10 },
     }),
+    // Lot 9 quinquies (D1) : SMS indispensable aux admins qui peuvent agir, regroupé (au plus un par 30 minutes et par
+    // admin, rien de 22 h à 8 h : migration 20261112000001). Une candidature seule : texte nominatif ; sinon le
+    // regroupé (la partie à zéro est omise). Guillemets droits : « » n'existent pas en GSM-7.
+    ADMIN_REVIEW_SMS: define('ADMIN_REVIEW_SMS', {
+        label: 'SMS aux administrateurs : à valider', channels: ['SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', inAppType: null,
+        link: () => '/admin/dashboard',
+        sms: (d, ctx) => adminReviewSms(d, ctx),
+        sample: { partner_count: 1, event_count: 0, company: 'Association culturelle Sabar Events Dakar Plateau' },
+    }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),
@@ -1726,6 +1735,25 @@ const CATALOG = {
     // N26 (tâche 48) : lien de vérification d'une adresse email, seul envoi vers une adresse non vérifiée.
     EMAIL_VERIFICATION: defineSyncEmail('EMAIL_VERIFICATION', 'Vérification de l’adresse email'),
 } satisfies { readonly [T in NotificationType]: NotificationTemplate<TemplateData[T]> };
+
+/**
+ * Lot 9 quinquies (D1) : texte du SMS aux admins. `partner_count` (candidatures et dossiers complétés) et `event_count` (événements
+ * soumis) ; une candidature nouvelle seule (`company` présent) → texte nominatif ; sinon texte regroupé du chef de projet.
+ */
+export function adminReviewSms(d: object, ctx: RenderContext): string {
+    const partners = count(d, 'partner_count');
+    const events = count(d, 'event_count');
+    const company = optText(d, 'company');
+    const link = appLink(ctx, '/admin/dashboard');
+    if (partners === 1 && events === 0 && company) {
+        return `${SMS_PREFIX}nouvelle demande de partenaire "${smsVar(company, 40)}". Vérifiez son dossier : ${link}`;
+    }
+    const parts: string[] = [];
+    if (partners > 0) parts.push(`${partners} demande(s) de partenaire`);
+    if (events > 0) parts.push(`${events} événement(s)`);
+    if (parts.length === 0) throw new TemplateDataError('partner_count', 'et event_count à zéro : rien à valider');
+    return `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
+}
 
 function hallName(d: object): string {
     const name = optText(d, 'hall_name');
