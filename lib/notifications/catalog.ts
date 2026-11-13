@@ -1882,11 +1882,12 @@ export function renderSyncSms(type: SyncType, data: { code?: string; firstName?:
         case 'OTP_REGISTER':
         case 'OTP_PHONE_CHANGE':
         case 'OTP_AUTH_HOOK':
-            return `${SMS_PREFIX}votre code de vérification est ${code}. Valable 10 minutes.`;
+            // Lot 9 quinquies (C1 : AUTH-10) : « Ne le donnez à personne. » (texte du chef de projet)
+            return `${SMS_PREFIX}votre code est ${code}. Ne le donnez à personne. Valable 10 minutes.`;
         case 'OTP_WITHDRAWAL':
             return `${SMS_PREFIX}votre code de retrait est ${code}. Valable 10 minutes. Ne le donnez à personne.`;
         case 'OTP_PASSWORD_RESET':
-            return `${SMS_PREFIX}votre code de réinitialisation du mot de passe est ${code}. Valable 10 minutes.`;
+            return `${SMS_PREFIX}votre code de réinitialisation est ${code}. Ne le donnez à personne. Valable 10 minutes.`;
         // Lot 9 quinquies (A3 : AUTH-05) : texte du chef de projet
         case 'OTP_ADMIN':
             return `${SMS_PREFIX}code administrateur ${code}. Ne le donnez à personne. Valable 10 minutes.`;
