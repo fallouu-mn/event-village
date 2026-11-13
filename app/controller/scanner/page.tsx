@@ -847,7 +847,8 @@ export default function ControllerScannerPage() {
         // Lot 6 (contrat F4) : l'appareil ne reçoit plus les notifications push du compte après la déconnexion
         // (erreur journalisée par detachPushSubscription, la déconnexion continue).
         await detachPushSubscription();
-        await supabase.auth.signOut({ scope: 'global' });
+        // Lot 9 quinquies (B4 : AUTH-07) : cet appareil seulement
+        await supabase.auth.signOut({ scope: 'local' });
         router.push('/login');
     };
 
@@ -888,7 +889,7 @@ export default function ControllerScannerPage() {
             onClose={() => setShowLogoutConfirm(false)}
             onConfirm={handleLogout}
             title="Se déconnecter ?"
-            message="Vous serez déconnecté de tous vos appareils. Vous devrez vous reconnecter pour accéder au scanner."
+            message="Vous serez déconnecté de cet appareil seulement. Vous devrez vous reconnecter pour accéder au scanner."
             confirmLabel="Déconnexion"
             variant="danger"
         />

@@ -37,7 +37,8 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         );
-        await supabase.auth.signOut({ scope: 'global' });
+        // Lot 9 quinquies (B4 : AUTH-07) : cet appareil seulement
+        await supabase.auth.signOut({ scope: 'local' });
         router.push('/login');
     };
 
@@ -92,7 +93,7 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                 onClose={() => setShowLogout(false)}
                 onConfirm={handleLogout}
                 title="Se déconnecter ?"
-                message="Vous serez déconnecté de tous vos appareils. Vous devrez vous reconnecter pour accéder au scanner."
+                message="Vous serez déconnecté de cet appareil seulement. Vous devrez vous reconnecter pour accéder au scanner."
                 confirmLabel="Déconnexion"
                 variant="danger"
             />

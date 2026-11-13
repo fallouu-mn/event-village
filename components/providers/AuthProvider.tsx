@@ -98,6 +98,8 @@ interface AuthContextType {
     isLoading: boolean;
     isAuthenticated: boolean;
     signOut: () => Promise<void>;
+    /** Lot 9 quinquies (B4 : AUTH-07) : ferme toutes les sessions du compte (profil, « Déconnecter tous mes appareils »). */
+    signOutEverywhere: () => Promise<void>;
     refreshProfile: () => Promise<void>;
     hasRole: (role: string) => boolean;
     hasAnyRole: (roles: string[]) => boolean;
@@ -221,7 +223,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
             await detachPushSubscription();
             const supabase = getBrowserClient();
-            await supabase.auth.signOut();
+            // Lot 9 quinquies (B4 : AUTH-07) : « Se déconnecter » ne ferme que CET appareil (les autres gardent leur session et
+            // leurs billets hors ligne) ; « Déconnecter tous mes appareils » passe par signOutEverywhere.
+            await supabase.auth.signOut({ scope: 'local' });
         } catch (e) {
             console.warn('[AuthProvider] Signout notice:', e);
         } finally {
@@ -233,6 +237,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             router.push('/login');
             router.refresh();
         }
+    };
+
+    // Lot 9 quinquies (B4 : AUTH-07) : toutes les sessions du compte sont révoquées par le serveur (jetons de rafraîchissement
+    // compris), puis cet appareil se déconnecte. Un refus du serveur est remonté à l'écran, rien n'est fermé en silence.
+    const signOutEverywhere = async () => {
+        const supabase = getBrowserClient();
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) throw new Error('Session absente : reconnectez-vous.');
+        const res = await fetch('/api/auth/sign-out-global', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+            const body = (await res.json().catch(() => null)) as { error?: string } | null;
+            throw new Error(body?.error ?? 'Déconnexion de tous les appareils impossible. Réessayez.');
+        }
+        await signOut();
     };
 
     const hasRole = useCallback((role: string): boolean => {
@@ -261,6 +280,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 isLoading,
                 isAuthenticated: !!user,
                 signOut,
+                signOutEverywhere,
                 refreshProfile,
                 hasRole,
                 hasAnyRole,
@@ -284,6 +304,7 @@ export const useAuth = (): AuthContextType => {
             isLoading: false,
             isAuthenticated: false,
             signOut: async () => {},
+            signOutEverywhere: async () => {},
             refreshProfile: async () => {},
             hasRole: () => false,
             hasAnyRole: () => false,

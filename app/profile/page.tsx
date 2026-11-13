@@ -32,6 +32,7 @@ import { TONE_ICON, type Tone } from '@/components/ui/tones';
 import { AvatarEditor } from '@/components/profile/AvatarEditor';
 import { ProfileForm } from '@/components/profile/ProfileForm';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 /**
  * Profil et réglages du compte (lot 6, contrat H4 : migré sur le système de design pour recevoir le lien
@@ -99,7 +100,10 @@ function ShortcutBody({ title, description, icon: Icon, tone }: Omit<Shortcut, '
 
 export default function ProfilePage() {
   const { theme, setTheme } = useTheme();
-  const { profile, partner, isLoading, isAuthenticated, signOut, refreshProfile } = useAuth();
+  const { profile, partner, isLoading, isAuthenticated, signOut, signOutEverywhere, refreshProfile } = useAuth();
+  // Lot 9 quinquies (B4 : AUTH-07) : « Déconnecter tous mes appareils », avec confirmation
+  const [confirmEverywhere, setConfirmEverywhere] = useState(false);
+  const [everywhereError, setEverywhereError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
 
   const retryProfile = async () => {
@@ -318,6 +322,27 @@ export default function ProfilePage() {
       >
         Se déconnecter
       </Button>
+      <p className="text-center text-sm text-fg-muted">« Se déconnecter » ferme seulement cet appareil.</p>
+      <Button variant="ghost" fullWidth onClick={() => { setEverywhereError(null); setConfirmEverywhere(true); }}>
+        Déconnecter tous mes appareils
+      </Button>
+      {everywhereError && <p role="alert" className="text-center text-sm text-danger-fg">{everywhereError}</p>}
+      <ConfirmDialog
+        isOpen={confirmEverywhere}
+        onClose={() => setConfirmEverywhere(false)}
+        onConfirm={async () => {
+          try {
+            await signOutEverywhere();
+          } catch (err) {
+            setConfirmEverywhere(false);
+            setEverywhereError(err instanceof Error ? err.message : 'Déconnexion de tous les appareils impossible. Réessayez.');
+          }
+        }}
+        title="Déconnecter tous mes appareils ?"
+        message="Vos billets hors ligne seront effacés sur les autres téléphones."
+        confirmLabel="Tout déconnecter"
+        variant="danger"
+      />
     </div>
   );
 }
