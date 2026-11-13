@@ -23,7 +23,8 @@
 --     notif_cashouts_notify (20261109000007:320-587), checkout_create_payment (20261109000007:693-806),
 --     free_tickets_claim (20261105000007:205-275), calculate_referral_commissions (20261109000007:813-895),
 --     shift_close (20261109000008:792-940), pilotage_compute_cash (20261102000005:303-372 : discrepancy_validated_at par
---     caisse, pour l'onglet Caisse du pilotage).
+--     caisse, pour l'onglet Caisse du pilotage), cashout_finalize (20261109000007:987-1062 : doublon remboursé moins
+--     la retenue → REFUNDED une fois versé).
 -- Aucun BEGIN ni COMMIT ; rejouable. Nouvelles fonctions : SECURITY DEFINER, search_path fixé, service_role seul.
 -- ============================================================================
 
@@ -1227,3 +1228,88 @@ $$;
 
 REVOKE ALL ON FUNCTION public.pilotage_compute_cash(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.pilotage_compute_cash(uuid) TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- Recopie : cashout_finalize (20261109000007_lot9bis_versements.sql:987-1062). Seul changement (C1) : un
+-- paiement en double remboursé moins la retenue des frais de l'opérateur (metadata.duplicate_fee_withheld) passe
+-- REFUNDED une fois le remboursement versé : il est soldé (remboursement + retenue = montant) et n'a aucun billet.
+-- Sans cela il restait PARTIAL sans billet (invariant (a) du lot 2). Droits inchangés (CREATE OR REPLACE).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.cashout_finalize(p_cashout_id uuid, p_outcome text, p_detail text)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    c record;
+    r record;
+    w record;
+    v_payment_status text;
+    v_client uuid;
+    v_tickets uuid[] := ARRAY[]::uuid[];
+    v_partner uuid;
+BEGIN
+    IF p_outcome NOT IN ('CONFIRME', 'ECHOUE') THEN
+        RAISE EXCEPTION 'cashout_finalize : issue % inconnue', p_outcome;
+    END IF;
+    SELECT * INTO c FROM public.cashouts WHERE id = p_cashout_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'cashout_finalize : envoi % introuvable', p_cashout_id; END IF;
+
+    IF c.kind IN ('REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND') THEN
+        SELECT * INTO r FROM public.refunds WHERE id = c.refund_id FOR UPDATE;
+        IF NOT FOUND THEN RAISE EXCEPTION 'cashout_finalize : remboursement de l''envoi % introuvable', p_cashout_id; END IF;
+        SELECT client_id INTO v_client FROM public.payments WHERE id = r.payment_id;
+        IF p_outcome = 'CONFIRME' AND r.status <> 'PROCESSED' THEN
+            UPDATE public.refunds SET status = 'PROCESSED', external_refund_id = p_detail, updated_at = now() WHERE id = r.id;
+            UPDATE public.payments
+               SET refunded_amount = refunded_amount + r.amount,
+                   status = CASE WHEN refunded_amount + r.amount
+                                      + COALESCE((metadata->>'duplicate_fee_withheld')::numeric, 0) >= amount
+                                 THEN 'REFUNDED'::payment_status_enum
+                                 ELSE 'PARTIAL'::payment_status_enum END,
+                   updated_at = now()
+             WHERE id = r.payment_id
+            RETURNING status::text INTO v_payment_status;
+            IF c.kind = 'TICKET_REFUND' THEN
+                WITH u AS (UPDATE public.tickets SET status = 'REMBOURSE' WHERE id = r.ticket_id AND status = 'REMBOURSEMENT_EN_COURS' RETURNING id)
+                SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) INTO v_tickets FROM u;
+            ELSE
+                WITH u AS (UPDATE public.tickets SET status = 'REMBOURSE' WHERE payment_id = r.payment_id AND status = 'REMBOURSEMENT_EN_COURS' RETURNING id)
+                SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) INTO v_tickets FROM u;
+            END IF;
+        ELSIF p_outcome = 'ECHOUE' THEN
+            UPDATE public.refunds SET status = 'FAILED', updated_at = now() WHERE id = r.id AND status = 'PENDING';
+        END IF;
+        -- Lot 9 bis (H7, X3, X4, A6) : frais réels d'un remboursement confirmé imputés à la partenaire qui a annulé
+        -- (cashout_fee_apply, M05 : filtre la nature et l'auteur de l'annulation, idempotente par source_key). Appelée
+        -- à chaque CONFIRME, même déjà PROCESSED : un appel manqué est rattrapé sans doublon. Grand livre en dernier
+        -- (tableau 3.3). samirpay_* ne sont pas écrits ici (TypeScript, avant cet appel).
+        IF p_outcome = 'CONFIRME' THEN
+            PERFORM public.cashout_fee_apply(p_cashout_id);
+        END IF;
+        RETURN jsonb_build_object('kind', c.kind, 'outcome', p_outcome, 'refund_id', r.id, 'payment_id', r.payment_id,
+                                  'client_id', v_client, 'amount', r.amount, 'payment_status', v_payment_status,
+                                  'ticket_ids', to_jsonb(v_tickets));
+    END IF;
+
+    -- Retrait
+    SELECT * INTO w FROM public.withdrawals WHERE id = c.withdrawal_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'cashout_finalize : retrait de l''envoi % introuvable', p_cashout_id; END IF;
+    IF p_outcome = 'CONFIRME' THEN
+        UPDATE public.withdrawals SET status = 'PAID', external_reference = p_detail, processed_at = now(), updated_at = now()
+         WHERE id = w.id AND status IN ('PENDING', 'PROCESSING');
+    ELSIF w.status IN ('PENDING', 'PROCESSING') THEN
+        UPDATE public.withdrawals SET status = 'REJECTED', rejection_reason = p_detail, processed_at = now(), updated_at = now()
+         WHERE id = w.id;
+        SELECT id INTO v_partner FROM public.partners WHERE user_id = w.user_id AND w.account_kind = 'ORGANISATEUR' LIMIT 1;
+        PERFORM public.fin_ledger_credit(w.user_id, w.account_kind, v_partner, 'RETRAIT_ANNULE', w.gross_amount, now(),
+                                         jsonb_build_object('withdrawal_id', w.id), 'RETRAIT-ANN-' || w.id::text,
+                                         'Retrait refusé par l''opérateur : montant rendu au solde');
+        PERFORM public.fin_referral_unallocate(w.id);
+    END IF;
+    RETURN jsonb_build_object('kind', c.kind, 'outcome', p_outcome, 'withdrawal_id', w.id, 'user_id', w.user_id,
+                              'account_kind', w.account_kind, 'gross_amount', w.gross_amount, 'net_amount', w.net_amount);
+END;
+$$;
