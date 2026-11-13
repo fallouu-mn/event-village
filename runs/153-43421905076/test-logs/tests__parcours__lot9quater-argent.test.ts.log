@@ -1,0 +1,171 @@
+TAP version 13
+[confirmation] paiement aa17bca3-f9bc-4418-b33a-6a6f75aa706e encaissé mais non honorable (paiement en double du panier déjà réglé (498f2a4f-79c1-4ad5-8855-7cc532741016)) : remboursement
+[webhook SamirPay] événement 267469ba-61cf-433b-b567-210cc5cb4c29 : REFUND_REQUIRED
+[confirmation] paiement 73abdc2c-4582-4c00-ad22-1af388975e8f encaissé mais non honorable (paiement en double du panier déjà réglé (7bf8433c-d219-4bd8-820e-20afa559a485)) : remboursement
+[webhook SamirPay] événement 596a3ca1-aff6-4011-a5a4-553fb715d604 : REFUND_REQUIRED
+[webhook SamirPay] erreur interne sur l'événement 342ac662-4357-4203-bd03-5ffc5bf78c6f : Confirmation du paiement 8724135d-3e6a-4b85-a015-e67aed2d3693 impossible : record "v_pay" has no field "aggregator_fee"
+[webhook SamirPay] événement 342ac662-4357-4203-bd03-5ffc5bf78c6f : ERROR (Confirmation du paiement 8724135d-3e6a-4b85-a015-e67aed2d3693 impossible : record "v_pay" has no field "aggregator_fee")
+[C1] remboursements : [{"amount":2100,"paid":2100,"fee":31.5,"payer":"779493654","phone":"779493654"},{"amount":2100,"paid":2100,"fee":31.5,"payer":"779493654","phone":"779493654"},{"amount":null,"paid":2100,"fee":31.5,"payer":"779493654","phone":null}]
+# Subtest: C1 — doublons remboursés en boucle
+    # Subtest: les 2 premiers doublons du compte sur 30 jours : remboursés en entier ; le 3e : moins les frais SamirPay, admins et client prévenus
+    not ok 1 - les 2 premiers doublons du compte sur 30 jours : remboursés en entier ; le 3e : moins les frais SamirPay, admins et client prévenus
+      ---
+      duration_ms: 1341.330599
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quater-argent.test.ts:2:3322'
+      failureType: 'testCodeFailure'
+      error: |-
+        3e doublon : moins les frais SamirPay
+        
+        NaN !== 2068.5
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 2068.5
+      actual: NaN
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/lot9quater-argent.test.ts:74:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..1
+not ok 1 - C1 — doublons remboursés en boucle
+  ---
+  duration_ms: 1342.140129
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quater-argent.test.ts:2:3246'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[C2] statuts : 200, 200, 200, 409 ; dernier : HTTP 409 {"error":"Un paiement est déjà en attente pour ce numéro. Terminez-le ou attendez quelques minutes.","code":"PAYER_PENDING_LIMIT"}
+# Subtest: C2, C3 — paiements en attente par numéro payeur
+    # Subtest: au plus 3 paiements en attente par numéro payeur et par heure, tous comptes confondus
+    ok 1 - au plus 3 paiements en attente par numéro payeur et par heure, tous comptes confondus
+      ---
+      duration_ms: 1609.808835
+      type: 'test'
+      ...
+    # Subtest: écran : avertissement « Le paiement sera demandé au … » quand le numéro payeur diffère de celui du compte
+    ok 2 - écran : avertissement « Le paiement sera demandé au … » quand le numéro payeur diffère de celui du compte
+      ---
+      duration_ms: 0.314886
+      type: 'test'
+      ...
+    1..2
+ok 2 - C2, C3 — paiements en attente par numéro payeur
+  ---
+  duration_ms: 1610.339491
+  type: 'suite'
+  ...
+# Subtest: C4 — paiement FAILED sans identifiant SamirPay
+    # Subtest: signalé dans « Versements à reprendre » avec la consigne, sans action automatique
+    ok 1 - signalé dans « Versements à reprendre » avec la consigne, sans action automatique
+      ---
+      duration_ms: 553.476582
+      type: 'test'
+      ...
+    1..1
+ok 3 - C4 — paiement FAILED sans identifiant SamirPay
+  ---
+  duration_ms: 553.598383
+  type: 'suite'
+  ...
+[C5] commissions : payé avec le numéro du parrain 0 ; avec son propre numéro 1
+# Subtest: C5 — auto-parrainage par un second numéro
+    # Subtest: aucune commission quand le numéro payeur est celui du parrain ; commission avec un autre numéro
+    ok 1 - aucune commission quand le numéro payeur est celui du parrain ; commission avec un autre numéro
+      ---
+      duration_ms: 699.304788
+      type: 'test'
+      ...
+    1..1
+ok 4 - C5 — auto-parrainage par un second numéro
+  ---
+  duration_ms: 699.654747
+  type: 'suite'
+  ...
+[C6] redemande HTTP 409 {"error":"Limite de 1 billet(s) gratuit(s) « Gratuite » par compte atteinte.","code":"FREE_LIMIT_REACHED"} ; panier mixte HTTP 400 {"error":"Limite de 1 billet(s) gratuit(s) « Gratuite » par compte atteinte.","code":"SALE_CHECK_FAILED","problems":[{"code":"FREE_LIMIT_REACHED","message":"Limite de 1 billet(s) gratuit(s) « Gratuite
+# Subtest: C6 — limite des billets gratuits
+    # Subtest: billet gratuit transféré : compté ; panier mixte : limite appliquée
+    ok 1 - billet gratuit transféré : compté ; panier mixte : limite appliquée
+      ---
+      duration_ms: 638.153178
+      type: 'test'
+      ...
+    1..1
+ok 5 - C6 — limite des billets gratuits
+  ---
+  duration_ms: 638.37109
+  type: 'suite'
+  ...
+# Subtest: C7 — écart de caisse validé par l’organisatrice
+    # Subtest: clôture avec écart sans PIN ; validation par la partenaire seule, mot de passe récent exigé
+    not ok 1 - clôture avec écart sans PIN ; validation par la partenaire seule, mot de passe récent exigé
+      ---
+      duration_ms: 402.761978
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quater-argent.test.ts:2:12530'
+      failureType: 'testCodeFailure'
+      error: |-
+        HTTP 409 {"error":"Cet événement n’est pas encore ouvert au contrôle.","code":"EVENT_NOT_OPEN","result":"event_not_open"}
+        
+        409 !== 200
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 200
+      actual: 409
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/lot9quater-argent.test.ts:196:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: écran : bouton « Valider l’écart » dans l’onglet Caisse, plus de PIN à la clôture
+    ok 2 - écran : bouton « Valider l’écart » dans l’onglet Caisse, plus de PIN à la clôture
+      ---
+      duration_ms: 0.276528
+      type: 'test'
+      ...
+    1..2
+not ok 6 - C7 — écart de caisse validé par l’organisatrice
+  ---
+  duration_ms: 403.20356
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quater-argent.test.ts:2:12433'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] lot9quater-argent — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] lot9quater-argent — purge des réservations échues : {"expired":0}
+[INVARIANT] lot9quater-argent — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] lot9quater-argent — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] lot9quater-argent — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] lot9quater-argent — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] lot9quater-argent — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] lot9quater-argent — envoyeur : 1000 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] lot9quater-argent — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] lot9quater-argent — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] lot9quater-argent — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] lot9quater-argent — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] lot9quater-argent — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] lot9quater-argent — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] lot9quater-argent — (q) : 0 violation(s)
+1..6
+# tests 8
+# suites 6
+# pass 6
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7798.224766
