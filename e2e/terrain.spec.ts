@@ -737,7 +737,8 @@ test('7. reprise de session : même événement et même mode après une sortie,
         const keysBefore4 = keys.length;
         await presentPayloadNoResult(page, await livePayload(holder, t4.id), 'reprise : billet 4, application fermée pendant l’envoi');
         await expect.poll(() => held, { message: 'billet 4 : lecture reçue par le serveur', timeout: 20_000 }).toBe(1);
-        expect(heldStatus, 'billet 4 : la lecture a bien été traitée par le serveur').toBe(200);
+        // held passe à 1 avant la fin de route.fetch() : le statut est attendu, pas lu dans la foulée (run 162 : 0).
+        await expect.poll(() => heldStatus, { message: 'billet 4 : la lecture a bien été traitée par le serveur', timeout: 20_000 }).toBe(200);
         await expect(page.locator('[data-scan-state="pending"], [data-scan-state="slow"]').first(), 'billet 4 : envoi en cours, réponse attendue').toBeAttached();
         expect(await pendingScanKeys(page), 'billet 4 : clé gardée sur l’appareil pendant l’envoi').toEqual([keys[keysBefore4]]);
         released = true;
