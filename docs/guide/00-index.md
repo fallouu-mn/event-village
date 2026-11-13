@@ -25,9 +25,9 @@
 | `12-taches-planifiees.md` | principe commun (secret, refus), les 9 tâches (fréquence, effet, messages, ce qui se passe si elle ne tourne pas), `npm run cron:local` (8 tâches), planification de production (pg_cron et Vault), ce qui n'est pas planifié | 12.0 à 12.12 | 12 |
 | `13-limites-quotas-securite.md` | règles communes des quotas, garde SMS, codes, connexion, liens, invitations, contrôle d'accès, achats et argent, fichiers, quantités et longueurs, notifications, délais ; protections en place et leurs limites | sections 1 à 15 | 3 (13.1 à 13.3) |
 | `14-non-implemente.md` | interrupteurs `features.*`, salles (lot 10), tables (lot 11), commandes (lot 12), abonnement et essai, mise en avant, parrainage complet (lot 13), moyens de paiement non construits, virement, campagnes et WhatsApp, liste d'attente et codes promo, manques de l'administration, tableau cahier des charges → état → lot | 14.1 à 14.14 | 11 (format adapté, voir plus bas) |
-| `15-constats.md` | les **96 constats G-01 à G-96** (0 bloquant, 29 visibles, 67 mineurs), avec preuve et correspondance avec les notes des rédacteurs | — | — |
+| `15-constats.md` | les **97 constats G-01 à G-97** (0 bloquant, 29 visibles, 68 mineurs), avec preuve et correspondance avec les notes des rédacteurs | — | — |
 
-**Total : 216 scénarios** au format en 7 points, 103 types de messages au catalogue, 96 constats.
+**Total : 216 scénarios** au format en 7 points, 103 types de messages au catalogue, 97 constats.
 
 Les 13 sections numérotées qui ne sont pas des scénarios sont des tableaux de synthèse ou des règles communes :
 02.20, 03.23, 04.0, 05.30, 06.19, 08.0, 08.22, 09.13, 09.14, 12.12, 14.12 à 14.14 (les rédacteurs les comptaient
@@ -311,5 +311,5 @@ fausses). Aucune des quatre ne touche un texte tel que le code l'envoie, un mont
 | `05-equipe-controle-acces.md` (05.2, point 5) | « ne peut rien faire avant l'activation » → le compte n'a pas de mot de passe connu, mais il est actif et peut ouvrir une session par code SMS (ou « Mot de passe oublié ») avant l'activation, avec les preuves |
 | `10-notifications.md` (`HALL_RESERVATION_CONFIRMED` et `HALL_RESERVATION_CANCELLED`) | « Module non construit (lot 10) » → « Module des salles présent mais fermé par défaut (`features.halls_enabled` à false), à terminer au lot 10 (14.2) » ; la même phrase figurait deux fois |
 
-**Point à reprendre hors de ce tirage.** La connexion par code d'un contrôleur jamais activé (F18) n'a pas de constat
-dans `15-constats.md` : à ajouter à la prochaine passe.
+**Point repris hors de ce tirage.** La connexion par code d'un contrôleur jamais activé (F18) est ajoutée à `15-constats.md`
+sous G-97.

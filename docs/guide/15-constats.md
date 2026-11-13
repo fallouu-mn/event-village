@@ -6,7 +6,7 @@
 >
 > Les rédacteurs ont noté leurs écarts sous des identifiants de travail W1-xx à W8-xx, que les fichiers 01 à 14 citent
 > encore (« constat W6-02 ») ; la colonne **Note** donne la correspondance. Les notes en double ont été fusionnées : 111
-> notes de travail donnent **96 constats G** ; la passe de cohérence en a reclassé un après relecture du code (G-30) et élargi
+> notes de travail donnent **96 constats G**, plus G-97 ajouté après la vérification finale (F18) ; la passe de cohérence en a reclassé un après relecture du code (G-30) et élargi
 > un autre (G-31, règle de mot de passe de l'activation d'un contrôleur ; G-45, troisième libellé du SUPERADMIN).
 >
 > **Gravité.** *Bloquant* : empêche un parcours prévu ou expose un droit ou de l'argent sans contournement — **aucun**
@@ -20,8 +20,8 @@
 |---|---|---|
 | Bloquant | 0 | — |
 | Visible | 29 | G-01 à G-29 |
-| Mineur | 67 | G-30 à G-96 |
-| **Total** | **96** | |
+| Mineur | 68 | G-30 à G-97 |
+| **Total** | **97** | |
 
 Constats qui touchent directement un essai de `docs/recette-billetterie.md` : G-05 et G-30 (essai 73), G-15 (essai 9),
 G-17 (essais 42 et 87), G-61 (essai 93), G-70 et G-96 (question A3).
@@ -173,6 +173,7 @@ G-17 (essais 42 et 87), G-61 (essai 93), G-70 et G-96 (question A3).
 | G-73 | mineur | Scanner, « Transfert en cours » : l'explication prévue (« Billet en cours de transfert : il doit être accepté ou le transfert annulé avant l’entrée. ») n'est affichée nulle part. | `lib/scan/scan-result.ts:82-83` | W5-13 | 05.16 |
 | G-74 | mineur | Aide du réglage « Alerte de refus à une porte : nombre de refus » : elle n'énumère pas « Paiement requis », « QR expiré » ni « QR dynamique requis », pourtant comptés. | `app/admin/finance-settings/page.tsx:82` ; `M/20261110000010_lot9ter_pilotage.sql:64-74` | W5-14 | 05.28 |
 | G-75 | mineur | Acceptation d'une invitation : les événements qui ne sont plus Validés ou Publiés sont ignorés sans le dire ; le message reste « Invitation acceptée : vous pouvez contrôler l’entrée de ces événements. », même sans affectation créée. | `M/20261109000008_lot9bis_cycle.sql:2125-2135` ; `app/api/account/controller-invitations/[id]/route.ts:52-59` | W5-15 | 05.7 |
+| G-97 | mineur (à arbitrer) | Un contrôleur invité par un numéro neuf peut ouvrir une session avant d'avoir activé son compte : le compte créé par l'invitation est déjà `ACTIF` avec ce numéro, et la connexion par code SMS (ou « Mot de passe oublié ») ne regarde pas `is_temporary_controller_account` ; l'activation (mot de passe, consentement) peut donc être sautée. | `app/api/partner/team/invite/route.ts:331`, `:360`, `:380-392` ; `app/api/auth/send-otp/route.ts:55-95` ; `app/api/auth/verify-otp/route.ts:81-129` | vérification finale (F18) | 05 |
 
 ### Catalogue, achat, billets
 
