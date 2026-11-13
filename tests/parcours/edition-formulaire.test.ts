@@ -141,7 +141,8 @@ function dakarInstant(date: string, time: string): number {
  */
 async function prepareEvent(label: string, categories: CategorySpec[], target: EventStatus, opts: { day?: number; capacity?: number | null } = {}): Promise<DraftEvent> {
     const day = opts.day ?? 5;
-    const ev = await createDraftEvent(partner, label, categories, { capacity: opts.capacity, startsInHours: (day + 1) * 24 });
+    // Lot 9 quater (D3 : AUD-26) : titre sans 13 chiffres d'affilée (horodatage en base 36), le formulaire le renvoie tel quel
+    const ev = await createDraftEvent(partner, label, categories, { capacity: opts.capacity, startsInHours: (day + 1) * 24, title: `TEST Cycle ${label} ${Date.now().toString(36)}` });
     const d = dakarDay(day);
     const { data, error } = await service.from('events')
         .update({ start_date: d, start_time: '20:00:00', end_date: d, end_time: '23:30:00', practical_info: PRACTICAL })

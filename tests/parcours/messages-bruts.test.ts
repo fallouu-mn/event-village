@@ -135,7 +135,7 @@ const getProfile = (user: Buyer): Promise<Response> => controllerProfile(authed(
 function passwordChange(user: Buyer): NextRequest {
     return authed('/api/controller/profile', 'PATCH', user, {
         current_password: `Aa1${randomBytes(8).toString('hex')}`,
-        new_password: `Bb2${randomBytes(8).toString('hex')}`,
+        new_password: `Bb2!${randomBytes(8).toString('hex')}`, // lot 9 quater : règle commune (caractère spécial)
     });
 }
 

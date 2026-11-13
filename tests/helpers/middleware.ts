@@ -42,7 +42,13 @@ export async function sessionCookies(client: SupabaseClient): Promise<SessionCoo
         // Lot 9 quater (A6 : AUD-06) : un compte suspendu est bloqué chez GoTrue, setSession (qui relit le compte) le
         // refuse. Le navigateur d'un compte suspendu pendant sa session garde pourtant ses cookies : ils sont écrits ici
         // tels quels, par la bibliothèque elle-même, pour éprouver le middleware. Modification signalée au rapport.
-        await (ssr.auth as unknown as { _saveSession(s: typeof data.session): Promise<void> })._saveSession(data.session);
+        // @supabase/ssr n'écrit les cookies qu'à un événement d'authentification : SIGNED_IN est émis après l'écriture.
+        const auth = ssr.auth as unknown as {
+            _saveSession(s: typeof data.session): Promise<void>;
+            _notifyAllSubscribers(event: 'SIGNED_IN', s: typeof data.session): Promise<void>;
+        };
+        await auth._saveSession(data.session);
+        await auth._notifyAllSubscribers('SIGNED_IN', data.session);
     } else if (setErr) throw new Error(`setSession : ${setErr.message}`);
     if (jar.size === 0) throw new Error('setSession n\'a produit aucun cookie de session');
     return Array.from(jar, ([name, value]) => ({ name, value }));

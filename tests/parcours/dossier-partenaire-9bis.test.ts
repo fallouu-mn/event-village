@@ -27,7 +27,6 @@ import { randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWOR
 import { service } from './paiement-helpers';
 import { jsonRequest, newPartner, superadminId, type TestPartner } from './finance-helpers';
 import type { RouteResult } from './acces-helpers';
-import { outboxRows } from './notif-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { newAdminWith } from './terrain-helpers';
 
@@ -74,8 +73,12 @@ async function partnersByCompany(company: string): Promise<Row[]> {
 }
 
 async function adminNotices(type: string, company: string, since: number): Promise<number> {
-    const rows = await outboxRows({ type });
-    return rows.filter((r) => Date.parse(r.created_at) >= since && String(r.template_data?.company ?? '') === company).length;
+    // Lot 9 quater : filtre posé dans la requête. Lu par type seul, l'historique dépasse le plafond de 1000 lignes de
+    // PostgREST (max_rows) quand les suites créent plus d'admins, et les lignes les plus récentes étaient coupées.
+    const { data, error } = await service.from('notification_outbox').select('created_at')
+        .eq('type', type).eq('template_data->>company', company);
+    assert.equal(error, null, `lecture de notification_outbox : ${error?.message}`);
+    return (data ?? []).filter((r) => Date.parse(String(r.created_at)) >= since).length;
 }
 
 describe('R53 — le dossier n’est ouvert qu’après la vérification du code SMS', () => {
