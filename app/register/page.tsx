@@ -17,6 +17,7 @@ import { getBrowserClient } from '@/lib/supabase/client';
 import { RegisterStartSchema, RegisterWithCodeSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { safeInternalPath } from '@/lib/auth/safe-redirect';
+import { LOGIN_PREFILL_PHONE_KEY } from '@/components/auth/LoginForm';
 
 /**
  * Inscription d'un client — lot 7 (7.3, D1, D61, contrat 3.6) : « numéro d'abord ».
@@ -188,6 +189,16 @@ export default function RegisterPage() {
     };
 
     const loginHref = redirectTo ? `/login?redirect=${encodeURIComponent(redirectTo)}` : '/login';
+    // Lot 9 quinquies (B6 : E-57) : « Recevoir un code de connexion » ouvre l'onglet « Code SMS », numéro prérempli (passé par
+    // sessionStorage, jamais dans l'adresse)
+    const codeLoginHref = `/login?mode=code${redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : ''}`;
+    const rememberPhoneForLogin = () => {
+        try {
+            sessionStorage.setItem(LOGIN_PREFILL_PHONE_KEY, phone.trim());
+        } catch (err) {
+            console.warn('[inscription] numéro non transmis à la connexion :', err instanceof Error ? err.message : String(err));
+        }
+    };
 
     /** Étape 1 (et renvoi) : code d'inscription envoyé par SMS, aucun compte créé. */
     const sendCode = async (mode: 'first' | 'resend') => {
@@ -359,7 +370,7 @@ export default function RegisterPage() {
                             announce="alert"
                             title={errorMessage}
                             action={alreadyRegistered ? (
-                                <LinkButton href={loginHref} variant="secondary" size="sm" leftIcon={<LogIn size={16} />}>
+                                <LinkButton href={codeLoginHref} onClick={rememberPhoneForLogin} variant="secondary" size="sm" leftIcon={<LogIn size={16} />}>
                                     Recevoir un code de connexion
                                 </LinkButton>
                             ) : undefined}

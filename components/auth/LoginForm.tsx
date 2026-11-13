@@ -73,7 +73,7 @@ function signInRefusalMessage(code: string | undefined): string {
         case 'email_not_confirmed':
             return 'Votre adresse email n\'est pas encore confirmée.';
         case 'user_banned':
-            return 'Ce compte n\'est plus actif. Veuillez contacter le support.';
+            return 'Votre compte est suspendu. Contactez le support depuis la page Aide (lien ci-dessous).';
         case 'over_request_rate_limit':
             return 'Trop de tentatives. Patientez quelques instants avant de réessayer.';
         default:
@@ -115,14 +115,33 @@ export interface LoginFormProps {
     messageParam: string | null;
     /** Issue d'une réinitialisation du mot de passe (?reset=success). */
     resetParam: string | null;
+    /** Lot 9 quinquies (B6 : E-57) : « code » ouvre l'onglet « Code SMS » (numéro prérempli depuis l'inscription). */
+    modeParam?: string | null;
 }
 
-export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }: LoginFormProps) {
+/** Lot 9 quinquies (B6) : numéro passé par l'inscription, gardé hors de l'adresse (sessionStorage, lu une fois). */
+export const LOGIN_PREFILL_PHONE_KEY = 'ev_login_prefill_phone';
+
+export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, modeParam }: LoginFormProps) {
     const router = useRouter();
     const { refreshProfile } = useAuth();
 
-    const [isOtpMode, setIsOtpMode] = useState(false);
+    const [isOtpMode, setIsOtpMode] = useState(modeParam === 'code');
     const [identifier, setIdentifier] = useState('');
+
+    // Lot 9 quinquies (B6 : E-57) : numéro déjà inscrit à l'inscription → onglet « Code SMS », numéro prérempli
+    useEffect(() => {
+        if (modeParam !== 'code') return;
+        try {
+            const phone = sessionStorage.getItem(LOGIN_PREFILL_PHONE_KEY);
+            if (phone) {
+                setIdentifier(phone);
+                sessionStorage.removeItem(LOGIN_PREFILL_PHONE_KEY);
+            }
+        } catch (err) {
+            console.warn('[LoginForm] numéro prérempli illisible :', err instanceof Error ? err.message : String(err));
+        }
+    }, [modeParam]);
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [otpCode, setOtpCode] = useState('');
@@ -279,7 +298,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
             // Lot 6 (contrat F4) : l'appareil ne garde aucun abonnement push d'un compte suspendu.
             await detachPushSubscription();
             await supabase.auth.signOut();
-            setErrorMessage('Votre compte est suspendu. Veuillez contacter le support.');
+            setErrorMessage('Votre compte est suspendu. Contactez le support depuis la page Aide (lien ci-dessous).');
             setIsLoading(false);
             return;
         }
@@ -595,7 +614,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
                         placeholder="77 123 45 67 ou adresse email"
-                        hint="Le numéro sénégalais ou l’adresse email de votre compte."
+                        hint="Email : seulement si votre adresse a été vérifiée. Sinon, utilisez votre numéro."
                     />
 
                     <div className="relative">
@@ -750,6 +769,12 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam }:
                     </span>
                     <ArrowRight size={18} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
                 </Link>
+
+                {/* Lot 9 quinquies (B1 : AUTH-06) : le contact du support est toujours à un clic */}
+                <p className="text-center text-sm text-fg-muted">
+                    Besoin d’aide ?{' '}
+                    <Link href="/aide" className={TEXT_LINK}>Aide et contact du support</Link>
+                </p>
             </div>
         </div>
     );

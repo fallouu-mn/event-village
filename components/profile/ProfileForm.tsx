@@ -28,8 +28,9 @@ const PasswordConfirmDialog = dynamic(
  *
  * Lot 9 bis :
  *  - G.47, R87 (contrat 4.6, 5.47) : aide « Recommandé : … » ; une adresse saisie attend sa vérification
- *    (users.email_pending, lu dans le profil servi par /api/auth/me) : le champ la montre, avec « Email non vérifié » et
- *    « Renvoyer le lien » (POST /api/account/email/resend) ; une adresse vérifiée porte « Email vérifié ». Une adresse
+ *    (users.email_pending, lu dans le profil servi par /api/auth/me) : le champ la montre, avec le bandeau « Adresse email
+ *    non vérifiée » et « Recevoir le lien de vérification » (POST /api/account/email/resend ; lot 9 quinquies, B5) ; une
+ *    adresse vérifiée porte « Email vérifié ». Une adresse
  *    réelle d'avant le lot, jamais vérifiée (B98), est traitée comme une adresse en attente. Le sort du lien (envoyé,
  *    non parti, envoi indisponible, quota) est dit sous l'adresse, sans disparaître comme un toast.
  *  - R57 (tâche 13) : changer d'adresse exige un mot de passe saisi depuis moins de 10 minutes ; le refus
@@ -260,15 +261,20 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
           disabled={isSaving}
           hint="Recommandé : recevez vos billets et confirmations par email"
         />
-        {emailState.address && (
+        {emailState.address && emailState.verified && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-surface-sunken p-3">
-            {emailState.verified ? (
-              <Badge variant="success" icon={<MailCheck size={14} aria-hidden="true" />}>Email vérifié</Badge>
-            ) : (
-              <Badge variant="warning" icon={<MailWarning size={14} aria-hidden="true" />}>Email non vérifié</Badge>
-            )}
+            <Badge variant="success" icon={<MailCheck size={14} aria-hidden="true" />}>Email vérifié</Badge>
             <span className="min-w-0 flex-1 basis-40 break-all text-sm text-fg">{emailState.address}</span>
-            {!emailState.verified && (
+          </div>
+        )}
+        {/* Lot 9 quinquies (B5 : A7 de la revue) : bandeau « Adresse email non vérifiée » ; tant qu'elle ne l'est pas, la
+            connexion se fait par le numéro */}
+        {emailState.address && !emailState.verified && (
+          <StatusBanner
+            tone="warning"
+            icon={<MailWarning size={20} aria-hidden="true" />}
+            title="Adresse email non vérifiée"
+            action={(
               <Button
                 type="button"
                 variant="secondary"
@@ -278,10 +284,12 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
                 disabled={isSaving}
                 leftIcon={<RotateCcw size={16} aria-hidden="true" />}
               >
-                Renvoyer le lien
+                Recevoir le lien de vérification
               </Button>
             )}
-          </div>
+          >
+            <span className="break-all">{emailState.address}</span> : ouvrez le lien reçu par email pour la vérifier. En attendant, connectez-vous avec votre numéro.
+          </StatusBanner>
         )}
         {emailFeedback && (
           <StatusBanner tone={emailFeedback.tone} announce={emailFeedback.tone === 'danger' ? 'alert' : 'status'} title={emailFeedback.text} />

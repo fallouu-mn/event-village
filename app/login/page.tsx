@@ -25,6 +25,8 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
     const errorParam = firstParam(searchParams?.error);
     const messageParam = firstParam(searchParams?.message);
     const resetParam = firstParam(searchParams?.reset);
+    // Lot 9 quinquies (B6 : E-57) : onglet « Code SMS » demandé par l'inscription
+    const modeParam = firstParam(searchParams?.mode);
 
     return (
         <div className="flex justify-center py-4 sm:py-8">
@@ -37,7 +39,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
                     description="Accédez à vos billets, commandes, réservations et portefeuille."
                     className="pb-0 sm:pb-0"
                 />
-                <LoginForm redirectUrl={redirectUrl} errorParam={errorParam} messageParam={messageParam} resetParam={resetParam} />
+                <LoginForm redirectUrl={redirectUrl} errorParam={errorParam} messageParam={messageParam} resetParam={resetParam} modeParam={modeParam} />
             </div>
         </div>
     );
