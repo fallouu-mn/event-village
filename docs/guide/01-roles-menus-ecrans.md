@@ -167,11 +167,11 @@ Autres écrans du client, sans entrée de menu mais atteints par l’avatar, la 
 
 1. Qui, où : client dont le compte a été suspendu par un admin (voir 11.4 et 02) ; il ouvre `/login`.
 2. Ce qu’il saisit : numéro ou email et mot de passe.
-3. Ce que fait le système : la connexion par mot de passe ne lit pas le statut du compte ; elle ouvre une session (`app/api/auth/login/route.ts:88-101`). Un test du lot 6 l’écrit aussi : « GoTrue délivre encore un jeton » (`tests/parcours/dette-suspendu-temps-reel.test.ts:5-6`). Ensuite, chaque action qui exige un compte actif est refusée.
+3. Ce que fait le système : la route de connexion par mot de passe ne lit pas le statut du compte et ouvre une session (`app/api/auth/login/route.ts:88-101`) ; un test du lot 6 l’écrit aussi : « GoTrue délivre encore un jeton » (`tests/parcours/dette-suspendu-temps-reel.test.ts:5-6`). Mais l’écran de connexion relit aussitôt le statut : pour un compte `SUSPENDU`, il détache l’appareil du push, **ferme la session** et reste sur `/login` (`components/auth/LoginForm.tsx:269-287` ; appelé après la connexion par mot de passe, `:365`, et par code, `:489`). La fermeture de session efface aussi les billets hors ligne de l’appareil (voir 02.17 et 07.18). Seul un appel direct à la route, hors écran, garde une session ; chaque action qui exige un compte actif lui est alors refusée.
 4. Messages envoyés : aucun à la connexion.
 5. Ce que voient les autres rôles : rien.
-6. Refus : « Votre compte n'est pas actif. Contactez le support. » sur les écrans qui lisent une route protégée (`lib/auth/session.ts:56-63`). Le billet hors ligne enregistré reste présentable (voir 07). Écart avec le texte de la suspension, qui annonce « ne pourra plus se connecter » : noté dans les constats.
-7. Preuves : ci-dessus. Essai 73.
+6. Refus : à l’écran de connexion, « Votre compte est suspendu. Veuillez contacter le support. » (`components/auth/LoginForm.tsx:283-284`). Hors écran (session ouverte par appel direct, ou jeton encore valable au moment de la suspension) : « Votre compte n'est pas actif. Contactez le support. » sur chaque route protégée (`lib/auth/session.ts:56-63`). Écart : le serveur de connexion ne refuse pas lui-même un compte suspendu, seul l’écran le fait (constat W1-04 de `15-constats.md`).
+7. Preuves : ci-dessus. Essai 73. *(Passe de cohérence : scénario recalé sur `LoginForm.tsx:269-287`, que 02.17 et 03.10 citaient déjà.)*
 
 ### Scénario 01.4 — Retour à l’espace après connexion
 
@@ -197,7 +197,7 @@ sous-pages) vers le tableau de bord ; `/partner/scan` reste ouvert (`app/partner
 | Page ouverte | Ce qu’elle montre |
 |---|---|
 | `/partner/dashboard` | bandeau « Compte en cours de vérification » : « Vos pièces sont vérifiées par l’équipe Event Village. Vous recevrez un SMS dès la validation de votre compte ; vous pourrez alors créer et publier vos événements. En attendant, votre profil reste modifiable. », bouton « Voir mon profil » (`app/partner/dashboard/page.tsx:452-462`) |
-| `/partner/profile` | « Page professionnelle » modifiable (`app/partner/profile/page.tsx:160-161`) |
+| `/partner/profile` | « Page professionnelle » affichée avec son formulaire (`app/partner/profile/page.tsx:160-161`) ; la lecture admet le statut « en attente », mais l’enregistrement exige un compte actif : « Enregistrer » est refusé avec « Votre compte n'est pas actif. Contactez le support. » (`app/api/partner/profile/route.ts:114-115`, `:136-137`), malgré le « votre profil reste modifiable » du bandeau (voir 03.4, constat W3-01) |
 
 **Dans l’espace client**, la section « Espaces métier » propose « Espace partenaire » (`AppLayout.tsx:201-202`) et le
 profil affiche le badge « Partenaire en attente de validation » (`app/profile/page.tsx:220-224`). Les routes qui
@@ -275,8 +275,8 @@ suspend ses événements en ligne (`M/20261109000006_lot9bis_argent.sql:837-841`
 
 ### Scénario 01.8 — Une partenaire suspendue revient dans l’application
 
-1. Qui, où : partenaire suspendue ; elle se reconnecte (la connexion par mot de passe ne lit pas le statut, voir 01.3) et arrive sur `/partner/dashboard`.
-2. Ce qu’elle saisit : identifiant et mot de passe.
+1. Qui, où : partenaire suspendue. Si elle se reconnecte par l’écran `/login`, l’écran ferme aussitôt la session et affiche « Votre compte est suspendu. Veuillez contacter le support. » (voir 01.3, `components/auth/LoginForm.tsx:280-285`) : elle n’atteint aucune page. Le cas ci-dessous est celui d’un onglet resté ouvert sur `/partner/dashboard` avec un jeton encore valable (au plus une heure après la fermeture de ses sessions : durée du jeton `jwt_expiry = 3600` de la configuration locale, `supabase/config.toml:152`, projet distant NON VÉRIFIÉ), ou d’une session ouverte hors écran.
+2. Ce qu’elle saisit : rien.
 3. Ce que fait le système : le menu partenaire s’affiche (la garde ne regarde que le statut « en attente »), mais le tableau de bord lit une route qui n’admet que les comptes actifs ou en attente : elle répond 403.
 4. Messages envoyés : aucun à ce moment (l’avis de suspension `PARTNER_SUSPENDED` est parti à la suspension, voir 11.8).
 5. Ce que voient les autres rôles : rien.
