@@ -433,11 +433,15 @@ describe('4.8 — anti-abus SMS', () => {
             assert.equal(sent, NON_OTP_MAX, `SMS non OTP envoyés avant l'arrêt (plafond ${CAP}, part OTP 30 %) : ${sent}`);
             assert.match(String(outcomes[outcomes.length - 1].code), /CAP/, `code du refus non OTP : ${JSON.stringify(outcomes[outcomes.length - 1])}`);
 
+            // Lot 9 quater (A8 : AUD-05) : seuls les codes vers un numéro qui a un compte tirent sur le plafond global ; un
+            // numéro sans compte a sa propre part (modification signalée au rapport : numéros de comptes existants).
+            const holders: string[] = [];
+            for (let i = 0; i <= CAP - NON_OTP_MAX; i += 1) holders.push((await newBuyer(`plafond-otp-${i}`)).phoneE164);
             for (let i = 0; i < CAP - NON_OTP_MAX; i += 1) {
-                const r = await sendOtp(freshIp(), randomSenegalPhone('76'));
+                const r = await sendOtp(freshIp(), holders[i]);
                 assert.equal(r.status, 200, `OTP ${i + 1} dans la part réservée : HTTP ${r.status} ${JSON.stringify(r.body)}`);
             }
-            const over = await sendOtp(freshIp(), randomSenegalPhone('76'));
+            const over = await sendOtp(freshIp(), holders[CAP - NON_OTP_MAX]);
             assert.equal(over.status, 429, `OTP au-delà du plafond global : HTTP ${over.status} ${JSON.stringify(over.body)}`);
             assert.equal(over.body.code, 'SMS_DAILY_CAP_REACHED');
         });

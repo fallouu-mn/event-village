@@ -157,13 +157,19 @@ async function isTemporary(phone: string): Promise<boolean> {
     assert.equal(error, null, `compte du ${phone} : ${error?.message}`);
     const { data: auth, error: aErr } = await service.auth.admin.getUserById(String(data.id));
     assert.equal(aErr, null, `compte d'authentification : ${aErr?.message}`);
-    return auth.user?.user_metadata?.is_temporary_controller_account === true;
+    // Lot 9 quater (A3) : marque lue dans app_metadata (modification signalée au rapport)
+    return auth.user?.app_metadata?.controller_activation_pending === true;
 }
 
-/** Connexion par mot de passe (clé anon) avec l'email de connexion synthétique du contrôleur. */
+/**
+ * Connexion par mot de passe (clé anon) avec l'email de connexion synthétique du contrôleur. Lot 9 quater (A4) : l'adresse
+ * technique n'est plus tirée du numéro, elle est relue sur le compte (modification signalée au rapport).
+ */
 async function canSignIn(phone: string, password: string): Promise<boolean> {
+    const { data: row, error: rowErr } = await service.from('users').select('email').eq('phone', phone).single();
+    assert.equal(rowErr, null, `adresse du compte ${phone} : ${rowErr?.message}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await anon.auth.signInWithPassword({ email: `${phone.replace('+', '')}@eventvillage.sn`, password });
+    const { data, error } = await anon.auth.signInWithPassword({ email: String(row.email), password });
     return !error && Boolean(data.session);
 }
 

@@ -111,6 +111,9 @@ async function ensureUser(key: FixtureUserKey): Promise<string> {
         if (error || !data.user) fail(`auth.createUser(${key})`, error);
         userId = data.user.id;
     } else {
+        // Lot 9 quater (A3) : permis exigé par la base avant tout changement de mot de passe
+        const { error: permitErr } = await supabase.rpc('auth_write_permit_grant', { p: { user_id: userId, kind: 'PASSWORD' } });
+        if (permitErr) fail(`auth_write_permit_grant(${key})`, permitErr);
         const { error } = await supabase.auth.admin.updateUserById(userId, {
             password: TEST_PASSWORD,
             email_confirm: true,
@@ -131,6 +134,8 @@ async function ensureUser(key: FixtureUserKey): Promise<string> {
             role: spec.primaryRole,
             status: fixtureUserStatus(key),
             referral_status: 'STANDARD',
+            // Lot 9 quater (A2) : numéro prouvé (actions qui donnent quelque chose)
+            phone_verified_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         },
         { onConflict: 'id' }

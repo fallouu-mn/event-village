@@ -105,8 +105,12 @@ function freshEmail(label: string): string {
     return randomEmail(`profil-${label}`);
 }
 
-function technicalEmail(phone: string): string {
-    return `${phone.replace('+', '')}@eventvillage.sn`;
+/**
+ * Lot 9 quater (A4 : AUD-19) : adresse technique rétablie quand l'adresse est vidée = celle tirée de l'identifiant du
+ * compte (technical_email_for), plus jamais du numéro (modification signalée au rapport).
+ */
+function technicalEmail(userId: string): string {
+    return `u${userId.replace(/-/g, '')}@comptes.eventvillage.invalid`;
 }
 
 function valid(user: Buyer, email: string): Record<string, unknown> {
@@ -257,7 +261,7 @@ describe('PATCH /api/account/profile — email vidé (L24)', () => {
         assert.deepEqual([r.body.ok, r.body.email_technical, r.body.email_pending], [true, true, null], `réponse (contrat 4.6 : + email_pending) : ${r.text}`);
         assert.notEqual(r.body.email_verification, 'SENT', 'aucun lien pour une adresse vidée');
         assert.equal(getFakes().email.sent.length, since, 'aucun email tenté');
-        const expected = technicalEmail(a.phoneE164);
+        const expected = technicalEmail(a.userId);
         assert.equal((await profileOf(a.userId)).email, expected, 'jamais NULL');
         assert.equal(await authEmailOf(a.userId), expected);
         assert.deepEqual(await pendingOf(a.userId), { email_pending: null, email_verified_at: null }, 'adresse vidée : rien en attente ni vérifié (D-ema 2.1)');

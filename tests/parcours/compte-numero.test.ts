@@ -139,7 +139,9 @@ async function authOf(userId: string): Promise<{ phone: string | undefined; emai
 }
 
 const digits = (phone: string): string => phone.replace(/[^0-9]/g, '');
-const technicalEmail = (phone: string): string => `${digits(phone)}@eventvillage.sn`;
+// Lot 9 quater (A4 : AUD-19) : l'adresse technique n'est plus tirée du numéro et ne le suit plus (la règle L27 « l'email
+// technique suit le numéro » est remplacée) ; adresse technique neuve du nouveau format (modification signalée au rapport).
+const technicalEmail = (): string => `u${randomBytes(16).toString('hex')}@comptes.eventvillage.invalid`;
 
 function anonClient(): SupabaseClient {
     return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -184,7 +186,7 @@ async function otpRow(phone: string, purpose: string): Promise<{ verified: boole
 /** Compte dont l'email d'authentification est l'email technique du numéro (inscription sans email). */
 async function technicalAccount(label: string): Promise<Buyer> {
     const phoneE164 = randomSenegalPhone('77');
-    const email = technicalEmail(phoneE164);
+    const email = technicalEmail();
     const { data, error } = await service.auth.admin.createUser({
         email, phone: phoneE164, password: STRONG_PASSWORD, email_confirm: true, phone_confirm: true,
         user_metadata: { first_name: 'Awa', last_name: `Technique${label.replace(/[^a-z]/gi, '').slice(0, 8)}` },
@@ -547,16 +549,16 @@ describe('POST /api/account/phone/confirm — succès', () => {
         assert.equal(byOld.status, 401, 'l’ancien numéro n’ouvre plus de session (401 INVALID_CREDENTIALS, R58)'); assert.equal((await reply(await resolvePhone(jsonRequest('/api/auth/resolve-phone', { phone: a.phoneE164 }, { 'x-forwarded-for': `203.0.113.${randomBytes(1)[0] % 250 + 1}, 10.0.0.1` })))).status, 404, 'l’ancien numéro ne correspond plus à aucun compte');
     });
 
-    test('email technique : réécrit vers le nouveau numéro dans les deux tables, connexion possible', async () => {
+    test('email technique : inchangé par le changement de numéro (lot 9 quater, A4), connexion par le nouveau numéro', async () => {
         const a = await technicalAccount('tech-ok');
         const next = randomSenegalPhone('78');
         const code = await askCode(a, next);
         const { result, hits } = await intercept([{ name: 'put', match: adminUpdate(a.userId), reply: passThrough }], () => postConfirm(a, { phone: next, code }));
         assert.equal(result.status, 200, result.text);
-        assert.equal(hits.put[0].body?.email, technicalEmail(next));
-        assert.equal(hits.put[0].body?.email_confirm, true);
-        assert.equal((await profileOf(a.userId)).email, technicalEmail(next));
-        assert.equal((await authOf(a.userId)).email, technicalEmail(next));
+        assert.equal(hits.put[0].body?.email, undefined, 'l’adresse technique n’est plus réécrite');
+        assert.equal((await profileOf(a.userId)).email, a.email);
+        assert.equal((await authOf(a.userId)).email, a.email);
+        assert.ok(!a.email.includes(digits(next).slice(3)) && !a.email.includes(digits(a.phoneE164).slice(3)), 'aucun numéro dans l’adresse technique');
         assert.deepEqual(await loginByPhone(next), { status: 200, signInError: null });
     });
 
@@ -571,14 +573,14 @@ describe('POST /api/account/phone/confirm — succès', () => {
         assert.ok(flow.userId && flow.userId !== a.userId, `nouveau compte attendu sur l’ancien numéro : ${JSON.stringify(flow.register)}`);
     });
 
-    test('users.email NULL et email d’authentification technique : le profil reçoit le nouvel email technique', async () => {
+    test('users.email NULL et email d’authentification technique : le profil reprend l’adresse technique du compte', async () => {
         const a = await technicalAccount('tech-null');
         const { error } = await service.from('users').update({ email: null }).eq('id', a.userId);
         assert.equal(error, null, `email NULL : ${error?.message}`);
         const next = randomSenegalPhone('78');
         await changeNumber(a, next);
-        assert.equal((await profileOf(a.userId)).email, technicalEmail(next));
-        assert.equal((await authOf(a.userId)).email, technicalEmail(next));
+        assert.equal((await profileOf(a.userId)).email, a.email);
+        assert.equal((await authOf(a.userId)).email, a.email);
         assert.deepEqual(await loginByPhone(next), { status: 200, signInError: null });
     });
 
@@ -885,7 +887,8 @@ describe('Pannes de la confirmation (AR2, L28)', () => {
             assert.equal(digits(String(hits.put[1].body?.phone)), digits(a.phoneE164), 'compensation vers le numéro relu');
             assert.equal(hits.put[1].body?.phone_confirm, true);
             if (kind === 'technique') {
-                assert.equal(hits.put[0].body?.email, technicalEmail(next));
+                // Lot 9 quater (A4) : l'aller ne réécrit plus l'adresse technique
+                assert.equal(hits.put[0].body?.email, undefined);
                 assert.equal(hits.put[1].body?.email, a.email, 'compensation vers l’email relu');
                 assert.equal(hits.put[1].body?.email_confirm, true);
             }

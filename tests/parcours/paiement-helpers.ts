@@ -56,7 +56,8 @@ export async function newBuyer(label: string, opts: { firstName?: string; lastNa
     assert.equal(error, null, `création de l'acheteur : ${error?.message}`);
     const userId = data.user!.id;
     const { error: upErr } = await service.from('users')
-        .update({ phone: phoneE164, first_name: firstName, last_name: lastName, status: 'ACTIF' })
+        // Lot 9 quater (A2) : numéro prouvé, comme après l'inscription par code (achat, billet gratuit, transfert, retrait)
+        .update({ phone: phoneE164, first_name: firstName, last_name: lastName, status: 'ACTIF', phone_verified_at: new Date().toISOString() })
         .eq('id', userId);
     assert.equal(upErr, null, `profil de l'acheteur : ${upErr?.message}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });

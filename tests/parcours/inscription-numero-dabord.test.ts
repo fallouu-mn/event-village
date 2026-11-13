@@ -205,7 +205,8 @@ describe('7.3 — inscription : bon code, compte vérifié', () => {
         assert.equal(error, null, `profil : ${error?.message}`);
         assert.equal(user.status, 'ACTIF', 'compte ACTIF');
         assert.ok(user.phone_verified_at, 'phone_verified_at posé : le numéro est prouvé par le code');
-        assert.equal(user.email, `${phone.replace('+', '')}@eventvillage.sn`, 'email technique dérivé du numéro (aucun email fourni)');
+        // Lot 9 quater (A4 : AUD-19) : adresse technique aléatoire sous .invalid, jamais tirée du numéro (modification signalée)
+        assert.match(String(user.email), /^u[0-9a-f]{32}@comptes\.eventvillage\.invalid$/, 'email technique (aucun email fourni), sans le numéro');
         assert.equal(r.body.email, user.email, 'email renvoyé = email du compte');
         const [row] = await registerCodes(phone);
         assert.equal(row.verified, true, 'code consommé');
@@ -271,7 +272,7 @@ describe('7.3 — inscription : un tiers ne bloque plus un numéro ; parrainage 
         // Lot 9 bis (R87, T60, contrat 4.6) : l'adresse fournie attend sa vérification ; users.email garde l'adresse technique.
         const { data: user, error } = await service.from('users').select('email').eq('id', flow.userId!).single();
         assert.equal(error, null, `profil : ${error?.message}`);
-        assert.equal(user.email, `${flow.phone.replace('+', '')}@eventvillage.sn`, 'R87 : adresse technique tant que l’adresse fournie n’est pas vérifiée');
+        assert.match(String(user.email), /^u[0-9a-f]{32}@comptes\.eventvillage\.invalid$/, 'R87 : adresse technique tant que l’adresse fournie n’est pas vérifiée (lot 9 quater : sans le numéro)');
         const { data: pending, error: pErr } = await service.from('users').select('email_pending, email_verified_at').eq('id', flow.userId!).single();
         assert.equal(pErr, null, `adresse en attente : ${pErr?.message} — colonnes users.email_pending et users.email_verified_at (M10 du lot 9 bis)`);
         assert.deepEqual([pending.email_pending, pending.email_verified_at], [email.toLowerCase(), null], 'email fourni enregistré en attente, non vérifié');
@@ -299,7 +300,7 @@ describe('7.3 — inscription : écran (statique, fix(7.3e))', () => {
         assert.doesNotMatch(code, /\/api\/auth\/verify-otp/, 'plus de vérification séparée par verify-otp (le code est vérifié par /api/auth/register)');
     });
 
-    test('garde PageHeader « Créer un compte » et @eventvillage.sn ; conserve ?redirect= (chemin interne seulement)', () => {
+    test('garde PageHeader « Créer un compte », aucune adresse tirée du numéro ; conserve ?redirect= (chemin interne seulement)', () => {
         const code = page();
         const sf = ts.createSourceFile('page.tsx', fs.readFileSync('app/register/page.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
         const titles: string[] = [];
@@ -313,7 +314,8 @@ describe('7.3 — inscription : écran (statique, fix(7.3e))', () => {
         };
         visit(sf);
         assert.ok(titles.some((t) => t.includes('Créer un compte')), `PageHeader « Créer un compte » (notif-interface.test.ts:519-521) ; titres lus : ${titles.join(' | ') || 'aucun'}`);
-        assert.match(code, /@eventvillage\.sn/, 'email technique @eventvillage.sn');
+        // Lot 9 quater (A4 : AUD-19) : l'écran ne fabrique plus l'adresse technique à partir du numéro (modification signalée)
+        assert.doesNotMatch(code, /@eventvillage\.sn/, 'aucune adresse technique tirée du numéro dans l’écran');
         assert.match(code, /\.get\(\s*["']redirect["']\s*\)/, 'destination lue dans ?redirect= (D61)');
         const refusesExternal = /["'`]\/\/["'`]/.test(code) || /\\\/\\\//.test(code) || /\b(safe|internal|sanitiz)\w*(Redirect|Path)\w*\s*\(/i.test(code);
         assert.ok(refusesExternal, 'une destination « //… » (hors du site) est refusée (D61) : contrôle de « // » ou aide de chemin interne attendus');

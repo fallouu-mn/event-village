@@ -120,6 +120,9 @@ describe('9b.38 R29 : plus d\'alerte de mot de passe à l\'activation d\'un cont
         const atActivation = await outboxRows({ type: 'PASSWORD_CHANGED', userId });
         assert.deepEqual(atActivation.map((r) => r.channel), [], 'aucune alerte de mot de passe à l\'activation du compte coquille (R29)');
 
+        // Lot 9 quater (A3) : permis exigé par la base avant tout changement de mot de passe (modification signalée au rapport)
+        const { data: permit, error: permitErr } = await service.rpc('auth_write_permit_grant', { p: { user_id: userId, kind: 'PASSWORD' } });
+        assert.equal(permitErr, null, `permis du mot de passe : ${permitErr?.message} ${JSON.stringify(permit)}`);
         const { error: resetErr } = await service.auth.admin.updateUserById(userId, { password: `Reset#${randomBytes(6).toString('hex')}A1` });
         assert.equal(resetErr, null, `réinitialisation du mot de passe : ${resetErr?.message}`);
         const afterReset = await outboxRows({ type: 'PASSWORD_CHANGED', userId });

@@ -36,6 +36,7 @@ import { getFakes } from '../fakes';
 import { BASE_URL, jsonRequest, randomSenegalPhone } from './helpers';
 import { flushNotifications, newAdmin, outboxRows } from './notif-helpers';
 import { registerClientFlow } from './terrain-helpers';
+import { newBuyer } from './paiement-helpers';
 
 const LIMITS = {
     SMS_OTP_PER_PHONE_15MIN: '2',
@@ -118,9 +119,11 @@ describe('Anti-abus SMS', () => {
         process.env.SMS_GLOBAL_DAILY_CAP = String(used + 1);
         resetServerEnvCache();
         try {
-            const first = randomSenegalPhone('78');
+            // Lot 9 quater (A8 : AUD-05) : codes vers des numéros qui ont un compte (seuls à tirer sur le plafond global ;
+            // modification signalée au rapport)
+            const first = (await newBuyer('plafond-premier')).phoneE164;
+            const second = (await newBuyer('plafond-second')).phoneE164;
             assert.equal((await sendOtp(otpRequest(first, freshIp()))).status, 200, 'dernier SMS sous le plafond');
-            const second = randomSenegalPhone('78');
             const res = await sendOtp(otpRequest(second, freshIp()));
             const body = await res.json();
             assert.equal(res.status, 429, `plafond : HTTP ${res.status} ${JSON.stringify(body)}`);

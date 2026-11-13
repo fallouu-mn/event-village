@@ -13,12 +13,19 @@ import { randomEmail, STRONG_PASSWORD } from './helpers';
 
 const service = getServiceRoleClient();
 
+/**
+ * Compte existant à promouvoir. Lot 9 quater (A2) : l'inscription publique de GoTrue est fermée ; le compte est créé par
+ * le service_role, comme toute création de l'application, puis la session est ouverte avec la clé anon (modification
+ * signalée au rapport : avant, signUp public).
+ */
 async function signUp(email: string) {
+    const { data, error } = await service.auth.admin.createUser({ email, password: STRONG_PASSWORD, email_confirm: true });
+    assert.equal(error, null, `création du compte : ${error?.message}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { data, error } = await anon.auth.signUp({ email, password: STRONG_PASSWORD });
-    assert.equal(error, null, `signUp : ${error?.message}`);
+    const { error: signInErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    assert.equal(signInErr, null, `connexion : ${signInErr?.message}`);
     return { anon, userId: data.user!.id };
 }
 
