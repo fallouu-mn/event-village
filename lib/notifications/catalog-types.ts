@@ -239,6 +239,8 @@ export interface TemplateData {
     ADMIN_REVIEW_SMS: { partner_count: number; event_count: number; company?: string | null; refs?: string[] };
     /** Lot 9 quinquies (A1 : AUTH-01) : 10e échec de mot de passe sur le compte, une fois par jour (`day` de Dakar). */
     ACCOUNT_LOGIN_FAILURES: { day?: string };
+    /** Lot 9 quinquies (C2 : AUTH-09) : nouvelle adresse email vérifiée sur le compte (aucune donnée : jamais l'adresse dans un SMS). */
+    EMAIL_ADDED: Record<string, never>;
 }
 
 export type NotificationType = keyof TemplateData;

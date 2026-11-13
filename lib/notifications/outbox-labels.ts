@@ -213,6 +213,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     // Lot 9 quinquies (D1)
     ADMIN_REVIEW_SMS: 'SMS aux administrateurs : à valider',
     ACCOUNT_LOGIN_FAILURES: 'Essais de connexion échoués',
+    EMAIL_ADDED: 'Adresse email ajoutée au compte',
 };
 
 export function outboxStatusLabel(status: string): string {

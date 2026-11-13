@@ -8,6 +8,10 @@ import {
 } from '@/lib/auth/account-sync';
 import { hashVerificationToken, isVerificationToken } from '@/lib/email/verification';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { EmailService } from '@/lib/email/email.service';
+import { renderEmailChangedOld } from '@/lib/notifications/catalog';
+import { isDeliverableEmail } from '@/lib/notifications/channels';
+import { getServerEnv } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +35,23 @@ interface CheckReply { ok?: boolean; code?: string; user_id?: string; email?: st
 interface FinalizeReply { ok?: boolean; code?: string }
 
 const refuse = (err: unknown): NextResponse => apiFailure(CONTEXT, err, FALLBACK);
+
+/**
+ * Lot 9 quinquies (C2 : AUTH-09) : l'ancienne adresse vérifiée reçoit un avis quand une autre la remplace. Envoi au mieux,
+ * après la validation : un échec est journalisé (jamais avalé en silence) et ne change pas la réponse.
+ */
+async function warnOldAddress(userId: string, oldAddress: string, tokenHash: string): Promise<void> {
+    try {
+        const mail = renderEmailChangedOld({ appUrl: getServerEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, '') });
+        const sent = await EmailService.send({
+            to: oldAddress, subject: mail.subject, html: mail.html, text: mail.text,
+            idempotencyKey: `EMAIL_CHANGED_OLD:${userId}:${tokenHash.slice(0, 16)}`,
+        });
+        if (!sent.sent) console.error(`[${CONTEXT}] avis à l’ancienne adresse du compte ${userId} non envoyé : ${sent.error ?? 'refus'}`);
+    } catch (err) {
+        console.error(`[${CONTEXT}] avis à l’ancienne adresse du compte ${userId} :`, err instanceof Error ? err.message : String(err));
+    }
+}
 
 async function handle(req: NextRequest): Promise<NextResponse> {
     let body: unknown;
@@ -89,6 +110,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
             return refuse(REFUSALS.EMAIL_TAKEN);
         };
 
+        // Lot 9 quinquies (C2) : ancienne adresse vérifiée, lue avant la validation (avis si elle est remplacée)
+        const { data: before, error: beforeErr } = await supabase.from('users').select('email, email_verified_at').eq('id', userId).maybeSingle();
+        if (beforeErr) return refuse(beforeErr);
+        const oldAddress = before?.email_verified_at && isDeliverableEmail(before.email) && String(before.email).toLowerCase() !== email.toLowerCase()
+            ? String(before.email) : null;
+
         // 2. Ordre AR2 : identité libre (AM1), puis auth.users, puis la RPC de validation, compensation en cas d'échec.
         if (authUpdate) {
             if ((await identityTaken(userId, email, null)).emailTaken) return takenElsewhere();
@@ -110,6 +137,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
             if (refusal) return refuse(refusal);
             return NextResponse.json({ error: FALLBACK.message, code: FALLBACK.code }, { status: 500 });
         }
+        if (oldAddress) await warnOldAddress(userId, oldAddress, tokenHash);
         return NextResponse.json({ ok: true });
     } catch (err) {
         return refuse(err);

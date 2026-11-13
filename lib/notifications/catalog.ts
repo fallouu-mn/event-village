@@ -1021,10 +1021,13 @@ const CATALOG = {
         inApp: (d) => ({ title: 'Remboursements en attente', content: `Des remboursements de ${q(text(d, 'title'))} sont bloqués : l'administration les reprend.` }),
         sample: { ...SAMPLE_EVENT },
     }),
+    // Lot 9 quinquies (C3 : AUTH-12) : + SMS (l'email de la partenaire n'est pas encore vérifié à l'inscription). Texte du
+    // chef de projet, « reçue » remplacé par « enregistrée » (ç hors GSM-7).
     PARTNER_REGISTERED_ACK: define('PARTNER_REGISTERED_ACK', {
-        label: 'Inscription partenaire reçue', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
+        label: 'Inscription partenaire reçue', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
         link: () => '/partner/dashboard',
         inApp: (d) => ({ title: 'Inscription reçue', content: `Votre demande de compte partenaire ${q(text(d, 'company'))} est en cours d'examen.` }),
+        sms: (d) => `${SMS_PREFIX}votre demande de compte partenaire ${smsVar(text(d, 'company'), 40)} est enregistrée. Réponse sous 48 h.`,
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
     }),
     PARTNER_VALIDATED: define('PARTNER_VALIDATED', {
@@ -1738,6 +1741,18 @@ const CATALOG = {
         sms: (_d, ctx) => `${SMS_PREFIX}plusieurs connexions ont échoué sur votre compte. Si ce n'est pas vous, changez votre mot de passe : ${appLink(ctx, '/forgot-password')}`,
         sample: { day: '2026-11-13' },
     }),
+    // Lot 9 quinquies (C2 : AUTH-09) : SMS indispensable au numéro du compte (texte du chef de projet) et email de
+    // confirmation à l'adresse désormais vérifiée ; l'adresse n'est jamais écrite dans le SMS.
+    EMAIL_ADDED: define('EMAIL_ADDED', {
+        label: 'Adresse email ajoutée au compte', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: null,
+        link: () => '/aide',
+        inApp: () => ({
+            title: 'Adresse email ajoutée',
+            content: 'Cette adresse email est désormais celle de votre compte Event Village : elle sert à vous connecter et à recevoir vos billets. Si ce n’est pas vous, ouvrez la page d’aide pour joindre le support.',
+        }),
+        sms: (_d, ctx) => `${SMS_PREFIX}une adresse email a été ajoutée à votre compte. Si ce n'est pas vous : ${appLink(ctx, '/aide')}`,
+        sample: {},
+    }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),
@@ -1901,6 +1916,31 @@ export function renderSyncSms(type: SyncType, data: { code?: string; firstName?:
         default:
             throw new TemplateDataError('type', `${JSON.stringify(type)} n’est pas un envoi synchrone`);
     }
+}
+
+/**
+ * Lot 9 quinquies (C2 : AUTH-09) : email à l'ANCIENNE adresse vérifiée quand une autre adresse la remplace (envoi
+ * synchrone de POST /api/account/email/verify). Aucune des deux adresses n'est écrite dans le message.
+ */
+export const EMAIL_CHANGED_OLD_TEXTS = {
+    subject: 'Adresse email de votre compte modifiée — Event Village',
+    title: 'Adresse email modifiée',
+    paragraph: 'L’adresse email de votre compte Event Village vient d’être remplacée par une autre adresse. Vous ne recevrez plus nos messages ici.',
+    notice: 'Si ce n’est pas vous : ouvrez la page d’aide pour joindre le support, et changez votre mot de passe avec « Mot de passe oublié ».',
+    button: 'Obtenir de l’aide',
+} as const;
+
+export function renderEmailChangedOld(ctx: RenderContext): { subject: string; html: string; text: string } {
+    const T = EMAIL_CHANGED_OLD_TEXTS;
+    const { html, text: plain } = emailLayout({
+        appUrl: ctx.appUrl,
+        heading: T.title,
+        paragraphs: [T.paragraph],
+        notice: [T.notice],
+        cta: { label: T.button, path: '/aide' },
+        unsubscribeTopic: null,
+    });
+    return { subject: T.subject, html, text: plain };
 }
 
 /** Lot 9 bis (11.1 N26) : textes de l'email de vérification d'adresse, mot pour mot. */
