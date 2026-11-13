@@ -77,12 +77,31 @@ const FROZEN_LOT9BIS: Readonly<Record<string, string>> = {
     '20261109000012_lot9bis_mode_reel.sql': 'edb721aa07011c51a17b5ac1d01eedbc70ec8100c7d2620b2c416fa989c33faa',
 };
 
+/**
+ * Lot 9 quater (consigne : migrations 20261103… à 20261110… gelées) : empreintes SHA-256 (LF) des migrations du lot 9 ter,
+ * calculées sur main 0cf8eb8 (appliquées sur event-village-dev le 13/11) ; toute correction passe par une migration 20261111….
+ */
+const FROZEN_LOT9TER: Readonly<Record<string, string>> = {
+    '20261110000001_lot9ter_rls.sql': '320ee25a79efabba825629f0183626a9cdf828a4a0339a28bb5f543adb27fed1',
+    '20261110000002_lot9ter_reglages.sql': '045526c9de7dec6107519a21f5952f6ab067d832c7d134c6ec4886249cb6f7b1',
+    '20261110000003_lot9ter_transfert_statut.sql': '9b33208fd939cd6fd4157077a41faa08dd4af06a0bfb0a2d39c41572bdecd46a',
+    '20261110000004_lot9ter_registre.sql': 'da1aaf91b09956ca7ad452bf73d35ec8ef1524d109d796323f25628f23b07889',
+    '20261110000005_lot9ter_argent.sql': '1bf16b24e079e610bb979b5fff96b73e9761427ad11e87bd59c54daf3d3f0233',
+    '20261110000006_lot9ter_equipe_messages.sql': 'a430fda75bbdd95c37c15ae4a167b8e69f2dc1fdd9b3d0ca9d996f0fabb0172d',
+    '20261110000007_lot9ter_evenements.sql': '1c2aa66dec62ae03ec6975a9db817939220d0d60dd1633b693772632e90b0724',
+    '20261110000008_lot9ter_invites.sql': '6c0ed0b7c0b7b67150cf6baa007bd076da948e6a2edc35e0af0305ed0044375b',
+    '20261110000009_lot9ter_zones.sql': 'fc602eb84f23736e3593819c4befb567404fdb970b9e76e7aea0c58c1933bf5b',
+    '20261110000010_lot9ter_pilotage.sql': 'b14ee14d339fca01504f5e59acb69fd23ddf1d17fe06243e053567d576d2f3fb',
+    '20261110000011_lot9ter_stock.sql': '11d8fd1908870973b21969c24a459f50cbab16a59f37c90b1e1675e06b8e8a5e',
+};
+
 const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> = [
     ['20261103', 'lot 6', FROZEN_LOT6],
     ['20261105', 'lot 7', FROZEN_LOT7],
     ['20261106', 'lot 8', FROZEN_LOT8],
     ['20261108', 'lot 9', FROZEN_LOT9],
     ['20261109', 'lot 9 bis', FROZEN_LOT9BIS],
+    ['20261110', 'lot 9 ter', FROZEN_LOT9TER],
 ];
 
 function sha256Lf(name: string): string {
