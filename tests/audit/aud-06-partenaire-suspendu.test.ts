@@ -3,17 +3,17 @@
  * auth_user_role() ignorent le statut du compte ; impact mesuré sur un partenaire SUSPENDU.
  *
  * is_partner_owner (0003_rls.sql:33-38) : `partners.id = p AND user_id = auth.uid()`, sans statut du compte ni du
- * partenaire. Politiques qui s'en servent sans autre condition de statut : tickets_read
- * (20261103000001_lot6_dette.sql:118), payments_read (0003_rls.sql:274), refunds_read (0003_rls.sql:287),
- * event_cancellations_select (20261031000005:34), participant_exports_owner_admin_select (20261102000005:51),
- * events_read_public (20261110000007:221, brouillons compris). La suspension (partner_status_set) passe users.status à
- * SUSPENDU et révoque les sessions, mais un jeton d'accès déjà émis reste accepté par PostgREST jusqu'à son expiration
- * (jwt_expiry = 3600 s, supabase/config.toml) : PostgREST ne vérifie que la signature et la date.
- * À comparer : is_admin() exige ACTIF depuis le lot 9 ter (20261110000001_lot9ter_rls.sql:116-117), et les politiques de
- * ticket_scans, scan_incidents, notifications et controller_shifts ajoutent un test de statut (lot 6).
+ * partenaire. Politiques qui s'en servent sans autre condition de statut : payments_read (0003_rls.sql:274),
+ * refunds_read (0003_rls.sql:287), event_cancellations_select (20261031000005:34),
+ * participant_exports_owner_admin_select (20261102000005:51), events_read_public (20261110000007:221, brouillons
+ * compris). tickets_read, elle, ajoute un test de statut (20261103000001_lot6_dette.sql:118-140) : le billet est bien
+ * protégé, le paiement non. La suspension (partner_status_set) passe users.status à SUSPENDU et révoque les sessions,
+ * mais un jeton d'accès déjà émis reste accepté par PostgREST jusqu'à son expiration (jwt_expiry = 3600 s,
+ * supabase/config.toml) ; et le compte n'est pas banni chez GoTrue : il se reconnecte (second test).
+ * À comparer : is_admin() exige ACTIF depuis le lot 9 ter (20261110000001_lot9ter_rls.sql:116-117).
  *
- * Test ROUGE tant que la faille existe : après la suspension du partenaire par la RPC de l'administration, son jeton ne
- * lit plus les billets ni les paiements (numéro du payeur compris) de son événement.
+ * Tests ROUGES tant que la faille existe : après la suspension du partenaire par la RPC de l'administration, ni son
+ * ancien jeton ni un jeton neuf ne lisent les paiements (numéro du payeur compris) de ses acheteurs.
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -53,13 +53,14 @@ describe('AUD-06 — partenaire suspendu : lectures REST qui ignorent le statut 
         assert.equal(u?.status, 'SUSPENDU', 'précondition : compte du partenaire suspendu');
 
         const client = asUser(partner.accessToken);
-        const tickets = await client.from('tickets').select('*').eq('event_id', ev.eventId);
+        // Colonnes que le rôle authenticated a le droit de lire (un select('*') bute sur les droits de colonne, pas sur la RLS)
+        const tickets = await client.from('tickets').select('id, ticket_number, user_id, status').eq('event_id', ev.eventId);
         const payments = await client.from('payments').select('*').eq('id', purchase.payment.id);
         const leaked = (payments.data ?? []).map((row) => Object.fromEntries(Object.entries(row as Record<string, unknown>)
             .filter(([k]) => /phone|client_id|amount|status/.test(k))));
         console.log(`[AUD-06] jeton du partenaire suspendu : billets lus=${tickets.data?.length ?? 0} (erreur ${tickets.error?.message ?? 'aucune'}) ; paiements lus=${payments.data?.length ?? 0} (erreur ${payments.error?.message ?? 'aucune'}) ; colonnes : ${JSON.stringify(leaked)}`);
         assert.deepEqual({ tickets: tickets.data?.length ?? 0, payments: payments.data?.length ?? 0 }, { tickets: 0, payments: 0 },
-            'un partenaire SUSPENDU lit encore, avec son jeton, les billets et les paiements de ses acheteurs (is_partner_owner ignore le statut)');
+            'un partenaire SUSPENDU lit encore, avec son jeton, les paiements de ses acheteurs, numéro du payeur compris (payments_read repose sur is_partner_owner, qui ignore le statut)');
     });
 
     /**
@@ -68,11 +69,11 @@ describe('AUD-06 — partenaire suspendu : lectures REST qui ignorent le statut 
      * lib/admin/admin.service.ts:348) et la connexion ne lit pas users.status (app/api/auth/login/route.ts:96 ne traite
      * que les refus de GoTrue). Un compte suspendu obtient donc un jeton neuf : la fenêtre n'est pas d'une heure.
      */
-    test('un partenaire suspendu ne peut pas obtenir un nouveau jeton qui lit encore les billets de ses acheteurs', async () => {
+    test('un partenaire suspendu ne peut pas obtenir un nouveau jeton qui lit encore les paiements de ses acheteurs', async () => {
         const partner = await newPartner('aud-susp-relog');
         const ev = await createPartnerEvent(partner.partnerId, 'aud suspendu reconnexion', [{ name: 'Std', price: 1_000, total: 5 }]);
         const buyer = await newBuyer('aud-susp-relog-acheteur');
-        await buyConfirmed(buyer, ev, [['Std', 1]]);
+        const purchase = await buyConfirmed(buyer, ev, [['Std', 1]]);
         const { data: reply, error } = await service.rpc('partner_status_set', {
             p: { partner_id: partner.partnerId, actor_id: await superadminId(), status: 'SUSPENDU', reason: 'Audit de sécurité AUD-06 (reconnexion)' },
         });
@@ -84,9 +85,9 @@ describe('AUD-06 — partenaire suspendu : lectures REST qui ignorent le statut 
         });
         const relog = await anon.auth.signInWithPassword({ email: partner.email, password: STRONG_PASSWORD });
         const fresh = relog.data.session?.access_token;
-        const tickets = fresh ? await asUser(fresh).from('tickets').select('id').eq('event_id', ev.eventId) : null;
-        console.log(`[AUD-06] reconnexion du partenaire suspendu : ${relog.error ? `refusée (${relog.error.message})` : 'acceptée'} ; billets lus avec le jeton neuf : ${tickets?.data?.length ?? 0}`);
-        assert.equal(tickets?.data?.length ?? 0, 0,
-            'un partenaire SUSPENDU se reconnecte et lit de nouveau, avec un jeton neuf, les billets de ses acheteurs (aucun bannissement, aucun contrôle du statut)');
+        const payments = fresh ? await asUser(fresh).from('payments').select('id, payer_phone, amount, status').eq('id', purchase.payment.id) : null;
+        console.log(`[AUD-06] reconnexion du partenaire suspendu : ${relog.error ? `refusée (${relog.error.message})` : 'acceptée'} ; paiements lus avec le jeton neuf : ${JSON.stringify(payments?.data ?? [])}`);
+        assert.equal(payments?.data?.length ?? 0, 0,
+            'un partenaire SUSPENDU se reconnecte et relit, avec un jeton neuf, les paiements de ses acheteurs, numéro du payeur compris (aucun bannissement, aucun contrôle du statut)');
     });
 });

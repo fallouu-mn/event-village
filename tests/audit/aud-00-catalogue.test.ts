@@ -62,11 +62,12 @@ describe('Audit — inventaire du catalogue (base locale, lecture seule)', () =>
                    AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
                  ORDER BY 1, 2, 3`);
 
-            helpers.push(...await section(c, 'Définition des aides exécutables de public', `
+            helpers.push(...await section(c, 'Définition des aides exécutables de public (hors fonctions d’extensions)', `
                 SELECT p.proname AS name, pg_get_functiondef(p.oid) AS def
                   FROM pg_proc p
                  WHERE p.pronamespace = 'public'::regnamespace
                    AND (has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+                   AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
                  ORDER BY 1`));
 
             await section(c, 'Politiques RLS (public, storage, realtime)', `
