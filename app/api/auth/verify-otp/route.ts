@@ -121,12 +121,10 @@ export async function POST(req: NextRequest) {
             if (isControllerActivationPending(authRow.user)) return controllerNotActivatedResponse();
             authEmail = authRow.user.email ?? null;
 
-            // Confirmer le téléphone dans auth.users si pas encore fait (H3: partenaire OTP)
-            if (!authRow.user.phone_confirmed_at) {
-                // Lot 9 (L40) : l'erreur est rendue sans être levée ; journalisée, réponse inchangée.
-                const { error: confirmError } = await supabase.auth.admin.updateUserById(userProfile.id, { phone_confirm: true });
-                if (confirmError) console.error('[API verify-otp] phone_confirm non enregistré :', confirmError.message);
-            }
+            // Confirmer le téléphone dans auth.users (H3: partenaire OTP), comme avant le lot.
+            // Lot 9 (L40) : l'erreur est rendue sans être levée ; journalisée, réponse inchangée.
+            const { error: confirmError } = await supabase.auth.admin.updateUserById(userProfile.id, { phone_confirm: true });
+            if (confirmError) console.error('[API verify-otp] phone_confirm non enregistré :', confirmError.message);
         }
 
         // Lot 9 quater (A3 : G-04) : un code « Mot de passe oublié » ouvre une autorisation de 15 minutes, seule clé de

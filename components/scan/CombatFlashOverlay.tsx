@@ -319,7 +319,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
                     type="button"
                     data-testid="combat-confirm-repeat"
                     onClick={(e) => { e.stopPropagation(); onConfirmRepeat(); }}
-                    className="min-h-14 rounded-2xl border-2 border-current bg-white/15 px-6 py-3 text-2xl font-black focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-current"
+                    className="min-h-14 rounded-2xl border-2 border-current px-6 py-3 text-2xl font-black focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-current"
                 >
                     Même personne : laisser passer
                 </button>

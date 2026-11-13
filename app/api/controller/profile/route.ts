@@ -3,7 +3,7 @@ import { apiFailure } from '@/lib/api/public-error';
 import { z } from 'zod';
 import { getServerSessionUser, requireActiveSession, serverHasAnyRole } from '@/lib/auth/session';
 import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
-import { PasswordCheckUnavailable, verifyAccountPassword } from '@/lib/auth/password-confirm';
+import { noStoreFetch } from '@/lib/supabase/no-store-fetch';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
@@ -121,17 +121,46 @@ export async function PATCH(req: NextRequest) {
             });
         }
 
-        let ok: boolean;
-        try {
-            ok = await verifyAccountPassword(user.id, current_password);
-        } catch (err) {
-            if (err instanceof PasswordCheckUnavailable) {
-                console.error('[PATCH /api/controller/profile]', err.message);
-                return NextResponse.json({ error: 'Impossible de vérifier l’identité.', code: 'IDENTITY_UNAVAILABLE' }, { status: 503 });
-            }
-            throw err;
+        // 1. Récupérer le numéro de téléphone pour la vérification de l'ancien mot de passe
+        const { data: profile, error: profileErr } = await supabase
+            .from('users')
+            .select('phone')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        // Lot 8 (L56) : même règle que GET, une panne n'est pas un profil absent.
+        if (profileErr) return apiFailure('PATCH /api/controller/profile, profil', profileErr, PROFILE_FALLBACK);
+        if (!profile?.phone) {
+            return NextResponse.json({ error: 'Profil introuvable.' }, { status: 404 });
         }
-        if (!ok) {
+
+        // 2. Adresse de connexion du compte
+        const { data: authUser, error: authUserErr } = await supabase.auth.admin.getUserById(user.id);
+        if (authUserErr) {
+            return apiFailure('PATCH /api/controller/profile, compte de connexion', authUserErr, {
+                message: 'Impossible de vérifier l\'identité.',
+                code: 'IDENTITY_UNAVAILABLE',
+            });
+        }
+        const loginEmail = authUser?.user?.email;
+
+        if (!loginEmail) {
+            return NextResponse.json({ error: 'Impossible de vérifier l\'identité.' }, { status: 500 });
+        }
+
+        // 3. Valider l'ancien mot de passe via signInWithPassword (vrai check côté Supabase Auth)
+        const { createClient } = await import('@supabase/supabase-js');
+        const anonClient = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { fetch: noStoreFetch }, auth: { persistSession: false, autoRefreshToken: false } }
+        );
+        const { error: signInErr } = await anonClient.auth.signInWithPassword({
+            email: loginEmail,
+            password: current_password,
+        });
+
+        if (signInErr) {
             return NextResponse.json({ error: 'Mot de passe actuel incorrect.' }, { status: 400 });
         }
 
