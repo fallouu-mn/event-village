@@ -365,6 +365,8 @@ export default function ControllerScannerPage() {
     const resumePendingRef = useRef<(reason: string) => void>(() => undefined);
     /** Un scan est envoyé ou son résultat est affiché : toute lecture est écartée (avec trace). */
     const busyRef = useRef(false);
+    /** Lot 9 quater (E2) : dernière lecture envoyée (requête et contenu lu), pour confirmer un nouveau passage de zone. */
+    const lastRequestRef = useRef<{ request: ScanRequest; payload: string | null } | null>(null);
     const lastValidRef = useRef<{ payload: string; at: number } | null>(null);
     const ignoredTraceRef = useRef<{ payload: string; at: number } | null>(null);
     const seqRef = useRef(0);
@@ -694,6 +696,8 @@ export default function ControllerScannerPage() {
      */
     const runScan = useCallback(async (request: ScanRequest, payload: string | null, key?: string, recoveredAt: number | null = null) => {
         const scanKey = key ?? newIdempotencyKey();
+        // Lot 9 quater (E2) : dernière lecture, reprise telle quelle si le contrôleur confirme un nouveau passage de zone
+        lastRequestRef.current = { request, payload };
         const account = accountIdRef.current;
         if (account) savePendingScan(SURFACE, account, { key: scanKey, eventId: request.eventId, request, createdAt: recoveredAt ?? Date.now() });
         busyRef.current = true;
@@ -738,6 +742,12 @@ export default function ControllerScannerPage() {
         presentOutcome(outcome, payload, recoveredAt);
         return outcome;
     }, [presentOutcome, redirectIfSessionExpired, fetchAssignments]);
+
+    const confirmZoneRepeat = useCallback(() => {
+        const last = lastRequestRef.current;
+        dismissResult();
+        if (last) void runScanRef.current({ ...last.request, confirmZoneRepeat: true }, last.payload);
+    }, [dismissResult]);
 
     const runScanRef = useRef(runScan);
     runScanRef.current = runScan;
@@ -1237,6 +1247,7 @@ export default function ControllerScannerPage() {
                     redirectZones={outcome.redirectZones}
                     checkedInGate={outcome.ticket?.checked_in_gate}
                     gateProblem={outcome.failure === 'gate' && isGateProblemCode(outcome.code) ? outcome.code : null}
+                    onConfirmRepeat={outcome.result === 'zone_already_passed' ? confirmZoneRepeat : undefined}
                 />
             )}
 

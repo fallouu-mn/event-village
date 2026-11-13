@@ -95,7 +95,11 @@ function zoneItem(z: EntriesZoneRow, index: number): ShareItem {
     if (z.kind === 'CONTROLE') {
         const checked = z.checked ?? 0;
         const entered = z.expected ?? 0;
-        return { key, label: `${z.name} (contrôle de zone)`, text: checkedOf(checked, entered), part: checked, whole: entered, detail: refusedDetail(z.refused) };
+        // Lot 9 quater (E2 : AUD-14) : chaque nouveau passage confirmé est compté et dit
+        const repeats = z.repeats ?? 0;
+        const repeatText = repeats > 0 ? `${formatInteger(repeats)} passage${repeats > 1 ? 's' : ''} répété${repeats > 1 ? 's' : ''}` : undefined;
+        const detail = [refusedDetail(z.refused), repeatText].filter(Boolean).join(' · ') || undefined;
+        return { key, label: `${z.name} (contrôle de zone)`, text: checkedOf(checked, entered), part: checked, whole: entered, detail };
     }
     const entered = z.entered ?? 0;
     const expected = z.expected ?? 0;

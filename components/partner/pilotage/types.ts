@@ -83,6 +83,8 @@ export interface EntriesZoneRow {
     expected: number | null;
     entered: number | null;
     checked: number | null;
+    /** Lot 9 quater (E2 : AUD-14) : passages confirmés au-delà du premier à un contrôle de zone. */
+    repeats?: number | null;
     refused: number;
 }
 

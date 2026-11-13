@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { toSenegaleseE164 } from './auth';
+import { contactInfoMessage, hasContactInfo } from '@/lib/validations/contact-info';
 
 /**
  * Lot 9, tâche 9.0 (contrat 4.1) — corps de POST /api/partner/events/[id]/invitations : une catégorie, 1 à 10 numéros
@@ -31,6 +32,8 @@ const GuestNameSchema = z.string({ required_error: 'Nom de l’invité manquant.
     .trim()
     .max(MAX_GUEST_NAME_LENGTH, GUEST_NAME_TOO_LONG)
     .refine((name) => !hasControlChar(name), GUEST_NAME_FORBIDDEN_CHAR)
+    // Lot 9 quater (D3 : AUD-26) : le nom de l'invité part dans le SMS d'invitation
+    .refine((name) => !hasContactInfo(name), contactInfoMessage("Le nom de l'invité"))
     .transform((name) => (name === '' ? null : name))
     .nullable();
 

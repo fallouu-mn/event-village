@@ -52,6 +52,17 @@ function wrongZoneMessage(data: Rpc): string {
     return typeof category === 'string' && category.trim() !== '' ? `Accès refusé : billet ${category}` : SCAN_RESULT_LABELS.wrong_zone;
 }
 
+/** Lot 9 quater (E2 : AUD-14) : « Déjà passé à {zone} à {heure} » (heure de Dakar). */
+function zoneAlreadyPassedMessage(data: Rpc): string {
+    const zone = data.zone && typeof data.zone === 'object' ? (data.zone as { name?: unknown }).name : undefined;
+    const at = typeof data.zone_last_pass_at === 'string' ? new Date(data.zone_last_pass_at) : null;
+    const hour = at && !Number.isNaN(at.getTime())
+        ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dakar' }).format(at)
+        : null;
+    const where = typeof zone === 'string' && zone.trim() !== '' ? zone : 'cette zone';
+    return hour ? `Déjà passé à ${where} à ${hour}` : `Déjà passé à ${where}`;
+}
+
 /**
  * Réponse d'un résultat de scan (HTTP 200) : résultat de l'union partagée, jamais d'erreur technique déguisée.
  * `replayed` est toujours un booléen (vrai seulement pour le rejeu d'une clé déjà traitée, D40).
@@ -61,7 +72,8 @@ function scanResponse(data: Rpc): NextResponse {
     if (!isScanResult(result)) throw new Error(`résultat de scan inconnu : ${JSON.stringify(data)}`);
     const message = result === 'not_processed' ? NOT_PROCESSED_MESSAGE
         : result === 'wrong_zone' ? wrongZoneMessage(data)
-            : SCAN_RESULT_LABELS[result as ScanResult];
+            : result === 'zone_already_passed' ? zoneAlreadyPassedMessage(data)
+                : SCAN_RESULT_LABELS[result as ScanResult];
     return NextResponse.json({ ...data, result, replayed: data.replayed === true, message }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
@@ -205,6 +217,11 @@ export async function POST(req: NextRequest) {
             p.ticket_number = m.manualTicketNumber;
             p.identity_verified = m.identityVerified === true;
             p.payload_hash = sha256(m.manualTicketNumber.toUpperCase());
+        }
+        // Lot 9 quater (E2 : AUD-14) : le contrôleur confirme le nouveau passage d'un billet déjà passé à ce contrôle de
+        // zone (même personne) ; lu sur le corps brut, seule la valeur true compte
+        if (!replay && body && typeof body === 'object' && (body as { confirmZoneRepeat?: unknown }).confirmZoneRepeat === true) {
+            p.confirm_zone_repeat = true;
         }
         // Lot 9 ter (9t.15) : porte annoncée, posée seulement si la clé est dans le corps (null compris)
         if (!replay && body && typeof body === 'object' && 'gateId' in body) {

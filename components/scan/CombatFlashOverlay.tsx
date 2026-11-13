@@ -67,6 +67,11 @@ export interface CombatFlashOverlayProps {
     /** Retour automatique (ms) ; 0 : attend un toucher. */
     durationMs?: number;
     onDismiss?: () => void;
+    /**
+     * Lot 9 quater (E2 : AUD-14) : billet déjà passé à ce contrôle de zone ; le contrôleur confirme qu'il s'agit de la
+     * même personne (sortie aux toilettes) : le passage est alors compté. Sans retour automatique.
+     */
+    onConfirmRepeat?: () => void;
     /** Heure de la lecture d'origine d'un scan renvoyé au retour dans l'application (A10) ; sinon absent. */
     recoveredAt?: number | null;
     /** Lot 9 ter : couleur de la catégorie (clé de SCAN_CATEGORY_COLORS), bande du plein écran. */
@@ -170,8 +175,10 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     redirectZones,
     checkedInGate,
     gateProblem,
+    onConfirmRepeat,
 }) => {
-    const effectiveDuration = durationMs ?? (status === 'valid' || status === 'zone_ok' ? 1500 : 3000);
+    const effectiveDuration = status === 'zone_already_passed' && onConfirmRepeat ? 0
+        : durationMs ?? (status === 'valid' || status === 'zone_ok' ? 1500 : 3000);
 
     useEffect(() => {
         if (!status || effectiveDuration <= 0 || !onDismiss) return;
@@ -306,6 +313,17 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             )}
 
             {badge && <p data-scan-contrast className="rounded-xl border-2 border-current px-4 py-1 text-lg font-bold">{badge}</p>}
+
+            {status === 'zone_already_passed' && onConfirmRepeat && (
+                <button
+                    type="button"
+                    data-testid="combat-confirm-repeat"
+                    onClick={(e) => { e.stopPropagation(); onConfirmRepeat(); }}
+                    className="min-h-14 rounded-2xl border-2 border-current bg-white/15 px-6 py-3 text-2xl font-black focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-current"
+                >
+                    Même personne : laisser passer
+                </button>
+            )}
 
             {onDismiss && (
                 // Retour automatique (consigne 7.2 : aucun clic nécessaire) : le toucher ne fait que l'avancer. « Touchez

@@ -68,6 +68,11 @@ const serverEnvSchema = z.object({
     // jour, compteur propre qui ne tire pas sur le plafond global : des inscriptions en masse ne bloquent plus les codes
     // des comptes existants. Défaut 90 = 30 % de la part des codes (30 % de 1 000).
     SMS_OTP_NEW_NUMBER_DAILY_CAP: limit(90),
+    // Lot 9 quater (D1 : AUD-18) : transferts offerts par billet et par compte, par jour
+    TRANSFER_PER_TICKET_DAY: limit(3),
+    TRANSFER_PER_ACCOUNT_DAY: limit(10),
+    // Lot 9 quater (D2 : AUD-32) : numéros invités (liste des invités) par compte et par jour
+    INVITATION_PER_ACCOUNT_DAY: limit(50),
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Lot 2 : chaîne paiement → billet

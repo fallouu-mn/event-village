@@ -46,6 +46,8 @@ const REFUSAL_STATUS: Readonly<Record<string, number>> = {
 const QUOTA_MESSAGES: Readonly<Record<string, string>> = {
     invitation_event: 'Limite d\'invitations atteinte pour cet événement. Réessayez plus tard.',
     invitation_phone: 'Ce numéro a déjà reçu le maximum d\'invitations aujourd\'hui.',
+    // Lot 9 quater (D2 : AUD-32)
+    invitation_account: 'Limite d\'invitations atteinte pour votre compte aujourd\'hui (50 numéros par jour). Réessayez demain.',
 };
 
 type RpcBody = Record<string, unknown>;
@@ -110,7 +112,8 @@ export async function createInvitations(actorId: string, eventId: string, input:
         quantity: input.quantity,
         // Lot 9 ter (9t.17) : clé absente sans noms (la RPC garde alors l'audit d'aujourd'hui)
         ...(input.guest_names !== undefined ? { guest_names: input.guest_names } : {}),
-        limits: { per_event_hour: env.INVITATION_PER_EVENT_HOUR, per_phone_day: env.INVITATION_PER_PHONE_DAY },
+        // Lot 9 quater (D2 : AUD-32) : numéros invités par compte et par jour
+        limits: { per_event_hour: env.INVITATION_PER_EVENT_HOUR, per_phone_day: env.INVITATION_PER_PHONE_DAY, per_account_day: env.INVITATION_PER_ACCOUNT_DAY },
     });
     return { ticket_count: Number(body.ticket_count), phone_count: Number(body.phone_count) };
 }

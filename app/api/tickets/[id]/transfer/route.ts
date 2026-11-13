@@ -4,6 +4,11 @@ import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession, requireVerifiedPhone } from '@/lib/auth/session';
 import { normalizeRecipient } from '@/lib/validations/transfer';
 import { TicketTransferService, TRANSFER_PHONE, type TransferRefusal } from '@/lib/tickets/ticket-transfer.service';
+import { getServerEnv } from '@/lib/env';
+import { releaseQuota, reserveQuota } from '@/lib/security/quota';
+import { quotaRefusalResponse } from '@/lib/security/quota-http';
+
+const DAY_SECONDS = 86_400;
 
 export const dynamic = 'force-dynamic';
 
@@ -62,8 +67,34 @@ export async function POST(
         return NextResponse.json({ error: 'Numéro de téléphone du destinataire invalide.', code: 'INVALID_BODY' }, { status: 400 });
     }
 
+    // Lot 9 quater (D1 : AUD-18) : transferts offerts au plus TRANSFER_PER_TICKET_DAY fois par billet (3) et
+    // TRANSFER_PER_ACCOUNT_DAY fois par compte (10) et par jour ; chaque offre fait partir un SMS indispensable. Une
+    // offre refusée par la suite (billet d'un autre, statut) rend ses unités.
+    const env = getServerEnv();
+    const transferRules = [
+        { scope: 'transfer_offer_ticket', bucket: ticketId, windowSecs: DAY_SECONDS },
+        { scope: 'transfer_offer_account', bucket: user.id, windowSecs: DAY_SECONDS },
+    ];
+    const quota = await reserveQuota([
+        { ...transferRules[0], max: env.TRANSFER_PER_TICKET_DAY },
+        { ...transferRules[1], max: env.TRANSFER_PER_ACCOUNT_DAY },
+    ], 'transfert de billet');
+    if (!quota.allowed) {
+        return quotaRefusalResponse(quota, {
+            error: `Limite de transferts atteinte pour aujourd’hui : ${env.TRANSFER_PER_TICKET_DAY} par billet et ${env.TRANSFER_PER_ACCOUNT_DAY} par compte. Réessayez demain.`,
+            code: 'TRANSFER_RATE_LIMITED',
+        });
+    }
+
     try {
-        const result = await TicketTransferService.initiateTransfer(user.id, ticketId, target.normalized);
+        let result: Awaited<ReturnType<typeof TicketTransferService.initiateTransfer>>;
+        try {
+            result = await TicketTransferService.initiateTransfer(user.id, ticketId, target.normalized);
+        } catch (initErr) {
+            const released = await releaseQuota(transferRules, 'transfert de billet (rendu)');
+            if (!released.ok) console.error(`[POST /api/tickets/${ticketId}/transfer] unités de quota non rendues`);
+            throw initErr;
+        }
         const transfer = {
             transfer_id: result.transfer_id,
             ticket_id: result.ticket_id,

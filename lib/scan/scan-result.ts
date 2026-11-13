@@ -27,6 +27,9 @@ export const SCAN_RESULTS = [
     'wrong_zone',
     'not_entered',
     'zone_ok',
+    // Lot 9 quater (E2 : AUD-14) : billet déjà passé à ce contrôle de zone (orange, rien écrit) ; le contrôleur confirme
+    // qu'il s'agit de la même personne et le passage est compté (zone_ok)
+    'zone_already_passed',
     'rate_limited',
     'network_error',
     'server_error',
@@ -67,6 +70,7 @@ export const SCAN_RESULT_LABELS: Record<ScanResult, string> = {
     wrong_zone: 'Mauvaise zone',
     not_entered: 'Pas encore entré',
     zone_ok: 'Accès autorisé',
+    zone_already_passed: 'Déjà passé dans cette zone',
     rate_limited: 'Trop de scans : patientez quelques secondes',
     network_error: 'Erreur réseau : réessayez',
     server_error: 'Erreur serveur : réessayez',
@@ -106,6 +110,7 @@ export const SCAN_RESULT_CATEGORY: Record<ScanResult, ScanCategory> = {
     wrong_zone: 'oriente',
     not_entered: 'oriente',
     zone_ok: 'accepte',
+    zone_already_passed: 'oriente',
     qr_expired: 'refuse',
     event_not_open: 'hors_fenetre',
     event_ended: 'hors_fenetre',

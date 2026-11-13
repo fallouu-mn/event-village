@@ -19,6 +19,7 @@ import { canonicalCity } from '@/lib/events/senegal-cities';
 import { SCAN_CATEGORY_COLORS, type ScanCategoryColor } from '@/lib/scan/scan-result';
 import { foldText } from '@/lib/text/fold';
 import { INVALID_SN_CONTACT_PHONE_MESSAGE, toSenegaleseContactE164 } from '@/lib/validations/auth';
+import { contactInfoMessage, hasContactInfo } from '@/lib/validations/contact-info';
 
 // ── Valeurs et bornes ──────────────────────────────────────────────────────
 
@@ -180,19 +181,23 @@ function blankToNull(v: unknown): unknown {
 const dateField = z.string().refine(isCalendarDate, { message: 'Date invalide (format AAAA-MM-JJ).' });
 const timeField = z.string().regex(TIME_RE, 'Heure invalide (format HH:mm).').transform((t) => t.slice(0, 5));
 
+// Lot 9 quater (D3 : AUD-26) : titre, lieu, ville et consigne recopiés dans les SMS : ni adresse web ni numéro
 const titleField = z.string().trim()
     .min(EVENT_LIMITS.titleMin, `Le titre compte au moins ${EVENT_LIMITS.titleMin} caractères.`)
-    .max(EVENT_LIMITS.titleMax, `Le titre compte au plus ${EVENT_LIMITS.titleMax} caractères.`);
+    .max(EVENT_LIMITS.titleMax, `Le titre compte au plus ${EVENT_LIMITS.titleMax} caractères.`)
+    .refine((v) => !hasContactInfo(v), contactInfoMessage('Le titre'));
 const descriptionField = z.preprocess(blankToNull, z.string().trim()
     .max(EVENT_LIMITS.descriptionMax, 'La description compte au plus 5 000 caractères.').nullable());
 const locationField = z.string().trim()
     .min(EVENT_LIMITS.locationMin, `Le lieu compte au moins ${EVENT_LIMITS.locationMin} caractères.`)
-    .max(EVENT_LIMITS.locationMax, `Le lieu compte au plus ${EVENT_LIMITS.locationMax} caractères.`);
+    .max(EVENT_LIMITS.locationMax, `Le lieu compte au plus ${EVENT_LIMITS.locationMax} caractères.`)
+    .refine((v) => !hasContactInfo(v), contactInfoMessage('Le lieu'));
 // Lot 9 ter (R96) : une ville de la liste (lib/events/senegal-cities.ts) est ramenée à sa forme de la liste ; une autre
 // ville (« Autre ville ») est gardée telle quelle, 2 à 80 caractères.
 const cityField = z.string().trim()
     .min(EVENT_LIMITS.cityMin, `La ville compte au moins ${EVENT_LIMITS.cityMin} caractères.`)
     .max(EVENT_LIMITS.cityMax, `La ville compte au plus ${EVENT_LIMITS.cityMax} caractères.`)
+    .refine((v) => !hasContactInfo(v), contactInfoMessage('La ville'))
     .transform(canonicalCity);
 const categoryField = z.enum(EVENT_CATEGORY_VALUES, {
     errorMap: () => ({ message: 'Choisissez une catégorie d’événement dans la liste.' }),
@@ -529,8 +534,12 @@ const scanColorField = z.custom<ScanCategoryColor>(
 const entryInstructionField = z.custom<string>((v) => typeof v === 'string', { message: ENTRY_INSTRUCTION_MESSAGE, params: { code: 'INVALID_INPUT' } })
     .transform((v) => v.trim())
     .refine((v) => v.length <= 60, { message: ENTRY_INSTRUCTION_MESSAGE, params: { code: 'INVALID_INPUT' } })
+    .refine((v) => !hasContactInfo(v), { message: contactInfoMessage('La consigne'), params: { code: 'INVALID_INPUT' } })
     .nullable()
     .transform((v) => (v === '' ? null : v));
+
+/** Lot 9 quater (D3) : champs dont le texte part dans les SMS (contrôle statique tests/schema/lot9quater-coordonnees). */
+export const EVENT_CONTACT_FIELDS = { title: titleField, location: locationField, city: cityField, entry_instruction: entryInstructionField };
 
 const ticketCategoryCreateObject = z.object({
     ...categoryCreateShape,

@@ -86,7 +86,7 @@ export type ScanRequest = (
     | { eventId: string; payload: string }
     | { eventId: string; manualTicketNumber: string; identityVerified: boolean }
     | { eventId: string; guestTicketId: string; identityVerified: boolean }
-) & { gateId?: string | null };
+) & { gateId?: string | null; /** Lot 9 quater (E2) : nouveau passage confirmé à un contrôle de zone. */ confirmZoneRepeat?: boolean };
 
 export interface SendOptions {
     /** Clé d'idempotence imposée (saisie manuelle : la clé de la vérification est reprise pour la validation). */
