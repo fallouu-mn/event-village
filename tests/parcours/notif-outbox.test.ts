@@ -120,7 +120,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('WITHDRAWAL_UNCERTAIN', [I, S, P, M], 'ANY', 'A'), // G.49
     ess('CANCEL_REFUNDS_DONE', [I, M, P], 'PARTNER', 'A'),
     ess('CANCEL_REFUNDS_BLOCKED', [I, M, P], 'PARTNER', 'A'),
-    ess('PARTNER_REGISTERED_ACK', [I, M], 'PARTNER', 'B'),
+    ess('PARTNER_REGISTERED_ACK', [I, S, M], 'PARTNER', 'B'), // lot 9 quinquies (C3) : + SMS d'accusé, modification signalée
     ess('PARTNER_VALIDATED', [I, S, M], 'PARTNER', 'B'),
     ess('PARTNER_REJECTED', [I, S, M], 'PARTNER', 'B'),
     ess('PARTNER_SUSPENDED', [I, S, M], 'PARTNER', 'A'),
@@ -193,6 +193,12 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     // Lot 9 quater (A8 : AUD-05 ; A9 : AUD-34) : deux types nouveaux (migrations 20261111000002 et …04), modification signalée
     ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'notifications.read'),
     ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M], 'ANY', 'B'),
+    // Lot 9 quinquies (D1, A1, A2, A3, C2) : types nouveaux (migrations 20261112000001, …02, …06, …08), modification signalée
+    ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B'),
+    ess('ACCOUNT_LOGIN_FAILURES', [S, M], 'ANY', 'B'),
+    sync('ACCOUNT_ACTIVATION'),
+    sync('OTP_ADMIN'),
+    ess('EMAIL_ADDED', [S, M], 'ANY', 'B'),
 ];
 
 const LOT6_TABLES = ['notification_outbox', 'notification_types', 'notification_preferences', 'push_subscriptions'] as const;

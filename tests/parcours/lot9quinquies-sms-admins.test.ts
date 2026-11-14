@@ -162,10 +162,14 @@ describe('D1 — SMS aux administrateurs pour ce qui attend leur action', () => 
         assert.equal(await addReview('EVENT_SUBMITTED', t0), 2, 'SUPERADMIN et ADMIN events.write touchés');
         await dispatchFor(superadmin, t0);
         await dispatchFor(eventsWriter, t0);
-        await dispatchFor(validator, t0);
         const expected = `Event Village : 1 événement(s) attendent votre validation : ${APP_URL}/admin/dashboard`;
         assert.deepEqual(smsSince(eventsWriter, start.ev), [expected], 'ADMIN events.write');
         assert.deepEqual(smsSince(superadmin, start.sa), [expected], 'SUPERADMIN');
-        assert.deepEqual(smsSince(validator, start.validator), [], 'ADMIN partners.validate seul : rien pour un événement');
+        // Run 171 : l'ADMIN partners.validate garde la ligne regroupée des candidatures des tests 2 et 3 (jamais envoyée
+        // pour lui) ; l'envoyer ici donnait un SMS « demande(s) de partenaire » sans rapport avec l'événement. Contrôle :
+        // aucune de ses lignes ne compte un événement, et aucun de ses SMS n'en parle.
+        const validatorEvents = (await reviewRows(validator)).filter((r) => Number((r.template_data as { event_count?: unknown } | null)?.event_count ?? 0) > 0);
+        assert.deepEqual(validatorEvents.map((r) => r.template_data), [], 'ADMIN partners.validate seul : aucune ligne pour un événement');
+        assert.deepEqual(smsSince(validator, start.validator).filter((m) => m.includes('événement')), [], 'ADMIN partners.validate seul : aucun SMS d’événement');
     });
 });

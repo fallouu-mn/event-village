@@ -145,12 +145,15 @@ for (const s of SUBJECTS) {
 describe('A26 — partner/events/[id], lecture du partenaire', () => {
     const event = SUBJECTS[0];
 
-    test('panne de partners : 500 EVENT_UNAVAILABLE, journalisée, jamais 404', async () => {
+    test('panne de partners : 503 PARTNER_UNAVAILABLE (garde de la fiche), journalisée, jamais 404', async () => {
+        // Lot 9 quinquies (A9 ; modification signalée au rapport) : la garde de la fiche partenaire (requireActiveSession,
+        // lib/auth/partner-fiche-guard.ts) lit partners AVANT la route ; la panne y est arrêtée : 503 PARTNER_UNAVAILABLE,
+        // journalisée, jamais 404 ni un passage. La règle éprouvée est la même : une panne n'est jamais présentée comme une absence.
         const { result, logged } = await during(tableWhere('partners', 'user_id', partner.userId), async () => event.call(partner, ev.eventId));
-        assert.equal(result.status, 500, `panne présentée comme une absence : ${show(result)}`);
+        assert.equal(result.status, 503, `panne présentée comme une absence : ${show(result)}`);
         assertClean(result, 'partners');
-        assert.equal(result.body.code, 'EVENT_UNAVAILABLE', show(result));
-        assert.equal(result.body.error, 'Événement momentanément indisponible.', show(result));
+        assert.equal(result.body.code, 'PARTNER_UNAVAILABLE', show(result));
+        assert.equal(result.body.error, 'Vérification du compte momentanément impossible.', show(result));
         assert.ok(logged.length >= 1, 'panne non journalisée');
     });
 
@@ -166,12 +169,15 @@ describe('A26 — partner/events/[id], lecture du partenaire', () => {
 describe('A32 — partner/orders/[id], lecture du partenaire et propriété', () => {
     const order = SUBJECTS[3];
 
-    test('panne de partners : 500 ORDER_UNAVAILABLE, journalisée', async () => {
+    test('panne de partners : 503 PARTNER_UNAVAILABLE (garde de la fiche), journalisée', async () => {
+        // Lot 9 quinquies (A9 ; modification signalée au rapport) : la garde de la fiche partenaire (requireActiveSession,
+        // lib/auth/partner-fiche-guard.ts) lit partners AVANT la route ; la panne y est arrêtée : 503 PARTNER_UNAVAILABLE,
+        // journalisée, jamais 404 ni un passage. La règle éprouvée est la même : une panne n'est jamais présentée comme une absence.
         const { result, logged } = await withFlag(order, () => during(tableWhere('partners', 'user_id', partner.userId), async () => order.call(partner, orderId)));
-        assert.equal(result.status, 500, show(result));
+        assert.equal(result.status, 503, show(result));
         assertClean(result, 'partners');
-        assert.equal(result.body.code, 'ORDER_UNAVAILABLE', show(result));
-        assert.match(String(result.body.error), /momentanément indisponible/, show(result));
+        assert.equal(result.body.code, 'PARTNER_UNAVAILABLE', show(result));
+        assert.match(String(result.body.error), /momentanément impossible/, show(result));
         assert.ok(logged.length >= 1, 'panne non journalisée');
     });
 

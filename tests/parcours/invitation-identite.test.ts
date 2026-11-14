@@ -107,7 +107,10 @@ describe('Invitation : identité des comptes existants', () => {
         const verified = await verifyOtp(jsonRequest('/api/auth/verify-otp', { phone: holder.phone, otpCode: lastCodeTo(holder.phone) }));
         const body = await verified.json();
         assert.equal(verified.status, 200, `verify-otp : HTTP ${verified.status} ${JSON.stringify(body)}`);
-        assert.equal(body.email, holder.email, 'le lien de réinitialisation vise l’email du client');
+        // Lot 9 quinquies (A6 : AUTH-14 ; modification signalée au rapport) : verify-otp ne rend plus l'adresse, seulement
+        // l'identifiant du compte ; le lien de réinitialisation vise toujours le compte du client
+        assert.equal(body.user?.id, holder.userId, 'le lien de réinitialisation vise le compte du client');
+        assert.equal(body.email, undefined, 'aucune adresse dans la réponse (A6)');
     });
 
     test('recherche par égalité exacte : un numéro étranger finissant par les 9 chiffres d’un client est refusé', async () => {

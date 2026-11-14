@@ -636,7 +636,9 @@ function freshIp(): string {
 }
 
 describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2.5-J2.8)', () => {
-    test('inscription par la route : un seul SMS (le code), PARTNER_REGISTERED_ACK in-app et email, aucune ligne SMS de la boîte d’envoi', async () => {
+    // Lot 9 quinquies (C3 ; modification signalée au rapport) : la décision 14 (pas de SMS « inscription reçue ») est remplacée
+    // par le SMS d'accusé demandé par le chef de projet : PARTNER_REGISTERED_ACK a maintenant le canal SMS.
+    test('inscription par la route : SMS du code, puis PARTNER_REGISTERED_ACK in-app, email et SMS d’accusé', async () => {
         const phone = randomSenegalPhone('76');
         const email = randomEmail('pros-inscription');
         const reg = await registerPartnerTwoStep({ // lot 9 bis (R53, T38) : deux appels de la même route, code lu dans le faux SMS
@@ -652,14 +654,16 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.equal(error, null, `compte : ${error?.message}`);
         const pr = await service.from('partners').select('id').eq('user_id', user.id).single();
         assert.equal(pr.error, null, `partenaire : ${pr.error?.message}`);
-        const rows = await groupRows('PARTNER_REGISTERED_ACK', `PARTNER_REGISTERED_ACK:${pr.data!.id}`, ['EMAIL', 'IN_APP'], String(user.id));
+        const rows = await groupRows('PARTNER_REGISTERED_ACK', `PARTNER_REGISTERED_ACK:${pr.data!.id}`, ['EMAIL', 'IN_APP', 'SMS'], String(user.id));
         assert.ok(rows.every((r) => (r.channel === 'EMAIL' ? r.status === 'SKIPPED' && r.reason === 'NO_REAL_EMAIL' : r.status === 'PENDING')), `compte EN_ATTENTE : avis non bloqué ; EMAIL SKIPPED NO_REAL_EMAIL, adresse technique (contrat 4.6, B100) (${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))})`);
         const outboxSms = [...await outboxRows({ userId: String(user.id), channel: 'SMS' }), ...await outboxRows({ phone, channel: 'SMS' })]
             .filter((r) => r.origin === 'OUTBOX');
-        assert.deepEqual(outboxSms.map((r) => r.idempotency_key), [], 'aucun SMS « inscription reçue » (doublon de l’OTP, décision 14)');
+        assert.deepEqual(Array.from(new Set(outboxSms.map((r) => r.idempotency_key))), [`PARTNER_REGISTERED_ACK:${pr.data!.id}:SMS`], 'une seule ligne SMS : l’accusé (C3)');
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: String(user.id), title: 'Inscription reçue', contains: ['Inscription Test SARL'], actionUrl: '/partner/dashboard' });
-        assert.equal(getFakes().sms.messagesTo(phone).length, 1, 'après le passage de l’envoyeur : toujours un seul SMS');
+        const messages = getFakes().sms.messagesTo(phone).map((m) => m.message);
+        assert.equal(messages.length, 2, `après le passage de l’envoyeur : le code, puis l’accusé (${JSON.stringify(messages)})`);
+        assert.equal(messages[1], 'Event Village : votre demande de compte partenaire Inscription Test SARL est enregistrée. Réponse sous 48 h.', 'texte de l’accusé (C3)');
     });
 
     test('partner_status_set : validation d’un partenaire EN_ATTENTE → VALIDE, compte ACTIF, PARTNER_VALIDATED (in-app, SMS, email), SMS exact', async () => {

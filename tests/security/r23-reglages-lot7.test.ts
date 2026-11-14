@@ -19,7 +19,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
-import { assertDenied, signInFixture, uniqueSuffix } from './helpers';
+import { assertDenied, signInFixture, stepUpFixture, uniqueSuffix } from './helpers';
 
 const KEYS = ['notif.sms_optional_daily_cap', 'notif.free_ticket_reminder_sms', 'features.halls_enabled'] as const;
 /** Valeur d'écriture de mauvaise foi, différente de toute valeur admise. */
@@ -96,6 +96,8 @@ describe('R23 — réglages du lot 7 (budget SMS optionnel, billets gratuits, in
 
     test('témoin : le SUPERADMIN modifie notif.sms_optional_daily_cap et features.halls_enabled par PUT /api/admin/finance-settings (puis restaure)', async () => {
         const superadmin = await signInFixture('SUPERADMIN');
+        // Lot 9 quinquies (A3, A4 ; modification signalée au rapport) : la route de l'administration exige le second facteur
+        await stepUpFixture('SUPERADMIN');
         const token = await accessToken(superadmin.client);
         const { PUT } = (await import('../../app/api/admin/finance-settings/route')) as { PUT: (req: NextRequest) => Promise<Response> };
         const put = async (key: string, value: unknown) => {

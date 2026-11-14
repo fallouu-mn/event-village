@@ -126,6 +126,29 @@ export async function adminStepUpThroughRoutes(token: string, phone: string): Pr
     if (ok.status !== 200) throw new Error(`second facteur : code refusé (HTTP ${ok.status} ${JSON.stringify(ok.body)})`);
 }
 
+const fixtureStepUps = new Map<FixtureUserKey, Promise<void>>();
+
+/**
+ * Lot 9 quinquies (A3, A4 ; aide ajoutée, signalée au rapport) : second facteur de la session de fixture d'un ADMIN ou
+ * d'un SUPERADMIN, passé par les VRAIES routes (mot de passe, puis code administrateur lu dans le faux SMS), sans
+ * service_role. À appeler seulement par une suite qui appelle une route de l'application avec ce compte : la REST n'est
+ * pas concernée, et un code par suite épuiserait la limite de SMS par numéro (3 par 15 minutes ; run 171). Une fois par
+ * compte et par processus.
+ */
+export function stepUpFixture(key: FixtureUserKey): Promise<void> {
+    let done = fixtureStepUps.get(key);
+    if (!done) {
+        done = (async () => {
+            const account = await signInFixture(key);
+            const { data, error } = await account.client.auth.getSession();
+            if (error || !data.session) throw new Error(`stepUpFixture(${key}) : session absente (${error?.message ?? 'aucune'})`);
+            await adminStepUpThroughRoutes(data.session.access_token, FIXTURE_USERS[key].phone);
+        })();
+        fixtureStepUps.set(key, done);
+    }
+    return done;
+}
+
 export function signInFixture(key: FixtureUserKey): Promise<AttackerAccount> {
     let session = fixtureSessions.get(key);
     if (!session) {
@@ -133,11 +156,6 @@ export function signInFixture(key: FixtureUserKey): Promise<AttackerAccount> {
             const client = newClient();
             const { data, error } = await client.auth.signInWithPassword({ email: FIXTURE_USERS[key].email, password: TEST_PASSWORD });
             if (error || !data.user) throw new Error(`signInWithPassword(${key}) : ${error?.message ?? 'aucun utilisateur'}`);
-            // Lot 9 quinquies (A3, A4 ; aide modifiée, signalée au rapport) : un compte ADMIN ou SUPERADMIN passe le second
-            // facteur par les VRAIES routes (mot de passe, puis code administrateur lu dans le faux SMS), sans service_role.
-            if ((FIXTURE_USERS[key].roles as readonly string[]).some((r) => r === 'ADMIN' || r === 'SUPERADMIN')) {
-                await adminStepUpThroughRoutes(data.session!.access_token, FIXTURE_USERS[key].phone);
-            }
             return { client, userId: data.user.id, email: FIXTURE_USERS[key].email };
         })();
         fixtureSessions.set(key, session);
