@@ -40,7 +40,7 @@ export function sessionIdOf(token: string): string {
 export async function callRoute(
     rel: string,
     method: string,
-    opts: { token?: string; body?: unknown; cookie?: string; params?: Record<string, string>; url?: string } = {},
+    opts: { token?: string; body?: unknown; cookie?: string; params?: Record<string, string>; url?: string; headers?: Record<string, string> } = {},
 ): Promise<Reply | null> {
     const mod = (await import(`../../app/api/${rel}/route`)) as Record<string, Handler | undefined>;
     const handler = mod[method];
@@ -48,6 +48,7 @@ export async function callRoute(
     const headers: Record<string, string> = { 'content-type': 'application/json', 'x-forwarded-for': freshIp() };
     if (opts.token) headers.authorization = `Bearer ${opts.token}`;
     if (opts.cookie) headers.cookie = opts.cookie;
+    Object.assign(headers, opts.headers ?? {});
     const params = opts.params ?? {};
     const res = await handler(new NextRequest(opts.url ?? `${BASE_URL}/api/${rel}`, {
         method,

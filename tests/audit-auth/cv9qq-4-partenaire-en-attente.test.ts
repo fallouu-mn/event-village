@@ -135,7 +135,7 @@ describe('Attaque 4 — partenaire dont la fiche n\'est pas validée', () => {
         assert.equal(roleErr, null, roleErr?.message);
         try {
             await assignController(partner, partner.userId, eventId, false);
-            const r = await callRoute('controller/scan', 'POST', { token: partner.accessToken, body: { eventId, manualTicketNumber: 'EV-0000-0000' } });
+            const r = await callRoute('controller/scan', 'POST', { token: partner.accessToken, body: { eventId, manualTicketNumber: 'EV-0000-0000' }, headers: { 'idempotency-key': randomUUID() } });
             console.log(`[CV9QQ-4d] observation : scan par la partenaire EN_ATTENTE affectée comme contrôleuse : ${r?.status} ${String(r?.body.code ?? r?.body.result ?? '')}`);
         } finally {
             await service.from('event_controllers').delete().eq('event_id', eventId).eq('user_id', partner.userId);

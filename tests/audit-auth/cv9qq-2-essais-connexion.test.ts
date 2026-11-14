@@ -5,8 +5,8 @@
  *  a. 25 essais EN PARALLÈLE sur POST /api/auth/login : au plus 10 essais vérifiés, puis 429 ; le bon mot de passe aussi ;
  *  b. en alternant le numéro et l'adresse email (vérifiée) du même compte : la limite est commune ;
  *  c. directement chez GoTrue (/auth/v1/token, clé publique), sans passer par l'application ;
- *  d. par la connexion par code : après le blocage, le code SMS a ses propres limites (5 essais par code, 3 codes par
- *     15 minutes et par numéro) et ne permet pas de deviner.
+ *  d. par la connexion par code : après le blocage, le code SMS a sa propre limite (5 essais par code) et ne
+ *     permet pas de deviner (la limite des codes par numéro est relevée dans .env.test).
  */
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -66,7 +66,7 @@ describe('Attaque 2 — dépasser 10 mauvais mots de passe', () => {
         assert.notEqual(right.error, null, 'GoTrue ouvre une session après 12 mauvais mots de passe : la limite par compte ne vaut que pour /api/auth/login');
     });
 
-    test('d. connexion par code après le blocage : 5 essais par code, puis le bon code est refusé ; 3 codes par 15 minutes', async () => {
+    test('d. connexion par code après le blocage : 5 essais par code, puis le bon code est refusé', async () => {
         const u = await newBuyer('cv9qq-code');
         for (let i = 0; i < 10; i += 1) await login(u.phone9, wrong());
         assert.equal((await login(u.phone9, STRONG_PASSWORD)).status, 429, 'compte bloqué');
@@ -81,9 +81,8 @@ describe('Attaque 2 — dépasser 10 mauvais mots de passe', () => {
         const after5 = await post('auth/verify-otp', { phone: u.phoneE164, otpCode: code });
         console.log(`[CV9QQ-2d] 5 codes faux : ${tries.join(',')} ; bon code ensuite : ${after5.status} ${String(after5.body.code ?? '')}`);
         assert.notEqual(after5.status, 200, 'le bon code passe après 5 essais faux');
-        const sends: number[] = [];
-        for (let i = 0; i < 3; i += 1) sends.push((await post('auth/send-otp', { phone: u.phoneE164, purpose: 'LOGIN' })).status);
-        console.log(`[CV9QQ-2d] codes demandés ensuite (déjà 1 dans les 15 minutes) : ${sends.join(',')}`);
-        assert.ok(sends.includes(429), `aucune limite des codes par numéro : ${sends.join(',')}`);
+        // La limite des codes par numéro (SMS_OTP_PER_PHONE_15MIN, 3 par défaut) est relevée à 1000 dans .env.test pour
+        // les autres suites ; elle est prouvée (valeur abaissée) par tests/parcours/sms-anti-abus.test.ts.
+        console.log(`[CV9QQ-2d] limite des codes par numéro dans cet environnement : ${process.env.SMS_OTP_PER_PHONE_15MIN ?? '3 (défaut)'} par 15 minutes`);
     });
 });
