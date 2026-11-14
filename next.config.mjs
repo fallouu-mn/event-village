@@ -58,6 +58,12 @@ const CSP_REPORT_ONLY = [
 
 const nextConfig = {
   reactStrictMode: true,
+  // Lot 9 quinquies (A4 : AUTH-04) : cookie de session du navigateur Secure quand l'application est servie en HTTPS. Règle
+  // calculée une fois à la construction, comme celle du serveur (lib/supabase/cookie-options.ts, NEXT_PUBLIC_APP_URL) : le
+  // navigateur ne reçoit qu'une constante (client Supabase chargé sur toutes les pages, budget de poids, run 173).
+  env: {
+    NEXT_PUBLIC_SESSION_COOKIE_SECURE: String((process.env.NEXT_PUBLIC_APP_URL ?? '').trim().toLowerCase().startsWith('https://')),
+  },
   // instrumentation.ts : avertissement unique au démarrage si le canal email est désactivé (lot 1C.8)
   // web-push (lot 6, chiffrement du push) est chargé par Node tel quel, sans passer par webpack.
   experimental: { instrumentationHook: true, serverComponentsExternalPackages: ['web-push'] },

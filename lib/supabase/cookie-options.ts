@@ -5,8 +5,8 @@
  * sur une connexion en clair. En local et en e2e (http://localhost), Secure n'est pas posé, sinon la session ne tiendrait
  * pas. SameSite=Lax et chemin « / » comme les valeurs par défaut de @supabase/ssr. HttpOnly reste impossible : le client
  * Supabase du navigateur lit sa session dans ce cookie (constat AUTH-04, mesure réaliste : durée et inactivité).
- * Serveur (middleware, confirmation du mot de passe) ; le client du navigateur applique la même règle par le protocole de
- * la page (lib/supabase/client.ts).
+ * Serveur (middleware, confirmation du mot de passe) ; le client du navigateur reçoit la même règle, calculée à la
+ * construction par next.config.mjs (NEXT_PUBLIC_SESSION_COOKIE_SECURE, lu par lib/supabase/client.ts).
  */
 export function secureCookies(): boolean {
     return (process.env.NEXT_PUBLIC_APP_URL ?? '').trim().toLowerCase().startsWith('https://');

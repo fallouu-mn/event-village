@@ -14,12 +14,11 @@ export function getBrowserClient() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-    // Lot 9 quinquies (A4) : cookie de session Secure dès que la page est servie en HTTPS (production) ; chemin « / » et
-    // SameSite=Lax sont les valeurs par défaut de @supabase/ssr (DEFAULT_COOKIE_OPTIONS, fusionnées avec celles-ci). Côté
-    // serveur (middleware, confirmation du mot de passe), la même règle est lue dans NEXT_PUBLIC_APP_URL
-    // (lib/supabase/cookie-options.ts). Expression courte : ce module est chargé sur toutes les pages (run 173).
+    // Lot 9 quinquies (A4) : cookie de session Secure quand l'application est servie en HTTPS (production). Constante écrite
+    // à la construction par next.config.mjs depuis NEXT_PUBLIC_APP_URL, même règle que le serveur
+    // (lib/supabase/cookie-options.ts). Chemin « / » et SameSite=Lax : valeurs par défaut de @supabase/ssr.
     browserClient = createBrowserClient(supabaseUrl, anonKey, {
-        cookieOptions: { secure: typeof location !== 'undefined' && location.protocol === 'https:' },
+        cookieOptions: { secure: process.env.NEXT_PUBLIC_SESSION_COOKIE_SECURE === 'true' },
     });
 
     return browserClient;
