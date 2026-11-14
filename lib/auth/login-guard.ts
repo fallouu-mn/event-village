@@ -19,6 +19,11 @@ import { formatRetryDelay } from '@/lib/format-delay';
 export const LOGIN_FAILURES_MAX = 10;
 export const LOGIN_FAILURES_WINDOW_SECS = 15 * 60;
 
+/** Limite d'un compteur d'échecs : nombre et fenêtre glissante. */
+export interface AttemptLimits { max: number; windowSecs: number }
+
+const LOGIN_LIMITS: AttemptLimits = { max: LOGIN_FAILURES_MAX, windowSecs: LOGIN_FAILURES_WINDOW_SECS };
+
 /** Clé de la limite : compte résolu, sinon empreinte de l'identifiant saisi (normalisé par l'appelant). */
 export function loginBucket(userId: string | null, normalizedIdentifier: string): string {
     if (userId) return `user:${userId.toLowerCase()}`;
@@ -34,16 +39,19 @@ export class LoginGuardUnavailable extends Error {
 
 export type LoginAttempt = { allowed: true; attemptId: string } | { allowed: false; retryAfterSeconds: number };
 
-/** Réserve un essai sur la clé ; refus si 10 essais échoués (ou en cours) dans les 15 dernières minutes. */
-export async function beginLoginAttempt(bucket: string): Promise<LoginAttempt> {
+/**
+ * Réserve un essai sur la clé ; refus si 10 essais échoués (ou en cours) dans les 15 dernières minutes. `limits` : autre
+ * compteur (mot de passe redemandé dans l'administration, app/api/admin/step-up/route.ts).
+ */
+export async function beginLoginAttempt(bucket: string, limits: AttemptLimits = LOGIN_LIMITS): Promise<LoginAttempt> {
     const { data, error } = await getServiceRoleClient().rpc('auth_login_attempt_begin', {
-        p: { bucket, max: LOGIN_FAILURES_MAX, window_secs: LOGIN_FAILURES_WINDOW_SECS },
+        p: { bucket, max: limits.max, window_secs: limits.windowSecs },
     });
     if (error) throw new LoginGuardUnavailable(`limite des essais : ${error.message}`);
     const reply = data as { ok?: boolean; allowed?: boolean; attempt_id?: unknown; retry_after_seconds?: unknown; code?: string } | null;
     if (reply?.ok !== true) throw new LoginGuardUnavailable(`limite des essais refusée : ${reply?.code ?? 'réponse vide'}`);
     if (reply.allowed === true && typeof reply.attempt_id === 'string') return { allowed: true, attemptId: reply.attempt_id };
-    if (reply.allowed === false) return { allowed: false, retryAfterSeconds: Math.max(1, Number(reply.retry_after_seconds) || LOGIN_FAILURES_WINDOW_SECS) };
+    if (reply.allowed === false) return { allowed: false, retryAfterSeconds: Math.max(1, Number(reply.retry_after_seconds) || limits.windowSecs) };
     throw new LoginGuardUnavailable(`limite des essais : réponse inattendue ${JSON.stringify(data)}`);
 }
 
@@ -51,9 +59,9 @@ export async function beginLoginAttempt(bucket: string): Promise<LoginAttempt> {
  * Fin de l'essai : SUCCESS et ABORTED rendent l'essai, FAILURE le garde (et peut mettre en file l'avis du 10e échec).
  * Une erreur est journalisée et remontée : l'appelant décide (jamais avalée).
  */
-export async function endLoginAttempt(attemptId: string, outcome: 'SUCCESS' | 'FAILURE' | 'ABORTED', userId: string | null): Promise<void> {
+export async function endLoginAttempt(attemptId: string, outcome: 'SUCCESS' | 'FAILURE' | 'ABORTED', userId: string | null, limits: AttemptLimits = LOGIN_LIMITS): Promise<void> {
     const { data, error } = await getServiceRoleClient().rpc('auth_login_attempt_end', {
-        p: { attempt_id: attemptId, outcome, user_id: userId, max: LOGIN_FAILURES_MAX, window_secs: LOGIN_FAILURES_WINDOW_SECS },
+        p: { attempt_id: attemptId, outcome, user_id: userId, max: limits.max, window_secs: limits.windowSecs },
     });
     if (error) throw new LoginGuardUnavailable(`fin de l'essai ${attemptId} : ${error.message}`);
     const reply = data as { ok?: boolean; code?: string } | null;
