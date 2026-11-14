@@ -446,7 +446,9 @@ const PASSWORD_CONFIRMATION_REQUIRED = {
     error: 'Par sécurité, saisissez votre mot de passe pour continuer.', code: 'PASSWORD_CONFIRMATION_REQUIRED',
 };
 /** Aide exacte de PasswordChangeDialog (contrat 5.42). */
-const PASSWORD_RULES_HELP = '8 caractères au moins, dont une majuscule, un chiffre et un caractère spécial.';
+// Lot 9 quinquies (A7 : AUTH-11 ; modification signalée au rapport) : règle commune, 10 caractères, sans composition imposée
+// (PASSWORD_HINT de lib/auth/password-rules.ts)
+const PASSWORD_RULES_HELP = '10 caractères au moins. Une phrase de plusieurs mots est idéale ; majuscules et caractères spéciaux sont facultatifs.';
 /** Jeton factice de /verify-email : la page ne valide rien au chargement (contrat 4.6), il n'est jamais envoyé. */
 const VERIFY_EMAIL_TOKEN = 'e2e-jeton-factice-jamais-envoye-0123456789abcdef';
 const VERIFY_EMAIL_API = '/api/account/email/verify';
@@ -1419,10 +1421,12 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'profil-email-non-verifie', titre: 'Profil du client — adresse email en attente de vérification (Renvoyer le lien)', role: 'client', needsIds: true, path: () => '/profile',
+        // Lot 9 quinquies (B5 ; modification signalée au rapport) : bandeau « Adresse email non vérifiée » et bouton
+        // « Recevoir le lien de vérification » à la place du badge « Email non vérifié » et de « Renvoyer le lien »
+        id: 'profil-email-non-verifie', titre: 'Profil du client — adresse email en attente de vérification (Recevoir le lien de vérification)', role: 'client', needsIds: true, path: () => '/profile',
         ready: async ({ page }) => {
-            await expect(page.getByText('Email non vérifié', { exact: true }).first(), 'adresse en attente du client du seed (email_pending, R87)').toBeVisible();
-            const resend = page.getByRole('button', { name: /^renvoyer le lien$/i });
+            await expect(page.getByText('Adresse email non vérifiée', { exact: true }).first(), 'adresse en attente du client du seed (email_pending, R87)').toBeVisible();
+            const resend = page.getByRole('button', { name: /^recevoir le lien de vérification$/i });
             await expect(resend).toBeVisible();
             await revealCenter(resend);
         },
