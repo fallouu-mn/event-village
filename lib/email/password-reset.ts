@@ -5,7 +5,8 @@
  * seulement (password_reset_links), à usage unique, valable 60 minutes ; un nouveau lien remplace le précédent. Seule une
  * adresse VÉRIFIÉE d'un compte ACTIF le reçoit ; la réponse de la route est toujours la même (aucune énumération des
  * comptes). Email du catalogue (renderPasswordResetEmail), même expéditeur que les autres emails (EmailService).
- * Le jeton n'est jamais journalisé ni stocké en clair.
+ * Le jeton n'est jamais journalisé ni stocké en clair. Envoi synchrone rangé avec les autres (lib/email/verification.ts,
+ * contrat K2 du lot 6 : aucun appel direct à l'adaptateur hors de lib/email/ et de l'envoyeur).
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { EmailService } from '@/lib/email/email.service';

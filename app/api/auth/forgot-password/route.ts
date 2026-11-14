@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { noStore } from '@/lib/auth/account-sync';
-import { sendPasswordResetEmail } from '@/lib/auth/password-reset-email';
+import { sendPasswordResetEmail } from '@/lib/email/password-reset';
 import { getClientIp } from '@/lib/security/client-ip';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';

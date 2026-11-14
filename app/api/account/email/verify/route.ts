@@ -8,10 +8,8 @@ import {
 } from '@/lib/auth/account-sync';
 import { hashVerificationToken, isVerificationToken } from '@/lib/email/verification';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { EmailService } from '@/lib/email/email.service';
-import { renderEmailChangedOld } from '@/lib/notifications/catalog';
+import { sendEmailChangedOldNotice } from '@/lib/email/email-changed-old';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
-import { getServerEnv } from '@/lib/env';
 import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
@@ -44,12 +42,8 @@ const refuse = (err: unknown): NextResponse => apiFailure(CONTEXT, err, FALLBACK
  */
 async function warnOldAddress(userId: string, oldAddress: string, tokenHash: string): Promise<void> {
     try {
-        const mail = renderEmailChangedOld({ appUrl: getServerEnv().NEXT_PUBLIC_APP_URL.replace(/\/+$/, '') });
-        const sent = await EmailService.send({
-            to: oldAddress, subject: mail.subject, html: mail.html, text: mail.text,
-            idempotencyKey: `EMAIL_CHANGED_OLD:${userId}:${tokenHash.slice(0, 16)}`,
-        });
-        if (!sent.sent) console.error(`[${CONTEXT}] avis à l’ancienne adresse du compte ${userId} non envoyé : ${sent.error ?? 'refus'}`);
+        const sent = await sendEmailChangedOldNotice(userId, oldAddress, tokenHash);
+        if (!sent.sent) console.error(`[${CONTEXT}] avis à l’ancienne adresse du compte ${userId} non envoyé : ${sent.error}`);
     } catch (err) {
         console.error(`[${CONTEXT}] avis à l’ancienne adresse du compte ${userId} :`, err instanceof Error ? err.message : String(err));
     }

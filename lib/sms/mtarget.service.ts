@@ -202,14 +202,6 @@ export class MTargetService {
         return result;
     }
 
-    /** Lot 9 quinquies (A3 : AUTH-05) : code administrateur (catégorie OTP d'un compte existant), journalisé sans le code. */
-    async sendAdminCode(phone: string, code: string, ctx: SyncSmsContext = {}): Promise<MTargetSendResult> {
-        const message = renderSyncSms('OTP_ADMIN', { code });
-        const result = (await demoRefusal(phone, ctx)) ?? await this.sendSms(phone, message, { ...guardContext(ctx), category: 'OTP', audience: 'ACCOUNT' });
-        if (ctx.log) await this.journal(ctx.log, phone, result);
-        return result;
-    }
-
     /**
      * Alias historique de sendSms (contrat K : conservé pour tests/fondations-lot0.test.ts). Aucun module
      * applicatif ne l'appelle : les notifications passent par la boîte d'envoi et son envoyeur.

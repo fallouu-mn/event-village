@@ -156,6 +156,9 @@ const WHITELIST_PREFIXES: ReadonlyArray<[string, string]> = [
 ];
 const WHITELIST_FILES: ReadonlyArray<[string, string]> = [
     ['lib/notifications/dispatcher.ts', "l'envoyeur unique (contrat E4)"],
+    // Lot 9 quinquies (A2 ; ajout signalé au rapport) : lien d'activation d'un compte créé par un admin, envoi synchrone
+    // journalisé (ACCOUNT_ACTIVATION), comme l'invitation d'un contrôleur
+    ['lib/auth/account-activation.ts', "lien d'activation d'un compte créé par un admin (envoi synchrone journalisé)"],
 ];
 /**
  * Routes synchrones : une seule méthode permise (contrat E7). Lot 7 (D1, T6) : le code d'inscription est envoyé
@@ -170,6 +173,8 @@ const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendController
     'app/api/account/phone/start/route.ts': { method: 'sendOtp', why: 'code de changement de numéro (lot 9, 9.2)' },
     'app/api/partner/register/route.ts': { method: 'sendOtp', why: "code d'inscription partenaire" },
     'app/api/partner/team/invite/route.ts': { method: 'sendControllerInvite', why: "code d'activation d'un nouveau contrôleur" },
+    // Lot 9 quinquies (A3 ; ajout signalé au rapport)
+    'app/api/admin/step-up/sms/route.ts': { method: 'sendOtp', why: 'code administrateur (nouvel appareil, 12 h)' },
 };
 
 function fullyWhitelisted(file: string): boolean {
@@ -288,11 +293,12 @@ describe('6.7 — envois TypeScript retirés', () => {
         assert.deepEqual(found, [], `références restantes :\n${found.join('\n')}`);
     });
 
-    test('MTargetService : seules sendSms, sendNotification (alias), sendOtp et sendControllerInvite restent', () => {
+    // Lot 9 quinquies (A2 ; ajout signalé au rapport) : sendAccountActivation, lien d'activation d'un compte créé par un admin
+    test('MTargetService : seules sendSms, sendNotification (alias), sendOtp, sendControllerInvite et sendAccountActivation restent', () => {
         const file = 'lib/sms/mtarget.service.ts';
         assert.ok(exists(file), `${file} absent`);
         const methods = Array.from(source(file).matchAll(/^\s*(?:public\s+)?(?:async\s+)?(send\w*)\s*\(/gm)).map((m) => m[1]).sort();
-        assert.deepEqual(Array.from(new Set(methods)), ['sendControllerInvite', 'sendNotification', 'sendOtp', 'sendSms'],
+        assert.deepEqual(Array.from(new Set(methods)), ['sendAccountActivation', 'sendControllerInvite', 'sendNotification', 'sendOtp', 'sendSms'],
             `méthodes send* de MTargetService : ${methods.join(', ')}`);
     });
 

@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
             console.error('[POST /api/admin/step-up/sms] code non enregistré :', storeErr?.message ?? JSON.stringify(stored));
             return noStore(NextResponse.json({ error: 'Code non préparé. Réessayez.', code: 'STEP_UP_SMS_FAILED' }, { status: 500 }));
         }
-        const sent = await mTargetService.sendAdminCode(phone, code, {
+        const sent = await mTargetService.sendOtp(phone, code, {
             reservation: reserved.reservation,
             log: { type: 'OTP_ADMIN', ref: `${userId}:${Date.now()}`, userId, actorId: userId },
         });

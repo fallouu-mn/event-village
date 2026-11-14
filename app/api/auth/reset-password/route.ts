@@ -6,7 +6,7 @@ import { requireActiveSession } from '@/lib/auth/session';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
 import { ServerPasswordSchema } from '@/lib/auth/password-policy.server';
-import { resetTokenHash } from '@/lib/auth/password-reset-email'; // lot 9 quinquies (A7)
+import { resetTokenHash } from '@/lib/email/password-reset'; // lot 9 quinquies (A7)
 import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
