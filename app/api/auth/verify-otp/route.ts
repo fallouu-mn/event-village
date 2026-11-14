@@ -160,7 +160,9 @@ export async function POST(req: NextRequest) {
         // Lot 9 quater (A4 : AUD-19) : l'adresse du compte est relue (jamais tirée du numéro) ; la base n'accepte le lien
         // de session vers une adresse technique qu'avec le permis EMAIL_LINK posé juste avant.
         let tokenHash: string | undefined;
-        const targetEmail = authEmail ?? (userProfile?.email as string | null | undefined) ?? null;
+        // Contre-vérification du lot 9 quinquies (point 2) : seulement l'identifiant de GoTrue (adresse technique), jamais
+        // l'adresse du profil (GoTrue ne la connaît plus : un lien vers elle créerait un autre compte).
+        const targetEmail = authEmail;
 
         if (userProfile && targetEmail) {
             try {

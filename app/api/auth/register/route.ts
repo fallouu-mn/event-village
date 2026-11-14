@@ -230,7 +230,8 @@ export async function POST(req: NextRequest) {
         }
 
         // Lien de vérification de l'adresse saisie, au mieux : un échec n'empêche pas l'inscription (le profil propose
-        // « Renvoyer le lien »). L'écran se connecte avec `email` (adresse technique).
+        // « Renvoyer le lien »). L'écran se connecte ensuite par POST /api/auth/login avec `phone` ; `email` est l'adresse
+        // technique du profil, qui n'est plus un identifiant de GoTrue (contre-vérification du lot 9 quinquies, point 2).
         let emailVerification: EmailVerificationState | null = null;
         if (typedEmail) {
             try {

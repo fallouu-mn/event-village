@@ -7,7 +7,6 @@ import {
     noStore,
 } from '@/lib/auth/account-sync';
 import { technicalEmailFor } from '@/lib/auth/technical-email';
-import { isTechnicalAddress } from '@/lib/notifications/channels';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
@@ -86,11 +85,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
             return refuse(new PublicError(message, OTP_REFUSAL_CODE[check.reason], status));
         }
 
-        // Lot 9 quater (A4 : AUD-19) : l'adresse technique n'est plus tirée du numéro, elle ne change donc pas avec lui
-        // (la connexion par numéro relit l'adresse du compte). Un profil sans adresse reprend l'adresse technique de
-        // l'authentification, ou à défaut celle tirée de son identifiant.
-        const authEmail = authData.user.email ?? '';
-        const newEmail = user.email ? null : (isTechnicalAddress(authEmail) ? authEmail.toLowerCase() : technicalEmailFor(user.id));
+        // Lot 9 quater (A4 : AUD-19) : l'adresse technique n'est plus tirée du numéro, elle ne change donc pas avec lui.
+        // Contre-vérification du lot 9 quinquies (point 2) : l'identifiant GoTrue (empreinte secrète) ne sort jamais de
+        // auth.users ; un profil sans adresse reprend l'adresse technique tirée de son identifiant.
+        const newEmail = user.email ? null : technicalEmailFor(user.id);
 
         const taken = await identityTaken(user.id, newEmail, phone);
         if (taken.phoneTaken || taken.emailTaken) return refuse(PHONE_TAKEN);

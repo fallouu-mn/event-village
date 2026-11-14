@@ -70,7 +70,14 @@ function readHidden(prompt: string): Promise<string> {
     });
 }
 
-async function findUserIdByEmail(authAdmin: SupabaseClient['auth']['admin'], email: string): Promise<string | null> {
+async function findUserIdByEmail(admin: SupabaseClient, email: string): Promise<string | null> {
+    // Contre-vérification du lot 9 quinquies (point 2) : l'adresse réelle n'est plus dans auth.users (identifiant GoTrue
+    // secret, migration 20261112000012) ; elle est lue dans public.users, puis, pour un projet d'avant la migration, dans
+    // auth.users.
+    const { data: profile, error: profileErr } = await admin.from('users').select('id').eq('email', email).maybeSingle();
+    if (profileErr) throw new Error(`Lecture des comptes impossible : ${profileErr.message}`);
+    if (profile?.id) return String(profile.id);
+    const authAdmin = admin.auth.admin;
     for (let page = 1; ; page++) {
         const { data, error } = await authAdmin.listUsers({ page, perPage: 200 });
         if (error) throw new Error(`Lecture des comptes impossible : ${error.message}`);
@@ -107,7 +114,7 @@ async function main(): Promise<void> {
     }
 
     const admin = createClient(target.url, target.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const userId = await findUserIdByEmail(admin.auth.admin, email);
+    const userId = await findUserIdByEmail(admin, email);
     if (!userId) {
         writeJournal(buildJournalEntry({ projectRef: target.ref, userId: null, email, outcome: 'ABORTED', sessionsRevoked: false, operator, detail: 'compte introuvable' }));
         throw new Error(`Aucun compte ${maskEmail(email)} dans ce projet.`);
@@ -137,7 +144,9 @@ async function main(): Promise<void> {
     let sessionsRevoked = false;
     let revokeDetail: string | undefined;
     const anon = createClient(target.url, target.anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: signIn, error: signErr } = await anon.auth.signInWithPassword({ email, password: first });
+    const { data: authRow } = await admin.auth.admin.getUserById(userId);
+    const loginEmail = authRow?.user?.email ?? email; // identifiant GoTrue (adresse technique secrète depuis 20261112000012)
+    const { data: signIn, error: signErr } = await anon.auth.signInWithPassword({ email: loginEmail, password: first });
     if (signErr || !signIn.session) {
         revokeDetail = `connexion pour la révocation impossible : ${signErr?.message ?? 'aucune session'}`;
     } else {

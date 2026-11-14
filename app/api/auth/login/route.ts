@@ -71,13 +71,17 @@ async function loginIdentityOfPhone(raw: string): Promise<LoginIdentity | null> 
     return loginIdentityOfUser(String(data.id));
 }
 
-/** Identifiant saisi sous forme d'adresse : compte relu dans public.users (adresse réelle vérifiée). */
+/**
+ * Identifiant saisi sous forme d'adresse : compte relu dans public.users (adresse réelle), puis son identifiant GoTrue.
+ * Contre-vérification du lot 9 quinquies (point 2) : GoTrue ne connaît plus l'adresse réelle (auth.users.email est une
+ * adresse technique tirée d'une empreinte secrète, migration 20261112000012) ; une adresse inconnue n'est jamais
+ * présentée à GoTrue (aucune adresse technique devinée ne passe par ici).
+ */
 async function loginIdentityOfEmail(email: string): Promise<LoginIdentity | null> {
     const { data, error } = await getServiceRoleClient().from('users').select('id').eq('email', email).limit(1).maybeSingle();
     if (error) throw new PasswordCheckUnavailable(`compte de l’adresse illisible : ${error.message}`);
-    if (!data) return { email, pending: null, userId: null };
-    const identity = await loginIdentityOfUser(String(data.id));
-    return identity ? { email, pending: identity.pending, userId: identity.userId } : { email, pending: null, userId: String(data.id) };
+    if (!data) return null;
+    return loginIdentityOfUser(String(data.id));
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {

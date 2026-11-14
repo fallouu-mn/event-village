@@ -291,22 +291,36 @@ export default function RegisterPage() {
                 return;
             }
 
-            // Compte créé (numéro vérifié) : ouverture de la session avec l'email du compte, l'adresse technique tant
-            // que l'adresse saisie n'est pas vérifiée (R87).
-            // Lot 9 quater (A4 : AUD-19) : l'adresse technique n'est plus tirée du numéro ; elle vient de la réponse.
-            const accountEmail = typeof result.body?.email === 'string' && result.body.email ? result.body.email : null;
-            if (!accountEmail) {
-                console.error('[RegisterPage] réponse d’inscription sans identifiant de connexion');
+            // Compte créé (numéro vérifié) : ouverture de la session par la route de connexion de l'application, avec le
+            // numéro vérifié rendu par l'inscription. Contre-vérification du lot 9 quinquies (point 2) : le navigateur ne
+            // parle plus à GoTrue avec un identifiant (GoTrue ne connaît qu'une adresse technique secrète).
+            const accountPhone = typeof result.body?.phone === 'string' && result.body.phone ? result.body.phone : null;
+            if (!accountPhone) {
+                console.error('[RegisterPage] réponse d’inscription sans numéro');
                 setSignInFailed(true);
                 return;
             }
             const pendingEmail = typeof result.body?.email_pending === 'string' && result.body.email_pending ? result.body.email_pending : null;
             const notice = pendingEmail ? emailNoticeOf(result.body?.email_verification, pendingEmail) : null;
             setEmailNotice(notice);
-            const supabase = getBrowserClient();
-            const { error: signInError } = await supabase.auth.signInWithPassword({ email: accountEmail, password });
-            if (signInError) {
-                console.error('[RegisterPage] connexion après inscription impossible :', signInError.message);
+            const loginRes = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier: accountPhone, password }),
+            });
+            const login = (await loginRes.json().catch((err: unknown) => {
+                console.error('[RegisterPage] réponse de connexion illisible, code HTTP', loginRes.status, err);
+                return null;
+            })) as { ok?: boolean; code?: string } | null;
+            if (!loginRes.ok || login?.ok !== true) {
+                console.error('[RegisterPage] connexion après inscription impossible :', loginRes.status, login?.code ?? '');
+                setSignInFailed(true);
+                return;
+            }
+            // Session posée par le serveur (cookies) : relue par le navigateur, comme après la connexion (LoginForm)
+            const { error: refreshError } = await getBrowserClient().auth.refreshSession();
+            if (refreshError) {
+                console.error('[RegisterPage] session posée par le serveur illisible dans le navigateur :', refreshError.message);
                 setSignInFailed(true);
                 return;
             }
