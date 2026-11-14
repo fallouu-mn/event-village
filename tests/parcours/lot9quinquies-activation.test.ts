@@ -23,6 +23,7 @@ import { bearer, signInAs } from '../helpers/fixtures';
 import { BASE_URL, randomSenegalPhone } from './helpers';
 import { service } from './paiement-helpers';
 import { outboxRows } from './notif-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '');
 /** Exemples publics de la règle (A7), jamais des secrets : une phrase acceptée, un mot de passe évident refusé. */
@@ -54,7 +55,7 @@ function lastActivationToken(phone: string): string {
 
 async function signIn(email: string, password: string): Promise<boolean> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    return (await anon.auth.signInWithPassword({ email, password })).error === null;
+    return (await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password })).error === null;
 }
 
 describe('A2 — comptes créés par un admin : activation par lien', () => {

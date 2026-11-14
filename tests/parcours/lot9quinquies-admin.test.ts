@@ -22,6 +22,7 @@ import { getFakes } from '../fakes';
 import { BASE_URL, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
 import { service } from './paiement-helpers';
 import { smsSegments } from '../../lib/notifications/sms-format';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9quinquiesInvariants('lot9quinquies-admin');
@@ -45,7 +46,7 @@ async function rawAccount(role: 'ADMIN' | 'SUPERADMIN' | 'CLIENT', permissions: 
         for (const permission of permissions) await service.from('admin_permissions').upsert({ user_id: userId, permission }, { onConflict: 'user_id,permission' });
     }
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: s, error: sErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data: s, error: sErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(sErr, null, sErr?.message);
     const token = s.session!.access_token;
     const sessionId = String((JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as { session_id: string }).session_id);

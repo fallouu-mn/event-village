@@ -22,6 +22,7 @@ import { createClient } from '@supabase/supabase-js';
 import { newBuyer, service } from '../parcours/paiement-helpers';
 import { STRONG_PASSWORD } from '../parcours/helpers';
 import { buyConfirmed, createPartnerEvent, newPartner, superadminId } from '../parcours/finance-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 function asUser(accessToken: string) {
     return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
@@ -83,7 +84,7 @@ describe('AUD-06 — partenaire suspendu : lectures REST qui ignorent le statut 
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
             auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
         });
-        const relog = await anon.auth.signInWithPassword({ email: partner.email, password: STRONG_PASSWORD });
+        const relog = await anon.auth.signInWithPassword({ email: await gotrueEmail(partner.email), password: STRONG_PASSWORD });
         const fresh = relog.data.session?.access_token;
         const payments = fresh ? await asUser(fresh).from('payments').select('id, payer_phone, amount, status').eq('id', purchase.payment.id) : null;
         console.log(`[AUD-06] reconnexion du partenaire suspendu : ${relog.error ? `refusée (${relog.error.message})` : 'acceptée'} ; paiements lus avec le jeton neuf : ${JSON.stringify(payments?.data ?? [])}`);

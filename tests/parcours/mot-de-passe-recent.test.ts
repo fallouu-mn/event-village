@@ -28,6 +28,7 @@ import { newBuyer, service, type Buyer, type SaleEvent } from './paiement-helper
 import { buyConfirmed, createPartnerEvent, jsonRequest, newPartner } from './finance-helpers';
 import type { RouteResult } from './acces-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9bisInvariants('mot-de-passe-recent');
@@ -60,7 +61,7 @@ function sessionIdOf(token: string): string {
 /** Seconde session du même compte (connexion par mot de passe, clé anon). */
 async function secondSession(user: Buyer): Promise<string> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await anon.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
     assert.equal(error, null, `seconde connexion : ${error?.message}`);
     return data.session!.access_token;
 }

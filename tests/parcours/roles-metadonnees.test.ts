@@ -15,6 +15,7 @@ import { inRolledBackTransaction } from '../helpers/db';
 import { loadFixtures } from '../helpers/fixtures';
 import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { randomEmail, STRONG_PASSWORD } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 function roleKeys(meta: Record<string, unknown> | null | undefined): string[] {
     return Object.keys(meta ?? {}).filter((k) => k === 'role' || k === 'roles');
@@ -78,7 +79,7 @@ describe('Rôles hors des métadonnées utilisateur', () => {
         assert.deepEqual(roleKeys(after.user?.user_metadata), [], `rôles recopiés dans les métadonnées : ${JSON.stringify(after.user?.user_metadata)}`);
 
         const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { error: signErr } = await client.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+        const { error: signErr } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
         assert.equal(signErr, null, `connexion : ${signErr?.message}`);
         const res = await callMiddleware('/partner/dashboard', await sessionCookies(client));
         assert.ok(res.passedThrough, `middleware : accès partenaire attendu, HTTP ${res.status} ${res.location ?? ''}`);

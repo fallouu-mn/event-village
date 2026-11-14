@@ -20,6 +20,7 @@ import { grantUserRoles } from '../../lib/auth/roles';
 import { resolvePostLoginRoute } from '../../lib/auth/resolve-post-login-route';
 import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { randomEmail, STRONG_PASSWORD } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 async function newSignedInAccount(label: string) {
     const service = getServiceRoleClient();
@@ -29,7 +30,7 @@ async function newSignedInAccount(label: string) {
     const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { error: signInErr } = await client.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { error: signInErr } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(signInErr, null, `connexion : ${signInErr?.message}`);
     return { userId: data.user!.id, cookies: await sessionCookies(client) };
 }

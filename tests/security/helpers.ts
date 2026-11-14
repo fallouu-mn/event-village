@@ -12,6 +12,7 @@ import { createClient, type PostgrestError, type SupabaseClient } from '@supabas
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
 import { FIXTURE_EVENTS, FIXTURE_USERS, TEST_PASSWORD, type FixtureEventKey, type FixtureUserKey } from '../helpers/fixture-data';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 export const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -85,7 +86,7 @@ export async function signUpAttacker(label: string, metadata: Record<string, unk
     const userId = String(reg.body.userId ?? '');
     if (!email || !userId) throw new Error(`inscription (${label}) : réponse sans identifiant ${JSON.stringify(reg.body)}`);
     const client = newClient();
-    const { error: signInErr } = await client.auth.signInWithPassword({ email, password });
+    const { error: signInErr } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password });
     if (signInErr) throw new Error(`signInWithPassword(${label}) : ${signInErr.message}`);
     if (Object.keys(metadata).length > 0) {
         const { error: metaErr } = await client.auth.updateUser({ data: metadata });
@@ -154,7 +155,7 @@ export function signInFixture(key: FixtureUserKey): Promise<AttackerAccount> {
     if (!session) {
         session = (async () => {
             const client = newClient();
-            const { data, error } = await client.auth.signInWithPassword({ email: FIXTURE_USERS[key].email, password: TEST_PASSWORD });
+            const { data, error } = await client.auth.signInWithPassword({ email: await gotrueEmail(FIXTURE_USERS[key].email), password: TEST_PASSWORD });
             if (error || !data.user) throw new Error(`signInWithPassword(${key}) : ${error?.message ?? 'aucun utilisateur'}`);
             return { client, userId: data.user.id, email: FIXTURE_USERS[key].email };
         })();

@@ -31,6 +31,7 @@ import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { authed } from './acces-helpers';
 import { BASE_URL, confirmPassword, jsonRequest, randomEmail, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9Invariants('compte-profil');
@@ -82,7 +83,7 @@ function anonClient(): SupabaseClient {
 }
 
 async function signInError(email: string): Promise<string | null> {
-    const { error } = await anonClient().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { error } = await anonClient().auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     return error ? error.message : null;
 }
 
@@ -487,7 +488,7 @@ describe('PATCH /api/account/profile — droits (middleware)', () => {
     test('middleware : une session passe (déjà vrai, garde-fou)', async () => {
         const a = await newBuyer('profil-mw');
         const client = anonClient();
-        const { error } = await client.auth.signInWithPassword({ email: a.email, password: STRONG_PASSWORD });
+        const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(a.email), password: STRONG_PASSWORD });
         assert.equal(error, null, `connexion : ${error?.message}`);
         const result = await callMiddleware(PROFILE_PATH, await sessionCookies(client));
         assert.equal(result.passedThrough, true, JSON.stringify(result));

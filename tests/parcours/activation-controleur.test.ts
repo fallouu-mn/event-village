@@ -40,6 +40,7 @@ import { newPartner, type TestPartner } from './finance-helpers';
 import { assignController, authed, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, type DraftEvent } from './cycle-helpers';
 import { assertTerrainInvariants } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertTerrainInvariants('activation-controleur');
@@ -169,7 +170,7 @@ async function canSignIn(phone: string, password: string): Promise<boolean> {
     const { data: row, error: rowErr } = await service.from('users').select('email').eq('phone', phone).single();
     assert.equal(rowErr, null, `adresse du compte ${phone} : ${rowErr?.message}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await anon.auth.signInWithPassword({ email: String(row.email), password });
+    const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(String(row.email)), password });
     return !error && Boolean(data.session);
 }
 
@@ -277,7 +278,7 @@ describe('7.0 d Code d’activation : usage unique et renvoi (D22)', () => {
 describe('8.2 v — /api/controller/setup ne réécrit pas le mot de passe d’un compte établi (cas T1.2 porté)', () => {
     async function opensSession(email: string, password: string): Promise<boolean> {
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { data, error } = await anon.auth.signInWithPassword({ email, password });
+        const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password });
         return !error && Boolean(data.session);
     }
 

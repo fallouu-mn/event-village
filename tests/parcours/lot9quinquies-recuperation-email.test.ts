@@ -22,6 +22,7 @@ import { getFakes } from '../fakes';
 import { BASE_URL, randomEmail, STRONG_PASSWORD } from './helpers';
 import { newBuyer, service } from './paiement-helpers';
 import { markEmailVerified, outboxRows } from './notif-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9quinquiesInvariants('lot9quinquies-recuperation-email');
@@ -67,8 +68,8 @@ describe('B2 — « Mot de passe oublié » par email via l\'application et Rese
         const ok = await post('/api/auth/reset-password', { token, password: chosen });
         assert.equal(ok.status, 200, JSON.stringify(ok.body));
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        assert.equal((await anon.auth.signInWithPassword({ email: u.email, password: chosen })).error, null, 'nouveau mot de passe');
-        assert.notEqual((await anon.auth.signInWithPassword({ email: u.email, password: STRONG_PASSWORD })).error, null, 'ancien refusé');
+        assert.equal((await anon.auth.signInWithPassword({ email: await gotrueEmail(u.email), password: chosen })).error, null, 'nouveau mot de passe');
+        assert.notEqual((await anon.auth.signInWithPassword({ email: await gotrueEmail(u.email), password: STRONG_PASSWORD })).error, null, 'ancien refusé');
         assert.equal((await anon.auth.getUser(u.token)).data.user, null, 'ancienne session fermée');
         assert.ok((await outboxRows({ type: 'PASSWORD_CHANGED', userId: u.userId })).length > before, 'avis PASSWORD_CHANGED');
         const again = await post('/api/auth/reset-password', { token, password: newPhrase() });

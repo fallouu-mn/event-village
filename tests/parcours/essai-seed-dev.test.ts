@@ -22,6 +22,7 @@ import { openConcurrentClient } from '../helpers/db';
 import { assertRecetteInvariants } from '../helpers/recette-invariants';
 import { eventHistory } from './cycle-helpers';
 import { importModule, service } from './paiement-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const CORE_FILE = path.join(process.cwd(), 'scripts', 'dev', 'seed-dev.core.ts');
 const DOMAIN = '@essai.eventvillage.invalid';
@@ -191,7 +192,7 @@ function afterSecondRun() {
 
 async function signIn(email: string, password: string): Promise<string | null> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { error } = await anon.auth.signInWithPassword({ email, password });
+    const { error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password });
     return error ? error.message : null;
 }
 

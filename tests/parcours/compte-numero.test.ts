@@ -39,6 +39,7 @@ import { BASE_URL, confirmPassword, jsonRequest, randomSenegalPhone, STRONG_PASS
 import { flushNotifications, markPhoneVerified, outboxRows, smsMark, smsTo, withEnv } from './notif-helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { issueFreeTicket, registerClientFlow } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9Invariants('compte-numero');
@@ -152,7 +153,7 @@ interface Session { accessToken: string; refreshToken: string; client: SupabaseC
 
 async function openSession(email: string): Promise<Session> {
     const client = anonClient();
-    const { data, error } = await client.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data, error } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion : ${error?.message}`);
     return { accessToken: data.session!.access_token, refreshToken: data.session!.refresh_token, client };
 }

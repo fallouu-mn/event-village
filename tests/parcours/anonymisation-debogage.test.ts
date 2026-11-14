@@ -31,6 +31,7 @@ import { BASE_URL, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './he
 import { paymentById } from './paiement-helpers';
 import { buyConfirmed, newPartner } from './finance-helpers';
 import { createCashOrderTickets, createTimedEvent, newController, ticketRow } from './acces-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 function anonClient() {
     return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -68,7 +69,7 @@ describe('Routes de débogage et anonymisation', () => {
         assert.equal(error, null, `création du compte : ${error?.message}`);
         const userId = created.user!.id;
 
-        const { error: preErr } = await anonClient().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+        const { error: preErr } = await anonClient().auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
         assert.equal(preErr, null, `précondition : connexion possible avant anonymisation (${preErr?.message})`);
 
         const res = await adminDeleteUser(new NextRequest(`${BASE_URL}/api/admin/users?userId=${userId}`, { method: 'DELETE', headers: bearer(superadmin.accessToken) }));
@@ -83,7 +84,7 @@ describe('Routes de débogage et anonymisation', () => {
         const bannedUntil = (authUser.user as { banned_until?: string } | null)?.banned_until;
         assert.ok(bannedUntil && new Date(bannedUntil).getTime() > Date.now(), `le compte doit être banni (banned_until=${bannedUntil})`);
 
-        const { error: loginErr } = await anonClient().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+        const { error: loginErr } = await anonClient().auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
         assert.ok(loginErr, 'connexion avec l’email d’origine refusée après anonymisation');
 
         const { error: reuseErr } = await service.auth.admin.createUser({ email, password: STRONG_PASSWORD, email_confirm: true });

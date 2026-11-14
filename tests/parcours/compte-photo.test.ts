@@ -29,6 +29,7 @@ import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { BASE_URL, STRONG_PASSWORD } from './helpers';
 import { withEnv } from './notif-helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9Invariants('compte-photo');
@@ -535,7 +536,7 @@ describe('Droits (D-cpt C6)', () => {
     test('middleware : une session passe (déjà vrai, garde-fou)', async () => {
         const a = await newBuyer('photo-mw');
         const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { error } = await client.auth.signInWithPassword({ email: a.email, password: STRONG_PASSWORD });
+        const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(a.email), password: STRONG_PASSWORD });
         assert.equal(error, null, `connexion : ${error?.message}`);
         const result = await callMiddleware(AVATAR_PATH, await sessionCookies(client));
         assert.equal(result.passedThrough, true, JSON.stringify(result));

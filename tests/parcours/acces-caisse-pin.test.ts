@@ -35,6 +35,7 @@ import { routeContext, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { jsonRequest, newPartner, type TestPartner } from './finance-helpers';
 import { assignController, authed, createTimedEvent, newController, openShift, shiftRow, type RouteResult } from './acces-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const PIN_RE = /^\d{6}$/;
 
@@ -166,7 +167,7 @@ function hmacBoth(key: string, message: string): string[] {
 
 async function signedClient(email: string) {
     const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { error } = await client.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion de ${email} : ${error?.message}`);
     return client;
 }

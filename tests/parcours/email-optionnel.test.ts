@@ -25,6 +25,7 @@ import { advanceEventTo, posterUrl } from './cycle-helpers';
 import { flushNotifications, loadLotModule, markEmailVerified, outboxRows } from './notif-helpers';
 import { newBuyer } from './paiement-helpers';
 import { registerClientFlow } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const warnings: string[] = [];
 const originalWarn = console.warn;
@@ -148,7 +149,7 @@ describe('Lot 9 bis (G53-10, contrat 4.6) — sans RESEND_API_KEY : le lien de v
             'journal du lien : non tenté, motif explicite');
 
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { data: s, error } = await anon.auth.signInWithPassword({ email: String(withEmail.register?.body.email), password: STRONG_PASSWORD });
+        const { data: s, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(String(withEmail.register?.body.email)), password: STRONG_PASSWORD });
         assert.equal(error, null, `connexion du compte inscrit : ${error?.message}`);
         const mod = await loadLotModule('../../app/api/account/email/resend/route', 'route POST /api/account/email/resend (contrat 4.6, fix(9b.48))');
         assert.equal(typeof mod.POST, 'function', 'POST /api/account/email/resend non exporté');

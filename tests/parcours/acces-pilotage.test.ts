@@ -22,6 +22,7 @@ import { STRONG_PASSWORD } from './helpers';
 import { service, importModule, newBuyer, type Buyer, type SaleEvent } from './paiement-helpers';
 import { newPartner, buyConfirmed, type TestPartner } from './finance-helpers';
 import { authed, createTimedEvent, newController, scan, scansOf, ticketPayload } from './acces-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 let partnerA: TestPartner;
 let partnerB: TestPartner;
@@ -33,7 +34,7 @@ async function signedClient(user: Buyer): Promise<SupabaseClient> {
     const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { error } = await client.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion de ${user.email} : ${error?.message}`);
     return client;
 }

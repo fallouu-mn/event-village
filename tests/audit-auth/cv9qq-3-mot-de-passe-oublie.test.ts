@@ -18,6 +18,7 @@ import { BASE_URL, STRONG_PASSWORD } from '../parcours/helpers';
 import { newBuyer, service, type Buyer } from '../parcours/paiement-helpers';
 import { markEmailVerified } from '../parcours/notif-helpers';
 import { anonClient, freshIp, post, type Reply } from './cv9qq-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9quinquiesInvariants('cv9qq-3-mot-de-passe-oublie');
@@ -43,7 +44,7 @@ async function resetWithLink(token: string, password: string, bearerOf?: string)
 }
 
 async function canSignIn(email: string, password: string): Promise<boolean> {
-    return (await anonClient().auth.signInWithPassword({ email, password })).error === null;
+    return (await anonClient().auth.signInWithPassword({ email: await gotrueEmail(email), password })).error === null;
 }
 
 async function emailLink(u: { email: string }): Promise<string> {
@@ -66,7 +67,7 @@ describe('Attaque 3 — mot de passe oublié', () => {
     test('a. session ouverte avant le code puis rafraîchie après sa vérification : refus, mot de passe inchangé', async () => {
         const u = await newBuyer('cv9qq-rafraichie');
         const gotrue = anonClient();
-        const { data: s } = await gotrue.auth.signInWithPassword({ email: u.email, password: STRONG_PASSWORD });
+        const { data: s } = await gotrue.auth.signInWithPassword({ email: await gotrueEmail(u.email), password: STRONG_PASSWORD });
         assert.ok(s.session, 'session de l\'attaquant');
         const since = getFakes().sms.messagesTo(u.phoneE164).length;
         assert.equal((await post('auth/send-otp', { phone: u.phoneE164, purpose: 'PASSWORD_RESET' })).status, 200);

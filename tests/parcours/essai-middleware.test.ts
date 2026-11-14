@@ -22,6 +22,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { FIXTURE_USERS, TEST_PASSWORD } from '../helpers/fixture-data';
 import { callMiddleware, sessionCookies, type SessionCookie } from '../helpers/middleware';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const ROOT = process.cwd();
 const DEV_PATHS = ['/dev', '/dev/', '/dev/paiements', `/dev/paiements/${randomUUID()}`, '/api/dev/samirpay/validate', '/api/dev/samirpay/refuse'];
@@ -41,7 +42,7 @@ before(async () => {
     const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { error } = await client.auth.signInWithPassword({ email: FIXTURE_USERS.SUPERADMIN.email, password: TEST_PASSWORD });
+    const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(FIXTURE_USERS.SUPERADMIN.email), password: TEST_PASSWORD });
     assert.equal(error, null, `connexion du superadmin du seed : ${error?.message}`);
     adminCookies = await sessionCookies(client);
 });

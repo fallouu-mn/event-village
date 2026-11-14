@@ -20,6 +20,7 @@ import { POST as upload } from '../../app/api/partner/documents/upload/route';
 import { GET as signedUrl } from '../../app/api/partner/documents/signed-url/route';
 // Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
 import { BASE_URL, MINIMAL_PDF, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments, uploadRequest } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 function getSigned(query: string, headers: Record<string, string> = {}): Promise<Response> {
     return signedUrl(new NextRequest(`${BASE_URL}/api/partner/documents/signed-url?${query}`, { method: 'GET', headers }));
@@ -45,7 +46,7 @@ async function registerWithDocuments() {
     const res = reg.second ?? reg.first; const body = res.body;
     assert.ok(reg.second !== null && res.status < 300, `inscription (appel 2, code vérifié) : HTTP ${res.status} ${JSON.stringify(body)}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: account, error: accErr } = await getServiceRoleClient().from('users').select('id').in('phone', [phone, phone.slice(1)]).single(); assert.equal(accErr, null, accErr?.message); const { data: own, error: ownErr } = await getServiceRoleClient().from('partners').select('id').eq('user_id', account.id).single(); assert.equal(ownErr, null, ownErr?.message); const { data: authUser } = await getServiceRoleClient().auth.admin.getUserById(String(account.id)); const { data: session, error } = await anon.auth.signInWithPassword({ email: String(authUser.user?.email ?? email), password: STRONG_PASSWORD });
+    const { data: account, error: accErr } = await getServiceRoleClient().from('users').select('id').in('phone', [phone, phone.slice(1)]).single(); assert.equal(accErr, null, accErr?.message); const { data: own, error: ownErr } = await getServiceRoleClient().from('partners').select('id').eq('user_id', account.id).single(); assert.equal(ownErr, null, ownErr?.message); const { data: authUser } = await getServiceRoleClient().auth.admin.getUserById(String(account.id)); const { data: session, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(String(authUser.user?.email ?? email)), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion du partenaire : ${error?.message}`);
     return { docs, partnerId: String(own.id), ownerToken: session.session!.access_token };
 }

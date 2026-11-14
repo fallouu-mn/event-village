@@ -33,6 +33,7 @@ import type { RouteResult } from './acces-helpers';
 import { outboxRows } from './notif-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { alignQuotaWindow, assertSameQuotaWindow } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9bisInvariants('compte-mot-de-passe');
@@ -71,7 +72,7 @@ function anon() {
 
 /** Connexion par mot de passe (clé anon) : jeton, ou null si refusée. */
 async function signIn(email: string, password: string): Promise<string | null> {
-    const { data, error } = await anon().auth.signInWithPassword({ email, password });
+    const { data, error } = await anon().auth.signInWithPassword({ email: await gotrueEmail(email), password });
     return error ? null : data.session?.access_token ?? null;
 }
 

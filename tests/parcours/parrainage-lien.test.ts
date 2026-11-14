@@ -31,6 +31,7 @@ import { authed, type RouteResult } from './acces-helpers';
 import { randomEmail, STRONG_PASSWORD } from './helpers';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { registerClientFlow } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Row = Record<string, unknown>;
 
@@ -82,7 +83,7 @@ async function accountWithPhone(phoneE164: string, label: string): Promise<Buyer
     const { error: upErr } = await service.from('users').update({ phone: phoneE164, first_name: firstName, last_name: lastName, status: 'ACTIF' }).eq('id', userId);
     assert.equal(upErr, null, `profil ${phoneE164} : ${upErr?.message}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: s, error: signErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data: s, error: signErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(signErr, null, `connexion ${phoneE164} : ${signErr?.message}`);
     return { userId, accessToken: s.session!.access_token, email, phoneE164, phone9: phoneE164.slice(4), firstName, lastName };
 }

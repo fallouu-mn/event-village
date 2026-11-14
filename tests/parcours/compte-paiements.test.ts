@@ -32,6 +32,7 @@ import { authed } from './acces-helpers';
 import { createPartnerEvent, newPartner } from './finance-helpers';
 import { BASE_URL, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9Invariants('compte-paiements');
@@ -174,7 +175,7 @@ describe('GET /api/account/payments — droits', () => {
     test('middleware : une session passe (déjà vrai, garde-fou)', async () => {
         const a = await newBuyer('pay-mw');
         const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { error } = await client.auth.signInWithPassword({ email: a.email, password: STRONG_PASSWORD });
+        const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(a.email), password: STRONG_PASSWORD });
         assert.equal(error, null, `connexion : ${error?.message}`);
         const result = await callMiddleware(PAYMENTS_PATH, await sessionCookies(client));
         assert.equal(result.passedThrough, true, JSON.stringify(result));

@@ -35,6 +35,7 @@ import { lastSmsCode, registerStart, registerSubmit } from '../parcours/terrain-
 import { outboxRows } from '../parcours/notif-helpers';
 import { getFakes } from '../fakes';
 import { openConcurrentClient } from '../helpers/db';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -96,7 +97,7 @@ describe('AUD-02 — changement de mot de passe direct chez GoTrue sans mot de p
     test('un changement de mot de passe fait avec le seul jeton d’une session prévient toujours le titulaire', async () => {
         const victim = await newBuyer('aud-mdp-alerte');
         const alerts = async () => (await outboxRows({ type: 'PASSWORD_CHANGED', userId: victim.userId })).length;
-        const opens = async (password: string) => !(await anon().auth.signInWithPassword({ email: victim.email, password })).error;
+        const opens = async (password: string) => !(await anon().auth.signInWithPassword({ email: await gotrueEmail(victim.email), password })).error;
         // Mot de passe réellement en place : un refus de GoTrue ne compte comme fermeture que s'il n'a rien changé
         let current = STRONG_PASSWORD;
 

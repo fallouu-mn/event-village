@@ -19,6 +19,7 @@ import { getFakes } from '../fakes';
 import { POST as adminCreateUser } from '../../app/api/admin/users/route';
 import { POST as inviteController } from '../../app/api/partner/team/invite/route';
 import { jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const service = getServiceRoleClient();
 
@@ -32,7 +33,7 @@ async function assertSessionRole(email: string, password: string, role: string):
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { data, error } = await anon.auth.signInWithPassword({ email, password });
+    const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password });
     assert.equal(error, null, `connexion ${email} : ${error?.message}`);
     const { data: granted, error: rpcErr } = await anon.rpc('has_role', { p_role: role });
     assert.equal(rpcErr, null, `has_role(${role}) : ${rpcErr?.message}`);

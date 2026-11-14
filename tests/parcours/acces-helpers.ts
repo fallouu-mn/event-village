@@ -23,6 +23,7 @@ import {
     type Buyer, type CategorySpec, type HelperEventDates, type SaleEvent,
 } from './paiement-helpers';
 import { superadminId, type TestPartner } from './finance-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 /** Clés access.* du lot 4 (contrat A du lot 4 ; acces-reglages en fixe les valeurs par défaut). */
 export type Lot4AccessSettingKey =
@@ -322,7 +323,7 @@ export async function respondControllerInvitation(user: Pick<Buyer, 'accessToken
  */
 export async function freshSession(user: Pick<Buyer, 'email'>): Promise<Pick<Buyer, 'accessToken'>> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await anon.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion de ${user.email} : ${error?.message}`);
     assert.ok(data.session, `session de ${user.email}`);
     return { accessToken: data.session.access_token };

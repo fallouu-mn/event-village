@@ -22,6 +22,7 @@ import { BASE_URL, randomEmail, randomSenegalPhone, routeContext, STRONG_PASSWOR
 import { POST as checkoutRoute } from '../../app/api/checkout/route';
 import { POST as webhookRoute } from '../../app/api/webhooks/samirpay/route';
 import { GET as statusRoute } from '../../app/api/payments/[transactionId]/status/route';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 export const service = getServiceRoleClient();
 
@@ -67,7 +68,7 @@ export async function newBuyer(label: string, opts: { firstName?: string; lastNa
         .eq('id', userId);
     assert.equal(upErr, null, `profil de l'acheteur : ${upErr?.message}`);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: s, error: signErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data: s, error: signErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(signErr, null, `connexion de l'acheteur : ${signErr?.message}`);
     // Lot 9 quinquies (A3, A4 ; aide modifiée, signalée au rapport) : session valant mot de passe et code administrateur saisis
     await stepUpTestSession(s.session!.access_token);

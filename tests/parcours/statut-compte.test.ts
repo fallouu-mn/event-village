@@ -29,6 +29,7 @@ import { POST as scanTicket } from '../../app/api/controller/scan/route';
 import { BASE_URL, jsonRequest, randomEmail, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
 import { NextRequest } from 'next/server';
 import { advanceEventTo, posterUrl } from './cycle-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -45,7 +46,7 @@ async function newAccount(label: string, opts: { roles?: ('PARTENAIRE' | 'CONTRO
     assert.equal(upErr, null, `profil ${label} : ${upErr?.message}`);
     if (opts.roles?.length) await grantUserRoles(userId, opts.roles);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: session, error: signErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data: session, error: signErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(signErr, null, `connexion ${label} : ${signErr?.message}`);
     // Lot 9 quater (A6 : AUD-06) : un compte SUSPENDU ne se connecte plus (bloqué chez GoTrue) ; la session est ouverte
     // avant la suspension, comme celle d'un compte suspendu pendant qu'il est connecté (modification signalée).
@@ -128,7 +129,7 @@ describe('Statut des comptes sur les routes partenaire et billets', () => {
         assert.notEqual(created.user?.email, victim.email, 'l’email du titulaire n’est pas réutilisé pour le compte invité');
 
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { error: loginErr } = await anon.auth.signInWithPassword({ email: victim.email, password: STRONG_PASSWORD });
+        const { error: loginErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(victim.email), password: STRONG_PASSWORD });
         assert.equal(loginErr, null, `le titulaire doit toujours se connecter avec son mot de passe : ${loginErr?.message}`);
         const { data: authUser } = await getServiceRoleClient().auth.admin.getUserById(victim.userId);
         const digits = (s: string | null | undefined) => (s || '').replace(/\D/g, '');

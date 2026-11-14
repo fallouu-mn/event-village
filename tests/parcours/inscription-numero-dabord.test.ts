@@ -40,6 +40,7 @@ import { newBuyer, service } from './paiement-helpers';
 import {
     assertTerrainInvariants, lastSmsCode, newRegisterEmail, registerClientFlow, registerStart, registerSubmit,
 } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Row = Record<string, unknown>;
 
@@ -213,7 +214,7 @@ describe('7.3 — inscription : bon code, compte vérifié', () => {
         assert.equal(smsCount(phone), smsAfterStart, 'la route d\'inscription n\'envoie plus de SMS');
 
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { data: s, error: signErr } = await anon.auth.signInWithPassword({ email: String(r.body.email), password: STRONG_PASSWORD });
+        const { data: s, error: signErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(String(r.body.email)), password: STRONG_PASSWORD });
         assert.equal(signErr, null, `connexion par mot de passe : ${signErr?.message}`);
         assert.equal(s.user?.id, userId, 'session du compte créé');
 

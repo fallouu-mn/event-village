@@ -16,6 +16,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient, type RealtimeChannel } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { FIXTURE_TICKETS, FIXTURE_USERS, TEST_PASSWORD, loadFixtures } from '../helpers/fixtures';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 interface Received { eventId: string; ticketNumber: string }
 
@@ -46,7 +47,7 @@ describe('Realtime du scanner', () => {
         const controller = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
             auth: { persistSession: false, autoRefreshToken: false },
         });
-        const { error: signInErr } = await controller.auth.signInWithPassword({ email: FIXTURE_USERS.CONTROLLER_A.email, password: TEST_PASSWORD });
+        const { error: signInErr } = await controller.auth.signInWithPassword({ email: await gotrueEmail(FIXTURE_USERS.CONTROLLER_A.email), password: TEST_PASSWORD });
         assert.equal(signInErr, null, `connexion du contrôleur : ${signInErr?.message}`);
 
         const received: Received[] = [];

@@ -30,6 +30,7 @@ import type { RouteResult } from './acces-helpers';
 import { createEventInStatus, eventStatus, posterUrl } from './cycle-helpers';
 import { dakarDay } from './notif-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9bisInvariants('partenaire-en-attente');
@@ -80,7 +81,7 @@ async function registerPending(): Promise<PendingPartner> {
     const { data: auth, error: aErr } = await service.auth.admin.getUserById(String(user.id));
     assert.equal(aErr, null, aErr?.message);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: session, error: sErr } = await anon.auth.signInWithPassword({ email: String(auth.user?.email), password: STRONG_PASSWORD });
+    const { data: session, error: sErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(String(auth.user?.email)), password: STRONG_PASSWORD });
     assert.equal(sErr, null, `connexion du compte en attente : ${sErr?.message}`);
     return { userId: String(user.id), partnerId: String(partner.id), token: session.session!.access_token };
 }

@@ -36,6 +36,7 @@ import { authed, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent } from './cycle-helpers';
 import { newAdmin, outboxRows, withEnv } from './notif-helpers';
 import { registerClientFlow } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
@@ -111,7 +112,7 @@ async function authEmail(userId: string): Promise<string> {
 }
 
 async function signInWith(email: string, password: string): Promise<boolean> {
-    const { data, error } = await anon().auth.signInWithPassword({ email, password });
+    const { data, error } = await anon().auth.signInWithPassword({ email: await gotrueEmail(email), password });
     return !error && Boolean(data.session);
 }
 

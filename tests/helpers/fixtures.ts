@@ -19,6 +19,7 @@ import {
     type FixturePartnerKey,
     type FixtureUserKey,
 } from './fixture-data';
+import { gotrueEmail } from './gotrue-email';
 
 export * from './fixture-data';
 
@@ -109,7 +110,7 @@ export async function signInAs(key: FixtureUserKey): Promise<SignedInUser> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { data, error } = await anon.auth.signInWithPassword({ email: FIXTURE_USERS[key].email, password: TEST_PASSWORD });
+    const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(FIXTURE_USERS[key].email), password: TEST_PASSWORD });
     if (error || !data.session) {
         throw new Error(`signInAs(${key}) : ${error?.message || 'session absente'} — ${SEED_HINT}`);
     }

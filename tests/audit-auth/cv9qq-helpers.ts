@@ -12,6 +12,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
 import { BASE_URL, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from '../parcours/helpers';
 import { service } from '../parcours/paiement-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 export type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 export interface Reply { status: number; body: Record<string, unknown> }
@@ -89,7 +90,7 @@ export async function rawAccount(label: string, role: 'ADMIN' | 'SUPERADMIN' | '
             assert.equal(pErr, null, `${permission} : ${pErr?.message}`);
         }
     }
-    const { data: s, error: sErr } = await anonClient().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data: s, error: sErr } = await anonClient().auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(sErr, null, sErr?.message);
     const token = s.session!.access_token;
     return { userId, phone, email, token, sessionId: sessionIdOf(token) };
@@ -97,7 +98,7 @@ export async function rawAccount(label: string, role: 'ADMIN' | 'SUPERADMIN' | '
 
 /** Nouvelle session du même compte, ouverte chez GoTrue sans saisie enregistrée par l'application. */
 export async function newSession(email: string, password: string = STRONG_PASSWORD): Promise<{ token: string; sessionId: string }> {
-    const { data, error } = await anonClient().auth.signInWithPassword({ email, password });
+    const { data, error } = await anonClient().auth.signInWithPassword({ email: await gotrueEmail(email), password });
     assert.equal(error, null, error?.message);
     return { token: data.session!.access_token, sessionId: sessionIdOf(data.session!.access_token) };
 }

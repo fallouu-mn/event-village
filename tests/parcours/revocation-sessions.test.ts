@@ -21,6 +21,7 @@ import { DELETE as removeController } from '../../app/api/partner/team/controlle
 import { PATCH as adminPatchUser, DELETE as adminDeleteUser } from '../../app/api/admin/users/route';
 import { POST as signOutGlobal } from '../../app/api/auth/sign-out-global/route';
 import { BASE_URL, jsonRequest, randomEmail, randomSenegalPhone, routeContext, STRONG_PASSWORD } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const anon = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -36,7 +37,7 @@ async function newSession(label: string, roles: ('CONTROLEUR' | 'PARTENAIRE')[] 
     const { error: upErr } = await service.from('users').update({ phone }).eq('id', userId);
     assert.equal(upErr, null, `profil : ${upErr?.message}`);
     if (roles.length) await grantUserRoles(userId, roles);
-    const { data: s, error: signErr } = await anon().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data: s, error: signErr } = await anon().auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(signErr, null, `connexion : ${signErr?.message}`);
     return { userId, accessToken: s.session!.access_token, refreshToken: s.session!.refresh_token };
 }

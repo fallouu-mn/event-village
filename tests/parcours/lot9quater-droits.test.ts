@@ -17,6 +17,7 @@ import { importModule, newBuyer, service, type Buyer } from './paiement-helpers'
 import { buyConfirmed, createPartnerEvent, newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { assignController, authed, type RouteResult } from './acces-helpers';
 import { newAdminWith } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
@@ -55,7 +56,7 @@ async function bannedUntil(userId: string): Promise<string | null> {
 }
 
 async function canSignIn(email: string): Promise<boolean> {
-    const { data, error } = await anon().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data, error } = await anon().auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     return !error && Boolean(data.session);
 }
 

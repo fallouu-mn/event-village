@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '../../lib/supabase/server';
 import { bootstrapSuperadmin } from '../../lib/admin/bootstrap-superadmin';
 import { randomEmail, STRONG_PASSWORD } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const service = getServiceRoleClient();
 
@@ -24,7 +25,7 @@ async function signUp(email: string) {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { error: signInErr } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { error: signInErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(signInErr, null, `connexion : ${signInErr?.message}`);
     return { anon, userId: data.user!.id };
 }

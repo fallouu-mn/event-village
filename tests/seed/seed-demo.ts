@@ -303,7 +303,13 @@ function buyerPeople(): Person[] {
 
 async function signIn(email: string): Promise<string> {
     const anon = createClient(SUPABASE_URL, String(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY), { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await anon.auth.signInWithPassword({ email, password: TEST_PASSWORD });
+    // Lot 9 quinquies, correctifs de la contre-vérification (point 2) : GoTrue ne connaît plus l'adresse réelle ; son
+    // identifiant de connexion (adresse technique tirée d'une empreinte secrète) est relu par l'API d'administration.
+    const { data: row, error: rowErr } = await service.from('users').select('id').eq('email', email).single();
+    if (rowErr || !row) fail(`compte de ${email}`, rowErr ?? 'absent');
+    const { data: authRow, error: authErr } = await service.auth.admin.getUserById(String(row.id));
+    if (authErr || !authRow.user?.email) fail(`identifiant de connexion de ${email}`, authErr?.message ?? 'absent');
+    const { data, error } = await anon.auth.signInWithPassword({ email: authRow.user.email, password: TEST_PASSWORD });
     if (error || !data.session) fail(`connexion de ${email}`, error ?? 'session absente');
     return data.session.access_token;
 }

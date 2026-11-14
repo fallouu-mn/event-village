@@ -54,6 +54,7 @@ import {
 import { flushNotifications, loadLotModule, markEmailVerified, outboxRows } from './notif-helpers';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { newAdminWith, registerClientFlow } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9bisInvariants('email-verification');
@@ -362,7 +363,7 @@ async function userIdByPhone(phone: string): Promise<string> {
 
 async function signInError(email: string): Promise<string | null> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { error } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     return error ? error.message : null;
 }
 
@@ -717,7 +718,7 @@ describe('9b.48 G53-11, G53-12 — renvoi du lien, jeton', () => {
     test('renvoi sans adresse à vérifier (adresse technique, rien en attente) : 400 NO_EMAIL_TO_VERIFY, aucun email', async () => {
         const flow = await registerClientFlow({ headers: freshIp() });
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { data, error } = await anon.auth.signInWithPassword({ email: String(await authEmail(flow.userId!)), password: STRONG_PASSWORD });
+        const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(String(await authEmail(flow.userId!))), password: STRONG_PASSWORD });
         assert.equal(error, null, `connexion du compte : ${error?.message}`);
         const before = getFakes().email.sent.length;
         const r = await resend({ accessToken: data.session!.access_token });

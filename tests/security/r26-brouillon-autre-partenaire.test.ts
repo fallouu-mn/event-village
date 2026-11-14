@@ -21,6 +21,7 @@ import { newPartner, type TestPartner } from '../parcours/finance-helpers';
 import { createDraftEvent, type DraftEvent } from '../parcours/cycle-helpers';
 import { assertTerrainInvariants } from '../parcours/terrain-helpers';
 import { anonClient } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 let partnerA: TestPartner;
 let partnerB: TestPartner;
@@ -31,7 +32,7 @@ let clientB: SupabaseClient;
 
 async function connected(partner: TestPartner): Promise<SupabaseClient> {
     const client = anonClient();
-    const { error } = await client.auth.signInWithPassword({ email: partner.email, password: STRONG_PASSWORD });
+    const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(partner.email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion du partenaire : ${error?.message}`);
     return client;
 }

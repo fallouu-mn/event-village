@@ -38,6 +38,7 @@ import { MINIMAL_PDF, STRONG_PASSWORD } from './helpers';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { newAdminWith } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const SUSPEND_REASON = 'Test du lot 9 ter';
@@ -88,12 +89,12 @@ async function signIn(user: Pick<Buyer, 'email' | 'userId'>, who: string): Promi
     const c = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
-    let { data, error } = await c.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    let { data, error } = await c.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
     if (error && /banned/i.test(error.message)) {
         // Lot 9 quater (A6 : AUD-06) : GoTrue refuse maintenant toute connexion d'un compte suspendu (constaté ici). Pour
         // éprouver la RLS avec un jeton encore valable (session ouverte avant la suspension), le blocage est levé le temps
         // de la connexion puis reposé ; users.status reste SUSPENDU. Modification signalée au rapport.
-        await withBanLifted(user.userId, async () => { ({ data, error } = await c.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD })); });
+        await withBanLifted(user.userId, async () => { ({ data, error } = await c.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD })); });
     }
     assert.equal(error, null, `précondition : nouvelle connexion de ${who} réussie : ${error?.message}`);
     assert.ok(data.session, `précondition : session ouverte pour ${who}`);

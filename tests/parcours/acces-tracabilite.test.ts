@@ -37,6 +37,7 @@ import { newPartner, type TestPartner } from './finance-helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { createTimedEvent, newController, scan, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
 import { alignQuotaWindow, assertSameQuotaWindow } from '../helpers/quota-window';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Row = Record<string, unknown>;
 
@@ -152,7 +153,7 @@ describe('4.9 Journal ticket_scans', () => {
         const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
             auth: { persistSession: false, autoRefreshToken: false },
         });
-        const { error: signErr } = await client.auth.signInWithPassword({ email: scanner.email, password: STRONG_PASSWORD });
+        const { error: signErr } = await client.auth.signInWithPassword({ email: await gotrueEmail(scanner.email), password: STRONG_PASSWORD });
         assert.equal(signErr, null, signErr?.message);
         const { data, error } = await client.from('ticket_scans').select('id').eq('scanner_id', scanner.userId);
         assert.ok(error !== null || (data ?? []).length === 0, `le scanneur ne lit pas le journal par l’API : ${JSON.stringify(data)}`);

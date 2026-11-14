@@ -14,6 +14,7 @@ import { grantUserRoles } from '../../lib/auth/roles';
 import { bearer, loadFixtures, signInAs } from '../helpers/fixtures';
 import { PATCH as adminPatchUser } from '../../app/api/admin/users/route';
 import { jsonRequest, randomEmail, STRONG_PASSWORD } from './helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 async function newAccount(label: string): Promise<{ userId: string; client: SupabaseClient }> {
     const service = getServiceRoleClient();
@@ -21,7 +22,7 @@ async function newAccount(label: string): Promise<{ userId: string; client: Supa
     const { data, error } = await service.auth.admin.createUser({ email, password: STRONG_PASSWORD, email_confirm: true });
     assert.equal(error, null, `création du compte : ${error?.message}`);
     const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { error: signErr } = await client.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { error: signErr } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(signErr, null, `connexion : ${signErr?.message}`);
     return { userId: data.user!.id, client };
 }

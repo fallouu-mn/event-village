@@ -19,6 +19,7 @@ import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers'; import { freshSession, respondControllerInvitations } from './acces-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 interface Holder { userId: string; email: string; phone: string; firstName: string; lastName: string }
 
@@ -88,7 +89,7 @@ describe('Invitation : identité des comptes existants', () => {
 
         assert.deepEqual(await identityOf(holder.userId), before, 'prénom, nom, email et téléphone du titulaire inchangés');
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { error: loginErr } = await anon.auth.signInWithPassword({ email: holder.email, password: STRONG_PASSWORD });
+        const { error: loginErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(holder.email), password: STRONG_PASSWORD });
         assert.equal(loginErr, null, `mot de passe du titulaire inchangé : ${loginErr?.message}`);
     });
 

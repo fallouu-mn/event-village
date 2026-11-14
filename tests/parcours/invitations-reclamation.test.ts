@@ -28,6 +28,7 @@ import { shiftEventDates } from './cycle-helpers';
 import { markPhoneVerified, outboxRows } from './notif-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { registerClientFlow } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Row = Record<string, unknown>;
 
@@ -99,7 +100,7 @@ async function registerOn(phone: string): Promise<Buyer> {
     const flow = await registerClientFlow({ phone, firstName, lastName, headers: { 'x-forwarded-for': `203.0.113.${(ipSeq % 250) + 1}` } });
     const email = String(flow.register!.body.email);
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await anon.auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion du compte inscrit : ${error?.message}`);
     return { userId: flow.userId!, accessToken: data.session!.access_token, email, phoneE164: phone, phone9: phone.slice(4), firstName, lastName };
 }

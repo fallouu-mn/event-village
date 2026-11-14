@@ -51,6 +51,7 @@ import {
     assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, markEmailVerified, noonDakarTomorrow, outboxRows, smsMark, smsTo,
     type OutboxChannel, type OutboxRow,
 } from './notif-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     setFakeMode('cashoutMode', 'success');
@@ -259,7 +260,7 @@ function anon() {
 }
 
 async function refreshTokenOf(email: string): Promise<string> {
-    const { data, error } = await anon().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
+    const { data, error } = await anon().auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion ${email} : ${error?.message}`);
     return data.session!.refresh_token;
 }

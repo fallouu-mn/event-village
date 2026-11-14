@@ -28,6 +28,7 @@ import { createPartnerEvent, newPartner, type TestPartner } from './finance-help
 import { BASE_URL, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { issueFreeTicket } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 const CITY_PATH = '/api/profile/city';
 const MARK = randomUUID().replace(/-/g, '').slice(0, 10).toLowerCase();
@@ -99,7 +100,7 @@ function signedClient(): SupabaseClient {
 
 async function signIn(user: Buyer): Promise<SupabaseClient> {
     const client = signedClient();
-    const { error } = await client.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
     assert.equal(error, null, `connexion : ${error?.message}`);
     return client;
 }

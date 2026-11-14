@@ -36,6 +36,7 @@ import { STRONG_PASSWORD } from './helpers';
 import { buyConfirmed, newPartner, type TestPartner } from './finance-helpers';
 import { newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { createTimedEvent, newController, scan, scansOf, ticketPayload, ticketRow, type RouteResult } from './acces-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Row = Record<string, unknown>;
 
@@ -199,7 +200,7 @@ describe('4.3 Voie unique', () => {
         const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
             auth: { persistSession: false, autoRefreshToken: false },
         });
-        const { error } = await client.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+        const { error } = await client.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
         assert.equal(error, null, `connexion : ${error?.message}`);
         return sessionCookies(client);
     }

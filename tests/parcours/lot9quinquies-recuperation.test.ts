@@ -22,6 +22,7 @@ import { assertLot9quinquiesInvariants } from '../helpers/lot9quinquies-invarian
 import { getFakes } from '../fakes';
 import { BASE_URL, jsonRequest, STRONG_PASSWORD } from './helpers';
 import { newBuyer, type Buyer } from './paiement-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9quinquiesInvariants('lot9quinquies-recuperation');
@@ -49,7 +50,7 @@ function reset(token: string, password: string): Promise<{ status: number; body:
 }
 
 async function signInWith(email: string, password: string): Promise<boolean> {
-    const { error } = await anon().auth.signInWithPassword({ email, password });
+    const { error } = await anon().auth.signInWithPassword({ email: await gotrueEmail(email), password });
     return error === null;
 }
 
@@ -97,7 +98,7 @@ describe('A8 — l\'autorisation de récupération est liée à la session ouver
         const tokenHash = await recoveryCode(user);
         const recovery = await openSession(tokenHash);
         assert.equal((await reset(recovery, newPassword())).status, 200, 'premier usage');
-        const after = await anon().auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+        const after = await anon().auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
         assert.notEqual(after.error, null, 'l\'ancien mot de passe ne marche plus');
         const left = await inspect(async (c) => Number((await c.query('SELECT count(*)::int AS n FROM public.account_recovery_grants WHERE user_id = $1', [user.userId])).rows[0].n));
         assert.equal(left, 0, 'autorisation supprimée à l\'usage');

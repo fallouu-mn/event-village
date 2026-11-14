@@ -32,6 +32,7 @@ import { buyConfirmed, jsonRequest, newPartner, type TestPartner } from './finan
 import { newController, type RouteResult } from './acces-helpers';
 import { createEventInStatus, type DraftEvent } from './cycle-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9bisInvariants('controleur-9bis');
@@ -104,7 +105,7 @@ describe('R102 — activation refusée à un compte suspendu', () => {
         const { data: auth, error: aErr } = await service.auth.admin.getUserById(shellId);
         assert.equal(aErr, null, aErr?.message);
         const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-        const { error: signErr } = await anon.auth.signInWithPassword({ email: String(auth.user?.email), password: newPassword });
+        const { error: signErr } = await anon.auth.signInWithPassword({ email: await gotrueEmail(String(auth.user?.email)), password: newPassword });
         assert.ok(signErr, 'mot de passe non posé : la connexion avec le mot de passe proposé échoue');
     });
 });

@@ -36,6 +36,8 @@ import {
 } from '@supabase/supabase-js';
 import { FIXTURE_USERS, TEST_PASSWORD, type FixtureUserKey } from './fixture-data';
 import { STRONG_PASSWORD } from '../parcours/helpers';
+import { gotrueEmail } from './gotrue-email';
+import { stepUpTestSession } from './admin-step-up';
 
 /** Délai d'abonnement, d'attente d'un message et pas de scrutation (valeurs du lot 4). */
 export const SUBSCRIBE_TIMEOUT_MS = 20_000;
@@ -69,12 +71,15 @@ export interface Credentials {
  * Client connecté par signInWithPassword : compte du seed (clé de FIXTURE_USERS, mot de passe
  * TEST_PASSWORD) ou compte créé par le test (Buyer, TestPartner ou { email, password }).
  * La session est transmise à Realtime par supabase-js au moment de l'abonnement.
+ * Lot 9 quinquies, correctifs de la contre-vérification (point 1 ; aide modifiée, signalée au rapport) : la session vaut
+ * une session dont le titulaire a passé le code administrateur (stepUpTestSession, comme signInAs), sauf `stepUp: false`
+ * (compte admin qui n'a PAS passé le code) ; sans effet pour un compte qui n'est pas admin.
  */
-export async function signedInClient(who: FixtureUserKey | Credentials, opts: { liftBan?: boolean } = {}): Promise<SupabaseClient> {
+export async function signedInClient(who: FixtureUserKey | Credentials, opts: { liftBan?: boolean; stepUp?: boolean } = {}): Promise<SupabaseClient> {
     const email = typeof who === 'string' ? FIXTURE_USERS[who].email : who.email;
     const password = typeof who === 'string' ? TEST_PASSWORD : (who.password ?? STRONG_PASSWORD);
     const client = newClient();
-    let { data, error } = await client.auth.signInWithPassword({ email, password });
+    let { data, error } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password });
     if (error && opts.liftBan && /banned/i.test(error.message)) {
         // Lot 9 quater (A6 : AUD-06) : GoTrue refuse maintenant toute connexion d'un compte suspendu (constaté ici). Pour
         // éprouver la RLS du temps réel avec un jeton encore valable (session ouverte avant la suspension), le blocage
@@ -87,7 +92,7 @@ export async function signedInClient(who: FixtureUserKey | Credentials, opts: { 
         const { error: liftErr } = await admin.auth.admin.updateUserById(String(found.id), { ban_duration: 'none' });
         assert.equal(liftErr, null, `déblocage temporaire de ${email} : ${liftErr?.message}`);
         try {
-            ({ data, error } = await client.auth.signInWithPassword({ email, password }));
+            ({ data, error } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password }));
         } finally {
             const { error: banErr } = await admin.auth.admin.updateUserById(String(found.id), { ban_duration: '876000h' });
             assert.equal(banErr, null, `blocage reposé de ${email} : ${banErr?.message}`);
@@ -95,6 +100,7 @@ export async function signedInClient(who: FixtureUserKey | Credentials, opts: { 
     }
     assert.equal(error, null, `connexion de ${email} : ${error?.message}`);
     assert.ok(data.session, `connexion de ${email} : session absente`);
+    if (opts.stepUp !== false) await stepUpTestSession(data.session.access_token);
     return client;
 }
 

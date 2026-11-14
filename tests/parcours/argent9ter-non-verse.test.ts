@@ -48,6 +48,7 @@ import { buyConfirmed, createPartnerEvent, newPartner, withSettings, type TestPa
 import { callsOf, fakePay, importModule, newBuyer, service, setFakeMode, type Buyer, type SaleEvent } from './paiement-helpers';
 import { outboxRows, type TestAdmin } from './notif-helpers';
 import { newAdminWith } from './terrain-helpers';
+import { gotrueEmail } from '../helpers/gotrue-email';
 
 type Row = Record<string, unknown>;
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
@@ -130,7 +131,7 @@ async function withCashoutMode<T>(mode: string, fn: () => Promise<T>): Promise<T
 /** Seconde session du même compte (connexion par mot de passe, clé anon). */
 async function otherSession(user: Buyer): Promise<Buyer> {
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await anon.auth.signInWithPassword({ email: user.email, password: STRONG_PASSWORD });
+    const { data, error } = await anon.auth.signInWithPassword({ email: await gotrueEmail(user.email), password: STRONG_PASSWORD });
     assert.equal(error, null, `seconde session de ${user.userId} : ${error?.message}`);
     return { ...user, accessToken: data.session!.access_token };
 }
