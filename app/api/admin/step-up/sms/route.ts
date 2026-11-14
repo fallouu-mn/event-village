@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { adminStepUpRefusal, deviceKey, deviceKeyOfValue, newDeviceCookieValue, setDeviceCookie } from '@/lib/admin/step-up';
 import { noStore } from '@/lib/auth/account-sync';
-import { otpFailureMessage, storeOtp, verifyStoredOtp } from '@/lib/auth/otp-store';
+import { hashOtpCode, otpFailureMessage, type OtpFailureReason } from '@/lib/auth/otp-store';
 import { getClientIp } from '@/lib/security/client-ip';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
@@ -14,6 +14,11 @@ import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
+
+/** Empreinte HMAC du code administrateur (même secret que les codes SMS), liée au compte : jamais le code en clair. */
+function adminCodeHash(userId: string, code: string): string {
+    return hashOtpCode(`admin-step-up:${userId}`, code);
+}
 
 const VerifySchema = z.object({ code: z.string().regex(/^\d{6}$/, 'Saisissez les 6 chiffres du code reçu par SMS.') }).strict();
 
@@ -58,16 +63,16 @@ export async function POST(req: NextRequest) {
         const reserved = await reserveSms(phone, { category: 'OTP', audience: 'ACCOUNT', ip: getClientIp(req) });
         if (!reserved.ok) return noStore(smsRefusalResponse(reserved.refusal));
         const code = randomInt(100000, 1000000).toString();
-        let otpId: string;
-        try {
-            otpId = await storeOtp(phone, code, new Date(Date.now() + 10 * 60 * 1000), 'ADMIN_STEP_UP');
-        } catch (err) {
-            console.error('[POST /api/admin/step-up/sms] code non enregistré :', err instanceof Error ? err.message : String(err));
+        const { data: stored, error: storeErr } = await getServiceRoleClient().rpc('admin_step_up_code_store', {
+            p: { user_id: userId, code_hash: adminCodeHash(userId, code) },
+        });
+        if (storeErr || (stored as { ok?: boolean } | null)?.ok !== true) {
+            console.error('[POST /api/admin/step-up/sms] code non enregistré :', storeErr?.message ?? JSON.stringify(stored));
             return noStore(NextResponse.json({ error: 'Code non préparé. Réessayez.', code: 'STEP_UP_SMS_FAILED' }, { status: 500 }));
         }
         const sent = await mTargetService.sendAdminCode(phone, code, {
             reservation: reserved.reservation,
-            log: { type: 'OTP_ADMIN', ref: otpId, userId, actorId: userId },
+            log: { type: 'OTP_ADMIN', ref: `${userId}:${Date.now()}`, userId, actorId: userId },
         });
         if (!sent.success) {
             console.error('[POST /api/admin/step-up/sms] SMS non parti :', sent.code ?? sent.error);
@@ -80,9 +85,16 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return noStore(NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Code invalide.', code: 'INVALID_FIELD' }, { status: 400 }));
     const quota = await reserveQuota([{ scope: 'admin_step_up_sms', bucket: userId, windowSecs: 900, max: 10 }], 'code administrateur');
     if (!quota.allowed) return noStore(quotaRefusalResponse(quota, { error: 'Trop d’essais de code. Patientez avant de réessayer.', code: 'STEP_UP_RATE_LIMITED' }));
-    const check = await verifyStoredOtp(phone, parsed.data.code, 'ADMIN_STEP_UP');
-    if (!check.ok) {
-        const { message, status } = otpFailureMessage(check.reason);
+    const { data: checked, error: checkErr } = await getServiceRoleClient().rpc('admin_step_up_code_check', {
+        p: { user_id: userId, code_hash: adminCodeHash(userId, parsed.data.code) },
+    });
+    if (checkErr) {
+        console.error('[POST /api/admin/step-up/sms] vérification impossible :', checkErr.message);
+        return noStore(NextResponse.json({ error: 'Vérification momentanément impossible. Réessayez.', code: 'STEP_UP_UNAVAILABLE' }, { status: 503 }));
+    }
+    const check = checked as { ok?: boolean; reason?: OtpFailureReason } | null;
+    if (check?.ok !== true) {
+        const { message, status } = otpFailureMessage(check?.reason ?? 'INVALID');
         return noStore(NextResponse.json({ error: message, code: 'STEP_UP_CODE_INVALID' }, { status }));
     }
     // Navigateur (session en cookies) : cookie d'appareil posé s'il manque. Client par jeton (en-tête Bearer, sans

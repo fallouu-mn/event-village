@@ -17,8 +17,8 @@
 -- Objets :
 --   tables admin_devices (compte, appareil, heure du dernier code vérifié) et admin_session_activity (session, compte,
 --     dernière activité) : service_role seul ;
---   otp_codes_purpose_check : objet ADMIN_STEP_UP ajouté (le code administrateur n'ouvre jamais de session :
---     /api/auth/verify-otp n'accepte que LOGIN, REGISTER, PASSWORD_RESET) ;
+--   table admin_step_up_codes et admin_step_up_code_store(p), admin_step_up_code_check(p) : code administrateur (jamais
+--     dans otp_codes, dont la contrainte d'objet est gelée ; /api/auth/verify-otp ne le connaît donc pas) ;
 --   admin_step_up_check(p) ; admin_device_verified(p).
 -- Aucun BEGIN ni COMMIT ; rejouable.
 -- ============================================================================
@@ -48,9 +48,83 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.admin_session_activity TO s
 COMMENT ON TABLE public.admin_session_activity IS
     'Lot 9 quinquies (A4 : AUTH-04) : dernière activité d''une session d''administration (mot de passe redemandé après 30 min sans activité). service_role seul.';
 
-ALTER TABLE public.otp_codes DROP CONSTRAINT IF EXISTS otp_codes_purpose_check;
-ALTER TABLE public.otp_codes ADD CONSTRAINT otp_codes_purpose_check
-    CHECK (purpose IN ('LOGIN', 'REGISTER', 'PASSWORD_RESET', 'CONTROLLER_SETUP', 'WITHDRAWAL', 'PHONE_CHANGE', 'ADMIN_STEP_UP'));
+-- Code administrateur : table propre (la contrainte otp_codes_purpose_check est gelée, lot 9 ter A3) ; le code n'est jamais
+-- un code de connexion (verify-otp ne lit que otp_codes). Empreinte HMAC seulement, 10 minutes, 5 essais, usage unique.
+CREATE TABLE IF NOT EXISTS public.admin_step_up_codes (
+    user_id    uuid PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+    code_hash  text NOT NULL CHECK (code_hash ~ '^[0-9a-f]{64}$'),
+    expires_at timestamptz NOT NULL,
+    attempts   integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+ALTER TABLE public.admin_step_up_codes ENABLE ROW LEVEL SECURITY;   -- aucune politique : service_role seul
+REVOKE ALL ON TABLE public.admin_step_up_codes FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.admin_step_up_codes TO service_role;
+COMMENT ON TABLE public.admin_step_up_codes IS
+    'Lot 9 quinquies (A3 : AUTH-05) : code administrateur en cours (empreinte HMAC, 10 min, 5 essais, usage unique). service_role seul.';
+
+-- p = { user_id, code_hash } → { ok, expires_at } : remplace le code en cours du compte
+CREATE OR REPLACE FUNCTION public.admin_step_up_code_store(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user    uuid := public.try_uuid(p->>'user_id');
+    v_hash    text := lower(btrim(COALESCE(p->>'code_hash', '')));
+    v_expires timestamptz := clock_timestamp() + interval '10 minutes';
+BEGIN
+    IF v_user IS NULL OR v_hash !~ '^[0-9a-f]{64}$' OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_user) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT');
+    END IF;
+    INSERT INTO public.admin_step_up_codes (user_id, code_hash, expires_at, attempts, created_at)
+    VALUES (v_user, v_hash, v_expires, 0, clock_timestamp())
+    ON CONFLICT (user_id) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, attempts = 0, created_at = EXCLUDED.created_at;
+    RETURN jsonb_build_object('ok', true, 'expires_at', v_expires);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.admin_step_up_code_store(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_step_up_code_store(jsonb) TO service_role;
+
+-- p = { user_id, code_hash } → { ok: true } (code consommé) ou { ok: false, reason: INVALID | EXPIRED | TOO_MANY_ATTEMPTS }
+CREATE OR REPLACE FUNCTION public.admin_step_up_code_check(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user uuid := public.try_uuid(p->>'user_id');
+    v_hash text := lower(btrim(COALESCE(p->>'code_hash', '')));
+    v_row  record;
+BEGIN
+    IF v_user IS NULL OR v_hash !~ '^[0-9a-f]{64}$' THEN
+        RETURN jsonb_build_object('ok', false, 'reason', 'INVALID');
+    END IF;
+    SELECT c.code_hash, c.expires_at, c.attempts INTO v_row FROM public.admin_step_up_codes c WHERE c.user_id = v_user FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('ok', false, 'reason', 'INVALID');
+    END IF;
+    IF v_row.expires_at <= clock_timestamp() THEN
+        DELETE FROM public.admin_step_up_codes WHERE user_id = v_user;
+        RETURN jsonb_build_object('ok', false, 'reason', 'EXPIRED');
+    END IF;
+    IF v_row.attempts >= 5 THEN
+        RETURN jsonb_build_object('ok', false, 'reason', 'TOO_MANY_ATTEMPTS');
+    END IF;
+    IF v_row.code_hash = v_hash THEN
+        DELETE FROM public.admin_step_up_codes WHERE user_id = v_user;
+        RETURN jsonb_build_object('ok', true);
+    END IF;
+    UPDATE public.admin_step_up_codes SET attempts = attempts + 1 WHERE user_id = v_user;
+    RETURN jsonb_build_object('ok', false, 'reason', CASE WHEN v_row.attempts + 1 >= 5 THEN 'TOO_MANY_ATTEMPTS' ELSE 'INVALID' END);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.admin_step_up_code_check(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_step_up_code_check(jsonb) TO service_role;
 
 -- p = { user_id, session_id, device_key, idle_secs (null : pas de contrôle d'inactivité), touch (bool) }
 --   → { ok: true } ou { ok: false, code: ADMIN_PASSWORD_REQUIRED | ADMIN_SMS_REQUIRED, reason }

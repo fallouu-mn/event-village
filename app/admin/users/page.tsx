@@ -34,7 +34,7 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { ADMIN_PERMISSIONS } from '@/lib/admin/admin-auth';
+import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
 import { permissionLabel } from '@/lib/admin/permission-labels';
 import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
