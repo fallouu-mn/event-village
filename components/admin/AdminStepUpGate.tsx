@@ -14,8 +14,11 @@ import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
 /**
  * Lot 9 quinquies (A3 : AUTH-05 ; A4 : AUTH-04) — fenêtre de sécurité de l'administration.
  *
- *  - À l'ouverture de /admin : GET /api/admin/step-up ; sur un nouvel appareil, ou après 12 h, la page attend le code
- *    administrateur reçu par SMS (et le mot de passe d'abord si la session a plus de 12 h).
+ *  - À l'ouverture de /admin : GET /api/admin/step-up ; sur un nouvel appareil, ou après 12 h, la fenêtre demande le code
+ *    administrateur reçu par SMS (et le mot de passe d'abord si la session a plus de 12 h). La page est rendue tout de
+ *    suite, côté serveur compris, et la fenêtre se pose par-dessus : ses lectures sont refusées par le serveur tant que
+ *    l'étape manque, puis la page est rechargée une fois l'étape passée. (Run 171 : rendue seulement après la lecture de
+ *    l'état, la page créait ses champs de date hors du document, et Chrome les affichait en mm/dd/yyyy malgré lang="fr".)
  *  - Après 30 minutes sans activité (minuterie locale, et tout refus 403 ADMIN_PASSWORD_REQUIRED ou ADMIN_SMS_REQUIRED
  *    renvoyé par une route), la fenêtre redemande le mot de passe PAR-DESSUS la page : rien n'est perdu, l'action
  *    interrompue se relance une fois la fenêtre fermée.
@@ -31,9 +34,10 @@ const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as con
 
 export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status | null>(null);
-  const [opened, setOpened] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const lastInput = useRef<number>(Date.now());
+  // Page ouverte alors qu'une étape manquait : ses premières lectures ont été refusées, elle est rechargée après l'étape
+  const lockedAtLoad = useRef<boolean | null>(null);
 
   const refresh = useCallback(async (): Promise<Status | null> => {
     try {
@@ -45,7 +49,7 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
       }
       setLoadError(null);
       setStatus(body);
-      if (!body.required) setOpened(true);
+      if (lockedAtLoad.current === null) lockedAtLoad.current = body.required !== null;
       return body;
     } catch (err) {
       console.error('[AdminStepUpGate] état de la session illisible :', err instanceof Error ? err.message : String(err));
@@ -64,7 +68,10 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
       if (res.status === 403) {
         res.clone().json().then((b: { code?: string } | null) => {
           if (b?.code && STEP_UP_CODES.has(b.code)) void refresh();
-        }).catch(() => undefined);
+        }).catch((err: unknown) => {
+          // Corps non JSON : ce refus n'est pas une étape de sécurité, rien à ouvrir
+          console.debug('[AdminStepUpGate] refus 403 sans corps JSON :', err instanceof Error ? err.message : String(err));
+        });
       }
       return res;
     };
@@ -78,7 +85,7 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
     for (const e of ACTIVITY_EVENTS) window.addEventListener(e, touch, { passive: true });
     const timer = window.setInterval(() => {
       const idle = (status?.idleMinutes ?? 30) * 60_000;
-      if (opened && !status?.required && Date.now() - lastInput.current > idle) {
+      if (status && !status.required && Date.now() - lastInput.current > idle) {
         setStatus((s) => (s ? { ...s, required: 'ADMIN_PASSWORD_REQUIRED', reason: 'IDLE' } : s));
       }
     }, 30_000);
@@ -86,22 +93,22 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
       for (const e of ACTIVITY_EVENTS) window.removeEventListener(e, touch);
       window.clearInterval(timer);
     };
-  }, [opened, status]);
+  }, [status]);
 
   const done = async () => {
     lastInput.current = Date.now();
-    await refresh();
+    const next = await refresh();
+    if (next && !next.required && lockedAtLoad.current) window.location.reload();
   };
 
   return (
     <>
-      {opened ? children : (
-        <div className="mx-auto max-w-lg py-10" aria-busy={!loadError}>
-          {loadError
-            ? <StatusBanner tone="danger" announce="alert" title="Administration indisponible">{loadError}</StatusBanner>
-            : <p className="text-center text-sm text-fg-muted">Vérification de la session d’administration…</p>}
+      {loadError && (
+        <div className="mx-auto max-w-lg px-4 pt-6">
+          <StatusBanner tone="danger" announce="alert" title="Administration indisponible">{loadError}</StatusBanner>
         </div>
       )}
+      {children}
       {status?.required && (
         <StepUpDialog required={status.required} reason={status.reason} phone={status.phone} onDone={() => void done()} />
       )}
