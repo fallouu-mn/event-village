@@ -5,12 +5,11 @@
  * sur une connexion en clair. En local et en e2e (http://localhost), Secure n'est pas posé, sinon la session ne tiendrait
  * pas. SameSite=Lax et chemin « / » comme les valeurs par défaut de @supabase/ssr. HttpOnly reste impossible : le client
  * Supabase du navigateur lit sa session dans ce cookie (constat AUTH-04, mesure réaliste : durée et inactivité).
- * Module partagé (navigateur et serveur).
+ * Serveur (middleware, confirmation du mot de passe) ; le client du navigateur applique la même règle par le protocole de
+ * la page (lib/supabase/client.ts).
  */
 export function secureCookies(): boolean {
-    // indexOf (et non startsWith) : dans le navigateur, l'adresse est écrite à la construction et le minificateur réduit
-    // toute l'expression à une constante (poids JavaScript commun, run 173)
-    return (process.env.NEXT_PUBLIC_APP_URL || '').trim().toLowerCase().indexOf('https://') === 0;
+    return (process.env.NEXT_PUBLIC_APP_URL ?? '').trim().toLowerCase().startsWith('https://');
 }
 
 export function supabaseCookieOptions(): { secure: boolean; sameSite: 'lax'; path: string } {
