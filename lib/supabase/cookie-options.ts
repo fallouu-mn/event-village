@@ -8,7 +8,9 @@
  * Module partagé (navigateur et serveur).
  */
 export function secureCookies(): boolean {
-    return (process.env.NEXT_PUBLIC_APP_URL ?? '').trim().toLowerCase().startsWith('https://');
+    // indexOf (et non startsWith) : dans le navigateur, l'adresse est écrite à la construction et le minificateur réduit
+    // toute l'expression à une constante (poids JavaScript commun, run 173)
+    return (process.env.NEXT_PUBLIC_APP_URL || '').trim().toLowerCase().indexOf('https://') === 0;
 }
 
 export function supabaseCookieOptions(): { secure: boolean; sameSite: 'lax'; path: string } {
