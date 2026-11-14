@@ -73,9 +73,19 @@ async function cachePut(cache, path, response, commit = true) {
   return true;
 }
 
+/**
+ * Lot 9 sexies (Next 15) : la coquille transporte la charge RSC en plusieurs balises self.__next_f.push(…), et une
+ * coupure peut tomber au milieu d'un nom de fichier (« static/chunks/460 » puis « 6-….js »). Les morceaux sont recollés
+ * avant la recherche ; un chemin sans extension de ressource n'est jamais retenu (un fragment ferait échouer tout le lot).
+ */
+const RSC_SPLIT_RE = /"\]\)<\/script><script>self\.__next_f\.push\(\[1,"/g;
+const ASSET_FILE_RE = /\.(?:js|css|woff2?|ttf|otf|png|jpe?g|gif|svg|webp|avif|ico)$/;
+
 function discover(text) {
   const found = new Set();
-  for (const m of text.match(ASSET_RE) || []) found.add(m.startsWith('/_next/') ? m : '/_next/' + m);
+  for (const m of text.replace(RSC_SPLIT_RE, '').match(ASSET_RE) || []) {
+    if (ASSET_FILE_RE.test(m)) found.add(m.startsWith('/_next/') ? m : '/_next/' + m);
+  }
   return found;
 }
 
