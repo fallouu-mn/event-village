@@ -1,6 +1,6 @@
 /**
  * Lot 2 — invariant global de la chaîne paiement → billet, vérifié à la fin de chaque suite de
- * paiement par une requête SQL sur la base LOCALE (lecture seule) :
+ * paiement par une requête SQL sur la base LOCALE (lecture seule, sauf la purge des réservations échues) :
  *  (a) aucun paiement SUCCESS (ou PARTIAL, lot 3) de billetterie sans ses billets (nombre exact = quantités réservées) ;
  *  (b) aucun billet payant VALIDE ou UTILISE sans paiement SUCCESS ou PARTIAL (remboursement partiel, lot 3),
  *      hors billet VALIDE « à régler sur place » d'une commande impayée (encaissement au contrôle, lot 4) ;
@@ -13,8 +13,7 @@
  * La sortie brute est imprimée (rapport du lot 2, section 4).
  */
 import assert from 'node:assert/strict';
-import { inspect } from './db';
-import { getServiceRoleClient } from '../../lib/supabase/server';
+import { inspect, writeLocal } from './db';
 
 export const INVARIANT_SQL = `
 WITH reserved AS (
@@ -72,14 +71,44 @@ function print(label: string, phase: string, rows: Violation[]): void {
     for (const r of rows) console.log(`[INVARIANT]   (${r.regle}) ${r.objet} : ${r.detail}`);
 }
 
+/**
+ * Purge des réservations échues puis contrôle strict, dans UNE transaction REPEATABLE READ : la purge et le contrôle
+ * partagent le même now() (début de transaction) et le même instantané. Auparavant, purge (appel REST) et contrôle
+ * avaient chacun leur now() : une réservation d'une autre suite arrivée à échéance entre les deux restait dans held
+ * mais plus dans « ACTIVE non échues » (run 182, push-service-worker : held 1 ≠ 0). Lot 9 quinquies, signalé.
+ * Un conflit de sérialisation (40001) avec une suite concurrente fait rejouer la transaction, au plus 5 fois.
+ */
+async function purgeThenCheck(): Promise<{ purged: unknown; after: Violation[] }> {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await writeLocal(async (db) => {
+                await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+                try {
+                    const purged = (await db.query<{ r: unknown }>('SELECT public.stock_reservations_expire() AS r')).rows[0].r;
+                    const after = (await db.query<Violation>(INVARIANT_SQL, [true])).rows;
+                    await db.query('COMMIT');
+                    return { purged, after };
+                } catch (err) {
+                    await db.query('ROLLBACK');
+                    throw err;
+                }
+            });
+        } catch (err) {
+            if (attempt < 5 && (err as { code?: string }).code === '40001') {
+                console.log(`[INVARIANT] conflit de sérialisation à la purge, essai ${attempt + 1}`);
+                continue;
+            }
+            throw err;
+        }
+    }
+}
+
 /** À appeler dans after() de chaque suite de paiement. */
 export async function assertPaymentInvariants(label: string): Promise<void> {
     const before = await run(false);
     print(label, 'avant purge (held = réservations ACTIVE)', before);
-    const { data: purged, error } = await getServiceRoleClient().rpc('stock_reservations_expire');
-    assert.equal(error, null, `purge des réservations échues : ${error?.message}`);
+    const { purged, after } = await purgeThenCheck();
     console.log(`[INVARIANT] ${label} — purge des réservations échues : ${JSON.stringify(purged)}`);
-    const after = await run(true);
     print(label, 'après purge (held = réservations non échues)', after);
     assert.deepEqual(before, [], `invariant violé avant purge :\n${before.map((r) => `(${r.regle}) ${r.objet} : ${r.detail}`).join('\n')}`);
     assert.deepEqual(after, [], `invariant violé après purge :\n${after.map((r) => `(${r.regle}) ${r.objet} : ${r.detail}`).join('\n')}`);
