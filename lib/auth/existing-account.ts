@@ -7,6 +7,16 @@
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { phoneStorageForms } from '@/lib/validations/auth';
 
+/**
+ * Réponse (409) à une demande de code d'inscription pour un numéro qui a déjà un compte, quel que soit son statut :
+ * POST /api/auth/register/start et POST /api/auth/send-otp (objet REGISTER ; contre-vérification du lot 9 quinquies,
+ * point 3). Aucun SMS ne part.
+ */
+export const PHONE_ALREADY_REGISTERED_REPLY = {
+    error: 'Ce numéro de téléphone est déjà associé à un compte. Veuillez vous connecter.',
+    code: 'PHONE_ALREADY_REGISTERED',
+} as const;
+
 export async function findExistingAccount(e164Phone: string, email: string | null | undefined): Promise<{ id: string } | null> {
     const supabase = getServiceRoleClient();
     const { data: byPhone, error: phoneErr } = await supabase

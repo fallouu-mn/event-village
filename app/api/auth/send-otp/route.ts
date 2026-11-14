@@ -10,6 +10,7 @@ import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
 import { activationPendingResponse } from '@/lib/auth/account-activation';
 import { suspendedAccountMessage } from '@/lib/support-contact';
+import { findExistingAccount, PHONE_ALREADY_REGISTERED_REPLY } from '@/lib/auth/existing-account';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,19 @@ export async function POST(req: NextRequest) {
                 { error: 'Numéro de téléphone sénégalais invalide (ex: 77 123 45 67).' },
                 { status: 400 }
             );
+        }
+
+        // Contre-vérification du lot 9 quinquies (point 3) : un code d'inscription pour un numéro qui a déjà un compte, quel
+        // que soit son statut (suspendu compris), est refusé avant toute réservation et tout SMS, avec la réponse de
+        // POST /api/auth/register/start.
+        if (otpPurpose === 'REGISTER') {
+            let existing: { id: string } | null;
+            try {
+                existing = await findExistingAccount(normalizedPhone, null);
+            } catch (lookupErr) {
+                return apiFailure('POST /api/auth/send-otp, compte du numéro (inscription)', lookupErr, { message: 'Envoi du code momentanément impossible. Réessayez.', code: 'OTP_SEND_FAILED' });
+            }
+            if (existing) return NextResponse.json(PHONE_ALREADY_REGISTERED_REPLY, { status: 409 });
         }
 
         const supabase = getServiceRoleClient();

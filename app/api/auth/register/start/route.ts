@@ -6,7 +6,7 @@ import { storeOtp } from '@/lib/auth/otp-store';
 import { reserveSms } from '@/lib/sms/sms-guard';
 import { smsRefusalResponse } from '@/lib/sms/sms-http';
 import { getClientIp } from '@/lib/security/client-ip';
-import { findExistingAccount } from '@/lib/auth/existing-account';
+import { findExistingAccount, PHONE_ALREADY_REGISTERED_REPLY } from '@/lib/auth/existing-account';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,10 +45,7 @@ export async function POST(req: NextRequest) {
         // Un numéro déjà inscrit ne déclenche aucun SMS (lot 1C.9).
         const existing = await findExistingAccount(phone, null);
         if (existing) {
-            return NextResponse.json(
-                { error: 'Ce numéro de téléphone est déjà associé à un compte. Veuillez vous connecter.', code: 'PHONE_ALREADY_REGISTERED' },
-                { status: 409 },
-            );
+            return NextResponse.json(PHONE_ALREADY_REGISTERED_REPLY, { status: 409 });
         }
 
         // Réservation anti-abus (numéro, IP, plafond global) avant d'enregistrer le code : un refus ne remplace
