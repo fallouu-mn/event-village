@@ -15,7 +15,7 @@ import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { inspect } from '../helpers/db';
+import { inspect, writeLocal } from '../helpers/db';
 import { assertLot9quinquiesInvariants } from '../helpers/lot9quinquies-invariants';
 import { superadminId } from './finance-helpers';
 
@@ -29,7 +29,7 @@ after(async () => {
 describe('B1 — joindre le support', () => {
     test('réglages du contact : valeurs valides acceptées, invalides refusées (finance_setting_set), lecture servie à l\'écran', async () => {
         const actor = await superadminId();
-        const set = async (key: string, value: string) => inspect(async (c) => (await c.query<{ r: { ok: boolean; code?: string } }>(
+        const set = async (key: string, value: string) => writeLocal(async (c) => (await c.query<{ r: { ok: boolean; code?: string } }>(
             'SELECT public.finance_setting_set($1, $2::jsonb, $3, $4) AS r', [key, JSON.stringify({ value }), actor, 'test du lot 9 quinquies'])).rows[0].r);
         const before = await inspect(async (c) => (await c.query(`SELECT key, value FROM public.platform_settings WHERE key LIKE 'support.%' ORDER BY key`)).rows);
         assert.deepEqual(before.map((r) => r.key), ['support.email', 'support.phone', 'support.whatsapp'], 'trois réglages');
@@ -42,7 +42,7 @@ describe('B1 — joindre le support', () => {
             const reply = await inspect(async (c) => (await c.query(`SELECT public.essai_check_reel('{}'::jsonb) AS r`)).rows[0].r);
             assert.equal(Number(reply.support?.filled), 2, `essai_check_reel : réglages renseignés ${JSON.stringify(reply.support)}`);
         } finally {
-            for (const r of before) await inspect((c) => c.query('UPDATE public.platform_settings SET value = $2 WHERE key = $1', [r.key, r.value]));
+            for (const r of before) await writeLocal((c) => c.query('UPDATE public.platform_settings SET value = $2 WHERE key = $1', [r.key, r.value]));
         }
         const route = read('app/api/admin/finance-settings/route.ts');
         assert.ok(route.includes('key.like.support.%'), 'la route des réglages sert support.*');

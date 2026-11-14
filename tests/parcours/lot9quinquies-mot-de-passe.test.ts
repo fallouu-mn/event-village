@@ -24,6 +24,9 @@ import { jsonRequest } from './finance-helpers';
 import { invoke, routeHandler } from './pilotage-helpers';
 
 const ROOT = process.cwd();
+/** Exemples publics de la règle (A7, critère de l'audit AUTH-11), jamais des secrets. */
+const REFUSED_SAMPLE = 'Senegal2026!';
+const ACCEPTED_SAMPLE = 'ma soirée au théâtre';
 
 after(async () => {
     await assertLot9quinquiesInvariants('lot9quinquies-mot-de-passe');
@@ -85,9 +88,9 @@ describe('A7 — règle du mot de passe', () => {
     test('POST /api/account/password : « Senegal2026! » refusé (400), « ma soirée au théâtre » accepté', async () => {
         const user = await newBuyer('a7-route');
         const handler = await routeHandler('../../app/api/account/password/route', 'POST', 'POST /api/account/password');
-        const refused = await invoke(handler, jsonRequest('/api/account/password', 'POST', user.accessToken, { current_password: STRONG_PASSWORD, new_password: 'Senegal2026!' }));
+        const refused = await invoke(handler, jsonRequest('/api/account/password', 'POST', user.accessToken, { current_password: STRONG_PASSWORD, new_password: REFUSED_SAMPLE }));
         assert.equal(refused.status, 400, `Senegal2026! : ${JSON.stringify(refused.body)}`);
-        const ok = await invoke(handler, jsonRequest('/api/account/password', 'POST', user.accessToken, { current_password: STRONG_PASSWORD, new_password: 'ma soirée au théâtre' }));
+        const ok = await invoke(handler, jsonRequest('/api/account/password', 'POST', user.accessToken, { current_password: STRONG_PASSWORD, new_password: ACCEPTED_SAMPLE }));
         assert.equal(ok.status, 200, `phrase : ${JSON.stringify(ok.body)}`);
     });
 

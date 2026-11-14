@@ -23,7 +23,7 @@ import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { inspect } from '../helpers/db';
+import { writeLocal } from '../helpers/db';
 import { assertLot9quinquiesInvariants } from '../helpers/lot9quinquies-invariants';
 import { getFakes } from '../fakes';
 import { randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments } from './helpers';
@@ -65,7 +65,7 @@ function smsSince(admin: TestAdmin, since: number): string[] {
 
 /** Appel direct de la fonction de la migration, horloge simulée, admins de la suite seulement. */
 async function addReview(kind: 'PARTNER_NEW' | 'PARTNER_RESUBMITTED' | 'EVENT_SUBMITTED', now: Date, company?: string): Promise<number> {
-    return inspect(async (c) => {
+    return writeLocal(async (c) => {
         const r = await c.query<{ n: number }>('SELECT public.notif_admin_review_sms($1::jsonb) AS n', [JSON.stringify({
             kind, ref: randomUUID(), company, now: now.toISOString(), only_admin_ids: admins().map((a) => a.userId),
         })]);

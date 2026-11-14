@@ -57,6 +57,15 @@ export async function inspect<T>(fn: (client: Client) => Promise<T>, role?: ApiR
     });
 }
 
+/**
+ * Lot 9 quinquies : écriture VALIDÉE sur la base LOCALE (préparation d'un état : réglage, horloge d'une session, appel d'une
+ * fonction qui écrit), une instruction par appel de `client.query`, sans transaction englobante. Même garde que inspect
+ * (SUPABASE_DB_URL locale seulement).
+ */
+export async function writeLocal<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+    return withClient(fn);
+}
+
 /** Exécute un essai (DDL compris) dans une transaction systématiquement annulée. */
 export async function inRolledBackTransaction<T>(fn: (client: Client) => Promise<T>): Promise<T> {
     return withClient(async (client) => {

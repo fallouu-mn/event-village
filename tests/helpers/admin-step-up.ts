@@ -11,7 +11,7 @@
  * lot 9 quinquies qui prouvent le second facteur ouvrent leurs sessions sans cette aide (tests/parcours/lot9quinquies-admin.test.ts).
  * Modification d'aides signalée au rapport du lot.
  */
-import { inspect } from './db';
+import { writeLocal } from './db';
 
 function claimsOf(accessToken: string): { sessionId: string; userId: string } {
     const claims = JSON.parse(Buffer.from(accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { session_id?: string; sub?: string };
@@ -21,7 +21,7 @@ function claimsOf(accessToken: string): { sessionId: string; userId: string } {
 
 export async function stepUpTestSession(accessToken: string): Promise<void> {
     const { sessionId, userId } = claimsOf(accessToken);
-    await inspect(async (c) => {
+    await writeLocal(async (c) => {
         // Avant la migration du lot (preuve des rouges), rien à écrire.
         const present = await c.query(`SELECT to_regclass('public.admin_devices') IS NOT NULL AS ok`);
         if (!present.rows[0].ok) return;

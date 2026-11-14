@@ -102,6 +102,30 @@ const fixtureSessions = new Map<FixtureUserKey, Promise<AttackerAccount>>();
  * Connexion à un compte de fixture (compte gratuit déjà existant) par email + mot de passe.
  * Une seule connexion par compte et par processus (limite de débit de l'API Auth).
  */
+type RouteHandler = (req: NextRequest) => Promise<Response>;
+
+async function stepUpCall(path: string, token: string, body: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+    const mod = (await import(`../../app${path}/route`)) as { POST: RouteHandler };
+    const res = await mod.POST(new NextRequest(`http://127.0.0.1:3000${path}`, {
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }));
+    return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+}
+
+/** Lot 9 quinquies (A3, A4) : mot de passe redemandé, code administrateur envoyé, lu dans le faux SMS, saisi. */
+export async function adminStepUpThroughRoutes(token: string, phone: string): Promise<void> {
+    const pwd = await stepUpCall('/api/admin/step-up', token, { password: TEST_PASSWORD });
+    if (pwd.status !== 200) throw new Error(`second facteur : mot de passe refusé (HTTP ${pwd.status} ${JSON.stringify(pwd.body)})`);
+    if (pwd.body.required !== 'ADMIN_SMS_REQUIRED') return;
+    const since = getFakes().sms.messagesTo(phone).length;
+    const sent = await stepUpCall('/api/admin/step-up/sms', token, {});
+    if (sent.status !== 200) throw new Error(`second facteur : code non envoyé (HTTP ${sent.status} ${JSON.stringify(sent.body)})`);
+    const code = getFakes().sms.messagesTo(phone).slice(since).map((m) => /code administrateur (\d{6})/.exec(m.message)?.[1]).find(Boolean);
+    if (!code) throw new Error('second facteur : aucun code administrateur reçu par le faux SMS');
+    const ok = await stepUpCall('/api/admin/step-up/sms', token, { code });
+    if (ok.status !== 200) throw new Error(`second facteur : code refusé (HTTP ${ok.status} ${JSON.stringify(ok.body)})`);
+}
+
 export function signInFixture(key: FixtureUserKey): Promise<AttackerAccount> {
     let session = fixtureSessions.get(key);
     if (!session) {
@@ -109,6 +133,11 @@ export function signInFixture(key: FixtureUserKey): Promise<AttackerAccount> {
             const client = newClient();
             const { data, error } = await client.auth.signInWithPassword({ email: FIXTURE_USERS[key].email, password: TEST_PASSWORD });
             if (error || !data.user) throw new Error(`signInWithPassword(${key}) : ${error?.message ?? 'aucun utilisateur'}`);
+            // Lot 9 quinquies (A3, A4 ; aide modifiée, signalée au rapport) : un compte ADMIN ou SUPERADMIN passe le second
+            // facteur par les VRAIES routes (mot de passe, puis code administrateur lu dans le faux SMS), sans service_role.
+            if ((FIXTURE_USERS[key].roles as readonly string[]).some((r) => r === 'ADMIN' || r === 'SUPERADMIN')) {
+                await adminStepUpThroughRoutes(data.session!.access_token, FIXTURE_USERS[key].phone);
+            }
             return { client, userId: data.user.id, email: FIXTURE_USERS[key].email };
         })();
         fixtureSessions.set(key, session);

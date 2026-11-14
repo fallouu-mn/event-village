@@ -25,6 +25,9 @@ import { service } from './paiement-helpers';
 import { outboxRows } from './notif-helpers';
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '');
+/** Exemples publics de la règle (A7), jamais des secrets : une phrase acceptée, un mot de passe évident refusé. */
+const PHRASE_SAMPLE = 'mon jardin de baobabs';
+const OBVIOUS_SAMPLE = 'dakar12345';
 
 after(async () => {
     await assertLot9quinquiesInvariants('lot9quinquies-activation');
@@ -90,10 +93,10 @@ describe('A2 — comptes créés par un admin : activation par lien', () => {
         assert.deepEqual([resent.status, resent.body.activation], [200, 'SENT'], JSON.stringify(resent.body));
         const second = lastActivationToken(phone);
         assert.notEqual(second, first);
-        const old = await route('/api/auth/activate', 'POST', { token: first, password: 'mon jardin de baobabs' });
+        const old = await route('/api/auth/activate', 'POST', { token: first, password: PHRASE_SAMPLE });
         assert.deepEqual([old.status, old.body.code], [410, 'ACTIVATION_EXPIRED'], `ancien lien : ${JSON.stringify(old.body)}`);
 
-        const weak = await route('/api/auth/activate', 'POST', { token: second, password: 'dakar12345' });
+        const weak = await route('/api/auth/activate', 'POST', { token: second, password: OBVIOUS_SAMPLE });
         assert.deepEqual([weak.status, weak.body.field], [400, 'password'], `mot de passe faible : ${JSON.stringify(weak.body)}`);
 
         const before = (await outboxRows({ type: 'PASSWORD_CHANGED', userId })).length;

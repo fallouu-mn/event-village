@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
-import { inspect } from '../helpers/db';
+import { writeLocal } from '../helpers/db';
 import { assertLot9quinquiesInvariants } from '../helpers/lot9quinquies-invariants';
 import { getFakes } from '../fakes';
 import { BASE_URL, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers';
@@ -81,7 +81,7 @@ async function passStepUp(a: RawAccount): Promise<string> {
 }
 
 async function sql(text: string, params: unknown[]): Promise<void> {
-    await inspect(async (c) => { await c.query(text, params); });
+    await writeLocal(async (c) => { await c.query(text, params); });
 }
 
 describe('A3 — code SMS administrateur sur un nouvel appareil', () => {

@@ -96,6 +96,15 @@ async function call(rel: string, method: string, token: string, body: unknown = 
     return { status: res.status, body: parsed };
 }
 
+/** is_partner_owner évaluée sous le rôle authenticated, jeton de la partenaire posé (transaction en lecture seule). */
+async function ownerCheck(): Promise<boolean> {
+    return inspect(async (c) => {
+        await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: partner.userId, role: 'authenticated' })]);
+        await c.query('SET LOCAL ROLE authenticated');
+        return (await c.query<{ ok: boolean }>('SELECT public.is_partner_owner($1) AS ok', [partner.partnerId])).rows[0].ok;
+    });
+}
+
 function userClient(token: string) {
     return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
         auth: { persistSession: false, autoRefreshToken: false },
@@ -163,16 +172,7 @@ describe('A9 — droits de la partenaire selon le statut de sa fiche', () => {
         const db = userClient(partner.accessToken);
         const { data: read } = await db.from('ticket_categories').select('id').eq('event_id', eventId);
         assert.equal((read ?? []).length > 0, true, 'catégories d\'un événement PUBLIE : lecture publique (témoin)');
-        const owned = await inspect(async (c) => {
-            await c.query('BEGIN');
-            try {
-                await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: partner.userId, role: 'authenticated' })]);
-                await c.query('SET LOCAL ROLE authenticated');
-                return (await c.query<{ ok: boolean }>('SELECT public.is_partner_owner($1) AS ok', [partner.partnerId])).rows[0].ok;
-            } finally {
-                await c.query('ROLLBACK');
-            }
-        });
+        const owned = await ownerCheck();
         assert.equal(owned, false, 'is_partner_owner faux pour une fiche EN_ATTENTE');
     });
 
@@ -192,16 +192,7 @@ describe('A9 — droits de la partenaire selon le statut de sa fiche', () => {
         await setFiche('VALIDE');
         assert.equal((await call('profile', 'GET', partner.accessToken))?.status, 200);
         assert.equal((await call('team/all', 'GET', partner.accessToken))?.status, 200);
-        const owned = await inspect(async (c) => {
-            await c.query('BEGIN');
-            try {
-                await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: partner.userId, role: 'authenticated' })]);
-                await c.query('SET LOCAL ROLE authenticated');
-                return (await c.query<{ ok: boolean }>('SELECT public.is_partner_owner($1) AS ok', [partner.partnerId])).rows[0].ok;
-            } finally {
-                await c.query('ROLLBACK');
-            }
-        });
+        const owned = await ownerCheck();
         assert.equal(owned, true, 'is_partner_owner vrai pour une fiche VALIDE');
     });
 });

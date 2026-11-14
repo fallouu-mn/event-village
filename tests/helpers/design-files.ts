@@ -232,4 +232,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/partner/pilotage/EntriesBreakdown.tsx',
     // B (9t.12, R106 b) : rapport de clôture unique, partagé par l'onglet et la fenêtre (E-B)
     'components/partner/pilotage/ClosingReportSummary.tsx',
+    // Lot 9 quinquies (A2, A3-A4, B1) : activation d'un compte créé par un admin, fenêtre de sécurité de l'administration,
+    // page publique d'aide (ajout signalé au rapport)
+    'app/activation/page.tsx',
+    'app/admin/layout.tsx',
+    'components/admin/AdminStepUpGate.tsx',
+    'app/aide/page.tsx',
 ];

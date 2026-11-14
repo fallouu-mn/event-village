@@ -13,7 +13,7 @@ import '../helpers/env';
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { inspect } from '../helpers/db';
+import { inspect, writeLocal } from '../helpers/db';
 import { assertLot9quinquiesInvariants } from '../helpers/lot9quinquies-invariants';
 import { getFakes } from '../fakes';
 import { jsonRequest } from './helpers';
@@ -57,11 +57,11 @@ async function suspend(userId: string): Promise<void> {
 async function withSupportWhatsapp<T>(value: string, fn: () => Promise<T>): Promise<T> {
     const before = await inspect(async (c) => (await c.query(`SELECT value FROM public.platform_settings WHERE key = 'support.whatsapp'`)).rows[0]?.value);
     assert.ok(before !== undefined, 'réglage support.whatsapp absent (migration 20261112000003)');
-    await inspect((c) => c.query(`UPDATE public.platform_settings SET value = $1::jsonb WHERE key = 'support.whatsapp'`, [JSON.stringify({ value })]));
+    await writeLocal((c) => c.query(`UPDATE public.platform_settings SET value = $1::jsonb WHERE key = 'support.whatsapp'`, [JSON.stringify({ value })]));
     try {
         return await fn();
     } finally {
-        await inspect((c) => c.query(`UPDATE public.platform_settings SET value = $1::jsonb WHERE key = 'support.whatsapp'`, [JSON.stringify(before)]));
+        await writeLocal((c) => c.query(`UPDATE public.platform_settings SET value = $1::jsonb WHERE key = 'support.whatsapp'`, [JSON.stringify(before)]));
     }
 }
 
