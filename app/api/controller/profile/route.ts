@@ -111,7 +111,7 @@ export async function PATCH(req: NextRequest) {
 
         const parse = ChangePasswordSchema.safeParse(body);
         if (!parse.success) {
-            return NextResponse.json({ error: parse.error.errors[0]?.message || 'Données invalides.' }, { status: 400 });
+            return NextResponse.json({ error: parse.error.issues[0]?.message || 'Données invalides.' }, { status: 400 });
         }
 
         const { current_password, new_password } = parse.data;

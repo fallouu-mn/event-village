@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -44,7 +45,7 @@ const FIELD_LABELS: Record<string, string> = {
 const blankToNull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
 
 /** Messages des refus : complément du libellé du champ (« Le nom commercial : 150 caractères au plus. »). */
-const TYPE_ERROR = { invalid_type_error: 'valeur de type inattendu.' };
+const TYPE_ERROR = zodTypeErrors({ invalid: 'valeur de type inattendu.' });
 
 const text = (min: number, max: number) => z.string(TYPE_ERROR).trim()
     .min(min, `${min} caractères au moins.`)
@@ -67,7 +68,7 @@ const ProfilePatchSchema = z.object({
     email: z.preprocess(blankToNull, text(0, 200).email('adresse invalide.').nullable()),
     logo_url: z.preprocess(blankToNull, text(0, 600).nullable()),
     cover_url: z.preprocess(blankToNull, text(0, 600).nullable()),
-    activities: z.array(z.enum(PartnerActivityTypes, { errorMap: () => ({ message: 'activité hors de la liste proposée.' }) }), TYPE_ERROR)
+    activities: z.array(z.enum(PartnerActivityTypes, { error: 'activité hors de la liste proposée.' }), TYPE_ERROR)
         .min(1, 'choisissez au moins une activité.')
         .max(PartnerActivityTypes.length, 'liste trop longue.'),
 }).partial();

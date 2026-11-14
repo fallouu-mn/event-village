@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { normalizePhoneNumber } from './auth';
 
 /**
@@ -6,9 +7,7 @@ import { normalizePhoneNumber } from './auth';
  * Accepte soit un numéro de téléphone valide, soit une adresse email valide.
  */
 export const InitiateTransferSchema = z.object({
-    recipient: z.string({
-        required_error: 'Le destinataire (téléphone ou email) est requis.',
-    }).min(3, 'Veuillez saisir un numéro de téléphone ou un email valide.').trim(),
+    recipient: z.string(zodTypeErrors({ required: 'Le destinataire (téléphone ou email) est requis.' })).min(3, 'Veuillez saisir un numéro de téléphone ou un email valide.').trim(),
 }).refine((data) => {
     const val = data.recipient;
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);

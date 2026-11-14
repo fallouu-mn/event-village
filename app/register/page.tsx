@@ -210,7 +210,7 @@ export default function RegisterPage() {
         const target = mode === 'first' ? phone.trim() : confirmedPhone;
         const parsed = RegisterStartSchema.safeParse({ phone: target });
         if (!parsed.success) {
-            setErrorMessage(parsed.error.errors[0]?.message ?? 'Numéro de téléphone sénégalais invalide (ex : 77 123 45 67).');
+            setErrorMessage(parsed.error.issues[0]?.message ?? 'Numéro de téléphone sénégalais invalide (ex : 77 123 45 67).');
             return;
         }
 
@@ -264,7 +264,7 @@ export default function RegisterPage() {
         };
         const parsed = RegisterWithCodeSchema.safeParse(payload);
         if (!parsed.success) {
-            const issue = parsed.error.errors[0];
+            const issue = parsed.error.issues[0];
             const message = issue?.message ?? 'Vérifiez les informations saisies.';
             const field = fieldNameOf(issue?.path[0]);
             if (field) showFieldError(field, message);

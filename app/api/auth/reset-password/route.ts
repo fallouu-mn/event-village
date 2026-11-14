@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { noStore } from '@/lib/auth/account-sync';
 import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { requireActiveSession } from '@/lib/auth/session';
@@ -17,7 +18,7 @@ const CONTEXT = 'POST /api/auth/reset-password';
 const RECOVERY_MAX_AGE_SECONDS = 15 * 60;
 
 const BodySchema = z.object({
-    password: z.string({ required_error: 'Saisissez le nouveau mot de passe.' })
+    password: z.string(zodTypeErrors({ required: 'Saisissez le nouveau mot de passe.' }))
         .max(200, 'Mot de passe trop long.')
         .pipe(ServerPasswordSchema),
     // Lot 9 quinquies (B2 : AUTH-08) : jeton du lien reçu par email (sans session)

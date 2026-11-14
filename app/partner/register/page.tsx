@@ -13,7 +13,7 @@ import { cn } from '@/components/ui/cn';
 import { OtpInput } from '@/components/auth/OtpInput';
 import { PasswordStrengthChecklist } from '@/components/auth/PasswordStrengthChecklist';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { PartnerActivityTypes, RegisterPartnerSchema, normalizePhoneNumber } from '@/lib/validations/auth';
+import { PartnerActivityTypes, RegisterPartnerFieldsSchema, normalizePhoneNumber } from '@/lib/validations/auth';
 import { partnerActivityLabel } from '@/lib/partner/activity-labels';
 import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
 
@@ -26,7 +26,7 @@ import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
  * parti. Lot 7 (7.0 f) :
  *  - D63 : ouverte par un compte déjà connecté, la page explique qu'elle crée un compte professionnel distinct (avec
  *    un autre numéro) et propose la déconnexion ; aucune conversion du compte connecté ;
- *  - D64 : tout le formulaire est validé par le schéma partagé (RegisterPartnerSchema sans les jetons) AVANT le
+ *  - D64 : tout le formulaire est validé par le schéma partagé (champs de RegisterPartnerSchema, RegisterPartnerFieldsSchema, sans les jetons) AVANT le
  *    moindre téléversement ; les jetons de dépôt sont réutilisés d'une tentative à l'autre tant qu'ils ne sont pas
  *    expirés et que le fichier est le même ; code SMS saisi par OtpInput, renvoi avec décompte ;
  *  - erreurs : récapitulatif en tête (focalisé, liens vers les champs) et message sous chaque champ ; libellés liés ;
@@ -70,7 +70,7 @@ const FIELD_IDS: Record<FieldName, string> = {
 const FIELD_ORDER = Object.keys(FIELD_IDS) as FieldName[];
 
 /** Schéma partagé sans les jetons de dépôt : contrôlé avant tout téléversement (D64). */
-const FormSchema = RegisterPartnerSchema.innerType().omit({ idCardUploadToken: true, businessDocUploadToken: true });
+const FormSchema = RegisterPartnerFieldsSchema.omit({ idCardUploadToken: true, businessDocUploadToken: true });
 
 const RESEND_DELAY_SECONDS = 60;
 /** Marge avant l'expiration d'un jeton : en deçà, la pièce est déposée à nouveau. */

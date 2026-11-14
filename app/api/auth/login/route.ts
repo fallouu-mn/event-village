@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { noStore } from '@/lib/auth/account-sync';
 import { applySessionCookies, PasswordCheckUnavailable, serverPasswordSignIn } from '@/lib/auth/password-confirm';
 import { getServerEnv } from '@/lib/env';
@@ -18,9 +19,9 @@ const CONTEXT = 'POST /api/auth/login';
 const HOUR_SECONDS = 3600;
 
 const BodySchema = z.object({
-    identifier: z.string({ required_error: 'Saisissez votre numéro de téléphone ou votre email.' }).trim()
+    identifier: z.string(zodTypeErrors({ required: 'Saisissez votre numéro de téléphone ou votre email.' })).trim()
         .min(3, 'Saisissez votre numéro de téléphone ou votre email.').max(254, 'Identifiant trop long.'),
-    password: z.string({ required_error: 'Saisissez votre mot de passe.' }).min(1, 'Saisissez votre mot de passe.').max(200, 'Mot de passe trop long.'),
+    password: z.string(zodTypeErrors({ required: 'Saisissez votre mot de passe.' })).min(1, 'Saisissez votre mot de passe.').max(200, 'Mot de passe trop long.'),
 });
 
 /** Numéro inconnu et mauvais mot de passe : une seule et même réponse (aucune énumération des comptes). */

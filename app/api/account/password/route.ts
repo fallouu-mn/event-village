@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { noStore } from '@/lib/auth/account-sync';
 import { applySessionCookies, PasswordCheckUnavailable, serverPasswordSignIn, verifyAccountPassword, type SessionCookie } from '@/lib/auth/password-confirm';
@@ -26,10 +27,10 @@ const SESSIONS_NOT_REVOKED = new PublicError(
 );
 
 const BodySchema = z.object({
-    current_password: z.string({ required_error: 'Saisissez votre mot de passe actuel.' })
+    current_password: z.string(zodTypeErrors({ required: 'Saisissez votre mot de passe actuel.' }))
         .min(1, 'Saisissez votre mot de passe actuel.')
         .max(200, 'Mot de passe trop long.'),
-    new_password: z.string({ required_error: 'Saisissez le nouveau mot de passe.' })
+    new_password: z.string(zodTypeErrors({ required: 'Saisissez le nouveau mot de passe.' }))
         .max(200, 'Mot de passe trop long.')
         .pipe(ServerPasswordSchema),
 }).strict();

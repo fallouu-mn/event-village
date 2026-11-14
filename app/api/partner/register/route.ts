@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
         const parseResult = RegisterPartnerSchema.safeParse(body);
         if (!parseResult.success) {
-            const firstError = parseResult.error.errors[0]?.message || 'Données du formulaire invalides.';
+            const firstError = parseResult.error.issues[0]?.message || 'Données du formulaire invalides.';
             return NextResponse.json({ error: firstError }, { status: 400 });
         }
 

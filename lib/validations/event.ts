@@ -199,9 +199,7 @@ const cityField = z.string().trim()
     .max(EVENT_LIMITS.cityMax, `La ville compte au plus ${EVENT_LIMITS.cityMax} caractères.`)
     .refine((v) => !hasContactInfo(v), contactInfoMessage('La ville'))
     .transform(canonicalCity);
-const categoryField = z.enum(EVENT_CATEGORY_VALUES, {
-    errorMap: () => ({ message: 'Choisissez une catégorie d’événement dans la liste.' }),
-});
+const categoryField = z.enum(EVENT_CATEGORY_VALUES, { error: 'Choisissez une catégorie d’événement dans la liste.' });
 const latitudeField = z.number().finite()
     .min(-90, 'La latitude est comprise entre -90 et 90.').max(90, 'La latitude est comprise entre -90 et 90.').nullable();
 const longitudeField = z.number().finite()
@@ -263,7 +261,7 @@ const optionalText = (max: number, message: string) =>
 const programLine = z.object({
     id: z.string().uuid('Identifiant de ligne invalide.'),
     time: timeField,
-    kind: z.enum(PROGRAM_KINDS, { errorMap: () => ({ message: 'Choisissez le type de la ligne : artiste, intervenant ou activité.' }) }),
+    kind: z.enum(PROGRAM_KINDS, { error: 'Choisissez le type de la ligne : artiste, intervenant ou activité.' }),
     title: z.string().trim().min(1, 'Indiquez le titre de la ligne.')
         .max(EVENT_LIMITS.programTitleMax, `Le titre d’une ligne compte au plus ${EVENT_LIMITS.programTitleMax} caractères.`),
     participant: optionalText(EVENT_LIMITS.programParticipantMax, `L’artiste ou l’intervenant compte au plus ${EVENT_LIMITS.programParticipantMax} caractères.`),
@@ -590,41 +588,44 @@ export type UpdateTicketCategoryInput = z.input<ReturnType<typeof updateTicketCa
 
 // ── Messages français et réponse 400 ───────────────────────────────────────
 
-/** Messages français pour les issues sans message explicite (types, clés inconnues, formats). */
-export const frenchErrorMap: z.ZodErrorMap = (issue) => {
+/**
+ * Messages français pour les issues sans message explicite (types, clés inconnues, formats).
+ * Lot 9 sexies (zod 4) : mêmes messages qu'en zod 3, codes de zod 4 (`invalid_value` pour une liste fermée,
+ * `invalid_format` pour un format, `origin` pour la nature de la valeur bornée). `not_finite` n'existe plus :
+ * un nombre infini est refusé comme une valeur non numérique (JSON ne peut pas en transporter).
+ */
+export const frenchErrorMap: z.core.$ZodErrorMap = (issue) => {
     switch (issue.code) {
-        case z.ZodIssueCode.invalid_type:
-            if (issue.received === 'undefined' || issue.received === 'null') return { message: 'Ce champ est obligatoire.' };
-            if (issue.expected === 'number') return { message: 'Une valeur numérique est attendue.' };
-            if (issue.expected === 'boolean') return { message: 'Une réponse oui ou non est attendue.' };
-            if (issue.expected === 'string') return { message: 'Un texte est attendu.' };
-            if (issue.expected === 'array') return { message: 'Une liste est attendue.' };
-            if (issue.expected === 'object') return { message: 'Un groupe de champs est attendu.' };
-            return { message: 'Type de valeur invalide.' };
-        case z.ZodIssueCode.unrecognized_keys:
-            return { message: 'Champ non accepté par le formulaire.' };
-        case z.ZodIssueCode.invalid_enum_value:
-            return { message: 'Valeur hors de la liste proposée.' };
-        case z.ZodIssueCode.too_small:
-            if (issue.type === 'string') return { message: `Au moins ${String(issue.minimum)} caractère(s).` };
-            if (issue.type === 'array') return { message: `Au moins ${String(issue.minimum)} élément(s).` };
-            return { message: `Valeur minimale : ${String(issue.minimum)}.` };
-        case z.ZodIssueCode.too_big:
-            if (issue.type === 'string') return { message: `Au plus ${String(issue.maximum)} caractères.` };
-            if (issue.type === 'array') return { message: `Au plus ${String(issue.maximum)} éléments.` };
-            return { message: `Valeur maximale : ${String(issue.maximum)}.` };
-        case z.ZodIssueCode.invalid_string:
-            return { message: 'Format invalide.' };
-        case z.ZodIssueCode.not_finite:
-            return { message: 'Une valeur numérique finie est attendue.' };
+        case 'invalid_type':
+            if (issue.input === undefined || issue.input === null) return 'Ce champ est obligatoire.';
+            if (issue.expected === 'number') return 'Une valeur numérique est attendue.';
+            if (issue.expected === 'boolean') return 'Une réponse oui ou non est attendue.';
+            if (issue.expected === 'string') return 'Un texte est attendu.';
+            if (issue.expected === 'array') return 'Une liste est attendue.';
+            if (issue.expected === 'object') return 'Un groupe de champs est attendu.';
+            return 'Type de valeur invalide.';
+        case 'unrecognized_keys':
+            return 'Champ non accepté par le formulaire.';
+        case 'invalid_value':
+            return 'Valeur hors de la liste proposée.';
+        case 'too_small':
+            if (issue.origin === 'string') return `Au moins ${String(issue.minimum)} caractère(s).`;
+            if (issue.origin === 'array') return `Au moins ${String(issue.minimum)} élément(s).`;
+            return `Valeur minimale : ${String(issue.minimum)}.`;
+        case 'too_big':
+            if (issue.origin === 'string') return `Au plus ${String(issue.maximum)} caractères.`;
+            if (issue.origin === 'array') return `Au plus ${String(issue.maximum)} éléments.`;
+            return `Valeur maximale : ${String(issue.maximum)}.`;
+        case 'invalid_format':
+            return 'Format invalide.';
         default:
-            return { message: 'Valeur invalide.' };
+            return 'Valeur invalide.';
     }
 };
 
 /** safeParse avec les messages français (les codes et chemins sont ceux du schéma). */
-export function parseWithFrenchErrors<T extends z.ZodTypeAny>(schema: T, input: unknown): z.SafeParseReturnType<z.input<T>, z.output<T>> {
-    return schema.safeParse(input, { errorMap: frenchErrorMap });
+export function parseWithFrenchErrors<T extends z.ZodTypeAny>(schema: T, input: unknown): z.ZodSafeParseResult<z.output<T>> {
+    return schema.safeParse(input, { error: frenchErrorMap });
 }
 
 export interface FieldError {

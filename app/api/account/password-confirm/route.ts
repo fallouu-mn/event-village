@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { noStore } from '@/lib/auth/account-sync';
 import { PasswordCheckUnavailable, recordPasswordConfirmation, verifyAccountPassword } from '@/lib/auth/password-confirm';
 import { getServerEnv } from '@/lib/env';
@@ -13,7 +14,7 @@ const CONTEXT = 'POST /api/account/password-confirm';
 const QUARTER_HOUR_SECONDS = 900;
 
 const BodySchema = z.object({
-    password: z.string({ required_error: 'Saisissez votre mot de passe.' }).min(1, 'Saisissez votre mot de passe.').max(200, 'Mot de passe trop long.'),
+    password: z.string(zodTypeErrors({ required: 'Saisissez votre mot de passe.' })).min(1, 'Saisissez votre mot de passe.').max(200, 'Mot de passe trop long.'),
 }).strict();
 
 async function handle(req: NextRequest): Promise<NextResponse> {

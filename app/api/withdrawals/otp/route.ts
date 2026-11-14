@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomInt } from 'crypto';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner, requireVerifiedPhone } from '@/lib/auth/session';
 import { storeOtp } from '@/lib/auth/otp-store';
@@ -17,9 +18,9 @@ const CONTEXT = 'POST /api/withdrawals/otp';
 const QUOTE_FALLBACK = { message: 'Retrait momentanément indisponible. Réessayez dans un instant.', code: 'WITHDRAWAL_QUOTE_FAILED' };
 
 const BodySchema = z.object({
-    account: z.enum(['ORGANISATEUR', 'PARRAINAGE'], { errorMap: () => ({ message: 'Compte inconnu (ORGANISATEUR ou PARRAINAGE).' }) }),
+    account: z.enum(['ORGANISATEUR', 'PARRAINAGE'], { error: 'Compte inconnu (ORGANISATEUR ou PARRAINAGE).' }),
     // Lot 9 bis (R62, B27) : le montant est exigé, le devis passe avant le code
-    amount: z.number({ required_error: 'Indiquez le montant du retrait.', invalid_type_error: 'Indiquez le montant du retrait.' })
+    amount: z.number(zodTypeErrors({ required: 'Indiquez le montant du retrait.', invalid: 'Indiquez le montant du retrait.' }))
         .int('Montant entier en FCFA attendu.').positive('Indiquez le montant du retrait.'),
 });
 
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
     const parsed = BodySchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: parsed.error.errors[0]?.message ?? 'Demande de code invalide.', code: 'INVALID_REQUEST' }, { status: 400 });
+        return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Demande de code invalide.', code: 'INVALID_REQUEST' }, { status: 400 });
     }
     if (parsed.data.account === 'ORGANISATEUR' && !serverIsPartner(session.user)) {
         return NextResponse.json({ error: 'Compte organisateur réservé aux partenaires.', code: 'NOT_PARTNER' }, { status: 403 });

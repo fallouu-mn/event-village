@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { requireAdminPermission } from '@/lib/auth/event-access';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { asShiftRefusal, ShiftService, DISCREPANCY_PENDING_MESSAGE } from '@/lib/shifts/shift.service';
@@ -11,8 +12,8 @@ export const dynamic = 'force-dynamic';
 const CloseShiftSchema = z.object({
     shiftId: z.string().uuid('Identifiant de caisse invalide.').optional(),
     shift_id: z.string().uuid('Identifiant de caisse invalide.').optional(),
-    declaredCashTotal: z.coerce.number({ invalid_type_error: 'Montant déclaré invalide.' }).optional(),
-    declared_cash_total: z.coerce.number({ invalid_type_error: 'Montant déclaré invalide.' }).optional(),
+    declaredCashTotal: z.coerce.number(zodTypeErrors({ invalid: 'Montant déclaré invalide.' })).optional(),
+    declared_cash_total: z.coerce.number(zodTypeErrors({ invalid: 'Montant déclaré invalide.' })).optional(),
     justification: z.string().max(1000, 'La justification est limitée à 1 000 caractères.').optional().nullable(),
     discrepancyJustification: z.string().max(1000, 'La justification est limitée à 1 000 caractères.').optional().nullable(),
     discrepancy_justification: z.string().max(1000, 'La justification est limitée à 1 000 caractères.').optional().nullable(),

@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     // 1. Profil
     const parsed = RegisterWithCodeSchema.safeParse(body);
     if (!parsed.success) {
-        const issue = parsed.error.errors[0];
+        const issue = parsed.error.issues[0];
         return NextResponse.json(
             { error: issue?.message || 'Données d\'inscription invalides.', code: 'INVALID_FIELD', field: issue?.path?.[0] ?? null },
             { status: 400 },

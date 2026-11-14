@@ -210,14 +210,19 @@ export const PartnerActivityTypes = [
 /**
  * Schéma d'Inscription / Onboarding Partenaire
  */
-export const RegisterPartnerSchema = z.object({
+// Lot 9 sexies (zod 4) : les champs sans le contrôle des deux mots de passe sont exportés à part
+// (RegisterPartnerFieldsSchema) ; zod 4 refuse .omit() sur un objet raffiné, et l'écran d'inscription en retire
+// les jetons de pièces (il utilisait .innerType() en zod 3, soit exactement ces champs).
+export const RegisterPartnerFieldsSchema = z.object({
     // Données Entreprise
     companyName: z.string().min(2, 'La raison sociale est requise'),
     commercialName: z.string().optional(),
     description: z.string().min(10, 'Une brève description de votre activité est requise'),
     address: z.string().min(3, 'L\'adresse de l\'établissement est requise'),
     city: z.string().default('Dakar'),
-    activities: z.array(z.enum(PartnerActivityTypes)).min(1, 'Sélectionnez au moins un type d\'activité'),
+    // Lot 9 sexies : liste bornée (sans borne, zod accumule une erreur par élément : GHSA-mrhx-c7xc-m3w5)
+    activities: z.array(z.enum(PartnerActivityTypes)).min(1, 'Sélectionnez au moins un type d\'activité')
+        .max(PartnerActivityTypes.length, 'Liste d\'activités trop longue.'),
 
     // Données Gestionnaire / Compte
     firstName: z.string().min(2, 'Le prénom du gérant est requis'),
@@ -235,7 +240,9 @@ export const RegisterPartnerSchema = z.object({
     // Lot 1C.2 : jetons de dépôt remis par /api/partner/documents/upload (plus de chemin libre).
     idCardUploadToken: z.string().min(32, "La pièce d'identité du gérant (CNI ou Passeport) est obligatoire"),
     businessDocUploadToken: z.string().min(32, "Le document d'entreprise (RCCM ou NINEA) est obligatoire"),
-}).refine((data) => data.password === data.confirmPassword, {
+});
+
+export const RegisterPartnerSchema = RegisterPartnerFieldsSchema.refine((data) => data.password === data.confirmPassword, {
     message: 'Les mots de passe ne correspondent pas',
     path: ['confirmPassword'],
 });

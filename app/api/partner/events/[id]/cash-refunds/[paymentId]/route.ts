@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
             }
         }
         const parsed = BodySchema.safeParse(body);
-        if (!parsed.success) throw new PublicError(parsed.error.errors[0]?.message ?? 'Note invalide.', 'INVALID_INPUT', 400);
+        if (!parsed.success) throw new PublicError(parsed.error.issues[0]?.message ?? 'Note invalide.', 'INVALID_INPUT', 400);
 
         const { data, error } = await getServiceRoleClient().rpc('event_cash_refund_mark', {
             p: { event_id: id, payment_id: paymentId, actor_id: session.user.id, note: parsed.data.note ?? null },

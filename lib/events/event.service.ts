@@ -180,7 +180,7 @@ interface EditableEvent {
 }
 
 const updateBodySchema = z.object({
-    patch: z.record(z.unknown()),
+    patch: z.record(z.string(), z.unknown()),
     expected_updated_at: z.string().min(1),
 }).strict();
 

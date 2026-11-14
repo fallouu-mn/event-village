@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
     const parsed = BodySchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: parsed.error.errors[0]?.message ?? 'Demande de retrait invalide.', code: 'INVALID_REQUEST' }, { status: 400 });
+        return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Demande de retrait invalide.', code: 'INVALID_REQUEST' }, { status: 400 });
     }
     const input = parsed.data;
     if (input.account === 'ORGANISATEUR' && !serverIsPartner(session.user)) {

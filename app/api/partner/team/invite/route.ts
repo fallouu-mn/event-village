@@ -43,8 +43,9 @@ function smsRefusalReason(code: string | null): string {
 const InviteSchema = z.object({
     event_id:        z.string().uuid('ID événement invalide.').optional(),
     eventId:         z.string().uuid('ID événement invalide.').optional(),
-    event_ids:       z.array(z.string().uuid('ID événement invalide.')).optional(),
-    eventIds:        z.array(z.string().uuid('ID événement invalide.')).optional(),
+    // Lot 9 sexies : listes bornées (sans borne, zod accumule une erreur par élément)
+    event_ids:       z.array(z.string().uuid('ID événement invalide.')).max(200, '200 événements au plus.').optional(),
+    eventIds:        z.array(z.string().uuid('ID événement invalide.')).max(200, '200 événements au plus.').optional(),
     phone:           z.string().min(8, 'Numéro de téléphone requis.'),
     first_name:      z.string().trim().optional(),
     firstName:       z.string().trim().optional(),
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
 
         const parse = InviteSchema.safeParse(body);
         if (!parse.success) {
-            return NextResponse.json({ error: parse.error.errors[0]?.message || 'Données invalides.' }, { status: 400 });
+            return NextResponse.json({ error: parse.error.issues[0]?.message || 'Données invalides.' }, { status: 400 });
         }
 
         // Lot 1C.1 : `email` et les noms saisis ne s'appliquent jamais à un compte existant, et un

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 
 /**
  * Schéma de validation pour la création d'une intention de paiement par la PWA.
@@ -12,18 +13,12 @@ export const CreatePaymentSchema = z.object({
         'TABLE_RESERVATION',
         'TICKET',
         'SUBSCRIPTION',
-    ], {
-        required_error: 'Le type de cible (targetType) est obligatoire.',
-        invalid_type_error: 'Type de paiement non reconnu.',
-    }),
+    ], zodTypeErrors({ required: 'Le type de cible (targetType) est obligatoire.', invalid: 'Type de paiement non reconnu.' })),
     targetId: z.string().uuid({
         message: 'L’identifiant de la cible (targetId) doit être un UUID valide.',
     }),
     // Lot 2 : Wave ou Orange Money obligatoire ; carte bancaire retirée tant qu'elle n'est pas intégrée.
-    operator: z.enum(['WAVE', 'ORANGE_MONEY'], {
-        required_error: 'Choisissez Wave ou Orange Money.',
-        invalid_type_error: 'Choisissez Wave ou Orange Money.',
-    }),
+    operator: z.enum(['WAVE', 'ORANGE_MONEY'], zodTypeErrors({ required: 'Choisissez Wave ou Orange Money.', invalid: 'Choisissez Wave ou Orange Money.' })),
     // Téléphone du payeur, transmis à SamirPay et persisté (normalisé en 9 chiffres côté serveur).
     payerPhone: z.string().min(9, { message: 'Le numéro du payeur est requis.' }),
     // Billet : quantité bornée par MAX_PER_ORDER_CAP, max_per_order contrôlé en base.
@@ -50,16 +45,10 @@ export type SamirPayWebhookInput = z.infer<typeof SamirPayWebhookSchema>;
  * Seuil minimum : 5 000 FCFA conformément au Cahier des Charges V3.0.
  */
 export const RequestWithdrawalSchema = z.object({
-    amount: z.number({
-        required_error: 'Le montant du retrait est requis.',
-        invalid_type_error: 'Le montant doit être un nombre.',
-    }).min(5000, {
+    amount: z.number(zodTypeErrors({ required: 'Le montant du retrait est requis.', invalid: 'Le montant doit être un nombre.' })).min(5000, {
         message: 'Le montant minimum de retrait est de 5 000 FCFA.',
     }),
-    operatorName: z.enum(['WAVE', 'ORANGE_MONEY'], {
-        required_error: 'L\'opérateur (WAVE ou ORANGE_MONEY) est requis.',
-        invalid_type_error: 'Opérateur non supporté (choisir WAVE ou ORANGE_MONEY).',
-    }),
+    operatorName: z.enum(['WAVE', 'ORANGE_MONEY'], zodTypeErrors({ required: 'L\'opérateur (WAVE ou ORANGE_MONEY) est requis.', invalid: 'Opérateur non supporté (choisir WAVE ou ORANGE_MONEY).' })),
     phoneNumber: z.string().min(8, {
         message: 'Le numéro de téléphone du bénéficiaire est requis (au moins 8 chiffres).',
     }),

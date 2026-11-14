@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { noStore } from '@/lib/auth/account-sync';
 import { ACCOUNT_ACTIVATION_KEY, activationTokenHash, isAccountActivationPending } from '@/lib/auth/account-activation';
 import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
@@ -15,8 +16,8 @@ export const dynamic = 'force-dynamic';
 const CONTEXT = 'POST /api/auth/activate';
 
 const BodySchema = z.object({
-    token: z.string({ required_error: 'Lien d’activation incomplet.' }).trim().regex(/^[A-Za-z0-9_-]{16,64}$/, 'Lien d’activation illisible.'),
-    password: z.string({ required_error: 'Choisissez votre mot de passe.' }).pipe(ServerPasswordSchema),
+    token: z.string(zodTypeErrors({ required: 'Lien d’activation incomplet.' })).trim().regex(/^[A-Za-z0-9_-]{16,64}$/, 'Lien d’activation illisible.'),
+    password: z.string(zodTypeErrors({ required: 'Choisissez votre mot de passe.' })).pipe(ServerPasswordSchema),
 }).strict();
 
 const LINK_REFUSALS: Readonly<Record<string, string>> = {

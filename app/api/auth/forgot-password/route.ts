@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { noStore } from '@/lib/auth/account-sync';
 import { sendPasswordResetEmail } from '@/lib/email/password-reset';
 import { getClientIp } from '@/lib/security/client-ip';
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
 const CONTEXT = 'POST /api/auth/forgot-password';
 
 const BodySchema = z.object({
-    email: z.string({ required_error: 'Saisissez votre adresse email.' }).trim().toLowerCase()
+    email: z.string(zodTypeErrors({ required: 'Saisissez votre adresse email.' })).trim().toLowerCase()
         .max(254, 'Adresse email trop longue.').email('Adresse email invalide.'),
 }).strict();
 

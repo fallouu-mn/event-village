@@ -24,8 +24,9 @@ const UpdateAssignmentsSchema = z.object({
     controller_id:   z.string().uuid('controller_id invalide.').optional(),
     controllerId:    z.string().uuid('controllerId invalide.').optional(),
     assignments:     z.array(AssignmentSchema).max(200, '200 affectations au plus.').optional(),
-    event_ids:       z.array(z.string().uuid('event_id invalide.')).optional(),
-    eventIds:        z.array(z.string().uuid('eventIds invalide.')).optional(),
+    // Lot 9 sexies : listes bornées comme `assignments` (sans borne, zod accumule une erreur par élément)
+    event_ids:       z.array(z.string().uuid('event_id invalide.')).max(200, '200 affectations au plus.').optional(),
+    eventIds:        z.array(z.string().uuid('eventIds invalide.')).max(200, '200 affectations au plus.').optional(),
     eventId:         z.string().uuid('eventId invalide.').optional(),
     can_accept_cash:   z.boolean().optional(),
     canAcceptCash:     z.boolean().optional(),
@@ -82,7 +83,7 @@ export async function PATCH(req: NextRequest) {
 
         const parse = UpdateAssignmentsSchema.safeParse(body);
         if (!parse.success) {
-            return NextResponse.json({ error: parse.error.errors[0]?.message || 'Données invalides.', code: 'INVALID_FIELD' }, { status: 400 });
+            return NextResponse.json({ error: parse.error.issues[0]?.message || 'Données invalides.', code: 'INVALID_FIELD' }, { status: 400 });
         }
 
         const { controller_id: controllerId, assignments, global_cash, confirm_promotion } = parse.data;

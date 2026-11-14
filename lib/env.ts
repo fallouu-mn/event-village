@@ -18,6 +18,7 @@
  * processus l'appellent après avoir modifié process.env.
  */
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 
 const optionalUrl = z.string().url().optional();
 const optionalString = z.string().min(1).optional();
@@ -160,9 +161,9 @@ const serverEnvSchema = z.object({
     OTP_HASH_SECRET: z.string().min(32, 'OTP_HASH_SECRET requis : secret aléatoire de 32 caractères au moins'),
     // Lot 4 : clé maître du code dynamique des billets (lib/security/totp.ts) et clé du PIN régisseur
     // (lib/shifts/shift.service.ts), sans valeur de repli
-    TICKET_TOTP_MASTER_KEY: z.string({ required_error: 'TICKET_TOTP_MASTER_KEY requis : secret aléatoire dédié (openssl rand -hex 32)' })
+    TICKET_TOTP_MASTER_KEY: z.string(zodTypeErrors({ required: 'TICKET_TOTP_MASTER_KEY requis : secret aléatoire dédié (openssl rand -hex 32)' }))
         .min(32, 'TICKET_TOTP_MASTER_KEY requis : secret aléatoire de 32 caractères au moins'),
-    REGISSEUR_PIN_KEY: z.string({ required_error: 'REGISSEUR_PIN_KEY requis : secret aléatoire dédié (openssl rand -hex 32)' })
+    REGISSEUR_PIN_KEY: z.string(zodTypeErrors({ required: 'REGISSEUR_PIN_KEY requis : secret aléatoire dédié (openssl rand -hex 32)' }))
         .min(32, 'REGISSEUR_PIN_KEY requis : secret aléatoire de 32 caractères au moins'),
 
     // Divers

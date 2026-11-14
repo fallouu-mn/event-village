@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession, requireVerifiedPhone } from '@/lib/auth/session';
 import { normalizeRecipient } from '@/lib/validations/transfer';
@@ -13,7 +14,7 @@ const DAY_SECONDS = 86_400;
 export const dynamic = 'force-dynamic';
 
 const BodySchema = z.object({
-    recipient: z.string({ required_error: 'Le numéro de téléphone du destinataire est requis.' })
+    recipient: z.string(zodTypeErrors({ required: 'Le numéro de téléphone du destinataire est requis.' }))
         .trim()
         .min(3, 'Saisissez le numéro de téléphone du destinataire.')
         .max(254, 'Numéro de téléphone du destinataire invalide.'),
@@ -55,7 +56,7 @@ export async function POST(
     const parsed = BodySchema.safeParse(body);
     if (!parsed.success) {
         return NextResponse.json({
-            error: parsed.error.errors[0]?.message || 'Numéro de téléphone du destinataire invalide.',
+            error: parsed.error.issues[0]?.message || 'Numéro de téléphone du destinataire invalide.',
             code: 'INVALID_BODY',
         }, { status: 400 });
     }

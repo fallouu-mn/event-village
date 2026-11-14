@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { toSenegaleseE164 } from './auth';
 import { contactInfoMessage, hasContactInfo } from '@/lib/validations/contact-info';
 
@@ -28,7 +29,7 @@ function hasControlChar(text: string): boolean {
 }
 
 /** Nom d'un invité : espaces ôtés, chaîne vide → null (sans nom), 60 caractères au plus, sans caractère de contrôle. */
-const GuestNameSchema = z.string({ required_error: 'Nom de l’invité manquant.', invalid_type_error: 'Nom de l’invité invalide.' })
+const GuestNameSchema = z.string(zodTypeErrors({ required: 'Nom de l’invité manquant.', invalid: 'Nom de l’invité invalide.' }))
     .trim()
     .max(MAX_GUEST_NAME_LENGTH, GUEST_NAME_TOO_LONG)
     .refine((name) => !hasControlChar(name), GUEST_NAME_FORBIDDEN_CHAR)
@@ -37,10 +38,7 @@ const GuestNameSchema = z.string({ required_error: 'Nom de l’invité manquant.
     .transform((name) => (name === '' ? null : name))
     .nullable();
 
-const PhonesSchema = z.array(z.string({ invalid_type_error: 'Numéro de téléphone invalide.' }), {
-    required_error: PHONES_REQUIRED,
-    invalid_type_error: PHONES_REQUIRED,
-})
+const PhonesSchema = z.array(z.string(zodTypeErrors({ invalid: 'Numéro de téléphone invalide.' })), zodTypeErrors({ required: PHONES_REQUIRED, invalid: PHONES_REQUIRED }))
     .min(1, PHONES_REQUIRED)
     .max(MAX_INVITATION_PHONES, `${MAX_INVITATION_PHONES} numéros au plus par envoi.`)
     .transform((phones, ctx) => {
@@ -61,15 +59,16 @@ const PhonesSchema = z.array(z.string({ invalid_type_error: 'Numéro de téléph
     });
 
 export const CreateInvitationsSchema = z.object({
-    category_id: z.string({ required_error: 'Choisissez une catégorie.', invalid_type_error: 'Choisissez une catégorie.' })
+    category_id: z.string(zodTypeErrors({ required: 'Choisissez une catégorie.', invalid: 'Choisissez une catégorie.' }))
         .uuid('Choisissez une catégorie.'),
     phones: PhonesSchema,
-    quantity: z.number({ required_error: QUANTITY_INVALID, invalid_type_error: QUANTITY_INVALID })
+    quantity: z.number(zodTypeErrors({ required: QUANTITY_INVALID, invalid: QUANTITY_INVALID }))
         .int(QUANTITY_INVALID)
         .min(1, QUANTITY_INVALID)
         .max(MAX_INVITATION_QUANTITY, QUANTITY_INVALID),
     // Lot 9 ter (9t.17) : un nom (ou null) par numéro, dans le même ordre ; absent : aucun nom
-    guest_names: z.array(GuestNameSchema, { invalid_type_error: GUEST_NAMES_MISMATCH }).optional(),
+    // Lot 9 sexies : au plus un nom par numéro possible (sans borne, zod accumule une erreur par élément)
+    guest_names: z.array(GuestNameSchema, zodTypeErrors({ invalid: GUEST_NAMES_MISMATCH })).max(MAX_INVITATION_PHONES, GUEST_NAMES_MISMATCH).optional(),
 }).superRefine((input, ctx) => {
     if (input.guest_names !== undefined && Array.isArray(input.phones) && input.guest_names.length !== input.phones.length) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['guest_names'], message: GUEST_NAMES_MISMATCH });
