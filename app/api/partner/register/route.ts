@@ -277,7 +277,12 @@ export async function POST(req: NextRequest) {
         let signedIn = false;
         let cookies: SessionCookie[] = [];
         try {
-            const signIn = await serverPasswordSignIn(req, { email: technicalEmail }, data.password);
+            // Contre-vérification du lot 9 quinquies (point 2) : l'identifiant GoTrue est l'empreinte secrète posée par la
+            // base (auth.users.email), jamais l'adresse du profil ; il est relu par le rôle de service
+            const { data: authUser, error: authReadErr } = await supabase.auth.admin.getUserById(userId);
+            const loginEmail = authUser?.user?.email;
+            if (authReadErr || !loginEmail) throw new Error(`identifiant de connexion illisible : ${authReadErr?.message ?? 'absent'}`);
+            const signIn = await serverPasswordSignIn(req, { email: loginEmail }, data.password);
             if (signIn.ok) {
                 signedIn = true;
                 cookies = signIn.cookies;

@@ -335,6 +335,8 @@ const RLS_HELPERS: Array<[string, Record<string, unknown> | undefined]> = [
     ['auth_user_role', undefined],
     // Lot 7 (D21) : prédicat privé des catégories de billets, sans lecture de public.users par l'appelant
     ['ticket_category_private_read', { p_event: ZERO_UUID }],
+    // Lot 9 quinquies, contre-vérification (point 4 ; ajout signalé) : affectation de contrôleur active de l'appelant
+    ['controller_assignment_active', { p_event: ZERO_UUID }],
 ];
 
 describe('R3 — RPC métier non appelables par anon / authenticated', () => {

@@ -11,21 +11,25 @@
 --   caisse). Leurs lectures de billets par la REST suivent la même règle (politique tickets_read). SUSPENDU garde les
 --   affectations (même règle que la garde des fiches, lib/auth/partner-fiche-guard.ts). Les comptes ADMIN (permission
 --   access.operate) et SUPERADMIN ne sont pas concernés.
--- Objets : event_controllers_active(uuid) ; recopies : scan_scanner_authorized (20261111000003_lot9quater_droits.sql:
---   238-251), politique tickets_read (20261103000001_lot6_dette.sql:116-139).
+-- Objets : controller_assignment_active(uuid) (aide RLS, groupe a : 8e de la liste blanche) ; recopies :
+--   scan_scanner_authorized (20261111000003_lot9quater_droits.sql:238-251), politique tickets_read
+--   (20261103000001_lot6_dette.sql:116-139).
+-- L'aide ne répond que pour le compte appelant (auth.uid()) : elle ne révèle pas le statut de la fiche d'un événement
+--   auquel l'appelant n'est pas affecté (faux pour anon).
 -- Aucun BEGIN ni COMMIT ; rejouable.
 -- ============================================================================
 
--- Vrai si les affectations de l'événement sont actives : sa fiche partenaire est VALIDE ou SUSPENDU (un événement sans
--- fiche lisible n'est pas concerné)
-CREATE OR REPLACE FUNCTION public.event_controllers_active(p_event uuid)
+-- Vrai si le compte appelant est affecté comme contrôleur à l'événement ET que la fiche partenaire de l'événement est
+-- VALIDE ou SUSPENDU (un événement sans fiche n'est pas concerné)
+CREATE OR REPLACE FUNCTION public.controller_assignment_active(p_event uuid)
 RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT NOT EXISTS (
+    SELECT EXISTS (SELECT 1 FROM public.event_controllers ec WHERE ec.event_id = p_event AND ec.user_id = auth.uid())
+       AND NOT EXISTS (
         SELECT 1
           FROM public.events e
           JOIN public.partners p ON p.id = e.partner_id
@@ -33,10 +37,10 @@ AS $$
            AND p.status::text NOT IN ('VALIDE', 'SUSPENDU')
     );
 $$;
-REVOKE ALL ON FUNCTION public.event_controllers_active(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.event_controllers_active(uuid) TO authenticated, service_role;
-COMMENT ON FUNCTION public.event_controllers_active(uuid) IS
-    'Lot 9 quinquies (contre-vérification, point 4) : vrai si la fiche partenaire de l''événement est VALIDE ou SUSPENDU ; sinon ses affectations de contrôleurs sont inactives.';
+REVOKE ALL ON FUNCTION public.controller_assignment_active(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.controller_assignment_active(uuid) TO anon, authenticated, service_role;
+COMMENT ON FUNCTION public.controller_assignment_active(uuid) IS
+    'Lot 9 quinquies (contre-vérification, point 4) : aide RLS ; vrai si l''appelant est affecté à l''événement et que la fiche partenaire de l''événement est VALIDE ou SUSPENDU.';
 
 -- Recopie de 20261111000003_lot9quater_droits.sql:238-251 ; changement : contrôleur affecté et partenaire seulement si la
 -- fiche de l'événement est VALIDE ou SUSPENDU
@@ -50,14 +54,15 @@ AS $$
     SELECT EXISTS (SELECT 1 FROM public.users u WHERE u.id = p_scanner AND u.status = 'ACTIF')
        AND (((EXISTS (SELECT 1 FROM public.event_controllers ec WHERE ec.event_id = p_event AND ec.user_id = p_scanner)
               OR EXISTS (SELECT 1 FROM public.events e JOIN public.partners p ON p.id = e.partner_id WHERE e.id = p_event AND p.user_id = p_scanner))
-             AND public.event_controllers_active(p_event))
+             AND NOT EXISTS (SELECT 1 FROM public.events e JOIN public.partners p ON p.id = e.partner_id
+                              WHERE e.id = p_event AND p.status::text NOT IN ('VALIDE', 'SUSPENDU')))
          OR EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = p_scanner AND r.role = 'SUPERADMIN')
          OR (EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = p_scanner AND r.role = 'ADMIN')
              AND EXISTS (SELECT 1 FROM public.admin_permissions ap WHERE ap.user_id = p_scanner AND ap.permission = 'access.operate')))
 $$;
 
--- Recopie de 20261103000001_lot6_dette.sql:116-139 ; changement : branche contrôleur seulement si les affectations de
--- l'événement sont actives
+-- Recopie de 20261103000001_lot6_dette.sql:116-139 ; changement : branche contrôleur par l'aide controller_assignment_active
+-- (affectation de l'appelant ET fiche VALIDE ou SUSPENDU)
 DROP POLICY IF EXISTS "tickets_read" ON public.tickets;
 CREATE POLICY "tickets_read" ON public.tickets
     FOR SELECT TO authenticated USING (
@@ -71,12 +76,7 @@ CREATE POLICY "tickets_read" ON public.tickets
             OR public.is_admin()
             OR (
                 public.is_controller()
-                AND EXISTS (
-                    SELECT 1 FROM public.event_controllers ec
-                     WHERE ec.event_id = tickets.event_id
-                       AND ec.user_id = auth.uid()
-                )
-                AND public.event_controllers_active(tickets.event_id)
+                AND public.controller_assignment_active(tickets.event_id)
             )
         )
         AND EXISTS (SELECT 1 FROM public.users u

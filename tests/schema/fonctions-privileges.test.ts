@@ -20,10 +20,14 @@ import { inRolledBackTransaction, inspect } from '../helpers/db';
  * Groupe a — seule liste de fonctions autorisées à rester exécutables par anon / authenticated.
  * Lot 7 (D21, T0e) : 7e aide, ticket_category_private_read(uuid), prédicat des politiques de
  * ticket_categories sans privilège SELECT de l'appelant sur public.users (rouge jusqu'à fix(7.0c)).
+ * Lot 9 quinquies, contre-vérification (point 4) : 8e aide, controller_assignment_active(uuid) (politique tickets_read).
  */
 export const RLS_HELPER_WHITELIST = [
     'is_admin', 'is_superadmin', 'is_controller', 'has_role', 'is_partner_owner', 'auth_user_role',
     'ticket_category_private_read',
+    // Contre-vérification du lot 9 quinquies (point 4 ; modification signalée au rapport) : 8e aide, affectation de
+    // contrôleur de l'appelant active seulement si la fiche partenaire de l'événement est VALIDE ou SUSPENDU
+    'controller_assignment_active',
 ] as const;
 
 interface FnRow {

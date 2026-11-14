@@ -20,7 +20,9 @@ fns AS (
 whitelist(name) AS (
     -- Lot 7 (D21) : 7e aide RLS, ticket_category_private_read (politiques de ticket_categories sans lecture de users)
     VALUES ('is_admin'), ('is_superadmin'), ('is_controller'), ('has_role'), ('is_partner_owner'), ('auth_user_role'),
-           ('ticket_category_private_read')
+           ('ticket_category_private_read'),
+    -- Lot 9 quinquies, contre-vérification (point 4) : 8e aide RLS, controller_assignment_active (politique tickets_read)
+           ('controller_assignment_active')
 ),
 checks(point, ok, detail) AS (
     -- 1A.1

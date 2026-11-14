@@ -1,5 +1,5 @@
 /**
- * Lot 9 quinquies — les migrations du lot (20261112000001 à …10) sont rejouables : chacune, déjà appliquée par la CI
+ * Lot 9 quinquies — les migrations du lot (20261112000001 à …14, dont 11 à 14 des correctifs de la contre-vérification) sont rejouables : chacune, déjà appliquée par la CI
  * depuis une base vide, s'exécute encore deux fois de suite sans erreur, dans une transaction annulée (base LOCALE seulement),
  * et ne gère pas elle-même sa transaction (aucun BEGIN ni COMMIT). Modèle : migration-lot9quater-rejouable.test.ts.
  * En fin de suite : invariants (a) à (x), (q1) à (q8) et (p) sur toute la base.
@@ -26,6 +26,11 @@ const LOT9QUINQUIES_MIGRATIONS = [
     '20261112000008_lot9quinquies_messages.sql',
     '20261112000009_lot9quinquies_check_reel.sql',
     '20261112000010_lot9quinquies_recuperation_email.sql',
+    // Correctifs de la contre-vérification (modification signalée au rapport)
+    '20261112000011_lot9quinquies_admin_code_rls.sql',
+    '20261112000012_lot9quinquies_identifiants_gotrue.sql',
+    '20261112000013_lot9quinquies_affectations_fiche.sql',
+    '20261112000014_lot9quinquies_salles_concurrence.sql',
 ] as const;
 
 after(async () => {
