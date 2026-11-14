@@ -80,8 +80,8 @@ function buildEnv() {
 }
 
 const steps = [
-    ['typecheck', 'npm run typecheck'],
-    ['lint', 'npm run lint'],
+    // Branche de preuve des rouges seulement (jamais fusionnée) : les tests du lot importent des modules qui n'existent
+    // pas encore ; le typecheck arrêterait verify avant les tests (run 147). Les tests tournent sans typecheck ni lint.
     ['test', 'npm run test'],
     ['build', 'npm run build'],
     ['js-budget', 'node scripts/js-budget.mjs'],
