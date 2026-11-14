@@ -41,9 +41,10 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Event Village',
   },
-  // Android (Chrome) : seule déclaration de mobile-web-app-capable
+  // Lot 9 sexies (Next 15) : appleWebApp.capable produit désormais mobile-web-app-capable (Android) ; la balise iPhone
+  // apple-mobile-web-app-capable, que Next 14 en tirait, est déclarée ici. Même <head> qu'avant : une balise de chaque.
   other: {
-    'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-capable': 'yes',
   },
 };
 
