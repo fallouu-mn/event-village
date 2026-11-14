@@ -95,6 +95,19 @@ const FROZEN_LOT9TER: Readonly<Record<string, string>> = {
     '20261110000011_lot9ter_stock.sql': '11d8fd1908870973b21969c24a459f50cbab16a59f37c90b1e1675e06b8e8a5e',
 };
 
+/**
+ * Lot 9 quinquies (consigne : migrations jusqu'à 20261111… gelées) : empreintes SHA-256 (LF) des migrations du lot 9 quater,
+ * calculées sur main ed2dc7ed (appliquées sur event-village-dev le 14/11) ; toute correction passe par une migration 20261112….
+ */
+const FROZEN_LOT9QUATER: Readonly<Record<string, string>> = {
+    '20261111000001_lot9quater_comptes.sql': '95e1b50c0b2b1df6d1026578f751c1a0bc52005dbd687bf6b305bdc0a93c78df',
+    '20261111000002_lot9quater_sms.sql': '5fcaf792d62e49024bf1851fb29a3380c76eaa2016c8de94a219d44227a7a779',
+    '20261111000003_lot9quater_droits.sql': '21967d4bc3fe2b76d5468de64bb406297f24c12d52a6de942ef2570b25906a3d',
+    '20261111000004_lot9quater_email.sql': 'f6170bbd29f49840c78d823badd531020758ee5c25de09992d1ae5dc6c5d21f7',
+    '20261111000005_lot9quater_argent.sql': 'c455a285d1faf360499fe07d32be08aeaee2ad103e88f5f5c448d1bcab3465f6',
+    '20261111000006_lot9quater_invites_zones.sql': '2e2c357072ea890f17cd220f4fd71ae89fe48cb7539a19eac435ce7b68454ca0',
+};
+
 const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> = [
     ['20261103', 'lot 6', FROZEN_LOT6],
     ['20261105', 'lot 7', FROZEN_LOT7],
@@ -102,6 +115,7 @@ const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> 
     ['20261108', 'lot 9', FROZEN_LOT9],
     ['20261109', 'lot 9 bis', FROZEN_LOT9BIS],
     ['20261110', 'lot 9 ter', FROZEN_LOT9TER],
+    ['20261111', 'lot 9 quater', FROZEN_LOT9QUATER],
 ];
 
 function sha256Lf(name: string): string {
@@ -109,7 +123,7 @@ function sha256Lf(name: string): string {
     return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
-describe('Migrations gelées : 20261103…, 20261105…, 20261106…, 20261108…, 20261109…', () => {
+describe('Migrations gelées : 20261103… à 20261111… (lot 9 quinquies : 20261111… gelées, correction par 20261112…)', () => {
     for (const [prefix, lot, frozen] of FROZEN) {
         test(`${prefix}… : la liste des fichiers du ${lot} reste exacte (gelée, toute correction passe par une migration 20261110…)`, () => {
             const present = fs.readdirSync(DIR).filter((f) => f.startsWith(prefix)).sort();
