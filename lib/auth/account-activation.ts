@@ -75,19 +75,30 @@ export async function issueAndSendActivation(userId: string, phone: string, acto
     return sent.success ? 'SENT' : 'NOT_SENT';
 }
 
+const ACTIVATION_READ_BATCH = 100;
+
 /** État de l'activation des comptes listés : PENDING (lien valable), EXPIRED (lien expiré ou remplacé), absent sinon. */
 export async function activationStates(userIds: string[]): Promise<Map<string, 'PENDING' | 'EXPIRED'>> {
     const out = new Map<string, 'PENDING' | 'EXPIRED'>();
     if (userIds.length === 0) return out;
-    const { data, error } = await getServiceRoleClient().from('account_activations')
-        .select('user_id, expires_at, used_at, superseded_at, created_at').in('user_id', userIds).order('created_at', { ascending: false });
-    if (error) throw new Error(`activations illisibles : ${error.message}`);
+    // Lecture par lots : un filtre `in` de milliers d'identifiants dépasse la longueur d'adresse admise (run 171 :
+    // « URI too long »). 100 identifiants ≈ 3,7 Ko d'adresse.
+    const data: Array<{ user_id: unknown; expires_at: unknown; used_at: unknown; superseded_at: unknown; created_at: unknown }> = [];
+    for (let i = 0; i < userIds.length; i += ACTIVATION_READ_BATCH) {
+        const { data: rows, error } = await getServiceRoleClient().from('account_activations')
+            .select('user_id, expires_at, used_at, superseded_at, created_at')
+            .in('user_id', userIds.slice(i, i + ACTIVATION_READ_BATCH))
+            .order('created_at', { ascending: false });
+        if (error) throw new Error(`activations illisibles : ${error.message}`);
+        data.push(...(rows ?? []));
+    }
+    // Chaque lot est trié du plus récent au plus ancien et un compte n'apparaît que dans un lot : l'ordre par compte est gardé
     const used = new Set<string>();
-    for (const r of data ?? []) {
+    for (const r of data) {
         const id = String(r.user_id);
         if (r.used_at) used.add(id);
     }
-    for (const r of data ?? []) {
+    for (const r of data) {
         const id = String(r.user_id);
         if (used.has(id) || out.has(id)) continue;
         out.set(id, !r.superseded_at && Date.parse(String(r.expires_at)) > Date.now() ? 'PENDING' : 'EXPIRED');
