@@ -5,7 +5,8 @@ import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { requireActiveSession } from '@/lib/auth/session';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
-import { ServerPasswordSchema } from '@/lib/auth/password-policy.server'; // lot 9 quinquies (A7)
+import { ServerPasswordSchema } from '@/lib/auth/password-policy.server';
+import { resetTokenHash } from '@/lib/auth/password-reset-email'; // lot 9 quinquies (A7)
 import { contactSupport } from '@/lib/support-contact';
 
 export const dynamic = 'force-dynamic';
@@ -19,7 +20,57 @@ const BodySchema = z.object({
     password: z.string({ required_error: 'Saisissez le nouveau mot de passe.' })
         .max(200, 'Mot de passe trop long.')
         .pipe(ServerPasswordSchema),
+    // Lot 9 quinquies (B2 : AUTH-08) : jeton du lien reçu par email (sans session)
+    token: z.string().trim().regex(/^[A-Za-z0-9_-]{32,256}$/, 'Lien de récupération illisible.').optional(),
 }).strict();
+
+const LINK_REFUSALS: Readonly<Record<string, string>> = {
+    UNKNOWN: 'Ce lien n’est pas valable. Demandez un nouveau lien depuis « Mot de passe oublié ».',
+    USED: 'Ce lien a déjà servi. Demandez un nouveau lien depuis « Mot de passe oublié » si besoin.',
+    EXPIRED: 'Ce lien a expiré (60 minutes) ou a été remplacé par un plus récent. Demandez un nouveau lien.',
+};
+
+/**
+ * Lot 9 quinquies (B2) : réinitialisation par le lien reçu par email, sans session : lien consommé (usage unique, 60 min),
+ * compte ACTIF, permis PASSWORD, mot de passe posé, toutes les sessions révoquées ; l'avis part du trigger.
+ */
+async function resetWithLink(token: string, password: string): Promise<NextResponse> {
+    const supabase = getServiceRoleClient();
+    const { data, error } = await supabase.rpc('password_reset_link_consume', { p: { token_hash: resetTokenHash(token) } });
+    if (error) {
+        console.error(`[${CONTEXT}] lien illisible :`, error.message);
+        return failure();
+    }
+    const reply = data as { ok?: boolean; user_id?: string; code?: string } | null;
+    if (reply?.ok !== true || !reply.user_id) {
+        const code = reply?.code ?? 'UNKNOWN';
+        return NextResponse.json({ error: LINK_REFUSALS[code] ?? LINK_REFUSALS.UNKNOWN, code: `RESET_LINK_${code}` }, { status: code === 'USED' ? 409 : 410 });
+    }
+    const userId = reply.user_id;
+    const { data: profile, error: profileErr } = await supabase.from('users').select('status').eq('id', userId).maybeSingle();
+    if (profileErr || !profile) {
+        console.error(`[${CONTEXT}] profil ${userId} illisible :`, profileErr?.message ?? 'absent');
+        return failure();
+    }
+    if (profile.status !== 'ACTIF') {
+        return NextResponse.json({ error: `Ce compte n’est pas actif. ${contactSupport()}`, code: 'ACCOUNT_NOT_ACTIVE' }, { status: 403 });
+    }
+    try {
+        await grantAuthWritePermit(userId, 'PASSWORD');
+    } catch (err) {
+        console.error(`[${CONTEXT}]`, err instanceof Error ? err.message : String(err));
+        return failure();
+    }
+    const { error: updErr } = await supabase.auth.admin.updateUserById(userId, { password });
+    if (updErr) {
+        console.error(`[${CONTEXT}] mise à jour du mot de passe de ${userId} :`, updErr.code ?? '', updErr.message);
+        return failure();
+    }
+    if (!(await revokeUserSessions(userId, { reason: 'PASSWORD_RESET_EMAIL', actorId: userId }))) {
+        return NextResponse.json({ error: `Mot de passe modifié, mais les autres appareils n’ont pas pu être déconnectés. ${contactSupport()}`, code: 'PASSWORD_SESSIONS_NOT_REVOKED' }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, message: 'Mot de passe modifié. Connectez-vous avec le nouveau.' });
+}
 
 /** Réponse neuve à chaque appel (un corps de réponse ne se lit qu'une fois). */
 function notRecovery(): NextResponse {
@@ -58,6 +109,17 @@ function isRecentEmailRecovery(accessToken: string): boolean {
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {
+    // Lot 9 quinquies (B2) : lien reçu par email (corps avec `token`, sans session)
+    const peek = await req.clone().json().catch(() => null) as { token?: unknown } | null;
+    if (peek && typeof peek === 'object' && 'token' in peek) {
+        const parsedLink = BodySchema.safeParse(peek);
+        if (!parsedLink.success || !parsedLink.data.token) {
+            const issue = parsedLink.success ? null : parsedLink.error.issues[0];
+            const field = issue?.path[0] === 'password' ? 'password' : 'token';
+            return NextResponse.json({ error: issue?.message ?? 'Lien de récupération illisible.', code: field === 'password' ? 'WEAK_PASSWORD' : 'RESET_LINK_UNKNOWN', field }, { status: 400 });
+        }
+        return resetWithLink(parsedLink.data.token, parsedLink.data.password);
+    }
     const active = await requireActiveSession(req);
     if (active.response) return active.response;
     const { user } = active;

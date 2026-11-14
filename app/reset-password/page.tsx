@@ -66,6 +66,8 @@ export default function ResetPasswordPage() {
     const toast = useToast();
 
     const [isCheckingSession, setIsCheckingSession] = useState(true);
+    // Lot 9 quinquies (B2 : AUTH-08) : jeton du lien reçu par email (lu une fois, retiré de l'adresse) ; sans session
+    const [linkToken, setLinkToken] = useState<string | null>(null);
 
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -89,6 +91,16 @@ export default function ResetPasswordPage() {
     //       asynchrone par le client Supabase. getSession() seul peut retourner null
     //       avant que le hash ne soit consommé → on écoute aussi onAuthStateChange.
     useEffect(() => {
+        // Lot 9 quinquies (B2) : lien reçu par email : aucune session à attendre, le jeton suffit (consommé par le serveur)
+        const url = new URL(window.location.href);
+        const fromLink = url.searchParams.get('t');
+        if (fromLink && /^[A-Za-z0-9_-]{32,256}$/.test(fromLink)) {
+            setLinkToken(fromLink);
+            url.searchParams.delete('t');
+            window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+            setIsCheckingSession(false);
+            return;
+        }
         const supabase = getBrowserClient();
         let cancelled = false;
         let fallbackTimer: ReturnType<typeof setTimeout>;
@@ -257,6 +269,24 @@ export default function ResetPasswordPage() {
         setIsLoading(true);
 
         try {
+            // Lot 9 quinquies (B2) : lien reçu par email : POST { token, password }, sans session
+            if (linkToken) {
+                const res = await fetch('/api/auth/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: linkToken, password }),
+                });
+                const body = await res.json().catch(() => ({})) as { error?: string; code?: string };
+                if (!res.ok) {
+                    console.error('[ResetPassword] lien refusé :', res.status, body.code ?? '');
+                    setErrorMessage(body.error ?? passwordUpdateRefusalMessage(undefined));
+                    if (res.status === 409 || res.status === 410) setLinkToken(null);
+                    return;
+                }
+                toast.success('Mot de passe mis à jour avec succès. Veuillez vous connecter.');
+                router.replace('/login?reset=success');
+                return;
+            }
             // Lot 9 quater (A3 : G-04) : le mot de passe est posé par le serveur (POST /api/auth/reset-password), qui
             // n'accepte qu'une session de récupération, applique la règle commune, révoque toutes les sessions et fait
             // partir l'avis « mot de passe modifié ». L'appareil se détache des notifications push AVANT, tant que la

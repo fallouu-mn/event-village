@@ -27,7 +27,8 @@ import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
 
 /**
  * Mot de passe oublié (lot 6, contrat A5 : écran sur le système de design, logique inchangée).
- *  - Email : resetPasswordForEmail ; l'écran de succès s'affiche toujours (erreur ou exception comprises)
+ *  - Email : POST /api/auth/forgot-password (lot 9 quinquies, B2 : lien de 60 min envoyé par l'application et Resend,
+ *    réponse neutre) ; l'écran de succès s'affiche toujours, sauf limite atteinte (délai réel) ou panne du serveur
  *    pour ne jamais révéler si un compte existe.
  *  - Téléphone : /api/auth/send-otp (purpose PASSWORD_RESET), /api/auth/verify-otp, session par verifyOtp
  *    type « magiclink », puis drapeaux sessionStorage ev_recovery_verified / ev_recovery_ts lus par
@@ -189,7 +190,7 @@ export default function ForgotPasswordPage() {
     }, [countdown]);
 
     // =========================================================================
-    // FLUX EMAIL : resetPasswordForEmail (Supabase natif)
+    // FLUX EMAIL : lien envoyé par l'application et Resend (lot 9 quinquies, B2 : GoTrue n'envoie plus aucun email)
     // =========================================================================
     const handleEmailRecovery = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -205,32 +206,29 @@ export default function ForgotPasswordPage() {
         setErrorMessage(null);
 
         try {
-            const supabase = getBrowserClient();
-            const redirectTo = typeof window !== 'undefined'
-                ? `${window.location.origin}/reset-password`
-                : '/reset-password';
-
-            const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-
-            if (error) {
-                // Ne pas révéler si l'email existe en base (sécurité)
-                if (error.message.toLowerCase().includes('rate limit') || error.status === 429) {
-                    setIsLockedOut(true);
-                    setLockoutRemaining(LOCKOUT_DURATION_SECONDS);
-                    setInitialLockoutDuration(LOCKOUT_DURATION_SECONDS);
-                    setErrorMessage(null);
-                    return;
-                }
-                // Erreur silencieuse pour ne pas révéler l'existence du compte
+            const res = await fetch('/api/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email }),
+            });
+            const data = await res.json().catch(() => ({})) as { error?: string; retryAfterSeconds?: number };
+            if (res.status === 429) {
+                setIsLockedOut(true);
+                setLockoutRemaining(retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS);
+                setInitialLockoutDuration(retryAfterOf(data) ?? LOCKOUT_DURATION_SECONDS);
+                setErrorMessage(null);
+                return;
             }
-
-            // Toujours afficher le succès (même si l'email n'existe pas — sécurité)
+            if (res.status === 400 || res.status >= 500) {
+                // Adresse illisible ou panne : dit à l'écran (la réponse neutre ne révèle jamais un compte)
+                setErrorMessage(data.error || 'Envoi momentanément impossible. Réessayez dans un instant.');
+                return;
+            }
+            // Réponse neutre : le même écran, qu'un compte porte l'adresse ou non
             setStep('email-sent');
         } catch (err) {
-            // Exception réseau : journalisée, et l'écran reste celui du succès pour ne jamais révéler si le
-            // compte existe (comportement inchangé).
             console.warn('[ForgotPassword] demande de lien de récupération en échec :', err instanceof Error ? err.message : String(err));
-            setStep('email-sent');
+            setErrorMessage('Connexion impossible : vérifiez votre réseau, puis réessayez.');
         } finally {
             setIsLoading(false);
         }

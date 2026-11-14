@@ -1949,6 +1949,31 @@ export function renderEmailChangedOld(ctx: RenderContext): { subject: string; ht
     return { subject: T.subject, html, text: plain };
 }
 
+/** Lot 9 quinquies (B2 : AUTH-08) : email « Mot de passe oublié », envoyé par l'application (Resend), en français. */
+export const PASSWORD_RESET_EMAIL_TEXTS = {
+    subject: 'Choisir un nouveau mot de passe — Event Village',
+    title: 'Mot de passe oublié',
+    paragraph: 'Vous avez demandé à choisir un nouveau mot de passe pour votre compte Event Village. Ouvrez le lien ci-dessous pour le faire.',
+    button: 'Choisir un nouveau mot de passe',
+    note: 'Ce lien est valable 60 minutes et ne sert qu’une fois. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message : votre mot de passe ne change pas.',
+} as const;
+
+/** Rendu de l'email « Mot de passe oublié » ; le jeton (base64url) n'est passé qu'ici, jamais stocké ni journalisé. */
+export function renderPasswordResetEmail(token: string, ctx: RenderContext): { subject: string; html: string; text: string } {
+    const t = typeof token === 'string' ? token.trim() : '';
+    if (!/^[A-Za-z0-9_-]{32,256}$/.test(t)) throw new TemplateDataError('token', 'absent ou illisible');
+    const T = PASSWORD_RESET_EMAIL_TEXTS;
+    const { html, text: plain } = emailLayout({
+        appUrl: ctx.appUrl,
+        heading: T.title,
+        paragraphs: [T.paragraph],
+        cta: { label: T.button, path: `/reset-password?t=${t}` },
+        footnote: T.note,
+        unsubscribeTopic: null,
+    });
+    return { subject: T.subject, html, text: plain };
+}
+
 /** Lot 9 bis (11.1 N26) : textes de l'email de vérification d'adresse, mot pour mot. */
 export const EMAIL_VERIFICATION_TEXTS = {
     subject: 'Vérifiez votre adresse email — Event Village',
