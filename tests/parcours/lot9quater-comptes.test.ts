@@ -36,7 +36,7 @@ import { authed, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent } from './cycle-helpers';
 import { newAdmin, outboxRows, withEnv } from './notif-helpers';
 import { registerClientFlow } from './terrain-helpers';
-import { gotrueEmail } from '../helpers/gotrue-email';
+import { gotrueEmail, GOTRUE_ALIAS_RE } from '../helpers/gotrue-email';
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>;
 
@@ -256,7 +256,11 @@ describe('A4 — adresse technique non routable, aucun code email', () => {
         const flow = await registerClientFlow({ headers: ip() });
         const tech = await authEmail(flow.userId!);
         console.log(`[A4] adresse technique d’un compte neuf : ${tech}`);
-        assert.match(tech, TECH_RE);
+        // Contre-vérification du lot 9 quinquies (point 2 ; modification signalée au rapport) : GoTrue porte l'adresse
+        // technique d'empreinte secrète ; le profil garde l'adresse technique u<32 hex> tirée au hasard.
+        assert.match(tech, GOTRUE_ALIAS_RE);
+        const { data: profileRow } = await service.from('users').select('email').eq('id', flow.userId!).single();
+        assert.match(String(profileRow?.email ?? ''), TECH_RE);
         assert.ok(!tech.includes(flow.phone.replace(/\D/g, '').slice(3)), 'aucun chiffre du numéro');
         const login = await call('../../app/api/auth/login/route', jsonRequest('/api/auth/login', { identifier: flow.phone, password: STRONG_PASSWORD }, ip()));
         assert.equal(login.status, 200, `connexion par numéro : ${show(login)}`);

@@ -8,10 +8,13 @@
  *  a. un attaquant qui connaît le numéro, l'adresse réelle ET le mot de passe d'une victime n'ouvre aucune session chez
  *     GoTrue directement (mot de passe par adresse ou par numéro, code par SMS ou par email) ; témoin : la connexion par
  *     l'application, par numéro et par adresse, réussit ;
- *  b. dans auth.users : aucun numéro, et pour chaque compte une adresse technique tirée d'une empreinte secrète (ni
- *     l'adresse réelle, ni l'identifiant du compte) ;
- *  c. un compte créé ou modifié par l'API d'administration avec une adresse réelle et un numéro garde l'adresse technique
- *     et aucun numéro chez GoTrue ; son profil garde l'adresse et le numéro.
+ *  b. pour chaque compte de auth.users, une adresse technique tirée d'une empreinte secrète (ni l'adresse réelle, ni
+ *     l'identifiant du compte) ; la connexion par numéro est fermée chez GoTrue (fournisseur Téléphone désactivé, lu dans
+ *     /auth/v1/settings) — option « connexion par téléphone fermée côté GoTrue » de la consigne : auth.users.phone garde
+ *     le numéro, dont GoTrue garantit l'unicité (lot 9, AM1) ;
+ *  c. un compte créé ou modifié par l'API d'administration avec une adresse réelle garde l'adresse technique chez
+ *     GoTrue ; son profil garde l'adresse.
+ * Modifié après le run de preuve des rouges (option du numéro), signalé au rapport.
  */
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -66,23 +69,25 @@ describe('Point 2 — GoTrue directement : aucun identifiant connu ne permet de 
         assert.equal(byEmail.status, 200, JSON.stringify(byEmail.body));
     });
 
-    test('b. auth.users : aucun numéro ; adresse technique d\'empreinte secrète, ni réelle ni tirée de l\'identifiant', async () => {
+    test('b. auth.users : adresse technique d\'empreinte secrète, ni réelle ni tirée de l\'identifiant ; connexion par numéro fermée chez GoTrue', async () => {
         const [row] = await inspect(async (c) => (await c.query<Record<string, string>>(
             `SELECT count(*)::int AS total,
-                    count(*) FILTER (WHERE COALESCE(a.phone, '') <> '')::int AS with_phone,
                     count(*) FILTER (WHERE COALESCE(a.email, '') !~ '^k[0-9a-f]{40}@comptes\\.eventvillage\\.invalid$')::int AS not_alias,
                     count(*) FILTER (WHERE u.email IS NOT NULL AND lower(a.email) = lower(u.email))::int AS same_as_profile,
                     count(*) FILTER (WHERE position(replace(a.id::text, '-', '') IN COALESCE(a.email, '')) > 0)::int AS from_id
                FROM auth.users a LEFT JOIN public.users u ON u.id = a.id`,
         )).rows);
         console.log(`[CV-2b] auth.users : ${JSON.stringify(row)}`);
-        assert.equal(Number(row.with_phone), 0, 'comptes avec un numéro chez GoTrue');
+        const settings = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! } });
+        const external = ((await settings.json()) as { external?: Record<string, unknown> }).external ?? {};
+        console.log(`[CV-2b] GoTrue /auth/v1/settings : fournisseur Téléphone ${external.phone === false ? 'fermé' : String(external.phone)}`);
+        assert.equal(external.phone, false, 'connexion par numéro ouverte chez GoTrue');
         assert.equal(Number(row.not_alias), 0, 'comptes dont l\'identifiant GoTrue n\'est pas l\'adresse technique');
         assert.equal(Number(row.same_as_profile), 0, 'comptes dont l\'identifiant GoTrue est l\'adresse du profil');
         assert.equal(Number(row.from_id), 0, 'comptes dont l\'identifiant GoTrue est tiré de l\'identifiant du compte');
     });
 
-    test('c. création et modification par l\'API d\'administration avec adresse réelle et numéro : GoTrue garde l\'adresse technique, sans numéro', async () => {
+    test('c. création et modification par l\'API d\'administration avec une adresse réelle : GoTrue garde l\'adresse technique', async () => {
         const email = randomEmail('cv-gotrue-api');
         const phone = randomSenegalPhone('78');
         const { data, error } = await service.auth.admin.createUser({ email, phone, password: STRONG_PASSWORD, email_confirm: true, phone_confirm: true });
@@ -90,9 +95,8 @@ describe('Point 2 — GoTrue directement : aucun identifiant connu ne permet de 
         const userId = data.user!.id;
         const created = await authRow(userId);
         const { data: profile } = await service.from('users').select('email, phone').eq('id', userId).single();
-        console.log(`[CV-2c] après création : GoTrue ${ALIAS_RE.test(String(created.email)) ? 'adresse technique' : 'AUTRE ADRESSE'}, numéro ${created.phone ? 'PRÉSENT' : 'absent'} ; profil ${profile?.email === email ? 'adresse réelle' : String(profile?.email)}`);
+        console.log(`[CV-2c] après création : GoTrue ${ALIAS_RE.test(String(created.email)) ? 'adresse technique' : 'AUTRE ADRESSE'} ; profil ${profile?.email === email ? 'adresse réelle' : String(profile?.email)}`);
         assert.match(String(created.email), ALIAS_RE);
-        assert.equal(created.phone, null);
         assert.equal(profile?.email, email, 'le profil garde l\'adresse réelle');
         assert.ok(String(profile?.phone ?? '').endsWith(phone.replace('+', '')), 'le profil garde le numéro');
 
@@ -100,7 +104,6 @@ describe('Point 2 — GoTrue directement : aucun identifiant connu ne permet de 
         assert.equal(upErr, null, upErr?.message);
         const updated = await authRow(userId);
         assert.equal(updated.email, created.email, 'l\'adresse technique ne change pas');
-        assert.equal(updated.phone, null, 'aucun numéro chez GoTrue');
 
         const direct = await anonClient().auth.signInWithPassword({ email, password: STRONG_PASSWORD });
         assert.equal(direct.data.session, null, 'GoTrue directement avec l\'adresse réelle : aucune session');

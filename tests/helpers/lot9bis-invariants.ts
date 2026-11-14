@@ -117,11 +117,14 @@ w12 AS (SELECT 'w12', o.id::text, 'email ' || o.type || ' envoyé à une adresse
 w13 AS (SELECT 'w13', o.id::text, 'email envoyé à une adresse technique'
           FROM public.notification_outbox o
          WHERE o.channel = 'EMAIL' AND o.status = 'SENT' AND o.recipient_email ~* '@([a-z0-9-]+\\.)*eventvillage\\.sn$'),
--- (w14) adresse vérifiée identique dans le profil et dans l'authentification ; jamais technique
-w14 AS (SELECT 'w14', u.id::text, 'adresse vérifiée différente entre le profil et l''authentification, ou technique'
+-- (w14) adresse vérifiée jamais technique. Contre-vérification du lot 9 quinquies (point 2 ; invariant modifié, signalé au
+-- rapport) : GoTrue ne porte plus l'adresse vérifiée (avant : identique dans le profil et dans l'authentification) mais
+-- l'adresse technique d'empreinte secrète, jamais l'adresse du profil.
+w14 AS (SELECT 'w14', u.id::text, 'adresse vérifiée technique, ou portée par GoTrue, ou identifiant GoTrue autre que l''adresse technique d''empreinte'
           FROM public.users u JOIN auth.users a ON a.id = u.id
          WHERE u.email_verified_at IS NOT NULL
-           AND (lower(u.email) <> lower(COALESCE(a.email, '')) OR u.email ~* '@([a-z0-9-]+\\.)*eventvillage\\.sn$')),
+           AND (lower(u.email) = lower(COALESCE(a.email, '')) OR u.email ~* '@([a-z0-9-]+\\.)*eventvillage\\.sn$'
+                OR COALESCE(a.email, '') !~ '^k[0-9a-f]{40}@comptes\\.eventvillage\\.invalid$')),
 -- (w15) I1 : rien d'envoyé (SMS, email, push) à un compte, un numéro, une adresse ou un événement de démonstration
 w15 AS (SELECT 'w15', o.id::text, o.channel || ' envoyé à un destinataire de démonstration'
           FROM demo_outbox o WHERE o.status = 'SENT' AND o.is_demo),

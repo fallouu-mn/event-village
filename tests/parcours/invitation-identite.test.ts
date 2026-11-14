@@ -19,7 +19,7 @@ import { POST as sendOtp } from '../../app/api/auth/send-otp/route';
 import { POST as verifyOtp } from '../../app/api/auth/verify-otp/route';
 import { getFakes } from '../fakes';
 import { jsonRequest, randomEmail, randomSenegalPhone, STRONG_PASSWORD } from './helpers'; import { freshSession, respondControllerInvitations } from './acces-helpers';
-import { gotrueEmail } from '../helpers/gotrue-email';
+import { gotrueEmail, GOTRUE_ALIAS_RE } from '../helpers/gotrue-email';
 
 interface Holder { userId: string; email: string; phone: string; firstName: string; lastName: string }
 
@@ -154,7 +154,8 @@ describe('Invitation : identité des comptes existants', () => {
         assert.ok(userId, `compte créé : ${JSON.stringify(body)}`);
         const { data: auth } = await getServiceRoleClient().auth.admin.getUserById(userId);
         // Lot 9 quater (A4 : AUD-19) : adresse synthétique aléatoire sous .invalid, plus jamais tirée du numéro (modification signalée)
-        assert.match(String(auth.user?.email), /^u[0-9a-f]{32}@comptes\.eventvillage\.invalid$/, 'email de connexion synthétique, sans le numéro');
+        // Contre-vérification du lot 9 quinquies (point 2 ; modification signalée) : identifiant GoTrue d'empreinte secrète
+        assert.match(String(auth.user?.email), GOTRUE_ALIAS_RE, 'email de connexion synthétique, sans le numéro');
     });
 });
 

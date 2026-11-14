@@ -39,7 +39,8 @@ import { BASE_URL, confirmPassword, jsonRequest, randomSenegalPhone, STRONG_PASS
 import { flushNotifications, markPhoneVerified, outboxRows, smsMark, smsTo, withEnv } from './notif-helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { issueFreeTicket, registerClientFlow } from './terrain-helpers';
-import { gotrueEmail } from '../helpers/gotrue-email';
+import { gotrueEmail, profileEmailBehindGotrue } from '../helpers/gotrue-email';
+import { technicalEmailFor } from '../../lib/auth/technical-email';
 
 after(async () => {
     await assertLot9Invariants('compte-numero');
@@ -134,10 +135,15 @@ async function profileOf(userId: string): Promise<Identity> {
     return data as Identity;
 }
 
+/**
+ * Contre-vérification du lot 9 quinquies (point 2 ; aide modifiée, signalée au rapport) : l'adresse de GoTrue ne suit plus
+ * le profil (adresse technique d'empreinte secrète, contrôlée par profileEmailBehindGotrue) ; `email` rend l'adresse du
+ * profil. Le numéro de GoTrue suit toujours le profil (connexion par numéro fermée chez GoTrue).
+ */
 async function authOf(userId: string): Promise<{ phone: string | undefined; email: string | undefined }> {
     const { data, error } = await service.auth.admin.getUserById(userId);
     assert.equal(error, null, `auth.users : ${error?.message}`);
-    return { phone: data.user?.phone, email: data.user?.email };
+    return { phone: data.user?.phone, email: await profileEmailBehindGotrue(userId) };
 }
 
 const digits = (phone: string): string => phone.replace(/[^0-9]/g, '');
@@ -583,8 +589,10 @@ describe('POST /api/account/phone/confirm — succès', () => {
         assert.equal(error, null, `email NULL : ${error?.message}`);
         const next = randomSenegalPhone('78');
         await changeNumber(a, next);
-        assert.equal((await profileOf(a.userId)).email, a.email);
-        assert.equal((await authOf(a.userId)).email, a.email);
+        // Contre-vérification (point 2 ; modification signalée au rapport) : l'identifiant GoTrue (empreinte secrète) ne sort
+        // jamais de auth.users ; le profil reprend l'adresse technique tirée de son identifiant (technical_email_for).
+        assert.equal((await profileOf(a.userId)).email, technicalEmailFor(a.userId));
+        assert.equal((await authOf(a.userId)).email, technicalEmailFor(a.userId));
         assert.deepEqual(await loginByPhone(next), { status: 200, signInError: null });
     });
 

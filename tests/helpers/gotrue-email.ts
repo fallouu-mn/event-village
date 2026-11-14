@@ -30,3 +30,30 @@ export async function gotrueEmail(identifier: string): Promise<string> {
     )).rows);
     return found[0]?.email ?? id;
 }
+
+/** Identifiant GoTrue d'un compte depuis la migration 20261112000012 (adresse technique d'empreinte secrète). */
+export const GOTRUE_ALIAS_RE = /^k[0-9a-f]{40}@comptes\.eventvillage\.invalid$/;
+
+/**
+ * Contre-vérification (point 2 ; aide ajoutée, signalée au rapport) : l'adresse de GoTrue ne suit plus le profil. Pour
+ * les suites qui vérifiaient « auth.users.email suit public.users.email », cette aide contrôle la règle nouvelle (GoTrue
+ * garde l'adresse technique d'empreinte, jamais l'adresse du profil) et rend l'adresse du profil : leurs assertions
+ * portent alors sur la valeur que l'authentification recopiait avant.
+ */
+export async function profileEmailBehindGotrue(userId: string): Promise<string | undefined> {
+    const rows = await inspect(async (c) => (await c.query<{ auth_email: string | null; profile_email: string | null }>(
+        `SELECT a.email AS auth_email, u.email AS profile_email
+           FROM auth.users a JOIN public.users u ON u.id = a.id
+          WHERE a.id = $1`,
+        [userId],
+    )).rows);
+    if (!rows[0]) throw new Error(`profileEmailBehindGotrue : compte ${userId} absent de auth.users ou de public.users`);
+    const { auth_email: authEmail, profile_email: profileEmail } = rows[0];
+    if (!GOTRUE_ALIAS_RE.test(String(authEmail ?? ''))) {
+        throw new Error(`profileEmailBehindGotrue : l'identifiant GoTrue de ${userId} n'est pas l'adresse technique d'empreinte`);
+    }
+    if (profileEmail && profileEmail.toLowerCase() === String(authEmail).toLowerCase()) {
+        throw new Error(`profileEmailBehindGotrue : l'adresse du profil de ${userId} est l'identifiant GoTrue`);
+    }
+    return profileEmail ?? undefined;
+}

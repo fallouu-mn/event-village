@@ -255,6 +255,14 @@ describe('I1 : reprise de M12 sur les comptes du seed', () => {
         const sql = fs.readFileSync(M12_FILE, 'utf8');
 
         const flags = await inRolledBackTransaction(async (db) => {
+            // Contre-vérification du lot 9 quinquies (point 2 ; modification signalée au rapport) : la base remet l'adresse
+            // technique à chaque écriture de auth.users ; pour rejouer M12 sur une adresse du domaine du seed écrite chez
+            // GoTrue (état d'avant 20261112000012), la règle est suspendue dans cette transaction annulée.
+            await db.query(`DO $$ BEGIN
+                IF to_regprocedure('private.auth_users_login_alias()') IS NOT NULL THEN
+                    EXECUTE 'CREATE OR REPLACE FUNCTION private.auth_users_login_alias() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN RETURN NEW; END $f$';
+                END IF;
+            END $$`);
             await db.query(`UPDATE auth.users SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"is_essai_fixture": true}'::jsonb WHERE id = $1`, [marked.userId]);
             await db.query('UPDATE auth.users SET email = $2 WHERE id = $1', [seedMail.userId, `reprise-${randomUUID().slice(0, 8)}@${SEED_DOMAIN}`]);
             await db.query(sql);

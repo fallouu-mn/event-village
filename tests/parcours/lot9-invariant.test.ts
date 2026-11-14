@@ -42,7 +42,7 @@ const V2 = 'nom d\'objet hors du format <user_id>/<uuid>.webp, ou dossier sans c
 const V3 = (n: number): string => `plusieurs photos pour un compte (${n})`;
 const V4 = 'numéro différent entre le profil et l\'authentification après un changement';
 const V5 = 'changement de numéro sans SMS à l\'ancien numéro';
-const V6 = 'email différent entre le profil et l\'authentification';
+const V6 = 'identifiant GoTrue autre que l\'adresse technique d\'empreinte, ou égal à l\'adresse du profil';
 
 /** Actions journalisées lues par la règle u5 (contrat 6.3). */
 const JOURNAL_ACTIONS = ['TICKET_INVITATIONS_SENT', 'TICKET_INVITATION_CANCELLED', 'ACCOUNT_PHONE_CHANGED', 'ACCOUNT_PROFILE_UPDATED'] as const;
@@ -489,30 +489,35 @@ describe('Lot 9 Invariant (v) : compte', () => {
         assertClean(rows, ids.notQueued, '(v5) témoin sms_queued faux');
     });
 
-    test('v6 : email du profil différent de l\'authentification, après un profil ou un numéro ; témoins : même email en casse différente, compte sans changement', async () => {
-        const ids = { profil: '', numero: '', casse: '', untouched: '' };
+    // Contre-vérification du lot 9 quinquies (point 2 ; test réécrit, signalé au rapport) : l'adresse de GoTrue ne suit plus
+    // le profil. Violation fabriquée : l'adresse du profil recopie l'identifiant GoTrue (avant : profil différent de
+    // l'authentification). Le cas « identifiant GoTrue autre que l'adresse technique d'empreinte » ne se fabrique pas : la
+    // base remet l'adresse technique à chaque écriture de auth.users (migration 20261112000012).
+    test('v6 : adresse du profil égale à l\'identifiant GoTrue, après un profil ou un numéro ; témoins : adresses différentes, compte sans changement', async () => {
+        const ids = { profil: '', numero: '', distinct: '', untouched: '' };
         const rows = await inScene('v6', async (db, s) => {
             ids.profil = s.client;
             ids.numero = s.bis;
-            ids.casse = s.partner;
+            ids.distinct = s.partner;
             ids.untouched = (await db.query<{ id: string }>('SELECT id::text AS id FROM public.users WHERE email = $1', [FIXTURE_USERS.ADMIN.email])).rows[0].id;
+            const copyAlias = (id: string) => db.query(
+                'UPDATE public.users u SET email = a.email, email_verified_at = NULL FROM auth.users a WHERE a.id = u.id AND u.id = $1', [id]);
 
-            await db.query('UPDATE public.users SET email = $2 WHERE id = $1', [s.client, `lot9-v6-profil-${randomUUID()}@test.eventvillage.local`]);
+            await copyAlias(s.client);
             await insertJournal(db, 'ACCOUNT_PROFILE_UPDATED', s.client, {});
 
-            await db.query('UPDATE public.users SET email = $2 WHERE id = $1', [s.bis, `lot9-v6-numero-${randomUUID()}@test.eventvillage.local`]);
+            await copyAlias(s.bis);
             await insertJournal(db, 'ACCOUNT_PHONE_CHANGED', s.bis, { sms_queued: false });
 
-            const email = `lot9-v6-casse-${randomUUID()}@test.eventvillage.local`;
-            await alignIdentity(db, s.partner, randomSenegalPhone('77'), email.toUpperCase());
+            await db.query('UPDATE public.users SET email = $2 WHERE id = $1', [s.partner, `lot9-v6-distinct-${randomUUID()}@test.eventvillage.local`]);
             await insertJournal(db, 'ACCOUNT_PROFILE_UPDATED', s.partner, {});
 
-            await db.query('UPDATE public.users SET email = $2 WHERE id = $1', [ids.untouched, `lot9-v6-sans-${randomUUID()}@test.eventvillage.local`]);
+            await copyAlias(ids.untouched);
             return lot9Violations(db);
         });
         assertDetected(rows, 'v', ids.profil, V6, '(v6) après un profil');
         assertDetected(rows, 'v', ids.numero, V6, '(v6) après un numéro');
-        assertClean(rows, ids.casse, '(v6) témoin casse');
+        assertClean(rows, ids.distinct, '(v6) témoin adresses différentes');
         assertClean(rows, ids.untouched, '(v6) témoin compte sans changement journalisé');
     });
 });

@@ -11,19 +11,21 @@
 --     réelle, ni le numéro, ni l'identifiant du compte (technical_email_for), et impossible à recalculer sans la clé.
 --     L'adresse réelle reste dans public.users ; POST /api/auth/login fait la correspondance (numéro ou adresse →
 --     compte → identifiant GoTrue relu par l'API d'administration).
---   - auth.users.phone est TOUJOURS vide (la connexion par numéro chez GoTrue est en plus fermée : [auth.sms]).
+--   - Numéro : la connexion par numéro est FERMÉE chez GoTrue (fournisseur Téléphone désactivé : [auth.sms]
+--     enable_signup = false en local ; réglage du tableau de bord à vérifier, rapport). auth.users.phone garde le numéro
+--     du compte : GoTrue en garantit l'unicité (changement de numéro, lot 9 : AM1) sans jamais l'accepter comme
+--     identifiant de connexion.
 --   - Garanti par la base, quel que soit l'appelant : déclencheur avant toute mise à jour de auth.users (adresse remise,
---     numéro vidé, changements en attente annulés, identités de GoTrue reprises : identité email = adresse technique,
---     identité téléphone sans numéro) ; handle_new_user remet l'adresse technique juste après la création (le profil
---     public.users reçoit d'abord l'adresse et le numéro passés à la création). Aucun déclencheur sur auth.identities
---     (droit non établi sur un projet hébergé) : une identité créée par GoTrue après le compte est reprise à la première
---     mise à jour du compte (connexion comprise) ; elle ne sert jamais à la connexion par mot de passe.
+--     changement d'adresse en attente annulé, identité email de GoTrue reprise sur l'adresse technique) ;
+--     handle_new_user remet l'adresse technique juste après la création (le profil public.users reçoit d'abord
+--     l'adresse passée à la création). Aucun déclencheur sur auth.identities (droit non établi sur un projet hébergé) :
+--     une identité créée par GoTrue après le compte est reprise à la première mise à jour du compte (connexion
+--     comprise) ; elle ne sert jamais à la connexion par mot de passe.
 -- Objets :
 --   schéma private ; table private.auth_login_key (clé, 32 octets) ; private.auth_login_alias(uuid) ;
 --   private.auth_users_login_alias() (déclencheur on_auth_user_login_alias, BEFORE UPDATE ON auth.users) ;
 --   recopie : handle_new_user (20261111000001_lot9quater_comptes.sql, section 3) ;
---   reprise des comptes existants, avec contrôles avant et après (échec explicite si un compte garde un numéro ou une
---   autre adresse).
+--   reprise des comptes existants, avec contrôles avant et après (échec explicite si un compte garde une autre adresse).
 -- Aucun BEGIN ni COMMIT ; rejouable (la clé n'est tirée qu'une fois : rejouer ne change aucune adresse).
 -- ============================================================================
 
@@ -59,8 +61,8 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION private.auth_login_alias(uuid) FROM PUBLIC, anon, authenticated, service_role;
 
--- auth.users : adresse technique et aucun numéro, à chaque mise à jour, quel que soit l'appelant (API d'administration,
--- GoTrue, migration, seed)
+-- auth.users : adresse technique à chaque mise à jour, quel que soit l'appelant (API d'administration, GoTrue, migration,
+-- seed)
 CREATE OR REPLACE FUNCTION private.auth_users_login_alias()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -70,22 +72,16 @@ SET search_path = public
 AS $$
 BEGIN
     NEW.email := private.auth_login_alias(NEW.id);
-    NEW.phone := NULL;
-    IF COALESCE(NEW.phone_change, '') <> '' THEN
-        NEW.phone_change := '';
-    END IF;
     IF COALESCE(NEW.email_change, '') <> '' THEN
         NEW.email_change := '';
     END IF;
-    -- Identités de GoTrue (créées après le compte) : identité email = adresse technique, identité téléphone sans numéro.
-    -- Reprises ici (chaque connexion met auth.users à jour) plutôt que par un déclencheur sur auth.identities.
+    -- Identité email de GoTrue (créée après le compte) : adresse technique. Reprise ici (chaque connexion met auth.users à
+    -- jour) plutôt que par un déclencheur sur auth.identities.
     UPDATE auth.identities i
-       SET identity_data = CASE WHEN i.provider = 'email'
-                                THEN jsonb_set(i.identity_data, '{email}', to_jsonb(NEW.email))
-                                ELSE i.identity_data - 'phone' END
+       SET identity_data = jsonb_set(i.identity_data, '{email}', to_jsonb(NEW.email))
      WHERE i.user_id = NEW.id
-       AND ((i.provider = 'email' AND i.identity_data->>'email' IS DISTINCT FROM NEW.email)
-         OR (i.provider = 'phone' AND i.identity_data ? 'phone'));
+       AND i.provider = 'email'
+       AND i.identity_data->>'email' IS DISTINCT FROM NEW.email;
     RETURN NEW;
 END;
 $$;
@@ -99,8 +95,8 @@ CREATE TRIGGER on_auth_user_login_alias
 
 -- ----------------------------------------------------------------------------
 -- handle_new_user (recopie de 20261111000001_lot9quater_comptes.sql, section 3)
---   Changement : le profil reçoit l'adresse et le numéro passés à la création, puis auth.users reçoit l'adresse
---   technique et perd le numéro (déclencheur on_auth_user_login_alias).
+--   Changement : le profil reçoit l'adresse passée à la création, puis auth.users reçoit l'adresse technique (déclencheur
+--   on_auth_user_login_alias).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
@@ -135,8 +131,8 @@ BEGIN
     VALUES (NEW.id, 'CLIENT')
     ON CONFLICT (user_id, role) DO NOTHING;
 
-    -- Contre-vérification du lot 9 quinquies (point 2) : identifiant GoTrue secret, aucun numéro chez GoTrue
-    UPDATE auth.users SET email = private.auth_login_alias(NEW.id), phone = NULL WHERE id = NEW.id;
+    -- Contre-vérification du lot 9 quinquies (point 2) : identifiant GoTrue secret
+    UPDATE auth.users SET email = private.auth_login_alias(NEW.id) WHERE id = NEW.id;
 
     RETURN NEW;
 END;
@@ -168,15 +164,9 @@ UPDATE auth.identities i
  WHERE i.provider = 'email'
    AND (i.identity_data->>'email' IS DISTINCT FROM private.auth_login_alias(i.user_id) OR i.provider_id IS DISTINCT FROM i.user_id::text);
 
-UPDATE auth.identities i
-   SET identity_data = i.identity_data - 'phone'
- WHERE i.provider = 'phone' AND i.identity_data ? 'phone';
-
 UPDATE auth.users a
-   SET email = private.auth_login_alias(a.id),
-       phone = NULL
- WHERE a.email IS DISTINCT FROM private.auth_login_alias(a.id)
-    OR a.phone IS NOT NULL;
+   SET email = private.auth_login_alias(a.id)
+ WHERE a.email IS DISTINCT FROM private.auth_login_alias(a.id);
 
 DO $$
 DECLARE
@@ -195,12 +185,11 @@ BEGIN
       FROM auth.users a;
     SELECT count(*) INTO v_ident
       FROM auth.identities i
-     WHERE (i.provider = 'email' AND i.identity_data->>'email' IS DISTINCT FROM private.auth_login_alias(i.user_id))
-        OR (i.provider = 'phone' AND i.identity_data ? 'phone');
-    RAISE NOTICE 'Identifiants GoTrue, après : % compte(s), % avec un numéro, % sans l''adresse technique d''empreinte, % avec l''adresse du profil, % identité(s) à reprendre',
+     WHERE i.provider = 'email' AND i.identity_data->>'email' IS DISTINCT FROM private.auth_login_alias(i.user_id);
+    RAISE NOTICE 'Identifiants GoTrue, après : % compte(s), % avec un numéro (fournisseur Téléphone fermé), % sans l''adresse technique d''empreinte, % avec l''adresse du profil, % identité(s) email à reprendre',
         v_total, v_phone, v_not_alias, v_profile, v_ident;
-    IF v_phone > 0 OR v_not_alias > 0 OR v_profile > 0 OR v_ident > 0 THEN
-        RAISE EXCEPTION 'Contre-vérification, point 2 : reprise incomplète des identifiants GoTrue (numéros %, adresses %, adresses du profil %, identités %)',
-            v_phone, v_not_alias, v_profile, v_ident;
+    IF v_not_alias > 0 OR v_profile > 0 OR v_ident > 0 THEN
+        RAISE EXCEPTION 'Contre-vérification, point 2 : reprise incomplète des identifiants GoTrue (adresses %, adresses du profil %, identités %)',
+            v_not_alias, v_profile, v_ident;
     END IF;
 END $$;

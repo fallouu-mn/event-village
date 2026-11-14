@@ -31,7 +31,7 @@ import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { authed } from './acces-helpers';
 import { BASE_URL, confirmPassword, jsonRequest, randomEmail, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
-import { gotrueEmail } from '../helpers/gotrue-email';
+import { gotrueEmail, profileEmailBehindGotrue } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9Invariants('compte-profil');
@@ -72,10 +72,12 @@ async function profileOf(userId: string): Promise<Identity> {
     return data as Identity;
 }
 
+/**
+ * Contre-vérification du lot 9 quinquies (point 2 ; aide modifiée, signalée au rapport) : l'adresse de GoTrue ne suit plus
+ * le profil ; l'aide contrôle que GoTrue garde l'adresse technique d'empreinte et rend l'adresse du profil.
+ */
 async function authEmailOf(userId: string): Promise<string | undefined> {
-    const { data, error } = await service.auth.admin.getUserById(userId);
-    assert.equal(error, null, `auth.users : ${error?.message}`);
-    return data.user?.email;
+    return profileEmailBehindGotrue(userId);
 }
 
 function anonClient(): SupabaseClient {
@@ -360,24 +362,27 @@ describe('PATCH /api/account/profile et validation du lien — unicité de l’e
         assert.equal(mailCount(b.email), since, 'aucun lien envoyé à l’adresse d’un autre compte');
     });
 
-    test('adresse prise dans auth.users seulement, après la vérification préalable de la validation : l’API échoue, 409 EMAIL_TAKEN sans compensation ni RPC (AM1)', async () => {
+    // Contre-vérification du lot 9 quinquies (point 2 ; test réécrit, signalé au rapport) : une adresse ne peut plus être
+    // « prise dans auth.users seulement » : GoTrue ne garde que l'adresse technique d'empreinte de chaque compte. Avant :
+    // l'API refusait (adresse déjà chez GoTrue), 409 EMAIL_TAKEN sans compensation ni RPC (AM1).
+    test('adresse écrite chez GoTrue pour un autre compte : remplacée par son adresse technique ; la validation aboutit, l’autre compte n’a rien', async () => {
         const a = await newBuyer('profil-auth-a');
         const ghost = await newBuyer('profil-auth-b');
         const email = freshEmail('decale');
         const token = await pendingLink(a, email);
         const { error } = await service.auth.admin.updateUserById(ghost.userId, { email, email_confirm: true });
-        assert.equal(error, null, `adresse prise dans auth.users seulement : ${error?.message}`);
+        assert.equal(error, null, `écriture de l’adresse chez GoTrue pour un autre compte : ${error?.message}`);
+        assert.equal(await authEmailOf(ghost.userId), ghost.email, 'GoTrue garde l’adresse technique de l’autre compte ; son profil est intact');
         const { result, hits } = await intercept([
             { name: 'identity', match: identityRpc, reply: identityFreeOnce },
             { name: 'put', match: adminUserUpdate(a.userId), reply: (pass) => pass() },
             { name: 'rpc', match: finalizeRpc, reply: (pass) => pass() },
         ], () => verifyLink(token));
-        assert.equal(result.status, 409, result.text);
-        assert.equal(result.body.code, 'EMAIL_TAKEN', result.text);
+        assert.equal(result.status, 200, result.text);
         assert.ok(hits.identity.length >= 1, 'vérification préalable account_identity_taken absente');
-        assert.equal(hits.put.length, 1, 'rien n’a été écrit : aucune compensation');
-        assert.equal(hits.rpc.length, 0, 'la RPC n’est pas appelée après un refus de l’API');
-        assert.equal(await authEmailOf(a.userId), a.email);
+        assert.equal(hits.rpc.length, 1, 'RPC de validation appelée');
+        assert.equal(await authEmailOf(a.userId), email, 'le profil de A porte l’adresse validée');
+        assert.equal(await authEmailOf(ghost.userId), ghost.email, 'l’autre compte n’a rien');
     });
 
     test('adresse prise dans public.users seulement, après l’envoi du lien : 409 EMAIL_TAKEN par la RPC de validation, API rappelée vers l’ancienne valeur', async () => {

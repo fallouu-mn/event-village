@@ -53,7 +53,7 @@ const W10_OPEN = 'transfert en attente sur un billet non verrouillé';
 const W11 = 'transfert vers le numéro de l\'expéditeur';
 const W12 = (type: string): string => `email ${type} envoyé à une adresse non vérifiée`;
 const W13 = 'email envoyé à une adresse technique';
-const W14 = 'adresse vérifiée différente entre le profil et l\'authentification, ou technique';
+const W14 = 'adresse vérifiée technique, ou portée par GoTrue, ou identifiant GoTrue autre que l\'adresse technique d\'empreinte';
 const W15 = (channel: string): string => `${channel} envoyé à un destinataire de démonstration`;
 const W16 = 'message retenu « compte de démonstration » pour un destinataire réel';
 const W17 = (n: number): string => `${n} paiements de billets en attente pour un compte et un événement`;
@@ -713,28 +713,31 @@ describe('Lot 9 bis Invariants (w12) à (w14) : email', () => {
         assertClean(rows, ids.skipped, '(w13) témoin email retenu');
     });
 
-    test('w14 : adresse vérifiée différente de l\'authentification, adresse technique vérifiée ; témoins : même adresse en casse différente, non vérifiée différente', async () => {
-        const ids = { differs: '', technical: '', casse: '', unverified: '' };
+    // Contre-vérification du lot 9 quinquies (point 2 ; test réécrit, signalé au rapport) : GoTrue ne porte plus l'adresse
+    // vérifiée mais l'adresse technique d'empreinte secrète (la base la remet à chaque écriture de auth.users). Violations
+    // fabriquées : adresse vérifiée qui recopie l'identifiant GoTrue (contraintes de réservation retirées dans la
+    // transaction), adresse technique vérifiée. Avant : adresse vérifiée différente de l'authentification.
+    test('w14 : adresse vérifiée qui recopie l\'identifiant GoTrue, adresse technique vérifiée ; témoins : adresse vérifiée réelle, copie non vérifiée', async () => {
+        const ids = { copied: '', technical: '', real: '', unverified: '' };
         const rows = await inScene('w14', ['users'], async (db, s) => {
             await db.query('ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_email_verified_real_chk');
-            const setEmails = async (userId: string, pub: string, auth: string, verified: boolean): Promise<string> => {
-                const p = await db.query('UPDATE public.users SET email = $2, email_verified_at = CASE WHEN $3 THEN now() END WHERE id = $1', [userId, pub, verified]);
+            await db.query('ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_email_verified_reserved_chk');
+            const setEmail = async (userId: string, pub: string | null, verified: boolean): Promise<string> => {
+                const p = await db.query(
+                    `UPDATE public.users u SET email = COALESCE($2, (SELECT a.email FROM auth.users a WHERE a.id = u.id)),
+                            email_verified_at = CASE WHEN $3 THEN now() END WHERE u.id = $1`, [userId, pub, verified]);
                 assert.equal(p.rowCount, 1, `compte ${userId} : public.users introuvable`);
-                const a = await db.query('UPDATE auth.users SET email = $2 WHERE id = $1', [userId, auth]);
-                assert.equal(a.rowCount, 1, `compte ${userId} : auth.users introuvable`);
                 return userId;
             };
-            ids.differs = await setEmails(s.client, `lot9bis-w14-a-${randomUUID()}@test.eventvillage.local`, `lot9bis-w14-b-${randomUUID()}@test.eventvillage.local`, true);
-            const technical = `lot9bis-w14-${randomUUID()}@eventvillage.sn`;
-            ids.technical = await setEmails(s.bis, technical, technical, true);
-            const casse = `lot9bis-w14-casse-${randomUUID()}@test.eventvillage.local`;
-            ids.casse = await setEmails(s.partnerUser, casse.toUpperCase(), casse, true);
-            ids.unverified = await setEmails(s.admin, `lot9bis-w14-c-${randomUUID()}@test.eventvillage.local`, `lot9bis-w14-d-${randomUUID()}@test.eventvillage.local`, false);
+            ids.copied = await setEmail(s.client, null, true);
+            ids.technical = await setEmail(s.bis, `lot9bis-w14-${randomUUID()}@eventvillage.sn`, true);
+            ids.real = await setEmail(s.partnerUser, `lot9bis-w14-reelle-${randomUUID()}@test.eventvillage.local`, true);
+            ids.unverified = await setEmail(s.admin, null, false);
             return lot9bisViolations(db);
         });
-        assertDetected(rows, 'w14', ids.differs, W14, '(w14) adresses différentes');
+        assertDetected(rows, 'w14', ids.copied, W14, '(w14) adresse vérifiée qui recopie l\'identifiant GoTrue');
         assertDetected(rows, 'w14', ids.technical, W14, '(w14) adresse technique');
-        assertClean(rows, ids.casse, '(w14) témoin casse');
+        assertClean(rows, ids.real, '(w14) témoin adresse vérifiée réelle');
         assertClean(rows, ids.unverified, '(w14) témoin non vérifiée');
     });
 });

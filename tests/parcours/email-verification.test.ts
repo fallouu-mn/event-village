@@ -54,7 +54,7 @@ import {
 import { flushNotifications, loadLotModule, markEmailVerified, outboxRows } from './notif-helpers';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { newAdminWith, registerClientFlow } from './terrain-helpers';
-import { gotrueEmail } from '../helpers/gotrue-email';
+import { gotrueEmail, profileEmailBehindGotrue } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9bisInvariants('email-verification');
@@ -348,10 +348,12 @@ async function accountOf(userId: string): Promise<Account> {
     return data as Account;
 }
 
+/**
+ * Contre-vérification du lot 9 quinquies (point 2 ; aide modifiée, signalée au rapport) : l'adresse de GoTrue ne suit plus
+ * le profil ; l'aide contrôle que GoTrue garde l'adresse technique d'empreinte et rend l'adresse du profil.
+ */
 async function authEmail(userId: string): Promise<string | undefined> {
-    const { data, error } = await service.auth.admin.getUserById(userId);
-    assert.equal(error, null, `auth.users : ${error?.message}`);
-    return data.user?.email;
+    return profileEmailBehindGotrue(userId);
 }
 
 async function userIdByPhone(phone: string): Promise<string> {

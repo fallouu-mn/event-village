@@ -75,10 +75,13 @@ v5 AS (SELECT 'v', j.id::text, 'changement de numéro sans SMS à l''ancien num�
         WHERE j.action = 'ACCOUNT_PHONE_CHANGED' AND COALESCE((j.metadata->>'sms_queued')::boolean, TRUE)
           AND NOT EXISTS (SELECT 1 FROM public.notification_outbox o
                            WHERE o.type = 'PHONE_CHANGED' AND o.idempotency_key LIKE 'PHONE_CHANGED:' || j.user_id::text || ':%')),
-v6 AS (SELECT 'v', u.id::text, 'email différent entre le profil et l''authentification'
+-- Contre-vérification du lot 9 quinquies (point 2 ; invariant modifié, signalé au rapport) : l'adresse de GoTrue ne suit
+-- plus le profil ; elle reste l'adresse technique d'empreinte secrète, jamais l'adresse du profil.
+v6 AS (SELECT 'v', u.id::text, 'identifiant GoTrue autre que l''adresse technique d''empreinte, ou égal à l''adresse du profil'
          FROM (SELECT DISTINCT user_id FROM journal WHERE action IN ('ACCOUNT_PHONE_CHANGED', 'ACCOUNT_PROFILE_UPDATED')) c
          JOIN public.users u ON u.id = c.user_id JOIN auth.users a ON a.id = u.id
-        WHERE lower(COALESCE(u.email, '')) <> lower(COALESCE(a.email, '')))
+        WHERE COALESCE(a.email, '') !~ '^k[0-9a-f]{40}@comptes\\.eventvillage\\.invalid$'
+           OR lower(COALESCE(u.email, '')) = lower(COALESCE(a.email, '')))
 SELECT * FROM t5 UNION ALL SELECT * FROM t6 UNION ALL SELECT * FROM u1 UNION ALL SELECT * FROM u2 UNION ALL SELECT * FROM u3
 UNION ALL SELECT * FROM u4 UNION ALL SELECT * FROM u5 UNION ALL SELECT * FROM u6 UNION ALL SELECT * FROM v1 UNION ALL SELECT * FROM v2
 UNION ALL SELECT * FROM v3 UNION ALL SELECT * FROM v4 UNION ALL SELECT * FROM v5 UNION ALL SELECT * FROM v6 ORDER BY 1, 2`;
