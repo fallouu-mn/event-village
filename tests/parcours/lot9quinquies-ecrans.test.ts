@@ -90,8 +90,9 @@ describe('B4 — se déconnecter', () => {
     test('« Se déconnecter » : cet appareil seulement ; « Déconnecter tous mes appareils » avec confirmation ; scanner', () => {
         const provider = read('components/providers/AuthProvider.tsx');
         assert.match(provider, /signOut\(\{ scope: 'local' \}\)/, 'AuthProvider : portée locale');
-        assert.ok(provider.includes('/api/auth/sign-out-global'), 'signOutEverywhere : révocation de toutes les sessions');
         const profile = read('app/profile/page.tsx');
+        // Run 173 : déconnexion de tous les appareils dans la page Profil (seule à s'en servir), hors du fournisseur commun
+        assert.ok(profile.includes('/api/auth/sign-out-global'), 'signOutEverywhere : révocation de toutes les sessions');
         assert.ok(profile.includes('Déconnecter tous mes appareils'));
         assert.ok(profile.includes('Vos billets hors ligne seront effacés sur les autres téléphones.'));
         for (const rel of ['app/controller/layout.tsx', 'app/controller/scanner/page.tsx']) {

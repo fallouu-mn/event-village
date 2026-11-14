@@ -7,7 +7,11 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
-import { PhoneVerifyDialog } from '@/components/tickets/PhoneVerifyDialog';
+import dynamic from 'next/dynamic';
+
+// Lot 9 quinquies (run 173, budget de /tickets) : fenêtre « Confirmer mon numéro » chargée à la demande, hors du premier
+// chargement de « Mes billets » (elle ne sert qu'à un compte dont le numéro n'est pas encore confirmé).
+const PhoneVerifyDialog = dynamic(() => import('@/components/tickets/PhoneVerifyDialog').then((m) => m.PhoneVerifyDialog), { ssr: false });
 import { formatDate, formatDateTime, formatEventDateTime, formatFcfa, formatTime } from '@/lib/format';
 
 /**

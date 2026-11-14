@@ -33,6 +33,7 @@ import { AvatarEditor } from '@/components/profile/AvatarEditor';
 import { ProfileForm } from '@/components/profile/ProfileForm';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { getBrowserClient } from '@/lib/supabase/client';
 
 /**
  * Profil et réglages du compte (lot 6, contrat H4 : migré sur le système de design pour recevoir le lien
@@ -100,7 +101,22 @@ function ShortcutBody({ title, description, icon: Icon, tone }: Omit<Shortcut, '
 
 export default function ProfilePage() {
   const { theme, setTheme } = useTheme();
-  const { profile, partner, isLoading, isAuthenticated, signOut, signOutEverywhere, refreshProfile } = useAuth();
+  const { profile, partner, isLoading, isAuthenticated, signOut, refreshProfile } = useAuth();
+
+  // Lot 9 quinquies (B4 : AUTH-07) : toutes les sessions du compte sont révoquées par le serveur (jetons de rafraîchissement
+  // compris), puis cet appareil se déconnecte. Un refus du serveur est remonté à l'écran, rien n'est fermé en silence. Ici
+  // et pas dans AuthProvider : seule cette page s'en sert (poids JavaScript commun à toutes les pages, run 173).
+  const signOutEverywhere = async () => {
+    const { data } = await getBrowserClient().auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Session absente : reconnectez-vous.');
+    const res = await fetch('/api/auth/sign-out-global', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(body?.error ?? 'Déconnexion de tous les appareils impossible. Réessayez.');
+    }
+    await signOut();
+  };
   // Lot 9 quinquies (B4 : AUTH-07) : « Déconnecter tous mes appareils », avec confirmation
   const [confirmEverywhere, setConfirmEverywhere] = useState(false);
   const [everywhereError, setEverywhereError] = useState<string | null>(null);
