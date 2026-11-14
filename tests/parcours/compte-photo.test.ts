@@ -23,7 +23,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
-import sharp from 'sharp';
+// Lot 9 sexies (sharp 0.35 ; modification signalée) : le type Sharp est un export nommé, plus Sharp
+import sharp, { type Sharp } from 'sharp';
 import { assertLot9Invariants } from '../helpers/lot9-invariants';
 import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { BASE_URL, STRONG_PASSWORD } from './helpers';
@@ -144,7 +145,7 @@ const EXIF_WITH_GPS = {
     IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '14/1 41/1 2/1', GPSLongitudeRef: 'W', GPSLongitude: '17/1 26/1 49/1', GPSMapDatum: MARK },
 };
 
-function canvas(width = 400, height = 300): sharp.Sharp {
+function canvas(width = 400, height = 300): Sharp {
     return sharp({ create: { width, height, channels: 3, background: { r: 200, g: 30, b: 30 } } });
 }
 
@@ -314,9 +315,9 @@ describe('POST /api/account/avatar — images acceptées', () => {
 
 describe('POST /api/account/avatar — métadonnées retirées', () => {
     for (const [format, encode] of [
-        ['JPEG', (s: sharp.Sharp) => s.jpeg()],
-        ['WebP', (s: sharp.Sharp) => s.webp()],
-        ['PNG', (s: sharp.Sharp) => s.png()],
+        ['JPEG', (s: Sharp) => s.jpeg()],
+        ['WebP', (s: Sharp) => s.webp()],
+        ['PNG', (s: Sharp) => s.png()],
     ] as const) {
         test(`${format} avec balise GPS : EXIF et position absents de l’objet stocké`, async () => {
             const a = await newBuyer('photo-exif');
