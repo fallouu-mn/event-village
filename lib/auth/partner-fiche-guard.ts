@@ -10,7 +10,9 @@
  *    bouton « Compléter mon dossier », et des pièces) ;
  *  - aucune fiche : rien.
  * Les routes qui refusent déjà une fiche non validée avec leur propre texte (création, transition, dépôt d'image) gardent
- * leur refus (même code PARTNER_NOT_VALIDATED).
+ * leur refus (même code PARTNER_NOT_VALIDATED). La transition appelle partnerTransitionFicheRefusal avant de lire le corps :
+ * la base ne refuse que la soumission et la publication (EN_ATTENTE, PUBLIE) ; toute autre transition (retrait, annulation…)
+ * d'une fiche non validée est refusée ici (run 171).
  * Appliqué par requireActiveSession (lib/auth/session.ts) à toutes les routes /api/partner/* et aux routes /api/controller/*
  * d'une partenaire qui n'est pas aussi contrôleur (scan et caisse de ses propres événements), pour un compte qui a le
  * rôle PARTENAIRE sans être ADMIN ni SUPERADMIN. Côté base, is_partner_owner exige la même fiche (migration 20261112000005).
@@ -20,6 +22,8 @@ import { NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const PARTNER_NOT_VALIDATED_TEXT = 'Votre profil d’organisateur doit être validé avant cette action.';
+/** Texte de la base pour la soumission et la publication (event_transition, 20261109000008_lot9bis_cycle.sql), repris tel quel. */
+export const PARTNER_NOT_VALIDATED_SUBMIT_TEXT = 'Votre profil d’organisateur doit être validé avant de soumettre ou de publier un événement.';
 
 type FicheStatus = 'VALIDE' | 'SUSPENDU' | 'EN_ATTENTE' | 'REJETE';
 
@@ -70,15 +74,35 @@ export function partnerFicheGuardApplies(roles: readonly string[], pathname: str
     return pathname.startsWith('/api/controller/') && !roles.includes('CONTROLEUR');
 }
 
+/** Statut de la fiche du compte (null : aucune fiche), ou la réponse 503 si la lecture échoue (jamais un passage). */
+async function readFicheStatus(userId: string, context: string): Promise<{ status: FicheStatus | null } | { response: NextResponse }> {
+    const { data, error } = await getServiceRoleClient().from('partners').select('status').eq('user_id', userId).maybeSingle();
+    if (error) {
+        console.error(`[${context}] fiche partenaire de ${userId} illisible :`, error.message);
+        return { response: NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'PARTNER_UNAVAILABLE' }, { status: 503 }) };
+    }
+    return { status: (data?.status as FicheStatus | undefined) ?? null };
+}
+
 /** Réponse de refus à rendre telle quelle, ou null si la fiche permet la route. */
 export async function partnerFicheRefusal(user: { id: string; roles: readonly string[] }, method: string, pathname: string): Promise<NextResponse | null> {
     if (!partnerFicheGuardApplies(user.roles, pathname)) return null;
-    const { data, error } = await getServiceRoleClient().from('partners').select('status').eq('user_id', user.id).maybeSingle();
-    if (error) {
-        console.error(`[partnerFicheRefusal] fiche partenaire de ${user.id} illisible :`, error.message);
-        return NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'PARTNER_UNAVAILABLE' }, { status: 503 });
-    }
-    const status = (data?.status as FicheStatus | undefined) ?? null;
-    if (partnerFicheAllows(status, method, pathname)) return null;
+    const read = await readFicheStatus(user.id, 'partnerFicheRefusal');
+    if ('response' in read) return read.response;
+    if (partnerFicheAllows(read.status, method, pathname)) return null;
     return NextResponse.json({ error: PARTNER_NOT_VALIDATED_TEXT, code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });
+}
+
+/**
+ * POST /api/partner/events/[id]/transition : refus d'une fiche ni VALIDE ni SUSPENDU, quelle que soit la transition et
+ * avant toute lecture du corps. `to` (lu dans le corps, s'il est lisible) ne choisit que le texte : celui de la base pour
+ * la soumission et la publication, le texte commun sinon.
+ */
+export async function partnerTransitionFicheRefusal(user: { id: string; roles: readonly string[] }, to: unknown): Promise<NextResponse | null> {
+    if (!partnerFicheGuardApplies(user.roles, '/api/partner/events/*/transition')) return null;
+    const read = await readFicheStatus(user.id, 'partnerTransitionFicheRefusal');
+    if ('response' in read) return read.response;
+    if (read.status === 'VALIDE' || read.status === 'SUSPENDU') return null;
+    const text = to === 'EN_ATTENTE' || to === 'PUBLIE' ? PARTNER_NOT_VALIDATED_SUBMIT_TEXT : PARTNER_NOT_VALIDATED_TEXT;
+    return NextResponse.json({ error: text, code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });
 }

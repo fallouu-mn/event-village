@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
+import { partnerTransitionFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { EventLifecycleError, EventLifecycleService, isEventStatus } from '@/lib/events/event-lifecycle.service';
 
 export const dynamic = 'force-dynamic';
@@ -28,9 +29,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     let raw: unknown;
+    let unreadable = false;
     try {
         raw = await request.json();
     } catch {
+        unreadable = true;
+    }
+    // Lot 9 quinquies (A9, run 171) : fiche partenaire non validée refusée pour toute transition, avant le contrôle du corps
+    const ficheRefusal = await partnerTransitionFicheRefusal(session.user, (raw as { to?: unknown } | null | undefined)?.to);
+    if (ficheRefusal) return ficheRefusal;
+    if (unreadable) {
         return NextResponse.json({ error: 'Corps de requête illisible (JSON attendu).', code: 'INVALID_BODY' }, { status: 400 });
     }
     const parsed = bodySchema.safeParse(raw);
