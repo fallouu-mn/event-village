@@ -3,8 +3,8 @@
  * Suite STATIQUE pour ses cas : elle lit les sources (arbre syntaxique TypeScript, commentaires exclus),
  * package.json, package-lock.json, app/globals.css, et exécute scripts/js-budget.mjs sur un build fabriqué
  * dans un dossier temporaire. Seul l'after() touche la base (assertTerrainInvariants, Conventions).
- *  - sharp épinglé à 0.33.5 dans `dependencies`, chargeable, et capable de convertir un PNG 1×1 en WebP ;
- *    package-lock.json contient sharp 0.33.5 et les binaires Linux `@img/sharp-linux-x64` et
+ *  - sharp épinglé à 0.35.5 (lot 9 sexies : 0.33.5 → 0.35.5, failles libvips, libheif, librsvg ; modification signalée) dans `dependencies`, chargeable, et capable de convertir un PNG 1×1 en WebP ;
+ *    package-lock.json contient sharp 0.35.5 et les binaires Linux `@img/sharp-linux-x64` et
  *    `@img/sharp-libvips-linux-x64` (sinon `npm ci` en CI n'installe pas le binaire, D75) ;
  *  - `@types/leaflet` en devDependencies, plus dans dependencies (D75) ;
  *  - aucune référence (import, export … from, import(), require()) à `framer-motion`, `liquid-glass-react`
@@ -169,7 +169,7 @@ function loadSharp(): SharpFactory {
     } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         assert.fail(`sharp ne se charge pas depuis la racine du dépôt (${code ?? 'erreur'} : ${err instanceof Error ? err.message.split('\n')[0] : String(err)}) : `
-            + 'installer sharp 0.33.5 en dependencies avec ses binaires @img/sharp-* (D75)');
+            + 'installer sharp 0.35.5 en dependencies avec ses binaires @img/sharp-* (D75)');
     }
     const factory = (typeof mod === 'function' ? mod : (mod as { default?: unknown }).default) as SharpFactory | undefined;
     assert.equal(typeof factory, 'function', 'le module sharp chargé n\'exporte pas de fonction');
@@ -177,9 +177,9 @@ function loadSharp(): SharpFactory {
 }
 
 describe('7.5 sharp et dépendances (D75, D77)', () => {
-    test('sharp est épinglé à 0.33.5 dans dependencies et convertit un PNG 1×1 en WebP', async () => {
+    test('sharp est épinglé à 0.35.5 dans dependencies et convertit un PNG 1×1 en WebP', async () => {
         const pkg = packageJson();
-        assert.equal(pkg.dependencies?.sharp, '0.33.5', `package.json : sharp attendu en dependencies à « 0.33.5 » exactement, trouvé ${JSON.stringify(pkg.dependencies?.sharp ?? null)}`);
+        assert.equal(pkg.dependencies?.sharp, '0.35.5', `package.json : sharp attendu en dependencies à « 0.35.5 » exactement, trouvé ${JSON.stringify(pkg.dependencies?.sharp ?? null)}`);
         assert.equal(pkg.devDependencies?.sharp, undefined, 'sharp ne doit pas être en devDependencies (next start en production en a besoin)');
 
         assert.equal(PNG_1X1.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'signature PNG de l\'échantillon');
@@ -195,13 +195,13 @@ describe('7.5 sharp et dépendances (D75, D77)', () => {
             `métadonnées de la sortie WebP : ${JSON.stringify(meta)}`);
     });
 
-    test('package-lock.json contient sharp 0.33.5 et les binaires Linux @img/sharp-linux-x64 et @img/sharp-libvips-linux-x64', () => {
+    test('package-lock.json contient sharp 0.35.5 et les binaires Linux @img/sharp-linux-x64 et @img/sharp-libvips-linux-x64', () => {
         const lock = JSON.parse(read('package-lock.json')) as { lockfileVersion?: number; packages?: Record<string, { version?: string; optional?: boolean }> };
         assert.ok(lock.packages && typeof lock.packages === 'object', `package-lock.json sans « packages » (lockfileVersion ${lock.lockfileVersion})`);
         const packages = lock.packages ?? {};
-        assert.equal((packages[''] as { dependencies?: Record<string, string> } | undefined)?.dependencies?.sharp, '0.33.5',
-            'package-lock.json : la racine ne déclare pas sharp 0.33.5 en dependencies (lockfile non régénéré)');
-        assert.equal(packages['node_modules/sharp']?.version, '0.33.5', `package-lock.json : node_modules/sharp en ${JSON.stringify(packages['node_modules/sharp']?.version ?? null)}, 0.33.5 attendu`);
+        assert.equal((packages[''] as { dependencies?: Record<string, string> } | undefined)?.dependencies?.sharp, '0.35.5',
+            'package-lock.json : la racine ne déclare pas sharp 0.35.5 en dependencies (lockfile non régénéré)');
+        assert.equal(packages['node_modules/sharp']?.version, '0.35.5', `package-lock.json : node_modules/sharp en ${JSON.stringify(packages['node_modules/sharp']?.version ?? null)}, 0.35.5 attendu`);
         const missing = ['node_modules/@img/sharp-linux-x64', 'node_modules/@img/sharp-libvips-linux-x64'].filter((k) => !packages[k]);
         assert.deepEqual(missing, [], `binaires Linux absents du lockfile (npm ci en CI n'installerait pas sharp) : ${missing.join(', ')}`);
     });

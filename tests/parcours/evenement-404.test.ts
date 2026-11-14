@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { notFound } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import ts from 'typescript';
 import { GET as getPublicEvent } from '../../app/api/events/[id]/route';
@@ -63,8 +64,23 @@ async function layout(): Promise<Layout> {
     return mod.default!;
 }
 
+/**
+ * Lot 9 sexies (Next 15 ; modification signalée) : le digest de notFound() est passé de « NEXT_NOT_FOUND » à
+ * « NEXT_HTTP_ERROR_FALLBACK;404 ». Il est lu sur le notFound() de la version installée : contrôle aussi strict.
+ */
+function notFoundDigest(): string {
+    try {
+        notFound();
+    } catch (err) {
+        return String((err as { digest?: string }).digest ?? '');
+    }
+    throw new Error('notFound() n’a rien levé');
+}
+
 async function assertNotFound(render: () => Promise<unknown>, what: string): Promise<void> {
-    await assert.rejects(render, (err: { digest?: string }) => err.digest === 'NEXT_NOT_FOUND', `${what} : notFound() attendu`);
+    const expected = notFoundDigest();
+    assert.ok(expected.length > 0, 'digest de notFound() illisible');
+    await assert.rejects(render, (err: { digest?: string }) => err.digest === expected, `${what} : notFound() attendu (digest ${expected})`);
 }
 
 function source(rel: string): ts.SourceFile {
