@@ -49,8 +49,10 @@ AS $$
            AND c.code_at > now() - interval '12 hours'
     ), FALSE);
 $$;
-REVOKE ALL ON FUNCTION public.admin_session_code_valid() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.admin_session_code_valid() TO anon, authenticated, service_role;
+-- is_admin() et is_superadmin() (SECURITY DEFINER) l'appellent avec les droits de leur propriétaire : aucun droit pour
+-- anon ni authenticated (invariant q6 du lot 9 quater : une aide exécutable par eux lit le statut du compte).
+REVOKE ALL ON FUNCTION public.admin_session_code_valid() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_session_code_valid() TO service_role;
 COMMENT ON FUNCTION public.admin_session_code_valid() IS
     'Lot 9 quinquies (contre-vérification, point 1) : vrai si la session du jeton courant (session_id) a passé le code administrateur depuis moins de 12 heures.';
 
