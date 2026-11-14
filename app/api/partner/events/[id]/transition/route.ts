@@ -20,7 +20,8 @@ const bodySchema = z.object({
  * Réponses : 200 `{ success, event: { id, status }, from, to }` ; 400 UNKNOWN_STATUS ou corps invalide ;
  * 403 rôle manquant ; 404 événement introuvable ; 409 transition hors table ; 422 SUBMIT_INCOMPLETE.
  */
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     const session = await requireActiveSession(request);
     if (session.response) return session.response;
     const id = params.id;

@@ -33,11 +33,11 @@ type Reply = { ok?: boolean; code?: string; message?: string; mark?: unknown } |
  * journalisée (CASH_REFUND_MARKED) dans la transaction de event_cash_refund_mark. Un second appel rend 200
  * ALREADY_MARKED et la marque existante. Un admin lit la liste sans la cocher (403) ; un tiers reçoit 404.
  */
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string; paymentId: string }> | { id: string; paymentId: string } }) {
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string; paymentId: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     try {
-        const { id, paymentId } = await Promise.resolve(context.params);
+        const { id, paymentId } = await context.params;
         if (typeof id !== 'string' || !UUID_RE.test(id)) throw new PublicError('Événement introuvable.', 'EVENT_NOT_FOUND', 404);
         if (typeof paymentId !== 'string' || !UUID_RE.test(paymentId)) {
             throw new PublicError('Vente introuvable dans la liste des espèces à rembourser.', 'PAYMENT_NOT_FOUND', 404);

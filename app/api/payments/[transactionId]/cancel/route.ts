@@ -29,8 +29,8 @@ async function ticketIdsOf(paymentId: string): Promise<string[]> {
  *  - SamirPay dit PENDING (ou ne connaît pas la transaction) : annulation comme avant.
  * Un succès tardif chez SamirPay après l'annulation reste honoré par la réconciliation (D4).
  */
-export async function POST(req: NextRequest, context: { params: Promise<{ transactionId: string }> | { transactionId: string } }) {
-    const { transactionId: id } = await Promise.resolve(context?.params);
+export async function POST(req: NextRequest, context: { params: Promise<{ transactionId: string }> }) {
+    const { transactionId: id } = await context.params;
     if (!id || !UUID.test(id)) {
         return NextResponse.json({ error: 'Identifiant de paiement invalide.' }, { status: 400 });
     }

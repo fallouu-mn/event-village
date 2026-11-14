@@ -20,7 +20,8 @@ const cancelSchema = z.object({
  * ACTIF (requireActiveSession puis verifyAdminAuth). Même corps et même transaction que la route du
  * partenaire : `{ publicNotice, internalReason, confirmTitle }`.
  */
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     const session = await requireActiveSession(request);
     if (session.response) return session.response;
     const auth = await verifyAdminAuth(request, { requiredPermission: 'events.write' });

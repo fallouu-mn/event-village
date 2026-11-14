@@ -32,14 +32,14 @@ const REFUSAL_MESSAGES: Record<string, string> = {
  * Payé en ligne : versement par le module de cashout (clé REFUND-TKT-<billet>, part du paiement),
  * billet REMBOURSEMENT_EN_COURS jusqu'à la confirmation. Espèces : à rembourser par l'organisateur.
  */
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string; ticketId: string }> | { id: string; ticketId: string } }) {
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string; ticketId: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const user = session.user;
     if (!serverIsAdmin(user) && !user.roles.includes('PARTENAIRE')) {
         return NextResponse.json({ error: 'Seul l’organisateur de l’événement ou un administrateur peut rembourser un billet.', code: 'FORBIDDEN' }, { status: 403 });
     }
-    const { id: eventId, ticketId } = await Promise.resolve(context.params);
+    const { id: eventId, ticketId } = await context.params;
     // Lot 9 bis (R2, B31) : un admin doit avoir refunds.manage, contrôlé avant toute lecture ou écriture.
     const access = await requireEventAccess(user, eventId, 'refunds.manage');
     if (access.kind === 'DENIED') return access.response;

@@ -14,7 +14,7 @@ const RETIRED = {
     code: 'CLAIM_LINK_RETIRED',
 } as const;
 
-type RouteContext = { params: Promise<{ token: string }> | { token: string } };
+type RouteContext = { params: Promise<{ token: string }> }; // Lot 9 sexies (Next 15) : params en promesse
 
 function retired(): NextResponse {
     return NextResponse.json(RETIRED, { status: 410, headers: { 'Cache-Control': 'no-store' } });

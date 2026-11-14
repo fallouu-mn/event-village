@@ -17,8 +17,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string } | Promise<{ id: string }> },
+    props: { params: Promise<{ id: string }> }
 ) {
+    const params = await props.params;
     const auth = await verifyAdminAuth(request, { requiredPermission: 'refunds.manage' });
     if (!auth.authorized || !auth.user) {
         return auth.errorResponse ?? NextResponse.json({ error: 'Accès réservé aux administrateurs.', code: 'FORBIDDEN' }, { status: 403 });

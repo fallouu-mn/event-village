@@ -20,7 +20,7 @@
  *  - plus aucune bibliothèque d’animation (D77), système de design (tokens, 14 px au moins), montants par formatFcfa (D60).
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -583,7 +583,8 @@ function PaymentQr({ value, label }: { value: string; label: string }) {
 
 /* ─────────────────────────────── Page ─────────────────────────────── */
 
-export default function PaymentStatusPage({ params }: { params: { id: string } }) {
+export default function PaymentStatusPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const router = useRouter();
   const toast = useToast();
   const id = PAYMENT_ID.test(params.id) ? params.id : null;

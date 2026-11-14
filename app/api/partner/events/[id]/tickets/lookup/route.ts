@@ -83,7 +83,7 @@ function isRefundable(status: string, mode: RefundMode, payment: PaymentRow | nu
  * ADMIN muni de refunds.manage, ou le SUPERADMIN (lot 9 bis, R2). Un billet d'un autre événement répond 404. Rien d'autre que le contrat : ni QR, ni téléphone,
  * ni nom complet. Le numéro est lu comme à la saisie manuelle du scan : sans espaces autour, en capitales.
  */
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const user = session.user;
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         if (!serverIsAdmin(user) && !user.roles.includes('PARTENAIRE')) {
             throw new PublicError('Seul l’organisateur de l’événement ou un administrateur peut consulter ce billet.', 'FORBIDDEN', 403);
         }
-        const { id: eventId } = await Promise.resolve(context.params);
+        const { id: eventId } = await context.params;
         // Lot 9 bis (R2, B31, décision D2) : la fiche sert le panneau de remboursement, un admin doit avoir refunds.manage.
         const access = await requireEventAccess(user, eventId, 'refunds.manage');
         if (access.kind === 'DENIED') return access.response;

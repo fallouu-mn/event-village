@@ -19,10 +19,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Lot 9 bis (R19, R25, contrat 4.3) : aucun code pour un événement suspendu ou annulé (409 EVENT_SUSPENDED,
  * EVENT_CANCELLED) ni pour un billet en cours de transfert (409 TRANSFER_PENDING).
  */
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
-    const { id } = await Promise.resolve(context.params);
+    const { id } = await context.params;
     if (!id || !UUID.test(id)) return NextResponse.json({ error: 'Billet introuvable.' }, { status: 404 });
 
     const quota = await reserveQuota([{ scope: 'live_code_user', bucket: session.user.id, windowSecs: 60, max: getServerEnv().LIVE_CODE_PER_USER_MIN }], 'live-code');

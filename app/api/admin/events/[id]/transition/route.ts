@@ -19,7 +19,8 @@ const bodySchema = z.object({
  * publier, suspendre (motif), réactiver, terminer (événement commencé). L'acteur journalisé est le compte
  * de la session ; la RPC event_transition vérifie la table de transitions.
  */
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     const session = await requireActiveSession(request);
     if (session.response) return session.response;
     const auth = await verifyAdminAuth(request, { requiredPermission: 'events.write' });

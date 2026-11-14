@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useId, useState } from 'react';
+import React, { useId, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, Eye, EyeOff, KeyRound, ShieldCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -30,7 +30,7 @@ import { obviousPasswordReason, PASSWORD_CRITERIA_LABELS, PASSWORD_HINT, PASSWOR
  */
 
 interface ControllerSetupPageProps {
-    searchParams?: Record<string, string | string[] | undefined>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 // Lot 9 quater (A5 : G-31) : règle commune du mot de passe (StrongPasswordSchema, lib/validations/auth.ts), la même que
@@ -83,7 +83,9 @@ async function signInAfterActivation(phone: string, password: string): Promise<b
     }
 }
 
-export default function ControllerSetupPage({ searchParams }: ControllerSetupPageProps) {
+export default function ControllerSetupPage({ searchParams: searchParamsPromise }: ControllerSetupPageProps) {
+    // Lot 9 sexies (Next 15) : searchParams arrive en promesse, déballée par use()
+    const searchParams = use(searchParamsPromise);
     const router = useRouter();
     const uid = useId();
     const otpLabelId = `${uid}-code`;

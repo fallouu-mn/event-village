@@ -44,7 +44,8 @@ const NOT_FOUND = () => NextResponse.json({ error: 'Événement introuvable.' },
  *  - lot 9 ter (R96) : `practicalInfo.contactPhone` formaté (« 77 123 45 67 », sinon la valeur telle quelle) et
  *    `practicalInfo.contactPhoneTel` (E.164 du numéro sénégalais, null sinon).
  */
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     try {
         const eventId = params.id;
         if (!isEventId(eventId)) return NOT_FOUND();

@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/halls/[id]
  * Récupère le détail complet d'une salle pour devis et réservation
  */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     try {
         // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
         const closed = await guardFeature('halls', 'GET /api/halls/[id]');

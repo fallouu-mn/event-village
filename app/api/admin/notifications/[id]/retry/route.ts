@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 const NO_STORE = { 'Cache-Control': 'no-store' };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const auth = await verifyAdminAuth(req, { requiredPermission: 'notifications.write' });
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         return auth.errorResponse ?? NextResponse.json({ error: 'Accès réservé aux administrateurs.', code: 'FORBIDDEN' }, { status: 403 });
     }
 
-    const { id } = await Promise.resolve(context.params);
+    const { id } = await context.params;
     if (typeof id !== 'string' || !UUID_RE.test(id)) {
         return NextResponse.json({ error: 'Notification introuvable.', code: 'NOT_FOUND' }, { status: 404, headers: NO_STORE });
     }

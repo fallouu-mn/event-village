@@ -10,7 +10,7 @@ import { safeInternalPath } from '@/lib/auth/safe-redirect';
  */
 
 interface LoginPageProps {
-    searchParams?: Record<string, string | string[] | undefined>;
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 /** Première valeur d'un paramètre d'URL (un paramètre répété garde sa première occurrence). */
@@ -19,7 +19,8 @@ function firstParam(value: string | string[] | undefined): string | null {
     return value ?? null;
 }
 
-export default function LoginPage({ searchParams }: LoginPageProps) {
+export default async function LoginPage(props: LoginPageProps) {
+    const searchParams = await props.searchParams;
     // Lot 9 quater (A1 : AUD-17, G-03) : seul un chemin interne du site est transmis au formulaire, sinon « / »
     const redirectUrl = safeInternalPath(firstParam(searchParams?.redirect)) ?? '/';
     const errorParam = firstParam(searchParams?.error);

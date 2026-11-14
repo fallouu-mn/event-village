@@ -120,8 +120,8 @@ async function receiptChannels(payment: PaymentRecord, accountEmail: string | un
  * Lot 9 bis (H2, B103) : holdMinutes (durée de garde appliquée au paiement) et paymentDeadline (création + 60 minutes,
  * validité SamirPay : la page suit le paiement jusque-là).
  */
-export async function GET(req: NextRequest, context: { params: Promise<{ transactionId: string }> | { transactionId: string } }) {
-    const { transactionId: id } = await Promise.resolve(context?.params);
+export async function GET(req: NextRequest, context: { params: Promise<{ transactionId: string }> }) {
+    const { transactionId: id } = await context.params;
     if (!id || !UUID.test(id)) {
         return NextResponse.json({ error: 'Identifiant de paiement invalide.' }, { status: 400 });
     }

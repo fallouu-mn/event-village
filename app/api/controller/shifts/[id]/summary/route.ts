@@ -14,12 +14,12 @@ const ShiftId = z.string().uuid();
  */
 export async function GET(
     req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
 
-    const { id } = await Promise.resolve(context.params);
+    const { id } = await context.params;
     if (!ShiftId.safeParse(id).success) {
         return NextResponse.json({ error: 'Session de caisse introuvable.', code: 'SHIFT_NOT_FOUND' }, { status: 404 });
     }

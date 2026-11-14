@@ -21,7 +21,8 @@ const cancelSchema = z.object({
  * longueur et du titre sont faits par la RPC (codes PUBLIC_NOTICE_REQUIRED, INTERNAL_REASON_REQUIRED,
  * TITLE_MISMATCH). La réponse ne contient jamais le motif interne.
  */
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     const session = await requireActiveSession(request);
     if (session.response) return session.response;
     const id = params.id;

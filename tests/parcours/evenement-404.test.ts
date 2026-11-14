@@ -134,7 +134,8 @@ async function withLoggedErrors<T>(fn: () => Promise<T>): Promise<{ result: T; l
 }
 
 async function apiStatus(id: string): Promise<number> {
-    const res = await getPublicEvent(new NextRequest(`${BASE_URL}/api/events/${id}`), { params: { id } });
+    // Lot 9 sexies (Next 15 ; modification signalée) : params arrive en promesse
+    const res = await getPublicEvent(new NextRequest(`${BASE_URL}/api/events/${id}`), { params: Promise.resolve({ id }) });
     return res.status;
 }
 

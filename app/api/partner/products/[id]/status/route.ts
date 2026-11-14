@@ -4,7 +4,8 @@ import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
 import { guardFeature } from '@/lib/features/flags';
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;

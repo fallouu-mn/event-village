@@ -20,7 +20,7 @@ const BodySchema = z.object({
  */
 export async function POST(
     req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
@@ -29,7 +29,7 @@ export async function POST(
         return NextResponse.json({ error: 'Accès non autorisé.', code: 'FORBIDDEN_ROLE' }, { status: 403 });
     }
 
-    const { id: eventId } = await Promise.resolve(context.params);
+    const { id: eventId } = await context.params;
     if (!eventId) {
         return NextResponse.json({ error: 'ID événement manquant.' }, { status: 400 });
     }

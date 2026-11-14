@@ -55,7 +55,7 @@ function previewOf(item: Row): Preview {
     return { available: false, reason: 'Aperçu indisponible pour ce canal.' };
 }
 
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const auth = await verifyAdminAuth(req, { requiredPermission: 'notifications.read' });
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
         return auth.errorResponse ?? NextResponse.json({ error: 'Accès réservé aux administrateurs.', code: 'FORBIDDEN' }, { status: 403 });
     }
 
-    const { id } = await Promise.resolve(context.params);
+    const { id } = await context.params;
     if (typeof id !== 'string' || !UUID_RE.test(id)) return notFound();
 
     const { data, error } = await getServiceRoleClient().rpc('admin_notification_detail', { p: { id } });

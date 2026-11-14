@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/restaurants/[id]/tables
  * Récupère les tables et zones disponibles pour un restaurant
  */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     try {
         // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
         const closed = await guardFeature('tables', 'GET /api/restaurants/[id]/tables');

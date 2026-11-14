@@ -32,13 +32,13 @@ function acceptsGzip(header: string | null): boolean {
  * courts, restent en JSON brut. Le corps ne reflète aucune entrée de l'appelant : seul le porteur reçoit un 200,
  * et l'identifiant du billet y est celui de la base (BREACH sans objet).
  */
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) {
         session.response.headers.set('Cache-Control', 'no-store');
         return session.response;
     }
-    const { id } = await Promise.resolve(context.params);
+    const { id } = await context.params;
     const result = await issueOfflineCodes({ ticketId: String(id ?? ''), userId: session.user.id });
     const headers = { ...result.headers, 'Cache-Control': 'no-store' };
     if (result.status !== 200 || !acceptsGzip(req.headers.get('accept-encoding'))) {

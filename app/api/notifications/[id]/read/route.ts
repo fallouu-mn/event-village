@@ -16,11 +16,11 @@ function notFound(): NextResponse {
  * lue (RPC notifications_mark_read). Une notification d'un autre compte ou inconnue → 404, sans écriture
  * et sans dire laquelle des deux. Déjà lue → 200. Compte ACTIF ou EN_ATTENTE ; suspendu → 403.
  */
-export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
     if (session.response) return session.response;
 
-    const { id } = await Promise.resolve(context.params);
+    const { id } = await context.params;
     if (typeof id !== 'string' || !UUID_RE.test(id)) return notFound();
 
     const { data, error } = await rpcWithRetry<{ ok?: boolean; updated?: number; found?: boolean; code?: string }>(

@@ -115,7 +115,8 @@ export function errorResponse(err: unknown, route: string, failure: string, fail
 }
 
 /** Paramètres d'une route dynamique : objet (Next 14) ou promesse (Next 15). */
-export type RouteParams<T extends Record<string, string>> = { params: T | Promise<T> };
+// Lot 9 sexies (Next 15) : params arrive toujours en promesse dans un gestionnaire de route
+export type RouteParams<T extends Record<string, string>> = { params: Promise<T> };
 
 export async function routeParam<T extends Record<string, string>>(ctx: RouteParams<T> | undefined, key: keyof T): Promise<string> {
     if (!ctx) return '';

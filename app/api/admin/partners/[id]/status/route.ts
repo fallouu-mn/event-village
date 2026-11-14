@@ -45,8 +45,9 @@ type StatusReply = {
  */
 export async function PATCH(
     req: NextRequest,
-    { params }: { params: { id: string } | Promise<{ id: string }> }
+    props: { params: Promise<{ id: string }> }
 ) {
+    const params = await props.params;
     const auth = await verifyAdminAuth(req);
     if (!auth.authorized) return auth.errorResponse!;
 

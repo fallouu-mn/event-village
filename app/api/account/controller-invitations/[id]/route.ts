@@ -24,10 +24,10 @@ const REFUSALS: Record<string, [number, string]> = {
  * tout ou rien). Acceptation : rôle Contrôleur et affectations aux événements encore validés ou publiés ; refus :
  * rien d'autre. Un tiers ou une invitation inconnue : 404 sans indice ; échue : 410 INVITATION_EXPIRED.
  */
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
-    const { id } = await Promise.resolve(context.params);
+    const { id } = await context.params;
     try {
         if (!id || !UUID_RE.test(id)) throw new PublicError(REFUSALS.INVITATION_NOT_FOUND[1], 'INVITATION_NOT_FOUND', 404);
         let body: unknown;

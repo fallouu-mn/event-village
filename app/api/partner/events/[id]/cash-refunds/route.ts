@@ -26,11 +26,11 @@ type Reply = { ok?: boolean; code?: string; message?: string; [key: string]: unk
  * par event_cash_refunds (référence du reçu, billets, montant, numéro masqué, vendeur, « Remboursé le … par … »),
  * totaux et `can_mark` (propriétaire seule). Lecture : propriétaire, ou admin avec events.read ; un tiers reçoit 404.
  */
-export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     try {
-        const { id } = await Promise.resolve(context.params);
+        const { id } = await context.params;
         if (typeof id !== 'string' || !UUID_RE.test(id)) throw new PublicError('Événement introuvable.', 'EVENT_NOT_FOUND', 404);
 
         const { data, error } = await getServiceRoleClient().rpc('event_cash_refunds', { p: { event_id: id, actor_id: session.user.id } });

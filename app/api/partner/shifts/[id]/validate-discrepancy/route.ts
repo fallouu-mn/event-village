@@ -24,10 +24,10 @@ const REFUSAL_STATUS: Readonly<Record<string, number>> = {
  * sur le téléphone du contrôleur ne valide un écart. Seule la partenaire propriétaire de la caisse (compte ACTIF) valide ;
  * toute autre : 404. 200 { ok, shift_id, discrepancy, validated_at } ; 409 caisse non fermée, sans écart, déjà validée.
  */
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
-    const { id: shiftId } = await Promise.resolve(context.params);
+    const { id: shiftId } = await context.params;
     if (!shiftId || !UUID_RE.test(shiftId)) {
         return NextResponse.json({ error: 'Caisse introuvable.', code: 'SHIFT_NOT_FOUND' }, { status: 404 });
     }

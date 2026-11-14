@@ -12,7 +12,11 @@ export const dynamic = 'force-dynamic';
 // GET /api/partner/team/[eventId]
 // Liste les contrôleurs assignés à un événement (partenaire propriétaire seulement)
 // ──────────────────────────────────────────────────────────
-export async function GET(req: NextRequest, { params }: { params: { eventId: string } | Promise<{ eventId: string }> }) {
+export async function GET(
+    req: NextRequest,
+    props: { params: Promise<{ eventId: string }> }
+) {
+    const params = await props.params;
     try {
         const activeSession = await requireActiveSession(req);
         if (activeSession.response) return activeSession.response;
@@ -91,7 +95,11 @@ function assignmentNotFound(): NextResponse {
     return NextResponse.json({ error: 'Affectation introuvable pour cet événement.', code: 'ASSIGNMENT_NOT_FOUND' }, { status: 404 });
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { eventId: string } | Promise<{ eventId: string }> }) {
+export async function DELETE(
+    req: NextRequest,
+    props: { params: Promise<{ eventId: string }> }
+) {
+    const params = await props.params;
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
     const user = activeSession.user;

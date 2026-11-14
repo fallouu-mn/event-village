@@ -26,13 +26,13 @@ const CLOCK_RE = /^([01]\d|2[0-3]):([0-5]\d)/;
  */
 export async function GET(
     req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
     const user = activeSession.user;
 
-    const resolvedParams = await Promise.resolve(context?.params);
+    const resolvedParams = await context.params;
     const ticketId = resolvedParams?.id;
     try {
         if (!ticketId) throw new PublicError('Identifiant de billet manquant.', 'TICKET_ID_REQUIRED', 400);

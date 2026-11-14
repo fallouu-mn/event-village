@@ -41,14 +41,14 @@ async function handleAnonymize(
 
 export async function POST(
     req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     return handleAnonymize(req, context);
 }
 
 export async function DELETE(
     req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     return handleAnonymize(req, context);
 }

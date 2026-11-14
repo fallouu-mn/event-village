@@ -12,7 +12,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * propriétaire et aux admins, sinon 404 (aucun chiffre servi). Avant l'annulation : `{ impact }` ;
  * après : `{ progress }` (« à reprendre » visible des seuls admins). Le motif interne n'est jamais servi.
  */
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
     const session = await requireActiveSession(request);
     if (session.response) return session.response;
     const id = params.id;

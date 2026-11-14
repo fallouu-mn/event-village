@@ -10,8 +10,14 @@ export const dynamic = 'force-dynamic';
  * journalisée et la page s'affiche : l'API reste protectrice, et EventNotFound couvre un événement retiré
  * pendant la consultation.
  */
-export default async function PublicEventLayout({ params, children }: { params: { id: string }; children: ReactNode }) {
-    const status = await readPublicEventStatus(params.id);
-    if (status === 'NOT_PUBLIC') notFound();
-    return children;
+export default async function PublicEventLayout(props: { params: Promise<{ id: string }>; children: ReactNode }) {
+ const params = await props.params;
+
+ const {
+  children
+ } = props;
+
+ const status = await readPublicEventStatus(params.id);
+ if (status === 'NOT_PUBLIC') notFound();
+ return children;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, use } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -392,7 +392,8 @@ const AVAILABILITY_TEXT: Record<'success' | 'warning' | 'danger' | 'neutral', st
   neutral: 'text-fg-muted',
 };
 
-export default function EventDetailPage({ params }: { params: { id: string } }) {
+export default function EventDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const router = useRouter();
   const toast = useToast();
   const { isAuthenticated, isLoading: isAuthLoading, session } = useAuth();

@@ -39,12 +39,12 @@ const REFUSALS: Record<string, { status: number; message?: string }> = {
  * (porteur, droit ouvert) ; l'argent va au compte Mobile Money qui a payé (acheteur d'origine d'un billet transféré).
  * 200 `{ ok, amount, to_original_buyer }` ; 409 POSTPONEMENT_REFUND_CLOSED ; 404 pour un billet d'un autre compte.
  */
-export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const user = session.user;
     try {
-        const { id } = await Promise.resolve(context.params);
+        const { id } = await context.params;
         if (typeof id !== 'string' || !UUID_RE.test(id)) throw NOT_FOUND;
 
         let body: unknown;

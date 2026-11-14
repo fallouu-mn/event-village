@@ -13,12 +13,12 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(
     req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
 
-    const resolvedParams = await Promise.resolve(context?.params);
+    const resolvedParams = await context.params;
     const transferId = resolvedParams?.id ?? '';
     try {
         const claim = await TicketTransferService.acceptTransfer(activeSession.user.id, transferId);

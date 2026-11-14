@@ -35,7 +35,7 @@ type RemovalReply = {
 // ──────────────────────────────────────────────────────────
 export async function DELETE(
     req: NextRequest,
-    context: { params: Promise<{ controllerId: string }> | { controllerId: string } }
+    context: { params: Promise<{ controllerId: string }> }
 ) {
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
@@ -47,7 +47,7 @@ export async function DELETE(
     const denied = await adminTeamRefusal(user, 'events.write');
     if (denied) return denied;
 
-    const resolvedParams = await Promise.resolve(context?.params);
+    const resolvedParams = await context.params;
     const controllerId = resolvedParams?.controllerId;
     if (!controllerId || !UUID.safeParse(controllerId).success) {
         return NextResponse.json({ error: 'Identifiant de contrôleur invalide.', code: 'INVALID_REQUEST' }, { status: 400 });

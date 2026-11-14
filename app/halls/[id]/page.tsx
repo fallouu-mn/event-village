@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -25,7 +25,8 @@ import { PaymentModal } from '@/components/payment/PaymentModal';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useToast } from '@/components/ui/Toast';
 
-export default function HallDetailPage({ params }: { params: { id: string } }) {
+export default function HallDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const hallId = params.id;
   const { isAuthenticated, session } = useAuth();
   const router = useRouter();

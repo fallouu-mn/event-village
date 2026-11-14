@@ -29,7 +29,7 @@ const BodySchema = z.object({
  */
 export async function POST(
     req: NextRequest,
-    context: { params: Promise<{ id: string }> | { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     const activeSession = await requireActiveSession(req);
     if (activeSession.response) return activeSession.response;
@@ -41,7 +41,7 @@ export async function POST(
     const recent = await requireRecentPassword(req, user.id);
     if (recent) return recent;
 
-    const resolvedParams = await Promise.resolve(context?.params);
+    const resolvedParams = await context.params;
     const ticketId = resolvedParams?.id;
     if (!ticketId) {
         return NextResponse.json({ error: 'Identifiant de billet requis.', code: 'TICKET_ID_REQUIRED' }, { status: 400 });

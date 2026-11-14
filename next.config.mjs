@@ -64,9 +64,11 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_SESSION_COOKIE_SECURE: String((process.env.NEXT_PUBLIC_APP_URL ?? '').trim().toLowerCase().startsWith('https://')),
   },
-  // instrumentation.ts : avertissement unique au démarrage si le canal email est désactivé (lot 1C.8)
-  // web-push (lot 6, chiffrement du push) est chargé par Node tel quel, sans passer par webpack.
-  experimental: { instrumentationHook: true, serverComponentsExternalPackages: ['web-push'] },
+  // instrumentation.ts : avertissement unique au démarrage si le canal email est désactivé (lot 1C.8) ; chargé d'office
+  // depuis Next 15 (lot 9 sexies : experimental.instrumentationHook retiré).
+  // web-push (lot 6, chiffrement du push) est chargé par Node tel quel, sans passer par webpack (Next 15 :
+  // experimental.serverComponentsExternalPackages devient serverExternalPackages).
+  serverExternalPackages: ['web-push'],
   poweredByHeader: false,
   compress: true,
   images: {
