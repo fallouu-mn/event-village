@@ -4,7 +4,7 @@ Branche `lot9quinquies/authentification`, partie de `main` (ed2dc7ed), avec `ori
 
 ## À lire en premier
 
-**Correctifs de la contre-vérification (14/11).** Les cinq trous trouvés par la contre-vérification sont fermés (section suivante) : code administrateur exigé aussi par la base (REST et temps réel), identifiants de GoTrue secrets, send-otp REGISTER, affectations d'une fiche non validée, blocage de partner-halls-m7. Run « après » : **run 181** (commit de ce rapport), tout vert sauf `aud-07` (ignorée). Quatre migrations de plus (`20261112000011` à `…14`) : **quatorze** à appliquer, avec contrôles (§ 6). À faire en plus (§ 7) : fournisseur Téléphone fermé et limite de connexions par IP sur le tableau de bord. Rien n'est fusionné, aucune migration n'est appliquée.
+**Correctifs de la contre-vérification (14/11).** Les cinq trous trouvés par la contre-vérification sont fermés (section suivante) : code administrateur exigé aussi par la base (REST et temps réel), identifiants de GoTrue secrets, send-otp REGISTER, affectations d'une fiche non validée, blocage de partner-halls-m7. Run « après » : **run 182** (commit de ce rapport), tout vert sauf `aud-07` (ignorée). Quatre migrations de plus (`20261112000011` à `…14`) : **quatorze** à appliquer, avec contrôles (§ 6). À faire en plus (§ 7) : fournisseur Téléphone fermé et limite de connexions par IP sur le tableau de bord. Rien n'est fusionné, aucune migration n'est appliquée.
 
 **Lot livré.** Le run « après » est le **run 174** (e5e0df6f) : **379 suites sur 379 vertes**, les 3 suites `tests/audit-auth/` comprises, budgets de poids JavaScript respectés, `verify` OK en 5 étapes, e2e vert (les dix phases ; 441 captures, 0 en échec). Invariants (a) à (x), (q1) à (q8) et les nouveaux (p1) à (p3) à 0. Les deux seules lignes non nulles du journal sont les deux jeux de détection volontaires de `pilotage-invariant` (« sur le jeu »), présents à l'identique aux lots précédents.
 
@@ -16,7 +16,9 @@ Branche `lot9quinquies/authentification`, partie de `main` (ed2dc7ed), avec `ori
 
 ## Correctifs de la contre-vérification
 
-La contre-vérification (suites `tests/audit-auth/cv9qq-1` à `-6`, a7d994e8 puis 417d2b2d ; run 177) a trouvé cinq trous. Chacun a d'abord eu son test rouge (5202973c, aucun code de l'application modifié ; run 178), puis son correctif. Run « après » : **run 181**, sur le commit de ce rapport (code identique au run 180, plus le compte des aides du hotfix 03 et les citations de la recette) : 390 suites sur 390 vertes, `aud-07` ignorée comme avant ; les 6 suites `cv9qq-*` et les 8 suites de `tests/audit/` sont vertes ; e2e vert (dix phases).
+La contre-vérification (suites `tests/audit-auth/cv9qq-1` à `-6`, a7d994e8 puis 417d2b2d ; run 177) a trouvé cinq trous. Chacun a d'abord eu son test rouge (5202973c, aucun code de l'application modifié ; run 178), puis son correctif. Run « après » : **run 182**, sur le commit de ce rapport (code de l'application identique au run 180) : 390 suites sur 390 vertes, `aud-07` ignorée comme avant ; les 6 suites `cv9qq-*` et les 8 suites de `tests/audit/` sont vertes ; e2e vert (dix phases).
+
+Le run 181 (c47b6c76) avait 389 suites vertes sur 390 et l'e2e vert. La seule rouge était `sms-plafond-optionnel` (« 701 rappels sous les défauts de la garde : 700 SMS SENT attendus ({"SENT:":699,"SKIPPED:SMS_OPTIONAL_CAP":2}) »). Cause : un défaut d'isolation du test, sans lien avec les correctifs. Le budget des SMS optionnels se compte par jour sur toute la base. Le test tirait son jour entre J+120 et J+1 800, une plage où `rappels-gratuits`, `notif-envoyeur` et `notif-admins` envoient aussi des SMS optionnels à des jours simulés. Un SMS d'une autre suite est tombé le même jour. Le test tire maintenant son jour entre J+2 000 et J+3 680, une plage qu'aucune autre suite ne vise (tableau du § 9).
 
 ### Preuve des rouges (run 178, 5202973c), sortie brute
 
@@ -555,7 +557,8 @@ Troisième vague, correctifs de la contre-vérification (5202973c, 292b3f9a, 466
 | `lot9quinquies-cv-gotrue` (b, après le run 178) | Option retenue pour le numéro : fournisseur Téléphone fermé, au lieu de numéros vidés. Le test vérifie `external.phone = false` au lieu d'un nombre de numéros nul. |
 | `fonctions-privileges`, `r3-fonctions-rpc`, `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` | Point 4 : 8e aide RLS `controller_assignment_active` sur la liste blanche (et compte des aides de 7 à 8 dans le contrôle 1A.3 du hotfix), comme le lot 7 l'avait fait pour la 7e. |
 | `migration-lot9quinquies-rejouable` | Migrations 11 à 14 ajoutées à la liste du lot. |
-| `docs/recette-billetterie.md` | Citations recalées une troisième et une quatrième fois (466d3451, puis 10 citations au commit de ce rapport). |
+| `docs/recette-billetterie.md` | Citations recalées une troisième et une quatrième fois (466d3451, puis 10 citations en c47b6c76). |
+| `sms-plafond-optionnel` (après le run 181) | Le jour simulé passe de J+120…J+1 800 à J+2 000…J+3 680, hors des jours visés par les autres suites qui envoient des SMS optionnels (run 181 : un SMS d'une autre suite compté le même jour, 699 SENT au lieu de 700). Aucune assertion n'est changée. |
 
 Aucun de ces changements n'affaiblit une vérification : chacun suit une règle du prompt (textes, création sans mot de passe, second facteur) ou corrige une aide de test.
 
