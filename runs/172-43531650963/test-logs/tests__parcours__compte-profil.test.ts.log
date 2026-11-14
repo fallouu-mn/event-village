@@ -1,0 +1,249 @@
+TAP version 13
+# Subtest: PATCH /api/account/profile — enregistrement
+    # Subtest: prénom, nom, email : 200, adresse en attente et lien ; à la validation, public.users et auth.users à jour ; réponse sans cache, audit sans valeur
+    ok 1 - prénom, nom, email : 200, adresse en attente et lien ; à la validation, public.users et auth.users à jour ; réponse sans cache, audit sans valeur
+      ---
+      duration_ms: 377.235597
+      type: 'test'
+      ...
+    # Subtest: email saisi en majuscules : en attente en minuscules, puis enregistré en minuscules dans les deux tables à la validation
+    ok 2 - email saisi en majuscules : en attente en minuscules, puis enregistré en minuscules dans les deux tables à la validation
+      ---
+      duration_ms: 252.726041
+      type: 'test'
+      ...
+    # Subtest: email inchangé : aucun appel à l’API d’authentification, prénom enregistré
+    ok 3 - email inchangé : aucun appel à l’API d’authentification, prénom enregistré
+      ---
+      duration_ms: 144.103287
+      type: 'test'
+      ...
+    # Subtest: appel à l’API d’authentification : aucun au PATCH ; à la validation, updateUserById avec email et email_confirm, une seule fois
+    ok 4 - appel à l’API d’authentification : aucun au PATCH ; à la validation, updateUserById avec email et email_confirm, une seule fois
+      ---
+      duration_ms: 261.866311
+      type: 'test'
+      ...
+    # Subtest: la connexion suit la validation : avant, l’ancienne adresse ouvre la session et la nouvelle non ; après, l’inverse ; connexion par numéro intacte
+    ok 5 - la connexion suit la validation : avant, l’ancienne adresse ouvre la session et la nouvelle non ; après, l’inverse ; connexion par numéro intacte
+      ---
+      duration_ms: 468.332148
+      type: 'test'
+      ...
+    1..5
+ok 1 - PATCH /api/account/profile — enregistrement
+  ---
+  duration_ms: 1505.155477
+  type: 'suite'
+  ...
+# Subtest: PATCH /api/account/profile — email vidé (L24)
+    # Subtest: email vide : email technique du numéro rétabli dans les deux tables, rien en attente ni vérifié, aucun lien, connexion possible, email_technical vrai
+    ok 1 - email vide : email technique du numéro rétabli dans les deux tables, rien en attente ni vérifié, aucun lien, connexion possible, email_technical vrai
+      ---
+      duration_ms: 314.314403
+      type: 'test'
+      ...
+    # Subtest: email vide alors qu’il est déjà technique : aucun appel à l’API
+    ok 2 - email vide alors qu’il est déjà technique : aucun appel à l’API
+      ---
+      duration_ms: 245.898755
+      type: 'test'
+      ...
+    # Subtest: email vide sans numéro : 400 INVALID_FIELD sur email, rien d’écrit
+    ok 3 - email vide sans numéro : 400 INVALID_FIELD sur email, rien d’écrit
+      ---
+      duration_ms: 141.864037
+      type: 'test'
+      ...
+    1..3
+ok 2 - PATCH /api/account/profile — email vidé (L24)
+  ---
+  duration_ms: 702.435116
+  type: 'suite'
+  ...
+# Subtest: PATCH /api/account/profile — refus de validation
+    # Subtest: champs invalides : 400 INVALID_FIELD et champ nommé, rien d’écrit, aucun appel à l’API
+    ok 1 - champs invalides : 400 INVALID_FIELD et champ nommé, rien d’écrit, aucun appel à l’API
+      ---
+      duration_ms: 187.577811
+      type: 'test'
+      ...
+    # Subtest: corps illisible : 400 INVALID_BODY
+    ok 2 - corps illisible : 400 INVALID_BODY
+      ---
+      duration_ms: 139.924603
+      type: 'test'
+      ...
+    1..2
+ok 3 - PATCH /api/account/profile — refus de validation
+  ---
+  duration_ms: 327.70219
+  type: 'suite'
+  ...
+# Subtest: PATCH /api/account/profile et validation du lien — unicité de l’email
+    # Subtest: email d’un autre compte, même casse puis casse différente : 409 EMAIL_TAKEN, rien d’écrit, aucun lien
+    ok 1 - email d’un autre compte, même casse puis casse différente : 409 EMAIL_TAKEN, rien d’écrit, aucun lien
+      ---
+      duration_ms: 377.359385
+      type: 'test'
+      ...
+    # Subtest: adresse prise dans auth.users seulement, après la vérification préalable de la validation : l’API échoue, 409 EMAIL_TAKEN sans compensation ni RPC (AM1)
+    ok 2 - adresse prise dans auth.users seulement, après la vérification préalable de la validation : l’API échoue, 409 EMAIL_TAKEN sans compensation ni RPC (AM1)
+      ---
+      duration_ms: 395.115663
+      type: 'test'
+      ...
+    # Subtest: adresse prise dans public.users seulement, après l’envoi du lien : 409 EMAIL_TAKEN par la RPC de validation, API rappelée vers l’ancienne valeur
+    ok 3 - adresse prise dans public.users seulement, après l’envoi du lien : 409 EMAIL_TAKEN par la RPC de validation, API rappelée vers l’ancienne valeur
+      ---
+      duration_ms: 407.621101
+      type: 'test'
+      ...
+    # Subtest: deux comptes valident la même adresse en même temps : un seul gagne, l’autre 409 et garde son email partout
+    ok 4 - deux comptes valident la même adresse en même temps : un seul gagne, l’autre 409 et garde son email partout
+      ---
+      duration_ms: 789.474484
+      type: 'test'
+      ...
+    # Subtest: profil modifié entre la lecture et la RPC de validation : 409 EMAIL_CONFLICT, auth.users aligné sur la valeur relue
+    ok 5 - profil modifié entre la lecture et la RPC de validation : 409 EMAIL_CONFLICT, auth.users aligné sur la valeur relue
+      ---
+      duration_ms: 268.845758
+      type: 'test'
+      ...
+    1..5
+ok 4 - PATCH /api/account/profile et validation du lien — unicité de l’email
+  ---
+  duration_ms: 2238.742746
+  type: 'suite'
+  ...
+# Subtest: PATCH /api/account/profile — droits
+    # Subtest: A ne modifie que lui-même : id, user_id et userId du corps ignorés
+    ok 1 - A ne modifie que lui-même : id, user_id et userId du corps ignorés
+      ---
+      duration_ms: 466.685722
+      type: 'test'
+      ...
+    # Subtest: sans session : 401 AUTH_REQUIRED
+    ok 2 - sans session : 401 AUTH_REQUIRED
+      ---
+      duration_ms: 1.037418
+      type: 'test'
+      ...
+[requireActiveSession] accès refusé à /api/account/profile : compte 5d060674-a87c-44d4-b19c-868084d4bc95 au statut SUSPENDU
+    # Subtest: compte suspendu : 403 ACCOUNT_NOT_ACTIVE, rien d’écrit
+    ok 3 - compte suspendu : 403 ACCOUNT_NOT_ACTIVE, rien d’écrit
+      ---
+      duration_ms: 162.849704
+      type: 'test'
+      ...
+    1..3
+ok 5 - PATCH /api/account/profile — droits
+  ---
+  duration_ms: 630.776836
+  type: 'suite'
+  ...
+# Subtest: PATCH /api/account/profile — droits (middleware)
+    # Subtest: middleware : 401 sans session (déjà vrai, garde-fou)
+    ok 1 - middleware : 401 sans session (déjà vrai, garde-fou)
+      ---
+      duration_ms: 1.346837
+      type: 'test'
+      ...
+    # Subtest: middleware : une session passe (déjà vrai, garde-fou)
+    ok 2 - middleware : une session passe (déjà vrai, garde-fou)
+      ---
+      duration_ms: 205.102906
+      type: 'test'
+      ...
+    1..2
+ok 6 - PATCH /api/account/profile — droits (middleware)
+  ---
+  duration_ms: 206.580898
+  type: 'suite'
+  ...
+# Subtest: Validation du lien — pannes (AR2, L28, déplacées du PATCH au lot 9 bis)
+    # Subtest: API d’authentification en panne : 500 sans texte de la base, public.users inchangé, RPC non appelée, le lien sert encore
+    ok 1 - API d’authentification en panne : 500 sans texte de la base, public.users inchangé, RPC non appelée, le lien sert encore
+      ---
+      duration_ms: 263.631422
+      type: 'test'
+      ...
+    # Subtest: RPC en panne : 500 sans texte de la base, API rappelée vers l’ancien email, les deux tables alignées
+    ok 2 - RPC en panne : 500 sans texte de la base, API rappelée vers l’ancien email, les deux tables alignées
+      ---
+      duration_ms: 310.818216
+      type: 'test'
+      ...
+    # Subtest: compensation en échec : 500 ACCOUNT_SYNC_FAILED, ligne ACCOUNT_AUTH_DESYNC, journal sans email, réparation par une nouvelle validation
+    ok 3 - compensation en échec : 500 ACCOUNT_SYNC_FAILED, ligne ACCOUNT_AUTH_DESYNC, journal sans email, réparation par une nouvelle validation
+      ---
+      duration_ms: 410.834901
+      type: 'test'
+      ...
+    1..3
+ok 7 - Validation du lien — pannes (AR2, L28, déplacées du PATCH au lot 9 bis)
+  ---
+  duration_ms: 985.490274
+  type: 'suite'
+  ...
+# Subtest: Écran du profil (contrat 5.3)
+    # Subtest: ProfileForm : route, libellé figé pour l’e2e, email technique masqué
+    ok 1 - ProfileForm : route, libellé figé pour l’e2e, email technique masqué
+      ---
+      duration_ms: 0.373313
+      type: 'test'
+      ...
+    # Subtest: /profile affiche le formulaire et ne montre plus l’email technique
+    ok 2 - /profile affiche le formulaire et ne montre plus l’email technique
+      ---
+      duration_ms: 0.14126
+      type: 'test'
+      ...
+    1..2
+ok 8 - Écran du profil (contrat 5.3)
+  ---
+  duration_ms: 0.588863
+  type: 'suite'
+  ...
+# Subtest: Validation du lien — numéro et GoTrue
+    # Subtest: changement d’email : le numéro reste le même dans le profil et dans l’authentification
+    ok 1 - changement d’email : le numéro reste le même dans le profil et dans l’authentification
+      ---
+      duration_ms: 319.665035
+      type: 'test'
+      ...
+    # Subtest: constat AM1 : updateUserById vers un email pris échoue et laisse auth.users inchangé, sans figer le code d’erreur
+    ok 2 - constat AM1 : updateUserById vers un email pris échoue et laisse auth.users inchangé, sans figer le code d’erreur
+      ---
+      duration_ms: 274.248179
+      type: 'test'
+      ...
+    1..2
+ok 9 - Validation du lien — numéro et GoTrue
+  ---
+  duration_ms: 594.075905
+  type: 'suite'
+  ...
+[INVARIANT] compte-profil — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] compte-profil — purge des réservations échues : {"expired":0}
+[INVARIANT] compte-profil — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] compte-profil — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] compte-profil — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] compte-profil — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] compte-profil — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] compte-profil — envoyeur : 6 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] compte-profil — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] compte-profil — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] compte-profil — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] compte-profil — (t)(u)(v) : 0 violation(s)
+1..9
+# tests 27
+# suites 9
+# pass 27
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7854.329606

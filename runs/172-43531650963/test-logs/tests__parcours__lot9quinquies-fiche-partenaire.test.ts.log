@@ -1,0 +1,444 @@
+TAP version 13
+[A9-INVENTAIRE] fonction | ticket_category_private_read(p_event uuid)
+[A9-INVENTAIRE] politique | public.event_cancellations : event_cancellations_select (SELECT)
+[A9-INVENTAIRE] politique | public.event_status_history : event_status_history_read (SELECT)
+[A9-INVENTAIRE] politique | public.events : events_read_public (SELECT)
+[A9-INVENTAIRE] politique | public.hall_reservations : hall_reservations_read (SELECT)
+[A9-INVENTAIRE] politique | public.halls : halls_read_public (SELECT)
+[A9-INVENTAIRE] politique | public.order_items : order_items_read (SELECT)
+[A9-INVENTAIRE] politique | public.orders : orders_read (SELECT)
+[A9-INVENTAIRE] politique | public.participant_exports : participant_exports_owner_admin_select (SELECT)
+[A9-INVENTAIRE] politique | public.partner_activities : partner_activities_read (SELECT)
+[A9-INVENTAIRE] politique | public.payments : payments_read (SELECT)
+[A9-INVENTAIRE] politique | public.product_categories : product_categories_read (SELECT)
+[A9-INVENTAIRE] politique | public.products : products_read (SELECT)
+[A9-INVENTAIRE] politique | public.refunds : refunds_read (SELECT)
+[A9-INVENTAIRE] politique | public.restaurant_tables : restaurant_tables_read (SELECT)
+[A9-INVENTAIRE] politique | public.restaurant_zones : restaurant_zones_read (SELECT)
+[A9-INVENTAIRE] politique | public.table_reservations : table_reservations_read (SELECT)
+[A9-INVENTAIRE] politique | public.tickets : tickets_read (SELECT)
+[A9-INVENTAIRE] total : 18
+# Subtest: A9 — droits de la partenaire selon le statut de sa fiche
+    # Subtest: inventaire pour le rapport : politiques et fonctions qui utilisent is_partner_owner
+    ok 1 - inventaire pour le rapport : politiques et fonctions qui utilisent is_partner_owner
+      ---
+      duration_ms: 31.483772
+      type: 'test'
+      ...
+[A9] routes permises à une fiche EN_ATTENTE : GET dashboard → 200 ; GET documents/signed-url → 400 ; POST dossier/complete → 400 ; GET profile → 200
+    # Subtest: fiche remise EN_ATTENTE (compte ACTIF) : toute route /api/partner hors liste blanche → 403 PARTNER_NOT_VALIDATED ; tableau de bord et profil lisibles
+    not ok 2 - fiche remise EN_ATTENTE (compte ACTIF) : toute route /api/partner hors liste blanche → 403 PARTNER_NOT_VALIDATED ; tableau de bord et profil lisibles
+      ---
+      duration_ms: 1148.263488
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:11:251'
+      failureType: 'testCodeFailure'
+      error: |-
+        routes ouvertes à une fiche EN_ATTENTE :
+        POST activation : 403 {"error":"Le compte partenaire doit d'abord être validé par un administrateur."}
+        GET events : 200 {"success":true,"events":[{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","partner_id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","title":"TEST Finance a9 179461560771
+        GET events/* : 200 {"success":true,"event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","partner_id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","title":"TEST Finance a9 1794615607717"
+        PUT events/* : 400 {"error":"Corps de requête invalide : envoyez les modifications (patch) et la version lue de l’événement (expected_updated_at).","code":"INVALID_BODY"}
+        DELETE events/* : 409 {"error":"Un événement sorti du brouillon ne peut pas être supprimé : annulez-le ou laissez-le se terminer.","code":"EVENT_NOT_DELETABLE"}
+        POST events/*/cancel : 400 {"error":"Données invalides : avis public, motif interne et titre retapé sont obligatoires.","code":"INVALID_BODY"}
+        GET events/*/cancellation : 200 {"impact":{"buyers":0,"counter":{"sales":0,"total":0,"tickets":0},"tickets":{"cash":0,"free":0,"online":0,"invitations":0},"in_progress":false,"used_online":{"a
+        GET events/*/cash-refunds : 409 {"error":"La liste des espèces à rembourser n’existe que pour un événement annulé.","code":"EVENT_NOT_CANCELLED"}
+        POST events/*/cash-refunds/* : 409 {"error":"La liste des espèces à rembourser n’existe que pour un événement annulé.","code":"EVENT_NOT_CANCELLED"}
+        POST events/*/categories : 400 {"success":false,"error":"Le formulaire contient 3 erreurs. Ce champ est obligatoire.","code":"VALIDATION_FAILED","field":"name","fields":[{"path":"name","messa
+        PATCH events/*/categories/* : 404 {"success":false,"error":"Catégorie de billets introuvable pour cet événement.","code":"CATEGORY_NOT_FOUND"}
+        DELETE events/*/categories/* : 404 {"success":false,"error":"Catégorie de billets introuvable pour cet événement.","code":"CATEGORY_NOT_FOUND"}
+        GET events/*/invitations : 200 {"items":[],"page":1,"page_size":50,"total_count":0}
+        POST events/*/invitations : 400 {"error":"Choisissez une catégorie.","code":"INVALID_FIELD","field":"category_id"}
+        PATCH events/*/invitations/* : 400 {"error":"Nom de l’invité manquant.","code":"INVALID_FIELD","field":"guest_name"}
+        POST events/*/invitations/*/cancel : 404 {"error":"Invitation introuvable.","code":"TICKET_NOT_FOUND"}
+        POST events/*/participants-export : 400 {"error":"Données invalides : indiquez si les contacts sont inclus (includeContacts) et, dans ce cas, la finalité.","code":"INVALID_BODY"}
+        GET events/*/pilotage/cash : 200 {"ok":true,"pin":{"hasPin":false,"updatedAt":null},"shifts":[],"totals":{"open":0,"closed":0,"difference":0,"cash_collected":0},"event_id":"4eaf532e-8f10-45c7-a
+        GET events/*/pilotage/closing : 200 {"z":[],"ok":true,"report":{"entries":{"total":0,"counter":0,"refused":0,"guest_list":0,"attendance_rate":null},"revenue":{"cash":0,"online":0,"refunded":0,"onl
+        GET events/*/pilotage/entries : 200 {"ok":true,"rate":{"by_minute":[{"start":"2026-11-13T23:51:00","accepted":0},{"start":"2026-11-13T23:52:00","accepted":0},{"start":"2026-11-13T23:53:00","accept
+        GET events/*/pilotage/overview : 200 {"ok":true,"event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","city":"Dakar","title":"TEST Finance a9 1794615607717","end_at":"2026-12-14T23:00:00+00:00","sta
+        GET events/*/pilotage/sales : 200 {"ok":true,"by_day":[],"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","by_channel":[{"label":"En ligne","amount":0,"channel":"ONLINE","tickets":0},{"label":"
+        GET events/*/pilotage/team : 200 {"ok":true,"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","can_manage":true,"computed_at":"2026-11-14T00:20:08.30863+00:00","controllers":[]}
+        GET events/*/promotion : 200 {"promotion":null}
+        POST events/*/promotion : 403 {"error":"La mise en avant sponsorisée n’est pas proposée pour le moment : seule la billetterie est disponible.","code":"SERVICE_UNAVAILABLE"}
+        POST events/*/regisseur-pin : 400 {"error":"Confirmez la génération du code PIN : l’ancien code ne sera plus valable.","code":"CONFIRMATION_REQUIRED"}
+        GET events/*/shifts : 200 {"success":true,"shifts":[]}
+        POST events/*/tickets/*/refund : 400 {"error":"Le motif de remboursement est obligatoire (3 caractères au moins)."}
+        GET events/*/tickets/lookup : 400 {"error":"Saisissez le numéro complet du billet.","code":"INVALID_TICKET_NUMBER"}
+        POST events/*/transition : 400 {"error":"Données invalides : indiquez le statut visé (to) et, si besoin, un motif.","code":"INVALID_BODY"}
+        GET events/*/zones : 200 {"zones":[],"can_edit":true,"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","categories":[{"id":"e73f1828-995a-4a6b-82a0-ce65177d74a4","name":"Standard","is_a
+        PUT events/*/zones : 400 {"error":"Demande invalide.","code":"INVALID_FIELD","field":"zones"}
+        GET events/overview : 200 {"ok":true,"counts":{"ANNULE":0,"PUBLIE":1,"VALIDE":0,"TERMINE":0,"SUSPENDU":0,"BROUILLON":0,"EN_ATTENTE":0},"totals":{"events":1,"invitations":0,"revenue_cash"
+        GET finance : 200 {"success":true,"finance":{"grossRevenue":0,"netRevenue":0,"refunded":0,"availableRevenue":0,"pendingRevenue":0,"nextAvailableAt":null,"debt":0,"soldeDisponible
+        GET halls : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        POST halls : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        GET halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        PUT halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        DELETE halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        POST halls/reservations/*/status : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        GET metrics : 200 {"success":true,"isPartner":true,"partner":{"id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","companyName":"Finance a9-fiche","status":"EN_ATTENTE","isVerified":true
+        GET orders : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        GET orders/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        PATCH orders/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        GET products : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        POST products : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        GET products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        PATCH products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        DELETE products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        POST products/*/status : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        PATCH profile : 200 {"success":true,"partner":{"id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","company_name":"TEST Finance a9-fiche 1794615607690","commercial_name":"Finance a9-fiche"
+        GET reports/accounting : 200 {"raw":"Date;Événement;Référence de la transaction;Canal;Billet;Catégorie;Quantité;Prix facial (F CFA);Frais de service acheteur (F CFA, informatif);Rembourseme
+        GET reports/closing : 200 {"success":true,"report":{"reportId":"CLOTURE-4EAF532E-20261114","generatedAt":"2026-11-14T00:20:08.690Z","event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","
+        GET reports/closing/pdf : 200 {"raw":"%PDF-1.4\n%����\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [5 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Font
+        POST shifts/*/validate-discrepancy : 403 {"error":"Par sécurité, saisissez votre mot de passe pour continuer.","code":"PASSWORD_CONFIRMATION_REQUIRED"}
+        GET stats : 200 {"success":true,"period":{"from":null,"to":null},"stats":{"events":{"total":1,"byStatus":{"PUBLIE":1}},"tickets":{"total":0,"sold":0,"used":0,"revenue":0},"hall
+        GET subscription : 200 {"success":true,"subscription":{"currentPlan":null,"status":"EN_ATTENTE","isFounder":false,"trialStartedAt":null,"trialEndsAt":null,"trialDuration":null,"daysRe
+        GET tables : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        POST tables : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        PATCH tables/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        DELETE tables/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        GET tables/reservations : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        POST tables/reservations : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        PATCH tables/reservations/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        DELETE tables/reservations/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}
+        GET team/* : 200 {"success":true,"controllers":[]}
+        DELETE team/* : 400 {"error":"Événement et affectation (assignmentId) requis.","code":"INVALID_REQUEST"}
+        GET team/all : 200 {"success":true,"controllers":[],"events":[{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","title":"TEST Finance a9 1794615607717","date":"2026-12-14","status":"PU
+        DELETE team/all : 400 {"error":"controllerId requis."}
+        PATCH team/assignments : 400 {"error":"controller_id ou controllerId requis.","code":"INVALID_FIELD"}
+        PATCH team/assignments/* : 400 {"error":"Données invalides : canAcceptCash doit valoir vrai ou faux.","code":"INVALID_BODY"}
+        DELETE team/controller/* : 404 {"error":"Ce contrôleur ne fait pas partie de cette équipe.","code":"CONTROLLER_NOT_IN_TEAM"}
+        PATCH team/entry-point : 400 {"error":"Point d’entrée invalide (80 caractères au plus).","details":{"formErrors":[],"fieldErrors":{"controllerId":["Required"],"eventId":["Required"],"entryP
+        PATCH team/gate : 400 {"error":"Affectation invalide : événement, contrôleur et porte requis.","code":"INVALID_BODY"}
+        POST team/invite : 400 {"error":"Required"}
+        + actual - expected
+        
+        + [
+        +   `POST activation : 403 {"error":"Le compte partenaire doit d'abord être validé par un administrateur."}`,
+        +   'GET events : 200 {"success":true,"events":[{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","partner_id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","title":"TEST Finance a9 179461560771',
+        +   'GET events/* : 200 {"success":true,"event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","partner_id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","title":"TEST Finance a9 1794615607717"',
+        +   'PUT events/* : 400 {"error":"Corps de requête invalide : envoyez les modifications (patch) et la version lue de l’événement (expected_updated_at).","code":"INVALID_BODY"}',
+        +   'DELETE events/* : 409 {"error":"Un événement sorti du brouillon ne peut pas être supprimé : annulez-le ou laissez-le se terminer.","code":"EVENT_NOT_DELETABLE"}',
+        +   'POST events/*/cancel : 400 {"error":"Données invalides : avis public, motif interne et titre retapé sont obligatoires.","code":"INVALID_BODY"}',
+        +   'GET events/*/cancellation : 200 {"impact":{"buyers":0,"counter":{"sales":0,"total":0,"tickets":0},"tickets":{"cash":0,"free":0,"online":0,"invitations":0},"in_progress":false,"used_online":{"a',
+        +   'GET events/*/cash-refunds : 409 {"error":"La liste des espèces à rembourser n’existe que pour un événement annulé.","code":"EVENT_NOT_CANCELLED"}',
+        +   'POST events/*/cash-refunds/* : 409 {"error":"La liste des espèces à rembourser n’existe que pour un événement annulé.","code":"EVENT_NOT_CANCELLED"}',
+        +   'POST events/*/categories : 400 {"success":false,"error":"Le formulaire contient 3 erreurs. Ce champ est obligatoire.","code":"VALIDATION_FAILED","field":"name","fields":[{"path":"name","messa',
+        +   'PATCH events/*/categories/* : 404 {"success":false,"error":"Catégorie de billets introuvable pour cet événement.","code":"CATEGORY_NOT_FOUND"}',
+        +   'DELETE events/*/categories/* : 404 {"success":false,"error":"Catégorie de billets introuvable pour cet événement.","code":"CATEGORY_NOT_FOUND"}',
+        +   'GET events/*/invitations : 200 {"items":[],"page":1,"page_size":50,"total_count":0}',
+        +   'POST events/*/invitations : 400 {"error":"Choisissez une catégorie.","code":"INVALID_FIELD","field":"category_id"}',
+        +   'PATCH events/*/invitations/* : 400 {"error":"Nom de l’invité manquant.","code":"INVALID_FIELD","field":"guest_name"}',
+        +   'POST events/*/invitations/*/cancel : 404 {"error":"Invitation introuvable.","code":"TICKET_NOT_FOUND"}',
+        +   'POST events/*/participants-export : 400 {"error":"Données invalides : indiquez si les contacts sont inclus (includeContacts) et, dans ce cas, la finalité.","code":"INVALID_BODY"}',
+        +   'GET events/*/pilotage/cash : 200 {"ok":true,"pin":{"hasPin":false,"updatedAt":null},"shifts":[],"totals":{"open":0,"closed":0,"difference":0,"cash_collected":0},"event_id":"4eaf532e-8f10-45c7-a',
+        +   'GET events/*/pilotage/closing : 200 {"z":[],"ok":true,"report":{"entries":{"total":0,"counter":0,"refused":0,"guest_list":0,"attendance_rate":null},"revenue":{"cash":0,"online":0,"refunded":0,"onl',
+        +   'GET events/*/pilotage/entries : 200 {"ok":true,"rate":{"by_minute":[{"start":"2026-11-13T23:51:00","accepted":0},{"start":"2026-11-13T23:52:00","accepted":0},{"start":"2026-11-13T23:53:00","accept',
+        +   'GET events/*/pilotage/overview : 200 {"ok":true,"event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","city":"Dakar","title":"TEST Finance a9 1794615607717","end_at":"2026-12-14T23:00:00+00:00","sta',
+        +   'GET events/*/pilotage/sales : 200 {"ok":true,"by_day":[],"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","by_channel":[{"label":"En ligne","amount":0,"channel":"ONLINE","tickets":0},{"label":"',
+        +   'GET events/*/pilotage/team : 200 {"ok":true,"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","can_manage":true,"computed_at":"2026-11-14T00:20:08.30863+00:00","controllers":[]}',
+        +   'GET events/*/promotion : 200 {"promotion":null}',
+        +   'POST events/*/promotion : 403 {"error":"La mise en avant sponsorisée n’est pas proposée pour le moment : seule la billetterie est disponible.","code":"SERVICE_UNAVAILABLE"}',
+        +   'POST events/*/regisseur-pin : 400 {"error":"Confirmez la génération du code PIN : l’ancien code ne sera plus valable.","code":"CONFIRMATION_REQUIRED"}',
+        +   'GET events/*/shifts : 200 {"success":true,"shifts":[]}',
+        +   'POST events/*/tickets/*/refund : 400 {"error":"Le motif de remboursement est obligatoire (3 caractères au moins)."}',
+        +   'GET events/*/tickets/lookup : 400 {"error":"Saisissez le numéro complet du billet.","code":"INVALID_TICKET_NUMBER"}',
+        +   'POST events/*/transition : 400 {"error":"Données invalides : indiquez le statut visé (to) et, si besoin, un motif.","code":"INVALID_BODY"}',
+        +   'GET events/*/zones : 200 {"zones":[],"can_edit":true,"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","categories":[{"id":"e73f1828-995a-4a6b-82a0-ce65177d74a4","name":"Standard","is_a',
+        +   'PUT events/*/zones : 400 {"error":"Demande invalide.","code":"INVALID_FIELD","field":"zones"}',
+        +   'GET events/overview : 200 {"ok":true,"counts":{"ANNULE":0,"PUBLIE":1,"VALIDE":0,"TERMINE":0,"SUSPENDU":0,"BROUILLON":0,"EN_ATTENTE":0},"totals":{"events":1,"invitations":0,"revenue_cash"',
+        +   'GET finance : 200 {"success":true,"finance":{"grossRevenue":0,"netRevenue":0,"refunded":0,"availableRevenue":0,"pendingRevenue":0,"nextAvailableAt":null,"debt":0,"soldeDisponible',
+        +   'GET halls : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'POST halls : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'GET halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'PUT halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'DELETE halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'POST halls/reservations/*/status : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'GET metrics : 200 {"success":true,"isPartner":true,"partner":{"id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","companyName":"Finance a9-fiche","status":"EN_ATTENTE","isVerified":true',
+        +   'GET orders : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'GET orders/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'PATCH orders/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'GET products : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'POST products : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'GET products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'PATCH products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'DELETE products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'POST products/*/status : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'PATCH profile : 200 {"success":true,"partner":{"id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","company_name":"TEST Finance a9-fiche 1794615607690","commercial_name":"Finance a9-fiche"',
+        +   'GET reports/accounting : 200 {"raw":"Date;Événement;Référence de la transaction;Canal;Billet;Catégorie;Quantité;Prix facial (F CFA);Frais de service acheteur (F CFA, informatif);Rembourseme',
+        +   'GET reports/closing : 200 {"success":true,"report":{"reportId":"CLOTURE-4EAF532E-20261114","generatedAt":"2026-11-14T00:20:08.690Z","event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","',
+        +   'GET reports/closing/pdf : 200 {"raw":"%PDF-1.4\\n%����\\n1 0 obj\\n<< /Type /Catalog /Pages 2 0 R >>\\nendobj\\n2 0 obj\\n<< /Type /Pages /Kids [5 0 R] /Count 1 >>\\nendobj\\n3 0 obj\\n<< /Type /Font',
+        +   'POST shifts/*/validate-discrepancy : 403 {"error":"Par sécurité, saisissez votre mot de passe pour continuer.","code":"PASSWORD_CONFIRMATION_REQUIRED"}',
+        +   'GET stats : 200 {"success":true,"period":{"from":null,"to":null},"stats":{"events":{"total":1,"byStatus":{"PUBLIE":1}},"tickets":{"total":0,"sold":0,"used":0,"revenue":0},"hall',
+        +   'GET subscription : 200 {"success":true,"subscription":{"currentPlan":null,"status":"EN_ATTENTE","isFounder":false,"trialStartedAt":null,"trialEndsAt":null,"trialDuration":null,"daysRe',
+        +   'GET tables : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'POST tables : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'PATCH tables/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'DELETE tables/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'GET tables/reservations : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'POST tables/reservations : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'PATCH tables/reservations/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'DELETE tables/reservations/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}',
+        +   'GET team/* : 200 {"success":true,"controllers":[]}',
+        +   'DELETE team/* : 400 {"error":"Événement et affectation (assignmentId) requis.","code":"INVALID_REQUEST"}',
+        +   'GET team/all : 200 {"success":true,"controllers":[],"events":[{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","title":"TEST Finance a9 1794615607717","date":"2026-12-14","status":"PU',
+        +   'DELETE team/all : 400 {"error":"controllerId requis."}',
+        +   'PATCH team/assignments : 400 {"error":"controller_id ou controllerId requis.","code":"INVALID_FIELD"}',
+        +   'PATCH team/assignments/* : 400 {"error":"Données invalides : canAcceptCash doit valoir vrai ou faux.","code":"INVALID_BODY"}',
+        +   'DELETE team/controller/* : 404 {"error":"Ce contrôleur ne fait pas partie de cette équipe.","code":"CONTROLLER_NOT_IN_TEAM"}',
+        +   'PATCH team/entry-point : 400 {"error":"Point d’entrée invalide (80 caractères au plus).","details":{"formErrors":[],"fieldErrors":{"controllerId":["Required"],"eventId":["Required"],"entryP',
+        +   'PATCH team/gate : 400 {"error":"Affectation invalide : événement, contrôleur et porte requis.","code":"INVALID_BODY"}',
+        +   'POST team/invite : 400 {"error":"Required"}'
+        + ]
+        - []
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+        0: `POST activation : 403 {"error":"Le compte partenaire doit d'abord être validé par un administrateur."}`
+        1: 'GET events : 200 {"success":true,"events":[{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","partner_id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","title":"TEST Finance a9 179461560771'
+        2: 'GET events/* : 200 {"success":true,"event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","partner_id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","title":"TEST Finance a9 1794615607717"'
+        3: 'PUT events/* : 400 {"error":"Corps de requête invalide : envoyez les modifications (patch) et la version lue de l’événement (expected_updated_at).","code":"INVALID_BODY"}'
+        4: 'DELETE events/* : 409 {"error":"Un événement sorti du brouillon ne peut pas être supprimé : annulez-le ou laissez-le se terminer.","code":"EVENT_NOT_DELETABLE"}'
+        5: 'POST events/*/cancel : 400 {"error":"Données invalides : avis public, motif interne et titre retapé sont obligatoires.","code":"INVALID_BODY"}'
+        6: 'GET events/*/cancellation : 200 {"impact":{"buyers":0,"counter":{"sales":0,"total":0,"tickets":0},"tickets":{"cash":0,"free":0,"online":0,"invitations":0},"in_progress":false,"used_online":{"a'
+        7: 'GET events/*/cash-refunds : 409 {"error":"La liste des espèces à rembourser n’existe que pour un événement annulé.","code":"EVENT_NOT_CANCELLED"}'
+        8: 'POST events/*/cash-refunds/* : 409 {"error":"La liste des espèces à rembourser n’existe que pour un événement annulé.","code":"EVENT_NOT_CANCELLED"}'
+        9: 'POST events/*/categories : 400 {"success":false,"error":"Le formulaire contient 3 erreurs. Ce champ est obligatoire.","code":"VALIDATION_FAILED","field":"name","fields":[{"path":"name","messa'
+        10: 'PATCH events/*/categories/* : 404 {"success":false,"error":"Catégorie de billets introuvable pour cet événement.","code":"CATEGORY_NOT_FOUND"}'
+        11: 'DELETE events/*/categories/* : 404 {"success":false,"error":"Catégorie de billets introuvable pour cet événement.","code":"CATEGORY_NOT_FOUND"}'
+        12: 'GET events/*/invitations : 200 {"items":[],"page":1,"page_size":50,"total_count":0}'
+        13: 'POST events/*/invitations : 400 {"error":"Choisissez une catégorie.","code":"INVALID_FIELD","field":"category_id"}'
+        14: 'PATCH events/*/invitations/* : 400 {"error":"Nom de l’invité manquant.","code":"INVALID_FIELD","field":"guest_name"}'
+        15: 'POST events/*/invitations/*/cancel : 404 {"error":"Invitation introuvable.","code":"TICKET_NOT_FOUND"}'
+        16: 'POST events/*/participants-export : 400 {"error":"Données invalides : indiquez si les contacts sont inclus (includeContacts) et, dans ce cas, la finalité.","code":"INVALID_BODY"}'
+        17: 'GET events/*/pilotage/cash : 200 {"ok":true,"pin":{"hasPin":false,"updatedAt":null},"shifts":[],"totals":{"open":0,"closed":0,"difference":0,"cash_collected":0},"event_id":"4eaf532e-8f10-45c7-a'
+        18: 'GET events/*/pilotage/closing : 200 {"z":[],"ok":true,"report":{"entries":{"total":0,"counter":0,"refused":0,"guest_list":0,"attendance_rate":null},"revenue":{"cash":0,"online":0,"refunded":0,"onl'
+        19: 'GET events/*/pilotage/entries : 200 {"ok":true,"rate":{"by_minute":[{"start":"2026-11-13T23:51:00","accepted":0},{"start":"2026-11-13T23:52:00","accepted":0},{"start":"2026-11-13T23:53:00","accept'
+        20: 'GET events/*/pilotage/overview : 200 {"ok":true,"event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","city":"Dakar","title":"TEST Finance a9 1794615607717","end_at":"2026-12-14T23:00:00+00:00","sta'
+        21: 'GET events/*/pilotage/sales : 200 {"ok":true,"by_day":[],"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","by_channel":[{"label":"En ligne","amount":0,"channel":"ONLINE","tickets":0},{"label":"'
+        22: 'GET events/*/pilotage/team : 200 {"ok":true,"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","can_manage":true,"computed_at":"2026-11-14T00:20:08.30863+00:00","controllers":[]}'
+        23: 'GET events/*/promotion : 200 {"promotion":null}'
+        24: 'POST events/*/promotion : 403 {"error":"La mise en avant sponsorisée n’est pas proposée pour le moment : seule la billetterie est disponible.","code":"SERVICE_UNAVAILABLE"}'
+        25: 'POST events/*/regisseur-pin : 400 {"error":"Confirmez la génération du code PIN : l’ancien code ne sera plus valable.","code":"CONFIRMATION_REQUIRED"}'
+        26: 'GET events/*/shifts : 200 {"success":true,"shifts":[]}'
+        27: 'POST events/*/tickets/*/refund : 400 {"error":"Le motif de remboursement est obligatoire (3 caractères au moins)."}'
+        28: 'GET events/*/tickets/lookup : 400 {"error":"Saisissez le numéro complet du billet.","code":"INVALID_TICKET_NUMBER"}'
+        29: 'POST events/*/transition : 400 {"error":"Données invalides : indiquez le statut visé (to) et, si besoin, un motif.","code":"INVALID_BODY"}'
+        30: 'GET events/*/zones : 200 {"zones":[],"can_edit":true,"event_id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","categories":[{"id":"e73f1828-995a-4a6b-82a0-ce65177d74a4","name":"Standard","is_a'
+        31: 'PUT events/*/zones : 400 {"error":"Demande invalide.","code":"INVALID_FIELD","field":"zones"}'
+        32: 'GET events/overview : 200 {"ok":true,"counts":{"ANNULE":0,"PUBLIE":1,"VALIDE":0,"TERMINE":0,"SUSPENDU":0,"BROUILLON":0,"EN_ATTENTE":0},"totals":{"events":1,"invitations":0,"revenue_cash"'
+        33: 'GET finance : 200 {"success":true,"finance":{"grossRevenue":0,"netRevenue":0,"refunded":0,"availableRevenue":0,"pendingRevenue":0,"nextAvailableAt":null,"debt":0,"soldeDisponible'
+        34: 'GET halls : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        35: 'POST halls : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        36: 'GET halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        37: 'PUT halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        38: 'DELETE halls/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        39: 'POST halls/reservations/*/status : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        40: 'GET metrics : 200 {"success":true,"isPartner":true,"partner":{"id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","companyName":"Finance a9-fiche","status":"EN_ATTENTE","isVerified":true'
+        41: 'GET orders : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        42: 'GET orders/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        43: 'PATCH orders/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        44: 'GET products : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        45: 'POST products : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        46: 'GET products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        47: 'PATCH products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        48: 'DELETE products/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        49: 'POST products/*/status : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        50: 'PATCH profile : 200 {"success":true,"partner":{"id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","company_name":"TEST Finance a9-fiche 1794615607690","commercial_name":"Finance a9-fiche"'
+        51: 'GET reports/accounting : 200 {"raw":"Date;Événement;Référence de la transaction;Canal;Billet;Catégorie;Quantité;Prix facial (F CFA);Frais de service acheteur (F CFA, informatif);Rembourseme'
+        52: 'GET reports/closing : 200 {"success":true,"report":{"reportId":"CLOTURE-4EAF532E-20261114","generatedAt":"2026-11-14T00:20:08.690Z","event":{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","'
+        53: 'GET reports/closing/pdf : 200 {"raw":"%PDF-1.4\\n%����\\n1 0 obj\\n<< /Type /Catalog /Pages 2 0 R >>\\nendobj\\n2 0 obj\\n<< /Type /Pages /Kids [5 0 R] /Count 1 >>\\nendobj\\n3 0 obj\\n<< /Type /Font'
+        54: 'POST shifts/*/validate-discrepancy : 403 {"error":"Par sécurité, saisissez votre mot de passe pour continuer.","code":"PASSWORD_CONFIRMATION_REQUIRED"}'
+        55: 'GET stats : 200 {"success":true,"period":{"from":null,"to":null},"stats":{"events":{"total":1,"byStatus":{"PUBLIE":1}},"tickets":{"total":0,"sold":0,"used":0,"revenue":0},"hall'
+        56: 'GET subscription : 200 {"success":true,"subscription":{"currentPlan":null,"status":"EN_ATTENTE","isFounder":false,"trialStartedAt":null,"trialEndsAt":null,"trialDuration":null,"daysRe'
+        57: 'GET tables : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        58: 'POST tables : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        59: 'PATCH tables/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        60: 'DELETE tables/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        61: 'GET tables/reservations : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        62: 'POST tables/reservations : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        63: 'PATCH tables/reservations/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        64: 'DELETE tables/reservations/* : 404 {"error":"Page introuvable.","code":"NOT_FOUND"}'
+        65: 'GET team/* : 200 {"success":true,"controllers":[]}'
+        66: 'DELETE team/* : 400 {"error":"Événement et affectation (assignmentId) requis.","code":"INVALID_REQUEST"}'
+        67: 'GET team/all : 200 {"success":true,"controllers":[],"events":[{"id":"4eaf532e-8f10-45c7-a337-7d47ee33bcb8","title":"TEST Finance a9 1794615607717","date":"2026-12-14","status":"PU'
+        68: 'DELETE team/all : 400 {"error":"controllerId requis."}'
+        69: 'PATCH team/assignments : 400 {"error":"controller_id ou controllerId requis.","code":"INVALID_FIELD"}'
+        70: 'PATCH team/assignments/* : 400 {"error":"Données invalides : canAcceptCash doit valoir vrai ou faux.","code":"INVALID_BODY"}'
+        71: 'DELETE team/controller/* : 404 {"error":"Ce contrôleur ne fait pas partie de cette équipe.","code":"CONTROLLER_NOT_IN_TEAM"}'
+        72: 'PATCH team/entry-point : 400 {"error":"Point d’entrée invalide (80 caractères au plus).","details":{"formErrors":[],"fieldErrors":{"controllerId":["Required"],"eventId":["Required"],"entryP'
+        73: 'PATCH team/gate : 400 {"error":"Affectation invalide : événement, contrôleur et porte requis.","code":"INVALID_BODY"}'
+        74: 'POST team/invite : 400 {"error":"Required"}'
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:151:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: fiche EN_ATTENTE : scan de son événement refusé (403 PARTNER_NOT_VALIDATED)
+    not ok 3 - fiche EN_ATTENTE : scan de son événement refusé (403 PARTNER_NOT_VALIDATED)
+      ---
+      duration_ms: 29.692387
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:12:379'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"result":"manual_entry_refused","scan_id":"8719c251-d506-43b6-8109-3c42b636d081","replayed":false,"message":"Saisie manuelle refusée"}
+        + actual - expected
+        
+          [
+        +   200,
+        +   undefined
+        -   403,
+        -   'PARTNER_NOT_VALIDATED'
+          ]
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        0: 403
+        1: 'PARTNER_NOT_VALIDATED'
+      actual:
+        0: 200
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:167:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: fiche EN_ATTENTE : par la REST, son événement n'est plus lisible ni modifiable (is_partner_owner)
+    not ok 4 - fiche EN_ATTENTE : par la REST, son événement n'est plus lisible ni modifiable (is_partner_owner)
+      ---
+      duration_ms: 33.481703
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:12:1151'
+      failureType: 'testCodeFailure'
+      error: |-
+        is_partner_owner faux pour une fiche EN_ATTENTE
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:176:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: fiche REJETE : profil refusé, tableau de bord lisible, complément de dossier admis par la garde
+    not ok 5 - fiche REJETE : profil refusé, tableau de bord lisible, complément de dossier admis par la garde
+      ---
+      duration_ms: 13.603471
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:12:1704'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"success":true,"partner":{"id":"31386eb2-ee02-4923-99ae-91b42bd5cd81","company_name":"TEST Finance a9-fiche 1794615607690","commercial_name":"Finance a9-fiche","description":"Partenaire dédié aux tests financiers (lot 3).","logo_url":null,"cover_url":null,"address":"Rue de test, Dakar","city":"Dakar","latitude":null,"longitude":null,"phone":"+221777806903","email":"parcours-pay-part-a9-fiche-b4d12314b0@test.eventvillage.local","status":"REJETE","partner_activities":[{"is_active":true,"activity_type":"ORGANISATEUR"}]}}
+        + actual - expected
+        
+          [
+        +   200,
+        +   undefined
+        -   403,
+        -   'PARTNER_NOT_VALIDATED'
+          ]
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        0: 403
+        1: 'PARTNER_NOT_VALIDATED'
+      actual:
+        0: 200
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:182:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: témoin : fiche de nouveau VALIDE, profil et équipe lisibles, is_partner_owner vrai
+    ok 6 - témoin : fiche de nouveau VALIDE, profil et équipe lisibles, is_partner_owner vrai
+      ---
+      duration_ms: 38.524943
+      type: 'test'
+      ...
+    1..6
+not ok 1 - A9 — droits de la partenaire selon le statut de sa fiche
+  ---
+  duration_ms: 1618.4943
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:2:4782'
+  failureType: 'subtestsFailed'
+  error: '4 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] lot9quinquies-fiche-partenaire — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] lot9quinquies-fiche-partenaire — purge des réservations échues : {"expired":0}
+[INVARIANT] lot9quinquies-fiche-partenaire — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] lot9quinquies-fiche-partenaire — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] lot9quinquies-fiche-partenaire — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] lot9quinquies-fiche-partenaire — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] lot9quinquies-fiche-partenaire — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] lot9quinquies-fiche-partenaire — envoyeur : 197 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] lot9quinquies-fiche-partenaire — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] lot9quinquies-fiche-partenaire — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] lot9quinquies-fiche-partenaire — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] lot9quinquies-fiche-partenaire — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] lot9quinquies-fiche-partenaire — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] lot9quinquies-fiche-partenaire — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] lot9quinquies-fiche-partenaire — (q) : 0 violation(s)
+not ok 2 - /home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts
+  ---
+  duration_ms: 1753.78725
+  location: '/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:2:2087'
+  failureType: 'hookFailed'
+  error: |-
+    schéma du lot 9 quinquies incomplet : invariants (p) impossibles à vérifier :
+    fonction public.notif_admin_review_sms
+    fonction public.notif_admin_review_due
+    type de notification ADMIN_REVIEW_SMS
+    + actual - expected
+    
+    + [
+    +   'fonction public.notif_admin_review_sms',
+    +   'fonction public.notif_admin_review_due',
+    +   'type de notification ADMIN_REVIEW_SMS'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: 'fonction public.notif_admin_review_sms'
+    1: 'fonction public.notif_admin_review_due'
+    2: 'type de notification ADMIN_REVIEW_SMS'
+  operator: 'deepStrictEqual'
+  stack: |-
+    lot9quinquiesViolations (/home/runner/work/event-village/event-village/tests/helpers/lot9quinquies-invariants.ts:69:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertLot9quinquiesInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9quinquies-invariants.ts:77:18)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/lot9quinquies-fiche-partenaire.test.ts:48:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 2
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3382.736955
