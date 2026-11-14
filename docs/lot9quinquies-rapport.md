@@ -4,13 +4,86 @@ Branche `lot9quinquies/authentification`, partie de `main` (ed2dc7ed), avec `ori
 
 ## À lire en premier
 
+**Correctifs de la contre-vérification (14/11).** Les cinq trous trouvés par la contre-vérification sont fermés (section suivante) : code administrateur exigé aussi par la base (REST et temps réel), identifiants de GoTrue secrets, send-otp REGISTER, affectations d'une fiche non validée, blocage de partner-halls-m7. Run « après » : **run 181** (commit de ce rapport), tout vert sauf `aud-07` (ignorée). Quatre migrations de plus (`20261112000011` à `…14`) : **quatorze** à appliquer, avec contrôles (§ 6). À faire en plus (§ 7) : fournisseur Téléphone fermé et limite de connexions par IP sur le tableau de bord. Rien n'est fusionné, aucune migration n'est appliquée.
+
 **Lot livré.** Le run « après » est le **run 174** (e5e0df6f) : **379 suites sur 379 vertes**, les 3 suites `tests/audit-auth/` comprises, budgets de poids JavaScript respectés, `verify` OK en 5 étapes, e2e vert (les dix phases ; 441 captures, 0 en échec). Invariants (a) à (x), (q1) à (q8) et les nouveaux (p1) à (p3) à 0. Les deux seules lignes non nulles du journal sont les deux jeux de détection volontaires de `pilotage-invariant` (« sur le jeu »), présents à l'identique aux lots précédents.
 
 - **Ce qui est fait.** D1 (SMS aux admins), A1 à A9, B1 à B6, C1 à C3 : les 13 constats de l'audit que le prompt traite (AUTH-01 à AUTH-12 et AUTH-14 ; AUTH-13 et AUTH-15 sont hors périmètre) et les trous T1 à T5. Détail au § 2, avec le commit du correctif et le test de chacun.
 - **Suites d'audit.** Les 3 suites de `tests/audit-auth/` sont vertes au run « après », sans aucune modification (`git diff 5804e530 HEAD -- tests/audit tests/audit-auth` est vide). Les 8 suites de `tests/audit/` restent vertes.
-- **Dix migrations à appliquer** sur event-village-dev (`20261112000001` à `…10`), avec contrôles avant et après (§ 6). **Avant** : vérifier que chaque ADMIN et SUPERADMIN a un numéro `+221…` sur son compte (contrôle B du § 6.1). Sans numéro, il ne peut plus recevoir le code administrateur et n'ouvre plus l'administration.
+- **Quatorze migrations à appliquer** sur event-village-dev (`20261112000001` à `…14`, dont 11 à 14 pour les correctifs de la contre-vérification), avec contrôles avant et après (§ 6). **Avant** : vérifier que chaque ADMIN et SUPERADMIN a un numéro `+221…` sur son compte (contrôle B du § 6.1). Sans numéro, il ne peut plus recevoir le code administrateur et n'ouvre plus l'administration.
 - **À faire de ton côté** (§ 7) : longueur minimale 10 dans le tableau de bord Supabase, remplir le contact du support (réglages, section « Contact du support »), déployer l'application juste après les migrations.
 - **Où j'en suis.** Fini. Dernier commit de code : e5e0df6f (poussé, run 174). Ce rapport est le commit suivant. Je m'arrête là, comme demandé : rien n'est fusionné dans `main`, aucune migration n'est appliquée sur event-village-dev.
+
+## Correctifs de la contre-vérification
+
+La contre-vérification (suites `tests/audit-auth/cv9qq-1` à `-6`, a7d994e8 puis 417d2b2d ; run 177) a trouvé cinq trous. Chacun a d'abord eu son test rouge (5202973c, aucun code de l'application modifié ; run 178), puis son correctif. Run « après » : **run 181**, sur le commit de ce rapport (code identique au run 180, plus le compte des aides du hotfix 03 et les citations de la recette) : 390 suites sur 390 vertes, `aud-07` ignorée comme avant ; les 6 suites `cv9qq-*` et les 8 suites de `tests/audit/` sont vertes ; e2e vert (dix phases).
+
+### Preuve des rouges (run 178, 5202973c), sortie brute
+
+```
+tests/audit-auth/cv9qq-1-code-admin.test.ts                   FAIL     6.4s      1
+tests/audit-auth/cv9qq-2-essais-connexion.test.ts             FAIL     5.2s      1
+tests/audit-auth/cv9qq-6-compte-suspendu.test.ts              FAIL     1.9s      1
+tests/parcours/lot9quinquies-cv-admin-rest.test.ts            FAIL     32.0s     1
+tests/parcours/lot9quinquies-cv-controleur.test.ts            FAIL     3.6s      1
+tests/parcours/lot9quinquies-cv-gotrue.test.ts                FAIL     3.1s      1
+tests/parcours/lot9quinquies-cv-inscription.test.ts           FAIL     3.0s      1
+TOTAL : 390 suite(s) — 382 réussie(s), 8 en échec, 0 expirée(s)
+
+[CV-1a] 44 relation(s) lues par un ADMIN sans code ; fuites : admin_signals, controller_shifts, event_cancellations, event_status_history, events, hall_reservations, order_items, orders, participant_exports, partners, payments, platform_settings, referral_comm…
+[CV-1e] controller/profile d'un ADMIN : sans code 200  ; avec code 200
+[CV-2a] GoTrue directement : mot de passe, adresse réelle : accepté ; mot de passe, adresse en capitales : accepté ; mot de passe, numéro : refus 422 phone_provider_disabled ; …
+[CV-2b] auth.users : {"total":1377,"with_phone":1372,"not_alias":1377,"same_as_profile":1375,"from_id":2}
+[CV-2c] après création : GoTrue AUTRE ADRESSE, numéro PRÉSENT ; profil adresse réelle
+[CV-4] scans selon la fiche : {"VALIDE":{"controleur":"200/…"},"EN_ATTENTE":{"controleur":"200/…","partenaire":"200/…"},"REJETE":{"controleur":"200/…"} …
+[CV-5] 15 tours × 4 : blocages mutuels 0 ; autres écarts 0
+```
+
+(La 8e suite rouge du run 178, `recette-matrice`, venait des citations `fichier:ligne` décalées par les imports ajoutés ; recalées en 466d3451.)
+
+### Point 1 — code administrateur exigé aussi par la base (REST et temps réel)
+
+- **Constat.** Un jeton ADMIN ou SUPERADMIN qui n'avait pas passé le code lisait par PostgREST 44 relations, dont `payments`, `partners`, `events`, `orders`, `platform_settings`, et recevait les signaux admin en temps réel : le code n'était exigé que par les routes de l'application. `GET /api/controller/profile` répondait 200 sans le code.
+- **Cause.** `is_admin()` et `is_superadmin()` ne regardaient que le rôle et le statut du compte ; toutes les politiques réservées aux admins passent par elles.
+- **Correctif** (e89b8bdf, 8885a35c ; migration 11). Table `admin_session_codes` (une ligne par session de GoTrue : `session_id` du jeton, heure du code). `admin_session_code_valid()` est vraie si la session du jeton a passé le code depuis moins de 12 h. `is_admin()` et `is_superadmin()` l'exigent : toute politique de lecture réservée aux admins l'exige donc, REST et temps réel compris (le temps réel évalue la RLS avec le jeton de l'abonné). Le code posé par la fenêtre de l'administration (`admin_step_up_check`, `admin_device_verified`) inscrit la session. Un admin garde ses propres données (les branches « mon compte » des politiques ne passent pas par `is_admin`). `GET /api/controller/profile` exige le code pour un compte admin.
+- **Tests.** `lot9quinquies-cv-admin-rest` (a : balayage de toutes les relations lisibles par `authenticated`, admin sans code contre client ; b : témoin après le code ; c : code de plus de 12 h ; d : temps réel ; e : `controller/profile`), `cv9qq-1`.
+
+### Point 2 — identifiants de GoTrue secrets
+
+- **Constat.** GoTrue, appelé directement avec la clé publique et l'adresse réelle d'une victime, acceptait les essais sans la limite de 10 échecs par compte et ouvrait la session. 1 377 comptes sur 1 377 avaient une adresse de connexion connue (adresse réelle, ou tirée de l'identifiant du compte).
+- **Correctif** (9bff76c6, 292b3f9a, e9f49f3b ; migration 12).
+  - `auth.users.email` est **toujours** une adresse technique `k<40 hexadécimaux>@comptes.eventvillage.invalid`, tirée d'une empreinte HMAC-SHA256 de l'identifiant du compte avec une clé de 32 octets tirée au hasard par la migration. La clé est dans le schéma `private`, que l'API n'expose pas et qu'aucun rôle de l'API ne lit. Sans la clé, l'adresse ne se recalcule pas.
+  - L'adresse réelle reste dans `public.users`. `POST /api/auth/login` fait la correspondance (numéro ou adresse → compte → identifiant GoTrue relu par l'API d'administration) ; une adresse saisie n'est jamais envoyée telle quelle à GoTrue.
+  - Garanti par la base : un déclencheur avant toute mise à jour de `auth.users` remet l'adresse technique (et l'identité email de GoTrue) ; `handle_new_user` la pose juste après la création. Les appels de l'application qui écrivent encore une adresse dans `auth.users` (`updateUserById`) restent, sans effet sur l'identifiant ; à simplifier plus tard.
+  - Inscription client et inscription partenaire : la session est ouverte côté serveur avec l'identifiant GoTrue (plus de connexion du navigateur avec l'adresse saisie).
+  - **Numéro : option « connexion par téléphone fermée côté GoTrue ».** `auth.users.phone` garde le numéro : GoTrue en garantit l'unicité, sur laquelle reposent le changement de numéro (lot 9, AM1) et les invariants de synchronisation. Vider les numéros aurait retiré cette garantie. GoTrue refuse toute connexion par numéro (`phone_provider_disabled`, prouvé en CI ; `/auth/v1/settings` rend `external.phone = false`).
+  - **Hook de vérification du mot de passe** (« Password Verification Attempt ») : réservé aux offres Team et Enterprise de Supabase. Je ne l'ai pas ajouté : l'offre d'event-village-dev n'est pas établie, et le correctif n'en dépend pas (GoTrue ne connaît plus d'identifiant devinable).
+  - **Reprise des comptes existants** dans la migration, avec contrôles avant et après (NOTICE) ; la migration échoue d'elle-même si un compte garde une autre adresse.
+- **Tests.** `lot9quinquies-cv-gotrue` (a : un attaquant qui connaît le numéro et l'adresse réelle d'une victime, en clair, en capitales, numéro avec et sans `+`, code par SMS, n'ouvre aucune session par GoTrue ; témoin : la connexion de l'application marche ; b : tous les comptes ont l'adresse d'empreinte, fournisseur Téléphone fermé ; c : création et mise à jour gardent l'empreinte), `cv9qq-2`.
+
+### Point 3 — send-otp, objet REGISTER
+
+- **Constat.** `POST /api/auth/send-otp` avec l'objet REGISTER envoyait un SMS à un numéro déjà inscrit, compte SUSPENDU compris.
+- **Correctif** (d1ed977e). Refus avant tout SMS pour un numéro qui a déjà un compte, quel que soit son statut : 409 `PHONE_ALREADY_REGISTERED`, exactement la réponse de `/api/auth/register/start` (même constante, `lib/auth/existing-account.ts`). Les autres objets ne changent pas.
+- **Tests.** `lot9quinquies-cv-inscription` (REGISTER, SIGNUP, INSCRIPTION ; comptes ACTIF et SUSPENDU ; réponse identique à `register/start`, aucun SMS), `cv9qq-6`.
+
+### Point 4 — affectations de contrôleurs d'une fiche ni VALIDE ni SUSPENDU
+
+- **Constat.** Fiche remise EN_ATTENTE ou REJETE : la contrôleuse affectée, et la partenaire affectée à son propre événement, scannaient encore (200).
+- **Correctif** (aabfa107, e9f49f3b ; migration 13). `scan_scanner_authorized`, par où passent toutes les RPC du contrôle d'accès (scan, liste d'invités, recherche, codes hors ligne, portes, caisse), exige que la fiche de l'événement soit VALIDE ou SUSPENDU pour un contrôleur affecté et pour la partenaire. La lecture des billets par la REST suit la même règle : branche contrôleur de `tickets_read` par l'aide RLS `controller_assignment_active(uuid)`, qui ne répond que pour le compte appelant (elle ne dit rien de la fiche d'un événement où l'on n'est pas affecté). SUSPENDU garde les affectations, comme la garde des fiches. ADMIN (`access.operate`) et SUPERADMIN ne sont pas concernés.
+- **Tests.** `lot9quinquies-cv-controleur` (VALIDE : 200 ; EN_ATTENTE et REJETE : refus pour la contrôleuse et pour la partenaire ; SUSPENDU : 200), `cv9qq-4`.
+
+### Point 5 — partner-halls-m7 (blocage mutuel)
+
+- **Cause.** Pas les déclencheurs de `partners`. Deux réservations simultanées qui se chevauchent sur la même salle : la contrainte d'exclusion `no_overlapping_hall_reservations` vérifie le chevauchement **après** avoir inscrit la ligne dans son index ; chaque transaction attend alors la fin de l'autre, d'où le blocage mutuel (40P01) au lieu d'un refus propre.
+- **Correctif** (4c625471 ; migration 14). `check_hall_availability` prend d'abord un verrou consultatif par salle (`pg_advisory_xact_lock`, clé tirée de l'identifiant de la salle) : les réservations d'une même salle passent l'une après l'autre ; la seconde voit la première et reçoit le refus « salle déjà réservée ».
+- **Tests.** `partner-halls-m7` est gardé tel quel et vert. `lot9quinquies-cv-salles` (15 tours de 4 réservations simultanées) : **0 blocage au run 178 déjà, avant le correctif** ; la fenêtre est trop étroite pour être reproduite à coup sûr. La cause est établie par le raisonnement ci-dessus, pas par une reproduction ; le correctif rend le blocage impossible par construction.
+
+### Effets à connaître
+
+- **Script de développement** `scripts/dev/essai-fiche-partenaire.mjs` : il se connectait chez GoTrue avec l'adresse `partenaire@essai.eventvillage.invalid` et la seule clé publique. Il ne marche plus, par construction : c'est précisément l'attaque fermée au point 2.
+- **Fenêtre entre la migration 12 et le déploiement** : l'application d'avant envoie l'adresse saisie à GoTrue ; la connexion par adresse et la connexion après l'inscription échouent tant que la nouvelle application n'est pas déployée. La connexion par numéro marche dans les deux versions (la route serveur relit l'identifiant GoTrue).
+- **Administrateurs** : après la migration 11, un admin dont la session n'a pas passé le code ne lit plus rien d'admin par la REST ni par le temps réel. Les écrans de l'administration passent déjà par la fenêtre du code ; une session ouverte avant la migration doit repasser le code une fois.
 
 ## 1. Méthode et runs
 
@@ -287,7 +360,7 @@ Emails nouveaux : « Choisir un nouveau mot de passe — Event Village » (B2 : 
 
 ## 6. Migrations à appliquer sur event-village-dev
 
-Dix migrations, dans cet ordre, d'un seul `db push` :
+Quatorze migrations, dans cet ordre, d'un seul `db push` :
 
 | Ordre | Migration | Ce qu'elle fait |
 |---|---|---|
@@ -301,10 +374,14 @@ Dix migrations, dans cet ordre, d'un seul `db push` :
 | 8 | `20261112000008_lot9quinquies_messages.sql` | Types `EMAIL_ADDED`, `PARTNER_REGISTERED_ACK` ; déclencheur `trg_email_verification_used`. |
 | 9 | `20261112000009_lot9quinquies_check_reel.sql` | Recopie de `essai_check_reel` (+ champ `support`). |
 | 10 | `20261112000010_lot9quinquies_recuperation_email.sql` | Table `password_reset_links`, `password_reset_link_issue`/`_consume` ; recopie de `auth_users_guard_writes` (permis `EMAIL_LINK` pour tout jeton email). |
+| 11 | `20261112000011_lot9quinquies_admin_code_rls.sql` | Table `admin_session_codes`, `admin_session_code_valid()` ; recopies de `is_admin`, `is_superadmin` (code de la session exigé, moins de 12 h), `admin_step_up_check`, `admin_device_verified`. |
+| 12 | `20261112000012_lot9quinquies_identifiants_gotrue.sql` | Schéma `private`, clé `private.auth_login_key` (tirée au hasard), `private.auth_login_alias`, déclencheur `on_auth_user_login_alias` sur `auth.users` ; recopie de `handle_new_user` ; **reprise de tous les comptes** (`auth.users.email` et identités email → adresse d'empreinte), contrôles avant et après dans la migration. |
+| 13 | `20261112000013_lot9quinquies_affectations_fiche.sql` | Aide RLS `controller_assignment_active` ; recopies de `scan_scanner_authorized` et de la politique `tickets_read`. |
+| 14 | `20261112000014_lot9quinquies_salles_concurrence.sql` | Recopie de `check_hall_availability` (verrou consultatif par salle). |
 
-Toutes sans BEGIN ni COMMIT, rejouables (prouvé en CI : `migration-lot9quinquies-rejouable`, chacune rejouée deux fois de suite). Aucune ne touche aux données existantes, sauf l'ajout de trois clés vides à `platform_settings`. Les migrations jusqu'à `20261111…` sont inchangées (`migrations-gelees`).
+Toutes sans BEGIN ni COMMIT, rejouables (prouvé en CI : `migration-lot9quinquies-rejouable`, chacune rejouée deux fois de suite). Aucune ne touche aux données existantes, sauf l'ajout de trois clés vides à `platform_settings` et la migration 12, qui remplace l'adresse de connexion de **tous** les comptes dans `auth.users` et `auth.identities` (les adresses réelles de `public.users` ne bougent pas). La clé de la migration 12 est tirée une seule fois : rejouer la migration ne change aucune adresse. Les migrations jusqu'à `20261111…` sont inchangées (`migrations-gelees`).
 
-**Déployer l'application du lot juste après, dans la même fenêtre.** Entre les migrations et le déploiement : « Mot de passe oublié » **par email** échoue (l'ancienne application passe par GoTrue, que la migration 10 ferme) ; le reste marche (connexion, code SMS, « Mot de passe oublié » par SMS). Une partenaire dont la fiche n'est pas VALIDE perd l'accès REST à ses événements dès la migration 5, ce qui est voulu.
+**Déployer l'application du lot juste après, dans la même fenêtre.** Entre les migrations et le déploiement : « Mot de passe oublié » **par email** échoue (l'ancienne application passe par GoTrue, que la migration 10 ferme) ; le reste marche (connexion, code SMS, « Mot de passe oublié » par SMS). Depuis la migration 12, la connexion par **adresse email** et la connexion juste après une inscription échouent aussi tant que l'application n'est pas déployée ; la connexion par numéro marche. Une partenaire dont la fiche n'est pas VALIDE perd l'accès REST à ses événements dès la migration 5, ce qui est voulu.
 
 ### 6.1 Avant `db push` (éditeur SQL, une requête à la fois, garder les résultats)
 
@@ -325,30 +402,42 @@ select status, count(*) from public.partners group by 1 order by 1;
 -- D. attendu : 0 ligne (aucune des tables nouvelles n'existe encore)
 select tablename from pg_tables where schemaname = 'public'
    and tablename in ('auth_login_attempts', 'account_activations', 'admin_devices', 'admin_session_activity',
-                     'admin_step_up_codes', 'password_reset_links');
+                     'admin_step_up_codes', 'password_reset_links', 'admin_session_codes');
+
+-- E. comptes de connexion (garder les nombres) : total, avec un numéro, avec l'adresse du profil
+--    (attendu après la migration 12 : même total, 0 avec l'adresse du profil)
+select count(*) as total,
+       count(*) filter (where coalesce(a.phone, '') <> '') as avec_numero,
+       count(*) filter (where exists (select 1 from public.users u where u.id = a.id and lower(u.email) = lower(a.email))) as adresse_du_profil
+  from auth.users a;
+
+-- F. attendu : 0 ligne (le schéma private n'existe pas encore)
+select nspname from pg_namespace where nspname = 'private';
 ```
 
 ### 6.2 Appliquer
 
 ```powershell
 npx supabase@2.122.0 link --project-ref VOTRE_REFERENCE
-npx supabase@2.122.0 migration list --linked     # les dix 20261112… en local seulement
-npx supabase@2.122.0 db push --linked --dry-run  # exactement les dix fichiers, dans l'ordre
+npx supabase@2.122.0 migration list --linked     # les quatorze 20261112… en local seulement
+npx supabase@2.122.0 db push --linked --dry-run  # exactement les quatorze fichiers, dans l'ordre
 npx supabase@2.122.0 db push --linked
 ```
 
 Si la liste contient autre chose : s'arrêter, sans `--include-all` ni `migration repair`.
 
+La migration 12 affiche deux lignes `NOTICE` (« Identifiants GoTrue, avant : … » et « … après : … ») : les garder. Si un compte garde une autre adresse, elle s'arrête d'elle-même avec « reprise incomplète des identifiants GoTrue » et rien n'est changé.
+
 ### 6.3 Après (éditeur SQL)
 
 ```sql
--- attendu : 10 lignes, de 20261112000001 à 20261112000010
+-- attendu : 14 lignes, de 20261112000001 à 20261112000014
 select version from supabase_migrations.schema_migrations where version like '20261112%' order by 1;
 
--- attendu : 6 lignes
+-- attendu : 7 lignes
 select tablename from pg_tables where schemaname = 'public'
    and tablename in ('auth_login_attempts', 'account_activations', 'admin_devices', 'admin_session_activity',
-                     'admin_step_up_codes', 'password_reset_links') order by 1;
+                     'admin_step_up_codes', 'password_reset_links', 'admin_session_codes') order by 1;
 
 -- attendu : 6 lignes
 select type from public.notification_types
@@ -367,6 +456,25 @@ select pg_get_functiondef('public.is_partner_owner(uuid)'::regprocedure) like '%
 
 -- C relancée : mêmes nombres qu'avant (aucune fiche modifiée)
 select status, count(*) from public.partners group by 1 order by 1;
+
+-- E relancée (migration 12) : même total qu'avant, adresse_du_profil = 0, adresse_d_empreinte = total
+select count(*) as total,
+       count(*) filter (where coalesce(a.phone, '') <> '') as avec_numero,
+       count(*) filter (where exists (select 1 from public.users u where u.id = a.id and lower(u.email) = lower(a.email))) as adresse_du_profil,
+       count(*) filter (where a.email ~ '^k[0-9a-f]{40}@comptes\.eventvillage\.invalid$') as adresse_d_empreinte
+  from auth.users a;
+
+-- attendu : 0 (aucune identité email avec une autre adresse que celle du compte)
+select count(*) from auth.identities i join auth.users a on a.id = i.user_id
+ where i.provider = 'email' and i.identity_data->>'email' is distinct from a.email;
+
+-- attendu : true, true, true (migrations 11, 13, 14)
+select pg_get_functiondef('public.is_admin()'::regprocedure) like '%admin_session_code_valid%',
+       pg_get_functiondef('public.scan_scanner_authorized(uuid, uuid)'::regprocedure) like '%VALIDE%',
+       pg_get_functiondef('public.check_hall_availability()'::regprocedure) like '%pg_advisory_xact_lock%';
+
+-- attendu : 1 ligne, on_auth_user_login_alias
+select tgname from pg_trigger where tgname = 'on_auth_user_login_alias';
 ```
 
 Puis exécuter `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` : tout `OK`.
@@ -380,7 +488,9 @@ Dans l'ordre :
 3. **Longueur minimale du mot de passe** sur le tableau de bord Supabase d'event-village-dev : Authentication → Sign In / Providers → Email → « Minimum password length » = **10**, « Password requirements » : aucune exigence → Save. (Pendant de `minimum_password_length = 10` dans `supabase/config.toml`, qui ne s'applique qu'au Supabase local.)
 4. **Contact du support** : avec le SUPERADMIN, Réglages financiers → section « Contact du support » : remplir au moins un des trois (WhatsApp, téléphone au format `+221…`, email). Vérification : la page `/aide` (sans être connecté) affiche le contact ; `npm run essai:check-reel` ne signale plus le support.
 5. **SMTP de Supabase** : rien à configurer, il est devenu inutile (Supabase n'envoie plus aucun email). Les emails partent par Resend, avec la configuration déjà en place.
-6. **Première connexion à l'administration** après le déploiement : chaque admin (SUPERADMIN compris) devra saisir son mot de passe puis le code reçu par SMS sur son appareil.
+6. **Première connexion à l'administration** après le déploiement : chaque admin (SUPERADMIN compris) devra saisir son mot de passe puis le code reçu par SMS sur son appareil. Depuis la migration 11, tant que ce n'est pas fait, sa session ne lit rien d'admin, ni par l'écran, ni par la REST, ni en temps réel.
+7. **Fournisseur Téléphone fermé** (point 2 de la contre-vérification) : tableau de bord d'event-village-dev → Authentication → Sign In / Providers → **Phone** : désactivé → Save. Vérification, dans un navigateur : `https://VOTRE_REFERENCE.supabase.co/auth/v1/settings?apikey=CLE_ANON` doit montrer `"phone":false` dans `external`. L'application n'en a pas besoin : les codes SMS passent par MTarget, pas par GoTrue.
+8. **Limite de connexions par IP** : Authentication → Rate Limits → « Sign-ups and sign-ins » (par 5 minutes et par IP) → **300** → Save. Attention : les connexions de l'application arrivent chez GoTrue depuis l'adresse du **serveur** de l'application, pas depuis celle de chaque utilisateur. Cette limite plafonne donc toutes les connexions de l'application ensemble ; une valeur basse (30, le défaut) bloquerait tout le monde aux heures de pointe. La vraie protection est celle de l'application (essais par IP et 10 échecs par compte), et GoTrue ne connaît plus d'identifiant devinable. Si le journal du serveur montre des refus « rate limit » de GoTrue à la connexion, relever cette valeur.
 
 ## 8. Décisions et écarts
 
@@ -396,7 +506,7 @@ Dans l'ordre :
 
 ## 9. Tests existants modifiés (et pourquoi)
 
-Aucune suite de `tests/audit/` ni de `tests/audit-auth/` n'est modifiée (`git diff 5804e530 HEAD -- tests/audit tests/audit-auth` est vide).
+Jusqu'au run 174, aucune suite de `tests/audit/` ni de `tests/audit-auth/` n'était modifiée. Les correctifs de la contre-vérification en modifient quatre, pour la connexion de préparation seulement (troisième vague ci-dessous, à relire).
 
 | Fichier | Pourquoi |
 |---|---|
@@ -431,6 +541,22 @@ Seconde vague, après le run 171 (commits 6a082a19, cc362b15, c3cc0f5b) :
 | `e2e/support/screens.ts` | Captures `profil-mot-de-passe` (aide de la règle A7) et `profil-email-non-verifie` (bandeau « Adresse email non vérifiée » et bouton « Recevoir le lien de vérification », B5). |
 | `docs/recette-billetterie.md` | Citations recalées une seconde fois, par le nom du test (les lignes avaient encore bougé). |
 
+Troisième vague, correctifs de la contre-vérification (5202973c, 292b3f9a, 466d3451, e9f49f3b, bf8a9617) :
+
+| Fichier | Pourquoi |
+|---|---|
+| `tests/helpers/gotrue-email.ts` (nouveau), 52 suites (`signInWithPassword`, 65 lignes) | Point 2 : GoTrue ne connaît plus l'adresse réelle. Les suites qui ouvrent une session directement chez GoTrue passent par `gotrueEmail()`, qui lit l'identifiant d'empreinte dans la base locale. Aucune vérification n'est retirée : c'est la connexion de préparation qui change. |
+| `tests/audit/aud-01` (l. 99), `tests/audit/aud-06` (l. 86), `tests/audit-auth/cv9qq-3`, `tests/audit-auth/cv9qq-helpers.ts` | **Suites d'audit modifiées, à relire.** Seul changement : l'adresse passée à `signInWithPassword` devient `await gotrueEmail(…)`. Avec l'adresse réelle, GoTrue refuse toujours. Les attaques d'`aud-01` (mot de passe changé par le seul jeton) et d'`aud-06` (reconnexion d'une partenaire suspendue) seraient alors devenues vertes **sans rien prouver**. Avec l'identifiant, elles jouent l'attaquant le plus fort, celui qui connaît l'identifiant secret, et restent probantes. Aucune assertion n'est changée. `aud-01` l. 164 et 170 et `cv9qq-2 c` gardent l'adresse réelle : elles éprouvent justement l'attaque avec l'adresse connue. |
+| `tests/seed/seed-demo.ts`, `scripts/reset-test-password.ts` | Même raison : identifiant relu par le rôle de service. |
+| `tests/helpers/admin-step-up.ts`, `tests/helpers/realtime.ts`, `tests/security/helpers.ts` (`signInFixture`), `securite-ecritures-services-9ter`, `bootstrap-superadmin` | Point 1 : le code de la session est exigé par la base. `stepUpTestSession` inscrit aussi la session dans `admin_session_codes`. `signedInClient` le passe sauf `{ stepUp: false }` (témoin du temps réel). `bootstrap-superadmin` vérifie en plus que `is_superadmin()` est faux avant le code. |
+| `compte-numero`, `compte-profil`, `email-verification`, `lot9quater-comptes` (A4 et reprise), `invitation-identite` | Point 2 : `auth.users.email` n'est plus l'adresse du profil. Les tests lisent l'adresse du profil derrière l'identifiant (`profileEmailBehindGotrue`, qui vérifie aussi l'empreinte). Dans `compte-profil`, « adresse prise dans auth.users seulement » attend maintenant 200 (aucune adresse réelle n'y est jamais). La désynchronisation vérifie que l'identifiant GoTrue ne bouge pas. Le constat AM1 est réécrit : l'appel vers l'email d'un autre compte ne touche aucun des deux identifiants (le refus 409 `EMAIL_TAKEN` repose sur `account_identity_taken`, lu avant tout appel). |
+| `tests/helpers/lot9-invariants.ts` (v6), `tests/helpers/lot9bis-invariants.ts` (w14), `lot9-invariant`, `lot9bis-invariant` | Les invariants « adresse de connexion = adresse du profil » deviennent « identifiant d'empreinte, ou égale au profil ». Leurs jeux de détection sont réécrits sur la règle nouvelle. |
+| `essai-comptes-demo` (I1) | La reprise de l'identifiant est neutralisée dans la transaction annulée du test, qui pose volontairement une adresse de démonstration. |
+| `lot9quinquies-cv-gotrue` (b, après le run 178) | Option retenue pour le numéro : fournisseur Téléphone fermé, au lieu de numéros vidés. Le test vérifie `external.phone = false` au lieu d'un nombre de numéros nul. |
+| `fonctions-privileges`, `r3-fonctions-rpc`, `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` | Point 4 : 8e aide RLS `controller_assignment_active` sur la liste blanche (et compte des aides de 7 à 8 dans le contrôle 1A.3 du hotfix), comme le lot 7 l'avait fait pour la 7e. |
+| `migration-lot9quinquies-rejouable` | Migrations 11 à 14 ajoutées à la liste du lot. |
+| `docs/recette-billetterie.md` | Citations recalées une troisième et une quatrième fois (466d3451, puis 10 citations au commit de ce rapport). |
+
 Aucun de ces changements n'affaiblit une vérification : chacun suit une règle du prompt (textes, création sans mot de passe, second facteur) ou corrige une aide de test.
 
 ## 10. Essais pour un non-développeur
@@ -452,3 +578,7 @@ Sur l'application déployée (event-village-dev), avec un navigateur ordinaire e
 - **Admin sans numéro, ou qui a perdu son téléphone** : il ne peut plus ouvrir l'administration (§ 6.1 B), ni changer son numéro depuis son profil (les routes de compte d'un admin demandent aussi le code). Aucun écran ne permet à un autre admin de changer ce numéro, et il n'y a pas de code de secours : le seul recours est la base (éditeur SQL du tableau de bord). À décider : un écran de changement de numéro par le SUPERADMIN, ou des codes de secours imprimés.
 - **Liste des mots de passe courants** : SecLists 10 000 (MIT) plus une liste de mots sénégalais, écrite à la main ; elle peut être élargie.
 - **Fusion** : `lot9quinquies/authentification` n'est pas fusionnée dans `main` ; `lot9quinquies/rouges` sert de preuve et ne doit pas être fusionnée.
+- **Script de développement** `scripts/dev/essai-fiche-partenaire.mjs` : ne se connecte plus (connexion directe chez GoTrue avec l'adresse, fermée au point 2). À réécrire pour passer par `POST /api/auth/login`, ou à retirer.
+- **Blocage de partner-halls-m7** : le nouveau test ne l'a pas reproduit (0 sur 60 essais avant le correctif). La cause est établie par le raisonnement, et le verrou par salle rend le blocage impossible.
+- **Appels `updateUserById({ email })` de l'application** : sans effet sur l'identifiant depuis le point 2. À retirer plus tard ; je les ai laissés pour ne pas toucher aux parcours de compte dans ce correctif.
+- **Hook de vérification du mot de passe** de Supabase : offres Team et Enterprise seulement ; non ajouté.
