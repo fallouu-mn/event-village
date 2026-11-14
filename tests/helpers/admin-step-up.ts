@@ -29,5 +29,11 @@ export async function stepUpTestSession(accessToken: string): Promise<void> {
                        ON CONFLICT (user_id, device_key) DO UPDATE SET sms_verified_at = EXCLUDED.sms_verified_at`, [userId, `ses:${sessionId}`]);
         await c.query(`INSERT INTO public.admin_session_activity (session_id, user_id, last_activity_at, password_at) VALUES ($1, $2, now(), now())
                        ON CONFLICT (session_id) DO UPDATE SET last_activity_at = EXCLUDED.last_activity_at, password_at = EXCLUDED.password_at`, [sessionId, userId]);
+        // Contre-vérification (point 1 ; aide modifiée, signalée au rapport) : session admise par le code (is_admin() en base)
+        const codes = await c.query(`SELECT to_regclass('public.admin_session_codes') IS NOT NULL AS ok`);
+        if (codes.rows[0].ok) {
+            await c.query(`INSERT INTO public.admin_session_codes (session_id, user_id, code_at) VALUES ($1, $2, now())
+                           ON CONFLICT (session_id) DO UPDATE SET code_at = EXCLUDED.code_at, user_id = EXCLUDED.user_id`, [sessionId, userId]);
+        }
     });
 }

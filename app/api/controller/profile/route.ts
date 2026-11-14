@@ -10,6 +10,7 @@ import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { ServerPasswordSchema } from '@/lib/auth/password-policy.server'; // lot 9 quinquies (A7)
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
+import { adminStepUpRefusal, isAdminAccount } from '@/lib/admin/step-up';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,12 @@ export async function GET(req: NextRequest) {
         if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
         if (!serverHasAnyRole(user, [...ALLOWED_ROLES])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
+        }
+        // Contre-vérification du lot 9 quinquies (point 1) : un compte ADMIN ou SUPERADMIN ne lit son profil qu'avec le code
+        // administrateur de cet appareil et un mot de passe de moins de 12 h (même règle que requireActiveSession).
+        if (isAdminAccount(user.roles)) {
+            const stepUp = await adminStepUpRefusal(req, user.id, 'ACCOUNT');
+            if (stepUp) return stepUp;
         }
 
         const supabase = getServiceRoleClient();

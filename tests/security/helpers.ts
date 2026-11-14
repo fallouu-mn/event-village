@@ -13,6 +13,7 @@ import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
 import { FIXTURE_EVENTS, FIXTURE_USERS, TEST_PASSWORD, type FixtureEventKey, type FixtureUserKey } from '../helpers/fixture-data';
 import { gotrueEmail } from '../helpers/gotrue-email';
+import { stepUpTestSession } from '../helpers/admin-step-up';
 
 export const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -132,9 +133,10 @@ const fixtureStepUps = new Map<FixtureUserKey, Promise<void>>();
 /**
  * Lot 9 quinquies (A3, A4 ; aide ajoutée, signalée au rapport) : second facteur de la session de fixture d'un ADMIN ou
  * d'un SUPERADMIN, passé par les VRAIES routes (mot de passe, puis code administrateur lu dans le faux SMS), sans
- * service_role. À appeler seulement par une suite qui appelle une route de l'application avec ce compte : la REST n'est
- * pas concernée, et un code par suite épuiserait la limite de SMS par numéro (3 par 15 minutes ; run 171). Une fois par
- * compte et par processus.
+ * service_role. À appeler seulement par une suite qui appelle une route de l'application avec ce compte : un code par
+ * suite épuiserait la limite de SMS par numéro (3 par 15 minutes ; run 171). Une fois par compte et par processus.
+ * Contre-vérification (point 1) : signInFixture inscrit déjà la session comme admise (stepUpTestSession, base locale) :
+ * le passage par les routes ne redemande alors plus le code.
  */
 export function stepUpFixture(key: FixtureUserKey): Promise<void> {
     let done = fixtureStepUps.get(key);
@@ -156,7 +158,10 @@ export function signInFixture(key: FixtureUserKey): Promise<AttackerAccount> {
         session = (async () => {
             const client = newClient();
             const { data, error } = await client.auth.signInWithPassword({ email: await gotrueEmail(FIXTURE_USERS[key].email), password: TEST_PASSWORD });
-            if (error || !data.user) throw new Error(`signInWithPassword(${key}) : ${error?.message ?? 'aucun utilisateur'}`);
+            if (error || !data.user || !data.session) throw new Error(`signInWithPassword(${key}) : ${error?.message ?? 'aucun utilisateur'}`);
+            // Contre-vérification du lot 9 quinquies (point 1 ; aide modifiée, signalée au rapport) : is_admin() exige en base
+            // le code administrateur de la session ; la session de fixture vaut une session qui l'a passé (comme signInAs).
+            await stepUpTestSession(data.session.access_token);
             return { client, userId: data.user.id, email: FIXTURE_USERS[key].email };
         })();
         fixtureSessions.set(key, session);
