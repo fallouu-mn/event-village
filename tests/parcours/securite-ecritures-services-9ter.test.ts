@@ -39,6 +39,7 @@ import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { newAdminWith } from './terrain-helpers';
 import { gotrueEmail } from '../helpers/gotrue-email';
+import { stepUpTestSession } from '../helpers/admin-step-up';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const SUSPEND_REASON = 'Test du lot 9 ter';
@@ -98,6 +99,10 @@ async function signIn(user: Pick<Buyer, 'email' | 'userId'>, who: string): Promi
     }
     assert.equal(error, null, `précondition : nouvelle connexion de ${who} réussie : ${error?.message}`);
     assert.ok(data.session, `précondition : session ouverte pour ${who}`);
+    // Contre-vérification du lot 9 quinquies (point 1 ; modification signalée au rapport) : is_admin() exige en base le code
+    // administrateur de la session ; il est posé ici pour que les témoins actifs lisent, et que le refus des comptes suspendus
+    // reste éprouvé avec un code valable
+    await stepUpTestSession(data.session.access_token);
     return { client: c, userId: user.userId };
 }
 

@@ -31,7 +31,7 @@ import { callMiddleware, sessionCookies } from '../helpers/middleware';
 import { authed } from './acces-helpers';
 import { BASE_URL, confirmPassword, jsonRequest, randomEmail, STRONG_PASSWORD } from './helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
-import { gotrueEmail, profileEmailBehindGotrue } from '../helpers/gotrue-email';
+import { gotrueEmail, GOTRUE_ALIAS_RE, profileEmailBehindGotrue } from '../helpers/gotrue-email';
 
 after(async () => {
     await assertLot9Invariants('compte-profil');
@@ -78,6 +78,15 @@ async function profileOf(userId: string): Promise<Identity> {
  */
 async function authEmailOf(userId: string): Promise<string | undefined> {
     return profileEmailBehindGotrue(userId);
+}
+
+/** Identifiant GoTrue brut de auth.users (contre-vérification du lot 9 quinquies, point 2 : empreinte secrète, jamais l'adresse). */
+async function gotrueIdOf(userId: string): Promise<string> {
+    const { data, error } = await service.auth.admin.getUserById(userId);
+    assert.equal(error, null, `auth.users : ${error?.message}`);
+    const id = String(data.user?.email);
+    assert.match(id, GOTRUE_ALIAS_RE, `auth.users porte l'identifiant GoTrue : ${id}`);
+    return id;
 }
 
 function anonClient(): SupabaseClient {
@@ -545,6 +554,7 @@ describe('Validation du lien — pannes (AR2, L28, déplacées du PATCH au lot 9
         const a = await newBuyer('profil-desync');
         const email = freshEmail('desync');
         const token = await pendingLink(a, email);
+        const gotrueBefore = await gotrueIdOf(a.userId);
         const { result, hits, logged } = await intercept([
             { name: 'put', match: adminUserUpdate(a.userId), reply: (pass, n) => (n === 1 ? pass() : fault()) },
             { name: 'rpc', match: finalizeRpc },
@@ -556,7 +566,9 @@ describe('Validation du lien — pannes (AR2, L28, déplacées du PATCH au lot 9
         assert.ok(logged.some((l) => l.includes('[account-sync]')), `journal attendu : ${logged.join(' | ')}`);
         assert.equal(logged.some((l) => l.includes(email) || l.includes(a.email)), false, `email en clair au journal : ${logged.join(' | ')}`);
         assert.equal((await profileOf(a.userId)).email, a.email, 'public.users garde l’ancienne valeur');
-        assert.equal(await authEmailOf(a.userId), email, 'auth.users porte la nouvelle valeur (contrat, état laissé)');
+        // Contre-vérification du lot 9 quinquies (point 2 ; modification signalée au rapport) : auth.users ne porte plus
+        // l'adresse réelle ; l'appel non compensé n'y laisse rien (identifiant GoTrue inchangé), la trace reste posée
+        assert.equal(await gotrueIdOf(a.userId), gotrueBefore, 'auth.users garde son identifiant GoTrue (aucune adresse réelle)');
         const desync = await auditRows(a.userId, 'ACCOUNT_AUTH_DESYNC');
         assert.equal(desync.length, 1, 'ligne de repérage pour le support');
         assert.equal((desync[0].metadata as { step?: unknown }).step, 'compensation', JSON.stringify(desync[0].metadata));
@@ -604,13 +616,20 @@ describe('Validation du lien — numéro et GoTrue', () => {
         assert.equal(data.user?.phone, a.phoneE164.replace('+', ''), 'numéro d’authentification inchangé');
     });
 
-    test('constat AM1 : updateUserById vers un email pris échoue et laisse auth.users inchangé, sans figer le code d’erreur', async () => {
+    // Contre-vérification du lot 9 quinquies (point 2 ; test réécrit, signalé au rapport) : auth.users ne porte plus que
+    // l'identifiant GoTrue d'empreinte secrète ; GoTrue ne peut donc plus refuser un email « pris » (il n'y est plus) et le
+    // refus 409 EMAIL_TAKEN repose sur account_identity_taken (public.users), lu avant tout appel. Constat gardé : l'appel
+    // vers l'email d'un autre compte ne touche ni l'un ni l'autre identifiant.
+    test('constat AM1 : updateUserById vers l’email d’un autre compte ne change aucun identifiant GoTrue', async () => {
         const a = await newBuyer('profil-gotrue-a');
         const b = await newBuyer('profil-gotrue-b');
+        const [idA, idB] = [await gotrueIdOf(a.userId), await gotrueIdOf(b.userId)];
         const { error } = await service.auth.admin.updateUserById(a.userId, { email: b.email, email_confirm: true });
-        assert.ok(error, 'GoTrue accepte un email déjà pris : le refus 409 EMAIL_TAKEN du contrat ne peut pas reposer sur l’API');
-        assert.equal(await authEmailOf(a.userId), a.email, 'auth.users modifié malgré l’échec de l’appel');
-        assert.equal(await authEmailOf(b.userId), b.email, 'le titulaire de l’email ne doit pas être touché');
+        console.log(`[AM1] updateUserById vers l’email d’un autre compte : ${error ? `${error.code ?? ''} ${error.message}` : 'accepté, identifiant forcé'}`);
+        assert.equal(await gotrueIdOf(a.userId), idA, 'identifiant GoTrue du compte inchangé');
+        assert.equal(await gotrueIdOf(b.userId), idB, 'le titulaire de l’email ne doit pas être touché');
+        assert.equal(await authEmailOf(a.userId), a.email, 'profil du compte inchangé');
+        assert.equal(await authEmailOf(b.userId), b.email, 'profil du titulaire inchangé');
     });
 });
 

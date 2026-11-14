@@ -11,6 +11,7 @@ import { getServiceRoleClient } from '../../lib/supabase/server';
 import { bootstrapSuperadmin } from '../../lib/admin/bootstrap-superadmin';
 import { randomEmail, STRONG_PASSWORD } from './helpers';
 import { gotrueEmail } from '../helpers/gotrue-email';
+import { stepUpTestSession } from '../helpers/admin-step-up';
 
 const service = getServiceRoleClient();
 
@@ -47,9 +48,16 @@ describe('Bootstrap SUPERADMIN (scripts/bootstrap-superadmin.ts)', () => {
         const { data: roles } = await service.from('user_roles').select('role').eq('user_id', userId);
         assert.ok((roles || []).some((r) => r.role === 'SUPERADMIN'), 'user_roles doit contenir SUPERADMIN');
 
+        // Contre-vérification du lot 9 quinquies (point 1 ; modification signalée au rapport) : is_superadmin() exige en base
+        // que la session ait passé le code administrateur ; faux avant, vrai après
+        const { data: beforeCode, error: beforeErr } = await anon.rpc('is_superadmin');
+        assert.equal(beforeErr, null);
+        assert.equal(beforeCode, false, 'is_superadmin() faux tant que la session n’a pas passé le code');
+        const { data: sess } = await anon.auth.getSession();
+        await stepUpTestSession(sess.session!.access_token);
         const { data: isSuper, error } = await anon.rpc('is_superadmin');
         assert.equal(error, null);
-        assert.equal(isSuper, true, 'is_superadmin() vrai pour le compte promu');
+        assert.equal(isSuper, true, 'is_superadmin() vrai pour le compte promu, session passée par le code');
 
         const { data: audit } = await service.from('audit_logs').select('action').eq('object_id', userId).eq('action', 'SUPERADMIN_BOOTSTRAP');
         assert.equal(audit?.length, 1, 'promotion journalisée');

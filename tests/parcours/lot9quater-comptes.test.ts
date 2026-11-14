@@ -326,8 +326,11 @@ describe('A4 — adresse technique non routable, aucun code email', () => {
         // Fixture retirée : le compte d'avant le lot (sans autre donnée) n'est pas laissé à l'invariant (q1).
         const { error: delErr } = await service.auth.admin.deleteUser(id);
         assert.equal(delErr, null, `retrait du compte d'avant le lot : ${delErr?.message}`);
-        assert.deepEqual([after.auth, after.users, after.left], [expected, expected, 0]);
-        assert.ok(after.identities.every((e) => e === expected), `identités : ${JSON.stringify(after.identities)}`);
+        // Contre-vérification du lot 9 quinquies (point 2 ; modification signalée au rapport) : auth.users et auth.identities
+        // portent l'identifiant GoTrue d'empreinte secrète (déclencheur de 20261112000012), le profil l'adresse technique
+        assert.deepEqual([after.users, after.left], [expected, 0]);
+        assert.match(String(after.auth), GOTRUE_ALIAS_RE, `auth.users : ${after.auth}`);
+        assert.ok(after.identities.every((e) => e === after.auth), `identités : ${JSON.stringify(after.identities)}`);
     });
 
     test('adresse .invalid refusée à la saisie (profil, inscription)', async () => {
