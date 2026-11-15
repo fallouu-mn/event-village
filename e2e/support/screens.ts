@@ -1586,13 +1586,35 @@ export const SCREENS: readonly Screen[] = [
         id: 'partenaire-equipe-portes', titre: 'Pilotage — Équipe : porte d’un contrôleur et droit de changer de porte', role: 'organisateur', needsIds: true,
         path: zonesTeamPath,
         ready: async ({ page }) => { await zonesEditorReady(page); },
+        // Finition 1 (E-14) : la porte se règle dans la fenêtre « Modifier » (un seul « Enregistrer ») ; la ligne en donne le
+        // résumé « Porte : Porte Nord · Entrée générale » (capture recalée, signalée au rapport)
         actions: async ({ page }) => {
-            const gate = page.getByLabel(/^porte(?: \(obligatoire\))?$/i).first();
-            await expect(gate, 'champ « Porte » de la ligne du contrôleur (C.1.4)').toBeVisible();
-            await expect(gate.locator('option:checked'), 'porte posée par la graine v4').toHaveText('Porte Nord — Entrée générale');
-            const canChange = page.getByRole('switch', { name: /^peut changer de porte/i }).first();
+            await expect(page.getByText('Porte : Porte Nord · Entrée générale').filter({ visible: true }).first(), 'résumé de la porte sur la ligne').toBeVisible({ timeout: 30_000 });
+            await page.getByRole('button', { name: /^modifier$/i }).filter({ visible: true }).first().click();
+            const dialog = page.getByRole('dialog');
+            const gate = dialog.getByLabel(/^porte$/i);
+            await expect(gate, 'champ « Porte » de la fenêtre « Modifier »').toBeVisible();
+            await expect(gate.locator('option:checked'), 'porte posée par la graine v4').toHaveText('Porte Nord · Entrée générale');
+            const canChange = dialog.getByRole('switch', { name: /^peut changer de porte/i });
             await expect(canChange, 'interrupteur « Peut changer de porte », fermé dans la graine v4').toHaveAttribute('aria-checked', 'false');
-            await revealCenter(gate);
+        },
+    },
+    {
+        id: 'partenaire-equipe-inviter', titre: 'Équipe — fenêtre « Inviter un contrôleur »', role: 'organisateur', needsIds: true,
+        path: () => '/partner/team',
+        ready: async ({ page }) => expectPageTitle(page),
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^inviter un contrôleur$/i }).click();
+            await expect(page.getByRole('dialog', { name: /^inviter un contrôleur$/i }), 'fenêtre d’invitation').toBeVisible();
+        },
+    },
+    {
+        id: 'partenaire-equipe-retirer', titre: 'Équipe — fenêtre « Retirer de l’équipe » (ce qui se passe, dit vrai)', role: 'organisateur', needsIds: true,
+        path: () => '/partner/team',
+        ready: async ({ page }) => expectPageTitle(page),
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^retirer de l’équipe$/i }).filter({ visible: true }).first().click();
+            await expect(page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: /de votre équipe \?/ }).first(), 'fenêtre de retrait').toBeVisible();
         },
     },
     // ── Lot 9 ter : pilotage et stock (D.3.1) ───────────────────────────────

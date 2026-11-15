@@ -509,19 +509,27 @@ test('acte 3 [partenaire] : invitation de K1, permission espèces, point d’ent
     await openTab(partner, /^équipe/i);
 
     await test.step('invitation de K1 avec la permission espèces, SMS d’activation', async () => {
-        await partner.getByLabel(/^prénom/i).fill(r.k1.firstName);
-        await partner.getByLabel(/^nom/i).first().fill('Controle');
-        await partner.getByLabel(/^téléphone du contrôleur/i).fill(r.k1.local);
-        await partner.getByRole('checkbox', { name: /encaissement en espèces/i }).check();
-        const invited = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => partner.getByRole('button', { name: /^inviter le contrôleur$/i }).click(), 201, 'invitation du contrôleur');
-        expect(String(invited.message ?? ''), 'SMS d’activation parti').toMatch(/SMS avec code d'activation envoyé/);
+        // Finition 1 (E-14) : l'invitation passe dans la fenêtre « Inviter un contrôleur » (étape recalée, signalée)
+        await partner.getByRole('button', { name: /^inviter un contrôleur$/i }).click();
+        const inviteDialog = partner.getByRole('dialog', { name: /^inviter un contrôleur$/i });
+        await inviteDialog.getByLabel(/^prénom/i).fill(r.k1.firstName);
+        await inviteDialog.getByLabel(/^nom/i).first().fill('Controle');
+        await inviteDialog.getByLabel(/^numéro de téléphone/i).fill(r.k1.local);
+        await inviteDialog.getByRole('switch', { name: /^encaisser les espèces/i }).click();
+        const invited = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => inviteDialog.getByRole('button', { name: /^inviter$/i }).click(), 201, 'invitation du contrôleur');
+        expect(String(invited.message ?? ''), 'SMS d’activation parti').toMatch(/^Invitation envoyée à .+ par SMS : code d’activation valable jusqu’au /);
     });
 
     await test.step('point d’entrée et permission espèces lus sur la fiche du contrôleur', async () => {
-        const card = partner.getByRole('list', { name: /^contrôleurs affectés$/i }).getByRole('listitem').filter({ hasText: r.k1.firstName });
-        await expect(card.getByRole('switch'), 'permission espèces de cette affectation').toHaveAttribute('aria-checked', 'true');
-        await card.getByLabel(/^point d.entrée/i).fill('Porte Ngor');
-        await expectRoute(partner, 'PATCH', '/api/partner/team/entry-point', () => card.getByRole('button', { name: /^enregistrer$/i }).click(), 200, 'point d’entrée');
+        // Finition 1 (E-14) : réglages dans la fenêtre « Modifier », un seul « Enregistrer » (étape recalée, signalée)
+        const card = partner.getByRole('table', { name: /^contrôleurs de l’équipe$/i }).getByRole('row').filter({ hasText: r.k1.firstName }).first();
+        await expect(card.getByText('Espèces autorisées').first(), 'espèces autorisées sur cet événement').toBeVisible();
+        await card.getByRole('button', { name: /^modifier$/i }).first().click();
+        const settings = partner.getByRole('dialog');
+        await expect(settings.getByRole('switch', { name: /^encaisser les espèces/i }), 'permission espèces de cet événement').toHaveAttribute('aria-checked', 'true');
+        await settings.getByLabel(/^point d.entrée/i).fill('Porte Ngor');
+        await expectRoute(partner, 'PATCH', '/api/partner/team/settings', () => settings.getByRole('button', { name: /^enregistrer$/i }).click(), 200, 'point d’entrée');
+        await expect(card.getByText('Point d’entrée : Porte Ngor').first(), 'résumé exact de la ligne').toBeVisible();
     });
 
     await test.step('PIN régisseur généré, affiché une fois', async () => {
@@ -1259,14 +1267,17 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
             .toEqual(['Entrée générale ENTREE 3 Porte Nord + Porte Sud', 'Carré VIP CONTROLE 2 Accès carré']);
 
         // fumee-controleur, déjà de l'équipe de PARTNER_A : affecté directement
-        const phone = partner.getByLabel(/^téléphone du contrôleur/i);
-        await phone.fill(controllerA.phone.replace(/^\+221/, ''));
-        await expectRoute(partner, 'POST', '/api/partner/team/invite', () => partner.getByRole('button', { name: /^inviter le contrôleur$/i }).click(), 201, 'affectation de fumee-controleur');
+        // Finition 1 (E-14, E-18) : invitations dans la fenêtre « Inviter un contrôleur » (étapes recalées, signalées)
+        const inviteDialog = partner.getByRole('dialog', { name: /^inviter un contrôleur$/i });
+        await partner.getByRole('button', { name: /^inviter un contrôleur$/i }).click();
+        await inviteDialog.getByLabel(/^numéro de téléphone/i).fill(controllerA.phone.replace(/^\+221/, ''));
+        await expectRoute(partner, 'POST', '/api/partner/team/invite', () => inviteDialog.getByRole('button', { name: /^inviter$/i }).click(), 201, 'affectation de fumee-controleur');
         // K2, compte établi inconnu de PARTNER_A : confirmation, puis invitation qu'il accepte lui-même (0.5)
-        await phone.fill(k2.local);
-        const asked = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => partner.getByRole('button', { name: /^inviter le contrôleur$/i }).click(), 200, 'K2 : compte existant');
+        await partner.getByRole('button', { name: /^inviter un contrôleur$/i }).click();
+        await inviteDialog.getByLabel(/^numéro de téléphone/i).fill(k2.local);
+        const asked = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => inviteDialog.getByRole('button', { name: /^inviter$/i }).click(), 200, 'K2 : compte existant');
         expect(asked.requires_confirmation, `K2 inconnu de la partenaire : confirmation demandée (${JSON.stringify(asked)})`).toBe(true);
-        const existing = partner.getByRole('dialog', { name: /^compte existant/i });
+        const existing = partner.getByRole('dialog', { name: /^ce numéro a déjà un compte/i });
         await expect(existing).toBeVisible();
         const invited = await expectRoute(partner, 'POST', '/api/partner/team/invite', () => existing.getByRole('button', { name: /^envoyer l.invitation$/i }).click(), 201, 'invitation de K2');
         expect(typeof invited.invitation_id, 'invitation à accepter, aucune affectation directe').toBe('string');
@@ -1280,7 +1291,7 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
 
         await partner.reload();
         await expect(partner.getByRole('tab', { name: /^équipe/i })).toHaveAttribute('aria-selected', 'true');
-        const team = partner.getByRole('list', { name: /^contrôleurs affectés$/i });
+        const team = partner.getByRole('table', { name: /^contrôleurs de l’équipe$/i });
         await setGate(partner, team, controllerA.firstName, 'Porte Nord — Entrée générale', false);
         await setGate(partner, team, k2.firstName, 'Porte Sud — Entrée générale', true);
         const { data: gates, error: gatesErr } = await serviceClient().from('event_gates').select('id, name').eq('event_id', eventId);
@@ -1496,16 +1507,21 @@ function categoryBox(name: string): RegExp {
     return new RegExp(`^${escapeRe(name)}(?: ·|$)`);
 }
 
-/** Porte d'un contrôleur de l'équipe (liste « Porte », droit de changer), enregistrée par PATCH /api/partner/team/gate. */
+/**
+ * Porte d'un contrôleur de l'équipe (liste « Porte », droit de changer) dans la fenêtre « Modifier », enregistrée par PATCH
+ * /api/partner/team/settings (finition 1, E-14 : un seul « Enregistrer » ; recalé, signalé). La ligne en donne le résumé.
+ */
 async function setGate(page: Page, team: Locator, firstName: string, gateLabel: string, canChange: boolean): Promise<void> {
-    const card = team.getByRole('listitem').filter({ hasText: firstName });
-    await expect(card, `ligne de ${firstName} dans l’équipe`).toHaveCount(1, { timeout: 30_000 });
-    await card.getByLabel(/^porte$/i).selectOption({ label: gateLabel });
-    const allowed = card.getByRole('switch', { name: /^peut changer de porte/i });
-    if (canChange) await allowed.click();
+    const card = team.getByRole('row').filter({ hasText: firstName }).first();
+    await expect(card, `ligne de ${firstName} dans l’équipe`).toBeVisible({ timeout: 30_000 });
+    await card.getByRole('button', { name: /^modifier$/i }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/^porte$/i).selectOption({ label: gateLabel.replace(' — ', ' · ') });
+    const allowed = dialog.getByRole('switch', { name: /^peut changer de porte/i });
+    if ((await allowed.getAttribute('aria-checked')) !== String(canChange)) await allowed.click();
     await expect(allowed, `droit de changer de porte de ${firstName}`).toHaveAttribute('aria-checked', String(canChange));
-    await expectRoute(page, 'PATCH', '/api/partner/team/gate', () => card.getByRole('button', { name: /^enregistrer$/i }).click(), 200, `porte de ${firstName}`);
-    await expect(card.getByLabel(/^porte$/i).locator('option:checked'), `porte de ${firstName} enregistrée`).toHaveText(gateLabel);
+    await expectRoute(page, 'PATCH', '/api/partner/team/settings', () => dialog.getByRole('button', { name: /^enregistrer$/i }).click(), 200, `porte de ${firstName}`);
+    await expect(card.getByText(`Porte : ${gateLabel.replace(' — ', ' · ')}`).first(), `porte de ${firstName} enregistrée`).toBeVisible();
 }
 
 /** Écran « Commencer le contrôle » : événement choisi, porte annoncée (zone et type), « Changer de porte » selon le droit. */
