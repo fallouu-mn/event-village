@@ -21,6 +21,8 @@ const FINITION1_MIGRATIONS = [
     '20261115000002_finition1_equipe.sql',
     // Compléments 10 à 12 (plage du contrôle, statut du scanner, la partenaire scanne ses événements)
     '20261115000003_finition1_controle.sql',
+    // Complément 12 : fiche VALIDE exigée de la propriétaire qui scanne (scan_scanner_authorized)
+    '20261115000004_finition1_fiche_proprietaire.sql',
 ] as const;
 
 after(async () => {
