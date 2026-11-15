@@ -388,3 +388,44 @@ describe('E-17 — droits de l’admin sur l’équipe', () => {
         assert.equal(denied.status, 403, show(denied));
     });
 });
+
+describe('Complément 9 — portes et couleurs dans l’équipe', () => {
+    test('porte : ce qu’elle laisse entrer, avec la couleur au contrôle ; avertissements ; porte choisie dans la liste seulement', async () => {
+        const ev = await createTimedEvent(partner.partnerId, 'f1-couleurs', [
+            { name: 'Simple', price: 2_000, total: 20 }, { name: 'VIP', price: 5_000, total: 10 }, { name: 'VVIP', price: 9_000, total: 5 },
+        ], { startsInHours: 48 });
+        for (const [name, color] of [['VIP', 'OR'], ['VVIP', 'VIOLET']] as const) {
+            const { error } = await service.from('ticket_categories').update({ scan_color: color }).eq('id', ev.categories[name].id);
+            assert.equal(error, null, `couleur de ${name} (montage) : ${error?.message}`);
+        }
+        const { data: zone, error: zErr } = await service.from('event_zones').insert({ event_id: ev.eventId, name: 'Carré', kind: 'ENTREE' }).select('id').single();
+        assert.equal(zErr, null, `zone (montage) : ${zErr?.message}`);
+        for (const name of ['VIP', 'VVIP']) {
+            const inserted: { error: { message: string } | null } = await service.from('zone_categories').insert({ event_id: ev.eventId, zone_id: zone!.id, category_id: ev.categories[name].id });
+            assert.equal(inserted.error, null, `catégorie ${name} de la zone (montage) : ${inserted.error?.message}`);
+        }
+        const { data: gVip } = await service.from('event_gates').insert({ event_id: ev.eventId, zone_id: zone!.id, name: 'Porte VIP' }).select('id').single();
+        await service.from('event_gates').insert({ event_id: ev.eventId, zone_id: zone!.id, name: 'Porte Est' });
+        const c = await newController(partner, ev.eventId, { label: 'f1-couleurs' });
+        await service.from('event_controllers').update({ gate_id: gVip!.id }).eq('event_id', ev.eventId).eq('user_id', c.userId);
+
+        const view = await teamGet(partner.accessToken, `?eventId=${ev.eventId}`);
+        const a = ((member(view, c.userId).assignments ?? []) as Row[])[0];
+        assert.deepEqual((a.gate as Row).categories, [{ name: 'VIP', scan_color: 'OR' }, { name: 'VVIP', scan_color: 'VIOLET' }],
+            `« Porte VIP — laisse entrer : VIP (or), VVIP (violet) » : ${JSON.stringify(a.gate)}`);
+        const evRow = ((view.events ?? []) as Row[])[0];
+        assert.deepEqual(evRow.uncovered_categories, [{ name: 'Simple', scan_color: null }], 'catégorie en vente acceptée par aucune porte');
+        assert.deepEqual(evRow.gates_without_controller, ['Porte Est'], 'porte sans contrôleur');
+
+        const free = await settings(partner.accessToken, { eventId: ev.eventId, controllerId: c.userId, entryPoint: 'Entrée libre', canAcceptCash: false });
+        assert.equal(free.status, 409, `texte libre sur un événement à zones : ${show(free)}`);
+        assert.equal(free.body.code, 'GATES_CONFIGURED');
+        const foreignGate = await settings(partner.accessToken, { eventId: ev.eventId, controllerId: c.userId, gateId, canAcceptCash: false });
+        assert.equal(foreignGate.status, 409, `porte d'un autre événement : ${show(foreignGate)}`);
+        assert.equal(foreignGate.body.code, 'GATE_INVALID');
+        const noZones = await teamGet(partner.accessToken, `?eventId=${evFree.eventId}`);
+        const freeEvent = ((noZones.events ?? []) as Row[])[0];
+        assert.equal(freeEvent.has_zones, false, 'sans zone : « Toutes les catégories » à l’écran');
+        assert.deepEqual(freeEvent.uncovered_categories, [], 'sans zone : aucun avertissement de catégorie');
+    });
+});
