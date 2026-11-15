@@ -408,7 +408,7 @@ export class EventService {
         // tâche planifiée la reprendra au bout de 7 jours)
         if (imageChanged && event.image_url) {
             try {
-                await removePosterIfUnused(event.image_url, eventId);
+                await removePosterIfUnused(event.image_url);
             } catch (err) {
                 console.error(`[EventService.updateEvent] ancienne affiche de ${eventId} non effacée :`, err instanceof Error ? err.message : String(err));
             }
