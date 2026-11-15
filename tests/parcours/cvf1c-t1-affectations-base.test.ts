@@ -2,17 +2,18 @@
  * Correctifs de la contre-vérification de la finition 1 — T1 en base (migration 20261115000013) : aucune affectation de
  * contrôleur n'est créée pour un compte ADMIN ou SUPERADMIN, quel que soit le chemin. Même texte neutre que la route.
  *  a. controller_assignments_sync : ajouter un événement à un compte d'administration (contrôleur de l'organisatrice
- *     devenu admin, donc connu d'elle) → refus NOT_INVITABLE, texte neutre, rien d'écrit. Retirer ses événements et
- *     changer son droit d'encaisser restent possibles (comptes d'avant le correctif, rapport § 0.1).
+ *     devenu admin, donc connu d'elle) → refus NOT_INVITABLE, texte neutre, rien d'écrit. Depuis la migration 14, la
+ *     promotion retire elle-même ses affectations (tests cvf1c-t1-promotion) : le témoin « droit d'encaisser et retrait
+ *     d'un compte d'administration encore affecté » n'a plus de cas à construire et il est retiré (signalé au rapport).
  *  b. Garde de la table event_controllers : insertion directe par le service_role (comme la route d'invitation, les
  *     seeds ou toute fonction future), ou ligne passée à un compte d'administration → refus CT409 au texte neutre ; un
  *     contrôleur ordinaire s'affecte toujours.
  *  c. POST /api/partner/team/invite (écriture directe de la table) : le compte devient admin pendant la demande (table
  *     verrouillée, rôle validé pendant l'attente) → 409 NOT_INVITABLE au texte neutre, aucune affectation.
  *  d. PATCH /api/partner/team/assignments (controller_assignments_sync) : même course → 409 neutre, aucune affectation.
- *  e. POST /api/account/controller-invitations/[id] (controller_invitation_respond) : même course → 403 NOT_INVITABLE
- *     (texte de l'acceptation), invitation toujours en attente, aucune affectation ; le refus reste possible.
- * Rouge avant le correctif : a et b écrivent l'affectation ; c, d et e la créent (201, 200, 200).
+ *  (e, acceptation pendant la promotion : depuis la migration 14, l'acceptation verrouille d'abord le compte et la
+ *   promotion annule l'invitation ; la course est éprouvée dans cvf1c-t1-promotion, cas e. Retiré d'ici, signalé.)
+ * Rouge avant le correctif : a et b écrivent l'affectation ; c et d la créent (201, 200).
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -23,10 +24,9 @@ import { newController } from './acces-helpers';
 import { newAdmin } from './notif-helpers';
 import { openConcurrentClient, waitForLockWaiters } from '../helpers/db';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
-import { addRole, api, assignmentOf, freeEvent, invitationRow, show, type Reply, type Row } from '../audit/cvf1-helpers';
+import { addRole, api, assignmentOf, freeEvent, show, type Reply, type Row } from '../audit/cvf1-helpers';
 
 const NOT_INVITABLE_TEXT = 'Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.';
-const NOT_INVITABLE_ACCEPT_TEXT = 'Ce compte ne peut pas devenir contrôleur. Refusez cette invitation.';
 
 let P: TestPartner;
 let ev1: SaleEvent;
@@ -102,21 +102,10 @@ describe('T1 base a. controller_assignments_sync', () => {
             assert.equal(reply.code, 'NOT_INVITABLE', JSON.stringify(reply));
             assert.equal(reply.message, NOT_INVITABLE_TEXT, JSON.stringify(reply));
             assert.equal(await assignmentOf(ev2.eventId, a.userId), null, `${role} : affecté à ev2`);
-            assert.ok(await assignmentOf(ev1.eventId, a.userId), `${role} : affectation d'avant (ev1) retirée par le refus`);
+            // Migration 14 : la promotion a retiré l'affectation d'avant (ev1) ; le refus n'en ajoute aucune
+            assert.equal(await assignmentOf(ev1.eventId, a.userId), null, `${role} : affectation d'avant (ev1) gardée par la promotion`);
         });
     }
-
-    test('compte d’administration déjà affecté : droit d’encaisser et retrait toujours possibles', async () => {
-        const a = await controllerTurnedStaff('cvf1c-t1b-sync-retrait', 'ADMIN');
-        const cash = await sync(a.userId, [{ event_id: ev1.eventId, can_accept_cash: true }]);
-        assert.equal(cash.ok, true, `droit d'encaisser : ${JSON.stringify(cash)}`);
-        assert.equal(cash.updated, 1, JSON.stringify(cash));
-        assert.equal((await assignmentOf(ev1.eventId, a.userId))?.can_accept_cash, true, 'droit d’encaisser non enregistré');
-        const removed = await sync(a.userId, []);
-        assert.equal(removed.ok, true, `retrait : ${JSON.stringify(removed)}`);
-        assert.deepEqual(removed.removed, [ev1.eventId], JSON.stringify(removed));
-        assert.equal(await assignmentOf(ev1.eventId, a.userId), null, 'affectation non retirée');
-    });
 });
 
 describe('T1 base b. garde de la table event_controllers', () => {
@@ -148,7 +137,7 @@ describe('T1 base b. garde de la table event_controllers', () => {
     });
 });
 
-describe('T1 base c, d, e. compte devenu admin pendant la demande', () => {
+describe('T1 base c, d. compte devenu admin pendant la demande', () => {
     test('c. invitation (écriture directe de la table) : 409 neutre, aucune affectation', async () => {
         const k = await newController(P, ev1.eventId, { label: 'cvf1c-t1b-invite' });
         const reply = await raceToStaff(k.userId, 'event_controllers',
@@ -166,31 +155,7 @@ describe('T1 base c, d, e. compte devenu admin pendant la demande', () => {
             }), 'événements du contrôleur');
         assertNeutral(reply, 'événements du contrôleur');
         assert.equal(await assignmentOf(ev2.eventId, k.userId), null, 'compte devenu admin affecté à ev2');
-        assert.ok(await assignmentOf(ev1.eventId, k.userId), 'affectation d’avant (ev1) perdue');
-    });
-
-    test('e. acceptation d’une invitation (controller_invitation_respond) : 403, invitation en attente, aucune affectation', async () => {
-        const q = await newPartner('cvf1c-t1b-q');
-        const evq = await freeEvent(q, 'cvf1c-t1b-q', { startsInHours: 48 });
-        // Contrôleur d'une autre organisatrice : rôles CLIENT et CONTROLEUR déjà posés (l'acceptation n'en écrit aucun)
-        const h = await newController(q, evq.eventId, { label: 'cvf1c-t1b-accepte' });
-        await addRole(h.userId, 'CLIENT');
-        const { data: inv, error: invErr } = await service.from('controller_invitations').insert({
-            partner_id: P.partnerId, user_id: h.userId, created_by: P.userId,
-            assignments: [{ event_id: ev2.eventId, can_accept_cash: false }],
-        }).select('id').single();
-        assert.equal(invErr, null, `invitation (montage) : ${invErr?.message}`);
-        const id = String(inv!.id);
-        const answer = (accept: boolean) => api('POST', 'account/controller-invitations/[id]', {
-            token: h.accessToken, path: `/api/account/controller-invitations/${id}`, params: { id }, body: { accept },
-        });
-        const reply = await raceToStaff(h.userId, 'controller_invitation_respond', () => answer(true), 'acceptation');
-        assert.equal(reply.status, 403, `acceptation : ${show(reply)}`);
-        assert.equal(reply.body.code, 'NOT_INVITABLE', show(reply));
-        assert.ok(String(reply.body.error ?? '').startsWith(NOT_INVITABLE_ACCEPT_TEXT), show(reply));
-        assert.equal(await assignmentOf(ev2.eventId, h.userId), null, 'compte devenu admin affecté par l’acceptation');
-        assert.equal((await invitationRow(id)).status, 'PENDING', 'invitation close malgré le refus');
-        const decline = await answer(false);
-        assert.equal(decline.status, 200, `refus de l’invitation : ${show(decline)}`);
+        // Migration 14 : la promotion pendant la demande a retiré l'affectation d'avant (ev1)
+        assert.equal(await assignmentOf(ev1.eventId, k.userId), null, 'affectation d’avant (ev1) gardée par la promotion');
     });
 });

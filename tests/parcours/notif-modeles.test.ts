@@ -1179,6 +1179,9 @@ function lot9quinquiesExpected(): ExpectedType[] {
         ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation acceptée'),
         ess('CONTROLLER_INVITATION_DECLINED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation refusée'),
         ess('CONTROLLER_INVITATION_EXPIRED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation sans réponse'),
+        // Correctifs de la contre-vérification (migration 20261115000014) : contrôleur devenu compte d'administration,
+        // retiré de l'équipe ; cloche, push et email, sans SMS. Ajout signalé.
+        ess('CONTROLLER_BECAME_ADMIN', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Contrôleur retiré de votre équipe'),
     ];
 }
 
