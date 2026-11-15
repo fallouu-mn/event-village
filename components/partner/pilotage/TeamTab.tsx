@@ -24,6 +24,8 @@ export function TeamTab({ eventId, signal, onOpenTab }: {
     return (
         <div className="flex flex-col gap-6">
             <TeamPanel scope="event" eventId={eventId} signal={signal + teamSignal} onOpenTab={onOpenTab} />
+            {/* Complément 9 : éditeur des zones et des couleurs, cible du lien « Modifier les portes et les couleurs » */}
+            <div id="portes-et-couleurs" className="scroll-mt-24">
             <ZonesEditor
                 eventId={eventId}
                 config={zones.data}
@@ -33,6 +35,7 @@ export function TeamTab({ eventId, signal, onOpenTab }: {
                 reload={zones.reload}
                 onSaved={() => setTeamSignal((n) => n + 1)}
             />
+            </div>
         </div>
     );
 }

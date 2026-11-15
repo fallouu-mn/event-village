@@ -25,6 +25,8 @@ import { formatTime } from '@/lib/format';
 import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
 import { ActionDialog, InviteDialog, SettingsDialog } from './TeamDialogs';
+import { GateAdmits } from './CategoryPills';
+import { LinkButton } from '@/components/ui/LinkButton';
 import {
     displayPhone, entriesText, eventWhen, firstNameOf, invitationState, invitationWhatsappMessage, memberName, memberState, placeOf,
     telHref, whatsappHref, whatsappMessage,
@@ -233,24 +235,67 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
         </div>
     );
 
-    const eventLines = (m: TeamMember) => (
-        <ul className="flex flex-col gap-3" aria-label={`Événements de ${memberName(m)}`}>
-            {m.assignments.map((a) => {
-                const place = placeOf(a);
-                return (
-                    <li key={a.assignment_id} className="flex flex-col gap-2">
-                        {scope === 'all' && <p className="text-sm font-semibold text-fg">{`${a.title} · ${eventWhen(a.start_at)}`}{a.past && <span className="font-normal text-fg-muted"> · passé</span>}</p>}
-                        <p className={cn('text-sm', place.missing ? 'font-semibold text-warning-fg' : 'text-fg')}>{a.gate ? `Porte : ${place.text}` : place.text}</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={a.can_accept_cash ? 'success' : 'neutral'}>{a.can_accept_cash ? 'Espèces autorisées' : 'Sans espèces'}</Badge>
-                            <ShiftAndEntries a={a} scope={scope} onOpenTab={onOpenTab} />
-                        </div>
-                        {assignmentActions(m, a)}
-                    </li>
-                );
-            })}
-        </ul>
-    );
+    const oneLine = (m: TeamMember, a: TeamAssignment) => {
+        const place = placeOf(a);
+        return (
+            <li key={a.assignment_id} className="flex flex-col gap-2">
+                {scope === 'all' && <p className="text-sm font-semibold text-fg">{`${a.title} · ${eventWhen(a.start_at)}`}</p>}
+                <p className={cn('text-sm', place.missing ? 'font-semibold text-warning-fg' : 'text-fg')}>{a.gate ? `Porte : ${place.text}` : place.text}</p>
+                <GateAdmits categories={a.gate?.categories ?? (a.has_zones ? null : [])} hasZones={a.has_zones} />
+                <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={a.can_accept_cash ? 'success' : 'neutral'}>{a.can_accept_cash ? 'Espèces autorisées' : 'Sans espèces'}</Badge>
+                    <ShiftAndEntries a={a} scope={scope} onOpenTab={onOpenTab} />
+                </div>
+                {assignmentActions(m, a)}
+            </li>
+        );
+    };
+    // Complément 10 : un événement terminé (ou annulé) passe dans « Événements passés », sans action possible
+    // Complément 9 : avertissements servis par le serveur, événements à venir seulement
+    const gateEvents = data.events.filter((e) => !e.past && (scope === 'event' || e.assignable));
+    const gateWarnings = gateEvents.flatMap((e) => [
+        ...(e.uncovered_categories.length > 0 ? [{
+            key: `${e.id}-cat`, eventId: e.id,
+            title: scope === 'all' ? `« ${e.title} » : catégorie en vente sans porte` : 'Catégorie en vente sans porte',
+            text: `${e.uncovered_categories.map((c) => c.name).join(', ')} : aucune porte ne laisse entrer ces billets. Ajoutez la catégorie à une zone qui a une porte.`,
+        }] : []),
+        ...(e.gates_without_controller.length > 0 ? [{
+            key: `${e.id}-gate`, eventId: e.id,
+            title: scope === 'all' ? `« ${e.title} » : porte sans contrôleur` : 'Porte sans contrôleur',
+            text: `${e.gates_without_controller.join(', ')} : personne ne contrôle cette porte. Choisissez-la pour un contrôleur avec « Modifier ».`,
+        }] : []),
+    ]);
+    const gatesLink = (id: string, variant: 'secondary' | 'ghost') => (scope === 'event'
+        ? <LinkButton href="#portes-et-couleurs" variant={variant} size="sm">Modifier les portes et les couleurs</LinkButton>
+        : <LinkButton href={`/partner/events/${id}?tab=equipe#portes-et-couleurs`} variant={variant} size="sm">Modifier les portes et les couleurs</LinkButton>);
+
+    const eventLines = (m: TeamMember) => {
+        const upcoming = m.assignments.filter((a) => !a.past);
+        const past = m.assignments.filter((a) => a.past);
+        return (
+            <div className="flex flex-col gap-3">
+                {upcoming.length > 0 && (
+                    <ul className="flex flex-col gap-3" aria-label={`Événements de ${memberName(m)}`}>
+                        {upcoming.map((a) => oneLine(m, a))}
+                    </ul>
+                )}
+                {past.length > 0 && (
+                    <details className="rounded-xl border border-border px-3 py-2">
+                        <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold text-fg-muted">
+                            Événements passés
+                        </summary>
+                        <ul className="mt-2 flex flex-col gap-2" aria-label={`Événements passés de ${memberName(m)}`}>
+                            {past.map((a) => (
+                                <li key={a.assignment_id} className="text-sm text-fg-muted">
+                                    {`${a.title} · ${eventWhen(a.start_at)} · ${entriesText(a)}`}
+                                </li>
+                            ))}
+                        </ul>
+                    </details>
+                )}
+            </div>
+        );
+    };
 
     return (
         <section className="flex flex-col gap-4" aria-labelledby="equipe-titre">
@@ -288,6 +333,41 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                     action={<Button variant="secondary" size="sm" onClick={() => setFilter('followup')}>Voir</Button>}>
                     Expirées ou refusées : invitez de nouveau ou effacez-les.
                 </StatusBanner>
+            )}
+
+            {gateWarnings.map((w) => (
+                <StatusBanner key={w.key} tone="warning" title={w.title}
+                    action={canManage ? gatesLink(w.eventId, 'secondary') : undefined}>
+                    {w.text}
+                </StatusBanner>
+            ))}
+
+            {gateEvents.length > 0 && (
+                <details className="rounded-2xl border border-border bg-surface p-4" open={scope === 'event'}>
+                    <summary className="min-h-11 cursor-pointer content-center text-base font-semibold text-fg">Portes et couleurs</summary>
+                    <ul className="mt-3 flex flex-col gap-4" aria-label="Portes et couleurs des événements">
+                        {gateEvents.map((e) => (
+                            <li key={e.id} className="flex flex-col gap-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold text-fg">{`${e.title} · ${eventWhen(e.start_at)}`}</p>
+                                    {canManage && gatesLink(e.id, 'ghost')}
+                                </div>
+                                {e.has_zones ? (
+                                    <ul className="flex flex-col gap-2">
+                                        {e.gates.map((g) => (
+                                            <li key={g.id} className="flex flex-col gap-1">
+                                                <p className="text-sm text-fg">{`${g.name} · ${g.zone_name}`}</p>
+                                                <GateAdmits categories={g.categories} hasZones />
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="text-sm text-fg-muted">Pas de zones : chaque contrôleur laisse entrer toutes les catégories.</p>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                </details>
             )}
 
             {(scope === 'all' || data.counts.members >= 6) && (

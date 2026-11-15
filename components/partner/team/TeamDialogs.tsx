@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toast';
 import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { assignmentSummary, eventWhen, firstNameOf, memberName, normalizeTyped, PHONE_ERROR } from './team-format';
+import { GateAdmits } from './CategoryPills';
 import type { TeamAssignment, TeamEvent, TeamMember } from './team-types';
 
 const SN_MOBILE_RE = /^7[0-8]\d{7}$/;
@@ -274,6 +275,7 @@ export function SettingsDialog({ target, event, actsAsAdmin, onClose, onDone }: 
                                 onChange={(e) => setGateId(e.target.value)}
                                 options={[{ value: '', label: 'Aucune porte' }, ...(event?.gates ?? []).map((g) => ({ value: g.id, label: `${g.name} · ${g.zone_name}` }))]}
                             />
+                            <GateAdmits categories={gateId ? (event?.gates.find((g) => g.id === gateId)?.categories ?? []) : null} hasZones />
                             <Switch label="Peut changer de porte" description="Choisit lui-même sa porte dans le scanner." checked={changeAllowed} onChange={setChangeAllowed} />
                         </>
                     ) : (

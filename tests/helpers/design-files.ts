@@ -241,4 +241,5 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     // Finition 1 (E-14) : composant commun de l'équipe, page /partner/team et onglet Équipe du pilotage
     'components/partner/team/TeamPanel.tsx',
     'components/partner/team/TeamDialogs.tsx',
+    'components/partner/team/CategoryPills.tsx',
 ];

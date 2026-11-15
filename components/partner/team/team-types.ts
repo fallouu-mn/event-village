@@ -5,7 +5,10 @@
 export type AccountState = 'ACTIVE' | 'PENDING_ACTIVATION' | 'SUSPENDED';
 export type InvitationState = 'PENDING' | 'EXPIRED' | 'DECLINED' | 'CANCELLED';
 
-export interface TeamGate { id: string; name: string; zone_name: string }
+/** Catégorie admise par une porte, avec sa couleur au contrôle (palette fermée du scanner, ou null). */
+export interface TeamCategory { name: string; scan_color: string | null }
+
+export interface TeamGate { id: string; name: string; zone_name: string; categories: TeamCategory[] }
 
 export interface TeamAssignment {
     assignment_id: string;
@@ -58,6 +61,10 @@ export interface TeamEvent {
     past: boolean;
     has_zones: boolean;
     gates: TeamGate[];
+    /** Complément 9 : catégories en vente qu'aucune porte ne laisse entrer (événement à zones). */
+    uncovered_categories: TeamCategory[];
+    /** Complément 9 : portes sans contrôleur. */
+    gates_without_controller: string[];
 }
 
 export interface TeamView {

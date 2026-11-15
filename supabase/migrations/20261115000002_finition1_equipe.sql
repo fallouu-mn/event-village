@@ -11,7 +11,7 @@
 --   controller_invitations : état CANCELLED, colonnes phone_entered, cleared_at, last_sent_at, send_count,
 --     cancelled_by (+ reprise : numéro du titulaire, date de création) ;
 --   types d'avis CONTROLLER_INVITATION_ACCEPTED, _DECLINED, _EXPIRED (cloche, push, email ; jamais de SMS) ;
---   fonctions nouvelles : team_mask_name, controller_invitation_notify_partner, partner_team_view,
+--   fonctions nouvelles : team_mask_name, team_gate_categories (complément 9), controller_invitation_notify_partner, partner_team_view,
 --     controller_invitation_cancel, controller_invitation_clear, controller_invitation_resend,
 --     controller_invitations_expire_due, event_controller_settings_set ;
 --   recopies : controller_invitation_create (20261109000008_lot9bis_cycle.sql:1990-2070),
@@ -78,6 +78,23 @@ AS $$
             CASE WHEN btrim(COALESCE(p_first, '')) <> '' THEN left(btrim(p_first), 2) || '***' END,
             CASE WHEN btrim(COALESCE(p_last, '')) <> '' THEN left(btrim(p_last), 1) || '***' END)
     END;
+$$;
+
+-- Complément 9 : catégories qu'une porte laisse entrer (celles de sa zone), avec leur couleur au contrôle, dans l'ordre
+-- des catégories ; [] si la zone n'admet aucune catégorie. Lecture seule.
+CREATE OR REPLACE FUNCTION public.team_gate_categories(p_gate uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('name', c.name, 'scan_color', c.scan_color)
+                              ORDER BY c.price, lower(c.name), c.id), '[]'::jsonb)
+      FROM public.event_gates g
+      JOIN public.zone_categories zc ON zc.zone_id = g.zone_id
+      JOIN public.ticket_categories c ON c.id = zc.category_id
+     WHERE g.id = p_gate;
 $$;
 
 -- Avis à la propriétaire de la fiche quand une invitation est acceptée, refusée ou expirée (une fois par invitation et
@@ -600,10 +617,25 @@ BEGIN
                'assignable', ev.status IN ('VALIDE', 'PUBLIE'),
                'past', ev.end_at < now() OR ev.status IN ('TERMINE', 'ANNULE'),
                'has_zones', EXISTS (SELECT 1 FROM public.event_zones z WHERE z.event_id = ev.id),
-               'gates', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', g.id, 'name', g.name, 'zone_name', z.name)
+               'gates', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', g.id, 'name', g.name, 'zone_name', z.name,
+                                                                      'categories', public.team_gate_categories(g.id))
                                                    ORDER BY z.position, lower(z.name), lower(g.name))
                                     FROM public.event_gates g JOIN public.event_zones z ON z.id = g.zone_id
-                                   WHERE g.event_id = ev.id), '[]'::jsonb))
+                                   WHERE g.event_id = ev.id), '[]'::jsonb),
+               -- Complément 9 : catégories en vente qu'aucune porte ne laisse entrer ; portes sans contrôleur (zones seulement)
+               'uncovered_categories', CASE WHEN EXISTS (SELECT 1 FROM public.event_zones z WHERE z.event_id = ev.id) THEN COALESCE((
+                    SELECT jsonb_agg(jsonb_build_object('name', c.name, 'scan_color', c.scan_color) ORDER BY c.price, lower(c.name), c.id)
+                      FROM public.ticket_categories c
+                     WHERE c.event_id = ev.id AND c.is_active
+                       AND (COALESCE(c.sale_online, FALSE) OR COALESCE(c.sale_counter, FALSE))
+                       AND NOT EXISTS (SELECT 1 FROM public.zone_categories zc
+                                         JOIN public.event_gates g ON g.zone_id = zc.zone_id
+                                        WHERE zc.category_id = c.id)), '[]'::jsonb) ELSE '[]'::jsonb END,
+               'gates_without_controller', COALESCE((
+                    SELECT jsonb_agg(g.name ORDER BY lower(g.name))
+                      FROM public.event_gates g
+                     WHERE g.event_id = ev.id
+                       AND NOT EXISTS (SELECT 1 FROM public.event_controllers x WHERE x.event_id = ev.id AND x.gate_id = g.id)), '[]'::jsonb))
            ORDER BY ev.start_at NULLS LAST, lower(ev.title)), '[]'::jsonb)
       INTO v_events
       FROM ev;
@@ -647,7 +679,8 @@ BEGIN
                    'assignments', (SELECT jsonb_agg(jsonb_build_object(
                            'assignment_id', ec.id, 'event_id', ec.event_id, 'title', ec.title, 'status', ec.status,
                            'start_at', ec.start_at, 'past', ec.end_at < now() OR ec.status IN ('TERMINE', 'ANNULE'),
-                           'gate', (SELECT jsonb_build_object('id', g.id, 'name', g.name, 'zone_name', z.name)
+                           'gate', (SELECT jsonb_build_object('id', g.id, 'name', g.name, 'zone_name', z.name,
+                                                              'categories', public.team_gate_categories(g.id))
                                       FROM public.event_gates g JOIN public.event_zones z ON z.id = g.zone_id
                                      WHERE g.id = ec.gate_id),
                            'has_zones', EXISTS (SELECT 1 FROM public.event_zones z2 WHERE z2.event_id = ec.event_id),
@@ -781,8 +814,16 @@ BEGIN
             'message', 'Indiquez le motif de cette action (5 caractères au moins) : il est inscrit au journal.');
     END IF;
     v_zones := EXISTS (SELECT 1 FROM public.event_zones z WHERE z.event_id = v_event);
+    -- Complément 9 : sur un événement à zones, la porte se choisit dans la liste ; aucun texte libre
+    IF v_zones AND v_entry IS NOT NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'GATES_CONFIGURED',
+            'message', 'Cet événement a des portes : choisissez la porte du contrôleur dans la liste.');
+    END IF;
+    IF NOT v_zones AND v_gate IS NOT NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'GATE_INVALID', 'message', 'Cet événement n’a pas de portes : indiquez un point d’entrée.');
+    END IF;
     IF v_gate IS NOT NULL THEN
-        SELECT g.name, jsonb_build_object('id', g.id, 'name', g.name, 'zone_name', z.name)
+        SELECT g.name, jsonb_build_object('id', g.id, 'name', g.name, 'zone_name', z.name, 'categories', public.team_gate_categories(g.id))
           INTO v_gate_name, v_gate_json
           FROM public.event_gates g JOIN public.event_zones z ON z.id = g.zone_id
          WHERE g.id = v_gate AND g.event_id = v_event;
@@ -825,6 +866,7 @@ $$;
 -- 14. Droits : service_role seul
 -- ----------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION public.team_mask_name(text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.team_gate_categories(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.controller_invitation_notify_partner(uuid, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.controller_invitation_create(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.controller_invitation_respond(jsonb) FROM PUBLIC, anon, authenticated;
@@ -836,6 +878,7 @@ REVOKE ALL ON FUNCTION public.controller_invitations_expire_due() FROM PUBLIC, a
 REVOKE ALL ON FUNCTION public.partner_team_view(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.event_controller_settings_set(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.team_mask_name(text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.team_gate_categories(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.controller_invitation_notify_partner(uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.controller_invitation_create(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.controller_invitation_respond(jsonb) TO service_role;
