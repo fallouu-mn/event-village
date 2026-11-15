@@ -16,7 +16,7 @@ import { releaseQuota, reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { addUserRole, grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
-import { createControllerInvitation } from '../controller-invitation';
+import { createControllerInvitation, notInvitableResponse } from '../controller-invitation';
 import { adminTeamRefusal } from '../team-access';
 import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { CONTROLLER_ACTIVATION_KEY, isControllerActivationPending } from '@/lib/auth/controller-activation';
@@ -229,13 +229,13 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Recherche du compte impossible. Réessayez.' }, { status: 500 });
             }
             const currentRoles = (existingRoles || []).map(r => r.role as string);
-            alreadyController =
-                currentRoles.includes('CONTROLEUR') ||
-                currentRoles.includes('ADMIN') ||
-                currentRoles.includes('SUPERADMIN') ||
-                existingProfile.role === 'CONTROLEUR' ||
-                existingProfile.role === 'ADMIN' ||
-                existingProfile.role === 'SUPERADMIN';
+            // cvf1 T1 : un compte d'administration n'est jamais invité. Refus neutre AVANT la confirmation « ce numéro a
+            // déjà un compte » (aucun nom masqué), avant tout quota du numéro et tout SMS.
+            if (currentRoles.includes('ADMIN') || currentRoles.includes('SUPERADMIN')
+                || existingProfile.role === 'ADMIN' || existingProfile.role === 'SUPERADMIN') {
+                return notInvitableResponse();
+            }
+            alreadyController = currentRoles.includes('CONTROLEUR') || existingProfile.role === 'CONTROLEUR';
         }
         // Reste S3 (R38, lot 1C.1) : le refus vise un contrôleur déjà activé (son texte le dit). Un compte établi qui
         // n'est pas encore contrôleur suit le chemin de l'invitation : « resend » ne contourne pas la confirmation

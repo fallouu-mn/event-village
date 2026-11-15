@@ -25,6 +25,8 @@ const FINITION1_MIGRATIONS = [
     '20261115000004_finition1_fiche_proprietaire.sql',
     // Complément 4 (13, 14) : Mes soirées, chiffres d'une soirée, prochain changement du menu « Scanner »
     '20261115000005_finition1_soirees.sql',
+    // Correctifs de la contre-vérification (cvf1) : un fichier par point
+    '20261115000006_cvf1_admin_non_invitable.sql',
 ] as const;
 
 after(async () => {

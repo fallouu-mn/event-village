@@ -8,7 +8,7 @@ import { grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { maskPersonName } from '@/lib/security/mask';
 import { revokeUserSessions } from '@/lib/auth/sessions';
-import { createControllerInvitation } from '../controller-invitation';
+import { createControllerInvitation, notInvitableResponse } from '../controller-invitation';
 import { AdminService } from '@/lib/admin/admin.service';
 import { adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
 import { isControllerActivationPending } from '@/lib/auth/controller-activation';
@@ -167,6 +167,20 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: 'Impossible de lire les rôles du contrôleur.' }, { status: 500 });
         }
         const ctrlRoles = (ctrlRoleRows || []).map((r) => r.role as string);
+        // cvf1 T1 : un compte d'administration ne devient jamais contrôleur : aucun événement ne lui est ajouté (refus neutre,
+        // sans nom masqué ni invitation). Retirer un compte déjà affecté reste possible.
+        if (ctrlRoles.includes('ADMIN') || ctrlRoles.includes('SUPERADMIN') || ctrlUser.role === 'ADMIN' || ctrlUser.role === 'SUPERADMIN') {
+            if (requestedEventIds.length > 0) {
+                const { data: staffRows, error: staffErr } = await supabase
+                    .from('event_controllers').select('event_id').eq('user_id', controllerId).in('event_id', requestedEventIds);
+                if (staffErr) {
+                    console.error('[PATCH team/assignments] affectations d’un compte d’administration :', staffErr.message);
+                    return NextResponse.json({ error: 'Impossible de lire les affectations actuelles.' }, { status: 500 });
+                }
+                const kept = new Set((staffRows ?? []).map((r) => String(r.event_id)));
+                if (requestedEventIds.some((id) => !kept.has(id))) return notInvitableResponse();
+            }
+        }
         const alreadyController = ctrlRoles.some((r) => r === 'CONTROLEUR' || r === 'ADMIN' || r === 'SUPERADMIN');
 
         if (!alreadyController) {

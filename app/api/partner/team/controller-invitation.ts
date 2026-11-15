@@ -19,7 +19,16 @@ export type InvitationOutcome =
     | { response: NextResponse; invitationId?: undefined; expiresAt?: undefined }
     | { response?: undefined; invitationId: string; expiresAt: string };
 
+/** cvf1 T1 : texte neutre d'un numéro qui ne peut pas être invité (compte d'administration), sans dire pourquoi. */
+export const NOT_INVITABLE_TEXT = 'Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.';
+
+/** cvf1 T1 : refus d'inviter ou d'affecter un compte d'administration (409, aucun nom, aucun SMS). */
+export function notInvitableResponse(): NextResponse {
+    return NextResponse.json({ error: NOT_INVITABLE_TEXT, code: 'NOT_INVITABLE' }, { status: 409 });
+}
+
 const REFUSALS: Record<string, [number, string]> = {
+    NOT_INVITABLE: [409, NOT_INVITABLE_TEXT],
     INVALID_INPUT: [400, 'Invitation incomplète : choisissez au moins un événement.'],
     PARTNER_NOT_FOUND: [404, 'Organisateur introuvable.'],
     ACCOUNT_NOT_ACTIVE: [403, 'Ce compte n’est pas actif : il ne peut pas être invité.'],

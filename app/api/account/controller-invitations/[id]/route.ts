@@ -17,7 +17,9 @@ const REFUSALS: Record<string, [number, string]> = {
     INVITATION_NOT_PENDING: [409, 'Cette invitation a déjà reçu une réponse.'],
     // Finition 1 (E-19) : invitation annulée par l'organisateur, le lien ne mène plus à rien
     INVITATION_CANCELLED: [410, 'L’organisateur a annulé cette invitation.'],
-    ACCOUNT_NOT_ACTIVE: [403, 'Votre compte n’est pas actif.'], // lot 9 quinquies (B1) : le lien d'aide est ajouté à la requête
+    ACCOUNT_NOT_ACTIVE: [403, 'Votre compte n’est pas actif.'],
+    // cvf1 T1 : un compte d'administration ne devient jamais contrôleur (il peut refuser l'invitation)
+    NOT_INVITABLE: [403, 'Ce compte ne peut pas devenir contrôleur. Refusez cette invitation.'], // lot 9 quinquies (B1) : le lien d'aide est ajouté à la requête
 };
 
 /**
