@@ -26,6 +26,7 @@ const REFUSAL_STATUS: Record<string, number> = {
     EVENT_NOT_FOUND: 404,
     NOT_ASSIGNED: 404,
     GATE_INVALID: 409,
+    GATE_GONE: 409, // cvf1 R1 : porte supprimée pendant l'enregistrement
 };
 
 type Reply = Record<string, unknown> & { ok?: unknown; code?: unknown; message?: unknown };

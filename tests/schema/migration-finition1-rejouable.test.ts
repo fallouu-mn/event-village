@@ -31,6 +31,7 @@ const FINITION1_MIGRATIONS = [
     '20261115000008_cvf1_soirees_scans_acceptes.sql',
     '20261115000009_cvf1_verdict_hors_plage.sql',
     '20261115000010_cvf1_motif.sql',
+    '20261115000011_cvf1_porte_supprimee.sql',
 ] as const;
 
 after(async () => {

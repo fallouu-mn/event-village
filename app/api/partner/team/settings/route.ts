@@ -27,6 +27,7 @@ const REFUSAL_STATUS: Record<string, number> = {
     ACCOUNT_NOT_ACTIVE: 403,
     REASON_REQUIRED: 400,
     GATE_INVALID: 409,
+    GATE_GONE: 409, // cvf1 R1 : porte supprimée pendant l'enregistrement
     GATES_CONFIGURED: 409,
     NOT_ASSIGNED: 404,
 };
