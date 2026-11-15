@@ -39,9 +39,12 @@ describe('Finition 2a — écrans', () => {
 
     test('formulaire : recherche de lieu, fin retenue, format conseillé de l’affiche', () => {
         const form = read('components/events/EventForm.tsx') + read('components/ui/MapPicker.tsx') + read('components/ui/ImageUpload.tsx');
-        for (const t of ['Rechercher un lieu', '© contributeurs OpenStreetMap', 'Fin retenue : ', 'Format conseillé']) {
+        for (const t of ['Rechercher un lieu', 'Fin retenue : ', 'Format conseillé']) {
             assert.ok(form.includes(t), `texte absent : « ${t} »`);
         }
+        // « © » écrit en entité HTML (&copy;) dans le JSX, comme la mention des tuiles : la règle « emoji » du système de
+        // design (design-systeme) lit le caractère © comme pictogramme ; même rendu à l'écran
+        assert.ok(/(©|&copy;) contributeurs OpenStreetMap/.test(form), 'texte absent : « © contributeurs OpenStreetMap »');
         assert.ok(/>\s*Rechercher\s*</.test(form) || /'Rechercher'/.test(form), 'bouton « Rechercher » absent');
         assert.ok(/aspect-\[16\/10\]/.test(read('components/ui/ImageUpload.tsx')), 'aperçu du recadrage 16:10 absent');
         assert.ok(/downscale/.test(read('components/events/EventForm.tsx')), 'réduction de l’image avant l’envoi absente du formulaire');

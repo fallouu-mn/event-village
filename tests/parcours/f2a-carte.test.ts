@@ -241,4 +241,25 @@ describe('3 c. repère déplacé après validation', () => {
         assert.equal(far.body.notified_holders, 2, show(far));
         assert.equal(await changedSms(ev.eventId), before + 2, 'un SMS par détenteur pour un déplacement de plus de 200 m');
     });
+
+    // Ajouté après la preuve des rouges du run d5eb6b3b (signalé au rapport) : l'alerte de l'administration (ADMIN_EVENT_CHANGED,
+    // changement PLACE) suit la même règle des 200 m ; rouge avant le correctif (le déclencheur ne regardait pas la position).
+    test('alerte de l’administration : rien en deçà de 200 m, « lieu » au-delà', async () => {
+        const ev: SaleEvent = await createTimedEvent(P.partnerId, 'f2a-carte-admin', [{ name: 'Standard', price: 0, total: 10 }], { startsInHours: 48 });
+        await service.from('events').update(DAKAR).eq('id', ev.eventId);
+        const alerts = async (): Promise<Row[]> => {
+            const { data, error } = await service.from('notification_outbox').select('template_data')
+                .eq('event_id', ev.eventId).eq('type', 'ADMIN_EVENT_CHANGED');
+            assert.equal(error, null, error?.message);
+            return (data ?? []) as Row[];
+        };
+        const before = (await alerts()).length;
+        assert.equal((await put(ev.eventId, { latitude: DAKAR.latitude + 0.0009, longitude: DAKAR.longitude })).status, 200);
+        assert.equal((await alerts()).length, before, 'alerte aux admins pour un déplacement de moins de 200 m');
+        assert.equal((await put(ev.eventId, { latitude: DAKAR.latitude + 0.0036, longitude: DAKAR.longitude })).status, 200);
+        const after = await alerts();
+        console.log(`[F2A-3] alertes admin : ${before} → ${after.length}`);
+        assert.ok(after.length > before, 'aucune alerte aux admins pour un déplacement de plus de 200 m');
+        assert.ok(after.slice(before).every((a) => JSON.stringify((a.template_data as Row | null)?.changes ?? []).includes('PLACE')), JSON.stringify(after.slice(before)));
+    });
 });
