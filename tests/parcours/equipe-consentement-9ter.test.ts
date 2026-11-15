@@ -41,8 +41,9 @@ const INVITE_ROUTE = '../../app/api/partner/team/invite/route';
 const ASSIGNMENTS_ROUTE = '../../app/api/partner/team/assignments/route';
 
 /** Textes exacts du contrat (4.2 B.3), nom masqué du titulaire en variable. */
+/** Finition 1 (E-18) : un seul texte quand le numéro a déjà un compte, sans « affecté » (recalé, signalé au rapport). */
 function inviteConsentMessage(name: string): string {
-    return `Ce numéro appartient déjà à un compte Event Village (${name}). Ce titulaire n’a jamais contrôlé vos événements : il doit accepter votre invitation dans l’application avant d’être affecté. Confirmez-vous l’envoi de l’invitation ?`;
+    return `Ce numéro a déjà un compte Event Village (${name}). Nous lui envoyons une invitation par SMS : il contrôlera vos événements après l’avoir acceptée dans l’application, sous 72 h. Son compte, ses billets et son portefeuille ne changent pas.`;
 }
 function patchConsentMessage(name: string): string {
     return `Ce compte (${name}) n’a jamais contrôlé vos événements : il doit accepter votre invitation dans l’application avant d’être affecté. Confirmez-vous l’envoi de l’invitation ?`;

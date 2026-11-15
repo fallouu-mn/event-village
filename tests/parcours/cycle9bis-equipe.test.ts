@@ -126,7 +126,8 @@ describe('R37 — un client existant invité comme contrôleur doit accepter lui
         const client = await newBuyer('equipe-client', { firstName: 'Fatou', lastName: 'Cliente' });
         const res = await invite({ phone: client.phoneE164, event_ids: [evA.eventId], confirm_promotion: true });
         assert.ok(res.status === 200 || res.status === 201, show(res));
-        assert.match(String(res.body.message ?? ''), /doit l[’']accepter dans l[’']application avant d[’']être affecté/, `réponse à la partenaire (contrat 4.3) : ${show(res)}`);
+        // Finition 1 (E-18) : texte en mots simples, sans « affecté » (recalé, signalé au rapport)
+        assert.match(String(res.body.message ?? ''), /^Invitation envoyée à .+ : réponse attendue avant le /, `réponse à la partenaire (finition 1, E-18) : ${show(res)}`);
         assert.ok(!(await rolesOf(client.userId)).includes('CONTROLEUR'), 'aucun rôle CONTROLEUR avant l’acceptation (aujourd’hui posé tout de suite)');
         assert.deepEqual(await cashByEvent(client.userId), {}, 'aucune affectation avant l’acceptation');
         const invs = await invitationsOf(client.userId);

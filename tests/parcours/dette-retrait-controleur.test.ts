@@ -96,7 +96,8 @@ function show(res: RouteResult): string {
 
 async function removeController(user: Buyer, controllerId: string, query = ''): Promise<RouteResult> {
     const { DELETE } = await importModule(CONTROLLER_ROUTE);
-    return invoke(DELETE as Handler, authed(`/api/partner/team/controller/${controllerId}${query}`, 'DELETE', user), routeContext({ controllerId }));
+    // Finition 1 (E-17) : motif exigé d'un admin sur l'équipe d'un organisateur, ignoré pour la partenaire (signalé)
+    return invoke(DELETE as Handler, authed(`/api/partner/team/controller/${controllerId}${query}`, 'DELETE', user, { reason: 'Demande de l’organisateur (test)' }), routeContext({ controllerId }));
 }
 
 async function removeAssignment(user: Buyer, eventId: string, assignmentId: string): Promise<RouteResult> {
