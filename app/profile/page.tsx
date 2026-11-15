@@ -19,6 +19,7 @@ import {
   Sun,
   User,
   Wallet,
+  CalendarCheck,
 } from 'lucide-react';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -212,6 +213,16 @@ export default function ProfilePage() {
       title: 'Contrôle des billets',
       description: 'Scanner les QR codes à l’entrée d’un événement',
       icon: QrCode,
+      tone: 'neutral',
+    });
+  }
+  // Finition 1 (complément 13) : historique des soirées, même quand aucun contrôle n'est ouvert
+  if (roles.includes('CONTROLEUR')) {
+    shortcuts.push({
+      href: '/profile/soirees',
+      title: 'Mes soirées',
+      description: 'Les événements que vous avez contrôlés : vos entrées et votre caisse',
+      icon: CalendarCheck,
       tone: 'neutral',
     });
   }

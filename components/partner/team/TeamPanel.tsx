@@ -32,6 +32,7 @@ import {
     telHref, whatsappHref, whatsappMessage,
 } from './team-format';
 import type { TeamAssignment, TeamInvitation, TeamMember, TeamScope, TeamView } from './team-types';
+import { eveningCashText, eveningEntriesText } from '@/lib/shifts/evening-format';
 
 type Filter = 'all' | 'ready' | 'pending' | 'nogate' | 'followup';
 const FILTERS: Array<{ id: Filter; label: string }> = [
@@ -288,7 +289,11 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                         <ul className="mt-2 flex flex-col gap-2" aria-label={`Événements passés de ${memberName(m)}`}>
                             {past.map((a) => (
                                 <li key={a.assignment_id} className="text-sm text-fg-muted">
-                                    {`${a.title} · ${eventWhen(a.start_at)} · ${entriesText(a)}`}
+                                    <span className="block text-fg">{`${a.title} · ${eventWhen(a.start_at)}`}</span>
+                                    {/* Complément 13 : mêmes chiffres que « Mes soirées » du contrôleur */}
+                                    <span className="block tabular-nums">
+                                        {a.evening ? `${eveningEntriesText(a.evening.entries)} · ${eveningCashText(a.evening.cash)}` : entriesText(a)}
+                                    </span>
                                 </li>
                             ))}
                         </ul>

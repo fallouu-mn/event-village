@@ -2,6 +2,7 @@
  * Finition 1 (E-13) — forme de la réponse de GET /api/partner/team (RPC partner_team_view), lue par TeamPanel. Rien
  * n'est calculé à l'écran : états, dates, comptages et portes viennent du serveur.
  */
+import type { EveningFigures } from '@/lib/shifts/evening-format';
 export type AccountState = 'ACTIVE' | 'PENDING_ACTIVATION' | 'SUSPENDED';
 export type InvitationState = 'PENDING' | 'EXPIRED' | 'DECLINED' | 'CANCELLED';
 
@@ -25,6 +26,8 @@ export interface TeamAssignment {
     open_shift: boolean;
     entries: number;
     last_scan_at: string | null;
+    /** Complément 13 : chiffres de la soirée passée (mêmes que « Mes soirées » du contrôleur) ; absent sinon. */
+    evening?: EveningFigures | null;
 }
 
 export interface TeamMember {
