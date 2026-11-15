@@ -42,7 +42,10 @@ function assertNothingOfTicket(r: Reply, what: string, t: { number: string }): v
 }
 
 async function closedCase(ev: SaleEvent, label: string, expected: string): Promise<void> {
-    const c = await newController(P, ev.eventId, { label: `t4-${label}` });
+    // Libellé réduit à des lettres et chiffres ASCII : il entre dans l'adresse email du compte de test (run 209 : « avant
+    // l’ouverture » donnait une adresse invalide, le test tombait avant toute vérification)
+    const slug = label.normalize('NFD').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    const c = await newController(P, ev.eventId, { label: `t4-${slug}` });
     const t = await freeTicket(ev, H);
     const key = randomUUID();
     const sc = await scanTicket(c, ev.eventId, t.id, {}, key);
