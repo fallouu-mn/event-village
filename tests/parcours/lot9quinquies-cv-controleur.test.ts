@@ -58,7 +58,9 @@ describe('Point 4 — fiche ni VALIDE ni SUSPENDU : affectations de contrôleurs
         assert.ok(!seen.VALIDE.partenaire.startsWith('403'), `fiche VALIDE : la partenaire affectée passe la garde (${seen.VALIDE.partenaire})`);
         for (const status of ['EN_ATTENTE', 'REJETE']) {
             assert.equal(seen[status].controleur, '403/SCAN_FORBIDDEN', `fiche ${status} : contrôleur`);
-            assert.equal(seen[status].partenaire, '403/SCAN_FORBIDDEN', `fiche ${status} : la partenaire elle-même`);
+            // Correctifs cvf1 (T2) : la partenaire est refusée par la garde de fiche des routes /api/controller/* (même 403,
+            // code PARTNER_NOT_VALIDATED, comme SUSPENDU) avant la fonction de scan, qui la refuserait aussi (SCAN_FORBIDDEN)
+            assert.equal(seen[status].partenaire, '403/PARTNER_NOT_VALIDATED', `fiche ${status} : la partenaire elle-même`);
         }
     });
 });
