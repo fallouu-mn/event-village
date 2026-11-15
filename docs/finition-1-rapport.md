@@ -5,7 +5,7 @@ Branche `finition-1/equipe`, partie de `main` à `6d5020b5`, dans son propre dos
 ## À lire en premier
 
 **Correctifs de la contre-vérification, en premier (§ 0).** La contre-vérification (`docs/audit-finition-1.md`) a trouvé 5 trous, aucun critique. Tous sont fermés, le plus grave d'abord, chacun avec un test rouge puis vert :
-- **T1.** Le numéro d'un compte ADMIN ou SUPERADMIN ne s'invite plus, sans révéler de nom masqué, et un tel compte ne devient plus contrôleur. Depuis la migration 13, demandée après la première livraison, la base elle-même refuse toute nouvelle affectation d'un tel compte, quel que soit le chemin (§ 0.2).
+- **T1.** Le numéro d'un compte ADMIN ou SUPERADMIN ne s'invite plus, sans révéler de nom masqué, et un tel compte ne devient plus contrôleur. Depuis la migration 13, demandée après la première livraison, la base elle-même refuse toute nouvelle affectation d'un tel compte, quel que soit le chemin (§ 0.2). Depuis la migration 14, un contrôleur qui devient administrateur quitte les équipes de contrôle, dans la même transaction (§ 0.3).
 - **T2.** Une propriétaire dont la fiche n'est pas VALIDE n'ouvre plus de caisse sur ses événements.
 - **T3.** « Mes soirées » ne retient plus un scan refusé.
 - **T4.** Hors de la plage du contrôle, le scanner ne rend plus que le verdict : ni nom du porteur, ni numéro, ni catégorie.
@@ -33,13 +33,14 @@ Les remarques R1 à R4 sont corrigées aussi. Les 9 suites `tests/audit/cvf1-*` 
    Elle est prévenue quand une invitation est acceptée, refusée ou laissée sans réponse : cloche, push et email, jamais de SMS. Elle-même apparaît en tête de la liste, « Vous (organisatrice) — toutes les portes ». Elle scanne et vend au guichet sur ses propres événements sans s'inviter.
 4. **Fin d'un événement : règle existante gardée.** Le contrôle ouvre 6 h avant le début et ferme 6 h après la fin retenue (la fin saisie, sinon début + 6 h). Un événement annulé ou suspendu ferme tout de suite. C'est exactement la règle demandée ; seuls les messages et un trou (la recherche d'invités) ont changé (§ 3.1). Le compte du contrôleur reste actif et son rôle n'est jamais retiré à la fin d'un événement. Le menu « Scanner » n'apparaît que si un contrôle est ouvert ou ouvre dans les 24 h, et il se met à jour sans recharger la page (§ 3.6).
 5. **« Mes soirées » (complément 13).** Le contrôleur ouvre depuis son profil, même sans contrôle ouvert, l'historique de ses événements passés : date, événement, organisatrice, sa porte, les entrées qu'il a validées et, s'il a tenu la caisse, le total encaissé et l'état de la clôture. Il ne voit que ses propres chiffres : aucun nom, numéro ni billet de client, rien des autres contrôleurs (testé). L'organisatrice lit les mêmes chiffres, calculés par la même fonction, dans « Événements passés » de sa page Équipe (§ 3.5).
-6. **Treize migrations `20261115…` à appliquer sur event-village-dev** : cinq pour la finition, huit pour les correctifs de la contre-vérification. Déployer ensuite l'application de la branche dans la même fenêtre (§ 5). Aucune ne modifie les données existantes, sauf la reprise de deux colonnes neuves sur les invitations.
+6. **Quatorze migrations `20261115…` à appliquer sur event-village-dev** : cinq pour la finition, neuf pour les correctifs de la contre-vérification. Déployer ensuite l'application de la branche dans la même fenêtre (§ 5). Aucune ne modifie les données existantes, sauf la reprise de deux colonnes neuves sur les invitations.
 7. **Runs :**
    - « avant » : 188, sur le code de `main`, vert (391/391, e2e vert) ;
    - preuve des rouges : 189, 196 et 197 (branches de tests seuls) ;
    - « après » : 203, sur `9e2edf23`, vert (398/398, e2e vert, captures comprises) ;
    - correctifs de la contre-vérification : preuve des rouges aux runs 208 et 210, « après » au run 211 (§ 0) ;
-   - T1 en base (migration 13) : preuve des rouges au run 213, « après » au run 214 (§ 0.2).
+   - T1 en base (migration 13) : preuve des rouges au run 213, « après » au run 214 (§ 0.2) ;
+   - promotion en administrateur (migration 14) : preuve des rouges au run 216, « après » au run 217 (§ 0.3).
 
    Entre les deux, la relecture des captures du run 199 a fait corriger trois fautes de texte de l'équipe (§ 7.1). Le run 202 a révélé un défaut d'isolation entre deux suites de SMS, antérieur à la finition, corrigé sans toucher aux assertions (§ 6).
 
@@ -49,7 +50,7 @@ Les remarques R1 à R4 sont corrigées aussi. Les 9 suites `tests/audit/cvf1-*` 
 
 ## 0. Correctifs de la contre-vérification
 
-La contre-vérification de la finition (`docs/audit-finition-1.md`, branche `audit/finition-1`, `672f8388`) a trouvé 5 trous (T1 à T5), aucun critique, et 4 remarques (R1 à R4). Elle a été fusionnée dans `finition-1/equipe` (`51bb05da`) sans toucher à ses assertions : ses 9 suites `tests/audit/cvf1-*` servent de tests rouges. Chaque point est corrigé dans son propre commit, dans l'ordre, avec un test rouge avant le correctif. Huit migrations nouvelles, `20261115000006` à `20261115000013`, sont décrites au § 5. La dernière a été ajoutée à ta demande après la première livraison : elle refuse aussi en base toute affectation d'un compte d'administration (§ 0.2).
+La contre-vérification de la finition (`docs/audit-finition-1.md`, branche `audit/finition-1`, `672f8388`) a trouvé 5 trous (T1 à T5), aucun critique, et 4 remarques (R1 à R4). Elle a été fusionnée dans `finition-1/equipe` (`51bb05da`) sans toucher à ses assertions : ses 9 suites `tests/audit/cvf1-*` servent de tests rouges. Chaque point est corrigé dans son propre commit, dans l'ordre, avec un test rouge avant le correctif. Neuf migrations nouvelles, `20261115000006` à `20261115000014`, sont décrites au § 5. Les deux dernières ont été ajoutées à ta demande après la première livraison : la 13 refuse aussi en base toute affectation d'un compte d'administration (§ 0.2), la 14 retire de ses équipes un contrôleur qui devient administrateur (§ 0.3).
 
 Preuve des rouges :
 - runs 205 et 206 de la contre-vérification : `cvf1-2`, `cvf1-3`, `cvf1-4`, `cvf1-6` et `cvf1-7` rouges ;
@@ -59,6 +60,8 @@ Preuve des rouges :
 Après les neuf correctifs : run 211, sur `0ffe3924`. Vert : 415/415, dont les 9 suites `cvf1-*` et les 26 suites de `tests/audit/` et `tests/audit-auth/`. Invariants à 0 (seules lignes à 1 : les violations fabriquées exprès par l'auto-test `pilotage-invariant`). e2e vert : captures, fumée, terrain et recette. Budgets JavaScript identiques au run 203, aucun relevé.
 
 Après la migration 13 : run 214, sur `f0523410`. Vert : 416/416, dont les 9 suites `cvf1-*`, les 26 suites de `tests/audit/` et `tests/audit-auth/`, et `cvf1c-t1-affectations-base`. Invariants à 0, x5 compris. e2e vert : captures, fumée, terrain et recette. Budgets JavaScript identiques au run 203, aucun relevé.
+
+Après la migration 14 : run 217, sur `6714e822`. Vert : 417/417, dont les 9 suites `cvf1-*`, les 26 suites de `tests/audit/` et `tests/audit-auth/`, `cvf1c-t1-affectations-base` et `cvf1c-t1-promotion`. Invariants à 0, f5 compris. e2e vert : captures, fumée, terrain et recette. Budgets JavaScript identiques au run 203, aucun relevé.
 
 | Point | Constat | Cause | Correctif (commit) | Test rouge puis vert |
 |---|---|---|---|---|
@@ -127,9 +130,51 @@ Au run 213, celui des rouges, 357 suites sur 416 passent. `cvf1c-t1-affectations
 
 Les 58 autres suites rouges ne tombent sur aucune de leurs assertions. Toutes tombent sur l'invariant x5 du lot 9 ter : « affectation … sans lien partner_controllers ». En cause, la ligne que le cas b a fait passer au compte d'administration : c'est le trou lui-même, comme l'invariant f2 au run 208 pour R2. Avec la migration 13, ce changement est refusé et la ligne ne bouge pas.
 
-### 0.3 Ce qui reste
+### 0.3 Un contrôleur qui devient administrateur quitte les équipes de contrôle (migration 14)
 
-- Un contrôleur promu ADMIN ou SUPERADMIN depuis la page des comptes garde ses affectations. Ce n'est pas l'ajout d'un événement, donc la garde ne le voit pas. La requête du § 0.1 liste ces comptes. La promotion pourrait refuser un compte encore contrôleur, ou retirer ses affectations ; je ne l'ai pas fait, car ce n'était pas demandé. Dis-moi si tu le veux.
+Ta décision : quand un compte qui a des affectations de contrôleur reçoit le rôle ADMIN ou SUPERADMIN (page des comptes, création, toute fonction qui donne ce rôle), une caisse ouverte refuse la promotion ; sinon une confirmation vient d'abord, puis tout est retiré dans la même transaction, les organisatrices sont prévenues et le passé reste intact ; un garde-fou en base est éprouvé par un invariant et un test, promotion et invitation simultanées comprises.
+
+**Voies qui donnent le rôle, toutes relevées :**
+
+| Voie | Écriture du rôle | Désormais |
+|---|---|---|
+| Page des comptes : `PATCH /api/admin/users` sur un compte existant | fonction `user_roles_set` | Refus si caisse ouverte, confirmation, puis retrait complet. |
+| Création d'un compte : `POST /api/admin/users` | `user_roles_set` sur un compte neuf (un numéro déjà inscrit est refusé) | Un compte neuf n'a aucune affectation : rien à retirer. |
+| Amorçage du premier superadmin : `scripts/bootstrap-superadmin.ts` | `user_roles` écrit par le serveur (`grantUserRoles`) | Déclencheur : même retrait, même refus si caisse ouverte. |
+| Toute autre écriture du rôle (requête de support, fonction future) | `user_roles`, ou la colonne héritée `users.role` | Déclencheurs sur les deux : même retrait. |
+
+**À savoir sur l'écran.** La page des comptes ne change pas aujourd'hui le rôle d'un compte existant : elle crée des comptes, suspend, règle les droits des administrateurs. Promouvoir un contrôleur passe donc par l'API de cette page, qu'aucune fenêtre n'appelle pour cela. La confirmation est portée par l'API : sans `confirm_staff_promotion: true`, elle répond `requires_confirmation` avec le texte ci-dessous, et rien ne change. Je n'ai pas ajouté de bouton « Changer le rôle », qui n'était pas demandé ; s'il vient, sa fenêtre affichera ce texte tel quel.
+
+**Correctif** (`6714e822`, migration `20261115000014`) :
+- **Caisse ouverte** : promotion refusée, rien ne change. Texte : « Cette personne a une caisse ouverte sur « {événement} ». Elle doit la fermer avec l’organisatrice avant de devenir administrateur. » Le code reste `CONTROLLER_HAS_OPEN_SHIFT`, comme avant ce correctif.
+- **Confirmation** : « Cette personne contrôle les entrées pour 2 organisateurs. En devenant administrateur, elle sera retirée de leurs équipes. » ; au singulier, « … pour 1 organisateur. En devenant administrateur, elle sera retirée de son équipe. ». J'ai accordé ton texte au singulier ; dis-moi si tu préfères « organisateur(s) » tel quel.
+- **Dans la transaction de la promotion** (fonction `controller_staff_promotion_apply`, lancée par l'écriture du rôle) :
+  - toutes ses affectations sont retirées, sans avis de retrait ni SMS au compte promu ; ses rappels de la veille sont annulés ;
+  - son rôle CONTROLEUR est retiré ; ses invitations en attente sont annulées, au nom de l'administrateur qui promeut ;
+  - ses sessions sont révoquées : le scanner resté ouvert est refusé (401) ;
+  - le journal reçoit `CONTROLLER_REMOVED_FOR_ADMIN`, avec ses événements, ses organisatrices et le nombre d'invitations annulées ;
+  - chaque organisatrice dont il quitte l'équipe reçoit l'avis `CONTROLLER_BECAME_ADMIN`, par la cloche, le push et l'email, jamais par SMS : « {nom} ne fait plus partie de votre équipe : son compte est devenu un compte d'administration Event Village. Invitez une autre personne pour vos entrées. ». Une organisatrice qui n'avait qu'une invitation en attente voit cette invitation annulée, sans cet avis.
+- **Passé intact** : rien n'est supprimé dans ses scans ni dans ses caisses. « Mes soirées » garde ses soirées passées, grâce à ses scans et à ses caisses (testé). Chez l'organisatrice, il disparaît de la page Équipe, puisqu'il n'en fait plus partie ; ses entrées et sa caisse restent enregistrées.
+- **Garde-fou** : la promotion verrouille le compte. L'affectation (garde de la table), l'invitation (`controller_invitation_create`) et l'acceptation (`controller_invitation_respond`) le lisent sous verrou. Si la promotion commence la première, la demande attend puis refuse ; si une affectation est déjà en cours, la promotion l'attend puis la retire. Partout, le compte est verrouillé avant l'invitation : aucun interblocage. L'invariant f5 (aucun compte d'administration affecté) est vérifié à la fin de chaque suite de la finition.
+- `user_roles_set` retire CONTROLEUR quand ADMIN ou SUPERADMIN est demandé : un compte d'administration n'est jamais contrôleur.
+
+**Test** `cvf1c-t1-promotion` (nouveau), rouge au run 216 (`finition-1/rouges-cvf1-14`, tests seuls) et vert au run 217 :
+- a. caisse ouverte : refus sur la route, par `user_roles_set` et par une écriture directe du rôle ; rien ne change ;
+- b. confirmation au pluriel et au singulier ; rien ne change ;
+- c. promotion confirmée. Vérifiés : affectations, rôle, invitation annulée, scanner refusé, journal ; avis à deux organisatrices, sans SMS, et aucun à celle qui n'avait qu'une invitation ; aucun avis de retrait ni SMS au compte promu ; « Mes soirées », chiffres de la soirée passée, scans et caisses identiques ;
+- d. rôle SUPERADMIN écrit directement, comme à l'amorçage : même retrait, avis et journal ;
+- e. quatre courses. Pendant la promotion : une acceptation, une affectation directe, une nouvelle invitation. Et une affectation déjà en cours quand la promotion commence. Aucun compte d'administration ne reste affecté.
+
+Au run 216, celui des rouges, 405 suites sur 417 passent. Les rouges se rangent ainsi :
+- `cvf1c-t1-promotion` est rouge sur tous ses cas. La route refuse avec l'ancien texte générique et promeut sans confirmation ; la promotion ne retire rien. Pendant les courses, l'affectation et l'invitation sont créées (201) et les affectations restent. L'attente de la promotion est observée à chaque course.
+- `cvf1c-t1-affectations-base` est rouge sur ses cas adaptés : l'affectation d'avant reste.
+- `notif-modeles` et `notif-outbox` sont rouges, faute du type d'avis ; `migration-finition1-rejouable` aussi, faute du fichier.
+- Les 6 autres suites de la finition ne tombent sur aucune de leurs assertions. Toutes tombent sur l'invariant f5 : des comptes d'administration gardent une affectation, ce qui est le trou lui-même.
+
+### 0.4 Ce qui reste
+
+- La page des comptes n'a pas de bouton « Changer le rôle » d'un compte existant (§ 0.3) ; la confirmation est prête côté API.
+- Si quelqu'un accepte une invitation pendant sa propre promotion, il reçoit « L’organisateur a annulé cette invitation. » : c'est la promotion qui l'a annulée. Ses sessions sont révoquées dans la même transaction, il doit de toute façon se reconnecter. Un texte propre à ce cas est possible si tu le veux.
 - La fenêtre de 60 s de R2 ne vaut que pour une invitation **identique**. Renvoyer un SMS passe par « Renvoyer », qui garde son plafond.
 
 ## 1. Sécurité
@@ -469,8 +514,9 @@ Ils ne sont pas envoyés par Event Village : WhatsApp s'ouvre sur le téléphone
 | 11 | `20261115000011_cvf1_porte_supprimee.sql` | R1 : recopies de `event_controller_settings_set` et `event_controller_gate_set` (porte verrouillée, refus `GATE_GONE`). |
 | 12 | `20261115000012_cvf1_invitations_simultanees.sql` | R2 : recopie de `controller_invitation_create`, version de la migration 6 (verrou par organisatrice et par compte, refus `INVITATION_ALREADY_SENT`). |
 | 13 | `20261115000013_cvf1_affectations_admin_base.sql` | T1 en base : recopie de `controller_assignments_sync` (refus `NOT_INVITABLE` d'un événement ajouté à un compte d'administration) ; garde de la table `event_controllers`, avec la fonction `event_controllers_staff_guard` et le déclencheur `trg_event_controllers_staff_guard` (avant insertion ou changement de titulaire, code `CT409`). |
+| 14 | `20261115000014_cvf1_promotion_admin.sql` | Promotion en administrateur. Type d'avis `CONTROLLER_BECAME_ADMIN`. Fonctions `controller_staff_open_shift`, `controller_staff_promotion_preview` et `controller_staff_promotion_apply`. Déclencheurs `trg_user_roles_staff_promotion` (`user_roles`) et `trg_users_staff_promotion` (`users.role`). Recopies de `user_roles_set` (CONTROLEUR retiré, refus d'une caisse ouverte), `notif_event_controllers_notify` (aucun avis de retrait pendant une promotion), `event_controllers_staff_guard`, `controller_invitation_create` et `controller_invitation_respond` (compte lu sous verrou). |
 
-Toutes sont sans BEGIN ni COMMIT et rejouables : c'est prouvé en CI par `migration-finition1-rejouable`, où chacune des treize est rejouée dans une transaction annulée. Les migrations jusqu'à `20261112…` sont inchangées (`migrations-gelees`). Les huit migrations des correctifs ne touchent à aucune donnée. Elles remplacent des fonctions, en créent deux, réservées au service_role ou à la base, et ajoutent un déclencheur à `event_controllers` ; ce déclencheur refuse seulement les nouvelles affectations d'un compte d'administration.
+Toutes sont sans BEGIN ni COMMIT et rejouables : c'est prouvé en CI par `migration-finition1-rejouable`, où chacune des quatorze est rejouée dans une transaction annulée. Les migrations jusqu'à `20261112…` sont inchangées (`migrations-gelees`). Les neuf migrations des correctifs ne modifient aucune donnée existante. Elles remplacent des fonctions et en créent, réservées au service_role ou à la base ; elles ajoutent un type d'avis et trois déclencheurs (`event_controllers`, `user_roles`, `users`), qui n'agissent que sur une nouvelle affectation ou une nouvelle promotion d'un compte d'administration.
 
 **Déployer l'application de la branche juste après, dans la même fenêtre.** Entre les migrations et le déploiement, l'ancienne application marche :
 - les fonctions recopiées gardent leurs paramètres (le numéro saisi et le motif y sont facultatifs) ;
@@ -502,7 +548,8 @@ select partner_id, user_id, count(*) from public.controller_invitations
 
 -- E. attendu : 0 ligne (types d'avis nouveaux absents)
 select type from public.notification_types
- where type in ('CONTROLLER_INVITATION_ACCEPTED', 'CONTROLLER_INVITATION_DECLINED', 'CONTROLLER_INVITATION_EXPIRED');
+ where type in ('CONTROLLER_INVITATION_ACCEPTED', 'CONTROLLER_INVITATION_DECLINED', 'CONTROLLER_INVITATION_EXPIRED',
+                'CONTROLLER_BECAME_ADMIN');
 
 -- F. fiches partenaires SUSPENDU dont le compte est ACTIF (garder le nombre) : ces propriétaires ne scanneront plus
 --    leurs événements (§ 1.3) ; leurs contrôleurs, si.
@@ -531,7 +578,7 @@ npx supabase db push            # projet lié : event-village-dev (rswk…)
 ### 5.3 Après (éditeur SQL)
 
 ```sql
--- A. attendu : 20261115000013
+-- A. attendu : 20261115000014
 select max(version) from supabase_migrations.schema_migrations;
 
 -- B. attendu : ec_select_by_controller et ec_select_owner présentes, ec_select_by_creator absente
@@ -550,17 +597,20 @@ select count(*) filter (where ci.last_sent_at is null) as sans_date_envoi,
   from public.controller_invitations ci left join public.users u on u.id = ci.user_id;
 select status, count(*) from public.controller_invitations group by 1 order by 1;
 
--- E. attendu : 3 lignes, canaux {IN_APP,PUSH,EMAIL}, audience PARTNER, aucune avec SMS
+-- E. attendu : 4 lignes, canaux {IN_APP,PUSH,EMAIL}, audience PARTNER, aucune avec SMS
 select type, channels, audience from public.notification_types
- where type in ('CONTROLLER_INVITATION_ACCEPTED', 'CONTROLLER_INVITATION_DECLINED', 'CONTROLLER_INVITATION_EXPIRED');
+ where type in ('CONTROLLER_INVITATION_ACCEPTED', 'CONTROLLER_INVITATION_DECLINED', 'CONTROLLER_INVITATION_EXPIRED',
+                'CONTROLLER_BECAME_ADMIN');
 
--- F. attendu : 17 (toutes les fonctions nouvelles présentes, account_is_staff et event_controllers_staff_guard comprises)
+-- F. attendu : 22 (toutes les fonctions nouvelles présentes, celles des migrations 6, 13 et 14 comprises)
 select count(distinct p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
  where n.nspname = 'public' and p.proname in ('team_mask_name', 'team_gate_categories', 'controller_invitation_notify_partner',
    'controller_invitation_create', 'controller_invitation_respond', 'controller_invitation_actor_check',
    'controller_invitation_cancel', 'controller_invitation_clear', 'controller_invitation_resend',
    'controller_invitations_expire_due', 'partner_team_view', 'event_controller_settings_set', 'controller_scanner_status',
-   'controller_evening_figures', 'controller_evenings', 'account_is_staff', 'event_controllers_staff_guard');
+   'controller_evening_figures', 'controller_evenings', 'account_is_staff', 'event_controllers_staff_guard',
+   'controller_staff_open_shift', 'controller_staff_promotion_preview', 'controller_staff_promotion_apply',
+   'user_roles_staff_promotion', 'users_staff_promotion');
 
 -- G. attendu : 0 ligne (aucune de ces fonctions, créées ou recopiées, n'est exécutable par anon ni par authenticated)
 select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -570,10 +620,12 @@ select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    'controller_invitations_expire_due', 'partner_team_view', 'event_controller_settings_set', 'controller_scanner_status',
    'controller_evening_figures', 'controller_evenings', 'account_is_staff', 'shift_can_handle_cash',
    'ticket_manual_lookup', 'ticket_scan', 'event_controller_gate_set', 'controller_assignments_sync',
-   'event_controllers_staff_guard')
+   'event_controllers_staff_guard', 'controller_staff_open_shift', 'controller_staff_promotion_preview',
+   'controller_staff_promotion_apply', 'user_roles_staff_promotion', 'users_staff_promotion', 'user_roles_set',
+   'notif_event_controllers_notify')
    and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
 
--- H. invariants (f1) à (f4) : attendu 0 ligne
+-- H. invariants (f1) à (f5) : attendu 0 ligne
 select 'f1' as regle, id::text from public.controller_invitations where status = 'CANCELLED' and responded_at is null
 union all
 select 'f2', min(id::text) from public.controller_invitations where status = 'PENDING' and expires_at > now()
@@ -582,14 +634,18 @@ union all
 select 'f3', id::text from public.controller_invitations where cleared_at is not null and status = 'PENDING' and expires_at > now()
 union all
 select 'f4', policyname from pg_policies where schemaname = 'public' and tablename = 'event_controllers'
-   and cmd in ('SELECT', 'ALL') and coalesce(qual, '') ~ 'created_by';
+   and cmd in ('SELECT', 'ALL') and coalesce(qual, '') ~ 'created_by'
+union all
+select 'f5', ec.id::text from public.event_controllers ec join public.users u on u.id = ec.user_id
+ where u.role::text in ('ADMIN', 'SUPERADMIN')
+    or exists (select 1 from public.user_roles r where r.user_id = ec.user_id and r.role::text in ('ADMIN', 'SUPERADMIN'));
 
 -- I. essais sans effet : attendu {"ok": true, "scanner": false, "open_now": 0, "next_opens_at": null, "next_change_at": null}
 --    puis {"ok": true, "items": []}
 select public.controller_scanner_status(jsonb_build_object('user_id', gen_random_uuid()));
 select public.controller_evenings(jsonb_build_object('user_id', gen_random_uuid()));
 
--- J. correctifs de la contre-vérification en place : attendu 11 lignes, toutes à true
+-- J. correctifs de la contre-vérification en place : attendu 16 lignes, toutes à true
 select v.fonction, v.marque,
        (select bool_or(p.prosrc like '%' || v.marque || '%') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and p.proname = v.fonction) as en_place
@@ -603,15 +659,24 @@ select v.fonction, v.marque,
                ('event_controller_settings_set', 'GATE_GONE'),                 -- R1
                ('event_controller_gate_set', 'GATE_GONE'),                     -- R1
                ('controller_invitation_create', 'pg_advisory_xact_lock'),      -- R2
-               ('controller_assignments_sync', 'NOT_INVITABLE')                -- T1 en base (migration 13)
+               ('controller_assignments_sync', 'NOT_INVITABLE'),               -- T1 en base (migration 13)
+               ('user_roles_set', 'STAFF_PROMOTION_OPEN_SHIFT'),               -- promotion (migration 14)
+               ('notif_event_controllers_notify', 'staff_promotion'),          -- promotion (migration 14)
+               ('event_controllers_staff_guard', 'FOR SHARE'),                 -- promotion (migration 14)
+               ('controller_invitation_create', 'FOR SHARE'),                  -- promotion (migration 14)
+               ('controller_invitation_respond', 'FOR NO KEY UPDATE')          -- promotion (migration 14)
        ) as v(fonction, marque);
 
 -- K. essai sans effet : attendu false (compte inconnu)
 select public.account_is_staff(gen_random_uuid());
 
--- K bis. garde de la table (migration 13) : attendu 1 ligne, trg_event_controllers_staff_guard, activé (O)
-select tgname, tgenabled from pg_trigger
- where tgrelid = 'public.event_controllers'::regclass and tgname = 'trg_event_controllers_staff_guard' and not tgisinternal;
+-- K bis. déclencheurs des migrations 13 et 14 : attendu 3 lignes, toutes activées (O)
+select tgrelid::regclass as table_, tgname, tgenabled from pg_trigger
+ where tgname in ('trg_event_controllers_staff_guard', 'trg_user_roles_staff_promotion', 'trg_users_staff_promotion')
+   and not tgisinternal order by 2;
+
+-- K ter. essai sans effet : attendu {"ok": true, "events": 0, "open_shift": null, "organizers": 0}
+select public.controller_staff_promotion_preview(jsonb_build_object('user_id', gen_random_uuid()));
 
 -- L. comptes d'administration avec le rôle CONTROLEUR : relancer G du § 5.1 ; même liste qu'avant (les correctifs
 --    n'en retirent aucun, ils empêchent seulement d'en ajouter)
@@ -643,8 +708,10 @@ select tgname, tgenabled from pg_trigger
 | 211 | `0ffe3924` | « Après » des correctifs : vert, 415/415 (9 suites `cvf1-*`, 26 suites de `tests/audit/` et `tests/audit-auth/`), invariants à 0, e2e vert, budgets inchangés |
 | 213 | `2e2ba502` (`finition-1/rouges-cvf1-13`, test de la migration 13 seul, sur `fbeda670`) | Preuve des rouges de la migration 13 : 357/416. `cvf1c-t1-affectations-base` est rouge sur tous ses cas sauf le témoin du retrait : la fonction rend `ok: true`, les insertions et le changement de titulaire sont acceptés, les trois courses répondent 201, 200 et 200 (attente du verrou observée). Les 58 autres rouges tombent toutes, et seulement, sur l'invariant x5 : la ligne passée par le cas b au compte d'administration n'a pas de lien partner_controllers. e2e vert |
 | 214 | `f0523410` (migration 13) | « Après » de la migration 13 : vert, 416/416 (9 suites `cvf1-*`, 26 suites de `tests/audit/` et `tests/audit-auth/`). `cvf1c-t1-affectations-base` est vert : la fonction rend `NOT_INVITABLE`, la garde refuse avec `CT409`, les trois courses répondent 409, 409 et 403 (attente du verrou observée). Invariants à 0, e2e vert, budgets inchangés |
+| 216 | `c0f59581` (`finition-1/rouges-cvf1-14`, tests de la migration 14 seuls, sur `07654261`) | Preuve des rouges de la migration 14 : 405/417. `cvf1c-t1-promotion` est rouge sur tous ses cas : ancien texte, aucune confirmation, rien de retiré ; pendant les courses, affectation et invitation créées (attente observée). `cvf1c-t1-affectations-base` est rouge sur ses cas adaptés. Registres d'avis et rejeu rouges (type et fichier absents). Les 6 autres suites ne tombent que sur f5. e2e vert |
+| 217 | `6714e822` (migration 14) | « Après » de la migration 14 : vert, 417/417 (9 suites `cvf1-*`, 26 suites de `tests/audit/` et `tests/audit-auth/`). Promotion : refus de caisse ouverte au texte exact (route, fonction, écriture directe), confirmation au pluriel et au singulier, retrait complet avec avis aux organisatrices, scanner refusé (401). Courses : acceptation 410, affectation directe et nouvelle invitation 409 neutres, affectation en cours retirée ; attente observée chaque fois. Invariants à 0, e2e vert, budgets inchangés |
 
-Budgets JavaScript : aucun n'a été relevé, ni par la finition ni par les correctifs de la contre-vérification (mesures des runs 209, 211 et 214 identiques à celles du run 203). Le dépassement de `/` au run 193 venait de l'appel ajouté dans la mise en page commune ; il est remplacé par le champ du profil (§ 3.2). Mesure du run 203 : `/` 226 271 octets pour un budget de 226 342 (`main` : 226 297) ; `/events/[id]` 232 573 / 233 316 ; `/tickets` 249 662 / 250 417 ; `/controller/scanner` 233 757 / 234 911 ; `/billet/hors-ligne` 221 822 / 224 268. Toutes dans leur budget, aucun relevé.
+Budgets JavaScript : aucun n'a été relevé, ni par la finition ni par les correctifs de la contre-vérification (mesures des runs 209, 211, 214 et 217 identiques à celles du run 203). Le dépassement de `/` au run 193 venait de l'appel ajouté dans la mise en page commune ; il est remplacé par le champ du profil (§ 3.2). Mesure du run 203 : `/` 226 271 octets pour un budget de 226 342 (`main` : 226 297) ; `/events/[id]` 232 573 / 233 316 ; `/tickets` 249 662 / 250 417 ; `/controller/scanner` 233 757 / 234 911 ; `/billet/hors-ligne` 221 822 / 224 268. Toutes dans leur budget, aucun relevé.
 
 ## 7. Captures avant et après
 
@@ -698,7 +765,8 @@ Vu et laissé tel quel :
 - Correctifs de la contre-vérification (§ 0) :
   - les 9 suites `tests/audit/cvf1-*`, fusionnées sans changement ;
   - 8 suites nouvelles dans `tests/parcours/` : `cvf1c-t1-admin`, `cvf1c-t2-caisse`, `cvf1c-t4-verdict`, `cvf1c-t5-motif`, `cvf1c-r1-porte-supprimee`, `cvf1c-r2-invitations-simultanees`, `cvf1c-r3-textes-motif` et `cvf1c-r4-affectations-autre` ;
-  - pour la migration 13 : `cvf1c-t1-affectations-base` (§ 0.2).
+  - pour la migration 13 : `cvf1c-t1-affectations-base` (§ 0.2) ;
+  - pour la migration 14 : `cvf1c-t1-promotion` (§ 0.3), et l'invariant (f5) dans `tests/helpers/finition1-invariants.ts`.
 
 ### 8.2 Tests existants modifiés (et pourquoi)
 
@@ -718,9 +786,12 @@ Vu et laissé tel quel :
 | `.github/workflows/verify.yml` | Déclencheur `finition-*/**` | Runs « avant » et « après » de la finition |
 | `lot9quinquies-cv-controleur` | Partenaire à fiche EN_ATTENTE ou REJETE : code attendu `PARTNER_NOT_VALIDATED` au lieu de `SCAN_FORBIDDEN` (même 403). Contrôleur inchangé | T2 : la garde de fiche des routes `/api/controller/*` refuse désormais la partenaire avant la fonction de scan, comme pour une fiche SUSPENDU ; rouge au run 209 |
 | `finition1-controle` (test de la finition) | Même changement de code attendu pour la propriétaire à fiche non VALIDE | T2, même raison |
-| `migration-finition1-rejouable` (test de la finition) | Migrations 6 à 13 ajoutées à la liste, une par commit | Chaque migration nouvelle est rejouée |
+| `migration-finition1-rejouable` (test de la finition) | Migrations 6 à 14 ajoutées à la liste, une par commit | Chaque migration nouvelle est rejouée |
 | `cvf1c-r2-invitations-simultanees` (nouveau, avant son premier vert) | Parmi les 4 demandes simultanées, un 429 `PHONE_INVITE_RATE_LIMIT` est accepté à côté des 409 `INVITATION_ALREADY_SENT` ; toujours un seul 201, une seule invitation et un seul SMS | Le plafond du numéro (lot 9 ter) peut légitimement répondre avant le verrou |
 | `cvf1c-t4-verdict` (nouveau) | Libellé du contrôleur de test réduit à de l'ASCII avant d'entrer dans son adresse email ; aucune assertion changée | « avant l’ouverture » donnait une adresse invalide : les cas a et b tombaient avant toute vérification (runs 208 et 209) |
+| `notif-modeles`, `notif-outbox` | Type `CONTROLLER_BECAME_ADMIN` ajouté aux registres | Avis nouveau de la migration 14 |
+| `cvf1c-t1-affectations-base` (test de la migration 13) | Cas a et d : l'affectation d'avant (ev1) est désormais retirée par la promotion, au lieu d'être gardée. Témoin « droit d'encaisser et retrait d'un compte d'administration encore affecté » retiré : depuis la migration 14, ce compte ne peut plus exister après une promotion. Cas e (acceptation pendant la promotion) retiré : il interbloquerait avec le verrou du compte, et cette course est éprouvée par `cvf1c-t1-promotion`, cas e | Règle de la migration 14 |
+| `tests/helpers/finition1-invariants.ts` | Invariant (f5) ajouté | Garde-fou demandé |
 
 ## 9. Essais pour un non-développeur
 
@@ -743,8 +814,8 @@ Sur l'application de la branche, avec un compte partenaire dont la fiche est val
 ## 10. À faire de ton côté
 
 1. Relire ce rapport et regarder les captures (`docs/finition-1-captures/`).
-2. Décider de la fusion de `finition-1/equipe` dans `main` (avance rapide possible, la branche part de `main` à `6d5020b5`). Les branches `finition-1/rouges`, `finition-1/rouges-2`, `finition-1/rouges-3`, `finition-1/rouges-cvf1` et `finition-1/rouges-cvf1-13` ne sont pas à fusionner : ce sont des preuves. `audit/finition-1` est déjà contenue dans `finition-1/equipe`.
-3. Après la fusion : contrôles du § 5.1 (G compris : comptes d'administration déjà contrôleurs), `db push` des treize migrations, contrôles du § 5.3, puis déploiement de l'application dans la même fenêtre.
+2. Décider de la fusion de `finition-1/equipe` dans `main` (avance rapide possible, la branche part de `main` à `6d5020b5`). Les branches `finition-1/rouges`, `finition-1/rouges-2`, `finition-1/rouges-3`, `finition-1/rouges-cvf1`, `finition-1/rouges-cvf1-13` et `finition-1/rouges-cvf1-14` ne sont pas à fusionner : ce sont des preuves. `audit/finition-1` est déjà contenue dans `finition-1/equipe`.
+3. Après la fusion : contrôles du § 5.1 (G compris : comptes d'administration déjà contrôleurs), `db push` des quatorze migrations, contrôles du § 5.3, puis déploiement de l'application dans la même fenêtre.
 4. Si le contrôle G rend des lignes : décider pour chaque compte (§ 0.1).
 5. Vérifier que la tâche planifiée `/api/cron/reminders` tourne sur l'hébergement : c'est elle qui clôt les invitations échues et prévient la partenaire.
 6. Pour un admin qui gère l'équipe d'un organisateur : ouvrir `/partner/team?partnerId={id}`. La liste de choix est notée pour après le lancement.
