@@ -4,6 +4,7 @@ import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { contactSupport } from '@/lib/support-contact';
+import { isNotInvitableDbError } from '@/lib/auth/staff-account';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,12 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         const { data, error } = await getServiceRoleClient().rpc('controller_invitation_respond', {
             p: { invitation_id: id, actor_id: session.user.id, accept: parsed.data.accept },
         });
-        if (error) throw error;
+        if (error) {
+            // cvf1 (migration 13) : compte devenu admin pendant l'acceptation, refusé par la garde de la table : même refus
+            // que celui de la fonction (l'invitation reste en attente, il peut la refuser)
+            if (isNotInvitableDbError(error)) throw new PublicError(REFUSALS.NOT_INVITABLE[1], 'NOT_INVITABLE', REFUSALS.NOT_INVITABLE[0]);
+            throw error;
+        }
         const reply = data as { ok?: boolean; code?: string; status?: string; assigned_event_ids?: string[] } | null;
         if (!reply) throw new Error('controller_invitation_respond : réponse vide');
         if (reply.ok !== true) {

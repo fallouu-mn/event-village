@@ -17,6 +17,7 @@ import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { addUserRole, grantUserRoles } from '@/lib/auth/roles';
 import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { createControllerInvitation, notInvitableResponse } from '../controller-invitation';
+import { isNotInvitableDbError } from '@/lib/auth/staff-account';
 import { adminTeamRefusal } from '../team-access';
 import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { CONTROLLER_ACTIVATION_KEY, isControllerActivationPending } from '@/lib/auth/controller-activation';
@@ -487,6 +488,9 @@ export async function POST(req: NextRequest) {
                 .insert(toInsert.map((evId) => ({ event_id: evId, user_id: controllerUserId, can_accept_cash, created_by: user.id })))
                 .select(ASSIGNMENT_COLUMNS);
             if (insertErr || !inserted) {
+                // cvf1 (migration 13) : compte devenu admin pendant la demande, refusé par la garde de la table (même refus
+                // neutre que plus haut, aucun nom)
+                if (isNotInvitableDbError(insertErr)) return notInvitableResponse();
                 console.error('[invite-controller] Insert event_controllers error:', insertErr?.message ?? 'réponse vide');
                 return NextResponse.json({ error: 'Impossible d\'enregistrer les affectations. Réessayez.' }, { status: 500 });
             }

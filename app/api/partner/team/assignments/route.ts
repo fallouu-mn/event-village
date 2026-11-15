@@ -9,6 +9,7 @@ import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { maskPersonName } from '@/lib/security/mask';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { createControllerInvitation, notInvitableResponse } from '../controller-invitation';
+import { isNotInvitableDbError } from '@/lib/auth/staff-account';
 import { AdminService } from '@/lib/admin/admin.service';
 import { adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
 import { isControllerActivationPending } from '@/lib/auth/controller-activation';
@@ -364,10 +365,14 @@ export async function PATCH(req: NextRequest) {
         if (isControllerRemovalBlocked(syncErr)) {
             return NextResponse.json(controllerRemovalConflict(), { status: 409 });
         }
+        // cvf1 (migration 13) : compte devenu admin pendant l'enregistrement, refusé par la garde de la table
+        if (isNotInvitableDbError(syncErr)) return notInvitableResponse();
         if (syncErr) throw new Error(`controller_assignments_sync : ${syncErr.code ?? ''} ${syncErr.message}`);
         const sync = data as SyncReply | null;
         if (!sync) throw new Error('controller_assignments_sync : réponse vide');
         if (sync.ok !== true) {
+            // cvf1 (migration 13) : la fonction refuse elle-même d'ajouter un événement à un compte d'administration
+            if (sync.code === 'NOT_INVITABLE') return notInvitableResponse();
             const status = SYNC_REFUSALS[String(sync.code)];
             if (!status) throw new Error(`controller_assignments_sync : refus inattendu ${JSON.stringify(sync)}`);
             return NextResponse.json({ error: sync.message ?? 'Affectations refusées.', code: sync.code }, { status });
