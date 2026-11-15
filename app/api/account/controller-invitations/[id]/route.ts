@@ -15,6 +15,8 @@ const REFUSALS: Record<string, [number, string]> = {
     INVITATION_NOT_FOUND: [404, 'Invitation introuvable.'],
     INVITATION_EXPIRED: [410, 'Cette invitation a expiré.'],
     INVITATION_NOT_PENDING: [409, 'Cette invitation a déjà reçu une réponse.'],
+    // Finition 1 (E-19) : invitation annulée par l'organisateur, le lien ne mène plus à rien
+    INVITATION_CANCELLED: [410, 'L’organisateur a annulé cette invitation.'],
     ACCOUNT_NOT_ACTIVE: [403, 'Votre compte n’est pas actif.'], // lot 9 quinquies (B1) : le lien d'aide est ajouté à la requête
 };
 
