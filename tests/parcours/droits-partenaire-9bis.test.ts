@@ -69,6 +69,12 @@ function ctx(params: Record<string, string>): { params: Promise<Record<string, s
     return { params: Object.assign(Promise.resolve(params), params) };
 }
 
+/**
+ * Finition 1 (E-17) : un admin qui agit sur l'équipe d'un organisateur donne un motif (journalisé) ; ajouté aux appels
+ * des routes d'équipe de cette matrice, ignoré pour une partenaire sur sa propre équipe (modification signalée au rapport).
+ */
+const ADMIN_REASON = 'Demande de l’organisateur (test des droits)';
+
 async function call(mod: string, method: string, path: string, token: string | null, params: Record<string, string>, body?: unknown): Promise<RouteResult> {
     const handler = await routeHandler(`../../app/api/partner/${mod}/route`, method, `${method} /api/partner/${mod}`);
     return invoke(handler, jsonRequest(path, method, token, body), ctx(params));
@@ -391,7 +397,7 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
         const c2 = await newController(partnerA, evA.eventId, { label: 'dp9-retrait-2' });
         const a1 = await assignmentId(evA.eventId, c1.userId);
         const a2 = await assignmentId(evA.eventId, c2.userId);
-        const del = (id: string): Call => (t) => call('team/[eventId]', 'DELETE', `/api/partner/team/${evA.eventId}?assignmentId=${id}`, t, { eventId: evA.eventId });
+        const del = (id: string): Call => (t) => call('team/[eventId]', 'DELETE', `/api/partner/team/${evA.eventId}?assignmentId=${id}`, t, { eventId: evA.eventId }, { reason: ADMIN_REASON });
         await runMatrix({
             name: 'DELETE /api/partner/team/[eventId]', permission: 'events.write', allowed: await adminWith(['events.write']),
             other: await adminWith(['events.read', 'refunds.manage', 'partners.read']), refused: del(a1),
@@ -405,7 +411,7 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
         const c1 = await newController(partnerA, evA.eventId, { label: 'dp9-tout-1' });
         const c2 = await newController(partnerA, evA.eventId, { label: 'dp9-tout-2' });
         // Lot 9 quater (B8 : N-01) : un admin nomme l'organisateur (partnerId), ignoré pour une partenaire (modification signalée)
-        const del = (u: Buyer): Call => (t) => call('team/all', 'DELETE', `/api/partner/team/all?controllerId=${u.userId}&partnerId=${partnerA.partnerId}`, t, {});
+        const del = (u: Buyer): Call => (t) => call('team/all', 'DELETE', `/api/partner/team/all?controllerId=${u.userId}&partnerId=${partnerA.partnerId}`, t, {}, { reason: ADMIN_REASON });
         await runMatrix({
             name: 'DELETE /api/partner/team/all', permission: 'events.write', allowed: await adminWith(['events.write']),
             other: await adminWith(['events.read', 'refunds.manage', 'partners.read']), refused: del(c1), bOwnScope: true,
@@ -418,7 +424,7 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
     test('PATCH /api/partner/team/assignments (format assignments[] du contrat 4.3) : events.write', async () => {
         const ctrl = await newController(partnerA, evA.eventId, { label: 'dp9-affecte', canAcceptCash: false });
         const sync = (cash: boolean): Call => (t) => call('team/assignments', 'PATCH', '/api/partner/team/assignments', t, {}, {
-            controller_id: ctrl.userId, assignments: [{ event_id: evA.eventId, can_accept_cash: cash }],
+            controller_id: ctrl.userId, assignments: [{ event_id: evA.eventId, can_accept_cash: cash }], reason: ADMIN_REASON,
         });
         await runMatrix({
             name: 'PATCH /api/partner/team/assignments', permission: 'events.write', allowed: await adminWith(['events.write']),
@@ -432,7 +438,7 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
     test('PATCH /api/partner/team/assignments/[id] {canAcceptCash} : events.write (aujourd’hui OWNER_ONLY pour tout admin)', async () => {
         const ctrl = await newController(partnerA, evA.eventId, { label: 'dp9-especes', canAcceptCash: false });
         const id = await assignmentId(evA.eventId, ctrl.userId);
-        const set = (cash: boolean): Call => (t) => call('team/assignments/[id]', 'PATCH', `/api/partner/team/assignments/${id}`, t, { id }, { canAcceptCash: cash });
+        const set = (cash: boolean): Call => (t) => call('team/assignments/[id]', 'PATCH', `/api/partner/team/assignments/${id}`, t, { id }, { canAcceptCash: cash, reason: ADMIN_REASON });
         await runMatrix({
             name: 'PATCH /api/partner/team/assignments/[id]', permission: 'events.write', allowed: await adminWith(['events.write']),
             other: await adminWith(['events.read', 'refunds.manage', 'partners.read']), refused: set(true),
@@ -445,7 +451,7 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
     test('DELETE /api/partner/team/controller/[controllerId]?partnerId= : events.write', async () => {
         const c1 = await newController(partnerA, evA.eventId, { label: 'dp9-equipe-1' });
         const c2 = await newController(partnerA, evA.eventId, { label: 'dp9-equipe-2' });
-        const del = (u: Buyer): Call => (t) => call('team/controller/[controllerId]', 'DELETE', `/api/partner/team/controller/${u.userId}?partnerId=${partnerA.partnerId}`, t, { controllerId: u.userId });
+        const del = (u: Buyer): Call => (t) => call('team/controller/[controllerId]', 'DELETE', `/api/partner/team/controller/${u.userId}?partnerId=${partnerA.partnerId}`, t, { controllerId: u.userId }, { reason: ADMIN_REASON });
         await runMatrix({
             name: 'DELETE /api/partner/team/controller/[controllerId]', permission: 'events.write', allowed: await adminWith(['events.write']),
             other: await adminWith(['events.read', 'refunds.manage', 'partners.read']), refused: del(c1),
@@ -458,7 +464,7 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
     test('PATCH /api/partner/team/entry-point : events.write', async () => {
         const ctrl = await newController(partnerA, evA.eventId, { label: 'dp9-porte' });
         const set = (entryPoint: string): Call => (t) => call('team/entry-point', 'PATCH', '/api/partner/team/entry-point', t, {}, {
-            controllerId: ctrl.userId, eventId: evA.eventId, entryPoint,
+            controllerId: ctrl.userId, eventId: evA.eventId, entryPoint, reason: ADMIN_REASON,
         });
         await runMatrix({
             name: 'PATCH /api/partner/team/entry-point', permission: 'events.write', allowed: await adminWith(['events.write']),
@@ -472,7 +478,7 @@ describe('R2 — écritures réservées à la propriétaire ou à un admin event
     test('POST /api/partner/team/invite (numéro sans compte) : events.write ; un refus ne crée aucun compte et n’envoie aucun SMS', async () => {
         const refusedPhones: string[] = [];
         const invite = (phone: string): Call => (t) => call('team/invite', 'POST', '/api/partner/team/invite', t, {}, {
-            event_id: evA.eventId, phone, first_name: 'Abdou', last_name: 'Invite',
+            event_id: evA.eventId, phone, first_name: 'Abdou', last_name: 'Invite', reason: ADMIN_REASON,
         });
         const refused: Call = (t) => {
             const phone = randomSenegalPhone('76');

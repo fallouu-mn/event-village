@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { callLot5Rpc, errorResponse, routeParam, UUID_RE, type RouteParams } from '@/lib/events/pilotage.service';
+import { AdminService } from '@/lib/admin/admin.service';
+import { getServiceRoleClient } from '@/lib/supabase/server';
+import { actsAsTeamAdmin, adminReasonRefusal, adminTeamRefusal, cleanReason } from '../../team-access';
 
 export const dynamic = 'force-dynamic';
 
-const bodySchema = z.object({ canAcceptCash: z.boolean() }).strict();
+// Finition 1 (E-17) : `reason`, motif d'un admin hors de sa fiche (journalisé)
+const bodySchema = z.object({ canAcceptCash: z.boolean(), reason: z.string().max(500).optional() }).strict();
 
 /**
  * PATCH /api/partner/team/assignments/[id] — lot 5 (contrat I, onglet Équipe). Corps `{ canAcceptCash }`.
@@ -17,6 +21,9 @@ const bodySchema = z.object({ canAcceptCash: z.boolean() }).strict();
 export async function PATCH(request: NextRequest, ctx: RouteParams<{ id: string }>) {
     const session = await requireActiveSession(request);
     if (session.response) return session.response;
+    // Finition 1 (E-17) : la permission d'un admin est vérifiée avant le motif et tout effet
+    const denied = await adminTeamRefusal(session.user, 'events.write');
+    if (denied) return denied;
     const assignmentId = await routeParam(ctx, 'id');
     if (!UUID_RE.test(assignmentId)) {
         return NextResponse.json({ error: 'Affectation introuvable.', code: 'ASSIGNMENT_NOT_FOUND' }, { status: 404 });
@@ -34,11 +41,25 @@ export async function PATCH(request: NextRequest, ctx: RouteParams<{ id: string 
     }
 
     try {
+        const { data: owner, error: ownerErr } = await getServiceRoleClient()
+            .from('event_controllers').select('events!inner(partner_id)').eq('id', assignmentId).maybeSingle();
+        if (ownerErr) throw new Error(`lecture de l'affectation : ${ownerErr.message}`);
+        const partnerOfAssignment = (owner?.events as unknown as { partner_id: string } | undefined)?.partner_id ?? null;
+        const asAdmin = partnerOfAssignment ? await actsAsTeamAdmin(session.user, partnerOfAssignment) : false;
+        const reasonRefused = adminReasonRefusal(asAdmin, parsed.data.reason);
+        if (reasonRefused) return reasonRefused;
         const body = await callLot5Rpc('event_controller_set_cash', {
             assignment_id: assignmentId,
             actor_id: session.user.id,
             can_accept_cash: parsed.data.canAcceptCash,
         }, 'Modification de la permission espèces impossible pour le moment.');
+        if (asAdmin) {
+            await AdminService.logAudit({
+                userId: session.user.id, userRole: 'ADMIN', action: 'TEAM_ADMIN_ACTION', objectType: 'event_controllers', objectId: assignmentId,
+                newValue: { can_accept_cash: parsed.data.canAcceptCash },
+                metadata: { route: 'PATCH /api/partner/team/assignments/[id]', reason: cleanReason(parsed.data.reason) },
+            });
+        }
         return NextResponse.json({
             success: true,
             assignment: {

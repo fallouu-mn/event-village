@@ -5,7 +5,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { revokeUserSessions } from '@/lib/auth/sessions';
-import { adminForeignTeamRefusal, adminTeamRefusal } from '../../team-access';
+import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason, optionalJsonBody } from '../../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,6 +79,13 @@ export async function DELETE(
         // Lot 9 quater (B3 : AUD-24) : un ADMIN-PARTENAIRE hors de sa fiche passe par la permission events.write
         const foreign = await adminForeignTeamRefusal(user, 'events.write', [partnerId]);
         if (foreign) return foreign;
+        // Finition 1 (E-17) : un admin hors de sa fiche donne un motif (corps JSON { reason }), journalisé
+        const body = await optionalJsonBody(req);
+        if (body === null) return NextResponse.json({ error: 'Demande illisible.', code: 'INVALID_BODY' }, { status: 400 });
+        const asAdmin = await actsAsTeamAdmin(user, partnerId);
+        const reasonRefused = adminReasonRefusal(asAdmin, body.reason);
+        if (reasonRefused) return reasonRefused;
+        const reason = asAdmin ? cleanReason(body.reason) : null;
 
         // 2. Retrait atomique (verrou consultatif + profil FOR UPDATE)
         const { data: rpcResult, error: rpcErr } = await supabase.rpc('atomic_partner_remove_controller', {
@@ -138,6 +145,7 @@ export async function DELETE(
                 deleted_by: user.id,
                 removed_assignments: removal.removed_assignments,
                 remaining_assignments: removal.remaining_assignments,
+                ...(reason ? { reason } : {}),
             },
         });
 

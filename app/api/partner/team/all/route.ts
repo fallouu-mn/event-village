@@ -6,7 +6,7 @@ import { isEventEligibleForController } from '@/lib/events/event-status';
 import { dakarInstant } from '@/lib/validations/event';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
 import { maskPersonName } from '@/lib/security/mask';
-import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
+import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason, optionalJsonBody } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -367,6 +367,13 @@ export async function DELETE(req: NextRequest) {
         if (!partnerId) {
             return NextResponse.json({ error: 'Choisissez l’organisateur dont vous gérez l’équipe.', code: 'PARTNER_SCOPE_REQUIRED' }, { status: 400 });
         }
+        // Finition 1 (E-17) : un admin hors de sa fiche donne un motif (corps JSON { reason }), journalisé
+        const body = await optionalJsonBody(req);
+        if (body === null) return NextResponse.json({ error: 'Demande illisible.', code: 'INVALID_BODY' }, { status: 400 });
+        const asAdmin = await actsAsTeamAdmin(user, partnerId);
+        const reasonRefused = adminReasonRefusal(asAdmin, body.reason);
+        if (reasonRefused) return reasonRefused;
+        const reason = asAdmin ? cleanReason(body.reason) : null;
         const assignmentsQuery = supabase
             .from('event_controllers')
             .select('id, event_id, events!inner(partner_id)')
@@ -418,6 +425,7 @@ export async function DELETE(req: NextRequest) {
                     partner_id: partnerId,
                     controller_id: controllerId,
                     removed_by: user.id,
+                    ...(reason ? { reason } : {}),
                 },
             });
         } catch (auditErr) {

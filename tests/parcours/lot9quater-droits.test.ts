@@ -232,7 +232,8 @@ describe('B3, B8 — équipe de contrôle', () => {
         assert.equal(none.body.error, 'Choisissez l’organisateur dont vous gérez l’équipe.');
         const count = async () => (await service.from('event_controllers').select('id').eq('user_id', a.ctrl.userId)).data?.length ?? 0;
         assert.equal(await count(), 2, 'aucune affectation supprimée');
-        const scoped = await call('../../app/api/partner/team/all/route', authed(`/api/partner/team/all?controllerId=${a.ctrl.userId}&partnerId=${a.partner.partnerId}`, 'DELETE', admin), 'DELETE');
+        // Finition 1 (E-17) : motif exigé d'un admin sur l'équipe d'un organisateur (modification signalée au rapport)
+        const scoped = await call('../../app/api/partner/team/all/route', authed(`/api/partner/team/all?controllerId=${a.ctrl.userId}&partnerId=${a.partner.partnerId}`, 'DELETE', admin, { reason: 'Demande de l’organisateur (test)' }), 'DELETE');
         assert.equal(scoped.status, 200, show(scoped));
         const { data: left } = await service.from('event_controllers').select('event_id').eq('user_id', a.ctrl.userId);
         assert.deepEqual((left ?? []).map((x) => x.event_id), [b.eventId], 'seule l’affectation de l’autre organisateur reste');

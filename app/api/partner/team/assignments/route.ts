@@ -9,7 +9,8 @@ import { refuseInactiveAccount } from '@/lib/auth/account-status';
 import { maskPersonName } from '@/lib/security/mask';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { createControllerInvitation } from '../controller-invitation';
-import { adminTeamRefusal } from '../team-access';
+import { AdminService } from '@/lib/admin/admin.service';
+import { adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
 import { isControllerActivationPending } from '@/lib/auth/controller-activation';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,8 @@ const UpdateAssignmentsSchema = z.object({
     canAcceptCash:     z.boolean().optional(),
     confirm_promotion: z.boolean().optional(),
     confirmPromotion:  z.boolean().optional(),
+    // Finition 1 (E-17) : motif d'un admin hors de sa fiche, journalisé
+    reason:            z.string().max(500).optional(),
 }).transform(data => ({
     controller_id:     data.controller_id || data.controllerId || '',
     // Lot 9 bis (R41) : `assignments` fait foi ; une simple liste d'événements garde le droit d'encaisser actuel
@@ -39,6 +42,7 @@ const UpdateAssignmentsSchema = z.object({
         ?? (data.event_ids || data.eventIds || (data.eventId ? [data.eventId] : [])).map((event_id) => ({ event_id, can_accept_cash: undefined as boolean | undefined })),
     global_cash:       data.can_accept_cash !== undefined || data.canAcceptCash !== undefined,
     confirm_promotion: data.confirm_promotion ?? data.confirmPromotion ?? false,
+    reason:            data.reason,
 })).refine(data => !!data.controller_id, {
     message: 'controller_id ou controllerId requis.',
 });
@@ -97,6 +101,10 @@ export async function PATCH(req: NextRequest) {
         }
         const requestedEventIds = Array.from(new Set(assignments.map((a) => a.event_id)));
         const supabase = getServiceRoleClient();
+        // Finition 1 (E-17) : un admin (sans fiche partenaire) donne un motif, journalisé, avant tout effet
+        const asAdmin = !serverHasRole(user, 'PARTENAIRE');
+        const reasonRefused = adminReasonRefusal(asAdmin, parse.data.reason);
+        if (reasonRefused) return reasonRefused;
 
         // 1. Résoudre le partner_id
         let partnerId: string | null = null;
@@ -192,6 +200,7 @@ export async function PATCH(req: NextRequest) {
                     partnerId,
                     userId: controllerId,
                     assignments: assignments.map((a) => ({ event_id: a.event_id, can_accept_cash: a.can_accept_cash ?? false })),
+                    reason: asAdmin ? cleanReason(parse.data.reason) : null,
                 });
                 if (invited.response) return invited.response;
                 return NextResponse.json({
@@ -327,9 +336,16 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: sync.message ?? 'Affectations refusées.', code: sync.code }, { status });
         }
 
+        if (asAdmin) {
+            await AdminService.logAudit({
+                userId: user.id, userRole: 'ADMIN', action: 'TEAM_ADMIN_ACTION', objectType: 'users', objectId: controllerId,
+                newValue: { added: sync.added ?? [], removed: sync.removed ?? [] },
+                metadata: { route: 'PATCH /api/partner/team/assignments', reason: cleanReason(parse.data.reason) },
+            });
+        }
         return NextResponse.json({
             success: true,
-            message: 'Affectations synchronisées avec succès.',
+            message: 'Événements du contrôleur enregistrés.',
             added: sync.added ?? [],
             removed: sync.removed ?? [],
             total_active: requestedEventIds.length,

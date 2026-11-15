@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
+import { AdminService } from '@/lib/admin/admin.service';
+import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,8 @@ const BodySchema = z.object({
     controllerId: z.string().uuid(),
     gateId: z.string().uuid().nullable(),
     gateChangeAllowed: z.boolean().optional(),
+    // Finition 1 (E-17) : motif d'un admin hors de sa fiche, journalisé
+    reason: z.string().max(500).optional(),
 });
 
 /** Statut HTTP des refus de event_controller_gate_set (liste blanche, contrat 4.3). */
@@ -54,6 +57,9 @@ export async function PATCH(req: NextRequest) {
         if (evErr) throw new Error(`lecture de l'événement : ${evErr.message}`);
         const foreign = await adminForeignTeamRefusal(session.user, 'events.write', [(ev?.partner_id as string | null | undefined) ?? null]);
         if (foreign) return foreign;
+        const asAdmin = ev ? await actsAsTeamAdmin(session.user, ev.partner_id as string | null) : false;
+        const reasonRefused = adminReasonRefusal(asAdmin, parsed.data.reason);
+        if (reasonRefused) return reasonRefused;
 
         const { data, error } = await getServiceRoleClient().rpc('event_controller_gate_set', {
             p: {
@@ -72,6 +78,13 @@ export async function PATCH(req: NextRequest) {
             const status = REFUSAL_STATUS[code];
             if (!status || typeof reply.message !== 'string') throw new Error(`event_controller_gate_set : refus non répertorié ${JSON.stringify(reply)}`);
             throw new PublicError(reply.message, code, status);
+        }
+        if (asAdmin) {
+            await AdminService.logAudit({
+                userId: session.user.id, userRole: 'ADMIN', action: 'TEAM_ADMIN_ACTION', objectType: 'event_controllers',
+                newValue: { gate_id: parsed.data.gateId, gate_change_allowed: parsed.data.gateChangeAllowed ?? false },
+                metadata: { route: 'PATCH /api/partner/team/gate', event_id: parsed.data.eventId, controller_id: parsed.data.controllerId, reason: cleanReason(parsed.data.reason) },
+            });
         }
         return NextResponse.json({
             ok: true,

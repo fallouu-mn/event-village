@@ -4,7 +4,7 @@ import { requireActiveSession, serverIsAdmin, serverIsPartner, serverHasRole } f
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
-import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
+import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason, optionalJsonBody } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,6 +143,13 @@ export async function DELETE(
                 return NextResponse.json({ error: 'Non autorisé à modifier l’équipe de cet événement.', code: 'FORBIDDEN' }, { status: 403 });
             }
         }
+        // Finition 1 (E-17) : un admin hors de sa fiche donne un motif (corps JSON { reason }), journalisé
+        const body = await optionalJsonBody(req);
+        if (body === null) return NextResponse.json({ error: 'Demande illisible.', code: 'INVALID_BODY' }, { status: 400 });
+        const asAdmin = await actsAsTeamAdmin(user, event.partner_id as string | null);
+        const reasonRefused = adminReasonRefusal(asAdmin, body.reason);
+        if (reasonRefused) return reasonRefused;
+        const reason = asAdmin ? cleanReason(body.reason) : null;
 
         // 3. Retrait (le trigger controller_removal_guard refuse une affectation à caisse ouverte)
         const { data: deleted, error: delErr } = await supabase
@@ -166,7 +173,7 @@ export async function DELETE(
             objectType: 'event_controllers',
             objectId: assignmentId,
             newValue: { event_id: eventId, controller_user_id: assignment.user_id },
-            metadata: { removed_by: user.id },
+            metadata: { removed_by: user.id, ...(reason ? { reason } : {}) },
         });
 
         return NextResponse.json({ success: true, message: 'Contrôleur retiré de l’événement.', notification: 'QUEUED' });

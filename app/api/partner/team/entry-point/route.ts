@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
+import { AdminService } from '@/lib/admin/admin.service';
+import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,8 @@ const BodySchema = z.object({
     controllerId: z.string().uuid(),
     eventId: z.string().uuid(),
     entryPoint: z.string().trim().max(80).nullable(),
+    // Finition 1 (E-17) : motif d'un admin hors de sa fiche, journalisé
+    reason: z.string().max(500).optional(),
 });
 
 /**
@@ -53,6 +56,9 @@ export async function PATCH(req: NextRequest) {
     // Lot 9 quater (B3 : AUD-24) : un ADMIN-PARTENAIRE hors de sa fiche passe par la permission events.write
     const foreign = await adminForeignTeamRefusal(user, 'events.write', [event.partner_id as string | null]);
     if (foreign) return foreign;
+    const asAdmin = await actsAsTeamAdmin(user, event.partner_id as string | null);
+    const reasonRefused = adminReasonRefusal(asAdmin, parsed.data.reason);
+    if (reasonRefused) return reasonRefused;
     const { count: zoneCount, error: zonesErr } = await supabase
         .from('event_zones')
         .select('id', { count: 'exact', head: true })
@@ -77,5 +83,12 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: 'Modification momentanément indisponible.' }, { status: 500 });
     }
     if (!rows?.length) return NextResponse.json({ error: 'Ce contrôleur n’est pas affecté à cet événement.' }, { status: 404 });
+    if (asAdmin) {
+        await AdminService.logAudit({
+            userId: user.id, userRole: 'ADMIN', action: 'TEAM_ADMIN_ACTION', objectType: 'event_controllers', objectId: String(rows[0].id),
+            newValue: { entry_point: entryPoint },
+            metadata: { route: 'PATCH /api/partner/team/entry-point', event_id: parsed.data.eventId, controller_id: parsed.data.controllerId, reason: cleanReason(parsed.data.reason) },
+        });
+    }
     return NextResponse.json({ ok: true, entry_point: entryPoint });
 }
