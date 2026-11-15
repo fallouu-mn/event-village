@@ -63,8 +63,17 @@ async function stored(pathInBucket: string): Promise<Buffer | null> {
     return Buffer.from(await data.arrayBuffer());
 }
 
+async function versionOf(eventId: string): Promise<string> {
+    const { data, error } = await service.from('events').select('updated_at').eq('id', eventId).single();
+    assert.equal(error, null, `version de ${eventId} : ${error?.message}`);
+    return String(data!.updated_at);
+}
+
 async function saveImage(eventId: string, imageUrl: string): Promise<Reply> {
-    return api('PUT', 'partner/events/[id]', { token: P.accessToken, path: `/api/partner/events/${eventId}`, params: { id: eventId }, body: { image_url: imageUrl } });
+    return api('PUT', 'partner/events/[id]', {
+        token: P.accessToken, path: `/api/partner/events/${eventId}`, params: { id: eventId },
+        body: { patch: { image_url: imageUrl }, expected_updated_at: await versionOf(eventId) },
+    });
 }
 
 async function imageOf(eventId: string): Promise<string | null> {

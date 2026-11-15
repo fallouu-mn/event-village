@@ -155,8 +155,17 @@ describe('3 a. recherche de lieu par le serveur', () => {
     });
 });
 
-async function put(eventId: string, body: Row): Promise<Reply> {
-    return api('PUT', 'partner/events/[id]', { token: P.accessToken, path: `/api/partner/events/${eventId}`, params: { id: eventId }, body });
+async function versionOf(eventId: string): Promise<string> {
+    const { data, error } = await service.from('events').select('updated_at').eq('id', eventId).single();
+    assert.equal(error, null, `version de ${eventId} : ${error?.message}`);
+    return String(data!.updated_at);
+}
+
+async function put(eventId: string, patch: Row): Promise<Reply> {
+    return api('PUT', 'partner/events/[id]', {
+        token: P.accessToken, path: `/api/partner/events/${eventId}`, params: { id: eventId },
+        body: { patch, expected_updated_at: await versionOf(eventId) },
+    });
 }
 
 async function transition(eventId: string, to: string): Promise<Reply> {
@@ -179,9 +188,9 @@ describe('3 b. position : ensemble, au Sénégal, obligatoire pour soumettre', (
         assert.equal(paris.status, 400, show(paris));
         assert.equal(paris.body.code, 'POSITION_OUT_OF_BOUNDS', show(paris));
         assert.equal((await put(d.eventId, { latitude: null, longitude: null })).status, 200, 'brouillon sans position');
-        const rpcPartial = await rpc('event_update', { event_id: d.eventId, actor_id: P.userId, patch: { latitude: 14.7 } });
+        const rpcPartial = await rpc('event_update', { event_id: d.eventId, actor_id: P.userId, patch: { latitude: 14.7 }, expected_updated_at: await versionOf(d.eventId) });
         assert.equal(rpcPartial.code, 'POSITION_INCOMPLETE', JSON.stringify(rpcPartial));
-        const rpcOut = await rpc('event_update', { event_id: d.eventId, actor_id: P.userId, patch: { latitude: 10.5, longitude: -17.0 } });
+        const rpcOut = await rpc('event_update', { event_id: d.eventId, actor_id: P.userId, patch: { latitude: 10.5, longitude: -17.0 }, expected_updated_at: await versionOf(d.eventId) });
         assert.equal(rpcOut.code, 'POSITION_OUT_OF_BOUNDS', JSON.stringify(rpcOut));
         const created = await rpc('event_create', { actor_id: P.userId, event: { title: 'Hors du pays', latitude: 48.85, longitude: 2.35 } });
         assert.equal(created.code, 'POSITION_OUT_OF_BOUNDS', JSON.stringify(created));

@@ -112,6 +112,12 @@ function assertSuspended(r: Reply, what: string): void {
     assert.match(text.slice(SUSPENDED_TEXT.length), CONTACT, `${what} : contact du support (${show(r)})`);
 }
 
+async function versionOf(eventId: string): Promise<string> {
+    const { data, error } = await service.from('events').select('updated_at').eq('id', eventId).single();
+    assert.equal(error, null, `version de ${eventId} : ${error?.message}`);
+    return String(data!.updated_at);
+}
+
 async function rpc(name: string, p: Row): Promise<Row> {
     const { data, error } = await service.rpc(name, { p });
     assert.equal(error, null, `${name} : ${error?.message}`);
@@ -148,7 +154,7 @@ describe('1a. fiche SUSPENDU : la base refuse aussi', () => {
     test('fonctions d’écriture appelées avec la partenaire suspendue pour auteur : PARTNER_SUSPENDED', async () => {
         const before = await snapshot();
         const actor = P.userId;
-        assertRpcSuspended(await rpc('event_update', { event_id: evPub.eventId, actor_id: actor, patch: { title: 'Titre changé' } }), 'event_update');
+        assertRpcSuspended(await rpc('event_update', { event_id: evPub.eventId, actor_id: actor, patch: { title: 'Titre changé' }, expected_updated_at: await versionOf(evPub.eventId) }), 'event_update');
         assertRpcSuspended(await rpc('ticket_category_create', { event_id: evPub.eventId, actor_id: actor, category: { name: 'Nouvelle', price: 0, total_quantity: 10 } }), 'ticket_category_create');
         assertRpcSuspended(await rpc('ticket_category_update', { event_id: evPub.eventId, actor_id: actor, category_id: categoryId, patch: { total_quantity: 99 } }), 'ticket_category_update');
         assertRpcSuspended(await rpc('ticket_category_delete', { event_id: evPub.eventId, actor_id: actor, category_id: categoryId }), 'ticket_category_delete');
@@ -194,7 +200,7 @@ describe('1a. fiche SUSPENDU : lecture gardée, admin et contrôleurs inchangés
 
     test('l’admin events.write modifie l’événement ; le contrôleur affecté scanne', async () => {
         const admin = await newAdmin('f2a-susp-admin', ['events.write']);
-        const reply = await rpc('event_update', { event_id: evPub.eventId, actor_id: admin.userId, patch: { title: 'Titre corrigé par l’administration' } });
+        const reply = await rpc('event_update', { event_id: evPub.eventId, actor_id: admin.userId, patch: { title: 'Titre corrigé par l’administration' }, expected_updated_at: await versionOf(evPub.eventId) });
         assert.equal(reply.ok, true, `admin events.write refusé : ${JSON.stringify(reply).slice(0, 300)}`);
         const holder = await newBuyer('f2a-susp-porteur');
         const t = await freeTicket(evPub, holder);
