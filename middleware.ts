@@ -145,7 +145,10 @@ export async function middleware(req: NextRequest) {
     // (scan_scanner_authorized : affectation, propriété de l'événement ou admin), comme la voie de scan.
     const isSharedControlApi = pathname === '/api/controller/scan' || pathname.startsWith('/api/controller/scan/')
         || pathname === '/api/controller/scans'
-        || pathname.startsWith('/api/controller/shifts');
+        || pathname.startsWith('/api/controller/shifts')
+        // Finition 1 (complément 12) : vente au guichet de la partenaire sur ses propres événements (la route et la base
+        // vérifient la propriété, fiche VALIDE ; jamais l'événement d'une autre partenaire)
+        || pathname === '/api/controller/counter-sale' || pathname.startsWith('/api/controller/counter-sale/');
     const isPartnerArea = pathname.startsWith('/partner') && pathname !== '/partner/register';
 
     let supabaseResponse = NextResponse.next({ request: req });

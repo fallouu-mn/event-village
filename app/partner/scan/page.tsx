@@ -31,8 +31,9 @@
  * appliquée par le serveur (sans porte choisie : « Aucune porte… », rien n'est validé).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Camera, ChevronLeft, Keyboard, Loader2, QrCode, ShieldAlert, Ticket } from 'lucide-react';
+import { Banknote, Camera, ChevronLeft, Keyboard, Loader2, QrCode, ShieldAlert, Ticket } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Field';
@@ -50,6 +51,14 @@ import {
 } from '@/lib/scan/scan-session';
 
 interface PartnerEvent { id: string; title: string; start_date?: string; status?: string }
+
+// Finition 1 (complément 12) : guichet de la partenaire sur ses propres événements, chargé à la demande (mêmes écrans que
+// le contrôleur : vente au guichet, ouverture de caisse avec le code PIN régisseur ; clôture dans l'onglet Caisse)
+const CounterSalePanel = dynamic(() => import('@/components/scan/CounterSalePanel').then((m) => m.CounterSalePanel), {
+    ssr: false,
+    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du guichet…</p>,
+});
+const OpenShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.OpenShiftModal), { ssr: false });
 
 /** Lot 9 ter : zones et portes de l'événement contrôlé (null : sans zone ou pas encore lues). */
 interface ZoneGates { zones: Array<{ id: string; name: string; gates: Array<{ id: string; name: string }> }> }
@@ -103,6 +112,10 @@ export default function PartnerScanPage() {
     const [loadingEvents, setLoadingEvents] = useState(true);
     const [eventId, setEventId] = useState('');
     const [scanMode, setScanMode] = useState<ScanInputMode>('camera');
+    /** Finition 1 (complément 12) : guichet (vente au guichet) à la place du contrôle. */
+    const [counterOpen, setCounterOpen] = useState(false);
+    const [showOpenShift, setShowOpenShift] = useState(false);
+    const [counterSignal, setCounterSignal] = useState(0);
     const [isVerifying, setIsVerifying] = useState(false);
     const [shown, setShown] = useState<Shown | null>(null);
     const [stats, setStats] = useState<ServedStats | null>(null);
@@ -487,12 +500,12 @@ export default function PartnerScanPage() {
                 <Select
                     id="partner-scan-gate"
                     label="Porte de contrôle"
-                    required
-                    hint="Choisissez la porte où vous contrôlez : la règle des zones s’applique à vos scans."
-                    placeholder="Choisissez une porte"
+                    hint="« Toutes les portes » : vous laissez entrer tout billet valable de votre événement. Choisissez une porte pour appliquer la règle de sa zone."
                     value={gateId}
                     onChange={(e) => { setGateId(e.target.value); setShown(null); }}
                 >
+                    {/* Finition 1 (complément 12) : la propriétaire contrôle toutes les portes (porte envoyée vide) */}
+                    <option value="">Toutes les portes</option>
                     {zoneGates.zones.map((z) => (
                         <optgroup key={z.id} label={z.name}>
                             {z.gates.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -508,7 +521,7 @@ export default function PartnerScanPage() {
                         {counter}{statsError && stats ? ' (non actualisé)' : ''}
                     </p>
 
-                    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Mode de contrôle">
+                    <div className="grid grid-cols-3 gap-2" role="group" aria-label="Mode de contrôle">
                         <Button
                             variant={scanMode === 'camera' ? 'primary' : 'secondary'}
                             size="lg"
@@ -529,7 +542,37 @@ export default function PartnerScanPage() {
                         >
                             Saisie manuelle
                         </Button>
+                        <Button
+                            variant={counterOpen ? 'primary' : 'secondary'}
+                            size="lg"
+                            className="gap-2 whitespace-nowrap px-4 text-sm"
+                            aria-pressed={counterOpen}
+                            onClick={() => setCounterOpen((v) => !v)}
+                            leftIcon={<Banknote size={18} />}
+                        >
+                            Guichet
+                        </Button>
                     </div>
+
+                    {counterOpen && (
+                        <div className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-5">
+                            <CounterSalePanel
+                                key={counterSignal}
+                                eventId={eventId}
+                                onOpenShift={() => setShowOpenShift(true)}
+                                onSold={() => setCounterSignal((n) => n + 1)}
+                                onSessionExpired={goToLogin}
+                            />
+                            <p className="text-sm text-fg-muted">Fermez votre caisse à la fin de la soirée dans l’onglet Caisse de l’événement.</p>
+                            <OpenShiftModal
+                                isOpen={showOpenShift}
+                                onClose={() => setShowOpenShift(false)}
+                                eventId={eventId}
+                                eventTitle={selectedEvent?.title}
+                                onShiftOpened={() => { setShowOpenShift(false); setCounterSignal((n) => n + 1); }}
+                            />
+                        </div>
+                    )}
 
                     {pendingNotice && (
                         <StatusBanner tone="warning" title="Scan sans réponse">

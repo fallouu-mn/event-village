@@ -47,7 +47,16 @@ export async function GET(req: NextRequest) {
         if (setting.error) throw new Error(`réglage ${COUNTER_SALE_KEY} : ${setting.error.message}`);
         if (shift.error) throw new Error(`caisse ouverte : ${shift.error.message}`);
         if (categories.error) throw new Error(`catégories : ${categories.error.message}`);
-        if (!assignment.data) {
+        // Finition 1 (complément 12) : la propriétaire de l'événement (fiche VALIDE) vend sans être affectée, toutes les
+        // portes (la base applique la même règle dans counter_sale et counter_sale_quote)
+        let seller = assignment.data as { can_accept_cash: boolean; gate_id: string | null } | null;
+        if (!seller) {
+            const { data: own, error: ownErr } = await supabase.from('events').select('id, partners!inner(user_id, status)')
+                .eq('id', eventId).eq('partners.user_id', session.user.id).eq('partners.status', 'VALIDE').maybeSingle();
+            if (ownErr) throw new Error(`propriété de l'événement : ${ownErr.message}`);
+            if (own) seller = { can_accept_cash: true, gate_id: null };
+        }
+        if (!seller) {
             return NextResponse.json({ error: 'Vente réservée au contrôleur affecté à l’événement.', code: 'NOT_ASSIGNED' }, { status: 403 });
         }
         const enabled = (setting.data?.value as { value?: unknown } | null | undefined)?.value;
@@ -56,7 +65,7 @@ export async function GET(req: NextRequest) {
         }
         const eventGates = await readEventGates([eventId]);
         const configured = eventGates.configured.has(eventId);
-        const gate = gateOut(eventGates, assignment.data.gate_id);
+        const gate = gateOut(eventGates, seller.gate_id);
         let admitted = new Set<string>();
         if (configured && gate?.zone.kind === 'ENTREE') {
             const { data: rows, error: admErr } = await supabase.from('zone_categories').select('category_id').eq('zone_id', gate.zone.id);
@@ -66,7 +75,7 @@ export async function GET(req: NextRequest) {
         const open = shift.data;
         return NextResponse.json({
             enabled,
-            can_accept_cash: assignment.data.can_accept_cash === true,
+            can_accept_cash: seller.can_accept_cash === true,
             open_shift: open ? {
                 id: open.id,
                 opened_at: open.opened_at,
@@ -80,7 +89,7 @@ export async function GET(req: NextRequest) {
                 price: Number(c.price),
                 available: Math.max(0, Number(c.total_quantity) - Number(c.sold_quantity) - Number(c.held_quantity ?? 0)),
                 on_site_only: c.sale_online === false,
-                admitted_at_gate: !configured || admitted.has(String(c.id)),
+                admitted_at_gate: !configured || !assignment.data || admitted.has(String(c.id)), // finition 1 : la propriétaire vend toutes les portes
             })),
             gate,
         }, { headers: { 'Cache-Control': 'no-store' } });

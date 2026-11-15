@@ -391,6 +391,17 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                 </div>
             )}
 
+            {/* Complément 12 : la partenaire en tête de son équipe ; elle scanne ses événements sans s'inviter */}
+            {!actsAsAdmin && (
+                <div className="flex flex-col gap-2 rounded-2xl border border-brand bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                        <p className="font-semibold text-fg">Vous (organisatrice) — toutes les portes</p>
+                        <p className="text-sm text-fg-muted">Vous scannez vos événements dont le contrôle est ouvert, à toutes les portes ou à une porte choisie, et vous vendez au guichet.</p>
+                    </div>
+                    <LinkButton href="/partner/scan" variant="secondary" size="sm">Scanner les billets</LinkButton>
+                </div>
+            )}
+
             {data.members.length === 0 && data.invitations.length === 0 ? (
                 <EmptyState
                     title={scope === 'event' ? 'Personne ne contrôle encore cet événement' : assignableEvents.length === 0 ? 'Pas encore d’équipe' : 'Aucun contrôleur dans votre équipe'}
