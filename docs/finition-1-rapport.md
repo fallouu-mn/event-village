@@ -4,6 +4,15 @@ Branche `finition-1/equipe`, partie de `main` à `6d5020b5`, dans son propre dos
 
 ## À lire en premier
 
+**Correctifs de la contre-vérification, en premier (§ 0).** La contre-vérification (`docs/audit-finition-1.md`) a trouvé 5 trous, aucun critique. Tous sont fermés, le plus grave d'abord, chacun avec un test rouge puis vert :
+- **T1.** Le numéro d'un compte ADMIN ou SUPERADMIN ne s'invite plus, sans révéler de nom masqué, et un tel compte ne devient plus contrôleur.
+- **T2.** Une propriétaire dont la fiche n'est pas VALIDE n'ouvre plus de caisse sur ses événements.
+- **T3.** « Mes soirées » ne retient plus un scan refusé.
+- **T4.** Hors de la plage du contrôle, le scanner ne rend plus que le verdict : ni nom du porteur, ni numéro, ni catégorie.
+- **T5.** Le motif d'un admin fait de 5 à 500 caractères partout.
+
+Les remarques R1 à R4 sont corrigées aussi. Les 9 suites `tests/audit/cvf1-*` sont vertes, avec `tests/audit/` et `tests/audit-auth/`. Tu demandais s'il existe déjà des comptes d'administration avec le rôle CONTROLEUR : la réponse, la requête et ma proposition sont au § 0.1.
+
 1. **Sécurité, corrigée en premier (S1).** La règle de lecture `ec_select_by_creator` de la table des contrôleurs d'événement laissait la personne qui avait ajouté un contrôleur relire la ligne par l'API REST de Supabase, sans regarder ni l'état de son compte ni la propriété actuelle de l'événement. Deux cas le prouvaient :
    - un admin à qui on avait retiré le rôle relisait encore les contrôleurs qu'il avait ajoutés ;
    - une partenaire suspendue relisait encore les siens tant que son jeton restait valable (jusqu'à 1 h).
@@ -24,17 +33,67 @@ Branche `finition-1/equipe`, partie de `main` à `6d5020b5`, dans son propre dos
    Elle est prévenue quand une invitation est acceptée, refusée ou laissée sans réponse : cloche, push et email, jamais de SMS. Elle-même apparaît en tête de la liste, « Vous (organisatrice) — toutes les portes ». Elle scanne et vend au guichet sur ses propres événements sans s'inviter.
 4. **Fin d'un événement : règle existante gardée.** Le contrôle ouvre 6 h avant le début et ferme 6 h après la fin retenue (la fin saisie, sinon début + 6 h). Un événement annulé ou suspendu ferme tout de suite. C'est exactement la règle demandée ; seuls les messages et un trou (la recherche d'invités) ont changé (§ 3.1). Le compte du contrôleur reste actif et son rôle n'est jamais retiré à la fin d'un événement. Le menu « Scanner » n'apparaît que si un contrôle est ouvert ou ouvre dans les 24 h, et il se met à jour sans recharger la page (§ 3.6).
 5. **« Mes soirées » (complément 13).** Le contrôleur ouvre depuis son profil, même sans contrôle ouvert, l'historique de ses événements passés : date, événement, organisatrice, sa porte, les entrées qu'il a validées et, s'il a tenu la caisse, le total encaissé et l'état de la clôture. Il ne voit que ses propres chiffres : aucun nom, numéro ni billet de client, rien des autres contrôleurs (testé). L'organisatrice lit les mêmes chiffres, calculés par la même fonction, dans « Événements passés » de sa page Équipe (§ 3.5).
-6. **Cinq migrations `20261115…` à appliquer sur event-village-dev**, puis l'application de la branche à déployer dans la même fenêtre (§ 5). Aucune ne modifie les données existantes, sauf la reprise de deux colonnes neuves sur les invitations.
+6. **Douze migrations `20261115…` à appliquer sur event-village-dev** : cinq pour la finition, sept pour les correctifs de la contre-vérification. Déployer ensuite l'application de la branche dans la même fenêtre (§ 5). Aucune ne modifie les données existantes, sauf la reprise de deux colonnes neuves sur les invitations.
 7. **Runs :**
    - « avant » : 188, sur le code de `main`, vert (391/391, e2e vert) ;
    - preuve des rouges : 189, 196 et 197 (branches de tests seuls) ;
-   - « après » : 203, sur `9e2edf23`, vert (398/398, e2e vert, captures comprises).
+   - « après » : 203, sur `9e2edf23`, vert (398/398, e2e vert, captures comprises) ;
+   - correctifs de la contre-vérification : preuve des rouges aux runs 208 et 210, « après » au run 211 (§ 0).
 
    Entre les deux, la relecture des captures du run 199 a fait corriger trois fautes de texte de l'équipe (§ 7.1). Le run 202 a révélé un défaut d'isolation entre deux suites de SMS, antérieur à la finition, corrigé sans toucher aux assertions (§ 6).
 
    `tests/audit/` et `tests/audit-auth/` restent verts, les invariants sont à 0 et les budgets JavaScript n'ont pas été relevés (un dépassement de 41 octets au run 193 a été corrigé dans le code, § 6).
-8. **Tests existants modifiés : 16 fichiers**, chacun justifié au § 8.2. Aucune assertion de sécurité n'a été affaiblie.
+8. **Tests existants modifiés : 17 fichiers**, chacun justifié au § 8.2. Les correctifs de la contre-vérification ont aussi recalé trois tests de la finition elle-même ; c'est signalé au même endroit. Aucune assertion de sécurité n'a été affaiblie.
 9. **Budget de la page d'accueil tenu sans relèvement.** La relecture du menu ajoute environ 150 octets compressés au code commun à toutes les pages. Pour les compenser, des messages de journal de la console du navigateur ont été raccourcis (AuthProvider, service worker, avatar, interrupteurs), sans changer aucun comportement (§ 3.6). Mesure du run 203 : 226 271 octets pour un budget de 226 342 (`main` : 226 297).
+
+## 0. Correctifs de la contre-vérification
+
+La contre-vérification de la finition (`docs/audit-finition-1.md`, branche `audit/finition-1`, `672f8388`) a trouvé 5 trous (T1 à T5), aucun critique, et 4 remarques (R1 à R4). Elle a été fusionnée dans `finition-1/equipe` (`51bb05da`) sans toucher à ses assertions : ses 9 suites `tests/audit/cvf1-*` servent de tests rouges. Chaque point est corrigé dans son propre commit, dans l'ordre, avec un test rouge avant le correctif. Sept migrations nouvelles, `20261115000006` à `20261115000012`, sont décrites au § 5.
+
+Preuve des rouges :
+- runs 205 et 206 de la contre-vérification : `cvf1-2`, `cvf1-3`, `cvf1-4`, `cvf1-6` et `cvf1-7` rouges ;
+- run 208, sur `finition-1/rouges-cvf1` (`c3f89e37`, tests seuls, sans les correctifs) : 397/415. Les rouges sont exactement les 5 suites cvf1 ci-dessus, les 8 suites nouvelles `cvf1c-*`, `migration-finition1-rejouable` (migrations 6 à 12 absentes) et 4 suites de la finition (`finition1-controle`, `-equipe`, `-securite`, `-soirees`). Ces 4 suites ne tombent sur aucune de leurs assertions : elles tombent sur l'invariant f2, que R2 viole (« 3 invitations en attente pour le même organisateur et le même compte »), et prouvent donc R2 elles aussi ;
+- run 210, sur `3ac9c2d5` : preuve refaite pour `cvf1c-t4-verdict`. Au run 208, ses cas « avant l'ouverture », « après la fermeture » et « annulé » tombaient avant toute vérification : le libellé du contrôleur de test, « avant l’ouverture », entrait dans son adresse email, qui était alors refusée. Libellé réduit à de l'ASCII (§ 8.2). Au run 210, `cvf1c-t4-verdict` tombe sur son assertion : « scan : billet rendu » avant l'ouverture, après la fermeture et pour l'annulé. Les autres rouges sont les mêmes qu'au run 208, plus `cvf1-8` : ses quatre invitations simultanées laissent cette fois 2 invitations en attente et 3 SMS. La course sort au hasard ; c'est encore R2.
+
+Après : run 211, sur `0ffe3924`. Vert : 415/415, dont les 9 suites `cvf1-*` et les 26 suites de `tests/audit/` et `tests/audit-auth/`. Invariants à 0 (seules lignes à 1 : les violations fabriquées exprès par l'auto-test `pilotage-invariant`). e2e vert : captures, fumée, terrain et recette. Budgets JavaScript identiques au run 203, aucun relevé.
+
+| Point | Constat | Cause | Correctif (commit) | Test rouge puis vert |
+|---|---|---|---|---|
+| **T1** (gravité moyenne) | Le numéro d'un compte ADMIN ou SUPERADMIN s'invitait :<br>– la route répondait « Ce numéro a déjà un compte Event Village (Nd*** A***) », avec le nom masqué ;<br>– l'invitation et le SMS partaient ;<br>– à l'acceptation, le compte recevait le rôle CONTROLEUR et l'affectation, et l'organisatrice lisait son nom et son numéro dans son équipe. | La route rangeait un compte d'administration parmi les comptes « déjà contrôleurs », puis le chemin du consentement lui envoyait une invitation. Ni `controller_invitation_create` ni `controller_invitation_respond` ne regardaient les rôles d'administration. | `165e7b11`, migration 6.<br>– Nouvelle fonction `account_is_staff` : rôle ADMIN ou SUPERADMIN dans `user_roles` ou dans `users.role`.<br>– Route d'invitation : refus 409 `NOT_INVITABLE`, « Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne. ». Il arrive juste après la lecture des rôles, donc avant le renvoi, avant la confirmation « ce numéro a déjà un compte » et avant le quota du numéro : ni nom masqué, ni SMS, ni quota consommé.<br>– `controller_invitation_create` : même refus.<br>– `controller_invitation_respond` : l'acceptation est refusée (403, « Ce compte ne peut pas devenir contrôleur. Refusez cette invitation. ») ; le refus reste possible.<br>– `PATCH assignments` : même refus 409 si un événement serait ajouté à un compte d'administration ; retirer reste possible. | `cvf1-6` : rouge aux runs 205, 206 et 208, vert au run 211.<br>`cvf1c-t1-admin` (nouveau) : rouge au run 208, vert au run 211. Il couvre la route sans nom ni confirmation, la fonction, l'acceptation par une invitation déjà en attente (route et fonction ; refuser reste possible) et `PATCH assignments`. |
+| **T2** (faible à moyenne) | Une propriétaire dont la fiche n'était pas VALIDE ouvrait une caisse sur son événement dans 4 cas sur 6 : fiche SUSPENDU avec ou sans le rôle CONTROLEUR, fiche EN_ATTENTE ou REJETE avec le rôle. Aucune vente ni entrée ne suivait. | `shift_can_handle_cash` admettait la propriétaire sans regarder sa fiche. Les routes `/api/controller/*` n'appliquaient pas la garde de la fiche à un compte qui a aussi le rôle CONTROLEUR, et laissaient passer une fiche SUSPENDU. | `9471addb`, migration 7.<br>– `shift_can_handle_cash` n'admet la propriétaire qu'avec `p.status = 'VALIDE'`, comme `counter_sale` et `scan_scanner_authorized`.<br>– Nouvelle garde `ownEventFicheRefusal` (`lib/auth/partner-fiche-guard.ts`). Un compte partenaire, avec ou sans le rôle CONTROLEUR, n'agit sur **ses propres** événements qu'avec une fiche VALIDE ; sinon 403 `PARTNER_NOT_VALIDATED`. Elle s'applique à l'ouverture de caisse, au guichet (lecture et vente), au devis, au scan, à la vérification manuelle, aux invités et au choix de porte.<br>– Ses affectations chez une autre organisatrice ne sont pas visées : elle y scanne toujours (testé). | `cvf1-4` : rouge aux runs 205, 206 et 208, vert au run 211.<br>`cvf1c-t2-caisse` (nouveau) : rouge au run 208, vert au run 211. Il couvre la fonction pour les 4 états de fiche, les 7 routes, le témoin chez l'autre organisatrice et la fiche SUSPENDU sans le rôle. |
+| **T3** (faible) | Après un scan refusé sur l'événement d'une autre organisatrice, cet événement apparaissait dans « Mes soirées », pour un contrôleur comme pour un simple client. | `controller_evenings` reprenait toutes les lignes de scan du compte, y compris la ligne `forbidden` que `ticket_scan` écrit quand il refuse le scanneur. | `62754a75`, migration 8 : `controller_evenings` ne retient que les scans **acceptés** du compte (`sc.accepted`), plus ses affectations et ses caisses. Cela vaut pour la liste des événements comme pour la porte lue à défaut d'affectation. Les chiffres sont inchangés : ils ne comptaient déjà que les entrées acceptées. | `cvf1-2` : rouge aux runs 205, 206 et 208, vert au run 211. |
+| **T4** (faible) | Hors de la plage du contrôle (avant l'ouverture, après la fermeture, événement annulé ou suspendu), la vérification manuelle rendait le nom du porteur, le numéro, la catégorie et l'état du billet. Le verdict de refus du scan rendait aussi le billet, nom du porteur compris. | `ticket_manual_lookup` lisait le billet avant de regarder la plage. Les réponses « contrôle fermé » de `ticket_scan` (étapes 5 et 6, et le renvoi d'une lecture) portaient l'objet `ticket`. | `dd89e9fa`, migration 9.<br>– `ticket_manual_lookup` : après le droit et la porte, hors de la plage, refus 409 `CONTROL_CLOSED` sans lire le billet. La route affiche le message commun du contrôle fermé (complément 10) et la vérification est journalisée.<br>– `ticket_scan` : le verdict « contrôle fermé » ne porte plus `ticket`. Un renvoi ne rend le billet que si le contrôle est ouvert et que la lecture d'origine n'était pas un refus « contrôle fermé ».<br>– Un scanneur non autorisé reçoit toujours 403 sans rien du billet ; c'est vérifié. | `cvf1-3` : rouge aux runs 205, 206 et 208, vert au run 211.<br>`cvf1c-t4-verdict` (nouveau) : rouge au run 210 (voir plus haut), vert au run 211. Il couvre l'avant, l'après et l'annulé (scan, renvoi, vérification) et le scanneur non autorisé. |
+| **T5** (faible) | « Renvoyer », « Annuler » et « Effacer » acceptaient un motif d'admin de 5 000 caractères et l'inscrivaient au journal ; le renvoi envoyait même le SMS. | `invitation-actions.ts` passait le motif à la fonction sans limite, et `controller_invitation_actor_check` ne vérifiait que le minimum de 5 caractères. | `471e746a`, migration 10.<br>– `adminReasonRefusal` (`team-access.ts`) refuse aussi plus de 500 caractères : 400 `REASON_TOO_LONG`, « Le motif est trop long : 500 caractères au plus. Raccourcissez-le. ».<br>– Elle s'applique désormais dans `invitation-actions.ts`, avant tout effet.<br>– `controller_invitation_actor_check` applique la même borne. | `cvf1-7` : rouge aux runs 205, 206 et 208, vert au run 211.<br>`cvf1c-t5-motif` (nouveau) : rouge au run 208, vert au run 211. Il vérifie 501 caractères refusés sans effet, 500 acceptés, et la fonction directement. |
+| **R1** | Une porte supprimée pendant l'enregistrement faisait répondre une erreur 500 générique, sans dégât. | La porte était lue, puis supprimée par une autre transaction avant l'écriture ; la clé étrangère refusait alors l'écriture. | `83f9cce6`, migration 11 : `event_controller_settings_set` et `event_controller_gate_set` verrouillent la porte en partage de clé (`FOR KEY SHARE`) avant de la lire. Une suppression concurrente fait attendre l'enregistrement, qui refuse ensuite 409 `GATE_GONE`, « Cette porte n’existe plus. Choisissez-en une autre. ». Une porte d'un autre événement garde son refus `GATE_INVALID`. | `cvf1c-r1-porte-supprimee` (nouveau) : rouge au run 208 (HTTP 500), vert au run 211. Il couvre la suppression concurrente avec l'attente du verrou observée, la porte supprimée avant, et la porte d'un autre événement. `cvf1-8` restait vert, puisqu'il n'y avait pas de dégât. |
+| **R2** | Quatre invitations simultanées du même numéro créaient trois invitations et envoyaient trois SMS, dont deux vers des liens aussitôt morts. | `controller_invitation_create` ne prenait aucun verrou. | `4c5462d1`, migration 12 : `controller_invitation_create` (version T1) prend un verrou transactionnel par organisatrice et par compte. Une invitation identique (mêmes événements, mêmes droits), encore en attente et créée il y a moins de 60 s, n'est pas recréée : refus 409 `INVITATION_ALREADY_SENT`, « Une invitation vient d’être envoyée à ce numéro. Attendez sa réponse ou utilisez « Renvoyer ». ». « Inviter de nouveau » avec d'autres événements remplace toujours la précédente. | `cvf1c-r2-invitations-simultanees` (nouveau) : rouge au run 208, avec 3 invitations en attente (invariant f2 violé dans 4 autres suites), vert au run 211. Il vérifie 1 seul 201, 1 invitation, 1 SMS, et le remplacement avec d'autres événements. Son attente a été élargie avant son premier vert (§ 8.2). |
+| **R3** | Pour un motif d'admin trop long, les refus étaient justes mais leurs messages faux : « Point d’entrée invalide (80 caractères au plus). », « canAcceptCash doit valoir vrai ou faux. » ou « Too big: expected string… ». | Les schémas des routes bornaient eux-mêmes `reason` à 500 caractères, et leurs messages d'erreur génériques passaient avant `adminReasonRefusal`. | `8aa9e443` : plus de borne propre sur `reason` dans les schémas d'inviter, des réglages, du point d'entrée, du droit d'encaisser, des événements du contrôleur et de la porte. C'est `adminReasonRefusal` qui juge, avec son texte. La route des réglages appelle désormais elle aussi `adminReasonRefusal` et ne transmet le motif que pour un admin. | `cvf1c-r3-textes-motif` (nouveau) : rouge au run 208, vert au run 211. Pour 8 écritures, il vérifie que 501 caractères donnent le texte « trop long », que « abc » donne le texte « 5 caractères au moins », et que rien ne change. |
+| **R4** | `PATCH /api/partner/team/assignments` envoyé par A avec le contrôleur de B et une liste vide répondait 200 « Événements du contrôleur enregistrés. », sans aucun effet. | Une liste vide ne passait par aucun contrôle de lien entre l'organisatrice et le contrôleur. | `87053069` : sans événement à ajouter, si le contrôleur n'a ni lien avec l'organisatrice ni affectation sur ses événements, la route répond 404 « Contrôleur introuvable. », exactement comme pour un identifiant inconnu. Avec des événements à ajouter, le chemin du consentement est inchangé. | `cvf1c-r4-affectations-autre` (nouveau) : rouge au run 208, vert au run 211. Il vérifie 404, un corps identique à celui d'un identifiant tiré au hasard, et l'affectation de B inchangée. |
+
+### 0.1 Comptes d'administration qui ont déjà le rôle CONTROLEUR (T1)
+
+**Je ne peux pas dire s'il en existe sur event-village-dev :** je n'y ai aucun accès en lecture, et le jeu de test n'en contient pas. La requête suivante, à lancer dans l'éditeur SQL, est en lecture seule ; elle est aussi au § 5.1, contrôle G :
+
+```sql
+select u.id, array_agg(ur.role::text order by ur.role::text) as roles,
+       (select count(*) from public.event_controllers ec where ec.user_id = u.id) as affectations,
+       (select count(*) from public.controller_invitations ci
+         where ci.user_id = u.id and ci.status = 'PENDING' and ci.expires_at > now()) as invitations_en_attente
+  from public.users u join public.user_roles ur on ur.user_id = u.id
+ group by u.id
+having bool_or(ur.role::text in ('ADMIN', 'SUPERADMIN')) and bool_or(ur.role::text = 'CONTROLEUR');
+```
+
+Ce que je propose, sans migration automatique des données (retirer un rôle ou une affectation se décide compte par compte) :
+- **0 ligne :** rien à faire. Les correctifs empêchent le cas de se reproduire.
+- **Des lignes :** pour chaque compte, l'organisatrice concernée, ou un admin depuis `/partner/team?partnerId=…`, choisit « Retirer de l'équipe ». Cela retire les affectations, le rôle CONTROLEUR s'il ne travaille pour personne d'autre, et ferme son scanner. Une invitation encore en attente est annulée par « Annuler l’invitation ». De toute façon, il ne peut plus l'accepter : `controller_invitation_respond` refuse désormais.
+- Si tu préfères que je le fasse par une requête de support, dis-le-moi avec les identifiants. Je l'écrirai dans une transaction, avec le journal d'audit.
+
+Les affectations déjà en place ne sont pas retirées par les correctifs. Un compte d'administration déjà contrôleur garde son scanner jusqu'à ce retrait ; on ne peut simplement plus lui ajouter d'événement.
+
+### 0.2 Ce qui reste
+
+- `controller_assignments_sync` ne vérifie pas elle-même qu'un compte est d'administration. Les deux seules routes qui l'appellent, inviter et `PATCH assignments`, refusent avant elle. Elle est réservée au service_role depuis le lot 9 bis. Ajouter le même refus dans la fonction serait une huitième migration : je ne l'ai pas faite, car la consigne nommait la route, `controller_invitation_create` et `controller_invitation_respond`. Dis-moi si tu la veux.
+- La fenêtre de 60 s de R2 ne vaut que pour une invitation **identique**. Renvoyer un SMS passe par « Renvoyer », qui garde son plafond.
 
 ## 1. Sécurité
 
@@ -365,17 +424,25 @@ Ils ne sont pas envoyés par Event Village : WhatsApp s'ouvre sur le téléphone
 | 3 | `20261115000003_finition1_controle.sql` | Recopies de `ticket_guest_list_search` (plage du contrôle), `scan_gate_context` (« Toutes les portes » de la propriétaire), `counter_sale` et `counter_sale_quote` (guichet de la propriétaire), `ticket_scan` (porte de la catégorie inscrite sur l'entrée) ; `controller_scanner_status`. |
 | 4 | `20261115000004_finition1_fiche_proprietaire.sql` | Recopie de `scan_scanner_authorized` : la propriétaire doit avoir une fiche VALIDE. |
 | 5 | `20261115000005_finition1_soirees.sql` | `controller_evening_figures`, `controller_evenings` (« Mes soirées ») ; recopies de `partner_team_view` (+ chiffres des soirées passées) et de `controller_scanner_status` (+ `next_change_at`). Réservées au service_role. |
+| 6 | `20261115000006_cvf1_admin_non_invitable.sql` | T1 : `account_is_staff` ; recopies de `controller_invitation_create` (refus `NOT_INVITABLE`) et `controller_invitation_respond` (acceptation refusée à un compte d'administration, refus possible). |
+| 7 | `20261115000007_cvf1_caisse_fiche.sql` | T2 : recopie de `shift_can_handle_cash` (la propriétaire seulement avec une fiche VALIDE). |
+| 8 | `20261115000008_cvf1_soirees_scans_acceptes.sql` | T3 : recopie de `controller_evenings` (scans acceptés seulement). |
+| 9 | `20261115000009_cvf1_verdict_hors_plage.sql` | T4 : recopies de `ticket_manual_lookup` (refus `CONTROL_CLOSED` sans lire le billet) et `ticket_scan` (verdict « contrôle fermé » sans billet). |
+| 10 | `20261115000010_cvf1_motif.sql` | T5 : recopie de `controller_invitation_actor_check` (motif de 500 caractères au plus). |
+| 11 | `20261115000011_cvf1_porte_supprimee.sql` | R1 : recopies de `event_controller_settings_set` et `event_controller_gate_set` (porte verrouillée, refus `GATE_GONE`). |
+| 12 | `20261115000012_cvf1_invitations_simultanees.sql` | R2 : recopie de `controller_invitation_create`, version de la migration 6 (verrou par organisatrice et par compte, refus `INVITATION_ALREADY_SENT`). |
 
-Toutes sont sans BEGIN ni COMMIT et rejouables : c'est prouvé en CI par `migration-finition1-rejouable`, où chacune est rejouée dans une transaction annulée. Les migrations jusqu'à `20261112…` sont inchangées (`migrations-gelees`).
+Toutes sont sans BEGIN ni COMMIT et rejouables : c'est prouvé en CI par `migration-finition1-rejouable`, où chacune des douze est rejouée dans une transaction annulée. Les migrations jusqu'à `20261112…` sont inchangées (`migrations-gelees`). Les sept migrations des correctifs ne touchent à aucune donnée : elles remplacent des fonctions et en créent une, toutes réservées au service_role.
 
 **Déployer l'application de la branche juste après, dans la même fenêtre.** Entre les migrations et le déploiement, l'ancienne application marche :
 - les fonctions recopiées gardent leurs paramètres (le numéro saisi et le motif y sont facultatifs) ;
 - les anciennes routes restent ;
 - le scanner et le guichet d'un contrôleur ne changent pas.
 
-Deux différences seulement :
-- une propriétaire dont la fiche n'est pas VALIDE ne scanne plus, ce qui est voulu ;
-- le motif d'un admin n'est exigé qu'une fois la nouvelle application déployée, puisque ce sont ses routes qui le demandent.
+Trois différences seulement :
+- une propriétaire dont la fiche n'est pas VALIDE ne scanne plus et n'ouvre plus de caisse, ce qui est voulu ;
+- le motif d'un admin n'est exigé qu'une fois la nouvelle application déployée, puisque ce sont ses routes qui le demandent ;
+- l'ancienne application ne connaît pas les nouveaux refus des fonctions : compte d'administration, porte supprimée, invitation déjà envoyée, motif trop long, vérification hors de la plage. Le refus a bien lieu et rien n'est écrit, mais le message peut rester général jusqu'au déploiement.
 
 ### 5.1 Avant `db push` (éditeur SQL, une requête à la fois, garder les résultats)
 
@@ -403,6 +470,16 @@ select type from public.notification_types
 --    leurs événements (§ 1.3) ; leurs contrôleurs, si.
 select count(*) from public.partners p join public.users u on u.id = p.user_id
  where p.status::text = 'SUSPENDU' and u.status::text = 'ACTIF';
+
+-- G. comptes d'administration qui ont aussi le rôle CONTROLEUR (garder la liste, § 0.1) : attendu 0 ligne.
+--    S'il y en a : rien ne bloque la migration ; les retirer de l'équipe après le déploiement (§ 0.1).
+select u.id, array_agg(ur.role::text order by ur.role::text) as roles,
+       (select count(*) from public.event_controllers ec where ec.user_id = u.id) as affectations,
+       (select count(*) from public.controller_invitations ci
+         where ci.user_id = u.id and ci.status = 'PENDING' and ci.expires_at > now()) as invitations_en_attente
+  from public.users u join public.user_roles ur on ur.user_id = u.id
+ group by u.id
+having bool_or(ur.role::text in ('ADMIN', 'SUPERADMIN')) and bool_or(ur.role::text = 'CONTROLEUR');
 ```
 
 ### 5.2 Appliquer
@@ -416,7 +493,7 @@ npx supabase db push            # projet lié : event-village-dev (rswk…)
 ### 5.3 Après (éditeur SQL)
 
 ```sql
--- A. attendu : 20261115000005
+-- A. attendu : 20261115000012
 select max(version) from supabase_migrations.schema_migrations;
 
 -- B. attendu : ec_select_by_controller et ec_select_owner présentes, ec_select_by_creator absente
@@ -439,21 +516,22 @@ select status, count(*) from public.controller_invitations group by 1 order by 1
 select type, channels, audience from public.notification_types
  where type in ('CONTROLLER_INVITATION_ACCEPTED', 'CONTROLLER_INVITATION_DECLINED', 'CONTROLLER_INVITATION_EXPIRED');
 
--- F. attendu : 15 (toutes les fonctions nouvelles présentes)
+-- F. attendu : 16 (toutes les fonctions nouvelles présentes, account_is_staff comprise)
 select count(distinct p.proname) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
  where n.nspname = 'public' and p.proname in ('team_mask_name', 'team_gate_categories', 'controller_invitation_notify_partner',
    'controller_invitation_create', 'controller_invitation_respond', 'controller_invitation_actor_check',
    'controller_invitation_cancel', 'controller_invitation_clear', 'controller_invitation_resend',
    'controller_invitations_expire_due', 'partner_team_view', 'event_controller_settings_set', 'controller_scanner_status',
-   'controller_evening_figures', 'controller_evenings');
+   'controller_evening_figures', 'controller_evenings', 'account_is_staff');
 
--- G. attendu : 0 ligne (aucune de ces fonctions n'est exécutable par anon ni par authenticated)
+-- G. attendu : 0 ligne (aucune de ces fonctions, créées ou recopiées, n'est exécutable par anon ni par authenticated)
 select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
  where n.nspname = 'public' and p.proname in ('team_mask_name', 'team_gate_categories', 'controller_invitation_notify_partner',
    'controller_invitation_create', 'controller_invitation_respond', 'controller_invitation_actor_check',
    'controller_invitation_cancel', 'controller_invitation_clear', 'controller_invitation_resend',
    'controller_invitations_expire_due', 'partner_team_view', 'event_controller_settings_set', 'controller_scanner_status',
-   'controller_evening_figures', 'controller_evenings')
+   'controller_evening_figures', 'controller_evenings', 'account_is_staff', 'shift_can_handle_cash',
+   'ticket_manual_lookup', 'ticket_scan', 'event_controller_gate_set')
    and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
 
 -- H. invariants (f1) à (f4) : attendu 0 ligne
@@ -471,6 +549,28 @@ select 'f4', policyname from pg_policies where schemaname = 'public' and tablena
 --    puis {"ok": true, "items": []}
 select public.controller_scanner_status(jsonb_build_object('user_id', gen_random_uuid()));
 select public.controller_evenings(jsonb_build_object('user_id', gen_random_uuid()));
+
+-- J. correctifs de la contre-vérification en place : attendu 10 lignes, toutes à true
+select v.fonction, v.marque,
+       (select bool_or(p.prosrc like '%' || v.marque || '%') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and p.proname = v.fonction) as en_place
+  from (values ('controller_invitation_create', 'NOT_INVITABLE'),              -- T1
+               ('controller_invitation_respond', 'NOT_INVITABLE'),             -- T1
+               ('shift_can_handle_cash', 'p.status = ''VALIDE'''),             -- T2
+               ('controller_evenings', 'sc.accepted'),                         -- T3
+               ('ticket_manual_lookup', 'CONTROL_CLOSED'),                     -- T4
+               ('ticket_scan', 'cvf1 T4'),                                     -- T4
+               ('controller_invitation_actor_check', 'REASON_TOO_LONG'),       -- T5
+               ('event_controller_settings_set', 'GATE_GONE'),                 -- R1
+               ('event_controller_gate_set', 'GATE_GONE'),                     -- R1
+               ('controller_invitation_create', 'pg_advisory_xact_lock')       -- R2
+       ) as v(fonction, marque);
+
+-- K. essai sans effet : attendu false (compte inconnu)
+select public.account_is_staff(gen_random_uuid());
+
+-- L. comptes d'administration avec le rôle CONTROLEUR : relancer G du § 5.1 ; même liste qu'avant (les correctifs
+--    n'en retirent aucun, ils empêchent seulement d'en ajouter)
 ```
 
 ## 6. Runs
@@ -491,9 +591,14 @@ select public.controller_evenings(jsonb_build_object('user_id', gen_random_uuid(
 | 200 | `e578f515` | Annulé par la poussée suivante |
 | 201 | `94d325a9` | Tests verts, 398/398 ; e2e : la capture `partenaire-equipe-retirer` (4 sur 4) cherchait le titre avec une espace ordinaire avant « ? », devenue insécable (§ 7.1). Motif de la capture corrigé, écran inchangé (§ 8.2) |
 | 202 | `ba77815d` | e2e vert (captures comprises) ; tests 397/398 : `sms-veille` (« 700 porteurs, plafond 700 » : une alerte de prévision inattendue). Cause : `sms-plafond-optionnel` et `sms-veille` tirent leur jour simulé dans la même plage (J+2 000 à J+3 680) depuis le lot 9 quinquies ; les 700 SMS optionnels de l'une sont tombés sur le jour de l'autre. Défaut d'isolation antérieur à la finition, sans lien avec son code ; plage séparée (§ 8.2) |
-| 203 | `9e2edf23` | « Après » : vert, 398/398 (dont les 17 suites de `tests/audit/` et `tests/audit-auth/`), invariants à 0 (les seules lignes à 1 sont les violations fabriquées exprès par l'auto-test `pilotage-invariant`), e2e vert, 24 captures de l'équipe et de « Mes soirées » sans blocage |
+| 203 | `9e2edf23` | « Après » de la finition : vert, 398/398 (dont les 17 suites de `tests/audit/` et `tests/audit-auth/`), invariants à 0 (les seules lignes à 1 sont les violations fabriquées exprès par l'auto-test `pilotage-invariant`), e2e vert, 24 captures de l'équipe et de « Mes soirées » sans blocage |
+| 205, 206 | `3a87f753`, `6f04e250` (`audit/finition-1`) | Contre-vérification : 402/407 ; rouges exactement `cvf1-2`, `cvf1-3`, `cvf1-4`, `cvf1-6`, `cvf1-7` (T1 à T5) |
+| 208 | `c3f89e37` (`finition-1/rouges-cvf1`, tests seuls, sans les correctifs) | Preuve des rouges des correctifs : 397/415. Rouges exactement les 5 suites cvf1 ci-dessus, les 8 suites `cvf1c-*`, `migration-finition1-rejouable` (migrations 6 à 12 absentes) et `finition1-controle`, `-equipe`, `-securite`, `-soirees` (invariant f2 : 3 invitations en attente laissées par R2). `cvf1c-t4-verdict` tombait sur une adresse email de test invalide, pas sur son assertion : preuve refaite au run 210. e2e vert |
+| 209 | `87053069` (les 9 commits de correctifs) | 413/415 ; e2e vert ; budgets inchangés. Deux rouges : `cvf1c-t4-verdict` (même adresse email invalide qu'au run 208 : les cas a et b ne vérifiaient rien) et `lot9quinquies-cv-controleur` (partenaire à fiche EN_ATTENTE ou REJETE : 403 `PARTNER_NOT_VALIDATED`, refus de la garde ajoutée par T2, au lieu de 403 `SCAN_FORBIDDEN` ; même refus). Les deux tests sont corrigés au commit `0ffe3924` (§ 8.2) |
+| 210 | `3ac9c2d5` (`finition-1/rouges-cvf1` + test T4 corrigé) | Preuve des rouges refaite : 396/415. `cvf1c-t4-verdict` est rouge sur son assertion (« billet rendu » avant l'ouverture, après la fermeture, annulé). Mêmes rouges qu'au run 208, plus `cvf1-8` (R2 : 2 invitations en attente, 3 SMS). e2e vert |
+| 211 | `0ffe3924` | « Après » des correctifs : vert, 415/415 (9 suites `cvf1-*`, 26 suites de `tests/audit/` et `tests/audit-auth/`), invariants à 0, e2e vert, budgets inchangés |
 
-Budgets JavaScript : aucun n'a été relevé. Le dépassement de `/` au run 193 venait de l'appel ajouté dans la mise en page commune ; il est remplacé par le champ du profil (§ 3.2). Mesure du run 203 : `/` 226 271 octets pour un budget de 226 342 (`main` : 226 297) ; `/events/[id]` 232 573 / 233 316 ; `/tickets` 249 662 / 250 417 ; `/controller/scanner` 233 757 / 234 911 ; `/billet/hors-ligne` 221 822 / 224 268. Toutes dans leur budget, aucun relevé.
+Budgets JavaScript : aucun n'a été relevé, ni par la finition ni par les correctifs de la contre-vérification (mesures des runs 209 et 211 identiques à celles du run 203). Le dépassement de `/` au run 193 venait de l'appel ajouté dans la mise en page commune ; il est remplacé par le champ du profil (§ 3.2). Mesure du run 203 : `/` 226 271 octets pour un budget de 226 342 (`main` : 226 297) ; `/events/[id]` 232 573 / 233 316 ; `/tickets` 249 662 / 250 417 ; `/controller/scanner` 233 757 / 234 911 ; `/billet/hors-ligne` 221 822 / 224 268. Toutes dans leur budget, aucun relevé.
 
 ## 7. Captures avant et après
 
@@ -544,6 +649,9 @@ Vu et laissé tel quel :
 - `tests/schema/finition1-soirees-mots.test.ts` : porte de « Mes soirées » sans « Porte » en double (§ 7.1).
 - `tests/schema/migration-finition1-rejouable.test.ts` : les cinq migrations, rejouées.
 - `tests/helpers/finition1-invariants.ts` : invariants (f1) à (f4), enchaînés après ceux des lots précédents.
+- Correctifs de la contre-vérification (§ 0) :
+  - les 9 suites `tests/audit/cvf1-*`, fusionnées sans changement ;
+  - 8 suites nouvelles dans `tests/parcours/` : `cvf1c-t1-admin`, `cvf1c-t2-caisse`, `cvf1c-t4-verdict`, `cvf1c-t5-motif`, `cvf1c-r1-porte-supprimee`, `cvf1c-r2-invitations-simultanees`, `cvf1c-r3-textes-motif` et `cvf1c-r4-affectations-autre`.
 
 ### 8.2 Tests existants modifiés (et pourquoi)
 
@@ -561,6 +669,11 @@ Vu et laissé tel quel :
 | `docs/recette-billetterie.md`, `docs/parcours-evenement-complet.md` | Citations de lignes recalées (540→548, 692→700, 809→817, 886→894, 934→942, 1039→1047, 1191→1199 ; `partenaire-lot7` 892→894) | Lignes déplacées par la recette ; texte cité inchangé ; journaux et rapports des anciens lots non touchés |
 | `sms-plafond-optionnel`, `sms-veille` | Jour simulé de `sms-plafond-optionnel` tiré entre J+4 000 et J+5 680 au lieu de J+2 000 à J+3 680 ; commentaires des deux suites. Aucune assertion changée | Les deux suites partageaient la même plage ; collision au run 202 (§ 6) |
 | `.github/workflows/verify.yml` | Déclencheur `finition-*/**` | Runs « avant » et « après » de la finition |
+| `lot9quinquies-cv-controleur` | Partenaire à fiche EN_ATTENTE ou REJETE : code attendu `PARTNER_NOT_VALIDATED` au lieu de `SCAN_FORBIDDEN` (même 403). Contrôleur inchangé | T2 : la garde de fiche des routes `/api/controller/*` refuse désormais la partenaire avant la fonction de scan, comme pour une fiche SUSPENDU ; rouge au run 209 |
+| `finition1-controle` (test de la finition) | Même changement de code attendu pour la propriétaire à fiche non VALIDE | T2, même raison |
+| `migration-finition1-rejouable` (test de la finition) | Migrations 6 à 12 ajoutées à la liste, une par commit | Chaque migration nouvelle est rejouée |
+| `cvf1c-r2-invitations-simultanees` (nouveau, avant son premier vert) | Parmi les 4 demandes simultanées, un 429 `PHONE_INVITE_RATE_LIMIT` est accepté à côté des 409 `INVITATION_ALREADY_SENT` ; toujours un seul 201, une seule invitation et un seul SMS | Le plafond du numéro (lot 9 ter) peut légitimement répondre avant le verrou |
+| `cvf1c-t4-verdict` (nouveau) | Libellé du contrôleur de test réduit à de l'ASCII avant d'entrer dans son adresse email ; aucune assertion changée | « avant l’ouverture » donnait une adresse invalide : les cas a et b tombaient avant toute vérification (runs 208 et 209) |
 
 ## 9. Essais pour un non-développeur
 
@@ -583,10 +696,11 @@ Sur l'application de la branche, avec un compte partenaire dont la fiche est val
 ## 10. À faire de ton côté
 
 1. Relire ce rapport et regarder les captures (`docs/finition-1-captures/`).
-2. Décider de la fusion de `finition-1/equipe` dans `main` (avance rapide possible, la branche part de `main` à `6d5020b5`). Les branches `finition-1/rouges`, `finition-1/rouges-2` et `finition-1/rouges-3` ne sont pas à fusionner : ce sont des preuves.
-3. Après la fusion : contrôles du § 5.1, `db push` des cinq migrations, contrôles du § 5.3, puis déploiement de l'application dans la même fenêtre.
-4. Vérifier que la tâche planifiée `/api/cron/reminders` tourne sur l'hébergement : c'est elle qui clôt les invitations échues et prévient la partenaire.
-5. Pour un admin qui gère l'équipe d'un organisateur : ouvrir `/partner/team?partnerId={id}`. La liste de choix est notée pour après le lancement.
+2. Décider de la fusion de `finition-1/equipe` dans `main` (avance rapide possible, la branche part de `main` à `6d5020b5`). Les branches `finition-1/rouges`, `finition-1/rouges-2`, `finition-1/rouges-3` et `finition-1/rouges-cvf1` ne sont pas à fusionner : ce sont des preuves. `audit/finition-1` est déjà contenue dans `finition-1/equipe`.
+3. Après la fusion : contrôles du § 5.1 (G compris : comptes d'administration déjà contrôleurs), `db push` des douze migrations, contrôles du § 5.3, puis déploiement de l'application dans la même fenêtre.
+4. Si le contrôle G rend des lignes : décider pour chaque compte (§ 0.1).
+5. Vérifier que la tâche planifiée `/api/cron/reminders` tourne sur l'hébergement : c'est elle qui clôt les invitations échues et prévient la partenaire.
+6. Pour un admin qui gère l'équipe d'un organisateur : ouvrir `/partner/team?partnerId={id}`. La liste de choix est notée pour après le lancement.
 
 ## 11. Points ouverts
 
