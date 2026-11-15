@@ -21,6 +21,8 @@ import { adminTeamRefusal } from '../team-access';
 import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { CONTROLLER_ACTIVATION_KEY, isControllerActivationPending } from '@/lib/auth/controller-activation';
 import { contactSupport } from '@/lib/support-contact';
+import { formatDateTime } from '@/lib/format';
+import { adminReasonRefusal, cleanReason } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +42,17 @@ function smsRefusalReason(code: string | null): string {
     }
 }
 
+/** Finition 1 (E-18) : texte unique de la fenêtre « Ce numéro a déjà un compte ». */
+function existingAccountMessage(displayName: string): string {
+    return `Ce numéro a déjà un compte Event Village (${displayName}). Nous lui envoyons une invitation par SMS : il contrôlera vos événements après l’avoir acceptée dans l’application, sous 72 h. Son compte, ses billets et son portefeuille ne changent pas.`;
+}
+
+/** Prénom du contrôleur pour les messages (« Contrôleur » par défaut n'est pas un prénom) ; repli « le contrôleur ». */
+function personLabel(firstName: string | null | undefined): string {
+    const first = (firstName ?? '').trim();
+    return first && first !== 'Contrôleur' ? first : 'le contrôleur';
+}
+
 const InviteSchema = z.object({
     event_id:        z.string().uuid('ID événement invalide.').optional(),
     eventId:         z.string().uuid('ID événement invalide.').optional(),
@@ -57,6 +70,8 @@ const InviteSchema = z.object({
     resend:            z.boolean().optional().default(false),
     confirm_promotion: z.boolean().optional().default(false),
     confirmPromotion:  z.boolean().optional().default(false),
+    // Finition 1 (E-17) : motif d'un admin qui agit sur l'équipe d'un organisateur (journalisé)
+    reason:            z.string().max(500).optional(),
 }).transform(data => ({
     event_id:          data.event_id || data.eventId,
     event_ids:         data.event_ids || data.eventIds,
@@ -67,6 +82,7 @@ const InviteSchema = z.object({
     can_accept_cash:   data.can_accept_cash ?? data.canAcceptCash ?? false,
     resend:            data.resend ?? false,
     confirm_promotion: Boolean(data.confirm_promotion || data.confirmPromotion),
+    reason:            data.reason,
 }));
 
 export async function POST(req: NextRequest) {
@@ -106,6 +122,12 @@ export async function POST(req: NextRequest) {
         if (targetEventIds.length === 0) {
             return NextResponse.json({ error: 'Veuillez sélectionner au moins un événement.' }, { status: 400 });
         }
+        // Finition 1 (E-17) : un admin (sans fiche partenaire) agit sur l'équipe d'un organisateur avec un motif journalisé,
+        // vérifié avant tout quota et tout effet
+        const actsAsAdmin = !serverHasRole(user, 'PARTENAIRE');
+        const reasonRefused = adminReasonRefusal(actsAsAdmin, parse.data.reason);
+        if (reasonRefused) return reasonRefused;
+        const reason = actsAsAdmin ? cleanReason(parse.data.reason) : null;
 
         const supabase = getServiceRoleClient();
         // Lot 1C.1 : numéro mobile sénégalais E.164 exigé (plus de recherche par suffixe)
@@ -293,9 +315,8 @@ export async function POST(req: NextRequest) {
                         requires_confirmation: true,
                         code: 'EXISTING_ACCOUNT',
                         existing_user: { display_name: displayName, phone: normalizedPhone },
-                        message: needsConsent
-                            ? `Ce numéro appartient déjà à un compte Event Village (${displayName}). Ce titulaire n’a jamais contrôlé vos événements : il doit accepter votre invitation dans l’application avant d’être affecté. Confirmez-vous l’envoi de l’invitation ?`
-                            : `Ce numéro appartient déjà à un compte Event Village (${displayName}). Confirmez-vous l'affectation de ce titulaire comme contrôleur de vos événements ? Son identité et ses identifiants ne seront pas modifiés.`,
+                        // Finition 1 (E-18) : un seul texte, sans « affectation », quel que soit le chemin
+                        message: existingAccountMessage(displayName),
                     }, { status: 200 });
                 }
 
@@ -311,6 +332,8 @@ export async function POST(req: NextRequest) {
                         partnerId: ownPartner ? String(partnerEvents[0].partner_id) : null,
                         userId: existingProfile.id,
                         assignments: targetEventIds.map((evId) => ({ event_id: evId, can_accept_cash })),
+                        phoneEntered: normalizedPhone,
+                        reason,
                     });
                     if (invited.response) return invited.response;
                     phoneUnitUsed = true; // CONTROLLER_INVITATION mis en file par la RPC
@@ -322,7 +345,7 @@ export async function POST(req: NextRequest) {
                         invitation_id: invited.invitationId,
                         invitation_expires_at: invited.expiresAt,
                         notification: 'QUEUED',
-                        message: `Invitation envoyée : ${displayName} doit l’accepter dans l’application avant d’être affecté.`,
+                        message: `Invitation envoyée à ${displayName} : réponse attendue avant le ${formatDateTime(invited.expiresAt)}.`,
                     }, { status: 201 });
                 }
 
@@ -480,7 +503,7 @@ export async function POST(req: NextRequest) {
                         event_id: assignment.event_id, controller_user_id: controllerUserId,
                         can_accept_cash, is_new_user: isNewUser,
                     },
-                    metadata: { invited_by: user.id, event_title: evTitle },
+                    metadata: { invited_by: user.id, event_title: evTitle, ...(reason ? { reason } : {}) },
                 });
             }
         }
@@ -547,22 +570,21 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Finition 1 (E-10) : textes en mots simples, sans « affectation » ni « droits » ; renvoi du SMS d'activation :
+        // « SMS renvoyé à {prénom} : code valable jusqu’au {date}. »
+        const who = personLabel(existingProfile?.first_name ?? first_name);
         const countEvents = targetEventIds.length;
-        const msgSuffix = countEvents > 1 ? `sur ${countEvents} événements` : `sur l'événement`;
-        const baseMsg = isNewUser
-            ? `Contrôleur créé et assigné ${msgSuffix}.`
-            : anyNewlyAssigned
-                ? `Contrôleur assigné avec succès ${msgSuffix}.`
-                : `Droits mis à jour ${msgSuffix}.`;
-        // Lot 4.8 : le partenaire sait si le SMS est parti (refus de la garde anti-abus compris).
-        // Lot 9 bis (R38) : un SMS n'est annoncé que s'il part (affectation nouvelle d'un compte établi, par le trigger).
-        const actionMsg = !issueActivationCode
-            ? (anyNewlyAssigned
-                ? `${baseMsg} Le contrôleur est prévenu dans l'application et par SMS.`
-                : `${baseMsg} Aucune nouvelle affectation : aucun SMS n'est envoyé.`)
-            : smsSent
-                ? `${baseMsg} SMS avec code d'activation envoyé.`
-                : `${baseMsg} SMS non envoyé : ${smsRefusalReason(smsRefusal)}. Renvoyez l’invitation plus tard.`;
+        const eventsText = countEvents > 1 ? `${countEvents} événements` : 'l’événement';
+        const codeUntil = formatDateTime(new Date(expiresAt).toISOString());
+        const actionMsg = issueActivationCode
+            ? (smsSent
+                ? (isNewUser
+                    ? `Invitation envoyée à ${who} par SMS : code d’activation valable jusqu’au ${codeUntil}.`
+                    : `SMS renvoyé à ${who} : code valable jusqu’au ${codeUntil}.`)
+                : `SMS non envoyé à ${who} : ${smsRefusalReason(smsRefusal)}. Réessayez plus tard.`)
+            : (anyNewlyAssigned
+                ? `C’est fait : ${who} contrôle ${eventsText}. Un SMS et un avis dans l’application lui sont envoyés.`
+                : `Réglages de ${who} enregistrés. Aucun SMS n’est envoyé.`);
 
         return NextResponse.json({
             success:      true,

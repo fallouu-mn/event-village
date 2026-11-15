@@ -37,6 +37,10 @@ export async function createControllerInvitation(supabase: ServiceClient, input:
     partnerId: string | null;
     userId: string;
     assignments: InvitationAssignment[];
+    /** Finition 1 (E-19) : numéro saisi par l'organisateur (affiché sur sa page Équipe) ; null s'il a choisi un compte. */
+    phoneEntered?: string | null;
+    /** Finition 1 (E-17) : motif d'un admin, journalisé avec l'invitation. */
+    reason?: string | null;
 }): Promise<InvitationOutcome> {
     let partnerId = input.partnerId;
     if (!partnerId) {
@@ -61,6 +65,8 @@ export async function createControllerInvitation(supabase: ServiceClient, input:
             partner_id: partnerId,
             user_id: input.userId,
             assignments: input.assignments,
+            phone_entered: input.phoneEntered ?? null,
+            reason: input.reason ?? null,
         },
     });
     if (error) throw new Error(`controller_invitation_create : ${error.code ?? ''} ${error.message}`);
