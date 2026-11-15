@@ -163,6 +163,33 @@ describe('Complément 12 — la partenaire scanne ses propres événements', () 
         assert.equal(theirs.status, 403, `guichet sur l'événement d'une autre partenaire : ${show(theirs)}`);
     });
 
+    test('fiche VALIDE exigée : fiche suspendue, la propriétaire ne scanne ni ne vend ; son contrôleur scanne toujours', async () => {
+        const susp = await newPartner('f1-fiche-susp');
+        const ev = await createTimedEvent(susp.partnerId, 'f1-fiche-susp', CATS, { startsInHours: 1 });
+        const c = await newController(susp, ev.eventId, { label: 'f1-fiche-susp' });
+        const [t] = (await buyConfirmed(buyer, ev, [['Standard', 1]])).tickets;
+        const fiche = async (status: 'VALIDE' | 'SUSPENDU') => {
+            const { error } = await service.from('partners').update({ status }).eq('id', susp.partnerId);
+            assert.equal(error, null, `fiche ${status} : ${error?.message}`);
+        };
+        await fiche('SUSPENDU');
+        try {
+            const own = await scan(susp, { eventId: ev.eventId, payload: await ticketPayload(String(t.id)) });
+            assert.equal(own.status, 403, `fiche suspendue, scan de la propriétaire : ${show(own)}`);
+            assert.equal(own.body.code, 'SCAN_FORBIDDEN', show(own));
+            const { data: row } = await service.from('tickets').select('status').eq('id', t.id).single();
+            assert.equal(row!.status, 'VALIDE', 'billet non consommé par un scan refusé');
+            const GET = await routeHandler('../../app/api/controller/counter-sale/route', 'GET', 'GET /api/controller/counter-sale');
+            const sale = await invoke(GET, jsonRequest(`/api/controller/counter-sale?event_id=${ev.eventId}`, 'GET', susp.accessToken));
+            assert.equal(sale.status, 403, `fiche suspendue, guichet de la propriétaire : ${show(sale)}`);
+            // Règle A9 du lot 9 quinquies gardée : les affectations d'une fiche suspendue restent actives (les détenteurs entrent)
+            const ctrl = await scan(c, { eventId: ev.eventId, payload: await ticketPayload(String(t.id)) });
+            assert.equal(ctrl.body.result, 'valid', `fiche suspendue, scan du contrôleur : ${show(ctrl)}`);
+        } finally {
+            await fiche('VALIDE');
+        }
+    });
+
     test('équipe : la partenaire apparaît en tête, « Vous (organisatrice) — toutes les portes »', () => {
         const src = fs.readFileSync(path.join(process.cwd(), 'components/partner/team/TeamPanel.tsx'), 'utf8');
         assert.ok(src.includes('Vous (organisatrice) — toutes les portes'), 'ligne de la partenaire en tête de l’équipe');
