@@ -4,7 +4,8 @@
  *  a. ADMIN events.read : lit l'équipe (can_manage faux) ; aucune écriture (invitation, renvoi, annulation, effacement,
  *     réglages, point d'entrée, espèces, affectations, retraits).
  *  b. ADMIN sans permission : ni lecture ni écriture.
- *  c. ADMIN events.write dont la session n'a pas le code administrateur : ni lecture ni écriture, ni par la REST.
+ *  c. ADMIN events.write dont la session n'a ni le mot de passe redemandé ni le code administrateur : ni lecture ni
+ *     écriture, ni par la REST ; c bis. mot de passe saisi, code administrateur absent : même chose.
  *  d. ADMIN events.write rétrogradé (rôle retiré, ancien jeton) : aucune écriture.
  *  e. ADMIN events.write avec le code : motif exigé sur chaque écriture (absent, trop court, blanc, plus de 500 caractères
  *     refusés) ; avec un motif valable, l'action passe et le motif est inscrit au journal.
@@ -16,6 +17,7 @@ import { newBuyer, service, type Buyer, type SaleEvent } from '../parcours/paiem
 import { newPartner, type TestPartner } from '../parcours/finance-helpers';
 import { newController } from '../parcours/acces-helpers';
 import { newAdmin } from '../parcours/notif-helpers';
+import { writeLocal } from '../helpers/db';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
 import {
     adminWithoutCode, api, assignmentOf, expireInvitation, freeEvent, invitationRow, invitationsFor, inviteExisting, ok2xx,
@@ -124,6 +126,30 @@ describe('a à d. admins sans le droit d’écrire', () => {
         }
         assert.deepEqual(breaches, [], breaches.join('\n'));
         await assertNothingChanged('sans code');
+    });
+
+    test('c bis. ADMIN events.write, mot de passe saisi mais SANS le code administrateur : rien, ni par la REST', async () => {
+        // Session dont le titulaire vient de saisir son mot de passe (admin_session_activity.password_at), sans code SMS de
+        // l'appareil ni de la session (ni admin_devices, ni admin_session_codes) : seul le code manque
+        const noCode = await adminWithoutCode('adm-mdp-sanscode', ['events.read', 'events.write']);
+        const claims = JSON.parse(Buffer.from(noCode.accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')) as { session_id?: string };
+        assert.ok(claims.session_id, 'jeton sans session_id');
+        await writeLocal(async (c) => {
+            await c.query(`INSERT INTO public.admin_session_activity (session_id, user_id, last_activity_at, password_at) VALUES ($1, $2, now(), now())
+                           ON CONFLICT (session_id) DO UPDATE SET last_activity_at = EXCLUDED.last_activity_at, password_at = EXCLUDED.password_at`,
+            [claims.session_id, noCode.userId]);
+        });
+        const view = await api('GET', 'partner/team', { token: noCode.accessToken, path: `/api/partner/team?partnerId=${P.partnerId}` });
+        console.log(`[CVF1-7] mot de passe saisi, sans code : lecture → ${show(view)}`);
+        const breaches = await noWriteAccepted(noCode.accessToken, REASON, 'mot de passe saisi, sans code');
+        if (ok2xx(view)) breaches.push(`lecture de l'équipe sans le code : ${show(view)}`);
+        for (const [table, filter] of [['event_controllers', { event_id: ev.eventId }], ['controller_invitations', { partner_id: P.partnerId }]] as const) {
+            const r = await restRows(userClient(noCode.accessToken), table, filter);
+            console.log(`[CVF1-7] mot de passe saisi, sans code : REST ${table} → ${r.rows.length} ligne(s)${r.error ? ` ; refus ${r.error}` : ''}`);
+            if (r.rows.length > 0) breaches.push(`REST ${table} lue sans le code : ${r.rows.length} ligne(s)`);
+        }
+        assert.deepEqual(breaches, [], breaches.join('\n'));
+        await assertNothingChanged('mot de passe saisi, sans code');
     });
 
     test('d. ADMIN events.write rétrogradé, ancien jeton : aucune écriture', async () => {
