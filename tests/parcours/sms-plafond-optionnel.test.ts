@@ -84,15 +84,17 @@ before(async () => {
 // ── Outils locaux ──────────────────────────────────────────────────────────
 
 /**
- * Jours de Dakar futurs distincts, tirés au hasard entre J+2 000 et J+3 680. Le budget optionnel se compte par jour
+ * Jours de Dakar futurs distincts, tirés au hasard entre J+4 000 et J+5 680. Le budget optionnel se compte par jour
  * sur toute la base : rappels-gratuits (J+60 à J+960), notif-envoyeur (J+150 à J+550) et notif-admins (J+200 à J+900)
  * envoient des SMS optionnels à des jours simulés ; l'ancienne plage (J+120 à J+1 800) les recouvrait (run 181 :
  * 699 SENT au lieu de 700, un SMS d'une autre suite compté le même jour). Correctif du lot 9 quinquies, signalé.
+ * Finition 1 (run 202) : J+2 000 à J+3 680 est aussi la plage de sms-veille ; les 700 SMS optionnels de cette suite,
+ * tombés sur le jour tiré par sms-veille, ont fait sortir son alerte « 700 porteurs, plafond 700 ». Plage propre ici.
  */
 const usedOffsets = new Set<number>();
 function randomFutureDay(): string {
     for (;;) {
-        const offset = 2000 + randomInt(0, 1680);
+        const offset = 4000 + randomInt(0, 1680);
         if (usedOffsets.has(offset) || usedOffsets.has(offset - 1) || usedOffsets.has(offset + 1)) continue;
         usedOffsets.add(offset);
         return dakarDay(offset);
