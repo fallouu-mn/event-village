@@ -91,6 +91,17 @@ describe('Finition 1 — écran de l’équipe', () => {
         }
     });
 
+    test('contraste en sombre : texte couleur marque par text-brand-fg, texte sur fond marque par text-on-brand (run 193)', () => {
+        // text-brand est la couleur des FONDS (#C2410C : 3,48:1 sur la surface sombre) ; text-brand-fg sur bg-brand donne
+        // #FB923C sur #C2410C en sombre (2,28:1). Les deux ont été relevés par axe sur les captures sombres du run 193.
+        for (const rel of [...teamFiles().filter((f) => f.endsWith('.tsx')), PAGE, TAB]) {
+            const src = read(rel);
+            assert.deepEqual(src.match(/\btext-brand(?![-\w/])/g) ?? [], [], `${rel} : text-brand (couleur de fond) employé pour du texte`);
+            const onBrand = (src.match(/[^'"`]*\bbg-brand(?![-\w/])[^'"`]*/g) ?? []).filter((c) => /\btext-brand-fg\b/.test(c));
+            assert.deepEqual(onBrand, [], `${rel} : text-brand-fg sur bg-brand`);
+        }
+    });
+
     test('fichiers de l’équipe inscrits au système de design', () => {
         for (const rel of [...teamFiles().filter((f) => f.endsWith('.tsx')), PAGE, TAB]) {
             assert.ok(MIGRATED_DESIGN_FILES.includes(rel), `${rel} absent de tests/helpers/design-files.ts`);

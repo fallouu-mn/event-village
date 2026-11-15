@@ -46,6 +46,14 @@ async function scannerStatus(user: Pick<Buyer, 'accessToken'>): Promise<Row> {
     return res.body;
 }
 
+/** Le menu suit le profil servi par /api/auth/me (`profile.scanner_open`), lu par AppLayout sans requête de plus. */
+async function meScanner(user: Pick<Buyer, 'accessToken'>): Promise<unknown> {
+    const GET = await routeHandler('../../app/api/auth/me/route', 'GET', 'GET /api/auth/me');
+    const res = await invoke(GET, jsonRequest('/api/auth/me', 'GET', user.accessToken));
+    assert.equal(res.status, 200, `profil : ${show(res)}`);
+    return (res.body.profile as Row | null)?.scanner_open;
+}
+
 let partner: TestPartner;
 let other: TestPartner;
 let buyer: Buyer;
@@ -106,12 +114,23 @@ describe('Complément 11 — le menu « Scanner » suit les événements, pas le
         const far = await createTimedEvent(partner.partnerId, 'f1-loin', CATS, { startsInHours: 40 });
         const c = await newController(partner, far.eventId, { label: 'f1-statut' });
         assert.equal((await scannerStatus(c)).scanner, false, 'ouverture dans 34 h : application d’un client normal');
+        assert.equal(await meScanner(c), false, 'profil : menu « Scanner » masqué (ouverture dans 34 h)');
         const near = await createTimedEvent(other.partnerId, 'f1-proche', CATS, { startsInHours: 20 });
         await service.from('event_controllers').insert({ event_id: near.eventId, user_id: c.userId, created_by: other.userId });
         const st = await scannerStatus(c);
         assert.equal(st.scanner, true, `ouverture dans 14 h (autre partenaire) : ${JSON.stringify(st)}`);
+        assert.equal(await meScanner(c), true, 'profil : menu « Scanner » affiché (ouverture dans 14 h)');
+        const { data: roles } = await service.from('user_roles').select('role').eq('user_id', c.userId);
+        assert.ok((roles ?? []).some((r: { role: string }) => r.role === 'CONTROLEUR'), 'rôle CONTROLEUR gardé');
         const client = await newBuyer('f1-statut-client');
         assert.equal((await scannerStatus(client)).scanner, false, 'client sans affectation');
+        assert.equal(await meScanner(client), undefined, 'profil d’un client : aucun champ scanner_open');
+    });
+
+    test('le menu lit le profil (scanner_open), sans requête de plus dans la mise en page commune (budget JS)', () => {
+        const src = fs.readFileSync(path.resolve(process.cwd(), 'components/layout/AppLayout.tsx'), 'utf8');
+        assert.match(src, /profile\?\.scanner_open/, 'AppLayout lit profile?.scanner_open');
+        assert.doesNotMatch(src, /\/api\/controller\/status/, 'aucun appel à /api/controller/status depuis AppLayout');
     });
 });
 
