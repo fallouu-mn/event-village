@@ -879,6 +879,15 @@ export const SCREENS: readonly Screen[] = [
         injectError: /\/api\/partner\/events(\/overview)?(\?.*)?$/, ready: expectRetry,
     },
     { id: 'partenaire-creation', titre: 'Création d’un événement (formulaire partagé)', role: 'organisateur', needsIds: true, path: () => '/partner/events/new' },
+    // Finition 2a : étape Accès du formulaire (carte du lieu, recherche), captures avant et après
+    {
+        id: 'partenaire-creation-acces', titre: 'Création d’un événement — étape Accès (carte du lieu)', role: 'organisateur', needsIds: true,
+        path: () => '/partner/events/new',
+        actions: async ({ page }) => {
+            await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: /accès/i }).click();
+            await expect(page.getByRole('heading', { name: /^accès et informations pratiques$/i })).toBeVisible();
+        },
+    },
     {
         id: 'partenaire-edition', titre: 'Édition d’un événement publié avec ventes (champs verrouillés)', role: 'organisateur', needsIds: true,
         path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
@@ -980,6 +989,12 @@ export const SCREENS: readonly Screen[] = [
         injectError: /\/api\/admin\/events(\?.*)?$/, ready: expectRetry,
     },
     { id: 'admin-fiche-en-attente', titre: 'Administration — fiche complète avant validation', role: 'admin', needsIds: true, path: (i) => `/admin/events/${ids(i).events.enAttente.id}` },
+    // Finition 2a : onglet Infos du pilotage (dates et fin retenue, lieu, carte, itinéraire). Avant la finition, l'onglet
+    // n'existe pas et l'adresse ouvre l'Aperçu : la capture « avant » montre ce qui en tenait lieu (en-tête).
+    {
+        id: 'pilotage-infos', titre: 'Pilotage — onglet Infos (dates, fin retenue, lieu, carte)', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.ceSoir.id}?tab=infos`,
+    },
     { id: 'admin-fiche-suspendu', titre: 'Administration — fiche d’un événement suspendu (motif, réactiver)', role: 'admin', needsIds: true, path: (i) => `/admin/events/${ids(i).events.suspendu.id}` },
     {
         id: 'admin-notifications', titre: 'Administration — supervision des notifications (liste filtrable, compteurs)', role: 'admin', needsIds: true,
