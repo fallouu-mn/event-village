@@ -131,7 +131,8 @@ describe('PATCH /api/partner/team/assignments/[id] { canAcceptCash }', () => {
         const unknown = await patchAssignment(ds.partner, randomUUID(), { canAcceptCash: false });
         assert.equal(unknown.status, 404, `affectation inconnue : 404 attendu, ${show(unknown)}`);
 
-        const byWriter = await patchAssignment(adminWriter, ds.assignments.c4, { canAcceptCash: false });
+        // Finition 1 (E-17) : motif exigé d'un admin sur l'équipe d'un organisateur (signalé au rapport)
+        const byWriter = await patchAssignment(adminWriter, ds.assignments.c4, { canAcceptCash: false, reason: 'Demande de l’organisateur (test)' });
         assert.equal(byWriter.status, 200, `R2 : admin events.write → 200 attendu, ${show(byWriter)}`);
         assert.equal(await cashPermission(ds.eventId, ds.c4.userId), false, 'admin events.write : permission espèces de C4 retirée');
         assert.equal(await cashPermission(otherEvent.eventId, ds.c4.userId), false, 'admin events.write : l’autre affectation de C4 reste inchangée');

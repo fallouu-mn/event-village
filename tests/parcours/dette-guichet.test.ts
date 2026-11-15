@@ -324,12 +324,14 @@ describe('C7 — vente au guichet = entrée immédiate', () => {
         assert.equal((await scansOf(ticketId)).filter((s) => s.accepted === true).length, 1, 'une seule entrée acceptée');
     });
 
-    test('garde-fou : le partenaire propriétaire ne vend pas au guichet (NOT_ASSIGNED), rien vendu', async () => {
+    // Finition 1 (complément 12) : la partenaire vend désormais au guichet sur ses propres événements ; sans caisse ouverte
+    // elle est refusée comme un contrôleur (NO_OPEN_SHIFT), rien n'est vendu (garde-fou recalé, signalé au rapport)
+    test('garde-fou : la partenaire propriétaire sans caisse ouverte ne vend pas (NO_OPEN_SHIFT), rien vendu', async () => {
         const before = await snapshot();
         const res = await counterSale(partner, { eventId: ev.eventId, items: items(1) });
-        assert.ok(res.status >= 400 && res.status < 500, `vente par le partenaire : refus 4xx attendu : ${show(res)}`);
-        assert.equal(res.body.code, 'NOT_ASSIGNED', `code NOT_ASSIGNED : ${show(res)}`);
-        await assertNothingSold(before, 'vente par le partenaire');
+        assert.ok(res.status >= 400 && res.status < 500, `vente par la partenaire sans caisse : refus 4xx attendu : ${show(res)}`);
+        assert.equal(res.body.code, 'NO_OPEN_SHIFT', `code NO_OPEN_SHIFT : ${show(res)}`);
+        await assertNothingSold(before, 'vente par la partenaire sans caisse');
     });
 
     test('garde-fou : invariants (g)(h)(i) vrais sur les billets, la caisse et les paiements de la suite', async () => {

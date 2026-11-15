@@ -72,8 +72,9 @@ describe('Complément 10 — plage du contrôle', () => {
         const opens = new Date(String(s7.opens_at));
         assert.equal(s7.message, `Le contrôle ouvre le ${formatDate(opens)} à ${formatTime(opens)}.`, 'message de l’ouverture');
         assert.equal((await stateOf(c, soon.eventId)).open, true, 'ouvert 6 h avant le début');
-        const { error } = await service.from('events').update({ status: 'ANNULE' }).eq('id', soon.eventId);
-        assert.equal(error, null, `annulation (montage) : ${error?.message}`);
+        // Annulation par la vraie transition (event_cancel) : le statut ne change jamais par une écriture directe
+        const { advanceEventTo } = await import('./cycle-helpers');
+        await advanceEventTo(soon.eventId, 'ANNULE');
         const cancelled = await stateOf(c, soon.eventId);
         assert.equal(cancelled.open, false);
         assert.equal(cancelled.problem, 'event_cancelled');
