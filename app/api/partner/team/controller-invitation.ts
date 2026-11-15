@@ -29,6 +29,8 @@ export function notInvitableResponse(): NextResponse {
 
 const REFUSALS: Record<string, [number, string]> = {
     NOT_INVITABLE: [409, NOT_INVITABLE_TEXT],
+    // cvf1 R2 : invitation identique déjà envoyée il y a moins d'une minute (demandes simultanées, double clic)
+    INVITATION_ALREADY_SENT: [409, 'Une invitation vient d’être envoyée à ce numéro. Attendez sa réponse ou utilisez « Renvoyer ».'],
     INVALID_INPUT: [400, 'Invitation incomplète : choisissez au moins un événement.'],
     PARTNER_NOT_FOUND: [404, 'Organisateur introuvable.'],
     ACCOUNT_NOT_ACTIVE: [403, 'Ce compte n’est pas actif : il ne peut pas être invité.'],
