@@ -70,7 +70,7 @@ import { cart, checkout, importModule, newBuyer, service, type Buyer, type Categ
 import { dispatchAt, flushNotifications, noonDakarTomorrow } from './notif-helpers';
 import { buyConfirmed, jsonRequest, newPartner, withSettings, type TestPartner } from './finance-helpers';
 import {
-    advanceEventTo, assertRpcOk, createDraftEvent, createEventInStatus, eventHistory, posterUrl, rpcTransition,
+    advanceEventTo, assertRpcOk, createDraftEvent, createEventInStatus, eventHistory, posterUrl, rpcTransition, storedPosterUrl,
     type DraftEvent, type EventStatus,
 } from './cycle-helpers';
 
@@ -81,11 +81,14 @@ const PRACTICAL = { address: 'Place de l’Obélisque, Dakar', accessNotes: 'Ent
 const STANDARD: CategorySpec[] = [{ name: 'Standard', price: 5000, total: 20 }];
 
 let partner: TestPartner;
+/** Finition 2a (1b) : affiche réellement déposée (le serveur vérifie le fichier), à la place de posterUrl. */
+let storedPoster: string;
 let otherPartner: TestPartner;
 let admin: Buyer;
 
 before(async () => {
     partner = await newPartner('edition-form');
+    storedPoster = await storedPosterUrl(partner.partnerId);
     otherPartner = await newPartner('edition-form-b');
     admin = await newAdmin('edition-form');
 });
@@ -190,7 +193,7 @@ function createBody(label: string, overrides: Row = {}): Row {
         city: 'Dakar',
         latitude: 14.6937,
         longitude: -17.4441,
-        image_url: posterUrl(partner.partnerId),
+        image_url: storedPoster,
         capacity: 200,
         program: [{ id: randomUUID(), time: '20:00', kind: 'ARTISTE', title: 'Ouverture', participant: 'Orchestre de test' }],
         practical_info: { address: 'Boulevard de la République, Dakar', accessNotes: 'Entrée principale' },
@@ -566,7 +569,7 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         const sale = await sell(ev, 'Standard');
         await flushEvent(ev.eventId);
         const seen = await notificationIds(sale.buyer.userId);
-        const poster = posterUrl(partner.partnerId);
+        const poster = await storedPosterUrl(partner.partnerId);
         const program = [
             { id: randomUUID(), time: '20:00', kind: 'ARTISTE', title: 'Première partie', participant: 'Groupe de test' },
             { id: randomUUID(), time: '21:30', kind: 'ACTIVITE', title: 'Entracte' },

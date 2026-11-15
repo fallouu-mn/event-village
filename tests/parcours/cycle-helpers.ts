@@ -19,6 +19,7 @@ import '../helpers/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { PostgrestError } from '@supabase/supabase-js';
+import sharp from 'sharp';
 import { service, type CategorySpec, type SaleEvent } from './paiement-helpers';
 import { superadminId, type TestPartner } from './finance-helpers';
 
@@ -102,6 +103,19 @@ export function posterUrl(partnerId: string, fileName = `${randomUUID()}.png`): 
     const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
     assert.ok(base, 'NEXT_PUBLIC_SUPABASE_URL absente (.env.test)');
     return `${base.replace(/\/+$/, '')}/storage/v1/object/public/public-images/events/${partnerId}/${fileName}`;
+}
+
+/**
+ * Finition 2a (1b) : affiche réellement déposée dans le dossier de la partenaire. Le serveur vérifie désormais que le
+ * fichier existe quand une route enregistre l'affiche (création, modification) ; posterUrl ne donne qu'une adresse (les
+ * insertions directes l'acceptent). Aide ajoutée, signalée au rapport.
+ */
+export async function storedPosterUrl(partnerId: string): Promise<string> {
+    const path = `events/${partnerId}/${Date.now()}_${randomUUID().slice(0, 8)}.webp`;
+    const image = await sharp({ create: { width: 160, height: 100, channels: 3, background: { r: 40, g: 90, b: 160 } } }).webp().toBuffer();
+    const { error } = await service.storage.from('public-images').upload(path, image, { contentType: 'image/webp', upsert: false });
+    assert.equal(error, null, `affiche de test ${path} : ${error?.message}`);
+    return service.storage.from('public-images').getPublicUrl(path).data.publicUrl;
 }
 
 export interface DraftEventOptions {

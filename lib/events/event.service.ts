@@ -1,3 +1,4 @@
+import { POSTER_NOT_FOUND_TEXT, posterExists, posterPath, removePosterIfUnused } from '@/lib/events/poster-storage';
 import { z } from 'zod';
 import { PublicError } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '../supabase/server';
@@ -180,6 +181,15 @@ interface EditableEvent {
     practical_info: Record<string, unknown> | null;
 }
 
+/** Finition 2a (1b) : une affiche du projet doit exister dans le dossier de la partenaire (le chemin est déjà vérifié). */
+async function assertPosterStored(url: string | null): Promise<void> {
+    const path = posterPath(url);
+    if (!path) return;
+    if (!(await posterExists(path))) {
+        throw new EventServiceError(400, 'IMAGE_NOT_FOUND', POSTER_NOT_FOUND_TEXT, { field: 'image_url' });
+    }
+}
+
 const updateBodySchema = z.object({
     patch: z.record(z.string(), z.unknown()),
     expected_updated_at: z.string().min(1),
@@ -276,6 +286,7 @@ export class EventService {
         const parsed = parseWithFrenchErrors(createEventSchema({ partnerId: partner.id }), input);
         if (!parsed.success) throw invalid(parsed.error);
         const { ticket_categories: categories, ...event } = parsed.data;
+        await assertPosterStored((event as { image_url?: string | null }).image_url ?? null);
         const result = await editionResult<{ ok: true; event: DbRecord }>('event_create', rpcWithRetry('event_create', { p: {
             actor_id: partnerUserId,
             event,
@@ -379,6 +390,9 @@ export class EventService {
             },
         }), patch);
         if (!parsed.success) throw invalid(parsed.error);
+        const nextImage = (parsed.data as { image_url?: string | null }).image_url;
+        const imageChanged = nextImage !== undefined && (nextImage ?? null) !== (event.image_url ?? null);
+        if (imageChanged) await assertPosterStored(nextImage ?? null);
 
         const result = await editionResult<{ ok: true; event: DbRecord; notified_holders: number; sms_queued: number }>('event_update', rpcWithRetry('event_update', { p: {
             event_id: eventId,
@@ -386,6 +400,15 @@ export class EventService {
             patch: parsed.data,
             expected_updated_at,
         } }));
+        // Finition 2a (1b) : l'affiche remplacée est effacée si aucun autre événement ne l'utilise (échec : journal, la
+        // tâche planifiée la reprendra au bout de 7 jours)
+        if (imageChanged && event.image_url) {
+            try {
+                await removePosterIfUnused(event.image_url, eventId);
+            } catch (err) {
+                console.error(`[EventService.updateEvent] ancienne affiche de ${eventId} non effacée :`, err instanceof Error ? err.message : String(err));
+            }
+        }
         return { event: result.event, notified_holders: Number(result.notified_holders ?? 0), sms_queued: Number(result.sms_queued ?? 0) };
     }
 

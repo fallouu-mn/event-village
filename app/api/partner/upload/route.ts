@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { sniffImage } from '@/lib/images/sniff';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -13,6 +14,10 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 /** Compartiment public créé par la migration 20261102000004_lot5_edition.sql (plus de création à l'exécution). */
 const BUCKET_NAME = 'public-images';
 const FOLDERS = new Set(['events', 'halls', 'products', 'misc']);
+/** Finition 2a (1b) : plus grand côté de l'image stockée (jamais agrandie), qualité WebP, garde contre les images géantes. */
+const MAX_SIDE_PX = 1600;
+const WEBP_QUALITY = 82;
+const MAX_INPUT_PIXELS = 40_000_000;
 
 /**
  * POST /api/partner/upload — dépôt d'une image publique (affiche, salle, produit) par un organisateur.
@@ -79,10 +84,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Format non pris en charge : formats acceptés JPEG, PNG et WebP.', code: 'UNSUPPORTED_FORMAT' }, { status: 400 });
     }
 
-    const filePath = `${folder}/${partner.id}/${Date.now()}_${randomUUID().slice(0, 8)}.${kind.ext}`;
+    // Finition 2a (1b) : image réencodée (orientation appliquée, réduite, WebP) ; sharp ne recopie aucune métadonnée
+    // (EXIF et GPS, XMP, IPTC, profil ICC) : seuls les pixels sont stockés.
+    let encoded: Buffer;
+    try {
+        encoded = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
+            .rotate()
+            .resize({ width: MAX_SIDE_PX, height: MAX_SIDE_PX, fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: WEBP_QUALITY })
+            .toBuffer();
+    } catch (err) {
+        console.warn(`[upload] image de ${user.id} illisible (${kind.mime}) :`, err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Image illisible : choisissez une autre image JPEG, PNG ou WebP.', code: 'UNSUPPORTED_FORMAT' }, { status: 400 });
+    }
+
+    const filePath = `${folder}/${partner.id}/${Date.now()}_${randomUUID().slice(0, 8)}.webp`;
     const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, buffer, { contentType: kind.mime, upsert: false });
+        .upload(filePath, encoded, { contentType: 'image/webp', upsert: false });
     if (uploadError) {
         console.error(`[upload] dépôt de ${filePath} impossible : ${uploadError.message}`);
         return NextResponse.json({ error: 'Dépôt impossible pour le moment. Réessayez.', code: 'UPLOAD_FAILED' }, { status: 500 });

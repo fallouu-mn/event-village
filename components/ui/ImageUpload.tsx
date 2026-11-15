@@ -4,6 +4,7 @@ import React, { useCallback, useId, useState } from 'react';
 import { AlertCircle, ImageIcon, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { IconButton } from './IconButton';
 import { cn } from './cn';
+import { downscaleImage } from '@/lib/images/downscale-image';
 
 interface ImageUploadProps {
     value: string;
@@ -19,6 +20,10 @@ interface ImageUploadProps {
     /** Identifiant imposé du champ fichier (lien depuis un récapitulatif d'erreurs). */
     id?: string;
     className?: string;
+    /** Finition 2a (1b) : plus grand côté (px) de l'image réduite dans le navigateur avant l'envoi (création seulement). */
+    downscale?: number;
+    /** Finition 2a (1b) : aperçu dans le cadre des cartes du site (16:10, recadré au centre) au lieu du 16:9. */
+    cardPreview?: boolean;
 }
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -42,6 +47,8 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
     required = false,
     id,
     className,
+    downscale,
+    cardPreview = false,
 }) => {
     const generated = useId();
     const inputId = id ?? `image-${generated}`;
@@ -57,12 +64,14 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
     const shownError = uploadError ?? error ?? null;
     const describedBy = [shownError ? errorId : null, hintId, isUploading ? statusId : null].filter(Boolean).join(' ');
 
-    const upload = useCallback(async (file: File) => {
+    const upload = useCallback(async (picked: File) => {
         setUploadError(null);
-        if (!ACCEPTED_TYPES.includes(file.type)) {
+        if (!ACCEPTED_TYPES.includes(picked.type)) {
             setUploadError('Format non pris en charge : choisissez une image JPEG, PNG ou WebP.');
             return;
         }
+        // Finition 2a (1b) : réduite avant l'envoi quand le formulaire le demande (une photo de téléphone passe ainsi les 5 Mo)
+        const file = downscale ? await downscaleImage(picked, downscale) : picked;
         if (file.size > MAX_SIZE_BYTES) {
             setUploadError('Image trop lourde : 5 Mo au plus.');
             return;
@@ -92,7 +101,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
         } finally {
             setIsUploading(false);
         }
-    }, [folder, onChange]);
+    }, [downscale, folder, onChange]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -140,9 +149,9 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
             {value ? (
                 <div className="overflow-hidden rounded-2xl border border-border bg-surface-sunken peer-focus-visible:ring-2 peer-focus-visible:ring-ring">
                     {/* eslint-disable-next-line @next/next/no-img-element -- aperçu de l'image déposée (URL du stockage du projet) */}
-                    <img src={value} alt={`Aperçu : ${label}`} className="aspect-video w-full object-cover" />
+                    <img src={value} alt={`Aperçu : ${label}`} className={cn('w-full object-cover', cardPreview ? 'aspect-[16/10]' : 'aspect-video')} />
                     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface p-2">
-                        <span className="px-2 text-sm text-fg-muted">Image enregistrée</span>
+                        <span className="px-2 text-sm text-fg-muted">{cardPreview ? 'Aperçu sur les cartes du site' : 'Image enregistrée'}</span>
                         <div className="flex items-center gap-1">
                             <label
                                 htmlFor={inputId}

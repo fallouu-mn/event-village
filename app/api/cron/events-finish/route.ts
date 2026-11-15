@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { refuseUnlessCron } from '@/lib/security/cron-auth';
+import { purgeOrphanPosters } from '@/lib/events/poster-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,16 @@ async function run(req: NextRequest) {
         ids.push(...(data.ids ?? []).map(String));
         if (n < BATCH) break;
     }
-    return NextResponse.json({ ok: true, finished, ids });
+    // Finition 2a (1b) : affiches de plus de 7 jours qu'aucun événement n'utilise (brouillons abandonnés, affiches
+    // remplacées) ; jamais une affiche utilisée. Un échec est journalisé sans annuler le passage à TERMINE.
+    let posters: { scanned: number; deleted: number } | { error: string };
+    try {
+        posters = await purgeOrphanPosters(7);
+    } catch (err) {
+        console.error('[cron events-finish] purge des affiches orphelines impossible :', err instanceof Error ? err.message : String(err));
+        posters = { error: 'Purge des affiches momentanément impossible.' };
+    }
+    return NextResponse.json({ ok: true, finished, ids, posters });
 }
 
 export const GET = run;

@@ -956,8 +956,10 @@ export function EventForm(props: EventFormProps) {
                             folder="events"
                             value={values.image_url}
                             onChange={(url) => set('image_url', url)}
-                            hint="JPEG, PNG ou WebP, 5 Mo au plus. Obligatoire pour soumettre l’événement à la validation."
+                            hint="Format conseillé : paysage, 1 600 × 1 000 pixels (proportion des cartes du site), recadré au centre. JPEG, PNG ou WebP, 5 Mo au plus. Obligatoire pour soumettre l’événement à la validation."
                             error={errors.image_url}
+                            cardPreview
+                            downscale={isEdit ? undefined : 1600}
                         />
 
                         <fieldset className="flex flex-col gap-4 rounded-2xl border border-border p-4">
