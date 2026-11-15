@@ -199,6 +199,10 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     sync('ACCOUNT_ACTIVATION'),
     sync('OTP_ADMIN'),
     ess('EMAIL_ADDED', [S, M], 'ANY', 'B'),
+    // Finition 1 (E-20) : avis à la partenaire, cloche, push et email, sans SMS (migration 20261115000002), modification signalée
+    ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M], 'PARTNER', 'B'),
+    ess('CONTROLLER_INVITATION_DECLINED', [I, P, M], 'PARTNER', 'B'),
+    ess('CONTROLLER_INVITATION_EXPIRED', [I, P, M], 'PARTNER', 'B'),
 ];
 
 const LOT6_TABLES = ['notification_outbox', 'notification_types', 'notification_preferences', 'push_subscriptions'] as const;

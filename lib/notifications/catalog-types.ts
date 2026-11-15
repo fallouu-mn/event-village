@@ -22,7 +22,8 @@
  *  - TICKET_SCANNED : ticket_count, payment_id (avis regroupé par commande, R78) ;
  *  - PAYMENT_REFUND_STARTED : duplicate_of (variante « double ») ; ADMIN_CASHOUT_TO_RESUME : kind (nature du
  *    versement), cause (DELAYED | BLOCKED), blocked_reason ; SHIFT_OPEN_AT_END : open_shifts ;
- *  - CONTROLLER_INVITATION : invitation_id, company, expires_at, events ; CONTROLLER_EVENT_STATUS : status
+ *  - CONTROLLER_INVITATION : invitation_id, company, expires_at, events ; CONTROLLER_INVITATION_ACCEPTED, _DECLINED,
+ *    _EXPIRED (finition 1) : invitation_id, controller_name, events ; CONTROLLER_EVENT_STATUS : status
  *    (SUSPENDU | PUBLIE) ; TICKET_CANCELLED : kind (INVITATION | FREE | CASH) ; ADMIN_EVENT_CHANGED : changes
  *    (TITLE | POSTER | PLACE | DATE | CATEGORY), old_title, category ; motifs : reason (motif interne ou de l'admin),
  *    public_notice (avis public d'une annulation).
@@ -204,6 +205,10 @@ export interface TemplateData {
     TRANSFER_DECLINED_SENDER: EventData & { transfer_id: string; ticket_id: string };
     TRANSFER_RECIPIENT_CHANGED: EventData & { transfer_id: string; ticket_id: string };
     CONTROLLER_INVITATION: Partial<EventData> & { invitation_id: string; company: string; expires_at: string; events?: ControllerEventRef[] };
+    // Finition 1 (E-20) : avis à la partenaire (nom complet pour une acceptation, masqué sinon)
+    CONTROLLER_INVITATION_ACCEPTED: { invitation_id: string; controller_name: string; events?: ControllerEventRef[] };
+    CONTROLLER_INVITATION_DECLINED: { invitation_id: string; controller_name: string; events?: ControllerEventRef[] };
+    CONTROLLER_INVITATION_EXPIRED: { invitation_id: string; controller_name: string; events?: ControllerEventRef[] };
     EVENT_CANCELLED_BY_ADMIN: EventData & { public_notice?: string | null };
     ADMIN_EVENT_CANCELLED: EventData & { company?: string | null; reason?: string | null };
     CONTROLLER_EVENT_CANCELLED: EventData;

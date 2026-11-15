@@ -1175,6 +1175,10 @@ function lot9quinquiesExpected(): ExpectedType[] {
         sync('ACCOUNT_ACTIVATION'), // A2 (AUTH-02) : lien d'activation d'un compte créé par un admin, journal seulement
         sync('OTP_ADMIN'), // A3 (AUTH-05) : code administrateur, journal seulement
         ess('EMAIL_ADDED', [S, M], 'ANY', 'B', null, ['/aide'], null), // C2 (AUTH-09)
+        // Finition 1 (E-20) : avis à la partenaire, cloche, push et email, sans SMS (migration 20261115000002). Ajout signalé.
+        ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation acceptée'),
+        ess('CONTROLLER_INVITATION_DECLINED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation refusée'),
+        ess('CONTROLLER_INVITATION_EXPIRED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation sans réponse'),
     ];
 }
 

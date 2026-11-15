@@ -381,6 +381,11 @@ const SAMPLE_ID = {
     otherEvent: '0d8b6f4a-2c1e-4a9d-b7f5-3e1c9a7d5b93',
     invitation: 'b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04',
 };
+/** Finition 1 (E-20) : données d'exemple des avis d'invitation de contrôleur à la partenaire. */
+const SAMPLE_TEAM_NOTICE = {
+    invitation_id: 'b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04',
+    events: [{ event_id: '7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01', title: 'Gala de la Teranga', start_at: '2026-11-14T20:00:00.000Z' }],
+};
 const SAMPLE_MONEY = { cashout_id: SAMPLE_ID.cashout, amount: 25_000, operator: 'WAVE', account_kind: 'ORGANISATEUR' };
 
 const eventPath = (d: object): string => `/events/${ident(d, 'event_id')}`;
@@ -502,6 +507,18 @@ function mainAssignment(d: object): MainAssignment {
     if (titleTop) return { title: titleTop, start_at: optIso(d, 'start_at') ?? '', others };
     if (first && typeof first === 'object') return { title: text(first, 'title'), start_at: optIso(first, 'start_at') ?? '', others };
     throw new TemplateDataError('title');
+}
+
+/**
+ * Finition 1 (E-20) : événements d'une invitation de contrôleur, pour les avis à la partenaire : « « Titre » », « « Titre »
+ * et 2 autres événements », ou « vos événements » si aucun n'est plus lisible (événement supprimé).
+ */
+function invitedEventsClause(d: object): string {
+    const events = list(d, 'events').filter((e): e is object => !!e && typeof e === 'object' && !!optText(e, 'title'));
+    if (events.length === 0) return 'vos événements';
+    const others = events.length - 1;
+    const more = others > 0 ? ` et ${others} ${others > 1 ? 'autres événements' : 'autre événement'}` : '';
+    return `${q(text(events[0], 'title'))}${more}`;
 }
 
 // ── Lot 9 bis (11.1 N16, N21) : changements vus par un contrôleur et par l'administration ──
@@ -1524,6 +1541,35 @@ const CATALOG = {
                 { event_id: SAMPLE_ID.otherEvent, title: 'Nuit du Mbalax', start_at: '2026-11-21T21:00:00.000Z' },
             ],
         },
+    }),
+    // Finition 1 (E-20) : avis à la partenaire quand le contrôleur invité accepte, refuse ou laisse expirer l'invitation.
+    // Cloche, push et email ; jamais de SMS (consigne). Nom complet pour une acceptation, masqué sinon.
+    CONTROLLER_INVITATION_ACCEPTED: define('CONTROLLER_INVITATION_ACCEPTED', {
+        label: 'Invitation de contrôleur acceptée', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        link: () => '/partner/team',
+        inApp: (d) => ({
+            title: 'Invitation acceptée',
+            content: `${text(d, 'controller_name')} a accepté votre invitation à contrôler l'entrée de ${invitedEventsClause(d)}. Choisissez sa porte et les espèces dans votre équipe.`,
+        }),
+        sample: { ...SAMPLE_TEAM_NOTICE, controller_name: 'Aminata Fall' },
+    }),
+    CONTROLLER_INVITATION_DECLINED: define('CONTROLLER_INVITATION_DECLINED', {
+        label: 'Invitation de contrôleur refusée', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        link: () => '/partner/team',
+        inApp: (d) => ({
+            title: 'Invitation refusée',
+            content: `${text(d, 'controller_name')} a refusé votre invitation à contrôler l'entrée de ${invitedEventsClause(d)}. Invitez une autre personne depuis votre équipe.`,
+        }),
+        sample: { ...SAMPLE_TEAM_NOTICE, controller_name: 'Ou*** B***' },
+    }),
+    CONTROLLER_INVITATION_EXPIRED: define('CONTROLLER_INVITATION_EXPIRED', {
+        label: 'Invitation de contrôleur sans réponse', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        link: () => '/partner/team',
+        inApp: (d) => ({
+            title: 'Invitation sans réponse',
+            content: `${text(d, 'controller_name')} n'a pas répondu à votre invitation à contrôler l'entrée de ${invitedEventsClause(d)} : elle a expiré. Invitez de nouveau depuis votre équipe.`,
+        }),
+        sample: { ...SAMPLE_TEAM_NOTICE, controller_name: 'Kh*** S***' },
     }),
     // N13 (R15) : propriétaire d'un événement annulé par un admin ; avis public, jamais le motif interne.
     EVENT_CANCELLED_BY_ADMIN: define('EVENT_CANCELLED_BY_ADMIN', {
