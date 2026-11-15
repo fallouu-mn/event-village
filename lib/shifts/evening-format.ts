@@ -22,6 +22,19 @@ export function eveningEntriesText(entries: number): string {
     return `${entries} entrée${entries > 1 ? 's' : ''} validée${entries > 1 ? 's' : ''}`;
 }
 
+/** Règle de la route du scanner (lot 9 bis, R100) : « Porte » ajouté seulement si le nom ne se nomme pas déjà. */
+const NAMED_ENTRY = /^(porte|portail|entr[ée]e|acc[èe]s|guichet)\b/i;
+
+/** « Porte Sud · Tribune », « Porte VIP · Carré VIP » (pas « Porte Porte VIP »), « Point d’entrée : … » ou « Porte non précisée ». */
+export function eveningPlaceText(p: { gate: string | null; zone: string | null; entry_point: string | null }): string {
+    if (p.gate) {
+        const gate = p.gate.trim();
+        return `${NAMED_ENTRY.test(gate) ? gate : `Porte ${gate}`}${p.zone ? ` · ${p.zone}` : ''}`;
+    }
+    if (p.entry_point) return `Point d’entrée : ${p.entry_point}`;
+    return 'Porte non précisée';
+}
+
 function gapText(gap: number): string {
     return gap < 0 ? `il manquait ${formatFcfa(-gap)}` : `${formatFcfa(gap)} de trop`;
 }

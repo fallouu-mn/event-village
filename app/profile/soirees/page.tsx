@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { formatDate, formatTime } from '@/lib/format';
-import { eveningCashText, eveningEntriesText, type EveningCash } from '@/lib/shifts/evening-format';
+import { eveningCashText, eveningEntriesText, eveningPlaceText, type EveningCash } from '@/lib/shifts/evening-format';
 import Loading from './loading';
 
 /**
@@ -28,12 +28,6 @@ interface Evening {
   entry_point: string | null;
   entries: number;
   cash: EveningCash | null;
-}
-
-function placeText(e: Evening): string {
-  if (e.gate) return `Porte ${e.gate}${e.zone ? ` · ${e.zone}` : ''}`;
-  if (e.entry_point) return `Point d’entrée : ${e.entry_point}`;
-  return 'Porte non précisée';
 }
 
 function whenText(startAt: string | null): string {
@@ -110,7 +104,7 @@ export default function EveningsPage() {
               <dl className="grid gap-2 text-sm sm:grid-cols-3">
                 <div className="flex items-center gap-2">
                   <dt><DoorOpen size={16} className="text-fg-muted" aria-hidden="true" /><span className="sr-only">Votre porte</span></dt>
-                  <dd className="text-fg">{placeText(e)}</dd>
+                  <dd className="text-fg">{eveningPlaceText(e)}</dd>
                 </div>
                 <div className="flex items-center gap-2">
                   <dt><Ticket size={16} className="text-fg-muted" aria-hidden="true" /><span className="sr-only">Vos entrées</span></dt>
