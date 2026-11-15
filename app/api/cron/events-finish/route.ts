@@ -10,7 +10,8 @@ const MAX_ROUNDS = 10;
 
 /**
  * Lot 5.4 (contrat D7) — passage automatique à TERMINE des événements PUBLIE dont la fin
- * (event_end_at : fin renseignée, sinon début à 23:59 Africa/Dakar) est passée, par la transition
+ * (event_end_at : fin saisie ; date de fin sans heure : ce jour à 23:59 ; sinon début + 6 h, heure de Dakar — finition 2a,
+ * E-01) est passée, par la transition
  * interne (acteur SYSTEM, canal CRON, journalisée). RPC events_finish_overdue en lots de 200
  * (FOR UPDATE SKIP LOCKED). Planification : toutes les 15 minutes (docs/deploiement-projet-neuf.md §7).
  * Protégée par CRON_SECRET (Authorization: Bearer), sans repli.

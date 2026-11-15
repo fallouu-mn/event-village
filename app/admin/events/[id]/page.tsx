@@ -34,6 +34,7 @@ import { EVENT_STATUS_META, eventStatusLabel, isEventStatus, type EventStatus } 
 import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { PROGRAM_KIND_LABELS, type ProgramKind } from '@/lib/validations/event';
 import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger, formatShortDate, toDakarDateTimeLocal } from '@/lib/format';
+import { retainedEnd } from '@/lib/events/event-end';
 
 /**
  * Lot 5 (tâche 5.7, contrat G ; 5.8, contrat J) — fiche complète d'un événement pour l'administration.
@@ -479,7 +480,8 @@ export default function AdminEventSheetPage() {
   const partnerStatus = organizer?.status ? PARTNER_STATUS[organizer.status] : undefined;
   const historyNewestFirst = history.slice().reverse();
   const startLabel = formatEventDateTime(event.start_date, event.start_time);
-  const endLabel = event.end_date ? formatEventDateTime(event.end_date, event.end_time) : null;
+  // Finition 2a (2, E-01) : la fin retenue (même règle que la base), jamais « Non précisée »
+  const end = retainedEnd({ start_date: event.start_date, start_time: event.start_time, end_date: event.end_date, end_time: event.end_time });
   const confirmCopy = confirmAction ? actionCopy(confirmAction, currentStatus) : null;
   const reasonCopy = reasonAction ? actionCopy(reasonAction, currentStatus) : null;
 
@@ -597,7 +599,10 @@ export default function AdminEventSheetPage() {
           <Section id="fiche-infos" title="Dates et lieu">
             <dl className="grid gap-4 sm:grid-cols-2">
               <InfoRow icon={<CalendarDays size={18} />} label="Début">{startLabel}</InfoRow>
-              <InfoRow icon={<Clock size={18} />} label="Fin">{endLabel ?? 'Non précisée (fin de journée)'}</InfoRow>
+              <InfoRow icon={<Clock size={18} />} label="Fin">
+                {end ? end.text : '—'}
+                {end?.note && <span className="block text-sm font-normal text-fg-muted">{end.note}</span>}
+              </InfoRow>
               <InfoRow icon={<MapPin size={18} />} label="Lieu">
                 {[event.location, event.city].filter(Boolean).join(', ') || 'Non renseigné'}
               </InfoRow>

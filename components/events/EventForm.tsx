@@ -21,6 +21,7 @@ import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, senegalCity } from '@/lib/events/senegal-cities';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { formatInteger } from '@/lib/format';
+import { retainedEnd } from '@/lib/events/event-end';
 import {
     EVENT_LIMITS,
     EVENT_RULE_CODES,
@@ -94,6 +95,8 @@ const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
+/** Finition 2a (2, E-01) : aide sous la fin retenue quand aucune heure de fin n'est saisie. */
+const RETAINED_END_HELP = 'La vente s’arrête à cette heure. Indiquez l’heure de fin si votre événement dure plus longtemps.';
 
 const CITY_OPTIONS = [
     ...SENEGAL_CITIES.map((c) => ({ value: c, label: c })),
@@ -815,6 +818,10 @@ export function EventForm(props: EventFormProps) {
     const showSummary = errorEntries.length > 0 || formError !== null;
     const lastStep = stepIndex === STEPS.length - 1;
     const hint = (base: string | undefined, notify: boolean) => (notify && withHolders ? [base, NOTIFY_HINT].filter(Boolean).join(' ') : base);
+    // Finition 2a (2, E-01) : sans heure de fin, la fin retenue (même règle que la base) est montrée sous les dates
+    const retained = values.start_date && values.start_time && !values.end_time
+        ? retainedEnd({ start_date: values.start_date, start_time: values.start_time, end_date: values.end_date || null, end_time: null })
+        : null;
 
     return (
         <div className="mx-auto w-full max-w-4xl pb-24 pt-6 md:pb-10">
@@ -976,6 +983,12 @@ export function EventForm(props: EventFormProps) {
                                     onChange={(e) => set('end_time', e.target.value)} error={errors.end_time}
                                     hint="Facultative ; avec une heure de fin, la date de fin est demandée." />
                             </div>
+                            {retained && (
+                                <div className="rounded-xl bg-surface-sunken px-4 py-3">
+                                    <p className="text-base font-semibold text-fg">Fin retenue : {retained.text}</p>
+                                    <p className="mt-1 text-sm leading-relaxed text-fg-muted">{RETAINED_END_HELP}</p>
+                                </div>
+                            )}
                         </fieldset>
 
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -16,6 +16,8 @@ const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 const FINITION2A_MIGRATIONS = [
     // 1a, sécurité, corrigée en premier : fiche SUSPENDU, événements en lecture seule
     '20261116000001_f2a_fiche_suspendue.sql',
+    // 2, fin retenue (E-01) : équipe et « Mes soirées » sur event_end_at
+    '20261116000002_f2a_fin_retenue.sql',
 ] as const;
 
 after(async () => {

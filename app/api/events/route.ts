@@ -19,8 +19,8 @@ function failure(err: unknown): NextResponse {
 
 /**
  * GET /api/events — catalogue public (accueil, explorer). Lot 5 (contrat E) :
- *  - seulement les événements PUBLIE dont la fin (event_end_at : fin renseignée, sinon début à 23:59
- *    Africa/Dakar) est à venir ; un événement en cours reste listé ;
+ *  - seulement les événements PUBLIE dont la fin (event_end_at : fin saisie ; date de fin sans heure : ce jour à 23:59 ;
+ *    sinon début + 6 h, heure de Dakar) est à venir ; un événement en cours reste listé ;
  *  - prix « à partir de » calculé sur les catégories actives ET vendues en ligne ; sans catégorie achetable :
  *    aucun prix (price null) et « Bientôt en vente », jamais « Gratuit » ;
  *  - aucune donnée de stock ni catégorie masquée exposée.
