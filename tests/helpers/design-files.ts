@@ -204,6 +204,9 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/profile/AvatarEditor.tsx',
     'app/profile/payments/page.tsx',
     'app/profile/payments/loading.tsx',
+    // Finition 1 (complément 13) : Mes soirées du contrôleur
+    'app/profile/soirees/page.tsx',
+    'app/profile/soirees/loading.tsx',
     // ── Lot 9 bis (contrat, section 8.2 ; T3) ──
     // Fichiers créés par le lot (aucun autre nouveau .tsx n'est permis). Absents tant que l'écran n'est pas écrit :
     // la suite design-systeme est rouge jusqu'aux commits d'écran (fix(9b.48e), fix(9b.26e), fix(9b.13e),

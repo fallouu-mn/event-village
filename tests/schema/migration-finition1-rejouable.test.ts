@@ -23,6 +23,8 @@ const FINITION1_MIGRATIONS = [
     '20261115000003_finition1_controle.sql',
     // Complément 12 : fiche VALIDE exigée de la propriétaire qui scanne (scan_scanner_authorized)
     '20261115000004_finition1_fiche_proprietaire.sql',
+    // Complément 4 (13, 14) : Mes soirées, chiffres d'une soirée, prochain changement du menu « Scanner »
+    '20261115000005_finition1_soirees.sql',
 ] as const;
 
 after(async () => {
