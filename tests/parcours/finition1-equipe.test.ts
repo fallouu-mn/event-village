@@ -102,6 +102,9 @@ before(async () => {
     const { data: gate, error: gErr } = await service.from('event_gates').insert({ event_id: evZones.eventId, zone_id: zone!.id, name: 'Porte Nord' }).select('id').single();
     assert.equal(gErr, null, `porte (montage) : ${gErr?.message}`);
     gateId = String(gate!.id);
+    // Invariant (x10) du lot 9 ter : toute catégorie active d'un événement à zones est admise par une zone d'entrée
+    const { error: zcErr } = await service.from('zone_categories').insert({ event_id: evZones.eventId, zone_id: zone!.id, category_id: evZones.categories.Standard.id });
+    assert.equal(zcErr, null, `catégorie de la zone (montage) : ${zcErr?.message}`);
 });
 
 after(async () => {
@@ -129,7 +132,7 @@ describe('E-13, E-14 — une seule lecture pour la page et pour l’onglet', () 
         const z = byEvent.get(evZones.eventId) as Row;
         const f = byEvent.get(evFree.eventId) as Row;
         assert.ok(z && f, `deux événements pour le contrôleur : ${JSON.stringify(m.assignments)}`);
-        assert.deepEqual(z.gate, { id: gateId, name: 'Porte Nord', zone_name: 'Pelouse' }, `porte : ${JSON.stringify(z)}`);
+        assert.deepEqual(z.gate, { id: gateId, name: 'Porte Nord', zone_name: 'Pelouse', categories: [{ name: 'Standard', scan_color: null }] }, `porte : ${JSON.stringify(z)}`);
         assert.equal(z.gate_change_allowed, true);
         assert.equal(z.can_accept_cash, true);
         assert.equal(z.open_shift, true, 'caisse ouverte servie');
@@ -140,7 +143,7 @@ describe('E-13, E-14 — une seule lecture pour la page et pour l’onglet', () 
         assert.equal(f.open_shift, false);
         const evRow = ((page.events ?? []) as Row[]).find((e) => e.id === evZones.eventId);
         assert.ok(evRow, 'événement servi avec ses portes');
-        assert.deepEqual(evRow.gates, [{ id: gateId, name: 'Porte Nord', zone_name: 'Pelouse' }]);
+        assert.deepEqual(evRow.gates, [{ id: gateId, name: 'Porte Nord', zone_name: 'Pelouse', categories: [{ name: 'Standard', scan_color: null }] }]);
         assert.equal(evRow.has_zones, true);
 
         const tab = await teamGet(partner.accessToken, `?eventId=${evFree.eventId}`);
@@ -404,6 +407,11 @@ describe('Complément 9 — portes et couleurs dans l’équipe', () => {
             const inserted: { error: { message: string } | null } = await service.from('zone_categories').insert({ event_id: ev.eventId, zone_id: zone!.id, category_id: ev.categories[name].id });
             assert.equal(inserted.error, null, `catégorie ${name} de la zone (montage) : ${inserted.error?.message}`);
         }
+        // « Simple » est admise par une zone d'entrée sans porte (invariant (x10) respecté) : aucune porte ne la laisse entrer
+        const { data: annexe, error: aErr } = await service.from('event_zones').insert({ event_id: ev.eventId, name: 'Annexe', kind: 'ENTREE', position: 1 }).select('id').single();
+        assert.equal(aErr, null, `zone sans porte (montage) : ${aErr?.message}`);
+        const simple: { error: { message: string } | null } = await service.from('zone_categories').insert({ event_id: ev.eventId, zone_id: annexe!.id, category_id: ev.categories.Simple.id });
+        assert.equal(simple.error, null, `catégorie Simple de la zone sans porte (montage) : ${simple.error?.message}`);
         const { data: gVip } = await service.from('event_gates').insert({ event_id: ev.eventId, zone_id: zone!.id, name: 'Porte VIP' }).select('id').single();
         await service.from('event_gates').insert({ event_id: ev.eventId, zone_id: zone!.id, name: 'Porte Est' });
         const c = await newController(partner, ev.eventId, { label: 'f1-couleurs' });
