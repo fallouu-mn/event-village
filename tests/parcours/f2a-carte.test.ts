@@ -23,7 +23,7 @@ import { createTimedEvent } from './acces-helpers';
 import { createDraftEvent } from './cycle-helpers';
 import { resetServerEnvCache } from '../../lib/env';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
-import { api, freeTicket, show, type Reply, type Row } from '../audit/cvf1-helpers';
+import { FREE, api, freeTicket, show, type Reply, type Row } from '../audit/cvf1-helpers';
 
 const UNAVAILABLE = 'Recherche indisponible pour le moment : touchez la carte pour placer le repère.';
 const ATTRIBUTION = '© contributeurs OpenStreetMap';
@@ -226,7 +226,8 @@ async function changedSms(eventId: string): Promise<number> {
 
 describe('3 c. repère déplacé après validation', () => {
     test('moins de 200 m : personne n’est prévenu ; plus de 200 m : les détenteurs, comme un changement d’adresse', async () => {
-        const ev: SaleEvent = await createTimedEvent(P.partnerId, 'f2a-carte-lieu', [{ name: 'Standard', price: 0, total: 10 }], { startsInHours: 48 });
+        // Catégorie gratuite au nom attendu par freeTicket (tests/audit/cvf1-helpers.ts)
+        const ev: SaleEvent = await createTimedEvent(P.partnerId, 'f2a-carte-lieu', [{ name: FREE, price: 0, total: 10 }], { startsInHours: 48 });
         await service.from('events').update(DAKAR).eq('id', ev.eventId);
         for (const label of ['f2a-carte-d1', 'f2a-carte-d2']) await freeTicket(ev, await newBuyer(label));
         const before = await changedSms(ev.eventId);
