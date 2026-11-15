@@ -12,7 +12,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
-import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
+import { serverIsPartner, type ServerUser } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
 import { formatDateTime } from '@/lib/format';
 import { releaseQuota, reserveQuota } from '@/lib/security/quota';
@@ -57,11 +57,9 @@ async function callRpc(action: InvitationAction, p: Record<string, unknown>): Pr
     return reply;
 }
 
-export async function handleInvitationAction(action: InvitationAction, req: NextRequest, id: string): Promise<NextResponse> {
+/** `user` : session active déjà vérifiée par la route (requireActiveSession, garde de la fiche partenaire comprise). */
+export async function handleInvitationAction(action: InvitationAction, req: NextRequest, id: string, user: ServerUser): Promise<NextResponse> {
     const context = `${req.method} /api/partner/team/invitations/[id]${action === 'clear' ? '' : `/${action}`}`;
-    const session = await requireActiveSession(req);
-    if (session.response) return session.response;
-    const user = session.user;
     if (!serverIsPartner(user)) {
         return NextResponse.json({ error: 'Accès réservé aux organisateurs.', code: 'FORBIDDEN' }, { status: 403 });
     }

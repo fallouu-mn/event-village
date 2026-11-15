@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { requireActiveSession } from '@/lib/auth/session';
 import { handleInvitationAction } from '../../invitation-actions';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +10,8 @@ export const dynamic = 'force-dynamic';
  * (motif exigé d'un admin). Voir ../../invitation-actions.ts.
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+    const session = await requireActiveSession(req);
+    if (session.response) return session.response;
     const { id } = await ctx.params;
-    return handleInvitationAction('cancel', req, id);
+    return handleInvitationAction('cancel', req, id, session.user);
 }

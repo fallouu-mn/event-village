@@ -83,7 +83,8 @@ function ContactButtons({ phone, message, name }: { phone: string | null; messag
 }
 
 function ShiftAndEntries({ a, scope, onOpenTab }: { a: TeamAssignment; scope: TeamScope; onOpenTab?: TeamPanelProps['onOpenTab'] }) {
-    const linkClass = 'font-semibold text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    // Cible de 44 px (règle des captures, DoD 7) : lien en ligne mais haut de 44 px
+    const linkClass = 'inline-flex min-h-11 items-center font-semibold text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
     const open = (tab: 'caisse' | 'entrees') => (scope === 'event' && onOpenTab
         ? <button type="button" className={linkClass} onClick={() => onOpenTab(tab)}>{tab === 'caisse' ? 'Caisse ouverte' : entriesText(a)}</button>
         : <a className={linkClass} href={`/partner/events/${a.event_id}?tab=${tab}`}>{tab === 'caisse' ? 'Caisse ouverte' : entriesText(a)}</a>);
