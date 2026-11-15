@@ -182,6 +182,8 @@ interface Shown { id: number; outcome: ScanOutcome; payload: string | null; reco
 interface DeviceIncident { eventId: string; kind: 'NETWORK' | 'TIMEOUT'; at: string }
 
 const SCANNER_PATH = '/controller/scanner';
+/** Finition 1 (complément 14) : verdicts « contrôle fermé » qui font relire le menu « Scanner ». */
+const CONTROL_CLOSED_RESULTS: readonly string[] = ['event_ended', 'event_not_open', 'event_cancelled', 'event_suspended'];
 /** « Réseau lent » après 1,5 s sans réponse (contrat 6.2). */
 const SLOW_AFTER_MS = 1500;
 /** Même QR qu'une entrée validée : ignoré pendant 20 s (D41). */
@@ -673,6 +675,8 @@ export default function ControllerScannerPage() {
             const incident: DeviceIncident = { eventId: id, kind: outcome.failure === 'timeout' ? 'TIMEOUT' : 'NETWORK', at: new Date().toISOString() };
             incidentsRef.current = [...incidentsRef.current, incident].slice(-100);
         }
+        // Finition 1 (complément 14) : refus « contrôle fermé » → le menu « Scanner » relit l'état du serveur
+        if (CONTROL_CLOSED_RESULTS.includes(outcome.result)) window.dispatchEvent(new Event('ev:scanner-refresh'));
         busyRef.current = true;
         seqRef.current += 1;
         setShown({ id: seqRef.current, outcome, payload, recoveredAt: recoveredTimeOf(outcome, recoveredAt), resumed: recoveredAt !== null });

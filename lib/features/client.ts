@@ -64,7 +64,7 @@ export function useFeatureFlags(): ClientFeatureFlags | null {
                     if (alive) setFlags(f);
                 })
                 .catch((err: unknown) => {
-                    console.error('[features] lecture des interrupteurs impossible, services masqués :', err instanceof Error ? err.message : String(err));
+                    console.error('[features] interrupteurs illisibles, services masqués :', err);
                 });
         };
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {

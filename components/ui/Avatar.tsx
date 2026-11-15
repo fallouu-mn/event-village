@@ -52,7 +52,7 @@ export const Avatar: React.FC<AvatarProps> = ({ src, initials, size = 'sm', alt 
           decoding="async"
           className="h-full w-full object-cover"
           onError={() => {
-            console.warn('[Avatar] photo illisible : les initiales sont affichées à la place.');
+            console.warn('[Avatar] photo illisible : initiales');
             setFailedSrc(photo);
           }}
         />

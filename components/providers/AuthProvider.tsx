@@ -47,10 +47,8 @@ function LazyOfflineTicketsSync() {
                     if (active) setSync(() => component);
                 })
                 .catch((err: unknown) => {
-                    console.error(
-                        '[AuthProvider] synchronisation des billets hors ligne non chargée (nouvel essai au retour du réseau) :',
-                        err instanceof Error ? err.message : String(err),
-                    );
+                    // Nouvel essai au retour du réseau (finition 1 : message raccourci, budget JS de la page d'accueil)
+                    console.error('[AuthProvider] billets hors ligne non chargés :', err);
                 });
         };
         load();
@@ -64,6 +62,10 @@ function LazyOfflineTicketsSync() {
     return Sync ? <Sync /> : null;
 }
 
+/** Finition 1 (complément 14) : retour au premier plan (l'événement du document remonte à window) et refus « contrôle
+ * fermé » signalé par le scanner. */
+const SCANNER_EVENTS = ['visibilitychange', 'ev:scanner-refresh'];
+
 export interface UserProfile {
     id: string;
     first_name: string;
@@ -74,6 +76,8 @@ export interface UserProfile {
     roles: string[];
     /** Finition 1 (complément 11) : contrôleur seul — menu « Scanner » affiché (null : état illisible, affiché). */
     scanner_open?: boolean | null;
+    /** Complément 14 : prochain instant où le menu « Scanner » peut changer (contrôleur seul). */
+    scanner_next_change_at?: string | null;
     status: 'ACTIF' | 'SUSPENDU' | 'EN_ATTENTE';
     referral_status: 'STANDARD' | 'AMBASSADEUR';
     avatar_url?: string | null;
@@ -132,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      */
     const fetchUserProfile = useCallback(async (_userId: string, currentSession?: Session | null) => {
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-            console.warn('[AuthProvider] hors ligne : profil relu au retour du réseau');
+            console.warn('[AuthProvider] hors ligne : profil différé');
             return;
         }
         try {
@@ -140,11 +144,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 headers: currentSession?.access_token ? { 'Authorization': `Bearer ${currentSession.access_token}` } : {}
             });
             const data = await res.json().catch((err: unknown) => {
-                console.error(`[AuthProvider] /api/auth/me : réponse illisible (HTTP ${res.status})`, err);
+                console.error('[AuthProvider] /api/auth/me illisible', res.status, err);
                 return null;
             });
             if (!res.ok || !data?.authenticated || !data?.profile) {
-                console.error(`[AuthProvider] /api/auth/me : HTTP ${res.status}`, data?.error ?? '');
+                console.error('[AuthProvider] /api/auth/me', res.status, data?.error ?? '');
                 setProfile(null);
                 setPartner(null);
                 setAdminPermissions([]);
@@ -156,7 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const perms: unknown = data.admin_permissions;
             setAdminPermissions(Array.isArray(perms) ? perms.filter((p): p is string => typeof p === 'string') : []);
         } catch (err) {
-            console.error('[AuthProvider] chargement du profil impossible :', err);
+            console.error('[AuthProvider] profil :', err);
             setProfile(null);
             setPartner(null);
             setAdminPermissions([]);
@@ -206,12 +210,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
     }, [fetchUserProfile]);
 
-    // Lot 7 (7.1) : profil non lu hors ligne, relu au retour du réseau.
+    // Relectures du profil, un seul gestionnaire :
+    //  - Lot 7 (7.1) : profil non lu hors ligne, relu au retour du réseau (`online`) ;
+    //  - Finition 1 (complément 14) : contrôleur seul (profil avec scanner_open), menu « Scanner » à jour sans recharger :
+    //    relu à l'heure du prochain changement servie par /api/auth/me (scanner_next_change_at, + 1 s ; servie seulement
+    //    dans les 24 h, sinon null et rapprochée à chaque renouvellement de session), au retour au premier plan (visibilitychange) et quand le scanner signale un refus
+    //    « contrôle fermé » (ev:scanner-refresh) ; jamais en arrière-plan (la relecture attend le premier plan). Le menu
+    //    n'est qu'un confort : le serveur refuse lui-même tout scan hors de la plage. Rien pour les autres comptes.
     useEffect(() => {
-        if (!user || profile) return;
-        const onOnline = () => { void fetchUserProfile(user.id, session); };
-        window.addEventListener('online', onOnline);
-        return () => window.removeEventListener('online', onOnline);
+        const watch = profile?.scanner_open !== undefined;
+        if (!user || (profile && !watch)) return;
+        const relire = () => void ((watch && document.hidden) || fetchUserProfile(user.id, session));
+        const events = profile ? SCANNER_EVENTS : ['online'];
+        const at = watch && profile?.scanner_next_change_at;
+        const timer = at ? setTimeout(relire, Date.parse(at) - Date.now() + 1e3) : undefined;
+        for (const e of events) addEventListener(e, relire);
+        return () => {
+            clearTimeout(timer);
+            for (const e of events) removeEventListener(e, relire);
+        };
     }, [user, profile, session, fetchUserProfile]);
 
     const signOut = async () => {

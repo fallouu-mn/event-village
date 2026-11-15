@@ -13,7 +13,7 @@ export function ServiceWorkerRegister() {
     if (process.env.NODE_ENV !== 'production' || !('serviceWorker' in navigator)) return;
     const register = () => {
       navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
-        console.warn('[PWA] Enregistrement du service worker impossible :', error instanceof Error ? error.message : String(error));
+        console.warn('[PWA] service worker non enregistré :', error);
       });
     };
     if (document.readyState === 'complete') {

@@ -15,6 +15,9 @@ export const dynamic = 'force-dynamic';
  * le menu « Scanner » s'affiche (contrôle ouvert ou ouvrant dans les 24 h : RPC controller_scanner_status, même règle
  * que GET /api/controller/status). État illisible : null (le menu reste affiché, le scanner refuse lui-même hors de la
  * plage du contrôle). Champ absent pour tout autre compte. Le rôle n'est jamais retiré.
+ * Complément 14 : `profile.scanner_next_change_at` (même compte) : prochain instant où le menu peut changer (24 h avant
+ * une ouverture, ou une fermeture du contrôle) ; le navigateur relit le profil à cette heure. null : aucun changement
+ * prévu. Le serveur reste la seule protection : le menu n'est qu'un confort.
  */
 export async function GET(req: NextRequest) {
     try {
@@ -56,18 +59,20 @@ export async function GET(req: NextRequest) {
         }
 
         let scannerOpen: boolean | null | undefined;
+        let scannerNextChange: string | null = null;
         if (roles.includes('CONTROLEUR') && !roles.some((r) => ['PARTENAIRE', 'ADMIN', 'SUPERADMIN'].includes(r))) {
             const { data: st, error: stErr } = await supabase.rpc('controller_scanner_status', { p: { user_id: user.id } });
-            const reply = st as { ok?: boolean; scanner?: boolean } | null;
+            const reply = st as { ok?: boolean; scanner?: boolean; next_change_at?: string | null } | null;
             if (stErr || reply?.ok !== true) {
                 console.error('[API /api/auth/me] controller_scanner_status :', stErr?.message ?? JSON.stringify(st));
                 scannerOpen = null;
             } else {
                 scannerOpen = reply.scanner === true;
+                scannerNextChange = reply.next_change_at ?? null;
             }
         }
 
-        const profile = { ...userData, roles, ...(scannerOpen === undefined ? {} : { scanner_open: scannerOpen }) };
+        const profile = { ...userData, roles, ...(scannerOpen === undefined ? {} : { scanner_open: scannerOpen, scanner_next_change_at: scannerNextChange }) };
         const adminPermissions = await loadAdminPermissions(user.id, roles);
 
         return NextResponse.json({
