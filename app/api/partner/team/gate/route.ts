@@ -16,7 +16,7 @@ const BodySchema = z.object({
     gateId: z.string().uuid().nullable(),
     gateChangeAllowed: z.boolean().optional(),
     // Finition 1 (E-17) : motif d'un admin hors de sa fiche, journalisé
-    reason: z.string().max(500).optional(),
+    reason: z.string().optional(),
 });
 
 /** Statut HTTP des refus de event_controller_gate_set (liste blanche, contrat 4.3). */

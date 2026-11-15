@@ -12,7 +12,7 @@ const BodySchema = z.object({
     eventId: z.string().uuid(),
     entryPoint: z.string().trim().max(80).nullable(),
     // Finition 1 (E-17) : motif d'un admin hors de sa fiche, journalisé
-    reason: z.string().max(500).optional(),
+    reason: z.string().optional(),
 });
 
 /**

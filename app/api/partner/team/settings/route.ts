@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { adminForeignTeamRefusal, adminTeamRefusal } from '../team-access';
+import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ const BodySchema = z.object({
     gateChangeAllowed: z.boolean().optional(),
     entryPoint: z.string().trim().max(80, 'Point d’entrée : 80 caractères au plus.').nullable().optional(),
     canAcceptCash: z.boolean(),
-    reason: z.string().max(500).optional(),
+    reason: z.string().optional(),
 }).strict();
 
 /** Refus de event_controller_settings_set : statut HTTP (texte de la RPC, rédigé pour l'écran). */
@@ -64,6 +64,10 @@ export async function PATCH(req: NextRequest) {
         // Lot 9 quater (B3 : AUD-24) : un ADMIN-PARTENAIRE hors de sa fiche passe par la permission events.write
         const foreign = await adminForeignTeamRefusal(user, 'events.write', [(ev?.partner_id as string | null | undefined) ?? null]);
         if (foreign) return foreign;
+        // cvf1 R3 : motif d'un admin de 5 à 500 caractères, avec le message juste (la fonction vérifie aussi le minimum)
+        const asAdmin = await actsAsTeamAdmin(user, (ev?.partner_id as string | null | undefined) ?? null);
+        const reasonRefused = adminReasonRefusal(asAdmin, b.reason);
+        if (reasonRefused) return reasonRefused;
 
         const { data, error } = await getServiceRoleClient().rpc('event_controller_settings_set', {
             p: {
@@ -74,7 +78,7 @@ export async function PATCH(req: NextRequest) {
                 gate_change_allowed: b.gateChangeAllowed ?? false,
                 entry_point: b.entryPoint ?? null,
                 can_accept_cash: b.canAcceptCash,
-                reason: b.reason ?? null,
+                reason: asAdmin ? cleanReason(b.reason) : null,
             },
         });
         if (error) throw new Error(`event_controller_settings_set : ${error.code ?? ''} ${error.message}`);

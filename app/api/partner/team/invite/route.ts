@@ -71,7 +71,7 @@ const InviteSchema = z.object({
     confirm_promotion: z.boolean().optional().default(false),
     confirmPromotion:  z.boolean().optional().default(false),
     // Finition 1 (E-17) : motif d'un admin qui agit sur l'équipe d'un organisateur (journalisé)
-    reason:            z.string().max(500).optional(),
+    reason:            z.string().optional(),
 }).transform(data => ({
     event_id:          data.event_id || data.eventId,
     event_ids:         data.event_ids || data.eventIds,

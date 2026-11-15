@@ -34,7 +34,7 @@ const UpdateAssignmentsSchema = z.object({
     confirm_promotion: z.boolean().optional(),
     confirmPromotion:  z.boolean().optional(),
     // Finition 1 (E-17) : motif d'un admin hors de sa fiche, journalisé
-    reason:            z.string().max(500).optional(),
+    reason:            z.string().optional(),
 }).transform(data => ({
     controller_id:     data.controller_id || data.controllerId || '',
     // Lot 9 bis (R41) : `assignments` fait foi ; une simple liste d'événements garde le droit d'encaisser actuel

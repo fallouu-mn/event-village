@@ -9,7 +9,7 @@ import { actsAsTeamAdmin, adminReasonRefusal, adminTeamRefusal, cleanReason } fr
 export const dynamic = 'force-dynamic';
 
 // Finition 1 (E-17) : `reason`, motif d'un admin hors de sa fiche (journalisé)
-const bodySchema = z.object({ canAcceptCash: z.boolean(), reason: z.string().max(500).optional() }).strict();
+const bodySchema = z.object({ canAcceptCash: z.boolean(), reason: z.string().optional() }).strict();
 
 /**
  * PATCH /api/partner/team/assignments/[id] — lot 5 (contrat I, onglet Équipe). Corps `{ canAcceptCash }`.
