@@ -1633,7 +1633,7 @@ export const SCREENS: readonly Screen[] = [
         ready: async ({ page }) => expectPageTitle(page),
         actions: async ({ page }) => {
             await page.getByRole('button', { name: /^retirer de l’équipe$/i }).filter({ visible: true }).first().click();
-            await expect(page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: /de votre équipe \?/ }).first(), 'fenêtre de retrait').toBeVisible();
+            await expect(page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: /de votre équipe\s\?/ }).first(), 'fenêtre de retrait').toBeVisible();
         },
     },
     // ── Lot 9 ter : pilotage et stock (D.3.1) ───────────────────────────────
