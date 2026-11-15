@@ -149,6 +149,29 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: 'Contrôleur introuvable.' }, { status: 404 });
         }
 
+        // cvf1 R4 : une organisatrice qui vise, sans événement à ajouter, un compte qu'elle n'a jamais eu dans son équipe
+        // (aucun lien partner_controllers, aucune affectation sur ses événements) reçoit la réponse d'un identifiant
+        // inconnu : 404 sans indice, jamais « enregistrés ». Avec des événements à ajouter, le chemin de l'invitation
+        // (consentement, lot 9 ter) reste celui d'avant.
+        if (partnerId && requestedEventIds.length === 0) {
+            const { data: known, error: knownErr } = await supabase.rpc('partner_controller_known', { p_partner: partnerId, p_user: controllerId });
+            if (knownErr) {
+                console.error('[PATCH team/assignments] lien partenaire–contrôleur :', knownErr.message);
+                return NextResponse.json({ error: 'Impossible de lire l’équipe du contrôleur.' }, { status: 500 });
+            }
+            let inTeam = known === true;
+            if (!inTeam && partnerEventMap.size > 0) {
+                const { count, error: ecErr } = await supabase.from('event_controllers').select('id', { count: 'exact', head: true })
+                    .eq('user_id', controllerId).in('event_id', Array.from(partnerEventMap.keys()));
+                if (ecErr) {
+                    console.error('[PATCH team/assignments] affectations chez cette organisatrice :', ecErr.message);
+                    return NextResponse.json({ error: 'Impossible de lire l’équipe du contrôleur.' }, { status: 500 });
+                }
+                inTeam = (count ?? 0) > 0;
+            }
+            if (!inTeam) return NextResponse.json({ error: 'Contrôleur introuvable.' }, { status: 404 });
+        }
+
         // Lot 1B.6 : un compte non ACTIF n'est jamais affecté ni réactivé par une route partenaire.
         if (ctrlUser.status !== 'ACTIF') {
             return refuseInactiveAccount({
