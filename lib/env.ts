@@ -78,6 +78,13 @@ const serverEnvSchema = z.object({
     // partenaire (POST /api/partner/upload) par compte et par heure
     DOCUMENT_UPLOADS_GLOBAL_DAY: limit(500),
     PARTNER_IMAGE_UPLOADS_PER_ACCOUNT_HOUR: limit(30),
+    // Finition 2a (3) : recherche de lieu de l'étape Accès, par le serveur (GET /api/partner/places/search). Service de
+    // type Nominatim (adresse réglable : instance publique d'OpenStreetMap par défaut, faux service ou adresse injoignable
+    // en CI), contact envoyé dans l'identification de l'application (politique d'usage de Nominatim), recherches par
+    // compte et par heure.
+    NOMINATIM_URL: z.string().url().default('https://nominatim.openstreetmap.org'),
+    NOMINATIM_CONTACT: optionalString,
+    PLACE_SEARCHES_PER_ACCOUNT_HOUR: limit(60),
     // Dépôts publics de pièces d'inscription (lot 1C.2), par IP et par heure
     DOCUMENT_UPLOADS_PER_IP_HOUR: limit(20),
     // Lot 2 : chaîne paiement → billet

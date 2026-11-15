@@ -1,18 +1,27 @@
 'use client';
 
 import React from 'react';
-import { CalendarDays, Clock, MapPin } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { CalendarDays, Clock, ExternalLink, MapPin, Navigation } from 'lucide-react';
 import { ErrorState } from '@/components/ui/EmptyState';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useServerData } from '@/components/partner/useServerData';
 import { PilotageSection } from './PilotageBlocks';
 import { formatEventDateTime } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
+import { directionsUrl } from '@/lib/events/directions';
+
+// Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
+const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
+    ssr: false,
+    loading: () => <div className="h-48 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
+});
 
 /**
  * Finition 2a — onglet « Infos » du pilotage : dates, fin retenue (même règle que la base, jamais « Non précisée »),
- * lieu et informations pratiques, tels qu'ils sont enregistrés. Source : GET /api/partner/events/[id] (lecture
- * seule ; la modification passe par « Modifier »).
+ * lieu avec sa petite carte et « Voir l’itinéraire » (point 3), informations pratiques, tels qu'ils sont enregistrés.
+ * Source : GET /api/partner/events/[id] (lecture seule ; la modification passe par « Modifier »).
  */
 
 interface InfosEvent {
@@ -79,6 +88,7 @@ export function InfosTab({ eventId }: { eventId: string }) {
 
     const ev = data.event;
     const end = retainedEnd(ev);
+    const hasPosition = typeof ev.latitude === 'number' && typeof ev.longitude === 'number';
     const practical = ev.practical_info && typeof ev.practical_info === 'object'
         ? Object.entries(PRACTICAL_LABELS)
             .map(([key, label]) => ({ key, label, value: text(ev.practical_info?.[key]) }))
@@ -102,8 +112,26 @@ export function InfosTab({ eventId }: { eventId: string }) {
                     <dl className="grid gap-4 sm:grid-cols-2">
                         <InfoItem icon={<MapPin size={18} />} label="Lieu">
                             {[ev.location, ev.city].filter(Boolean).join(', ') || 'Non renseigné'}
+                            {!hasPosition && (
+                                <span className="block text-sm font-normal text-fg-muted">Aucun repère sur la carte : placez-le depuis « Modifier », étape Accès.</span>
+                            )}
                         </InfoItem>
                     </dl>
+                    {hasPosition && (
+                        <div className="flex flex-col gap-3">
+                            <EventMap latitude={ev.latitude as number} longitude={ev.longitude as number} venueName={ev.location ?? undefined} />
+                            <LinkButton
+                                href={directionsUrl(ev.latitude as number, ev.longitude as number)}
+                                external
+                                variant="secondary"
+                                leftIcon={<Navigation size={18} />}
+                                rightIcon={<ExternalLink size={16} />}
+                                className="self-start"
+                            >
+                                Voir l’itinéraire
+                            </LinkButton>
+                        </div>
+                    )}
                     {practical.length > 0 && (
                         <dl className="grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
                             {practical.map((p) => (

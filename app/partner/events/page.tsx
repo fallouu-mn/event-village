@@ -151,7 +151,8 @@ export default function PartnerEventsPage() {
             return true;
         } catch (err) {
             const message = errorMessage(err, 'Changement de statut impossible pour le moment.');
-            const missing = err instanceof ApiError && err.code === 'SUBMIT_INCOMPLETE' && Array.isArray(err.body?.missing)
+            // Finition 2a (3) : POSITION_REQUIRED (position du lieu seul manque) rend aussi la liste des manques
+            const missing = err instanceof ApiError && (err.code === 'SUBMIT_INCOMPLETE' || err.code === 'POSITION_REQUIRED') && Array.isArray(err.body?.missing)
                 ? (err.body.missing as Array<{ message?: unknown }>).map((m) => (typeof m.message === 'string' ? m.message : '')).filter((m) => m !== '')
                 : [];
             if (missing.length > 0) {

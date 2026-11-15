@@ -82,6 +82,9 @@ export interface PublishedEventInput {
     capacity: number;
     /** Affiche déjà déposée par le partenaire (chemin vérifié par event_poster_path_ok). */
     imageUrl: string;
+    /** Finition 2a (3) : position du lieu, obligatoire pour soumettre (défaut : Dakar). */
+    latitude?: number;
+    longitude?: number;
     /** maxPerOrder : limite par compte (défaut 10 ; contrainte 1 à 50). */
     category?: PublishedCategoryInput;
     /** Lot 9 ter (D.3.3, amendement 4 de D) : plusieurs catégories, prioritaires sur `category`. */
@@ -108,6 +111,8 @@ export async function createPublishedEvent(input: PublishedEventInput): Promise<
             city: input.city,
             capacity: input.capacity,
             image_url: input.imageUrl,
+            latitude: input.latitude ?? 14.6928,
+            longitude: input.longitude ?? -17.4467,
         },
         ticket_categories: categories.map((c) => ({ name: c.name, price: c.price, total_quantity: c.total, max_per_order: c.maxPerOrder ?? 10 })),
     });

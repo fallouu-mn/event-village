@@ -15,3 +15,15 @@ d'où elle vient et pourquoi elle attend.
 | Retirer les anciennes routes `PATCH /api/partner/team/gate`, `…/entry-point`, `…/assignments/[id]` et `GET /api/partner/team/all`, `GET /api/partner/team/[eventId]`. | L'écran ne les appelle plus (remplacées par `GET /api/partner/team` et `PATCH /api/partner/team/settings`), mais des tests et d'éventuels outils les utilisent encore. Elles exigent déjà le motif d'un admin et gardent leurs contrôles. | Finition 1 |
 | Renommer un contrôleur depuis l'équipe (compte encore à activer seulement). | Aucune route aujourd'hui ; un compte établi garde son nom. | Revue d'ergonomie, section 3.1 |
 | Lien des avis à la partenaire vers la ligne précise de l'équipe (ancre). | Confort ; le lien ouvre la page Équipe. | Finition 1, E-20 |
+
+## Fin retenue, carte, affiche (finition 2a)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Étape « Contrôle à l'entrée (facultatif) » du formulaire de l'événement ; l'onglet « Entrées » du pilotage garde son nom. | Décision : lot 2c. | Consigne de la finition 2a |
+| Recadrage de l'affiche choisi par l'organisatrice (déplacer le cadre 16:10 sur l'image). | L'aperçu montre le recadrage au centre, celui des cartes du site ; un outil de recadrage est une fonction nouvelle. | Finition 2a, 1b |
+| Purge des images orphelines des autres dossiers (salles, produits, divers). | La finition traite les affiches des événements (dossier events) ; les autres dossiers n'ont pas de référence unique à vérifier. | Finition 2a, 1b |
+| Fournisseur de tuiles de carte avec contrat (ou tuiles servies par l'application) au lieu des serveurs d'OpenStreetMap. | Les cartes (formulaire, page publique, fiche admin, onglet Infos) lisent les tuiles d'openstreetmap.org, dont la politique d'usage limite le volume ; adresse réglable par NEXT_PUBLIC_MAP_TILE_URL, à choisir avec le trafic réel. | Finition 2a, 3 |
+| Service de recherche de lieu à soi (Nominatim hébergé) ou fournisseur payant si le volume dépasse l'usage permis de l'instance publique. | Une requête par seconde au plus aujourd'hui, réponses gardées 30 jours ; adresse réglable par NOMINATIM_URL. | Finition 2a, 3 |
+| Adresse proposée à partir du repère (recherche inverse) pour remplir « Adresse précise ». | Fonction nouvelle, appels supplémentaires au service. | Finition 2a, 3 |
+| Position demandée aussi à la publication des événements validés avant la finition 2a (s'il en reste sans repère). | La règle porte sur la soumission ; un événement déjà validé sans repère reste modifiable et publiable. Contrôle de la base au § « À faire de ton côté » du rapport. | Finition 2a, 3 |

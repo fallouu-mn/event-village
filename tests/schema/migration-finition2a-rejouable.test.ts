@@ -18,6 +18,9 @@ const FINITION2A_MIGRATIONS = [
     '20261116000001_f2a_fiche_suspendue.sql',
     // 2, fin retenue (E-01) : équipe et « Mes soirées » sur event_end_at
     '20261116000002_f2a_fin_retenue.sql',
+    // 3, carte de l'étape Accès : position (ensemble, au Sénégal, obligatoire pour soumettre), repère déplacé de plus de
+    // 200 m, recherche de lieu (réponses gardées, une requête par seconde)
+    '20261116000003_f2a_carte.sql',
 ] as const;
 
 after(async () => {

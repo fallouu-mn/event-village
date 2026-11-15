@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import {
   Building2,
   CalendarDays,
@@ -11,6 +12,7 @@ import {
   Image as ImageIcon,
   Mail,
   MapPin,
+  Navigation,
   Phone,
   Users,
 } from 'lucide-react';
@@ -35,6 +37,13 @@ import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { PROGRAM_KIND_LABELS, type ProgramKind } from '@/lib/validations/event';
 import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger, formatShortDate, toDakarDateTimeLocal } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
+import { directionsUrl } from '@/lib/events/directions';
+
+// Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
+const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
+  ssr: false,
+  loading: () => <div className="h-48 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
+});
 
 /**
  * Lot 5 (tâche 5.7, contrat G ; 5.8, contrat J) — fiche complète d'un événement pour l'administration.
@@ -59,6 +68,8 @@ interface SheetEvent {
   end_time: string | null;
   location: string | null;
   city: string | null;
+  latitude: number | null;
+  longitude: number | null;
   capacity: number | null;
   program: unknown;
   practical_info: Record<string, unknown> | null;
@@ -482,6 +493,7 @@ export default function AdminEventSheetPage() {
   const startLabel = formatEventDateTime(event.start_date, event.start_time);
   // Finition 2a (2, E-01) : la fin retenue (même règle que la base), jamais « Non précisée »
   const end = retainedEnd({ start_date: event.start_date, start_time: event.start_time, end_date: event.end_date, end_time: event.end_time });
+  const hasPosition = typeof event.latitude === 'number' && typeof event.longitude === 'number';
   const confirmCopy = confirmAction ? actionCopy(confirmAction, currentStatus) : null;
   const reasonCopy = reasonAction ? actionCopy(reasonAction, currentStatus) : null;
 
@@ -605,11 +617,27 @@ export default function AdminEventSheetPage() {
               </InfoRow>
               <InfoRow icon={<MapPin size={18} />} label="Lieu">
                 {[event.location, event.city].filter(Boolean).join(', ') || 'Non renseigné'}
+                {!hasPosition && <span className="block text-sm font-normal text-fg-muted">Aucun repère sur la carte.</span>}
               </InfoRow>
               <InfoRow icon={<Users size={18} />} label="Jauge déclarée">
                 <span className="tabular-nums">{event.capacity ? `${formatInteger(event.capacity)} personnes` : 'Non limitée'}</span>
               </InfoRow>
             </dl>
+            {hasPosition && (
+              <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
+                <EventMap latitude={event.latitude as number} longitude={event.longitude as number} venueName={event.location ?? undefined} />
+                <LinkButton
+                  href={directionsUrl(event.latitude as number, event.longitude as number)}
+                  external
+                  variant="secondary"
+                  leftIcon={<Navigation size={18} />}
+                  rightIcon={<ExternalLink size={16} />}
+                  className="self-start"
+                >
+                  Voir l’itinéraire
+                </LinkButton>
+              </div>
+            )}
             {practical.length > 0 && (
               <dl className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
                 {practical.map((p) => (

@@ -72,6 +72,10 @@ const REFUSAL_HTTP: Record<string, number> = {
     PARTNER_NOT_FOUND: 403,
     PARTNER_NOT_VALIDATED: 403,
     PARTNER_SUSPENDED: 403, // finition 2a (1a) : fiche SUSPENDU, événements en lecture seule
+    // Finition 2a (3) : position du lieu (ensemble, au Sénégal, non retirée après validation)
+    POSITION_INCOMPLETE: 400,
+    POSITION_OUT_OF_BOUNDS: 400,
+    POSITION_REQUIRED: 400,
     ACCOUNT_NOT_ACTIVE: 403,
     ADMIN_CANNOT_EDIT: 403,
     EVENT_NOT_FOUND: 404,

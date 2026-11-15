@@ -53,6 +53,8 @@ const REFUSAL_HTTP: Record<string, number> = {
     REASON_REQUIRED: 400,
     CANCELLATION_REQUIRED: 409,
     SUBMIT_INCOMPLETE: 422,
+    // Finition 2a (3) : soumission sans position du lieu (seul manque ; la liste des manques est rendue de même)
+    POSITION_REQUIRED: 422,
     EVENT_NOT_STARTED: 409,
     EVENT_ENDED: 409,
     // Lot 9 bis (R3) : clôture d'un SUSPENDU dont la fin n'est pas passée

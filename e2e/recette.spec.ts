@@ -451,6 +451,9 @@ test('acte 2 [partenaire] [admin] : inscription avec pièces, validation, E1 et 
 
         await partner.getByRole('button', { name: /^suivant/i }).click();
         await expect(partner.getByRole('heading', { level: 2, name: /^accès et informations pratiques$/i })).toBeVisible();
+        // Finition 2a (3) : la soumission exige la position du lieu ; repère placé en touchant la carte
+        await partner.getByRole('region', { name: 'Carte du lieu' }).click();
+        await expect(partner.getByText(/^Position choisie/), 'repère placé sur la carte').toBeVisible();
         await partner.getByLabel(/^adresse précise/i).fill(PRACTICAL.address);
         await partner.getByLabel(/^stationnement/i).fill(PRACTICAL.parking);
         await partner.getByLabel(/^indications d.accès/i).fill(PRACTICAL.access);

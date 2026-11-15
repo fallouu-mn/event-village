@@ -18,7 +18,10 @@ import { Select, TextInput, Textarea } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
-import { OTHER_CITY_VALUE, SENEGAL_CITIES, senegalCity } from '@/lib/events/senegal-cities';
+import { OTHER_CITY_VALUE, SENEGAL_CITIES, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
+import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
+// Types seulement (effacés à la compilation) : la carte reste chargée à la demande (next/dynamic)
+import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { formatInteger } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
@@ -95,6 +98,22 @@ const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
+/**
+ * Finition 2a (3) : recherche de lieu par le serveur (GET /api/partner/places/search), un appel par appui sur
+ * « Rechercher ». Réseau coupé ou réponse illisible : « Recherche indisponible pour le moment : touchez la carte pour
+ * placer le repère. » ; sinon le texte du serveur.
+ */
+async function searchPlacesFromServer(query: string): Promise<PlaceSearchOutcome> {
+    try {
+        const res = await fetch(`/api/partner/places/search?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
+        const body = (await res.json().catch(() => null)) as { results?: PlaceSearchResult[]; error?: unknown } | null;
+        if (res.ok && Array.isArray(body?.results)) return { kind: 'results', results: body.results };
+        return { kind: 'error', message: typeof body?.error === 'string' && body.error ? body.error : PLACE_SEARCH_UNAVAILABLE };
+    } catch {
+        return { kind: 'error', message: PLACE_SEARCH_UNAVAILABLE };
+    }
+}
+
 /** Finition 2a (2, E-01) : aide sous la fin retenue quand aucune heure de fin n'est saisie. */
 const RETAINED_END_HELP = 'La vente s’arrête à cette heure. Indiquez l’heure de fin si votre événement dure plus longtemps.';
 
@@ -318,6 +337,11 @@ function diffPayload(next: Row, before: Row): Row {
     for (const key of Object.keys(next)) {
         if (next[key] === undefined) continue;
         if (JSON.stringify(next[key]) !== JSON.stringify(before[key])) patch[key] = next[key];
+    }
+    // Finition 2a (3) : latitude et longitude partent ensemble (le serveur refuse une moitié de position)
+    if ('latitude' in patch || 'longitude' in patch) {
+        patch.latitude = next.latitude ?? null;
+        patch.longitude = next.longitude ?? null;
     }
     return patch;
 }
@@ -1106,13 +1130,16 @@ export function EventForm(props: EventFormProps) {
                 {step === 'acces' && (
                     <div className="flex flex-col gap-5">
                         <fieldset className="flex flex-col gap-3">
-                            <legend className="mb-2 text-base font-semibold text-fg">Position sur la carte</legend>
+                            <legend className="mb-1 text-base font-semibold text-fg">Position sur la carte</legend>
+                            <p className="text-sm leading-snug text-fg-muted">Obligatoire pour soumettre l’événement à la validation.</p>
                             <MapPicker
                                 idPrefix={MAP_PREFIX}
                                 latitude={values.latitude}
                                 longitude={values.longitude}
                                 onChange={(lat, lng) => setValues((v) => ({ ...v, latitude: lat, longitude: lng }))}
                                 error={errors.latitude ?? errors.longitude}
+                                center={cityCenter(values.city)}
+                                onSearch={searchPlacesFromServer}
                             />
                         </fieldset>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
