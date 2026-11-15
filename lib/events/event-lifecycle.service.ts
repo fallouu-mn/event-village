@@ -57,7 +57,8 @@ const REFUSAL_HTTP: Record<string, number> = {
     EVENT_ENDED: 409,
     // Lot 9 bis (R3) : clôture d'un SUSPENDU dont la fin n'est pas passée
     EVENT_NOT_ENDED: 409,
-    // Lot 9 bis (R5, B18) : republication de l'événement d'une partenaire suspendue
+    // Lot 9 bis (R5, B18) : republication de l'événement d'une partenaire suspendue ; finition 2a (1a) : transition par la
+    // partenaire suspendue elle-même (la route la refuse avant, en 403 avec le contact du support)
     PARTNER_SUSPENDED: 409,
     // Lot 9 bis (R7, B39) : soumission ou publication par une partenaire au dossier non validé
     PARTNER_NOT_VALIDATED: 403,

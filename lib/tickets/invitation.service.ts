@@ -28,6 +28,7 @@ export class InvitationRefusal extends PublicError {
 
 const REFUSAL_STATUS: Readonly<Record<string, number>> = {
     INVALID_INPUT: 400,
+    PARTNER_SUSPENDED: 403, // finition 2a (1a)
     EVENT_NOT_FOUND: 404,
     TICKET_NOT_FOUND: 404,
     FORBIDDEN: 403,

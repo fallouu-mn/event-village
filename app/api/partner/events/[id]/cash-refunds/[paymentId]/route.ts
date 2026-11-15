@@ -18,6 +18,7 @@ const BodySchema = z.object({
 /** Refus de event_cash_refund_mark (M06) : texte français écrit par la RPC, statut HTTP du contrat 4.1. */
 const REFUSALS: Record<string, number> = {
     EVENT_NOT_FOUND: 404,
+    PARTNER_SUSPENDED: 403, // finition 2a (1a)
     PAYMENT_NOT_FOUND: 404,
     FORBIDDEN: 403,
     ACCOUNT_NOT_ACTIVE: 403,

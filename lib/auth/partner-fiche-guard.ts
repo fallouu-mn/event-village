@@ -4,7 +4,10 @@
  *
  * Règle (décision du chef de projet) :
  *  - fiche VALIDE : tout ce que la route permet (inchangé) ;
- *  - fiche SUSPENDU : inchangé (lot 6 : lectures gardées ; lot 9 quater A6 : actions refusées par leurs contrôles) ;
+ *  - fiche SUSPENDU : lectures gardées ; finition 2a (1a) : toute écriture d'événement refusée (création, modification,
+ *    billets, zones, transitions, annulation, invitations, remboursements, code du régisseur, dépôt d'image) avec
+ *    PARTNER_SUSPENDED et le contact du support ; les autres routes inchangées ; la base refuse aussi (migration
+ *    20261116000001) ;
  *  - fiche EN_ATTENTE : seulement la lecture du tableau de bord, du profil, des pièces, et le complément de dossier ;
  *  - fiche REJETE : le complément de dossier seulement (avec la lecture du tableau de bord, qui porte le motif et le
  *    bouton « Compléter mon dossier », et des pièces) ;
@@ -20,10 +23,14 @@
  */
 import { NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { supportSentenceOrHelp } from '@/lib/support-contact';
 
 export const PARTNER_NOT_VALIDATED_TEXT = 'Votre profil d’organisateur doit être validé avant cette action.';
 /** Texte de la base pour la soumission et la publication (event_transition, 20261109000008_lot9bis_cycle.sql), repris tel quel. */
 export const PARTNER_NOT_VALIDATED_SUBMIT_TEXT = 'Votre profil d’organisateur doit être validé avant de soumettre ou de publier un événement.';
+
+/** Finition 2a (1a) : refus d'une écriture d'événement pour une fiche SUSPENDU (texte de la base), suivi du contact. */
+export const PARTNER_SUSPENDED_TEXT = 'Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support.';
 
 type FicheStatus = 'VALIDE' | 'SUSPENDU' | 'EN_ATTENTE' | 'REJETE';
 
@@ -67,6 +74,25 @@ export function partnerFicheAllows(status: string | null, method: string, pathna
     return false;
 }
 
+/**
+ * Finition 2a (1a) : écriture d'un événement, refusée à une fiche SUSPENDU. Toute méthode autre que GET sous
+ * /api/partner/events (création comprise), sauf l'export des participants (lecture envoyée en POST), et le dépôt d'image.
+ */
+export function partnerEventWrite(method: string, pathname: string): boolean {
+    const m = method.toUpperCase();
+    if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return false;
+    const key = routeKey(m, pathname);
+    if (key === 'POST /api/partner/events/*/participants-export') return false;
+    const path = key.slice(m.length + 1);
+    return path === '/api/partner/events' || path.startsWith('/api/partner/events/') || path === '/api/partner/upload';
+}
+
+/** Réponse 403 PARTNER_SUSPENDED : texte de la base suivi du contact du support. */
+export async function partnerSuspendedResponse(): Promise<NextResponse> {
+    const support = await supportSentenceOrHelp('fiche suspendue');
+    return NextResponse.json({ error: `${PARTNER_SUSPENDED_TEXT} ${support}`, code: 'PARTNER_SUSPENDED' }, { status: 403 });
+}
+
 /** La garde s'applique-t-elle à ce compte et à ce chemin ? */
 export function partnerFicheGuardApplies(roles: readonly string[], pathname: string): boolean {
     if (!roles.includes('PARTENAIRE') || roles.includes('ADMIN') || roles.includes('SUPERADMIN')) return false;
@@ -89,6 +115,7 @@ export async function partnerFicheRefusal(user: { id: string; roles: readonly st
     if (!partnerFicheGuardApplies(user.roles, pathname)) return null;
     const read = await readFicheStatus(user.id, 'partnerFicheRefusal');
     if ('response' in read) return read.response;
+    if (read.status === 'SUSPENDU' && partnerEventWrite(method, pathname)) return partnerSuspendedResponse();
     if (partnerFicheAllows(read.status, method, pathname)) return null;
     return NextResponse.json({ error: PARTNER_NOT_VALIDATED_TEXT, code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });
 }
@@ -127,7 +154,9 @@ export async function partnerTransitionFicheRefusal(user: { id: string; roles: r
     if (!partnerFicheGuardApplies(user.roles, '/api/partner/events/*/transition')) return null;
     const read = await readFicheStatus(user.id, 'partnerTransitionFicheRefusal');
     if ('response' in read) return read.response;
-    if (read.status === 'VALIDE' || read.status === 'SUSPENDU') return null;
+    // Finition 2a (1a) : une fiche SUSPENDU ne fait plus aucune transition (refusée ici et en base)
+    if (read.status === 'SUSPENDU') return partnerSuspendedResponse();
+    if (read.status === 'VALIDE') return null;
     const text = to === 'EN_ATTENTE' || to === 'PUBLIE' ? PARTNER_NOT_VALIDATED_SUBMIT_TEXT : PARTNER_NOT_VALIDATED_TEXT;
     return NextResponse.json({ error: text, code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });
 }
