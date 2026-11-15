@@ -4,6 +4,7 @@ import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { controlClosedMessage } from '@/lib/scan/control-window';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,8 @@ type SearchReply = {
     http?: number;
     code?: string;
     retry_after_seconds?: unknown;
+    problem?: string;
+    opens_at?: string | null;
     items?: unknown;
     truncated?: unknown;
 };
@@ -103,6 +106,10 @@ export async function POST(req: NextRequest) {
         if (reply.http === 400 && reply.code === 'INVALID_INPUT') throw new PublicError(INVALID_QUERY, 'INVALID_INPUT', 400);
         if (reply.http === 403 && reply.code === 'SCAN_FORBIDDEN') {
             throw new PublicError('Vous n’êtes pas autorisé à consulter la liste des invités de cet événement.', 'SCAN_FORBIDDEN', 403);
+        }
+        // Finition 1 (complément 10) : hors de la plage du contrôle, même message que le scanner
+        if (reply.http === 409 && reply.code === 'CONTROL_CLOSED') {
+            throw new PublicError(controlClosedMessage(reply.problem, reply.opens_at) ?? 'Le contrôle n’est pas ouvert sur cet événement.', 'CONTROL_CLOSED', 409);
         }
         if (reply.http === 429 && reply.code === 'GUEST_LIST_RATE_LIMITED') {
             const seconds = Number(reply.retry_after_seconds);

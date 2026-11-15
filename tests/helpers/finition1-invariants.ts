@@ -58,7 +58,7 @@ export async function missingFinition1Schema(db?: Client): Promise<string[]> {
             SELECT f.objet FROM (VALUES
                 ('partner_team_view'), ('controller_invitation_cancel'), ('controller_invitation_clear'),
                 ('controller_invitation_resend'), ('controller_invitations_expire_due'),
-                ('event_controller_settings_set')) AS f(objet)
+                ('event_controller_settings_set'), ('team_gate_categories'), ('controller_scanner_status')) AS f(objet)
              WHERE NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                                 WHERE n.nspname = 'public' AND p.proname = f.objet)`);
         return rows.map((r) => r.objet);

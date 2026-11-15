@@ -69,6 +69,7 @@ import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
+import { CONTROL_ENDED_MESSAGE, controlClosedMessage } from '@/lib/scan/control-window';
 import type { CameraReadVerdict } from '@/components/scan/CameraQrScanner';
 import type { ServedShift } from '@/components/scan/ScannerShiftBanner';
 import { ScanStatusBar } from '@/components/scan/ScanStatusBar';
@@ -244,17 +245,18 @@ function closedBanner(scan: ScanState | null): { tone: 'danger' | 'warning'; tit
     if (scan.problem === 'event_ended') {
         const closed = toDate(scan.closes_at);
         return {
+            // Finition 1 (complément 10) : phrase commune (lib/scan/control-window.ts), heure de fermeture en plus
             tone: 'warning', title: 'Contrôle fermé',
             text: closed
-                ? `Contrôle fermé depuis le ${formatDate(closed)} à ${formatTime(closed)} : les scans ne sont plus autorisés sur cet événement.`
-                : 'Contrôle fermé : les scans ne sont plus autorisés sur cet événement.',
+                ? `${CONTROL_ENDED_MESSAGE} Fermé depuis le ${formatDate(closed)} à ${formatTime(closed)}.`
+                : CONTROL_ENDED_MESSAGE,
         };
     }
     const opening = upcomingOpening(scan);
     if (opening) {
         return {
             tone: 'warning', title: 'Contrôle pas encore ouvert',
-            text: `Contrôle ouvert à partir du ${formatDate(opening)} à ${formatTime(opening)}. Le scan s’activera de lui-même à cette heure.`,
+            text: `${controlClosedMessage('event_not_open', opening) ?? ''} Le scan s’activera de lui-même à cette heure.`,
         };
     }
     if (scan.problem === 'event_not_open') {

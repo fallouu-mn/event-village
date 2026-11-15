@@ -229,7 +229,7 @@ export const DISCREPANCY_PENDING_MESSAGE = 'Écart en attente de validation par 
 
 const EVENT_PROBLEM_MESSAGES: Record<string, string> = {
     event_cancelled: 'Cet événement est annulé.',
-    event_ended: 'Cet événement est terminé.',
+    event_ended: 'Cet événement est terminé : le contrôle est fermé.',
     event_suspended: 'Cet événement est suspendu.',
     event_not_open: 'Cet événement n’est pas encore ouvert au contrôle.',
 };

@@ -19,6 +19,8 @@ const FINITION1_MIGRATIONS = [
     // Sécurité S1, corrigée en premier (fichier séparé : un commit par tâche ; liste modifiée et signalée au rapport)
     '20261115000001_finition1_securite.sql',
     '20261115000002_finition1_equipe.sql',
+    // Compléments 10 à 12 (plage du contrôle, statut du scanner, la partenaire scanne ses événements)
+    '20261115000003_finition1_controle.sql',
 ] as const;
 
 after(async () => {

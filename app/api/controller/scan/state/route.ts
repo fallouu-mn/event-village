@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { controlClosedMessage } from '@/lib/scan/control-window';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,10 @@ export async function GET(req: NextRequest) {
             }
             throw new Error(`scan_states : refus inattendu ${JSON.stringify(reply)}`);
         }
-        return NextResponse.json({ items: reply.items }, { headers: NO_STORE });
+        // Finition 1 (complément 10) : message d'un contrôle fermé, en mots (« Cet événement est terminé : le contrôle est
+        // fermé. », « Le contrôle ouvre le … à … ») ; null quand il est ouvert
+        const items = reply.items.map((item) => ({ ...item, message: item.open ? null : controlClosedMessage(item.problem, item.opens_at) }));
+        return NextResponse.json({ items }, { headers: NO_STORE });
     } catch (err: unknown) {
         return apiFailure('GET /api/controller/scan/state', err, {
             message: 'État du contrôle momentanément indisponible.',

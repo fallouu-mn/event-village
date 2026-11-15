@@ -157,8 +157,11 @@ describe('R16 — le scanner décide par scan.open (contrôle statique)', () => 
         assert.doesNotMatch(src, /const\s+eligible\s*=\s*isEventEligibleForController\s*\(/,
             'le scanner ne décide plus d’après le statut (aujourd’hui :820 : isEventEligibleForController(eventStatus))');
         assert.match(src, /const\s+eligible\s*=\s*[^;\n]*\bscan\??\.open\b/, 'eligible lu dans scan.open servi par le serveur');
-        assert.match(src, /Contrôle ouvert à partir du/, 'bandeau « Contrôle ouvert à partir du {date} à {heure} »');
-        assert.match(src, /Contrôle fermé depuis le/, 'bandeau « Contrôle fermé depuis le {date} à {heure} »');
+        // Finition 1 (complément 10) : phrases communes « Le contrôle ouvre le {date} à {heure}. » et « Cet événement est
+        // terminé : le contrôle est fermé. Fermé depuis le {date} à {heure}. » (lib/scan/control-window.ts ; recalé, signalé)
+        assert.match(src, /controlClosedMessage\('event_not_open', opening\)/, 'bandeau « Le contrôle ouvre le {date} à {heure}. »');
+        assert.match(src, /CONTROL_ENDED_MESSAGE\} Fermé depuis le/, 'bandeau « Cet événement est terminé : le contrôle est fermé. Fermé depuis le … »');
+        assert.match(code('lib/scan/control-window.ts'), /Le contrôle ouvre le \$\{formatDate\(at\)\} à \$\{formatTime\(at\)\}\./, 'texte de l’ouverture');
         assert.match(src, /opens_at/, 'minuterie : relecture à opens_at');
         assert.match(src, /closes_at/, 'minuterie : relecture à closes_at');
         assert.match(code(PARTNER_SCAN_PAGE), /\/api\/controller\/scan\/state/, 'scan partenaire : état lu par GET /api/controller/scan/state');
