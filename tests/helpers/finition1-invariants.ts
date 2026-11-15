@@ -75,7 +75,7 @@ export async function finition1Violations(db?: Client): Promise<Finition1Violati
 export async function assertFinition1Invariants(label: string): Promise<void> {
     await assertLot9quinquiesInvariants(label);
     const missing = await missingFinition1Schema();
-    assert.deepEqual(missing, [], `objets de la finition 1 absents (migration 20261115000001 non appliquée ?) : ${missing.join(', ')}`);
+    assert.deepEqual(missing, [], `objets de la finition 1 absents (migration 20261115000002 non appliquée ?) : ${missing.join(', ')}`);
     const violations = await finition1Violations();
     console.log(`[INVARIANT-FINITION1] ${label} — (f) : ${violations.length} violation(s)`);
     for (const v of violations) console.log(`[INVARIANT-FINITION1]   (${v.regle}) ${v.objet} : ${v.detail}`);

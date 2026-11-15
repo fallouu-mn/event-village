@@ -1,5 +1,5 @@
 /**
- * Finition 1 (équipe) — la migration de la finition (20261115000001) est rejouable : déjà appliquée par la CI depuis une
+ * Finition 1 (équipe) — les migrations de la finition (20261115000001 et …02) sont rejouables : déjà appliquée par la CI depuis une
  * base vide, elle s'exécute encore deux fois de suite sans erreur, dans une transaction annulée (base LOCALE seulement),
  * et ne gère pas elle-même sa transaction (aucun BEGIN ni COMMIT). Modèle : migration-lot9quinquies-rejouable.test.ts.
  * En fin de suite : invariants des lots précédents et (f1) à (f4) sur toute la base.
@@ -16,7 +16,9 @@ import { assertFinition1Invariants } from '../helpers/finition1-invariants';
 const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 
 const FINITION1_MIGRATIONS = [
-    '20261115000001_finition1_equipe.sql',
+    // Sécurité S1, corrigée en premier (fichier séparé : un commit par tâche ; liste modifiée et signalée au rapport)
+    '20261115000001_finition1_securite.sql',
+    '20261115000002_finition1_equipe.sql',
 ] as const;
 
 after(async () => {
