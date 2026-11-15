@@ -72,6 +72,8 @@ export interface UserProfile {
     email: string | null;
     role: 'CLIENT' | 'PARTENAIRE' | 'ADMIN' | 'CONTROLEUR' | 'SUPERADMIN';
     roles: string[];
+    /** Finition 1 (complément 11) : contrôleur seul — menu « Scanner » affiché (null : état illisible, affiché). */
+    scanner_open?: boolean | null;
     status: 'ACTIF' | 'SUSPENDU' | 'EN_ATTENTE';
     referral_status: 'STANDARD' | 'AMBASSADEUR';
     avatar_url?: string | null;
