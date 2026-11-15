@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
+import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { getServerEnv } from '@/lib/env';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { GATE_PROBLEM_MESSAGES, isGateProblemCode, isScanResult, SCAN_RESULT_LABELS, type ScanResult } from '@/lib/scan/scan-result';
@@ -227,6 +228,9 @@ export async function POST(req: NextRequest) {
         if (!replay && body && typeof body === 'object' && 'gateId' in body) {
             p.gate_id = (camera?.success ? camera.data.gateId : guest?.success ? guest.data.gateId : manual?.data?.gateId) ?? null;
         }
+        // cvf1 T2 : compte partenaire sur son propre événement : fiche VALIDE exigée (comme en base), refus par la route
+        const ficheRefused = await ownEventFicheRefusal(user, typeof p.event_id === 'string' ? p.event_id : null);
+        if (ficheRefused) return ficheRefused;
         const { data, error } = await rpcWithRetry<Rpc>('ticket_scan', { p });
         if (error || !data) throw new Error(`ticket_scan : ${error?.message ?? 'réponse vide'}`);
         if (data.http === 403) {

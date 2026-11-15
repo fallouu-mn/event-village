@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
+import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 
 export const dynamic = 'force-dynamic';
@@ -52,6 +53,8 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
         return NextResponse.json({ error: 'Devis invalide : événement et catégories requis.', code: 'INVALID_BODY' }, { status: 400 });
     }
+    const ficheRefused = await ownEventFicheRefusal(session.user, parsed.data.eventId);
+    if (ficheRefused) return ficheRefused;
 
     let quote: QuoteReply;
     try {

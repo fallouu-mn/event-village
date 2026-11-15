@@ -94,6 +94,31 @@ export async function partnerFicheRefusal(user: { id: string; roles: readonly st
 }
 
 /**
+ * cvf1 T2 — routes /api/controller/* (scan, vérification, invités, porte, guichet, devis, vente, ouverture de caisse) sur
+ * l'événement `eventId` : un compte partenaire (non ADMIN ni SUPERADMIN), qu'il ait ou non aussi le rôle CONTROLEUR, n'agit
+ * sur SES PROPRES événements qu'avec une fiche VALIDE (comme counter_sale, scan_scanner_authorized et
+ * shift_can_handle_cash en base). Ses affectations chez une autre organisatrice ne sont pas visées. Lecture en échec :
+ * 503, jamais un passage.
+ */
+export async function ownEventFicheRefusal(user: { id: string; roles: readonly string[] }, eventId: string | null | undefined): Promise<NextResponse | null> {
+    if (!eventId || !user.roles.includes('PARTENAIRE') || user.roles.includes('ADMIN') || user.roles.includes('SUPERADMIN')) return null;
+    const supabase = getServiceRoleClient();
+    const { data: fiche, error } = await supabase.from('partners').select('id, status').eq('user_id', user.id).maybeSingle();
+    if (error) {
+        console.error(`[ownEventFicheRefusal] fiche partenaire de ${user.id} illisible :`, error.message);
+        return NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'PARTNER_UNAVAILABLE' }, { status: 503 });
+    }
+    if (!fiche || fiche.status === 'VALIDE') return null;
+    const { data: own, error: evErr } = await supabase.from('events').select('id').eq('id', eventId).eq('partner_id', fiche.id).maybeSingle();
+    if (evErr) {
+        console.error(`[ownEventFicheRefusal] événement ${eventId} illisible :`, evErr.message);
+        return NextResponse.json({ error: 'Vérification du compte momentanément impossible.', code: 'PARTNER_UNAVAILABLE' }, { status: 503 });
+    }
+    if (!own) return null;
+    return NextResponse.json({ error: PARTNER_NOT_VALIDATED_TEXT, code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });
+}
+
+/**
  * POST /api/partner/events/[id]/transition : refus d'une fiche ni VALIDE ni SUSPENDU, quelle que soit la transition et
  * avant toute lecture du corps. `to` (lu dans le corps, s'il est lisible) ne choisit que le texte : celui de la base pour
  * la soumission et la publication, le texte commun sinon.

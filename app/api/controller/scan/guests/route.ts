@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
+import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { getServerEnv } from '@/lib/env';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { controlClosedMessage } from '@/lib/scan/control-window';
@@ -84,6 +85,8 @@ export async function POST(req: NextRequest) {
         }
         const parsed = BodySchema.safeParse(raw);
         if (!parsed.success) throw new PublicError(INVALID_QUERY, 'INVALID_BODY', 400);
+        const ficheRefused = await ownEventFicheRefusal(session.user, parsed.data.eventId);
+        if (ficheRefused) return ficheRefused;
 
         const { data, error } = await getServiceRoleClient().rpc('ticket_guest_list_search', {
             p: {

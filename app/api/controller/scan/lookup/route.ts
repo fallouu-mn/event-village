@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
+import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { getServerEnv } from '@/lib/env';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { GATE_PROBLEM_MESSAGES, isGateProblemCode, isScanResult, SCAN_RESULT_LABELS } from '@/lib/scan/scan-result';
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
         return NextResponse.json({ error: 'Vérification invalide : événement et numéro de billet requis.', code: 'INVALID_BODY' }, { status: 400 });
     }
+    const ficheRefused = await ownEventFicheRefusal(session.user, parsed.data.eventId);
+    if (ficheRefused) return ficheRefused;
 
     const quota = await reserveQuota(
         [{ scope: 'scan_lookup', bucket: user.id, windowSecs: 60, max: getServerEnv().SCAN_LOOKUP_PER_SCANNER_MIN }],

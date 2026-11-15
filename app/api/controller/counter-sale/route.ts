@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
+import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
@@ -33,6 +34,8 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'event_id requis (identifiant d’événement).', code: 'INVALID_EVENT' }, { status: 400 });
     }
     const eventId = parsed.data;
+    const ficheRefused = await ownEventFicheRefusal(session.user, eventId);
+    if (ficheRefused) return ficheRefused;
     const supabase = getServiceRoleClient();
     try {
         const [assignment, setting, shift, categories] = await Promise.all([
@@ -164,6 +167,8 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
         return NextResponse.json({ error: 'Vente invalide : événement et catégories requis.', code: 'INVALID_BODY' }, { status: 400 });
     }
+    const ficheRefused = await ownEventFicheRefusal(session.user, parsed.data.eventId);
+    if (ficheRefused) return ficheRefused;
     let buyerE164: string | null = null;
     if (parsed.data.buyerPhone) {
         buyerE164 = toSenegaleseE164(parsed.data.buyerPhone);

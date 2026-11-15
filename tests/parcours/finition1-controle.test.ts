@@ -176,7 +176,8 @@ describe('Complément 12 — la partenaire scanne ses propres événements', () 
         try {
             const own = await scan(susp, { eventId: ev.eventId, payload: await ticketPayload(String(t.id)) });
             assert.equal(own.status, 403, `fiche suspendue, scan de la propriétaire : ${show(own)}`);
-            assert.equal(own.body.code, 'SCAN_FORBIDDEN', show(own));
+            // cvf1 T2 : la route refuse elle-même la propriétaire à fiche non validée, avant la base (même refus 403)
+            assert.equal(own.body.code, 'PARTNER_NOT_VALIDATED', show(own));
             const { data: row } = await service.from('tickets').select('status').eq('id', t.id).single();
             assert.equal(row!.status, 'VALIDE', 'billet non consommé par un scan refusé');
             const GET = await routeHandler('../../app/api/controller/counter-sale/route', 'GET', 'GET /api/controller/counter-sale');

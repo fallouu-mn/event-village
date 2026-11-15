@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
+import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { asShiftRefusal, ShiftService } from '@/lib/shifts/shift.service';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Données invalides.', code: 'INVALID_BODY' }, { status: 400 });
     }
+    const ficheRefused = await ownEventFicheRefusal(session.user, parsed.data.eventId);
+    if (ficheRefused) return ficheRefused;
 
     try {
         const shift = await ShiftService.openShift(session.user.id, {
