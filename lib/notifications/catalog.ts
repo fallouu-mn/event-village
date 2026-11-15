@@ -1571,6 +1571,17 @@ const CATALOG = {
         }),
         sample: { ...SAMPLE_TEAM_NOTICE, controller_name: 'Kh*** S***' },
     }),
+    // Correctifs de la contre-vérification (migration 20261115000014) : un contrôleur devenu compte d'administration quitte
+    // l'équipe de l'organisatrice. Cloche, push et email ; jamais de SMS (décision de l'utilisateur).
+    CONTROLLER_BECAME_ADMIN: define('CONTROLLER_BECAME_ADMIN', {
+        label: 'Contrôleur devenu administrateur', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        link: () => '/partner/team',
+        inApp: (d) => ({
+            title: 'Contrôleur retiré de votre équipe',
+            content: `${text(d, 'controller_name')} ne fait plus partie de votre équipe : son compte est devenu un compte d'administration Event Village. Invitez une autre personne pour vos entrées.`,
+        }),
+        sample: { controller_name: 'Aminata Fall' },
+    }),
     // N13 (R15) : propriétaire d'un événement annulé par un admin ; avis public, jamais le motif interne.
     EVENT_CANCELLED_BY_ADMIN: define('EVENT_CANCELLED_BY_ADMIN', {
         label: 'Annulation d’un événement par l’administration', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',

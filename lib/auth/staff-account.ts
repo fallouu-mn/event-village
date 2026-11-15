@@ -10,3 +10,13 @@ export const NOT_INVITABLE_SQLSTATE = 'CT409';
 export function isNotInvitableDbError(err: unknown): boolean {
     return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === NOT_INVITABLE_SQLSTATE;
 }
+
+/**
+ * Migration 20261115000014 : confirmation avant de promouvoir en administrateur un compte qui contrôle les entrées
+ * d'organisatrices (décision de l'utilisateur ; accord au singulier).
+ */
+export function staffPromotionConfirmText(organizers: number): string {
+    return organizers === 1
+        ? 'Cette personne contrôle les entrées pour 1 organisateur. En devenant administrateur, elle sera retirée de son équipe.'
+        : `Cette personne contrôle les entrées pour ${organizers} organisateurs. En devenant administrateur, elle sera retirée de leurs équipes.`;
+}

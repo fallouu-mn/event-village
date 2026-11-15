@@ -93,7 +93,8 @@ export interface RoleChange {
 
 /** Refus de user_roles_set : code stable ; CONTROLLER_HAS_OPEN_SHIFT porte aussi le SQLSTATE EV409. */
 export class RoleChangeError extends Error {
-    constructor(public readonly code: string, message: string) {
+    /** `detail` : texte de user_roles_set pour l'écran (migration 14 : caisse ouverte d'un contrôleur promu, avec l'événement). */
+    constructor(public readonly code: string, message: string, public readonly detail?: string) {
         super(message);
         this.name = 'RoleChangeError';
     }
@@ -114,7 +115,8 @@ export async function setUserRoles(userId: string, roles: UserRoleType[], actorI
     if (!reply) throw new Error('user_roles_set : réponse vide');
     if (reply.ok !== true) {
         const code = String(reply.code ?? 'ROLE_CHANGE_REFUSED');
-        const err = new RoleChangeError(code === 'CONTROLLER_HAS_OPEN_SHIFT' ? 'EV409' : code, `${code} : ${reply.message ?? 'changement de rôles refusé'}`);
+        const err = new RoleChangeError(code === 'CONTROLLER_HAS_OPEN_SHIFT' ? 'EV409' : code, `${code} : ${reply.message ?? 'changement de rôles refusé'}`,
+            typeof reply.message === 'string' ? reply.message : undefined);
         throw err;
     }
     const asRoles = (v: string[] | undefined): UserRoleType[] => (v ?? []).map((r) => r as UserRoleType).sort();

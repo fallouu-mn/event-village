@@ -209,6 +209,8 @@ export interface TemplateData {
     CONTROLLER_INVITATION_ACCEPTED: { invitation_id: string; controller_name: string; events?: ControllerEventRef[] };
     CONTROLLER_INVITATION_DECLINED: { invitation_id: string; controller_name: string; events?: ControllerEventRef[] };
     CONTROLLER_INVITATION_EXPIRED: { invitation_id: string; controller_name: string; events?: ControllerEventRef[] };
+    // Migration 20261115000014 : contrôleur devenu compte d'administration (nom complet : il était dans l'équipe)
+    CONTROLLER_BECAME_ADMIN: { controller_name: string };
     EVENT_CANCELLED_BY_ADMIN: EventData & { public_notice?: string | null };
     ADMIN_EVENT_CANCELLED: EventData & { company?: string | null; reason?: string | null };
     CONTROLLER_EVENT_CANCELLED: EventData;

@@ -6,7 +6,8 @@ import { AdminService } from '@/lib/admin/admin.service';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { RoleChangeError, setUserRoles, type UserRoleType } from '@/lib/auth/roles';
 import { revokeUserSessions } from '@/lib/auth/sessions';
-import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { CONTROLLER_HAS_OPEN_SHIFT, controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { staffPromotionConfirmText } from '@/lib/auth/staff-account';
 import { newTechnicalEmail } from '@/lib/auth/technical-email';
 import { TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 import { RESERVED_EMAIL_MESSAGE } from '@/lib/validations/auth';
@@ -293,7 +294,7 @@ export async function PATCH(req: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
 
     try {
-        let body: { userId?: string; role?: string; roles?: unknown; referralStatus?: unknown; status?: string; reason?: unknown };
+        let body: { userId?: string; role?: string; roles?: unknown; referralStatus?: unknown; status?: string; reason?: unknown; confirm_staff_promotion?: unknown };
         try {
             body = await req.json();
         } catch {
@@ -405,6 +406,33 @@ export async function PATCH(req: NextRequest) {
             }
         }
 
+        // 3 quater. Migration 14 (correctifs de la contre-vérification) : un contrôleur qui devient administrateur quitte les
+        //          équipes de contrôle. Caisse ouverte : refus, rien ne change. Sinon, confirmation d'abord (nombre
+        //          d'organisatrices) ; user_roles_set retire ensuite tout dans sa transaction (affectations, rôle CONTROLEUR,
+        //          invitations en attente, sessions, journal, avis aux organisatrices).
+        const promotesStaff = targetRoles !== null
+            && (targetRoles.includes('ADMIN') || targetRoles.includes('SUPERADMIN'))
+            && !(targetCurrentRoles.includes('ADMIN') || targetCurrentRoles.includes('SUPERADMIN'));
+        if (promotesStaff) {
+            const { data: previewData, error: previewErr } = await supabase.rpc('controller_staff_promotion_preview', { p: { user_id: userId } });
+            const preview = (previewData ?? null) as { ok?: boolean; organizers?: number; open_shift?: { message?: string } | null } | null;
+            if (previewErr || !preview || preview.ok !== true) {
+                return apiFailure('PATCH /api/admin/users, équipes du compte', previewErr ?? new Error(`controller_staff_promotion_preview : ${JSON.stringify(preview)}`), USER_UPDATE_FALLBACK);
+            }
+            if (preview.open_shift && typeof preview.open_shift.message === 'string') {
+                return NextResponse.json({ error: preview.open_shift.message, code: CONTROLLER_HAS_OPEN_SHIFT }, { status: 409 });
+            }
+            const organizers = Number(preview.organizers ?? 0);
+            if (organizers > 0 && body.confirm_staff_promotion !== true) {
+                return NextResponse.json({
+                    requires_confirmation: true,
+                    code: 'STAFF_PROMOTION_CONFIRMATION',
+                    message: staffPromotionConfirmText(organizers),
+                    organizers,
+                }, { status: 200 });
+            }
+        }
+
         // 4. Rôles : ajout et retrait dans user_roles (le trigger recalcule users.role)
         //    Lot 4.7 : retirer CONTROLEUR à un compte qui a une caisse OUVERT est refusé par le trigger
         //    controller_removal_guard (CONTROLLER_HAS_OPEN_SHIFT) → 409, rien d'autre n'est modifié.
@@ -414,6 +442,11 @@ export async function PATCH(req: NextRequest) {
                 roleChange = await setUserRoles(userId, targetRoles, auth.user!.id);
             } catch (roleErr) {
                 if (isControllerRemovalBlocked(roleErr)) {
+                    // Migration 14 : caisse ouverte d'un contrôleur promu (ouverte entre la vérification et l'écriture) :
+                    // le texte de la base, qui nomme l'événement
+                    if (promotesStaff && roleErr instanceof RoleChangeError && roleErr.detail) {
+                        return NextResponse.json({ error: roleErr.detail, code: CONTROLLER_HAS_OPEN_SHIFT }, { status: 409 });
+                    }
                     return NextResponse.json(controllerRemovalConflict(), { status: 409 });
                 }
                 // Lot 5 (C4) : refus de user_roles_set, vérifiés en base (rien n'a été modifié)

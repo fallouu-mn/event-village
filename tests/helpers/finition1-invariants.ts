@@ -6,7 +6,9 @@
  *  (f2) au plus une invitation de contrôleur en attente et non échue par organisateur et par compte ;
  *  (f3) une invitation effacée par l'organisateur (cleared_at) n'est jamais une invitation en attente non échue ;
  *  (f4) aucune politique de lecture de event_controllers ne repose sur le créateur de la ligne (created_by) : la
- *       lecture suit la propriété actuelle de l'événement et le statut du compte (S1).
+ *       lecture suit la propriété actuelle de l'événement et le statut du compte (S1) ;
+ *  (f5) aucun compte d'administration (ADMIN ou SUPERADMIN, dans user_roles ou users.role) ne garde d'affectation de
+ *       contrôleur (correctifs de la contre-vérification, migrations 20261115000013 et 20261115000014).
  * Sortie brute `[INVARIANT-FINITION1]`. Échec explicite qui nomme chaque objet de la finition absent (jamais d'erreur
  * Postgres brute, jamais de faux vert).
  */
@@ -39,6 +41,13 @@ SELECT * FROM (
       FROM pg_policies p
      WHERE p.schemaname = 'public' AND p.tablename = 'event_controllers'
        AND p.cmd IN ('SELECT', 'ALL') AND COALESCE(p.qual, '') ~ 'created_by'
+    UNION ALL
+    SELECT 'f5', 'event_controllers.' || ec.id::text,
+           'affectation du compte d''administration ' || ec.user_id::text
+      FROM public.event_controllers ec
+      JOIN public.users u ON u.id = ec.user_id
+     WHERE u.role::text IN ('ADMIN', 'SUPERADMIN')
+        OR EXISTS (SELECT 1 FROM public.user_roles r WHERE r.user_id = ec.user_id AND r.role::text IN ('ADMIN', 'SUPERADMIN'))
 ) v
 ORDER BY regle, objet`;
 
@@ -71,7 +80,7 @@ export async function finition1Violations(db?: Client): Promise<Finition1Violati
     return db ? run(db) : inspect(run);
 }
 
-/** Invariants des lots précédents puis (f1) à (f4) ; échec explicite listant chaque violation. */
+/** Invariants des lots précédents puis (f1) à (f5) ; échec explicite listant chaque violation. */
 export async function assertFinition1Invariants(label: string): Promise<void> {
     await assertLot9quinquiesInvariants(label);
     const missing = await missingFinition1Schema();

@@ -194,6 +194,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     CONTROLLER_INVITATION_ACCEPTED: 'Invitation de contrôleur acceptée',
     CONTROLLER_INVITATION_DECLINED: 'Invitation de contrôleur refusée',
     CONTROLLER_INVITATION_EXPIRED: 'Invitation de contrôleur sans réponse',
+    CONTROLLER_BECAME_ADMIN: 'Contrôleur devenu administrateur',
     EVENT_CANCELLED_BY_ADMIN: "Événement annulé par l'administration",
     ADMIN_EVENT_CANCELLED: "Événement annulé par l'organisateur",
     CONTROLLER_EVENT_CANCELLED: 'Contrôle annulé',
