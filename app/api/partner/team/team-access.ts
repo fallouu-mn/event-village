@@ -49,10 +49,14 @@ export async function ownPartnerId(user: ServerUser): Promise<string | null> {
  */
 export const REASON_REQUIRED_TEXT = 'Indiquez le motif de cette action (5 caractères au moins) : il est inscrit au journal.';
 
+/** cvf1 T5, R3 : motif de plus de 500 caractères, avec un message qui le dit (et non « 5 caractères au moins »). */
+export const REASON_TOO_LONG_TEXT = 'Le motif est trop long : 500 caractères au plus. Raccourcissez-le.';
+
 export function adminReasonRefusal(actsAsAdmin: boolean, reason: unknown): NextResponse | null {
     if (!actsAsAdmin) return null;
     const text = typeof reason === 'string' ? reason.trim() : '';
-    if (text.length >= 5 && text.length <= 500) return null;
+    if (text.length > 500) return NextResponse.json({ error: REASON_TOO_LONG_TEXT, code: 'REASON_TOO_LONG', field: 'reason' }, { status: 400 });
+    if (text.length >= 5) return null;
     return NextResponse.json({ error: REASON_REQUIRED_TEXT, code: 'REASON_REQUIRED', field: 'reason' }, { status: 400 });
 }
 

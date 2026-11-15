@@ -19,7 +19,7 @@ import { releaseQuota, reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { toSenegaleseE164 } from '@/lib/validations/auth';
-import { adminTeamRefusal, optionalJsonBody } from '../team-access';
+import { actsAsTeamAdmin, adminReasonRefusal, adminTeamRefusal, optionalJsonBody } from '../team-access';
 
 export type InvitationAction = 'resend' | 'cancel' | 'clear';
 
@@ -32,6 +32,7 @@ const REFUSAL_STATUS: Record<string, number> = {
     PERMISSION_MISSING: 403,
     ACCOUNT_NOT_ACTIVE: 403,
     REASON_REQUIRED: 400,
+    REASON_TOO_LONG: 400,
     INVITATION_NOT_PENDING: 409,
     INVITATION_STILL_PENDING: 409,
 };
@@ -71,6 +72,15 @@ export async function handleInvitationAction(action: InvitationAction, req: Next
         if (!UUID_RE.test(id)) throw new PublicError('Invitation introuvable.', 'INVITATION_NOT_FOUND', 404);
         const body = await optionalJsonBody(req);
         if (body === null) throw new PublicError('Demande illisible.', 'INVALID_BODY', 400);
+        // cvf1 T5 : motif d'un admin de 5 à 500 caractères, par la même aide que les autres écritures de l'équipe, avant tout
+        // effet (la fonction vérifie de nouveau). Organisatrice de l'invitation lue d'abord ; inconnue : la fonction rend 404.
+        const { data: owner, error: ownerErr } = await getServiceRoleClient()
+            .from('controller_invitations').select('partner_id').eq('id', id).maybeSingle();
+        if (ownerErr) throw new Error(`invitation ${id} : ${ownerErr.message}`);
+        if (owner) {
+            const reasonRefused = adminReasonRefusal(await actsAsTeamAdmin(user, String(owner.partner_id)), body.reason);
+            if (reasonRefused) return reasonRefused;
+        }
         const p: Record<string, unknown> = { actor_id: user.id, invitation_id: id, reason: typeof body.reason === 'string' ? body.reason : null };
 
         if (action !== 'resend') {
