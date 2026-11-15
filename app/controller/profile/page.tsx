@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
-import { Banknote, Bell, Calendar, Check, Eye, EyeOff, KeyRound, MapPin, Phone, ShieldCheck, X } from 'lucide-react';
+import { Banknote, Bell, Calendar, CalendarCheck, Check, Eye, EyeOff, KeyRound, MapPin, Phone, ShieldCheck, X } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
@@ -239,6 +239,11 @@ export default function ControllerProfilePage() {
 
             <LinkButton href="/profile/notifications" variant="secondary" fullWidth leftIcon={<Bell size={18} aria-hidden="true" />}>
                 Préférences de notification
+            </LinkButton>
+
+            {/* Finition 1 (complément 13) : historique des soirées, en lecture seule, même sans contrôle ouvert */}
+            <LinkButton href="/profile/soirees" variant="secondary" fullWidth leftIcon={<CalendarCheck size={18} aria-hidden="true" />}>
+                Mes soirées
             </LinkButton>
 
             <section aria-labelledby={`${uid}-evenements`} className="space-y-3">

@@ -1302,6 +1302,25 @@ export const SCREENS: readonly Screen[] = [
         ready: async ({ page }) => { await expectHeading(page, /^mon profil$/i); },
     },
     {
+        // Finition 1 (complément 13) : historique des soirées du contrôleur, depuis son profil (réponse imposée : trois
+        // soirées types, caisse clôturée, écart en attente, événement annulé sans caisse)
+        id: 'controleur-soirees', titre: 'Mes soirées du contrôleur (entrées et caisse, lecture seule)', role: 'controleur', needsIds: true,
+        path: () => '/profile/soirees',
+        stubResponses: [{
+            url: /\/api\/account\/evenings(\?|$)/, method: 'GET', status: 200, body: { items: [
+                { event_id: '00000000-0000-4000-8000-0000000000a1', title: 'Nuit du Sabar — édition d’automne', status: 'TERMINE', start_at: '2026-11-07T20:00:00.000Z',
+                  organizer: 'Teranga Events', gate: 'Porte VIP', zone: 'Carré VIP', entry_point: null, entries: 214,
+                  cash: { collected: 36000, gap: 0, state: 'CLOSED' } },
+                { event_id: '00000000-0000-4000-8000-0000000000a2', title: 'Gala de la Teranga', status: 'TERMINE', start_at: '2026-10-24T19:30:00.000Z',
+                  organizer: 'Teranga Events', gate: null, zone: null, entry_point: 'Entrée principale', entries: 87,
+                  cash: { collected: 12000, gap: -2000, state: 'GAP_PENDING' } },
+                { event_id: '00000000-0000-4000-8000-0000000000a3', title: 'Festival du Fleuve', status: 'ANNULE', start_at: '2026-10-10T18:00:00.000Z',
+                  organizer: 'Saint-Louis Live', gate: null, zone: null, entry_point: null, entries: 0, cash: null },
+            ] },
+        }],
+        ready: async ({ page }) => { await expectHeading(page, /^mes soirées$/i); },
+    },
+    {
         id: 'admin-campagnes', titre: 'Administration — campagnes de communication', role: 'admin', needsIds: true, path: () => '/admin/communications',
         ready: async ({ page }) => { await expectHeading(page, /^campagnes de communication$/i); },
     },
