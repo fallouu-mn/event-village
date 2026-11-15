@@ -5,6 +5,7 @@ import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { getServerEnv } from '@/lib/env';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { GATE_PROBLEM_MESSAGES, isGateProblemCode, isScanResult, SCAN_RESULT_LABELS } from '@/lib/scan/scan-result';
+import { controlClosedMessage } from '@/lib/scan/control-window';
 import { reserveQuota } from '@/lib/security/quota';
 import { ticketStatusLabel } from '@/lib/tickets/ticket-status';
 
@@ -21,6 +22,9 @@ type LookupReply = {
     ok?: boolean;
     http?: number;
     code?: string;
+    /** cvf1 T4 : refus « contrôle fermé » (scan_event_problem) et heure d'ouverture. */
+    problem?: string | null;
+    opens_at?: string | null;
     found?: boolean;
     ticket?: {
         ticket_number?: unknown; holder?: unknown; category?: unknown; status?: unknown; preview?: unknown; redirect_zones?: unknown;
@@ -79,6 +83,13 @@ export async function POST(req: NextRequest) {
         if (error || !data) throw new Error(`ticket_manual_lookup : ${error?.message ?? 'réponse vide'}`);
         if (data.http === 403) {
             return NextResponse.json({ error: 'Vous n’êtes pas autorisé à vérifier un billet de cet événement.', code: 'SCAN_FORBIDDEN' }, { status: 403 });
+        }
+        // cvf1 T4 : hors de la plage du contrôle, le verdict seul (le billet n'est pas lu)
+        if (data.http === 409 && data.code === 'CONTROL_CLOSED') {
+            return NextResponse.json({
+                error: controlClosedMessage(data.problem, data.opens_at) ?? 'Le contrôle n’est pas ouvert sur cet événement.',
+                code: 'CONTROL_CLOSED',
+            }, { status: 409, headers: NO_STORE });
         }
         if (data.http === 409) {
             if (!isGateProblemCode(data.code)) throw new Error(`ticket_manual_lookup : refus 409 inconnu ${JSON.stringify(data)}`);
