@@ -236,6 +236,29 @@ describe('c. le numéro d’un admin ne s’invite pas', () => {
         }
         assert.deepEqual(breaches, [], `le numéro d'un admin s'invite :\n${breaches.join('\n')}`);
     });
+
+    test('suite de l’essai : l’ADMIN invité qui accepte devient contrôleur de l’organisatrice, qui lit son nom et son numéro', async () => {
+        const breaches: string[] = [];
+        const { partner: X, ev } = await freshTeam('admin-ok');
+        const admin = await newAdmin('cvf1-inv-admin-ok', ['events.read'], {});
+        const confirm = await api('POST', 'partner/team/invite', { token: X.accessToken, body: { event_ids: [ev.eventId], phone: admin.phoneE164, confirm_promotion: true } });
+        console.log(`[CVF1-6] ADMIN (suite) : invitation → ${show(confirm)}`);
+        if (typeof confirm.body.invitation_id !== 'string') {
+            // L'invitation est refusée : la défense tient, rien d'autre à essayer
+            assert.ok(!ok2xx(confirm) || !confirm.body.success, `réponse inattendue : ${show(confirm)}`);
+            return;
+        }
+        const id = confirm.body.invitation_id;
+        const accept = await respond(admin, id, true);
+        const team = await api('GET', 'partner/team', { token: X.accessToken });
+        const text = JSON.stringify(team.body);
+        console.log(`[CVF1-6] ADMIN (suite) : acceptation → ${show(accept)} ; rôles ${(await rolesOf(admin.userId)).join(',')} ; numéro de l'admin dans l'équipe de l'organisatrice : ${text.includes(admin.phoneE164)}`);
+        if (ok2xx(accept)) breaches.push(`un compte ADMIN accepte l'invitation d'une organisatrice ${show(accept)}`);
+        if ((await rolesOf(admin.userId)).includes('CONTROLEUR')) breaches.push('le compte ADMIN porte désormais le rôle CONTROLEUR');
+        if (await assignmentOf(ev.eventId, admin.userId)) breaches.push('le compte ADMIN est affecté à un événement de l’organisatrice');
+        if (text.includes(admin.phoneE164)) breaches.push('l’organisatrice lit le numéro du compte ADMIN dans son équipe');
+        assert.deepEqual(breaches, [], `compte d'administration enrôlé dans l'équipe d'une organisatrice :\n${breaches.join('\n')}`);
+    });
 });
 
 describe('d. se faire passer pour un autre', () => {
