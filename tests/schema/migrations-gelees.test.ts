@@ -108,6 +108,45 @@ const FROZEN_LOT9QUATER: Readonly<Record<string, string>> = {
     '20261111000006_lot9quater_invites_zones.sql': '2e2c357072ea890f17cd220f4fd71ae89fe48cb7539a19eac435ce7b68454ca0',
 };
 
+/**
+ * Finition 2a (consigne : les migrations précédentes gelées) : empreintes SHA-256 (LF) des migrations du lot 9 quinquies
+ * (20261112…) et de la finition 1 avec ses correctifs (20261115…), calculées sur main c248e17f (toutes appliquées sur
+ * event-village-dev, les 14 et 15/11) ; toute correction passe par une migration 20261116….
+ */
+const FROZEN_LOT9QUINQUIES: Readonly<Record<string, string>> = {
+    '20261112000001_lot9quinquies_admin_sms.sql': 'fca3126dd3327d962813f28f83fc7bb22f5ad32ba2b0864d159fbd725dab21df',
+    '20261112000002_lot9quinquies_connexion.sql': '42050e3f5258813379c3de6e0e21a9568c7b3f5fc5d56ef64f832e82cb69d201',
+    '20261112000003_lot9quinquies_support.sql': 'd2226e42eadfe429535cad5bb84ef3983ccf42ce42785258732fb7f0c2faa465',
+    '20261112000004_lot9quinquies_recuperation.sql': 'a1fc816057c920a57c4edcfba752df6ca3e24f3af0efd80ca00e304812b9e6c2',
+    '20261112000005_lot9quinquies_fiche_partenaire.sql': 'f20f3b7b6b01f84b61ed9e3f916aba4fb47aca4656f29912f2635cbc90f96f29',
+    '20261112000006_lot9quinquies_comptes_admin.sql': 'af2c3283b7ff0bf6678b8e8cbf55d2fdbffc50b4e478493ebb506829ea3f21da',
+    '20261112000007_lot9quinquies_admin_step_up.sql': '0c6fd2386505458d132cd5fe85de2708afe6b8f60e9bb286feb1e05e2f3f2eb6',
+    '20261112000008_lot9quinquies_messages.sql': '8b33f112a94d69a1c8e1e73dc8575b639ecdfdce5ef856548b2c79f6b075be0f',
+    '20261112000009_lot9quinquies_check_reel.sql': 'eeb1acb47a5908ff9825f5e3c3620be610c0157141f0a8c58952ccee7fe4d237',
+    '20261112000010_lot9quinquies_recuperation_email.sql': '045da3fa0679a7757ef469a7e64eb03dcec746ee2f0384c4e75d7ace122b34f4',
+    '20261112000011_lot9quinquies_admin_code_rls.sql': '09a8e1509cfdc82635c0900c970b65756f46fd15a4c9ca8afc288c810a1711e8',
+    '20261112000012_lot9quinquies_identifiants_gotrue.sql': '82efae3eb3bd3060d6a560a0cf343b17eb0c9fba72ba588445a7a8fa2bdbc737',
+    '20261112000013_lot9quinquies_affectations_fiche.sql': '143b9b9c07909a1d86bb2a0b8165fca1e3223544741b8fcf42377d59974ead07',
+    '20261112000014_lot9quinquies_salles_concurrence.sql': '7a4c77eb9d76a561e78e2611d06e080e0d267e8481aebd940396334fe845336b',
+};
+
+const FROZEN_FINITION1: Readonly<Record<string, string>> = {
+    '20261115000001_finition1_securite.sql': '8cfea478f97b42a8c95e0b535fdf088f46972f3ad982482f40951bf18122c4f5',
+    '20261115000002_finition1_equipe.sql': 'c54ce4ae0ba755487b1f02ce8728891baba702f7ab01e0f3f137041b5cb13022',
+    '20261115000003_finition1_controle.sql': 'ab2afb54d4d4e3bfae4bff49585ce9c201d2aaf4c884fec6436cb0b63d888822',
+    '20261115000004_finition1_fiche_proprietaire.sql': 'ba237f6595369eb78b1183c30f6126b65619e11338906d2dc3974a9888f853de',
+    '20261115000005_finition1_soirees.sql': '40f26e7a1dcbfa4494fb33feeae6b4b5a60f4dcdb0483d3a60568e6a4a704b49',
+    '20261115000006_cvf1_admin_non_invitable.sql': '348b0469dbf16cfa830415bc4c79fb0303f288de308c29363254a76981e18e39',
+    '20261115000007_cvf1_caisse_fiche.sql': '382cbb98af5b9e485e9592d63dbaad3a2acdb351bcc14046d83daf0b156add5d',
+    '20261115000008_cvf1_soirees_scans_acceptes.sql': '1e2da80620ca95cba9fd7c53149de92643b23c8339153317608f5540e70bc4e4',
+    '20261115000009_cvf1_verdict_hors_plage.sql': '78d7701ec70fe9f0f777bfc9cc5263ff52c5f2145e20d731204aa219d76a2c03',
+    '20261115000010_cvf1_motif.sql': '6f19d28fca09f1c8e48f8ad8b0557ad0a01b5234fbe1a501891bb9844cde59ae',
+    '20261115000011_cvf1_porte_supprimee.sql': 'b399b1c22daf69954b383070dc3b658673301cb9742cdc63a5e33eda5886744a',
+    '20261115000012_cvf1_invitations_simultanees.sql': '24710d9302dda4b259d78129f916c048084f5b51c6e5d28088c597209ec3edfe',
+    '20261115000013_cvf1_affectations_admin_base.sql': '55cb780ca6e519db20a62a80afaf733edb4c2f96dca9015601d8c967cd955569',
+    '20261115000014_cvf1_promotion_admin.sql': '44748fc947219a47a7549d609c15b8e40e531f0978e070fd807a5aacecef6be8',
+};
+
 const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> = [
     ['20261103', 'lot 6', FROZEN_LOT6],
     ['20261105', 'lot 7', FROZEN_LOT7],
@@ -116,6 +155,8 @@ const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> 
     ['20261109', 'lot 9 bis', FROZEN_LOT9BIS],
     ['20261110', 'lot 9 ter', FROZEN_LOT9TER],
     ['20261111', 'lot 9 quater', FROZEN_LOT9QUATER],
+    ['20261112', 'lot 9 quinquies', FROZEN_LOT9QUINQUIES],
+    ['20261115', 'finition 1', FROZEN_FINITION1],
 ];
 
 function sha256Lf(name: string): string {
@@ -123,7 +164,7 @@ function sha256Lf(name: string): string {
     return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
-describe('Migrations gelées : 20261103… à 20261111… (lot 9 quinquies : 20261111… gelées, correction par 20261112…)', () => {
+describe('Migrations gelées : 20261103… à 20261115… (finition 2a : 20261112… et 20261115… gelées, correction par 20261116…)', () => {
     for (const [prefix, lot, frozen] of FROZEN) {
         test(`${prefix}… : la liste des fichiers du ${lot} reste exacte (gelée, toute correction passe par une migration 20261110…)`, () => {
             const present = fs.readdirSync(DIR).filter((f) => f.startsWith(prefix)).sort();
