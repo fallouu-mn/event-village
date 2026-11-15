@@ -84,7 +84,7 @@ function ContactButtons({ phone, message, name }: { phone: string | null; messag
 
 function ShiftAndEntries({ a, scope, onOpenTab }: { a: TeamAssignment; scope: TeamScope; onOpenTab?: TeamPanelProps['onOpenTab'] }) {
     // Cible de 44 px (règle des captures, DoD 7) : lien en ligne mais haut de 44 px
-    const linkClass = 'inline-flex min-h-11 items-center font-semibold text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    const linkClass = 'inline-flex min-h-11 items-center font-semibold text-brand-fg underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
     const open = (tab: 'caisse' | 'entrees') => (scope === 'event' && onOpenTab
         ? <button type="button" className={linkClass} onClick={() => onOpenTab(tab)}>{tab === 'caisse' ? 'Caisse ouverte' : entriesText(a)}</button>
         : <a className={linkClass} href={`/partner/events/${a.event_id}?tab=${tab}`}>{tab === 'caisse' ? 'Caisse ouverte' : entriesText(a)}</a>);
@@ -384,7 +384,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                         {FILTERS.map((f) => (
                             <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}
                                 className={cn('inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                    filter === f.id ? 'border-brand bg-brand text-brand-fg' : 'border-border bg-surface text-fg hover:bg-surface-sunken')}>
+                                    filter === f.id ? 'border-brand bg-brand text-on-brand' : 'border-border bg-surface text-fg hover:bg-surface-sunken')}>
                                 {f.label}
                             </button>
                         ))}
