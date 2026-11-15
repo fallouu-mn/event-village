@@ -289,7 +289,7 @@ export function SettingsDialog({ target, event, actsAsAdmin, onClose, onDone }: 
                 isOpen={confirmCashOff}
                 onClose={() => { if (!busy) setConfirmCashOff(false); }}
                 onConfirm={() => void save()}
-                title="Retirer le droit d’encaisser ?"
+                title="Retirer le droit d’encaisser ?"
                 message={`${firstNameOf(member)} ne pourra plus vendre au guichet. Sa caisse reste ouverte : elle doit être clôturée avec le régisseur. Aucun message ne part : prévenez-le vous-même.`}
                 confirmLabel="Retirer le droit"
                 cancelLabel="Revenir"

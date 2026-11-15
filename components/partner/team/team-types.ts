@@ -84,3 +84,9 @@ export interface TeamView {
 }
 
 export type TeamScope = 'all' | 'event';
+
+/** Fenêtre « Retirer de l’équipe » : « de votre événement » pour un seul, jamais « de vos 1 événement ». */
+export function removedFromText(first: string, n: number): string {
+    if (n <= 0) return `${first} est retiré de votre équipe`;
+    return n === 1 ? `${first} est retiré de votre événement` : `${first} est retiré de vos ${n} événements`;
+}

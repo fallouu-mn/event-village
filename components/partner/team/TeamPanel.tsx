@@ -31,7 +31,7 @@ import {
     displayPhone, entriesText, eventWhen, firstNameOf, invitationState, invitationWhatsappMessage, memberName, memberState, placeOf,
     telHref, whatsappHref, whatsappMessage,
 } from './team-format';
-import type { TeamAssignment, TeamInvitation, TeamMember, TeamScope, TeamView } from './team-types';
+import { removedFromText, type TeamAssignment, type TeamInvitation, type TeamMember, type TeamScope, type TeamView } from './team-types';
 import { eveningCashText, eveningEntriesText } from '@/lib/shifts/evening-format';
 
 type Filter = 'all' | 'ready' | 'pending' | 'nogate' | 'followup';
@@ -566,7 +566,7 @@ function pendingDialog(p: Pending | null, data: TeamView | undefined): { title: 
         case 'remove-event': {
             const name = memberName(p.member);
             return {
-                title: `Retirer ${name} de « ${p.slot.title} » ?`,
+                title: `Retirer ${name} de « ${p.slot.title} » ?`,
                 lines: [
                     'Son scanner est refusé pour cet événement dès votre confirmation, même sur un téléphone déjà ouvert. Il reçoit un SMS et un avis. Ses scans déjà faits restent dans les entrées.',
                     ...(p.slot.open_shift ? [`${name} a une caisse ouverte sur cet événement : fermez-la d’abord dans l’onglet Caisse, sinon le retrait sera refusé.`] : []),
@@ -579,9 +579,9 @@ function pendingDialog(p: Pending | null, data: TeamView | undefined): { title: 
             const name = memberName(p.member);
             const n = data.members.find((m) => m.user_id === p.member.user_id)?.assignments.length ?? p.member.assignments.length;
             return {
-                title: `Retirer ${name} de votre équipe ?`,
+                title: `Retirer ${name} de votre équipe ?`,
                 lines: [
-                    `${firstNameOf(p.member)} est retiré de vos ${n} événement${n > 1 ? 's' : ''} et reçoit un SMS et un avis. Son scanner est refusé pour vos événements dès votre confirmation, même sur un téléphone déjà ouvert.`,
+                    `${removedFromText(firstNameOf(p.member), n)} et reçoit un SMS et un avis. Son scanner est refusé pour vos événements dès votre confirmation, même sur un téléphone déjà ouvert.`,
                     p.member.other_organizers
                         ? 'Il continue de contrôler pour les autres organisateurs qui l’ont invité.'
                         : 'Son accès au scanner est fermé et il est déconnecté de l’application sur tous ses téléphones, espace client compris. Il pourra se reconnecter pour ses billets.',
@@ -593,28 +593,28 @@ function pendingDialog(p: Pending | null, data: TeamView | undefined): { title: 
         }
         case 'resend-activation':
             return {
-                title: `Renvoyer le code à ${memberName(p.member)} ?`,
+                title: `Renvoyer le code à ${memberName(p.member)} ?`,
                 lines: [`Un SMS part vers le ${displayPhone(p.member.phone)} avec un nouveau code valable 24 h ; l’ancien code ne marche plus. 3 envois au plus par jour vers ce numéro.`],
                 confirm: 'Renvoyer le SMS',
                 variant: 'default',
             };
         case 'resend-invitation':
             return {
-                title: `Renvoyer l’invitation à ${p.invitation.display_name} ?`,
+                title: `Renvoyer l’invitation à ${p.invitation.display_name} ?`,
                 lines: ['Un nouveau SMS part et l’invitation est prolongée de 72 h. 3 envois au plus par jour vers ce numéro.'],
                 confirm: 'Renvoyer l’invitation',
                 variant: 'default',
             };
         case 'cancel-invitation':
             return {
-                title: `Annuler l’invitation de ${p.invitation.display_name} ?`,
+                title: `Annuler l’invitation de ${p.invitation.display_name} ?`,
                 lines: ['Le lien du SMS ne mènera plus à rien : il verra « Aucune invitation en attente ». Aucun message ne lui est envoyé.'],
                 confirm: 'Annuler l’invitation',
                 variant: 'danger',
             };
         default:
             return {
-                title: 'Effacer cette invitation ?',
+                title: 'Effacer cette invitation ?',
                 lines: ['Elle disparaît de votre équipe. Vous pourrez toujours inviter ce numéro de nouveau.'],
                 confirm: 'Effacer',
                 variant: 'default',

@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { MIGRATED_DESIGN_FILES } from '../helpers/design-files';
+import * as teamTypes from '../../components/partner/team/team-types';
 
 const ROOT = process.cwd();
 const PANEL = 'components/partner/team/TeamPanel.tsx';
@@ -99,6 +100,22 @@ describe('Finition 1 — écran de l’équipe', () => {
             assert.deepEqual(src.match(/\btext-brand(?![-\w/])/g) ?? [], [], `${rel} : text-brand (couleur de fond) employé pour du texte`);
             const onBrand = (src.match(/[^'"`]*\bbg-brand(?![-\w/])[^'"`]*/g) ?? []).filter((c) => /\btext-brand-fg\b/.test(c));
             assert.deepEqual(onBrand, [], `${rel} : text-brand-fg sur bg-brand`);
+        }
+    });
+
+    test('fenêtre « Retirer de l’équipe » : « de votre événement », pas « de vos 1 événement » (captures du run 199)', () => {
+        const removedFrom = (teamTypes as unknown as { removedFromText?: (first: string, n: number) => string }).removedFromText;
+        assert.equal(typeof removedFrom, 'function', 'removedFromText absent de components/partner/team/team-types.ts');
+        assert.equal(removedFrom!('Ibrahima', 0), 'Ibrahima est retiré de votre équipe');
+        assert.equal(removedFrom!('Ibrahima', 1), 'Ibrahima est retiré de votre événement');
+        assert.equal(removedFrom!('Ibrahima', 3), 'Ibrahima est retiré de vos 3 événements');
+        assert.doesNotMatch(read('components/partner/team/TeamPanel.tsx'), /de vos \$\{n\} événement/);
+    });
+
+    test('« ? » final précédé d’une espace insécable : jamais seul en début de ligne (captures du run 199)', () => {
+        for (const rel of [...teamFiles().filter((f) => f.endsWith('.tsx')), PAGE, TAB]) {
+            const bad = read(rel).split('\n').filter((l) => / [?!](?=[`'"<])/.test(l)).map((l) => l.trim());
+            assert.deepEqual(bad, [], `${rel} : espace ordinaire avant « ? » ou « ! »`);
         }
     });
 
