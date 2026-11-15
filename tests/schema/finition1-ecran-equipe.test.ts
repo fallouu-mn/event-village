@@ -70,11 +70,14 @@ describe('Finition 1 — écran de l’équipe', () => {
         assert.ok(!/<IconButton[^>]*(Trash2|UserMinus)/.test(all), 'icône seule pour un retrait');
     });
 
-    test('cartes sur téléphone, tableau sur ordinateur', () => {
-        const all = teamFiles().map((f) => code(read(f))).join('\n');
-        assert.match(all, /md:hidden/, 'cartes masquées à partir de md');
-        assert.match(all, /hidden md:(block|table|grid)/, 'tableau à partir de md');
-        assert.match(all, /<table/, 'tableau sur ordinateur');
+    // Le système de design impose DataList pour un tableau (cartes sous md, tableau à partir de md :
+    // tests/parcours/design-systeme.test.ts) ; la liste passe par lui, avec une carte sur mesure (ajusté, signalé).
+    test('cartes sur téléphone, tableau sur ordinateur (DataList avec carte sur mesure)', () => {
+        const panel = code(read(PANEL));
+        assert.match(panel, /<DataList[\s\S]*renderCard=/, 'DataList avec une carte sur mesure');
+        const dataList = code(read('components/ui/DataList.tsx'));
+        assert.match(dataList, /md:hidden/, 'cartes masquées à partir de md');
+        assert.match(dataList, /hidden md:block/, 'tableau à partir de md');
     });
 
     test('aucun mot technique dans les textes de l’équipe', () => {

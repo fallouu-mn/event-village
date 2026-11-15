@@ -238,4 +238,7 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/admin/layout.tsx',
     'components/admin/AdminStepUpGate.tsx',
     'app/aide/page.tsx',
+    // Finition 1 (E-14) : composant commun de l'équipe, page /partner/team et onglet Équipe du pilotage
+    'components/partner/team/TeamPanel.tsx',
+    'components/partner/team/TeamDialogs.tsx',
 ];

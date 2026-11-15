@@ -811,7 +811,9 @@ describe('7.4 Écrans partenaire : chiffres servis par le serveur, états, conte
         const files = screenFiles(TEAM_PAGE);
         assert.deepEqual(figuresOfScreen(TEAM_PAGE), [], 'chiffres calculés dans le navigateur');
         const code = files.map(codeOf).join('\n');
-        for (const field of ['members_count', 'assignments_count', 'assignable_events']) assert.ok(new RegExp(`\\b${field}\\b`).test(code), `${field} servi par /api/partner/team/all non lu`);
+        // Finition 1 (E-13) : la page lit GET /api/partner/team (comptages `counts`, événements `assignable`) au lieu de
+        // /api/partner/team/all (members_count, assignments_count, assignable_events) ; champs recalés (modification signalée)
+        for (const field of ['counts', 'assignable']) assert.ok(new RegExp(`\\b${field}\\b`).test(code), `${field} servi par /api/partner/team non lu`);
         assert.ok(!files.some((f) => bindingsOf(f).some((b) => b.imported === 'isEventEligibleForController')), 'éligibilité des événements décidée dans le navigateur (isEventEligibleForController)');
     });
 

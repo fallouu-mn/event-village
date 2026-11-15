@@ -259,7 +259,7 @@ export default function PartnerEventPilotagePage() {
                     {activeTab === 'ventes' && <SalesTab eventId={eventId} signal={signal} />}
                     {activeTab === 'invitations' && <InvitationsTab eventId={eventId} eventStatus={ov.status} signal={signal} />}
                     {activeTab === 'entrees' && <EntriesTab eventId={eventId} signal={signal} />}
-                    {activeTab === 'equipe' && <TeamTab eventId={eventId} eventStatus={ov.status} signal={signal} />}
+                    {activeTab === 'equipe' && <TeamTab eventId={eventId} eventStatus={ov.status} signal={signal} onOpenTab={(tab) => setActiveTab(tab)} />}
                     {activeTab === 'caisse' && <CashTab eventId={eventId} signal={signal} />}
                     {activeTab === 'cloture' && <ClosingTab eventId={eventId} signal={signal} />}
                 </TabPanel>

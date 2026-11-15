@@ -548,7 +548,7 @@ $$;
 -- ----------------------------------------------------------------------------
 -- p = { partner_id, event_id? } (organisateur résolu et droits vérifiés par la route). Portée « page » : tous les
 -- événements de l'organisateur ; portée « événement » : cet événement seulement (EVENT_NOT_FOUND s'il n'est pas à lui).
--- → { ok, partner_id, event | null, members[], invitations[], events[], counts }. Chaque cellule de l'écran vient
+-- → { ok, partner_id, partner_name, event | null, members[], invitations[], events[], counts }. Chaque cellule de l'écran vient
 -- d'ici : état et dates, porte (zone) ou point d'entrée, « Peut changer de porte », espèces, caisse ouverte, entrées et
 -- dernier scan par événement ; invitations des 30 derniers jours non effacées (en attente toujours) ; événements et
 -- leurs portes ; comptages des bandeaux.
@@ -713,7 +713,10 @@ BEGIN
                'to_follow_up', (SELECT count(*) FROM jsonb_array_elements(v_invitations) i WHERE i->>'state' IN ('EXPIRED', 'DECLINED')))
       INTO v_counts;
 
-    RETURN jsonb_build_object('ok', true, 'partner_id', v_partner, 'event', v_event_json, 'members', v_members,
+    RETURN jsonb_build_object('ok', true, 'partner_id', v_partner,
+                              'partner_name', (SELECT COALESCE(NULLIF(btrim(pa.commercial_name), ''), pa.company_name)
+                                                 FROM public.partners pa WHERE pa.id = v_partner),
+                              'event', v_event_json, 'members', v_members,
                               'invitations', v_invitations, 'events', v_events, 'counts', v_counts);
 END;
 $$;
