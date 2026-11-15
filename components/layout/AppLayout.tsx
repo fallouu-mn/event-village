@@ -117,7 +117,29 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const isSuperAdmin = roles.includes('SUPERADMIN');
   const isAdmin = isSuperAdmin || roles.includes('ADMIN');
   const isPartner = roles.includes('PARTENAIRE');
-  const isController = roles.includes('CONTROLEUR') || isAdmin;
+  // Finition 1 (complément 11) : pour un contrôleur (sans rôle partenaire ni admin), le menu « Scanner » suit ses
+  // événements (contrôle ouvert ou ouvrant dans les 24 h, servi par GET /api/controller/status), pas le rôle du compte ;
+  // sinon il voit l'application d'un client normal. Partenaires et admins gardent leurs entrées.
+  const controllerOnly = roles.includes('CONTROLEUR') && !isPartner && !isAdmin;
+  const [scannerOpen, setScannerOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!controllerOnly) return;
+    let cancelled = false;
+    fetch('/api/controller/status', { cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = (await res.json()) as { scanner?: boolean };
+        if (!cancelled) setScannerOpen(body.scanner === true);
+      })
+      .catch((err: unknown) => {
+        // État illisible : on garde l'entrée « Scanner » (le scanner refuse lui-même hors de la plage du contrôle)
+        console.warn('[AppLayout] état du scanner illisible :', err instanceof Error ? err.message : String(err));
+        if (!cancelled) setScannerOpen(true);
+      });
+    return () => { cancelled = true; };
+  }, [controllerOnly]);
+  const showScanner = !controllerOnly || scannerOpen === true;
+  const isController = (roles.includes('CONTROLEUR') && showScanner) || isAdmin;
   const isAmbassador = mounted && (profile?.referral_status === 'AMBASSADEUR');
 
   const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
@@ -332,7 +354,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     ? partnerMobileItems
     : canShowRoleNav && isAdminRoute && isAdmin
     ? adminMobileItems.filter((i) => i.href !== '/admin/audit' || isSuperAdmin)
-    : roles.includes('CONTROLEUR')
+    : roles.includes('CONTROLEUR') && showScanner
     ? controllerMobileItems
     : navItems;
 
@@ -505,7 +527,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
             {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px
                 avec ses trois boutons de 44 px. */}
-            {roles.includes('CONTROLEUR') && (
+            {roles.includes('CONTROLEUR') && showScanner && (
               <div className="hidden sm:block">
                 <LinkButton href="/controller/scanner" size="sm" leftIcon={<QrCode size={16} />}>
                   Scanner

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { User, LogOut, ArrowLeft } from 'lucide-react';
@@ -9,6 +9,8 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconButton } from '@/components/ui/IconButton';
 import { Logo } from '@/components/ui/Logo';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { formatDate, formatTime } from '@/lib/format';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { detachPushSubscription } from '@/lib/push/client';
 import { clearAllScanMemory } from '@/lib/scan/scan-memory';
@@ -27,6 +29,27 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
     const pathname = usePathname();
     const onScanner = pathname?.startsWith('/controller/scanner') ?? false;
     const [showLogout, setShowLogout] = useState(false);
+    // Finition 1 (complément 11) : le scanner n'apparaît que si la personne a au moins un événement dont le contrôle est
+    // ouvert ou ouvre dans les 24 h (GET /api/controller/status) ; sinon, un message et l'espace client. Pendant la
+    // lecture, l'écran reste celui du scanner (qui refuse lui-même hors de la plage du contrôle).
+    const roles = profile?.roles ?? [];
+    const controllerOnly = roles.includes('CONTROLEUR') && !roles.includes('PARTENAIRE') && !roles.includes('ADMIN') && !roles.includes('SUPERADMIN');
+    const [scanner, setScanner] = useState<{ open: boolean; next: string | null } | null>(null);
+    useEffect(() => {
+        if (!onScanner || !controllerOnly) return;
+        let cancelled = false;
+        fetch('/api/controller/status', { cache: 'no-store' })
+            .then(async (res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const body = (await res.json()) as { scanner?: boolean; next_opens_at?: string | null };
+                if (!cancelled) setScanner({ open: body.scanner === true, next: body.next_opens_at ?? null });
+            })
+            .catch((err: unknown) => {
+                console.warn('[controller] état du scanner illisible :', err instanceof Error ? err.message : String(err));
+            });
+        return () => { cancelled = true; };
+    }, [onScanner, controllerOnly]);
+    const scannerClosed = onScanner && controllerOnly && scanner !== null && !scanner.open;
 
     const handleLogout = async () => {
         // Lot 7 (A10) : mémoire du contrôle (événement, mode, scan en attente) effacée à la déconnexion
@@ -85,7 +108,16 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
             </header>
 
             <main className={onScanner ? 'mx-auto max-w-2xl px-4 py-3' : 'mx-auto max-w-2xl px-4 py-6'}>
-                {children}
+                {scannerClosed ? (
+                    <EmptyState
+                        title="Aucun contrôle ouvert pour vous"
+                        description={scanner?.next
+                            ? `Votre prochain contrôle ouvre le ${formatDate(scanner.next)} à ${formatTime(scanner.next)}. Le scanner apparaîtra 24 h avant.`
+                            : 'Le scanner apparaît quand un organisateur vous confie un événement, 24 h avant l’ouverture du contrôle.'}
+                        actionLabel="Mes billets"
+                        actionHref="/tickets"
+                    />
+                ) : children}
             </main>
 
             <ConfirmDialog
