@@ -249,4 +249,8 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/partner/pilotage/InfosTab.tsx',
     // Finition 2b (A, E-22) : couleur au contrôle en pastilles nommées (groupe radio), à la création et en modification
     'components/events/ScanColorPicker.tsx',
+    // Finition 2b (B, E-23) : étape « Contrôle à l'entrée » (création, modification) et liste des zones partagée
+    'components/events/ZoneListEditor.tsx',
+    'components/events/EntryControlStep.tsx',
+    'components/events/EntryControlEditor.tsx',
 ];

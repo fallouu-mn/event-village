@@ -8,6 +8,7 @@
  */
 import React, { useRef } from 'react';
 import { AlertTriangle, Check } from 'lucide-react';
+import { Select } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
 import { SCAN_CATEGORY_COLORS, SCAN_CATEGORY_COLOR_LABELS, isScanCategoryColor, type ScanCategoryColor } from '@/lib/scan/scan-result';
 
@@ -114,5 +115,30 @@ export function ScanColorPicker({ id, label, value, onChange, others = [], hint,
             {hint && <p id={hintId} className="text-sm leading-snug text-fg-muted">{hint}</p>}
             {error && <p id={errorId} className="text-sm font-medium text-danger-fg">{error}</p>}
         </div>
+    );
+}
+
+/**
+ * Finition 2b (B) — couleur au contrôle en liste déroulante compacte (étape « Contrôle à l'entrée ») : la pastille à côté
+ * du libellé, le nom de la couleur dans la liste.
+ */
+export function ScanColorSelect({ id, label, value, onChange, disabled = false }: {
+    id: string;
+    label: string;
+    value: string;
+    onChange: (color: ScanCategoryColor) => void;
+    disabled?: boolean;
+}) {
+    return (
+        <Select
+            id={id}
+            label={label}
+            value={isScanCategoryColor(value) ? value : ''}
+            placeholder={isScanCategoryColor(value) ? undefined : 'Choisir une couleur'}
+            onChange={(e) => { if (isScanCategoryColor(e.target.value)) onChange(e.target.value); }}
+            options={SCAN_CATEGORY_COLORS.map((c) => ({ value: c, label: SCAN_CATEGORY_COLOR_LABELS[c] }))}
+            aside={<ScanColorDot color={value} className="h-5 w-5" />}
+            disabled={disabled}
+        />
     );
 }

@@ -523,6 +523,8 @@ interface EventTicketingManagerProps {
     categoryLocks?: Record<string, boolean> | null;
     /** Finition 2b (A, E-26) : prix minimum d'un billet payant lu par le serveur (null : pas encore lu). */
     minPaidPrice?: number | null;
+    /** Finition 2b (B) : couleurs enregistrées ailleurs (étape « Contrôle à l'entrée ») : identifiant → couleur. */
+    externalColors?: Record<string, string> | null;
 }
 
 /** Libellé d'une catégorie non enregistrée dans la fenêtre « Quitter sans enregistrer ? ». */
@@ -534,7 +536,7 @@ function dirtyLabel(d: CategoryDraft): string {
 
 const NETWORK_MESSAGE = 'Connexion impossible : la catégorie n’a pas été enregistrée. Vérifiez votre réseau, puis réessayez.';
 
-export function EventTicketingManager({ eventId, initialCategories, onDirtyChange, onSaved, categoryLocks = null, minPaidPrice = null }: EventTicketingManagerProps) {
+export function EventTicketingManager({ eventId, initialCategories, onDirtyChange, onSaved, categoryLocks = null, minPaidPrice = null, externalColors = null }: EventTicketingManagerProps) {
     const [items, setItems] = useState<ManagedCategory[]>(() => initialCategories.map((row) => {
         const draft = categoryDraftFromRow(row);
         return { draft, base: { ...draft }, errors: {}, message: null, suggestDeactivate: false, busy: false };
@@ -566,6 +568,17 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
             return { ...it, draft: { ...it.draft, has_sales: has }, base: it.base ? { ...it.base, has_sales: has } : null };
         }));
     }, [categoryLocks]);
+
+    // Finition 2b (B) : couleurs enregistrées à l'étape « Contrôle à l'entrée » : reprises ici (valeur enregistrée)
+    useEffect(() => {
+        if (!externalColors) return;
+        setItems((list) => list.map((it) => {
+            const id = it.draft.id;
+            if (!id || !(id in externalColors)) return it;
+            const color = externalColors[id];
+            return { ...it, draft: { ...it.draft, scan_color: color }, base: it.base ? { ...it.base, scan_color: color } : null };
+        }));
+    }, [externalColors]);
 
     const update = (key: string, change: (item: ManagedCategory) => ManagedCategory) => {
         setItems((list) => list.map((item) => (item.draft.key === key ? change(item) : item)));

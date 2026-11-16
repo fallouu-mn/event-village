@@ -25,7 +25,10 @@ import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapP
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { formatInteger, formatTime } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
-import { proposeScanColor } from '@/lib/scan/scan-result';
+import { proposeScanColor, type ScanCategoryColor } from '@/lib/scan/scan-result';
+import { EntryControlStep } from './EntryControlStep';
+import { EntryControlEditor } from './EntryControlEditor';
+import { MAX_ZONES, type ZoneDraft } from './ZoneListEditor';
 import { isBelowMinimum, priceMinimumMessage } from '@/lib/events/price-minimum';
 import {
     EVENT_LIMITS,
@@ -81,14 +84,71 @@ const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => 
     loading: () => <div className="h-64 w-full rounded-2xl bg-surface-sunken motion-safe:animate-pulse" aria-hidden="true" />,
 });
 
-type StepId = 'infos' | 'programme' | 'acces' | 'billetterie';
+type StepId = 'infos' | 'programme' | 'acces' | 'billetterie' | 'controle';
 
 const STEPS: Array<{ id: StepId; label: string; heading: string }> = [
     { id: 'infos', label: 'Informations', heading: 'Informations générales' },
     { id: 'programme', label: 'Programme', heading: 'Programme' },
     { id: 'acces', label: 'Accès', heading: 'Accès et informations pratiques' },
     { id: 'billetterie', label: 'Billets', heading: 'Billetterie' },
+    // Finition 2b (B, E-23) : portes, zones et couleurs, dès la création
+    { id: 'controle', label: 'Contrôle', heading: 'Contrôle à l’entrée (facultatif)' },
 ];
+
+/** Finition 2b (B) : préfixe des champs de l'étape « Contrôle à l'entrée » (zones, portes, couleurs). */
+const ZONES_PREFIX = 'ev-zones';
+
+/**
+ * Finition 2b (B) : zones de la création → corps de la création, chaque zone désignant ses catégories par leur ordre
+ * (category_refs) ; une catégorie retirée n'est plus citée.
+ */
+function zonesPayload(zones: ZoneDraft[], categories: CategoryDraft[]): Row[] {
+    return zones.map((z, i) => ({
+        name: z.name,
+        kind: z.kind,
+        position: i,
+        category_refs: z.categoryKeys.map((k) => categories.findIndex((c) => c.key === k)).filter((n) => n >= 0),
+        gates: z.gates.map((g) => ({ name: g.name })),
+    }));
+}
+
+/**
+ * Finition 2b (B) : règles des zones dites dès « Suivant », avec les textes de la base (event_zones_form_refusal et
+ * event_zones_write) ; le serveur reste seul juge à l'enregistrement.
+ */
+function zoneRuleErrors(zones: ZoneDraft[] | null, categories: CategoryDraft[]): Record<string, string> {
+    if (!zones || zones.length === 0) return {};
+    const out: Record<string, string> = {};
+    if (zones.length > MAX_ZONES) out.zones = '20 zones au plus par événement.';
+    else if (zones.reduce((n, z) => n + z.gates.length, 0) > 50) out.zones = '50 portes au plus par événement.';
+    const zoneNames = new Set<string>();
+    const gateNames = new Set<string>();
+    zones.forEach((z, i) => {
+        const name = z.name.trim();
+        if (name.length < 1 || name.length > 40) out[`zones.${i}.name`] = 'Donnez à chaque zone un nom de 1 à 40 caractères.';
+        else if (zoneNames.has(name.toLowerCase())) out[`zones.${i}.name`] = `Deux zones portent le nom ${name} : choisissez des noms différents.`;
+        else zoneNames.add(name.toLowerCase());
+        if (z.gates.length === 0) out[`zones.${i}.gates`] = `La zone ${name || `n° ${i + 1}`} n’a aucune porte : ajoutez-en au moins une.`;
+        z.gates.forEach((g, j) => {
+            const gate = g.name.trim();
+            if (gate.length < 1 || gate.length > 40) out[`zones.${i}.gates.${j}.name`] = 'Donnez à chaque porte un nom de 1 à 40 caractères.';
+            else if (gateNames.has(gate.toLowerCase())) out[`zones.${i}.gates.${j}.name`] = `Deux portes portent le nom ${gate} : choisissez des noms différents.`;
+            else gateNames.add(gate.toLowerCase());
+        });
+        if (!z.categoryKeys.some((k) => categories.some((c) => c.key === k))) {
+            out[`zones.${i}.category_ids`] = `La zone ${name || `n° ${i + 1}`} n’admet aucune catégorie : cochez-en au moins une.`;
+        }
+    });
+    if (!out.zones) {
+        if (!zones.some((z) => z.kind === 'ENTREE')) {
+            out.zones = 'Il faut au moins une zone de type Entrée : c’est là que les billets sont compostés.';
+        } else {
+            const outside = categories.find((c) => !zones.some((z) => z.kind === 'ENTREE' && z.categoryKeys.includes(c.key)));
+            if (outside) out.zones = `La catégorie ${outside.name.trim() || 'sans nom'} n’entre par aucune zone de type Entrée : cochez-la dans une zone d’entrée.`;
+        }
+    }
+    return out;
+}
 
 const STEP1_FIELDS = new Set(['title', 'category', 'description', 'image_url', 'start_date', 'start_time', 'end_date', 'end_time', 'location', 'city', 'capacity']);
 
@@ -428,6 +488,7 @@ function stepOfKey(key: string): StepId | null {
     if (key === 'program' || key.startsWith('program.')) return 'programme';
     if (key === 'latitude' || key === 'longitude' || key.startsWith('practical_info')) return 'acces';
     if (key === 'ticket_categories' || key.startsWith('billet.')) return 'billetterie';
+    if (key === 'zones' || key.startsWith('zones.')) return 'controle';
     return null;
 }
 
@@ -438,6 +499,14 @@ function domIdOfKey(key: string): string | null {
     if (parts[0] === 'program' && parts.length === 3) return `ev-program-${parts[1]}-${parts[2]}`;
     if (parts[0] === 'billet' && parts.length === 3) return categoryFieldId(parts[1], parts[2] as CategoryField);
     if (key === 'latitude' || key === 'longitude') return `${MAP_PREFIX}-${key}`;
+    // Finition 2b (B) : champs de l'étape « Contrôle à l'entrée » (identifiants de ZoneListEditor)
+    if (parts[0] === 'zones') {
+        if (parts.length === 1) return `${ZONES_PREFIX}-choix`;
+        const zone = `${ZONES_PREFIX}-z${parts[1]}`;
+        if (parts[2] === 'category_ids' || parts[2] === 'category_refs') return `${zone}-c0`;
+        if (parts[2] === 'gates') return `${zone}-g${parts.length >= 5 ? parts[3] : '0'}`;
+        return `${zone}-name`;
+    }
     if (stepOfKey(key)) return `ev-${key.replace(/\./g, '-')}`;
     return null;
 }
@@ -451,6 +520,14 @@ function labelOfKey(key: string, values: EventValues, categories: CategoryDraft[
     if (parts[0] === 'billet' && parts.length === 3) {
         const index = categories.findIndex((c) => c.key === parts[1]);
         return `Catégorie ${index + 1} : ${CATEGORY_FIELD_LABELS[parts[2] as CategoryField] ?? 'catégorie'}`;
+    }
+    // Finition 2b (B) : erreurs de l'étape « Contrôle à l'entrée »
+    if (parts[0] === 'zones') {
+        if (parts.length === 1) return 'Portes et zones';
+        const n = Number(parts[1]) + 1;
+        if (parts[2] === 'category_ids' || parts[2] === 'category_refs') return `Zone ${n} : catégories admises`;
+        if (parts[2] === 'gates') return parts.length >= 5 ? `Zone ${n}, porte ${Number(parts[3]) + 1} : nom` : `Zone ${n} : portes`;
+        return `Zone ${n} : nom`;
     }
     return FIELD_LABELS[key] ?? 'Formulaire';
 }
@@ -537,6 +614,15 @@ export function EventForm(props: EventFormProps) {
     const [leaving, setLeaving] = useState(false);
     /** Finition 2b (A, E-26) : prix minimum d'un billet payant, lu par le serveur (null : pas encore lu, ou illisible). */
     const [minPaidPrice, setMinPaidPrice] = useState<number | null>(null);
+    /** Finition 2b (B) : portes et zones de la création (null : une seule entrée). */
+    const [zones, setZones] = useState<ZoneDraft[] | null>(null);
+    const zoneSeq = useRef(0);
+    const newZoneKey = useCallback(() => {
+        zoneSeq.current += 1;
+        return `zn${zoneSeq.current}`;
+    }, []);
+    /** Finition 2b (B) : couleurs enregistrées à l'étape « Contrôle à l'entrée » (modification), reprises par l'étape Billets. */
+    const [savedColors, setSavedColors] = useState<Record<string, string> | null>(null);
     const headingRef = useRef<HTMLHeadingElement>(null);
     const summaryRef = useRef<HTMLDivElement>(null);
     const stepMoved = useRef(false);
@@ -593,6 +679,12 @@ export function EventForm(props: EventFormProps) {
         void loadEvent();
     }, [loadEvent]);
 
+    // Finition 2b (B) : « Modifier les portes et les couleurs » (page Équipe) ouvre l'étape « Contrôle à l'entrée »
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (new URLSearchParams(window.location.search).get('etape') === 'controle') setStep('controle');
+    }, []);
+
     // Finition 2b (A, E-26) : minimum lu par le serveur (GET /api/partner/ticketing-rules) ; illisible : l'aide d'avant,
     // le serveur refuse de toute façon sous la bonne catégorie
     useEffect(() => {
@@ -640,11 +732,15 @@ export function EventForm(props: EventFormProps) {
     // Sortie de page avec des modifications non enregistrées (garde : fermeture, rechargement, liens internes)
     const current = useMemo(() => eventPayload(values), [values]);
     const fieldsDirty = isEdit ? Object.keys(diffPayload(current.payload, baseline)).length > 0 : JSON.stringify(current.payload) !== JSON.stringify(baseline);
-    const dirty = !leaving && (fieldsDirty || (isEdit ? ticketingDirty.length > 0 : categories.length > 0));
+    const dirty = !leaving && (fieldsDirty || (isEdit ? ticketingDirty.length > 0 : categories.length > 0 || zones !== null));
     const describeUnsaved = (): string[] => {
         const list: string[] = fieldsDirty ? ['Informations de l’événement'] : [];
         if (isEdit) return [...list, ...ticketingDirty];
-        return [...list, ...categories.map((c) => (c.name.trim() ? `Nouvelle catégorie « ${c.name.trim()} »` : 'Nouvelle catégorie'))];
+        return [
+            ...list,
+            ...categories.map((c) => (c.name.trim() ? `Nouvelle catégorie « ${c.name.trim()} »` : 'Nouvelle catégorie')),
+            ...(zones !== null ? ['Portes et zones'] : []),
+        ];
     };
     const unsaved = useUnsavedGuard(dirty, describeUnsaved);
 
@@ -706,7 +802,12 @@ export function EventForm(props: EventFormProps) {
         const { payload, programKeys } = eventPayload(values);
         const maps: KeyMaps = { programKeys, categoryKeys: categories.map((c) => c.key) };
         if (!isEdit) {
-            const body: Row = { ...payload, ticket_categories: categories.map(categoryCreateBody) };
+            // Finition 2b (B) : portes et zones envoyées avec la création (absentes : une seule entrée)
+            const body: Row = {
+                ...payload,
+                ticket_categories: categories.map(categoryCreateBody),
+                ...(zones && zones.length > 0 ? { zones: zonesPayload(zones, categories) } : {}),
+            };
             const partnerId = partner?.id ?? '';
             const parsed = parseWithFrenchErrors(createEventSchema({ partnerId }), body);
             const map = parsed.success ? {} : issuesToErrors(fieldErrors(parsed.error), maps, { ignoreImageOrigin: partnerId === '' });
@@ -737,8 +838,9 @@ export function EventForm(props: EventFormProps) {
         const index = STEPS.findIndex((s) => s.id === step);
         if (!isEdit) {
             const { map } = validate();
-            // Finition 2b (A, E-26) : le prix minimum est contrôlé dès « Suivant »
-            const own = Object.fromEntries(Object.entries({ ...map, ...belowMinimumErrors() }).filter(([k]) => stepOfKey(k) === step));
+            // Finition 2b (A, E-26) : le prix minimum est contrôlé dès « Suivant » ; (B) les règles des zones aussi
+            const own = Object.fromEntries(Object.entries({ ...map, ...belowMinimumErrors(), ...zoneRuleErrors(zones, categories) })
+                .filter(([k]) => stepOfKey(k) === step));
             if (Object.keys(own).length > 0) {
                 showErrors(own, null);
                 return;
@@ -761,7 +863,7 @@ export function EventForm(props: EventFormProps) {
         setSaveResult(null);
         setConflict(false);
         const { map: schemaMap, body, maps } = validate();
-        const map = { ...schemaMap, ...belowMinimumErrors() };
+        const map = { ...schemaMap, ...belowMinimumErrors(), ...(isEdit ? {} : zoneRuleErrors(zones, categories)) };
         if (isEdit && Object.keys(body).length === 0) {
             setErrors({});
             setFormError(null);
@@ -953,7 +1055,7 @@ export function EventForm(props: EventFormProps) {
                 <p className="mb-2 text-sm font-medium text-fg-muted">
                     Étape {stepIndex + 1} sur {STEPS.length} : {currentStep.heading}
                 </p>
-                <ol className="grid grid-cols-4 gap-2">
+                <ol className="grid grid-cols-5 gap-2">
                     {STEPS.map((s, i) => {
                         const active = s.id === step;
                         const hasError = stepsWithErrors.has(s.id);
@@ -1239,6 +1341,7 @@ export function EventForm(props: EventFormProps) {
                             initialCategories={eventCategories}
                             categoryLocks={categoryLocks}
                             minPaidPrice={minPaidPrice}
+                            externalColors={savedColors}
                             onDirtyChange={setTicketingDirty}
                             onSaved={() => void refreshLocks()}
                         />
@@ -1265,7 +1368,11 @@ export function EventForm(props: EventFormProps) {
                                     <IconButton
                                         aria-label={`Retirer la catégorie ${index + 1}`}
                                         variant="danger"
-                                        onClick={() => setCategories((list) => list.filter((c) => c.key !== cat.key))}
+                                        onClick={() => {
+                                            setCategories((list) => list.filter((c) => c.key !== cat.key));
+                                            // Finition 2b (B) : une catégorie retirée n'est plus admise par aucune zone
+                                            setZones((list) => list && list.map((z) => ({ ...z, categoryKeys: z.categoryKeys.filter((k) => k !== cat.key) })));
+                                        }}
                                     >
                                         <Trash2 size={18} />
                                     </IconButton>
@@ -1289,6 +1396,9 @@ export function EventForm(props: EventFormProps) {
                                         // Finition 2b (A) : couleur proposée, distincte de celles des autres catégories
                                         const draft = { ...newCategoryDraft(), scan_color: proposeScanColor(categories.map((c) => c.scan_color)) };
                                         setCategories((list) => [...list, draft]);
+                                        // Finition 2b (B) : comme en base après la création (trg_ticket_categories_zone_admit), une
+                                        // catégorie ajoutée est admise par toutes les zones d'entrée
+                                        setZones((list) => list && list.map((z) => (z.kind === 'ENTREE' ? { ...z, categoryKeys: [...z.categoryKeys, draft.key] } : z)));
                                         window.requestAnimationFrame(() => document.getElementById(categoryFieldId(draft.key, 'name'))?.focus());
                                     }}
                                 >
@@ -1297,6 +1407,25 @@ export function EventForm(props: EventFormProps) {
                             </div>
                         )}
                     </div>
+                )}
+
+                {step === 'controle' && !isEdit && (
+                    <EntryControlStep
+                        prefix={ZONES_PREFIX}
+                        categories={categories.map((c) => ({ key: c.key, name: c.name, scan_color: c.scan_color, is_active: c.is_active }))}
+                        zones={zones}
+                        onZonesChange={(next) => {
+                            setZones(next);
+                            setFormInfo(null);
+                        }}
+                        onColorChange={(key: string, color: ScanCategoryColor) => setCategories((list) => list.map((c) => (c.key === key ? { ...c, scan_color: color } : c)))}
+                        newKey={newZoneKey}
+                        errors={errors}
+                    />
+                )}
+
+                {step === 'controle' && isEdit && eventId && (
+                    <EntryControlEditor eventId={eventId} onColorsSaved={setSavedColors} />
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">

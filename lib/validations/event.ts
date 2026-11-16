@@ -390,6 +390,22 @@ function checkSaleWindow(
 
 // ── Événement : création ───────────────────────────────────────────────────
 
+/**
+ * Finition 2b (B, E-23) : portes et zones réglées dès la création. Chaque zone désigne ses catégories par leur ordre dans
+ * ticket_categories (category_refs : 0 pour la première). Comme pour PUT …/zones, le schéma ne borne que la forme et la
+ * taille ; les règles (20 zones, 50 portes, noms de 1 à 40 caractères, doublons, zone sans porte ou sans catégorie, au
+ * moins une zone d'entrée, toute catégorie admise par une zone d'entrée, catégorie inconnue) sont celles de la base
+ * (event_zones_form_refusal et event_zones_write), avec leur code et leur texte.
+ */
+const zoneGateCreateObject = z.object({ name: z.string().max(60) }).strict();
+const zoneCreateObject = z.object({
+    name: z.string().max(60),
+    kind: z.enum(['ENTREE', 'CONTROLE']),
+    position: z.number().int().min(0).max(99).nullable().optional(),
+    category_refs: z.array(z.number().int().min(0).max(99)).max(100),
+    gates: z.array(zoneGateCreateObject).max(100),
+}).strict();
+
 export interface EventSchemaContext {
     /** Partenaire propriétaire (dossier des affiches). */
     partnerId: string;
@@ -476,6 +492,8 @@ export function createEventSchema(ctx: EventSchemaContext) {
         ticket_categories: z.array(ticketCategoryCreateObject)
             .max(EVENT_LIMITS.categoriesMax, `Un événement compte au plus ${EVENT_LIMITS.categoriesMax} catégories de billets.`)
             .default([]),
+        // Finition 2b (B) : facultatif ; absent ou vide : une seule entrée (aucune zone)
+        zones: z.array(zoneCreateObject).max(100).optional(),
     }).strict().superRefine((v, c) => {
         const now = (ctx.now ?? new Date()).getTime();
         checkPosition(c, v);

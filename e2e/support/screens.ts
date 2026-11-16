@@ -694,16 +694,30 @@ const ENTRIES_ZONES_STUB = {
     computed_at: '2026-11-07T21:00:00.000Z',
 };
 
-/** Onglet Équipe de l'événement à zones de la graine v4 (organisateur ; C.1.4, ZonesEditor au-dessus des contrôleurs). */
+/** Onglet Équipe de l'événement à zones de la graine v4 (organisateur). */
 function zonesTeamPath(i: DemoIds | null): string {
     return `/partner/events/${seedEvent(i, 'zones').id}?tab=equipe`;
 }
 
-/** Éditeur des zones chargé avec les deux zones et les trois portes de la graine v4 (D.3.2). */
+/**
+ * Finition 2b (B, E-23) : étape « Contrôle à l'entrée » du formulaire de modification de l'événement à zones de la graine
+ * v4 (cible de « Modifier les portes et les couleurs ») ; l'éditeur des zones a quitté l'onglet Équipe.
+ */
+function zonesStepPath(i: DemoIds | null): string {
+    return `/partner/events/${seedEvent(i, 'zones').id}/edit?etape=controle`;
+}
+
+/** Onglet Équipe ouvert (?tab=equipe). */
+async function teamTabReady(page: Page): Promise<void> {
+    await expect(page.getByRole('tab', { name: /^équipe/i })).toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
+}
+
+/** Éditeur des zones chargé avec les deux zones et les trois portes de la graine v4 (D.3.2), à l'étape du formulaire. */
 async function zonesEditorReady(page: Page): Promise<Locator> {
-    await expect(page.getByRole('tab', { name: /^équipe/i })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('heading', { name: /^contrôle à l.entrée \(facultatif\)$/i }), 'étape « Contrôle à l’entrée » ouverte')
+        .toBeVisible({ timeout: 30_000 });
     const heading = page.getByRole('heading', { name: /^zones et portes$/i });
-    await expect(heading, 'section « Zones et portes » de l’onglet Équipe (C.1.4)').toBeVisible({ timeout: 30_000 });
+    await expect(heading, 'section « Zones et portes » de l’étape « Contrôle à l’entrée »').toBeVisible({ timeout: 30_000 });
     const zoneNames = page.getByLabel(/^nom de la zone/i);
     await expect(zoneNames, 'deux zones de la graine v4').toHaveCount(2);
     await expect(zoneNames.nth(0)).toHaveValue('Entrée générale');
@@ -1640,14 +1654,14 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'partenaire-zones', titre: 'Pilotage — Équipe : zones et portes de l’événement (éditeur)', role: 'organisateur', needsIds: true,
-        path: zonesTeamPath,
+        id: 'partenaire-zones', titre: 'Modifier l’événement — Contrôle à l’entrée : zones et portes (éditeur)', role: 'organisateur', needsIds: true,
+        path: zonesStepPath,
         ready: async ({ page }) => { await revealCenter(await zonesEditorReady(page)); },
     },
     {
         id: 'partenaire-equipe-portes', titre: 'Pilotage — Équipe : porte d’un contrôleur et droit de changer de porte', role: 'organisateur', needsIds: true,
         path: zonesTeamPath,
-        ready: async ({ page }) => { await zonesEditorReady(page); },
+        ready: async ({ page }) => { await teamTabReady(page); },
         // Finition 1 (E-14) : la porte se règle dans la fenêtre « Modifier » (un seul « Enregistrer ») ; la ligne en donne le
         // résumé « Porte : Porte Nord · Entrée générale » (capture recalée, signalée au rapport)
         actions: async ({ page }) => {

@@ -22,6 +22,8 @@ const FINITION2B_MIGRATIONS = [
     '20261119000003_f2b_couleur_auto.sql',
     // A, E-26 : prix minimum refusé sous la bonne catégorie (normalisation commune)
     '20261119000004_f2b_prix_minimum.sql',
+    // B, E-23 : portes et zones dès la création (fonctions communes extraites de event_zones_save)
+    '20261119000005_f2b_zones_creation.sql',
 ] as const;
 
 after(async () => {

@@ -106,6 +106,10 @@ const REFUSAL_HTTP: Record<string, number> = {
     // Finition 2b (A, E-26) : prix payant sous le minimum, refusé par la normalisation sous le chemin de la catégorie
     // (même statut que le refus du déclencheur, priceBelowMinimum)
     PRICE_BELOW_MINIMUM: 400,
+    // Finition 2b (B) : refus des zones à la création (mêmes statuts que PUT …/zones ; les autres codes des zones : 409)
+    ZONE_NAME_INVALID: 400,
+    TOO_MANY_ZONES: 400,
+    TOO_MANY_GATES: 400,
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -309,7 +313,7 @@ export class EventService {
         }
         const parsed = parseWithFrenchErrors(createEventSchema({ partnerId: partner.id }), input);
         if (!parsed.success) throw invalid(parsed.error);
-        const { ticket_categories: categories, ...event } = parsed.data;
+        const { ticket_categories: categories, zones, ...event } = parsed.data;
         // Finition 2a (1b) : affiche vérifiée pour une fiche VALIDE ; une autre fiche est refusée par event_create, avec
         // son propre texte (profil non validé, suspendu), qui garde ainsi la priorité
         if (partner.status === 'VALIDE') await assertPosterStored((event as { image_url?: string | null }).image_url ?? null);
@@ -317,6 +321,8 @@ export class EventService {
             actor_id: partnerUserId,
             event,
             ticket_categories: categories,
+            // Finition 2b (B) : portes et zones de la création (catégories désignées par leur ordre), même transaction
+            ...(zones && zones.length > 0 ? { zones } : {}),
         } }));
         return result.event;
     }

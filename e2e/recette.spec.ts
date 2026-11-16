@@ -1236,7 +1236,8 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
         await partner.goto(editUrl);
         await openTicketing(partner);
         const vipSection = categorySection(partner, 'VIP');
-        await vipSection.getByLabel('Couleur au contrôle').selectOption({ label: 'Or' });
+        // Finition 2b (A, E-22) : couleur en pastilles nommées (groupe de boutons radio) au lieu d'une liste (recalé, signalé)
+        await vipSection.getByRole('radio', { name: /^or$/i }).click();
         await vipSection.getByLabel('Consigne d’entrée').fill(GRANDE_SOIREE_VIP_INSTRUCTION);
         await expectRoute(partner, 'PATCH', CATEGORY_ROUTE, () => vipSection.getByRole('button', { name: /^enregistrer la catégorie$/i }).click(), 200, 'couleur et consigne de VIP');
         await expect(vipSection.getByText('Catégorie enregistrée.', { exact: true }), 'VIP enregistrée').toBeVisible();
@@ -1244,8 +1245,10 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
         if (vipErr || !vipRow) throw new Error(`[e2e] catégorie VIP de la grande soirée : ${vipErr?.message ?? 'introuvable'}`);
         expect(vipRow, 'couleur et consigne de VIP en base').toEqual({ scan_color: 'OR', entry_instruction: GRANDE_SOIREE_VIP_INSTRUCTION });
 
-        await partner.goto(`/partner/events/${eventId}?tab=equipe`);
-        await expect(partner.getByRole('tab', { name: /^équipe/i }), 'onglet Équipe ouvert par ?tab=equipe').toHaveAttribute('aria-selected', 'true');
+        // Finition 2b (B, E-23) : zones et portes à l'étape « Contrôle à l'entrée » du formulaire (avant : sous l'équipe de
+        // l'onglet Équipe ; recalé, signalé) ; l'éditeur et l'enregistrement sont les mêmes
+        await partner.goto(`${editUrl}?etape=controle`);
+        await expect(partner.getByRole('heading', { name: /^contrôle à l.entrée \(facultatif\)$/i }), 'étape « Contrôle à l’entrée » ouverte par ?etape=controle').toBeVisible();
         const zonesRegion = partner.getByRole('region', { name: 'Zones et portes', exact: true });
         await zonesRegion.getByRole('button', { name: /^configurer des zones$/i }).click();
         const zoneItems = zonesRegion.getByRole('list', { name: 'Zones de l’événement' }).locator(':scope > li');
@@ -1269,6 +1272,9 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
         expect(zones.map((z) => `${z.name} ${z.kind} ${z.category_ids.length} ${z.gates.map((g) => g.name).join(' + ')}`), 'configuration enregistrée')
             .toEqual(['Entrée générale ENTREE 3 Porte Nord + Porte Sud', 'Carré VIP CONTROLE 2 Accès carré']);
 
+        // Équipe : onglet Équipe du pilotage
+        await partner.goto(`/partner/events/${eventId}?tab=equipe`);
+        await expect(partner.getByRole('tab', { name: /^équipe/i }), 'onglet Équipe ouvert par ?tab=equipe').toHaveAttribute('aria-selected', 'true');
         // fumee-controleur, déjà de l'équipe de PARTNER_A : affecté directement
         // Finition 1 (E-14, E-18) : invitations dans la fenêtre « Inviter un contrôleur » (étapes recalées, signalées)
         const inviteDialog = partner.getByRole('dialog', { name: /^inviter un contrôleur$/i });
