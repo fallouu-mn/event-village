@@ -48,6 +48,9 @@ const PASSWORD_CONFIRMATION_REQUIRED = 'PASSWORD_CONFIRMATION_REQUIRED';
 type CanResend = 'NOW' | 'AFTER_CHECK' | false;
 type Action = 'resend' | 'mark-paid' | 'not-sent';
 
+/** Conseil de « Marquer versé » (contrat 5.1, chaîne simple lue telle quelle par tests/parcours/admin-remboursements). */
+const MARK_PAID_CHECK = 'Vérifiez auprès du support SamirPay que ce versement est bien parti, puis indiquez sa référence. Il sera confirmé sans nouvel envoi.';
+
 interface ResumeItem {
   id: string;
   kind: string;
@@ -397,7 +400,7 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
       ? 'À faire seulement si le support SamirPay confirme que ce versement n’est jamais parti. Il passera « Non versé » : un remboursement pourra ensuite être renvoyé, par un nouvel envoi ; un retrait sera annulé et son montant rendu au bénéficiaire. Rien ne repart automatiquement.'
       : isMarkPaid
       // Finition 3b (E-32) : le passage à « versé » met tout de suite en file l'avis « versé » au bénéficiaire (SMS compris)
-      ? `Un SMS part tout de suite à ${decision.item.beneficiary ?? 'son bénéficiaire'} : ne le faites qu’après avoir vérifié le versement. Vérifiez auprès du support SamirPay que ce versement est bien parti, puis indiquez sa référence. Il sera confirmé sans nouvel envoi. ${decision.item.kind === 'WITHDRAWAL' ? noticesText('cashout_mark_paid_withdrawal') : noticesText('cashout_mark_paid_refund')}`
+      ? `Un SMS part tout de suite à ${decision.item.beneficiary ?? 'son bénéficiaire'} : ne le faites qu’après avoir vérifié le versement. ${MARK_PAID_CHECK} ${decision.item.kind === 'WITHDRAWAL' ? noticesText('cashout_mark_paid_withdrawal') : noticesText('cashout_mark_paid_refund')}`
       : decision.item.can_resend === 'AFTER_CHECK'
         ? 'Le statut SamirPay est relu d’abord : le versement ne repart que s’il a échoué.'
         : 'Le versement repart vers ce bénéficiaire dès votre confirmation.';
