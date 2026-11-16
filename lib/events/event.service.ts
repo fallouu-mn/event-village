@@ -46,6 +46,14 @@ export interface EventUpdateResult {
     place_notice_at: string | null;
     /** T4 : avis de lieu retenu (un avis de changement de lieu est déjà parti il y a moins d'une heure). */
     place_notice_held: boolean;
+    /**
+     * Finition 2b (D, E-27, E-28) : heure réelle de l'avis par SMS (lieu ou date : fin de la fenêtre de 10 minutes, de la
+     * retenue d'une heure, ou maintenant), null sans SMS ; tout de suite ; retenu par la cadence ; nombre de SMS.
+     */
+    sms_notice_at: string | null;
+    sms_notice_immediate: boolean;
+    sms_notice_held: boolean;
+    sms_recipients: number;
 }
 
 /**
@@ -428,6 +436,7 @@ export class EventService {
 
         const result = await editionResult<{
             ok: true; event: DbRecord; notified_holders: number; sms_queued: number; place_notice_at?: string | null; place_notice_held?: boolean;
+            sms_notice_at?: string | null; sms_notice_immediate?: boolean; sms_notice_held?: boolean; sms_recipients?: number | null;
         }>('event_update', rpcWithRetry('event_update', { p: {
             event_id: eventId,
             actor_id: actorId,
@@ -449,6 +458,10 @@ export class EventService {
             sms_queued: Number(result.sms_queued ?? 0),
             place_notice_at: typeof result.place_notice_at === 'string' ? result.place_notice_at : null,
             place_notice_held: result.place_notice_held === true,
+            sms_notice_at: typeof result.sms_notice_at === 'string' ? result.sms_notice_at : null,
+            sms_notice_immediate: result.sms_notice_immediate === true,
+            sms_notice_held: result.sms_notice_held === true,
+            sms_recipients: Number(result.sms_recipients ?? 0),
         };
     }
 

@@ -24,6 +24,8 @@ const FINITION2B_MIGRATIONS = [
     '20261119000004_f2b_prix_minimum.sql',
     // B, E-23 : portes et zones dès la création (fonctions communes extraites de event_zones_save)
     '20261119000005_f2b_zones_creation.sql',
+    // D, E-28 : cadence des avis de lieu ET de date (une heure glissante, regroupés ; dernière heure : 2 SMS au plus)
+    '20261119000006_f2b_cadence_avis.sql',
 ] as const;
 
 after(async () => {
