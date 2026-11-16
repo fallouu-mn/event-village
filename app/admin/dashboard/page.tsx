@@ -39,9 +39,10 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { PartnerStatusDialog, type PartnerStatusResult, type PartnerStatusTarget } from '@/components/admin/PartnerStatusDialog';
+import { MoneyWaiting } from '@/components/admin/finance/MoneyWaiting';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { toastMessages } from '@/lib/messages/toast-messages';
-import { formatDateTime, formatFcfa, formatInteger, formatTime, toDakarDateTimeLocal } from '@/lib/format';
+import { formatDateTime, formatFcfaPrecise, formatInteger, formatTime, toDakarDateTimeLocal } from '@/lib/format';
 
 /**
  * Lot 5 (tâche 5.13, contrat O5 ; système de design, contrat Q) — tableau de bord de l'administration.
@@ -95,8 +96,10 @@ interface PartnerItem {
 }
 
 interface AdminKPIs {
-  totalVolume: number;
-  netRevenue: number;
+  /** Finition 3a : « Gagné par Event Village » et encaissé du mois en cours à Dakar (même calcul que la page Finance). */
+  earnedMonth: number;
+  encashedMonth: number;
+  month: { label: string; range: string };
   validatedPartners: number;
   pendingPartners: number;
   rejectedPartners: number;
@@ -512,6 +515,9 @@ export default function AdminDashboardPage() {
         </StatusBanner>
       )}
 
+      {/* Finition 3a (E-07) : l'argent que des personnes attendent passe avant tout le reste (droits sur l'argent seulement) */}
+      {(hasPermission('refunds.manage') || hasPermission('payments.read')) && <MoneyWaiting />}
+
       <section aria-labelledby="a-traiter" className="flex flex-col gap-3">
         <h2 id="a-traiter" className="text-lg font-bold tracking-tight text-fg">À traiter</h2>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -556,20 +562,21 @@ export default function AdminDashboardPage() {
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Finition 3a : un seul revenu, « Gagné par Event Village », le même que sur la page Finance (mois en cours) */}
             <KpiCard
-              label="Volume des transactions"
-              value={kpis ? formatFcfa(kpis.totalVolume) : '—'}
-              hint="Paiements en ligne encaissés"
-              icon={<TrendingUp size={18} />}
-              tone="info"
+              label="Gagné par Event Village"
+              value={kpis ? formatFcfaPrecise(kpis.earnedMonth) : '—'}
+              hint={kpis ? `${kpis.month.label}, ${kpis.month.range}. Détail sur la page Finance.` : undefined}
+              icon={<DollarSign size={18} />}
+              tone="brand"
               loading={!kpis}
             />
             <KpiCard
-              label="Revenu net de la plateforme"
-              value={kpis ? formatFcfa(kpis.netRevenue) : '—'}
-              hint="Commissions et frais Event Village"
-              icon={<DollarSign size={18} />}
-              tone="brand"
+              label="Encaissé ce mois-ci"
+              value={kpis ? formatFcfaPrecise(kpis.encashedMonth) : '—'}
+              hint="Paiements en ligne, frais de service compris."
+              icon={<TrendingUp size={18} />}
+              tone="info"
               loading={!kpis}
             />
             <KpiCard

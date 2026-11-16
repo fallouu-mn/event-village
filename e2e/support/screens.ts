@@ -404,6 +404,83 @@ const CASHOUTS_STUBS: StubResponse[] = [
     { url: REFUNDS_URL, method: 'GET', status: 200, body: CASHOUTS_TO_RESUME },
 ];
 
+// ── Finition 3a : argent de l'administration (page Finance, accueil) ─────────
+// Réponses imposées aux montants cohérents entre eux (voir le rapport de la finition 3a) : les captures montrent chaque
+// état sans dépendre des données du seed ; les règles de calcul sont prouvées par les suites f3a-* (base locale).
+const F3A_SUMMARY_URL = /\/api\/admin\/finance\/summary(\?.*)?$/;
+const F3A_PAYMENTS_URL = /\/api\/admin\/finance\/payments(\?.*)?$/;
+const F3A_DEBTS_URL = /\/api\/admin\/finance\/debts(\?.*)?$/;
+const F3A_WAITING_URL = /\/api\/admin\/finance\/waiting(\?.*)?$/;
+const F3A_PERIOD = {
+    key: 'month', from: '2026-11-01T00:00:00.000Z', to: '2026-11-17T00:00:00.000Z', firstDay: '2026-11-01', lastDay: '2026-11-16',
+    label: 'Ce mois-ci', range: 'du 1er au 16 novembre 2026',
+};
+const F3A_SUMMARY = {
+    computed_at: '2026-11-16T14:32:00.000Z',
+    earned: {
+        from: F3A_PERIOD.from, to: F3A_PERIOD.to, total: 182437.5, payments: 412, volume: 9845000, service_fees: 468810,
+        aggregator_fees: 147675, net_revenue: 321135, refunded_net: 41200, duplicate_withheld: 157.5, service_net: 280092.5,
+        commissions: 9870.25, commissions_unrecovered: 0, withdrawal_fees: 38500, withdrawals_paid: 37, samirpay_fees: 126284.75,
+        cashouts_with_fees: 52, rebilled: 0,
+    },
+    owed_partners: {
+        total: 6412850, ledger: 6108850, available: 4233600, pending: 1875250, frozen: 98000, withdrawable_now: 4135600,
+        withdrawals_in_progress: 304000, withdrawals_in_progress_count: 3, accounts: 28,
+    },
+    owed_referrers: {
+        total: 21340.5, ledger: 21340.5, available: 15200.5, pending: 6140, frozen: 0, withdrawable_now: 15200,
+        withdrawals_in_progress: 0, withdrawals_in_progress_count: 0, accounts: 41,
+    },
+    debts: { total: 12450, count: 3, partners_total: 11900, partners_count: 2, referrers_total: 550, referrers_count: 1 },
+    refunds_to_pay: { total: 63000, count: 6, failed: 1, uncertain: 1 },
+    reserve: { mode: 'AUTO_3_DAYS', amount: 1320000, auto_amount: 1320000, fixed_amount: 0, window_hours: 72 },
+};
+/** Solde 9 250 000 − dû 6 412 850 − parrains 21 340,50 − remboursements 63 000 − réserve 1 320 000 = 1 432 809,50. */
+const F3A_WITHDRAWABLE = { visible: true, balance: { solde: 9250000, readAt: '2026-11-16T14:32:00.000Z', cached: false }, amount: 1432809.5, shortfall: 0, simulated: false };
+/** Solde 7 500 000 : il manque 317 190,50 pour couvrir tout ce qui est dû et la réserve. */
+const F3A_WITHDRAWABLE_ZERO = { visible: true, balance: { solde: 7500000, readAt: '2026-11-16T14:32:00.000Z', cached: true }, amount: 0, shortfall: 317190.5, simulated: false };
+const F3A_WITHDRAWABLE_UNREADABLE = { visible: true, balance: null, amount: null, shortfall: null, simulated: false };
+const f3aSummary = (withdrawable: unknown): StubResponse => ({ url: F3A_SUMMARY_URL, method: 'GET', status: 200, body: { period: F3A_PERIOD, summary: F3A_SUMMARY, withdrawable } });
+const F3A_DEBTS: StubResponse = {
+    url: F3A_DEBTS_URL, method: 'GET', status: 200,
+    body: {
+        page: 1, pageSize: 20, total: 3, amount: 12450, pages: 1,
+        items: [
+            { id: 'f3a-d1', who: 'Sahel Événements', whoKind: 'Partenaire', reason: 'Remboursement avancé par Event Village', eventTitle: 'Concert au bord du Fleuve', amount: 10500, remaining: 10500, since: '2026-11-03T18:20:00.000Z' },
+            { id: 'f3a-d2', who: 'Teranga Prod', whoKind: 'Partenaire', reason: 'Frais SamirPay d’un remboursement', eventTitle: 'Soirée Gorée', amount: 1600, remaining: 1400, since: '2026-11-09T10:05:00.000Z' },
+            { id: 'f3a-d3', who: 'Awa N.', whoKind: 'Parrain', reason: 'Commission de parrainage reprise après un remboursement', eventTitle: 'Soirée Gorée', amount: 550, remaining: 550, since: '2026-11-12T08:40:00.000Z' },
+        ],
+    },
+};
+const F3A_PAYMENTS: StubResponse = {
+    url: F3A_PAYMENTS_URL, method: 'GET', status: 200,
+    body: {
+        status: 'ALL', page: 1, pageSize: 20, total: 412, pages: 21,
+        items: [
+            { id: 'f3a-p1', transactionReference: 'SP-2611-8F3A21', target: 'Billets', eventTitle: 'Concert au bord du Fleuve', encashedAt: '2026-11-16T13:58:00.000Z', amount: 21000, serviceFee: 1000, evNet: 650.75, status: 'SUCCESS', discrepancy: 0 },
+            { id: 'f3a-p2', transactionReference: 'SP-2611-7C1B09', target: 'Billets', eventTitle: 'Soirée Gorée', encashedAt: '2026-11-16T11:12:00.000Z', amount: 21000, serviceFee: 1000, evNet: 325.37, status: 'PARTIAL', discrepancy: 0 },
+            { id: 'f3a-p3', transactionReference: 'SP-2611-55E0D4', target: 'Billets', eventTitle: 'Soirée Gorée', encashedAt: '2026-11-15T21:47:00.000Z', amount: 10500, serviceFee: 500, evNet: 0, status: 'REFUND_PENDING', discrepancy: 0 },
+            { id: 'f3a-p4', transactionReference: 'SP-2611-4A9F70', target: 'Billets', eventTitle: 'Festival Jazz sur le Fleuve', encashedAt: '2026-11-15T19:03:00.000Z', amount: 10500, serviceFee: 500, evNet: -157.5, status: 'REFUNDED', discrepancy: 0 },
+            { id: 'f3a-p5', transactionReference: 'EV-TX-2611-0007', target: 'Abonnement', eventTitle: null, encashedAt: '2026-11-14T09:30:00.000Z', amount: 15000, serviceFee: 0, evNet: 14775, status: 'SUCCESS', discrepancy: 1 },
+        ],
+    },
+};
+const F3A_WAITING: StubResponse = {
+    url: F3A_WAITING_URL, method: 'GET', status: 200,
+    body: { lines: {
+        toResume: { visible: true, unavailable: false, count: 2, amount: 17850 },
+        refundsToPay: { visible: true, unavailable: false, count: 6, amount: 63000 },
+        debts: { visible: true, unavailable: false, count: 3, amount: 12450 },
+    } },
+};
+
+/** Chiffres en place (plus aucun squelette « Chargement : … »). */
+async function f3aFiguresReady(page: Page): Promise<void> {
+    await expectHeading(page, /^finance$/i);
+    await expect(page.getByRole('heading', { name: /^gagné par event village$/i })).toBeVisible();
+    await expect(page.locator('[aria-busy="true"][aria-label^="Chargement :"]')).toHaveCount(0);
+}
+
 /**
  * Lot 9 bis : « Versements à reprendre » de /admin/finance (RefundsToRetry, contrat 5.1) chargé : titre exact, ligne
  * « Retrait » (retraits compris, R10), conseil exact d'un versement incertain sans identifiant (B2), puis un bouton
@@ -1079,6 +1156,95 @@ export const SCREENS: readonly Screen[] = [
         ready: async ({ page }) => {
             const { resend } = await cashoutsReady(page);
             await revealCenter(resend.first());
+        },
+    },
+    // ── Finition 3a : argent de l'administration (sous fumee-superadmin ; réponses imposées cohérentes) ──
+    {
+        id: 'admin-finance-chiffres', titre: 'Administration — finance : période, « Gagné par Event Village », « Dû aux partenaires » (haut de page)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => { await f3aFiguresReady(page); },
+    },
+    {
+        id: 'admin-finance-retirable', titre: 'Administration — finance : « Retirable par Event Village » et « Créances » (solde lu à 14:32)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => {
+            await f3aFiguresReady(page);
+            await revealCenter(page.getByRole('heading', { name: /^retirable par event village$/i }));
+        },
+    },
+    {
+        id: 'admin-finance-rien-a-retirer', titre: 'Administration — finance : rien n’est retirable (compte insuffisant, manque affiché)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE_ZERO), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => {
+            await f3aFiguresReady(page);
+            const text = page.getByText('Rien n’est retirable pour le moment : l’argent du compte est dû aux partenaires et aux clients.').first();
+            await expect(text).toBeVisible();
+            await revealCenter(text);
+        },
+    },
+    {
+        id: 'admin-finance-solde-illisible', titre: 'Administration — finance : solde SamirPay illisible, aucun chiffre retirable',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE_UNREADABLE), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => {
+            await f3aFiguresReady(page);
+            const text = page.getByText('Solde SamirPay illisible pour le moment').first();
+            await expect(text).toBeVisible();
+            await revealCenter(text);
+        },
+    },
+    {
+        id: 'admin-finance-detail-gagne', titre: 'Administration — finance : détail de ce qui a été gagné (chaque ligne et sa date)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => {
+            await f3aFiguresReady(page);
+            const h = page.getByRole('heading', { name: /^détail de ce qui a été gagné$/i });
+            await expect(h).toBeVisible();
+            await h.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+        },
+    },
+    {
+        id: 'admin-finance-calcul-retirable', titre: 'Administration — finance : calcul de ce qui est retirable (solde, dû, réserve de prudence)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => {
+            await f3aFiguresReady(page);
+            const h = page.getByRole('heading', { name: /^calcul de ce qui est retirable$/i });
+            await expect(h).toBeVisible();
+            await h.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+        },
+    },
+    {
+        id: 'admin-finance-creances', titre: 'Administration — finance : créances (qui, pourquoi, depuis, reste dû)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance#creances',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => {
+            await f3aFiguresReady(page);
+            await expect(page.getByText('Sahel Événements').filter({ visible: true }).first()).toBeVisible();
+            await page.getByRole('heading', { name: /^créances$/i, level: 2 }).last().evaluate((el) => el.scrollIntoView({ block: 'start' }));
+        },
+    },
+    {
+        id: 'admin-finance-paiements', titre: 'Administration — finance : paiements encaissés (statuts en français, écart signalé, pages)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
+        stubResponses: [f3aSummary(F3A_WITHDRAWABLE), F3A_DEBTS, F3A_PAYMENTS],
+        ready: async ({ page }) => {
+            await f3aFiguresReady(page);
+            await expect(page.getByText('Remboursement en cours').filter({ visible: true }).first()).toBeVisible();
+            await page.getByRole('heading', { name: /^paiements encaissés$/i }).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+        },
+    },
+    {
+        id: 'admin-accueil-argent-qui-attend', titre: 'Administration — accueil : « Argent qui attend » en tête (liens directs vers la page Finance)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/dashboard',
+        stubResponses: [F3A_WAITING],
+        ready: async ({ page }) => {
+            await expect(page.getByRole('heading', { name: /^argent qui attend$/i })).toBeVisible();
+            await expect(page.getByRole('link', { name: /^traiter les versements/i })).toBeVisible();
         },
     },
     // ── Contrôle d'accès ────────────────────────────────────────────────────

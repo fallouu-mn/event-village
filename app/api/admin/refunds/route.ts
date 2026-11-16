@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
+import { UNCONFIRMED_PAYMENT_WINDOW_HOURS } from '@/lib/finance/admin-summary';
 import { isSimulationRun } from '@/lib/integrations/simulation';
 import { cashoutBlockLabel } from '@/lib/payments/cashout.service';
 import { maskPhone } from '@/lib/payments/payer-phone';
@@ -9,8 +10,11 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 
 const MAX_ITEMS = 100;
-/** Lot 9 quater (C4) : durée de signalement d'un paiement échoué sans identifiant SamirPay. */
-const UNCONFIRMED_WINDOW_HOURS = 48;
+/**
+ * Lot 9 quater (C4) : durée de signalement d'un paiement échoué sans identifiant SamirPay. Finition 3a : constante unique
+ * (lib/finance/admin-summary.ts), partagée avec le bloc « Argent qui attend » de l'accueil (même liste, même compte).
+ */
+const UNCONFIRMED_WINDOW_HOURS = UNCONFIRMED_PAYMENT_WINDOW_HOURS;
 
 type ResumeState = 'ECHOUE' | 'INCERTAIN' | 'BLOQUE' | 'EN_ATTENTE' | 'ENVOYE_NON_CONFIRME';
 

@@ -60,6 +60,12 @@ const FREE_REMINDER_SMS_LABELS: Record<string, string> = {
   SAME_AS_PAID: 'Comme un billet payant',
 };
 
+/** Finition 3a : réserve de prudence (finance.safety_reserve_mode). */
+const SAFETY_RESERVE_LABELS: Record<string, string> = {
+  AUTO_3_DAYS: 'Automatique : encaissements des 3 derniers jours',
+  FIXED: 'Montant fixe',
+};
+
 /** Libellés et aides d'affichage ; les bornes sont contrôlées par le serveur (finance_setting_set). */
 const META: Record<string, SettingMeta> = {
   'finance.service_fee_rate': { label: 'Frais de service', help: 'Payés par l’acheteur, arrondis au franc CFA supérieur par billet. De 0 à 50 %.', kind: 'percent', unit: '%' },
@@ -74,6 +80,9 @@ const META: Record<string, SettingMeta> = {
   'finance.withdrawal_min_amount': { label: 'Montant minimum de retrait', help: 'Montant entier en francs CFA.', kind: 'integer', unit: 'F CFA' },
   'finance.withdrawal_bank_enabled': { label: 'Retraits par virement bancaire', help: 'Tant qu’il est désactivé, seuls Wave et Orange Money sont proposés.', kind: 'boolean' },
   'finance.referral_availability_days': { label: 'Délai de validation des commissions', help: 'Jours avant qu’une commission de parrainage devienne disponible. De 7 à 14.', kind: 'integer', unit: 'jours' },
+  // Finition 3a : réserve de prudence déduite de « Retirable par Event Village » (page Finance)
+  'finance.safety_reserve_mode': { label: 'Réserve de prudence', help: 'En attendant la confirmation du délai de SamirPay, une réserve est gardée sur le compte. Elle est déduite de « Retirable par Event Village ». Automatique : les encaissements des 3 derniers jours. Montant fixe : le montant du réglage suivant.', kind: 'choice', options: SAFETY_RESERVE_LABELS },
+  'finance.safety_reserve_amount': { label: 'Montant fixe de la réserve de prudence', help: 'Lu seulement quand la réserve est « Montant fixe ». Entier de 0 à 1 000 000 000 F CFA.', kind: 'integer', unit: 'F CFA' },
   'access.scan_window_before_hours': { label: 'Ouverture du contrôle avant le début', help: 'Heures avant le début de l’événement à partir desquelles les billets peuvent être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },
   'access.scan_window_after_hours': { label: 'Fermeture du contrôle après la fin', help: 'Heures après la fin de l’événement pendant lesquelles les billets peuvent encore être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },
   'access.manual_entry_scope': { label: 'Saisie manuelle d’un numéro de billet', help: 'Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.', kind: 'choice', options: MANUAL_ENTRY_SCOPE_LABELS },

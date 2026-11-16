@@ -184,6 +184,17 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     // 8.3 A3 et A4 : remboursements à reprendre (E3), remboursement d'un billet au pilotage (E0)
     'components/admin/RefundsToRetry.tsx',
     'components/partner/pilotage/TicketRefundPanel.tsx',
+    // Finition 3a (argent de l'administration) : page Finance, ses chiffres et leur détail, bloc « Argent qui attend »
+    // de l'accueil (insérés ici, et non en fin de liste, pour ne pas chevaucher la finition 2a à la fusion)
+    'app/admin/finance/page.tsx',
+    'components/admin/finance/MoneyFigure.tsx',
+    'components/admin/finance/PeriodPicker.tsx',
+    'components/admin/finance/EarnedDetail.tsx',
+    'components/admin/finance/OwedDetail.tsx',
+    'components/admin/finance/DebtsList.tsx',
+    'components/admin/finance/RefundsToPayList.tsx',
+    'components/admin/finance/WithdrawableDetail.tsx',
+    'components/admin/finance/MoneyWaiting.tsx',
     // 8.1 : page de développement du faux SamirPay (E5), hors du build de production
     'app/dev/paiements/page.dev.tsx',
     'app/dev/paiements/[id]/page.dev.tsx',
