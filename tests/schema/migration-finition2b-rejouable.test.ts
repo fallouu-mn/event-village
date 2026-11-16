@@ -41,6 +41,16 @@ describe('Finition 2b — migrations 20261119… rejouables (transaction annulé
         const present = fs.readdirSync(DIR).filter((f) => f.startsWith('20261119')).sort();
         assert.deepEqual(present, [...FINITION2B_MIGRATIONS], `migrations 20261119… présentes : ${present.join(', ') || 'aucune'}`);
     });
+    // Ajout (point 3) : la finition 3a (migrations 20261117…) est fusionnée dans main avant la 2b ; les migrations de la
+    // 2b, non appliquées, passent après toutes les autres du dépôt (sinon : renuméroter)
+    test('les migrations 20261119… passent après toutes les autres du dépôt (finition 3a, 20261117…, comprise)', () => {
+        const all = fs.readdirSync(DIR).filter((f) => /^\d{14}_.+\.sql$/.test(f)).sort();
+        const others = all.filter((f) => !f.startsWith('20261119'));
+        const last = others[others.length - 1];
+        console.log(`[F2B-MIG] dernière migration hors finition 2b : ${last} ; première de la finition 2b : ${FINITION2B_MIGRATIONS[0]}`);
+        assert.ok(others.some((f) => f.startsWith('20261117')), 'précondition : migrations 20261117… de la finition 3a présentes (main fusionnée)');
+        assert.ok(last < FINITION2B_MIGRATIONS[0], `${last} passe après ${FINITION2B_MIGRATIONS[0]} : renuméroter les migrations de la finition 2b`);
+    });
     for (const name of FINITION2B_MIGRATIONS) {
         test(`${name} : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur`, async () => {
             const file = path.join(DIR, name);
