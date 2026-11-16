@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
-import { PAGE_SIZE, parsePage } from '@/lib/finance/admin-lists';
+import { PAGE_SIZE, parsePage, paymentLine } from '@/lib/finance/admin-lists';
 import { ENCASHED_PAYMENT_STATUSES } from '@/lib/finance/payment-labels';
 import { resolvePeriod } from '@/lib/finance/period';
 import { getServiceRoleClient } from '@/lib/supabase/server';
@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/admin/finance/payments?period=…[&from&to]&status=ALL|SUCCESS|PARTIAL|REFUND_PENDING|REFUNDED&page=N
  * Finition 3a (E-30, E-31) — liste des paiements encaissés de la période, paginée par le serveur (20 par page, du plus
  * récent au plus ancien), permission payments.read. Le filtre de statut ne touche que cette liste. Le statut est rendu
- * en code : l'écran l'affiche par son libellé (lib/finance/payment-labels.ts).
+ * en code : l'écran l'affiche par son libellé (lib/finance/payment-labels.ts). Ce qui revient à Event Village sur chaque
+ * paiement est calculé ici (lib/finance/admin-lists.ts, paymentLine), jamais dans le navigateur.
  */
 export async function GET(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'payments.read' });
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
         const total = Number(r.total);
         if (!Number.isInteger(total) || !Array.isArray(r.items)) throw new Error(`finance_admin_payments : réponse inattendue ${JSON.stringify(data).slice(0, 200)}`);
         return NextResponse.json({
-            period: resolved.period, status, page, pageSize: PAGE_SIZE, total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), items: r.items,
+            period: resolved.period, status, page, pageSize: PAGE_SIZE, total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), items: (r.items as Array<Record<string, unknown>>).map(paymentLine),
         }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
         return apiFailure('GET /api/admin/finance/payments', err, { message: 'Liste des paiements momentanément indisponible.', code: 'FINANCE_PAYMENTS_UNAVAILABLE' });

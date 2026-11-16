@@ -134,6 +134,49 @@ export function owedLine(r: Row, kind: 'ORGANISATEUR' | 'PARRAINAGE'): OwedLine 
     };
 }
 
+// ── Paiements encaissés ────────────────────────────────────────────────────
+
+export const PAYMENT_TARGET_LABELS: Readonly<Record<string, string>> = {
+    TICKET: 'Billets',
+    ORDER: 'Commande',
+    HALL_RESERVATION: 'Salle',
+    TABLE_RESERVATION: 'Table',
+    SUBSCRIPTION: 'Abonnement',
+    OTHER: 'Autre',
+};
+
+export interface PaymentLine {
+    id: string;
+    /** Référence de la transaction (SamirPay, sinon interne), affichée telle quelle. */
+    transactionReference: string;
+    target: string;
+    eventTitle: string | null;
+    encashedAt: string;
+    amount: number;
+    serviceFee: number;
+    /** Ce qui revient à Event Village sur ce paiement, calculé par le serveur : net − part annulée + retenue − commissions. */
+    evNet: number;
+    status: string;
+    /** Écart de contrôle (total ≠ part du partenaire + frais, ou frais ≠ agrégateur + net) ; 0 si rien. */
+    discrepancy: number;
+}
+
+export function paymentLine(r: Row): PaymentLine {
+    const cents = (v: unknown) => Math.round(amount(v) * 100);
+    return {
+        id: String(r.id),
+        transactionReference: str(r.reference) ?? String(r.id),
+        target: PAYMENT_TARGET_LABELS[String(r.target)] ?? 'Autre',
+        eventTitle: str(r.event_title),
+        encashedAt: String(r.encashed_at),
+        amount: amount(r.amount),
+        serviceFee: amount(r.service_fee),
+        evNet: (cents(r.net_revenue) - cents(r.refunded_net) + cents(r.duplicate_withheld) - cents(r.commissions)) / 100,
+        status: String(r.status),
+        discrepancy: amount(r.discrepancy),
+    };
+}
+
 // ── Pages ──────────────────────────────────────────────────────────────────
 
 export const PAGE_SIZE = 20;
