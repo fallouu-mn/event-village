@@ -1,0 +1,503 @@
+TAP version 13
+# Subtest: 1a — /api/admin/metrics ne renvoie aucune ligne du journal d’audit
+    # Subtest: ADMIN avec statistics.read : réponse 200 sans aucune ligne du journal (rouge : recentAuditLogs)
+    not ok 1 - ADMIN avec statistics.read : réponse 200 sans aucune ligne du journal (rouge : recentAuditLogs)
+      ---
+      duration_ms: 87.742104
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:5267'
+      failureType: 'testCodeFailure'
+      error: |-
+        champ recentAuditLogs encore servi à un ADMIN : [{"id":"519ddfcd-fd11-43b4-a06d-a477ddcd6b1a","action":"INSERT","object_type":"user_roles","user_role":"SYSTEM","created_at":"2026-11-16T15:03:00.474966+00:00","user_id":null},{"id":"01e13cdd-9941-43f2-963f-55b8c40cc427","action":"UPDATE","object_type":"users","user_role":"SYSTEM","created_at":"2026
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:126:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: SUPERADMIN : même réponse, aucune ligne du journal (le journal se lit sur /api/admin/audit)
+    not ok 2 - SUPERADMIN : même réponse, aucune ligne du journal (le journal se lit sur /api/admin/audit)
+      ---
+      duration_ms: 33.189151
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:6068'
+      failureType: 'testCodeFailure'
+      error: |-
+        champ recentAuditLogs encore servi
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:136:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: statique : app/api/admin/metrics/route.ts ne lit plus la table audit_logs
+    not ok 3 - statique : app/api/admin/metrics/route.ts ne lit plus la table audit_logs
+      ---
+      duration_ms: 0.492239
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:6745'
+      failureType: 'testCodeFailure'
+      error: 'app/api/admin/metrics/route.ts lit encore audit_logs'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        import { NextRequest, NextResponse } from 'next/server';
+        import { apiFailure } from '@/lib/api/public-error';
+        import { getServiceRoleClient } from '@/lib/supabase/server';
+        import { verifyAdminAuth } from '@/lib/admin/admin-auth';
+        
+        export const dynamic = 'force-dynamic';
+        
+        const PAGE_SIZE = 1000;
+        
+        interface ReadResult { error: { message: string } | null }
+        
+        
+        function ensure<T extends ReadResult>(label: string, res: T): T {
+            if (res.error) throw new Error(`Lecture impossible (${label}) : ${res.error.message}`);
+            return res;
+        }
+        
+        
+        async function countOf(label: string, query: PromiseLike<{ count: number | null; error: { message: string } | null }>): Promise<number> {
+            const res = ensure(label, await query);
+            return res.count ?? 0;
+        }
+        
+        
+        export async function GET(req: NextRequest) {
+            const auth = await verifyAdminAuth(req, { requiredPermission: 'statistics.read' });
+            if (!auth.authorized) return auth.errorResponse!;
+        
+            try {
+                const supabase = getServiceRoleClient();
+                const head = { count: 'exact' as const, head: true };
+        
+                const sumCommissions = async (): Promise<number> => {
+                    let total = 0;
+                    for (let from = 0; ; from += PAGE_SIZE) {
+                        const { data } = ensure('commissions de parrainage', await supabase
+                            .from('referral_commissions')
+                            .select('id, amount')
+                            .neq('status', 'CANCELLED')
+                            .order('id', { ascending: true })
+                            .range(from, from + PAGE_SIZE - 1));
+                        for (const c of data ?? []) total += Number(c.amount);
+                        if (!data || data.length < PAGE_SIZE) return total;
+                    }
+                };
+        
+                const [
+                    totalPartners, pendingPartners, validatedPartners, rejectedPartners,
+                    totalUsers, clientsCount, controllersCount, adminsCount, activeAmbassadors,
+                    totalTickets, totalCommissions, revenueRes, auditLogsRes,
+                ] = await Promise.all([
+                    countOf('partenaires', supabase.from('partners').select('id', head)),
+                    countOf('partenaires en attente', supabase.from('partners').select('id', head).eq('status', 'EN_ATTENTE')),
+                    countOf('partenaires validés', supabase.from('partners').select('id', head).eq('status', 'VALIDE')),
+                    countOf('partenaires rejetés', supabase.from('partners').select('id', head).eq('status', 'REJETE')),
+                    countOf('utilisateurs', supabase.from('users').select('id', head)),
+                    countOf('clients', supabase.from('users').select('id', head).eq('role', 'CLIENT')),
+                    countOf('contrôleurs', supabase.from('users').select('id', head).eq('role', 'CONTROLEUR')),
+                    countOf('administrateurs', supabase.from('users').select('id', head).in('role', ['ADMIN', 'SUPERADMIN'])),
+                    countOf('ambassadeurs', supabase.from('users').select('id', head).eq('referral_status', 'AMBASSADEUR')),
+                    countOf('billets', supabase.from('tickets').select('id', head)),
+                    sumCommissions(),
+                    supabase.rpc('finance_platform_revenue', { p_from: null, p_to: null }),
+                    supabase.from('audit_logs')
+                        .select('id, action, object_type, user_role, created_at, user_id')
+                        .order('created_at', { ascending: false })
+                        .limit(10),
+                ]);
+        
+                const revenue = ensure('revenu Event Village', revenueRes).data as Record<string, unknown> | null;
+                if (!revenue) throw new Error('Lecture impossible (revenu Event Village) : réponse vide');
+                const auditLogs = ensure('journal d’audit', auditLogsRes).data ?? [];
+        
+                return NextResponse.json({
+                    success: true,
+                    kpis: {
+                        totalVolume: Number(revenue.volume),
+                        netRevenue: Number(revenue.net_revenue),
+                        grossRevenue: Number(revenue.gross_revenue),
+                        serviceFees: Number(revenue.service_fees),
+                        aggregatorFees: Number(revenue.aggregator_fees),
+                        refundedAmount: Number(revenue.refunded),
+                        platformPayments: Number(revenue.payments),
+                        totalCommissions,
+                        validatedPartners,
+                        pendingPartners,
+                        rejectedPartners,
+                        totalPartners,
+                        totalUsers,
+                        clientsCount,
+                        controllersCount,
+                        adminsCount,
+                        activeAmbassadors,
+                        totalTickets,
+                    },
+                    recentAuditLogs: auditLogs,
+                    configWarning: null,
+                });
+            } catch (err: unknown) {
+                return apiFailure('GET /api/admin/metrics', err, { message: 'Indicateurs momentanément indisponibles.', code: 'METRICS_UNAVAILABLE' });
+            }
+        }
+        
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:143:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 1 - 1a — /api/admin/metrics ne renvoie aucune ligne du journal d’audit
+  ---
+  duration_ms: 840.195873
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:5157'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 1b — partner_status_set vérifie la permission de l’auteur (base)
+    # Subtest: valider sans partners.validate : refusé, fiche EN_ATTENTE, aucun journal (rouge)
+    not ok 1 - valider sans partners.validate : refusé, fiche EN_ATTENTE, aucun journal (rouge)
+      ---
+      duration_ms: 164.613051
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:7289'
+      failureType: 'testCodeFailure'
+      error: |-
+        validation acceptée sans partners.validate : {"ok":true,"status":"VALIDE","user_id":"fc1fdc42-db08-48ca-b9b1-89adb189f795","old_status":"EN_ATTENTE","partner_id":"3044478b-9a60-41e8-ae87-984d200edcbf","is_verified":true,"events_restored":[],"events_suspended":[],"rejection_reason":null,"sessions_revoked":null,"suspended_reason":null,"events_left_suspended":[]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:153:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: refuser un dossier sans partners.validate : refusé (rouge)
+    not ok 2 - refuser un dossier sans partners.validate : refusé (rouge)
+      ---
+      duration_ms: 151.410945
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:8068'
+      failureType: 'testCodeFailure'
+      error: |-
+        refus accepté sans partners.validate : {"ok":true,"status":"REJETE","user_id":"ecfdc4ea-cba7-4a85-be3f-84967fb9580a","old_status":"EN_ATTENTE","partner_id":"4b29e5f7-a972-46a2-afe8-528ec72b1bcc","is_verified":false,"events_restored":[],"events_suspended":[],"rejection_reason":"Contrôle de sécurité de la finition 3a","sessions_revoked":null,"suspended_reason":null,"events_left_suspended":[]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:163:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: suspendre par un ADMIN muni de partners.suspend : refusé, réservé au SUPERADMIN ; compte ACTIF, sessions gardées (rouge)
+    not ok 3 - suspendre par un ADMIN muni de partners.suspend : refusé, réservé au SUPERADMIN ; compte ACTIF, sessions gardées (rouge)
+      ---
+      duration_ms: 157.456158
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:8747'
+      failureType: 'testCodeFailure'
+      error: |-
+        suspension acceptée d’un ADMIN : {"ok":true,"status":"SUSPENDU","user_id":"c98d2c4f-dc90-4286-a73c-98d6e92ad710","old_status":"VALIDE","partner_id":"2a9eaf00-cf5d-4784-a4c2-ae316519cd4f","is_verified":false,"events_restored":[],"events_suspended":[],"rejection_reason":null,"sessions_revoked":1,"suspended_reason":"Contrôle de sécurité de la finition 3a","events_left_suspended":[]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:172:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: réactiver sans partners.validate : refusé, fiche et compte toujours suspendus (rouge)
+    not ok 4 - réactiver sans partners.validate : refusé, fiche et compte toujours suspendus (rouge)
+      ---
+      duration_ms: 167.027072
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:9445'
+      failureType: 'testCodeFailure'
+      error: |-
+        réactivation acceptée sans partners.validate : {"ok":true,"status":"VALIDE","user_id":"220264ff-cfa8-4ebf-895e-c7092658d85d","old_status":"SUSPENDU","partner_id":"56959eaa-488c-4a46-87d2-c236ffb30058","is_verified":true,"events_restored":[],"events_suspended":[],"rejection_reason":null,"sessions_revoked":null,"suspended_reason":null,"events_left_suspended":[]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:181:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: ADMIN sans aucune permission des partenaires : chaque action refusée (rouge)
+    not ok 5 - ADMIN sans aucune permission des partenaires : chaque action refusée (rouge)
+      ---
+      duration_ms: 152.304023
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:10046'
+      failureType: 'testCodeFailure'
+      error: |-
+        VALIDE accepté sans permission : {"ok":true,"status":"VALIDE","user_id":"c3fbbbb4-bdb0-4810-8c0e-e17937a5d1c5","old_status":"EN_ATTENTE","partner_id":"b393f12d-1dad-4fdf-b29e-846ad6b7b4e5","is_verified":true,"events_restored":[],"events_suspended":[],"rejection_reason":null,"sessions_revoked":null,"suspended_reason":null,"events_left_suspended":[]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:190:20)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: témoins (verts dès l’écriture) : valider et réactiver avec partners.validate, suspendre par le SUPERADMIN
+    ok 6 - témoins (verts dès l’écriture) : valider et réactiver avec partners.validate, suspendre par le SUPERADMIN
+      ---
+      duration_ms: 163.485939
+      type: 'test'
+      ...
+    1..6
+not ok 2 - 1b — partner_status_set vérifie la permission de l’auteur (base)
+  ---
+  duration_ms: 957.137862
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:7178'
+  failureType: 'subtestsFailed'
+  error: '5 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 1b — admin_permissions_set : auteur SUPERADMIN actif, cible lue dans user_roles
+    # Subtest: auteur ADMIN (même muni de tous les droits) : refusé, droits de la cible inchangés, aucun journal (rouge)
+    not ok 1 - auteur ADMIN (même muni de tous les droits) : refusé, droits de la cible inchangés, aucun journal (rouge)
+      ---
+      duration_ms: 137.472345
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:11809'
+      failureType: 'testCodeFailure'
+      error: |-
+        droits changés par un ADMIN : {"ok":true,"before":["events.read"],"permissions":["events.read","events.write","users.write"]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:216:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: auteur client (aucun rôle d’administration) : refusé (rouge)
+    not ok 2 - auteur client (aucun rôle d’administration) : refusé (rouge)
+      ---
+      duration_ms: 279.709294
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:12521'
+      failureType: 'testCodeFailure'
+      error: |-
+        droits changés par un client : {"ok":true,"before":[],"permissions":["users.write"]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:226:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: auteur SUPERADMIN suspendu : refusé (rouge)
+    not ok 3 - auteur SUPERADMIN suspendu : refusé (rouge)
+      ---
+      duration_ms: 267.10987
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:13090'
+      failureType: 'testCodeFailure'
+      error: |-
+        droits changés par un SUPERADMIN suspendu : {"ok":true,"before":[],"permissions":["users.read"]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:238:20)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: cible SUPERADMIN dans user_roles (ancienne colonne users.role restée CLIENT) : refusée, rien d’écrit (rouge)
+    not ok 4 - cible SUPERADMIN dans user_roles (ancienne colonne users.role restée CLIENT) : refusée, rien d’écrit (rouge)
+      ---
+      duration_ms: 133.92734
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:14103'
+      failureType: 'testCodeFailure'
+      error: 'précondition : users.role de la cible n’est pas SUPERADMIN (SUPERADMIN)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'SUPERADMIN'
+      actual: 'SUPERADMIN'
+      operator: 'notStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:251:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: cible sans rôle ADMIN (client) : refusée, rien d’écrit ; la route répond 400 (rouge)
+    not ok 5 - cible sans rôle ADMIN (client) : refusée, rien d’écrit ; la route répond 400 (rouge)
+      ---
+      duration_ms: 129.035758
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:15135'
+      failureType: 'testCodeFailure'
+      error: |-
+        droits écrits pour un compte non administrateur : {"ok":true,"before":[],"permissions":["users.write"]}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:262:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: cible ADMIN dans user_roles dont l’ancienne colonne users.role dit SUPERADMIN : acceptée (lue dans user_roles, transaction annulée) (rouge)
+    not ok 6 - cible ADMIN dans user_roles dont l’ancienne colonne users.role dit SUPERADMIN : acceptée (lue dans user_roles, transaction annulée) (rouge)
+      ---
+      duration_ms: 143.865904
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:16235'
+      failureType: 'testCodeFailure'
+      error: |-
+        cible ADMIN refusée sur la foi de users.role : {"ok":false,"code":"TARGET_IS_SUPERADMIN","message":"Le Superadmin dispose de toutes les permissions par défaut."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        <anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:279:20)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async <anonymous> (/home/runner/work/event-village/event-village/tests/helpers/db.ts:74:20)
+        async withClient (/home/runner/work/event-village/event-village/tests/helpers/db.ts:41:16)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:275:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: témoin (vert dès l’écriture) : SUPERADMIN actif, cible ADMIN : droits remplacés et journalisés
+    ok 7 - témoin (vert dès l’écriture) : SUPERADMIN actif, cible ADMIN : droits remplacés et journalisés
+      ---
+      duration_ms: 137.367168
+      type: 'test'
+      ...
+    1..7
+not ok 3 - 1b — admin_permissions_set : auteur SUPERADMIN actif, cible lue dans user_roles
+  ---
+  duration_ms: 1228.942052
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/f3a-securite.test.ts:2:11691'
+  failureType: 'subtestsFailed'
+  error: '6 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] f3a-securite — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] f3a-securite — purge des réservations échues : {"expired":0}
+[INVARIANT] f3a-securite — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] f3a-securite — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] f3a-securite — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] f3a-securite — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] f3a-securite — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] f3a-securite — envoyeur : 149 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] f3a-securite — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] f3a-securite — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] f3a-securite — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] f3a-securite — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] f3a-securite — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] f3a-securite — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] f3a-securite — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] f3a-securite — (p) : 0 violation(s)
+[INVARIANT-FINITION1] f3a-securite — (f) : 0 violation(s)
+1..3
+# tests 16
+# suites 3
+# pass 2
+# fail 14
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3731.798688
