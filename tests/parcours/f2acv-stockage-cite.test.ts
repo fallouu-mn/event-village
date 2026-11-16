@@ -4,8 +4,8 @@
  * dossier events/.
  *  a. Inventaire : chaque colonne d'une table de la base dont le nom désigne une adresse ou une image est lue par
  *     storage_public_citations (ou écartée pour une raison écrite) ; aucune colonne nouvelle n'y échappe.
- *  b. Purge : fichiers de plus de 7 jours sous events/<P>/ cités par la photo du compte, une pièce ancienne, la copie
- *     publique de l'affiche : gardés ; l'orpheline : effacée.
+ *  b. Purge : fichiers de plus de 7 jours sous events/<P>/ cités par la photo du compte et par une pièce ancienne : gardés ;
+ *     l'orpheline : effacée (la copie publique de l'affiche, tenue par un déclencheur, est vérifiée par l'inventaire a).
  *  c. Profil : logo et couverture du dossier events/ (en clair, puis encodé) refusés ; image déposée depuis le profil
  *     (misc/) acceptée.
  *  d. Salles et produits (services, routes fermées par interrupteur) : image du dossier events/ refusée
@@ -20,7 +20,6 @@ import sharp from 'sharp';
 import { NextRequest } from 'next/server';
 import { newBuyer, service } from './paiement-helpers';
 import { newPartner, type TestPartner } from './finance-helpers';
-import { createDraftEvent } from './cycle-helpers';
 import { BASE_URL } from './helpers';
 import { inspect, writeLocal } from '../helpers/db';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
@@ -76,33 +75,33 @@ async function age(pathInBucket: string, days: number): Promise<void> {
 }
 
 describe('b. purge : un fichier cité par n’importe quelle colonne est gardé', () => {
-    test('photo du compte, pièce ancienne, copie publique de l’affiche : gardées ; orpheline : effacée', async () => {
+    test('photo du compte, pièce ancienne : gardées ; orpheline : effacée', async () => {
+        // La copie publique (public_event_state.image_url) n'est pas posée à la main : une ligne forgée fausserait l'invariant
+        // x13 des autres suites, qui tournent en même temps (run 237). Sa lecture par la purge est vérifiée par l'inventaire (a).
         const files: Record<string, string> = {};
-        for (const k of ['photo', 'piece', 'copie', 'orpheline']) {
+        for (const k of ['photo', 'piece', 'orpheline']) {
             files[k] = `events/${P.partnerId}/${uniqueName('webp')}`;
             await putObject(files[k], await webp(), 'image/webp');
         }
         const holder = await newBuyer('f2acv-stockage-photo');
-        const { error: uErr } = await service.from('users').update({ avatar_url: publicUrl(files.photo) }).eq('id', holder.userId);
-        assert.equal(uErr, null, `photo du compte (montage) : ${uErr?.message}`);
-        const { error: pErr } = await service.from('partners').update({ id_card_url: publicUrl(files.piece) }).eq('id', P.partnerId);
-        assert.equal(pErr, null, `pièce ancienne (montage) : ${pErr?.message}`);
-        const d = await createDraftEvent(P, 'f2acv-stockage-copie', [{ name: 'Standard', price: 0, total: 10 }], { startsInHours: 72, imageUrl: null });
-        await writeLocal(async (c) => {
-            await c.query(`INSERT INTO public.public_event_state (event_id, status, title, image_url) VALUES ($1, 'PUBLIE', 'Copie publique', $2)
-                           ON CONFLICT (event_id) DO UPDATE SET image_url = EXCLUDED.image_url`, [d.eventId, publicUrl(files.copie)]);
-        });
-        for (const p of Object.values(files)) await age(p, 8);
-        const { GET } = (await import('../../app/api/cron/events-finish/route')) as { GET: (req: NextRequest) => Promise<Response> };
-        const res = await GET(new NextRequest(`${BASE_URL}/api/cron/events-finish`, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } }));
-        const body = (await res.json()) as Row;
-        console.log(`[F2ACV-T6] events-finish → HTTP ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
-        assert.equal(res.status, 200, JSON.stringify(body));
-        const kept = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([k, p]) => [k, Boolean(await stored(p))] as const)));
-        console.log(`[F2ACV-T6] après la purge : ${JSON.stringify(kept)}`);
-        assert.deepEqual(kept, { photo: true, piece: true, copie: true, orpheline: false });
-        await writeLocal(async (c) => { await c.query('DELETE FROM public.public_event_state WHERE event_id = $1', [d.eventId]); });
-        await service.from('partners').update({ id_card_url: null }).eq('id', P.partnerId);
+        try {
+            const { error: uErr } = await service.from('users').update({ avatar_url: publicUrl(files.photo) }).eq('id', holder.userId);
+            assert.equal(uErr, null, `photo du compte (montage) : ${uErr?.message}`);
+            const { error: pErr } = await service.from('partners').update({ id_card_url: publicUrl(files.piece) }).eq('id', P.partnerId);
+            assert.equal(pErr, null, `pièce ancienne (montage) : ${pErr?.message}`);
+            for (const p of Object.values(files)) await age(p, 8);
+            const { GET } = (await import('../../app/api/cron/events-finish/route')) as { GET: (req: NextRequest) => Promise<Response> };
+            const res = await GET(new NextRequest(`${BASE_URL}/api/cron/events-finish`, { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } }));
+            const body = (await res.json()) as Row;
+            console.log(`[F2ACV-T6] events-finish → HTTP ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
+            assert.equal(res.status, 200, JSON.stringify(body));
+            const kept = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([k, p]) => [k, Boolean(await stored(p))] as const)));
+            console.log(`[F2ACV-T6] après la purge : ${JSON.stringify(kept)}`);
+            assert.deepEqual(kept, { photo: true, piece: true, orpheline: false });
+        } finally {
+            await service.from('users').update({ avatar_url: null }).eq('id', holder.userId);
+            await service.from('partners').update({ id_card_url: null }).eq('id', P.partnerId);
+        }
     });
 });
 
