@@ -937,8 +937,24 @@ const CATALOG = {
     EVENT_VALIDATED: define('EVENT_VALIDATED', {
         label: 'Événement validé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
         link: (d) => partnerEventPath(d),
-        inApp: (d) => ({ title: 'Événement validé', content: `${q(text(d, 'title'))} est validé. Vous pouvez le publier depuis votre espace.` }),
+        // Finition 2b (D, E-25) : les prochaines étapes dans la cloche, le push (sans coupure) et l'email ; SMS inchangé
+        inApp: (d) => ({
+            title: 'Événement validé',
+            content: `${q(text(d, 'title'))} est validé. Prochaines étapes : réglez les portes, invitez vos contrôleurs, générez le code PIN de caisse, puis publiez-le.`,
+        }),
         sms: (d, ctx) => `${SMS_PREFIX}votre événement ${smsVar(text(d, 'title'), 30)} est validé. Publiez-le depuis votre espace : ${appLink(ctx, '/partner/events')}`,
+        emailBlocks: () => ({
+            list: {
+                title: 'Prochaines étapes',
+                items: [
+                    'Régler les portes et les zones : étape « Contrôle à l’entrée » de l’événement.',
+                    'Inviter vos contrôleurs : onglet Équipe de l’événement.',
+                    'Générer le code PIN de caisse : onglet Caisse de l’événement.',
+                    'Publier l’événement : il est alors en vente.',
+                ],
+            },
+            ctaLabel: 'Ouvrir l’événement',
+        }),
         sample: { ...SAMPLE_EVENT },
     }),
     EVENT_REJECTED: define('EVENT_REJECTED', {
