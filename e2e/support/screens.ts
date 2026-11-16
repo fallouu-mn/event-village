@@ -888,6 +888,34 @@ export const SCREENS: readonly Screen[] = [
             await expect(page.getByRole('heading', { name: /^accès et informations pratiques$/i })).toBeVisible();
         },
     },
+    // Finition 2a (captures « après » seulement) : la même étape descendue jusqu'à la recherche et à la carte (aucun repère
+    // avant un choix) ; l'étape Informations avec un début à 22:00 sans fin (« Fin retenue : … à 04:00 » et son aide)
+    {
+        id: 'partenaire-creation-carte', titre: 'Création d’un événement — recherche de lieu et carte sans repère', role: 'organisateur', needsIds: true,
+        path: () => '/partner/events/new',
+        actions: async ({ page }) => {
+            await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: /accès/i }).click();
+            const search = page.getByRole('search', { name: 'Rechercher un lieu' });
+            await expect(search).toBeVisible();
+            await expect(page.getByRole('region', { name: 'Carte du lieu' })).toBeVisible();
+            await search.evaluate((el) => {
+                el.scrollIntoView({ block: 'start' });
+                window.scrollBy(0, -96);
+            });
+        },
+    },
+    {
+        id: 'partenaire-creation-fin-retenue', titre: 'Création d’un événement — fin retenue sans heure de fin', role: 'organisateur', needsIds: true,
+        path: () => '/partner/events/new',
+        actions: async ({ page }) => {
+            const day = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+            await page.getByLabel(/^date de début/i).fill(day);
+            await page.getByLabel(/^heure de début/i).fill('22:00');
+            const retained = page.getByText(/^Fin retenue : /);
+            await expect(retained).toBeVisible();
+            await retained.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+        },
+    },
     {
         id: 'partenaire-edition', titre: 'Édition d’un événement publié avec ventes (champs verrouillés)', role: 'organisateur', needsIds: true,
         path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
