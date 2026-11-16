@@ -165,3 +165,16 @@ describe('détail de la page Finance : lignes en mots, numéro masqué', () => {
             [1, 1, 3, null, null, null, null, null]);
     });
 });
+
+describe('E-30 — ligne de la liste des paiements, préparée par le serveur', () => {
+    test('référence, objet en mots, part pour Event Village en centimes exacts, écart', async () => {
+        const { paymentLine } = await import('../../lib/finance/admin-lists');
+        const p = paymentLine({
+            id: 'p1', reference: 'TX-ABC', target: 'TICKET', event_title: 'Concert', encashed_at: '2026-11-05T10:00:00Z', amount: 21_000,
+            service_fee: 1_000, net_revenue: 685, refunded_net: 342.5, duplicate_withheld: 0, commissions: 17.13, status: 'PARTIAL', discrepancy: 0,
+        });
+        assert.deepEqual([p.transactionReference, p.target, p.eventTitle, p.evNet, p.status, p.discrepancy], ['TX-ABC', 'Billets', 'Concert', 325.37, 'PARTIAL', 0]);
+        const d = paymentLine({ id: 'p2', reference: null, target: 'XYZ', amount: 10_500, net_revenue: 342.5, refunded_net: 500, duplicate_withheld: 157.5, commissions: 0, status: 'REFUNDED', discrepancy: 0.01 });
+        assert.deepEqual([d.transactionReference, d.target, d.evNet, d.discrepancy], ['p2', 'Autre', 0, 0.01]);
+    });
+});
