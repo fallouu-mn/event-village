@@ -89,6 +89,15 @@ export async function POST(req: NextRequest) {
             if (outcome.code === 'TARGET_IS_SUPERADMIN') {
                 return NextResponse.json({ error: 'Le Superadmin dispose de toutes les permissions par défaut.', code: outcome.code }, { status: 400 });
             }
+            // Finition 3a (1b) : rôles de la cible lus dans user_roles par la base ; un compte sans rôle ADMIN est refusé
+            if (outcome.code === 'TARGET_NOT_ADMIN') {
+                return NextResponse.json({ error: 'Ce compte n’est pas administrateur : ses droits ne se règlent pas ici.', code: outcome.code }, { status: 400 });
+            }
+            // Finition 3a (1b) : auteur contrôlé aussi par la base (SUPERADMIN au compte actif) ; un refus ici suit un
+            // changement de rôle ou de statut entre le contrôle de la route et l'écriture
+            if (outcome.code === 'FORBIDDEN') {
+                return NextResponse.json({ error: 'Seul un Superadmin actif modifie les droits d’un administrateur.', code: outcome.code }, { status: 403 });
+            }
             return apiFailure('POST /api/admin/permissions', new Error(`refus inattendu : ${outcome.code}`), { message: 'Permissions non enregistrées. Réessayez.', code: 'PERMISSIONS_SAVE_FAILED' });
         }
 
