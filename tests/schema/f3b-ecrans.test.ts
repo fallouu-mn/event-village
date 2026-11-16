@@ -136,3 +136,38 @@ describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »',
         assert.match(labels, /export function permissionDescription\(/, 'phrases des droits absentes');
     });
 });
+
+// ── 3. Réglages de la plateforme (E-35) ──────────────────────────────────────────────────────────────────────────
+
+const SETTINGS_PAGE = 'app/admin/finance-settings/page.tsx';
+
+describe('3. E-35 — réglages groupés, expliqués, bornés à l’écran, confirmés « Avant → Après »', () => {
+    test('sommaire des thèmes avec ancres ; une phrase, la valeur par défaut et l’alerte de chaque réglage', () => {
+        const page = code(SETTINGS_PAGE);
+        assert.match(page, /aria-label="Sommaire des réglages"/, 'sommaire absent');
+        for (const anchor of ['finance', 'controle', 'support', 'notifications', 'services']) {
+            assert.match(page + code('lib/settings/catalog.ts'), new RegExp(`anchor: '${anchor}'`), `ancre #${anchor} absente`);
+        }
+        assert.match(page, /Par défaut :/, 'valeur par défaut non affichée');
+        assert.match(page, /settingRisk\(/, 'alerte des valeurs risquées absente');
+    });
+
+    test('bornes vérifiées à l’écran avant l’envoi (erreur sous le champ) ; confirmation « Avant → Après » avec le motif', () => {
+        const page = code(SETTINGS_PAGE);
+        assert.match(page, /settingBoundsError\(/, 'bornes non vérifiées à l’écran');
+        assert.match(page, /<ConfirmDialog\b/, 'aucune confirmation avant l’enregistrement');
+        assert.match(page, /→/, 'confirmation sans « Avant → Après »');
+        assert.match(page, /S’applique aux opérations faites à partir de maintenant ; le passé ne change pas\. Personne n’est prévenu\./, 'conséquence du changement absente');
+        assert.match(page, /Motif/, 'motif absent de la confirmation');
+    });
+
+    test('historique : qui, quoi, quand, pourquoi ; plus de clé technique à l’écran', () => {
+        const page = code(SETTINGS_PAGE);
+        assert.match(page, /\.author\b/, 'auteur des changements non affiché');
+        assert.doesNotMatch(page, /\{\s*h\.key\s*\}/, 'clé technique affichée dans l’historique');
+        const catalog = read('lib/settings/catalog.ts');
+        assert.match(catalog, /export const SETTING_BOUNDS/, 'catalogue des bornes absent');
+        assert.match(catalog, /export function settingBoundsError\(/, 'contrôle des bornes absent');
+        assert.match(catalog, /export function settingRisk\(/, 'alertes absentes');
+    });
+});
