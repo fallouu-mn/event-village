@@ -38,6 +38,9 @@ import { PROGRAM_KIND_LABELS, type ProgramKind } from '@/lib/validations/event';
 import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger, formatShortDate, toDakarDateTimeLocal } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
 import { directionsUrl } from '@/lib/events/directions';
+import { isScanCategoryColor, SCAN_CATEGORY_COLOR_LABELS, ZONE_KIND_LABELS } from '@/lib/scan/scan-result';
+import { ScanColorDot } from '@/components/events/ScanColorPicker';
+import { SINGLE_ENTRANCE_TEXT } from '@/components/events/ZoneListEditor';
 
 // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
 const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
@@ -91,6 +94,9 @@ interface SheetCategory {
   sale_online: boolean;
   sale_counter: boolean;
   is_active: boolean | null;
+  /** Finition 2b (D, E-25) : couleur au contrôle et consigne d'entrée. */
+  scan_color?: string | null;
+  entry_instruction?: string | null;
 }
 
 interface SheetOrganizer {
@@ -131,9 +137,20 @@ interface SheetActions {
   last_reason: { kind: 'REFUS' | 'SUSPENSION'; reason: string | null; at: string } | null;
 }
 
+/** Finition 2b (D, E-25) : zone de l'événement (catégories admises par identifiant) et ses portes. */
+interface SheetZone {
+  id: string;
+  name: string;
+  kind: string;
+  category_ids: string[];
+  gates: Array<{ id: string; name: string }>;
+}
+
 interface Sheet {
   event: SheetEvent;
   categories: SheetCategory[];
+  /** Finition 2b (D) : absent d'une réponse ancienne : aucune zone. */
+  zones?: SheetZone[];
   organizer: SheetOrganizer | null;
   history: SheetHistoryRow[];
   actions: SheetActions;
@@ -479,6 +496,7 @@ export default function AdminEventSheetPage() {
   }
 
   const { event, categories, organizer, history, actions, cancellation } = sheet;
+  const zones = sheet.zones ?? [];
   const currentStatus = actions.status;
   const program = programOf(event.program);
   const practical = event.practical_info && typeof event.practical_info === 'object'
@@ -522,6 +540,20 @@ export default function AdminEventSheetPage() {
       ),
     },
     { key: 'max', header: 'Par commande', align: 'right', render: (c) => <span className="tabular-nums">{c.max_per_order ? `${formatInteger(c.max_per_order)} au plus` : '—'}</span> },
+    // Finition 2b (D, E-25) : couleur au contrôle (pastille et nom) et consigne d'entrée montrées au contrôleur
+    {
+      key: 'scan',
+      header: 'Au contrôle',
+      render: (c) => (
+        <div className="flex min-w-0 flex-col gap-1 text-sm">
+          <span className="flex items-center gap-1.5">
+            <ScanColorDot color={c.scan_color} />
+            <span>{isScanCategoryColor(c.scan_color) ? SCAN_CATEGORY_COLOR_LABELS[c.scan_color] : 'Sans couleur'}</span>
+          </span>
+          {c.entry_instruction ? <span className="break-words text-fg">{`Consigne : ${c.entry_instruction}`}</span> : <span className="text-fg-muted">Aucune consigne</span>}
+        </div>
+      ),
+    },
     {
       key: 'state',
       header: 'Canaux et état',
@@ -690,6 +722,38 @@ export default function AdminEventSheetPage() {
               cardTitle={(c) => c.name}
               empty={<p className="text-sm text-fg-muted">Aucune catégorie de billet : l’événement ne peut pas être vendu.</p>}
             />
+          </Section>
+
+          {/* Finition 2b (D, E-25) : portes et zones réglées par l'organisateur */}
+          <Section id="fiche-controle" title="Contrôle à l’entrée">
+            {zones.length === 0 ? (
+              <p className="text-sm text-fg">{SINGLE_ENTRANCE_TEXT}</p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {zones.map((z) => (
+                  <li key={z.id} className="flex flex-col gap-2 rounded-xl border border-border bg-surface-sunken/60 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-fg">{z.name}</span>
+                      <Badge variant={z.kind === 'CONTROLE' ? 'info' : 'neutral'} size="sm">{z.kind === 'CONTROLE' ? ZONE_KIND_LABELS.CONTROLE : ZONE_KIND_LABELS.ENTREE}</Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-sm">
+                      <span className="text-fg-muted">Laisse entrer :</span>
+                      {z.category_ids.length === 0 && <span className="font-semibold text-warning-fg">aucune catégorie</span>}
+                      {z.category_ids.map((id) => {
+                        const c = categories.find((x) => x.id === id);
+                        return (
+                          <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-fg">
+                            <ScanColorDot color={c?.scan_color} className="h-3 w-3" />
+                            <span>{c?.name ?? 'Catégorie retirée'}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <p className="text-sm text-fg-muted">{`${z.gates.length > 1 ? 'Portes' : 'Porte'} : ${z.gates.map((g) => g.name).join(', ') || 'aucune'}`}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Section>
         </div>
 
