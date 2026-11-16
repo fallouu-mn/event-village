@@ -128,3 +128,39 @@ describe('inventaire : chaque route de /api/admin refuse un ADMIN sans aucun dro
         }
     });
 });
+
+// ── Le menu n'est qu'un confort : la route de chaque entrée refuse sans le droit de l'entrée ────────────────────────
+
+const ALL_PERMS = ['users.read', 'users.write', 'partners.read', 'partners.validate', 'partners.suspend', 'events.read', 'events.write',
+    'payments.read', 'refunds.manage', 'referrals.manage', 'communications.manage', 'statistics.read', 'notifications.read',
+    'notifications.write', 'access.operate', 'settings.read'];
+
+/** Entrée du menu → droit qui l'affiche → route que sa page lit en premier. */
+const MENU_ROUTES: Array<[string, string, string]> = [
+    ['Événements', 'events.read', 'events'],
+    ['Catalogues et services', 'events.read', 'services'],
+    ['Comptes', 'users.read', 'users'],
+    ['Finance (chiffres)', 'payments.read', 'finance/summary'],
+    ['Finance (versements à reprendre)', 'refunds.manage', 'refunds'],
+    ['Parrainage', 'referrals.manage', 'referral/config'],
+    ['Campagnes', 'communications.manage', 'communications'],
+    ['Notifications', 'notifications.read', 'notifications'],
+    ['Réglages', 'settings.read', 'finance-settings'],
+];
+
+describe('le menu n’est qu’un confort : chaque entrée, sans son droit, est refusée par le serveur', () => {
+    test('ADMIN muni de tous les droits sauf celui de l’entrée : la route de la page répond 403', async () => {
+        const leaks: string[] = [];
+        for (const [entry, perm, key] of MENU_ROUTES) {
+            const admin = await newAdmin(`f3b-sauf-${perm.replace('.', '-')}`, ALL_PERMS.filter((p) => p !== perm));
+            const { GET } = (await importModule(`../../app/api/admin/${key}/route`)) as { GET: Handler };
+            const res = await GET(jsonRequest(`/api/admin/${key}`, 'GET', admin.accessToken));
+            if (res.status !== 403) leaks.push(`${entry} (${perm}) : GET /api/admin/${key} → HTTP ${res.status}`);
+        }
+        const { GET: audit } = (await importModule('../../app/api/admin/audit/route')) as { GET: Handler };
+        const allButSuper = await newAdmin('f3b-tous-droits', ALL_PERMS);
+        const a = await audit(jsonRequest('/api/admin/audit', 'GET', allButSuper.accessToken));
+        if (a.status !== 403) leaks.push(`Journal d’audit (Superadmin) : GET /api/admin/audit → HTTP ${a.status}`);
+        assert.deepEqual(leaks, [], `entrée du menu ouverte sans son droit :\n${leaks.join('\n')}`);
+    });
+});

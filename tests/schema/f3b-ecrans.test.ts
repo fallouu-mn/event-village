@@ -65,3 +65,74 @@ describe('1. E-29 — « À faire aujourd’hui » en tête de l’accueil', () 
         assert.ok(MIGRATED_DESIGN_FILES.includes(TODO), `${TODO} absent de tests/helpers/design-files.ts`);
     });
 });
+
+// ── 2. Menu selon les droits et « Mes droits » (E-34) ───────────────────────────────────────────────────────────────
+
+type NavItem = { name: string; href: string; short?: string };
+type AdminNav = { groups: Array<{ label: string; items: NavItem[] }>; proItems: NavItem[]; mobile: NavItem[] };
+const NAV_MODULE = 'components/layout/admin-nav.ts';
+
+async function navFor(perms: string[], superadmin = false): Promise<AdminNav> {
+    const mod = (await import(path.join(ROOT, NAV_MODULE))) as { buildAdminNav: (can: (p: string) => boolean, isSuperAdmin: boolean) => AdminNav };
+    return mod.buildAdminNav((p) => superadmin || perms.includes(p), superadmin);
+}
+const hrefs = (nav: AdminNav): string[] => nav.groups.flatMap((g) => g.items.map((i) => i.href));
+
+describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »', () => {
+    test('AppLayout charge le menu de l’administration à la demande (module à part), plus aucune entrée admin en dur', () => {
+        const layout = code('components/layout/AppLayout.tsx');
+        assert.match(layout, /import\(\s*'\.\/admin-nav'\s*\)/, 'AppLayout ne charge pas ./admin-nav à la demande');
+        for (const href of ['/admin/pricing', '/admin/communications', '/admin/referral', '/admin/notifications', '/scan']) {
+            assert.ok(!layout.includes(`'${href}'`), `entrée ${href} encore écrite dans AppLayout`);
+        }
+    });
+
+    test('ADMIN sans aucun droit : seulement l’accueil et « Mes droits »', async () => {
+        const nav = await navFor([]);
+        assert.deepEqual(hrefs(nav), ['/admin/mes-droits']);
+        assert.deepEqual(nav.mobile.map((i) => i.href), ['/admin/dashboard']);
+        assert.deepEqual(nav.proItems.map((i) => i.href), ['/admin/dashboard', '/admin/mes-droits']);
+    });
+
+    test('ADMIN events.read et events.write : Événements, Catalogues et services, Mes droits, rien d’autre', async () => {
+        const nav = await navFor(['events.read', 'events.write']);
+        assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/services', '/admin/mes-droits']);
+        assert.deepEqual(nav.mobile.map((i) => i.href), ['/admin/dashboard', '/admin/events']);
+    });
+
+    test('chaque entrée suit son droit ; « Scanner » seulement avec access.operate ; « Réglages » avec settings.read', async () => {
+        const cases: Array<[string[], string[]]> = [
+            [['users.read'], ['/admin/users', '/admin/referral']],
+            [['referrals.manage'], ['/admin/referral']],
+            [['payments.read'], ['/admin/finance']],
+            [['refunds.manage'], ['/admin/finance']],
+            [['communications.manage'], ['/admin/communications']],
+            [['notifications.read'], ['/admin/notifications']],
+            [['settings.read'], ['/admin/finance-settings']],
+            [['access.operate'], ['/scan']],
+            [['statistics.read', 'partners.read', 'partners.validate'], []],
+        ];
+        for (const [perms, expected] of cases) {
+            const got = hrefs(await navFor(perms)).filter((h) => h !== '/admin/mes-droits');
+            assert.deepEqual(got, expected, `droits ${perms.join(', ')}`);
+        }
+    });
+
+    test('SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »', async () => {
+        const nav = await navFor([], true);
+        assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/users', '/admin/services', '/admin/finance', '/admin/referral',
+            '/admin/communications', '/admin/finance-settings', '/admin/audit', '/admin/notifications', '/scan']);
+        assert.deepEqual(nav.mobile.map((i) => i.href), ['/admin/dashboard', '/admin/events', '/admin/users', '/admin/finance', '/admin/audit']);
+        assert.ok(!JSON.stringify(nav).includes('/admin/pricing'), '« Tarification » encore au menu');
+    });
+
+    test('page « Mes droits » : ce que l’admin peut faire et ne pas faire, en phrases ; texte exact sans aucun droit', () => {
+        const page = code('app/admin/mes-droits/page.tsx');
+        assert.ok(norm(page).includes(norm("Vous n'avez encore aucun droit : demandez-les au super-administrateur.")), 'texte « aucun droit » absent');
+        for (const t of ['Vous pouvez', 'Vous ne pouvez pas']) assert.ok(page.includes(t), `rubrique « ${t} » absente`);
+        assert.match(page, /permissionDescription\(/, 'chaque droit sans sa phrase');
+        assert.ok(MIGRATED_DESIGN_FILES.includes('app/admin/mes-droits/page.tsx'), 'page absente de la liste du système de design');
+        const labels = read('lib/admin/permission-labels.ts');
+        assert.match(labels, /export function permissionDescription\(/, 'phrases des droits absentes');
+    });
+});
