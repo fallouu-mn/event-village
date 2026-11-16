@@ -238,8 +238,11 @@ const STEP1_FIELDS = new Set(['title', 'category', 'description', 'image_url', '
 const EDITABLE_STATUSES = new Set(['BROUILLON', 'VALIDE', 'PUBLIE', 'SUSPENDU']);
 /** Après validation : règles encadrées (champs notifiés, verrous après ventes). */
 const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
-/** Statuts où des billets ont pu être émis : les détenteurs sont prévenus d'un changement. */
-const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
+/**
+ * Statuts où des billets ont pu être émis : les détenteurs sont prévenus d'un changement. Finition 2b (D, E-27) : dès
+ * Validé, des invités peuvent déjà détenir un billet (event_update prévient dès VALIDE).
+ */
+const WITH_HOLDERS = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
 
@@ -1429,12 +1432,15 @@ export function EventForm(props: EventFormProps) {
             )}
 
             {afterValidation && (
-                <StatusBanner tone="info" title="Modifications encadrées après la validation" className="mb-4">
+                <StatusBanner tone="info" title="Votre événement est validé : ce que vos modifications changent" className="mb-4">
+                    {/* Finition 2b (D, E-27) : encadré réécrit ; des invités peuvent déjà détenir un billet dès Validé */}
                     <ul className="list-disc space-y-1 pl-5">
-                        <li>Description, programme, informations pratiques et affiche : modifiables librement.</li>
-                        <li>Titre, dates, heures, lieu, ville et adresse&nbsp;: les détenteurs de billets sont prévenus.</li>
+                        <li>Description, programme, informations pratiques et affiche : modifiables à tout moment, personne n’est prévenu.</li>
+                        <li>Dates, heures, lieu, ville et adresse : les détenteurs de billets, invités compris, sont prévenus dans l’application et par SMS. Avant d’enregistrer, vous voyez combien recevront un SMS et à quelle heure.</li>
+                        <li>Titre : les détenteurs de billets sont prévenus dans l’application.</li>
                         {/* Correctifs de la contre-vérification de la finition 2a (T3, T4) : dit avant d'enregistrer */}
                         <li>Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS.</li>
+                        <li>Un seul SMS par heure : les changements faits dans l’heure partent ensemble. À moins d’une heure du début, l’avis part tout de suite.</li>
                         <li>Type d’événement : verrouillé dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.</li>
                     </ul>
                 </StatusBanner>
@@ -1579,13 +1585,13 @@ export function EventForm(props: EventFormProps) {
                                 <TextInput id="ev-start_date" type="date" label="Date de début" required value={values.start_date}
                                     onChange={(e) => set('start_date', e.target.value)} error={errors.start_date} hint={hint(undefined, true)} />
                                 <TextInput id="ev-start_time" type="time" label="Heure de début" required value={values.start_time}
-                                    onChange={(e) => set('start_time', e.target.value)} error={errors.start_time} />
+                                    onChange={(e) => set('start_time', e.target.value)} error={errors.start_time} hint={hint(undefined, true)} />
                                 <TextInput id="ev-end_date" type="date" label="Date de fin" value={values.end_date}
                                     onChange={(e) => set('end_date', e.target.value)} error={errors.end_date}
-                                    hint="Facultative. Pour une soirée qui passe minuit, indiquez la date du lendemain." />
+                                    hint={hint('Facultative. Pour une soirée qui passe minuit, indiquez la date du lendemain.', true)} />
                                 <TextInput id="ev-end_time" type="time" label="Heure de fin" value={values.end_time}
                                     onChange={(e) => set('end_time', e.target.value)} error={errors.end_time}
-                                    hint="Facultative ; avec une heure de fin, la date de fin est demandée." />
+                                    hint={hint('Facultative ; avec une heure de fin, la date de fin est demandée.', true)} />
                             </div>
                             {retained && (
                                 <div className="rounded-xl bg-surface-sunken px-4 py-3">
