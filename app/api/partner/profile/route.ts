@@ -107,8 +107,17 @@ function isPartnerImageUrl(url: string, partnerId: string): boolean {
     if (parsed.origin !== baseUrl.origin) return false;
     const prefix = '/storage/v1/object/public/public-images/';
     if (!parsed.pathname.startsWith(prefix)) return false;
-    const segments = parsed.pathname.slice(prefix.length).split('/');
-    return segments.length >= 3 && segments[1] === partnerId && !segments.includes('..');
+    // Correctifs de la contre-vérification de la finition 2a (T6) : segments lus décodés (le stockage les décode), jamais le
+    // dossier des affiches events/ : une affiche citée par le profil serait effacée avec l'événement (remplacement, purge)
+    const segments = parsed.pathname.slice(prefix.length).split('/').map((s) => {
+        try {
+            return decodeURIComponent(s);
+        } catch {
+            return s;
+        }
+    });
+    return segments.length >= 3 && segments[0] !== 'events' && segments[1] === partnerId
+        && !segments.includes('..') && segments.every((s) => s.length > 0 && !s.includes('/') && !s.includes('\\'));
 }
 
 /** GET — lot 9 bis (R7, B39) : ouvert aussi au compte EN_ATTENTE (dossier en cours de vérification). */

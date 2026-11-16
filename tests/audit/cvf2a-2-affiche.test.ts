@@ -300,9 +300,11 @@ describe('e. effacement : jamais un fichier cité, jamais hors de events/', () =
                 const { error } = await service.from('products').insert({ partner_id: P.partnerId, name: `Produit ${Date.now()}`, price: 1000, images: [x.url] });
                 assert.equal(error, null, `produit (montage) : ${error?.message}`);
             } else {
-                const r = await api('PATCH', 'partner/profile', { token: P.accessToken, body: { logo_url: x.url } });
-                console.log(`[CVF2A-2] PATCH profile logo_url = affiche → ${show(r).slice(0, 200)}`);
-                assert.ok(r.status < 300, `précondition : le profil accepte cette image comme logo (${show(r)})`);
+                // Correctifs de la contre-vérification (T6), décision de l'utilisateur : le profil refuse désormais une adresse du
+                // dossier events/ ; la donnée ancienne est posée directement en base, comme la salle et le produit ci-dessus.
+                // Seul le montage change : l'attaque (affiche remplacée encore citée, gardée) est vérifiée comme avant.
+                const { error } = await service.from('partners').update({ logo_url: x.url }).eq('id', P.partnerId);
+                assert.equal(error, null, `logo du profil (montage) : ${error?.message}`);
             }
             const replaced = await putEvent(P.accessToken, draft.eventId, { image_url: y.url });
             assert.equal(replaced.status, 200, `remplacement par Y (${where}) : ${show(replaced)}`);
@@ -339,9 +341,10 @@ describe('e. effacement : jamais un fichier cité, jamais hors de events/', () =
         assert.equal(hErr, null, `salle (montage) : ${hErr?.message}`);
         const { error: prErr } = await service.from('products').insert({ partner_id: P.partnerId, name: `Produit purge ${Date.now()}`, price: 500, images: [url(files.produit)] });
         assert.equal(prErr, null, `produit (montage) : ${prErr?.message}`);
-        const prof = await api('PATCH', 'partner/profile', { token: P.accessToken, body: { logo_url: url(files.logo), cover_url: url(files.couverture) } });
-        console.log(`[CVF2A-2] PATCH profile logo_url et cover_url (dossier events/) → ${show(prof).slice(0, 200)}`);
-        assert.ok(prof.status < 300, `précondition : le profil accepte ces images (${show(prof)})`);
+        // Correctifs de la contre-vérification (T6), décision de l'utilisateur : le profil refuse désormais une adresse du dossier
+        // events/ ; logo et couverture anciens posés directement en base, comme la salle et le produit (montage seulement)
+        const { error: profErr } = await service.from('partners').update({ logo_url: url(files.logo), cover_url: url(files.couverture) }).eq('id', P.partnerId);
+        assert.equal(profErr, null, `logo et couverture (montage) : ${profErr?.message}`);
         for (const p of [...Object.values(files), ...Object.values(outside)]) await age(p, 8);
         await runPurge();
         const report: string[] = [];

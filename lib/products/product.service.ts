@@ -1,5 +1,6 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
+import { assertNoPosterFolder } from '@/lib/images/image-address';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -126,6 +127,8 @@ export class ProductService {
     // --- Produits ---
 
     static async createProduct(partnerUserId: string, input: CreateProductInput): Promise<Product> {
+        // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/)
+        assertNoPosterFolder(input.images);
         const partnerId = await this.resolvePartnerId(partnerUserId);
         const supabase = getServiceRoleClient();
         const { data, error } = await supabase
@@ -180,6 +183,8 @@ export class ProductService {
     }
 
     static async updateProduct(productId: string, partnerUserId: string, input: UpdateProductInput): Promise<Product> {
+        // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/)
+        assertNoPosterFolder(input.images);
         const partnerId = await this.resolvePartnerId(partnerUserId);
         const supabase = getServiceRoleClient();
         const { data, error } = await supabase

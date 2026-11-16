@@ -7,9 +7,12 @@
  *  - removePosterIfUnused : efface une affiche remplacée si plus aucun événement ne l'utilise ;
  *  - purgeOrphanPosters : efface les affiches de plus de N jours qu'aucun événement n'utilise (tâche planifiée
  *    events-finish).
- * Une affiche est « utilisée » quand le chemin de stockage d'une adresse enregistrée (affiche ou galerie de n'importe
- * quel événement) lui est égal, quel que soit l'hôte de l'adresse et sans filtre sur le nom : une affiche ancienne au
- * nom libre, ou enregistrée avec une autre forme d'adresse, n'est jamais effacée tant qu'un événement la cite.
+ * Une affiche est « utilisée » quand le chemin de stockage d'une adresse enregistrée lui est égal, quel que soit l'hôte de
+ * l'adresse et sans filtre sur le nom : une affiche ancienne au nom libre, ou enregistrée avec une autre forme d'adresse,
+ * n'est jamais effacée tant qu'elle est citée. Correctifs de la contre-vérification (T6) : citée par N'IMPORTE QUELLE
+ * colonne de la base (affiche et galerie des événements, copie publique, images des salles et des produits, logo et
+ * couverture du profil, pièces anciennes, photo du compte : fonction storage_public_citations, migration
+ * 20261116000008), et plus seulement par les événements.
  */
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -18,7 +21,6 @@ const PUBLIC_MARK = `/storage/v1/object/public/${BUCKET}/`;
 // Correctifs de la contre-vérification de la finition 2a (T5) : une affiche est un fichier de la route de dépôt
 // (horodatage_8 caractères.webp, lib/images/stored-name.ts), rangé dans le dossier events/<id de la partenaire>/
 const POSTER_PATH = /^events\/[0-9a-f-]{36}\/\d{13}_[0-9a-f]{8}\.webp$/;
-const EVENTS_PAGE = 1000;
 
 export const POSTER_NOT_FOUND_TEXT = 'L’affiche n’a pas été trouvée : déposez-la de nouveau.';
 
@@ -52,20 +54,18 @@ export async function posterExists(path: string): Promise<boolean> {
     return (data ?? []).some((o) => o.name === name && o.id !== null);
 }
 
-/** Chemins de stockage cités par les événements (affiche et galerie de tous les événements, état enregistré). */
+/**
+ * Chemins de stockage cités par la base (état enregistré). Correctifs de la contre-vérification (T6) : toutes les colonnes
+ * qui citent le compartiment public (storage_public_citations, un seul tableau, sans limite de lignes de l'API).
+ */
 async function referencedPaths(): Promise<Set<string>> {
     const used = new Set<string>();
-    const supabase = getServiceRoleClient();
-    for (let from = 0; ; from += EVENTS_PAGE) {
-        const { data, error } = await supabase.from('events').select('id, image_url, gallery_urls').order('id').range(from, from + EVENTS_PAGE - 1);
-        if (error) throw new Error(`affiches des événements illisibles : ${error.message}`);
-        for (const row of data ?? []) {
-            for (const url of [row.image_url, ...((row.gallery_urls as unknown[] | null) ?? [])]) {
-                const path = storagePathOf(url);
-                if (path) used.add(path);
-            }
-        }
-        if (!data || data.length < EVENTS_PAGE) break;
+    const { data, error } = await getServiceRoleClient().rpc('storage_public_citations');
+    if (error) throw new Error(`adresses citées illisibles : ${error.code ?? ''} ${error.message}`);
+    if (!Array.isArray(data)) throw new Error('adresses citées illisibles : réponse inattendue');
+    for (const url of data as unknown[]) {
+        const path = storagePathOf(url);
+        if (path) used.add(path);
     }
     return used;
 }

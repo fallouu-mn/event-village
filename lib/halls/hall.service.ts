@@ -1,5 +1,6 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
+import { assertNoPosterFolder } from '@/lib/images/image-address';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -72,6 +73,8 @@ export class HallService {
         if (depositRate < 0 || depositRate > 100) {
             throw new PublicError('Le taux d\'acompte doit être compris entre 0% et 100%.');
         }
+        // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/)
+        assertNoPosterFolder(input.images);
 
         const { data: hall, error } = await supabase
             .from('halls')
@@ -160,7 +163,11 @@ export class HallService {
         if (input.address !== undefined) updateData.address = input.address;
         if (input.city !== undefined) updateData.city = input.city;
         if (input.amenities !== undefined) updateData.amenities = input.amenities;
-        if (input.images !== undefined) updateData.images = input.images;
+        if (input.images !== undefined) {
+            // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches
+            assertNoPosterFolder(input.images);
+            updateData.images = input.images;
+        }
         if (input.is_active !== undefined) updateData.is_active = input.is_active;
 
         const { data: updated, error } = await supabase
