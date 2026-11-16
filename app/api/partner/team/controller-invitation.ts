@@ -6,6 +6,7 @@
  * transaction. Module serveur (pas une route).
  */
 import { NextResponse } from 'next/server';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 type ServiceClient = ReturnType<typeof getServiceRoleClient>;
@@ -84,6 +85,8 @@ export async function createControllerInvitation(supabase: ServiceClient, input:
     const reply = data as { ok?: boolean; code?: string; invitation_id?: string; expires_at?: string } | null;
     if (!reply) throw new Error('controller_invitation_create : réponse vide');
     if (reply.ok !== true) {
+        // Correctifs de la contre-vérification de la finition 2a (T1) : fiche SUSPENDU refusée aussi par la base
+        if (reply.code === 'PARTNER_SUSPENDED') return { response: await partnerSuspendedResponse() };
         const refusal = REFUSALS[String(reply.code)];
         if (!refusal) throw new Error(`controller_invitation_create : refus inattendu ${JSON.stringify(reply)}`);
         return { response: NextResponse.json({ error: refusal[1], code: String(reply.code) }, { status: refusal[0] }) };

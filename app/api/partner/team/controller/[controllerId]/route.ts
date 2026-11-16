@@ -4,6 +4,7 @@ import { requireActiveSession, serverHasRole, serverIsAdmin, serverIsPartner } f
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { revokeUserSessions } from '@/lib/auth/sessions';
 import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason, optionalJsonBody } from '../../team-access';
 
@@ -87,10 +88,12 @@ export async function DELETE(
         if (reasonRefused) return reasonRefused;
         const reason = asAdmin ? cleanReason(body.reason) : null;
 
-        // 2. Retrait atomique (verrou consultatif + profil FOR UPDATE)
+        // 2. Retrait atomique (verrou consultatif + profil FOR UPDATE). Correctifs de la contre-vérification de la finition 2a
+        //    (T1) : l'auteur est passé, la fonction refuse en tête la fiche SUSPENDU (un admin events.write n'est pas visé)
         const { data: rpcResult, error: rpcErr } = await supabase.rpc('atomic_partner_remove_controller', {
             p_partner_id: partnerId,
             p_controller_id: controllerId,
+            p_actor_id: user.id,
         });
         if (isControllerRemovalBlocked(rpcErr)) {
             return NextResponse.json(controllerRemovalConflict(), { status: 409 });
@@ -98,6 +101,7 @@ export async function DELETE(
         if (rpcErr || !rpcResult) throw new Error(`atomic_partner_remove_controller : ${rpcErr?.message ?? 'réponse vide'}`);
         const removal = rpcResult as RemovalReply;
         if (removal.ok !== true) {
+            if (removal.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
             if (removal.code === 'CONTROLLER_NOT_IN_TEAM') {
                 return NextResponse.json({ error: 'Ce contrôleur ne fait pas partie de cette équipe.', code: 'CONTROLLER_NOT_IN_TEAM' }, { status: 404 });
             }

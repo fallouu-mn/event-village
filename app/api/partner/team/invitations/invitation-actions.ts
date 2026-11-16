@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { serverIsPartner, type ServerUser } from '@/lib/auth/session';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { getServerEnv } from '@/lib/env';
 import { formatDateTime } from '@/lib/format';
 import { releaseQuota, reserveQuota } from '@/lib/security/quota';
@@ -35,6 +36,7 @@ const REFUSAL_STATUS: Record<string, number> = {
     REASON_TOO_LONG: 400,
     INVITATION_NOT_PENDING: 409,
     INVITATION_STILL_PENDING: 409,
+    PARTNER_SUSPENDED: 403,
 };
 
 const RPC: Record<InvitationAction, string> = {
@@ -118,6 +120,8 @@ export async function handleInvitationAction(action: InvitationAction, req: Next
             message: `Invitation renvoyée par SMS : réponse attendue avant le ${formatDateTime(expiresAt)}.`,
         });
     } catch (err) {
+        // Correctifs de la contre-vérification de la finition 2a (T1) : fiche SUSPENDU refusée aussi par la base
+        if (err instanceof PublicError && err.code === 'PARTNER_SUSPENDED') return await partnerSuspendedResponse();
         return apiFailure(context, err, { message: 'Action momentanément impossible. Réessayez.', code: 'INVITATION_ACTION_FAILED' });
     } finally {
         if (phoneBucket && !phoneUsed) {

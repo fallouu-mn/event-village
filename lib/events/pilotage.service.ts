@@ -65,6 +65,8 @@ const REFUSAL_HTTP: Record<string, number> = {
     PURPOSE_REQUIRED: 400,
     INVALID_INPUT: 400,
     UNKNOWN_STATUS: 400,
+    // Correctifs de la contre-vérification de la finition 2a (T1) : fiche SUSPENDU (event_controller_set_cash)
+    PARTNER_SUSPENDED: 403,
 };
 
 const DEFAULT_MESSAGES: Record<string, string> = {

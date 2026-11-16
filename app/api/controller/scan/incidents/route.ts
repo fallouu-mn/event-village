@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
+import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
 import { getServerEnv } from '@/lib/env';
 import { DEVICE_INCIDENT_KINDS, logDeviceScanIncidents, MAX_INCIDENTS_PER_REPORT } from '@/lib/scan/scan-incidents';
 import { reserveQuota } from '@/lib/security/quota';
@@ -37,6 +38,11 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Déclaration d’incidents invalide.', code: 'INVALID_BODY' }, { status: 400 });
     }
+    // Correctifs de la contre-vérification de la finition 2a (T1, décision) : sur SES événements, une partenaire dont la
+    // fiche n'est pas VALIDE ne scanne plus (cvf1 T2) ; elle n'a donc pas d'incident de scan à déclarer. Même refus que le
+    // scan (403 PARTNER_NOT_VALIDATED), avant le quota ; un contrôleur, un admin et l'événement d'une autre ne changent pas.
+    const ficheRefused = await ownEventFicheRefusal(user, parsed.data.eventId);
+    if (ficheRefused) return ficheRefused;
 
     const quota = await reserveQuota(
         [{ scope: 'scan_incident_report', bucket: user.id, windowSecs: 60, max: getServerEnv().SCAN_INCIDENT_REPORT_PER_SCANNER_MIN }],

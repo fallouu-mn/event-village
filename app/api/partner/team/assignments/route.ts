@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession, serverIsPartner, serverHasRole } from '@/lib/auth/session';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { isEventEligibleForController, INELIGIBLE_EVENT_ASSIGNMENT_ERROR } from '@/lib/events/event-status';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
@@ -373,6 +374,8 @@ export async function PATCH(req: NextRequest) {
         if (sync.ok !== true) {
             // cvf1 (migration 13) : la fonction refuse elle-même d'ajouter un événement à un compte d'administration
             if (sync.code === 'NOT_INVITABLE') return notInvitableResponse();
+            // Correctifs de la contre-vérification de la finition 2a (T1) : fiche SUSPENDU refusée aussi par la base
+            if (sync.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
             const status = SYNC_REFUSALS[String(sync.code)];
             if (!status) throw new Error(`controller_assignments_sync : refus inattendu ${JSON.stringify(sync)}`);
             return NextResponse.json({ error: sync.message ?? 'Affectations refusées.', code: sync.code }, { status });

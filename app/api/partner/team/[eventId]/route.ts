@@ -4,6 +4,7 @@ import { requireActiveSession, serverIsAdmin, serverIsPartner, serverHasRole } f
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason, optionalJsonBody } from '../team-access';
 
 export const dynamic = 'force-dynamic';
@@ -151,18 +152,22 @@ export async function DELETE(
         if (reasonRefused) return reasonRefused;
         const reason = asAdmin ? cleanReason(body.reason) : null;
 
-        // 3. Retrait (le trigger controller_removal_guard refuse une affectation à caisse ouverte)
-        const { data: deleted, error: delErr } = await supabase
-            .from('event_controllers')
-            .delete()
-            .eq('id', assignmentId)
-            .eq('event_id', eventId)
-            .select('id');
+        // 3. Retrait par event_controllers_remove (correctifs de la contre-vérification de la finition 2a, T1 : fiche SUSPENDU
+        //    refusée en tête, droits vérifiés de nouveau en base) ; le trigger controller_removal_guard refuse toujours une
+        //    affectation à caisse ouverte (EV409)
+        const { data: removal, error: delErr } = await supabase.rpc('event_controllers_remove', {
+            p: { actor_id: user.id, event_id: eventId, assignment_ids: [assignmentId] },
+        });
         if (isControllerRemovalBlocked(delErr)) {
             return NextResponse.json(controllerRemovalConflict(), { status: 409 });
         }
-        if (delErr) throw new Error(`retrait de l'affectation : ${delErr.message}`);
-        if ((deleted ?? []).length === 0) return assignmentNotFound(); // retrait concurrent
+        if (delErr || !removal) throw new Error(`retrait de l'affectation : ${delErr?.message ?? 'réponse vide'}`);
+        const removed = removal as { ok?: boolean; code?: string };
+        if (removed.ok !== true) {
+            if (removed.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
+            if (removed.code === 'ASSIGNMENT_NOT_FOUND') return assignmentNotFound(); // retrait concurrent
+            throw new Error(`retrait de l'affectation : refus inattendu ${JSON.stringify(removed)}`);
+        }
 
         // 4. Lot 6 (J2.4) : l'avis de retrait au contrôleur (in-app, push, SMS) est mis en file par le
         //    trigger trg_event_controllers_notify dans la transaction de la suppression. Journal.

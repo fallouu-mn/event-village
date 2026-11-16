@@ -6,8 +6,9 @@
  *  - fiche VALIDE : tout ce que la route permet (inchangé) ;
  *  - fiche SUSPENDU : lectures gardées ; finition 2a (1a) : toute écriture d'événement refusée (création, modification,
  *    billets, zones, transitions, annulation, invitations, remboursements, code du régisseur, dépôt d'image) avec
- *    PARTNER_SUSPENDED et le contact du support ; les autres routes inchangées ; la base refuse aussi (migration
- *    20261116000001) ;
+ *    PARTNER_SUSPENDED et le contact du support ; correctifs de la contre-vérification (T1, T2) : de même toute écriture de
+ *    l'équipe (/api/partner/team/*) et des caisses (/api/partner/shifts/*) ; les autres routes inchangées ; la base refuse
+ *    aussi (migrations 20261116000001, 20261116000004 et 20261116000005) ;
  *  - fiche EN_ATTENTE : seulement la lecture du tableau de bord, du profil, des pièces, et le complément de dossier ;
  *  - fiche REJETE : le complément de dossier seulement (avec la lecture du tableau de bord, qui porte le motif et le
  *    bouton « Compléter mon dossier », et des pièces) ;
@@ -77,6 +78,10 @@ export function partnerFicheAllows(status: string | null, method: string, pathna
 /**
  * Finition 2a (1a) : écriture d'un événement, refusée à une fiche SUSPENDU. Toute méthode autre que GET sous
  * /api/partner/events (création comprise), sauf l'export des participants (lecture envoyée en POST), et le dépôt d'image.
+ * Correctifs de la contre-vérification (T1, T2) : aussi toute écriture de l'équipe de ses événements (/api/partner/team/* :
+ * réglages, porte, point d'entrée, espèces, invitation, renvoi, annulation, effacement, retraits) et de ses caisses
+ * (/api/partner/shifts/* : validation d'un écart). Inventaire de toutes les écritures /api/partner/* et /api/controller/*
+ * avec leur garde : tests/parcours/f2acv-ecritures-fiche.test.ts.
  */
 export function partnerEventWrite(method: string, pathname: string): boolean {
     const m = method.toUpperCase();
@@ -84,7 +89,9 @@ export function partnerEventWrite(method: string, pathname: string): boolean {
     const key = routeKey(m, pathname);
     if (key === 'POST /api/partner/events/*/participants-export') return false;
     const path = key.slice(m.length + 1);
-    return path === '/api/partner/events' || path.startsWith('/api/partner/events/') || path === '/api/partner/upload';
+    return path === '/api/partner/events' || path.startsWith('/api/partner/events/') || path === '/api/partner/upload'
+        || path === '/api/partner/team' || path.startsWith('/api/partner/team/')
+        || path === '/api/partner/shifts' || path.startsWith('/api/partner/shifts/');
 }
 
 /** Réponse 403 PARTNER_SUSPENDED : texte de la base suivi du contact du support. */

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
-import { callLot5Rpc, errorResponse, routeParam, UUID_RE, type RouteParams } from '@/lib/events/pilotage.service';
+import { callLot5Rpc, errorResponse, PilotageError, routeParam, UUID_RE, type RouteParams } from '@/lib/events/pilotage.service';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { AdminService } from '@/lib/admin/admin.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { actsAsTeamAdmin, adminReasonRefusal, adminTeamRefusal, cleanReason } from '../../team-access';
@@ -72,6 +73,8 @@ export async function PATCH(request: NextRequest, ctx: RouteParams<{ id: string 
             openShift: body.open_shift === true,
         });
     } catch (err) {
+        // Correctifs de la contre-vérification de la finition 2a (T1) : fiche SUSPENDU refusée aussi par la base
+        if (err instanceof PilotageError && err.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
         return errorResponse(err, 'PATCH /api/partner/team/assignments/[id]',
             'Modification de la permission espèces impossible pour le moment.', 'ASSIGNMENT_UPDATE_FAILED');
     }
