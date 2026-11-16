@@ -371,7 +371,8 @@ type ErrorMap = Record<string, string>;
 
 const FIELD_LABELS: Record<string, string> = {
     title: 'Titre',
-    category: 'Catégorie de l’événement',
+    // Finition 2b (E-66) : « Type d'événement » (avant : « Catégorie de l'événement »)
+    category: 'Type d’événement',
     description: 'Description',
     image_url: 'Affiche',
     start_date: 'Date de début',
@@ -920,7 +921,7 @@ export function EventForm(props: EventFormProps) {
                         <li>Titre, dates, heures, lieu, ville et adresse&nbsp;: les détenteurs de billets sont prévenus.</li>
                         {/* Correctifs de la contre-vérification de la finition 2a (T3, T4) : dit avant d'enregistrer */}
                         <li>Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS.</li>
-                        <li>Catégorie d’événement : verrouillée dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.</li>
+                        <li>Type d’événement : verrouillé dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.</li>
                     </ul>
                 </StatusBanner>
             )}
@@ -1367,7 +1368,7 @@ function CategoryRadios({ value, onChange, locked, error }: {
     return (
         <div className="flex flex-col gap-1.5">
             <span id="ev-category-label" className="text-sm font-semibold text-fg">
-                Catégorie de l’événement
+                Type d’événement
                 <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
                 <span className="sr-only"> (obligatoire)</span>
             </span>
@@ -1410,7 +1411,7 @@ function CategoryRadios({ value, onChange, locked, error }: {
             {locked && (
                 <p id={hintId} className="flex items-start gap-1.5 text-sm text-fg-muted">
                     <Lock size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-                    Verrouillée : des billets ont déjà été vendus ou réservés.
+                    Verrouillé : des billets ont déjà été vendus ou réservés.
                 </p>
             )}
             {error && <p id={errorId} className="text-sm font-medium text-danger-fg">{error}</p>}

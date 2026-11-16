@@ -218,7 +218,8 @@ const cityField = z.string().trim()
     .max(EVENT_LIMITS.cityMax, `La ville compte au plus ${EVENT_LIMITS.cityMax} caractères.`)
     .refine((v) => !hasContactInfo(v), contactInfoMessage('La ville'))
     .transform(canonicalCity);
-const categoryField = z.enum(EVENT_CATEGORY_VALUES, { error: 'Choisissez une catégorie d’événement dans la liste.' });
+// Finition 2b (E-66) : « Type d'événement » à l'écran
+const categoryField = z.enum(EVENT_CATEGORY_VALUES, { error: 'Choisissez un type d’événement dans la liste.' });
 // Finition 2a (3) : bornes du Sénégal contrôlées avec la paire (checkPosition), plus de bornes -90/90 et -180/180 ici
 const latitudeField = z.number().finite().nullable();
 const longitudeField = z.number().finite().nullable();
