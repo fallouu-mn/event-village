@@ -586,6 +586,38 @@ describe('6.1 Envoyeur : plafond SMS et seuil du jour (décision 4, contrat E3 ;
 
 // ── Route cron ─────────────────────────────────────────────────────────────
 
+/** Lignes encore dues de la file (celles qu'un passage examinerait) : PENDING, file, échéance passée. */
+async function dueCount(): Promise<number> {
+    const { count, error } = await service.from('notification_outbox').select('id', { count: 'exact', head: true })
+        .eq('status', 'PENDING').eq('origin', 'OUTBOX').lte('next_attempt_at', new Date().toISOString());
+    assert.equal(error, null, `lignes dues : ${error?.message}`);
+    return count ?? 0;
+}
+
+/**
+ * Finition 2b : `n` rappels dans l'application, dus, sans événement : la réservation les annule (EVENT_NOT_PUBLISHED),
+ * ils sont donc examinés sans être réservés (cas du run 252).
+ */
+async function seedUnclaimableQueue(n: number): Promise<void> {
+    const holder = await newBuyer('notif-envoyeur-file');
+    const { data: t, error: tErr } = await service.from('notification_types').select('family').eq('type', 'REMINDER_J1').single();
+    assert.equal(tErr, null, `famille de REMINDER_J1 : ${tErr?.message}`);
+    const due = new Date(Date.now() - 2_000).toISOString();
+    for (let from = 0; from < n; from += 500) {
+        const rows: Array<Record<string, unknown>> = Array.from({ length: Math.min(500, n - from) }, (): Record<string, unknown> => {
+            const group = `TEST:FILE:${randomUUID()}`;
+            return {
+                type: 'REMINDER_J1', family: t!.family, channel: 'IN_APP', origin: 'OUTBOX', status: 'PENDING',
+                recipient_user_id: holder.userId, template_data: {}, attempts: 0, max_attempts: 5,
+                due_at: due, next_attempt_at: due, group_key: group, idempotency_key: `${group}:IN_APP`,
+            };
+        });
+        const inserted = await service.from('notification_outbox').insert(rows);
+        const error: { message: string } | null = inserted.error;
+        assert.equal(error, null, `file d'essai (${from} à ${from + rows.length}) : ${error?.message}`);
+    }
+}
+
 describe('6.1 Route /api/cron/notifications-dispatch (contrat E5)', () => {
     type Handler = (req: NextRequest) => Promise<Response>;
 
@@ -608,6 +640,9 @@ describe('6.1 Route /api/cron/notifications-dispatch (contrat E5)', () => {
         // (10 tours de 100, SMS en dernier) ; la ligne du test n'était envoyée que si la file était courte à ce moment.
         // La file est vidée d'abord, la ligne du test posée ensuite. Modification signalée au rapport.
         const drain = await lotFunction<(o: Record<string, unknown>) => Promise<DispatchRunReport>>(DISPATCHER_MODULE, 'dispatchNotifications', 'envoyeur (contrat E4)');
+        // Branche rouge de la finition 2b : la file d'essai (2 500 lignes examinées sans être réservées) avec l'ANCIEN vidage
+        await seedUnclaimableQueue(2_500);
+        void dueCount;
         for (let i = 0; i < 50 && (await drain({})).claimed >= 1000; i++) { /* jusqu'à une file plus courte qu'un passage */ }
         const row = await dueRow({ recipient_phone: phone });
         const mark = smsMark(phone);

@@ -15,6 +15,8 @@
  * F40 à F43), même contrôle strict (42501 pour anon et pour un compte, jamais PGRST202) ; rouges chacune jusqu'à sa
  * migration (20261110000002, …05 à …10). Hors liste : is_admin() et is_superadmin() (aides RLS du groupe a, recopiées
  * par 01, toujours exécutables : bloc des aides RLS ci-dessous), fonctions de trigger, recopies. Ajout seul.
+ * Finition 2b : bloc FINITION2B_RPCS (migrations 20261119000003, …05, …06, …07), même contrôle strict ; rouges chacune
+ * jusqu'à sa migration. Hors liste : ticket_categories_auto_color (fonction de trigger). Ajout seul.
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -212,6 +214,22 @@ const LOT9TER_RPCS: Array<[string, Record<string, unknown>]> = [
     ['pilotage_compute_entries', { p_event: ZERO_UUID, p_with_names: false }],
 ];
 
+/**
+ * Finition 2b : fonctions nouvelles (couleur au contrôle posée par la base, portes et zones dès la création, cadence des
+ * avis, aperçu de la fenêtre « Prévenir ») ; chacune doit EXISTER et être refusée (42501).
+ */
+const FINITION2B_RPCS: Array<[string, Record<string, unknown>]> = [
+    // 03 : couleur au contrôle proposée par la base
+    ['ticket_category_auto_color', { p_event: ZERO_UUID, p_exclude: ZERO_UUID }],
+    // 05 : portes et zones dès la création (fonctions communes extraites de event_zones_save)
+    ['event_zones_form_refusal', { p_zones: [] }],
+    ['event_zones_write', { p_event: ZERO_UUID, p_actor: ZERO_UUID, p_zones: [], p_at_creation: false }],
+    // 06 : cadence des avis
+    ['event_notice_recipient_count', { p_event: ZERO_UUID, p_multi: false }],
+    // 07 : aperçu d'une modification (fenêtre « Prévenir »)
+    ['event_update_preview', { p: {} }],
+];
+
 /** RPC métier (groupe b) avec des arguments factices valides en type. */
 const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['validate_and_check_in_ticket', { p_qr_code: 'EV-QR-INEXISTANT', p_controller_id: ZERO_UUID }],
@@ -323,6 +341,8 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ...LOT9BIS_RPCS,
     // Lot 9 ter : réglages, argent, équipe, événements, invités, zones, pilotage ; service_role uniquement
     ...LOT9TER_RPCS,
+    // Finition 2b : couleur, zones à la création, cadence des avis, aperçu ; service_role uniquement
+    ...FINITION2B_RPCS,
 ];
 
 /** Aides RLS (groupe a) : doivent rester exécutables par anon et authenticated. */
@@ -500,6 +520,23 @@ const FINITION3A_RPCS: Array<[string, Record<string, unknown>]> = [
 describe('R3 — finition 3a : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {
     const MIGRATIONS = 'migrations 20261117000003 (synthèse) et …04 (solde SamirPay)';
     for (const [fn, args] of FINITION3A_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
+describe('R3 — finition 2b : chaque fonction nouvelle existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261119000003 (couleur), …05 (zones à la création), …06 (cadence des avis), …07 (aperçu)';
+    for (const [fn, args] of FINITION2B_RPCS) {
         test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
             const anon = await anonClient().rpc(fn, args);
             assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
