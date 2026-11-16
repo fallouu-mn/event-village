@@ -154,19 +154,11 @@ describe('A9 — journal pseudonymisé, adresse en attente', () => {
 // ── B1, B2 ─────────────────────────────────────────────────────────────────
 
 describe('B1 — route des tarifs, services en préparation', () => {
-    test('un ADMIN pricing.manage n’écrit ni features.* ni une clé hors liste blanche (403, valeur inchangée)', async () => {
-        const admin = await newAdminWith(['pricing.manage'], { label: 'q-b1' });
-        const { data: before } = await service.from('platform_settings').select('value').eq('key', 'features.halls_enabled').single();
-        for (const key of ['features.halls_enabled', 'q.cle_libre']) {
-            const r = await call('../../app/api/admin/pricing/route', authed('/api/admin/pricing', 'POST', admin, { key, value: { value: true } }));
-            assert.equal(r.status, 403, `${key} : ${show(r)}`);
-        }
-        const { data: afterRow } = await service.from('platform_settings').select('value').eq('key', 'features.halls_enabled').single();
-        assert.deepEqual(afterRow?.value, before?.value, 'interrupteur inchangé');
-        // Clé de la liste blanche : la valeur actuelle est réécrite telle quelle (aucune autre suite n'en dépend alors)
-        const { data: fees } = await service.from('platform_settings').select('value').eq('key', 'aggregator_fees').single();
-        const ok = await call('../../app/api/admin/pricing/route', authed('/api/admin/pricing', 'POST', admin, { key: 'aggregator_fees', value: fees?.value }));
-        assert.equal(ok.status, 200, `clé tarifaire de la liste blanche : ${show(ok)}`);
+    // Finition 3b (E-36) : POST /api/admin/pricing est retirée avec la page « Tarification » et pricing.manage ; les
+    // interrupteurs features.* ne s'écrivent plus que par /api/admin/finance-settings (SUPERADMIN). Modification signalée
+    // au rapport de la finition 3b.
+    test('route des tarifs retirée (finition 3b) : plus aucun chemin d’écriture de features.* ni d’une clé libre', () => {
+        assert.ok(!fs.existsSync('app/api/admin/pricing/route.ts'), 'app/api/admin/pricing/route.ts existe encore');
     });
 
     test('écran : « Services en préparation », « Pas prêt pour le public », activation en tapant ACTIVER', () => {
@@ -270,7 +262,8 @@ describe('B5 — lectures d’administration', () => {
     test('sans settings.read : réglages et tarifs refusés ; permissions d’un autre admin : SUPERADMIN seul', async () => {
         const bare = await newAdminWith([], { label: 'q-b5-sans' });
         const reader = await newAdminWith(['settings.read'], { label: 'q-b5-avec' });
-        for (const [path, mod] of [['/api/admin/finance-settings', '../../app/api/admin/finance-settings/route'], ['/api/admin/pricing', '../../app/api/admin/pricing/route']] as const) {
+        // Finition 3b (E-36) : /api/admin/pricing retirée ; seule la route des réglages reste à contrôler (signalé au rapport).
+        for (const [path, mod] of [['/api/admin/finance-settings', '../../app/api/admin/finance-settings/route']] as const) {
             const no = await call(mod, authed(path, 'GET', bare), 'GET');
             const yes = await call(mod, authed(path, 'GET', reader), 'GET');
             assert.equal(no.status, 403, `${path} sans permission : ${show(no)}`);

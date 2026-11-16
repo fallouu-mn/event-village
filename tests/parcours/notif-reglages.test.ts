@@ -33,7 +33,7 @@
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { NextRequest } from 'next/server';
 import { inspect } from '../helpers/db';
@@ -226,7 +226,8 @@ describe('6.5 Réglages notif.* (contrat I1)', () => {
     });
 
     test('finance_setting_set : ADMIN refusé (FORBIDDEN, message du contrat), clé notif.* inconnue refusée (UNKNOWN_KEY), sans effet', async () => {
-        const admin = await newAdmin('reglages-forbidden', ['pricing.manage']);
+        // Finition 3b (E-36) : pricing.manage retiré ; un ADMIN qui lit les réglages (settings.read) reste refusé en écriture.
+        const admin = await newAdmin('reglages-forbidden', ['settings.read']);
         const key: NotifSettingKey = 'notif.reminder_h3_hours';
         const saved = await getNotifSetting(key);
         const count0 = (await historyOf(key)).length;
@@ -361,43 +362,11 @@ describe('6.5 Route /api/admin/finance-settings et refus de /api/admin/pricing (
         }
     });
 
-    test('POST /api/admin/pricing : un ADMIN qui a pricing.manage n’écrit ni ne crée de clé notif.* (403 NOTIF_SETTING, sans effet)', async () => {
-        const { POST: pricing } = (await importModule('../../app/api/admin/pricing/route')) as { POST: Handler };
-        const admin = await newAdmin('reglages-pricing', ['pricing.manage']);
-        // Lot 9 quater (B1 : AUD-22) : la route n'écrit plus qu'une clé tarifaire de sa liste blanche ; le témoin réécrit
-        // la valeur actuelle de aggregator_fees, inchangée, et n'est pas supprimé (modification signalée au rapport).
-        const witnessKey = 'aggregator_fees';
-        const { data: witnessRow } = await service.from('platform_settings').select('value').eq('key', witnessKey).single();
-        const created = 'notif.cle_creee_par_pricing_lot6';
-        const key: NotifSettingKey = 'notif.reminder_h3_hours';
-        const existed = await keyExists(key);
-        const saved = existed ? await getNotifSetting(key) : undefined;
-        const count0 = (await historyOf(key)).length;
-        try {
-            // Témoin : la permission pricing.manage est bien effective pour ce compte.
-            const control = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: witnessKey, value: witnessRow?.value }));
-            assert.equal(control.status, 200, `témoin (clé ordinaire par un ADMIN pricing.manage) : HTTP ${control.status} ${JSON.stringify(await control.json())}`);
-
-            const denied = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key, value: { value: 12 } }));
-            const body = await denied.json();
-            assert.equal(denied.status, 403, `${key} par /api/admin/pricing : HTTP ${denied.status} ${JSON.stringify(body)}`);
-            assert.equal(body.code, 'NOTIF_SETTING', `code du refus : ${JSON.stringify(body)}`);
-            assert.equal(body.error, PRICING_REFUSAL, 'message du refus (contrat I1.6)');
-            assert.equal(await keyExists(key), existed, `${key} : ni créée ni supprimée par la route`);
-            if (existed) assert.deepEqual(await getNotifSetting(key), saved, 'valeur inchangée');
-            assert.equal((await historyOf(key)).length, count0, 'aucun historique');
-
-            const create = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: created, value: { value: 1 } }));
-            assert.equal(create.status, 403, `création de ${created} par /api/admin/pricing : HTTP ${create.status}`);
-            assert.equal(await keyExists(created), false, 'aucune clé notif.* créée');
-        } finally {
-            const leftovers = [created];
-            if (!existed && (await keyExists(key))) leftovers.push(key);
-            await dropKeys(leftovers);
-            if (existed && JSON.stringify(await getNotifSetting(key)) !== JSON.stringify(saved)) {
-                await setNotifSetting(key, saved, 'restauration après le test de /api/admin/pricing');
-            }
-        }
+    // Finition 3b (E-36) : POST /api/admin/pricing est retirée avec la page « Tarification » et pricing.manage ; il ne reste
+    // plus que /api/admin/finance-settings (SUPERADMIN, valeur validée et historisée en base) pour écrire une clé notif.*.
+    // Modification signalée au rapport de la finition 3b.
+    test('POST /api/admin/pricing : route retirée (finition 3b), plus aucun autre chemin d’écriture d’une clé notif.*', () => {
+        assert.ok(!existsSync(path.join(process.cwd(), 'app/api/admin/pricing/route.ts')), 'app/api/admin/pricing/route.ts existe encore');
     });
 
     test('page /admin/finance-settings : 11 libellés exacts, choix en français, section « Notifications », section « Services en préparation » (contrôle statique)', () => {

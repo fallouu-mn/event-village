@@ -260,9 +260,11 @@ export async function POST(req: NextRequest) {
             email_pending: typedEmail || null,
             ...(emailVerification ? { email_verification: emailVerification } : {}),
             activation,
-            message: activation === 'SENT'
+            // Finition 3b (E-36) : un administrateur créé n'a aucun droit tant que le Superadmin ne lui en donne pas
+            message: (activation === 'SENT'
                 ? 'Compte créé. Le titulaire reçoit par SMS un lien pour choisir son mot de passe (valable 24 heures).'
-                : 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste des comptes.',
+                : 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste des comptes.')
+                + (targetRole === 'ADMIN' ? ' Il n’a encore aucun droit : choisissez-les maintenant.' : ''),
         });
     } catch (err: unknown) {
         return apiFailure('POST /api/admin/users', err, USER_SAVE_FALLBACK);

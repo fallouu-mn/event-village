@@ -18,10 +18,8 @@ export const PERMISSION_LABELS: Readonly<Record<string, string>> = {
     'referrals.manage': 'Gérer le parrainage',
     'communications.manage': 'Gérer les communications',
     'statistics.read': 'Consulter les statistiques',
-    'pricing.manage': 'Gérer les tarifs',
     'notifications.read': 'Consulter les envois de messages',
     'notifications.write': 'Relancer les envois de messages',
-    'shifts.read': 'Consulter les écarts de caisse',
     // Lot 9 quater (B4, B5) : nouvelles permissions, toujours affichées par leur libellé
     'access.operate': 'Contrôler les entrées et tenir une caisse',
     'settings.read': 'Lire les réglages',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth, ADMIN_PERMISSIONS, AdminPermission } from '@/lib/admin/admin-auth';
+import { withDependencies } from '@/lib/admin/permission-profiles';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -69,9 +70,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'adminId et tableau de permissions requis.' }, { status: 400 });
         }
 
-        const validPermissions = permissions.filter((p) =>
+        // Finition 3b (E-36) : un droit d'écriture amène sa lecture ; un droit retiré ou inconnu est ignoré.
+        const validPermissions = withDependencies(permissions.filter((p) =>
             (ADMIN_PERMISSIONS as readonly string[]).includes(p)
-        );
+        ));
 
         // Lot 9 (A33) : garde de la cible, remplacement et audit dans une transaction ; un échec laisse les droits intacts.
         const { data, error } = await getServiceRoleClient().rpc('admin_permissions_set', {

@@ -18,7 +18,7 @@
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { NextRequest } from 'next/server';
 import { assertAccessInvariants } from '../helpers/access-invariants';
@@ -151,43 +151,11 @@ describe('Réglages access.* (contrat A du lot 4)', () => {
         assert.deepEqual(data, [], 'aucune clé créée');
     });
 
-    test('POST /api/admin/pricing : un ADMIN qui a pricing.manage n’écrit ni ne crée de clé access.* (403, sans effet)', async () => {
-        const { POST: pricing } = (await importModule('../../app/api/admin/pricing/route')) as { POST: Handler };
-        const admin = await newBuyer('reglages-admin', { firstName: 'Ndeye', lastName: 'Tarificatrice' });
-        const { error: roleErr } = await service.from('user_roles').upsert([{ user_id: admin.userId, role: 'ADMIN' }], { onConflict: 'user_id,role' });
-        assert.equal(roleErr, null, `rôle ADMIN : ${roleErr?.message}`);
-        const { error: permErr } = await service.from('admin_permissions').upsert(
-            { user_id: admin.userId, permission: 'pricing.manage' }, { onConflict: 'user_id,permission' });
-        assert.equal(permErr, null, `permission pricing.manage : ${permErr?.message}`);
-
-        // Lot 9 quater (B1 : AUD-22) : la route n'écrit plus qu'une clé tarifaire de sa liste blanche ; le témoin réécrit
-        // la valeur actuelle de aggregator_fees, inchangée, et n'est pas supprimé (modification signalée au rapport).
-        const witnessKey = 'aggregator_fees';
-        const { data: witnessRow } = await service.from('platform_settings').select('value').eq('key', witnessKey).single();
-        const created = 'access.cle_creee_par_pricing_lot4';
-        const key: AccessSettingKey = 'access.scan_window_before_hours';
-        const saved = await getAccessSetting(key);
-        const count0 = (await historyOf(key)).length;
-        try {
-            // Témoin : la permission pricing.manage est bien effective pour ce compte.
-            const control = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: witnessKey, value: witnessRow?.value }));
-            assert.equal(control.status, 200, `témoin (clé ordinaire par un ADMIN pricing.manage) : HTTP ${control.status} ${JSON.stringify(await control.json())}`);
-
-            const denied = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key, value: { value: 48 } }));
-            assert.equal(denied.status, 403, `${key} par /api/admin/pricing : HTTP ${denied.status} ${JSON.stringify(await denied.json())}`);
-            assert.deepEqual(await getAccessSetting(key), saved, 'valeur inchangée');
-            assert.equal((await historyOf(key)).length, count0, 'aucun historique');
-
-            const create = await pricing(jsonRequest('/api/admin/pricing', 'POST', admin.accessToken, { key: created, value: { value: 1 } }));
-            assert.equal(create.status, 403, `création de ${created} par /api/admin/pricing : HTTP ${create.status}`);
-            const { data, error } = await service.from('platform_settings').select('key').eq('key', created);
-            assert.equal(error, null, error?.message);
-            assert.deepEqual(data, [], 'aucune clé access.* créée');
-        } finally {
-            await restore(key, saved);
-            const { error: cleanErr } = await service.from('platform_settings').delete().in('key', [created]);
-            assert.equal(cleanErr, null, `nettoyage des clés du test : ${cleanErr?.message}`);
-        }
+    // Finition 3b (E-36) : POST /api/admin/pricing est retirée avec la page « Tarification » et pricing.manage ; il ne reste
+    // plus que /api/admin/finance-settings (SUPERADMIN, valeur validée et historisée en base) pour écrire une clé access.*.
+    // Modification signalée au rapport de la finition 3b.
+    test('POST /api/admin/pricing : route retirée (finition 3b), plus aucun autre chemin d’écriture d’une clé access.*', () => {
+        assert.ok(!existsSync(path.join(process.cwd(), 'app/api/admin/pricing/route.ts')), 'app/api/admin/pricing/route.ts existe encore');
     });
 
     test('page /admin/finance-settings : les 4 clés access.* ont un libellé (contrôle statique)', () => {

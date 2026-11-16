@@ -91,9 +91,11 @@ describe('A21 — paiement', () => {
 });
 
 describe('A21 — administration', () => {
-    test('ADMIN_PERMISSIONS : plus de 10 droits, dont users.read, partners.validate, refunds.manage, pricing.manage', () => {
+    // Finition 3b (E-36) : pricing.manage retiré de la liste (« Tarification » retirée) ; remplacé ici par settings.read.
+    // Modification signalée au rapport de la finition 3b.
+    test('ADMIN_PERMISSIONS : plus de 10 droits, dont users.read, partners.validate, refunds.manage, settings.read', () => {
         assert.ok(ADMIN_PERMISSIONS.length > 10, `droits : ${ADMIN_PERMISSIONS.length}`);
-        for (const permission of ['users.read', 'partners.validate', 'refunds.manage', 'pricing.manage'] as const) {
+        for (const permission of ['users.read', 'partners.validate', 'refunds.manage', 'settings.read'] as const) {
             assert.equal(ADMIN_PERMISSIONS.includes(permission), true, `droit ${permission} absent`);
         }
     });

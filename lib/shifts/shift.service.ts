@@ -528,39 +528,6 @@ export class ShiftService {
         return (data ?? []) as unknown as Shift[];
     }
 
-    // ── 7. Écarts consolidés (admin) ───────────────────────────────────────
-
-    static async getConsolidatedDiscrepancies(): Promise<Array<{
-        shift_id: string;
-        event_id: string;
-        event_title?: string;
-        partner_id: string;
-        controller_id: string;
-        controller_name?: string;
-        expected_cash_total: number;
-        declared_cash_total: number;
-        discrepancy_amount: number;
-        discrepancy_justification: string;
-        closed_at: string;
-    }>> {
-        const { data, error } = await getServiceRoleClient().from('controller_shifts')
-            .select(`${SHIFT_COLUMNS}, events(id, title), users:controller_id(id, first_name, last_name)`)
-            .neq('discrepancy_amount', 0)
-            .not('discrepancy_amount', 'is', null)
-            .order('closed_at', { ascending: false });
-        if (error) throw new Error(`Lecture des écarts de caisse impossible : ${error.message}`);
-        return ((data ?? []) as unknown as Shift[]).map((d) => ({
-            shift_id: d.id,
-            event_id: d.event_id,
-            event_title: d.events?.title,
-            partner_id: d.partner_id,
-            controller_id: d.controller_id,
-            controller_name: ctrlName(d.users),
-            expected_cash_total: Number(d.expected_cash_total),
-            declared_cash_total: Number(d.declared_cash_total),
-            discrepancy_amount: Number(d.discrepancy_amount),
-            discrepancy_justification: d.discrepancy_justification || '',
-            closed_at: d.closed_at || '',
-        }));
-    }
+    // Finition 3b (E-36) : « écarts consolidés (admin) » retirés avec /api/admin/shifts/audit et shifts.read (aucun écran ne
+    // les lisait ; les écarts se valident dans l'onglet « Caisse » du pilotage).
 }

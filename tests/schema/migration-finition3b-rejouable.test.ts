@@ -21,6 +21,8 @@ const FINITION3B_MIGRATIONS = [
     '20261118000001_f3b_todo.sql',
     // 3 : valeur par défaut de chaque réglage (E-35)
     '20261118000002_f3b_reglages.sql',
+    // 4 : droits retirés (pricing.manage, shifts.read) (E-36)
+    '20261118000003_f3b_droits.sql',
 ] as const;
 
 after(async () => {

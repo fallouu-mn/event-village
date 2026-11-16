@@ -61,7 +61,6 @@ interface RouteResult { status: number; body: Row }
 const USERS_ROUTE = '../../app/api/admin/users/route';
 const NOTIFICATIONS_ROUTE = '../../app/api/admin/notifications/route';
 const RETRY_ROUTE = '../../app/api/admin/cashouts/[id]/resend/route';
-const SHIFTS_AUDIT_ROUTE = '../../app/api/admin/shifts/audit/route';
 
 /** Comptes créés par la suite (suspendus en fin de suite s'ils sont encore ACTIF). */
 const createdAccounts: string[] = [];
@@ -301,10 +300,12 @@ describe('7.0 c — un admin anonymisé n’a plus aucune permission et sa sessi
 
 // ── 4. Permissions dédiées ─────────────────────────────────────────────────
 
-describe('7.0 c — permissions dédiées : refunds.manage et shifts.read (3.7)', () => {
-    test('ADMIN_PERMISSIONS contient shifts.read (et toujours refunds.manage)', () => {
+describe('7.0 c — permissions dédiées : refunds.manage (shifts.read retiré à la finition 3b) (3.7)', () => {
+    // Finition 3b (E-36) : shifts.read retiré (sa seule route, /api/admin/shifts/audit, n'était appelée par aucun écran) ;
+    // refunds.manage reste. Modification signalée au rapport de la finition 3b.
+    test('ADMIN_PERMISSIONS contient refunds.manage ; shifts.read retiré (finition 3b)', () => {
         const list = ADMIN_PERMISSIONS as readonly string[];
-        assert.ok(list.includes('shifts.read'), `shifts.read absente de ADMIN_PERMISSIONS : ${list.join(', ')}`);
+        assert.ok(!list.includes('shifts.read'), `shifts.read encore dans ADMIN_PERMISSIONS : ${list.join(', ')}`);
         assert.ok(list.includes('refunds.manage'), 'refunds.manage absente de ADMIN_PERMISSIONS');
     });
 
@@ -337,24 +338,9 @@ describe('7.0 c — permissions dédiées : refunds.manage et shifts.read (3.7)'
         assert.equal(anonymous.status, 401, `sans session : ${show(anonymous)}`);
     });
 
-    test('GET /api/admin/shifts/audit : sans shifts.read → 403 ; avec → 200 ; SUSPENDU avec shifts.read → 403 ; SUPERADMIN → 200', async () => {
-        const path = '/api/admin/shifts/audit';
-        const without = await adminWith(['users.read', 'refunds.manage'], 'sans-shifts');
-        const r1 = await call(SHIFTS_AUDIT_ROUTE, 'GET', path, without.accessToken);
-        assert.equal(r1.status, 403, `ADMIN sans shifts.read : ${show(r1)}`);
-
-        const withPerm = await adminWith(['shifts.read'], 'shifts');
-        const r2 = await call(SHIFTS_AUDIT_ROUTE, 'GET', path, withPerm.accessToken);
-        assert.equal(r2.status, 200, `ADMIN avec shifts.read : ${show(r2)}`);
-        assert.equal(r2.body.success, true, `corps : ${show(r2)}`);
-        assert.equal(typeof r2.body.total_discrepancies, 'number', `total_discrepancies : ${show(r2)}`);
-
-        const suspended = await adminWith(['shifts.read'], 'shifts-suspendu');
-        await setStatus(suspended.userId, 'SUSPENDU');
-        const r3 = await call(SHIFTS_AUDIT_ROUTE, 'GET', path, suspended.accessToken);
-        assertNotActive(r3, 'ADMIN SUSPENDU avec shifts.read');
-
-        const r4 = await call(SHIFTS_AUDIT_ROUTE, 'GET', path, await superadminAccess());
-        assert.equal(r4.status, 200, `SUPERADMIN : ${show(r4)}`);
+    // Finition 3b (E-36) : la route et son droit sont retirés ; la suite vérifie qu'elle n'existe plus (signalé au rapport).
+    test('GET /api/admin/shifts/audit : route retirée avec shifts.read (finition 3b)', async () => {
+        const fs = await import('node:fs');
+        assert.ok(!fs.existsSync('app/api/admin/shifts/audit/route.ts'), 'app/api/admin/shifts/audit/route.ts existe encore');
     });
 });

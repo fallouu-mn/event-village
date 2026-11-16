@@ -15,8 +15,8 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
 import { permissionDescription, permissionLabel } from '@/lib/admin/permission-labels';
 
-/** Droits montrés : tous ceux qui ouvrent un écran ou une action (les droits retirés ne figurent plus dans la liste). */
-const SHOWN = ADMIN_PERMISSIONS.filter((p) => p !== 'pricing.manage' && p !== 'shifts.read');
+/** Droits montrés : tous les droits attribuables (lib/admin/permissions.ts). */
+const SHOWN: readonly string[] = ADMIN_PERMISSIONS;
 
 function RightsList({ title, items, granted }: { title: string; items: readonly string[]; granted: boolean }) {
   if (items.length === 0) return null;
