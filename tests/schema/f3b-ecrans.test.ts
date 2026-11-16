@@ -171,3 +171,20 @@ describe('3. E-35 — réglages groupés, expliqués, bornés à l’écran, con
         assert.match(catalog, /export function settingRisk\(/, 'alertes absentes');
     });
 });
+
+describe('3 bis. garde-fou : un seul libellé par réglage (page et catalogue des bornes)', () => {
+    test('chaque réglage borné a le même libellé et la même unité sur la page et dans lib/settings/catalog.ts', async () => {
+        const page = read(SETTINGS_PAGE);
+        const { SETTING_BOUNDS } = (await import(path.join(ROOT, 'lib/settings/catalog.ts'))) as { SETTING_BOUNDS: Record<string, { label: string; unit?: string }> };
+        const faults: string[] = [];
+        for (const [key, b] of Object.entries(SETTING_BOUNDS)) {
+            const line = page.split(String.fromCharCode(10)).find((l) => l.includes(`'${key}': { label:`));
+            if (!line) { faults.push(`${key} : absent de la page`); continue; }
+            const label = /label: '([^']*)'/.exec(line)?.[1];
+            const unit = /unit: '([^']*)'/.exec(line)?.[1];
+            if (label !== b.label) faults.push(`${key} : libellé « ${label} » (page) ≠ « ${b.label} » (catalogue)`);
+            if ((unit ?? undefined) !== (b.unit ?? undefined)) faults.push(`${key} : unité ${unit} (page) ≠ ${b.unit} (catalogue)`);
+        }
+        assert.deepEqual(faults, [], faults.join(String.fromCharCode(10)));
+    });
+});

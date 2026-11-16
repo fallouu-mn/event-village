@@ -517,10 +517,11 @@ describe('R3 — finition 3a : chaque fonction de la finition existe et reste r�
 // Finition 3b : chaque fonction nouvelle de la finition, appelée directement, est refusée à anon et à un compte.
 const FINITION3B_RPCS: Array<[string, Record<string, unknown>]> = [
     ['admin_todo', { p: { lines: ['debts'] } }],
+    ['platform_settings_defaults', {}],
 ];
 
 describe('R3 — finition 3b : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {
-    const MIGRATIONS = 'migration 20261118000001 (« À faire aujourd’hui »)';
+    const MIGRATIONS = 'migrations 20261118000001 (« À faire aujourd’hui ») et …02 (défaut des réglages)';
     for (const [fn, args] of FINITION3B_RPCS) {
         test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
             const anon = await anonClient().rpc(fn, args);

@@ -22,6 +22,7 @@ import React, { useCallback, useEffect, useId, useState } from 'react';
 import { Bell, History, Pencil, RefreshCw, Save, ScanLine, ToggleRight, Wallet, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { Select, TextInput } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -31,6 +32,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { formatDateTime } from '@/lib/format';
 import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
+import { SETTING_SECTIONS, settingBoundsError, settingRisk } from '@/lib/settings/catalog';
 
 type Kind = 'percent' | 'integer' | 'boolean' | 'choice' | 'text';
 
@@ -140,6 +142,8 @@ interface SettingsData {
   settings: Setting[];
   history: HistoryRow[];
   observed: ObservedFees;
+  /** Finition 3b (E-35) : valeur d'origine de chaque réglage. */
+  defaults: Record<string, unknown>;
 }
 
 const WITHDRAWAL_FEE_KEY = 'finance.withdrawal_fee_rate';
@@ -150,6 +154,8 @@ interface HistoryRow {
   newValue: unknown;
   reason: string | null;
   changedAt: string;
+  /** Finition 3b (E-35) : qui a fait le changement (« Automatique » sans compte). */
+  author: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,13 +195,14 @@ function parseSettings(body: unknown): SettingsData | null {
   const history = Array.isArray(body.history)
     ? body.history.flatMap((h: unknown) => {
         if (!isRecord(h) || typeof h.key !== 'string' || typeof h.changed_at !== 'string') return [];
-        return [{ key: h.key, oldValue: h.old_value, newValue: h.new_value, reason: typeof h.reason === 'string' ? h.reason : null, changedAt: h.changed_at }];
+        return [{ key: h.key, oldValue: h.old_value, newValue: h.new_value, reason: typeof h.reason === 'string' ? h.reason : null, changedAt: h.changed_at, author: typeof h.author === 'string' ? h.author : 'Auteur inconnu' }];
       })
     : [];
   return {
     settings,
     history,
     observed: { rate: percentOrNull(body.observed_cashout_fee_rate), max: percentOrNull(body.observed_cashout_fee_max) },
+    defaults: isRecord(body.defaults) ? body.defaults : {},
   };
 }
 
@@ -232,6 +239,10 @@ export default function AdminFinanceSettingsPage() {
   const [activationWord, setActivationWord] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  /** Finition 3b (E-35) : erreur de bornes affichée sous le champ, avant tout envoi. */
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  /** Finition 3b (E-35) : changement vérifié, en attente de la confirmation « Avant → Après ». */
+  const [pending, setPending] = useState<{ key: string; value: number | boolean | string } | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -239,7 +250,7 @@ export default function AdminFinanceSettingsPage() {
       const res = await fetch('/api/admin/finance-settings', { cache: 'no-store' });
       const body = await readJsonBody(res, 'réglages de la plateforme');
       if (!res.ok) {
-        setLoadError(serverErrorMessage(body) ?? `Réglages indisponibles (erreur ${res.status}).`);
+        setLoadError(serverErrorMessage(body) ?? (res.status === 403 ? 'Votre compte n’a pas la permission « Lire les réglages ». Demandez-la au Superadmin.' : 'Réglages indisponibles pour le moment.'));
         return;
       }
       const parsed = parseSettings(body);
@@ -269,9 +280,11 @@ export default function AdminFinanceSettingsPage() {
     setReason('');
     setActivationWord('');
     setSaveError(null);
+    setFieldError(null);
   };
 
-  const save = async (key: string) => {
+  /** Contrôles de l'écran (bornes du catalogue, motif, mot ACTIVER), puis confirmation « Avant → Après ». */
+  const prepare = (key: string) => {
     const meta = META[key];
     let value: number | boolean | string;
     if (meta?.kind === 'boolean') value = draft === 'true';
@@ -279,11 +292,17 @@ export default function AdminFinanceSettingsPage() {
     else {
       const parsed = Number(draft.replace(',', '.'));
       if (draft.trim() === '' || !Number.isFinite(parsed)) {
-        setSaveError('Saisissez une valeur numérique.');
+        setFieldError('Indiquez un nombre.');
+        return;
+      }
+      const bounds = settingBoundsError(key, draft);
+      if (bounds) {
+        setFieldError(bounds);
         return;
       }
       value = parsed;
     }
+    setFieldError(null);
     if (reason.trim().length < 3) {
       setSaveError('Indiquez le motif de la modification (3 caractères au moins).');
       return;
@@ -292,6 +311,14 @@ export default function AdminFinanceSettingsPage() {
       setSaveError('Ce service n’est pas prêt pour le public. Pour l’activer quand même, tapez ACTIVER.');
       return;
     }
+    setSaveError(null);
+    setPending({ key, value });
+  };
+
+  const save = async () => {
+    if (!pending) return;
+    const { key, value } = pending;
+    const meta = META[key];
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -304,11 +331,12 @@ export default function AdminFinanceSettingsPage() {
       if (!res.ok) {
         setSaveError(
           serverErrorMessage(body) ??
-            (res.status === 403 ? 'Seul un superadministrateur peut modifier ce réglage.' : `Réglage non enregistré (erreur ${res.status}).`)
+            (res.status === 403 ? 'Seul un Superadmin peut modifier ce réglage.' : 'Le serveur n’a pas répondu comme prévu. Réessayez ; si cela continue, prévenez l’équipe technique.')
         );
         return;
       }
       toast.success(`Réglage « ${meta?.label ?? 'sans libellé'} » enregistré. Il s’applique aux prochaines opérations.`);
+      setPending(null);
       setEditing(null);
       void load();
     } catch (err) {
@@ -319,14 +347,19 @@ export default function AdminFinanceSettingsPage() {
     }
   };
 
+  /** Valeurs actuelles de tous les réglages (alertes croisées : frais de service et frais SamirPay…). */
+  const currentValues: Record<string, unknown> = Object.fromEntries((data?.settings ?? []).map((x) => [x.key, unwrap(x.value)]));
+  const pendingMeta = pending ? META[pending.key] : null;
+  const pendingBefore = pending ? data?.settings.find((x) => x.key === pending.key)?.value : undefined;
+
   return (
     <div className="space-y-6 pb-24 lg:pb-12">
       <PageHeader
         title="Réglages de la plateforme"
         description={isSuperadmin
           ? 'Chaque modification est historisée et ne s’applique qu’aux opérations futures.'
-          : 'Lecture seule : seul un superadministrateur peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
-        back={{ href: '/admin', label: 'Administration' }}
+          : 'Lecture seule : seul un Superadmin peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
+        back={{ href: '/admin/dashboard', label: 'Accueil' }}
         actions={(
           <Button variant="secondary" leftIcon={<RefreshCw size={18} aria-hidden="true" />} onClick={() => void load()} isLoading={isLoading && Boolean(data)} disabled={isLoading}>
             Actualiser
@@ -348,13 +381,27 @@ export default function AdminFinanceSettingsPage() {
               {loadError} Les valeurs affichées sont celles du dernier chargement.
             </StatusBanner>
           )}
+          <nav aria-label="Sommaire des réglages" className="rounded-2xl border border-border bg-surface p-4">
+            <p className="text-sm font-semibold text-fg">Thèmes</p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {SETTING_SECTIONS.filter((t) => data.settings.some((x) => x.key.startsWith(t.prefix))).map((t) => (
+                <li key={t.anchor}>
+                  <a href={`#${t.anchor}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-3 text-sm font-medium text-brand-fg hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {t.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
           {SECTIONS.map((section) => {
             const items = data.settings.filter((s) => s.key.startsWith(section.prefix)).sort((a, b) => rank(a.key) - rank(b.key));
             if (items.length === 0) return null;
             const headingId = `${fieldId}-section-${section.prefix.replace('.', '')}`;
             const SectionIcon = section.icon;
+            const anchor = SETTING_SECTIONS.find((t) => t.prefix === section.prefix)?.anchor;
             return (
-              <section key={section.prefix} aria-labelledby={headingId} className="space-y-3">
+              <section key={section.prefix} id={anchor} aria-labelledby={headingId} className="scroll-mt-20 space-y-3">
                 <div className="space-y-1">
                   <h2 id={headingId} className="flex items-center gap-2 text-lg font-semibold text-fg">
                     <SectionIcon size={20} className="text-brand-fg" aria-hidden="true" />
@@ -378,7 +425,8 @@ export default function AdminFinanceSettingsPage() {
                             )}
                             {meta?.help && <p className="text-sm text-fg-muted">{meta.help}</p>}
                             <p className="text-sm text-fg-muted">
-                              Modifié le <time dateTime={s.updatedAt ?? undefined}>{formatDateTime(s.updatedAt)}</time>
+                              Par défaut : <span className="tabular-nums">{s.key in data.defaults ? displayValue(s.key, data.defaults[s.key]) : '—'}</span>
+                              {' · '}Modifié le <time dateTime={s.updatedAt ?? undefined}>{formatDateTime(s.updatedAt)}</time>
                             </p>
                           </div>
                           <div className="flex flex-shrink-0 items-center gap-3">
@@ -392,6 +440,9 @@ export default function AdminFinanceSettingsPage() {
                         </div>
 
                         {s.key === WITHDRAWAL_FEE_KEY && <WithdrawalFeeCheck setting={s} observed={data.observed} />}
+                        {!isEditing && settingRisk(s.key, unwrap(s.value), currentValues) && (
+                          <StatusBanner tone="warning" title="Valeur risquée">{settingRisk(s.key, unwrap(s.value), currentValues)}</StatusBanner>
+                        )}
 
                         {isSuperadmin && isEditing && (
                           <form
@@ -399,7 +450,7 @@ export default function AdminFinanceSettingsPage() {
                             noValidate
                             onSubmit={(e) => {
                               e.preventDefault();
-                              void save(s.key);
+                              prepare(s.key);
                             }}
                             className="grid grid-cols-1 items-start gap-3 rounded-2xl border border-border bg-surface-sunken p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
                           >
@@ -430,10 +481,17 @@ export default function AdminFinanceSettingsPage() {
                                 type="text"
                                 inputMode="decimal"
                                 value={draft}
-                                onChange={(e) => setDraft(e.target.value)}
+                                onChange={(e) => { setDraft(e.target.value); setFieldError(null); }}
+                                onBlur={() => setFieldError(settingBoundsError(s.key, draft))}
+                                error={fieldError ?? undefined}
                                 className="tabular-nums"
                               />
                             )}
+                            {(() => {
+                              const asValue = meta?.kind === 'boolean' ? draft === 'true' : meta?.kind === 'choice' || meta?.kind === 'text' ? draft : Number(draft.replace(',', '.'));
+                              const risk = settingRisk(s.key, asValue, currentValues);
+                              return risk ? <div className="sm:col-span-2"><StatusBanner tone="warning" title="Valeur risquée">{risk}</StatusBanner></div> : null;
+                            })()}
                             {s.key.startsWith('features.') && draft === 'true' && (
                               <TextInput
                                 label="Tapez ACTIVER pour confirmer"
@@ -453,7 +511,7 @@ export default function AdminFinanceSettingsPage() {
                               onChange={(e) => setReason(e.target.value)}
                               hint="3 caractères au moins ; visible dans l’historique."
                             />
-                            {saveError && (
+                            {saveError && !pending && (
                               <div className="sm:col-span-2">
                                 <StatusBanner tone="danger" announce="alert" title="Réglage non enregistré">
                                   {saveError}
@@ -462,7 +520,7 @@ export default function AdminFinanceSettingsPage() {
                             )}
                             <div className="flex flex-wrap gap-2 sm:col-span-2">
                               <Button type="submit" variant="primary" isLoading={isSaving} leftIcon={<Save size={18} aria-hidden="true" />}>
-                                Enregistrer
+                                Vérifier et enregistrer
                               </Button>
                               <Button type="button" variant="ghost" disabled={isSaving} onClick={() => setEditing(null)} leftIcon={<X size={18} aria-hidden="true" />}>
                                 Annuler
@@ -495,7 +553,8 @@ export default function AdminFinanceSettingsPage() {
                     </p>
                     <p className="text-fg-muted">
                       <time dateTime={h.changedAt}>{formatDateTime(h.changedAt)}</time>
-                      {h.reason && ` · ${h.reason}`}
+                      {' · '}Par {h.author}
+                      {h.reason && ` · Motif : ${h.reason}`}
                     </p>
                   </li>
                 ))}
@@ -504,6 +563,31 @@ export default function AdminFinanceSettingsPage() {
           </section>
         </>
       )}
+
+      <ConfirmDialog
+        isOpen={pending !== null}
+        onClose={() => { if (!isSaving) { setPending(null); setSaveError(null); } }}
+        onConfirm={() => void save()}
+        title="Confirmer le changement ?"
+        confirmLabel="Confirmer le changement"
+        variant="warning"
+        isLoading={isSaving}
+      >
+        {pending && (
+          <div className="space-y-3 text-sm text-fg">
+            <p className="text-base font-semibold">{pendingMeta?.label ?? 'Réglage'}</p>
+            <p className="tabular-nums">
+              Avant : {displayValue(pending.key, pendingBefore)} <span aria-hidden="true">→</span><span className="sr-only">devient</span> Après : {displayValue(pending.key, pending.value)}
+            </p>
+            <p className="text-fg-muted">S’applique aux opérations faites à partir de maintenant ; le passé ne change pas. Personne n’est prévenu.</p>
+            {settingRisk(pending.key, pending.value, currentValues) && (
+              <StatusBanner tone="warning" title="Valeur risquée">{settingRisk(pending.key, pending.value, currentValues)}</StatusBanner>
+            )}
+            <p className="text-fg-muted">Motif : {reason.trim()}</p>
+            {saveError && <StatusBanner tone="danger" announce="alert" title="Réglage non enregistré">{saveError}</StatusBanner>}
+          </div>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

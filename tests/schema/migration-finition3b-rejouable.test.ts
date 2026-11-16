@@ -19,6 +19,8 @@ const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 const FINITION3B_MIGRATIONS = [
     // 1 : « À faire aujourd'hui » (E-29)
     '20261118000001_f3b_todo.sql',
+    // 3 : valeur par défaut de chaque réglage (E-35)
+    '20261118000002_f3b_reglages.sql',
 ] as const;
 
 after(async () => {
