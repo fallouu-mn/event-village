@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -21,8 +22,11 @@ const REFUSAL_STATUS: Readonly<Record<string, number>> = {
  * POST /api/partner/shifts/[id]/validate-discrepancy — lot 9 quater (C7 : AUD-16). L'organisatrice valide l'écart d'une
  * caisse fermée depuis SA session (onglet Caisse du pilotage, bouton « Valider l'écart »), mot de passe saisi depuis moins
  * de 10 minutes (403 PASSWORD_CONFIRMATION_REQUIRED sinon : l'écran ouvre la saisie du mot de passe). Plus aucun PIN saisi
- * sur le téléphone du contrôleur ne valide un écart. Seule la partenaire propriétaire de la caisse (compte ACTIF) valide ;
- * toute autre : 404. 200 { ok, shift_id, discrepancy, validated_at } ; 409 caisse non fermée, sans écart, déjà validée.
+ * sur le téléphone du contrôleur ne valide un écart. La partenaire propriétaire de la caisse (compte ACTIF) valide ; toute
+ * autre : 404. 200 { ok, shift_id, discrepancy, validated_at } ; 409 caisse non fermée, sans écart, déjà validée.
+ * Correctifs de la contre-vérification de la finition 2a (T2) : fiche SUSPENDU refusée (403 PARTNER_SUSPENDED, par la garde
+ * de la fiche puis par la base) ; un admin muni de events.write valide aussi l'écart (journalisé ADMIN), depuis le même
+ * onglet Caisse du pilotage.
  */
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await requireActiveSession(req);
@@ -43,6 +47,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     }
     const reply = data as { ok?: boolean; code?: string; message?: string };
     if (reply.ok !== true) {
+        // Correctifs de la contre-vérification de la finition 2a (T2) : fiche SUSPENDU refusée aussi par la base
+        if (reply.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
         const status = REFUSAL_STATUS[String(reply.code)];
         if (!status) {
             console.error(`[${CONTEXT}] refus non répertorié :`, JSON.stringify(reply));
