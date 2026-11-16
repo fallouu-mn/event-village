@@ -14,6 +14,7 @@ import { StatusBanner, type StatusBannerTone } from '@/components/ui/StatusBanne
 import { ApiError, apiErrorOf } from '@/components/partner/fetch-json';
 import { isRecord, readJsonBody } from '@/lib/payments/payment-client';
 import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
+import { noticesText } from '@/lib/admin/confirmations';
 
 /**
  * « Versements à reprendre » sur /admin/finance (lot 8, A3 ; lot 9 bis, tâche 1 : B1 à B4, contrat 4.1 et 5.1).
@@ -395,7 +396,8 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
     : isNotSent
       ? 'À faire seulement si le support SamirPay confirme que ce versement n’est jamais parti. Il passera « Non versé » : un remboursement pourra ensuite être renvoyé, par un nouvel envoi ; un retrait sera annulé et son montant rendu au bénéficiaire. Rien ne repart automatiquement.'
       : isMarkPaid
-      ? 'Vérifiez auprès du support SamirPay que ce versement est bien parti, puis indiquez sa référence. Il sera confirmé sans nouvel envoi.'
+      // Finition 3b (E-32) : le passage à « versé » met tout de suite en file l'avis « versé » au bénéficiaire (SMS compris)
+      ? `Un SMS part tout de suite à ${decision.item.beneficiary ?? 'son bénéficiaire'} : ne le faites qu’après avoir vérifié le versement. Vérifiez auprès du support SamirPay que ce versement est bien parti, puis indiquez sa référence. Il sera confirmé sans nouvel envoi. ${decision.item.kind === 'WITHDRAWAL' ? noticesText('cashout_mark_paid_withdrawal') : noticesText('cashout_mark_paid_refund')}`
       : decision.item.can_resend === 'AFTER_CHECK'
         ? 'Le statut SamirPay est relu d’abord : le versement ne repart que s’il a échoué.'
         : 'Le versement repart vers ce bénéficiaire dès votre confirmation.';

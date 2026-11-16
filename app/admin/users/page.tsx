@@ -39,6 +39,7 @@ import { permissionDescription, permissionLabel } from '@/lib/admin/permission-l
 import { PERMISSION_GROUPS, PERMISSION_PROFILES, dependentsOf, withDependencies } from '@/lib/admin/permission-profiles';
 import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
+import { noticesText } from '@/lib/admin/confirmations';
 
 interface UserItem {
   id: string;
@@ -991,11 +992,13 @@ export default function AdminUsersManagementPage() {
         title={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
         description={statusTarget
           ? statusTarget.status === 'SUSPENDU'
-            ? `${statusTarget.first_name} ${statusTarget.last_name} retrouvera l’accès à son compte. Il est prévenu avec votre motif.`
-            : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. Il est prévenu avec votre motif.`
+            ? `${statusTarget.first_name} ${statusTarget.last_name} pourra de nouveau se connecter. ${noticesText('account_reactivate')}`
+            : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. ${noticesText('account_suspend')}`
           : undefined}
         label={statusTarget?.status === 'SUSPENDU' ? 'Motif de la réactivation' : 'Motif de la suspension'}
-        hint="Au moins 3 caractères. Ce motif est communiqué au titulaire du compte."
+        hint={statusTarget?.status === 'SUSPENDU'
+          ? 'Au moins 3 caractères. Gardé au journal ; la personne ne le voit pas.'
+          : 'Au moins 3 caractères. Envoyé à la personne (le SMS n’en garde que le début) et gardé au journal.'}
         confirmLabel={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
         variant={statusTarget?.status === 'SUSPENDU' ? 'primary' : 'danger'}
         isLoading={isChangingStatus}

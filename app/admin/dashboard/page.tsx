@@ -46,6 +46,7 @@ import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { toastMessages } from '@/lib/messages/toast-messages';
 import { formatDateTime, formatFcfaPrecise, formatInteger, formatTime, toDakarDateTimeLocal } from '@/lib/format';
+import { noticesText } from '@/lib/admin/confirmations';
 
 /**
  * Lot 5 (tâche 5.13, contrat O5 ; système de design, contrat Q) — tableau de bord de l'administration.
@@ -837,7 +838,7 @@ export default function AdminDashboardPage() {
         onConfirm={() => void confirmValidate()}
         title="Valider la candidature ?"
         message={partnerToValidate
-          ? `« ${partnerToValidate.company_name} » pourra créer des événements et vendre des billets. Le responsable est prévenu par SMS.`
+          ? `« ${partnerToValidate.company_name} » pourra créer des événements ; chacun passera encore par votre validation avant d’être publié. ${noticesText('partner_validate')}`
           : undefined}
         confirmLabel="Valider la candidature"
         isLoading={isActionLoading}
@@ -850,7 +851,7 @@ export default function AdminDashboardPage() {
         }}
         onConfirm={(reason) => void confirmReject(reason)}
         title="Refuser la candidature"
-        description={partnerToReject ? `« ${partnerToReject.company_name} » sera prévenu par SMS avec votre motif.` : undefined}
+        description={partnerToReject ? `« ${partnerToReject.company_name} » revient à son dossier et pourra le compléter. ${noticesText('partner_reject')} Mettez l’essentiel au début du motif : le SMS n’en garde que le début.` : undefined}
         label="Motif du refus"
         hint="Au moins 3 caractères. Par exemple : NINEA manquant ou illisible, activité non éligible."
         confirmLabel="Refuser la candidature"
