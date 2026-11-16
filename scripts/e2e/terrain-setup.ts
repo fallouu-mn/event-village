@@ -41,7 +41,7 @@
  */
 import { FIXTURE_USERS } from '../../tests/helpers/fixture-data';
 import { e2eConfig } from '../../e2e/support/env';
-import { createPublishedEvent, serviceClient, userIdByEmail } from '../../e2e/support/service';
+import { createPublishedEvent, routePosterOfPartner, serviceClient, userIdByEmail } from '../../e2e/support/service';
 
 const TAG = '[terrain-setup]';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -101,15 +101,13 @@ async function partnerIdOf(userId: string): Promise<string> {
     return String(data.id);
 }
 
-/** Affiche déjà déposée par le partenaire (chemin admis par event_poster_path_ok) : la plus ancienne. */
+/**
+ * Affiche du partenaire, à partir de la plus ancienne. Correctifs de la contre-vérification de la finition 2a (T5, aide
+ * modifiée, signalée au rapport) : event_poster_path_ok n'accepte plus qu'un fichier de la route de dépôt ; copie de cette
+ * affiche sous un nom de la route (routePosterOfPartner, e2e/support/service.ts).
+ */
 async function partnerPosterUrl(partnerId: string): Promise<string> {
-    const { data, error } = await serviceClient().from('events').select('image_url')
-        .eq('partner_id', partnerId).not('image_url', 'is', null)
-        .order('created_at', { ascending: true }).limit(1);
-    if (error) throw new Error(`${TAG} affiche du partenaire ${partnerId} : ${error.message}`);
-    const url = String(data?.[0]?.image_url ?? '');
-    if (!url) throw new Error(`${TAG} aucun événement du partenaire ${partnerId} n'a d'affiche (seed:test non abouti ?)`);
-    return url;
+    return routePosterOfPartner(partnerId);
 }
 
 async function readSetting(key: string): Promise<unknown> {
