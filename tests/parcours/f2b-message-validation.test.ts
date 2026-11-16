@@ -31,7 +31,9 @@ describe('Message de validation : prochaines étapes', () => {
         const e = tpl.email!(tpl.sample, CTX);
         assert.match(e.text, /Prochaines étapes/);
         for (const re of STEPS) assert.match(e.text, re);
-        assert.match(e.html, /Ouvrir l’événement/);
+        // Run 256 : bouton générique « Ouvrir Event Village » (contrat G4) ; il mène à la fiche de l'événement
+        assert.match(e.html, /Ouvrir Event Village/);
+        assert.match(e.html, /\/partner\/events\//);
     });
     test('SMS inchangé, un segment', () => {
         const sms = tpl.sms!(tpl.sample, CTX);

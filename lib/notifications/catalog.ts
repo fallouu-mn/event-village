@@ -953,7 +953,8 @@ const CATALOG = {
                     'Publier l’événement : il est alors en vente.',
                 ],
             },
-            ctaLabel: 'Ouvrir l’événement',
+            // Bouton générique (contrat G4, notif-modeles) : il mène au lien du type, la fiche de l'événement
+            ctaLabel: 'Ouvrir Event Village',
         }),
         sample: { ...SAMPLE_EVENT },
     }),
