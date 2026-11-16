@@ -40,6 +40,7 @@ import { PERMISSION_GROUPS, PERMISSION_PROFILES, dependentsOf, withDependencies 
 import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { noticesText } from '@/lib/admin/confirmations';
+import { TextInput } from '@/components/ui/Field';
 
 interface UserItem {
   id: string;
@@ -374,12 +375,13 @@ export default function AdminUsersManagementPage() {
         <div className="flex items-center gap-3">
           <Link
             href="/admin/dashboard"
-            className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            aria-label="Retour à l’accueil de l’administration"
+            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-surface text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ChevronLeft size={20} />
+            <ChevronLeft size={20} aria-hidden="true" />
           </Link>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-2xl font-black tracking-tight text-fg sm:text-3xl">
               Comptes et administrateurs
             </h1>
           </div>
@@ -402,39 +404,38 @@ export default function AdminUsersManagementPage() {
               variant="primary"
               size="sm"
               onClick={() => setIsCreateModalOpen(true)}
-              className="flex items-center gap-1.5 bg-[#FF5722] text-white"
+              leftIcon={<UserPlus size={16} aria-hidden="true" />}
             >
-              <UserPlus size={15} />
-              <span>Créer un compte</span>
+              Créer un compte
             </Button>
           )}
         </div>
       </div>
 
       {/* Filtres & Recherche */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
-          <div className="relative flex-1 max-w-md">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      <div className="space-y-6 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <div className="flex flex-col justify-between gap-4 border-b border-border pb-4 sm:flex-row sm:items-center">
+          <div className="relative max-w-md flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
             <input
-              type="text"
-              placeholder="Rechercher par nom, email, téléphone..."
+              type="search"
+              aria-label="Rechercher un compte"
+              placeholder="Nom, email ou téléphone"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF5722]"
+              className="min-h-11 w-full rounded-xl border border-border-strong bg-surface pl-9 pr-4 text-base text-fg outline-none placeholder:text-fg-muted focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-800/80">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrer par rôle">
             {['ALL', 'SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR', 'CLIENT'].map((role) => (
               <button
                 key={role}
                 type="button"
+                aria-pressed={roleFilter === role}
                 onClick={() => setRoleFilter(role)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  roleFilter === role
-                    ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  roleFilter === role ? 'bg-brand text-on-brand' : 'border border-border text-fg-muted hover:bg-surface-sunken hover:text-fg'
                 }`}
               >
                 {role === 'ALL' ? 'Tous' : roleLabel(role)}
@@ -445,9 +446,9 @@ export default function AdminUsersManagementPage() {
 
         {/* Liste Réelle des Utilisateurs */}
         {isLoading ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
-            <p className="text-xs">Chargement des utilisateurs...</p>
+          <div role="status" className="py-12 text-center text-fg-muted">
+            <RefreshCw size={24} className="mx-auto mb-2 text-brand-fg motion-safe:animate-spin" aria-hidden="true" />
+            <p className="text-sm">Chargement des comptes…</p>
           </div>
         ) : listError ? (
           <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
@@ -455,9 +456,9 @@ export default function AdminUsersManagementPage() {
             <p>{listError}</p>
           </div>
         ) : users.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <Users size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" />
-            <p className="text-xs font-bold">Aucun utilisateur trouvé.</p>
+          <div className="py-12 text-center text-fg-muted">
+            <Users size={32} className="mx-auto mb-2" aria-hidden="true" />
+            <p className="text-sm font-semibold">Aucun compte ne correspond à cette recherche.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -638,243 +639,102 @@ export default function AdminUsersManagementPage() {
         icon={<UserPlus size={18} />}
         maxWidth="lg"
       >
-        <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
-          {/* Prénom et Nom */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Prénom <span className="text-[#FF5722]">*</span>
-              </label>
-              <div className="relative">
-                <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex : Moussa"
-                  value={newFirstName}
-                  onChange={(e) => setNewFirstName(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Nom <span className="text-[#FF5722]">*</span>
-              </label>
-              <div className="relative">
-                <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex : Diop"
-                  value={newLastName}
-                  onChange={(e) => setNewLastName(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-                />
-              </div>
-            </div>
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TextInput label="Prénom" required autoComplete="off" placeholder="Ex : Moussa" value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} />
+            <TextInput label="Nom" required autoComplete="off" placeholder="Ex : Diop" value={newLastName} onChange={(e) => setNewLastName(e.target.value)} />
+          </div>
+          <TextInput label="Numéro de téléphone (Sénégal)" type="tel" required inputMode="tel" placeholder="77 123 45 67" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="tabular-nums" />
+          <TextInput label="Email (facultatif)" type="email" placeholder="contact@domaine.sn" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+
+          <div className="rounded-xl border border-border bg-surface-sunken p-3 text-sm text-fg-muted">
+            {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
+            <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+            <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.</p>
           </div>
 
-          {/* Numéro de Téléphone (Sénégal) */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-              Numéro de Téléphone (Sénégal) <span className="text-[#FF5722]">*</span>
-            </label>
-            <div className="relative">
-              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-[11px] font-black text-slate-700 dark:text-zinc-300 border border-slate-300/60 dark:border-zinc-700 pointer-events-none">
-                <span>+221</span>
-              </div>
-              <input
-                type="tel"
-                required
-                placeholder="77 123 45 67"
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-bold tabular-nums focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-              />
-            </div>
-          </div>
-
-          {/* Email et note d'activation sur 2 colonnes pour économiser de la hauteur */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Email (Optionnel)
-              </label>
-              <div className="relative">
-                <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <input
-                  type="email"
-                  placeholder="contact@domaine.sn"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-surface-sunken p-3 text-xs text-fg-muted">
-              {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
-              <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
-              <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.</p>
-            </div>
-          </div>
-
-          {/* Rôle Attribué (Sélecteur Compact 2x2) */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
-              Rôle Attribué <span className="text-[#FF5722]">*</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {/* CONTROLEUR */}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-semibold text-fg">Rôle</legend>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
+                aria-pressed={newRole === 'CONTROLEUR'}
                 onClick={() => setNewRole('CONTROLEUR')}
-                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                  newRole === 'CONTROLEUR'
-                    ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-[#FF5722]'
-                    : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'CONTROLEUR' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
                 }`}
               >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                  newRole === 'CONTROLEUR' ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                }`}>
-                  <QrCode size={14} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-xs text-slate-900 dark:text-white">Contrôleur</span>
-                    {newRole === 'CONTROLEUR' && <CheckCircle2 size={13} className="text-[#FF5722]" />}
-                  </div>
-                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                    Scanne les billets des événements où un partenaire l’affecte
-                  </p>
-                </div>
+                <QrCode size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Contrôleur</span>
+                  <span className="block text-sm text-fg-muted">Scanne les billets des événements où un partenaire l’affecte</span>
+                </span>
               </button>
-
               {/* Lot 9 bis (R71, B33) : créer un administrateur ou un superadmin est réservé au SUPERADMIN */}
               {isSuperadmin && (
                 <>
-                {/* ADMIN */}
-                <button
-                  type="button"
-                  onClick={() => setNewRole('ADMIN')}
-                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                    newRole === 'ADMIN'
-                      ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-purple-500'
-                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    newRole === 'ADMIN' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                  }`}>
-                    <Key size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs text-slate-900 dark:text-white">Administrateur</span>
-                      {newRole === 'ADMIN' && <CheckCircle2 size={13} className="text-purple-600" />}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                      Agit selon les droits que vous lui donnez
-                    </p>
-                  </div>
-                </button>
-
-                {/* SUPERADMIN */}
-                <button
-                  type="button"
-                  onClick={() => setNewRole('SUPERADMIN')}
-                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                    newRole === 'SUPERADMIN'
-                      ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-amber-500'
-                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    newRole === 'SUPERADMIN' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                  }`}>
-                    <ShieldCheck size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs text-slate-900 dark:text-white">Superadmin</span>
-                      {newRole === 'SUPERADMIN' && <CheckCircle2 size={13} className="text-amber-500" />}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                      Tous les droits, dont les réglages et la création d’administrateurs
-                    </p>
-                  </div>
-                </button>
-                </>
-              )}
-
-              {/* CLIENT */}
               <button
                 type="button"
-                onClick={() => setNewRole('CLIENT')}
-                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                  newRole === 'CLIENT'
-                    ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-emerald-500'
-                    : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                aria-pressed={newRole === 'ADMIN'}
+                onClick={() => setNewRole('ADMIN')}
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'ADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
                 }`}
               >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                  newRole === 'CLIENT' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                }`}>
-                  <User size={14} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-xs text-slate-900 dark:text-white">Client</span>
-                    {newRole === 'CLIENT' && <CheckCircle2 size={13} className="text-emerald-600" />}
-                  </div>
-                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                    Achète des billets, sans accès professionnel
-                  </p>
-                </div>
+                <Key size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Administrateur</span>
+                  <span className="block text-sm text-fg-muted">Agit selon les droits que vous lui donnez</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={newRole === 'SUPERADMIN'}
+                onClick={() => setNewRole('SUPERADMIN')}
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'SUPERADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                }`}
+              >
+                <ShieldCheck size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Superadmin</span>
+                  <span className="block text-sm text-fg-muted">Tous les droits, dont les réglages et la création d’administrateurs</span>
+                </span>
+              </button>
+                </>
+              )}
+              <button
+                type="button"
+                aria-pressed={newRole === 'CLIENT'}
+                onClick={() => setNewRole('CLIENT')}
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'CLIENT' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                }`}
+              >
+                <User size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Client</span>
+                  <span className="block text-sm text-fg-muted">Achète des billets, sans accès professionnel</span>
+                </span>
               </button>
             </div>
-          </div>
+          </fieldset>
 
-          {/* Note Contextuelle Rapide */}
-          <div className="p-2.5 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/30 flex items-center gap-2 text-[11px] text-slate-700 dark:text-zinc-300">
-            <Info size={14} className="text-[#FF5722] flex-shrink-0" />
-            <p className="leading-tight">
-              {newRole === 'CONTROLEUR' && (
-                <span>À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.</span>
-              )}
-              {newRole === 'ADMIN' && (
-                <span>Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.</span>
-              )}
-              {newRole === 'SUPERADMIN' && (
-                <span>Tous les droits, dont les réglages de la plateforme et la création d’administrateurs.</span>
-              )}
-              {newRole === 'CLIENT' && (
-                <span>Achète des billets et parraine ses proches, sans accès professionnel.</span>
-              )}
-            </p>
-          </div>
+          <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-bg p-3 text-sm text-info-fg">
+            <Info size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <span>
+              {newRole === 'CONTROLEUR' && 'À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.'}
+              {newRole === 'ADMIN' && 'Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.'}
+              {newRole === 'SUPERADMIN' && 'Tous les droits, dont les réglages de la plateforme et la création d’administrateurs.'}
+              {newRole === 'CLIENT' && 'Achète des billets et parraine ses proches, sans accès professionnel.'}
+            </span>
+          </p>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-2.5 border-t border-slate-100 dark:border-zinc-800">
-            <Button
-              variant="secondary"
-              size="md"
-              type="button"
-              onClick={() => setIsCreateModalOpen(false)}
-              className="rounded-xl px-4 h-10 font-bold text-xs"
-            >
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+            <Button variant="secondary" type="button" onClick={() => setIsCreateModalOpen(false)}>
               Annuler
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              type="submit"
-              isLoading={isCreating}
-              leftIcon={<UserPlus size={15} />}
-              className="rounded-xl px-5 h-10 font-black text-xs bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
-            >
+            <Button variant="primary" type="submit" isLoading={isCreating} leftIcon={<UserPlus size={16} aria-hidden="true" />}>
               Créer le compte {roleLabel(newRole)}
             </Button>
           </div>
@@ -954,14 +814,8 @@ export default function AdminUsersManagementPage() {
             </div>
             )}
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
-              <Button
-                variant="secondary"
-                size="md"
-                type="button"
-                onClick={() => setIsPermModalOpen(false)}
-                className="rounded-xl px-5 font-bold"
-              >
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+              <Button variant="secondary" type="button" onClick={() => setIsPermModalOpen(false)}>
                 Annuler
               </Button>
               <Button
@@ -970,8 +824,7 @@ export default function AdminUsersManagementPage() {
                 onClick={handleSavePermissions}
                 isLoading={isSavingPerms}
                 disabled={permsState !== 'ready'}
-                leftIcon={<ShieldCheck size={16} />}
-                className="rounded-xl px-6 font-black bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
+                leftIcon={<ShieldCheck size={16} aria-hidden="true" />}
               >
                 Enregistrer les droits
               </Button>
