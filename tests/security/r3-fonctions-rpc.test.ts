@@ -480,6 +480,40 @@ describe('R3 — lot 9 ter : chaque fonction du lot existe et reste réservée a
     }
 });
 
+/**
+ * Finition 3a (argent de l'administration) : fonctions nouvelles de la finition, même contrôle strict (42501 pour anon
+ * et pour un compte, jamais PGRST202). Garde-fou ajouté après les migrations 20261117000003 et …04 : vert dès l'écriture,
+ * annoncé au rapport. Ajout seul : aucune entrée existante ne change.
+ */
+const FINITION3A_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['finance_admin_earned', { p_from: null, p_to: null }],
+    ['finance_admin_summary', { p_from: null, p_to: null }],
+    ['finance_admin_payments', { p: {} }],
+    ['finance_admin_debts', { p: {} }],
+    ['finance_admin_refunds_to_pay', { p: {} }],
+    ['finance_admin_owed', { p: {} }],
+    ['finance_admin_waiting', { p_simulated: false, p_unconfirmed_hours: 48 }],
+    ['finance_balance_cached', { p_max_age_seconds: 300, p_simulated: false }],
+    ['finance_balance_record', { p_solde: 1, p_simulated: false }],
+];
+
+describe('R3 — finition 3a : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261117000003 (synthèse) et …04 (solde SamirPay)';
+    for (const [fn, args] of FINITION3A_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
 describe('R3 — aides RLS toujours appelables (sinon les politiques échouent)', () => {
     for (const [fn, args] of RLS_HELPERS) {
         test(`anon et authenticated : rpc(${fn}) acceptée`, async () => {
