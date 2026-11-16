@@ -71,7 +71,7 @@ import { dispatchAt, flushNotifications, noonDakarTomorrow } from './notif-helpe
 import { buyConfirmed, jsonRequest, newPartner, withSettings, type TestPartner } from './finance-helpers';
 import {
     advanceEventTo, assertRpcOk, createDraftEvent, createEventInStatus, eventHistory, posterUrl, rpcTransition, storedPosterUrl,
-    type DraftEvent, type EventStatus,
+    TEST_EVENT_POSITION, type DraftEvent, type EventStatus,
 } from './cycle-helpers';
 
 const ROOT = process.cwd();
@@ -570,6 +570,10 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         await flushEvent(ev.eventId);
         const seen = await notificationIds(sale.buyer.userId);
         const poster = await storedPosterUrl(partner.partnerId);
+        // Finition 2a (3) : un repère déplacé de moins de 200 m reste un champ libre ; au-delà, c'est un changement de lieu
+        // (prévenu, testé par f2a-carte). Repère de départ : position par défaut des aides ; arrivée à 100 m au nord.
+        const placed = await eventRow(ev.eventId);
+        assert.deepEqual([Number(placed.latitude), Number(placed.longitude)], [TEST_EVENT_POSITION.latitude, TEST_EVENT_POSITION.longitude], 'repère de départ');
         const program = [
             { id: randomUUID(), time: '20:00', kind: 'ARTISTE', title: 'Première partie', participant: 'Groupe de test' },
             { id: randomUUID(), time: '21:30', kind: 'ACTIVITE', title: 'Entracte' },
@@ -579,8 +583,8 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
             program,
             practical_info: { ...PRACTICAL, accessNotes: 'Entrée par la porte C', parking: 'Parking gratuit sur place' },
             image_url: poster,
-            latitude: 14.7167,
-            longitude: -17.4677,
+            latitude: 14.6937,
+            longitude: -17.4467,
         });
         assertOk(res, 'champs libres');
         assertNotified(res, 'champs libres', 0, 0);
@@ -593,7 +597,7 @@ describe('5.5 — édition : PUT /api/partner/events/[id] (event_update)', () =>
         assert.equal((after.practical_info as Row | null)?.accessNotes, 'Entrée par la porte C', 'infos pratiques');
         assert.equal((after.practical_info as Row | null)?.address, PRACTICAL.address, 'adresse inchangée');
         assert.equal(after.image_url, poster, 'affiche');
-        assert.deepEqual([Number(after.latitude), Number(after.longitude)], [14.7167, -17.4677], 'coordonnées');
+        assert.deepEqual([Number(after.latitude), Number(after.longitude)], [14.6937, -17.4467], 'coordonnées');
     });
 
     test('catégorie d’événement et jauge verrouillées dès qu’il y a des ventes (LOCKED_AFTER_SALES, champ en cause) ; hausse de jauge acceptée ; sans vente, modifiables', async () => {

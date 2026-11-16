@@ -7,8 +7,9 @@
 -- scan (règle A9, inchangée) ; la partenaire garde la lecture.
 -- Aides partner_owner_suspended et partner_actor_suspended ; contrôle en tête des fonctions d'écriture (recopies, seul
 -- ajout : ce contrôle). ticket_category_guard couvre ticket_category_create, _update, _delete et event_zones_save.
--- Écritures directes : suppression d'un brouillon (déclencheur) ; code du régisseur par event_regisseur_pin_store, toute
--- autre écriture refusée (déclencheur). Aucune donnée modifiée. Aucun BEGIN ni COMMIT ; rejouable.
+-- Écritures directes : suppression d'un brouillon (déclencheur) ; code du régisseur par event_regisseur_pin_store, seule
+-- écriture de l'application (le compte de service n'est pas bloqué, comme sur les autres tables). Aucune donnée modifiée.
+-- Aucun BEGIN ni COMMIT ; rejouable.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -64,30 +65,12 @@ CREATE TRIGGER trg_events_suspended_owner_delete
     FOR EACH ROW
     EXECUTE FUNCTION public.events_suspended_owner_delete_guard();
 
--- Code du régisseur : écrit par event_regisseur_pin_store (auteur contrôlé, admin compris) ; toute autre écriture pour
--- l'événement d'une fiche SUSPENDU est refusée
-CREATE OR REPLACE FUNCTION public.regisseur_pin_suspended_guard()
-RETURNS trigger
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-    IF current_setting('event_village.pin_write_checked', true) IS DISTINCT FROM 'on'
-       AND EXISTS (SELECT 1 FROM public.events e JOIN public.partners pa ON pa.id = e.partner_id
-                    WHERE e.id = NEW.event_id AND pa.status::text = 'SUSPENDU') THEN
-        RAISE EXCEPTION USING ERRCODE = 'PS403', MESSAGE = 'Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support.', HINT = 'PARTNER_SUSPENDED';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
+-- Code du régisseur : écrit par event_regisseur_pin_store (auteur contrôlé, admin compris), seule écriture de
+-- l'application (route POST /api/partner/events/[id]/regisseur-pin). Pas de déclencheur sur la table : il bloquerait
+-- aussi le compte de service (la plateforme elle-même), que rien ne bloque sur les autres tables. Une version de travail
+-- de cette migration en posait un : retiré s'il existe.
 DROP TRIGGER IF EXISTS trg_event_regisseur_pins_suspended ON public.event_regisseur_pins;
-CREATE TRIGGER trg_event_regisseur_pins_suspended
-    BEFORE INSERT OR UPDATE ON public.event_regisseur_pins
-    FOR EACH ROW
-    EXECUTE FUNCTION public.regisseur_pin_suspended_guard();
+DROP FUNCTION IF EXISTS public.regisseur_pin_suspended_guard();
 
 -- p : { event_id, actor_id, pin_hash, pin_salt }. Propriété vérifiée par le serveur avant (ShiftService) ; ici : fiche
 -- SUSPENDU refusée, puis enregistrement (le code en clair n'arrive jamais en base).
@@ -115,11 +98,9 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED', 'message', 'Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support.');
     END IF;
     v_previous := EXISTS (SELECT 1 FROM public.event_regisseur_pins r WHERE r.event_id = v_event);
-    PERFORM set_config('event_village.pin_write_checked', 'on', true);
     INSERT INTO public.event_regisseur_pins (event_id, pin_hash, pin_salt, updated_at)
     VALUES (v_event, v_hash, v_salt, now())
     ON CONFLICT (event_id) DO UPDATE SET pin_hash = EXCLUDED.pin_hash, pin_salt = EXCLUDED.pin_salt, updated_at = now();
-    PERFORM set_config('event_village.pin_write_checked', 'off', true);
     RETURN jsonb_build_object('ok', true, 'regenerated', v_previous);
 END;
 $$;
@@ -2004,4 +1985,3 @@ GRANT EXECUTE ON FUNCTION public.event_cash_refund_mark(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.ticket_refund_request(uuid, uuid, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ticket_refund_request(uuid, uuid, text) TO service_role;
 REVOKE ALL ON FUNCTION public.events_suspended_owner_delete_guard() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.regisseur_pin_suspended_guard() FROM PUBLIC, anon, authenticated;

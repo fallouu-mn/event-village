@@ -8,9 +8,9 @@
  *     PARTNER_SUSPENDED, texte exact puis contact ; rien ne change (événement, catégories, zones, invitations, code du
  *     régisseur, brouillon).
  *  b. Base : event_create, event_update, ticket_category_create/update/delete, event_zones_save, event_transition,
- *     event_cancel, ticket_invitation_create/cancel/guest_name_set, event_cash_refund_mark, ticket_refund_request
- *     appelées avec la partenaire suspendue pour auteur → PARTNER_SUSPENDED ; suppression du brouillon et code du
- *     régisseur écrits directement → refusés.
+ *     event_cancel, ticket_invitation_create/cancel/guest_name_set, event_cash_refund_mark, ticket_refund_request,
+ *     event_regisseur_pin_store appelées avec la partenaire suspendue pour auteur → PARTNER_SUSPENDED ; suppression
+ *     directe du brouillon → refusée ; l'application n'écrit le code du régisseur que par event_regisseur_pin_store.
  *  c. Lectures gardées : fiche, zones, pilotage, export des participants.
  *  d. L'admin events.write modifie l'événement ; le contrôleur affecté scanne.
  * Rouge avant le correctif : une fiche SUSPENDU modifiait tout (la garde la laissait passer, les fonctions aussi).
@@ -127,6 +127,21 @@ async function rpc(name: string, p: Row): Promise<Row> {
     return (data ?? {}) as Row;
 }
 
+/** Fichiers de lib/ et app/ qui écrivent directement dans event_regisseur_pins (attendu : aucun). */
+function directPinWrites(): string[] {
+    const found: string[] = [];
+    const write = /from\(\s*['"`]event_regisseur_pins['"`]\s*\)\s*\.\s*(insert|upsert|update|delete)\s*\(/;
+    const walk = (dir: string) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (/\.(ts|tsx)$/.test(e.name) && write.test(fs.readFileSync(full, 'utf8'))) found.push(path.relative(process.cwd(), full));
+        }
+    };
+    for (const dir of ['lib', 'app']) walk(path.join(process.cwd(), dir));
+    return found.sort();
+}
+
 function assertRpcSuspended(reply: Row, what: string): void {
     assert.equal(reply.ok, false, `${what} : accepté pour une fiche suspendue (${JSON.stringify(reply).slice(0, 300)})`);
     assert.equal(reply.code, 'PARTNER_SUSPENDED', `${what} : ${JSON.stringify(reply).slice(0, 300)}`);
@@ -183,6 +198,7 @@ describe('1a. fiche SUSPENDU : la base refuse aussi', () => {
         assertRpcSuspended(await rpc('ticket_invitation_cancel', { event_id: evPub.eventId, actor_id: actor, ticket_id: invitationTicketId }), 'ticket_invitation_cancel');
         assertRpcSuspended(await rpc('ticket_invitation_guest_name_set', { event_id: evPub.eventId, actor_id: actor, ticket_id: invitationTicketId, guest_name: 'Nom changé' }), 'ticket_invitation_guest_name_set');
         assertRpcSuspended(await rpc('event_cash_refund_mark', { event_id: evPub.eventId, actor_id: actor, payment_id: randomUUID(), note: 'essai' }), 'event_cash_refund_mark');
+        assertRpcSuspended(await rpc('event_regisseur_pin_store', { event_id: evPub.eventId, actor_id: actor, pin_hash: 'x', pin_salt: 'y' }), 'event_regisseur_pin_store');
         assertRpcSuspended(await rpc('event_create', { actor_id: actor, event: { title: 'Nouveau', category: 'Concert' } }), 'event_create');
         const { data: refund, error: refundErr } = await service.rpc('ticket_refund_request', { p_ticket_id: invitationTicketId, p_actor: actor, p_reason: 'essai' });
         assert.equal(refundErr, null, refundErr?.message);
@@ -192,10 +208,9 @@ describe('1a. fiche SUSPENDU : la base refuse aussi', () => {
         console.log(`[F2A-1A] suppression directe du brouillon → ${delErr ? `refus ${delErr.code} ${delErr.message}` : 'ACCEPTÉE'}`);
         assert.ok(delErr, 'brouillon d’une fiche suspendue supprimé');
         assert.ok(delErr.message.startsWith(SUSPENDED_TEXT), delErr.message);
-        const { error: pinErr } = await service.from('event_regisseur_pins').upsert({ event_id: evPub.eventId, pin_hash: 'x', pin_salt: 'y' }, { onConflict: 'event_id' });
-        console.log(`[F2A-1A] code du régisseur écrit directement → ${pinErr ? `refus ${pinErr.code} ${pinErr.message}` : 'ACCEPTÉ'}`);
-        assert.ok(pinErr, 'code du régisseur écrit pour une fiche suspendue');
-        assert.ok(pinErr.message.startsWith(SUSPENDED_TEXT), pinErr.message);
+        // Code du régisseur : l'application ne l'écrit que par event_regisseur_pin_store (refusée ci-dessus) ; aucune
+        // écriture directe dans la table (insert, upsert, update, delete) dans lib/ ni app/
+        assert.deepEqual(directPinWrites(), [], 'écriture directe du code du régisseur dans l’application');
         assert.equal(await snapshot(), before, 'la base a modifié l’événement, ses billets, ses zones ou son brouillon');
     });
 });
