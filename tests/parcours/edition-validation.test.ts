@@ -53,7 +53,7 @@ import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { routeContext } from './helpers';
 import { importModule, service, type Buyer } from './paiement-helpers';
 import { jsonRequest, newPartner, type TestPartner } from './finance-helpers';
-import { createDraftEvent, posterUrl } from './cycle-helpers';
+import { createDraftEvent, posterUrl, storedPosterUrl } from './cycle-helpers';
 
 const ROOT = process.cwd();
 const DAY_MS = 86_400_000;
@@ -562,6 +562,8 @@ describe('F1 — même schéma côté serveur (routes) et côté formulaire', ()
         const saleEnd = dakarParts(start + HOUR_MS);
         const body = base(partner.partnerId, {
             title: `TEST Validation fuseau ${randomUUID().slice(0, 8)}`, // lot 9 quater (D3) : un UUID entier peut aligner 10 chiffres
+            // Finition 2a (1b) : le serveur vérifie que l'affiche existe ; affiche réellement déposée
+            image_url: await storedPosterUrl(partner.partnerId),
             start_date: s.date, start_time: s.time, end_date: e.date, end_time: e.time,
             ticket_categories: [{ name: 'Standard', price: 5000, total_quantity: 100, max_per_order: 10, sale_end: `${saleEnd.date}T${saleEnd.time}` }],
         });

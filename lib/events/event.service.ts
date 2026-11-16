@@ -219,13 +219,13 @@ export class EventService {
     }
 
     /** Partenaire du compte, ou null s'il n'en a pas (erreur de lecture → 500). */
-    private static async partnerOf(userId: string): Promise<{ id: string } | null> {
-        const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', userId).maybeSingle();
+    private static async partnerOf(userId: string): Promise<{ id: string; status: string } | null> {
+        const { data, error } = await getServiceRoleClient().from('partners').select('id, status').eq('user_id', userId).maybeSingle();
         if (error) {
             console.error(`[EventService] partenaire du compte ${userId} illisible : ${error.message}`);
             throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
         }
-        return data ? { id: String(data.id) } : null;
+        return data ? { id: String(data.id), status: String(data.status) } : null;
     }
 
     private static async isStaff(userId: string): Promise<boolean> {
@@ -290,7 +290,9 @@ export class EventService {
         const parsed = parseWithFrenchErrors(createEventSchema({ partnerId: partner.id }), input);
         if (!parsed.success) throw invalid(parsed.error);
         const { ticket_categories: categories, ...event } = parsed.data;
-        await assertPosterStored((event as { image_url?: string | null }).image_url ?? null);
+        // Finition 2a (1b) : affiche vérifiée pour une fiche VALIDE ; une autre fiche est refusée par event_create, avec
+        // son propre texte (profil non validé, suspendu), qui garde ainsi la priorité
+        if (partner.status === 'VALIDE') await assertPosterStored((event as { image_url?: string | null }).image_url ?? null);
         const result = await editionResult<{ ok: true; event: DbRecord }>('event_create', rpcWithRetry('event_create', { p: {
             actor_id: partnerUserId,
             event,
