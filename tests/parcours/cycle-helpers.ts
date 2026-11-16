@@ -98,8 +98,13 @@ export async function shiftEventDates(eventId: string, shift: DateShift): Promis
 
 // ── Création d'un brouillon ────────────────────────────────────────────────
 
-/** URL d'affiche acceptée par le contrat F1 (préfixe du bucket public-images du projet). */
-export function posterUrl(partnerId: string, fileName = `${randomUUID()}.png`): string {
+/**
+ * URL d'affiche acceptée par le contrat F1 (préfixe du bucket public-images du projet). Correctifs de la contre-vérification
+ * de la finition 2a (T5, aide modifiée, signalée au rapport) : nom par défaut au format de la route de dépôt
+ * (horodatage_8 caractères.webp), le seul désormais accepté comme affiche ; avant : `<uuid>.png`. Le fichier n'existe pas
+ * (adresse seule, comme avant) : storedPosterUrl le dépose.
+ */
+export function posterUrl(partnerId: string, fileName = `${Date.now()}_${randomUUID().slice(0, 8)}.webp`): string {
     const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
     assert.ok(base, 'NEXT_PUBLIC_SUPABASE_URL absente (.env.test)');
     return `${base.replace(/\/+$/, '')}/storage/v1/object/public/public-images/events/${partnerId}/${fileName}`;

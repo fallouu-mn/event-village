@@ -15,13 +15,15 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 
 const BUCKET = 'public-images';
 const PUBLIC_MARK = `/storage/v1/object/public/${BUCKET}/`;
-const POSTER_PATH = /^events\/[0-9a-f-]{36}\/[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/i;
+// Correctifs de la contre-vérification de la finition 2a (T5) : une affiche est un fichier de la route de dépôt
+// (horodatage_8 caractères.webp, lib/images/stored-name.ts), rangé dans le dossier events/<id de la partenaire>/
+const POSTER_PATH = /^events\/[0-9a-f-]{36}\/\d{13}_[0-9a-f]{8}\.webp$/;
 const EVENTS_PAGE = 1000;
 
 export const POSTER_NOT_FOUND_TEXT = 'L’affiche n’a pas été trouvée : déposez-la de nouveau.';
 
 /** Chemin de stockage d'une adresse publique du compartiment (décodé, sans paramètres), ou null. */
-function storagePathOf(url: unknown): string | null {
+export function storagePathOf(url: unknown): string | null {
     if (typeof url !== 'string') return null;
     const i = url.indexOf(PUBLIC_MARK);
     if (i < 0) return null;

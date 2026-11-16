@@ -15,6 +15,7 @@
  */
 import { z } from 'zod';
 import { eventEndAt } from '@/lib/events/event-end';
+import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { SENEGAL_BOUNDS, canonicalCity, inSenegal } from '@/lib/events/senegal-cities';
 import { SCAN_CATEGORY_COLORS, type ScanCategoryColor } from '@/lib/scan/scan-result';
 import { foldText } from '@/lib/text/fold';
@@ -166,7 +167,13 @@ export function eventEndInstant(d: DatesLike): number {
 
 // ── Affiche ────────────────────────────────────────────────────────────────
 
-const POSTER_FILE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/;
+/**
+ * Correctifs de la contre-vérification de la finition 2a (T5) : seul un fichier produit par la route de dépôt
+ * (horodatage_8 caractères.webp, donc réencodé, sans métadonnée) est accepté comme affiche ; un fichier d'avant la
+ * finition, ou posé directement dans le stockage, est refusé (IMAGE_ORIGIN_INVALID). L'affiche déjà enregistrée, renvoyée
+ * telle quelle par le formulaire, reste acceptée (imageField, `unchanged`) ; scripts/reencode-posters.ts la réencode.
+ */
+const POSTER_FILE_RE = STORED_IMAGE_NAME_RE;
 
 /** Préfixe des affiches du partenaire : `${SUPABASE_URL}/storage/v1/object/public/public-images/events/<partner_id>/`. */
 export function posterPrefix(partnerId: string): string | null {
