@@ -1239,7 +1239,7 @@ const CATALOG = {
     }),
     ADMIN_REFUND_TO_RETRY: define('ADMIN_REFUND_TO_RETRY', {
         label: 'Remboursement à reprendre', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
-        link: () => '/admin/finance',
+        link: () => '/admin/finance#versements-a-reprendre',
         inApp: (d) => {
             const status = text(d, 'cashout_status');
             const reason = optText(d, 'blocked_reason');
@@ -1254,7 +1254,7 @@ const CATALOG = {
     /** Lot 8 (8.2 a, L32) : second paiement réussi d'un même panier, remboursement lancé par payment_confirm. */
     ADMIN_DUPLICATE_PAYMENT: define('ADMIN_DUPLICATE_PAYMENT', {
         label: 'Paiement en double remboursé', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
-        link: () => '/admin/finance',
+        link: () => '/admin/finance#remboursements-a-verser',
         // Lot 9 quater (C1 : AUD-20) : à partir du 3e doublon du compte en 30 jours, remboursé moins les frais SamirPay
         inApp: (d) => (Number(d.withheld ?? 0) > 0
             ? { title: 'Paiements en double répétés', content: `Un ${formatInteger(num(d, 'duplicate_rank'))}e paiement en double de ${money(d, 'amount')} en 30 jours pour le même client : il est remboursé moins les frais de l’opérateur de paiement, soit ${money(d, 'withheld')} retenus. Vérifiez s'il s'agit d'un abus.` }
@@ -1263,19 +1263,19 @@ const CATALOG = {
     }),
     ADMIN_CASHOUT_UNCERTAIN: define('ADMIN_CASHOUT_UNCERTAIN', {
         label: 'Versement incertain', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
-        link: () => '/admin/finance',
+        link: () => '/admin/finance#versements-a-reprendre',
         inApp: (d) => ({ title: 'Versement incertain', content: `L'issue d'un versement de ${money(d, 'amount')} est incertaine : vérifiez-le avant toute action.` }),
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 25_000 },
     }),
     ADMIN_WITHDRAWAL_REJECTED: define('ADMIN_WITHDRAWAL_REJECTED', {
         label: 'Retrait refusé par l’opérateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
-        link: () => '/admin/finance',
+        link: () => '/admin/finance#du-aux-partenaires',
         inApp: (d) => ({ title: 'Retrait refusé par l\'opérateur', content: `Le retrait de ${money(d, 'amount')} a été refusé ; le montant est revenu sur le solde du bénéficiaire.` }),
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 25_000 },
     }),
     ADMIN_FINANCE_DEBT: define('ADMIN_FINANCE_DEBT', {
         label: 'Créance sur un compte', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'payments.read', inAppType: 'FINANCE_ALERT',
-        link: () => '/admin/finance',
+        link: () => '/admin/finance#creances',
         inApp: (d) => {
             const kind = optText(d, 'account_kind');
             const account = kind === 'ORGANISATEUR' ? 'le compte organisateur' : kind === 'PARRAINAGE' ? 'le compte de parrainage' : 'un compte';
@@ -1390,7 +1390,7 @@ const CATALOG = {
     // N3 (R1, R9, R10) : versement à reprendre (retard de 30 min, tous types) ou retrait bloqué ; refunds.manage.
     ADMIN_CASHOUT_TO_RESUME: define('ADMIN_CASHOUT_TO_RESUME', {
         label: 'Versement à reprendre', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
-        link: () => '/admin/finance',
+        link: () => '/admin/finance#versements-a-reprendre',
         inApp: (d) => {
             const cause = text(d, 'cause');
             const amount = money(d, 'amount');
