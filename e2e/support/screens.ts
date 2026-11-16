@@ -1007,9 +1007,40 @@ export const SCREENS: readonly Screen[] = [
             await retained.evaluate((el) => el.scrollIntoView({ block: 'center' }));
         },
     },
+    // Finition 2b : les cinq étapes de la création (Informations : partenaire-creation ; Accès : partenaire-creation-acces),
+    // l'écran « Vérifier avant d'envoyer » (formulaire vide : liste de ce qui manque) et la fenêtre « Prévenir »
+    ...([
+        ['partenaire-creation-programme', 'Création d’un événement — étape 2, Programme', /programme/i, /^programme$/i],
+        ['partenaire-creation-billets', 'Création d’un événement — étape 4, Billets (couleur au contrôle, prix minimum)', /billets/i, /^billetterie$/i],
+        ['partenaire-creation-controle', 'Création d’un événement — étape 5, Contrôle à l’entrée (facultatif)', /contrôle/i, /^contrôle à l’entrée \(facultatif\)$/i],
+        ['partenaire-creation-verifier', 'Création d’un événement — Vérifier avant d’envoyer (ce qui manque)', /vérifier/i, /^vérifier avant d’envoyer$/i],
+    ] as const).map(([id, titre, stepButton, heading]): Screen => ({
+        id, titre, role: 'organisateur', needsIds: true,
+        path: () => '/partner/events/new',
+        actions: async ({ page }) => {
+            await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: stepButton }).click();
+            await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+        },
+    })),
     {
         id: 'partenaire-edition', titre: 'Édition d’un événement publié avec ventes (champs verrouillés)', role: 'organisateur', needsIds: true,
         path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
+    },
+    // Finition 2b (D, E-27) : lieu changé, « Enregistrer les modifications » : fenêtre « Prévenir » (jamais confirmée :
+    // rien n'est enregistré)
+    {
+        id: 'partenaire-edition-prevenir', titre: 'Modifier un événement publié — fenêtre « Prévenir les détenteurs de billets »', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
+        actions: async ({ page }) => {
+            const place = page.locator('#ev-location');
+            await expect(place, 'champ « Lieu »').toBeVisible({ timeout: 30_000 });
+            await place.fill(`${await place.inputValue()} — salle B`);
+            await page.getByRole('button', { name: /^enregistrer les modifications$/i }).click();
+            const dialog = page.getByRole('alertdialog', { name: /^prévenir les détenteurs de billets$/i });
+            await expect(dialog, 'fenêtre « Prévenir »').toBeVisible({ timeout: 30_000 });
+            await expect(dialog.getByText(/(seront prévenus|sera prévenu) par SMS (à \d{2}:\d{2}|tout de suite)\./)).toBeVisible();
+            await expect(dialog.getByRole('button', { name: /^enregistrer et prévenir$/i })).toBeVisible();
+        },
     },
     {
         id: 'partenaire-categorie-canaux', titre: 'Catégorie « Carré presse » : deux canaux, sur place uniquement', role: 'organisateur', needsIds: true,
