@@ -40,6 +40,9 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { PartnerStatusDialog, type PartnerStatusResult, type PartnerStatusTarget } from '@/components/admin/PartnerStatusDialog';
 import { MoneyWaiting } from '@/components/admin/finance/MoneyWaiting';
+import { TodoToday } from '@/components/admin/TodoToday';
+import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
+import { permissionMissingMessage } from '@/lib/admin/permission-labels';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { toastMessages } from '@/lib/messages/toast-messages';
 import { formatDateTime, formatFcfaPrecise, formatInteger, formatTime, toDakarDateTimeLocal } from '@/lib/format';
@@ -163,7 +166,10 @@ function PartnersSkeleton() {
 
 export default function AdminDashboardPage() {
   const toast = useToast();
-  const { hasRole, hasPermission } = useAuth();
+  const { hasRole, hasPermission, isLoading: authLoading } = useAuth();
+  // Finition 3b (E-29, E-34) : chaque bloc selon ses droits, décidé une fois la session lue (jamais de faux refus).
+  const canReadStats = !authLoading && hasPermission('statistics.read');
+  const canReadPartners = !authLoading && hasPermission('partners.read');
   // Lot 9 bis (R51, B34) : « Valider » et « Refuser » seulement avec partners.validate (la route décide toujours).
   const canValidate = hasPermission('partners.validate');
   const canSuspend = hasPermission('partners.suspend');
@@ -173,8 +179,10 @@ export default function AdminDashboardPage() {
   const [configWarning, setConfigWarning] = useState<string | null>(null);
   /** Lot 9 ter (R49) : heure du dernier chargement réussi des indicateurs ; les ventes ne sont pas suivies en temps réel. */
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
-  const [pendingEvents, setPendingEvents] = useState<number | null>(null);
-  const [eventsAccess, setEventsAccess] = useState<'ok' | 'forbidden' | 'error'>('ok');
+  /** Finition 3b (E-29) : nombre de fiches par statut, lu avec partners.read (plus avec statistics.read). */
+  const [partnerCounts, setPartnerCounts] = useState<Record<string, number> | null>(null);
+  /** Relecture de « À faire aujourd'hui » au bouton « Actualiser » et aux signaux en direct. */
+  const [todoSignal, setTodoSignal] = useState(0);
 
   const [activeTab, setActiveTab] = useTabParam<PartnerTab>(PARTNER_TABS, 'EN_ATTENTE', 'partenaires');
   const [partners, setPartners] = useState<PartnerItem[]>([]);
@@ -232,23 +240,6 @@ export default function AdminDashboardPage() {
     }
   }, [toast]);
 
-  const loadPendingEvents = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/events?status=EN_ATTENTE&pageSize=1', { cache: 'no-store' });
-      const body = await res.json().catch(() => null);
-      if (res.status === 403) {
-        setEventsAccess('forbidden');
-        return;
-      }
-      if (!res.ok || !body?.counts) throw new Error(readError(body) ?? 'Compteur indisponible');
-      setPendingEvents(Number(body.counts.EN_ATTENTE ?? 0));
-      setEventsAccess('ok');
-    } catch (err) {
-      console.error('[admin/dashboard] compteur des événements à valider en échec', err);
-      setEventsAccess('error');
-    }
-  }, []);
-
   const loadPartners = useCallback(async (silent: boolean) => {
     const seq = ++partnersSeq.current;
     if (!silent) {
@@ -263,6 +254,7 @@ export default function AdminDashboardPage() {
         throw new Error(res.status === 403 ? 'Votre compte n’a pas l’autorisation de consulter les partenaires.' : 'Impossible de charger les partenaires pour le moment.');
       }
       setPartners(body.partners as PartnerItem[]);
+      setPartnerCounts(body.counts && typeof body.counts === 'object' ? body.counts as Record<string, number> : null);
       setPartnersPhase('ready');
     } catch (err) {
       if (seq !== partnersSeq.current) return;
@@ -277,17 +269,17 @@ export default function AdminDashboardPage() {
   }, [activeTab, toast]);
 
   useEffect(() => {
-    void loadMetrics(false);
-    void loadPendingEvents();
-  }, [loadMetrics, loadPendingEvents]);
+    if (canReadStats) void loadMetrics(false);
+  }, [loadMetrics, canReadStats]);
 
   useEffect(() => {
-    void loadPartners(false);
-  }, [loadPartners]);
+    if (canReadPartners) void loadPartners(false);
+  }, [loadPartners, canReadPartners]);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadMetrics(true), loadPendingEvents(), loadPartners(true)]);
-  }, [loadMetrics, loadPendingEvents, loadPartners]);
+    setTodoSignal((n) => n + 1);
+    await Promise.all([canReadStats ? loadMetrics(true) : null, canReadPartners ? loadPartners(true) : null]);
+  }, [loadMetrics, loadPartners, canReadStats, canReadPartners]);
 
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: 'admin-tableau-de-bord',
@@ -406,11 +398,11 @@ export default function AdminDashboardPage() {
   }, [partners, partnersPhase, toast]);
 
   const tabs: TabItem[] = useMemo(() => [
-    { id: 'EN_ATTENTE', label: 'En attente', count: kpis?.pendingPartners },
-    { id: 'VALIDE', label: 'Validés', count: kpis?.validatedPartners },
-    { id: 'REJETE', label: 'Refusés', count: kpis?.rejectedPartners },
-    { id: 'ALL', label: 'Tous', count: kpis?.totalPartners },
-  ], [kpis]);
+    { id: 'EN_ATTENTE', label: 'En attente', count: partnerCounts?.EN_ATTENTE },
+    { id: 'VALIDE', label: 'Validés', count: partnerCounts?.VALIDE },
+    { id: 'REJETE', label: 'Refusés', count: partnerCounts?.REJETE },
+    { id: 'ALL', label: 'Tous', count: partnerCounts?.ALL },
+  ], [partnerCounts]);
 
   const partnerActions = (partner: PartnerItem, full = false) => (
     <div className={full ? 'grid grid-cols-1 gap-2 sm:grid-cols-3' : 'flex flex-wrap justify-end gap-2'}>
@@ -487,13 +479,6 @@ export default function AdminDashboardPage() {
     </div>
   );
 
-  const pendingEventsValue = eventsAccess === 'ok' && pendingEvents !== null ? formatInteger(pendingEvents) : '—';
-  const pendingEventsHint = eventsAccess === 'forbidden'
-    ? 'Votre compte n’a pas accès à la modération des événements.'
-    : eventsAccess === 'error'
-      ? 'Compteur indisponible pour le moment.'
-      : 'Soumis par les organisateurs, en attente de votre examen.';
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -515,49 +500,22 @@ export default function AdminDashboardPage() {
         </StatusBanner>
       )}
 
-      {/* Finition 3a (E-07) : l'argent que des personnes attendent passe avant tout le reste (droits sur l'argent seulement) */}
-      {(hasPermission('refunds.manage') || hasPermission('payments.read')) && <MoneyWaiting />}
+      {/* Finition 3b (E-29) : « À faire aujourd'hui » en tête, lu par une seule route serveur (lignes selon les droits) */}
+      {!authLoading && <TodoToday signal={todoSignal} hasAnyRight={ADMIN_PERMISSIONS.some((perm) => hasPermission(perm))} isSuperadmin={hasRole('SUPERADMIN')} />}
 
-      <section aria-labelledby="a-traiter" className="flex flex-col gap-3">
-        <h2 id="a-traiter" className="text-lg font-bold tracking-tight text-fg">À traiter</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5">
-            <KpiCard
-              label="Événements à valider"
-              value={pendingEventsValue}
-              hint={pendingEventsHint}
-              tone="warning"
-              icon={<CalendarClock size={18} />}
-              loading={eventsAccess === 'ok' && pendingEvents === null}
-              className="border-0 p-0 sm:p-0"
-            />
-            <LinkButton href="/admin/events" variant="primary" rightIcon={<ArrowRight size={16} />}>
-              Ouvrir la file de validation
-            </LinkButton>
-          </div>
-          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5">
-            <KpiCard
-              label="Partenaires à valider"
-              value={kpis ? formatInteger(kpis.pendingPartners) : '—'}
-              hint="Inscriptions avec leurs pièces justificatives."
-              tone="warning"
-              icon={<Building2 size={18} />}
-              loading={metricsPhase === 'loading' && !kpis}
-              className="border-0 p-0 sm:p-0"
-            />
-            <LinkButton href="#partenaires" variant="secondary" rightIcon={<ArrowRight size={16} />}>
-              Voir les candidatures
-            </LinkButton>
-          </div>
-        </div>
-      </section>
+      {/* Finition 3a (E-07) : l'argent que des personnes attendent (droits sur l'argent seulement) */}
+      {!authLoading && (hasPermission('refunds.manage') || hasPermission('payments.read')) && (
+        <div id="argent-qui-attend" className="scroll-mt-20"><MoneyWaiting /></div>
+      )}
 
       <section aria-labelledby="indicateurs" className="flex flex-col gap-3">
         <h2 id="indicateurs" className="text-lg font-bold tracking-tight text-fg">Indicateurs</h2>
-        {metricsPhase === 'error' && !kpis ? (
+        {!authLoading && !canReadStats ? (
+          <p className="text-sm text-fg-muted">{permissionMissingMessage('statistics.read')}</p>
+        ) : metricsPhase === 'error' && !kpis ? (
           <ErrorState
             title="Indicateurs indisponibles"
-            description="Impossible de charger les indicateurs de la plateforme. Vérifiez votre connexion, puis réessayez."
+            description="Impossible de charger les indicateurs de la plateforme pour le moment. Réessayez dans un instant."
             onRetry={() => void loadMetrics(false)}
           />
         ) : (
@@ -598,52 +556,55 @@ export default function AdminDashboardPage() {
         )}
       </section>
 
-      <section id="partenaires" aria-labelledby="partenaires-titre" className="flex scroll-mt-20 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-        <div>
-          <h2 id="partenaires-titre" className="text-lg font-bold tracking-tight text-fg">Candidatures des partenaires</h2>
-          <p className="mt-1 text-sm text-fg-muted">Validez ou refusez les organisateurs, restaurants et gestionnaires de salles après examen de leur dossier.</p>
-        </div>
+      {/* Finition 3b (E-34) : candidatures seulement avec partners.read (la route décide toujours) */}
+      {canReadPartners && (
+        <section id="partenaires" aria-labelledby="partenaires-titre" className="flex scroll-mt-20 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+          <div>
+            <h2 id="partenaires-titre" className="text-lg font-bold tracking-tight text-fg">Candidatures des partenaires</h2>
+            <p className="mt-1 text-sm text-fg-muted">Validez ou refusez les organisateurs, restaurants et gestionnaires de salles après examen de leur dossier.</p>
+          </div>
 
-        <Tabs
-          tabs={tabs}
-          value={activeTab}
-          onChange={(next) => {
-            if ((PARTNER_TABS as readonly string[]).includes(next)) setActiveTab(next as PartnerTab);
-          }}
-          ariaLabel="Statut des candidatures"
-          idPrefix={PARTNERS_ID_PREFIX}
-        />
+          <Tabs
+            tabs={tabs}
+            value={activeTab}
+            onChange={(next) => {
+              if ((PARTNER_TABS as readonly string[]).includes(next)) setActiveTab(next as PartnerTab);
+            }}
+            ariaLabel="Statut des candidatures"
+            idPrefix={PARTNERS_ID_PREFIX}
+          />
 
-        <TabPanel idPrefix={PARTNERS_ID_PREFIX} tabIdValue={activeTab}>
-          {partnersPhase === 'loading' && <PartnersSkeleton />}
-          {partnersPhase === 'error' && (
-            <ErrorState
-              title="Candidatures indisponibles"
-              description={partnersError ?? undefined}
-              onRetry={() => void retryPartners()}
-              isRetrying={isRetrying}
-            />
-          )}
-          {partnersPhase === 'ready' && (
-            <DataList
-              items={partners}
-              columns={partnerColumns}
-              getKey={(p) => p.id}
-              caption="Candidatures des partenaires"
-              renderCard={renderPartnerCard}
-              empty={(
-                <EmptyState
-                  icon={<Building2 size={28} />}
-                  title={activeTab === 'EN_ATTENTE' ? 'Aucune candidature en attente' : 'Aucune candidature'}
-                  description={activeTab === 'EN_ATTENTE'
-                    ? 'Les nouvelles inscriptions « Devenir partenaire » apparaissent ici en direct, avec leurs pièces justificatives.'
-                    : 'Aucun partenaire ne correspond à ce filtre.'}
-                />
-              )}
-            />
-          )}
-        </TabPanel>
-      </section>
+          <TabPanel idPrefix={PARTNERS_ID_PREFIX} tabIdValue={activeTab}>
+            {partnersPhase === 'loading' && <PartnersSkeleton />}
+            {partnersPhase === 'error' && (
+              <ErrorState
+                title="Candidatures indisponibles"
+                description={partnersError ?? undefined}
+                onRetry={() => void retryPartners()}
+                isRetrying={isRetrying}
+              />
+            )}
+            {partnersPhase === 'ready' && (
+              <DataList
+                items={partners}
+                columns={partnerColumns}
+                getKey={(p) => p.id}
+                caption="Candidatures des partenaires"
+                renderCard={renderPartnerCard}
+                empty={(
+                  <EmptyState
+                    icon={<Building2 size={28} />}
+                    title={activeTab === 'EN_ATTENTE' ? 'Aucune candidature en attente' : 'Aucune candidature'}
+                    description={activeTab === 'EN_ATTENTE'
+                      ? 'Les nouvelles inscriptions « Devenir partenaire » apparaissent ici en direct, avec leurs pièces justificatives.'
+                      : 'Aucun partenaire ne correspond à ce filtre.'}
+                  />
+                )}
+              />
+            )}
+          </TabPanel>
+        </section>
+      )}
 
       <section aria-labelledby="raccourcis" className="flex flex-col gap-3">
         <h2 id="raccourcis" className="text-lg font-bold tracking-tight text-fg">Raccourcis</h2>
