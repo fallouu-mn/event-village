@@ -76,8 +76,12 @@ export const TODO_SPECS: Record<TodoLineKey, Spec> = {
             const upcoming = Number(l.upcoming ?? 0);
             return (
                 <>
-                    {past > 0 && <>{past > 1 ? `${formatInteger(past)} dont la date est passée : clôturez-les ou annulez-les.` : '1 dont la date est passée : clôturez-le ou annulez-le.'} </>}
-                    {upcoming > 0 && (upcoming > 1 ? `${formatInteger(upcoming)} à venir : réactivez-les ou annulez-les.` : '1 à venir : réactivez-le ou annulez-le.')}
+                    {past > 0 && (past > 1
+                        ? <><span className="tabular-nums">{formatInteger(past)}</span> dont la date est passée : clôturez-les ou annulez-les. </>
+                        : <>1 dont la date est passée : clôturez-le ou annulez-le. </>)}
+                    {upcoming > 0 && (upcoming > 1
+                        ? <><span className="tabular-nums">{formatInteger(upcoming)}</span> à venir : réactivez-les ou annulez-les.</>
+                        : <>1 à venir : réactivez-le ou annulez-le.</>)}
                 </>
             );
         },
@@ -93,7 +97,7 @@ export const TODO_SPECS: Record<TodoLineKey, Spec> = {
             const k = Number(l.events_count ?? 0);
             return (
                 <>
-                    {k > 1 ? `Sur ${formatInteger(k)} événements. ` : ''}
+                    {k > 1 ? <>Sur <span className="tabular-nums">{formatInteger(k)}</span> événements. </> : null}
                     {first ? <>{k > 1 ? 'Le plus ancien' : 'Événement'} : « {first.title} ». </> : null}
                     Recomptez l’argent avec le contrôleur avant de valider.
                 </>
@@ -114,7 +118,7 @@ export const TODO_SPECS: Record<TodoLineKey, Spec> = {
     sms_cap: {
         icon: <MessageSquareWarning size={20} />,
         title: (l) => `SMS optionnels : ${formatInteger(Number(l.count))} sur ${formatInteger(Number(l.cap ?? 0))} aujourd’hui`,
-        explain: (l) => <>Au-delà de {formatInteger(Number(l.cap ?? 0))}, les rappels et les annonces partent sans SMS.</>,
+        explain: (l) => <>Au-delà de <span className="tabular-nums">{formatInteger(Number(l.cap ?? 0))}</span>, les rappels et les annonces partent sans SMS.</>,
         upToDate: 'SMS optionnels : sous le seuil d’alerte',
         action: 'Voir les envois',
         href: () => '/admin/notifications',
