@@ -19,6 +19,10 @@ const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 const FINITION3A_MIGRATIONS = [
     // 1b, sécurité d'abord : permission de l'auteur en base (partner_status_set, admin_permissions_set)
     '20261117000001_f3a_securite.sql',
+    // 2 : réserve de prudence (réglages), synthèse et détail des chiffres, solde SamirPay en cache de 5 minutes
+    '20261117000002_f3a_reserve.sql',
+    '20261117000003_f3a_synthese.sql',
+    '20261117000004_f3a_solde.sql',
 ] as const;
 
 after(async () => {
