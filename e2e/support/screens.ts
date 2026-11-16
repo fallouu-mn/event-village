@@ -1011,7 +1011,8 @@ export const SCREENS: readonly Screen[] = [
     // l'écran « Vérifier avant d'envoyer » (formulaire vide : liste de ce qui manque) et la fenêtre « Prévenir »
     ...([
         ['partenaire-creation-programme', 'Création d’un événement — étape 2, Programme', /programme/i, /^programme$/i],
-        ['partenaire-creation-billets', 'Création d’un événement — étape 4, Billets (couleur au contrôle, prix minimum)', /billets/i, /^billetterie$/i],
+        // Nom accessible d'une case du pas à pas : le titre de l'étape (« Billetterie »), le libellé visible est masqué (run 263)
+        ['partenaire-creation-billets', 'Création d’un événement — étape 4, Billets (couleur au contrôle, prix minimum)', /billetterie/i, /^billetterie$/i],
         ['partenaire-creation-controle', 'Création d’un événement — étape 5, Contrôle à l’entrée (facultatif)', /contrôle/i, /^contrôle à l’entrée \(facultatif\)$/i],
         ['partenaire-creation-verifier', 'Création d’un événement — Vérifier avant d’envoyer (ce qui manque)', /vérifier/i, /^vérifier avant d’envoyer$/i],
     ] as const).map(([id, titre, stepButton, heading]): Screen => ({
