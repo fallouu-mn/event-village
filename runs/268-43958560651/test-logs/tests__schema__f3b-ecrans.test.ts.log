@@ -1,0 +1,2746 @@
+TAP version 13
+# Subtest: 1. E-29 — « À faire aujourd’hui » en tête de l’accueil
+    # Subtest: rendu en tête, avant « Argent qui attend » (ancre), plus de bloc « À traiter »
+    ok 1 - rendu en tête, avant « Argent qui attend » (ancre), plus de bloc « À traiter »
+      ---
+      duration_ms: 1.063594
+      type: 'test'
+      ...
+    # Subtest: une seule route serveur, textes exacts de la consigne, jamais 0 pour un compteur illisible
+    ok 2 - une seule route serveur, textes exacts de la consigne, jamais 0 pour un compteur illisible
+      ---
+      duration_ms: 0.54351
+      type: 'test'
+      ...
+    # Subtest: candidatures comptées sans statistics.read ; indicateurs seulement avec statistics.read
+    ok 3 - candidatures comptées sans statistics.read ; indicateurs seulement avec statistics.read
+      ---
+      duration_ms: 0.541646
+      type: 'test'
+      ...
+    # Subtest: nouveau composant dans la liste du système de design
+    ok 4 - nouveau composant dans la liste du système de design
+      ---
+      duration_ms: 0.162921
+      type: 'test'
+      ...
+    1..4
+ok 1 - 1. E-29 — « À faire aujourd’hui » en tête de l’accueil
+  ---
+  duration_ms: 3.000902
+  type: 'suite'
+  ...
+# Subtest: 2. E-34 — menu et barre du bas selon les droits ; « Mes droits »
+    # Subtest: AppLayout charge le menu de l’administration à la demande (module à part), plus aucune entrée admin en dur
+    ok 1 - AppLayout charge le menu de l’administration à la demande (module à part), plus aucune entrée admin en dur
+      ---
+      duration_ms: 0.509477
+      type: 'test'
+      ...
+    # Subtest: ADMIN sans aucun droit : seulement l’accueil et « Mes droits »
+    ok 2 - ADMIN sans aucun droit : seulement l’accueil et « Mes droits »
+      ---
+      duration_ms: 95.711534
+      type: 'test'
+      ...
+    # Subtest: ADMIN events.read et events.write : Événements, Catalogues et services, Mes droits, rien d’autre
+    ok 3 - ADMIN events.read et events.write : Événements, Catalogues et services, Mes droits, rien d’autre
+      ---
+      duration_ms: 0.484268
+      type: 'test'
+      ...
+    # Subtest: chaque entrée suit son droit ; « Scanner » seulement avec access.operate ; « Réglages » avec settings.read
+    ok 4 - chaque entrée suit son droit ; « Scanner » seulement avec access.operate ; « Réglages » avec settings.read
+      ---
+      duration_ms: 2.018038
+      type: 'test'
+      ...
+    # Subtest: SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »
+    ok 5 - SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »
+      ---
+      duration_ms: 0.503444
+      type: 'test'
+      ...
+    # Subtest: page « Mes droits » : ce que l’admin peut faire et ne pas faire, en phrases ; texte exact sans aucun droit
+    ok 6 - page « Mes droits » : ce que l’admin peut faire et ne pas faire, en phrases ; texte exact sans aucun droit
+      ---
+      duration_ms: 4.023344
+      type: 'test'
+      ...
+    1..6
+ok 2 - 2. E-34 — menu et barre du bas selon les droits ; « Mes droits »
+  ---
+  duration_ms: 103.651346
+  type: 'suite'
+  ...
+# Subtest: 3. E-35 — réglages groupés, expliqués, bornés à l’écran, confirmés « Avant → Après »
+    # Subtest: sommaire des thèmes avec ancres ; une phrase, la valeur par défaut et l’alerte de chaque réglage
+    ok 1 - sommaire des thèmes avec ancres ; une phrase, la valeur par défaut et l’alerte de chaque réglage
+      ---
+      duration_ms: 0.825498
+      type: 'test'
+      ...
+    # Subtest: bornes vérifiées à l’écran avant l’envoi (erreur sous le champ) ; confirmation « Avant → Après » avec le motif
+    ok 2 - bornes vérifiées à l’écran avant l’envoi (erreur sous le champ) ; confirmation « Avant → Après » avec le motif
+      ---
+      duration_ms: 0.384905
+      type: 'test'
+      ...
+    # Subtest: historique : qui, quoi, quand, pourquoi ; plus de clé technique à l’écran
+    not ok 3 - historique : qui, quoi, quand, pourquoi ; plus de clé technique à l’écran
+      ---
+      duration_ms: 2.600074
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:10538'
+      failureType: 'testCodeFailure'
+      error: 'clé technique affichée dans l’historique'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        
+        
+        import React, { useCallback, useEffect, useId, useState } from 'react';
+        import { Bell, History, Pencil, RefreshCw, Save, ScanLine, ToggleRight, Wallet, X } from 'lucide-react';
+        import type { LucideIcon } from 'lucide-react';
+        import { Button } from '@/components/ui/Button';
+        import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+        import { ErrorState } from '@/components/ui/EmptyState';
+        import { Select, TextInput } from '@/components/ui/Field';
+        import { PageHeader } from '@/components/ui/PageHeader';
+        import { Skeleton } from '@/components/ui/Skeleton';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { useToast } from '@/components/ui/Toast';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { formatDateTime } from '@/lib/format';
+        import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
+        import { SETTING_SECTIONS, settingBoundsError, settingRisk } from '@/lib/settings/catalog';
+        
+        type Kind = 'percent' | 'integer' | 'boolean' | 'choice' | 'text';
+        
+        interface SettingMeta {
+          label: string;
+          help: string;
+          kind: Kind;
+          unit?: string;
+          
+          options?: Record<string, string>;
+        }
+        
+        const BEARER_LABELS: Record<string, string> = { EVENT_VILLAGE: 'Event Village', ORGANISATEUR: 'Organisateur' };
+        const MANUAL_ENTRY_SCOPE_LABELS: Record<string, string> = {
+          ASSIGNED_CONTROLLER: 'Contrôleur affecté seul',
+          STAFF: 'Contrôleur affecté, partenaire et admin',
+        };
+        
+        const SMS_POLICY_LABELS: Record<string, string> = {
+          ALWAYS: 'Toujours',
+          IF_NO_PUSH: 'Seulement sans notification push',
+          NEVER: 'Jamais',
+        };
+        
+        const FREE_REMINDER_SMS_LABELS: Record<string, string> = {
+          NEVER: 'Jamais',
+          SAME_AS_PAID: 'Comme un billet payant',
+        };
+        
+        
+        const SAFETY_RESERVE_LABELS: Record<string, string> = {
+          AUTO_3_DAYS: 'Automatique : encaissements des 3 derniers jours',
+          FIXED: 'Montant fixe',
+        };
+        
+        
+        const META: Record<string, SettingMeta> = {
+          'finance.service_fee_rate': { label: 'Frais de service', help: 'Payés par l’acheteur, arrondis au franc CFA supérieur par billet. De 0 à 50 %.', kind: 'percent', unit: '%' },
+          'finance.payment_hold_minutes': { label: 'Durée de garde des places pendant un paiement (minutes)', help: 'Temps pendant lequel les places d’un paiement en attente restent réservées. Le paiement reste valable 1 heure chez SamirPay : validé après l’échéance, il donne les billets s’il reste des places, sinon il est remboursé automatiquement. Entier de 5 à 60.', kind: 'integer', unit: 'min' },
+          'finance.min_paid_price': { label: 'Prix minimum d’un billet payant (F CFA)', help: 'Appliqué à toute catégorie payante créée ou dont le prix change ; un billet gratuit reste à 0. À ajuster quand SamirPay donnera son minimum d’encaissement. Entier de 1 à 100 000.', kind: 'integer', unit: 'F CFA' },
+          'finance.aggregator_fee_rate.WAVE': { label: 'Frais agrégateur Wave', help: 'Coût SamirPay d’un paiement Wave. De 0 à 10 %.', kind: 'percent', unit: '%' },
+          'finance.aggregator_fee_rate.ORANGE_MONEY': { label: 'Frais agrégateur Orange Money', help: 'Coût SamirPay d’un paiement Orange Money. De 0 à 10 %.', kind: 'percent', unit: '%' },
+          'finance.cancellation_aggregator_fee_bearer': { label: 'Frais agrégateur d’une annulation', help: 'Qui supporte les frais agrégateur quand un billet est remboursé.', kind: 'choice', options: BEARER_LABELS },
+          'finance.payout_hold_enabled': { label: 'Délai de garde des ventes', help: 'Désactivé : les ventes sont disponibles dès la confirmation du paiement.', kind: 'boolean' },
+          'finance.payout_delay_hours': { label: 'Délai après la fin de l’événement', help: 'Nombre d’heures avant que les ventes deviennent disponibles. De 0 à 720.', kind: 'integer', unit: 'h' },
+          'finance.withdrawal_fee_rate': { label: 'Frais de retrait', help: 'Arrondis au franc CFA supérieur, déduits du montant versé. De 0 à 10 %.', kind: 'percent', unit: '%' },
+          'finance.withdrawal_min_amount': { label: 'Montant minimum de retrait', help: 'Montant entier en francs CFA.', kind: 'integer', unit: 'F CFA' },
+          'finance.withdrawal_bank_enabled': { label: 'Retraits par virement bancaire', help: 'Tant qu’il est désactivé, seuls Wave et Orange Money sont proposés.', kind: 'boolean' },
+          'finance.referral_availability_days': { label: 'Délai de validation des commissions', help: 'Jours avant qu’une commission de parrainage devienne disponible. De 7 à 14.', kind: 'integer', unit: 'jours' },
+        
+          'finance.safety_reserve_mode': { label: 'Réserve de prudence', help: 'En attendant la confirmation du délai de SamirPay, une réserve est gardée sur le compte. Elle est déduite de « Retirable par Event Village ». Automatique : les encaissements des 3 derniers jours. Montant fixe : le montant du réglage suivant.', kind: 'choice', options: SAFETY_RESERVE_LABELS },
+          'finance.safety_reserve_amount': { label: 'Montant fixe de la réserve de prudence', help: 'Lu seulement quand la réserve est « Montant fixe ». Entier de 0 à 1 000 000 000 F CFA.', kind: 'integer', unit: 'F CFA' },
+          'access.scan_window_before_hours': { label: 'Ouverture du contrôle avant le début', help: 'Heures avant le début de l’événement à partir desquelles les billets peuvent être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },
+          'access.scan_window_after_hours': { label: 'Fermeture du contrôle après la fin', help: 'Heures après la fin de l’événement pendant lesquelles les billets peuvent encore être scannés. De 0 à 48.', kind: 'integer', unit: 'h' },
+          'access.manual_entry_scope': { label: 'Saisie manuelle d’un numéro de billet', help: 'Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.', kind: 'choice', options: MANUAL_ENTRY_SCOPE_LABELS },
+          'access.counter_sale_enabled': { label: 'Vente au guichet en espèces', help: 'Un contrôleur autorisé à encaisser, avec une caisse ouverte, vend des billets au prix facial, sans frais.', kind: 'boolean' },
+          'access.low_stock_threshold': { label: 'Seuil « bientôt complet »', help: 'Quand il reste ce nombre de places ou moins dans une catégorie, la page publique affiche le restant ; au-delà, seulement « disponible ». Entier de 1 à 1000.', kind: 'integer', unit: 'places' },
+          'access.refusal_alert_threshold': { label: 'Alerte de refus à une porte : nombre de refus', help: 'Quand une porte enregistre ce nombre de refus ou plus pendant la durée observée, l’organisateur reçoit une alerte, au plus une fois par porte et par durée. Comptent les billets invalides, déjà utilisés, annulés, remboursés, d’un autre événement, en attente de transfert, présentés dans la mauvaise zone ou pas encore entrés ; pas les refus liés au téléphone ou aux droits du contrôleur, à l’encaissement ni aux horaires de l’événement. Entier de 3 à 500.', kind: 'integer', unit: 'refus' },
+          'access.refusal_alert_minutes': { label: 'Alerte de refus à une porte : durée observée', help: 'Durée pendant laquelle les refus d’une même porte sont comptés pour l’alerte. Entier de 1 à 60.', kind: 'integer', unit: 'min' },
+          'notif.reminder_j1_enabled': { label: 'Rappel la veille', help: 'Rappel envoyé la veille du début aux porteurs d’un billet valable de l’événement en ligne.', kind: 'boolean' },
+          'notif.reminder_j1_hour': { label: 'Heure du rappel de la veille', help: 'Heure de Dakar à laquelle part le rappel de la veille. De 6 à 20.', kind: 'integer', unit: 'h' },
+          'notif.reminder_h3_enabled': { label: 'Rappel avant le début', help: 'Rappel envoyé quelques heures avant le début, avec le conseil d’ouvrir son billet avant d’arriver.', kind: 'boolean' },
+          'notif.reminder_h3_hours': { label: 'Heures avant le début', help: 'Nombre d’heures entre le rappel et le début de l’événement. De 1 à 12.', kind: 'integer', unit: 'h' },
+          'notif.j1_sms': { label: 'SMS du rappel de la veille', help: 'Envoi du SMS en plus de l’application et des notifications push.', kind: 'choice', options: SMS_POLICY_LABELS },
+          'notif.h3_sms': { label: 'SMS du rappel avant le début', help: 'Envoi du SMS en plus de l’application et des notifications push.', kind: 'choice', options: SMS_POLICY_LABELS },
+          'notif.sms_quiet_start': { label: 'Début de la plage sans SMS', help: 'Heure de Dakar à partir de laquelle aucun SMS optionnel ne part ; le rappel passe alors par les autres canaux. De 0 à 23.', kind: 'integer', unit: 'h' },
+          'notif.sms_quiet_end': { label: 'Fin de la plage sans SMS', help: 'Heure de Dakar de fin de la plage. Un début égal à la fin supprime la plage. De 0 à 23.', kind: 'integer', unit: 'h' },
+          'notif.sms_optional_daily_cap': { label: 'Plafond quotidien des SMS optionnels', help: 'Nombre maximal de SMS optionnels (rappels, annonces, signaux aux professionnels) envoyés par jour de Dakar ; au-delà, ils partent sans SMS, par l’application et les notifications push. Les SMS indispensables (achat, transfert, annulation, remboursement, sécurité du compte) ne sont jamais plafonnés. Les administrateurs sont alertés à 80 %. De 0 à 1 000 000 ; 0 : aucun SMS optionnel.', kind: 'integer', unit: 'SMS' },
+          'notif.sms_essential_daily_alert': { label: 'Seuil d’alerte des SMS indispensables du jour', help: 'Nombre de SMS indispensables envoyés dans la journée de Dakar à partir duquel les administrateurs sont alertés, une fois par jour. Ces SMS ne sont jamais plafonnés : le seuil sert à repérer un volume anormal. De 1 à 1 000 000.', kind: 'integer', unit: 'SMS' },
+          'notif.free_ticket_reminder_sms': { label: 'SMS des rappels pour les billets gratuits', help: 'Pour un porteur qui ne détient que des billets gratuits ou des invitations de l’événement. Les rappels arrivent toujours dans l’application et en notification push.', kind: 'choice', options: FREE_REMINDER_SMS_LABELS },
+          'features.halls_enabled': { label: 'Salles de fête', help: 'Réservation de salles par les clients et gestion des salles par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
+          'features.tables_enabled': { label: 'Réservation de tables', help: 'Réservation de tables dans les restaurants et gestion des tables par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
+        
+          'support.whatsapp': { label: 'Numéro WhatsApp du support', help: 'Format international, par exemple +221771234567. Laissez vide si aucun. Au moins un moyen de contact est exigé avant une séance réelle.', kind: 'text' },
+          'support.phone': { label: 'Téléphone du support', help: 'Format international, par exemple +221338000000. Laissez vide si aucun.', kind: 'text' },
+          'support.email': { label: 'Email du support', help: 'Adresse lue par l’équipe du support. Laissez vide si aucune.', kind: 'text' },
+          'features.orders_enabled': { label: 'Commandes de repas', help: 'Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés.', kind: 'boolean' },
+        };
+        
+        
+        const META_ORDER = Object.keys(META);
+        const rank = (key: string) => (META_ORDER.includes(key) ? META_ORDER.indexOf(key) : META_ORDER.length);
+        
+        
+        const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: LucideIcon }> = [
+          { prefix: 'finance.', title: 'Finance', help: 'Frais, délais de disponibilité des ventes, retraits et commissions.', icon: Wallet },
+          { prefix: 'access.', title: 'Contrôle d’accès', help: 'Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet, seuil de stock affiché au public et alerte de refus à une porte.', icon: ScanLine },
+          { prefix: 'support.', title: 'Contact du support', help: 'Moyens de joindre le support, affichés sur la page publique Aide et dans les messages de sécurité. Au moins un est exigé avant une séance réelle.', icon: Bell },
+          { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels, alerte sur les SMS indispensables et rappels des billets gratuits.', icon: Bell },
+        
+          { prefix: 'features.', title: 'Services en préparation', help: 'Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER.', icon: ToggleRight },
+        ];
+        
+        interface Setting {
+          key: string;
+          value: unknown;
+          updatedAt: string | null;
+        }
+        
+        
+        interface ObservedFees {
+          rate: number | null;
+          max: number | null;
+        }
+        
+        interface SettingsData {
+          settings: Setting[];
+          history: HistoryRow[];
+          observed: ObservedFees;
+          
+          defaults: Record<string, unknown>;
+        }
+        
+        const WITHDRAWAL_FEE_KEY = 'finance.withdrawal_fee_rate';
+        
+        interface HistoryRow {
+          key: string;
+          oldValue: unknown;
+          newValue: unknown;
+          reason: string | null;
+          changedAt: string;
+          
+          author: string;
+        }
+        
+        function isRecord(value: unknown): value is Record<string, unknown> {
+          return typeof value === 'object' && value !== null && !Array.isArray(value);
+        }
+        
+        
+        function unwrap(value: unknown): unknown {
+          return isRecord(value) && 'value' in value ? value.value : value;
+        }
+        
+        function displayValue(key: string, value: unknown): string {
+          const meta = META[key];
+          const v = unwrap(value);
+          if (v === null || v === undefined) return '—';
+          if (meta?.kind === 'boolean') return v === true ? 'Activé' : 'Désactivé';
+          if (meta?.kind === 'choice') return meta.options?.[String(v)] ?? 'Valeur non répertoriée';
+          if (meta?.kind === 'text') return String(v).trim() === '' ? 'Non renseigné' : String(v);
+          if (typeof v === 'number') return `${v.toLocaleString('fr-FR')}${meta?.unit ? ` ${meta.unit}` : ''}`;
+          return String(v);
+        }
+        
+        function percentOrNull(value: unknown): number | null {
+          return typeof value === 'number' && Number.isFinite(value) ? value : null;
+        }
+        
+        function formatRate(value: number): string {
+          return value.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+        }
+        
+        function parseSettings(body: unknown): SettingsData | null {
+          if (!isRecord(body) || !Array.isArray(body.settings)) return null;
+          const settings = body.settings.flatMap((s: unknown) => {
+            if (!isRecord(s) || typeof s.key !== 'string') return [];
+            return [{ key: s.key, value: s.value, updatedAt: typeof s.updated_at === 'string' ? s.updated_at : null }];
+          });
+          const history = Array.isArray(body.history)
+            ? body.history.flatMap((h: unknown) => {
+                if (!isRecord(h) || typeof h.key !== 'string' || typeof h.changed_at !== 'string') return [];
+                return [{ key: h.key, oldValue: h.old_value, newValue: h.new_value, reason: typeof h.reason === 'string' ? h.reason : null, changedAt: h.changed_at, author: typeof h.author === 'string' ? h.author : 'Auteur inconnu' }];
+              })
+            : [];
+          return {
+            settings,
+            history,
+            observed: { rate: percentOrNull(body.observed_cashout_fee_rate), max: percentOrNull(body.observed_cashout_fee_max) },
+            defaults: isRecord(body.defaults) ? body.defaults : {},
+          };
+        }
+        
+        
+        function WithdrawalFeeCheck({ setting, observed }: { setting: Setting; observed: ObservedFees }) {
+          const configured = Number(unwrap(setting.value));
+          if (observed.rate === null) {
+            return <p className="text-sm text-fg-muted">Frais SamirPay réels pas encore constatés.</p>;
+          }
+          const max = observed.max !== null ? ` (maximum ${formatRate(observed.max)} %)` : '';
+          if (Number.isFinite(configured) && configured < observed.rate) {
+            return (
+              <StatusBanner tone="warning" title="Frais de retrait sous le coût réel">
+                Attention : les frais de retrait ({formatRate(configured)} %) sont inférieurs aux frais SamirPay constatés ({formatRate(observed.rate)} %). Chaque retrait coûte alors de l’argent à Event Village.
+              </StatusBanner>
+            );
+          }
+          return <p className="text-sm text-fg-muted">Frais SamirPay constatés sur 90 jours : {formatRate(observed.rate)} %{max}.</p>;
+        }
+        
+        export default function AdminFinanceSettingsPage() {
+          const toast = useToast();
+          const { hasRole } = useAuth();
+          const isSuperadmin = hasRole('SUPERADMIN');
+          const fieldId = useId();
+          const [data, setData] = useState<SettingsData | null>(null);
+          const [loadError, setLoadError] = useState<string | null>(null);
+          const [isLoading, setIsLoading] = useState(true);
+        
+          const [editing, setEditing] = useState<string | null>(null);
+          const [draft, setDraft] = useState<string>('');
+          const [reason, setReason] = useState('');
+        
+          const [activationWord, setActivationWord] = useState('');
+          const [saveError, setSaveError] = useState<string | null>(null);
+          const [isSaving, setIsSaving] = useState(false);
+          
+          const [fieldError, setFieldError] = useState<string | null>(null);
+          
+          const [pending, setPending] = useState<{ key: string; value: number | boolean | string } | null>(null);
+        
+          const load = useCallback(async () => {
+            setIsLoading(true);
+            try {
+              const res = await fetch('/api/admin/finance-settings', { cache: 'no-store' });
+              const body = await readJsonBody(res, 'réglages de la plateforme');
+              if (!res.ok) {
+                setLoadError(serverErrorMessage(body) ?? (res.status === 403 ? 'Votre compte n’a pas la permission « Lire les réglages ». Demandez-la au Superadmin.' : 'Réglages indisponibles pour le moment.'));
+                return;
+              }
+              const parsed = parseSettings(body);
+              if (!parsed) {
+                console.error('[réglages de la plateforme] réponse inattendue :', body);
+                setLoadError('Réponse inattendue du serveur.');
+                return;
+              }
+              setData(parsed);
+              setLoadError(null);
+            } catch (err) {
+              console.error('[réglages de la plateforme] chargement impossible :', err);
+              setLoadError('Connexion impossible : vérifiez votre réseau puis réessayez.');
+            } finally {
+              setIsLoading(false);
+            }
+          }, []);
+        
+          useEffect(() => {
+            void load();
+          }, [load]);
+        
+          const startEdit = (setting: Setting) => {
+            const v = unwrap(setting.value);
+            setEditing(setting.key);
+            setDraft(v === null || v === undefined ? '' : String(v));
+            setReason('');
+            setActivationWord('');
+            setSaveError(null);
+            setFieldError(null);
+          };
+        
+          
+          const prepare = (key: string) => {
+            const meta = META[key];
+            let value: number | boolean | string;
+            if (meta?.kind === 'boolean') value = draft === 'true';
+            else if (meta?.kind === 'choice' || meta?.kind === 'text') value = draft.trim();
+            else {
+              const parsed = Number(draft.replace(',', '.'));
+              if (draft.trim() === '' || !Number.isFinite(parsed)) {
+                setFieldError('Indiquez un nombre.');
+                return;
+              }
+              const bounds = settingBoundsError(key, draft);
+              if (bounds) {
+                setFieldError(bounds);
+                return;
+              }
+              value = parsed;
+            }
+            setFieldError(null);
+            if (reason.trim().length < 3) {
+              setSaveError('Indiquez le motif de la modification (3 caractères au moins).');
+              return;
+            }
+            if (key.startsWith('features.') && value === true && activationWord.trim() !== 'ACTIVER') {
+              setSaveError('Ce service n’est pas prêt pour le public. Pour l’activer quand même, tapez ACTIVER.');
+              return;
+            }
+            setSaveError(null);
+            setPending({ key, value });
+          };
+        
+          const save = async () => {
+            if (!pending) return;
+            const { key, value } = pending;
+            const meta = META[key];
+            setIsSaving(true);
+            setSaveError(null);
+            try {
+              const res = await fetch('/api/admin/finance-settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, value, reason: reason.trim() }),
+              });
+              const body = await readJsonBody(res, 'réglages de la plateforme/modification');
+              if (!res.ok) {
+                setSaveError(
+                  serverErrorMessage(body) ??
+                    (res.status === 403 ? 'Seul un Superadmin peut modifier ce réglage.' : 'Le serveur n’a pas répondu comme prévu. Réessayez ; si cela continue, prévenez l’équipe technique.')
+                );
+                return;
+              }
+              toast.success(`Réglage « ${meta?.label ?? 'sans libellé'} » enregistré. Il s’applique aux prochaines opérations.`);
+              setPending(null);
+              setEditing(null);
+              void load();
+            } catch (err) {
+              console.error('[réglages de la plateforme] enregistrement impossible :', err);
+              setSaveError('Connexion impossible : le réglage n’a peut-être pas été enregistré. Actualisez avant de réessayer.');
+            } finally {
+              setIsSaving(false);
+            }
+          };
+        
+          
+          const currentValues: Record<string, unknown> = Object.fromEntries((data?.settings ?? []).map((x) => [x.key, unwrap(x.value)]));
+          const pendingMeta = pending ? META[pending.key] : null;
+          const pendingBefore = pending ? data?.settings.find((x) => x.key === pending.key)?.value : undefined;
+        
+          return (
+            <div className="space-y-6 pb-24 lg:pb-12">
+              <PageHeader
+                title="Réglages de la plateforme"
+                description={isSuperadmin
+                  ? 'Chaque modification est historisée et ne s’applique qu’aux opérations futures.'
+                  : 'Lecture seule : seul un Superadmin peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
+                back={{ href: '/admin/dashboard', label: 'Accueil' }}
+                actions={(
+                  <Button variant="secondary" leftIcon={<RefreshCw size={18} aria-hidden="true" />} onClick={() => void load()} isLoading={isLoading && Boolean(data)} disabled={isLoading}>
+                    Actualiser
+                  </Button>
+                )}
+              />
+        
+              {loadError && !data ? (
+                <ErrorState title="Réglages indisponibles" description={loadError} onRetry={() => void load()} isRetrying={isLoading} />
+              ) : !data ? (
+                <div className="space-y-3" aria-busy="true">
+                  <span className="sr-only">Chargement des réglages…</span>
+                  {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}
+                </div>
+              ) : (
+                <>
+                  {loadError && (
+                    <StatusBanner tone="danger" announce="alert" title="Réglages non actualisés">
+                      {loadError} Les valeurs affichées sont celles du dernier chargement.
+                    </StatusBanner>
+                  )}
+                  <nav aria-label="Sommaire des réglages" className="rounded-2xl border border-border bg-surface p-4">
+                    <p className="text-sm font-semibold text-fg">Thèmes</p>
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {SETTING_SECTIONS.filter((t) => data.settings.some((x) => x.key.startsWith(t.prefix))).map((t) => (
+                        <li key={t.anchor}>
+                          <a href={`#${t.anchor}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-3 text-sm font-medium text-brand-fg hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            {t.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </nav>
+        
+                  {SECTIONS.map((section) => {
+                    const items = data.settings.filter((s) => s.key.startsWith(section.prefix)).sort((a, b) => rank(a.key) - rank(b.key));
+                    if (items.length === 0) return null;
+                    const headingId = `${fieldId}-section-${section.prefix.replace('.', '')}`;
+                    const SectionIcon = section.icon;
+                    const anchor = SETTING_SECTIONS.find((t) => t.prefix === section.prefix)?.anchor;
+                    return (
+                      <section key={section.prefix} id={anchor} aria-labelledby={headingId} className="scroll-mt-20 space-y-3">
+                        <div className="space-y-1">
+                          <h2 id={headingId} className="flex items-center gap-2 text-lg font-semibold text-fg">
+                            <SectionIcon size={20} className="text-brand-fg" aria-hidden="true" />
+                            {section.title}
+                          </h2>
+                          <p className="text-sm text-fg-muted">{section.help}</p>
+                        </div>
+                        <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                          {items.map((s) => {
+                            const meta = META[s.key];
+                            const label = meta?.label ?? 'Réglage sans libellé';
+                            const isEditing = editing === s.key;
+                            const formId = `${fieldId}-${s.key}-form`;
+                            return (
+                              <li key={s.key} className="space-y-3 p-4">
+                                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                                  <div className="min-w-0 space-y-0.5">
+                                    <p className="text-sm font-semibold text-fg">{label}</p>
+                                    {s.key.startsWith('features.') && (
+                                      <p className="text-sm font-medium text-warning-fg">Pas prêt pour le public</p>
+                                    )}
+                                    {meta?.help && <p className="text-sm text-fg-muted">{meta.help}</p>}
+                                    <p className="text-sm text-fg-muted">
+                                      Par défaut : <span className="tabular-nums">{s.key in data.defaults ? displayValue(s.key, data.defaults[s.key]) : '—'}</span>
+                                      {' · '}Modifié le <time dateTime={s.updatedAt ?? undefined}>{formatDateTime(s.updatedAt)}</time>
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-shrink-0 items-center gap-3">
+                                    <span className="text-base font-semibold tabular-nums text-brand-fg">{displayValue(s.key, s.value)}</span>
+                                    {isSuperadmin && !isEditing && (
+                                      <Button variant="ghost" size="sm" leftIcon={<Pencil size={16} aria-hidden="true" />} onClick={() => startEdit(s)} aria-label={`Modifier ${label}`}>
+                                        Modifier
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+        
+                                {s.key === WITHDRAWAL_FEE_KEY && <WithdrawalFeeCheck setting={s} observed={data.observed} />}
+                                {!isEditing && settingRisk(s.key, unwrap(s.value), currentValues) && (
+                                  <StatusBanner tone="warning" title="Valeur risquée">{settingRisk(s.key, unwrap(s.value), currentValues)}</StatusBanner>
+                                )}
+        
+                                {isSuperadmin && isEditing && (
+                                  <form
+                                    id={formId}
+                                    noValidate
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      prepare(s.key);
+                                    }}
+                                    className="grid grid-cols-1 items-start gap-3 rounded-2xl border border-border bg-surface-sunken p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
+                                  >
+                                    {meta?.kind === 'boolean' ? (
+                                      <Select
+                                        label="Nouvelle valeur"
+                                        value={draft}
+                                        onChange={(e) => setDraft(e.target.value)}
+                                        options={[{ value: 'true', label: 'Activé' }, { value: 'false', label: 'Désactivé' }]}
+                                      />
+                                    ) : meta?.kind === 'choice' ? (
+                                      <Select
+                                        label="Nouvelle valeur"
+                                        value={draft}
+                                        onChange={(e) => setDraft(e.target.value)}
+                                        options={Object.entries(meta.options ?? {}).map(([value, optionLabel]) => ({ value, label: optionLabel }))}
+                                      />
+                                    ) : meta?.kind === 'text' ? (
+                                      <TextInput
+                                        label="Nouvelle valeur (vide : aucun)"
+                                        type="text"
+                                        value={draft}
+                                        onChange={(e) => setDraft(e.target.value)}
+                                      />
+                                    ) : (
+                                      <TextInput
+                                        label={`Nouvelle valeur${meta?.unit ? ` (${meta.unit})` : ''}`}
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={draft}
+                                        onChange={(e) => { setDraft(e.target.value); setFieldError(null); }}
+                                        onBlur={() => setFieldError(settingBoundsError(s.key, draft))}
+                                        error={fieldError ?? undefined}
+                                        className="tabular-nums"
+                                      />
+                                    )}
+                                    {(() => {
+                                      const asValue = meta?.kind === 'boolean' ? draft === 'true' : meta?.kind === 'choice' || meta?.kind === 'text' ? draft : Number(draft.replace(',', '.'));
+                                      const risk = settingRisk(s.key, asValue, currentValues);
+                                      return risk ? <div className="sm:col-span-2"><StatusBanner tone="warning" title="Valeur risquée">{risk}</StatusBanner></div> : null;
+                                    })()}
+                                    {s.key.startsWith('features.') && draft === 'true' && (
+                                      <TextInput
+                                        label="Tapez ACTIVER pour confirmer"
+                                        required
+                                        value={activationWord}
+                                        autoComplete="off"
+                                        onChange={(e) => setActivationWord(e.target.value)}
+                                        hint="Le service sera ouvert aux clients et aux partenaires alors qu’il n’est pas prêt pour le public."
+                                      />
+                                    )}
+                                    <TextInput
+                                      label="Motif"
+                                      required
+                                      value={reason}
+                                      maxLength={300}
+                                      placeholder="Ex : décision du comité du 15 novembre"
+                                      onChange={(e) => setReason(e.target.value)}
+                                      hint="3 caractères au moins ; visible dans l’historique."
+                                    />
+                                    {saveError && !pending && (
+                                      <div className="sm:col-span-2">
+                                        <StatusBanner tone="danger" announce="alert" title="Réglage non enregistré">
+                                          {saveError}
+                                        </StatusBanner>
+                                      </div>
+                                    )}
+                                    <div className="flex flex-wrap gap-2 sm:col-span-2">
+                                      <Button type="submit" variant="primary" isLoading={isSaving} leftIcon={<Save size={18} aria-hidden="true" />}>
+                                        Vérifier et enregistrer
+                                      </Button>
+                                      <Button type="button" variant="ghost" disabled={isSaving} onClick={() => setEditing(null)} leftIcon={<X size={18} aria-hidden="true" />}>
+                                        Annuler
+                                      </Button>
+                                    </div>
+                                  </form>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </section>
+                    );
+                  })}
+        
+                  <section aria-labelledby={`${fieldId}-historique`} className="space-y-3">
+                    <h2 id={`${fieldId}-historique`} className="flex items-center gap-2 text-lg font-semibold text-fg">
+                      <History size={20} className="text-brand-fg" aria-hidden="true" />
+                      Historique des modifications
+                    </h2>
+                    {data.history.length === 0 ? (
+                      <p className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg-muted">Aucune modification enregistrée.</p>
+                    ) : (
+                      <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                        {data.history.map((h, i) => (
+                          <li key={`${h.key}-${h.changedAt}-${i}`} className="space-y-0.5 px-4 py-3 text-sm">
+                            <p className="font-semibold text-fg">{META[h.key]?.label ?? 'Réglage retiré ou sans libellé'}</p>
+                            <p className="tabular-nums text-fg">
+                              {displayValue(h.key, h.oldValue)} <span aria-hidden="true">→</span><span className="sr-only">devient</span> {displayValue(h.key, h.newValue)}
+                            </p>
+                            <p className="text-fg-muted">
+                              <time dateTime={h.changedAt}>{formatDateTime(h.changedAt)}</time>
+                              {' · '}Par {h.author}
+                              {h.reason && ` · Motif : ${h.reason}`}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </>
+              )}
+        
+              <ConfirmDialog
+                isOpen={pending !== null}
+                onClose={() => { if (!isSaving) { setPending(null); setSaveError(null); } }}
+                onConfirm={() => void save()}
+                title="Confirmer le changement ?"
+                confirmLabel="Confirmer le changement"
+                variant="warning"
+                isLoading={isSaving}
+              >
+                {pending && (
+                  <div className="space-y-3 text-sm text-fg">
+                    <p className="text-base font-semibold">{pendingMeta?.label ?? 'Réglage'}</p>
+                    <p className="tabular-nums">
+                      Avant : {displayValue(pending.key, pendingBefore)} <span aria-hidden="true">→</span><span className="sr-only">devient</span> Après : {displayValue(pending.key, pending.value)}
+                    </p>
+                    <p className="text-fg-muted">S’applique aux opérations faites à partir de maintenant ; le passé ne change pas. Personne n’est prévenu.</p>
+                    {settingRisk(pending.key, pending.value, currentValues) && (
+                      <StatusBanner tone="warning" title="Valeur risquée">{settingRisk(pending.key, pending.value, currentValues)}</StatusBanner>
+                    )}
+                    <p className="text-fg-muted">Motif : {reason.trim()}</p>
+                    {saveError && <StatusBanner tone="danger" announce="alert" title="Réglage non enregistré">{saveError}</StatusBanner>}
+                  </div>
+                )}
+              </ConfirmDialog>
+            </div>
+          );
+        }
+        
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:167:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 3 - 3. E-35 — réglages groupés, expliqués, bornés à l’écran, confirmés « Avant → Après »
+  ---
+  duration_ms: 3.964844
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:8951'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 3 bis. garde-fou : un seul libellé par réglage (page et catalogue des bornes)
+    # Subtest: chaque réglage borné a le même libellé et la même unité sur la page et dans lib/settings/catalog.ts
+    ok 1 - chaque réglage borné a le même libellé et la même unité sur la page et dans lib/settings/catalog.ts
+      ---
+      duration_ms: 10.06506
+      type: 'test'
+      ...
+    1..1
+ok 4 - 3 bis. garde-fou : un seul libellé par réglage (page et catalogue des bornes)
+  ---
+  duration_ms: 10.15804
+  type: 'suite'
+  ...
+# Subtest: 4. E-36 — créer un administrateur enchaîne sur ses droits ; profils prêts ; dépendances
+    # Subtest: après la création d’un ADMIN, la grille de ses droits s’ouvre (identifiant rendu par la route)
+    not ok 1 - après la création d’un ADMIN, la grille de ses droits s’ouvre (identifiant rendu par la route)
+      ---
+      duration_ms: 0.858222
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:12545'
+      failureType: 'testCodeFailure'
+      error: 'identifiant du compte créé non lu'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useState, useEffect, useCallback, useRef } from 'react';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import Link from 'next/link';
+        import {
+          ChevronLeft,
+          Users,
+          UserPlus,
+          Shield,
+          ShieldAlert,
+          ShieldCheck,
+          Search,
+          RefreshCw,
+          AlertCircle,
+          CheckCircle2,
+          Phone,
+          Mail,
+          Sliders,
+          XCircle,
+          CheckCircle,
+          Key,
+          User,
+          QrCode,
+          Sparkles,
+          Info,
+          Trash2,
+        } from 'lucide-react';
+        import { Button } from '@/components/ui/Button';
+        import { Modal } from '@/components/ui/Modal';
+        import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+        import { ReasonDialog } from '@/components/ui/ReasonDialog';
+        import { LinkButton } from '@/components/ui/LinkButton';
+        import { Badge } from '@/components/ui/Badge';
+        import { useToast } from '@/components/ui/Toast';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
+        import { permissionLabel } from '@/lib/admin/permission-labels';
+        import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
+        import { isDeliverableEmail } from '@/lib/notifications/channels';
+        
+        interface UserItem {
+          id: string;
+          first_name: string;
+          last_name: string;
+          phone: string;
+          email: string;
+          role: 'SUPERADMIN' | 'ADMIN' | 'PARTENAIRE' | 'CONTROLEUR' | 'CLIENT';
+          status: 'ACTIF' | 'EN_ATTENTE' | 'SUSPENDU' | 'SUPPRIME';
+          referral_status: 'STANDARD' | 'AMBASSADEUR';
+          created_at: string;
+          
+          activation?: 'PENDING' | 'EXPIRED' | null;
+        }
+        
+        
+        function refusalOf(data: unknown, fallback: string): string {
+          if (data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' && (data as { error: string }).error.trim()) {
+            return (data as { error: string }).error;
+          }
+          return fallback;
+        }
+        
+        
+        export default function AdminUsersManagementPage() {
+          const toast = useToast();
+          const { hasPermission, hasRole } = useAuth();
+          const canWrite = hasPermission('users.write');
+          const isSuperadmin = hasRole('SUPERADMIN');
+          const [users, setUsers] = useState<UserItem[]>([]);
+          const [search, setSearch] = useState('');
+          const [roleFilter, setRoleFilter] = useState('ALL');
+          const [isLoading, setIsLoading] = useState(true);
+          const [listError, setListError] = useState<string | null>(null);
+          
+          const [partnerIdByUser, setPartnerIdByUser] = useState<Record<string, string>>({});
+          const canReadPartners = hasPermission('partners.read');
+        
+          const [statusTarget, setStatusTarget] = useState<UserItem | null>(null);
+          const [isChangingStatus, setIsChangingStatus] = useState(false);
+          const [statusError, setStatusError] = useState<string | null>(null);
+        
+          const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+          const [newFirstName, setNewFirstName] = useState('');
+          const [newLastName, setNewLastName] = useState('');
+          const [newPhone, setNewPhone] = useState('');
+          const [newEmail, setNewEmail] = useState('');
+          const [resendingId, setResendingId] = useState<string | null>(null);
+          const [newRole, setNewRole] = useState<'ADMIN' | 'SUPERADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+          const [isCreating, setIsCreating] = useState(false);
+        
+          const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+          const [isDeleting, setIsDeleting] = useState(false);
+        
+          const [selectedAdmin, setSelectedAdmin] = useState<UserItem | null>(null);
+          const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
+          const [isPermModalOpen, setIsPermModalOpen] = useState(false);
+          const [isSavingPerms, setIsSavingPerms] = useState(false);
+        
+          const [permsState, setPermsState] = useState<'loading' | 'ready' | 'error'>('loading');
+          const permsRequestFor = useRef<string | null>(null);
+        
+          const fetchUsers = useCallback(async () => {
+            setIsLoading(true);
+            setListError(null);
+            try {
+              const res = await fetch(`/api/admin/users?role=${roleFilter}&search=${encodeURIComponent(search)}`);
+              const data: unknown = await res.json().catch(() => null);
+              const list = data && typeof data === 'object' ? (data as { users?: unknown }).users : undefined;
+              if (!res.ok || !Array.isArray(list)) {
+        
+                setUsers([]);
+                setListError(refusalOf(data, 'Impossible de charger les comptes pour le moment. Réessayez.'));
+                return;
+              }
+              setUsers(list as UserItem[]);
+            } catch (err) {
+              console.error('[AdminUsers] Erreur chargement:', err);
+              setUsers([]);
+              setListError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+            } finally {
+              setIsLoading(false);
+            }
+          }, [roleFilter, search]);
+        
+          useEffect(() => {
+            fetchUsers();
+          }, [fetchUsers]);
+        
+          useEffect(() => {
+            if (!canReadPartners) return undefined;
+            let active = true;
+            (async () => {
+              try {
+                const res = await fetch('/api/admin/partners?status=ALL', { cache: 'no-store' });
+                const data: unknown = await res.json().catch(() => null);
+                const list = data && typeof data === 'object' ? (data as { partners?: unknown }).partners : undefined;
+                if (!res.ok || !Array.isArray(list)) {
+                  console.error(`[AdminUsers] fiches partenaires non lues (HTTP ${res.status})`);
+                  return;
+                }
+                const map: Record<string, string> = {};
+                for (const row of list as Array<{ id?: unknown; user_id?: unknown }>) {
+                  if (typeof row.id === 'string' && typeof row.user_id === 'string') map[row.user_id] = row.id;
+                }
+                if (active) setPartnerIdByUser(map);
+              } catch (err) {
+                console.error('[AdminUsers] fiches partenaires non lues :', err);
+              }
+            })();
+            return () => {
+              active = false;
+            };
+          }, [canReadPartners]);
+        
+          const handleCreateUser = async (e: React.FormEvent) => {
+            e.preventDefault();
+            setIsCreating(true);
+        
+            try {
+              const res = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  firstName: newFirstName.trim(),
+                  lastName: newLastName.trim(),
+                  phone: newPhone.trim(),
+                  email: newEmail.trim().toLowerCase() || undefined,
+                  role: newRole,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
+        
+              const reply = (data ?? {}) as { activation?: string; message?: string };
+              if (reply.activation === 'SENT') {
+                toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).`);
+              } else {
+                toast.error(reply.message ?? 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste.');
+              }
+              setIsCreateModalOpen(false);
+              setNewFirstName('');
+              setNewLastName('');
+              setNewPhone('');
+              setNewEmail('');
+              await fetchUsers();
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de la création.';
+              toast.error(msg);
+            } finally {
+              setIsCreating(false);
+            }
+          };
+        
+          const handleResendActivation = async (user: UserItem) => {
+            setResendingId(user.id);
+            try {
+              const res = await fetch('/api/admin/users/activation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id }),
+              });
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Le lien n’a pas pu être renvoyé.'));
+              const reply = (data ?? {}) as { activation?: string; message?: string };
+              if (reply.activation === 'SENT') toast.success(`Nouveau lien d’activation envoyé à ${user.first_name} ${user.last_name}.`);
+              else toast.error(reply.message ?? 'Le SMS n’est pas parti. Réessayez dans un instant.');
+              await fetchUsers();
+            } catch (err: unknown) {
+              toast.error(err instanceof Error ? err.message : 'Le lien n’a pas pu être renvoyé.');
+            } finally {
+              setResendingId(null);
+            }
+          };
+        
+          const handleToggleStatus = async (user: UserItem, reason: string) => {
+            const newStatus = user.status === 'SUSPENDU' ? 'ACTIF' : 'SUSPENDU';
+            setIsChangingStatus(true);
+            setStatusError(null);
+            try {
+              const res = await fetch('/api/admin/users', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId: user.id,
+                  status: newStatus,
+                  reason,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) {
+                setStatusError(refusalOf(data, 'Erreur lors du changement de statut.'));
+                return;
+              }
+        
+              toast.success(
+                newStatus === 'ACTIF'
+                  ? `Le compte de ${user.first_name} ${user.last_name} a été réactivé avec succès.`
+                  : `Le compte de ${user.first_name} ${user.last_name} a été suspendu.`
+              );
+              setStatusTarget(null);
+              await fetchUsers();
+            } catch (err: unknown) {
+              console.error('[AdminUsers] changement de statut en échec :', err);
+              setStatusError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+            } finally {
+              setIsChangingStatus(false);
+            }
+          };
+        
+          const handleOpenPermissions = async (adminUser: UserItem) => {
+        
+        
+            permsRequestFor.current = adminUser.id;
+            setAdminPermissions([]);
+            setPermsState('loading');
+            setSelectedAdmin(adminUser);
+            setIsPermModalOpen(true);
+        
+            try {
+              const res = await fetch(`/api/admin/permissions?adminId=${adminUser.id}`, { cache: 'no-store' });
+              const data = await res.json();
+              if (permsRequestFor.current !== adminUser.id) return;
+              if (!res.ok || !Array.isArray(data?.assignedPermissions)) {
+                console.error('[admin/users] droits illisibles :', res.status, data);
+                setPermsState('error');
+                return;
+              }
+              setAdminPermissions(data.assignedPermissions as string[]);
+              setPermsState('ready');
+            } catch (err) {
+              console.error('[admin/users] lecture des droits impossible :', err);
+              if (permsRequestFor.current === adminUser.id) setPermsState('error');
+            }
+          };
+        
+          const handleSavePermissions = async () => {
+            if (!selectedAdmin || permsState !== 'ready') return;
+            setIsSavingPerms(true);
+        
+            try {
+              const res = await fetch('/api/admin/permissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  adminId: selectedAdmin.id,
+                  permissions: adminPermissions,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
+        
+              toast.success(`Les permissions de l'administrateur ${selectedAdmin.first_name} ${selectedAdmin.last_name} ont été enregistrées.`);
+              setIsPermModalOpen(false);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
+              toast.error(msg);
+            } finally {
+              setIsSavingPerms(false);
+            }
+          };
+        
+          const togglePermissionItem = (perm: string) => {
+            if (adminPermissions.includes(perm)) {
+              setAdminPermissions(adminPermissions.filter((p) => p !== perm));
+            } else {
+              setAdminPermissions([...adminPermissions, perm]);
+            }
+          };
+        
+          const handleDeleteUser = (user: UserItem) => {
+            setUserToDelete(user);
+          };
+        
+          const handleConfirmDelete = async () => {
+            if (!userToDelete) return;
+            setIsDeleting(true);
+            try {
+              const res = await fetch(`/api/admin/users/${userToDelete.id}/anonymize`, {
+                method: 'POST',
+              });
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de l\'anonymisation.'));
+        
+              toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement anonymisé (RGPD).`);
+              setUserToDelete(null);
+              await fetchUsers();
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de l\'anonymisation.';
+              toast.error(msg);
+            } finally {
+              setIsDeleting(false);
+            }
+          };
+        
+          return (
+            <div className="space-y-8 pb-16">
+              {}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/admin/dashboard"
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  >
+                    <ChevronLeft size={20} />
+                  </Link>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
+                      Console Superadmin HQ
+                    </span>
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                      Gestion des Utilisateurs & Permissions RBAC
+                    </h1>
+                  </div>
+                </div>
+        
+                <div className="flex items-center gap-2.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchUsers}
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+                    <span>Actualiser</span>
+                  </Button>
+        
+                  {canWrite && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="flex items-center gap-1.5 bg-[#FF5722] text-white"
+                    >
+                      <UserPlus size={15} />
+                      <span>Créer un Compte / Admin</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+        
+              {}
+              <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
+                  <div className="relative flex-1 max-w-md">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Rechercher par nom, email, téléphone..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full pl-8 pr-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF5722]"
+                    />
+                  </div>
+        
+                  <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-800/80">
+                    {['ALL', 'SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR', 'CLIENT'].map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => setRoleFilter(role)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          roleFilter === role
+                            ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
+                            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        {role === 'ALL' ? 'Tous' : roleLabel(role)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+        
+                {}
+                {isLoading ? (
+                  <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
+                    <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
+                    <p className="text-xs">Chargement des utilisateurs...</p>
+                  </div>
+                ) : listError ? (
+                  <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
+                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <p>{listError}</p>
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
+                    <Users size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" />
+                    <p className="text-xs font-bold">Aucun utilisateur trouvé.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {users.map((user) => {
+                      const isSuper = user.role === 'SUPERADMIN';
+                      const isAdmin = user.role === 'ADMIN';
+                      const isSuspended = user.status === 'SUSPENDU';
+                      const isDeleted = user.status === 'SUPPRIME';
+                      const partnerId = partnerIdByUser[user.id];
+                      const isPartner = user.role === 'PARTENAIRE' || partnerId !== undefined;
+        
+                      return (
+                        <div
+                          key={user.id}
+                          className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                            isDeleted
+                              ? 'bg-slate-100/60 dark:bg-zinc-950/40 border-slate-200 dark:border-zinc-800 opacity-75'
+                              : 'bg-slate-50 dark:bg-zinc-900/70 border-slate-200/80 dark:border-zinc-800/80'
+                          }`}
+                        >
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                                {user.first_name} {user.last_name}
+                              </h4>
+        
+                              <span
+                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                                  isSuper
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300'
+                                    : isAdmin
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
+                                    : user.role === 'PARTENAIRE'
+                                    ? 'bg-orange-100 text-[#FF5722] dark:bg-orange-950/40'
+                                    : 'bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
+                                }`}
+                              >
+                                {roleLabel(user.role)}
+                              </span>
+        
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                  isDeleted
+                                    ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 font-black'
+                                    : isSuspended
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                }`}
+                              >
+                                {isDeleted ? ERASED_ACCOUNT_LABEL : accountStatusLabel(user.status)}
+                              </span>
+        
+                              {user.activation && !isDeleted && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  {user.activation === 'PENDING' ? 'Activation en attente' : 'Activation en attente (lien expiré)'}
+                                </span>
+                              )}
+        
+                              {user.referral_status === 'AMBASSADEUR' && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  Ambassadeur
+                                </span>
+                              )}
+                            </div>
+        
+                            <div className="flex flex-wrap items-center gap-x-4 text-xs text-slate-500 dark:text-zinc-400">
+                              <span className="flex items-center gap-1">
+                                <Phone size={12} />
+                                <span>{user.phone || 'Non renseigné'}</span>
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Mail size={12} />
+                                {}
+                                <span>{isDeliverableEmail(user.email) ? user.email : 'Non renseigné'}</span>
+                              </span>
+                            </div>
+                          </div>
+        
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {}
+                            {isAdmin && !isDeleted && isSuperadmin && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleOpenPermissions(user)}
+                                className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-600 hover:text-white"
+                              >
+                                <Key size={13} className="mr-1" />
+                                Permissions
+                              </Button>
+                            )}
+        
+                            {}
+                            {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                isLoading={resendingId === user.id}
+                                onClick={() => void handleResendActivation(user)}
+                              >
+                                Renvoyer le lien
+                              </Button>
+                            )}
+        
+                            {}
+                            {}
+                            {isPartner && !isDeleted && (
+                              partnerId !== undefined ? (
+                                <LinkButton
+                                  href={`/admin/dashboard?partenaires=ALL&dossier=${encodeURIComponent(partnerId)}`}
+                                  variant="secondary"
+                                  size="sm"
+                                >
+                                  Voir la fiche partenaire
+                                </LinkButton>
+                              ) : (
+                                <span className="text-sm text-fg-muted">Statut géré depuis la fiche partenaire</span>
+                              )
+                            )}
+        
+                            {!isSuper && !isDeleted && canWrite && (!isAdmin || isSuperadmin) && (
+                              <>
+                                {!isPartner && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    setStatusError(null);
+                                    setStatusTarget(user);
+                                  }}
+                                  className={`text-xs ${
+                                    isSuspended
+                                      ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                                      : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                                  }`}
+                                >
+                                  {isSuspended ? 'Réactiver' : 'Suspendre'}
+                                </Button>
+                                )}
+                                {}
+                                {!isPartner && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteUser(user)}
+                                  title="Anonymiser définitivement ce compte (RGPD)"
+                                  className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/30 flex items-center gap-1"
+                                >
+                                  <Trash2 size={13} />
+                                  <span>Supprimer</span>
+                                </Button>
+                                )}
+                              </>
+                            )}
+        
+                            {isDeleted && (
+                              <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 italic px-2">
+                                Compte Anonymisé & Banni
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+        
+                  </div>
+                )}
+              </div>
+        
+              {}
+              <Modal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                title="Créer un Compte Métier"
+                subtitle="Attribution de rôle sécurisée et synchronisation instantanée"
+                icon={<UserPlus size={18} />}
+                maxWidth="lg"
+              >
+                <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
+                  {}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                        Prénom <span className="text-[#FF5722]">*</span>
+                      </label>
+                      <div className="relative">
+                        <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex : Moussa"
+                          value={newFirstName}
+                          onChange={(e) => setNewFirstName(e.target.value)}
+                          className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                        Nom <span className="text-[#FF5722]">*</span>
+                      </label>
+                      <div className="relative">
+                        <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex : Diop"
+                          value={newLastName}
+                          onChange={(e) => setNewLastName(e.target.value)}
+                          className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+        
+                  {}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                      Numéro de Téléphone (Sénégal) <span className="text-[#FF5722]">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-[11px] font-black text-slate-700 dark:text-zinc-300 border border-slate-300/60 dark:border-zinc-700 pointer-events-none">
+                        <span>+221</span>
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="77 123 45 67"
+                        value={newPhone}
+                        onChange={(e) => setNewPhone(e.target.value)}
+                        className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-bold tabular-nums focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                      />
+                    </div>
+                  </div>
+        
+                  {}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                        Email (Optionnel)
+                      </label>
+                      <div className="relative">
+                        <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+                        <input
+                          type="email"
+                          placeholder="contact@domaine.sn"
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                        />
+                      </div>
+                    </div>
+        
+                    <div className="rounded-xl border border-border bg-surface-sunken p-3 text-xs text-fg-muted">
+                      {}
+                      <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+                      <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures, où il choisit lui-même son mot de passe.</p>
+                    </div>
+                  </div>
+        
+                  {}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                      Rôle Attribué <span className="text-[#FF5722]">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {}
+                      <button
+                        type="button"
+                        onClick={() => setNewRole('CONTROLEUR')}
+                        className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                          newRole === 'CONTROLEUR'
+                            ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-[#FF5722]'
+                            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                          newRole === 'CONTROLEUR' ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                        }`}>
+                          <QrCode size={14} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-xs text-slate-900 dark:text-white">CONTRÔLEUR</span>
+                            {newRole === 'CONTROLEUR' && <CheckCircle2 size={13} className="text-[#FF5722]" />}
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                            Scanner de billets sur site (/scan)
+                          </p>
+                        </div>
+                      </button>
+        
+                      {}
+                      {isSuperadmin && (
+                        <>
+                        {}
+                        <button
+                          type="button"
+                          onClick={() => setNewRole('ADMIN')}
+                          className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                            newRole === 'ADMIN'
+                              ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-purple-500'
+                              : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                            newRole === 'ADMIN' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                          }`}>
+                            <Key size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-xs text-slate-900 dark:text-white">ADMINISTRATEUR</span>
+                              {newRole === 'ADMIN' && <CheckCircle2 size={13} className="text-purple-600" />}
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                              Supervision avec permissions
+                            </p>
+                          </div>
+                        </button>
+        
+                        {}
+                        <button
+                          type="button"
+                          onClick={() => setNewRole('SUPERADMIN')}
+                          className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                            newRole === 'SUPERADMIN'
+                              ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-amber-500'
+                              : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                            newRole === 'SUPERADMIN' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                          }`}>
+                            <ShieldCheck size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-xs text-slate-900 dark:text-white">SUPERADMIN</span>
+                              {newRole === 'SUPERADMIN' && <CheckCircle2 size={13} className="text-amber-500" />}
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                              Accès maître absolu HQ
+                            </p>
+                          </div>
+                        </button>
+                        </>
+                      )}
+        
+                      {}
+                      <button
+                        type="button"
+                        onClick={() => setNewRole('CLIENT')}
+                        className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                          newRole === 'CLIENT'
+                            ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-emerald-500'
+                            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                          newRole === 'CLIENT' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                        }`}>
+                          <User size={14} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-xs text-slate-900 dark:text-white">CLIENT STANDARD</span>
+                            {newRole === 'CLIENT' && <CheckCircle2 size={13} className="text-emerald-600" />}
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                            Utilisateur public standard
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+        
+                  {}
+                  <div className="p-2.5 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/30 flex items-center gap-2 text-[11px] text-slate-700 dark:text-zinc-300">
+                    <Info size={14} className="text-[#FF5722] flex-shrink-0" />
+                    <p className="leading-tight">
+                      {newRole === 'CONTROLEUR' && (
+                        <span><strong>Routage :</strong> Redirigé automatiquement vers le scanner de billets (<code>/scan</code>) dès sa connexion.</span>
+                      )}
+                      {newRole === 'ADMIN' && (
+                        <span><strong>Gestion :</strong> Accès console administration avec attribution de permissions personnalisées.</span>
+                      )}
+                      {newRole === 'SUPERADMIN' && (
+                        <span><strong>Accès Maître :</strong> Tous les privilèges administratifs et financiers de la plateforme.</span>
+                      )}
+                      {newRole === 'CLIENT' && (
+                        <span><strong>Catalogue :</strong> Accès aux réservations d&apos;événements et au portefeuille de parrainage.</span>
+                      )}
+                    </p>
+                  </div>
+        
+                  {}
+                  <div className="flex items-center justify-end gap-2.5 pt-2.5 border-t border-slate-100 dark:border-zinc-800">
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(false)}
+                      className="rounded-xl px-4 h-10 font-bold text-xs"
+                    >
+                      Annuler
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      type="submit"
+                      isLoading={isCreating}
+                      leftIcon={<UserPlus size={15} />}
+                      className="rounded-xl px-5 h-10 font-black text-xs bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
+                    >
+                      Créer le compte {roleLabel(newRole)}
+                    </Button>
+                  </div>
+                </form>
+              </Modal>
+        
+              {}
+              {selectedAdmin && (
+                <Modal
+                  isOpen={isPermModalOpen}
+                  onClose={() => setIsPermModalOpen(false)}
+                  title="Permissions Granulaires"
+                  subtitle={`Attribution des droits d'administration pour ${selectedAdmin.first_name} ${selectedAdmin.last_name}`}
+                  icon={<Key size={20} />}
+                  maxWidth="lg"
+                >
+                  <div className="space-y-4 text-xs">
+                    <p className="text-slate-500 dark:text-zinc-400">
+                      Sélectionnez les permissions spécifiques que cet administrateur est autorisé à exercer au quotidien.
+                    </p>
+        
+                    {permsState === 'loading' && (
+                      <p role="status" className="py-6 text-center text-sm text-slate-500 dark:text-zinc-400">Chargement…</p>
+                    )}
+                    {permsState === 'error' && (
+                      <StatusBanner tone="danger" announce="alert" title="Droits illisibles">
+                        Droits illisibles : fermez et rouvrez.
+                      </StatusBanner>
+                    )}
+                    {permsState === 'ready' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto p-1">
+                      {ADMIN_PERMISSIONS.map((perm) => {
+                        const isChecked = adminPermissions.includes(perm);
+                        return (
+                          <button
+                            key={perm}
+                            type="button"
+                            onClick={() => togglePermissionItem(perm)}
+                            className={`p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                              isChecked
+                                ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white font-bold ring-1 ring-[#FF5722]'
+                                : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                            }`}
+                          >
+                            <span className="text-[11px] font-bold">{permissionLabel(perm)}</span>
+                            <span
+                              className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black transition-all ${
+                                isChecked ? 'bg-[#FF5722] text-white shadow-xs' : 'border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
+                              }`}
+                            >
+                              {isChecked ? '✓' : ''}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    )}
+        
+                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        type="button"
+                        onClick={() => setIsPermModalOpen(false)}
+                        className="rounded-xl px-5 font-bold"
+                      >
+                        Annuler
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        onClick={handleSavePermissions}
+                        isLoading={isSavingPerms}
+                        disabled={permsState !== 'ready'}
+                        leftIcon={<ShieldCheck size={16} />}
+                        className="rounded-xl px-6 font-black bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
+                      >
+                        Enregistrer les permissions
+                      </Button>
+                    </div>
+                  </div>
+                </Modal>
+              )}
+        
+              {}
+              <ReasonDialog
+                isOpen={statusTarget !== null}
+                onClose={() => {
+                  if (!isChangingStatus) setStatusTarget(null);
+                }}
+                onConfirm={(reason) => {
+                  if (statusTarget) void handleToggleStatus(statusTarget, reason);
+                }}
+                title={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+                description={statusTarget
+                  ? statusTarget.status === 'SUSPENDU'
+                    ? `${statusTarget.first_name} ${statusTarget.last_name} retrouvera l’accès à son compte. Il est prévenu avec votre motif.`
+                    : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. Il est prévenu avec votre motif.`
+                  : undefined}
+                label={statusTarget?.status === 'SUSPENDU' ? 'Motif de la réactivation' : 'Motif de la suspension'}
+                hint="Au moins 3 caractères. Ce motif est communiqué au titulaire du compte."
+                confirmLabel={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+                variant={statusTarget?.status === 'SUSPENDU' ? 'primary' : 'danger'}
+                isLoading={isChangingStatus}
+                error={statusError ?? undefined}
+                maxLength={500}
+              />
+        
+              {}
+              <ConfirmDialog
+                isOpen={!!userToDelete}
+                onClose={() => setUserToDelete(null)}
+                onConfirm={handleConfirmDelete}
+                variant="danger"
+                title="Anonymiser définitivement ce compte ?"
+                message="Attention : Cette action va anonymiser définitivement cet utilisateur (conformité RGPD). Ses données personnelles seront effacées et il sera banni, mais son historique financier sera conservé. Cette action est irréversible."
+                confirmLabel="Anonymiser & Supprimer"
+                cancelLabel="Annuler"
+                isLoading={isDeleting}
+              />
+            </div>
+          );
+        }
+        
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:199:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: profils prêts, dépendances cochées d’office, cases accessibles groupées, phrase de chaque droit
+    not ok 2 - profils prêts, dépendances cochées d’office, cases accessibles groupées, phrase de chaque droit
+      ---
+      duration_ms: 0.55798
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:13036'
+      failureType: 'testCodeFailure'
+      error: 'profils prêts absents'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useState, useEffect, useCallback, useRef } from 'react';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import Link from 'next/link';
+        import {
+          ChevronLeft,
+          Users,
+          UserPlus,
+          Shield,
+          ShieldAlert,
+          ShieldCheck,
+          Search,
+          RefreshCw,
+          AlertCircle,
+          CheckCircle2,
+          Phone,
+          Mail,
+          Sliders,
+          XCircle,
+          CheckCircle,
+          Key,
+          User,
+          QrCode,
+          Sparkles,
+          Info,
+          Trash2,
+        } from 'lucide-react';
+        import { Button } from '@/components/ui/Button';
+        import { Modal } from '@/components/ui/Modal';
+        import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+        import { ReasonDialog } from '@/components/ui/ReasonDialog';
+        import { LinkButton } from '@/components/ui/LinkButton';
+        import { Badge } from '@/components/ui/Badge';
+        import { useToast } from '@/components/ui/Toast';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
+        import { permissionLabel } from '@/lib/admin/permission-labels';
+        import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
+        import { isDeliverableEmail } from '@/lib/notifications/channels';
+        
+        interface UserItem {
+          id: string;
+          first_name: string;
+          last_name: string;
+          phone: string;
+          email: string;
+          role: 'SUPERADMIN' | 'ADMIN' | 'PARTENAIRE' | 'CONTROLEUR' | 'CLIENT';
+          status: 'ACTIF' | 'EN_ATTENTE' | 'SUSPENDU' | 'SUPPRIME';
+          referral_status: 'STANDARD' | 'AMBASSADEUR';
+          created_at: string;
+          
+          activation?: 'PENDING' | 'EXPIRED' | null;
+        }
+        
+        
+        function refusalOf(data: unknown, fallback: string): string {
+          if (data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' && (data as { error: string }).error.trim()) {
+            return (data as { error: string }).error;
+          }
+          return fallback;
+        }
+        
+        
+        export default function AdminUsersManagementPage() {
+          const toast = useToast();
+          const { hasPermission, hasRole } = useAuth();
+          const canWrite = hasPermission('users.write');
+          const isSuperadmin = hasRole('SUPERADMIN');
+          const [users, setUsers] = useState<UserItem[]>([]);
+          const [search, setSearch] = useState('');
+          const [roleFilter, setRoleFilter] = useState('ALL');
+          const [isLoading, setIsLoading] = useState(true);
+          const [listError, setListError] = useState<string | null>(null);
+          
+          const [partnerIdByUser, setPartnerIdByUser] = useState<Record<string, string>>({});
+          const canReadPartners = hasPermission('partners.read');
+        
+          const [statusTarget, setStatusTarget] = useState<UserItem | null>(null);
+          const [isChangingStatus, setIsChangingStatus] = useState(false);
+          const [statusError, setStatusError] = useState<string | null>(null);
+        
+          const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+          const [newFirstName, setNewFirstName] = useState('');
+          const [newLastName, setNewLastName] = useState('');
+          const [newPhone, setNewPhone] = useState('');
+          const [newEmail, setNewEmail] = useState('');
+          const [resendingId, setResendingId] = useState<string | null>(null);
+          const [newRole, setNewRole] = useState<'ADMIN' | 'SUPERADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+          const [isCreating, setIsCreating] = useState(false);
+        
+          const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+          const [isDeleting, setIsDeleting] = useState(false);
+        
+          const [selectedAdmin, setSelectedAdmin] = useState<UserItem | null>(null);
+          const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
+          const [isPermModalOpen, setIsPermModalOpen] = useState(false);
+          const [isSavingPerms, setIsSavingPerms] = useState(false);
+        
+          const [permsState, setPermsState] = useState<'loading' | 'ready' | 'error'>('loading');
+          const permsRequestFor = useRef<string | null>(null);
+        
+          const fetchUsers = useCallback(async () => {
+            setIsLoading(true);
+            setListError(null);
+            try {
+              const res = await fetch(`/api/admin/users?role=${roleFilter}&search=${encodeURIComponent(search)}`);
+              const data: unknown = await res.json().catch(() => null);
+              const list = data && typeof data === 'object' ? (data as { users?: unknown }).users : undefined;
+              if (!res.ok || !Array.isArray(list)) {
+        
+                setUsers([]);
+                setListError(refusalOf(data, 'Impossible de charger les comptes pour le moment. Réessayez.'));
+                return;
+              }
+              setUsers(list as UserItem[]);
+            } catch (err) {
+              console.error('[AdminUsers] Erreur chargement:', err);
+              setUsers([]);
+              setListError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+            } finally {
+              setIsLoading(false);
+            }
+          }, [roleFilter, search]);
+        
+          useEffect(() => {
+            fetchUsers();
+          }, [fetchUsers]);
+        
+          useEffect(() => {
+            if (!canReadPartners) return undefined;
+            let active = true;
+            (async () => {
+              try {
+                const res = await fetch('/api/admin/partners?status=ALL', { cache: 'no-store' });
+                const data: unknown = await res.json().catch(() => null);
+                const list = data && typeof data === 'object' ? (data as { partners?: unknown }).partners : undefined;
+                if (!res.ok || !Array.isArray(list)) {
+                  console.error(`[AdminUsers] fiches partenaires non lues (HTTP ${res.status})`);
+                  return;
+                }
+                const map: Record<string, string> = {};
+                for (const row of list as Array<{ id?: unknown; user_id?: unknown }>) {
+                  if (typeof row.id === 'string' && typeof row.user_id === 'string') map[row.user_id] = row.id;
+                }
+                if (active) setPartnerIdByUser(map);
+              } catch (err) {
+                console.error('[AdminUsers] fiches partenaires non lues :', err);
+              }
+            })();
+            return () => {
+              active = false;
+            };
+          }, [canReadPartners]);
+        
+          const handleCreateUser = async (e: React.FormEvent) => {
+            e.preventDefault();
+            setIsCreating(true);
+        
+            try {
+              const res = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  firstName: newFirstName.trim(),
+                  lastName: newLastName.trim(),
+                  phone: newPhone.trim(),
+                  email: newEmail.trim().toLowerCase() || undefined,
+                  role: newRole,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
+        
+              const reply = (data ?? {}) as { activation?: string; message?: string };
+              if (reply.activation === 'SENT') {
+                toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).`);
+              } else {
+                toast.error(reply.message ?? 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste.');
+              }
+              setIsCreateModalOpen(false);
+              setNewFirstName('');
+              setNewLastName('');
+              setNewPhone('');
+              setNewEmail('');
+              await fetchUsers();
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de la création.';
+              toast.error(msg);
+            } finally {
+              setIsCreating(false);
+            }
+          };
+        
+          const handleResendActivation = async (user: UserItem) => {
+            setResendingId(user.id);
+            try {
+              const res = await fetch('/api/admin/users/activation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id }),
+              });
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Le lien n’a pas pu être renvoyé.'));
+              const reply = (data ?? {}) as { activation?: string; message?: string };
+              if (reply.activation === 'SENT') toast.success(`Nouveau lien d’activation envoyé à ${user.first_name} ${user.last_name}.`);
+              else toast.error(reply.message ?? 'Le SMS n’est pas parti. Réessayez dans un instant.');
+              await fetchUsers();
+            } catch (err: unknown) {
+              toast.error(err instanceof Error ? err.message : 'Le lien n’a pas pu être renvoyé.');
+            } finally {
+              setResendingId(null);
+            }
+          };
+        
+          const handleToggleStatus = async (user: UserItem, reason: string) => {
+            const newStatus = user.status === 'SUSPENDU' ? 'ACTIF' : 'SUSPENDU';
+            setIsChangingStatus(true);
+            setStatusError(null);
+            try {
+              const res = await fetch('/api/admin/users', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId: user.id,
+                  status: newStatus,
+                  reason,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) {
+                setStatusError(refusalOf(data, 'Erreur lors du changement de statut.'));
+                return;
+              }
+        
+              toast.success(
+                newStatus === 'ACTIF'
+                  ? `Le compte de ${user.first_name} ${user.last_name} a été réactivé avec succès.`
+                  : `Le compte de ${user.first_name} ${user.last_name} a été suspendu.`
+              );
+              setStatusTarget(null);
+              await fetchUsers();
+            } catch (err: unknown) {
+              console.error('[AdminUsers] changement de statut en échec :', err);
+              setStatusError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+            } finally {
+              setIsChangingStatus(false);
+            }
+          };
+        
+          const handleOpenPermissions = async (adminUser: UserItem) => {
+        
+        
+            permsRequestFor.current = adminUser.id;
+            setAdminPermissions([]);
+            setPermsState('loading');
+            setSelectedAdmin(adminUser);
+            setIsPermModalOpen(true);
+        
+            try {
+              const res = await fetch(`/api/admin/permissions?adminId=${adminUser.id}`, { cache: 'no-store' });
+              const data = await res.json();
+              if (permsRequestFor.current !== adminUser.id) return;
+              if (!res.ok || !Array.isArray(data?.assignedPermissions)) {
+                console.error('[admin/users] droits illisibles :', res.status, data);
+                setPermsState('error');
+                return;
+              }
+              setAdminPermissions(data.assignedPermissions as string[]);
+              setPermsState('ready');
+            } catch (err) {
+              console.error('[admin/users] lecture des droits impossible :', err);
+              if (permsRequestFor.current === adminUser.id) setPermsState('error');
+            }
+          };
+        
+          const handleSavePermissions = async () => {
+            if (!selectedAdmin || permsState !== 'ready') return;
+            setIsSavingPerms(true);
+        
+            try {
+              const res = await fetch('/api/admin/permissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  adminId: selectedAdmin.id,
+                  permissions: adminPermissions,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
+        
+              toast.success(`Les permissions de l'administrateur ${selectedAdmin.first_name} ${selectedAdmin.last_name} ont été enregistrées.`);
+              setIsPermModalOpen(false);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
+              toast.error(msg);
+            } finally {
+              setIsSavingPerms(false);
+            }
+          };
+        
+          const togglePermissionItem = (perm: string) => {
+            if (adminPermissions.includes(perm)) {
+              setAdminPermissions(adminPermissions.filter((p) => p !== perm));
+            } else {
+              setAdminPermissions([...adminPermissions, perm]);
+            }
+          };
+        
+          const handleDeleteUser = (user: UserItem) => {
+            setUserToDelete(user);
+          };
+        
+          const handleConfirmDelete = async () => {
+            if (!userToDelete) return;
+            setIsDeleting(true);
+            try {
+              const res = await fetch(`/api/admin/users/${userToDelete.id}/anonymize`, {
+                method: 'POST',
+              });
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de l\'anonymisation.'));
+        
+              toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement anonymisé (RGPD).`);
+              setUserToDelete(null);
+              await fetchUsers();
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de l\'anonymisation.';
+              toast.error(msg);
+            } finally {
+              setIsDeleting(false);
+            }
+          };
+        
+          return (
+            <div className="space-y-8 pb-16">
+              {}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/admin/dashboard"
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  >
+                    <ChevronLeft size={20} />
+                  </Link>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
+                      Console Superadmin HQ
+                    </span>
+                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                      Gestion des Utilisateurs & Permissions RBAC
+                    </h1>
+                  </div>
+                </div>
+        
+                <div className="flex items-center gap-2.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchUsers}
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+                    <span>Actualiser</span>
+                  </Button>
+        
+                  {canWrite && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="flex items-center gap-1.5 bg-[#FF5722] text-white"
+                    >
+                      <UserPlus size={15} />
+                      <span>Créer un Compte / Admin</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+        
+              {}
+              <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
+                  <div className="relative flex-1 max-w-md">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Rechercher par nom, email, téléphone..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full pl-8 pr-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF5722]"
+                    />
+                  </div>
+        
+                  <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-800/80">
+                    {['ALL', 'SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR', 'CLIENT'].map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => setRoleFilter(role)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          roleFilter === role
+                            ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
+                            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        {role === 'ALL' ? 'Tous' : roleLabel(role)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+        
+                {}
+                {isLoading ? (
+                  <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
+                    <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
+                    <p className="text-xs">Chargement des utilisateurs...</p>
+                  </div>
+                ) : listError ? (
+                  <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
+                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <p>{listError}</p>
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
+                    <Users size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" />
+                    <p className="text-xs font-bold">Aucun utilisateur trouvé.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {users.map((user) => {
+                      const isSuper = user.role === 'SUPERADMIN';
+                      const isAdmin = user.role === 'ADMIN';
+                      const isSuspended = user.status === 'SUSPENDU';
+                      const isDeleted = user.status === 'SUPPRIME';
+                      const partnerId = partnerIdByUser[user.id];
+                      const isPartner = user.role === 'PARTENAIRE' || partnerId !== undefined;
+        
+                      return (
+                        <div
+                          key={user.id}
+                          className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                            isDeleted
+                              ? 'bg-slate-100/60 dark:bg-zinc-950/40 border-slate-200 dark:border-zinc-800 opacity-75'
+                              : 'bg-slate-50 dark:bg-zinc-900/70 border-slate-200/80 dark:border-zinc-800/80'
+                          }`}
+                        >
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                                {user.first_name} {user.last_name}
+                              </h4>
+        
+                              <span
+                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                                  isSuper
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300'
+                                    : isAdmin
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
+                                    : user.role === 'PARTENAIRE'
+                                    ? 'bg-orange-100 text-[#FF5722] dark:bg-orange-950/40'
+                                    : 'bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
+                                }`}
+                              >
+                                {roleLabel(user.role)}
+                              </span>
+        
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                  isDeleted
+                                    ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 font-black'
+                                    : isSuspended
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                }`}
+                              >
+                                {isDeleted ? ERASED_ACCOUNT_LABEL : accountStatusLabel(user.status)}
+                              </span>
+        
+                              {user.activation && !isDeleted && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  {user.activation === 'PENDING' ? 'Activation en attente' : 'Activation en attente (lien expiré)'}
+                                </span>
+                              )}
+        
+                              {user.referral_status === 'AMBASSADEUR' && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  Ambassadeur
+                                </span>
+                              )}
+                            </div>
+        
+                            <div className="flex flex-wrap items-center gap-x-4 text-xs text-slate-500 dark:text-zinc-400">
+                              <span className="flex items-center gap-1">
+                                <Phone size={12} />
+                                <span>{user.phone || 'Non renseigné'}</span>
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Mail size={12} />
+                                {}
+                                <span>{isDeliverableEmail(user.email) ? user.email : 'Non renseigné'}</span>
+                              </span>
+                            </div>
+                          </div>
+        
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {}
+                            {isAdmin && !isDeleted && isSuperadmin && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleOpenPermissions(user)}
+                                className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-600 hover:text-white"
+                              >
+                                <Key size={13} className="mr-1" />
+                                Permissions
+                              </Button>
+                            )}
+        
+                            {}
+                            {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                isLoading={resendingId === user.id}
+                                onClick={() => void handleResendActivation(user)}
+                              >
+                                Renvoyer le lien
+                              </Button>
+                            )}
+        
+                            {}
+                            {}
+                            {isPartner && !isDeleted && (
+                              partnerId !== undefined ? (
+                                <LinkButton
+                                  href={`/admin/dashboard?partenaires=ALL&dossier=${encodeURIComponent(partnerId)}`}
+                                  variant="secondary"
+                                  size="sm"
+                                >
+                                  Voir la fiche partenaire
+                                </LinkButton>
+                              ) : (
+                                <span className="text-sm text-fg-muted">Statut géré depuis la fiche partenaire</span>
+                              )
+                            )}
+        
+                            {!isSuper && !isDeleted && canWrite && (!isAdmin || isSuperadmin) && (
+                              <>
+                                {!isPartner && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    setStatusError(null);
+                                    setStatusTarget(user);
+                                  }}
+                                  className={`text-xs ${
+                                    isSuspended
+                                      ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                                      : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                                  }`}
+                                >
+                                  {isSuspended ? 'Réactiver' : 'Suspendre'}
+                                </Button>
+                                )}
+                                {}
+                                {!isPartner && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteUser(user)}
+                                  title="Anonymiser définitivement ce compte (RGPD)"
+                                  className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/30 flex items-center gap-1"
+                                >
+                                  <Trash2 size={13} />
+                                  <span>Supprimer</span>
+                                </Button>
+                                )}
+                              </>
+                            )}
+        
+                            {isDeleted && (
+                              <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 italic px-2">
+                                Compte Anonymisé & Banni
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+        
+                  </div>
+                )}
+              </div>
+        
+              {}
+              <Modal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                title="Créer un Compte Métier"
+                subtitle="Attribution de rôle sécurisée et synchronisation instantanée"
+                icon={<UserPlus size={18} />}
+                maxWidth="lg"
+              >
+                <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
+                  {}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                        Prénom <span className="text-[#FF5722]">*</span>
+                      </label>
+                      <div className="relative">
+                        <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex : Moussa"
+                          value={newFirstName}
+                          onChange={(e) => setNewFirstName(e.target.value)}
+                          className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                        Nom <span className="text-[#FF5722]">*</span>
+                      </label>
+                      <div className="relative">
+                        <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex : Diop"
+                          value={newLastName}
+                          onChange={(e) => setNewLastName(e.target.value)}
+                          className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+        
+                  {}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                      Numéro de Téléphone (Sénégal) <span className="text-[#FF5722]">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-[11px] font-black text-slate-700 dark:text-zinc-300 border border-slate-300/60 dark:border-zinc-700 pointer-events-none">
+                        <span>+221</span>
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="77 123 45 67"
+                        value={newPhone}
+                        onChange={(e) => setNewPhone(e.target.value)}
+                        className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-bold tabular-nums focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                      />
+                    </div>
+                  </div>
+        
+                  {}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
+                        Email (Optionnel)
+                      </label>
+                      <div className="relative">
+                        <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+                        <input
+                          type="email"
+                          placeholder="contact@domaine.sn"
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
+                        />
+                      </div>
+                    </div>
+        
+                    <div className="rounded-xl border border-border bg-surface-sunken p-3 text-xs text-fg-muted">
+                      {}
+                      <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+                      <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures, où il choisit lui-même son mot de passe.</p>
+                    </div>
+                  </div>
+        
+                  {}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                      Rôle Attribué <span className="text-[#FF5722]">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {}
+                      <button
+                        type="button"
+                        onClick={() => setNewRole('CONTROLEUR')}
+                        className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                          newRole === 'CONTROLEUR'
+                            ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-[#FF5722]'
+                            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                          newRole === 'CONTROLEUR' ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                        }`}>
+                          <QrCode size={14} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-xs text-slate-900 dark:text-white">CONTRÔLEUR</span>
+                            {newRole === 'CONTROLEUR' && <CheckCircle2 size={13} className="text-[#FF5722]" />}
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                            Scanner de billets sur site (/scan)
+                          </p>
+                        </div>
+                      </button>
+        
+                      {}
+                      {isSuperadmin && (
+                        <>
+                        {}
+                        <button
+                          type="button"
+                          onClick={() => setNewRole('ADMIN')}
+                          className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                            newRole === 'ADMIN'
+                              ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-purple-500'
+                              : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                            newRole === 'ADMIN' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                          }`}>
+                            <Key size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-xs text-slate-900 dark:text-white">ADMINISTRATEUR</span>
+                              {newRole === 'ADMIN' && <CheckCircle2 size={13} className="text-purple-600" />}
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                              Supervision avec permissions
+                            </p>
+                          </div>
+                        </button>
+        
+                        {}
+                        <button
+                          type="button"
+                          onClick={() => setNewRole('SUPERADMIN')}
+                          className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                            newRole === 'SUPERADMIN'
+                              ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-amber-500'
+                              : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                          }`}
+                        >
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                            newRole === 'SUPERADMIN' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                          }`}>
+                            <ShieldCheck size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-xs text-slate-900 dark:text-white">SUPERADMIN</span>
+                              {newRole === 'SUPERADMIN' && <CheckCircle2 size={13} className="text-amber-500" />}
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                              Accès maître absolu HQ
+                            </p>
+                          </div>
+                        </button>
+                        </>
+                      )}
+        
+                      {}
+                      <button
+                        type="button"
+                        onClick={() => setNewRole('CLIENT')}
+                        className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
+                          newRole === 'CLIENT'
+                            ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-emerald-500'
+                            : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                          newRole === 'CLIENT' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
+                        }`}>
+                          <User size={14} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-xs text-slate-900 dark:text-white">CLIENT STANDARD</span>
+                            {newRole === 'CLIENT' && <CheckCircle2 size={13} className="text-emerald-600" />}
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                            Utilisateur public standard
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+        
+                  {}
+                  <div className="p-2.5 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/30 flex items-center gap-2 text-[11px] text-slate-700 dark:text-zinc-300">
+                    <Info size={14} className="text-[#FF5722] flex-shrink-0" />
+                    <p className="leading-tight">
+                      {newRole === 'CONTROLEUR' && (
+                        <span><strong>Routage :</strong> Redirigé automatiquement vers le scanner de billets (<code>/scan</code>) dès sa connexion.</span>
+                      )}
+                      {newRole === 'ADMIN' && (
+                        <span><strong>Gestion :</strong> Accès console administration avec attribution de permissions personnalisées.</span>
+                      )}
+                      {newRole === 'SUPERADMIN' && (
+                        <span><strong>Accès Maître :</strong> Tous les privilèges administratifs et financiers de la plateforme.</span>
+                      )}
+                      {newRole === 'CLIENT' && (
+                        <span><strong>Catalogue :</strong> Accès aux réservations d&apos;événements et au portefeuille de parrainage.</span>
+                      )}
+                    </p>
+                  </div>
+        
+                  {}
+                  <div className="flex items-center justify-end gap-2.5 pt-2.5 border-t border-slate-100 dark:border-zinc-800">
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(false)}
+                      className="rounded-xl px-4 h-10 font-bold text-xs"
+                    >
+                      Annuler
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      type="submit"
+                      isLoading={isCreating}
+                      leftIcon={<UserPlus size={15} />}
+                      className="rounded-xl px-5 h-10 font-black text-xs bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
+                    >
+                      Créer le compte {roleLabel(newRole)}
+                    </Button>
+                  </div>
+                </form>
+              </Modal>
+        
+              {}
+              {selectedAdmin && (
+                <Modal
+                  isOpen={isPermModalOpen}
+                  onClose={() => setIsPermModalOpen(false)}
+                  title="Permissions Granulaires"
+                  subtitle={`Attribution des droits d'administration pour ${selectedAdmin.first_name} ${selectedAdmin.last_name}`}
+                  icon={<Key size={20} />}
+                  maxWidth="lg"
+                >
+                  <div className="space-y-4 text-xs">
+                    <p className="text-slate-500 dark:text-zinc-400">
+                      Sélectionnez les permissions spécifiques que cet administrateur est autorisé à exercer au quotidien.
+                    </p>
+        
+                    {permsState === 'loading' && (
+                      <p role="status" className="py-6 text-center text-sm text-slate-500 dark:text-zinc-400">Chargement…</p>
+                    )}
+                    {permsState === 'error' && (
+                      <StatusBanner tone="danger" announce="alert" title="Droits illisibles">
+                        Droits illisibles : fermez et rouvrez.
+                      </StatusBanner>
+                    )}
+                    {permsState === 'ready' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto p-1">
+                      {ADMIN_PERMISSIONS.map((perm) => {
+                        const isChecked = adminPermissions.includes(perm);
+                        return (
+                          <button
+                            key={perm}
+                            type="button"
+                            onClick={() => togglePermissionItem(perm)}
+                            className={`p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                              isChecked
+                                ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white font-bold ring-1 ring-[#FF5722]'
+                                : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                            }`}
+                          >
+                            <span className="text-[11px] font-bold">{permissionLabel(perm)}</span>
+                            <span
+                              className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black transition-all ${
+                                isChecked ? 'bg-[#FF5722] text-white shadow-xs' : 'border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
+                              }`}
+                            >
+                              {isChecked ? '✓' : ''}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    )}
+        
+                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        type="button"
+                        onClick={() => setIsPermModalOpen(false)}
+                        className="rounded-xl px-5 font-bold"
+                      >
+                        Annuler
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        onClick={handleSavePermissions}
+                        isLoading={isSavingPerms}
+                        disabled={permsState !== 'ready'}
+                        leftIcon={<ShieldCheck size={16} />}
+                        className="rounded-xl px-6 font-black bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
+                      >
+                        Enregistrer les permissions
+                      </Button>
+                    </div>
+                  </div>
+                </Modal>
+              )}
+        
+              {}
+              <ReasonDialog
+                isOpen={statusTarget !== null}
+                onClose={() => {
+                  if (!isChangingStatus) setStatusTarget(null);
+                }}
+                onConfirm={(reason) => {
+                  if (statusTarget) void handleToggleStatus(statusTarget, reason);
+                }}
+                title={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+                description={statusTarget
+                  ? statusTarget.status === 'SUSPENDU'
+                    ? `${statusTarget.first_name} ${statusTarget.last_name} retrouvera l’accès à son compte. Il est prévenu avec votre motif.`
+                    : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. Il est prévenu avec votre motif.`
+                  : undefined}
+                label={statusTarget?.status === 'SUSPENDU' ? 'Motif de la réactivation' : 'Motif de la suspension'}
+                hint="Au moins 3 caractères. Ce motif est communiqué au titulaire du compte."
+                confirmLabel={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+                variant={statusTarget?.status === 'SUSPENDU' ? 'primary' : 'danger'}
+                isLoading={isChangingStatus}
+                error={statusError ?? undefined}
+                maxLength={500}
+              />
+        
+              {}
+              <ConfirmDialog
+                isOpen={!!userToDelete}
+                onClose={() => setUserToDelete(null)}
+                onConfirm={handleConfirmDelete}
+                variant="danger"
+                title="Anonymiser définitivement ce compte ?"
+                message="Attention : Cette action va anonymiser définitivement cet utilisateur (conformité RGPD). Ses données personnelles seront effacées et il sera banni, mais son historique financier sera conservé. Cette action est irréversible."
+                confirmLabel="Anonymiser & Supprimer"
+                cancelLabel="Annuler"
+                isLoading={isDeleting}
+              />
+            </div>
+          );
+        }
+        
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:206:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: texte de création réécrit : lien d’activation par SMS valable 24 heures, aucun droit tant qu’on ne lui en donne pas
+    not ok 3 - texte de création réécrit : lien d’activation par SMS valable 24 heures, aucun droit tant qu’on ne lui en donne pas
+      ---
+      duration_ms: 0.549507
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:13816'
+      failureType: 'testCodeFailure'
+      error: 'phrase du lien d’activation absente'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:217:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 5 - 4. E-36 — créer un administrateur enchaîne sur ses droits ; profils prêts ; dépendances
+  ---
+  duration_ms: 2.101668
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:12407'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..5
+# tests 17
+# suites 5
+# pass 13
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 155.113532
