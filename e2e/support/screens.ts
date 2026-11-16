@@ -474,6 +474,65 @@ const F3A_WAITING: StubResponse = {
     } },
 };
 
+// ── Finition 3b : réponses imposées (aucune écriture : POST /api/admin/users est simulé) ──────────────────────────
+const F3B_TODO_URL = /\/api\/admin\/todo(\?.*)?$/;
+const F3B_ALL_LINES = ['to_resume', 'events_to_validate', 'partners_to_validate', 'events_suspended', 'cash_discrepancies', 'failed_sends', 'sms_cap', 'debts'];
+const F3B_TODO: StubResponse = {
+    url: F3B_TODO_URL, method: 'GET', status: 200,
+    body: {
+        lines: [
+            { key: 'to_resume', count: 2, amount: 17850 },
+            { key: 'events_to_validate', count: 3, oldest_at: '2026-11-14T09:00:00.000Z' },
+            { key: 'partners_to_validate', count: 2, resubmitted: 1 },
+            { key: 'events_suspended', count: 2, past: 1, upcoming: 1 },
+            { key: 'cash_discrepancies', count: 1, amount: 2500, events_count: 1, events: [{ event_id: '00000000-0000-4000-8000-00000000f3b1', title: 'Soirée Gorée', count: 1 }] },
+            { key: 'debts', count: 3, amount: 12450 },
+        ],
+        upToDate: ['failed_sends', 'sms_cap'], allowed: F3B_ALL_LINES, partial: false, computedAt: '2026-11-16T14:32:00.000Z',
+    },
+};
+const F3B_TODO_EMPTY: StubResponse = {
+    url: F3B_TODO_URL, method: 'GET', status: 200,
+    body: { lines: [], upToDate: F3B_ALL_LINES, allowed: F3B_ALL_LINES, partial: false, computedAt: '2026-11-16T14:32:00.000Z' },
+};
+/** ADMIN qui n'a que « Consulter » et « Gérer les événements » : menu et « Mes droits » (le serveur garde la vraie session). */
+const F3B_LIMITED_ADMIN_ME: StubResponse = {
+    url: /\/api\/auth\/me(\?.*)?$/, method: 'GET', status: 200,
+    body: {
+        authenticated: true,
+        user: { id: '00000000-0000-4000-8000-00000000f3b2', email: null },
+        profile: { id: '00000000-0000-4000-8000-00000000f3b2', first_name: 'Awa', last_name: 'Ndiaye', phone: '+221770000032', status: 'ACTIF', role: 'ADMIN', roles: ['ADMIN'] },
+        roles: ['ADMIN'], partner: null, admin_permissions: ['events.read', 'events.write'],
+    },
+};
+const F3B_TODO_LIMITED: StubResponse = {
+    url: F3B_TODO_URL, method: 'GET', status: 200,
+    body: {
+        lines: [{ key: 'events_to_validate', count: 3, oldest_at: '2026-11-14T09:00:00.000Z' }],
+        upToDate: ['events_suspended', 'cash_discrepancies'], allowed: ['events_to_validate', 'events_suspended', 'cash_discrepancies'],
+        partial: true, computedAt: '2026-11-16T14:32:00.000Z',
+    },
+};
+const F3B_NEW_ADMIN_ID = '00000000-0000-4000-8000-00000000f3b3';
+const F3B_USERS_EMPTY: StubResponse = { url: /\/api\/admin\/users(\?.*)?$/, method: 'GET', status: 200, body: { users: [] } };
+const F3B_CREATE_ADMIN: StubResponse = {
+    url: /\/api\/admin\/users(\?.*)?$/, method: 'POST', status: 200,
+    body: { success: true, userId: F3B_NEW_ADMIN_ID, activation: 'SENT', message: 'Compte créé. Le titulaire reçoit par SMS un lien pour choisir son mot de passe (valable 24 heures). Il n’a encore aucun droit : choisissez-les maintenant.' },
+};
+const F3B_NEW_ADMIN_RIGHTS: StubResponse = {
+    url: /\/api\/admin\/permissions\?adminId=/, method: 'GET', status: 200, body: { success: true, adminId: F3B_NEW_ADMIN_ID, assignedPermissions: [] },
+};
+
+/** Ouvre la fenêtre de création d'un compte et choisit « Administrateur ». */
+async function f3bOpenCreateAdmin(page: Page): Promise<void> {
+    await expectHeading(page, /^comptes et administrateurs$/i);
+    await page.getByRole('button', { name: /^créer un compte$/i }).click();
+    const dialog = anyDialog(page, /^créer un compte/i);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /^administrateur/i }).click();
+    await expect(dialog.getByText(/aucun droit tant que vous ne lui en donnez pas/i)).toBeVisible();
+}
+
 /** Chiffres en place (plus aucun squelette « Chargement : … »). */
 async function f3aFiguresReady(page: Page): Promise<void> {
     await expectHeading(page, /^finance$/i);
@@ -1231,6 +1290,109 @@ export const SCREENS: readonly Screen[] = [
         ready: async ({ page }) => {
             await expect(page.getByRole('heading', { name: /^argent qui attend$/i })).toBeVisible();
             await expect(page.getByRole('link', { name: /^traiter les versements/i })).toBeVisible();
+        },
+    },
+    // ── Finition 3b : accueil, menu et droits, réglages, création d'un administrateur ──
+    {
+        id: 'admin-accueil-a-faire', titre: 'Administration — accueil : « À faire aujourd’hui » en tête (une carte par file, « À jour »)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/dashboard',
+        stubResponses: [F3B_TODO, F3A_WAITING],
+        ready: async ({ page }) => {
+            await expect(page.getByRole('heading', { name: /^à faire aujourd[’']hui$/i })).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('link', { name: /^examiner les événements/i })).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-accueil-rien-a-faire', titre: 'Administration — accueil : « Rien d’urgent aujourd’hui. »',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/dashboard', views: ['mobile-clair', 'ordinateur-sombre'],
+        stubResponses: [F3B_TODO_EMPTY, F3A_WAITING],
+        ready: async ({ page }) => {
+            await expect(page.getByText(/^rien d[’']urgent aujourd[’']hui\.$/i)).toBeVisible({ timeout: 30_000 });
+        },
+    },
+    {
+        id: 'admin-mes-droits', titre: 'Administration — « Mes droits » d’un ADMIN qui ne gère que les événements (menu filtré à l’ordinateur)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/mes-droits',
+        stubResponses: [F3B_LIMITED_ADMIN_ME, F3B_TODO_LIMITED],
+        ready: async ({ page }) => {
+            await expectHeading(page, /^mes droits$/i);
+            await expect(page.getByRole('heading', { name: /^vous pouvez$/i })).toBeVisible();
+            await expect(page.getByRole('heading', { name: /^vous ne pouvez pas$/i })).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-menu-droits-limites', titre: 'Administration — menu d’un ADMIN qui ne gère que les événements (téléphone, tiroir ouvert)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/dashboard', views: MOBILE_VIEWS,
+        stubResponses: [F3B_LIMITED_ADMIN_ME, F3B_TODO_LIMITED],
+        ready: async ({ page }) => {
+            await expect(page.getByRole('heading', { name: /^à faire aujourd[’']hui$/i })).toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^ouvrir le menu$/i }).click();
+            await expect(page.getByRole('link', { name: /^mes droits$/i }).filter({ visible: true }).first()).toBeVisible();
+            await expect(page.getByRole('link', { name: /^finance$/i }).filter({ visible: true }), 'Finance masquée sans droit sur l’argent').toHaveCount(0);
+        },
+    },
+    {
+        id: 'admin-reglages', titre: 'Administration — Réglages de la plateforme : sommaire des thèmes, défaut et alertes',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance-settings',
+        ready: async ({ page }) => {
+            await expectHeading(page, /^réglages de la plateforme$/i);
+            await expect(page.getByRole('navigation', { name: /^sommaire des réglages$/i })).toBeVisible({ timeout: 30_000 });
+        },
+    },
+    {
+        id: 'admin-reglages-borne', titre: 'Administration — Réglages : valeur hors bornes dite sous le champ, avant tout envoi',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance-settings',
+        ready: async ({ page }) => {
+            await expect(page.getByRole('navigation', { name: /^sommaire des réglages$/i })).toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^modifier frais de service$/i }).click();
+            const field = page.getByLabel(/^nouvelle valeur/i).first();
+            await field.fill('60');
+            await field.blur();
+            await expect(page.getByText(/^choisissez entre 0 et 50 %\.$/i)).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-reglages-confirmation', titre: 'Administration — Réglages : confirmation « Avant → Après » avec le motif (non confirmée)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance-settings',
+        ready: async ({ page }) => {
+            await expect(page.getByRole('navigation', { name: /^sommaire des réglages$/i })).toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^modifier frais de service$/i }).click();
+            await page.getByLabel(/^nouvelle valeur/i).first().fill('6');
+            await page.getByLabel(/^motif/i).first().fill('Décision du comité du 16 novembre');
+            await page.getByRole('button', { name: /^vérifier et enregistrer$/i }).click();
+            const dialog = anyDialog(page, /^confirmer le changement/i);
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByText(/personne n[’']est prévenu/i)).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-creation-administrateur', titre: 'Administration — créer un compte : rôle « Administrateur » (aucun droit tant qu’on ne lui en donne pas)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/users',
+        stubResponses: [F3B_USERS_EMPTY],
+        actions: async ({ page }) => { await f3bOpenCreateAdmin(page); },
+    },
+    {
+        id: 'admin-droits-apres-creation', titre: 'Administration — après la création d’un administrateur : ses droits, profil « Validation » choisi (création simulée)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/users',
+        stubResponses: [F3B_USERS_EMPTY, F3B_CREATE_ADMIN, F3B_NEW_ADMIN_RIGHTS],
+        actions: async ({ page }) => {
+            await f3bOpenCreateAdmin(page);
+            const dialog = anyDialog(page, /^créer un compte/i);
+            await dialog.getByLabel(/^prénom/i).fill('Awa');
+            await dialog.getByLabel(/^nom/i).fill('Ndiaye');
+            await dialog.getByLabel(/^numéro de téléphone/i).fill('77 123 45 67');
+            await dialog.getByRole('button', { name: /^créer le compte/i }).click();
+            const rights = anyDialog(page, /^droits de awa ndiaye/i);
+            await expect(rights).toBeVisible({ timeout: 30_000 });
+            await rights.getByRole('button', { name: /^validation$/i }).click();
+            await expect(rights.getByRole('checkbox', { name: /^gérer les événements/i })).toBeChecked();
+            await expect(rights.getByRole('checkbox', { name: /^consulter les événements/i }), 'la lecture suit l’écriture').toBeChecked();
         },
     },
     // ── Contrôle d'accès ────────────────────────────────────────────────────
