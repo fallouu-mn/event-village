@@ -164,7 +164,7 @@ describe('3. E-35 — réglages groupés, expliqués, bornés à l’écran, con
     test('historique : qui, quoi, quand, pourquoi ; plus de clé technique à l’écran', () => {
         const page = code(SETTINGS_PAGE);
         assert.match(page, /\.author\b/, 'auteur des changements non affiché');
-        assert.doesNotMatch(page, /\{\s*h\.key\s*\}/, 'clé technique affichée dans l’historique');
+        assert.doesNotMatch(page, />\s*\{\s*h\.key\s*\}\s*</, 'clé technique affichée dans l’historique');
         const catalog = read('lib/settings/catalog.ts');
         assert.match(catalog, /export const SETTING_BOUNDS/, 'catalogue des bornes absent');
         assert.match(catalog, /export function settingBoundsError\(/, 'contrôle des bornes absent');

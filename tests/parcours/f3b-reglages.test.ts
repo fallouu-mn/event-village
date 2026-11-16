@@ -73,7 +73,7 @@ describe('bornes : le catalogue de l’écran et la base disent la même chose',
                 if (b.integer && await valid(key, b.min + 0.5)) faults.push(`${key} : décimal admis par la base alors que l’écran attend un entier`);
             }
             const { rows } = await c.query<{ def: string }>(`SELECT pg_get_functiondef('public.fin_setting_valid(text, jsonb)'::regprocedure) AS def`);
-            const numericKeys = [...rows[0].def.matchAll(/WHEN '([a-z_.A-Z]+)' THEN n/g)].map((m) => m[1]);
+            const numericKeys = [...rows[0].def.matchAll(/WHEN '([a-zA-Z0-9_.]+)' THEN n/g)].map((m) => m[1]);
             assert.ok(numericKeys.length >= 20, `réglages numériques lus dans la base : ${numericKeys.length}`);
             for (const k of numericKeys) if (!SETTING_BOUNDS[k]) faults.push(`${k} : réglage numérique sans bornes dans le catalogue`);
         });
