@@ -1,0 +1,702 @@
+TAP version 13
+# Subtest: 1. E-29 — « À faire aujourd’hui » en tête de l’accueil
+    # Subtest: rendu en tête, avant « Argent qui attend » (ancre), plus de bloc « À traiter »
+    ok 1 - rendu en tête, avant « Argent qui attend » (ancre), plus de bloc « À traiter »
+      ---
+      duration_ms: 1.283095
+      type: 'test'
+      ...
+    # Subtest: une seule route serveur, textes exacts de la consigne, jamais 0 pour un compteur illisible
+    ok 2 - une seule route serveur, textes exacts de la consigne, jamais 0 pour un compteur illisible
+      ---
+      duration_ms: 0.532538
+      type: 'test'
+      ...
+    # Subtest: candidatures comptées sans statistics.read ; indicateurs seulement avec statistics.read
+    ok 3 - candidatures comptées sans statistics.read ; indicateurs seulement avec statistics.read
+      ---
+      duration_ms: 0.476333
+      type: 'test'
+      ...
+    # Subtest: nouveau composant dans la liste du système de design
+    ok 4 - nouveau composant dans la liste du système de design
+      ---
+      duration_ms: 0.144671
+      type: 'test'
+      ...
+    1..4
+ok 1 - 1. E-29 — « À faire aujourd’hui » en tête de l’accueil
+  ---
+  duration_ms: 3.440348
+  type: 'suite'
+  ...
+# Subtest: 2. E-34 — menu et barre du bas selon les droits ; « Mes droits »
+    # Subtest: AppLayout charge le menu de l’administration à la demande (module à part), plus aucune entrée admin en dur
+    not ok 1 - AppLayout charge le menu de l’administration à la demande (module à part), plus aucune entrée admin en dur
+      ---
+      duration_ms: 2.741057
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:5207'
+      failureType: 'testCodeFailure'
+      error: 'AppLayout ne charge pas ./admin-nav à la demande'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useEffect, useRef, useState } from 'react';
+        import Link from 'next/link';
+        import { usePathname } from 'next/navigation';
+        import {
+          Home,
+          Compass,
+          Ticket,
+          ShoppingBag,
+          User,
+          LayoutDashboard,
+          QrCode,
+          Calendar,
+          Wallet,
+          Building2,
+          Utensils,
+          ShieldAlert,
+          LogIn,
+          LogOut,
+          Briefcase,
+          Users,
+          DollarSign,
+          Radio,
+          Sliders,
+          Activity,
+          ShieldCheck,
+          ArrowLeft,
+          FileText,
+          Megaphone,
+          Award,
+          BellRing,
+          X,
+          Menu,
+          Search,
+          type LucideIcon,
+        } from 'lucide-react';
+        import { Avatar } from '@/components/ui/Avatar';
+        import { Logo } from '@/components/ui/Logo';
+        import { ThemeToggle } from '@/components/ui/ThemeToggle';
+        import { IconButton } from '@/components/ui/IconButton';
+        import { LinkButton } from '@/components/ui/LinkButton';
+        import { cn } from '@/components/ui/cn';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { NotificationBell } from '@/components/notifications/NotificationBell';
+        import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
+        import { isDeliverableEmail } from '@/lib/notifications/channels';
+        
+        
+        type FeatureKey = keyof ClientFeatureFlags;
+        
+        interface NavItem {
+          name: string;
+          
+          short?: string;
+          href: string;
+          icon: LucideIcon;
+          
+          feature?: FeatureKey | FeatureKey[];
+        }
+        
+        
+        function isFeatureVisible(item: NavItem, flags: ClientFeatureFlags | null): boolean {
+          if (!item.feature) return true;
+          if (!flags) return false;
+          const keys = Array.isArray(item.feature) ? item.feature : [item.feature];
+          return keys.some((key) => flags[key]);
+        }
+        
+        
+        const BARE_ROUTES = new Set(['/billet/hors-ligne']);
+        
+        
+        const ROLE_LABELS: Record<string, string> = {
+          SUPERADMIN: 'Super administrateur',
+          ADMIN: 'Administrateur',
+          PARTENAIRE: 'Partenaire',
+          CONTROLEUR: 'Contrôleur',
+          CLIENT: 'Client',
+        };
+        
+        function roleLabel(role: string | null | undefined): string {
+          return (role && ROLE_LABELS[role]) || 'Client';
+        }
+        
+        
+        function navLinkClass(active: boolean): string {
+          return cn(
+            'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            active ? 'bg-brand-bg font-semibold text-brand-fg' : 'text-fg-muted hover:bg-surface-sunken hover:text-fg',
+          );
+        }
+        
+        export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+          const pathname = usePathname();
+          const { user, profile, isAuthenticated, isLoading, signOut } = useAuth();
+          const featureFlags = useFeatureFlags();
+          const visibleItems = (items: NavItem[]): NavItem[] => items.filter((item) => isFeatureVisible(item, featureFlags));
+          const [mounted, setMounted] = useState(false);
+        
+          useEffect(() => {
+            setMounted(true);
+          }, []);
+        
+          const isUserLoggedIn = mounted && (isAuthenticated || !!user);
+          const roles = mounted ? (profile?.roles || []) : [];
+        
+        
+          const isSuperAdmin = roles.includes('SUPERADMIN');
+          const isAdmin = isSuperAdmin || roles.includes('ADMIN');
+          const isPartner = roles.includes('PARTENAIRE');
+        
+        
+        
+        
+          const scannerNav = roles.includes('CONTROLEUR') && (isPartner || isAdmin || profile?.scanner_open !== false);
+          const isController = scannerNav || isAdmin;
+          const isAmbassador = mounted && (profile?.referral_status === 'AMBASSADEUR');
+        
+          const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
+          const isAdminRoute = pathname.startsWith('/admin/') || pathname === '/admin';
+          const isControllerRoute = pathname.startsWith('/controller');
+        
+        
+          const navItems = visibleItems([
+            { name: 'Accueil', href: '/', icon: Home },
+            { name: 'Explorer', href: '/explore', icon: Compass },
+            { name: 'Mes billets', short: 'Billets', href: '/tickets', icon: Ticket },
+            { name: 'Commandes', short: 'Achats', href: '/orders', icon: ShoppingBag, feature: ['halls', 'tables', 'orders'] },
+            { name: 'Portefeuille', href: '/wallet', icon: Wallet },
+          ]);
+        
+          const serviceItems = visibleItems([
+            { name: 'Salles de fête', href: '/halls', icon: Building2, feature: 'halls' },
+            { name: 'Restaurants et tables', href: '/restaurants/rest-terrou-bi/tables', icon: Utensils, feature: 'tables' },
+          ]);
+        
+          const partnerNavItems = visibleItems([
+            { name: 'Tableau de bord', href: '/partner/dashboard', icon: LayoutDashboard },
+            { name: 'Événements', href: '/partner/events', icon: Calendar },
+            { name: 'Produits et menu', href: '/partner/products', icon: ShoppingBag, feature: 'orders' },
+            { name: 'Salles de fête', href: '/partner/halls', icon: Building2, feature: 'halls' },
+            { name: 'Tables', href: '/partner/tables', icon: Utensils, feature: 'tables' },
+            { name: 'Commandes', href: '/partner/orders', icon: ShoppingBag, feature: 'orders' },
+            { name: 'Équipe', href: '/partner/team', icon: Users },
+          ]);
+          const partnerSecondaryItems: NavItem[] = [
+            { name: 'Finances', href: '/partner/finance', icon: DollarSign },
+            { name: 'Statistiques', href: '/partner/stats', icon: Activity },
+            { name: 'Scanner les billets', href: '/partner/scan', icon: QrCode },
+            { name: 'Calendrier', href: '/partner/calendar', icon: Calendar },
+            { name: 'Abonnement', href: '/partner/subscription', icon: Briefcase },
+            { name: 'Profil partenaire', href: '/partner/profile', icon: User },
+          ];
+          const partnerMobileItems: NavItem[] = [
+            { name: 'Accueil', href: '/partner/dashboard', icon: LayoutDashboard },
+            { name: 'Événements', short: 'Billetterie', href: '/partner/events', icon: Calendar },
+            { name: 'Scanner', href: '/partner/scan', icon: QrCode },
+            { name: 'Finances', href: '/partner/finance', icon: DollarSign },
+            { name: 'Profil', href: '/partner/profile', icon: User },
+          ];
+        
+          const adminMobileItems: NavItem[] = [
+            { name: 'Accueil', href: '/admin/dashboard', icon: LayoutDashboard },
+            { name: 'Événements', short: 'Validation', href: '/admin/events', icon: Calendar },
+            { name: 'Utilisateurs', short: 'Comptes', href: '/admin/users', icon: Users },
+            { name: 'Finance', href: '/admin/finance', icon: DollarSign },
+            { name: 'Audit', href: '/admin/audit', icon: Activity },
+          ];
+        
+          const controllerMobileItems: NavItem[] = [
+            { name: 'Accueil', href: '/', icon: Home },
+            { name: 'Explorer', href: '/explore', icon: Compass },
+            { name: 'Scanner', href: '/controller/scanner', icon: QrCode },
+            { name: 'Billets', href: '/tickets', icon: Ticket },
+            { name: 'Profil', href: '/controller/profile', icon: User },
+          ];
+        
+          const proItems: NavItem[] = [];
+        
+          if (isAdmin) {
+            proItems.push({ name: 'Administration', href: '/admin/dashboard', icon: LayoutDashboard });
+            proItems.push({ name: 'Événements à valider', href: '/admin/events', icon: Calendar });
+            proItems.push({ name: 'Utilisateurs et rôles', href: '/admin/users', icon: Users });
+            proItems.push({ name: 'Catalogues et services', href: '/admin/services', icon: Building2 });
+            proItems.push({ name: 'Finance et rapprochement', href: '/admin/finance', icon: DollarSign });
+            proItems.push({ name: 'Parrainage et ambassadeurs', href: '/admin/referral', icon: ShieldAlert });
+            proItems.push({ name: 'Tarification', href: '/admin/pricing', icon: Sliders });
+            proItems.push({ name: 'Communications et campagnes', href: '/admin/communications', icon: Radio });
+            if (isSuperAdmin) proItems.push({ name: 'Journal d’audit', href: '/admin/audit', icon: Activity });
+            proItems.push({ name: 'Notifications', href: '/admin/notifications', icon: BellRing });
+            proItems.push({ name: 'Scanner de contrôle', href: '/scan', icon: QrCode });
+          } else if (isPartner && !isPartnerRoute) {
+            proItems.push({ name: 'Espace partenaire', href: '/partner/dashboard', icon: LayoutDashboard });
+          } else if (isController) {
+            proItems.push({ name: 'Scanner les billets', href: '/controller/scanner', icon: QrCode });
+          }
+        
+          if (!isPartner && !isAdmin && !isController) {
+            proItems.push({ name: 'Devenir partenaire', href: '/partner/register', icon: Briefcase });
+          }
+        
+          const adminNavGroups: Array<{ label: string; items: NavItem[] }> = isAdmin ? [
+            {
+              label: 'Gestion',
+              items: [
+                { name: 'Événements', href: '/admin/events', icon: Calendar },
+                { name: 'Utilisateurs', href: '/admin/users', icon: Users },
+                { name: 'Catalogues et services', href: '/admin/services', icon: Building2 },
+              ],
+            },
+            {
+              label: 'Finances',
+              items: [
+                { name: 'Finance', href: '/admin/finance', icon: DollarSign },
+                { name: 'Tarification', href: '/admin/pricing', icon: Sliders },
+              ],
+            },
+            {
+              label: 'Engagement',
+              items: [
+                { name: 'Parrainage', href: '/admin/referral', icon: Award },
+                { name: 'Communications', href: '/admin/communications', icon: Megaphone },
+              ],
+            },
+            {
+              label: 'Système',
+              items: [
+                ...(isSuperAdmin ? [{ name: 'Journal d’audit', href: '/admin/audit', icon: FileText }] : []),
+                { name: 'Notifications', href: '/admin/notifications', icon: BellRing },
+                { name: 'Scanner', href: '/scan', icon: QrCode },
+              ],
+            },
+          ] : [];
+        
+          const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+          const menuButtonRef = useRef<HTMLButtonElement>(null);
+          const drawerCloseRef = useRef<HTMLButtonElement>(null);
+          const wasMenuOpen = useRef(false);
+        
+          useEffect(() => { setIsMobileMenuOpen(false); }, [pathname]);
+        
+          useEffect(() => {
+            if (isMobileMenuOpen) {
+              wasMenuOpen.current = true;
+              document.body.style.overflow = 'hidden';
+              drawerCloseRef.current?.focus();
+              const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsMobileMenuOpen(false); };
+              document.addEventListener('keydown', onEsc);
+              return () => { document.body.style.overflow = ''; document.removeEventListener('keydown', onEsc); };
+            }
+            if (wasMenuOpen.current) {
+              wasMenuOpen.current = false;
+              menuButtonRef.current?.focus();
+            }
+            return undefined;
+          }, [isMobileMenuOpen]);
+        
+          const canShowRoleNav = mounted && !isLoading;
+        
+          const isNavActive = (href: string) => {
+            if (href === '/') return pathname === '/';
+            return pathname === href || pathname.startsWith(`${href}/`);
+          };
+        
+          const closeMobileMenu = () => setIsMobileMenuOpen(false);
+        
+          const renderNavLink = (item: NavItem, onNavigate?: () => void) => {
+            const active = isNavActive(item.href);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onNavigate}
+                aria-current={active ? 'page' : undefined}
+                className={navLinkClass(active)}
+              >
+                <Icon size={18} className={active ? 'text-brand-fg' : 'text-fg-muted'} />
+                <span className="min-w-0 truncate">{item.name}</span>
+              </Link>
+            );
+          };
+        
+          const renderNavSection = (label: string, items: NavItem[], onNavigate?: () => void) => (
+            <div key={label}>
+              <p className="mb-1.5 block px-3 text-sm font-semibold text-fg-muted">{label}</p>
+              <div className="flex flex-col gap-0.5">{items.map((item) => renderNavLink(item, onNavigate))}</div>
+            </div>
+          );
+        
+          const adminBadge = (
+            <div className="flex items-center gap-2.5 rounded-xl border border-border bg-surface-sunken px-3 py-2">
+              <ShieldCheck size={16} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
+              <span className="text-sm font-semibold text-fg">Administration</span>
+            </div>
+          );
+        
+          const userFirst = profile?.first_name || (user?.user_metadata?.first_name as string) || '';
+          const userLast = profile?.last_name || (user?.user_metadata?.last_name as string) || '';
+        
+          const userEmail = isDeliverableEmail(user?.email) ? user.email : null;
+          const displayName = userFirst || userLast
+            ? `${userFirst} ${userLast}`.trim()
+            : userEmail?.split('@')[0] || 'Mon compte';
+        
+          const initials = userFirst || userLast
+            ? `${userFirst[0] || 'U'}${userLast[0] || 'E'}`.toUpperCase()
+            : userEmail
+            ? userEmail.slice(0, 2).toUpperCase()
+            : 'EV';
+        
+          const accountSubtitle = isAmbassador ? 'Ambassadeur' : roleLabel(profile?.role);
+        
+          const avatar = <Avatar src={profile?.avatar_url} initials={initials} />;
+        
+              <aside className="sticky top-0 z-30 hidden h-screen w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-surface p-5 shadow-subtle lg:flex xl:w-72">
+                <div className="mb-6 py-2">
+                  <Logo variant="full" />
+                </div>
+        
+                <nav aria-label="Navigation principale" className="flex flex-1 flex-col gap-5">
+                  {renderRoleNav()}
+                </nav>
+        
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-4">
+                  {isUserLoggedIn ? (
+                    <div className="flex w-full min-w-0 items-center justify-between gap-1">
+                      <Link href="/profile" className="group flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        {avatar}
+                        <span className="min-w-0 leading-tight">
+                          <span className="block truncate text-sm font-semibold text-fg group-hover:text-brand-fg">{displayName}</span>
+                          <span className="block truncate text-sm text-fg-muted">{accountSubtitle}</span>
+                        </span>
+                      </Link>
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => signOut()}>
+                          <LogOut size={18} />
+                        </IconButton>
+                        <ThemeToggle />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <LinkButton href="/login" variant="outline" size="sm" leftIcon={<LogIn size={16} />}>
+                        Se connecter
+                      </LinkButton>
+                      <ThemeToggle />
+                    </div>
+                  )}
+                </div>
+              </aside>
+        
+              {}
+              <div
+                className={cn(
+                  'fixed inset-0 z-50 duration-300 lg:hidden',
+                  isMobileMenuOpen ? 'visible opacity-100 transition-opacity' : 'pointer-events-none invisible opacity-0 transition-[opacity,visibility]',
+                )}
+              >
+                <div className="absolute inset-0 bg-scrim/60 backdrop-blur-sm" aria-hidden="true" onClick={closeMobileMenu} />
+        
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Menu"
+                  className={cn(
+                    'absolute bottom-0 left-0 top-0 flex w-[85vw] max-w-[320px] flex-col bg-surface-raised shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none',
+                    isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full',
+                  )}
+                >
+                  <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3">
+                    <Logo variant="full" />
+                    <IconButton ref={drawerCloseRef} aria-label="Fermer le menu" onClick={closeMobileMenu}>
+                      <X size={20} />
+                    </IconButton>
+                  </div>
+        
+                  <div className="px-4 pb-1 pt-3 sm:hidden">
+                    <Link
+                      href="/explore"
+                      onClick={closeMobileMenu}
+                      className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface-sunken px-3.5 text-sm text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Search size={16} aria-hidden="true" />
+                      <span>Rechercher un événement</span>
+                    </Link>
+                  </div>
+        
+                  <nav aria-label="Navigation principale" className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-3">
+                    {renderRoleNav(closeMobileMenu)}
+                  </nav>
+        
+                  <div className="flex-shrink-0 border-t border-border px-4 py-3">
+                    {isUserLoggedIn ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <Link href="/profile" onClick={closeMobileMenu} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                          {avatar}
+                          <span className="min-w-0 leading-tight">
+                            <span className="block truncate text-sm font-semibold text-fg">{displayName}</span>
+                            <span className="block truncate text-sm text-fg-muted">{accountSubtitle}</span>
+                          </span>
+                        </Link>
+                        <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => { closeMobileMenu(); signOut(); }}>
+                          <LogOut size={18} />
+                        </IconButton>
+                      </div>
+                    ) : (
+                      <LinkButton href="/login" onClick={closeMobileMenu} fullWidth leftIcon={<LogIn size={16} />}>
+                        Se connecter
+                      </LinkButton>
+                    )}
+                  </div>
+                </div>
+              </div>
+        
+              {}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 shadow-subtle lg:px-8">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <IconButton
+                      ref={menuButtonRef}
+                      aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+                      aria-expanded={isMobileMenuOpen}
+                      onClick={() => setIsMobileMenuOpen((v) => !v)}
+                      className="lg:hidden"
+                    >
+                      {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+                    </IconButton>
+                    <div className="lg:hidden">
+                      <Logo variant="auto" />
+                    </div>
+                  </div>
+        
+                  <div className="hidden max-w-lg flex-1 items-center sm:flex">
+                    <Link
+                      href="/explore"
+                      className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-sunken px-4 text-sm text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Search size={16} aria-hidden="true" />
+                      <span className="truncate">Rechercher un événement, un concert, un restaurant…</span>
+                    </Link>
+                  </div>
+        
+                  <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
+                    <NotificationBell />
+        
+                    {}
+                    {scannerNav && (
+                      <div className="hidden sm:block">
+                        <LinkButton href="/controller/scanner" size="sm" leftIcon={<QrCode size={16} />}>
+                          Scanner
+                        </LinkButton>
+                      </div>
+                    )}
+        
+                    <div className="lg:hidden">
+                      <ThemeToggle />
+                    </div>
+        
+                    {isUserLoggedIn ? (
+        
+        
+                      <Link
+                        href="/profile"
+                        className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                      >
+                        {avatar}
+                        <span className="sr-only">{`Mon profil (${displayName})`}</span>
+                      </Link>
+                    ) : (
+                      <Link
+                        href="/login"
+                        aria-label="Se connecter"
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-brand-bg text-brand-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                      >
+                        <LogIn size={18} aria-hidden="true" />
+                      </Link>
+                    )}
+                  </div>
+                </header>
+        
+                {}
+                <main className="mx-auto w-full max-w-7xl flex-1 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
+                  {children}
+                </main>
+              </div>
+        
+              {}
+              <nav aria-label="Navigation rapide" className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-1 py-1 shadow-lg lg:hidden">
+                <div className="flex items-stretch justify-around">
+                  {mobileItems.map((item) => {
+                    const active = isNavActive(item.href);
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        aria-current={active ? 'page' : undefined}
+                        className={cn(
+                          'flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 transition-colors duration-150',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                          active ? 'text-brand-fg' : 'text-fg-muted hover:text-fg',
+                        )}
+                      >
+                        <Icon size={20} aria-hidden="true" />
+                        <small className="text-caption max-w-full truncate font-semibold">{item.short ?? item.name}</small>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </nav>
+            </div>
+          );
+        };
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:84:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: ADMIN sans aucun droit : seulement l’accueil et « Mes droits »
+    not ok 2 - ADMIN sans aucun droit : seulement l’accueil et « Mes droits »
+      ---
+      duration_ms: 1.03515
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:5759'
+      failureType: 'testCodeFailure'
+      error: "Cannot find module '/home/runner/work/event-village/event-village/components/layout/admin-nav.ts' imported from /home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts"
+      code: 'ERR_MODULE_NOT_FOUND'
+      stack: |-
+        finalizeResolution (node:internal/modules/esm/resolve:275:11)
+        moduleResolve (node:internal/modules/esm/resolve:865:10)
+        defaultResolve (node:internal/modules/esm/resolve:989:11)
+        #cachedDefaultResolve (node:internal/modules/esm/loader:747:20)
+        #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:783:38)
+        nextStep (node:internal/modules/customization_hooks:189:26)
+        resolveBaseSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:11092)
+        resolveDirectorySync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:12398)
+        resolveTsPathsSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:13605)
+        resolve (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:16832)
+      ...
+    # Subtest: ADMIN events.read et events.write : Événements, Catalogues et services, Mes droits, rien d’autre
+    not ok 3 - ADMIN events.read et events.write : Événements, Catalogues et services, Mes droits, rien d’autre
+      ---
+      duration_ms: 0.571471
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:6148'
+      failureType: 'testCodeFailure'
+      error: "Cannot find module '/home/runner/work/event-village/event-village/components/layout/admin-nav.ts' imported from /home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts"
+      code: 'ERR_MODULE_NOT_FOUND'
+      stack: |-
+        finalizeResolution (node:internal/modules/esm/resolve:275:11)
+        moduleResolve (node:internal/modules/esm/resolve:865:10)
+        defaultResolve (node:internal/modules/esm/resolve:989:11)
+        #cachedDefaultResolve (node:internal/modules/esm/loader:747:20)
+        #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:783:38)
+        nextStep (node:internal/modules/customization_hooks:189:26)
+        resolveBaseSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:11092)
+        resolveDirectorySync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:12398)
+        resolveTsPathsSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:13605)
+        resolve (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:16832)
+      ...
+    # Subtest: chaque entrée suit son droit ; « Scanner » seulement avec access.operate ; « Réglages » avec settings.read
+    not ok 4 - chaque entrée suit son droit ; « Scanner » seulement avec access.operate ; « Réglages » avec settings.read
+      ---
+      duration_ms: 0.686847
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:6547'
+      failureType: 'testCodeFailure'
+      error: "Cannot find module '/home/runner/work/event-village/event-village/components/layout/admin-nav.ts' imported from /home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts"
+      code: 'ERR_MODULE_NOT_FOUND'
+      stack: |-
+        finalizeResolution (node:internal/modules/esm/resolve:275:11)
+        moduleResolve (node:internal/modules/esm/resolve:865:10)
+        defaultResolve (node:internal/modules/esm/resolve:989:11)
+        #cachedDefaultResolve (node:internal/modules/esm/loader:747:20)
+        #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:783:38)
+        nextStep (node:internal/modules/customization_hooks:189:26)
+        resolveBaseSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:11092)
+        resolveDirectorySync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:12398)
+        resolveTsPathsSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:13605)
+        resolve (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:16832)
+      ...
+    # Subtest: SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »
+    not ok 5 - SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »
+      ---
+      duration_ms: 0.569418
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:7327'
+      failureType: 'testCodeFailure'
+      error: "Cannot find module '/home/runner/work/event-village/event-village/components/layout/admin-nav.ts' imported from /home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts"
+      code: 'ERR_MODULE_NOT_FOUND'
+      stack: |-
+        finalizeResolution (node:internal/modules/esm/resolve:275:11)
+        moduleResolve (node:internal/modules/esm/resolve:865:10)
+        defaultResolve (node:internal/modules/esm/resolve:989:11)
+        #cachedDefaultResolve (node:internal/modules/esm/loader:747:20)
+        #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:783:38)
+        nextStep (node:internal/modules/customization_hooks:189:26)
+        resolveBaseSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:11092)
+        resolveDirectorySync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:12398)
+        resolveTsPathsSync (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:13605)
+        resolve (file:///home/runner/work/event-village/event-village/node_modules/tsx/dist/register-nyXW-TH3.mjs:2:16832)
+      ...
+    # Subtest: page « Mes droits » : ce que l’admin peut faire et ne pas faire, en phrases ; texte exact sans aucun droit
+    not ok 6 - page « Mes droits » : ce que l’admin peut faire et ne pas faire, en phrases ; texte exact sans aucun droit
+      ---
+      duration_ms: 0.476733
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:7983'
+      failureType: 'testCodeFailure'
+      error: 'app/admin/mes-droits/page.tsx absent'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        read (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:20:12)
+        code (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:24:39)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:130:22)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..6
+not ok 2 - 2. E-34 — menu et barre du bas selon les droits ; « Mes droits »
+  ---
+  duration_ms: 6.527575
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3b-ecrans.test.ts:2:5098'
+  failureType: 'subtestsFailed'
+  error: '6 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..2
+# tests 10
+# suites 2
+# pass 4
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 46.33128
