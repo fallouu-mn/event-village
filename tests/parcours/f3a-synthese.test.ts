@@ -393,9 +393,13 @@ describe('3 — détail de chaque chiffre : paiements paginés, créances, rembo
             await writeScenario(c);
             const b = await read();
             const d = (block: string, key: string): number => (cents((b[block] as Row)[key]) - cents((a[block] as Row)[key])) / 100;
-            // Versements à reprendre : l'échoué et l'incertain (les autres viennent d'être créés : moins de 30 minutes)
-            eqAmount(d('to_resume', 'count'), 2, 'versements à reprendre');
-            eqAmount(d('to_resume', 'amount'), 5_100, 'montant des versements à reprendre');
+            // Versements à reprendre : l'échoué et l'incertain (les autres viennent d'être créés : moins de 30 minutes), plus le
+            // paiement en échec sans identifiant SamirPay du scénario, créé à l'instant (à vérifier chez SamirPay, comme la
+            // liste de GET /api/admin/refunds) — run 246 : attendu corrigé (2 → 3), règle inchangée
+            eqAmount(d('to_resume', 'cashouts'), 2, 'versements à reprendre : versements');
+            eqAmount(d('to_resume', 'unconfirmed_payments'), 1, 'versements à reprendre : paiement sans identifiant SamirPay');
+            eqAmount(d('to_resume', 'count'), 3, 'versements à reprendre');
+            eqAmount(d('to_resume', 'amount'), 55_100, 'montant des versements à reprendre (2 100 + 3 000 + 50 000)');
             eqAmount(d('refunds_to_pay', 'count'), 4, 'remboursements à verser');
             eqAmount(d('refunds_to_pay', 'amount'), 16_100, 'montant à verser');
             eqAmount(d('debts', 'count'), 2, 'créances');
