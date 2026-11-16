@@ -173,10 +173,12 @@ describe('e. catégories existantes sans couleur : colorées par la migration', 
         const sql = fs.readFileSync(path.join(ROOT, MIGRATION), 'utf8');
         const ev = await createDraftEvent(P, 'f2b-a2-rattrapage', [{ name: 'Standard', price: 0, total: 10 }], { startsInHours: 96 });
         await inRolledBackTransaction(async (db) => {
-            await db.query('ALTER TABLE public.ticket_categories DISABLE TRIGGER trg_ticket_categories_auto_color');
+            // Montage : catégorie insérée sans qu'aucun déclencheur ne s'exécute (mode réplica de la session, base locale ;
+            // un ALTER TABLE … DISABLE TRIGGER après l'insertion échoue : « pending trigger events », run 253)
+            await db.query('SET LOCAL session_replication_role = replica');
             await db.query(`INSERT INTO public.ticket_categories (event_id, name, price, total_quantity, sold_quantity, is_active)
                             VALUES ($1, 'Sans couleur', 0, 5, 0, true)`, [ev.eventId]);
-            await db.query('ALTER TABLE public.ticket_categories ENABLE TRIGGER trg_ticket_categories_auto_color');
+            await db.query('SET LOCAL session_replication_role = origin');
             const before = await db.query(`SELECT scan_color FROM public.ticket_categories WHERE event_id = $1 AND name = 'Sans couleur'`, [ev.eventId]);
             assert.equal(before.rows[0].scan_color, null, 'précondition : catégorie sans couleur');
             await db.query(sql);

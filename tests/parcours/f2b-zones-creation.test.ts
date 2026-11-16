@@ -155,7 +155,8 @@ describe('b. refus à la création : texte et champ des zones, rien n’est cré
 
 describe('c. mêmes verdicts au scanner, zones créées avec l’événement ou ajoutées après', () => {
     async function verdicts(withZonesAtCreation: boolean): Promise<string[]> {
-        const label = withZonesAtCreation ? 'avec' : 'après';
+        // Libellés sans accent : ils entrent dans l'adresse email des comptes de test (run 253 : « après » refusé)
+        const label = withZonesAtCreation ? 'avec' : 'apres';
         const r = await postEvent(createBody(`TEST Zones verdicts ${label} ${Date.now().toString(36)}`, withZonesAtCreation ? ZONES_BY_REF : undefined));
         assert.equal(r.status, 201, show(r));
         const eventId = String((r.body.event as Row).id);

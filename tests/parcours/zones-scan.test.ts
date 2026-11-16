@@ -166,7 +166,9 @@ describe('9t.15 Scan sans zone : comportement d’aujourd’hui, zone implicite'
         assert.deepEqual(first.body.zone, { id: null, name: 'Entrée', kind: 'ENTREE', implicit: true }, `zone implicite servie (C.2.2 point 3) : ${show(first)}`);
         assert.equal(first.body.gate, null, `aucune porte : ${show(first)}`);
         assert.equal(ticket.origin, 'ONLINE', `origine du billet (F5) : ${show(first)}`);
-        assert.equal(ticket.category_color, null, `aucune couleur : ${show(first)}`);
+        // Finition 2b (A, E-22 ; modification signalée au rapport) : la base pose une couleur au contrôle à toute catégorie
+        // qui n'en a pas (SIMPLE, insérée la première : BLANC) ; avant : aucune couleur (null)
+        assert.equal(ticket.category_color, 'BLANC', `couleur posée par la base : ${show(first)}`);
         assert.equal(ticket.entry_instruction, null, `aucune consigne : ${show(first)}`);
 
         const second = await scanAtGate(ctrl, body, undefined);
