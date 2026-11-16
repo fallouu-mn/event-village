@@ -27,6 +27,34 @@ export const PERMISSION_LABELS: Readonly<Record<string, string>> = {
     'settings.read': 'Lire les réglages',
 };
 
+/**
+ * Finition 3b (E-34, E-36) — ce que chaque droit permet, en une phrase simple (page « Mes droits » et grille des droits).
+ * Relu contre les routes : chaque phrase ne promet que ce que la route de la permission ouvre.
+ */
+export const PERMISSION_DESCRIPTIONS: Readonly<Record<string, string>> = {
+    'users.read': 'Voir la liste des comptes et les chercher.',
+    'users.write': 'Créer, suspendre, réactiver ou supprimer des comptes de clients et de contrôleurs, jamais un administrateur.',
+    'partners.read': 'Voir les candidatures et les dossiers des partenaires : pièces, NINEA, contacts.',
+    'partners.validate': 'Valider, refuser ou réactiver un partenaire. Le partenaire en est prévenu.',
+    'partners.suspend': 'Suspendre un partenaire. Attention : seul le Superadmin peut le faire, ce droit ne suffit pas à un administrateur.',
+    'events.read': 'Voir les événements, leur pilotage, leurs équipes, leurs caisses et les catalogues.',
+    'events.write': 'Valider, refuser, suspendre, réactiver, clore ou annuler un événement ; valider un écart de caisse.',
+    'payments.read': 'Voir la finance : ce que gagne Event Village, ce qui est dû, les paiements et les créances.',
+    'refunds.manage': 'Traiter les versements à reprendre : renvoyer, marquer versé ou constater non versé.',
+    'referrals.manage': 'Voir les taux du parrainage.',
+    'communications.manage': 'Préparer des campagnes (brouillons seulement).',
+    'statistics.read': 'Voir les indicateurs de l’accueil : volume, revenu, nombre de comptes.',
+    'notifications.read': 'Voir les envois de SMS, d’emails et de notifications, et recevoir leurs alertes.',
+    'notifications.write': 'Relancer un envoi en échec.',
+    'access.operate': 'Contrôler les entrées et tenir une caisse sur un événement.',
+    'settings.read': 'Lire les réglages de la plateforme ; seul le Superadmin les change.',
+};
+
+/** Phrase d'une permission ; un code inconnu reçoit une phrase générique, jamais le code brut. */
+export function permissionDescription(permission: string): string {
+    return PERMISSION_DESCRIPTIONS[permission] ?? 'Action d’administration.';
+}
+
 /** Libellé d'une permission ; un code inconnu reçoit un libellé générique, jamais le code brut. */
 export function permissionLabel(permission: string): string {
     return PERMISSION_LABELS[permission] ?? 'action d’administration';
