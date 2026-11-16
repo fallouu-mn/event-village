@@ -89,8 +89,9 @@ const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => 
 
 type StepId = 'infos' | 'programme' | 'acces' | 'billetterie' | 'controle';
 
-const STEPS: Array<{ id: StepId; label: string; heading: string }> = [
-    { id: 'infos', label: 'Informations', heading: 'Informations générales' },
+/** `short` : libellé affiché sous 1 024 px quand le libellé entier ne tient pas dans sa case (run 263, capture à 390 px). */
+const STEPS: Array<{ id: StepId; label: string; heading: string; short?: string }> = [
+    { id: 'infos', label: 'Informations', heading: 'Informations générales', short: 'Infos' },
     { id: 'programme', label: 'Programme', heading: 'Programme' },
     { id: 'acces', label: 'Accès', heading: 'Accès et informations pratiques' },
     { id: 'billetterie', label: 'Billets', heading: 'Billetterie' },
@@ -103,7 +104,7 @@ const ZONES_PREFIX = 'ev-zones';
 
 /** Finition 2b (C, E-24) : écran « Vérifier avant d'envoyer », après les 5 étapes. */
 type ScreenId = StepId | 'verifier';
-const SCREENS: Array<{ id: ScreenId; label: string; heading: string }> = [
+const SCREENS: Array<{ id: ScreenId; label: string; heading: string; short?: string }> = [
     ...STEPS,
     { id: 'verifier', label: 'Vérifier', heading: 'Vérifier avant d’envoyer' },
 ];
@@ -1492,7 +1493,14 @@ export function EventForm(props: EventFormProps) {
                                     )}
                                 >
                                     <span aria-hidden="true" className="tabular-nums">{s.id === 'verifier' ? <Check size={16} /> : i + 1}</span>
-                                    <span aria-hidden="true" className="min-w-0 truncate">{s.label}</span>
+                                    <span aria-hidden="true" className="min-w-0 truncate">
+                                        {s.short ? (
+                                            <>
+                                                <span className="lg:hidden">{s.short}</span>
+                                                <span className="hidden lg:inline">{s.label}</span>
+                                            </>
+                                        ) : s.label}
+                                    </span>
                                     <span className="sr-only">{`${s.heading}${hasError ? ' (à corriger)' : ''}`}</span>
                                 </button>
                             </li>
