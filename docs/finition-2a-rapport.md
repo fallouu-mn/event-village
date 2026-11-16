@@ -2,6 +2,385 @@
 
 Branche `finition-2a/fin-carte-affiche`, partie de `main` à `c248e17f`, dans son propre dossier (`event-village-finition2a`). Rien n'est fusionné. Le dossier de recette n'a pas été touché.
 
+## Correctifs de la contre-vérification (16 novembre) : à lire avant tout
+
+Consigne « Correctifs de la contre-vérification — finition 2a » : six trous (T1 à T6) et trois remarques (R1 à R3) du rapport d'audit `docs/audit-finition-2a.md`. Ta consigne s'arrêtait à « R3. Corrige le § 11 du » ; j'ai complété R3 par la remarque correspondante du rapport d'audit (§ 3, « Rapport de la finition, § 11 »).
+
+Ce qui a été fait, dans l'ordre :
+- la branche d'audit `audit/finition-2a` est fusionnée en avance rapide (`768dc956`) ; ses suites `cvf2a-*` servent de tests rouges ;
+- un commit par point, dans l'ordre de la consigne ;
+- migrations `20261116000004` à `20261116000008`, sans BEGIN ni COMMIT, rejouables ; les trois premières (`…01` à `…03`) ne sont pas touchées.
+
+Aucune assertion des suites `cvf2a-*` n'est changée. Seule exception, décidée par toi : le montage de `cvf2a-2` e (§ C.9).
+
+### La sécurité d'abord
+
+Les six trous sont fermés, chacun à la route et en base, avec un test rouge puis vert :
+
+1. **T1, équipe d'une fiche SUSPENDU.** L'équipe est désormais en lecture seule pour la partenaire.
+   - **Routes.** `/api/partner/team/*` et `/api/partner/shifts/*` comptent parmi les écritures refusées : 403 `PARTNER_SUSPENDED`, avec le texte et le contact du support.
+   - **Base.** La fiche est contrôlée en tête de chaque fonction d'équipe : réglages, porte, point d'entrée, espèces, invitation, renvoi, annulation, effacement, retraits.
+   - **Écritures directes supprimées.** Les écritures que des routes faisaient directement dans `event_controllers` passent par trois fonctions nouvelles, gardées de la même façon.
+   - **Admin.** Un admin muni de `events.write` garde ses actions.
+2. **T2, écart d'une caisse.** La validation d'un écart est refusée à une fiche SUSPENDU, à la route et en base. Un admin muni de `events.write` peut valider l'écart ; jusqu'ici, seule la propriétaire le pouvait.
+3. **T3 et T4, changement de lieu.**
+   - **Position annoncée.** L'événement garde sa dernière position annoncée : posée à la validation, mise à jour au départ de chaque SMS « change de lieu ». La règle des 200 m se mesure depuis elle, et l'alerte « lieu » de l'administration suit la même règle.
+   - **Retour du repère.** Si le repère revient à moins de 200 m de la position annoncée, l'avis en attente est annulé sur tous les canaux.
+   - **Cadence.** Au plus un avis de changement de lieu par heure glissante, pour le SMS comme pour le push ; les changements suivants partent ensemble à l'heure dite.
+   - **Formulaire.** Le bandeau le dit avant d'enregistrer.
+4. **T5, affiche.** Seul un fichier produit par la route de dépôt est accepté comme affiche (`horodatage_8 caractères.webp`), dans le formulaire, à la route et en base. Le script `scripts/reencode-posters.ts` réencode une fois les affiches d'avant la finition encore citées (§ C.4).
+5. **T6, effacement d'un fichier cité.** La purge et l'effacement d'une affiche remplacée lisent toutes les colonnes de la base qui citent le stockage (dix colonnes, § C.5). Les salles, les produits et le profil (logo, couverture) refusent une adresse du dossier `events/`.
+
+Les remarques sont aussi traitées :
+- **R1.** Le caractère nul et les caractères de contrôle sont retirés de la recherche de lieu. Une recherche indisponible (503) ne compte plus dans le quota.
+- **R2.** `ProductService` applique une liste blanche des champs. La partenaire est toujours celle de la session, et le statut n'est jamais pris du corps. C'était une faille réelle sur un service fermé.
+- **R3.** Le § 11 de ce rapport est corrigé.
+
+### Runs
+- **Avant : 235** (`768dc956`, même commit que la tête après l'avance rapide). 425 suites sur 428 ; seules `cvf2a-1`, `cvf2a-2` et `cvf2a-4` sont rouges (T1 à T6). L'e2e est vert.
+- **Preuve des rouges : 239.** Branche `finition-2a/cv-rouges` : les huit suites nouvelles sur `768dc956`, sans aucun correctif. 425 sur 436 : exactement les 11 rouges attendus, `cvf2a-1`, `-2`, `-4` et les 8 suites `f2acv-*`. Un premier essai, le run 237, était faussé par une erreur de mon test (« Erreurs », 1).
+- **Après : 240** (`b2445ce1`). **Vert** :
+  - 436 suites sur 436, dont les 31 de `tests/audit/` et `tests/audit-auth/` (les 26 d'avant et les 5 `cvf2a-*`) ;
+  - invariants à 0 ;
+  - e2e vert : 465 captures, fumée, terrain, recette ;
+  - budgets JS identiques à `main`, non relevés.
+
+### Décisions prises, à relire
+1. **Trois routes de contrôle signalées par l'audit.**
+   - Incidents de scan : refusés à la propriétaire d'un événement dont la fiche n'est pas VALIDE, comme le scan.
+   - Clôture de sa caisse : gardée, car l'argent encaissé doit pouvoir être déclaré.
+   - Activation d'un compte de contrôleur : gardée, car c'est le compte du contrôleur et non un événement.
+2. **Services fermés (salles, produits, commandes, tables).** Leurs écritures restent permises à une fiche suspendue : à trancher à leur ouverture (§ C.1, et `docs/apres-lancement.md`).
+3. **Admin et écart de caisse.** Un admin `events.write` valide l'écart, sans motif à saisir (l'onglet Caisse n'a pas de champ motif) ; l'action est journalisée ADMIN.
+4. **Avis de lieu en un seul message.** Un changement qui touche au lieu part désormais ensemble dans l'application, en push, par SMS et par email, à la fin de la fenêtre de 10 minutes. Avant, l'application et le push partaient tout de suite. Sans cela, l'aller-retour annulé aurait laissé une notification fausse, et le push n'aurait pas eu la cadence. Les changements de date et de titre seuls partent comme avant.
+5. **Cadence et nom du lieu.** La cadence d'une heure vaut pour tout SMS « change de lieu » : nom du lieu, ville, adresse ou repère. Si elle ne valait que pour le repère, changer le nom du lieu en boucle referait la rafale de T4.
+6. **Cadence et début proche.** La cadence l'emporte même à moins d'une heure du début. Un second changement de lieu dans l'heure attend la fin de l'heure (§ C.3).
+7. **Réencodage par un script.** Le réencodage des affiches anciennes est un script à lancer une fois, et non une tâche planifiée : un test impose que chaque route de tâche soit planifiée par pg_cron. Le script tourne à blanc par défaut.
+
+### Erreurs de ma part, trouvées et corrigées
+1. **Ligne forgée dans un test (la plus lourde).** Mon test T6 (`f2acv-stockage-cite` b) posait à la main, pour un brouillon, une ligne de copie publique (`public_event_state`), puis la retirait en fin de test.
+   - Sur le code d'avant correctif (preuve des rouges, run 237), le test échouait avant de la retirer. L'invariant x13 (« résumé public faux ») a alors fait échouer 38 suites étrangères aux correctifs.
+   - Même avec le correctif, d'autres suites qui tournent en même temps pouvaient voir la ligne.
+   - J'ai retiré ce cas : la lecture de cette colonne est vérifiée par l'inventaire (a), et les remises à zéro sont dans un `finally`. La preuve des rouges est refaite (run 239).
+2. **Deux tests existants figeaient l'ancienne structure (run 236) :**
+   - la liste exacte des migrations 20261116… du test de rejouabilité ;
+   - l'inventaire de `notif-migration`, qui cherchait l'envoi E7-E8 dans `event_update` alors que je l'avais déplacé dans `event_change_notify`.
+
+   Je ne les avais pas mis à jour avant d'envoyer. C'est corrigé (§ C.9).
+3. **Mon test des avis de lieu (`f2acv-avis-de-lieu`, run 236) :**
+   - le cas d lisait `changed_fields`, que la route ne rend pas ;
+   - le cas c comparait les coordonnées au chiffre près ; or le repère passe par les données du message (15 chiffres significatifs) : 14.695500000000001 y devient 14.6955.
+
+   Les deux sont corrigés sans affaiblir la règle (comparaison à 10⁻⁶ degré, une dizaine de centimètres).
+4. **Typage de deux tests pour la preuve des rouges.** La vérification s'arrête à la première erreur de typage. Sur l'ancien code, le module de réencodage n'existe pas et les signatures de `ProductService` sont typées. Corrigé avant le premier run des rouges, sans changer d'assertion.
+5. **Montages e2e (run 238).** Je n'avais pas vu que les montages de la fumée, du terrain et de l'acte 10 de la recette créent leurs événements par `event_create` avec l'affiche de la graine, au nom libre. La règle stricte de T5 les a refusés. Une aide dépose désormais une copie au nom de la route (§ C.9).
+6. **Ancien test des commandes (run 238).** `tests/partner-orders-m9` créait un produit suspendu en passant le statut dans le corps, ce que R2 refuse désormais. Le montage passe par `setProductStatus` (§ C.9).
+
+### C.1 T1 : chaque écriture de /api/partner/* et /api/controller/*, avec sa garde
+
+Inventaire tiré des fichiers par `tests/parcours/f2acv-ecritures-fiche.test.ts` : 51 écritures partenaire, 11 de contrôle. Une écriture nouvelle sans décision fait échouer ce test.
+
+| Écriture | Fiche SUSPENDU (route) | Garde en base (fiche contrôlée en tête) |
+|---|---|---|
+| `DELETE /api/partner/team/*` | 403 `PARTNER_SUSPENDED` | `event_controllers_remove` (nouvelle) |
+| `DELETE /api/partner/team/all` | 403 `PARTNER_SUSPENDED` | `event_controllers_remove` (nouvelle) |
+| `DELETE /api/partner/team/controller/*` | 403 `PARTNER_SUSPENDED` | `atomic_partner_remove_controller` (auteur ajouté) |
+| `DELETE /api/partner/team/invitations/*` | 403 `PARTNER_SUSPENDED` | `controller_invitation_clear` |
+| `PATCH /api/partner/team/assignments` | 403 `PARTNER_SUSPENDED` | `controller_assignments_sync` (+ `controller_invitation_create`) |
+| `PATCH /api/partner/team/assignments/*` | 403 `PARTNER_SUSPENDED` | `event_controller_set_cash` |
+| `PATCH /api/partner/team/entry-point` | 403 `PARTNER_SUSPENDED` | `event_controller_entry_point_set` (nouvelle) |
+| `PATCH /api/partner/team/gate` | 403 `PARTNER_SUSPENDED` | `event_controller_gate_set` |
+| `PATCH /api/partner/team/settings` | 403 `PARTNER_SUSPENDED` | `event_controller_settings_set` |
+| `POST /api/partner/shifts/*/validate-discrepancy` | 403 `PARTNER_SUSPENDED` | `shift_discrepancy_validate` |
+| `POST /api/partner/team/invitations/*/cancel` | 403 `PARTNER_SUSPENDED` | `controller_invitation_cancel` |
+| `POST /api/partner/team/invitations/*/resend` | 403 `PARTNER_SUSPENDED` | `controller_invitation_resend` |
+| `POST /api/partner/team/invite` | 403 `PARTNER_SUSPENDED` | `controller_invitation_create`, `event_controllers_add` (nouvelle) |
+
+Événements (finition 2a, 1a, inchangé) : 17 écritures refusées par la route (403 `PARTNER_SUSPENDED`), et en base par les fonctions du § 1.1 : `DELETE /api/partner/events/*`, `DELETE /api/partner/events/*/categories/*`, `PATCH /api/partner/events/*/categories/*`, `PATCH /api/partner/events/*/invitations/*`, `POST /api/partner/events`, `POST /api/partner/events/*/cancel`, `POST /api/partner/events/*/cash-refunds/*`, `POST /api/partner/events/*/categories`, `POST /api/partner/events/*/invitations`, `POST /api/partner/events/*/invitations/*/cancel`, `POST /api/partner/events/*/promotion`, `POST /api/partner/events/*/regisseur-pin`, `POST /api/partner/events/*/tickets/*/refund`, `POST /api/partner/events/*/transition`, `POST /api/partner/upload`, `PUT /api/partner/events/*`, `PUT /api/partner/events/*/zones`.
+
+| Écriture gardée pour une fiche SUSPENDU | Raison |
+|---|---|
+| `DELETE /api/partner/halls/*` | service des salles fermé (interrupteur, 404) : à trancher à son ouverture |
+| `DELETE /api/partner/products/*` | service des produits fermé (interrupteur, 404) : à trancher à son ouverture |
+| `DELETE /api/partner/tables/*` | service des tables fermé (interrupteur, 404) : à trancher à son ouverture |
+| `DELETE /api/partner/tables/reservations/*` | service des tables fermé (interrupteur, 404) : à trancher à son ouverture |
+| `PATCH /api/partner/orders/*` | service des commandes fermé (interrupteur, 404) : à trancher à son ouverture |
+| `PATCH /api/partner/products/*` | service des produits fermé (interrupteur, 404) : à trancher à son ouverture |
+| `PATCH /api/partner/profile` | profil de la fiche (présentation, coordonnées) : pas un événement ; images contrôlées (T6) |
+| `PATCH /api/partner/tables/*` | service des tables fermé (interrupteur, 404) : à trancher à son ouverture |
+| `PATCH /api/partner/tables/reservations/*` | service des tables fermé (interrupteur, 404) : à trancher à son ouverture |
+| `POST /api/partner/activation` | période d’essai du compte (idempotente) : aucun événement, aucune équipe |
+| `POST /api/partner/documents/upload` | pièces du dossier : une fiche suspendue peut devoir compléter son dossier |
+| `POST /api/partner/dossier/complete` | complément du dossier, même raison |
+| `POST /api/partner/events/*/participants-export` | lecture envoyée en POST (export de la liste des participants) |
+| `POST /api/partner/halls` | service des salles fermé (interrupteur, 404) : à trancher à son ouverture |
+| `POST /api/partner/halls/reservations/*/status` | service des salles fermé (interrupteur, 404) : à trancher à son ouverture |
+| `POST /api/partner/products` | service des produits fermé (interrupteur, 404) : à trancher à son ouverture |
+| `POST /api/partner/products/*/status` | service des produits fermé (interrupteur, 404) : à trancher à son ouverture |
+| `POST /api/partner/register` | inscription d’une organisatrice (aucune fiche encore) |
+| `POST /api/partner/tables` | service des tables fermé (interrupteur, 404) : à trancher à son ouverture |
+| `POST /api/partner/tables/reservations` | service des tables fermé (interrupteur, 404) : à trancher à son ouverture |
+| `PUT /api/partner/halls/*` | service des salles fermé (interrupteur, 404) : à trancher à son ouverture |
+
+| Écriture de contrôle | Propriétaire d’un événement à fiche non VALIDE |
+|---|---|
+| `PATCH /api/controller/profile` | gardée : profil du contrôleur lui-même (nom) : aucun événement |
+| `POST /api/controller/counter-sale` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) |
+| `POST /api/controller/counter-sale/quote` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) |
+| `POST /api/controller/gate` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) |
+| `POST /api/controller/scan` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) |
+| `POST /api/controller/scan/guests` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) |
+| `POST /api/controller/scan/incidents` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) **(décision T1, nouveau)** |
+| `POST /api/controller/scan/lookup` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) |
+| `POST /api/controller/setup` | gardée : activation du compte d’un contrôleur (mot de passe) : son compte, aucun événement |
+| `POST /api/controller/shifts/close` | gardée : clôture de SA caisse ouverte : l’argent encaissé doit pouvoir être déclaré même après la suspension (sinon la caisse reste ouverte et le contrôleur ne peut plus être retiré) |
+| `POST /api/controller/shifts/open` | refusée, 403 `PARTNER_NOT_VALIDATED` (`ownEventFicheRefusal`) |
+
+### C.2 T2 : écart d'une caisse
+
+`POST /api/partner/shifts/[id]/validate-discrepancy`, une fois le mot de passe saisi :
+- **fiche SUSPENDU :** refus par la route (garde de la fiche), puis par `shift_discrepancy_validate` (`PARTNER_SUSPENDED`) ;
+- **admin muni de `events.write` :** l'écart est validé, journalisé `SHIFT_DISCREPANCY_VALIDATED` avec le rôle ADMIN ;
+- **admin sans la permission ou tiers :** « Caisse introuvable », comme avant.
+
+### C.3 T3 et T4 : changement de lieu
+
+Ce qui est enregistré (table `event_place_notices`, une ligne par événement, serveur seulement) :
+- la position annoncée ;
+- l'heure du départ du dernier avis de lieu ;
+- les champs de lieu retenus par la cadence, et l'heure de leur départ.
+
+| Situation | Avant | Maintenant |
+|---|---|---|
+| Repère déplacé par pas de 150 m | Personne n'est prévenu : chaque pas est mesuré depuis le précédent | Avis dès que le repère est à plus de 200 m de la position annoncée ; alerte « lieu » aux admins |
+| Aller de 300 m puis retour, dans les 10 minutes | Un SMS « change de lieu » part quand même | L'avis en attente est annulé sur tous les canaux (`NO_LONGER_RELEVANT`) ; rien ne part |
+| Allers-retours de 300 m, chaque SMS parti | 4 SMS et 4 push en moins d'une heure | Le premier part. Les suivants sont retenus jusqu'à une heure après lui et partent ensemble, si le lieu a encore changé ; un retour à la position annoncée efface la retenue |
+| Changement de date ou de titre seul | Notification dans l'application tout de suite ; SMS 10 minutes après | Inchangé |
+| Changement qui touche au lieu | Application et push tout de suite ; SMS 10 minutes après | Tout part ensemble 10 minutes après (application, push, SMS, email), ou tout de suite si le début est à moins d'une heure, sauf retenue d'une heure |
+
+La position annoncée :
+- **pose :** au passage à VALIDE (le repère validé) ; un événement validé sans repère prend son premier repère ;
+- **mise à jour :** au départ (SENT, ou UNCERTAIN : peut-être remis) de chaque SMS « change de lieu » ;
+- **pour les événements déjà validés :** la migration la pose au repère actuel, et rien n'est envoyé.
+
+L'avis retenu est libéré par l'envoyeur à chacun de ses passages (chaque minute). À ce moment :
+- le repère compte seulement s'il est encore à plus de 200 m de la position annoncée ;
+- le nom, la ville et l'adresse retenus comptent tels quels ;
+- l'avis part aux porteurs, aux numéros sans compte et aux contrôleurs, avec les valeurs actuelles.
+
+Textes exacts nouveaux :
+- **Bandeau du formulaire** (événement validé ou publié) :
+  - « Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS. » ;
+  - la première ligne devient « Description, programme, informations pratiques et affiche : modifiables librement. » (« et position » retiré : la position n'est plus libre).
+- **Résumé après enregistrement**, changement de lieu :
+  - « {n} détenteurs de billets seront prévenus à {heure}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées). » ;
+  - au singulier : « 1 détenteur de billets sera prévenu à {heure}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées). »
+- **Résumé, avis retenu :** « Le changement de lieu sera annoncé aux détenteurs de billets à {heure} : un seul avis de changement de lieu part par heure. » Seul, ou après le résumé des autres changements.
+
+### C.4 T5 : affiche
+
+**Règle.** Est accepté comme affiche un fichier du dossier `events/<id de la partenaire>/` du compartiment public, nommé `13 chiffres_8 caractères hexadécimaux.webp`. C'est le nom que donne la route de dépôt, qui réencode toujours. La règle est contrôlée à trois endroits :
+- formulaire et route (`IMAGE_ORIGIN_INVALID`) ;
+- vérification d'existence ;
+- base (`event_poster_path_ok`, appelée par `event_create`, et par `event_update` quand l'affiche change).
+
+Une affiche déjà enregistrée, renvoyée telle quelle par le formulaire, reste acceptée : modifier un autre champ d'un événement ancien ne bloque pas.
+
+**Réencodage des affiches anciennes : `scripts/reencode-posters.ts`.** À lancer une fois, après la fusion et les migrations.
+
+Ce que le script fera :
+1. **Recensement.** Il relève chaque événement dont l'affiche est un fichier de `events/<dossier>/` qui ne porte pas le nom de la route.
+2. **Pour chaque fichier, une seule fois même s'il est cité par plusieurs événements :**
+   - lecture, puis réencodage identique à la route (orientation appliquée, 1 600 px au plus, WebP 82, sans métadonnée) ;
+   - dépôt dans le même dossier, sous un nom de la route ;
+   - chaque événement qui cite encore l'ancienne adresse prend la nouvelle (`event_poster_reencoded`, comparaison puis écriture). C'est journalisé `EVENT_POSTER_REENCODED` (SYSTEM), sans alerte « affiche » aux admins ;
+   - l'ancien fichier est effacé s'il n'est plus cité nulle part (§ C.5).
+3. **Fichier absent ou illisible :** il est signalé et laissé tel quel. L'organisatrice redéposera son affiche.
+
+Comment le lancer :
+- **à blanc, par défaut :** la liste seulement, rien n'est écrit ;
+- **`--appliquer` :** pour de bon, 50 fichiers par passage ;
+- **rejouable :** un passage de plus ne trouve rien à refaire (seuls les fichiers absents sont signalés de nouveau).
+
+Contrôle avant et après (éditeur SQL du tableau de bord de Supabase) :
+```sql
+-- Affiches d'avant la finition encore citées (avant : n ; après --appliquer : seulement les fichiers absents signalés)
+SELECT count(*) AS affiches_anciennes,
+       count(DISTINCT image_url) AS fichiers
+  FROM public.events
+ WHERE image_url LIKE '%/storage/v1/object/public/public-images/events/%'
+   AND image_url !~ '/[0-9]{13}_[0-9a-f]{8}[.]webp([?#].*)?$';
+-- Journal du réencodage (après)
+SELECT count(*) FROM public.audit_logs WHERE action = 'EVENT_POSTER_REENCODED';
+```
+
+### C.5 T6 : colonnes qui citent le stockage
+
+Recherche dans tout le schéma. `tests/parcours/f2acv-stockage-cite.test.ts` relit le schéma à chaque run : une colonne nouvelle au nom d'adresse ou d'image, non lue, fait échouer le test. Toutes ces colonnes sont lues par `storage_public_citations`, donc par la purge et par l'effacement d'une affiche remplacée.
+
+| Colonne | Contenu | Refuse `events/` |
+|---|---|---|
+| `events.image_url` | affiche | non (c'est l'affiche) |
+| `events.gallery_urls` | galerie (non modifiable, servie par l'API publique) | non modifiable |
+| `public_event_state.image_url` | copie publique de l'affiche | copie |
+| `halls.images` | images d'une salle | oui (HallService) |
+| `products.images` | images d'un produit | oui (ProductService) |
+| `partners.logo_url`, `partners.cover_url` | logo, couverture du profil | oui (PATCH /api/partner/profile) |
+| `partners.id_card_url`, `partners.business_doc_url` | pièces d'avant le lot 1C | aucune écriture de l'application |
+| `users.avatar_url` | photo du compte (compartiment `avatars`) | écrite par la seule route de la photo |
+
+`partner_documents.object_path` cite le compartiment privé des pièces (`partner_documents`), jamais `public-images` : sans effet sur les affiches, elle n'est pas lue.
+
+### C.6 Remarques R1, R2, R3
+
+- **R1, recherche de lieu.** `normalizePlaceQuery` retire :
+  - le caractère nul et les caractères de contrôle (C0, suppression, C1) ; la tabulation et les retours à la ligne deviennent des espaces ;
+  - les caractères invisibles de mise en forme (sens de lecture, largeur nulle).
+
+  Le service ne reçoit plus `%00`, et la réponse est de nouveau gardée (l'écriture du cache échouait sur le nul). Une recherche indisponible (503 : service en panne, injoignable, ou attente trop longue) rend son unité de quota.
+- **R2, `ProductService`.** Création et modification passent par une liste blanche stricte : `category_id`, `name`, `description`, `price`, `is_daily_special`, `daily_special_date`, `stock_quantity`, `is_stock_managed`, `images`.
+  - Tout autre champ est refusé (400 `FIELD_NOT_EDITABLE`), dont `partner_id`, `status`, `id` et `created_at`.
+  - La partenaire est toujours celle de la session.
+  - Le statut prend sa valeur par défaut à la création et ne change que par la route du statut (valeur contrôlée).
+  - Une catégorie d'une autre organisatrice est refusée ; le produit d'une autre donne 404.
+  - L'écran des produits n'envoie que des champs de la liste : il n'est pas touché.
+- **R3.** § 11 corrigé : seule la fiche SUSPENDU cherche un lieu. EN_ATTENTE et REJETE reçoivent 403 `PARTNER_NOT_VALIDATED`.
+
+### C.7 Migrations 20261116000004 à 20261116000008 (à appliquer après les trois premières)
+
+| Migration | Contenu | Donnée écrite |
+|---|---|---|
+| `…04_f2acv_equipe_suspendue` | `partner_team_owner_suspended` ; 9 fonctions d'équipe recopiées, fiche contrôlée en tête ; 3 fonctions nouvelles ; `atomic_partner_remove_controller` à 3 paramètres | aucune |
+| `…05_f2acv_ecart_caisse` | `shift_discrepancy_validate` : fiche SUSPENDU refusée, admin `events.write` admis | aucune |
+| `…06_f2acv_avis_de_lieu` | table `event_place_notices` et 2 déclencheurs ; `event_change_notify`, `event_place_notice_revert`, `event_place_notices_release` ; `event_update` et l'alerte des admins recopiées | une ligne par événement validé avec repère (position annoncée = repère actuel) |
+| `…07_f2acv_affiche_format` | `event_poster_path_ok` stricte ; `event_poster_reencoded` ; alerte des admins recopiée (réencodage sans alerte) | aucune |
+| `…08_f2acv_stockage_cite` | `storage_public_citations` | aucune |
+
+Contrôles (éditeur SQL), avant puis après :
+```sql
+-- A. Avant : événements validés avec repère (ce que la migration 06 remplira)
+SELECT count(*) FROM public.events WHERE status::text IN ('VALIDE','PUBLIE','SUSPENDU') AND latitude IS NOT NULL AND longitude IS NOT NULL;
+-- B. Après : même nombre de positions annoncées
+SELECT count(*) FROM public.event_place_notices WHERE announced_latitude IS NOT NULL;
+-- C. Après : fonctions et déclencheurs
+SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN (
+  'partner_team_owner_suspended','event_controller_entry_point_set','event_controllers_remove','event_controllers_add',
+  'event_change_notify','event_place_notice_revert','event_place_notices_release','event_poster_reencoded','storage_public_citations');  -- 9
+SELECT tgname FROM pg_trigger WHERE tgname IN ('trg_events_place_announce','trg_notification_outbox_place_sent') ORDER BY 1;  -- 2 lignes
+SELECT pg_get_function_identity_arguments('public.atomic_partner_remove_controller'::regproc);  -- p_partner_id uuid, p_controller_id uuid, p_actor_id uuid
+-- D. Après : affiche, règle stricte
+SELECT public.event_poster_path_ok('https://x/storage/v1/object/public/public-images/events/00000000-0000-4000-8000-000000000000/ancienne.jpg', '00000000-0000-4000-8000-000000000000');  -- false
+SELECT public.event_poster_path_ok('https://x/storage/v1/object/public/public-images/events/00000000-0000-4000-8000-000000000000/1794809026783_1a2b3c4d.webp', '00000000-0000-4000-8000-000000000000');  -- true
+-- E. Après : adresses citées lues par la purge
+SELECT jsonb_array_length(public.storage_public_citations());
+```
+
+### C.8 Runs
+
+| Run | Commit | Contenu | Résultat |
+|---|---|---|---|
+| 235 | `768dc956` | « avant » : finition 2a et suites de la contre-vérification (même commit que la tête après l'avance rapide) | 425 suites sur 428. Rouges : exactement `cvf2a-1`, `cvf2a-2`, `cvf2a-4` (T1 à T6). e2e vert |
+| 236 | `bfbd6b41` | T1 à T4 seulement | 428 sur 432. `cvf2a-1` (T1, T2) et `cvf2a-4` (T3, T4) **verts**. `cvf2a-2` rouge, attendu : T5 et T6 n'y étaient pas encore. Trois échecs de ma part : voir « Erreurs ». e2e vert, budgets JS inchangés |
+| 237 | `11da84ee` (branche `finition-2a/cv-rouges`) | premier essai de la preuve des rouges : les 8 suites nouvelles sur `768dc956`, sans aucun correctif | 387 sur 436. Les 11 rouges attendus le sont pour la bonne raison : `cvf2a-1`, `-2`, `-4` et les 8 suites. Exemples : petits pas sans alerte `[0,0,0,0]`, `%00` envoyé au service, fonctions absentes, écritures de l'équipe et validation d'écart acceptées. Mais **38 suites étrangères en échec**, toutes par l'invariant x13, à cause d'une ligne forgée par mon test T6 (voir « Erreurs », 1). Preuve refaite au run 239 |
+| 238 | `ad216558` | tous les points | **435 sur 436** : toutes les suites `cvf2a-*` et `f2acv-*` vertes. En échec : l'ancien test des commandes (`tests/partner-orders-m9`, test 4), et l'e2e (fumée étape 11, terrain, recette acte 10), pour une seule cause chacun : voir « Erreurs », 5 et 6. Captures toutes faites (465, 55 ignorées comme au run 235) |
+| 239 | `7dfea8eb` (branche `finition-2a/cv-rouges`) | preuve des rouges refaite (mêmes 8 fichiers que la branche livrée) | **425 sur 436 : exactement les 11 rouges attendus**, `cvf2a-1`, `cvf2a-2`, `cvf2a-4` et les 8 suites `f2acv-*`. Aucun autre échec, invariants à 0, e2e vert. Sorties brutes ci-dessous |
+| 240 | `b2445ce1` | « après » | **436 sur 436, vert.** 31 suites d'audit vertes, invariants à 0. e2e vert : captures 465, 55 ignorées comme au run 235 ; fumée, terrain, recette. Budgets JS octet pour octet ceux de `main` |
+
+Sorties brutes des rouges, run 239 (code d'avant correctif ; extraits des journaux `test-logs/tests__parcours__f2acv-*.log`) :
+```
+== f2acv-ecritures-fiche
+[F2ACV-T1] écritures directes de l'équipe : app/api/partner/team/[eventId]/route.ts : event_controllers.delete ; app/api/partner/team/all/route.ts : event_controllers.delete ; app/api/partner/team/e
+== f2acv-equipe-suspendue
+[F2ACV-T1] event_controller_set_cash (fiche SUSPENDU) → {"ok":true,"changed":true,"event_id":"05befe36-9878-4fdd-9055-926a092f95f7","open_shift":false,"assignment_id":"254b584f-51e8-4824-8d6a-ecf004
+[F2ACV-T1] event_controller_entry_point_set (fiche SUSPENDU) → {"ok":false,"code":"SQL_ERROR","message":"PGRST202 Could not find the function public.event_controller_entry_point_set(p) in the schema
+[F2ACV-T1] event_controllers_add (fiche SUSPENDU) → {"ok":false,"code":"SQL_ERROR","message":"PGRST202 Could not find the function public.event_controllers_add(p) in the schema cache"}
+[F2ACV-T1] controller_invitation_resend (fiche SUSPENDU) → {"ok":true,"phone":"+221772972585","expires_at":"2026-11-19T13:29:34.754456+00:00","send_count":2,"invitation_id":"6b7f8f39-71cd-4dae-be5a-
+[F2ACV-T1] controller_invitation_cancel (fiche SUSPENDU) → {"ok":true,"status":"CANCELLED","invitation_id":"6b7f8f39-71cd-4dae-be5a-d13bbbd3ecbb"}
+== f2acv-ecart-caisse
+[F2ACV-T2] POST /api/partner/shifts/[id]/validate-discrepancy (fiche SUSPENDU) → HTTP 200 {"ok":true,"shift_id":"84d422a2-8599-4b7c-afbd-903baf931982","discrepancy":500,"validated_at":"2026-11-16T13
+[F2ACV-T2] shift_discrepancy_validate (fiche SUSPENDU) → {"ok":false,"code":"ALREADY_VALIDATED","message":"L'écart de cette caisse est déjà validé."}
+[F2ACV-T2] POST validate-discrepancy (admin events.write, fiche SUSPENDU) → HTTP 404 {"error":"Caisse introuvable.","code":"SHIFT_NOT_FOUND"}
+== f2acv-avis-de-lieu
+[F2ACV-T34] alertes « lieu » après chaque pas de 150 m : [0,0,0,0]
+== f2acv-affiche-format
+[F2ACV-T5] PUT affiche d'avant la finition → HTTP 200 {"success":true,"event":{"id":"1bf27615-9042-4e9b-a5e0-fec7669414be","city":"Dakar","slug":null,"title":"TEST Cycle f2acv-affiche-route 17948357
+[F2ACV-T5] event_update nom libre → {"ok":true,"event":{"id":"40e13ae1-71f1-44a8-8ed9-7ca49914a299","city":"Dakar","slug":null,"title":"TEST Cycle f2acv-affiche-base 1794835762479","status":"BROUILL
+      error: "Cannot find module '/home/runner/work/event-village/event-village/lib/events/poster-reencode' imported from /home/runner/work/event-village/event-village/tests/parcours/f2acv-affiche-for
+== f2acv-stockage-cite
+      error: 'function "public.storage_public_citations()" does not exist'
+[F2ACV-T6] après la purge : {"photo":false,"piece":false,"orpheline":false}
+[F2ACV-T6] PATCH profile logo du dossier events/ → HTTP 200 {"success":true,"partner":{"id":"dd791a12-b2a6-486b-b7bd-459d044eb089","company_name":"TEST Finance f2acv-stockage 1794835782600","commerc
+[F2ACV-T6] PATCH profile couverture du dossier events/ → HTTP 200 {"success":true,"partner":{"id":"dd791a12-b2a6-486b-b7bd-459d044eb089","company_name":"TEST Finance f2acv-stockage 1794835782600","c
+[F2ACV-T6] PATCH profile logo du dossier events/ encodé → HTTP 200 {"success":true,"partner":{"id":"dd791a12-b2a6-486b-b7bd-459d044eb089","company_name":"TEST Finance f2acv-stockage 1794835782600",
+== f2acv-recherche
+[F2ACV-R1] recherche avec un nul → HTTP 200 {"results":[{"label":"Stade\u0000 Demba\u0007 Diop 36167cfc, Dakar, Sénégal","latitude":14.7,"longitude":-17.45}],"attribution":"© contributeurs OpenSt
+      error: 'caractère de contrôle envoyé au service : /search?q=Stade%00+Demba%07+Diop+36167cfc&format=jsonv2&countrycodes=sn&limit=5&accept-language=fr'
+[F2ACV-R1] quota 1 : indisponible → 503 ; puis → 429 ; puis → 429
+== f2acv-produits
+[F2ACV-R2] création avec partner_id d’une autre → accepté
+[F2ACV-R2] création avec statut → accepté
+[F2ACV-R2] création avec identifiant → accepté
+[F2ACV-R2] création avec date de création → accepté
+[F2ACV-R2] modification avec partner_id → accepté
+```
+
+### C.9 Tests modifiés, et pourquoi
+
+| Fichier | Changement | Raison |
+|---|---|---|
+| `tests/audit/cvf2a-2-affiche.test.ts` (e, deux essais) | Logo et couverture posés directement en base, au lieu de `PATCH /api/partner/profile` | Ta décision. Le profil refuse désormais une adresse du dossier `events/` (T6), donc la précondition « le profil accepte cette image » ne pouvait plus tenir. La donnée ancienne est posée en base, comme la salle et le produit le sont déjà dans ce même test. Les vérifications d'attaque sont inchangées : fichier gardé au remplacement et à la purge |
+| `tests/parcours/cycle-helpers.ts` (`posterUrl`) | Nom par défaut au format de la route (`horodatage_8 caractères.webp`) au lieu de `<uuid>.png` | T5 : seul ce nom est accepté comme affiche. L'aide ne donne qu'une adresse, sans fichier, comme avant |
+| `tests/schema/migration-finition2a-rejouable.test.ts` | Liste des migrations 20261116… complétée (04 à 08) | Le test fige la liste exacte. Les cinq nouvelles y sont donc aussi rejouées deux fois en transaction annulée |
+| `tests/parcours/notif-migration.test.ts` (inventaire K1) | Envoi E7-E8 cherché dans `event_change_notify` | Le code de l'envoi a été déplacé de `event_update` dans cette fonction |
+| `tests/partner-orders-m9.test.ts` (test 4) | Produit créé puis suspendu par `setProductStatus`, au lieu de `status: 'SUSPENDU'` dans le corps de la création | R2 : le statut n'est jamais pris du corps. La vérification (commande refusée pour un produit suspendu) est inchangée |
+| `e2e/support/service.ts`, `scripts/e2e/terrain-setup.ts` | Aide `routePosterOfPartner` : copie de la plus ancienne affiche de la partenaire, réencodée en WebP sous un nom de la route | T5 : les montages e2e créaient des événements par `event_create` avec l'affiche de la graine (`fixture-<slug>.png`), refusée désormais. Même image sur les captures |
+
+Suites nouvelles : `f2acv-ecritures-fiche`, `f2acv-equipe-suspendue`, `f2acv-ecart-caisse`, `f2acv-avis-de-lieu`, `f2acv-affiche-format`, `f2acv-stockage-cite`, `f2acv-recherche`, `f2acv-produits`.
+
+### C.10 Captures avant et après
+
+Un seul écran change : le bandeau du formulaire d'un événement validé ou publié (capture `partenaire-edition`).
+- **Avant :** run 235. On y lit « Description, programme, informations pratiques, affiche et position : modifiables librement. »
+- **Après :** runs 238 et 240. Première ligne sans « et position », puis la ligne « Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS. »
+- **Formats :** 390 et 1 440 px, clair et sombre.
+
+J'ai relu les quatre captures « après ». Le bandeau garde ses couleurs (jetons du système de design) et se lit en clair comme en sombre. À 390 px, la nouvelle ligne tient sur trois lignes, sans défilement horizontal. Aucun mot technique.
+
+Le résumé affiché après l'enregistrement (heure de l'avis de lieu) n'est pas capturé. Il n'apparaît qu'après un enregistrement, et les captures n'écrivent jamais en base. Ses textes exacts sont au § C.3.
+
+### C.11 Essais pour un non-développeur (event-village-dev, après le déploiement)
+
+1. **Équipe d'une fiche suspendue (T1).**
+   1. L'admin suspend la fiche d'une organisatrice de test.
+   2. Connecté avec ce compte, dans « Équipe », change la porte d'un contrôleur.
+   3. Attendu : « Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support. » suivi du contact ; rien ne change.
+2. **Écart de caisse (T2).**
+   1. Même fiche suspendue, onglet « Caisse » du pilotage, « Valider l'écart » : même refus.
+   2. Connecté en admin muni de « Gérer les événements », sur la même page : l'écart est validé.
+3. **Changement de lieu (T3, T4).** Sur un événement publié, avec un billet de test à ton numéro :
+   1. déplace le repère deux fois de 150 m dans la même direction : 10 minutes après, un seul SMS « change de lieu » ;
+   2. déplace-le de 300 m puis remets-le à sa place avant 10 minutes : aucun SMS ;
+   3. déplace-le encore moins d'une heure après un SMS : le formulaire dit « Le changement de lieu sera annoncé aux détenteurs de billets à {heure} : un seul avis de changement de lieu part par heure. », et le SMS arrive à cette heure-là.
+4. **Bandeau (T3).** Ouvre « Modifier » sur un événement publié : le bandeau dit « Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS. »
+5. **Affiches anciennes (T5).** Lance le script à blanc (§ C.12) : il liste les affiches qu'il réencoderait.
+
+### C.12 À faire de ton côté (complète le § 10)
+
+1. **Décider la fusion** de la finition 2a, avec ces correctifs.
+2. **Migrations.** Après la fusion, appliquer sur event-village-dev les huit migrations `20261116000001` à `…08`, dans l'ordre : contrôles du § 5 pour 01 à 03, du § C.7 pour 04 à 08.
+3. **Réencodage des affiches anciennes**, après le déploiement, avec les variables du projet chargées dans le terminal :
+   1. `npx tsx scripts/reencode-posters.ts` (à blanc) : relire la liste ;
+   2. puis `npx tsx scripts/reencode-posters.ts --appliquer`, à relancer jusqu'à « Restants pour un passage suivant : 0 » ;
+   3. contrôle SQL avant et après au § C.4.
+4. **Décisions à trancher :**
+   - écritures des services fermés (salles, produits, commandes, tables) pour une fiche suspendue, à leur ouverture ;
+   - cadence d'une heure même à moins d'une heure du début (§ C.3), ou passage immédiat dans ce cas ;
+   - même cadence pour les SMS « change de date » ? Non demandé ; un aller-retour de date refait une rafale.
+
+La suite de ce rapport, à partir de « À lire en premier », est celle de la finition 2a (15 et 16 novembre). Elle est inchangée, hormis le § 11, corrigé pour R3.
+
+---
+
 ## À lire en premier
 
 **La sécurité d'abord (§ 1).** Deux failles corrigées en premier, chacune avec un test rouge puis vert :

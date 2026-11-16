@@ -29,3 +29,17 @@ d'où elle vient et pourquoi elle attend.
 | Position demandée aussi à la publication des événements validés avant la finition 2a (s'il en reste sans repère). | La règle porte sur la soumission ; un événement déjà validé sans repère reste modifiable et publiable. Contrôle de la base au § « À faire de ton côté » du rapport. | Finition 2a, 3 |
 | Exemples des champs « Téléphone de contact » et « Stationnement » de l'étape Accès (« 77 123 45 67 », « Parking gratuit sur place ») : écrits comme des valeurs, ils peuvent passer pour déjà remplis. | Même ambiguïté que les coordonnées, corrigée pour celles-ci seulement (« Par exemple : … ») ; ces deux champs viennent du lot 9 ter et sortent du périmètre de la finition. | Relecture des captures de la finition 2a |
 | Mention « Leaflet » au pied des cartes (« Leaflet \| © contributeurs OpenStreetMap »). | Choix du lot 8, sur toutes les cartes ; nom de la bibliothèque, donc mot technique. À retirer sur décision (seule la mention OpenStreetMap est exigée). | Relecture des captures de la finition 2a |
+
+## Correctifs de la contre-vérification de la finition 2a
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Écritures des salles, produits, commandes et tables d'une fiche SUSPENDU. | Services fermés par interrupteur (404) : gardées aujourd'hui, à trancher à leur ouverture (une fiche suspendue peut-elle encore vendre ou traiter une commande ?). | Inventaire des écritures, correctif T1 |
+| Cadence d'une heure aussi pour les SMS « change de date ». | Non demandée : un aller-retour de date après chaque SMS refait une rafale « change de date ». | Correctif T4 |
+| Second changement de lieu dans l'heure qui précède le début. | La cadence l'emporte : l'avis attend la fin de l'heure. À décider : laisser partir tout de suite quand le début est proche. | Correctif T4 |
+| Avis de lieu des contrôleurs dans l'application. | Toujours immédiat, comme avant (leurs SMS et emails suivent la fenêtre et l'annulation) : à regrouper comme pour les détenteurs. | Correctif T4 |
+| Nom, ville et adresse : pas de « dernière valeur annoncée ». | Seul le repère en a une (consigne). Un aller-retour du nom pendant la retenue envoie un avis du nom actuel, déjà connu des détenteurs. | Correctif T4 |
+| Galerie des événements (`gallery_urls`) non réencodée. | Le script réencode les affiches. La galerie n'est ni modifiable ni affichée, mais l'API publique la sert : à vider ou réencoder. | Correctif T5 |
+| `event_poster_path_ok` accepte tout hôte devant le chemin du stockage. | La route impose l'adresse du stockage du projet ; la base ne connaît pas cette adresse. | Remarque de la contre-vérification |
+| `controller_invitation_create` ne vérifie pas que l'auteur possède la fiche. | Exécutable par le seul compte de service ; la route le vérifie. La fiche suspendue y est désormais refusée en tête (T1). | Remarque de la contre-vérification |
+| Purge des affiches bornée à 1 000 dossiers et 1 000 fichiers par dossier. | Au-delà, des orphelines restent : un coût de stockage, pas un risque d'effacement. | Remarque de la contre-vérification |
