@@ -244,16 +244,21 @@ describe('1b — admin_permissions_set : auteur SUPERADMIN actif, cible lue dans
         }
     });
 
-    test('cible SUPERADMIN dans user_roles (ancienne colonne users.role restée CLIENT) : refusée, rien d’écrit (rouge)', async () => {
+    // Run 241 : la promotion recalcule users.role (déclencheurs de 20261115000014) ; la colonne désynchronisée est donc
+    // fabriquée dans une transaction annulée (précondition corrigée, signalée au rapport).
+    test('cible SUPERADMIN dans user_roles dont l’ancienne colonne users.role dit CLIENT : refusée, rien d’écrit (transaction annulée) (rouge)', async () => {
         const otherSuper = await newAdmin('f3a-super-cible', [], { role: 'SUPERADMIN' });
-        const { data: u, error } = await service.from('users').select('role').eq('id', otherSuper.userId).single();
-        assert.equal(error, null, error?.message);
-        assert.notEqual(u.role, 'SUPERADMIN', `précondition : users.role de la cible n’est pas SUPERADMIN (${u.role})`);
-        const r = await setPermissions(superadmin.userId, otherSuper.userId, ['users.read']);
-        assert.equal(r.ok, false, `droits écrits pour un SUPERADMIN : ${JSON.stringify(r)}`);
-        assert.equal(r.code, 'TARGET_IS_SUPERADMIN', JSON.stringify(r));
+        await inRolledBackTransaction(async (c) => {
+            await c.query(`UPDATE public.users SET role = 'CLIENT' WHERE id = $1`, [otherSuper.userId]);
+            const { rows } = await c.query<{ r: Row }>(`SELECT public.admin_permissions_set($1::jsonb) AS r`,
+                [JSON.stringify({ admin_id: otherSuper.userId, permissions: ['users.read'], actor_id: superadmin.userId })]);
+            const r = rows[0].r;
+            assert.equal(r.ok, false, `droits écrits pour un SUPERADMIN (users.role = CLIENT) : ${JSON.stringify(r)}`);
+            assert.equal(r.code, 'TARGET_IS_SUPERADMIN', JSON.stringify(r));
+            const { rows: perms } = await c.query(`SELECT permission FROM public.admin_permissions WHERE user_id = $1`, [otherSuper.userId]);
+            assert.deepEqual(perms, [], 'droits écrits dans la transaction');
+        });
         assert.deepEqual(await permissionsOf(otherSuper.userId), []);
-        assert.equal(await auditCount('UPDATE_PERMISSIONS', otherSuper.userId), 0, 'journal écrit malgré le refus');
     });
 
     test('cible sans rôle ADMIN (client) : refusée, rien d’écrit ; la route répond 400 (rouge)', async () => {
