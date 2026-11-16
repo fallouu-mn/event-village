@@ -252,8 +252,9 @@ Mode rapide pendant le travail (ligne `ci-rapide:` du commit : typecheck, lint, 
 | 256 | `4cc4b3b81` | C, D1, D2 (rapide, 8 suites) | 7/8 : `notif-modeles` refuse le bouton « Ouvrir l'événement » (contrat G4) ; bouton commun remis. |
 | 257 | `543b617da` | D5 cadence (rapide, 16 suites) | Vérification **verte**. La publication des journaux a échoué : course avec le run 258 de la 3a, fini à la même seconde. |
 | 261 | `d0ada3ebf` | D3, D4, fusion de main, ajout (points 1 à 3) (rapide, 29 suites) | **29/29**, dont 5 passages chacune pour :<br>• `cvf2a-3-recherche` : écarts entre appels de 1 296 à 1 303 ms ;<br>• `notif-envoyeur` : vidage en 3 passes à chaque fois (2 516 → 1 516 → 516 → 0, dont 0 ligne réservée sur 1 000 examinées à la 1re passe : l'ancien vidage se serait arrêté là).<br>`f2b-recherche-cadence` : 1 300 ms malgré la réservation revenue 450 ms en retard. |
-| RUN_ROUGE | `4beb4d668` (branche `finition-2b/rouges`) | Tests seuls sur main | RESULTAT_ROUGE |
-| RUN_COMPLET | RUN_COMPLET_SHA | Run complet (typecheck, lint, toutes les suites, build, poids JavaScript, e2e et captures) | RESULTAT_COMPLET |
+| 262 | `4beb4d668` (branche `finition-2b/rouges`) | Tests seuls sur main (`fdaa6c365`), sans aucun correctif | **0/19, chaque suite rouge pour la bonne raison** :<br>• code absent (modules, routes, fonctions : `PGRST202` pour r3, aucune migration `20261119…`) ;<br>• anciens textes à l'écran ; suppression qui vide la zone (HTTP 200) ; champs `scan_color` et `zones` refusés ;<br>• `f2b-recherche-cadence` : 646 ms entre deux appels ;<br>• `notif-envoyeur` : avec l'ancien vidage et la file d'essai, le passage de la route ne réserve pas la ligne du test (cas du run 252). |
+| 263 | `c879fba9e` | Premier run complet | Rouge, deux erreurs de ma part :<br>• suites 457/458 : `recette-matrice`, car mes ajouts dans `e2e/recette.spec.ts` et `zones-scan` décalaient les lignes citées par `docs/recette-billetterie.md` (recalées) ;<br>• e2e 517 réussis, 4 en échec : la capture `partenaire-creation-billets` cherchait la case « Billets », dont le nom accessible est « Billetterie » (corrigé).<br>Autres corrections après examen des captures :<br>• l'étape 1 s'affichait « Informati… » à 390 px : libellé court « Infos » sous 1 024 px ;<br>• fenêtre « Prévenir » : « 12 détenteurs seront prévenus par SMS à 21:40. ». |
+| RUN_COMPLET | RUN_COMPLET_SHA | Run complet après corrections (typecheck, lint, toutes les suites, build, poids JavaScript, e2e et captures) | RESULTAT_COMPLET |
 
 Remarque sur la recherche de lieu : sur 18 recherches simultanées (cvf2a-3), 3 sont servies et 15 reçoivent « Recherche indisponible pour le moment » (attente admise de 4 s). C'était 4 sur 18 avec l'ancien espacement. Une recherche isolée n'attend pas.
 
@@ -277,6 +278,8 @@ Remarque sur la recherche de lieu : sur 18 recherches simultanées (cvf2a-3), 3 
 | `notif-envoyeur` | Vidage de la file par comptage des lignes dues, file d'essai de 2 500 lignes | Ajout, point 2 ; assertions inchangées |
 | `design-files` | `ScanColorPicker`, `ZoneListEditor`, `EntryControlStep`, `EntryControlEditor`, `EventReview` déclarés | Fichiers nouveaux soumis aux règles du système de design |
 | `e2e/recette.spec.ts`, `e2e/fumee.spec.ts`, `e2e/support/screens.ts` | Création par les 5 étapes et « Vérifier » ; zones par `?etape=controle` ; radio « Or » ; captures nouvelles | Parcours de création changé (B, C) |
+
+Documents dont les numéros de ligne cités ont été recalés : `docs/recette-billetterie.md` (contrôlé par `recette-matrice`) et `docs/parcours-evenement-complet.md` (correspondances exactes seulement ; voir l'après-lancement).
 
 `notif-modeles` est inchangé. Au run 256, il a refusé mon bouton « Ouvrir l'événement » : le message de validation garde le bouton commun « Ouvrir Event Village » (contrat G4).
 
