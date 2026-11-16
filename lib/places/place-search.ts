@@ -44,9 +44,22 @@ export class PlaceSearchUnavailable extends Error {
     }
 }
 
-/** Recherche saisie, espaces ramenés à un seul (ce qui est envoyé au service). */
+/**
+ * Recherche saisie, espaces ramenés à un seul (ce qui est envoyé au service). Correctifs de la contre-vérification de la
+ * finition 2a (R1) : caractère nul et caractères de contrôle retirés (C0, suppression, C1 ; tabulation et retours à la
+ * ligne deviennent des espaces), ainsi que les caractères invisibles de mise en forme (sens de lecture, largeur nulle) :
+ * ils n'ont rien à faire dans un nom de lieu, et le nul empêchait de garder la réponse.
+ */
 export function normalizePlaceQuery(raw: string): string {
-    return raw.replace(/\s+/g, ' ').trim();
+    let out = '';
+    for (const ch of raw) {
+        const c = ch.codePointAt(0) ?? 0;
+        if (c >= 0x09 && c <= 0x0d) out += ' ';
+        else if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) continue;
+        else if ((c >= 0x200b && c <= 0x200f) || (c >= 0x202a && c <= 0x202e) || (c >= 0x2060 && c <= 0x2069) || c === 0xfeff) continue;
+        else out += ch;
+    }
+    return out.replace(/\s+/g, ' ').trim();
 }
 
 /** Clé de la réponse gardée : sans accents ni casse (« Thiès » et « THIES » partagent la même réponse). */

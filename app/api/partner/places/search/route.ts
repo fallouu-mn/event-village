@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
-import { reserveQuota } from '@/lib/security/quota';
+import { releaseQuota, reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
 import {
     PLACE_ATTRIBUTION,
@@ -17,7 +17,9 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/partner/places/search?q=… — finition 2a (3) : recherche de lieu de l'étape Accès, par le serveur.
  * Session d'organisateur exigée (401 sans session, 403 pour un autre compte) ; recherche de 3 à 120 caractères (400) ;
- * quota par compte et par heure (429, PLACE_SEARCHES_PER_ACCOUNT_HOUR), compté à chaque recherche ; réponse gardée,
+ * quota par compte et par heure (429, PLACE_SEARCHES_PER_ACCOUNT_HOUR), compté à chaque recherche servie (correctifs de la
+ * contre-vérification, R1 : une recherche indisponible, 503, rend son unité ; caractère nul et caractères de contrôle
+ * retirés de la recherche, normalizePlaceQuery) ; réponse gardée,
  * une requête par seconde au plus vers le service (lib/places/place-search.ts). Réponse : `{ results: [{ label,
  * latitude, longitude }] (5 au plus, au Sénégal), attribution }` ; service indisponible : 503 avec le texte à montrer.
  */
@@ -50,6 +52,12 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ results, attribution: PLACE_ATTRIBUTION }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
         console.warn(`[places] recherche indisponible pour ${user.id} :`, err instanceof Error ? err.message : String(err));
+        // Correctifs de la contre-vérification de la finition 2a (R1) : une recherche indisponible ne compte pas dans le quota
+        const released = await releaseQuota(
+            [{ scope: 'place_search', bucket: user.id, windowSecs: 3600 }],
+            'recherche de lieu indisponible, aucune réponse donnée',
+        );
+        if (!released.ok) console.error(`[places] unité de quota non rendue pour ${user.id} : ${released.message}`);
         return NextResponse.json({ error: PLACE_SEARCH_UNAVAILABLE, code: 'PLACE_SEARCH_UNAVAILABLE', attribution: PLACE_ATTRIBUTION }, { status: 503 });
     }
 }
