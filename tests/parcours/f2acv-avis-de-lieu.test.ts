@@ -181,7 +181,7 @@ describe('d. même cadence pour le nom du lieu', () => {
         const again = await move(ev.eventId, { location: 'Centre culturel de Pikine' });
         console.log(`[F2ACV-T34] second changement du nom du lieu → ${show(again).slice(0, 260)}`);
         assert.equal(again.body.place_notice_held, true, show(again));
-        assert.deepEqual(again.body.changed_fields, [], show(again));
+        assert.equal(again.body.notified_holders, 0, `personne n'est prévenu tout de suite : ${show(again)}`);
         const rows = await rowsOf(ev.eventId, holder.userId);
         assert.deepEqual(rows.filter((r) => r.status === 'PENDING').map((r) => r.channel), [], brief(rows));
         assert.equal(rows.filter((r) => r.channel === 'SMS').length, 1, brief(rows));
