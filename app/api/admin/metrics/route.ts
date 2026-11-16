@@ -23,11 +23,13 @@ async function countOf(label: string, query: PromiseLike<{ count: number | null;
 
 /**
  * GET /api/admin/metrics
- * KPIs agrégés depuis Supabase (CDC V3, lot 3 contrat G) et derniers journaux d'audit.
+ * KPIs agrégés depuis Supabase (CDC V3, lot 3 contrat G).
  *  - Volume et revenu Event Village : finance_platform_revenue, paiements plateforme uniquement
  *    (is_platform_payment = true ; espèces et paiements directs exclus, §76) ; revenu net EV =
  *    Σ (net − part annulée par les remboursements). Aucun taux appliqué ici.
  *  - Comptages par requêtes HEAD exactes (pas de troncature à 1 000 lignes).
+ * Finition 3a (1a) : plus aucune ligne du journal d'audit dans la réponse (champ recentAuditLogs retiré) : le journal est
+ * réservé au SUPERADMIN (GET /api/admin/audit) alors que cette route ne demande que statistics.read.
  */
 export async function GET(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'statistics.read' });
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
         const [
             totalPartners, pendingPartners, validatedPartners, rejectedPartners,
             totalUsers, clientsCount, controllersCount, adminsCount, activeAmbassadors,
-            totalTickets, totalCommissions, revenueRes, auditLogsRes,
+            totalTickets, totalCommissions, revenueRes,
         ] = await Promise.all([
             countOf('partenaires', supabase.from('partners').select('id', head)),
             countOf('partenaires en attente', supabase.from('partners').select('id', head).eq('status', 'EN_ATTENTE')),
@@ -68,15 +70,10 @@ export async function GET(req: NextRequest) {
             countOf('billets', supabase.from('tickets').select('id', head)),
             sumCommissions(),
             supabase.rpc('finance_platform_revenue', { p_from: null, p_to: null }),
-            supabase.from('audit_logs')
-                .select('id, action, object_type, user_role, created_at, user_id')
-                .order('created_at', { ascending: false })
-                .limit(10),
         ]);
 
         const revenue = ensure('revenu Event Village', revenueRes).data as Record<string, unknown> | null;
         if (!revenue) throw new Error('Lecture impossible (revenu Event Village) : réponse vide');
-        const auditLogs = ensure('journal d’audit', auditLogsRes).data ?? [];
 
         return NextResponse.json({
             success: true,
@@ -100,7 +97,6 @@ export async function GET(req: NextRequest) {
                 activeAmbassadors,
                 totalTickets,
             },
-            recentAuditLogs: auditLogs,
             configWarning: null,
         });
     } catch (err: unknown) {
