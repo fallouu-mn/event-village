@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronLeft, ChevronRight, Lock, Plus, Save, Trash2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Lock, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -23,9 +23,12 @@ import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
 // Types seulement (effacés à la compilation) : la carte reste chargée à la demande (next/dynamic)
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
-import { formatInteger, formatTime } from '@/lib/format';
+import { formatEventDateTime, formatInteger, formatShortDate, formatTime } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
-import { proposeScanColor, type ScanCategoryColor } from '@/lib/scan/scan-result';
+import { isScanCategoryColor, proposeScanColor, SCAN_CATEGORY_COLORS, ZONE_KIND_LABELS, type ScanCategoryColor } from '@/lib/scan/scan-result';
+import { submissionMissing } from '@/lib/events/submission-check';
+import { clearDraft, readDraft, writeDraft, type LocalDraft } from '@/lib/events/local-draft';
+import { EventReview, type ReviewData } from './EventReview';
 import { EntryControlStep } from './EntryControlStep';
 import { EntryControlEditor } from './EntryControlEditor';
 import { MAX_ZONES, type ZoneDraft } from './ZoneListEditor';
@@ -97,6 +100,85 @@ const STEPS: Array<{ id: StepId; label: string; heading: string }> = [
 
 /** Finition 2b (B) : préfixe des champs de l'étape « Contrôle à l'entrée » (zones, portes, couleurs). */
 const ZONES_PREFIX = 'ev-zones';
+
+/** Finition 2b (C, E-24) : écran « Vérifier avant d'envoyer », après les 5 étapes. */
+type ScreenId = StepId | 'verifier';
+const SCREENS: Array<{ id: ScreenId; label: string; heading: string }> = [
+    ...STEPS,
+    { id: 'verifier', label: 'Vérifier', heading: 'Vérifier avant d’envoyer' },
+];
+const SCREEN_IDS = new Set<string>(SCREENS.map((s) => s.id));
+
+/** Finition 2b (C) : brouillon gardé dans le navigateur (valeurs ; création : catégories et zones ; écran). */
+interface FormDraft {
+    values: EventValues;
+    categories: CategoryDraft[];
+    zones: ZoneDraft[] | null;
+    step: ScreenId;
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+
+/**
+ * Finition 2b (C) : contenu d'un brouillon contrôlé champ par champ avant toute reprise (lecture protégée) ; toute autre
+ * forme : refusé (le brouillon est alors effacé). Les clés locales sont refaites à la reprise.
+ */
+function validFormDraft(data: unknown, mode: 'create' | 'edit'): FormDraft | null {
+    if (!isObj(data) || !isObj(data.values) || !SCREEN_IDS.has(String(data.step))) return null;
+    const v = data.values;
+    const textKeys = ['title', 'description', 'image_url', 'start_date', 'start_time', 'end_date', 'end_time', 'location', 'city', 'capacity'] as const;
+    if (!textKeys.every((k) => isText(v[k], 6000))) return null;
+    if (!(v.category === '' || isCategoryValue(v.category))) return null;
+    const coord = (x: unknown, max: number) => x === null || (typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= max);
+    if (!coord(v.latitude, 90) || !coord(v.longitude, 180)) return null;
+    if (!Array.isArray(v.program) || v.program.length > EVENT_LIMITS.programLinesMax) return null;
+    const programOk = v.program.every((r) => isObj(r)
+        && ['id', 'time', 'title', 'participant', 'description', 'day'].every((k) => isText(r[k], 2000))
+        && (PROGRAM_KINDS as readonly string[]).includes(String(r.kind)));
+    if (!programOk) return null;
+    if (!isObj(v.practical) || !['address', 'accessNotes', 'parking', 'contactPhone', 'rules'].every((k) => isText((v.practical as Record<string, unknown>)[k], 2000))) return null;
+    const values = {
+        ...EMPTY_VALUES,
+        ...(Object.fromEntries(textKeys.map((k) => [k, v[k]])) as Record<(typeof textKeys)[number], string>),
+        category: v.category as EventValues['category'],
+        latitude: v.latitude as number | null,
+        longitude: v.longitude as number | null,
+        program: (v.program as Array<Record<string, unknown>>).map((r) => ({
+            key: localKey('p'), id: String(r.id), time: String(r.time), kind: r.kind as ProgramKind, title: String(r.title),
+            participant: String(r.participant), description: String(r.description), day: String(r.day),
+        })),
+        practical: { ...(v.practical as unknown as PracticalValues) },
+    };
+    if (mode === 'edit') return { values, categories: [], zones: null, step: data.step as ScreenId };
+    if (!Array.isArray(data.categories) || data.categories.length > EVENT_LIMITS.categoriesMax) return null;
+    const categoriesOk = data.categories.every((c) => isObj(c) && isText(c.key, 40)
+        && ['name', 'description', 'price', 'total_quantity', 'max_per_order', 'sale_start', 'sale_end', 'entry_instruction'].every((k) => isText(c[k], 1000))
+        && (c.scan_color === '' || (SCAN_CATEGORY_COLORS as readonly string[]).includes(String(c.scan_color)))
+        && ['sale_online', 'sale_counter', 'is_active'].every((k) => typeof c[k] === 'boolean'));
+    if (!categoriesOk) return null;
+    const zonesIn = data.zones;
+    const zonesOk = zonesIn === null || (Array.isArray(zonesIn) && zonesIn.length <= MAX_ZONES && zonesIn.every((z) => isObj(z)
+        && isText(z.name, 100) && (z.kind === 'ENTREE' || z.kind === 'CONTROLE')
+        && Array.isArray(z.categoryKeys) && z.categoryKeys.every((k) => isText(k, 40))
+        && Array.isArray(z.gates) && z.gates.length <= 50 && z.gates.every((g) => isObj(g) && isText(g.name, 100))));
+    if (!zonesOk) return null;
+    return {
+        values,
+        categories: (data.categories as Array<Record<string, unknown>>).map((c) => ({
+            ...newCategoryDraft(),
+            key: String(c.key), name: String(c.name), description: String(c.description), price: String(c.price),
+            total_quantity: String(c.total_quantity), max_per_order: String(c.max_per_order), sale_start: String(c.sale_start),
+            sale_end: String(c.sale_end), sale_online: c.sale_online === true, sale_counter: c.sale_counter === true,
+            is_active: c.is_active === true, scan_color: String(c.scan_color), entry_instruction: String(c.entry_instruction),
+        })),
+        zones: zonesIn === null ? null : (zonesIn as Array<Record<string, unknown>>).map((z) => ({
+            key: '', name: String(z.name), kind: z.kind as ZoneDraft['kind'], categoryKeys: (z.categoryKeys as string[]).slice(),
+            gates: (z.gates as Array<Record<string, unknown>>).map((g) => ({ key: '', name: String(g.name), inUse: false })),
+        })),
+        step: data.step as ScreenId,
+    };
+}
 
 /**
  * Finition 2b (B) : zones de la création → corps de la création, chaque zone désignant ses catégories par leur ordre
@@ -589,13 +671,15 @@ export function EventForm(props: EventFormProps) {
     const eventId = props.mode === 'edit' ? props.eventId : null;
     const router = useRouter();
     const toast = useToast();
-    const { partner } = useAuth();
+    const { partner, user } = useAuth();
+    /** Finition 2b (C) : compte de la session (clé du brouillon gardé dans le navigateur). */
+    const userId = user?.id ?? null;
 
     const [load, setLoad] = useState<LoadState>(isEdit ? { state: 'loading' } : { state: 'ready', event: {} });
     const [values, setValues] = useState<EventValues>(EMPTY_VALUES);
     const [baseline, setBaseline] = useState<Row>(() => eventPayload(EMPTY_VALUES).payload);
     const [categories, setCategories] = useState<CategoryDraft[]>([]);
-    const [step, setStep] = useState<StepId>('infos');
+    const [step, setStep] = useState<ScreenId>('infos');
     const [errors, setErrors] = useState<ErrorMap>({});
     const [formError, setFormError] = useState<string | null>(null);
     const [formInfo, setFormInfo] = useState<string | null>(null);
@@ -623,6 +707,13 @@ export function EventForm(props: EventFormProps) {
     }, []);
     /** Finition 2b (B) : couleurs enregistrées à l'étape « Contrôle à l'entrée » (modification), reprises par l'étape Billets. */
     const [savedColors, setSavedColors] = useState<Record<string, string> | null>(null);
+    /** Finition 2b (C) : envoi pour validation en cours (bouton « Envoyer pour validation »). */
+    const [sending, setSending] = useState(false);
+    /** Finition 2b (C) : brouillon gardé dans le navigateur, proposé à la reprise (null : rien à proposer). */
+    const [resumable, setResumable] = useState<LocalDraft<FormDraft> | null>(null);
+    const draftChecked = useRef(false);
+    /** Finition 2b (C) : catégories et zones relues pour l'écran « Vérifier » (modification). */
+    const [reviewSnapshot, setReviewSnapshot] = useState<{ categories: Row[]; zones: Row | null } | null>(null);
     const headingRef = useRef<HTMLHeadingElement>(null);
     const summaryRef = useRef<HTMLDivElement>(null);
     const stepMoved = useRef(false);
@@ -679,10 +770,12 @@ export function EventForm(props: EventFormProps) {
         void loadEvent();
     }, [loadEvent]);
 
-    // Finition 2b (B) : « Modifier les portes et les couleurs » (page Équipe) ouvre l'étape « Contrôle à l'entrée »
+    // Finition 2b (B) : « Modifier les portes et les couleurs » (page Équipe) ouvre l'étape « Contrôle à l'entrée » ;
+    // (C) un envoi refusé après la création ouvre l'écran « Vérifier »
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        if (new URLSearchParams(window.location.search).get('etape') === 'controle') setStep('controle');
+        const wanted = new URLSearchParams(window.location.search).get('etape');
+        if (wanted === 'controle' || wanted === 'verifier') setStep(wanted);
     }, []);
 
     // Finition 2b (A, E-26) : minimum lu par le serveur (GET /api/partner/ticketing-rules) ; illisible : l'aide d'avant,
@@ -744,6 +837,90 @@ export function EventForm(props: EventFormProps) {
     };
     const unsaved = useUnsavedGuard(dirty, describeUnsaved);
 
+    // Finition 2b (C) : brouillon gardé dans le navigateur — proposé une fois l'écran prêt (modification : après la lecture
+    // de l'événement ; un brouillon identique à ce qui est enregistré n'a rien à reprendre)
+    useEffect(() => {
+        if (!userId || draftChecked.current) return;
+        if (isEdit && load.state !== 'ready') return;
+        draftChecked.current = true;
+        const draft = readDraft(userId, eventId, (d) => validFormDraft(d, isEdit ? 'edit' : 'create'));
+        if (!draft) return;
+        if (isEdit && JSON.stringify(eventPayload(draft.data.values).payload) === JSON.stringify(baseline)) {
+            clearDraft(userId, eventId);
+            return;
+        }
+        setResumable(draft);
+    }, [userId, isEdit, eventId, load.state, baseline]);
+
+    // Finition 2b (C) : saisie gardée 0,8 s après la dernière frappe, tant qu'elle n'est pas enregistrée (rien côté serveur)
+    useEffect(() => {
+        if (!userId || resumable || leaving || !fieldsDirty && (isEdit || (categories.length === 0 && zones === null))) return undefined;
+        const timer = window.setTimeout(() => {
+            writeDraft(userId, eventId, { values, categories: isEdit ? [] : categories, zones: isEdit ? null : zones, step });
+        }, 800);
+        return () => window.clearTimeout(timer);
+    }, [userId, resumable, leaving, fieldsDirty, isEdit, eventId, values, categories, zones, step]);
+
+    /** Finition 2b (C) : « Reprendre » — valeurs, catégories et zones du brouillon, clés locales refaites. */
+    const resumeDraft = () => {
+        if (!resumable) return;
+        const d = resumable.data;
+        if (!isEdit) {
+            const keys = new Map<string, string>();
+            const cats = d.categories.map((c) => {
+                const key = localKey('c');
+                keys.set(c.key, key);
+                return { ...c, key };
+            });
+            setCategories(cats);
+            setZones(d.zones === null ? null : d.zones.map((z) => ({
+                ...z,
+                key: newZoneKey(),
+                categoryKeys: z.categoryKeys.map((k) => keys.get(k)).filter((k): k is string => typeof k === 'string'),
+                gates: z.gates.map((g) => ({ ...g, key: newZoneKey() })),
+            })));
+        }
+        setValues(d.values);
+        setCityOther(d.values.city !== '' && senegalCity(d.values.city) === null);
+        setStep(d.step);
+        setResumable(null);
+        toast.success('Saisie reprise.');
+    };
+
+    /** Finition 2b (C) : « Effacer » — le brouillon gardé est effacé, rien d'autre ne change. */
+    const eraseDraft = () => {
+        if (userId) clearDraft(userId, eventId);
+        setResumable(null);
+    };
+
+    // Finition 2b (C) : écran « Vérifier » en modification — catégories et zones enregistrées, relues par le serveur
+    useEffect(() => {
+        if (!isEdit || !eventId || step !== 'verifier') return undefined;
+        let cancelled = false;
+        (async () => {
+            try {
+                const [evRes, zRes] = await Promise.all([
+                    fetch(`/api/partner/events/${eventId}`, { cache: 'no-store' }),
+                    fetch(`/api/partner/events/${eventId}/zones`, { cache: 'no-store' }),
+                ]);
+                const evBody = await readApiBody(evRes);
+                const zBody = await readApiBody(zRes);
+                if (cancelled) return;
+                const ev = evRes.ok && evBody.event && typeof evBody.event === 'object' ? (evBody.event as Row) : null;
+                setReviewSnapshot({
+                    categories: ev && Array.isArray(ev.ticket_categories) ? (ev.ticket_categories as Row[]) : eventCategories,
+                    zones: zRes.ok ? (zBody as Row) : null,
+                });
+            } catch (err) {
+                console.error('[EventForm] relecture pour la vérification', err);
+                if (!cancelled) setReviewSnapshot({ categories: eventCategories, zones: null });
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [isEdit, eventId, step, eventCategories]);
+
     // Focus du titre de l'étape après un changement d'étape
     useEffect(() => {
         if (!stepMoved.current) return;
@@ -763,7 +940,7 @@ export function EventForm(props: EventFormProps) {
         setValues((v) => ({ ...v, program: v.program.map((r) => (r.key === key ? { ...r, ...change } : r)) }));
     };
 
-    const goToStep = (next: StepId) => {
+    const goToStep = (next: ScreenId) => {
         stepMoved.current = true;
         setStep(next);
         if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -835,8 +1012,8 @@ export function EventForm(props: EventFormProps) {
     };
 
     const handleNext = () => {
-        const index = STEPS.findIndex((s) => s.id === step);
-        if (!isEdit) {
+        const index = SCREENS.findIndex((s) => s.id === step);
+        if (!isEdit && step !== 'verifier') {
             const { map } = validate();
             // Finition 2b (A, E-26) : le prix minimum est contrôlé dès « Suivant » ; (B) les règles des zones aussi
             const own = Object.fromEntries(Object.entries({ ...map, ...belowMinimumErrors(), ...zoneRuleErrors(zones, categories) })
@@ -848,23 +1025,64 @@ export function EventForm(props: EventFormProps) {
             setErrors({});
             setFormError(null);
         }
-        if (index < STEPS.length - 1) goToStep(STEPS[index + 1].id);
+        if (index < SCREENS.length - 1) goToStep(SCREENS[index + 1].id);
     };
 
     const handlePrevious = () => {
-        const index = STEPS.findIndex((s) => s.id === step);
-        if (index > 0) goToStep(STEPS[index - 1].id);
+        const index = SCREENS.findIndex((s) => s.id === step);
+        if (index > 0) goToStep(SCREENS[index - 1].id);
     };
 
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
+        await save(false);
+    };
+
+    /**
+     * Finition 2b (C, E-24) : « Envoyer pour validation » depuis le formulaire, après la création ou l'enregistrement des
+     * champs modifiés (POST …/transition { to: 'EN_ATTENTE' }, la route de la liste). Refus : le texte du serveur (ses
+     * manques) ; après une création, le brouillon existe : l'écran « Vérifier » de la modification s'ouvre.
+     */
+    const sendForValidation = async (id: string, created: boolean) => {
+        const res = await fetch(`/api/partner/events/${id}/transition`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to: 'EN_ATTENTE' }),
+        });
+        const data = await readApiBody(res);
+        if (res.ok && data.success !== false) {
+            if (userId) clearDraft(userId, created ? null : eventId);
+            setLeaving(true);
+            toast.success('Événement envoyé pour validation. Vous recevrez un message dès qu’il aura été examiné.');
+            router.push('/partner/events');
+            return;
+        }
+        const refusal = data.error || 'L’envoi pour validation a été refusé.';
+        if (created) {
+            if (userId) clearDraft(userId, null);
+            setLeaving(true);
+            toast.error(`Brouillon enregistré, mais l’envoi a été refusé : ${refusal}`);
+            router.replace(`/partner/events/${id}/edit?etape=verifier`);
+            return;
+        }
+        setFormError(refusal);
+        window.setTimeout(() => summaryRef.current?.focus(), 50);
+    };
+
+    const save = async (send: boolean) => {
         if (submitting) return;
+        // Finition 2b (C) : une catégorie modifiée et non enregistrée part avec son propre bouton, avant l'envoi
+        if (send && isEdit && ticketingDirty.length > 0) {
+            setFormError(`Enregistrez d’abord ${ticketingDirty.join(', ')} : chaque catégorie s’enregistre avec son propre bouton, à l’étape Billets.`);
+            window.setTimeout(() => summaryRef.current?.focus(), 50);
+            return;
+        }
         setFormInfo(null);
         setSaveResult(null);
         setConflict(false);
         const { map: schemaMap, body, maps } = validate();
         const map = { ...schemaMap, ...belowMinimumErrors(), ...(isEdit ? {} : zoneRuleErrors(zones, categories)) };
-        if (isEdit && Object.keys(body).length === 0) {
+        if (isEdit && Object.keys(body).length === 0 && !send) {
             setErrors({});
             setFormError(null);
             setFormInfo('Aucune modification à enregistrer.');
@@ -877,6 +1095,7 @@ export function EventForm(props: EventFormProps) {
         setErrors({});
         setFormError(null);
         setSubmitting(true);
+        setSending(send);
         try {
             if (!isEdit) {
                 const res = await fetch('/api/partner/events', {
@@ -886,8 +1105,14 @@ export function EventForm(props: EventFormProps) {
                 });
                 const data = await readApiBody(res);
                 if (res.ok && data.success !== false) {
+                    const createdId = data.event && typeof data.event === 'object' ? str((data.event as Row).id) : '';
+                    if (send && createdId) {
+                        await sendForValidation(createdId, true);
+                        return;
+                    }
+                    if (userId) clearDraft(userId, null);
                     setLeaving(true);
-                    toast.success('Brouillon enregistré. Soumettez-le à la validation depuis la liste de vos événements.');
+                    toast.success('Brouillon enregistré. Envoyez-le pour validation quand il est prêt, depuis le formulaire ou la liste de vos événements.');
                     router.push('/partner/events');
                     return;
                 }
@@ -896,6 +1121,10 @@ export function EventForm(props: EventFormProps) {
             }
 
             const ev = event ?? {};
+            if (Object.keys(body).length === 0 && send && eventId) {
+                await sendForValidation(eventId, false);
+                return;
+            }
             const res = await fetch(`/api/partner/events/${eventId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -914,6 +1143,11 @@ export function EventForm(props: EventFormProps) {
                     placeNoticeAt: typeof data.place_notice_at === 'string' ? data.place_notice_at : null,
                     placeNoticeHeld: data.place_notice_held === true,
                 });
+                if (userId) clearDraft(userId, eventId);
+                if (send && eventId) {
+                    await sendForValidation(eventId, false);
+                    return;
+                }
                 toast.success('Modifications enregistrées.');
                 return;
             }
@@ -928,6 +1162,7 @@ export function EventForm(props: EventFormProps) {
             window.setTimeout(() => summaryRef.current?.focus(), 50);
         } finally {
             setSubmitting(false);
+            setSending(false);
         }
     };
 
@@ -940,7 +1175,7 @@ export function EventForm(props: EventFormProps) {
             title={isEdit ? 'Modifier l’événement' : 'Créer un événement'}
             description={isEdit
                 ? (event ? str(event.title) : undefined)
-                : 'L’événement est enregistré en brouillon. Vous le soumettrez à la validation depuis la liste de vos événements.'}
+                : 'L’événement est enregistré en brouillon. À la dernière étape, vérifiez-le puis envoyez-le pour validation (ou plus tard, depuis la liste de vos événements).'}
         />
     );
 
@@ -1000,21 +1235,116 @@ export function EventForm(props: EventFormProps) {
 
     // ── Formulaire ────────────────────────────────────────────────────────
 
-    const stepIndex = STEPS.findIndex((s) => s.id === step);
-    const currentStep = STEPS[stepIndex];
+    const stepIndex = SCREENS.findIndex((s) => s.id === step);
+    const currentStep = SCREENS[stepIndex];
+    const onReview = step === 'verifier';
+    /** Finition 2b (C) : l'envoi pour validation part du formulaire pour une création ou un brouillon. */
+    const canSend = !isEdit || status === 'BROUILLON';
     const errorEntries = Object.entries(errors);
     const stepsWithErrors = new Set(errorEntries.map(([k]) => stepOfKey(k)).filter(Boolean));
     const showSummary = errorEntries.length > 0 || formError !== null;
-    const lastStep = stepIndex === STEPS.length - 1;
+    const lastStep = onReview;
     const hint = (base: string | undefined, notify: boolean) => (notify && withHolders ? [base, NOTIFY_HINT].filter(Boolean).join(' ') : base);
     // Finition 2a (2, E-01) : sans heure de fin, la fin retenue (même règle que la base) est montrée sous les dates
     const retained = values.start_date && values.start_time && !values.end_time
         ? retainedEnd({ start_date: values.start_date, start_time: values.start_time, end_date: values.end_date || null, end_time: null })
         : null;
 
+    // Finition 2b (C, E-24) : récapitulatif et manques de l'écran « Vérifier » (création : la saisie ; modification : la
+    // saisie, les catégories et les zones enregistrées, relues)
+    const reviewCategories: Array<{ name: string; price: number | null; total: number | null; active: boolean; color: string; instruction: string; sale_start: string | null; sale_end: string | null }> = isEdit
+        ? (reviewSnapshot?.categories ?? eventCategories).map((c) => ({
+            name: str(c.name),
+            price: c.price === null || c.price === undefined ? null : Number(c.price),
+            total: c.total_quantity === null || c.total_quantity === undefined ? null : Number(c.total_quantity),
+            active: c.is_active !== false,
+            color: isScanCategoryColor(c.scan_color) ? c.scan_color : '',
+            instruction: str(c.entry_instruction),
+            sale_start: c.sale_start ? str(c.sale_start) : null,
+            sale_end: c.sale_end ? str(c.sale_end) : null,
+        }))
+        : categories.map((c) => ({
+            name: c.name,
+            price: numberInput(c.price) ?? null,
+            total: numberInput(c.total_quantity) ?? null,
+            active: c.is_active,
+            color: c.scan_color,
+            instruction: c.entry_instruction,
+            sale_start: c.sale_start || null,
+            sale_end: c.sale_end || null,
+        }));
+    const reviewZones: ReviewData['zones'] = (() => {
+        if (!isEdit) {
+            return zones === null ? null : zones.map((z) => ({
+                name: z.name,
+                kindLabel: ZONE_KIND_LABELS[z.kind],
+                categories: z.categoryKeys.map((k) => categories.find((c) => c.key === k)?.name.trim() ?? '').filter((n) => n !== ''),
+                gates: z.gates.map((g) => g.name.trim()).filter((n) => n !== ''),
+            }));
+        }
+        const config = reviewSnapshot?.zones;
+        if (!config || !Array.isArray(config.zones) || config.zones.length === 0) return null;
+        const names = new Map(((config.categories ?? []) as Row[]).map((c) => [str(c.id), str(c.name)]));
+        return (config.zones as Row[]).map((z) => ({
+            name: str(z.name),
+            kindLabel: z.kind === 'CONTROLE' ? ZONE_KIND_LABELS.CONTROLE : ZONE_KIND_LABELS.ENTREE,
+            categories: ((z.category_ids ?? []) as string[]).map((id) => names.get(id) ?? '').filter((n) => n !== ''),
+            gates: ((z.gates ?? []) as Row[]).map((g) => str(g.name)),
+        }));
+    })();
+    const missing = canSend
+        ? submissionMissing({
+            image_url: values.image_url.trim() === '' ? null : values.image_url,
+            latitude: values.latitude,
+            longitude: values.longitude,
+            start_date: values.start_date,
+            start_time: values.start_time,
+            end_date: values.end_date || null,
+            end_time: values.end_time || null,
+            categories: reviewCategories.map((c) => ({ name: c.name, is_active: c.active, sale_start: c.sale_start, sale_end: c.sale_end })),
+        })
+        : [];
+    const reviewData: ReviewData = {
+        title: values.title,
+        typeLabel: EVENT_CATEGORIES.find((c) => c.id === values.category)?.label ?? '',
+        start: values.start_date ? formatEventDateTime(values.start_date, values.start_time) : '',
+        end: values.end_time
+            ? formatEventDateTime(values.end_date || values.start_date, values.end_time)
+            : retained ? `${retained.text} (fin retenue)` : '',
+        location: values.location,
+        city: values.city,
+        capacity: values.capacity.trim() === '' ? null : numberInput(values.capacity) ?? null,
+        hasPoster: values.image_url.trim() !== '',
+        programLines: values.program.filter((r) => r.title.trim() !== '' || r.time !== '').length,
+        hasPosition: values.latitude !== null && values.longitude !== null,
+        address: values.practical.address,
+        contactPhone: values.practical.contactPhone,
+        categories: reviewCategories,
+        zones: reviewZones,
+    };
+
     return (
-        <div className="mx-auto w-full max-w-4xl pb-24 pt-6 md:pb-10">
+        <div className="mx-auto w-full max-w-4xl pb-40 pt-6 lg:pb-10">
             {header}
+
+            {/* Finition 2b (C) : brouillon gardé dans le navigateur, proposé au retour */}
+            {resumable && (
+                <StatusBanner
+                    tone="info"
+                    title={`Reprendre votre saisie du ${formatShortDate(resumable.savedAt)} à ${formatTime(resumable.savedAt)} ?`}
+                    className="mb-4"
+                    action={(
+                        <div className="flex flex-wrap gap-2">
+                            <Button type="button" size="sm" onClick={resumeDraft}>Reprendre</Button>
+                            <Button type="button" variant="ghost" size="sm" onClick={eraseDraft}>Effacer</Button>
+                        </div>
+                    )}
+                >
+                    {isEdit
+                        ? 'Des modifications de cet événement, non enregistrées, sont gardées sur cet appareil.'
+                        : 'Une saisie non enregistrée est gardée sur cet appareil.'}
+                </StatusBanner>
+            )}
 
             {afterValidation && (
                 <StatusBanner tone="info" title="Modifications encadrées après la validation" className="mb-4">
@@ -1053,12 +1383,13 @@ export function EventForm(props: EventFormProps) {
 
             <nav aria-label="Étapes du formulaire" className="mb-4">
                 <p className="mb-2 text-sm font-medium text-fg-muted">
-                    Étape {stepIndex + 1} sur {STEPS.length} : {currentStep.heading}
+                    {onReview ? 'Dernière étape : vérifier avant d’envoyer' : `Étape ${stepIndex + 1} sur ${STEPS.length} : ${currentStep.heading}`}
                 </p>
-                <ol className="grid grid-cols-5 gap-2">
-                    {STEPS.map((s, i) => {
+                {/* Finition 2b (C) : nom de chaque étape visible, sur téléphone aussi (3 colonnes, 6 sur grand écran) */}
+                <ol className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {SCREENS.map((s, i) => {
                         const active = s.id === step;
-                        const hasError = stepsWithErrors.has(s.id);
+                        const hasError = s.id !== 'verifier' && stepsWithErrors.has(s.id);
                         return (
                             <li key={s.id} className="min-w-0">
                                 <button
@@ -1072,8 +1403,8 @@ export function EventForm(props: EventFormProps) {
                                         hasError && !active && 'border-danger text-danger-fg',
                                     )}
                                 >
-                                    <span aria-hidden="true" className="tabular-nums">{i + 1}</span>
-                                    <span className="hidden truncate sm:inline">{s.label}</span>
+                                    <span aria-hidden="true" className="tabular-nums">{s.id === 'verifier' ? <Check size={16} /> : i + 1}</span>
+                                    <span aria-hidden="true" className="min-w-0 truncate">{s.label}</span>
                                     <span className="sr-only">{`${s.heading}${hasError ? ' (à corriger)' : ''}`}</span>
                                 </button>
                             </li>
@@ -1428,7 +1759,19 @@ export function EventForm(props: EventFormProps) {
                     <EntryControlEditor eventId={eventId} onColorsSaved={setSavedColors} />
                 )}
 
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+                {onReview && (
+                    <EventReview
+                        data={reviewData}
+                        missing={missing}
+                        canSend={canSend}
+                        onEdit={(s) => goToStep(s)}
+                        onFix={(m) => focusField(m.field)}
+                    />
+                )}
+
+                {/* Finition 2b (C) : barre d'actions fixe en bas sous 1024 px (téléphone, tablette), à sa place au-delà ; la
+                    barre « Navigation rapide » de l'application est masquée sur ce formulaire (AppLayout) */}
+                <div className="form-action-bar fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface px-4 pt-3 shadow-lg lg:static lg:z-auto lg:gap-3 lg:bg-transparent lg:px-0 lg:pt-4 lg:shadow-none">
                     <Button type="button" variant="ghost" onClick={handlePrevious} disabled={stepIndex === 0} leftIcon={<ChevronLeft size={18} />}>
                         Précédent
                     </Button>
@@ -1439,8 +1782,14 @@ export function EventForm(props: EventFormProps) {
                             </Button>
                         )}
                         {(isEdit || lastStep) && (
-                            <Button type="submit" variant="primary" isLoading={submitting} leftIcon={<Save size={18} />}>
+                            <Button type="submit" variant={onReview && canSend ? 'secondary' : 'primary'} isLoading={submitting && !sending} disabled={sending} leftIcon={<Save size={18} />}>
                                 {isEdit ? 'Enregistrer les modifications' : 'Enregistrer le brouillon'}
+                            </Button>
+                        )}
+                        {onReview && canSend && (
+                            <Button type="button" variant="primary" onClick={() => void save(true)} isLoading={sending}
+                                disabled={missing.length > 0 || (submitting && !sending)} leftIcon={<Send size={18} />}>
+                                Envoyer pour validation
                             </Button>
                         )}
                     </div>

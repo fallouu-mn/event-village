@@ -462,6 +462,12 @@ test('acte 2 [partenaire] [admin] : inscription avec pièces, validation, E1 et 
         await partner.getByRole('button', { name: /^suivant/i }).click();
         await expect(partner.getByRole('heading', { level: 2, name: /^billetterie$/i })).toBeVisible();
         for (let i = 0; i < CATEGORIES.length; i++) await addCategory(partner, i, CATEGORIES[i]);
+        // Finition 2b (B, C) : étapes « Contrôle à l'entrée » (une seule entrée) puis « Vérifier avant d'envoyer », où se trouve
+        // « Enregistrer le brouillon » (parcours recalé, signalé au rapport) ; la soumission reste celle de la liste
+        await partner.getByRole('button', { name: /^suivant/i }).click();
+        await expect(partner.getByRole('heading', { level: 2, name: /^contrôle à l.entrée \(facultatif\)$/i })).toBeVisible();
+        await partner.getByRole('button', { name: /^suivant/i }).click();
+        await expect(partner.getByRole('heading', { level: 2, name: /^vérifier avant d.envoyer$/i })).toBeVisible();
         await partner.getByRole('button', { name: /^enregistrer le brouillon$/i }).click();
         await partner.waitForURL(/\/partner\/events(\?|$)/);
         await expect(partner.getByText(r.e1.title, { exact: true })).toBeVisible();

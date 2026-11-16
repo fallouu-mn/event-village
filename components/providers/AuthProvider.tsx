@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { detachPushSubscription } from '@/lib/push/client';
 import { clearOfflineStore } from '@/lib/tickets/offline-store';
 import { clearAllScanMemory } from '@/lib/scan/scan-memory';
+import { clearUserDrafts } from '@/lib/events/local-draft';
 
 /**
  * Lot 7 (7.5) — synchronisation des billets hors ligne chargée à la demande.
@@ -237,6 +238,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await clearOfflineStore();
             // Lot 7 (A10) : mémoire du contrôle effacée aussi (scan partenaire et scanner contrôleur)
             clearAllScanMemory();
+            // Finition 2b (C) : brouillons du formulaire d'événement gardés dans le navigateur pour ce compte, effacés
+            if (user?.id) clearUserDrafts(user.id);
             // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
             await detachPushSubscription();
             const supabase = getBrowserClient();

@@ -253,4 +253,6 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/events/ZoneListEditor.tsx',
     'components/events/EntryControlStep.tsx',
     'components/events/EntryControlEditor.tsx',
+    // Finition 2b (C, E-24) : écran « Vérifier avant d'envoyer » (récapitulatif, manques)
+    'components/events/EventReview.tsx',
 ];
