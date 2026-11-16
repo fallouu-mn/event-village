@@ -86,7 +86,15 @@ describe('a, b. affiche : fichier de la route de dépôt seulement', () => {
 
 describe('c. affiches d’avant la finition : réencodées une fois (scripts/reencode-posters.ts)', () => {
     test('à blanc, pour de bon, rejouée', async () => {
-        const { reencodeLegacyPosters } = await import('../../lib/events/poster-reencode');
+        // Chemin en variable : avant le correctif, le module n'existe pas (preuve des rouges sans erreur de typage)
+        const modulePath = '../../lib/events/poster-reencode';
+        const { reencodeLegacyPosters } = (await import(modulePath)) as {
+            reencodeLegacyPosters: (o: { apply?: boolean; onlyEventIds?: string[]; limit?: number }) => Promise<{
+                apply: boolean; candidates: number; planned: Array<{ path: string; events: string[] }>;
+                done: Array<{ from: string; to: string; events: string[]; oldRemoved: boolean }>;
+                skipped: Array<{ path: string; events: string[]; reason: string }>; remaining: number;
+            }>;
+        };
         const oldPath = `events/${A.partnerId}/${Date.now()}_avant.jpg`;
         const oldUrl = await putObject(oldPath, await rawJpegWithGps(), 'image/jpeg');
         const missingUrl = service.storage.from('public-images').getPublicUrl(`events/${A.partnerId}/${Date.now()}_manquante.jpg`).data.publicUrl;
