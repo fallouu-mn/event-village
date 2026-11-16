@@ -12,6 +12,7 @@ import { CATEGORY_CHANNEL_HELP, categoryChannelLabel } from '@/lib/events/catego
 import { formatInteger, toDakarDateTimeLocal } from '@/lib/format';
 import { DEFAULT_MAX_PER_ORDER, EVENT_LIMITS } from '@/lib/validations/event';
 import { isScanCategoryColor, proposeScanColor } from '@/lib/scan/scan-result';
+import { isBelowMinimum, priceMinimumMessage } from '@/lib/events/price-minimum';
 import { ScanColorPicker } from './ScanColorPicker';
 
 /**
@@ -223,6 +224,16 @@ export function priceLockText(d: CategoryDraft): string {
 
 // ── Champs d'une catégorie ─────────────────────────────────────────────────
 
+/**
+ * Finition 2b (A, E-26) : aide du prix. Minimum connu (lu par le serveur) : « Billet payant : 100 F CFA au moins. 0 pour
+ * une entrée gratuite. » ; pas encore lu : l'aide d'avant (le serveur contrôle de toute façon).
+ */
+function priceHint(minPaidPrice: number | null): string {
+    return minPaidPrice !== null
+        ? `Billet payant : ${formatInteger(minPaidPrice)} F CFA au moins. 0 pour une entrée gratuite.`
+        : 'Montant entier ; 0 pour une entrée gratuite.';
+}
+
 interface CategoryFieldsProps {
     draft: CategoryDraft;
     onChange: (next: CategoryDraft) => void;
@@ -232,9 +243,11 @@ interface CategoryFieldsProps {
     showLocks?: boolean;
     /** Finition 2b (A) : autres catégories de l'événement (nom, couleur), pour signaler une couleur partagée. */
     others?: ReadonlyArray<{ name: string; color: string }>;
+    /** Finition 2b (A, E-26) : prix minimum d'un billet payant lu par le serveur ; null tant qu'il n'est pas lu. */
+    minPaidPrice?: number | null;
 }
 
-export function CategoryFields({ draft, onChange, errors = {}, disabled = false, showLocks = false, others = [] }: CategoryFieldsProps) {
+export function CategoryFields({ draft, onChange, errors = {}, disabled = false, showLocks = false, others = [], minPaidPrice = null }: CategoryFieldsProps) {
     const set = <K extends keyof CategoryDraft>(field: K, value: CategoryDraft[K]) => onChange({ ...draft, [field]: value });
     const priceLocked = showLocks && draft.id !== null && hasSales(draft);
     const id = (field: CategoryField) => categoryFieldId(draft.key, field);
@@ -268,7 +281,7 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                 step={1}
                 value={draft.price}
                 onChange={(e) => set('price', e.target.value)}
-                hint={priceLocked ? undefined : 'Montant entier ; 0 pour une entrée gratuite.'}
+                hint={priceLocked ? undefined : priceHint(minPaidPrice)}
                 error={errors.price}
                 disabled={disabled || priceLocked}
                 aside={priceLocked ? <Lock size={16} aria-hidden="true" /> : undefined}
@@ -508,6 +521,8 @@ interface EventTicketingManagerProps {
     onSaved?: () => void;
     /** has_sales par identifiant de catégorie (edit_locks.categories), relu après chaque enregistrement. */
     categoryLocks?: Record<string, boolean> | null;
+    /** Finition 2b (A, E-26) : prix minimum d'un billet payant lu par le serveur (null : pas encore lu). */
+    minPaidPrice?: number | null;
 }
 
 /** Libellé d'une catégorie non enregistrée dans la fenêtre « Quitter sans enregistrer ? ». */
@@ -519,7 +534,7 @@ function dirtyLabel(d: CategoryDraft): string {
 
 const NETWORK_MESSAGE = 'Connexion impossible : la catégorie n’a pas été enregistrée. Vérifiez votre réseau, puis réessayez.';
 
-export function EventTicketingManager({ eventId, initialCategories, onDirtyChange, onSaved, categoryLocks = null }: EventTicketingManagerProps) {
+export function EventTicketingManager({ eventId, initialCategories, onDirtyChange, onSaved, categoryLocks = null, minPaidPrice = null }: EventTicketingManagerProps) {
     const [items, setItems] = useState<ManagedCategory[]>(() => initialCategories.map((row) => {
         const draft = categoryDraftFromRow(row);
         return { draft, base: { ...draft }, errors: {}, message: null, suggestDeactivate: false, busy: false };
@@ -597,6 +612,13 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
     const save = (item: ManagedCategory) => {
         const { draft, base } = item;
         const key = draft.key;
+        // Finition 2b (A, E-26) : prix payant sous le minimum dit sous le prix, avant tout envoi (le serveur le refuse aussi)
+        if (minPaidPrice !== null && isBelowMinimum(draft.price, minPaidPrice) && (draft.id === null || base === null || draft.price !== base.price)) {
+            const message = priceMinimumMessage(minPaidPrice);
+            update(key, (it) => ({ ...it, errors: { ...it.errors, price: message }, message: { tone: 'danger', text: message } }));
+            window.requestAnimationFrame(() => document.getElementById(categoryFieldId(key, 'price'))?.focus());
+            return;
+        }
         if (draft.id === null || base === null) {
             void send(key, `/api/partner/events/${eventId}/categories`, {
                 method: 'POST',
@@ -704,6 +726,7 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
                             disabled={item.busy}
                             showLocks
                             others={items.filter((it) => it.draft.key !== draft.key).map((it) => ({ name: it.draft.name, color: it.draft.scan_color }))}
+                            minPaidPrice={minPaidPrice}
                         />
 
                         {item.message && (

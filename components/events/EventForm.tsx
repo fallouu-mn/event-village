@@ -26,6 +26,7 @@ import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { formatInteger, formatTime } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
 import { proposeScanColor } from '@/lib/scan/scan-result';
+import { isBelowMinimum, priceMinimumMessage } from '@/lib/events/price-minimum';
 import {
     EVENT_LIMITS,
     EVENT_RULE_CODES,
@@ -533,6 +534,8 @@ export function EventForm(props: EventFormProps) {
     const [cityOther, setCityOther] = useState(false);
     /** Brouillon créé : la page part vers la liste, la garde de sortie est levée. */
     const [leaving, setLeaving] = useState(false);
+    /** Finition 2b (A, E-26) : prix minimum d'un billet payant, lu par le serveur (null : pas encore lu, ou illisible). */
+    const [minPaidPrice, setMinPaidPrice] = useState<number | null>(null);
     const headingRef = useRef<HTMLHeadingElement>(null);
     const summaryRef = useRef<HTMLDivElement>(null);
     const stepMoved = useRef(false);
@@ -588,6 +591,36 @@ export function EventForm(props: EventFormProps) {
     useEffect(() => {
         void loadEvent();
     }, [loadEvent]);
+
+    // Finition 2b (A, E-26) : minimum lu par le serveur (GET /api/partner/ticketing-rules) ; illisible : l'aide d'avant,
+    // le serveur refuse de toute façon sous la bonne catégorie
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch('/api/partner/ticketing-rules', { cache: 'no-store' });
+                const body = (await res.json().catch(() => null)) as { min_paid_price?: unknown } | null;
+                const min = Number(body?.min_paid_price);
+                if (!cancelled && res.ok && Number.isInteger(min) && min >= 1) setMinPaidPrice(min);
+                else if (!res.ok) console.error(`[EventForm] prix minimum : HTTP ${res.status}`);
+            } catch (err) {
+                console.error('[EventForm] prix minimum illisible', err);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    /** Finition 2b (A, E-26) : prix payants sous le minimum, rangés sous la bonne catégorie (création). */
+    const belowMinimumErrors = (): ErrorMap => {
+        if (isEdit || minPaidPrice === null) return {};
+        const out: ErrorMap = {};
+        for (const c of categories) {
+            if (isBelowMinimum(c.price, minPaidPrice)) out[`billet.${c.key}.price`] = priceMinimumMessage(minPaidPrice);
+        }
+        return out;
+    };
 
     /** Relit les seuls verrous après un enregistrement de catégorie (jauge, catégorie d'événement, prix). */
     const refreshLocks = useCallback(async () => {
@@ -703,7 +736,8 @@ export function EventForm(props: EventFormProps) {
         const index = STEPS.findIndex((s) => s.id === step);
         if (!isEdit) {
             const { map } = validate();
-            const own = Object.fromEntries(Object.entries(map).filter(([k]) => stepOfKey(k) === step));
+            // Finition 2b (A, E-26) : le prix minimum est contrôlé dès « Suivant »
+            const own = Object.fromEntries(Object.entries({ ...map, ...belowMinimumErrors() }).filter(([k]) => stepOfKey(k) === step));
             if (Object.keys(own).length > 0) {
                 showErrors(own, null);
                 return;
@@ -725,7 +759,8 @@ export function EventForm(props: EventFormProps) {
         setFormInfo(null);
         setSaveResult(null);
         setConflict(false);
-        const { map, body, maps } = validate();
+        const { map: schemaMap, body, maps } = validate();
+        const map = { ...schemaMap, ...belowMinimumErrors() };
         if (isEdit && Object.keys(body).length === 0) {
             setErrors({});
             setFormError(null);
@@ -1202,6 +1237,7 @@ export function EventForm(props: EventFormProps) {
                             eventId={eventId}
                             initialCategories={eventCategories}
                             categoryLocks={categoryLocks}
+                            minPaidPrice={minPaidPrice}
                             onDirtyChange={setTicketingDirty}
                             onSaved={() => void refreshLocks()}
                         />
@@ -1238,6 +1274,7 @@ export function EventForm(props: EventFormProps) {
                                     onChange={(next) => setCategories((list) => list.map((c) => (c.key === cat.key ? next : c)))}
                                     errors={categoryErrorsFor(errors, cat.key)}
                                     others={categories.filter((c) => c.key !== cat.key).map((c) => ({ name: c.name, color: c.scan_color }))}
+                                    minPaidPrice={minPaidPrice}
                                 />
                             </section>
                         ))}

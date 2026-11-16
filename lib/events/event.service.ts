@@ -4,6 +4,7 @@ import { PublicError } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '../supabase/server';
 import { EventLifecycleService } from './event-lifecycle.service';
 import { eventEndAt } from './event-end';
+import { priceMinimumMessage } from './price-minimum';
 import { pgEscapeLike } from '@/lib/security/postgrest-filter';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import {
@@ -102,6 +103,9 @@ const REFUSAL_HTTP: Record<string, number> = {
     CATEGORY_HAS_SALES: 409,
     // Finition 2b (A) : suppression qui laisserait une zone sans catégorie admise (étape « Contrôle à l'entrée » proposée)
     CATEGORY_ONLY_IN_ZONE: 409,
+    // Finition 2b (A, E-26) : prix payant sous le minimum, refusé par la normalisation sous le chemin de la catégorie
+    // (même statut que le refus du déclencheur, priceBelowMinimum)
+    PRICE_BELOW_MINIMUM: 400,
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -116,12 +120,18 @@ interface RpcRefusal {
     field?: string;
     categories?: unknown;
     suggestion?: string;
+    /** Finition 2b (A, E-26) : minimum du prix d'un billet payant (refus PRICE_BELOW_MINIMUM). */
+    minimum?: unknown;
 }
 
 /** Refus d'une RPC → EventServiceError (champ en cause recopié dans field et fields). */
 function refusalToError(body: RpcRefusal): EventServiceError {
     const code = body.code ?? 'INVALID_INPUT';
-    const message = body.message || 'Opération refusée.';
+    // Finition 2b (A, E-26) : texte du minimum écrit ici, comme pour le refus du déclencheur (séparateur des milliers)
+    const minimum = Number(body.minimum);
+    const message = code === 'PRICE_BELOW_MINIMUM' && Number.isFinite(minimum) && minimum > 0
+        ? priceMinimumMessage(minimum)
+        : body.message || 'Opération refusée.';
     const details: Record<string, unknown> = {};
     if (body.field) {
         details.field = body.field;
@@ -149,7 +159,7 @@ function priceBelowMinimum(error: { code: string; message: string; details?: str
     if (!shown) console.error(`[EventService] PRICE_BELOW_MINIMUM sans minimum lisible : ${String(error.details)}`);
     return new EventServiceError(400, 'PRICE_BELOW_MINIMUM',
         shown
-            ? `Le prix d’un billet payant est d’au moins ${shown} F CFA. Pour un billet gratuit, indiquez 0.`
+            ? priceMinimumMessage(min)
             : 'Le prix d’un billet payant est inférieur au minimum autorisé. Pour un billet gratuit, indiquez 0.',
         { field: 'price' });
 }

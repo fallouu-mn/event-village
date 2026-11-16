@@ -20,6 +20,8 @@ const FINITION2B_MIGRATIONS = [
     '20261119000002_f2b_couleur_consigne.sql',
     // A, E-22 : couleur au contrôle posée par la base quand elle manque (distincte, jamais confondable avec un verdict)
     '20261119000003_f2b_couleur_auto.sql',
+    // A, E-26 : prix minimum refusé sous la bonne catégorie (normalisation commune)
+    '20261119000004_f2b_prix_minimum.sql',
 ] as const;
 
 after(async () => {
