@@ -11,7 +11,7 @@
  *
  * Garde-fou vert dès l'écriture si aucune faille n'existe (signalé au rapport) ; une route qui répond 2xx, 400 ou 500 à
  * un ADMIN sans droit est une faille (ou un contrôle fait après la lecture du corps) : elle est nommée.
- * Fin de suite : assertFinition3aInvariants.
+ * Fin de suite : assertFinition3bInvariants.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
-import { assertFinition3aInvariants } from '../helpers/finition3a-invariants';
+import { assertFinition3bInvariants } from '../helpers/finition3b-invariants';
 import { jsonRequest } from './finance-helpers';
 import { newAdmin, type TestAdmin } from './notif-helpers';
 import { importModule } from './paiement-helpers';
@@ -41,7 +41,7 @@ before(async () => {
 });
 
 after(async () => {
-    await assertFinition3aInvariants('f3b-securite');
+    await assertFinition3bInvariants('f3b-securite');
 });
 
 function routeFiles(dir: string): string[] {

@@ -4,7 +4,7 @@
  * LOCALE seulement), et ne gère pas elle-même sa transaction (aucun BEGIN ni COMMIT).
  * Modèle : migration-finition3a-rejouable.test.ts. La liste grandit avec chaque migration de la finition.
  * Rouge avant correctif : le fichier n'existe pas ; l'échec nomme le fichier attendu.
- * Fin de suite : invariants de toutes les livraisons précédentes (assertFinition3aInvariants).
+ * Fin de suite : invariants de la 3b (règle h1) et de toutes les livraisons précédentes (assertFinition3bInvariants).
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { inRolledBackTransaction } from '../helpers/db';
-import { assertFinition3aInvariants } from '../helpers/finition3a-invariants';
+import { assertFinition3bInvariants } from '../helpers/finition3b-invariants';
 
 const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 
@@ -26,7 +26,7 @@ const FINITION3B_MIGRATIONS = [
 ] as const;
 
 after(async () => {
-    await assertFinition3aInvariants('migration-finition3b-rejouable');
+    await assertFinition3bInvariants('migration-finition3b-rejouable');
 });
 
 describe('Finition 3b — migrations 20261118… rejouables (transaction annulée)', () => {
