@@ -23,7 +23,7 @@ import { SCAN_CATEGORY_COLORS, SCAN_CATEGORY_COLOR_LABELS, isScanCategoryColor }
  *  - Lot 9 ter (R93) : « il y a des ventes » vient du serveur (edit_locks.categories[].has_sales : un billet de tout
  *    statut ou une réservation active), jamais des compteurs ; le plancher du quota reste vendus + en cours.
  *  - Lot 9 ter (consigne 1 et 2, K8) : couleur au contrôle et consigne d'entrée d'une catégorie déjà créée (PATCH) ;
- *    jamais à la création de l'événement, que le serveur refuse.
+ *    finition 2b (A, E-22) : aussi à la création de l'événement et sur une catégorie nouvelle en modification (POST).
  */
 
 export type Row = Record<string, unknown>;
@@ -163,8 +163,12 @@ export function numberInput(raw: string): number | undefined {
     return Number(cleaned);
 }
 
-/** Corps d'une catégorie pour la création (avec l'événement ou par POST /categories). */
+/**
+ * Corps d'une catégorie pour la création (avec l'événement ou par POST /categories). Finition 2b (A) : couleur au
+ * contrôle et consigne d'entrée comprises (null : aucune consigne ; couleur absente : posée par la base).
+ */
 export function categoryCreateBody(d: CategoryDraft): Row {
+    const instruction = d.entry_instruction.trim();
     return {
         name: d.name,
         description: d.description.trim() === '' ? null : d.description,
@@ -176,17 +180,14 @@ export function categoryCreateBody(d: CategoryDraft): Row {
         sale_online: d.sale_online,
         sale_counter: d.sale_counter,
         is_active: d.is_active,
-    };
-}
-
-/** Corps d'une catégorie déjà créée : celui de la création, plus la couleur et la consigne (null : effacées). */
-function categoryEditBody(d: CategoryDraft): Row {
-    const instruction = d.entry_instruction.trim();
-    return {
-        ...categoryCreateBody(d),
         scan_color: d.scan_color === '' ? null : d.scan_color,
         entry_instruction: instruction === '' ? null : instruction,
     };
+}
+
+/** Corps d'une catégorie déjà créée : le même que la création (couleur et consigne comprises). */
+function categoryEditBody(d: CategoryDraft): Row {
+    return categoryCreateBody(d);
 }
 
 /** Champs modifiés d'une catégorie existante (PATCH) : seul ce qui a changé est envoyé. */
@@ -240,7 +241,6 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
     const priceLocked = showLocks && draft.id !== null && hasSales(draft);
     const id = (field: CategoryField) => categoryFieldId(draft.key, field);
 
-    const scanFields = showLocks && draft.id !== null;
     const quotaHint = showLocks && countedSales(draft)
         ? `Jamais sous les ventes : ${plural(draft.sold, 'billet vendu', 'billets vendus')}, ${formatInteger(draft.held)} en cours de paiement.`
         : 'Nombre de billets de cette catégorie (1 à 100 000).';
@@ -378,32 +378,31 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                     </p>
                 )}
             </fieldset>
-            {scanFields && (
-                <fieldset className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
-                    <legend className="mb-3 text-sm font-semibold text-fg">Au contrôle des entrées</legend>
-                    <Select
-                        id={id('scan_color')}
-                        label={CATEGORY_FIELD_LABELS.scan_color}
-                        value={draft.scan_color}
-                        onChange={(e) => set('scan_color', e.target.value)}
-                        options={SCAN_COLOR_OPTIONS}
-                        hint="Bande de couleur montrée au contrôleur avec le nom de la catégorie."
-                        error={errors.scan_color}
-                        disabled={disabled}
-                    />
-                    <TextInput
-                        id={id('entry_instruction')}
-                        label={CATEGORY_FIELD_LABELS.entry_instruction}
-                        maxLength={ENTRY_INSTRUCTION_MAX}
-                        value={draft.entry_instruction}
-                        onChange={(e) => set('entry_instruction', e.target.value)}
-                        placeholder="Par exemple : Remettre bracelet doré"
-                        hint="Facultative, 60 caractères au plus. Affichée en gros au contrôleur quand le billet est validé à l’entrée."
-                        error={errors.entry_instruction}
-                        disabled={disabled}
-                    />
-                </fieldset>
-            )}
+            {/* Finition 2b (A, E-22) : couleur et consigne pour toute catégorie, dès la création */}
+            <fieldset className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
+                <legend className="mb-3 text-sm font-semibold text-fg">Au contrôle des entrées</legend>
+                <Select
+                    id={id('scan_color')}
+                    label={CATEGORY_FIELD_LABELS.scan_color}
+                    value={draft.scan_color}
+                    onChange={(e) => set('scan_color', e.target.value)}
+                    options={SCAN_COLOR_OPTIONS}
+                    hint="Bande de couleur montrée au contrôleur avec le nom de la catégorie."
+                    error={errors.scan_color}
+                    disabled={disabled}
+                />
+                <TextInput
+                    id={id('entry_instruction')}
+                    label={CATEGORY_FIELD_LABELS.entry_instruction}
+                    maxLength={ENTRY_INSTRUCTION_MAX}
+                    value={draft.entry_instruction}
+                    onChange={(e) => set('entry_instruction', e.target.value)}
+                    placeholder="Par exemple : Remettre bracelet doré"
+                    hint="Facultative, 60 caractères au plus. Affichée en gros au contrôleur quand le billet est validé à l’entrée."
+                    error={errors.entry_instruction}
+                    disabled={disabled}
+                />
+            </fieldset>
             <div className="sm:col-span-2">
                 <ToggleField
                     id={id('is_active')}

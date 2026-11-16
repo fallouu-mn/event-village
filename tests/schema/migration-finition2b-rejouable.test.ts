@@ -16,6 +16,8 @@ const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 const FINITION2B_MIGRATIONS = [
     // A (sécurité faible, corrigée en premier) : une suppression de catégorie ne laisse jamais une zone sans catégorie
     '20261119000001_f2b_categorie_zone.sql',
+    // A, E-22 : couleur au contrôle et consigne d'entrée dès la création (normalisation commune, event_create)
+    '20261119000002_f2b_couleur_consigne.sql',
 ] as const;
 
 after(async () => {

@@ -365,7 +365,6 @@ const categoryCreateShape = {
     is_active: z.boolean().default(true),
 };
 
-const categoryCreateObject = z.object(categoryCreateShape).strict();
 
 /** Fenêtre de vente : début < fin ≤ fin de l'événement ; début avant la fin de l'événement. */
 function checkSaleWindow(
@@ -471,7 +470,9 @@ export function createEventSchema(ctx: EventSchemaContext) {
         capacity: capacityField.optional(),
         program: programField.default([]),
         practical_info: practicalInfoField().optional(),
-        ticket_categories: z.array(categoryCreateObject)
+        // Finition 2b (A) : couleur au contrôle et consigne d'entrée acceptées dès la création (même objet que la route
+        // des catégories ; ticket_category_normalize les contrôle aussi, sous le chemin de la catégorie)
+        ticket_categories: z.array(ticketCategoryCreateObject)
             .max(EVENT_LIMITS.categoriesMax, `Un événement compte au plus ${EVENT_LIMITS.categoriesMax} catégories de billets.`)
             .default([]),
     }).strict().superRefine((v, c) => {
@@ -557,8 +558,8 @@ export interface TicketCategorySchemaContext {
 /**
  * Lot 9 ter (9t.15, contrat D.2.3, X2) : couleur de la catégorie au scan (une des 8 clés de SCAN_CATEGORY_COLORS,
  * seule liste, ou null) et consigne d'entrée (60 caractères au plus, vide → null), acceptées par les seules routes des
- * catégories : categoryCreateObject (création d'événement) ne les connaît pas, event_create les refuserait
- * (rectification 13). Refus INVALID_INPUT avec le champ en cause, comme la RPC ; messages explicites, jamais
+ * catégories ; finition 2b (A) : aussi par la création de l'événement (ticket_categories de createEventSchema), que
+ * event_create accepte désormais. Refus INVALID_INPUT avec le champ en cause, comme la RPC ; messages explicites, jamais
  * remplacés par frenchErrorMap.
  */
 const SCAN_COLOR_MESSAGE = 'Choisissez une couleur dans la liste.';
