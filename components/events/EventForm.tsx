@@ -25,6 +25,7 @@ import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapP
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { formatInteger, formatTime } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
+import { proposeScanColor } from '@/lib/scan/scan-result';
 import {
     EVENT_LIMITS,
     EVENT_RULE_CODES,
@@ -1236,6 +1237,7 @@ export function EventForm(props: EventFormProps) {
                                     draft={cat}
                                     onChange={(next) => setCategories((list) => list.map((c) => (c.key === cat.key ? next : c)))}
                                     errors={categoryErrorsFor(errors, cat.key)}
+                                    others={categories.filter((c) => c.key !== cat.key).map((c) => ({ name: c.name, color: c.scan_color }))}
                                 />
                             </section>
                         ))}
@@ -1246,7 +1248,8 @@ export function EventForm(props: EventFormProps) {
                                     variant="outline"
                                     leftIcon={<Plus size={18} />}
                                     onClick={() => {
-                                        const draft = newCategoryDraft();
+                                        // Finition 2b (A) : couleur proposée, distincte de celles des autres catégories
+                                        const draft = { ...newCategoryDraft(), scan_color: proposeScanColor(categories.map((c) => c.scan_color)) };
                                         setCategories((list) => [...list, draft]);
                                         window.requestAnimationFrame(() => document.getElementById(categoryFieldId(draft.key, 'name'))?.focus());
                                     }}

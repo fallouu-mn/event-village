@@ -18,6 +18,8 @@ const FINITION2B_MIGRATIONS = [
     '20261119000001_f2b_categorie_zone.sql',
     // A, E-22 : couleur au contrôle et consigne d'entrée dès la création (normalisation commune, event_create)
     '20261119000002_f2b_couleur_consigne.sql',
+    // A, E-22 : couleur au contrôle posée par la base quand elle manque (distincte, jamais confondable avec un verdict)
+    '20261119000003_f2b_couleur_auto.sql',
 ] as const;
 
 after(async () => {

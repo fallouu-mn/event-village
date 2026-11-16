@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconButton } from '@/components/ui/IconButton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import { Select, TextInput, Textarea } from '@/components/ui/Field';
+import { TextInput, Textarea } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
 import { CATEGORY_CHANNEL_HELP, categoryChannelLabel } from '@/lib/events/category-channels';
 import { formatInteger, toDakarDateTimeLocal } from '@/lib/format';
 import { DEFAULT_MAX_PER_ORDER, EVENT_LIMITS } from '@/lib/validations/event';
-import { SCAN_CATEGORY_COLORS, SCAN_CATEGORY_COLOR_LABELS, isScanCategoryColor } from '@/lib/scan/scan-result';
+import { isScanCategoryColor, proposeScanColor } from '@/lib/scan/scan-result';
+import { ScanColorPicker } from './ScanColorPicker';
 
 /**
  * Lot 5 (contrats F1, F4, F6) — billetterie du formulaire d'événement.
@@ -52,11 +53,6 @@ export const CATEGORY_FIELD_LABELS: Record<CategoryField, string> = {
 /** Longueur maximale de la consigne d'entrée (contrainte ticket_categories_entry_instruction_check). */
 const ENTRY_INSTRUCTION_MAX = 60;
 
-const SCAN_COLOR_OPTIONS = [
-    { value: '', label: 'Aucune couleur' },
-    ...SCAN_CATEGORY_COLORS.map((c) => ({ value: c, label: SCAN_CATEGORY_COLOR_LABELS[c] })),
-];
-
 export interface CategoryDraft {
     /** Clé stable de l'interface (identifiants des champs, erreurs). */
     key: string;
@@ -72,7 +68,7 @@ export interface CategoryDraft {
     sale_online: boolean;
     sale_counter: boolean;
     is_active: boolean;
-    /** Couleur au contrôle (une des 8 clés) ou '' (aucune). */
+    /** Couleur au contrôle (une des 8 clés) ; finition 2b : proposée à l'ajout, posée par la base si elle manque. */
     scan_color: string;
     /** Consigne d'entrée affichée au contrôleur ('' : aucune). */
     entry_instruction: string;
@@ -234,9 +230,11 @@ interface CategoryFieldsProps {
     disabled?: boolean;
     /** Affiche les verrous liés aux ventes (édition). */
     showLocks?: boolean;
+    /** Finition 2b (A) : autres catégories de l'événement (nom, couleur), pour signaler une couleur partagée. */
+    others?: ReadonlyArray<{ name: string; color: string }>;
 }
 
-export function CategoryFields({ draft, onChange, errors = {}, disabled = false, showLocks = false }: CategoryFieldsProps) {
+export function CategoryFields({ draft, onChange, errors = {}, disabled = false, showLocks = false, others = [] }: CategoryFieldsProps) {
     const set = <K extends keyof CategoryDraft>(field: K, value: CategoryDraft[K]) => onChange({ ...draft, [field]: value });
     const priceLocked = showLocks && draft.id !== null && hasSales(draft);
     const id = (field: CategoryField) => categoryFieldId(draft.key, field);
@@ -381,16 +379,18 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
             {/* Finition 2b (A, E-22) : couleur et consigne pour toute catégorie, dès la création */}
             <fieldset className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
                 <legend className="mb-3 text-sm font-semibold text-fg">Au contrôle des entrées</legend>
-                <Select
-                    id={id('scan_color')}
-                    label={CATEGORY_FIELD_LABELS.scan_color}
-                    value={draft.scan_color}
-                    onChange={(e) => set('scan_color', e.target.value)}
-                    options={SCAN_COLOR_OPTIONS}
-                    hint="Bande de couleur montrée au contrôleur avec le nom de la catégorie."
-                    error={errors.scan_color}
-                    disabled={disabled}
-                />
+                <div className="sm:col-span-2">
+                    <ScanColorPicker
+                        id={id('scan_color')}
+                        label={CATEGORY_FIELD_LABELS.scan_color}
+                        value={draft.scan_color}
+                        onChange={(color) => set('scan_color', color)}
+                        others={others}
+                        hint="Bande de couleur montrée au contrôleur avec le nom de la catégorie. Proposée automatiquement, modifiable."
+                        error={errors.scan_color}
+                        disabled={disabled}
+                    />
+                </div>
                 <TextInput
                     id={id('entry_instruction')}
                     label={CATEGORY_FIELD_LABELS.entry_instruction}
@@ -557,7 +557,8 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
     };
 
     const addCategory = () => {
-        const draft = newCategoryDraft();
+        // Finition 2b (A) : couleur proposée, distincte de celles des autres catégories de l'événement
+        const draft = { ...newCategoryDraft(), scan_color: proposeScanColor(items.map((it) => it.draft.scan_color)) };
         setItems((list) => [...list, { draft, base: null, errors: {}, message: null, suggestDeactivate: false, busy: false }]);
         window.requestAnimationFrame(() => document.getElementById(categoryFieldId(draft.key, 'name'))?.focus());
     };
@@ -702,6 +703,7 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
                             errors={item.errors}
                             disabled={item.busy}
                             showLocks
+                            others={items.filter((it) => it.draft.key !== draft.key).map((it) => ({ name: it.draft.name, color: it.draft.scan_color }))}
                         />
 
                         {item.message && (

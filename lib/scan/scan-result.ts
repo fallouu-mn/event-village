@@ -227,3 +227,34 @@ export const SCAN_CATEGORY_COLOR_LABELS: Record<ScanCategoryColor, string> = {
 export function isScanCategoryColor(value: unknown): value is ScanCategoryColor {
     return typeof value === 'string' && (SCAN_CATEGORY_COLORS as readonly string[]).includes(value);
 }
+
+/**
+ * Finition 2b (A, E-22) — couleurs proposées automatiquement à une catégorie nouvelle, dans cet ordre : chaque couleur est
+ * la plus éloignée des précédentes (écart CIEDE2000 entre les jetons --scan-cat-<clé>-bg ; 100 entre les deux premières,
+ * 24 ou plus entre les quatre premières). Toutes sont à 29 ou plus du vert « valide », des rouges « déjà utilisé » et
+ * « refusé » et de l'orange « mauvaise zone » ; OR en est exclu (24,0 de l'orange, 5,1 de l'ambre « hors fenêtre ») et
+ * reste choisissable à la main. Même ordre en base : ticket_category_auto_color (migration 20261119000003), qui pose la
+ * couleur d'une catégorie enregistrée sans couleur. Mesure : tests/parcours/f2b-couleur-auto.test.ts.
+ */
+export const AUTO_SCAN_COLOR_ORDER = ['BLANC', 'NOIR', 'VIOLET', 'ROSE', 'TURQUOISE', 'BLEU', 'ARGENT'] as const satisfies readonly ScanCategoryColor[];
+
+/**
+ * Couleur proposée pour une catégorie nouvelle : la première de AUTO_SCAN_COLOR_ORDER qu'aucune autre catégorie de
+ * l'événement n'a ; les sept prises, la moins employée (dans cet ordre). Valeurs vides ou hors palette ignorées.
+ */
+export function proposeScanColor(used: ReadonlyArray<string | null | undefined>): ScanCategoryColor {
+    const counts = new Map<string, number>();
+    for (const color of used) {
+        if (isScanCategoryColor(color)) counts.set(color, (counts.get(color) ?? 0) + 1);
+    }
+    let best: ScanCategoryColor = AUTO_SCAN_COLOR_ORDER[0];
+    let bestCount = Number.POSITIVE_INFINITY;
+    for (const color of AUTO_SCAN_COLOR_ORDER) {
+        const n = counts.get(color) ?? 0;
+        if (n < bestCount) {
+            best = color;
+            bestCount = n;
+        }
+    }
+    return best;
+}
