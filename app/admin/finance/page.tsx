@@ -1,468 +1,383 @@
 'use client';
 
 /**
- * Rapprochement financier (CDC §84), lot 3 : montants persistés renvoyés par
- * GET /api/admin/finance/reconciliation (paiements plateforme encaissés). Frais de service perçus,
- * frais agrégateur, revenu net Event Village (remboursements déduits), reversements partenaires et
- * commissions sont affichés tels que calculés par le serveur ; aucun taux n'est codé ni appliqué ici.
- * Lot 8 (A3, contrat 3.10) : remboursements à reprendre (RefundsToRetry). L'écran passe sur les jetons du système de
- * design : capturé pour la première fois, il n'avait jamais tenu les contrôles bloquants à 390 px (« § », contrastes,
- * textes sous 14 px, cibles sous 44 px). Il reste hors de la liste des fichiers migrés (A22).
- * Lot 9 bis (H6, B106, A5 ; contrat 4.1 et 5.59) : frais SamirPay des versements lus dans la même réponse : réels
- * (cashoutFeesReal), estimés au taux de retrait réglé (cashoutFeesEstimated) et écart (gap) ; pour les encaissements,
- * la mention du serveur (cashinNote) : SamirPay n'en fournit pas les frais réels, jamais un 0 affiché.
+ * Finance de l'administration — finition 3a (E-06, E-07, E-30, E-31, E-38).
+ *
+ * En tête, une seule période pour toute la page (calculée par le serveur en heure de Dakar), puis trois chiffres et les
+ * créances, chacun avec une phrase simple, la date qu'il utilise et un lien vers son détail :
+ *  - « Gagné par Event Village » (période) ;
+ *  - « Dû aux partenaires » (à l'instant, grand livre) ;
+ *  - « Retirable par Event Village » (SUPERADMIN seulement ; solde SamirPay lu par le serveur, cache de 5 minutes) ;
+ *  - « Créances » (bloc à part, jamais déduit).
+ * Puis l'argent qui attend (versements à reprendre, remboursements à verser, créances), le détail de chaque chiffre et la
+ * liste des paiements encaissés, paginée par le serveur, dont le filtre de statut ne change que la liste.
+ * Aucun calcul ici : tout vient de GET /api/admin/finance/* (lib/finance). Les avis de l'administration mènent aux
+ * ancres (#versements-a-reprendre, #remboursements-a-verser, #creances, #du-aux-partenaires).
+ * Remplace le rapprochement du lot 3 (tous les paiements chargés, trois « revenus » différents, filtres qui changeaient
+ * les chiffres du haut) ; la route /api/admin/finance/reconciliation n'est plus lue par l'écran.
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CreditCard,
-  DollarSign,
-  Info,
-  RefreshCw,
-  Undo2,
-  Users,
-} from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { usePathname, useRouter } from 'next/navigation';
+import { Landmark, Receipt, Scale, Settings2, TrendingUp, Wallet } from 'lucide-react';
+import { Badge } from '@/components/ui/Badge';
+import { DataList, type DataColumn } from '@/components/ui/DataList';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { Select } from '@/components/ui/Field';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Select } from '@/components/ui/Field';
-import { StatusBanner } from '@/components/ui/StatusBanner';
-import { RefundsToRetry } from '@/components/admin/RefundsToRetry';
-import { StatusBadge } from '@/components/ui/Badge';
-import { ErrorState } from '@/components/ui/EmptyState';
+import { Pagination } from '@/components/ui/Pagination';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { formatFcfaPrecise } from '@/lib/format';
-import { readJsonBody, serverErrorMessage } from '@/components/payment/PaymentModal';
-import type { FinancialReconciliationItem, FinancialReconciliationSummary } from '@/lib/admin/admin.service';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { RefundsToRetry } from '@/components/admin/RefundsToRetry';
+import { DebtsList } from '@/components/admin/finance/DebtsList';
+import { EarnedDetail } from '@/components/admin/finance/EarnedDetail';
+import { MoneyFigure } from '@/components/admin/finance/MoneyFigure';
+import { OwedDetail } from '@/components/admin/finance/OwedDetail';
+import { PeriodPicker, type PeriodChoice } from '@/components/admin/finance/PeriodPicker';
+import { RefundsToPayList } from '@/components/admin/finance/RefundsToPayList';
+import { BALANCE_UNREADABLE, NOTHING_WITHDRAWABLE, WithdrawableDetail, type WithdrawableView } from '@/components/admin/finance/WithdrawableDetail';
+import { useHashScroll } from '@/hooks/useHashScroll';
+import { getJson } from '@/lib/finance/admin-client';
+import type { PaymentLine } from '@/lib/finance/admin-lists';
+import type { FinanceSummary } from '@/lib/finance/admin-summary';
+import { PAYMENT_STATUS_FILTER, paymentStatusLabel } from '@/lib/finance/payment-labels';
+import { DEFAULT_PERIOD, PERIOD_KEYS, type FinancePeriod, type PeriodKey } from '@/lib/finance/period';
+import { formatDateTime, formatFcfaPrecise, formatTime, toDakarDateTimeLocal } from '@/lib/format';
 
-type PeriodPreset = 'ALL' | '30D' | '7D';
-
-const PERIODS: Array<{ value: PeriodPreset; label: string }> = [
-  { value: 'ALL', label: 'Tout' },
-  { value: '30D', label: '30 jours' },
-  { value: '7D', label: '7 jours' },
-];
-
-const STATUSES: Array<{ value: string; label: string }> = [
-  { value: 'ALL', label: 'Tous les paiements encaissés' },
-  { value: 'SUCCESS', label: 'Confirmés' },
-  { value: 'PARTIAL', label: 'Partiellement remboursés' },
-  { value: 'REFUND_PENDING', label: 'Remboursement en cours' },
-  { value: 'REFUNDED', label: 'Remboursés' },
-];
-
-const TARGET_LABELS: Record<string, string> = {
-  TICKET: 'Billetterie',
-  ORDER: 'Commande',
-  HALL_RESERVATION: 'Salle',
-  TABLE_RESERVATION: 'Table',
-  SUBSCRIPTION: 'Abonnement',
-};
-
-const OPERATOR_NAMES: Record<string, string> = { WAVE: 'Wave', ORANGE_MONEY: 'Orange Money', SAMIRPAY: 'SamirPay' };
-
-const formatPrice = formatFcfaPrecise;
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Dakar' });
+interface SummaryBody {
+  period: FinancePeriod;
+  summary: FinanceSummary;
+  withdrawable: { visible: false } | WithdrawableView;
 }
 
-/** Taux de frais de service recopié sur le paiement (information), sans aucun calcul. */
-function serviceFeeLabel(item: FinancialReconciliationItem): string {
-  return item.platformFeeRate !== null ? `${formatPrice(item.serviceFee)} (${item.platformFeeRate.toLocaleString('fr-FR')} %)` : formatPrice(item.serviceFee);
+interface PaymentsBody {
+  page: number;
+  pageSize: number;
+  total: number;
+  items: PaymentLine[];
 }
 
-/** Frais SamirPay des versements sur la période (H6) ; null si la réponse ne les porte pas. */
-interface CashoutFees {
-  real: number;
-  estimated: number;
-  gap: number;
-  rate: number;
-  count: number;
-  cashinNote: string;
+type StatusFilter = (typeof PAYMENT_STATUS_FILTER)[number]['value'];
+
+/** Paramètres de période de l'adresse (?period=…&from=…&to=…), pour un lien qui rouvre la même vue. */
+function periodQuery(choice: PeriodChoice): string {
+  const params = new URLSearchParams({ period: choice.key });
+  if (choice.key === 'custom') {
+    params.set('from', choice.from ?? '');
+    params.set('to', choice.to ?? '');
+  }
+  return params.toString();
 }
 
-function readCashoutFees(body: Record<string, unknown>): CashoutFees | null {
-  const nums = [body.cashoutFeesReal, body.cashoutFeesEstimated, body.gap, body.cashoutFeeRate, body.cashoutCount];
-  if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n)) || typeof body.cashinNote !== 'string') return null;
-  return {
-    real: body.cashoutFeesReal as number,
-    estimated: body.cashoutFeesEstimated as number,
-    gap: body.gap as number,
-    rate: body.cashoutFeeRate as number,
-    count: body.cashoutCount as number,
-    cashinNote: body.cashinNote,
-  };
+function readChoice(): PeriodChoice {
+  const params = new URLSearchParams(window.location.search);
+  const key = params.get('period');
+  if (key && (PERIOD_KEYS as readonly string[]).includes(key)) {
+    return { key: key as PeriodKey, from: params.get('from') ?? undefined, to: params.get('to') ?? undefined };
+  }
+  return { key: DEFAULT_PERIOD };
 }
 
-function isReconciliation(body: unknown): body is { summary: FinancialReconciliationSummary; items: FinancialReconciliationItem[] } {
-  if (typeof body !== 'object' || body === null) return false;
-  const b = body as Record<string, unknown>;
-  return typeof b.summary === 'object' && b.summary !== null && Array.isArray(b.items);
-}
-
-export default function AdminFinanceReconciliationPage() {
+export default function AdminFinancePage() {
   const fieldId = useId();
-  const [summary, setSummary] = useState<FinancialReconciliationSummary | null>(null);
-  const [items, setItems] = useState<FinancialReconciliationItem[]>([]);
-  const [fees, setFees] = useState<CashoutFees | null>(null);
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('ALL');
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [refundsRefresh, setRefundsRefresh] = useState(0);
+  const router = useRouter();
+  const pathname = usePathname();
+  const { hasRole, hasPermission, isLoading: authLoading } = useAuth();
+  // Droits lus une fois la session connue (sinon tout paraîtrait refusé le temps du chargement)
+  const canRead = !authLoading && hasPermission('payments.read');
+  const canRefunds = !authLoading && hasPermission('refunds.manage');
+  const isSuperadmin = !authLoading && hasRole('SUPERADMIN');
 
-  const fetchReconciliation = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const params = new URLSearchParams({ status: statusFilter });
-      if (periodPreset !== 'ALL') {
-        const d = new Date();
-        d.setDate(d.getDate() - (periodPreset === '7D' ? 7 : 30));
-        params.set('startDate', d.toISOString());
-      }
-      const res = await fetch(`/api/admin/finance/reconciliation?${params.toString()}`, { cache: 'no-store' });
-      const body = await readJsonBody(res, 'rapprochement financier');
-      if (!res.ok) {
-        setLoadError(serverErrorMessage(body) ?? `Le rapprochement n’a pas pu être chargé (erreur ${res.status}).`);
+  const [choice, setChoice] = useState<PeriodChoice | null>(null);
+  const [summary, setSummary] = useState<SummaryBody | null>(null);
+  const [summaryPhase, setSummaryPhase] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [periodError, setPeriodError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  const [status, setStatus] = useState<StatusFilter>('ALL');
+  const [page, setPage] = useState(1);
+  const [payments, setPayments] = useState<PaymentsBody | null>(null);
+  const [paymentsPhase, setPaymentsPhase] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+  /** Nouvel essai demandé par « Réessayer » (même page, même filtre). */
+  const [paymentsTick, setPaymentsTick] = useState(0);
+
+  useEffect(() => setChoice(readChoice()), []);
+
+  const changePeriod = useCallback((next: PeriodChoice) => {
+    setChoice(next);
+    setPage(1);
+    router.replace(`${pathname}?${periodQuery(next)}`, { scroll: false });
+  }, [pathname, router]);
+
+  const loadSummary = useCallback(async (current: PeriodChoice) => {
+    const r = await getJson<SummaryBody>(`/api/admin/finance/summary?${periodQuery(current)}`, 'synthèse financière');
+    setRetrying(false);
+    if (!r.ok) {
+      if (r.status === 400) {
+        setPeriodError(r.message);
+        setSummaryPhase((p) => (p === 'loading' ? 'error' : p));
         return;
       }
-      if (!isReconciliation(body)) {
-        console.error('[rapprochement financier] réponse inattendue :', body);
-        setLoadError('Réponse inattendue du serveur.');
-        return;
-      }
-      const cashoutFees = readCashoutFees(body as unknown as Record<string, unknown>);
-      // Partie H6 absente ou illisible : journalisée et dite à l'écran (« Frais SamirPay non disponibles »), le reste du
-      // rapprochement reste lisible.
-      if (!cashoutFees) console.warn('[rapprochement financier] frais SamirPay absents ou illisibles dans la réponse :', body);
-      setSummary(body.summary);
-      setItems(body.items);
-      setFees(cashoutFees);
-      setLoadError(null);
-    } catch (err) {
-      console.error('[rapprochement financier] chargement impossible :', err);
-      setLoadError('Connexion impossible : vérifiez votre réseau puis réessayez.');
-    } finally {
-      setIsLoading(false);
+      setSummaryError(r.message);
+      setSummaryPhase('error');
+      return;
     }
-  }, [statusFilter, periodPreset]);
+    setPeriodError(null);
+    setSummaryError(null);
+    setSummary(r.data);
+    setSummaryPhase('ready');
+  }, []);
 
   useEffect(() => {
-    void fetchReconciliation();
-  }, [fetchReconciliation]);
+    if (!choice || !canRead) return;
+    void loadSummary(choice);
+  }, [choice, canRead, loadSummary]);
 
-  const kpis = summary
-    ? [
-        { label: 'Volume encaissé', value: summary.totalGrossVolume, tone: 'text-fg', help: `${summary.totalTransactionsCount} paiement(s), frais de service compris` },
-        { label: 'Frais de service perçus', value: summary.totalServiceFees, tone: 'text-fg', help: 'Payés par les acheteurs, montants enregistrés sur chaque paiement' },
-        { label: 'Frais agrégateur (SamirPay)', value: summary.totalAggregatorFees, tone: 'text-warning-fg', help: 'Prélevés sur les frais de service' },
-        { label: 'Revenu net Event Village', value: summary.totalPlatformNetRevenue, tone: 'text-brand-fg', help: 'Frais de service moins frais agrégateur, remboursements déduits' },
-        { label: 'Reversements partenaires', value: summary.totalPartnerPayouts, tone: 'text-success-fg', help: 'Prix des billets et prestations dus aux partenaires' },
-        { label: 'Remboursements versés', value: summary.totalRefunds, tone: 'text-fg', help: 'Remboursements confirmés sur la période' },
-      ]
-    : [];
+  useEffect(() => {
+    if (!choice || !canRead) return;
+    let cancelled = false;
+    setPaymentsPhase((p) => (p === 'ready' ? 'ready' : 'loading'));
+    void getJson<PaymentsBody>(`/api/admin/finance/payments?${periodQuery(choice)}&status=${status}&page=${page}`, 'paiements encaissés').then((r) => {
+      if (cancelled) return;
+      if (!r.ok || !Array.isArray(r.data.items)) {
+        setPaymentsError(r.ok ? null : r.message);
+        setPaymentsPhase('error');
+        return;
+      }
+      setPayments(r.data);
+      setPaymentsError(null);
+      setPaymentsPhase('ready');
+    });
+    return () => { cancelled = true; };
+  }, [choice, canRead, status, page, paymentsTick]);
+
+  // Avis de l'administration et liens de l'accueil : défilement vers la liste visée une fois la page en place
+  useHashScroll(!authLoading && (!canRead || summaryPhase !== 'loading'));
+
+  const s = summary?.summary ?? null;
+  const range = summary?.period.range ?? null;
+  const w = summary && summary.withdrawable.visible ? summary.withdrawable : null;
+  const loading = summaryPhase === 'loading';
+
+  const paymentColumns: DataColumn<PaymentLine>[] = [
+    {
+      key: 'at', header: 'Encaissé le',
+      render: (p) => <time dateTime={toDakarDateTimeLocal(p.encashedAt)} className="tabular-nums">{formatDateTime(p.encashedAt)}</time>,
+    },
+    {
+      key: 'ref', header: 'Référence',
+      render: (p) => <span className="break-all font-mono text-sm text-fg">{p.transactionReference}</span>,
+    },
+    {
+      key: 'what', header: 'Objet',
+      render: (p) => (
+        <span className="flex flex-col">
+          <span className="text-fg">{p.target}</span>
+          {p.eventTitle && <span className="text-sm text-fg-muted">{p.eventTitle}</span>}
+        </span>
+      ),
+    },
+    { key: 'amount', header: 'Payé', align: 'right', render: (p) => <span className="font-semibold tabular-nums">{formatFcfaPrecise(p.amount)}</span> },
+    { key: 'fee', header: 'Frais de service', align: 'right', render: (p) => <span className="tabular-nums">{formatFcfaPrecise(p.serviceFee)}</span> },
+    { key: 'ev', header: 'Pour Event Village', align: 'right', render: (p) => <span className="tabular-nums">{formatFcfaPrecise(p.evNet)}</span> },
+    {
+      key: 'status', header: 'Statut',
+      render: (p) => {
+        const label = paymentStatusLabel(p.status);
+        return (
+          <span className="flex flex-col items-start gap-1">
+            <Badge variant={label.variant} size="sm">{label.label}</Badge>
+            {p.discrepancy > 0 && <span className="text-sm font-semibold text-danger-fg tabular-nums">Écart de {formatFcfaPrecise(p.discrepancy)}</span>}
+          </span>
+        );
+      },
+    },
+  ];
+
+  const renderPaymentCard = (p: PaymentLine) => {
+    const label = paymentStatusLabel(p.status);
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-3">
+          <span className="text-lg font-bold text-fg tabular-nums">{formatFcfaPrecise(p.amount)}</span>
+          <Badge variant={label.variant} size="sm" className="flex-shrink-0">{label.label}</Badge>
+        </div>
+        <span className="text-sm text-fg">{p.target}{p.eventTitle ? ` · ${p.eventTitle}` : ''}</span>
+        <time dateTime={toDakarDateTimeLocal(p.encashedAt)} className="text-sm text-fg-muted tabular-nums">Encaissé le {formatDateTime(p.encashedAt)}</time>
+        <span className="break-all font-mono text-sm text-fg-muted">{p.transactionReference}</span>
+        <span className="text-sm text-fg-muted">
+          Frais de service <span className="tabular-nums text-fg">{formatFcfaPrecise(p.serviceFee)}</span> · pour Event Village{' '}
+          <span className="tabular-nums text-fg">{formatFcfaPrecise(p.evNet)}</span>
+        </span>
+        {p.discrepancy > 0 && <span className="text-sm font-semibold text-danger-fg tabular-nums">Écart de {formatFcfaPrecise(p.discrepancy)}</span>}
+      </div>
+    );
+  };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="flex flex-col gap-6 pb-16">
       <PageHeader
-        back={{ href: '/admin/dashboard', label: 'Tableau de bord' }}
-        title="Rapprochement financier"
+        title="Finance"
+        description="Ce que gagne Event Village, ce qui est dû aux partenaires et ce qui peut sortir du compte SamirPay."
         actions={(
-          <>
-            <LinkButton href="/admin/finance-settings" variant="ghost" size="sm">
-              Réglages de la plateforme
-            </LinkButton>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setRefundsRefresh((n) => n + 1);
-                void fetchReconciliation();
-              }}
-              disabled={isLoading}
-              leftIcon={<RefreshCw size={14} className={isLoading ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />}
-            >
-              Actualiser
-            </Button>
-          </>
+          <LinkButton href="/admin/finance-settings" variant="ghost" size="sm" leftIcon={<Settings2 size={16} />}>
+            Réglages de la plateforme
+          </LinkButton>
         )}
       />
 
-      {loadError && summary && (
-        <StatusBanner tone="danger" title="Rapprochement non actualisé" announce="alert">
-          {loadError}
+      {!authLoading && !canRead && (
+        <StatusBanner tone="info" title="Chiffres de la finance non affichés">
+          Votre compte n’a pas la permission « Consulter les paiements ». Demandez-la au Superadmin pour voir ce que gagne Event Village et ce qui est dû.
         </StatusBanner>
       )}
 
-      {/* Synthèse */}
-      {!summary ? (
-        loadError ? (
-          <ErrorState title="Rapprochement indisponible" description={loadError} onRetry={() => void fetchReconciliation()} />
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" aria-busy="true">
-            <span className="sr-only">Chargement du rapprochement…</span>
-            {[1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-28 rounded-3xl" />)}
-          </div>
-        )
-      ) : (
-        <>
-          <section aria-label="Synthèse financière" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {kpis.map((k) => (
-              <div key={k.label} className="p-5 rounded-3xl bg-surface border border-border shadow-xs space-y-1">
-                <span className="text-sm text-fg-muted font-medium">{k.label}</span>
-                <p className={`text-xl sm:text-2xl font-black tabular-nums ${k.tone}`}>{formatPrice(k.value)}</p>
-                <span className="text-sm text-fg-muted block leading-relaxed">{k.help}</span>
-              </div>
-            ))}
-          </section>
-
-          <section aria-label="Parrainage, retraits et écarts" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <span className="text-sm text-fg-muted font-bold">Commissions de parrainage</span>
-                <p className="text-base font-black text-fg tabular-nums">{formatPrice(summary.totalReferralCommissions)}</p>
-              </div>
-              <Users size={22} className="text-brand-fg shrink-0" aria-hidden="true" />
-            </div>
-            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <span className="text-sm text-fg-muted font-bold">Revenu net après parrainage</span>
-                <p className="text-base font-black text-brand-fg tabular-nums">{formatPrice(summary.platformNetBalance)}</p>
-              </div>
-              <DollarSign size={22} className="text-brand-fg shrink-0" aria-hidden="true" />
-            </div>
-            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <span className="text-sm text-fg-muted font-bold">Retraits versés</span>
-                <p className="text-base font-black text-fg tabular-nums">{formatPrice(summary.totalWithdrawalsPaid)}</p>
-              </div>
-              <CreditCard size={22} className="text-success-fg shrink-0" aria-hidden="true" />
-            </div>
-            <div className="p-4 rounded-2xl bg-surface-sunken border border-border flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <span className="text-sm text-fg-muted font-bold">Écarts de rapprochement</span>
-                <p className={`text-base font-black tabular-nums ${summary.discrepanciesCount ? 'text-danger-fg' : 'text-success-fg'}`}>
-                  {summary.discrepanciesCount} {summary.discrepanciesCount > 1 ? 'anomalies' : 'anomalie'}
-                </p>
-              </div>
-              {summary.discrepanciesCount ? (
-                <AlertTriangle size={22} className="text-danger-fg shrink-0" aria-hidden="true" />
-              ) : (
-                <CheckCircle2 size={22} className="text-success-fg shrink-0" aria-hidden="true" />
-              )}
-            </div>
-          </section>
-        </>
+      {canRead && choice && (
+        <PeriodPicker value={choice} range={range} error={periodError} disabled={loading} onChange={changePeriod} />
       )}
 
-      {summary && (
-        <section aria-labelledby={`${fieldId}-frais`} className="space-y-3">
-          <div className="space-y-1">
-            <h2 id={`${fieldId}-frais`} className="text-lg font-semibold text-fg">Frais SamirPay</h2>
+      {canRead && summaryPhase === 'error' && !summary && (
+        <ErrorState
+          title="Chiffres de la finance indisponibles"
+          description={summaryError ?? periodError ?? undefined}
+          onRetry={() => { setRetrying(true); if (choice) void loadSummary(choice); }}
+          isRetrying={retrying}
+        />
+      )}
+
+      {canRead && (summaryPhase !== 'error' || summary) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <MoneyFigure
+            id={`${fieldId}-gagne`}
+            title="Gagné par Event Village"
+            tone="brand"
+            icon={<TrendingUp size={18} />}
+            loading={loading}
+            value={s ? formatFcfaPrecise(s.earned.total) : null}
+            explanation="Ce qui reste à Event Village une fois payés SamirPay et les parrains : frais de service et frais de retrait, remboursements déduits."
+            basis={range ? <>Paiements encaissés, retraits versés et versements confirmés {range}.</> : null}
+            detailHref="#detail-gagne"
+            detailLabel="Voir le détail"
+          />
+          <MoneyFigure
+            id={`${fieldId}-du`}
+            title="Dû aux partenaires"
+            tone="info"
+            icon={<Wallet size={18} />}
+            loading={loading}
+            value={s ? formatFcfaPrecise(s.owed_partners.total) : null}
+            explanation="L’argent des ventes qui appartient aux partenaires : il est sur le compte SamirPay, mais il n’est pas à Event Village."
+            basis={s ? (
+              <>
+                Dont <span className="font-semibold text-fg tabular-nums">{formatFcfaPrecise(s.owed_partners.withdrawable_now)}</span> retirables aujourd’hui.
+                Dû aux parrains : <span className="font-semibold text-fg tabular-nums">{formatFcfaPrecise(s.owed_referrers.total)}</span>. À l’instant.
+              </>
+            ) : null}
+            detailHref="#du-aux-partenaires"
+            detailLabel="Voir le détail"
+          />
+          {isSuperadmin && (
+            <MoneyFigure
+              id={`${fieldId}-retirable`}
+              title="Retirable par Event Village"
+              tone={w && w.amount !== null && w.amount > 0 ? 'success' : 'warning'}
+              icon={<Landmark size={18} />}
+              loading={loading}
+              value={w && w.amount !== null ? formatFcfaPrecise(w.amount) : null}
+              explanation={!w || w.balance === null
+                ? <><span className="font-semibold text-warning-fg">{BALANCE_UNREADABLE}</span>. Ne retirez rien avant qu’il s’affiche.</>
+                : w.amount === 0
+                  ? <span className="font-semibold text-fg">{NOTHING_WITHDRAWABLE}</span>
+                  : 'Ce que vous pouvez sortir du compte SamirPay sans empêcher un partenaire, un parrain ou un client d’être payé.'}
+              basis={w && w.balance ? (
+                <>
+                  Solde SamirPay lu à <time dateTime={w.balance.readAt} className="tabular-nums">{formatTime(w.balance.readAt)}</time>, moins tout ce qui est dû et la réserve de prudence.
+                  {w.simulated && ' Mode d’essai : chiffre sans valeur réelle.'}
+                </>
+              ) : null}
+              detailHref="#calcul-retirable"
+              detailLabel="Voir le calcul"
+            />
+          )}
+          <MoneyFigure
+            id={`${fieldId}-creances`}
+            title="Créances"
+            tone={s && s.debts.count > 0 ? 'warning' : 'neutral'}
+            icon={<Scale size={18} />}
+            loading={loading}
+            value={s ? formatFcfaPrecise(s.debts.total) : null}
+            explanation="Ce que des partenaires ou des parrains doivent encore à Event Village, repris sur leurs prochains gains. Ce n’est déduit d’aucun autre chiffre."
+            basis={s ? <>{s.debts.count > 1 ? `${s.debts.count} créances` : s.debts.count === 1 ? '1 créance' : 'Aucune créance'} à l’instant.</> : null}
+            detailHref="#creances"
+            detailLabel="Voir les créances"
+          />
+        </div>
+      )}
+
+      {canRefunds && (
+        <div id="versements-a-reprendre" className="scroll-mt-20">
+          <RefundsToRetry />
+        </div>
+      )}
+
+      {(canRead || canRefunds) && <RefundsToPayList canResume={canRefunds} />}
+
+      {canRead && <DebtsList />}
+
+      {canRead && s && range && <EarnedDetail earned={s.earned} range={range} />}
+
+      {canRead && <OwedDetail partners={s?.owed_partners ?? null} referrers={s?.owed_referrers ?? null} />}
+
+      {canRead && w && s && <WithdrawableDetail view={w} summary={s} />}
+
+      {canRead && (
+        <section id="paiements" aria-labelledby={`${fieldId}-paiements`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+          <div className="flex flex-col gap-1">
+            <h2 id={`${fieldId}-paiements`} className="flex items-center gap-2 text-lg font-semibold text-fg">
+              <Receipt size={20} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
+              Paiements encaissés
+            </h2>
             <p className="text-sm leading-relaxed text-fg-muted">
-              Frais réellement prélevés sur les versements confirmés de la période, comparés à l’estimation au taux de retrait réglé.
+              Paiements en ligne encaissés {range ?? 'sur la période'}. Le statut choisi ne change que cette liste, jamais les chiffres du haut.
             </p>
           </div>
-          {!fees ? (
-            <StatusBanner tone="warning" title="Frais SamirPay non disponibles">
-              La comparaison des frais n’a pas pu être lue. Actualisez la page.
-            </StatusBanner>
-          ) : (
+          <Select
+            label="Statut"
+            id={`${fieldId}-statut`}
+            value={status}
+            options={PAYMENT_STATUS_FILTER.map((o) => ({ value: o.value, label: o.label }))}
+            onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1); }}
+            fieldClassName="md:w-80"
+          />
+          {paymentsPhase === 'loading' && (
+            <div role="status" aria-busy="true" aria-label="Chargement des paiements" className="flex flex-col gap-2">
+              <Skeleton className="h-16 rounded-2xl" />
+              <Skeleton className="h-16 rounded-2xl" />
+              <Skeleton className="h-16 rounded-2xl" />
+            </div>
+          )}
+          {paymentsPhase === 'error' && (
+            <ErrorState title="Paiements indisponibles" description={paymentsError ?? undefined} onRetry={() => setPaymentsTick((t) => t + 1)} />
+          )}
+          {paymentsPhase === 'ready' && payments && (
             <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="space-y-1 rounded-2xl border border-border bg-surface-sunken p-4">
-                  <span className="text-sm font-bold text-fg-muted">Frais réels des versements</span>
-                  <p className="text-base font-black tabular-nums text-fg">{formatPrice(fees.real)}</p>
-                  <span className="block text-sm text-fg-muted">
-                    <span className="tabular-nums">{fees.count}</span> {fees.count > 1 ? 'versements aux frais connus' : 'versement aux frais connus'}
-                  </span>
-                </div>
-                <div className="space-y-1 rounded-2xl border border-border bg-surface-sunken p-4">
-                  <span className="text-sm font-bold text-fg-muted">Frais estimés</span>
-                  <p className="text-base font-black tabular-nums text-fg">{formatPrice(fees.estimated)}</p>
-                  <span className="block text-sm text-fg-muted">
-                    Au taux de retrait réglé : <span className="tabular-nums">{fees.rate.toLocaleString('fr-FR')}</span> %
-                  </span>
-                </div>
-                <div className="space-y-1 rounded-2xl border border-border bg-surface-sunken p-4">
-                  <span className="text-sm font-bold text-fg-muted">Écart (réels moins estimés)</span>
-                  <p className={`flex items-center gap-1.5 text-base font-black tabular-nums ${fees.gap > 0 ? 'text-danger-fg' : 'text-fg'}`}>
-                    {fees.gap > 0 && <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />}
-                    {formatPrice(fees.gap)}
-                  </p>
-                  <span className="block text-sm text-fg-muted">
-                    {fees.gap > 0 ? 'Les versements coûtent plus que l’estimation.' : fees.gap < 0 ? 'Les versements coûtent moins que l’estimation.' : 'Aucun écart.'}
-                  </span>
-                </div>
-              </div>
-              <p className="flex items-start gap-2 rounded-2xl border border-border bg-surface p-3 text-sm text-fg-muted">
-                <Info size={16} className="mt-0.5 shrink-0 text-info-fg" aria-hidden="true" />
-                <span>Encaissements : {fees.cashinNote}</span>
-              </p>
+              <DataList
+                items={payments.items}
+                columns={paymentColumns}
+                getKey={(p) => p.id}
+                caption="Paiements encaissés"
+                renderCard={renderPaymentCard}
+                empty={<EmptyState title="Aucun paiement" description="Aucun paiement en ligne encaissé sur cette période avec ce statut." />}
+              />
+              <Pagination page={payments.page} pageSize={payments.pageSize} total={payments.total} onPageChange={setPage} ariaLabel="Pages des paiements" />
             </>
           )}
         </section>
       )}
-
-      <RefundsToRetry refreshToken={refundsRefresh} />
-
-      {/* Lignes */}
-      <section aria-labelledby={`${fieldId}-lignes`} className="p-4 sm:p-6 rounded-3xl bg-surface border border-border shadow-xs space-y-6">
-        <div className="flex flex-col gap-4 border-b border-border pb-4">
-          <div>
-            <h2 id={`${fieldId}-lignes`} className="text-lg font-semibold text-fg">Paiements rapprochés</h2>
-            <p className="text-sm text-fg-muted mt-0.5 leading-relaxed">
-              Contrôle automatique, paiement par paiement : total débité = reversement partenaire + frais de service ; frais de service = frais agrégateur + revenu net Event Village.
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-            <Select
-              label="Statut"
-              id={`${fieldId}-statut`}
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              options={STATUSES}
-              fieldClassName="sm:w-80"
-            />
-            <div role="group" aria-label="Période" className="flex items-center gap-1 p-1 rounded-xl bg-surface-sunken">
-              {PERIODS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  aria-pressed={periodPreset === p.value}
-                  onClick={() => setPeriodPreset(p.value)}
-                  className={`min-h-11 whitespace-nowrap px-3 rounded-lg text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    periodPreset === p.value ? 'bg-brand text-on-brand' : 'text-fg-muted'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {isLoading && items.length === 0 ? (
-          <div className="space-y-2" aria-busy="true">
-            <span className="sr-only">Chargement des paiements…</span>
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-2xl" />)}
-          </div>
-        ) : items.length === 0 ? (
-          <div className="py-12 text-center text-fg-muted">
-            <DollarSign size={32} className="mx-auto text-fg-muted mb-2" aria-hidden="true" />
-            <p className="text-sm font-bold">Aucun paiement encaissé pour cette période.</p>
-          </div>
-        ) : (
-          <>
-            {/* Mobile : cartes */}
-            <ul className="md:hidden space-y-3">
-              {items.map((item) => (
-                <li key={item.paymentId} className="p-4 rounded-2xl bg-surface-sunken border border-border space-y-2 text-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-mono font-bold text-fg break-all">{item.transactionReference}</p>
-                      <p className="text-sm text-fg-muted">
-                        {TARGET_LABELS[item.targetType] ?? 'Autre objet'} · {OPERATOR_NAMES[item.paymentMethod] ?? 'Autre moyen'} · {formatDate(item.createdAt)}
-                      </p>
-                    </div>
-                    <StatusBadge status={item.status} />
-                  </div>
-                  <dl className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
-                    <dt className="text-fg-muted">Total débité</dt>
-                    <dd className="text-right font-black text-fg">{formatPrice(item.grossAmount)}</dd>
-                    <dt className="text-fg-muted">Prix</dt>
-                    <dd className="text-right font-bold text-fg">{item.facialAmount !== null ? formatPrice(item.facialAmount) : '—'}</dd>
-                    <dt className="text-fg-muted">Frais de service</dt>
-                    <dd className="text-right font-bold text-fg">{serviceFeeLabel(item)}</dd>
-                    <dt className="text-fg-muted">Frais agrégateur</dt>
-                    <dd className="text-right text-warning-fg">{formatPrice(item.aggregatorFee)}</dd>
-                    <dt className="text-fg-muted">Net Event Village</dt>
-                    <dd className="text-right font-bold text-brand-fg">{formatPrice(item.platformNetRevenue)}</dd>
-                    <dt className="text-fg-muted">Partenaire</dt>
-                    <dd className="text-right font-bold text-success-fg">{formatPrice(item.partnerPayout)}</dd>
-                    {item.refundedAmount > 0 && (
-                      <>
-                        <dt className="text-fg-muted">Remboursé</dt>
-                        <dd className="text-right font-bold text-fg">{formatPrice(item.refundedAmount)}</dd>
-                      </>
-                    )}
-                    <dt className="text-fg-muted">Parrainage</dt>
-                    <dd className="text-right text-fg-muted">{formatPrice(item.totalReferralCommissions)}</dd>
-                  </dl>
-                  {item.discrepancy !== 0 && (
-                    <p className="flex items-center gap-1.5 font-bold tabular-nums text-danger-fg">
-                      <AlertTriangle size={13} aria-hidden="true" /> Écart : {formatPrice(item.discrepancy)}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            {/* Écran large : tableau */}
-            <div role="region" aria-label="Paiements rapprochés, tableau défilable" tabIndex={0} className="hidden md:block overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <table className="w-full min-w-[1240px] text-sm text-left">
-                <caption className="sr-only">Paiements encaissés et leur répartition</caption>
-                <thead>
-                  <tr className="border-b border-border text-fg-muted font-bold">
-                    <th scope="col" className="pb-3 pr-3">Référence</th>
-                    <th scope="col" className="pb-3 pr-3">Objet · moyen</th>
-                    <th scope="col" className="pb-3 pr-3">Statut</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Total débité</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Prix</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Frais de service</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Frais agrégateur</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Net Event Village</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Partenaire</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Remboursé</th>
-                    <th scope="col" className="pb-3 pr-3 text-right">Parrainage</th>
-                    <th scope="col" className="pb-3 pr-3 text-center">Écart</th>
-                    <th scope="col" className="pb-3 text-right">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border tabular-nums whitespace-nowrap">
-                  {items.map((item) => (
-                    <tr key={item.paymentId} className="hover:bg-surface-sunken">
-                      <td className="py-3 pr-3 font-mono font-bold text-fg">{item.transactionReference}</td>
-                      <td className="py-3 pr-3 text-fg-muted">
-                        {TARGET_LABELS[item.targetType] ?? 'Autre objet'} · {OPERATOR_NAMES[item.paymentMethod] ?? 'Autre moyen'}
-                      </td>
-                      <td className="py-3 pr-3"><StatusBadge status={item.status} /></td>
-                      <td className="py-3 pr-3 text-right font-black text-fg">{formatPrice(item.grossAmount)}</td>
-                      <td className="py-3 pr-3 text-right text-fg-muted">{item.facialAmount !== null ? formatPrice(item.facialAmount) : '—'}</td>
-                      <td className="py-3 pr-3 text-right font-bold text-fg whitespace-nowrap">{serviceFeeLabel(item)}</td>
-                      <td className="py-3 pr-3 text-right text-warning-fg">{formatPrice(item.aggregatorFee)}</td>
-                      <td className="py-3 pr-3 text-right font-bold text-brand-fg">{formatPrice(item.platformNetRevenue)}</td>
-                      <td className="py-3 pr-3 text-right font-bold text-success-fg">{formatPrice(item.partnerPayout)}</td>
-                      <td className="py-3 pr-3 text-right text-fg-muted">
-                        {item.refundedAmount > 0 ? (
-                          <span className="inline-flex items-center gap-1"><Undo2 size={12} aria-hidden="true" />{formatPrice(item.refundedAmount)}</span>
-                        ) : '—'}
-                      </td>
-                      <td className="py-3 pr-3 text-right text-fg-muted">{formatPrice(item.totalReferralCommissions)}</td>
-                      <td className="py-3 pr-3 text-center font-bold">
-                        {item.discrepancy === 0 ? (
-                          <span className="text-success-fg text-sm">Aucun</span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-danger-fg text-sm">
-                            <AlertTriangle size={12} aria-hidden="true" /> {formatPrice(item.discrepancy)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 text-right text-fg-muted text-sm whitespace-nowrap">{formatDate(item.createdAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
     </div>
   );
 }
