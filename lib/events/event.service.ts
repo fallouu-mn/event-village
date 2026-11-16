@@ -37,6 +37,14 @@ export interface EventUpdateResult {
     event: DbRecord;
     notified_holders: number;
     sms_queued: number;
+    /**
+     * Correctifs de la contre-vérification de la finition 2a (T4) : heure à laquelle l'avis de changement de lieu part
+     * (application, push et SMS ensemble : fin de la fenêtre de 10 minutes, ou de la retenue d'une heure), null sans
+     * changement de lieu.
+     */
+    place_notice_at: string | null;
+    /** T4 : avis de lieu retenu (un avis de changement de lieu est déjà parti il y a moins d'une heure). */
+    place_notice_held: boolean;
 }
 
 /**
@@ -400,7 +408,9 @@ export class EventService {
         const imageChanged = nextImage !== undefined && (nextImage ?? null) !== (event.image_url ?? null);
         if (imageChanged) await assertPosterStored(nextImage ?? null);
 
-        const result = await editionResult<{ ok: true; event: DbRecord; notified_holders: number; sms_queued: number }>('event_update', rpcWithRetry('event_update', { p: {
+        const result = await editionResult<{
+            ok: true; event: DbRecord; notified_holders: number; sms_queued: number; place_notice_at?: string | null; place_notice_held?: boolean;
+        }>('event_update', rpcWithRetry('event_update', { p: {
             event_id: eventId,
             actor_id: actorId,
             patch: parsed.data,
@@ -415,7 +425,13 @@ export class EventService {
                 console.error(`[EventService.updateEvent] ancienne affiche de ${eventId} non effacée :`, err instanceof Error ? err.message : String(err));
             }
         }
-        return { event: result.event, notified_holders: Number(result.notified_holders ?? 0), sms_queued: Number(result.sms_queued ?? 0) };
+        return {
+            event: result.event,
+            notified_holders: Number(result.notified_holders ?? 0),
+            sms_queued: Number(result.sms_queued ?? 0),
+            place_notice_at: typeof result.place_notice_at === 'string' ? result.place_notice_at : null,
+            place_notice_held: result.place_notice_held === true,
+        };
     }
 
     /** Ajout d'une catégorie de billets (F4) : schéma partagé, puis RPC ticket_category_create. */

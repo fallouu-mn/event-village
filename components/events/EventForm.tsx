@@ -23,7 +23,7 @@ import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
 // Types seulement (effacés à la compilation) : la carte reste chargée à la demande (next/dynamic)
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
-import { formatInteger } from '@/lib/format';
+import { formatInteger, formatTime } from '@/lib/format';
 import { retainedEnd } from '@/lib/events/event-end';
 import {
     EVENT_LIMITS,
@@ -158,9 +158,26 @@ function readEditLocks(v: unknown): EditLocks | null {
  * Lot 9 bis (R12, R26, B71, contrat 5.30) : résultat d'une modification. Les comptes sont prévenus tout de suite
  * dans l'application ; les SMS (comptes et numéros sans compte : invitations non réclamées, acheteurs au guichet)
  * partent après 10 minutes, les corrections faites d'ici là sont regroupées dans le même SMS.
+ * Correctifs de la contre-vérification de la finition 2a (T4) : un changement de lieu part d'un seul avis (application,
+ * notification et SMS ensemble) à la fin des 10 minutes ; un seul avis de changement de lieu par heure : fait moins
+ * d'une heure après le précédent avis, il part à l'heure dite (event_update : place_notice_at, place_notice_held).
  */
-function saveSummary({ notifiedHolders, smsQueued }: { notifiedHolders: number; smsQueued: number }): string {
-    if (notifiedHolders <= 0 && smsQueued <= 0) return 'Aucun détenteur de billets n’était à prévenir.';
+function saveSummary({ notifiedHolders, smsQueued, placeNoticeAt, placeNoticeHeld }: SaveResult): string {
+    const placeAt = placeNoticeAt ? formatTime(placeNoticeAt) : null;
+    const held = placeNoticeHeld && placeAt
+        ? `Le changement de lieu sera annoncé aux détenteurs de billets à ${placeAt} : un seul avis de changement de lieu part par heure.`
+        : null;
+    if (notifiedHolders <= 0 && smsQueued <= 0) return held ?? 'Aucun détenteur de billets n’était à prévenir.';
+    if (placeAt && !placeNoticeHeld && notifiedHolders > 0) {
+        return notifiedHolders > 1
+            ? `${formatInteger(notifiedHolders)} détenteurs de billets seront prévenus à ${placeAt}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées).`
+            : `1 détenteur de billets sera prévenu à ${placeAt}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées).`;
+    }
+    const summary = baseSummary(notifiedHolders, smsQueued);
+    return held ? `${summary} ${held}` : summary;
+}
+
+function baseSummary(notifiedHolders: number, smsQueued: number): string {
     const parts: string[] = [];
     if (notifiedHolders > 0) {
         parts.push(`${formatInteger(notifiedHolders)} ${notifiedHolders > 1 ? 'détenteurs de billets prévenus' : 'détenteur de billets prévenu'} dans l’application`);
@@ -481,6 +498,10 @@ type LoadState =
 interface SaveResult {
     notifiedHolders: number;
     smsQueued: number;
+    /** T4 : heure de l'avis de changement de lieu, null sans changement de lieu. */
+    placeNoticeAt: string | null;
+    /** T4 : avis de lieu retenu (un avis de changement de lieu est parti il y a moins d'une heure). */
+    placeNoticeHeld: boolean;
 }
 
 export function EventForm(props: EventFormProps) {
@@ -748,7 +769,12 @@ export function EventForm(props: EventFormProps) {
                 setValues(v);
                 setBaseline(eventPayload(v).payload);
                 setLoad({ state: 'ready', event: updated });
-                setSaveResult({ notifiedHolders: Number(data.notified_holders ?? 0), smsQueued: Number(data.sms_queued ?? 0) });
+                setSaveResult({
+                    notifiedHolders: Number(data.notified_holders ?? 0),
+                    smsQueued: Number(data.sms_queued ?? 0),
+                    placeNoticeAt: typeof data.place_notice_at === 'string' ? data.place_notice_at : null,
+                    placeNoticeHeld: data.place_notice_held === true,
+                });
                 toast.success('Modifications enregistrées.');
                 return;
             }
@@ -854,8 +880,10 @@ export function EventForm(props: EventFormProps) {
             {afterValidation && (
                 <StatusBanner tone="info" title="Modifications encadrées après la validation" className="mb-4">
                     <ul className="list-disc space-y-1 pl-5">
-                        <li>Description, programme, informations pratiques, affiche et position : modifiables librement.</li>
+                        <li>Description, programme, informations pratiques et affiche : modifiables librement.</li>
                         <li>Titre, dates, heures, lieu, ville et adresse&nbsp;: les détenteurs de billets sont prévenus.</li>
+                        {/* Correctifs de la contre-vérification de la finition 2a (T3, T4) : dit avant d'enregistrer */}
+                        <li>Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS.</li>
                         <li>Catégorie d’événement : verrouillée dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.</li>
                     </ul>
                 </StatusBanner>

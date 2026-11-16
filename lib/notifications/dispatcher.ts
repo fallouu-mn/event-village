@@ -588,6 +588,18 @@ export async function dispatchNotifications(opts: DispatchOptions = {}): Promise
     const supabase = getServiceRoleClient();
     const nowIso = opts.now ? opts.now.toISOString() : undefined;
 
+    // Correctifs de la contre-vérification de la finition 2a (T4) : les avis de lieu retenus par la cadence (un par heure
+    // glissante) sont mis en file à l'heure dite, avant la réservation, et partent dans ce même passage. Un passage limité
+    // à des lignes précises (onlyIds) n'en libère aucun ; limité à des événements, seulement les leurs.
+    if (!opts.onlyIds) {
+        const releaseArgs: Record<string, unknown> = {};
+        if (nowIso) releaseArgs.now = nowIso;
+        if (opts.onlyEventIds) releaseArgs.only_event_ids = opts.onlyEventIds;
+        const { data: releaseData, error: releaseErr } = await rpcWithRetry<{ ok?: boolean; code?: string }>('event_place_notices_release', { p: releaseArgs });
+        if (releaseErr) throw rpcFailure('event_place_notices_release', `${releaseErr.code} ${releaseErr.message}`);
+        if (!releaseData || releaseData.ok !== true) throw rpcFailure('event_place_notices_release', releaseData?.code ?? 'réponse vide');
+    }
+
     for (let round = 1; round <= maxRounds; round++) {
         const claimArgs: Record<string, unknown> = { limit };
         if (nowIso) claimArgs.now = nowIso;
