@@ -485,7 +485,7 @@ export default function AdminUsersManagementPage() {
                       </h4>
 
                       <span
-                        className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                        className={`text-[10px] font-black px-2 py-0.5 rounded ${
                           isSuper
                             ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300'
                             : isAdmin
@@ -603,7 +603,7 @@ export default function AdminUsersManagementPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleDeleteUser(user)}
-                          title="Anonymiser définitivement ce compte (RGPD)"
+                          title="Supprimer définitivement ce compte"
                           className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/30 flex items-center gap-1"
                         >
                           <Trash2 size={13} />
@@ -615,7 +615,7 @@ export default function AdminUsersManagementPage() {
 
                     {isDeleted && (
                       <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 italic px-2">
-                        Compte Anonymisé & Banni
+                        Compte supprimé
                       </span>
                     )}
                   </div>
@@ -1012,9 +1012,9 @@ export default function AdminUsersManagementPage() {
         onClose={() => setUserToDelete(null)}
         onConfirm={handleConfirmDelete}
         variant="danger"
-        title="Anonymiser définitivement ce compte ?"
-        message="Attention : Cette action va anonymiser définitivement cet utilisateur (conformité RGPD). Ses données personnelles seront effacées et il sera banni, mais son historique financier sera conservé. Cette action est irréversible."
-        confirmLabel="Anonymiser & Supprimer"
+        title={userToDelete ? `Supprimer définitivement ${userToDelete.first_name} ${userToDelete.last_name} ?` : 'Supprimer définitivement ce compte ?'}
+        message="Nom, téléphone et email sont effacés pour toujours ; ce compte ne pourra plus jamais se connecter. Ses paiements et ses billets restent dans l’historique. La personne n’est pas prévenue. Cette action est irréversible."
+        confirmLabel="Supprimer définitivement"
         cancelLabel="Annuler"
         isLoading={isDeleting}
       />

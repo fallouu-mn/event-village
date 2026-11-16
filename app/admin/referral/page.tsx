@@ -23,6 +23,7 @@ import { KpiCard } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { formatInteger, formatPercent } from '@/lib/format';
+import { roleLabel } from '@/lib/labels/account';
 
 export interface RealUserRow {
   id: string;
@@ -165,11 +166,8 @@ export default function AdminReferralAmbassadorsPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
-              Console Superadmin HQ
-            </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Gestion des Ambassadeurs & Parrainage
+              Parrainage et ambassadeurs
             </h1>
           </div>
         </div>
@@ -316,11 +314,11 @@ export default function AdminReferralAmbassadorsPage() {
                         {user.first_name} {user.last_name}
                       </h4>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
-                        {user.role}
+                        {roleLabel(user.role)}
                       </span>
                       {isAmbassador ? (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400">
-                          ⭐ Ambassadeur VIP
+                          Ambassadeur
                         </span>
                       ) : (
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-500">
@@ -353,7 +351,7 @@ export default function AdminReferralAmbassadorsPage() {
                           : 'text-[#FF5722] bg-orange-50 dark:bg-orange-950/30 hover:bg-[#FF5722] hover:text-white'
                       }`}
                     >
-                      {isAmbassador ? 'Rétrograder' : 'Promouvoir Ambassadeur ⭐'}
+                      {isAmbassador ? 'Retirer le statut d’ambassadeur' : 'Nommer ambassadeur'}
                     </Button>
                   </div>
                 </div>
