@@ -123,7 +123,7 @@ describe('1a — /api/admin/metrics ne renvoie aucune ligne du journal d’audit
         const res = await GET(jsonRequest('/api/admin/metrics', 'GET', noPerm.accessToken));
         const body = (await res.json()) as Row;
         assert.equal(res.status, 200, `HTTP ${res.status} ${JSON.stringify(body).slice(0, 300)}`);
-        assert.equal('recentAuditLogs' in body, false, `champ recentAuditLogs encore servi à un ADMIN : ${JSON.stringify(body.recentAuditLogs).slice(0, 300)}`);
+        assert.equal('recentAuditLogs' in body, false, `champ recentAuditLogs encore servi à un ADMIN : ${String(JSON.stringify(body.recentAuditLogs)).slice(0, 300)}`);
         const lines = auditLinesIn(body);
         assert.deepEqual(lines, [], `lignes du journal d’audit dans la réponse : ${JSON.stringify(lines).slice(0, 300)}`);
     });
