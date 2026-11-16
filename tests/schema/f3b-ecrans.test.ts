@@ -188,3 +188,36 @@ describe('3 bis. garde-fou : un seul libellé par réglage (page et catalogue de
         assert.deepEqual(faults, [], faults.join(String.fromCharCode(10)));
     });
 });
+
+// ── 4. Création d'un administrateur et ses droits (E-36) ──────────────────────────────────────────────────────────
+
+const USERS_PAGE = 'app/admin/users/page.tsx';
+
+describe('4. E-36 — créer un administrateur enchaîne sur ses droits ; profils prêts ; dépendances', () => {
+    test('après la création d’un ADMIN, la grille de ses droits s’ouvre (identifiant rendu par la route)', () => {
+        const page = code(USERS_PAGE);
+        assert.match(page, /reply\.userId/, 'identifiant du compte créé non lu');
+        assert.match(page, /handleOpenPermissions\(/, 'grille des droits non ouverte');
+        assert.match(page, /newRole === 'ADMIN'/, 'enchaînement réservé à la création d’un administrateur');
+    });
+
+    test('profils prêts, dépendances cochées d’office, cases accessibles groupées, phrase de chaque droit', () => {
+        const page = code(USERS_PAGE);
+        assert.match(page, /PERMISSION_PROFILES\.map\(/, 'profils prêts absents');
+        assert.match(page, /withDependencies\(/, 'dépendances non appliquées');
+        assert.match(page, /type="checkbox"/, 'cases à cocher absentes');
+        assert.match(page, /<fieldset\b/, 'groupes de droits sans fieldset');
+        assert.match(page, /<legend\b/, 'groupes de droits sans légende');
+        assert.match(page, /permissionDescription\(/, 'droits sans leur phrase');
+        assert.match(page, /Droits de \$\{/, 'titre « Droits de … » absent');
+    });
+
+    test('texte de création réécrit : lien d’activation par SMS valable 24 heures, aucun droit tant qu’on ne lui en donne pas', () => {
+        const page = norm(code(USERS_PAGE));
+        assert.ok(page.includes(norm('Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.')), 'phrase du lien d’activation absente');
+        assert.ok(page.includes(norm('Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.')), 'phrase « aucun droit » absente');
+        for (const jargon of ['Permissions Granulaires', 'Console Superadmin HQ', 'RBAC', 'Accès maître absolu HQ', 'Routage :', 'CLIENT STANDARD', 'Créer un Compte Métier']) {
+            assert.ok(!page.includes(jargon), `jargon encore à l’écran : « ${jargon} »`);
+        }
+    });
+});
