@@ -98,7 +98,7 @@ export function settingRisk(key: string, value: unknown, all: Readonly<Record<st
         case 'finance.service_fee_rate': {
             const fees = [all['finance.aggregator_fee_rate.WAVE'], all['finance.aggregator_fee_rate.ORANGE_MONEY']].map(Number).filter(Number.isFinite);
             const top = fees.length > 0 ? Math.max(...fees) : null;
-            if (top !== null && n < top) return `Sous les frais SamirPay (${fr(top)} %) : chaque vente coûte de l’argent à Event Village.`;
+            if (top !== null && n < top) return `En dessous des frais SamirPay de ${fr(top)} %, chaque vente coûte de l’argent à Event Village.`;
             if (n > 10) return 'Au-delà de 10 %, le prix paraît abusif aux acheteurs.';
             return null;
         }
