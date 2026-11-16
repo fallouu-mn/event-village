@@ -56,6 +56,16 @@ export interface EventUpdateResult {
     sms_recipients: number;
 }
 
+/** Finition 2b (D, E-27) : aperçu d'une modification (fenêtre « Prévenir »), calculé sans rien écrire. */
+export interface EventUpdatePreview {
+    changed_fields: string[];
+    sms_recipients: number;
+    sms_notice_at: string | null;
+    sms_notice_immediate: boolean;
+    sms_notice_held: boolean;
+    place_notice_at: string | null;
+}
+
 /**
  * Refus d'une opération d'édition : statut HTTP, code stable, message français ; `details` est recopié dans
  * le corps de la réponse (field, fields, categories…).
@@ -397,7 +407,13 @@ export class EventService {
      * par statut, verrous après ventes, file des notifications, fonds). Les SMS partent par le cron
      * event-change-notifications.
      */
-    public static async updateEvent(eventId: string, actorId: string, body: unknown): Promise<EventUpdateResult> {
+    /**
+     * Finition 2b (D, E-27) : contrôles communs à l'enregistrement et à son aperçu (corps, propriétaire et statut, champs
+     * non modifiables, schéma partagé, affiche déposée) ; rend le patch validé et la version attendue.
+     */
+    private static async prepareUpdate(eventId: string, actorId: string, body: unknown): Promise<{
+        event: DbRecord; patch: Record<string, unknown>; expected_updated_at: string; imageChanged: boolean;
+    }> {
         const shape = updateBodySchema.safeParse(body);
         if (!shape.success) {
             throw new EventServiceError(400, 'INVALID_BODY',
@@ -433,14 +449,18 @@ export class EventService {
         const nextImage = (parsed.data as { image_url?: string | null }).image_url;
         const imageChanged = nextImage !== undefined && (nextImage ?? null) !== (event.image_url ?? null);
         if (imageChanged) await assertPosterStored(nextImage ?? null);
+        return { event, patch: parsed.data as Record<string, unknown>, expected_updated_at, imageChanged };
+    }
 
+    public static async updateEvent(eventId: string, actorId: string, body: unknown): Promise<EventUpdateResult> {
+        const { event, patch, expected_updated_at, imageChanged } = await this.prepareUpdate(eventId, actorId, body);
         const result = await editionResult<{
             ok: true; event: DbRecord; notified_holders: number; sms_queued: number; place_notice_at?: string | null; place_notice_held?: boolean;
             sms_notice_at?: string | null; sms_notice_immediate?: boolean; sms_notice_held?: boolean; sms_recipients?: number | null;
         }>('event_update', rpcWithRetry('event_update', { p: {
             event_id: eventId,
             actor_id: actorId,
-            patch: parsed.data,
+            patch,
             expected_updated_at,
         } }));
         // Finition 2a (1b) : l'affiche remplacée est effacée si aucun autre événement ne l'utilise (échec : journal, la
@@ -462,6 +482,32 @@ export class EventService {
             sms_notice_immediate: result.sms_notice_immediate === true,
             sms_notice_held: result.sms_notice_held === true,
             sms_recipients: Number(result.sms_recipients ?? 0),
+        };
+    }
+
+    /**
+     * Finition 2b (D, E-27) : aperçu d'une modification avant de l'enregistrer (fenêtre « Prévenir ») : mêmes contrôles
+     * que updateEvent, puis RPC event_update_preview (event_update exécuté puis annulé : rien n'est écrit). Rend le nombre
+     * de SMS et l'heure réelle de l'avis ; mêmes refus que l'enregistrement.
+     */
+    public static async previewEventUpdate(eventId: string, actorId: string, body: unknown): Promise<EventUpdatePreview> {
+        const { patch, expected_updated_at } = await this.prepareUpdate(eventId, actorId, body);
+        const result = await editionResult<{
+            ok: true; changed_fields?: unknown; sms_recipients?: number | null; sms_notice_at?: string | null;
+            sms_notice_immediate?: boolean; sms_notice_held?: boolean; place_notice_at?: string | null;
+        }>('event_update_preview', rpcWithRetry('event_update_preview', { p: {
+            event_id: eventId,
+            actor_id: actorId,
+            patch,
+            expected_updated_at,
+        } }));
+        return {
+            changed_fields: Array.isArray(result.changed_fields) ? result.changed_fields.filter((f): f is string => typeof f === 'string') : [],
+            sms_recipients: Number(result.sms_recipients ?? 0),
+            sms_notice_at: typeof result.sms_notice_at === 'string' ? result.sms_notice_at : null,
+            sms_notice_immediate: result.sms_notice_immediate === true,
+            sms_notice_held: result.sms_notice_held === true,
+            place_notice_at: typeof result.place_notice_at === 'string' ? result.place_notice_at : null,
         };
     }
 

@@ -242,6 +242,37 @@ const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
+
+/**
+ * Finition 2b (D, E-27) : champs dont le changement peut prévenir les détenteurs par SMS (dates, heures, lieu, ville,
+ * adresse, repère) ; avant de les enregistrer, l'écran demande l'aperçu au serveur (POST …/notice-preview).
+ */
+const NOTICE_KEYS = ['start_date', 'start_time', 'end_date', 'end_time', 'location', 'city', 'practical_info', 'latitude', 'longitude'] as const;
+
+/** Finition 2b (D, E-27) : aperçu d'une modification, calculé par le serveur sans rien écrire. */
+interface NoticePreview {
+    /** Nombre de SMS (détenteurs et numéros sans compte). */
+    count: number;
+    /** Heure réelle de l'avis par SMS. */
+    at: string | null;
+    immediate: boolean;
+    /** Retenu par la cadence d'une heure (un avis est parti il y a moins d'une heure). */
+    held: boolean;
+}
+
+/** Fenêtre « Prévenir » : « {n} détenteurs seront prévenus par SMS {à HH:MM | tout de suite}. » */
+function noticeSentence({ count, at, immediate }: NoticePreview): string {
+    const when = immediate || !at ? 'tout de suite' : `à ${formatTime(at)}`;
+    return count > 1
+        ? `${formatInteger(count)} détenteurs seront prévenus par SMS ${when}.`
+        : `1 détenteur sera prévenu par SMS ${when}.`;
+}
+
+function noticeDetail({ immediate, held }: NoticePreview): string {
+    if (immediate) return 'L’événement commence dans moins d’une heure : l’avis part dès l’enregistrement, deux SMS au plus dans cette dernière heure.';
+    if (held) return 'Un avis est déjà parti il y a moins d’une heure : un seul SMS par heure, vos changements d’ici là y seront regroupés.';
+    return 'Vos corrections faites d’ici là partiront dans le même SMS.';
+}
 /**
  * Finition 2a (3) : recherche de lieu par le serveur (GET /api/partner/places/search), un appel par appui sur
  * « Rechercher ». Réseau coupé ou réponse illisible : « Recherche indisponible pour le moment : touchez la carte pour
@@ -306,25 +337,35 @@ function readEditLocks(v: unknown): EditLocks | null {
  * notification et SMS ensemble) à la fin des 10 minutes ; un seul avis de changement de lieu par heure : fait moins
  * d'une heure après le précédent avis, il part à l'heure dite (event_update : place_notice_at, place_notice_held).
  */
-function saveSummary({ notifiedHolders, smsQueued, placeNoticeAt, placeNoticeHeld }: SaveResult): string {
+function saveSummary(r: SaveResult): string {
+    const { notifiedHolders, smsQueued, placeNoticeAt, placeNoticeHeld } = r;
     const placeAt = placeNoticeAt ? formatTime(placeNoticeAt) : null;
+    // Finition 2b (D, E-28) : un changement de date retenu par la cadence d'une heure part à l'heure dite (heure réelle)
+    const smsAt = r.smsNoticeAt ? formatTime(r.smsNoticeAt) : null;
     const held = placeNoticeHeld && placeAt
         ? `Le changement de lieu sera annoncé aux détenteurs de billets à ${placeAt} : un seul avis de changement de lieu part par heure.`
-        : null;
+        : r.smsNoticeHeld && smsAt
+            ? `Le changement sera annoncé aux détenteurs de billets à ${smsAt} : un seul SMS part par heure, vos changements d’ici là y seront regroupés.`
+            : null;
     if (notifiedHolders <= 0 && smsQueued <= 0) return held ?? 'Aucun détenteur de billets n’était à prévenir.';
     if (placeAt && !placeNoticeHeld && notifiedHolders > 0) {
         return notifiedHolders > 1
             ? `${formatInteger(notifiedHolders)} détenteurs de billets seront prévenus à ${placeAt}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées).`
             : `1 détenteur de billets sera prévenu à ${placeAt}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées).`;
     }
-    const summary = baseSummary(notifiedHolders, smsQueued);
+    const summary = baseSummary(notifiedHolders, smsQueued, r.smsNoticeImmediate);
     return held ? `${summary} ${held}` : summary;
 }
 
-function baseSummary(notifiedHolders: number, smsQueued: number): string {
+function baseSummary(notifiedHolders: number, smsQueued: number, immediate: boolean): string {
     const parts: string[] = [];
     if (notifiedHolders > 0) {
         parts.push(`${formatInteger(notifiedHolders)} ${notifiedHolders > 1 ? 'détenteurs de billets prévenus' : 'détenteur de billets prévenu'} dans l’application`);
+    }
+    // Finition 2b (D, E-28) : à moins d'une heure du début, l'avis part tout de suite
+    if (smsQueued > 0 && immediate) {
+        parts.push(smsQueued > 1 ? `${formatInteger(smsQueued)} SMS partent tout de suite.` : '1 SMS part tout de suite.');
+        return parts.join(' ; ');
     }
     if (smsQueued > 0) {
         parts.push(smsQueued > 1
@@ -664,6 +705,10 @@ interface SaveResult {
     placeNoticeAt: string | null;
     /** T4 : avis de lieu retenu (un avis de changement de lieu est parti il y a moins d'une heure). */
     placeNoticeHeld: boolean;
+    /** Finition 2b (D, E-28) : heure réelle de l'avis par SMS (lieu ou date), tout de suite, retenu par la cadence. */
+    smsNoticeAt: string | null;
+    smsNoticeImmediate: boolean;
+    smsNoticeHeld: boolean;
 }
 
 export function EventForm(props: EventFormProps) {
@@ -686,6 +731,8 @@ export function EventForm(props: EventFormProps) {
     const [conflict, setConflict] = useState(false);
     const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    /** Finition 2b (D, E-27) : fenêtre « Prévenir » ouverte (aperçu du serveur, envoi pour validation demandé ou non). */
+    const [notice, setNotice] = useState<(NoticePreview & { send: boolean }) | null>(null);
     /** Version du chargement : la billetterie repart des catégories relues à chaque rechargement. */
     const [loadVersion, setLoadVersion] = useState(0);
     /** Lot 9 ter (R93) : verrous du serveur ; null en création ou tant qu'ils ne sont pas lus. */
@@ -1069,7 +1116,7 @@ export function EventForm(props: EventFormProps) {
         window.setTimeout(() => summaryRef.current?.focus(), 50);
     };
 
-    const save = async (send: boolean) => {
+    const save = async (send: boolean, noticeConfirmed = false) => {
         if (submitting) return;
         // Finition 2b (C) : une catégorie modifiée et non enregistrée part avec son propre bouton, avant l'envoi
         if (send && isEdit && ticketingDirty.length > 0) {
@@ -1125,6 +1172,38 @@ export function EventForm(props: EventFormProps) {
                 await sendForValidation(eventId, false);
                 return;
             }
+            // Finition 2b (D, E-27) : avant d'enregistrer un changement de date, d'heure, de lieu ou de repère, le serveur
+            // calcule (sans rien écrire) combien de détenteurs recevront un SMS et à quelle heure : fenêtre « Prévenir »
+            if (!noticeConfirmed && withHolders && NOTICE_KEYS.some((k) => k in body)) {
+                const preview = await fetch(`/api/partner/events/${eventId}/notice-preview`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ patch: body, expected_updated_at: str(ev.updated_at) }),
+                });
+                const seen = await readApiBody(preview);
+                if (preview.ok && seen.success !== false) {
+                    const count = Number(seen.sms_recipients ?? 0);
+                    if (count > 0) {
+                        setNotice({
+                            count,
+                            at: typeof seen.sms_notice_at === 'string' ? seen.sms_notice_at : null,
+                            immediate: seen.sms_notice_immediate === true,
+                            held: seen.sms_notice_held === true,
+                            send,
+                        });
+                        return;
+                    }
+                } else if (preview.status < 500) {
+                    if (seen.code === 'EDIT_CONFLICT') {
+                        setConflict(true);
+                        setFormError(null);
+                        return;
+                    }
+                    showErrors(serverErrors(seen, maps), seen.error || 'La modification a été refusée.');
+                    return;
+                }
+                // Aperçu indisponible (erreur du serveur) : l'enregistrement part, son bilan dit l'heure réelle de l'avis
+            }
             const res = await fetch(`/api/partner/events/${eventId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -1142,6 +1221,9 @@ export function EventForm(props: EventFormProps) {
                     smsQueued: Number(data.sms_queued ?? 0),
                     placeNoticeAt: typeof data.place_notice_at === 'string' ? data.place_notice_at : null,
                     placeNoticeHeld: data.place_notice_held === true,
+                    smsNoticeAt: typeof data.sms_notice_at === 'string' ? data.sms_notice_at : null,
+                    smsNoticeImmediate: data.sms_notice_immediate === true,
+                    smsNoticeHeld: data.sms_notice_held === true,
                 });
                 if (userId) clearDraft(userId, eventId);
                 if (send && eventId) {
@@ -1813,6 +1895,28 @@ export function EventForm(props: EventFormProps) {
                 cancelLabel="Rester sur la page"
                 variant="danger"
             />
+
+            {/* Finition 2b (D, E-27) : fenêtre « Prévenir », heure réelle de l'avis calculée par le serveur */}
+            <ConfirmDialog
+                isOpen={notice !== null}
+                onClose={() => setNotice(null)}
+                onConfirm={() => {
+                    const pending = notice;
+                    setNotice(null);
+                    if (pending) void save(pending.send, true);
+                }}
+                title="Prévenir les détenteurs de billets"
+                confirmLabel="Enregistrer et prévenir"
+                cancelLabel="Annuler"
+                variant="warning"
+            >
+                {notice && (
+                    <div className="flex flex-col gap-2 tabular-nums">
+                        <p className="text-base font-semibold text-fg">{noticeSentence(notice)}</p>
+                        <p className="text-sm leading-relaxed text-fg-muted">{noticeDetail(notice)}</p>
+                    </div>
+                )}
+            </ConfirmDialog>
         </div>
     );
 }

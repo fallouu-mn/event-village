@@ -26,6 +26,8 @@ const FINITION2B_MIGRATIONS = [
     '20261119000005_f2b_zones_creation.sql',
     // D, E-28 : cadence des avis de lieu ET de date (une heure glissante, regroupés ; dernière heure : 2 SMS au plus)
     '20261119000006_f2b_cadence_avis.sql',
+    // D, E-27 : aperçu d'une modification (fenêtre « Prévenir ») : event_update exécuté puis annulé
+    '20261119000007_f2b_apercu_avis.sql',
 ] as const;
 
 after(async () => {
