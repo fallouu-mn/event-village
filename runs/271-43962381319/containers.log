@@ -1,0 +1,498 @@
+===== supabase_db_event-village =====
+	          FROM acc a
+	         WHERE a.ledger + a.in_progress > 0
+	    )
+	    SELECT (SELECT count(*)::integer FROM owners),
+	           COALESCE((SELECT jsonb_agg(x.item ORDER BY x.total DESC, x.owner_id) FROM (
+	               SELECT r.owner_id, r.total,
+	                      jsonb_build_object(
+	                          'owner_id', r.owner_id,
+	                          'first_name', u.first_name,
+	                          'last_name', u.last_name,
+	                          'company_name', (SELECT pa.company_name FROM public.partners pa
+	                                            WHERE pa.user_id = r.owner_id AND v_kind = 'ORGANISATEUR'
+	                                            ORDER BY pa.created_at LIMIT 1),
+	                          'total', r.total,
+	                          'ledger', r.ledger,
+	                          'available', r.available,
+	                          'pending', r.ledger - r.available,
+	                          'frozen', r.frozen,
+	                          'withdrawable_now', public.fin_round_down(GREATEST(r.available - r.frozen, 0)),
+	                          'withdrawals_in_progress', r.in_progress
+	                      ) AS item
+	                 FROM owners r JOIN public.users u ON u.id = r.owner_id
+	                ORDER BY r.total DESC, r.owner_id
+	                LIMIT v_limit OFFSET v_offset) x), '[]'::jsonb)
+	      INTO v_total, v_items;
+	
+	    RETURN jsonb_build_object('kind', v_kind, 'total', v_total, 'limit', v_limit, 'offset', v_offset, 'items', v_items);
+	END;
+	$$
+172.18.0.1 2026-11-16 21:42:43.356 UTC [248] postgres@postgres LOG:  execute <unnamed>: COMMENT ON FUNCTION public.finance_admin_owed(jsonb) IS
+	    'Finition 3a (E-06) : dû par compte (partenaires ou parrains) — solde du grand livre et net des retraits en cours, dont retirable aujourd''hui, en attente, gelé — du plus grand au plus petit, par pages. service_role uniquement.'
+172.18.0.1 2026-11-16 21:42:43.356 UTC [248] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.finance_admin_owed(jsonb) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-16 21:42:43.356 UTC [248] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.finance_admin_owed(jsonb) TO service_role
+172.18.0.1 2026-11-16 21:42:43.356 UTC [248] postgres@postgres LOG:  execute <unnamed>: -- ----------------------------------------------------------------------------
+	-- 7. finance_admin_waiting : bloc « Argent qui attend » de l'accueil de l'administration (E-07)
+	--    Versements à reprendre : même liste que GET /api/admin/refunds?state=to_retry (cashouts_to_resume, filtrée sur le mode
+	--    du serveur, plus les paiements en échec sans identifiant SamirPay de moins de p_unconfirmed_hours heures) ;
+	--    remboursements à verser et créances : mêmes règles que finance_admin_summary. Les droits de chaque ligne sont
+	--    appliqués par la route (refunds.manage, payments.read).
+	-- ----------------------------------------------------------------------------
+	CREATE OR REPLACE FUNCTION public.finance_admin_waiting(p_simulated boolean, p_unconfirmed_hours integer)
+	RETURNS jsonb
+	LANGUAGE plpgsql
+	STABLE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	DECLARE
+	    v_resume record;
+	    v_unconfirmed record;
+	    v_refunds record;
+	    v_debts record;
+	BEGIN
+	    SELECT count(*)::integer AS n, COALESCE(sum(c.amount), 0) AS amount INTO v_resume
+	      FROM public.cashouts_to_resume() r
+	      JOIN public.cashouts c ON c.id = r.id
+	     WHERE r.simulated = COALESCE(p_simulated, FALSE);
+	    SELECT count(*)::integer AS n, COALESCE(sum(p.amount), 0) AS amount INTO v_unconfirmed
+	      FROM public.payments p
+	     WHERE p.status::text = 'FAILED' AND p.external_transaction_id IS NULL
+	       AND p.created_at > now() - make_interval(hours => GREATEST(COALESCE(p_unconfirmed_hours, 48), 1));
+	    SELECT count(*)::integer AS n, COALESCE(sum(c.amount), 0) AS amount INTO v_refunds
+	      FROM public.cashouts c
+	     WHERE c.kind IN ('REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND')
+	       AND c.status IN ('A_ENVOYER', 'ENVOYE', 'INCERTAIN', 'ECHOUE');
+	    SELECT count(*)::integer AS n, COALESCE(sum(d.remaining), 0) AS amount INTO v_debts
+	      FROM public.finance_debts d WHERE d.remaining > 0;
+	
+	    RETURN jsonb_build_object(
+	        'to_resume', jsonb_build_object('count', v_resume.n + v_unconfirmed.n, 'amount', v_resume.amount + v_unconfirmed.amount,
+	                                        'cashouts', v_resume.n, 'unconfirmed_payments', v_unconfirmed.n),
+	        'refunds_to_pay', jsonb_build_object('count', v_refunds.n, 'amount', v_refunds.amount),
+	        'debts', jsonb_build_object('count', v_debts.n, 'amount', v_debts.amount));
+	END;
+	$$
+172.18.0.1 2026-11-16 21:42:43.356 UTC [248] postgres@postgres LOG:  execute <unnamed>: COMMENT ON FUNCTION public.finance_admin_waiting(boolean, integer) IS
+	    'Finition 3a (E-07) : nombres et montants du bloc « Argent qui attend » (versements à reprendre, remboursements à verser, créances), mêmes règles que les listes de la page Finance. service_role uniquement.'
+172.18.0.1 2026-11-16 21:42:43.357 UTC [248] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.finance_admin_waiting(boolean, integer) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-16 21:42:43.357 UTC [248] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.finance_admin_waiting(boolean, integer) TO service_role
+172.18.0.1 2026-11-16 21:42:43.360 UTC [248] postgres@postgres LOG:  execute <unnamed>: -- ============================================================================
+	-- EVENT VILLAGE — Finition 3a (argent de l'administration), point 2 : solde SamirPay lu par le serveur, avec un cache de
+	-- 5 minutes partagé par toutes les instances de l'application
+	-- ============================================================================
+	-- « Retirable par Event Village » (SUPERADMIN seulement) part du solde du compte SamirPay (GET /api/tiers/payments/solde,
+	-- lib/samirpay/http-client.ts:290-299). Le serveur relit d'abord la dernière lecture de moins de 5 minutes ; sans elle, il
+	-- interroge SamirPay et enregistre la lecture (date et montant affichés à l'écran : « Solde lu à … »). Une lecture en
+	-- échec n'est jamais enregistrée : l'écran dit « Solde SamirPay illisible pour le moment » et n'affiche aucun chiffre.
+	-- Objets :
+	--   table samirpay_balance_reads (RLS activée, aucun droit pour anon ni authenticated : service_role seul) ;
+	--   finance_balance_cached(p_max_age_seconds, p_simulated) : dernière lecture assez récente du mode du serveur, ou NULL ;
+	--   finance_balance_record(p_solde, p_simulated) : enregistre une lecture et efface celles de plus de 90 jours.
+	-- Mode d'essai (lib/integrations/simulation.ts) : les lectures du faux service sont marquées et ne servent jamais à un
+	-- serveur réel. Aucun BEGIN ni COMMIT ; rejouable.
+	-- ============================================================================
+	
+	CREATE TABLE IF NOT EXISTS public.samirpay_balance_reads (
+	    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+	    read_at timestamptz NOT NULL DEFAULT now(),
+	    solde numeric(14,2) NOT NULL,
+	    simulated boolean NOT NULL DEFAULT FALSE
+	)
+172.18.0.1 2026-11-16 21:42:43.362 UTC [248] postgres@postgres LOG:  execute <unnamed>: COMMENT ON TABLE public.samirpay_balance_reads IS
+	    'Finition 3a : lectures du solde SamirPay par le serveur (cache de 5 minutes de « Retirable par Event Village »), gardées 90 jours. service_role seul.'
+172.18.0.1 2026-11-16 21:42:43.362 UTC [248] postgres@postgres LOG:  execute <unnamed>: ALTER TABLE public.samirpay_balance_reads ENABLE ROW LEVEL SECURITY
+172.18.0.1 2026-11-16 21:42:43.362 UTC [248] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON TABLE public.samirpay_balance_reads FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-16 21:42:43.362 UTC [248] postgres@postgres LOG:  execute <unnamed>: CREATE INDEX IF NOT EXISTS idx_samirpay_balance_reads_recent ON public.samirpay_balance_reads (simulated, read_at DESC)
+172.18.0.1 2026-11-16 21:42:43.362 UTC [248] postgres@postgres LOG:  execute <unnamed>: CREATE OR REPLACE FUNCTION public.finance_balance_cached(p_max_age_seconds integer, p_simulated boolean)
+	RETURNS jsonb
+	LANGUAGE sql
+	STABLE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	    SELECT jsonb_build_object('solde', r.solde, 'read_at', r.read_at, 'cached', true)
+	      FROM public.samirpay_balance_reads r
+	     WHERE r.simulated = COALESCE(p_simulated, FALSE)
+	       AND r.read_at > now() - make_interval(secs => GREATEST(COALESCE(p_max_age_seconds, 300), 0))
+	       AND r.read_at <= now() + interval '1 minute'
+	     ORDER BY r.read_at DESC, r.id DESC
+	     LIMIT 1
+	$$
+172.18.0.1 2026-11-16 21:42:43.363 UTC [248] postgres@postgres LOG:  execute <unnamed>: COMMENT ON FUNCTION public.finance_balance_cached(integer, boolean) IS
+	    'Finition 3a : dernière lecture du solde SamirPay de moins de p_max_age_seconds (300 par défaut) pour le mode du serveur (réel ou essai), ou NULL. service_role uniquement.'
+172.18.0.1 2026-11-16 21:42:43.363 UTC [248] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.finance_balance_cached(integer, boolean) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-16 21:42:43.363 UTC [248] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.finance_balance_cached(integer, boolean) TO service_role
+172.18.0.1 2026-11-16 21:42:43.363 UTC [248] postgres@postgres LOG:  execute <unnamed>: CREATE OR REPLACE FUNCTION public.finance_balance_record(p_solde numeric, p_simulated boolean)
+	RETURNS jsonb
+	LANGUAGE plpgsql
+	VOLATILE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	DECLARE
+	    r record;
+	BEGIN
+	    IF p_solde IS NULL THEN
+	        RAISE EXCEPTION 'finance_balance_record : solde absent' USING ERRCODE = '22023';
+	    END IF;
+	    INSERT INTO public.samirpay_balance_reads (solde, simulated)
+	    VALUES (round(p_solde, 2), COALESCE(p_simulated, FALSE))
+	    RETURNING solde, read_at INTO r;
+	    DELETE FROM public.samirpay_balance_reads WHERE read_at < now() - interval '90 days';
+	    RETURN jsonb_build_object('solde', r.solde, 'read_at', r.read_at, 'cached', false);
+	END;
+	$$
+172.18.0.1 2026-11-16 21:42:43.363 UTC [248] postgres@postgres LOG:  execute <unnamed>: COMMENT ON FUNCTION public.finance_balance_record(numeric, boolean) IS
+	    'Finition 3a : enregistre une lecture réussie du solde SamirPay (mode réel ou essai) et efface les lectures de plus de 90 jours. service_role uniquement.'
+172.18.0.1 2026-11-16 21:42:43.363 UTC [248] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.finance_balance_record(numeric, boolean) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-16 21:42:43.363 UTC [248] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.finance_balance_record(numeric, boolean) TO service_role
+172.18.0.1 2026-11-16 21:42:43.366 UTC [248] postgres@postgres LOG:  execute <unnamed>: -- Finition 3b (E-29) — « À faire aujourd'hui » en tête de l'accueil de l'administration.
+	--
+	-- admin_todo(p jsonb) : compteurs des seules lignes demandées (la route ne demande que celles que l'administrateur a le
+	-- droit de traiter). Chaque ligne est calculée dans son propre bloc : une lecture en échec rend
+	-- {"unavailable": true, "error": "<SQLSTATE>"} pour cette ligne, jamais 0, et n'empêche pas les autres.
+	--   p : {"lines": ["to_resume", "events_to_validate", ...], "simulated": bool, "unconfirmed_hours": int, "now": timestamptz?}
+	-- Lignes :
+	--   to_resume            versements à reprendre (même règle que « Argent qui attend » : finance_admin_waiting)
+	--   events_to_validate   événements EN_ATTENTE ; plus ancienne soumission (event_status_history)
+	--   partners_to_validate fiches partenaires EN_ATTENTE ; dont dossiers complétés après un refus (resubmitted_at)
+	--   events_suspended     événements SUSPENDU ; partage passé (fin dépassée, event_end_at) / à venir
+	--   cash_discrepancies   caisses clôturées avec un écart non validé ; les 3 événements les plus anciens
+	--   failed_sends         envois FAILED terminés aujourd'hui (jour de Dakar)
+	--   sms_cap              SMS optionnels du jour / plafond ; alerte à 80 % (même seuil que ADMIN_SMS_OPTIONAL_80)
+	--   debts                créances ouvertes (reste > 0)
+	-- Lecture seule. Sans BEGIN ni COMMIT ; rejouable (CREATE OR REPLACE, REVOKE/GRANT).
+	
+	CREATE OR REPLACE FUNCTION public.admin_todo(p jsonb)
+	RETURNS jsonb
+	LANGUAGE plpgsql
+	STABLE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	DECLARE
+	    v_lines   text[];
+	    v_now     timestamptz;
+	    v_today   date;
+	    v_start   timestamptz;
+	    v_out     jsonb := '{}'::jsonb;
+	    v_line    text;
+	    v_known   CONSTANT text[] := ARRAY['to_resume', 'events_to_validate', 'partners_to_validate', 'events_suspended',
+	                                       'cash_discrepancies', 'failed_sends', 'sms_cap', 'debts'];
+	    v_n       bigint;
+	    v_k       bigint;
+	    v_amount  numeric;
+	    v_oldest  timestamptz;
+	    v_j       jsonb;
+	    v_cap     integer;
+	BEGIN
+	    IF p IS NULL OR jsonb_typeof(p->'lines') <> 'array' THEN
+	        RAISE EXCEPTION 'admin_todo : liste des lignes absente' USING ERRCODE = '22023';
+	    END IF;
+	    SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::text[]) INTO v_lines FROM jsonb_array_elements_text(p->'lines') x;
+	    IF NOT (v_lines <@ v_known) THEN
+	        RAISE EXCEPTION 'admin_todo : ligne inconnue (%)', array_to_string(v_lines, ', ') USING ERRCODE = '22023';
+	    END IF;
+	    v_now   := COALESCE(NULLIF(p->>'now', '')::timestamptz, now());
+	    v_today := (v_now AT TIME ZONE 'Africa/Dakar')::date;
+	    v_start := v_today::timestamp AT TIME ZONE 'Africa/Dakar';
+	
+	    FOREACH v_line IN ARRAY v_lines LOOP
+	        BEGIN
+	            CASE v_line
+	            WHEN 'to_resume' THEN
+	                v_j := public.finance_admin_waiting(COALESCE((p->>'simulated')::boolean, false),
+	                                                    COALESCE(NULLIF(p->>'unconfirmed_hours', '')::integer, 48)) -> 'to_resume';
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object(
+	                    'count', COALESCE((v_j->>'count')::bigint, 0), 'amount', COALESCE((v_j->>'amount')::numeric, 0)));
+	            WHEN 'events_to_validate' THEN
+	                SELECT count(*), min(s.submitted_at) INTO v_n, v_oldest
+	                  FROM public.events e
+	                  LEFT JOIN LATERAL (SELECT max(h.created_at) AS submitted_at FROM public.event_status_history h
+	                                      WHERE h.event_id = e.id AND h.new_status = 'EN_ATTENTE') s ON true
+	                 WHERE e.status::text = 'EN_ATTENTE';
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object('count', v_n, 'oldest_at', v_oldest));
+	            WHEN 'partners_to_validate' THEN
+	                SELECT count(*), count(*) FILTER (WHERE pa.resubmitted_at IS NOT NULL) INTO v_n, v_k
+	                  FROM public.partners pa WHERE pa.status::text = 'EN_ATTENTE';
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object('count', v_n, 'resubmitted', v_k));
+	            WHEN 'events_suspended' THEN
+	                SELECT count(*), count(*) FILTER (WHERE public.event_end_at(e.id) < v_now) INTO v_n, v_k
+	                  FROM public.events e WHERE e.status::text = 'SUSPENDU';
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object('count', v_n, 'past', v_k, 'upcoming', v_n - v_k));
+	            WHEN 'cash_discrepancies' THEN
+	                SELECT count(*), COALESCE(sum(abs(s.discrepancy_amount)), 0) INTO v_n, v_amount
+	                  FROM public.controller_shifts s
+	                 WHERE s.status = 'CLOTURE' AND COALESCE(s.discrepancy_amount, 0) <> 0 AND s.discrepancy_validated_at IS NULL;
+	                SELECT COALESCE(jsonb_agg(jsonb_build_object('event_id', x.event_id, 'title', x.title, 'count', x.n)
+	                                          ORDER BY x.oldest, x.event_id), '[]'::jsonb), count(*)
+	                  INTO v_j, v_k
+	                  FROM (SELECT s.event_id, e.title, count(*) AS n, min(COALESCE(s.closed_at, s.updated_at)) AS oldest
+	                          FROM public.controller_shifts s JOIN public.events e ON e.id = s.event_id
+	                         WHERE s.status = 'CLOTURE' AND COALESCE(s.discrepancy_amount, 0) <> 0 AND s.discrepancy_validated_at IS NULL
+	                         GROUP BY s.event_id, e.title) x;
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object(
+	                    'count', v_n, 'amount', v_amount, 'events_count', v_k,
+	                    'events', COALESCE((SELECT jsonb_agg(z.value ORDER BY z.i)
+	                                          FROM (SELECT t.value, t.i FROM jsonb_array_elements(v_j) WITH ORDINALITY t(value, i)
+	                                                 ORDER BY t.i LIMIT 3) z), '[]'::jsonb)));
+	            WHEN 'failed_sends' THEN
+	                SELECT count(*) INTO v_n FROM public.notification_outbox o
+	                 WHERE o.status = 'FAILED' AND COALESCE(o.finished_at, o.created_at) >= v_start;
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object('count', v_n));
+	            WHEN 'sms_cap' THEN
+	                v_cap := public.notif_setting_int('notif.sms_optional_daily_cap');
+	                v_n := public.notif_sms_optional_used(v_today);
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object(
+	                    'count', v_n, 'cap', v_cap,
+	                    'alert', v_cap IS NOT NULL AND v_cap > 0 AND v_n * 100 >= v_cap * 80));
+	            WHEN 'debts' THEN
+	                SELECT count(*), COALESCE(sum(d.remaining), 0) INTO v_n, v_amount
+	                  FROM public.finance_debts d WHERE d.remaining > 0;
+	                v_out := v_out || jsonb_build_object(v_line, jsonb_build_object('count', v_n, 'amount', v_amount));
+	            END CASE;
+	        EXCEPTION WHEN OTHERS THEN
+	            v_out := v_out || jsonb_build_object(v_line, jsonb_build_object('unavailable', true, 'error', SQLSTATE));
+	        END;
+	    END LOOP;
+	    RETURN jsonb_build_object('ok', true, 'computed_at', v_now, 'lines', v_out);
+	END;
+	$$
+172.18.0.1 2026-11-16 21:42:43.367 UTC [248] postgres@postgres LOG:  execute <unnamed>: COMMENT ON FUNCTION public.admin_todo(jsonb) IS
+	    'Finition 3b (E-29) : compteurs de « À faire aujourd''hui », seulement pour les lignes demandées ; une ligne en échec est « unavailable », jamais 0.'
+172.18.0.1 2026-11-16 21:42:43.367 UTC [248] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.admin_todo(jsonb) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-16 21:42:43.367 UTC [248] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.admin_todo(jsonb) TO service_role
+172.18.0.1 2026-11-16 21:42:43.370 UTC [248] postgres@postgres LOG:  execute <unnamed>: -- Finition 3b (E-35) — valeur par défaut de chaque réglage de la plateforme, montrée à l'écran.
+	--
+	-- platform_settings_defaults() : pour chaque réglage exposé par /api/admin/finance-settings (finance.*, access.*, notif.*,
+	-- features.*, support.*), sa valeur d'origine, lue dans l'historique (trigger platform_settings_audit, lot 3) :
+	--   - première ligne de l'historique créée à l'insertion (old_value NULL) : la valeur insérée par la migration ;
+	--   - première ligne d'un réglage antérieur au trigger (old_value non NULL) : la valeur d'avant le premier changement ;
+	--   - aucun historique : la valeur actuelle (jamais changée).
+	-- Rend {"<clé>": <valeur>} (valeur sans l'enveloppe {"value": …}). Lecture seule. Sans BEGIN ni COMMIT ; rejouable.
+	
+	CREATE OR REPLACE FUNCTION public.platform_settings_defaults()
+	RETURNS jsonb
+	LANGUAGE sql
+	STABLE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	    SELECT COALESCE(jsonb_object_agg(s.key, COALESCE(
+	               (SELECT COALESCE(h.old_value, h.new_value)
+	                  FROM public.platform_settings_history h
+	                 WHERE h.key = s.key
+	                 ORDER BY h.changed_at, h.id
+	                 LIMIT 1),
+	               s.value) -> 'value'), '{}'::jsonb)
+	      FROM public.platform_settings s
+	     WHERE s.key ~ '^(finance|access|notif|features|support)\.'
+	$$
+172.18.0.1 2026-11-16 21:42:43.370 UTC [248] postgres@postgres LOG:  execute <unnamed>: COMMENT ON FUNCTION public.platform_settings_defaults() IS
+	    'Finition 3b (E-35) : valeur d''origine de chaque réglage de la plateforme (premier état de l''historique, sinon la valeur actuelle).'
+172.18.0.1 2026-11-16 21:42:43.370 UTC [248] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.platform_settings_defaults() FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-16 21:42:43.370 UTC [248] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.platform_settings_defaults() TO service_role
+172.18.0.1 2026-11-16 21:42:43.375 UTC [248] postgres@postgres ERROR:  relation "supabase_migrations.seed_files" does not exist at character 24
+172.18.0.1 2026-11-16 21:42:43.375 UTC [248] postgres@postgres STATEMENT:  SELECT path, hash FROM supabase_migrations.seed_files
+172.18.0.1 2026-11-16 21:42:43.378 UTC [248] postgres@postgres LOG:  statement: CREATE SCHEMA IF NOT EXISTS supabase_migrations
+172.18.0.1 2026-11-16 21:42:43.378 UTC [248] postgres@postgres LOG:  statement: CREATE TABLE IF NOT EXISTS supabase_migrations.seed_files (path text NOT NULL PRIMARY KEY, hash text NOT NULL)
+172.18.0.8 2026-11-16 21:42:43.424 UTC [213] supabase_storage_admin@postgres LOG:  could not receive data from client: Connection reset by peer
+===== supabase_auth_event-village =====
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-11-16T21:42:08Z"}
+{"component":"pop","level":"info","msg":"Migrations already up to date, nothing to apply","time":"2026-11-16T21:42:08Z"}
+{"args":[0.021073305],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-11-16T21:42:08Z"}
+{"count":0,"level":"info","msg":"GoTrue migrations applied successfully","time":"2026-11-16T21:42:08Z"}
+{"component":"api","level":"warning","msg":"DEPRECATION NOTICE: GOTRUE_JWT_ADMIN_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon","time":"2026-11-16T21:42:08Z"}
+{"component":"api","level":"warning","msg":"DEPRECATION NOTICE: GOTRUE_JWT_DEFAULT_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon","time":"2026-11-16T21:42:08Z"}
+{"level":"info","msg":"GoTrue API started on: 0.0.0.0:9999","time":"2026-11-16T21:42:08Z","version":"v2.197.0"}
+{"component":"apiworker","level":"info","msg":"apiworker: index worker started","time":"2026-11-16T21:42:08Z","worker_type":"apiworker_index_worker"}
+{"component":"apiworker","level":"info","msg":"apiworker: config notifier started","time":"2026-11-16T21:42:08Z","worker_type":"apiworker_config_notifier"}
+{"component":"apiworker","level":"info","msg":"apiworker: template cache worker started","time":"2026-11-16T21:42:08Z","worker_type":"apiworker_template_cache"}
+{"component":"apiworker","level":"info","msg":"apiworker: db worker started","time":"2026-11-16T21:42:08Z","worker_type":"apiworker_db_worker"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"mfa_factor_enrolled_notification","msg":"mailer: reloaded template type: mfa_factor_enrolled_notification","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"mfa_factor_unenrolled_notification","msg":"mailer: reloaded template type: mfa_factor_unenrolled_notification","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"confirmation","msg":"mailer: reloaded template type: confirmation","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"recovery","msg":"mailer: reloaded template type: recovery","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"email_change","msg":"mailer: reloaded template type: email_change","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"magic_link","msg":"mailer: reloaded template type: magic_link","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"phone_changed_notification","msg":"mailer: reloaded template type: phone_changed_notification","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"password_changed_notification","msg":"mailer: reloaded template type: password_changed_notification","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"email_changed_notification","msg":"mailer: reloaded template type: email_changed_notification","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"invite","msg":"mailer: reloaded template type: invite","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"reauthentication","msg":"mailer: reloaded template type: reauthentication","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"identity_linked_notification","msg":"mailer: reloaded template type: identity_linked_notification","time":"2026-11-16T21:42:08Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"identity_unlinked_notification","msg":"mailer: reloaded template type: identity_unlinked_notification","time":"2026-11-16T21:42:08Z"}
+{"component":"apiworker","config_conn_max_idle_time":"0s","config_conn_max_lifetime":"0s","config_conn_percentage":0,"config_max_idle_pool_size":10,"config_max_pool_size":10,"level":"info","limit_conn_max_idle_time":"0s","limit_conn_max_lifetime":"0s","limit_max_idle_conns":10,"limit_max_open_conns":10,"limit_strategy":"fixed","msg":"applying connection limits to db using the \"fixed\" strategy","server_max_conns":100,"time":"2026-11-16T21:42:08Z","worker_type":"apiworker_db_worker"}
+{"level":"info","msg":"received graceful shutdown signal","time":"2026-11-16T21:42:43Z"}
+{"component":"apiworker","level":"info","msg":"apiworker: template cache worker exited","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_template_cache"}
+{"component":"apiworker","level":"info","msg":"apiworker: db worker exited","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_db_worker"}
+{"component":"apiworker","level":"info","msg":"apiworker: config notifier exited","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_config_notifier"}
+{"component":"apiworker","level":"info","msg":"apiworker: index worker exited","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_index_worker"}
+{"component":"apiworker","level":"info","msg":"background apiworker is exiting","time":"2026-11-16T21:42:43Z"}
+{"component":"api","level":"info","msg":"http server closed","time":"2026-11-16T21:42:43Z"}
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-11-16T21:42:43Z"}
+{"component":"pop","level":"info","msg":"Migrations already up to date, nothing to apply","time":"2026-11-16T21:42:43Z"}
+{"args":[0.019402987],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-11-16T21:42:43Z"}
+{"count":0,"level":"info","msg":"GoTrue migrations applied successfully","time":"2026-11-16T21:42:43Z"}
+{"component":"api","level":"warning","msg":"DEPRECATION NOTICE: GOTRUE_JWT_ADMIN_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon","time":"2026-11-16T21:42:43Z"}
+{"component":"api","level":"warning","msg":"DEPRECATION NOTICE: GOTRUE_JWT_DEFAULT_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon","time":"2026-11-16T21:42:43Z"}
+{"level":"info","msg":"GoTrue API started on: 0.0.0.0:9999","time":"2026-11-16T21:42:43Z","version":"v2.197.0"}
+{"component":"apiworker","level":"info","msg":"apiworker: index worker started","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_index_worker"}
+{"component":"apiworker","level":"info","msg":"apiworker: config notifier started","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_config_notifier"}
+{"component":"apiworker","level":"info","msg":"apiworker: template cache worker started","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_template_cache"}
+{"component":"apiworker","level":"info","msg":"apiworker: db worker started","time":"2026-11-16T21:42:43Z","worker_type":"apiworker_db_worker"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"mfa_factor_unenrolled_notification","msg":"mailer: reloaded template type: mfa_factor_unenrolled_notification","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"phone_changed_notification","msg":"mailer: reloaded template type: phone_changed_notification","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"password_changed_notification","msg":"mailer: reloaded template type: password_changed_notification","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"reauthentication","msg":"mailer: reloaded template type: reauthentication","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"mfa_factor_enrolled_notification","msg":"mailer: reloaded template type: mfa_factor_enrolled_notification","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"recovery","msg":"mailer: reloaded template type: recovery","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"identity_linked_notification","msg":"mailer: reloaded template type: identity_linked_notification","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"invite","msg":"mailer: reloaded template type: invite","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"identity_unlinked_notification","msg":"mailer: reloaded template type: identity_unlinked_notification","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"confirmation","msg":"mailer: reloaded template type: confirmation","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"email_change","msg":"mailer: reloaded template type: email_change","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"email_changed_notification","msg":"mailer: reloaded template type: email_changed_notification","time":"2026-11-16T21:42:43Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"magic_link","msg":"mailer: reloaded template type: magic_link","time":"2026-11-16T21:42:43Z"}
+{"component":"apiworker","config_conn_max_idle_time":"0s","config_conn_max_lifetime":"0s","config_conn_percentage":0,"config_max_idle_pool_size":10,"config_max_pool_size":10,"level":"info","limit_conn_max_idle_time":"0s","limit_conn_max_lifetime":"0s","limit_max_idle_conns":10,"limit_max_open_conns":10,"limit_strategy":"fixed","msg":"applying connection limits to db using the \"fixed\" strategy","server_max_conns":100,"time":"2026-11-16T21:42:43Z","worker_type":"apiworker_db_worker"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4095165,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"031d6b6f-7a98-4650-b56e-6d6fad069058","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"13639bac-5797-4057-9db2-b5844bde285e","created_at":"2026-11-16T21:42:56.688917978Z","ip_address":"","log_type":"team","request_id":"caef4ec3-fb7d-4677-a679-fbfb3a76c81b","traits":{"provider":"email","user_email":"client@test.eventvillage.local","user_id":"f7896d7d-bca2-4eb5-8013-51edcc0186ad","user_phone":"221700000001"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:56Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"client@test.eventvillage.local","user_id":"f7896d7d-bca2-4eb5-8013-51edcc0186ad","user_phone":"221700000001"}},"component":"api","duration":78182947,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"caef4ec3-fb7d-4677-a679-fbfb3a76c81b","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1079972,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"3b01efa5-b724-48bd-947d-25837c578ad4","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"5ef0172f-b9c7-4fb2-abb6-be0cf55cccd3","created_at":"2026-11-16T21:42:56.775795653Z","ip_address":"","log_type":"team","request_id":"57ff6208-7981-41f7-bd09-f90cfc93b69c","traits":{"provider":"email","user_email":"client-bis@test.eventvillage.local","user_id":"c73a993d-7f10-4210-9c17-21c23c22a73c","user_phone":"221700000002"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:56Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"client-bis@test.eventvillage.local","user_id":"c73a993d-7f10-4210-9c17-21c23c22a73c","user_phone":"221700000002"}},"component":"api","duration":63596180,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"57ff6208-7981-41f7-bd09-f90cfc93b69c","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1028643,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"54e4cb02-a509-47f8-b93b-e03aa4fd51f6","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"96b8a234-7646-4433-85a4-be7a31fd3ea6","created_at":"2026-11-16T21:42:56.854858708Z","ip_address":"","log_type":"team","request_id":"5cb8a341-4e4d-492a-b733-365e19e8a7b7","traits":{"provider":"email","user_email":"partner-a@test.eventvillage.local","user_id":"e3a35684-48a5-4736-9b47-005e9a8c1757","user_phone":"221700000003"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:56Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"partner-a@test.eventvillage.local","user_id":"e3a35684-48a5-4736-9b47-005e9a8c1757","user_phone":"221700000003"}},"component":"api","duration":63475026,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"5cb8a341-4e4d-492a-b733-365e19e8a7b7","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1174873,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"a36df99a-b12b-4b69-ada3-ff93b861f84e","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"f1fe00cf-7680-4b8b-9e9f-bcadb3709f5a","created_at":"2026-11-16T21:42:56.935396493Z","ip_address":"","log_type":"team","request_id":"039cb36b-c5b5-41c6-ad84-da75e946df3d","traits":{"provider":"email","user_email":"partner-b@test.eventvillage.local","user_id":"67f76f18-0104-4b96-bee6-c6b3c8b2a227","user_phone":"221700000004"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:56Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"partner-b@test.eventvillage.local","user_id":"67f76f18-0104-4b96-bee6-c6b3c8b2a227","user_phone":"221700000004"}},"component":"api","duration":63708796,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"039cb36b-c5b5-41c6-ad84-da75e946df3d","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1094834,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"1d032138-1766-40ab-a361-9f83683fe2e0","status":200,"time":"2026-11-16T21:42:56Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:56Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"8b5cf985-abec-49ee-9a52-d7ad3fa87b28","created_at":"2026-11-16T21:42:57.011540479Z","ip_address":"","log_type":"team","request_id":"3638491b-62c2-4592-8fdc-058070e6684f","traits":{"provider":"email","user_email":"controller-a@test.eventvillage.local","user_id":"6a7bb284-12da-4a1c-9725-d07c443c694a","user_phone":"221700000005"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:57Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"controller-a@test.eventvillage.local","user_id":"6a7bb284-12da-4a1c-9725-d07c443c694a","user_phone":"221700000005"}},"component":"api","duration":63145872,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"3638491b-62c2-4592-8fdc-058070e6684f","status":200,"time":"2026-11-16T21:42:57Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:57Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1092210,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"fb8d7ad5-abb3-4efa-a306-4a05285fc426","status":200,"time":"2026-11-16T21:42:57Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:57Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"00ec01e8-b971-41e3-bbf2-9fd355d59fa7","created_at":"2026-11-16T21:42:57.089534572Z","ip_address":"","log_type":"team","request_id":"eed6f8a5-cc94-407b-ae03-8b21c12fdbf9","traits":{"provider":"email","user_email":"admin@test.eventvillage.local","user_id":"44504e99-0bb8-44d9-861a-fa2b887bd880","user_phone":"221700000006"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:57Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"admin@test.eventvillage.local","user_id":"44504e99-0bb8-44d9-861a-fa2b887bd880","user_phone":"221700000006"}},"component":"api","duration":64643610,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"eed6f8a5-cc94-407b-ae03-8b21c12fdbf9","status":200,"time":"2026-11-16T21:42:57Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:57Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1045361,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"b4d3ad7e-8a5c-4268-8816-707441956ca5","status":200,"time":"2026-11-16T21:42:57Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:57Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"99ea67d5-c5b0-4a63-84ab-14d955b07a70","created_at":"2026-11-16T21:42:57.172833775Z","ip_address":"","log_type":"team","request_id":"e3f37214-36c2-4b96-969e-502498e98bb7","traits":{"provider":"email","user_email":"superadmin@test.eventvillage.local","user_id":"51643119-7a12-45b2-a9f3-afa93797b4fc","user_phone":"221700000007"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:57Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"superadmin@test.eventvillage.local","user_id":"51643119-7a12-45b2-a9f3-afa93797b4fc","user_phone":"221700000007"}},"component":"api","duration":63060981,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"e3f37214-36c2-4b96-969e-502498e98bb7","status":200,"time":"2026-11-16T21:42:57Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:57Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1072943,"level":"info","method":"GET","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"a05f9ab8-26dc-4d81-964c-0dacdb80046b","status":200,"time":"2026-11-16T21:42:57Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-16T21:42:57Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"auth_audit_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"audit_log_id":"defd6024-e01a-4508-99c7-81091a2f96a9","created_at":"2026-11-16T21:42:57.250795516Z","ip_address":"","log_type":"team","request_id":"70c0cb31-3638-4663-8c84-9354159a36e2","traits":{"provider":"email","user_email":"suspendu@test.eventvillage.local","user_id":"c33aa40d-30b3-49de-b17c-0be9b5f43a8b","user_phone":"221700000008"},"user_agent":"node"},"level":"info","msg":"audit_event","time":"2026-11-16T21:42:57Z"}
+{"auth_event":{"action":"user_signedup","actor_id":"00000000-0000-0000-0000-000000000000","actor_username":"service_role","actor_via_sso":false,"log_type":"team","traits":{"provider":"email","user_email":"suspendu@test.eventvillage.local","user_id":"c33aa40d-30b3-49de-b17c-0be9b5f43a8b","user_phone":"221700000008"}},"component":"api","duration":63481316,"level":"info","method":"POST","msg":"request completed","path":"/admin/users","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"70c0cb31-3638-4663-8c84-9354159a36e2","status":200,"time":"2026-11-16T21:42:57Z"}
+===== supabase_realtime_event-village (filtré) =====
+----- supabase_realtime_event-village (autres lignes filtrées) -----
+2026-11-16T21:42:10.083857826Z 21:42:10.069 [warning] Failed to load OTP-trusted CAs: :error::function_clause, falling back to hardcoded authorities
+2026-11-16T21:42:10.864483036Z 21:42:10.864 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:10.864829346Z 21:42:10.864 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:11.287746994Z 21:42:11.287 [warning] Zero region nodes for us-east-1 using :nonode@nohost
+2026-11-16T21:42:11.295901973Z 21:42:11.295 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-16T21:42:11.351266350Z 21:42:11.350 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-16T21:42:12.818109776Z =WARNING REPORT==== 16-Nov-2026::21:42:12.817571 ===
+2026-11-16T21:42:12.818135224Z Failed to load OTP-trusted CAs: error:function_clause, falling back to hardcoded authorities
+2026-11-16T21:42:12.889625608Z 21:42:12.889 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:12.908379096Z 21:42:12.908 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:21.680478118Z 21:42:21.678 [error] GenServer #PID<0.3609.0> terminating
+2026-11-16T21:42:21.680499800Z ** (stop) %DBConnection.ConnectionError{message: "tcp async recv: closed", severity: :error, reason: :closed}
+2026-11-16T21:42:21.680503766Z Last message: {:EXIT, #PID<0.3608.0>, %DBConnection.ConnectionError{message: "tcp async recv: closed", severity: :error, reason: :closed}}
+2026-11-16T21:42:21.681300622Z 21:42:21.679 [error] #PID<0.4020.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.683096611Z 21:42:21.680 [error] #PID<0.4025.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.683109370Z 21:42:21.681 [error] GenServer #PID<0.4017.0> terminating
+2026-11-16T21:42:21.683113385Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.683116520Z Last message: {:EXIT, #PID<0.4016.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.683122869Z 21:42:21.681 [error] GenServer #PID<0.4022.0> terminating
+2026-11-16T21:42:21.683125944Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.683129059Z Last message: {:EXIT, #PID<0.4021.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.683418445Z 21:42:21.681 [error] #PID<0.4030.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.684432822Z 21:42:21.682 [error] GenServer #PID<0.4027.0> terminating
+2026-11-16T21:42:21.684453722Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.684457989Z Last message: {:EXIT, #PID<0.4026.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.684636873Z 21:42:21.683 [error] #PID<0.4036.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.686118247Z 21:42:21.683 [error] GenServer #PID<0.4033.0> terminating
+2026-11-16T21:42:21.686129254Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.686132689Z Last message: {:EXIT, #PID<0.4032.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.686135753Z 21:42:21.684 [error] #PID<0.4041.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.686138608Z 21:42:21.685 [error] GenServer #PID<0.4038.0> terminating
+2026-11-16T21:42:21.686141201Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.686143905Z Last message: {:EXIT, #PID<0.4037.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.689381982Z 21:42:21.688 [error] #PID<0.4046.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.691442441Z 21:42:21.688 [error] GenServer #PID<0.4043.0> terminating
+2026-11-16T21:42:21.691452586Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.691456231Z Last message: {:EXIT, #PID<0.4042.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.691525684Z 21:42:21.689 [error] #PID<0.4051.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.692697872Z 21:42:21.690 [error] GenServer #PID<0.4048.0> terminating
+2026-11-16T21:42:21.692713075Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.692727066Z Last message: {:EXIT, #PID<0.4047.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.692731202Z 21:42:21.690 [error] #PID<0.4057.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.692744792Z 21:42:21.691 [error] GenServer #PID<0.4054.0> terminating
+2026-11-16T21:42:21.692751361Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.692754977Z Last message: {:EXIT, #PID<0.4053.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.692861554Z 21:42:21.692 [error] #PID<0.4062.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.692905939Z 21:42:21.692 [error] GenServer #PID<0.4059.0> terminating
+2026-11-16T21:42:21.692909685Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.692912529Z Last message: {:EXIT, #PID<0.4058.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.693832726Z 21:42:21.693 [error] #PID<0.4067.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.693911242Z 21:42:21.693 [error] GenServer #PID<0.4064.0> terminating
+2026-11-16T21:42:21.693915619Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.693918683Z Last message: {:EXIT, #PID<0.4063.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.695197374Z 21:42:21.694 [error] #PID<0.4072.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.695261168Z 21:42:21.694 [error] GenServer #PID<0.4069.0> terminating
+2026-11-16T21:42:21.695265534Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.695268669Z Last message: {:EXIT, #PID<0.4068.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.695418680Z 21:42:21.694 [error] #PID<0.4078.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.695431609Z 21:42:21.694 [error] GenServer #PID<0.4075.0> terminating
+2026-11-16T21:42:21.695434584Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.695437578Z Last message: {:EXIT, #PID<0.4074.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.697133054Z 21:42:21.695 [error] #PID<0.4083.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.697496200Z 21:42:21.695 [error] GenServer #PID<0.4080.0> terminating
+2026-11-16T21:42:21.697521578Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.697525884Z Last message: {:EXIT, #PID<0.4079.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.697701132Z 21:42:21.697 [error] #PID<0.4088.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.697963834Z 21:42:21.697 [error] GenServer #PID<0.4085.0> terminating
+2026-11-16T21:42:21.697971215Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.697974861Z Last message: {:EXIT, #PID<0.4084.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:21.699111923Z 21:42:21.698 [error] #PID<0.4093.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:21.701368522Z 21:42:21.699 [error] GenServer #PID<0.4090.0> terminating
+2026-11-16T21:42:21.701378667Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-16T21:42:21.701382282Z Last message: {:EXIT, #PID<0.4089.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-16T21:42:24.635448888Z 21:42:24.631 [error] Postgrex.Protocol (#PID<0.154.0> ("db_conn_2")) failed to connect: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:24.636126057Z 21:42:24.631 [error] Postgrex.Protocol (#PID<0.153.0> ("db_conn_1")) failed to connect: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-16T21:42:28.417499581Z 21:42:28.411 [warning] Failed to load OTP-trusted CAs: :error::function_clause, falling back to hardcoded authorities
+2026-11-16T21:42:28.870002251Z 21:42:28.869 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:28.872978267Z 21:42:28.872 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:29.098295614Z 21:42:29.098 [warning] Zero region nodes for us-east-1 using :nonode@nohost
+2026-11-16T21:42:29.105276889Z 21:42:29.105 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-16T21:42:29.183126224Z 21:42:29.182 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-16T21:42:30.631990814Z =WARNING REPORT==== 16-Nov-2026::21:42:30.631460 ===
+2026-11-16T21:42:30.632013036Z Failed to load OTP-trusted CAs: error:function_clause, falling back to hardcoded authorities
+2026-11-16T21:42:30.708218086Z 21:42:30.707 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:30.726402528Z 21:42:30.726 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:43.525649092Z 21:42:43.524 [error] Elixir.Realtime.SignalHandler: :sigterm received
+2026-11-16T21:42:45.846398346Z 21:42:45.840 [warning] Failed to load OTP-trusted CAs: :error::function_clause, falling back to hardcoded authorities
+2026-11-16T21:42:46.304125734Z 21:42:46.303 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:46.307125479Z 21:42:46.306 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:46.564253146Z 21:42:46.563 [warning] Zero region nodes for us-east-1 using :nonode@nohost
+2026-11-16T21:42:46.573392172Z 21:42:46.573 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-16T21:42:46.621885535Z 21:42:46.621 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-16T21:42:47.993416937Z =WARNING REPORT==== 16-Nov-2026::21:42:47.992862 ===
+2026-11-16T21:42:47.993438639Z Failed to load OTP-trusted CAs: error:function_clause, falling back to hardcoded authorities
+2026-11-16T21:42:48.069925310Z 21:42:48.069 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-16T21:42:48.085386655Z 21:42:48.085 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+===== supabase_db_event-village (lecteur Realtime, filtré) =====
