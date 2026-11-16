@@ -43,3 +43,19 @@ d'où elle vient et pourquoi elle attend.
 | `event_poster_path_ok` accepte tout hôte devant le chemin du stockage. | La route impose l'adresse du stockage du projet ; la base ne connaît pas cette adresse. | Remarque de la contre-vérification |
 | `controller_invitation_create` ne vérifie pas que l'auteur possède la fiche. | Exécutable par le seul compte de service ; la route le vérifie. La fiche suspendue y est désormais refusée en tête (T1). | Remarque de la contre-vérification |
 | Purge des affiches bornée à 1 000 dossiers et 1 000 fichiers par dossier. | Au-delà, des orphelines restent : un coût de stockage, pas un risque d'effacement. | Remarque de la contre-vérification |
+
+## Argent de l'administration (finition 3a)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Page « À faire aujourd'hui » complète (événements à valider avec leur ancienneté, événements suspendus à décider, envois en échec, plafond des SMS, paiements avec un écart), route `GET /api/admin/todo`. | Finition 3b. La 3a ne pose que le bloc « Argent qui attend » (versements à reprendre, remboursements à verser, créances). | Revue d'ergonomie, E-29 |
+| Menu et barre du bas selon les droits, page « Mes droits », bandeaux « Lecture seule », refus qui nomme la permission. | Finition 3b. La page Finance dit seulement, sans `payments.read`, que ses chiffres ne sont pas affichés. | Revue d'ergonomie, E-34 |
+| Réglages : entrée de menu, sommaire et recherche, confirmation « avant → après », bornes vérifiées avant l'envoi, auteur dans l'historique, valeurs risquées. | Finition 3b. La 3a ajoute seulement les deux réglages de la réserve de prudence, avec leur explication. | Revue d'ergonomie, E-35 |
+| Création d'un ADMIN enchaînée sur ses droits, profils prêts, dépendances cochées d'office. | Finition 3b. | Revue d'ergonomie, E-36 |
+| Confirmations qui disent qui est prévenu (réactivation, suspension, « Marquer versé »…) et libellés de `/admin/users`, `/admin/referral`, `/admin/audit`. | Finition 3c. | Revue d'ergonomie, E-32, E-37, E-39 |
+| Recours d'un admin qui perd son téléphone (changement de numéro par le SUPERADMIN, codes de secours), écran de changement de rôle, espèces d'un événement annulé marquées par un admin, règle des 30 minutes sur les routes partenaire utilisées par un admin. | Finition 3d. | État des lieux du 16/11 |
+| « Retirable » : déduire les paiements en échec sans identifiant SamirPay (le client a peut-être été débité) et les frais SamirPay des versements encore à faire. | Non demandés par la consigne ; la réserve de prudence (encaissements des 3 derniers jours par défaut) les couvre largement. À décider avec le client. | Finition 3a |
+| Délai de règlement de SamirPay : le solde compte-t-il un encaissement dès sa confirmation ? Ajuster la réserve de prudence (ou la remplacer par une ligne « En cours de règlement ») quand SamirPay aura répondu. | Réponse de SamirPay attendue. | Revue d'ergonomie, point à arbitrer 8 |
+| Comparaison « frais SamirPay réels / estimés au taux de retrait » retirée de la page Finance : les frais réels figurent dans le détail de « Gagné », l'alerte sur un taux de retrait trop bas reste dans les réglages. La route `GET /api/admin/finance/reconciliation` n'est plus lue par l'écran (encore lue par des tests) : la retirer ou la réduire. | Nettoyage ; aucune perte de chiffre (les frais réels sont comptés). | Finition 3a |
+| `finance_platform_revenue` n'est plus lue par aucun écran ni aucune route (une seule mesure : `finance_admin_earned`) ; seul `tests/security/r3-fonctions-rpc.test.ts` la cite. La supprimer avec ce test. | Nettoyage. | Finition 3a |
+| Mise à jour en direct des chiffres de la page Finance (aujourd'hui : au chargement et au changement de période ; solde relu au plus toutes les 5 minutes). | Pas demandé ; la page se recharge. | Finition 3a |
