@@ -376,7 +376,7 @@ export default function AdminUsersManagementPage() {
           <Link
             href="/admin/dashboard"
             aria-label="Retour à l’accueil de l’administration"
-            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-surface text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-surface text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronLeft size={20} aria-hidden="true" />
           </Link>
@@ -420,7 +420,7 @@ export default function AdminUsersManagementPage() {
             <input
               type="search"
               aria-label="Rechercher un compte"
-              placeholder="Nom, email ou téléphone"
+              placeholder="Rechercher par nom, email ou téléphone"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="min-h-11 w-full rounded-xl border border-border-strong bg-surface pl-9 pr-4 text-base text-fg outline-none placeholder:text-fg-muted focus-visible:ring-2 focus-visible:ring-ring"
