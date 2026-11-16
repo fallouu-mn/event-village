@@ -100,6 +100,8 @@ const REFUSAL_HTTP: Record<string, number> = {
     QUOTA_BELOW_HELD: 409,
     PRICE_LOCKED_AFTER_SALES: 409,
     CATEGORY_HAS_SALES: 409,
+    // Finition 2b (A) : suppression qui laisserait une zone sans catégorie admise (étape « Contrôle à l'entrée » proposée)
+    CATEGORY_ONLY_IN_ZONE: 409,
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
