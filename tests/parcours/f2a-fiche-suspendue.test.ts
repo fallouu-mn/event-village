@@ -3,9 +3,10 @@
  * soit leur statut, route ET base. Message « Votre compte organisateur est suspendu : vos événements ne sont plus
  * modifiables. Contactez le support. » suivi du contact. L'admin muni de events.write garde ses actions ; les contrôleurs
  * gardent le scan (règle A9 du lot 9 quinquies).
- *  a. Routes : chaque route d'écriture de /api/partner/events (toutes les méthodes autres que GET, liste tirée du disque)
- *     et le dépôt d'image → 403 PARTNER_SUSPENDED, texte exact puis contact ; rien ne change (événement, catégories,
- *     zones, invitations, code du régisseur, brouillon).
+ *  a. Routes : une modification valide de l'événement (titre, version lue), puis chaque route d'écriture de
+ *     /api/partner/events (toutes les méthodes autres que GET, liste tirée du disque) et le dépôt d'image → 403
+ *     PARTNER_SUSPENDED, texte exact puis contact ; rien ne change (événement, catégories, zones, invitations, code du
+ *     régisseur, brouillon).
  *  b. Base : event_create, event_update, ticket_category_create/update/delete, event_zones_save, event_transition,
  *     event_cancel, ticket_invitation_create/cancel/guest_name_set, event_cash_refund_mark, ticket_refund_request
  *     appelées avec la partenaire suspendue pour auteur → PARTNER_SUSPENDED ; suppression du brouillon et code du
@@ -133,6 +134,20 @@ function assertRpcSuspended(reply: Row, what: string): void {
 }
 
 describe('1a. fiche SUSPENDU : routes d’écriture', () => {
+    // Le geste de l'organisatrice : « Modifier », changer le titre, « Enregistrer » (modification valide, avec la version
+    // lue). Le test suivant envoie un corps générique à chaque route : il prouve le refus en tête, pas qu'une écriture
+    // valide passait ; celui-ci le prouve sur la route la plus utilisée.
+    test('« Modifier » puis « Enregistrer » (modification valide, version lue) : 403 PARTNER_SUSPENDED, titre inchangé', async () => {
+        const before = await snapshot();
+        const r = await api('PUT', 'partner/events/[id]', {
+            token: P.accessToken, path: `/api/partner/events/${evPub.eventId}`, params: { id: evPub.eventId },
+            body: { patch: { title: 'Titre changé par la route' }, expected_updated_at: await versionOf(evPub.eventId) },
+        });
+        console.log(`[F2A-1A] PUT /api/partner/events/[id] (modification valide) → ${show(r).slice(0, 160)}`);
+        assertSuspended(r, 'PUT events/[id] (modification valide)');
+        assert.equal(await snapshot(), before, 'la modification valide a changé l’événement');
+    });
+
     test('chaque route d’écriture de l’événement et le dépôt d’image : 403 PARTNER_SUSPENDED, rien ne change', async () => {
         const before = await snapshot();
         let calls = 0;
