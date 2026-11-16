@@ -92,10 +92,11 @@ describe('b. écran « Vérifier avant d’envoyer » et envoi depuis le formula
     const form = fs.readFileSync(path.join(ROOT, 'components/events/EventForm.tsx'), 'utf8');
     const review = fs.readFileSync(path.join(ROOT, 'components/events/EventReview.tsx'), 'utf8');
     test('récapitulatif des étapes avec « Modifier », manques, « Envoyer pour validation »', () => {
-        assert.match(review, /Vérifier avant d’envoyer/);
+        // Run 255 : le titre de l'écran et le bouton sont ceux du formulaire (EventForm), le récapitulatif celui d'EventReview
+        assert.match(form, /heading: 'Vérifier avant d’envoyer'/);
         assert.match(review, /Modifier/);
-        assert.match(review, /submissionMissing|missing/);
-        assert.match(review, /Envoyer pour validation/);
+        assert.match(review, /missing/);
+        assert.match(form, /Envoyer pour validation/);
     });
     test('le formulaire envoie pour validation (transition EN_ATTENTE) après la création ou l’enregistrement', () => {
         assert.match(form, /\/transition/);
