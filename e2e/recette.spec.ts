@@ -203,7 +203,13 @@ async function editSetting(page: Page, label: string, apply: (row: Locator) => P
 }
 
 async function saveSetting(page: Page, label: string, row: Locator, value: string): Promise<void> {
-    await expectRoute(page, 'PUT', '/api/admin/finance-settings', () => row.getByRole('button', { name: /^enregistrer$/i }).click(), 200, `réglage « ${label} »`);
+    // Finition 3b (E-35) : « Vérifier et enregistrer » ouvre la confirmation « Avant → Après » ; rien n'est envoyé avant
+    // « Confirmer le changement ». Modification signalée au rapport.
+    await row.getByRole('button', { name: /^vérifier et enregistrer$/i }).click();
+    const confirm = page.getByRole('alertdialog', { name: /^confirmer le changement/i });
+    await expect(confirm, `confirmation du réglage « ${label} »`).toContainText(/Avant : .+Après : /);
+    await expectRoute(page, 'PUT', '/api/admin/finance-settings', () => confirm.getByRole('button', { name: /^confirmer le changement$/i }).click(), 200, `réglage « ${label} »`);
+    await expect(confirm).toBeHidden();
     await expect(settingRow(page, label).getByText(value, { exact: true }), `réglage « ${label} » affiché`).toBeVisible();
 }
 
@@ -324,7 +330,7 @@ test('acte 1 [admin] : délai de garde coupé à l’écran, motif exigé, histo
         const row = settingRow(page, hold);
         await row.getByRole('button', { name: `Modifier ${hold}` }).click();
         await row.getByLabel(/^nouvelle valeur/i).selectOption('false');
-        await row.getByRole('button', { name: /^enregistrer$/i }).click();
+        await row.getByRole('button', { name: /^vérifier et enregistrer$/i }).click();
         await expect(row.getByText(/indiquez le motif/i), 'sans motif, rien n’est envoyé').toBeVisible();
         await row.getByRole('button', { name: /^annuler$/i }).click();
 
