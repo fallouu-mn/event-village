@@ -1,0 +1,482 @@
+TAP version 13
+[F2B-C1] sans affiche, sans repère, aucune catégorie active : écran [{"field":"image_url","message":"Ajoutez une affiche à l'événement."},{"field":"latitude","message":"Placez le repère du lieu sur la carte (étape Accès)."},{"field":"ticket_categories","message":"Ajoutez au moins une catégorie de billets active."}] ; base {"ok":false,"missing":[{"field":"image_url","message":"Ajoutez une affiche à l'événement."},{"field":"latitude","message":"Placez le repère du lieu sur la carte (étape Accès)."},{"field":"ticket_categories","message":"Ajoutez au moins une catégorie de billets active."}]}
+# Subtest: a. parité des manques entre l’écran et la base
+    # Subtest: sans affiche, sans repère, aucune catégorie active
+    ok 1 - sans affiche, sans repère, aucune catégorie active
+      ---
+      duration_ms: 116.530425
+      type: 'test'
+      ...
+[F2B-C1] début passé : écran [{"field":"start_date","message":"La date de début est passée : changez-la avant de soumettre."}] ; base {"ok":false,"missing":[{"field":"start_date","message":"La date de début est passée : changez-la avant de soumettre."}]}
+    # Subtest: début passé
+    ok 2 - début passé
+      ---
+      duration_ms: 19.501412
+      type: 'test'
+      ...
+[F2B-C1] période de vente au-delà de la fin : écran [{"field":"ticket_categories","message":"La période de vente de « Tardive » dépasse la fin de l’événement."}] ; base {"ok":false,"missing":[{"field":"ticket_categories","message":"La période de vente de « Tardive » dépasse la fin de l’événement."}]}
+    # Subtest: période de vente au-delà de la fin
+    ok 3 - période de vente au-delà de la fin
+      ---
+      duration_ms: 21.499978
+      type: 'test'
+      ...
+    # Subtest: brouillon complet : aucun manque, la base l’accepte
+    ok 4 - brouillon complet : aucun manque, la base l’accepte
+      ---
+      duration_ms: 25.598845
+      type: 'test'
+      ...
+    1..4
+ok 1 - a. parité des manques entre l’écran et la base
+  ---
+  duration_ms: 475.691401
+  type: 'suite'
+  ...
+# Subtest: b. écran « Vérifier avant d’envoyer » et envoi depuis le formulaire
+    # Subtest: récapitulatif des étapes avec « Modifier », manques, « Envoyer pour validation »
+    not ok 1 - récapitulatif des étapes avec « Modifier », manques, « Envoyer pour validation »
+      ---
+      duration_ms: 3.933226
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/f2b-verifier-envoyer.test.ts:2:5195'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /Vérifier avant d’envoyer/. Input:
+        
+        "'use client';\n" +
+          '\n' +
+          '/**\n' +
+          " * Finition 2b (C, E-24) — écran « Vérifier avant d'envoyer » du formulaire d'événement : ce qui manque pour l'envoi en\n" +
+          ' * tête (chaque manque mène à son étape), puis le récapitulatif de chaque étape avec « Modifier ». Les manques viennent de\n' +
+          ' * submissionMissing (lib/events/submission-check.ts : règles et textes de la base à la soumission). Les boutons\n' +
+          ' * « Enregistrer le brouillon » et « Envoyer pour validation » sont ceux de la barre du formulaire.\n' +
+          ' */\n' +
+          "import React from 'react';\n" +
+          "import { AlertTriangle, CheckCircle2, Pencil } from 'lucide-react';\n" +
+          "import { Button } from '@/components/ui/Button';\n" +
+          "import { formatFcfa, formatInteger } from '@/lib/format';\n" +
+          "import { SCAN_CATEGORY_COLOR_LABELS, isScanCategoryColor } from '@/lib/scan/scan-result';\n" +
+          "import type { MissingItem } from '@/lib/events/submission-check';\n" +
+          "import { ScanColorDot } from './ScanColorPicker';\n" +
+          "import { SINGLE_ENTRANCE_TEXT } from './ZoneListEditor';\n" +
+          '\n' +
+          "export type ReviewStep = 'infos' | 'programme' | 'acces' | 'billetterie' | 'controle';\n" +
+          '\n' +
+          'export interface ReviewData {\n' +
+          '    title: string;\n' +
+          '    typeLabel: string;\n' +
+          '    start: string;\n' +
+          '    end: string;\n' +
+          '    location: string;\n' +
+          '    city: string;\n' +
+          '    capacity: number | null;\n' +
+          '    hasPoster: boolean;\n' +
+          '    programLines: number;\n' +
+          '    hasPosition: boolean;\n' +
+          '    address: string;\n' +
+          '    contactPhone: string;\n' +
+          '    categories: Array<{ name: string; price: number | null; total: number | null; active: boolean; color: string; instruction: string }>;\n' +
+          '    /** null : une seule entrée. */\n' +
+          '    zones: Array<{ name: string; kindLabel: string; categories: string[]; gates: string[] }> | null;\n' +
+          '}\n' +
+          '\n' +
+          'interface EventReviewProps {\n' +
+          '    data: ReviewData;\n' +
+          '    missing: MissingItem[];\n' +
+          "    /** L'envoi pour validation est possible ici (création, brouillon). */\n" +
+          '    canSend: boolean;\n' +
+          '    onEdit: (step: ReviewStep) => void;\n' +
+          '    onFix: (item: MissingItem) => void;\n' +
+          '}\n' +
+          '\n' +
+          'const STEP_TITLES: Record<ReviewStep, string> = {\n' +
+          "    infos: 'Informations',\n" +
+          "    programme: 'Programme',\n" +
+          "    acces: 'Accès',\n" +
+          "    billetterie: 'Billets',\n" +
+          "    controle: 'Contrôle à l’entrée',\n" +
+          '};\n' +
+          '\n' +
+          'function Section({ index, step, children, onEdit }: { index: number; step: ReviewStep; children: React.ReactNode; onEdit: (step: ReviewStep) => void }) {\n' +
+          '    const id = `ev-revue-${step}`;\n' +
+          '    return (\n' +
+          '        <section aria-labelledby={id} className="flex flex-col gap-3 rounded-2xl border border-border p-4">\n' +
+          '            <div className="flex flex-wrap items-center justify-between gap-2">\n' +
+          '                <h3 id={id} className="text-base font-semibold text-fg">{`${index}. ${STEP_TITLES[step]}`}</h3>\n' +
+          '                <Button type="button" variant="secondary" size="sm" leftIcon={<Pencil size={16} />} onClick={() => onEdit(step)}\n' +
+          '                    aria-label={`Modifier : ${STEP_TITLES[step]}`}>\n' +
+          '                    Modifier\n' +
+          '                </Button>\n' +
+          '            </div>\n' +
+          '            {children}\n' +
+          '        </section>\n' +
+          '    );\n' +
+          '}\n' +
+          '\n' +
+          'function Rows({ rows }: { rows: Array<[string, React.ReactNode]> }) {\n' +
+          '    return (\n' +
+          '        <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,12rem)_1fr]">\n' +
+          '            {rows.map(([label, value]) => (\n' +
+          '                <React.Fragment key={label}>\n' +
+          '                    <dt className="text-fg-muted">{label}</dt>\n' +
+          '                    <dd className="min-w-0 break-words font-medium text-fg">{value}</dd>\n' +
+          '                </React.Fragment>\n' +
+          '            ))}\n' +
+          '        </dl>\n' +
+          '    );\n' +
+          '}\n' +
+          '\n' +
+          "const orNone = (s: string, none = 'Non précisé') => (s.trim() === '' ? none : s);\n" +
+          '\n' +
+          'export function EventReview({ data, missing, canSend, onEdit, onFix }: EventReviewProps) {\n' +
+          '    return (\n' +
+          '        <div className="flex flex-col gap-5">\n' +
+          '            {canSend && (missing.length > 0 ? (\n' +
+          '                <div role="status" className="flex flex-col gap-2 rounded-2xl border border-warning-border bg-warning-bg p-4">\n' +
+          '                    <p className="flex items-start gap-2 text-base font-semibold tabular-nums text-warning-fg">\n' +
+          '                        <AlertTriangle size={20} className="mt-0.5 flex-shrink-0" aria-hidden="true" />\n' +
+          "                        {missing.length > 1 ? `${formatInteger(missing.length)} points à compléter avant d’envoyer` : 'Un point à compléter avant d’envoyer'}\n" +
+          '                    </p>\n' +
+          '                    <ul className="flex flex-col gap-1">\n' +
+          '                        {missing.map((m) => (\n' +
+          '                            <li key={`${m.field}-${m.message}`}>\n' +
+          '                                <button type="button" onClick={() => onFix(m)}\n' +
+          '                                    className="min-h-11 cursor-pointer text-left text-sm font-medium text-warning-fg underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">\n' +
+          '                                    {`${m.message} (étape ${STEP_TITLES[m.step]})`}\n' +
+          '                                </button>\n' +
+          '                            </li>\n' +
+          '                        ))}\n' +
+          '                    </ul>\n' +
+          '                </div>\n' +
+          '            ) : (\n' +
+          '                <p role="status" className="flex items-start gap-2 rounded-2xl border border-success-border bg-success-bg p-4 text-base font-semibold text-success-fg">\n' +
+          '                    <CheckCircle2 size={20} className="mt-0.5 flex-shrink-0" aria-hidden="true" />\n' +
+          '                    Tout est prêt : vous pouvez envoyer l’événement pour validation.\n' +
+          '                </p>\n' +
+          '            ))}\n' +
+          '\n' +
+          '            <Section index={1} step="infos" onEdit={onEdit}>\n' +
+          '                <Rows rows={[\n' +
+          "                    ['Titre', orNone(data.title)],\n" +
+          "                    ['Type d’événement', orNone(data.typeLabel, 'Non choisi')],\n" +
+          "                    ['Début', orNone(data.start)],\n" +
+          "                    ['Fin', orNone(data.end)],\n" +
+          "                    ['Lieu', `${orNone(data.location)}, ${orNone(data.city)}`],\n" +
+          '                    [\'Capacité\', data.capacity === null ? \'Non précisée\' : <span className="tabular-nums">{`${formatInteger(data.capacity)} places`}</span>],\n' +
+          "                    ['Affiche', data.hasPoster ? 'Déposée' : 'Aucune affiche'],\n" +
+          '                ]} />\n' +
+          '            </Section>\n' +
+          '\n' +
+          '            <Section index={2} step="programme" onEdit={onEdit}>\n' +
+          '                <p className="text-sm text-fg">\n' +
+          '                    {data.programLines === 0\n' +
+          "                        ? 'Aucune ligne de programme (facultatif).'\n" +
+          '                        : <span className="tabular-nums">{data.programLines > 1 ? `${formatInteger(data.programLines)} lignes de programme.` : \'1 ligne de programme.\'}</span>}\n' +
+          '                </p>\n' +
+          '            </Section>\n' +
+          '\n' +
+          '            <Section index={3} step="acces" onEdit={onEdit}>\n' +
+          '                <Rows rows={[\n' +
+          "                    ['Repère sur la carte', data.hasPosition ? 'Placé' : 'Non placé'],\n" +
+          "                    ['Adresse précise', orNone(data.address)],\n" +
+          "                    ['Téléphone de contact', orNone(data.contactPhone)],\n" +
+          '                ]} />\n' +
+          '            </Section>\n' +
+          '\n' +
+          '            <Section index={4} step="billetterie" onEdit={onEdit}>\n' +
+          '                {data.categories.length === 0 ? (\n' +
+          '                    <p className="text-sm text-fg">Aucune catégorie de billets.</p>\n' +
+          '                ) : (\n' +
+          '                    <ul className="flex flex-col gap-2">\n' +
+          '                        {data.categories.map((c, i) => (\n' +
+          '                            <li key={`${c.name}-${i}`} className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2 text-sm">\n' +
+          '                                <span className="flex flex-wrap items-center gap-2 font-semibold text-fg">\n' +
+          '                                    <ScanColorDot color={c.color} />\n' +
+          '                                    <span className="min-w-0 break-words">{c.name.trim() || `Catégorie ${i + 1}`}</span>\n' +
+          '                                    {!c.active && <span className="font-normal text-fg-muted">· vente fermée</span>}\n' +
+          '                                </span>\n' +
+          '                                <span className="tabular-nums text-fg-muted">\n' +
+          '                                    {[\n' +
+          "                                        c.price === null ? 'Prix à préciser' : c.price === 0 ? 'Gratuit' : formatFcfa(c.price),\n" +
+          "                                        c.total === null ? 'quantité à préciser' : `${formatInteger(c.total)} ${c.total > 1 ? 'billets' : 'billet'}`,\n" +
+          '                                        isScanCategoryColor(c.color) ? `couleur ${SCAN_CATEGORY_COLOR_LABELS[c.color].toLowerCase()}` : null,\n' +
+          "                                    ].filter(Boolean).join(' · ')}\n" +
+          '                                </span>\n' +
+          '                                {c.instruction.trim() !== \'\' && <span className="text-fg">{`Consigne : ${c.instruction.trim()}`}</span>}\n' +
+          '                            </li>\n' +
+          '                        ))}\n' +
+          '                    </ul>\n' +
+          '                )}\n' +
+          '            </Section>\n' +
+          '\n' +
+          '            <Section index={5} step="controle" onEdit={onEdit}>\n' +
+          '                {data.zones === null ? (\n' +
+          '                    <p className="text-sm text-fg">{SINGLE_ENTRANCE_TEXT}</p>\n' +
+          '                ) : (\n' +
+          '                    <ul className="flex flex-col gap-2">\n' +
+          '                        {data.zones.map((z, i) => (\n' +
+          '                            <li key={`${z.name}-${i}`} className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2 text-sm">\n' +
+          '                                <span className="font-semibold text-fg">{`${z.name.trim() || `Zone ${i + 1}`} · ${z.kindLabel}`}</span>\n' +
+          '                                <span className="text-fg-muted">{`Laisse entrer : ${z.categories.length > 0 ? z.categories.join(\', \') : \'aucune catégorie\'}`}</span>\n' +
+          '                                <span className="text-fg-muted">{`${z.gates.length > 1 ? \'Portes\' : \'Porte\'} : ${z.gates.length > 0 ? z.gates.join(\', \') : \'aucune\'}`}</span>\n' +
+          '                            </li>\n' +
+          '                        ))}\n' +
+          '                    </ul>\n' +
+          '                )}\n' +
+          '            </Section>\n' +
+          '        </div>\n' +
+          '    );\n' +
+          '}\n'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        /**
+         * Finition 2b (C, E-24) — écran « Vérifier avant d'envoyer » du formulaire d'événement : ce qui manque pour l'envoi en
+         * tête (chaque manque mène à son étape), puis le récapitulatif de chaque étape avec « Modifier ». Les manques viennent de
+         * submissionMissing (lib/events/submission-check.ts : règles et textes de la base à la soumission). Les boutons
+         * « Enregistrer le brouillon » et « Envoyer pour validation » sont ceux de la barre du formulaire.
+         */
+        import React from 'react';
+        import { AlertTriangle, CheckCircle2, Pencil } from 'lucide-react';
+        import { Button } from '@/components/ui/Button';
+        import { formatFcfa, formatInteger } from '@/lib/format';
+        import { SCAN_CATEGORY_COLOR_LABELS, isScanCategoryColor } from '@/lib/scan/scan-result';
+        import type { MissingItem } from '@/lib/events/submission-check';
+        import { ScanColorDot } from './ScanColorPicker';
+        import { SINGLE_ENTRANCE_TEXT } from './ZoneListEditor';
+        
+        export type ReviewStep = 'infos' | 'programme' | 'acces' | 'billetterie' | 'controle';
+        
+        export interface ReviewData {
+            title: string;
+            typeLabel: string;
+            start: string;
+            end: string;
+            location: string;
+            city: string;
+            capacity: number | null;
+            hasPoster: boolean;
+            programLines: number;
+            hasPosition: boolean;
+            address: string;
+            contactPhone: string;
+            categories: Array<{ name: string; price: number | null; total: number | null; active: boolean; color: string; instruction: string }>;
+            /** null : une seule entrée. */
+            zones: Array<{ name: string; kindLabel: string; categories: string[]; gates: string[] }> | null;
+        }
+        
+        interface EventReviewProps {
+            data: ReviewData;
+            missing: MissingItem[];
+            /** L'envoi pour validation est possible ici (création, brouillon). */
+            canSend: boolean;
+            onEdit: (step: ReviewStep) => void;
+            onFix: (item: MissingItem) => void;
+        }
+        
+        const STEP_TITLES: Record<ReviewStep, string> = {
+            infos: 'Informations',
+            programme: 'Programme',
+            acces: 'Accès',
+            billetterie: 'Billets',
+            controle: 'Contrôle à l’entrée',
+        };
+        
+        function Section({ index, step, children, onEdit }: { index: number; step: ReviewStep; children: React.ReactNode; onEdit: (step: ReviewStep) => void }) {
+            const id = `ev-revue-${step}`;
+            return (
+                <section aria-labelledby={id} className="flex flex-col gap-3 rounded-2xl border border-border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 id={id} className="text-base font-semibold text-fg">{`${index}. ${STEP_TITLES[step]}`}</h3>
+                        <Button type="button" variant="secondary" size="sm" leftIcon={<Pencil size={16} />} onClick={() => onEdit(step)}
+                            aria-label={`Modifier : ${STEP_TITLES[step]}`}>
+                            Modifier
+                        </Button>
+                    </div>
+                    {children}
+                </section>
+            );
+        }
+        
+        function Rows({ rows }: { rows: Array<[string, React.ReactNode]> }) {
+            return (
+                <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,12rem)_1fr]">
+                    {rows.map(([label, value]) => (
+                        <React.Fragment key={label}>
+                            <dt className="text-fg-muted">{label}</dt>
+                            <dd className="min-w-0 break-words font-medium text-fg">{value}</dd>
+                        </React.Fragment>
+                    ))}
+                </dl>
+            );
+        }
+        
+        const orNone = (s: string, none = 'Non précisé') => (s.trim() === '' ? none : s);
+        
+        export function EventReview({ data, missing, canSend, onEdit, onFix }: EventReviewProps) {
+            return (
+                <div className="flex flex-col gap-5">
+                    {canSend && (missing.length > 0 ? (
+                        <div role="status" className="flex flex-col gap-2 rounded-2xl border border-warning-border bg-warning-bg p-4">
+                            <p className="flex items-start gap-2 text-base font-semibold tabular-nums text-warning-fg">
+                                <AlertTriangle size={20} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                                {missing.length > 1 ? `${formatInteger(missing.length)} points à compléter avant d’envoyer` : 'Un point à compléter avant d’envoyer'}
+                            </p>
+                            <ul className="flex flex-col gap-1">
+                                {missing.map((m) => (
+                                    <li key={`${m.field}-${m.message}`}>
+                                        <button type="button" onClick={() => onFix(m)}
+                                            className="min-h-11 cursor-pointer text-left text-sm font-medium text-warning-fg underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                            {`${m.message} (étape ${STEP_TITLES[m.step]})`}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : (
+                        <p role="status" className="flex items-start gap-2 rounded-2xl border border-success-border bg-success-bg p-4 text-base font-semibold text-success-fg">
+                            <CheckCircle2 size={20} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                            Tout est prêt : vous pouvez envoyer l’événement pour validation.
+                        </p>
+                    ))}
+        
+                    <Section index={1} step="infos" onEdit={onEdit}>
+                        <Rows rows={[
+                            ['Titre', orNone(data.title)],
+                            ['Type d’événement', orNone(data.typeLabel, 'Non choisi')],
+                            ['Début', orNone(data.start)],
+                            ['Fin', orNone(data.end)],
+                            ['Lieu', `${orNone(data.location)}, ${orNone(data.city)}`],
+                            ['Capacité', data.capacity === null ? 'Non précisée' : <span className="tabular-nums">{`${formatInteger(data.capacity)} places`}</span>],
+                            ['Affiche', data.hasPoster ? 'Déposée' : 'Aucune affiche'],
+                        ]} />
+                    </Section>
+        
+                    <Section index={2} step="programme" onEdit={onEdit}>
+                        <p className="text-sm text-fg">
+                            {data.programLines === 0
+                                ? 'Aucune ligne de programme (facultatif).'
+                                : <span className="tabular-nums">{data.programLines > 1 ? `${formatInteger(data.programLines)} lignes de programme.` : '1 ligne de programme.'}</span>}
+                        </p>
+                    </Section>
+        
+                    <Section index={3} step="acces" onEdit={onEdit}>
+                        <Rows rows={[
+                            ['Repère sur la carte', data.hasPosition ? 'Placé' : 'Non placé'],
+                            ['Adresse précise', orNone(data.address)],
+                            ['Téléphone de contact', orNone(data.contactPhone)],
+                        ]} />
+                    </Section>
+        
+                    <Section index={4} step="billetterie" onEdit={onEdit}>
+                        {data.categories.length === 0 ? (
+                            <p className="text-sm text-fg">Aucune catégorie de billets.</p>
+                        ) : (
+                            <ul className="flex flex-col gap-2">
+                                {data.categories.map((c, i) => (
+                                    <li key={`${c.name}-${i}`} className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2 text-sm">
+                                        <span className="flex flex-wrap items-center gap-2 font-semibold text-fg">
+                                            <ScanColorDot color={c.color} />
+                                            <span className="min-w-0 break-words">{c.name.trim() || `Catégorie ${i + 1}`}</span>
+                                            {!c.active && <span className="font-normal text-fg-muted">· vente fermée</span>}
+                                        </span>
+                                        <span className="tabular-nums text-fg-muted">
+                                            {[
+                                                c.price === null ? 'Prix à préciser' : c.price === 0 ? 'Gratuit' : formatFcfa(c.price),
+                                                c.total === null ? 'quantité à préciser' : `${formatInteger(c.total)} ${c.total > 1 ? 'billets' : 'billet'}`,
+                                                isScanCategoryColor(c.color) ? `couleur ${SCAN_CATEGORY_COLOR_LABELS[c.color].toLowerCase()}` : null,
+                                            ].filter(Boolean).join(' · ')}
+                                        </span>
+                                        {c.instruction.trim() !== '' && <span className="text-fg">{`Consigne : ${c.instruction.trim()}`}</span>}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </Section>
+        
+                    <Section index={5} step="controle" onEdit={onEdit}>
+                        {data.zones === null ? (
+                            <p className="text-sm text-fg">{SINGLE_ENTRANCE_TEXT}</p>
+                        ) : (
+                            <ul className="flex flex-col gap-2">
+                                {data.zones.map((z, i) => (
+                                    <li key={`${z.name}-${i}`} className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2 text-sm">
+                                        <span className="font-semibold text-fg">{`${z.name.trim() || `Zone ${i + 1}`} · ${z.kindLabel}`}</span>
+                                        <span className="text-fg-muted">{`Laisse entrer : ${z.categories.length > 0 ? z.categories.join(', ') : 'aucune catégorie'}`}</span>
+                                        <span className="text-fg-muted">{`${z.gates.length > 1 ? 'Portes' : 'Porte'} : ${z.gates.length > 0 ? z.gates.join(', ') : 'aucune'}`}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </Section>
+                </div>
+            );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/f2b-verifier-envoyer.test.ts:95:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: le formulaire envoie pour validation (transition EN_ATTENTE) après la création ou l’enregistrement
+    ok 2 - le formulaire envoie pour validation (transition EN_ATTENTE) après la création ou l’enregistrement
+      ---
+      duration_ms: 0.28434
+      type: 'test'
+      ...
+    # Subtest: la soumission depuis la liste reste
+    ok 3 - la soumission depuis la liste reste
+      ---
+      duration_ms: 0.303685
+      type: 'test'
+      ...
+    1..3
+not ok 2 - b. écran « Vérifier avant d’envoyer » et envoi depuis le formulaire
+  ---
+  duration_ms: 4.93459
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/f2b-verifier-envoyer.test.ts:2:4823'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] f2b-verifier-envoyer — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] f2b-verifier-envoyer — purge des réservations échues : {"expired":0}
+[INVARIANT] f2b-verifier-envoyer — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] f2b-verifier-envoyer — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] f2b-verifier-envoyer — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] f2b-verifier-envoyer — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] f2b-verifier-envoyer — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] f2b-verifier-envoyer — envoyeur : 56 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] f2b-verifier-envoyer — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] f2b-verifier-envoyer — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] f2b-verifier-envoyer — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] f2b-verifier-envoyer — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] f2b-verifier-envoyer — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] f2b-verifier-envoyer — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] f2b-verifier-envoyer — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] f2b-verifier-envoyer — (p) : 0 violation(s)
+[INVARIANT-FINITION1] f2b-verifier-envoyer — (f) : 0 violation(s)
+1..2
+# tests 7
+# suites 2
+# pass 6
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1353.544415
