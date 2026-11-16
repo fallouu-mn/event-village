@@ -949,15 +949,15 @@ describe('6.8 — supervision admin (L4, C6)', () => {
             });
             if (!inSystem) faults.push('groupe « Système » sans { name: \'Notifications\', href: \'/admin/notifications\' }');
         }
-        const pushes = callsTo(APP_LAYOUT, 'push').filter((c) => ts.isPropertyAccessExpression(c.expression) && c.expression.expression.getText() === 'proItems'
+        const pushes = callsTo(ADMIN_NAV, 'push').filter((c) => ts.isPropertyAccessExpression(c.expression) && c.expression.expression.getText() === 'proItems'
             && c.arguments.some((a) => ts.isObjectLiteralExpression(a) && propString(sf, a, 'href') === '/admin/notifications'));
         if (pushes.length === 0) faults.push('proItems sans entrée /admin/notifications');
-        const mobile = objectLiterals(APP_LAYOUT, (o) => {
+        const mobile = objectLiterals(ADMIN_NAV, (o) => {
             const p = o.parent;
             return !!p && ts.isArrayLiteralExpression(p) && !!p.parent && ts.isVariableDeclaration(p.parent) && p.parent.name.getText() === 'adminMobileItems';
         });
         if (mobile.length !== 5 || mobile.some((o) => propString(sf, o, 'href') === '/admin/notifications')) faults.push(`barre du bas admin modifiée (${mobile.length} entrées ; 5 attendues, sans /admin/notifications)`);
-        assert.deepEqual(faults, [], `${APP_LAYOUT} :\n  ${faults.join('\n  ')}`);
+        assert.deepEqual(faults, [], `${ADMIN_NAV} :\n  ${faults.join('\n  ')}`);
     });
 
     test('abonnements à admin_signals filtrés par kind : tableau de bord et file des événements kind=in.(EVENT_SUBMITTED,PARTNER_REGISTERED), page Notifications kind=in.(NOTIFICATION_FAILED,SMS_DAILY_THRESHOLD,SMS_OPTIONAL_80,SMS_FORECAST)', () => {
