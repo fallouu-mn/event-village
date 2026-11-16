@@ -26,7 +26,7 @@ import { createTimedEvent, newController } from './acces-helpers';
 import { createDraftEvent } from './cycle-helpers';
 import { newAdmin } from './notif-helpers';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
-import { api, freeTicket, scanTicket, setFiche, show, type Reply, type Row } from '../audit/cvf1-helpers';
+import { FREE, api, freeTicket, scanTicket, setFiche, show, type Reply, type Row } from '../audit/cvf1-helpers';
 import { randomSenegalPhone } from './helpers';
 
 const SUSPENDED_TEXT = 'Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support.';
@@ -35,7 +35,8 @@ const ROOT = path.join(process.cwd(), 'app', 'api', 'partner');
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
 /** Écriture qui n'en est pas une : l'export des participants est une lecture (POST pour son corps). */
 const READ_POSTS = new Set(['POST events/[id]/participants-export']);
-const CATS = [{ name: 'Standard', price: 0, total: 50 }];
+// Catégorie gratuite au nom attendu par freeTicket (tests/audit/cvf1-helpers.ts)
+const CATS = [{ name: FREE, price: 0, total: 50 }];
 
 let P: TestPartner;
 let evPub: SaleEvent;
@@ -47,7 +48,7 @@ let controller: Buyer;
 before(async () => {
     P = await newPartner('f2a-susp');
     evPub = await createTimedEvent(P.partnerId, 'f2a-susp-pub', CATS, { startsInHours: 1 });
-    categoryId = evPub.categories.Standard.id;
+    categoryId = evPub.categories[FREE].id;
     evDraftId = (await createDraftEvent(P, 'f2a-susp-draft', CATS, { startsInHours: 72 })).eventId;
     // Une invitation créée avant la suspension (pour les fonctions d'annulation et de nom de l'invité)
     const inv = await api('POST', 'partner/events/[id]/invitations', {
@@ -55,7 +56,8 @@ before(async () => {
         body: { category_id: categoryId, phones: [randomSenegalPhone('77')], quantity: 1 },
     });
     assert.ok(inv.status < 300, `invitation (montage) : ${show(inv)}`);
-    const { data: t } = await service.from('tickets').select('id').eq('event_id', evPub.eventId).eq('origin', 'INVITATION').limit(1).single();
+    const { data: t, error: tErr } = await service.from('tickets').select('id').eq('event_id', evPub.eventId).eq('sale_channel', 'INVITATION').limit(1).single();
+    assert.equal(tErr, null, `billet d'invitation (montage) : ${tErr?.message}`);
     invitationTicketId = String(t!.id);
     controller = await newController(P, evPub.eventId, { label: 'f2a-susp' });
     await setFiche(P.partnerId, 'SUSPENDU');
@@ -198,14 +200,16 @@ describe('1a. fiche SUSPENDU : lecture gardée, admin et contrôleurs inchangés
         }
     });
 
-    test('l’admin events.write modifie l’événement ; le contrôleur affecté scanne', async () => {
-        const admin = await newAdmin('f2a-susp-admin', ['events.write']);
-        const reply = await rpc('event_update', { event_id: evPub.eventId, actor_id: admin.userId, patch: { title: 'Titre corrigé par l’administration' }, expected_updated_at: await versionOf(evPub.eventId) });
-        assert.equal(reply.ok, true, `admin events.write refusé : ${JSON.stringify(reply).slice(0, 300)}`);
+    // L'administration agit par les changements de statut (event_update refuse tout admin : ADMIN_CANNOT_EDIT) : l'admin
+    // events.write suspend l'événement de la fiche suspendue. Le scan d'abord : un événement suspendu ne se scanne plus.
+    test('le contrôleur affecté scanne ; l’admin events.write garde ses actions (suspension de l’événement)', async () => {
         const holder = await newBuyer('f2a-susp-porteur');
         const t = await freeTicket(evPub, holder);
         const sc = await scanTicket(controller, evPub.eventId, t.id);
         assert.equal(sc.status, 200, `scan du contrôleur : ${show(sc)}`);
         assert.equal(sc.body.result, 'valid', `scan du contrôleur : ${show(sc)}`);
+        const admin = await newAdmin('f2a-susp-admin', ['events.write']);
+        const reply = await rpc('event_transition', { event_id: evPub.eventId, actor_id: admin.userId, to_status: 'SUSPENDU', reason: 'Contrôle de la finition 2a' });
+        assert.equal(reply.ok, true, `admin events.write refusé : ${JSON.stringify(reply).slice(0, 300)}`);
     });
 });

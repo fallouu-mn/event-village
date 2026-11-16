@@ -1742,7 +1742,8 @@ DECLARE
     v_cat_name text;
 BEGIN
     -- Finition 2a (1a) : fiche SUSPENDU, événements en lecture seule pour la partenaire (l'admin events.write garde ses actions)
-    IF public.partner_owner_suspended((SELECT t.event_id FROM public.tickets t WHERE t.id = p_ticket_id), p_actor) THEN
+    -- alias tk : la fonction déclare une variable t (référence « t.event_id » ambiguë pour PL/pgSQL)
+    IF public.partner_owner_suspended((SELECT tk.event_id FROM public.tickets tk WHERE tk.id = p_ticket_id), p_actor) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED', 'message', 'Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support.');
     END IF;
     SELECT payment_id, category_id INTO v_payment_id, v_category FROM public.tickets WHERE id = p_ticket_id;
