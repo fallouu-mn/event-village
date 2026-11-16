@@ -262,12 +262,12 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('CONTROLLER_ACTIVATED', [I, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Compte activé'), // G.49
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement à valider', 'events.read'),
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'KYC', ['/admin/dashboard'], 'Nouvelle candidature', 'partners.read'),
-    ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Remboursement à reprendre', 'refunds.manage'),
+    ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#versements-a-reprendre'], 'Remboursement à reprendre', 'refunds.manage'),
     // Lot 8, tâche 8.2 a (contrat 6.1, L32) : alerte du second paiement réussi d'un même panier.
-    ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Paiement en double remboursé', 'refunds.manage'),
-    ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Versement incertain', 'refunds.manage'),
-    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Retrait refusé par l\'opérateur', 'refunds.manage'),
-    ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'FINANCE_ALERT', ['/admin/finance'], 'Créance sur un compte', 'payments.read'),
+    ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#remboursements-a-verser'], 'Paiement en double remboursé', 'refunds.manage'),
+    ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#versements-a-reprendre'], 'Versement incertain', 'refunds.manage'),
+    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#du-aux-partenaires'], 'Retrait refusé par l\'opérateur', 'refunds.manage'),
+    ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'FINANCE_ALERT', ['/admin/finance#creances'], 'Créance sur un compte', 'payments.read'),
     ess('ADMIN_NOTIFICATION_FAILED', [I, M], 'ADMIN', 'B', 'NOTIFICATION_ALERT', ['/admin/notifications/:outbox'], 'Envoi en échec', 'notifications.read'), // G.49
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Volume de SMS indispensables élevé', 'notifications.read'), // 11.2 M6
     ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Plafond de SMS atteint', 'notifications.read'), // G.49
@@ -972,7 +972,7 @@ function lot9bisExpected(): ExpectedType[] {
     return [
         ess('REFUND_DELAYED', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROGRESS', null, 'Remboursement retardé'),
         ess('WITHDRAWAL_DELAYED', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_PENDING_CHECK', null, 'Retrait retardé'),
-        ess('ADMIN_CASHOUT_TO_RESUME', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance'], 'Versement à reprendre', 'refunds.manage'),
+        ess('ADMIN_CASHOUT_TO_RESUME', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#versements-a-reprendre'], 'Versement à reprendre', 'refunds.manage'),
         ess('PAYMENT_REFUND_STARTED', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROGRESS', null, 'Remboursement de votre paiement'),
         ess('ADMIN_PARTNER_RESUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', null, 'Dossier complété', 'partners.read'),
         ess('EVENT_CLOSED_HOLDER', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', null, 'Événement clos'),

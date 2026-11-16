@@ -226,7 +226,7 @@ describe('6.6 Admin — remboursements, cashouts incertains, créances (trg_cash
         assert.ok(rows.every((r) => r.template_data.cashout_id === cashout.id), 'template_data.cashout_id');
         assert.equal((await signals('REFUND_TO_RETRY', String(cashout.id))).length, 1, 'un signal REFUND_TO_RETRY');
         const sent = await deliverFor(rows, admins['refunds.manage']);
-        const n = await assertInApp(sent, admins['refunds.manage'], 'Remboursement à reprendre', ['bloqué'], '/admin/finance');
+        const n = await assertInApp(sent, admins['refunds.manage'], 'Remboursement à reprendre', ['bloqué'], '/admin/finance#versements-a-reprendre');
         assert.equal((n.metadata as Row).cashout_id, cashout.id, 'metadata.cashout_id (lu par les tests existants)');
     });
 
@@ -247,7 +247,7 @@ describe('6.6 Admin — remboursements, cashouts incertains, créances (trg_cash
         const rows = await adminAlert('ADMIN_CASHOUT_UNCERTAIN', `ADMIN_CASHOUT_UNCERTAIN:${cashout.id}:${Number(cashout.attempt_count)}:`, 'refunds.manage', ['EMAIL', 'IN_APP', 'PUSH']);
         assert.equal((await signals('CASHOUT_UNCERTAIN', String(cashout.id))).length, 1, 'un signal CASHOUT_UNCERTAIN');
         const sent = await deliverFor(rows, admins['refunds.manage']);
-        await assertInApp(sent, admins['refunds.manage'], 'Versement incertain', ['incertaine'], '/admin/finance');
+        await assertInApp(sent, admins['refunds.manage'], 'Versement incertain', ['incertaine'], '/admin/finance#versements-a-reprendre');
     });
 
     test('créance sur un organisateur : ADMIN_FINANCE_DEBT (in-app, email) aux admins payments.read, metadata.debt_id', async () => {
@@ -268,7 +268,7 @@ describe('6.6 Admin — remboursements, cashouts incertains, créances (trg_cash
             const rows = await adminAlert('ADMIN_FINANCE_DEBT', `ADMIN_FINANCE_DEBT:${debtId}:`, 'payments.read', ['EMAIL', 'IN_APP']);
             assert.ok(rows.every((r) => r.template_data.debt_id === debtId), 'template_data.debt_id');
             const sent = await deliverFor(rows, admins['payments.read']);
-            const n = await assertInApp(sent, admins['payments.read'], 'Créance sur un compte', [], '/admin/finance');
+            const n = await assertInApp(sent, admins['payments.read'], 'Créance sur un compte', [], '/admin/finance#creances');
             assert.equal((n.metadata as Row).debt_id, debtId, 'metadata.debt_id (finance-annulation.test.ts)');
         });
     });
