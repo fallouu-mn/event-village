@@ -221,3 +221,64 @@ describe('4. E-36 — créer un administrateur enchaîne sur ses droits ; profil
         }
     });
 });
+
+// ── 6. Libellés : plus de jargon ni de code brut dans l'administration (E-37, E-39) ─────────────────────────────
+
+/** Fichiers .tsx de l'administration (pages et composants), lus sur le disque. */
+function adminFiles(): string[] {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+        for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+            const rel = `${dir}/${e.name}`;
+            if (e.isDirectory()) walk(rel);
+            else if (e.name.endsWith('.tsx')) out.push(rel);
+        }
+    };
+    walk('app/admin');
+    walk('components/admin');
+    return out.sort();
+}
+
+describe('6. E-37, E-39 — français simple, statuts sans capitales, aucun code brut', () => {
+    test('aucun jargon de la revue dans les écrans de l’administration', () => {
+        const JARGON = ['Console Superadmin HQ', 'RBAC', 'Permissions Granulaires', "'SYSTEM'", 'Old Value', 'New Value', 'Audit Log #',
+            'STATUS_CHANGE (', 'SEND_COMMUNICATION (', 'Anonymiser', 'Anonymisé', 'Banni', 'VIP', 'Promouvoir Ambassadeur', 'Rétrograder',
+            'Inaltérable & Traçabilité', 'Gestion des Ambassadeurs &'];
+        const faults: string[] = [];
+        for (const f of adminFiles()) {
+            const c = code(f);
+            for (const j of JARGON) if (c.includes(j)) faults.push(`${f} : « ${j} »`);
+        }
+        assert.deepEqual(faults, [], faults.join('\n'));
+    });
+
+    test('journal d’audit et parrainage : rôle, action et objet en mots (repli « Autre action », jamais le code)', () => {
+        const audit = code('app/admin/audit/page.tsx');
+        for (const raw of [/\{\s*log\.action\s*\}/, /\{\s*log\.object_type\s*\}/, /\{\s*log\.user_role\b/, /\{\s*selectedLog\.object_type\s*\}/, /\{\s*selectedLog\.user_role\s*\}/]) {
+            assert.doesNotMatch(audit, raw, `code brut affiché : ${raw}`);
+        }
+        for (const fn of ['auditActionLabel(', 'auditObjectLabel(', 'auditActorRoleLabel(']) assert.ok(audit.includes(fn), `${fn} absent du journal`);
+        assert.doesNotMatch(code('app/admin/referral/page.tsx'), /\{\s*user\.role\s*\}/, 'rôle brut affiché dans le parrainage');
+    });
+
+    test('libellés d’audit : une action inconnue dit « Autre action », jamais son code', async () => {
+        const mod = (await import(path.join(ROOT, 'lib/labels/audit.ts'))) as {
+            auditActionLabel: (a: string | null) => string; auditObjectLabel: (o: string | null) => string; auditActorRoleLabel: (r: string | null) => string;
+        };
+        assert.equal(mod.auditActionLabel('UPDATE_PERMISSIONS'), 'Droits d’un administrateur changés');
+        assert.equal(mod.auditActionLabel('CODE_INCONNU_XYZ'), 'Autre action');
+        assert.equal(mod.auditObjectLabel('platform_settings'), 'Réglage');
+        assert.equal(mod.auditObjectLabel('table_inconnue'), 'Autre');
+        assert.equal(mod.auditActorRoleLabel(null), 'Automatique');
+        assert.equal(mod.auditActorRoleLabel('SYSTEM'), 'Automatique');
+        assert.equal(mod.auditActorRoleLabel('SUPERADMIN'), 'Superadmin');
+    });
+
+    test('statuts et rôles sans capitales forcées dans les comptes ; suppression d’un compte dite simplement', () => {
+        const users = code('app/admin/users/page.tsx');
+        const roleBadge = /className=\{`[^`]*\buppercase\b[^`]*`\}\s*>\s*\{roleLabel\(user\.role\)\}/.test(users);
+        assert.equal(roleBadge, false, 'rôle affiché en capitales forcées');
+        assert.match(users, /Supprimer définitivement/, '« Supprimer définitivement » absent');
+        assert.ok(norm(users).includes(norm('La personne n’est pas prévenue.')), 'la confirmation ne dit pas que la personne n’est pas prévenue');
+    });
+});
