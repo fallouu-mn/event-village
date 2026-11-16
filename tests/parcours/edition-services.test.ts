@@ -38,7 +38,7 @@ import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { routeContext } from './helpers';
 import { importModule, service, type Buyer, type CategorySpec } from './paiement-helpers';
 import { jsonRequest, newPartner, superadminId, type TestPartner } from './finance-helpers';
-import { createDraftEvent, createEventInStatus, posterUrl } from './cycle-helpers';
+import { createDraftEvent, createEventInStatus, posterUrl, storedPosterUrl } from './cycle-helpers';
 
 const ROOT = process.cwd();
 const DAY_MS = 86_400_000;
@@ -46,9 +46,12 @@ const FORCED_SERVICES = { ticketing: true, tableBooking: false, communication: f
 const STANDARD: CategorySpec[] = [{ name: 'Standard', price: 5000, total: 20 }];
 
 let partner: TestPartner;
+/** Finition 2a (1b) : affiche réellement déposée (le serveur vérifie le fichier), à la place de posterUrl. */
+let storedPoster: string;
 
 before(async () => {
     partner = await newPartner('edition-services');
+    storedPoster = await storedPosterUrl(partner.partnerId);
 });
 
 after(async () => {
@@ -96,7 +99,7 @@ function createBody(label: string, overrides: Row = {}): Row {
         end_time: '23:00',
         location: 'Place du Souvenir, Dakar',
         city: 'Dakar',
-        image_url: posterUrl(partner.partnerId),
+        image_url: storedPoster,
         capacity: 300,
         program: [],
         practical_info: { address: 'Corniche Ouest, Dakar' },

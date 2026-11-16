@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { randomInt } from 'crypto';
 import crypto from 'crypto';
 import { requireActiveSession, serverIsPartner, serverHasRole, serverHasAnyRole } from '@/lib/auth/session';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { INVALID_SN_PHONE_MESSAGE, phoneStorageForms, toSenegaleseE164 } from '@/lib/validations/auth';
 import { maskPersonName } from '@/lib/security/mask';
@@ -26,6 +27,14 @@ import { formatDateTime } from '@/lib/format';
 import { adminReasonRefusal, cleanReason } from '../team-access';
 
 export const dynamic = 'force-dynamic';
+
+/** Affectation rendue par event_controllers_add (correctifs de la contre-vérification de la finition 2a, T1). */
+interface AddedAssignment { id: string; event_id: string; user_id: string; can_accept_cash: boolean; created_at: string; inserted?: boolean }
+
+/** Forme de la réponse : colonnes d'event_controllers, comme avant (sans l'indication « inserted »). */
+function assignmentRow(a: AddedAssignment) {
+    return { id: a.id, event_id: a.event_id, user_id: a.user_id, can_accept_cash: a.can_accept_cash, created_at: a.created_at };
+}
 
 /** Fenêtre du quota INVITE_PER_PHONE_DAY (une journée), la même à la réservation et au rendu. */
 const PHONE_WINDOW_SECS = 86_400;
@@ -445,57 +454,39 @@ export async function POST(req: NextRequest) {
         // 3. Traiter les assignations pour chaque événement sélectionné. Lot 6 (J2.4) : les nouvelles
         //    affectations sont insérées en une seule instruction ; le trigger trg_event_controllers_notify
         //    met en file leurs avis (in-app et push par affectation, un seul SMS regroupé par requête).
-        const ASSIGNMENT_COLUMNS = 'id, event_id, user_id, can_accept_cash, created_at';
-        const finalAssignments: any[] = [];
+        // Correctifs de la contre-vérification de la finition 2a (T1) : droit d'encaisser des affectations existantes et
+        // nouvelles affectations écrits par event_controllers_add (fiche SUSPENDU refusée en tête, droits vérifiés de nouveau
+        // en base, nouvelles affectations en une seule instruction) ; plus d'écriture directe dans event_controllers.
+        const finalAssignments: Array<ReturnType<typeof assignmentRow>> = [];
         let anyNewlyAssigned = false;
 
-        const { data: existingAssignments, error: existingErr } = await supabase
-            .from('event_controllers')
-            .select(ASSIGNMENT_COLUMNS)
-            .eq('user_id', controllerUserId)
-            .in('event_id', targetEventIds);
-        if (existingErr) {
-            console.error('[invite-controller] lecture des affectations existantes :', existingErr.message);
-            return NextResponse.json({ error: 'Lecture des affectations impossible. Réessayez.' }, { status: 500 });
+        const { data: addData, error: addErr } = await supabase.rpc('event_controllers_add', {
+            p: { actor_id: user.id, controller_id: controllerUserId, event_ids: targetEventIds, can_accept_cash: Boolean(can_accept_cash) },
+        });
+        if (addErr || !addData) {
+            // cvf1 (migration 13) : compte devenu admin pendant la demande, refusé par la garde de la table (même refus
+            // neutre que plus haut, aucun nom)
+            if (isNotInvitableDbError(addErr)) return notInvitableResponse();
+            console.error('[invite-controller] event_controllers_add :', addErr?.message ?? 'réponse vide');
+            return NextResponse.json({ error: 'Impossible d\'enregistrer les affectations. Réessayez.' }, { status: 500 });
         }
-        const existingByEvent = new Map((existingAssignments ?? []).map((a) => [a.event_id as string, a]));
-
-        for (const evId of targetEventIds) {
-            const alreadyAssigned = existingByEvent.get(evId);
-            if (!alreadyAssigned) continue;
-            let updatedAssignment = alreadyAssigned;
-            if (can_accept_cash !== undefined && can_accept_cash !== alreadyAssigned.can_accept_cash) {
-                const { data: updated, error: updateErr } = await supabase
-                    .from('event_controllers')
-                    .update({ can_accept_cash })
-                    .eq('id', alreadyAssigned.id)
-                    .select(ASSIGNMENT_COLUMNS)
-                    .single();
-                if (updateErr || !updated) {
-                    console.error('[invite-controller] mise à jour de la permission espèces :', updateErr?.message ?? 'aucune ligne');
-                    return NextResponse.json({ error: 'Mise à jour de la permission espèces impossible. Réessayez.' }, { status: 500 });
-                }
-                updatedAssignment = updated;
+        const added = addData as { ok?: boolean; code?: string; assignments?: AddedAssignment[] };
+        if (added.ok !== true) {
+            if (added.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
+            if (added.code === 'EVENT_NOT_OWNED') {
+                return NextResponse.json({ error: 'Vous n’êtes pas propriétaire de tous les événements sélectionnés.', code: 'EVENT_NOT_OWNED' }, { status: 403 });
             }
-            finalAssignments.push(updatedAssignment);
+            console.error('[invite-controller] event_controllers_add, refus inattendu :', JSON.stringify(added));
+            return NextResponse.json({ error: 'Impossible d\'enregistrer les affectations. Réessayez.' }, { status: 500 });
         }
-
-        const toInsert = targetEventIds.filter((evId) => !existingByEvent.has(evId));
-        if (toInsert.length > 0) {
+        const inserted = (added.assignments ?? []).filter((a) => a.inserted === true);
+        for (const assignment of added.assignments ?? []) {
+            if (assignment.inserted !== true) finalAssignments.push(assignmentRow(assignment));
+        }
+        if (inserted.length > 0) {
             anyNewlyAssigned = true;
-            const { data: inserted, error: insertErr } = await supabase
-                .from('event_controllers')
-                .insert(toInsert.map((evId) => ({ event_id: evId, user_id: controllerUserId, can_accept_cash, created_by: user.id })))
-                .select(ASSIGNMENT_COLUMNS);
-            if (insertErr || !inserted) {
-                // cvf1 (migration 13) : compte devenu admin pendant la demande, refusé par la garde de la table (même refus
-                // neutre que plus haut, aucun nom)
-                if (isNotInvitableDbError(insertErr)) return notInvitableResponse();
-                console.error('[invite-controller] Insert event_controllers error:', insertErr?.message ?? 'réponse vide');
-                return NextResponse.json({ error: 'Impossible d\'enregistrer les affectations. Réessayez.' }, { status: 500 });
-            }
             for (const assignment of inserted) {
-                finalAssignments.push(assignment);
+                finalAssignments.push(assignmentRow(assignment));
                 const evTitle = partnerEvents.find(e => e.id === assignment.event_id)?.title || 'Événement';
                 await AdminService.logAudit({
                     userId: user.id,

@@ -23,6 +23,7 @@ import { RefundProgress } from '@/components/events/RefundProgress';
 import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
 import { OverviewTab } from '@/components/partner/pilotage/OverviewTab';
+import { InfosTab } from '@/components/partner/pilotage/InfosTab';
 import { SalesTab } from '@/components/partner/pilotage/SalesTab';
 import { InvitationsTab } from '@/components/partner/pilotage/InvitationsTab';
 import { EntriesTab } from '@/components/partner/pilotage/EntriesTab';
@@ -35,8 +36,8 @@ import type { EventAction, PilotageOverview } from '@/components/partner/pilotag
 
 /**
  * Lot 5, tâche 5.10 (contrat I) — page de pilotage d'un événement par son organisateur.
- *  - Onglets dans `?tab=` : Aperçu, Ventes, Invitations (lot 9), Entrées, Équipe, Caisse, Clôture (les anciennes
- *    pages …/team et …/caisse redirigent ici).
+ *  - Onglets dans `?tab=` : Aperçu, Infos (finition 2a : dates, fin retenue, lieu), Ventes, Invitations (lot 9),
+ *    Entrées, Équipe, Caisse, Clôture (les anciennes pages …/team et …/caisse redirigent ici).
  *  - Une seule source de vérité : les routes …/pilotage/* (RPC pilotage_*), jamais de calcul ici.
  *  - En direct : ticket_scans, scan_incidents, controller_shifts, l'historique des statuts et (lot 9 ter, R49)
  *    ticket_categories de CET événement (filtre event_id) déclenchent le rechargement de l'en-tête et de l'onglet
@@ -48,10 +49,11 @@ import type { EventAction, PilotageOverview } from '@/components/partner/pilotag
  *    la route ne sert « à reprendre » qu'aux admins, le rôle ne fait que choisir l'affichage.
  */
 
-const TAB_IDS = ['apercu', 'ventes', 'invitations', 'entrees', 'equipe', 'caisse', 'cloture'] as const;
+const TAB_IDS = ['apercu', 'infos', 'ventes', 'invitations', 'entrees', 'equipe', 'caisse', 'cloture'] as const;
 type PilotageTabId = (typeof TAB_IDS)[number];
 const TABS: TabItem[] = [
     { id: 'apercu', label: 'Aperçu' },
+    { id: 'infos', label: 'Infos' },
     { id: 'ventes', label: 'Ventes' },
     { id: 'invitations', label: 'Invitations' },
     { id: 'entrees', label: 'Entrées' },
@@ -256,6 +258,7 @@ export default function PartnerEventPilotagePage() {
                 <ScrollableTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as PilotageTabId)} ariaLabel="Rubriques du pilotage" idPrefix={TABS_PREFIX} />
                 <TabPanel idPrefix={TABS_PREFIX} tabIdValue={activeTab}>
                     {activeTab === 'apercu' && <OverviewTab data={ov} saleStopped={ov.status === 'ANNULE'} />}
+                    {activeTab === 'infos' && <InfosTab eventId={eventId} />}
                     {activeTab === 'ventes' && <SalesTab eventId={eventId} signal={signal} />}
                     {activeTab === 'invitations' && <InvitationsTab eventId={eventId} eventStatus={ov.status} signal={signal} />}
                     {activeTab === 'entrees' && <EntriesTab eventId={eventId} signal={signal} />}

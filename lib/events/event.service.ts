@@ -1,3 +1,4 @@
+import { POSTER_NOT_FOUND_TEXT, posterExists, posterPath, removePosterIfUnused } from '@/lib/events/poster-storage';
 import { z } from 'zod';
 import { PublicError } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '../supabase/server';
@@ -36,6 +37,14 @@ export interface EventUpdateResult {
     event: DbRecord;
     notified_holders: number;
     sms_queued: number;
+    /**
+     * Correctifs de la contre-vérification de la finition 2a (T4) : heure à laquelle l'avis de changement de lieu part
+     * (application, push et SMS ensemble : fin de la fenêtre de 10 minutes, ou de la retenue d'une heure), null sans
+     * changement de lieu.
+     */
+    place_notice_at: string | null;
+    /** T4 : avis de lieu retenu (un avis de changement de lieu est déjà parti il y a moins d'une heure). */
+    place_notice_held: boolean;
 }
 
 /**
@@ -70,6 +79,11 @@ const REFUSAL_HTTP: Record<string, number> = {
     SALE_DATES_INVALID: 400,
     PARTNER_NOT_FOUND: 403,
     PARTNER_NOT_VALIDATED: 403,
+    PARTNER_SUSPENDED: 403, // finition 2a (1a) : fiche SUSPENDU, événements en lecture seule
+    // Finition 2a (3) : position du lieu (ensemble, au Sénégal, non retirée après validation)
+    POSITION_INCOMPLETE: 400,
+    POSITION_OUT_OF_BOUNDS: 400,
+    POSITION_REQUIRED: 400,
     ACCOUNT_NOT_ACTIVE: 403,
     ADMIN_CANNOT_EDIT: 403,
     EVENT_NOT_FOUND: 404,
@@ -179,6 +193,15 @@ interface EditableEvent {
     practical_info: Record<string, unknown> | null;
 }
 
+/** Finition 2a (1b) : une affiche du projet doit exister dans le dossier de la partenaire (le chemin est déjà vérifié). */
+async function assertPosterStored(url: string | null): Promise<void> {
+    const path = posterPath(url);
+    if (!path) return;
+    if (!(await posterExists(path))) {
+        throw new EventServiceError(400, 'IMAGE_NOT_FOUND', POSTER_NOT_FOUND_TEXT, { field: 'image_url' });
+    }
+}
+
 const updateBodySchema = z.object({
     patch: z.record(z.string(), z.unknown()),
     expected_updated_at: z.string().min(1),
@@ -204,13 +227,13 @@ export class EventService {
     }
 
     /** Partenaire du compte, ou null s'il n'en a pas (erreur de lecture → 500). */
-    private static async partnerOf(userId: string): Promise<{ id: string } | null> {
-        const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', userId).maybeSingle();
+    private static async partnerOf(userId: string): Promise<{ id: string; status: string } | null> {
+        const { data, error } = await getServiceRoleClient().from('partners').select('id, status').eq('user_id', userId).maybeSingle();
         if (error) {
             console.error(`[EventService] partenaire du compte ${userId} illisible : ${error.message}`);
             throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
         }
-        return data ? { id: String(data.id) } : null;
+        return data ? { id: String(data.id), status: String(data.status) } : null;
     }
 
     private static async isStaff(userId: string): Promise<boolean> {
@@ -275,6 +298,9 @@ export class EventService {
         const parsed = parseWithFrenchErrors(createEventSchema({ partnerId: partner.id }), input);
         if (!parsed.success) throw invalid(parsed.error);
         const { ticket_categories: categories, ...event } = parsed.data;
+        // Finition 2a (1b) : affiche vérifiée pour une fiche VALIDE ; une autre fiche est refusée par event_create, avec
+        // son propre texte (profil non validé, suspendu), qui garde ainsi la priorité
+        if (partner.status === 'VALIDE') await assertPosterStored((event as { image_url?: string | null }).image_url ?? null);
         const result = await editionResult<{ ok: true; event: DbRecord }>('event_create', rpcWithRetry('event_create', { p: {
             actor_id: partnerUserId,
             event,
@@ -378,14 +404,34 @@ export class EventService {
             },
         }), patch);
         if (!parsed.success) throw invalid(parsed.error);
+        const nextImage = (parsed.data as { image_url?: string | null }).image_url;
+        const imageChanged = nextImage !== undefined && (nextImage ?? null) !== (event.image_url ?? null);
+        if (imageChanged) await assertPosterStored(nextImage ?? null);
 
-        const result = await editionResult<{ ok: true; event: DbRecord; notified_holders: number; sms_queued: number }>('event_update', rpcWithRetry('event_update', { p: {
+        const result = await editionResult<{
+            ok: true; event: DbRecord; notified_holders: number; sms_queued: number; place_notice_at?: string | null; place_notice_held?: boolean;
+        }>('event_update', rpcWithRetry('event_update', { p: {
             event_id: eventId,
             actor_id: actorId,
             patch: parsed.data,
             expected_updated_at,
         } }));
-        return { event: result.event, notified_holders: Number(result.notified_holders ?? 0), sms_queued: Number(result.sms_queued ?? 0) };
+        // Finition 2a (1b) : l'affiche remplacée est effacée si aucun autre événement ne l'utilise (échec : journal, la
+        // tâche planifiée la reprendra au bout de 7 jours)
+        if (imageChanged && event.image_url) {
+            try {
+                await removePosterIfUnused(event.image_url);
+            } catch (err) {
+                console.error(`[EventService.updateEvent] ancienne affiche de ${eventId} non effacée :`, err instanceof Error ? err.message : String(err));
+            }
+        }
+        return {
+            event: result.event,
+            notified_holders: Number(result.notified_holders ?? 0),
+            sms_queued: Number(result.sms_queued ?? 0),
+            place_notice_at: typeof result.place_notice_at === 'string' ? result.place_notice_at : null,
+            place_notice_held: result.place_notice_held === true,
+        };
     }
 
     /** Ajout d'une catégorie de billets (F4) : schéma partagé, puis RPC ticket_category_create. */

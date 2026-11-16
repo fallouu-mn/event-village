@@ -185,7 +185,8 @@ function signedSmsAmount(n: number): string {
 
 const START_FIELDS = new Set(['start_date', 'start_time', 'start_at']);
 const END_FIELDS = new Set(['end_date', 'end_time', 'end_at']);
-const PLACE_FIELDS = new Set(['location', 'address', 'city']);
+// Finition 2a (3) : « position » = repère déplacé de plus de 200 m après validation, avis de changement de lieu
+const PLACE_FIELDS = new Set(['location', 'address', 'city', 'position']);
 
 const BLOCKED_REASON_LABELS: Readonly<Record<string, string>> = {
     OPERATOR_UNKNOWN: 'opérateur du paiement inconnu',
@@ -482,6 +483,8 @@ function eventChangedInApp(d: object): { title: string; content: string } {
         if (addr) parts.push(`nouvelle adresse : ${addr}`);
         else if (c.address) parts.push(field(d, 'address_cleared') === true ? 'adresse retirée' : 'nouvelle adresse'); // lot 9 bis (R80)
         if (city || c.city) parts.push(`nouvelle ville : ${city ?? text(d, 'city')}`);
+        // Finition 2a (3) : seul le repère a bougé (plus de 200 m), le nom du lieu reste
+        if (!loc && !c.location && !addr && !c.address && !city && !c.city) parts.push(`nouvel emplacement sur la carte : ${text(d, 'location')}`);
     }
     if (c.title) {
         const old = optText(d, 'old_title');

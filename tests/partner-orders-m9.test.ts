@@ -160,9 +160,13 @@ test('Test 3 : CYCLE STATUTS', async () => {
 test('Test 4 : BLOCAGE PRODUIT INTERDIT', async () => {
     const { partnerUserId, clientId, partnerId } = await createTestUsers('block');
     try {
-        const prod = await ProductService.createProduct(partnerUserId, {
-            name: 'Plat Suspendu', price: 5000, is_stock_managed: false, status: 'SUSPENDU'
+        // Correctifs de la contre-vérification de la finition 2a (R2, montage modifié, signalé au rapport) : le statut n'est
+        // jamais pris du corps de la création ; il est posé par setProductStatus, le seul chemin qui le change
+        const created = await ProductService.createProduct(partnerUserId, {
+            name: 'Plat Suspendu', price: 5000, is_stock_managed: false
         });
+        const prod = await ProductService.setProductStatus(created.id, partnerUserId, 'SUSPENDU');
+        assert.equal(prod.status, 'SUSPENDU', 'précondition : produit suspendu');
 
         await assert.rejects(
             OrderService.createOrder(clientId, {

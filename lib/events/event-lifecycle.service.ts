@@ -53,11 +53,14 @@ const REFUSAL_HTTP: Record<string, number> = {
     REASON_REQUIRED: 400,
     CANCELLATION_REQUIRED: 409,
     SUBMIT_INCOMPLETE: 422,
+    // Finition 2a (3) : soumission sans position du lieu (seul manque ; la liste des manques est rendue de même)
+    POSITION_REQUIRED: 422,
     EVENT_NOT_STARTED: 409,
     EVENT_ENDED: 409,
     // Lot 9 bis (R3) : clôture d'un SUSPENDU dont la fin n'est pas passée
     EVENT_NOT_ENDED: 409,
-    // Lot 9 bis (R5, B18) : republication de l'événement d'une partenaire suspendue
+    // Lot 9 bis (R5, B18) : republication de l'événement d'une partenaire suspendue ; finition 2a (1a) : transition par la
+    // partenaire suspendue elle-même (la route la refuse avant, en 403 avec le contact du support)
     PARTNER_SUSPENDED: 409,
     // Lot 9 bis (R7, B39) : soumission ou publication par une partenaire au dossier non validé
     PARTNER_NOT_VALIDATED: 403,

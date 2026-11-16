@@ -7,7 +7,7 @@
  * revérifiée ici (même règle que scripts/e2e/env.mjs:requireLocalUrl) ; la clé vient de `.env.e2e`
  * (secret aléatoire du run en CI), jamais du code.
  */
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { TEST_PASSWORD } from '../../tests/helpers/fixture-data';
 import { e2eConfig, LOCAL_HOSTNAMES } from './env';
@@ -82,6 +82,9 @@ export interface PublishedEventInput {
     capacity: number;
     /** Affiche déjà déposée par le partenaire (chemin vérifié par event_poster_path_ok). */
     imageUrl: string;
+    /** Finition 2a (3) : position du lieu, obligatoire pour soumettre (défaut : Dakar). */
+    latitude?: number;
+    longitude?: number;
     /** maxPerOrder : limite par compte (défaut 10 ; contrainte 1 à 50). */
     category?: PublishedCategoryInput;
     /** Lot 9 ter (D.3.3, amendement 4 de D) : plusieurs catégories, prioritaires sur `category`. */
@@ -108,6 +111,8 @@ export async function createPublishedEvent(input: PublishedEventInput): Promise<
             city: input.city,
             capacity: input.capacity,
             image_url: input.imageUrl,
+            latitude: input.latitude ?? 14.6928,
+            longitude: input.longitude ?? -17.4467,
         },
         ticket_categories: categories.map((c) => ({ name: c.name, price: c.price, total_quantity: c.total, max_per_order: c.maxPerOrder ?? 10 })),
     });
@@ -155,20 +160,40 @@ export async function sendingOfEvent(eventId: string): Promise<OutboxLine[]> {
 }
 
 /**
- * Lot 9 ter (D.3.3) : affiche déjà déposée par la partenaire d'un compte (chemin admis par event_poster_path_ok), la plus
- * ancienne de ses événements ; même règle que scripts/e2e/terrain-setup.ts.
+ * Lot 9 ter (D.3.3) : affiche de la partenaire d'un compte, à partir de la plus ancienne de ses événements ; même règle
+ * que scripts/e2e/terrain-setup.ts. Correctifs de la contre-vérification de la finition 2a (T5, aide modifiée, signalée au
+ * rapport) : event_poster_path_ok n'accepte plus qu'un fichier de la route de dépôt (horodatage_8 caractères.webp), et les
+ * affiches de la graine portent un nom libre (fixture-<slug>.png). L'aide dépose donc une copie de cette affiche, réencodée
+ * en WebP comme à la route, sous un nom de la route, dans le dossier de la partenaire : même image sur les captures.
  */
 export async function partnerPosterOf(partnerUserId: string): Promise<string> {
     const { data: partner, error: partnerErr } = await serviceClient().from('partners').select('id').eq('user_id', partnerUserId).maybeSingle();
     if (partnerErr) throw new Error(`[e2e] partenaire du compte ${partnerUserId} : ${partnerErr.message}`);
     if (!partner?.id) throw new Error(`[e2e] aucun partenaire pour le compte ${partnerUserId} (seed:test non abouti ?)`);
+    return routePosterOfPartner(String(partner.id));
+}
+
+/** T5 : copie, sous un nom de la route de dépôt, de la plus ancienne affiche de la partenaire (dossier events/<id>/). */
+export async function routePosterOfPartner(partnerId: string): Promise<string> {
     const { data, error } = await serviceClient().from('events').select('image_url')
-        .eq('partner_id', String(partner.id)).not('image_url', 'is', null)
+        .eq('partner_id', partnerId).not('image_url', 'is', null)
         .order('created_at', { ascending: true }).limit(1);
-    if (error) throw new Error(`[e2e] affiche du partenaire ${String(partner.id)} : ${error.message}`);
+    if (error) throw new Error(`[e2e] affiche du partenaire ${partnerId} : ${error.message}`);
     const url = String(data?.[0]?.image_url ?? '');
-    if (!url) throw new Error(`[e2e] aucun événement du partenaire ${String(partner.id)} n'a d'affiche (seed:test non abouti ?)`);
-    return url;
+    if (!url) throw new Error(`[e2e] aucun événement du partenaire ${partnerId} n'a d'affiche (seed:test non abouti ?)`);
+    const mark = '/storage/v1/object/public/public-images/';
+    const source = url.includes(mark) ? decodeURIComponent(url.slice(url.indexOf(mark) + mark.length).split(/[?#]/)[0]) : null;
+    if (!source) throw new Error(`[e2e] affiche du partenaire ${partnerId} hors du stockage : ${url}`);
+    const storage = serviceClient().storage.from('public-images');
+    const { data: blob, error: readErr } = await storage.download(source);
+    if (readErr || !blob) throw new Error(`[e2e] affiche ${source} illisible : ${readErr?.message ?? 'fichier absent'}`);
+    const { default: sharp } = await import('sharp');
+    const image = await sharp(Buffer.from(await blob.arrayBuffer())).rotate()
+        .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+    const target = `events/${partnerId}/${Date.now()}_${randomUUID().slice(0, 8)}.webp`;
+    const { error: upErr } = await storage.upload(target, image, { contentType: 'image/webp', upsert: false });
+    if (upErr) throw new Error(`[e2e] dépôt de ${target} impossible : ${upErr.message}`);
+    return storage.getPublicUrl(target).data.publicUrl;
 }
 
 /** Affiche (image_url) d'un événement : réutilisée pour le second événement du même partenaire. */

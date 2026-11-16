@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { refuseUnlessCron } from '@/lib/security/cron-auth';
+import { purgeOrphanPosters } from '@/lib/events/poster-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +10,8 @@ const MAX_ROUNDS = 10;
 
 /**
  * Lot 5.4 (contrat D7) — passage automatique à TERMINE des événements PUBLIE dont la fin
- * (event_end_at : fin renseignée, sinon début à 23:59 Africa/Dakar) est passée, par la transition
+ * (event_end_at : fin saisie ; date de fin sans heure : ce jour à 23:59 ; sinon début + 6 h, heure de Dakar — finition 2a,
+ * E-01) est passée, par la transition
  * interne (acteur SYSTEM, canal CRON, journalisée). RPC events_finish_overdue en lots de 200
  * (FOR UPDATE SKIP LOCKED). Planification : toutes les 15 minutes (docs/deploiement-projet-neuf.md §7).
  * Protégée par CRON_SECRET (Authorization: Bearer), sans repli.
@@ -30,7 +32,16 @@ async function run(req: NextRequest) {
         ids.push(...(data.ids ?? []).map(String));
         if (n < BATCH) break;
     }
-    return NextResponse.json({ ok: true, finished, ids });
+    // Finition 2a (1b) : affiches de plus de 7 jours qu'aucun événement n'utilise (brouillons abandonnés, affiches
+    // remplacées) ; jamais une affiche utilisée. Un échec est journalisé sans annuler le passage à TERMINE.
+    let posters: { scanned: number; deleted: number } | { error: string };
+    try {
+        posters = await purgeOrphanPosters(7);
+    } catch (err) {
+        console.error('[cron events-finish] purge des affiches orphelines impossible :', err instanceof Error ? err.message : String(err));
+        posters = { error: 'Purge des affiches momentanément impossible.' };
+    }
+    return NextResponse.json({ ok: true, finished, ids, posters });
 }
 
 export const GET = run;

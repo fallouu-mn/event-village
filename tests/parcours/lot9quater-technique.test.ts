@@ -10,6 +10,7 @@ import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
+import sharp from 'sharp';
 import { assertLot9quaterInvariants } from '../helpers/lot9quater-invariants';
 import { BASE_URL } from './helpers';
 import { importModule, service } from './paiement-helpers';
@@ -68,7 +69,9 @@ describe('F2 — dépôts de pièces et images', () => {
 
     test('image de partenaire : fiche non VALIDE refusée ; quota par compte ; taille annoncée refusée avant lecture', async () => {
         const { POST } = await importModule('../../app/api/partner/upload/route') as { POST: (r: NextRequest) => Promise<Response> };
-        const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082', 'hex');
+        // Finition 2a (1b) : le serveur décode et réencode chaque dépôt ; image PNG valide (l'ancienne suite d'octets n'en était
+        // pas une : bloc IDAT sans somme de contrôle, IEND tronqué)
+        const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: 120, g: 120, b: 120 } } }).png().toBuffer();
         const send = (token: string, extra: Record<string, string> = {}) => {
             const form = new FormData();
             form.append('file', new Blob([png], { type: 'image/png' }), 'a.png');

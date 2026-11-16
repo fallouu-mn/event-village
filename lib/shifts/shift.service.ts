@@ -272,15 +272,20 @@ export class ShiftService {
                 { open_shifts: openShifts });
         }
 
-        const { data: previous, error: prevErr } = await supabase.from('event_regisseur_pins').select('event_id').eq('event_id', eventId).maybeSingle();
-        if (prevErr) throw new Error(`Lecture du PIN régisseur impossible : ${prevErr.message}`);
-
         const pin = crypto.randomInt(100000, 1000000).toString();
         const salt = crypto.randomBytes(16).toString('hex');
-        const { error: pinErr } = await supabase.from('event_regisseur_pins').upsert(
-            { event_id: eventId, pin_hash: hashRegisseurPin(eventId, salt, pin), pin_salt: salt, updated_at: new Date().toISOString() },
-            { onConflict: 'event_id' });
-        if (pinErr) throw new Error(`Enregistrement du code PIN régisseur impossible : ${pinErr.message}`);
+        // Finition 2a (1a) : écriture par event_regisseur_pin_store (fiche SUSPENDU refusée en base, admin compris gardé)
+        const { data: stored, error: pinErr } = await supabase.rpc('event_regisseur_pin_store', {
+            p: { event_id: eventId, actor_id: actorUserId, pin_hash: hashRegisseurPin(eventId, salt, pin), pin_salt: salt },
+        });
+        if (pinErr || !stored) throw new Error(`Enregistrement du code PIN régisseur impossible : ${pinErr?.message ?? 'réponse vide'}`);
+        const reply = stored as { ok?: boolean; code?: string; message?: string; regenerated?: boolean };
+        if (reply.ok !== true) {
+            if (reply.code === 'PARTNER_SUSPENDED') throw new ShiftError(403, 'PARTNER_SUSPENDED', String(reply.message));
+            if (reply.code === 'EVENT_NOT_FOUND') throw new ShiftError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
+            throw new Error(`Enregistrement du code PIN régisseur refusé : ${JSON.stringify(reply)}`);
+        }
+        const previous = reply.regenerated === true;
 
         await writeAudit({
             userId: actorUserId,

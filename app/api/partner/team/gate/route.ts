@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
@@ -76,6 +77,8 @@ export async function PATCH(req: NextRequest) {
         if (!reply || typeof reply !== 'object') throw new Error('event_controller_gate_set : réponse vide');
         if (reply.ok !== true) {
             const code = typeof reply.code === 'string' ? reply.code : '';
+            // Correctifs de la contre-vérification de la finition 2a (T1) : fiche SUSPENDU refusée aussi par la base
+            if (code === 'PARTNER_SUSPENDED') return await partnerSuspendedResponse();
             const status = REFUSAL_STATUS[code];
             if (!status || typeof reply.message !== 'string') throw new Error(`event_controller_gate_set : refus non répertorié ${JSON.stringify(reply)}`);
             throw new PublicError(reply.message, code, status);

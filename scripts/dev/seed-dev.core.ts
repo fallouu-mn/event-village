@@ -313,6 +313,8 @@ async function ensureEvent(client: SupabaseClient, seed: EventSeed, actors: Even
     const event = must(`événement « ${seed.title} »`, await client.from('events').insert({
         partner_id: partnerId, title: seed.title, slug: seed.slug, description: seed.description, category: 'CONCERT',
         ...dateColumns(seed.inDays, now), location: 'Salle d\'essai, Dakar', city: 'Dakar', capacity: 500, image_url: imageUrl, status: 'BROUILLON',
+        // Finition 2a (3) : position du lieu, obligatoire pour soumettre
+        latitude: 14.6928, longitude: -17.4467,
         services: { ticketing: true, tableBooking: false, communication: false },
     }).select('id').single()) as { id: string };
     for (const c of seed.categories) {

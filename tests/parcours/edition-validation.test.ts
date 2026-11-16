@@ -5,8 +5,8 @@
  *    et par le serveur (POST /api/partner/events, PUT /api/partner/events/[id] : 400 avec la liste des
  *    champs en cause), en .strict() (clé inconnue refusée) ;
  *  - titre 3 à 120 caractères, description ≤ 5000, lieu 2 à 200, ville 2 à 80, chaque info pratique ≤ 300 ;
- *    catégorie d'événement obligatoire parmi CONCERT, FESTIVAL, FOOD, SALLE ; latitude −90 à 90, longitude
- *    −180 à 180 ;
+ *    catégorie d'événement obligatoire parmi CONCERT, FESTIVAL, FOOD, SALLE ; position (finition 2a, point 3 : règle
+ *    remplacée) : latitude et longitude ensemble, au Sénégal (latitude 12,2 à 16,8, longitude −17,6 à −11,3) ;
  *  - dates en Africa/Dakar : start_date et start_time obligatoires, end_date exigée si end_time, début dans
  *    le futur à la création et à chaque changement de date (EVENT_START_PAST), fin après le début
  *    (EVENT_END_BEFORE_START) ;
@@ -53,7 +53,7 @@ import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { routeContext } from './helpers';
 import { importModule, service, type Buyer } from './paiement-helpers';
 import { jsonRequest, newPartner, type TestPartner } from './finance-helpers';
-import { createDraftEvent, posterUrl } from './cycle-helpers';
+import { createDraftEvent, posterUrl, storedPosterUrl } from './cycle-helpers';
 
 const ROOT = process.cwd();
 const DAY_MS = 86_400_000;
@@ -378,12 +378,18 @@ describe('F1 — schéma partagé lib/validations/event.ts', () => {
         }
     });
 
-    test('coordonnées : latitude de −90 à 90, longitude de −180 à 180', async () => {
-        for (const [p, v] of [['latitude', 90.5], ['latitude', -91], ['longitude', 180.5], ['longitude', -181]] as Array<[string, number]>) {
+    // Finition 2a (3) : règle remplacée (avant : latitude de −90 à 90, longitude de −180 à 180, ce qui acceptait un lieu hors
+    // du Sénégal) ; bornes du Sénégal et paire complète, mêmes codes que la base
+    test('coordonnées : au Sénégal (latitude 12,2 à 16,8 ; longitude −17,6 à −11,3), latitude et longitude ensemble', async () => {
+        for (const [p, v] of [['latitude', 90.5], ['latitude', -91], ['longitude', 180.5], ['longitude', -181],
+            ['latitude', 12.1], ['latitude', 16.9], ['longitude', -17.7], ['longitude', -11.2]] as Array<[string, number]>) {
             expectIssue(await parseCreate(variant(base(), p, v)), `${p} ${v}`, { path: p });
         }
-        expectValid(await parseCreate({ ...base(), latitude: -90, longitude: 180 }), 'coordonnées (−90, 180)');
-        expectValid(await parseCreate({ ...base(), latitude: 90, longitude: -180 }), 'coordonnées (90, −180)');
+        expectValid(await parseCreate({ ...base(), latitude: 12.2, longitude: -17.6 }), 'coin sud-ouest (12,2 ; −17,6)');
+        expectValid(await parseCreate({ ...base(), latitude: 16.8, longitude: -11.3 }), 'coin nord-est (16,8 ; −11,3)');
+        expectValid(await parseCreate({ ...base(), latitude: null, longitude: null }), 'aucune position (brouillon)');
+        expectIssue(await parseCreate({ ...base(), latitude: 14.7, longitude: null }), 'position incomplète', { path: 'longitude' });
+        expectIssue(await parseCreate({ ...base(), latitude: -90, longitude: 180 }), 'coordonnées (−90, 180) hors du Sénégal', { path: 'latitude' });
     });
 
     test('montants et quantités entiers et bornés (prix 1500,5 refusé)', async () => {
@@ -556,6 +562,8 @@ describe('F1 — même schéma côté serveur (routes) et côté formulaire', ()
         const saleEnd = dakarParts(start + HOUR_MS);
         const body = base(partner.partnerId, {
             title: `TEST Validation fuseau ${randomUUID().slice(0, 8)}`, // lot 9 quater (D3) : un UUID entier peut aligner 10 chiffres
+            // Finition 2a (1b) : le serveur vérifie que l'affiche existe ; affiche réellement déposée
+            image_url: await storedPosterUrl(partner.partnerId),
             start_date: s.date, start_time: s.time, end_date: e.date, end_time: e.time,
             ticket_categories: [{ name: 'Standard', price: 5000, total_quantity: 100, max_per_order: 10, sale_end: `${saleEnd.date}T${saleEnd.time}` }],
         });

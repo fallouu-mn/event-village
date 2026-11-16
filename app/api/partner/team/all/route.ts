@@ -5,6 +5,7 @@ import { AdminService } from '@/lib/admin/admin.service';
 import { isEventEligibleForController } from '@/lib/events/event-status';
 import { dakarInstant } from '@/lib/validations/event';
 import { controllerRemovalConflict, isControllerRemovalBlocked } from '@/lib/shifts/shift.service';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { maskPersonName } from '@/lib/security/mask';
 import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason, optionalJsonBody } from '../team-access';
 
@@ -393,18 +394,20 @@ export async function DELETE(req: NextRequest) {
         const assignmentIds = assignmentsToDelete.map(a => a.id);
         const affectedEventIds = assignmentsToDelete.map(a => a.event_id);
 
-        // 4. Supprimer uniquement ces assignations
-        const { error: delErr } = await supabase
-            .from('event_controllers')
-            .delete()
-            .in('id', assignmentIds);
+        // 4. Supprimer uniquement ces assignations, par event_controllers_remove (correctifs de la contre-vérification de la
+        //    finition 2a, T1 : fiche SUSPENDU refusée en tête, droits vérifiés de nouveau en base ; toutes ou aucune)
+        const { data: removal, error: delErr } = await supabase.rpc('event_controllers_remove', {
+            p: { actor_id: user.id, assignment_ids: assignmentIds },
+        });
 
         // Lot 4.7 : une caisse ouverte sur l'un des événements → refus du trigger (aucune affectation retirée)
         if (isControllerRemovalBlocked(delErr)) {
             return NextResponse.json(controllerRemovalConflict(), { status: 409 });
         }
-        if (delErr) {
-            console.error('[DELETE team/all] delete error:', delErr.message);
+        const removed = (removal ?? null) as { ok?: boolean; code?: string } | null;
+        if (removed?.ok !== true && removed?.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
+        if (delErr || removed?.ok !== true) {
+            console.error('[DELETE team/all] delete error:', delErr?.message ?? JSON.stringify(removed));
             return NextResponse.json({ error: 'Impossible de retirer les affectations.' }, { status: 500 });
         }
 

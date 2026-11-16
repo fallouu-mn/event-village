@@ -74,7 +74,9 @@ describe('B1 — joindre le support', () => {
                 if (e.isDirectory()) walk(rel);
                 else if (/\.ts$/.test(e.name)) {
                     const src = fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-                    if (/contacte[zr] le support\s*[.'"`]/i.test(src) && !/contactSupport\(/.test(src)) offenders.push(rel.replace(/\\/g, '/'));
+                    // Finition 2a (1a) : supportSentenceOrHelp (lib/support-contact.ts) finit toujours par le lien /aide, comme
+                    // contactSupport ; la fiche suspendue (lib/auth/partner-fiche-guard.ts) l'ajoute après « Contactez le support. »
+                    if (/contacte[zr] le support\s*[.'"`]/i.test(src) && !/contactSupport\(|supportSentenceOrHelp\(/.test(src)) offenders.push(rel.replace(/\\/g, '/'));
                 }
             }
         };

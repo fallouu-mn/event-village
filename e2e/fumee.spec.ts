@@ -161,6 +161,12 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             await partner.getByLabel(/affiche/i).setInputFiles({ name: 'affiche-fumee.png', mimeType: 'image/png', buffer: poster });
             expect((await upload).ok(), 'téléversement de l’affiche').toBe(true);
 
+            // Finition 2a (3) : la soumission exige la position du lieu ; repère placé en touchant la carte (étape Accès)
+            for (let i = 0; i < 6 && !(await partner.getByRole('heading', { name: /accès et informations pratiques/i }).isVisible()); i++) {
+                await partner.getByRole('button', { name: /^suivant/i }).click();
+            }
+            await partner.getByRole('region', { name: 'Carte du lieu' }).click();
+            await expect(partner.getByText(/^Position choisie/), 'repère placé sur la carte').toBeVisible();
             for (let i = 0; i < 6 && !(await partner.getByRole('heading', { name: /billetterie/i }).isVisible()); i++) {
                 await partner.getByRole('button', { name: /^suivant/i }).click();
             }

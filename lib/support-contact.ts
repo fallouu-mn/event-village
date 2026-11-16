@@ -89,6 +89,19 @@ export function supportSentence(c: SupportContact): string {
 }
 
 /**
+ * Finition 2a (1a) : phrase de contact du support pour un refus ; réglages illisibles : le lien /aide seul (la page
+ * affiche le contact), jamais un contact inventé.
+ */
+export async function supportSentenceOrHelp(context: string): Promise<string> {
+    try {
+        return supportSentence(await getSupportContact());
+    } catch (err) {
+        console.error(`[support] contact illisible (${context}) :`, err instanceof Error ? err.message : String(err));
+        return `Aide et contact : ${helpUrl()}`;
+    }
+}
+
+/**
  * Lot 9 quinquies (A5 : T1) : refus d'un compte suspendu, avant tout SMS et tout lien de session. Le contact est lu dans
  * les réglages ; une lecture en échec donne le lien /aide seul (la page affiche le contact), jamais un contact inventé.
  */

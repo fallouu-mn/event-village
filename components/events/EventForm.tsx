@@ -18,9 +18,13 @@ import { Select, TextInput, Textarea } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
-import { OTHER_CITY_VALUE, SENEGAL_CITIES, senegalCity } from '@/lib/events/senegal-cities';
+import { OTHER_CITY_VALUE, SENEGAL_CITIES, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
+import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
+// Types seulement (effacés à la compilation) : la carte reste chargée à la demande (next/dynamic)
+import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
-import { formatInteger } from '@/lib/format';
+import { formatInteger, formatTime } from '@/lib/format';
+import { retainedEnd } from '@/lib/events/event-end';
 import {
     EVENT_LIMITS,
     EVENT_RULE_CODES,
@@ -94,6 +98,24 @@ const AFTER_VALIDATION = new Set(['VALIDE', 'PUBLIE', 'SUSPENDU']);
 const WITH_HOLDERS = new Set(['PUBLIE', 'SUSPENDU']);
 
 const NOTIFY_HINT = 'Les détenteurs de billets seront prévenus de ce changement.';
+/**
+ * Finition 2a (3) : recherche de lieu par le serveur (GET /api/partner/places/search), un appel par appui sur
+ * « Rechercher ». Réseau coupé ou réponse illisible : « Recherche indisponible pour le moment : touchez la carte pour
+ * placer le repère. » ; sinon le texte du serveur.
+ */
+async function searchPlacesFromServer(query: string): Promise<PlaceSearchOutcome> {
+    try {
+        const res = await fetch(`/api/partner/places/search?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
+        const body = (await res.json().catch(() => null)) as { results?: PlaceSearchResult[]; error?: unknown } | null;
+        if (res.ok && Array.isArray(body?.results)) return { kind: 'results', results: body.results };
+        return { kind: 'error', message: typeof body?.error === 'string' && body.error ? body.error : PLACE_SEARCH_UNAVAILABLE };
+    } catch {
+        return { kind: 'error', message: PLACE_SEARCH_UNAVAILABLE };
+    }
+}
+
+/** Finition 2a (2, E-01) : aide sous la fin retenue quand aucune heure de fin n'est saisie. */
+const RETAINED_END_HELP = 'La vente s’arrête à cette heure. Indiquez l’heure de fin si votre événement dure plus longtemps.';
 
 const CITY_OPTIONS = [
     ...SENEGAL_CITIES.map((c) => ({ value: c, label: c })),
@@ -136,9 +158,26 @@ function readEditLocks(v: unknown): EditLocks | null {
  * Lot 9 bis (R12, R26, B71, contrat 5.30) : résultat d'une modification. Les comptes sont prévenus tout de suite
  * dans l'application ; les SMS (comptes et numéros sans compte : invitations non réclamées, acheteurs au guichet)
  * partent après 10 minutes, les corrections faites d'ici là sont regroupées dans le même SMS.
+ * Correctifs de la contre-vérification de la finition 2a (T4) : un changement de lieu part d'un seul avis (application,
+ * notification et SMS ensemble) à la fin des 10 minutes ; un seul avis de changement de lieu par heure : fait moins
+ * d'une heure après le précédent avis, il part à l'heure dite (event_update : place_notice_at, place_notice_held).
  */
-function saveSummary({ notifiedHolders, smsQueued }: { notifiedHolders: number; smsQueued: number }): string {
-    if (notifiedHolders <= 0 && smsQueued <= 0) return 'Aucun détenteur de billets n’était à prévenir.';
+function saveSummary({ notifiedHolders, smsQueued, placeNoticeAt, placeNoticeHeld }: SaveResult): string {
+    const placeAt = placeNoticeAt ? formatTime(placeNoticeAt) : null;
+    const held = placeNoticeHeld && placeAt
+        ? `Le changement de lieu sera annoncé aux détenteurs de billets à ${placeAt} : un seul avis de changement de lieu part par heure.`
+        : null;
+    if (notifiedHolders <= 0 && smsQueued <= 0) return held ?? 'Aucun détenteur de billets n’était à prévenir.';
+    if (placeAt && !placeNoticeHeld && notifiedHolders > 0) {
+        return notifiedHolders > 1
+            ? `${formatInteger(notifiedHolders)} détenteurs de billets seront prévenus à ${placeAt}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées).`
+            : `1 détenteur de billets sera prévenu à ${placeAt}, dans l’application et par SMS (vos corrections d’ici là y seront regroupées).`;
+    }
+    const summary = baseSummary(notifiedHolders, smsQueued);
+    return held ? `${summary} ${held}` : summary;
+}
+
+function baseSummary(notifiedHolders: number, smsQueued: number): string {
     const parts: string[] = [];
     if (notifiedHolders > 0) {
         parts.push(`${formatInteger(notifiedHolders)} ${notifiedHolders > 1 ? 'détenteurs de billets prévenus' : 'détenteur de billets prévenu'} dans l’application`);
@@ -316,6 +355,11 @@ function diffPayload(next: Row, before: Row): Row {
         if (next[key] === undefined) continue;
         if (JSON.stringify(next[key]) !== JSON.stringify(before[key])) patch[key] = next[key];
     }
+    // Finition 2a (3) : latitude et longitude partent ensemble (le serveur refuse une moitié de position)
+    if ('latitude' in patch || 'longitude' in patch) {
+        patch.latitude = next.latitude ?? null;
+        patch.longitude = next.longitude ?? null;
+    }
     return patch;
 }
 
@@ -454,6 +498,10 @@ type LoadState =
 interface SaveResult {
     notifiedHolders: number;
     smsQueued: number;
+    /** T4 : heure de l'avis de changement de lieu, null sans changement de lieu. */
+    placeNoticeAt: string | null;
+    /** T4 : avis de lieu retenu (un avis de changement de lieu est parti il y a moins d'une heure). */
+    placeNoticeHeld: boolean;
 }
 
 export function EventForm(props: EventFormProps) {
@@ -721,7 +769,12 @@ export function EventForm(props: EventFormProps) {
                 setValues(v);
                 setBaseline(eventPayload(v).payload);
                 setLoad({ state: 'ready', event: updated });
-                setSaveResult({ notifiedHolders: Number(data.notified_holders ?? 0), smsQueued: Number(data.sms_queued ?? 0) });
+                setSaveResult({
+                    notifiedHolders: Number(data.notified_holders ?? 0),
+                    smsQueued: Number(data.sms_queued ?? 0),
+                    placeNoticeAt: typeof data.place_notice_at === 'string' ? data.place_notice_at : null,
+                    placeNoticeHeld: data.place_notice_held === true,
+                });
                 toast.success('Modifications enregistrées.');
                 return;
             }
@@ -815,6 +868,10 @@ export function EventForm(props: EventFormProps) {
     const showSummary = errorEntries.length > 0 || formError !== null;
     const lastStep = stepIndex === STEPS.length - 1;
     const hint = (base: string | undefined, notify: boolean) => (notify && withHolders ? [base, NOTIFY_HINT].filter(Boolean).join(' ') : base);
+    // Finition 2a (2, E-01) : sans heure de fin, la fin retenue (même règle que la base) est montrée sous les dates
+    const retained = values.start_date && values.start_time && !values.end_time
+        ? retainedEnd({ start_date: values.start_date, start_time: values.start_time, end_date: values.end_date || null, end_time: null })
+        : null;
 
     return (
         <div className="mx-auto w-full max-w-4xl pb-24 pt-6 md:pb-10">
@@ -823,8 +880,10 @@ export function EventForm(props: EventFormProps) {
             {afterValidation && (
                 <StatusBanner tone="info" title="Modifications encadrées après la validation" className="mb-4">
                     <ul className="list-disc space-y-1 pl-5">
-                        <li>Description, programme, informations pratiques, affiche et position : modifiables librement.</li>
+                        <li>Description, programme, informations pratiques et affiche : modifiables librement.</li>
                         <li>Titre, dates, heures, lieu, ville et adresse&nbsp;: les détenteurs de billets sont prévenus.</li>
+                        {/* Correctifs de la contre-vérification de la finition 2a (T3, T4) : dit avant d'enregistrer */}
+                        <li>Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS.</li>
                         <li>Catégorie d’événement : verrouillée dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.</li>
                     </ul>
                 </StatusBanner>
@@ -956,8 +1015,10 @@ export function EventForm(props: EventFormProps) {
                             folder="events"
                             value={values.image_url}
                             onChange={(url) => set('image_url', url)}
-                            hint="JPEG, PNG ou WebP, 5 Mo au plus. Obligatoire pour soumettre l’événement à la validation."
+                            hint="Format conseillé : paysage, 1 600 × 1 000 pixels (proportion des cartes du site), recadré au centre. JPEG, PNG ou WebP, 5 Mo au plus. Obligatoire pour soumettre l’événement à la validation."
                             error={errors.image_url}
+                            cardPreview
+                            downscale={isEdit ? undefined : 1600}
                         />
 
                         <fieldset className="flex flex-col gap-4 rounded-2xl border border-border p-4">
@@ -974,6 +1035,12 @@ export function EventForm(props: EventFormProps) {
                                     onChange={(e) => set('end_time', e.target.value)} error={errors.end_time}
                                     hint="Facultative ; avec une heure de fin, la date de fin est demandée." />
                             </div>
+                            {retained && (
+                                <div className="rounded-xl bg-surface-sunken px-4 py-3">
+                                    <p className="text-base font-semibold text-fg">Fin retenue : {retained.text}</p>
+                                    <p className="mt-1 text-sm leading-relaxed text-fg-muted">{RETAINED_END_HELP}</p>
+                                </div>
+                            )}
                         </fieldset>
 
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1091,13 +1158,16 @@ export function EventForm(props: EventFormProps) {
                 {step === 'acces' && (
                     <div className="flex flex-col gap-5">
                         <fieldset className="flex flex-col gap-3">
-                            <legend className="mb-2 text-base font-semibold text-fg">Position sur la carte</legend>
+                            <legend className="mb-1 text-base font-semibold text-fg">Position sur la carte</legend>
+                            <p className="text-sm leading-snug text-fg-muted">Obligatoire pour soumettre l’événement à la validation.</p>
                             <MapPicker
                                 idPrefix={MAP_PREFIX}
                                 latitude={values.latitude}
                                 longitude={values.longitude}
                                 onChange={(lat, lng) => setValues((v) => ({ ...v, latitude: lat, longitude: lng }))}
                                 error={errors.latitude ?? errors.longitude}
+                                center={cityCenter(values.city)}
+                                onSearch={searchPlacesFromServer}
                             />
                         </fieldset>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

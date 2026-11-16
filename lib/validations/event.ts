@@ -15,7 +15,8 @@
  */
 import { z } from 'zod';
 import { eventEndAt } from '@/lib/events/event-end';
-import { canonicalCity } from '@/lib/events/senegal-cities';
+import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
+import { SENEGAL_BOUNDS, canonicalCity, inSenegal } from '@/lib/events/senegal-cities';
 import { SCAN_CATEGORY_COLORS, type ScanCategoryColor } from '@/lib/scan/scan-result';
 import { foldText } from '@/lib/text/fold';
 import { INVALID_SN_CONTACT_PHONE_MESSAGE, toSenegaleseContactE164 } from '@/lib/validations/auth';
@@ -84,6 +85,18 @@ export const EVENT_RULE_CODES = {
     SALE_START_AFTER_EVENT: 'SALE_START_AFTER_EVENT',
     CATEGORY_NAME_TAKEN: 'CATEGORY_NAME_TAKEN',
     QUOTA_ABOVE_CAPACITY: 'QUOTA_ABOVE_CAPACITY',
+    // Finition 2a (3) : position du lieu (mêmes codes et textes que public.event_position_refusal et event_transition)
+    POSITION_INCOMPLETE: 'POSITION_INCOMPLETE',
+    POSITION_OUT_OF_BOUNDS: 'POSITION_OUT_OF_BOUNDS',
+    POSITION_REQUIRED: 'POSITION_REQUIRED',
+} as const;
+
+/** Finition 2a (3) : textes de la position du lieu, identiques en base (migration 20261116000003). */
+export const POSITION_TEXTS = {
+    incomplete: 'La position du lieu est incomplète : touchez la carte pour placer le repère.',
+    outOfBounds: 'Le repère doit être placé au Sénégal : touchez la carte à l’emplacement du lieu.',
+    requiredToSubmit: 'Placez le repère du lieu sur la carte (étape Accès).',
+    requiredAfterValidation: 'Le repère du lieu ne peut plus être retiré après la validation : déplacez-le si le lieu change.',
 } as const;
 
 // ── Dates et heures (Africa/Dakar = UTC+0) ─────────────────────────────────
@@ -154,7 +167,13 @@ export function eventEndInstant(d: DatesLike): number {
 
 // ── Affiche ────────────────────────────────────────────────────────────────
 
-const POSTER_FILE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/;
+/**
+ * Correctifs de la contre-vérification de la finition 2a (T5) : seul un fichier produit par la route de dépôt
+ * (horodatage_8 caractères.webp, donc réencodé, sans métadonnée) est accepté comme affiche ; un fichier d'avant la
+ * finition, ou posé directement dans le stockage, est refusé (IMAGE_ORIGIN_INVALID). L'affiche déjà enregistrée, renvoyée
+ * telle quelle par le formulaire, reste acceptée (imageField, `unchanged`) ; scripts/reencode-posters.ts la réencode.
+ */
+const POSTER_FILE_RE = STORED_IMAGE_NAME_RE;
 
 /** Préfixe des affiches du partenaire : `${SUPABASE_URL}/storage/v1/object/public/public-images/events/<partner_id>/`. */
 export function posterPrefix(partnerId: string): string | null {
@@ -200,10 +219,9 @@ const cityField = z.string().trim()
     .refine((v) => !hasContactInfo(v), contactInfoMessage('La ville'))
     .transform(canonicalCity);
 const categoryField = z.enum(EVENT_CATEGORY_VALUES, { error: 'Choisissez une catégorie d’événement dans la liste.' });
-const latitudeField = z.number().finite()
-    .min(-90, 'La latitude est comprise entre -90 et 90.').max(90, 'La latitude est comprise entre -90 et 90.').nullable();
-const longitudeField = z.number().finite()
-    .min(-180, 'La longitude est comprise entre -180 et 180.').max(180, 'La longitude est comprise entre -180 et 180.').nullable();
+// Finition 2a (3) : bornes du Sénégal contrôlées avec la paire (checkPosition), plus de bornes -90/90 et -180/180 ici
+const latitudeField = z.number().finite().nullable();
+const longitudeField = z.number().finite().nullable();
 const capacityField = z.number().int('La jauge est un nombre entier.')
     .min(1, 'La jauge compte au moins 1 place.').max(EVENT_LIMITS.capacityMax, 'La jauge compte au plus 100 000 places.').nullable();
 
@@ -418,6 +436,24 @@ function checkEventDates(
     }
 }
 
+/**
+ * Finition 2a (3) : latitude et longitude ensemble (toutes deux présentes, toutes deux renseignées ou toutes deux vides),
+ * au Sénégal. Codes et textes de la base ; le champ pointé est celui qui manque ou qui sort des bornes.
+ */
+function checkPosition(c: z.RefinementCtx, v: { latitude?: number | null; longitude?: number | null }): void {
+    const lat = v.latitude ?? null;
+    const lng = v.longitude ?? null;
+    if ((v.latitude === undefined) !== (v.longitude === undefined) || (lat === null) !== (lng === null)) {
+        const missing = v.latitude !== undefined && lat !== null ? 'longitude' : 'latitude';
+        c.addIssue({ code: custom, path: [missing], message: POSITION_TEXTS.incomplete, params: { code: EVENT_RULE_CODES.POSITION_INCOMPLETE } });
+        return;
+    }
+    if (lat !== null && lng !== null && !inSenegal(lat, lng)) {
+        const latOut = lat < SENEGAL_BOUNDS.minLatitude || lat > SENEGAL_BOUNDS.maxLatitude;
+        c.addIssue({ code: custom, path: [latOut ? 'latitude' : 'longitude'], message: POSITION_TEXTS.outOfBounds, params: { code: EVENT_RULE_CODES.POSITION_OUT_OF_BOUNDS } });
+    }
+}
+
 export function createEventSchema(ctx: EventSchemaContext) {
     return z.object({
         title: titleField,
@@ -440,6 +476,7 @@ export function createEventSchema(ctx: EventSchemaContext) {
             .default([]),
     }).strict().superRefine((v, c) => {
         const now = (ctx.now ?? new Date()).getTime();
+        checkPosition(c, v);
         checkEventDates(c, v, { checkStartPast: true, now });
         const eventEnd = datesReadable(v) ? eventEndInstant(v) : null;
         const seen = new Map<string, number>();
@@ -484,6 +521,7 @@ export function updateEventSchema(ctx: UpdateEventSchemaContext) {
         program: programField.optional(),
         practical_info: practicalInfoField(current.contact_phone ?? null).optional(),
     }).strict().superRefine((v, c) => {
+        if (v.latitude !== undefined || v.longitude !== undefined) checkPosition(c, v);
         const touched = v.start_date !== undefined || v.start_time !== undefined || v.end_date !== undefined || v.end_time !== undefined;
         if (!touched) return;
         const merged = {

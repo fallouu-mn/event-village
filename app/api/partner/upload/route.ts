@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'node:crypto';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
+import { encodeImage, storedImageName } from '@/lib/images/encode-image';
 import { sniffImage } from '@/lib/images/sniff';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
@@ -79,10 +79,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Format non pris en charge : formats acceptés JPEG, PNG et WebP.', code: 'UNSUPPORTED_FORMAT' }, { status: 400 });
     }
 
-    const filePath = `${folder}/${partner.id}/${Date.now()}_${randomUUID().slice(0, 8)}.${kind.ext}`;
+    // Finition 2a (1b) : image réencodée (orientation appliquée, réduite, WebP) ; sharp ne recopie aucune métadonnée
+    // (EXIF et GPS, XMP, IPTC, profil ICC) : seuls les pixels sont stockés. Correctifs de la contre-vérification (T5) : même
+    // réencodage que les affiches d'avant la finition (lib/images/encode-image.ts, scripts/reencode-posters.ts).
+    let encoded: Buffer;
+    try {
+        encoded = await encodeImage(buffer);
+    } catch (err) {
+        console.warn(`[upload] image de ${user.id} illisible (${kind.mime}) :`, err instanceof Error ? err.message : String(err));
+        return NextResponse.json({ error: 'Image illisible : choisissez une autre image JPEG, PNG ou WebP.', code: 'UNSUPPORTED_FORMAT' }, { status: 400 });
+    }
+
+    // T5 : nom horodatage_8 caractères.webp, le seul accepté comme affiche (lib/images/stored-name.ts)
+    const filePath = `${folder}/${partner.id}/${storedImageName()}`;
     const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, buffer, { contentType: kind.mime, upsert: false });
+        .upload(filePath, encoded, { contentType: 'image/webp', upsert: false });
     if (uploadError) {
         console.error(`[upload] dépôt de ${filePath} impossible : ${uploadError.message}`);
         return NextResponse.json({ error: 'Dépôt impossible pour le moment. Réessayez.', code: 'UPLOAD_FAILED' }, { status: 500 });

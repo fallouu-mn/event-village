@@ -37,7 +37,7 @@ import { routeContext } from './helpers';
 import { newBuyer, service, type Buyer, type CategorySpec } from './paiement-helpers';
 import { buyConfirmed, jsonRequest, newPartner, type TestPartner } from './finance-helpers';
 import { type RouteResult } from './acces-helpers';
-import { advanceEventTo, assertRpcOk, createDraftEvent, posterUrl, rpcTransition, type DraftEvent } from './cycle-helpers';
+import { advanceEventTo, assertRpcOk, createDraftEvent, rpcTransition, storedPosterUrl, type DraftEvent } from './cycle-helpers';
 import {
     addMinutes, dakarAt, dakarDay, dispatchAt, noonDakarTomorrow, outboxRows, smsMark, smsTo, withNotifSettings, type OutboxRow,
 } from './notif-helpers';
@@ -274,7 +274,7 @@ describe('9b.36 R18 et R95 : ADMIN_EVENT_CHANGED aux admins events.read après v
 
     test('affiche changée sur un PUBLIE : alerte à l\'admin events.read', async () => {
         const ev = await eventInStatus('Affiche admin', 'PUBLIE');
-        await putOk(partner, ev.eventId, { image_url: posterUrl(partner.partnerId) }, 'changement d\'affiche');
+        await putOk(partner, ev.eventId, { image_url: await storedPosterUrl(partner.partnerId) }, 'changement d\'affiche');
         assertAlerted(await alerts(reader, ev.eventId), 'affiche changée');
     });
 

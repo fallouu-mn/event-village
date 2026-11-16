@@ -11,6 +11,7 @@ const BodySchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 const REFUSALS: Record<string, number> = {
     TICKET_NOT_FOUND: 404,
+    PARTNER_SUSPENDED: 403, // finition 2a (1a)
     TICKET_NOT_REFUNDABLE: 409,
     PAYMENT_NOT_REFUNDABLE: 409,
     ALREADY_REFUNDED: 409,

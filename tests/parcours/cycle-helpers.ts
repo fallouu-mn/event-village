@@ -19,6 +19,7 @@ import '../helpers/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { PostgrestError } from '@supabase/supabase-js';
+import sharp from 'sharp';
 import { service, type CategorySpec, type SaleEvent } from './paiement-helpers';
 import { superadminId, type TestPartner } from './finance-helpers';
 
@@ -97,11 +98,29 @@ export async function shiftEventDates(eventId: string, shift: DateShift): Promis
 
 // ── Création d'un brouillon ────────────────────────────────────────────────
 
-/** URL d'affiche acceptée par le contrat F1 (préfixe du bucket public-images du projet). */
-export function posterUrl(partnerId: string, fileName = `${randomUUID()}.png`): string {
+/**
+ * URL d'affiche acceptée par le contrat F1 (préfixe du bucket public-images du projet). Correctifs de la contre-vérification
+ * de la finition 2a (T5, aide modifiée, signalée au rapport) : nom par défaut au format de la route de dépôt
+ * (horodatage_8 caractères.webp), le seul désormais accepté comme affiche ; avant : `<uuid>.png`. Le fichier n'existe pas
+ * (adresse seule, comme avant) : storedPosterUrl le dépose.
+ */
+export function posterUrl(partnerId: string, fileName = `${Date.now()}_${randomUUID().slice(0, 8)}.webp`): string {
     const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
     assert.ok(base, 'NEXT_PUBLIC_SUPABASE_URL absente (.env.test)');
     return `${base.replace(/\/+$/, '')}/storage/v1/object/public/public-images/events/${partnerId}/${fileName}`;
+}
+
+/**
+ * Finition 2a (1b) : affiche réellement déposée dans le dossier de la partenaire. Le serveur vérifie désormais que le
+ * fichier existe quand une route enregistre l'affiche (création, modification) ; posterUrl ne donne qu'une adresse (les
+ * insertions directes l'acceptent). Aide ajoutée, signalée au rapport.
+ */
+export async function storedPosterUrl(partnerId: string): Promise<string> {
+    const path = `events/${partnerId}/${Date.now()}_${randomUUID().slice(0, 8)}.webp`;
+    const image = await sharp({ create: { width: 160, height: 100, channels: 3, background: { r: 40, g: 90, b: 160 } } }).webp().toBuffer();
+    const { error } = await service.storage.from('public-images').upload(path, image, { contentType: 'image/webp', upsert: false });
+    assert.equal(error, null, `affiche de test ${path} : ${error?.message}`);
+    return service.storage.from('public-images').getPublicUrl(path).data.publicUrl;
 }
 
 export interface DraftEventOptions {
@@ -119,6 +138,11 @@ export interface DraftEventOptions {
     imageUrl?: string | null;
     location?: string;
     city?: string;
+    /**
+     * Finition 2a (3) : position du lieu (défaut : TEST_EVENT_POSITION, Dakar) ; null : sans position (soumission refusée,
+     * POSITION_REQUIRED).
+     */
+    position?: { latitude: number; longitude: number } | null;
 }
 
 export interface DraftEvent extends SaleEvent {
@@ -133,6 +157,14 @@ export interface DraftEvent extends SaleEvent {
  * Événement BROUILLON du partenaire et ses catégories, insérés par le service_role. Le résultat est
  * compatible avec les helpers des lots 2 à 4 (SaleEvent : buyConfirmed, newController…).
  */
+/**
+ * Finition 2a (3) : position du lieu des événements de test (Dakar, au Sénégal). Depuis la finition 2a, la soumission
+ * exige une position (event_transition, POSITION_REQUIRED) : les brouillons de test en ont une par défaut, et la
+ * soumission par advanceEventTo pose celle-ci sur un événement qui n'en a pas (événements insérés directement par les
+ * aides des autres lots).
+ */
+export const TEST_EVENT_POSITION = { latitude: 14.6928, longitude: -17.4467 } as const;
+
 export async function createDraftEvent(owner: EventOwner, label: string, categories: CategorySpec[], opts: DraftEventOptions = {}): Promise<DraftEvent> {
     const title = opts.title ?? `TEST Cycle ${label} ${Date.now()}`;
     const imageUrl = opts.imageUrl === undefined ? posterUrl(owner.partnerId) : opts.imageUrl;
@@ -145,6 +177,8 @@ export async function createDraftEvent(owner: EventOwner, label: string, categor
         ...dates,
         location: opts.location ?? 'Salle de test, Dakar',
         city: opts.city ?? 'Dakar',
+        latitude: opts.position === null ? null : (opts.position ?? TEST_EVENT_POSITION).latitude,
+        longitude: opts.position === null ? null : (opts.position ?? TEST_EVENT_POSITION).longitude,
         capacity: opts.capacity === undefined ? categories.reduce((sum, c) => sum + c.total, 0) + 10 : opts.capacity,
         image_url: imageUrl,
         status: 'BROUILLON',
@@ -330,9 +364,15 @@ async function eventTitle(eventId: string): Promise<string> {
  * nombre de jours nécessaire (heures et durée gardées), puis ses dates demandées lui sont rendues aussitôt.
  */
 async function submitWithFutureStart(eventId: string, actorId: string): Promise<RpcCall> {
-    const { data, error } = await service.from('events').select('start_date, start_time, end_date, end_time').eq('id', eventId).single();
+    const { data, error } = await service.from('events').select('start_date, start_time, end_date, end_time, latitude, longitude').eq('id', eventId).single();
     assert.equal(error, null, `dates de l'événement ${eventId} : ${error?.message}`);
     const cols = data as DateColumns;
+    // Finition 2a (3) : la soumission exige la position du lieu ; un événement de test sans position reçoit celle de Dakar
+    const position = data as { latitude: number | null; longitude: number | null };
+    if (position.latitude === null || position.longitude === null) {
+        const { error: pErr } = await service.from('events').update(TEST_EVENT_POSITION).eq('id', eventId);
+        assert.equal(pErr, null, `position posée pour la soumission de ${eventId} : ${pErr?.message}`);
+    }
     const time = String(cols.start_time ?? '00:00:00');
     const startMs = Date.parse(`${cols.start_date}T${time.length === 5 ? `${time}:00` : time}Z`);
     if (!(startMs <= Date.now() + 60_000)) return rpcTransition(eventId, actorId, 'EN_ATTENTE');

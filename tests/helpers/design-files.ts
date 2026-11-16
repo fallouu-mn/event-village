@@ -256,4 +256,6 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/partner/team/TeamPanel.tsx',
     'components/partner/team/TeamDialogs.tsx',
     'components/partner/team/CategoryPills.tsx',
+    // Finition 2a (2 et 3) : onglet « Infos » du pilotage (dates, fin retenue, lieu, petite carte, « Voir l’itinéraire »)
+    'components/partner/pilotage/InfosTab.tsx',
 ];

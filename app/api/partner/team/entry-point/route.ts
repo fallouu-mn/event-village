@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
+import { partnerSuspendedResponse } from '@/lib/auth/partner-fiche-guard';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { AdminService } from '@/lib/admin/admin.service';
 import { actsAsTeamAdmin, adminForeignTeamRefusal, adminReasonRefusal, adminTeamRefusal, cleanReason } from '../team-access';
@@ -59,33 +60,32 @@ export async function PATCH(req: NextRequest) {
     const asAdmin = await actsAsTeamAdmin(user, event.partner_id as string | null);
     const reasonRefused = adminReasonRefusal(asAdmin, parsed.data.reason);
     if (reasonRefused) return reasonRefused;
-    const { count: zoneCount, error: zonesErr } = await supabase
-        .from('event_zones')
-        .select('id', { count: 'exact', head: true })
-        .eq('event_id', parsed.data.eventId);
-    if (zonesErr) {
-        console.error('[entry-point] lecture des zones impossible :', zonesErr.message);
-        return NextResponse.json({ error: 'Modification momentanément indisponible.' }, { status: 500 });
-    }
-    if ((zoneCount ?? 0) > 0) {
-        return NextResponse.json({ error: 'Cet événement a des portes : choisissez la porte du contrôleur dans la liste.', code: 'GATES_CONFIGURED' },
-            { status: 409 });
-    }
     const entryPoint = parsed.data.entryPoint ? parsed.data.entryPoint : null;
-    const { data: rows, error } = await supabase
-        .from('event_controllers')
-        .update({ entry_point: entryPoint })
-        .eq('event_id', parsed.data.eventId)
-        .eq('user_id', parsed.data.controllerId)
-        .select('id');
-    if (error) {
-        console.error('[entry-point] mise à jour impossible :', error.message);
+    // Correctifs de la contre-vérification de la finition 2a (T1) : écriture par event_controller_entry_point_set (fiche
+    // SUSPENDU refusée en tête, droits et portes vérifiés de nouveau en base), plus d'écriture directe dans event_controllers
+    const { data: reply, error } = await supabase.rpc('event_controller_entry_point_set', {
+        p: { actor_id: user.id, event_id: parsed.data.eventId, controller_id: parsed.data.controllerId, entry_point: entryPoint },
+    });
+    const r = (reply ?? null) as { ok?: boolean; code?: string; assignment_id?: string } | null;
+    if (error || !r) {
+        console.error('[entry-point] mise à jour impossible :', error?.message ?? 'réponse vide');
         return NextResponse.json({ error: 'Modification momentanément indisponible.' }, { status: 500 });
     }
-    if (!rows?.length) return NextResponse.json({ error: 'Ce contrôleur n’est pas affecté à cet événement.' }, { status: 404 });
+    if (r.ok !== true) {
+        if (r.code === 'PARTNER_SUSPENDED') return partnerSuspendedResponse();
+        if (r.code === 'GATES_CONFIGURED') {
+            return NextResponse.json({ error: 'Cet événement a des portes : choisissez la porte du contrôleur dans la liste.', code: 'GATES_CONFIGURED' },
+                { status: 409 });
+        }
+        if (r.code === 'NOT_ASSIGNED') return NextResponse.json({ error: 'Ce contrôleur n’est pas affecté à cet événement.' }, { status: 404 });
+        if (r.code === 'EVENT_NOT_FOUND') return NextResponse.json({ error: 'Événement introuvable.' }, { status: 404 });
+        if (r.code === 'INVALID_INPUT') return NextResponse.json({ error: 'Point d’entrée invalide (80 caractères au plus).' }, { status: 400 });
+        console.error('[entry-point] refus inattendu :', JSON.stringify(r));
+        return NextResponse.json({ error: 'Modification momentanément indisponible.' }, { status: 500 });
+    }
     if (asAdmin) {
         await AdminService.logAudit({
-            userId: user.id, userRole: 'ADMIN', action: 'TEAM_ADMIN_ACTION', objectType: 'event_controllers', objectId: String(rows[0].id),
+            userId: user.id, userRole: 'ADMIN', action: 'TEAM_ADMIN_ACTION', objectType: 'event_controllers', objectId: String(r.assignment_id),
             newValue: { entry_point: entryPoint },
             metadata: { route: 'PATCH /api/partner/team/entry-point', event_id: parsed.data.eventId, controller_id: parsed.data.controllerId, reason: cleanReason(parsed.data.reason) },
         });
