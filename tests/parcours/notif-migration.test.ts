@@ -408,7 +408,10 @@ const INVENTORY: Insertion[] = [
             'EVENT_CLOSED_HOLDER', 'EVENT_CLOSED_BY_ADMIN', 'SHIFT_OPEN_AT_END', 'EVENT_CANCELLED_BY_ADMIN', 'ADMIN_EVENT_CANCELLED',
             'CONTROLLER_EVENT_CANCELLED', 'CONTROLLER_EVENT_STATUS', 'EVENT_SUBMITTED_ACK', 'EVENT_FINISHED'],
     },
-    { k1: 'E7-E8', fn: 'event_update', types: ['EVENT_CHANGED', 'CONTROLLER_EVENT_CHANGED'] }, // lot 9 bis (R33, T37)
+    // lot 9 bis (R33, T37) ; correctifs de la contre-vérification de la finition 2a (T3-T4, inventaire mis à jour, signalé
+    // au rapport) : l'envoi est déplacé de event_update dans event_change_notify, appelée par event_update et par
+    // event_place_notices_release (avis de lieu retenu par la cadence)
+    { k1: 'E7-E8', fn: 'event_change_notify', types: ['EVENT_CHANGED', 'CONTROLLER_EVENT_CHANGED'] },
     {
         k1: 'E6, F1-F7', trigger: { name: 'trg_cashouts_notify', table: 'public.cashouts' },
         types: ['REFUND_REQUESTED', 'REFUND_PAID', 'WITHDRAWAL_PAID', 'WITHDRAWAL_REJECTED', 'WITHDRAWAL_UNCERTAIN',

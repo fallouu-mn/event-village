@@ -78,6 +78,14 @@ async function move(eventId: string, patch: Row): Promise<Reply> {
 
 const minutes = (n: number) => new Date(Date.now() + n * 60_000);
 
+/**
+ * Position annoncée égale au repère, à 10⁻⁶ degré près (une dizaine de centimètres) : le repère passe par les données du
+ * message (nombre décimal, 15 chiffres significatifs), 14.695500000000001 y devient 14.6955.
+ */
+function near(a: Row | null, latitude: number, longitude: number): boolean {
+    return Math.abs(Number(a?.announced_latitude) - latitude) < 1e-6 && Math.abs(Number(a?.announced_longitude) - longitude) < 1e-6;
+}
+
 describe('a. position annoncée et alerte de l’administration', () => {
     test('posée à la validation : le repère validé', async () => {
         const d = await createDraftEvent(P, 'f2acv-lieu-validation', [{ name: 'Standard', price: 0, total: 10 }], { startsInHours: 72, position: DAKAR });
@@ -85,7 +93,7 @@ describe('a. position annoncée et alerte de l’administration', () => {
         await advanceEventTo(d.eventId, 'VALIDE', { partnerUserId: P.userId });
         const a = await announced(d.eventId);
         console.log(`[F2ACV-T34] validation → position annoncée ${JSON.stringify(a)}`);
-        assert.deepEqual([Number(a?.announced_latitude), Number(a?.announced_longitude)], [DAKAR.latitude, DAKAR.longitude]);
+        assert.ok(near(a, DAKAR.latitude, DAKAR.longitude), JSON.stringify(a));
     });
 
     test('petits pas de 150 m (600 m en tout) : alerte « lieu » à l’administration dès 200 m de la position annoncée', async () => {
@@ -143,7 +151,7 @@ describe('c. cadence : au plus un avis de lieu par heure glissante, regroupé', 
         assert.equal(sent1.length, 1, 'précondition : premier SMS parti');
         const a1 = await announced(ev.eventId);
         console.log(`[F2ACV-T34] après le premier avis : ${JSON.stringify(a1)}`);
-        assert.deepEqual([Number(a1?.announced_latitude), Number(a1?.announced_longitude)], [DAKAR.latitude + NORTH_300M, DAKAR.longitude], 'position annoncée = repère du premier avis');
+        assert.ok(near(a1, DAKAR.latitude + NORTH_300M, DAKAR.longitude), `position annoncée = repère du premier avis : ${JSON.stringify(a1)}`);
 
         const back = await move(ev.eventId, { latitude: DAKAR.latitude, longitude: DAKAR.longitude });
         console.log(`[F2ACV-T34] retour (300 m de la position annoncée) → ${show(back).slice(0, 260)}`);
@@ -168,7 +176,7 @@ describe('c. cadence : au plus un avis de lieu par heure glissante, regroupé', 
         assert.equal(rows.filter((r) => r.channel === 'PUSH').length, 2, `une notification push par avis, pas par déplacement : ${brief(rows)}`);
         assert.equal(rows.filter((r) => r.channel === 'IN_APP').length, 2, `une notification dans l'application par avis : ${brief(rows)}`);
         const a2 = await announced(ev.eventId);
-        assert.deepEqual([Number(a2?.announced_latitude), Number(a2?.announced_longitude)], [DAKAR.latitude, DAKAR.longitude], 'position annoncée = repère du second avis');
+        assert.ok(near(a2, DAKAR.latitude, DAKAR.longitude), `position annoncée = repère du second avis : ${JSON.stringify(a2)}`);
         assert.equal(a2?.held_until ?? null, null, 'retenue vidée');
     });
 });

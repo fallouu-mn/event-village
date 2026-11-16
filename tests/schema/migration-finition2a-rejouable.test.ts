@@ -21,6 +21,13 @@ const FINITION2A_MIGRATIONS = [
     // 3, carte de l'étape Accès : position (ensemble, au Sénégal, obligatoire pour soumettre), repère déplacé de plus de
     // 200 m, recherche de lieu (réponses gardées, une requête par seconde)
     '20261116000003_f2a_carte.sql',
+    // Correctifs de la contre-vérification de la finition 2a (liste complétée, signalée au rapport) : T1, équipe d'une
+    // fiche SUSPENDU ; T2, écart de caisse ; T3-T4, avis de lieu ; T5, affiche de la route ; T6, adresses citées
+    '20261116000004_f2acv_equipe_suspendue.sql',
+    '20261116000005_f2acv_ecart_caisse.sql',
+    '20261116000006_f2acv_avis_de_lieu.sql',
+    '20261116000007_f2acv_affiche_format.sql',
+    '20261116000008_f2acv_stockage_cite.sql',
 ] as const;
 
 after(async () => {
