@@ -52,6 +52,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Finition 3a : mode rapide pendant le travail d'un lot. Une ligne « ci-rapide: <suites> » dans le message du
+      # commit poussé fait tourner typecheck, lint et ces seules suites (scripts/ci-rapide.mjs), sans build, sans e2e
+      # ni mesure du poids JavaScript. Sans cette ligne : vérification complète, inchangée. La CI complète reste la
+      # seule preuve finale d'un lot.
+      - name: Mode de vérification (ligne « ci-rapide » du message du commit)
+        run: |
+          . /tmp/etape.sh mode
+          ligne="$(git log -1 --format=%B "$GITHUB_SHA" | grep -m1 -E '^ci-rapide:' || true)"
+          if [ -n "$ligne" ]; then
+            suites="$(printf '%s' "${ligne#ci-rapide:}" | xargs)"
+            if [ -z "$suites" ]; then echo "Ligne ci-rapide sans suite : rien à vérifier"; exit 1; fi
+            echo "EV_RAPIDE=1" >> "$GITHUB_ENV"
+            echo "EV_RAPIDE_SUITES=$suites" >> "$GITHUB_ENV"
+            echo "Mode rapide : $suites"
+          else
+            echo "Mode complet"
+          fi
+
       - name: Node.js
         uses: actions/setup-node@v4
         with:
@@ -121,10 +139,22 @@ jobs:
 
       - name: Vérification complète (typecheck → lint → tests → build)
         id: verify
+        if: ${{ env.EV_RAPIDE != '1' }}
         run: |
           . /tmp/etape.sh verify
           set -o pipefail
           npm run verify 2>&1 | tee /tmp/verify.log
+
+      # Finition 3a : mode rapide (étape « Mode de vérification ») ; « verify » est alors sautée, donc ni le build de
+      # mesure ni les phases e2e ne tournent (elles attendent verify en succès ou en échec).
+      - name: Vérification rapide (typecheck, lint, suites citées par le commit)
+        id: verify-rapide
+        if: ${{ env.EV_RAPIDE == '1' }}
+        run: |
+          . /tmp/etape.sh verify-rapide
+          set -o pipefail
+          # shellcheck disable=SC2086
+          node scripts/ci-rapide.mjs $EV_RAPIDE_SUITES 2>&1 | tee /tmp/verify.log
 
       # Lot 7 (contrat 9, 11.7, 14.1) : au run « avant », les tests rouges arrêtent verify à l'étape test ; sans ce
       # build, ni la mesure du poids JavaScript (js-budget) ni les phases e2e (terrain, pwa, perf) ne tourneraient.
@@ -393,6 +423,8 @@ jobs:
             echo "build_mesure=${{ steps.build-mesure.outcome }}"
             echo "e2e_seed=${{ steps.e2e-seed.outcome }}"
             echo "e2e=${{ steps.e2e.outcome }}"
+            # Finition 3a : mode de la vérification (rapide : suites citées par le commit)
+            if [ "${EV_RAPIDE:-}" = "1" ]; then echo "mode=rapide"; echo "suites=${EV_RAPIDE_SUITES:-}"; else echo "mode=complet"; fi
             echo "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             if [ -n "${EV_JOB_STARTED_AT:-}" ]; then echo "job_elapsed_s=$(( $(date +%s) - EV_JOB_STARTED_AT ))"; fi
             # Lot 8 (L71, contrat 15.9) : version de npm, puis une ligne par étape, secondes comptées depuis le début du job
