@@ -127,7 +127,8 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
         L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
         // Lot 7 (D74) : mention légale des tuiles (12 px de Leaflet) marquée comme légende pour le contrôle des
         // captures (e2e/support/checks.ts, CAPTION_SELECTOR) ; elle reste lisible et n'est pas un contenu.
-        map.attributionControl?.setPrefix('Leaflet'); // sans le drapeau du préfixe par défaut de Leaflet
+        // Finition 2b (A) : pied de carte réduit à la mention des fonds (« © contributeurs OpenStreetMap »), sans « Leaflet »
+        map.attributionControl?.setPrefix(false);
         map.attributionControl?.getContainer()?.setAttribute('data-ev-caption', '');
 
         // Repère créé au premier choix seulement ; déplaçable à la souris ou au doigt, sans action au clavier dans
