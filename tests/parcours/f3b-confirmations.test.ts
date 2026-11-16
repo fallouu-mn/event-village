@@ -91,15 +91,19 @@ describe('2. base : une transition par l’administration ne met en file que des
                       JOIN public.partners pa ON pa.id = e.partner_id JOIN public.users u ON u.id = pa.user_id
                      WHERE u.status::text = 'ACTIF'
                        AND NOT EXISTS (SELECT 1 FROM public.controller_shifts s WHERE s.event_id = e.id AND s.status = 'OUVERT')
+                       -- un avis à clé par événement (EVENT_FINISHED:<événement>) déjà envoyé ne repart pas (clé d'idempotence)
+                       AND NOT EXISTS (SELECT 1 FROM public.notification_outbox o WHERE o.idempotency_key LIKE $1 || ':' || e.id::text || '%')
                      ORDER BY (EXISTS (SELECT 1 FROM public.tickets t WHERE t.event_id = e.id AND t.user_id IS NOT NULL AND t.status::text IN ('VALIDE', 'UTILISE'))) DESC,
                               (EXISTS (SELECT 1 FROM public.event_controllers ec WHERE ec.event_id = e.id)) DESC, e.created_at
-                     LIMIT 1`);
+                     LIMIT 1`, [declared[0].type]);
                 assert.ok(ev[0], 'aucun événement d’un partenaire actif');
                 const { rows: h } = await c.query<{ id: string }>(`
                     INSERT INTO public.event_status_history (event_id, old_status, new_status, actor_role, reason, channel)
                     VALUES ($1, $2::event_status, $3::event_status, 'ADMIN', 'Motif de l’essai de la finition 3b', 'TRANSITION') RETURNING id`, [ev[0].id, from, to]);
+                assert.ok(h[0], 'ligne d’historique non créée');
+                // Avis créés par cette transaction (même now() : created_at par défaut), quelle que soit la forme de leur clé
                 const { rows } = await c.query<{ type: string; channel: string }>(
-                    `SELECT DISTINCT type, channel FROM public.notification_outbox WHERE idempotency_key LIKE '%' || $1 || '%' ORDER BY 1, 2`, [h[0].id]);
+                    `SELECT DISTINCT type, channel FROM public.notification_outbox WHERE created_at = now() ORDER BY 1, 2`);
                 return rows;
             });
             const faults: string[] = [];
