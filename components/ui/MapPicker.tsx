@@ -397,7 +397,9 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
                     value={latText}
                     onChange={(e) => setLatText(e.target.value)}
                     onBlur={() => applyTyped(latText, lngText)}
-                    placeholder="14.6937"
+                    // Finition 2a (3) : plus de repère par défaut, le champ est vide au départ ; l'exemple ne doit pas
+                    // ressembler à une position déjà choisie
+                    placeholder="Par exemple : 14.6937"
                 />
                 <TextInput
                     id={`${prefix}-longitude`}
@@ -406,7 +408,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
                     value={lngText}
                     onChange={(e) => setLngText(e.target.value)}
                     onBlur={() => applyTyped(latText, lngText)}
-                    placeholder="-17.4441"
+                    placeholder="Par exemple : -17.4441"
                     error={shownError ?? undefined}
                 />
             </div>
