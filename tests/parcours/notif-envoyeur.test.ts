@@ -608,7 +608,10 @@ describe('6.1 Route /api/cron/notifications-dispatch (contrat E5)', () => {
         // (10 tours de 100, SMS en dernier) ; la ligne du test n'était envoyée que si la file était courte à ce moment.
         // La file est vidée d'abord, la ligne du test posée ensuite. Modification signalée au rapport.
         const drain = await lotFunction<(o: Record<string, unknown>) => Promise<DispatchRunReport>>(DISPATCHER_MODULE, 'dispatchNotifications', 'envoyeur (contrat E4)');
-        for (let i = 0; i < 50 && (await drain({})).claimed >= 1000; i++) { /* jusqu'à une file plus courte qu'un passage */ }
+        // Finition 3b : vidage jusqu'à un passage qui ne réserve plus rien. S'arrêter dès qu'un passage réservait moins de 1 000
+        // lignes laissait des lignes dues quand ce passage s'arrêtait plus tôt (budget de temps) : runs 252 et 274, le SMS du test,
+        // servi en dernier, n'était pas atteint par la route. Modification signalée au rapport.
+        for (let i = 0; i < 50 && (await drain({})).claimed > 0; i++) { /* jusqu'à une file vide */ }
         const row = await dueRow({ recipient_phone: phone });
         const mark = smsMark(phone);
         const pathName = '/api/cron/notifications-dispatch';

@@ -46,9 +46,13 @@ const LIMITS = {
 };
 
 let ipSeq = 0;
+// Finition 3b : plage tirée au hasard dans 100.64.0.0/10, propre à cette suite. Le bloc 198.51.100.0/24 est aussi tiré au
+// hasard par d'autres suites qui envoient des SMS (lot 9 quinquies) : run 274, un envoi étranger depuis 198.51.100.8 a compté
+// dans la limite par IP (statuts 200,200,429 au lieu de 200,200,200,429). Modification signalée au rapport.
+const IP_BASE = `100.${64 + crypto.randomInt(64)}.${crypto.randomInt(256)}`;
 function freshIp(): string {
     ipSeq += 1;
-    return `198.51.100.${(ipSeq % 250) + 1}`;
+    return `${IP_BASE}.${(ipSeq % 250) + 1}`;
 }
 
 function otpRequest(phone: string, ip: string) {
