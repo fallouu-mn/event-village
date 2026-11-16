@@ -83,18 +83,22 @@ describe('a. mêmes heures partout', () => {
             const assignment = ((member?.assignments as Row[]) ?? []).find((a) => a.event_id === c.eventId);
             const item = ((evenings.items as Row[]) ?? []).find((i) => i.event_id === c.eventId);
             const admin = retainedEnd(c.dates);
+            const pastExpected = c.expected.getTime() < now;
             const sources: Record<string, string> = {
                 règle: c.expected.toISOString(),
                 base: iso(base),
                 catalogue: eventEndAt(c.dates).toISOString(),
                 'équipe (événement)': iso(tEvent?.end_at),
                 'équipe (affectation)': iso(assignment?.end_at),
-                '« Mes soirées »': iso(item?.end_at),
                 'fiche admin / Infos': admin ? admin.at.toISOString() : 'aucune',
             };
-            const pastExpected = c.expected.getTime() < now;
-            console.log(`[CVF2A-5] ${c.label} : ${JSON.stringify(sources)} ; passé (équipe) ${String(tEvent?.past)} ; texte admin « ${admin?.text ?? ''} » ; note « ${admin?.note ?? ''} »`);
+            // « Mes soirées » ne liste que les soirées finies (controller_evenings : end_at < now(), ou TERMINE/ANNULE ;
+            // run 233 : les soirées à venir en sont absentes par construction). Comparée seulement quand elle y figure ;
+            // sa présence doit suivre la même fin retenue.
+            if (item) sources['« Mes soirées »'] = iso(item.end_at);
+            console.log(`[CVF2A-5] ${c.label} : ${JSON.stringify(sources)} ; dans « Mes soirées » ${item ? 'oui' : 'non'} ; passé (équipe) ${String(tEvent?.past)} ; texte admin « ${admin?.text ?? ''} » ; note « ${admin?.note ?? ''} »`);
             for (const [k, v] of Object.entries(sources)) if (v !== sources.règle) diffs.push(`${c.label} : ${k} = ${v} au lieu de ${sources.règle}`);
+            if (Boolean(item) !== pastExpected) diffs.push(`${c.label} : « Mes soirées » ${item ? 'la montre' : 'ne la montre pas'} alors que la fin ${sources.règle} est ${pastExpected ? 'passée' : 'à venir'}`);
             if (tEvent && tEvent.past !== pastExpected) diffs.push(`${c.label} : équipe dit passé=${String(tEvent.past)} alors que la fin ${sources.règle} est ${pastExpected ? 'passée' : 'à venir'}`);
             const hhmm = c.expected.toISOString().slice(11, 16);
             if (admin && !admin.text.endsWith(`à ${hhmm}`)) diffs.push(`${c.label} : fiche admin « ${admin.text} » au lieu de « … à ${hhmm} »`);

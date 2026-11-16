@@ -380,7 +380,8 @@ describe('j. fiche réactivée : tout revient', () => {
             token, body: { eventId: m.ev.eventId, controllerId: m.ctrl.userId, gateId: m.gate2, gateChangeAllowed: false, canAcceptCash: true },
         }), two);
         check('POST team/invite', await api('POST', 'partner/team/invite', {
-            token, body: { event_ids: [m.ev.eventId], phone: (await newBuyer(`cvf2a-${label}-neuf`)).phoneE164, confirm_promotion: true },
+            // libellé ASCII : newBuyer en tire l'adresse e-mail (run 233 : « réactivée » → adresse refusée par GoTrue)
+            token, body: { event_ids: [m.ev.eventId], phone: (await newBuyer('cvf2a-reactivation-neuf')).phoneE164, confirm_promotion: true },
         }), two);
         return failures;
     }
@@ -405,7 +406,7 @@ describe('j. fiche réactivée : tout revient', () => {
         console.log(`[CVF2A-1] partner_status_set SUSPENDU → ${susp.error ? susp.error.message : JSON.stringify(susp.data).slice(0, 300)}`);
         assert.equal((susp.data as Row | null)?.ok, true, `suspension (montage) : ${JSON.stringify(susp.data ?? susp.error)}`);
         const { data: evSusp } = await service.from('events').select('status').eq('id', m.ev.eventId).single();
-        const back = await service.rpc('partner_status_set', { p: { partner_id: m.P.partnerId, actor_id: sa.userId, status: 'VALIDE', reason: null } });
+        const back = await service.rpc('partner_status_set', { p: { partner_id: m.P.partnerId, actor_id: sa.userId, status: 'VALIDE', reason: 'Réactivation (contre-vérification de la finition 2a)' } });
         console.log(`[CVF2A-1] partner_status_set VALIDE → ${back.error ? back.error.message : JSON.stringify(back.data).slice(0, 300)}`);
         assert.equal((back.data as Row | null)?.ok, true, `réactivation (montage) : ${JSON.stringify(back.data ?? back.error)}`);
         const { data: evBack } = await service.from('events').select('status').eq('id', m.ev.eventId).single();
