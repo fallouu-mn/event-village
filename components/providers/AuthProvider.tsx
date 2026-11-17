@@ -69,6 +69,9 @@ function LazyOfflineTicketsSync() {
  * fermé » signalé par le scanner. */
 const SCANNER_EVENTS = ['visibilitychange', 'ev:scanner-refresh'];
 
+/** Cvf2b 6.2 : pages d'authentification, sans donnée du compte, jamais remplacées par l'écran « déconnecté ». */
+const AUTH_PAGES = ['/login', '/register', '/forgot-password', '/reset-password'];
+
 export interface UserProfile {
     id: string;
     first_name: string;
@@ -127,7 +130,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    /** Sécurité (déconnexion sans réseau) : « Vous êtes déconnecté de ce téléphone. » à la place de la page (signOut). */
+    /**
+     * Sécurité (déconnexion sans réseau) : « Vous êtes déconnecté de ce téléphone. » à la place de la page (signOut).
+     * Cvf2b 6.2 : aussi sur tout SIGNED_OUT, dans TOUS les onglets (autre onglet, autre appareil, session refusée) : un
+     * écran personnel déjà affiché (administration, scanner, portefeuille…) ne reste pas lisible.
+     */
     const [signedOut, setSignedOut] = useState(false);
     const router = useRouter();
     const pathname = usePathname();
@@ -196,6 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Finition 2b (C) : brouillons du formulaire d'événement aussi (autre onglet, autre appareil, autres
                     // boutons de déconnexion : contrôleur, mot de passe réinitialisé)
                     clearAllDrafts();
+                    setSignedOut(true); // cvf2b 6.2 : la page affichée est remplacée, dans tous les onglets
                 } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
                     void clearOfflineStore();
                 } else if (event === 'INITIAL_SESSION' && !nextUserId && sessionEnded()) {
@@ -317,7 +325,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }}
         >
             {syncOfflineTickets && <LazyOfflineTicketsSync />}
-            {signedOut && pathname !== '/login' ? (
+            {signedOut && !AUTH_PAGES.includes(pathname) ? (
                 <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface-sunken p-6 text-center text-fg">
                     <p role="status" className="text-lg font-semibold">Vous êtes déconnecté de ce téléphone.</p>
                     <LinkButton href="/login?message=deconnecte">Se connecter</LinkButton>
