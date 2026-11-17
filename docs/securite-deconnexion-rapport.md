@@ -14,7 +14,7 @@ Branche `securite/deconnexion-hors-ligne`, partie de `finition-2b/creation` (`28
 - une fois la session révoquée, l'écran de connexion s'ouvre avec le même message ;
 - même règle pour le scanner (et l'en-tête du contrôleur) et pour « Déconnecter tous mes appareils » (toutes les sessions du compte, révocation journalisée).
 
-**Preuves.** Rouge au run 300 (tests seuls, § 4) ; vert au run rapide 303 et au run complet RUN_COMPLET.
+**Preuves.** Rouge au run 300 (tests seuls, § 4) ; vert au run rapide 303 et au run complet 315.
 
 ## 1. À l'écran
 
@@ -45,11 +45,11 @@ Budgets inchangés. Pour faire de la place, deux modules sortent du code chargé
 
 | Route | Budget | 2b (run 285) | Ce lot, CI |
 |---|---|---|---|
-| `/` | 226 342 | 226 300 | JS_ACCUEIL |
-| `/events/[id]` | 233 316 | 232 938 | JS_EVENEMENT |
-| `/tickets` | 250 417 | 249 690 | JS_BILLETS |
-| `/controller/scanner` | 234 911 | 233 887 | JS_SCANNER |
-| `/billet/hors-ligne` | 224 268 | 221 850 | JS_HORS_LIGNE |
+| `/` | 226 342 | 226 300 | 225 706 |
+| `/events/[id]` | 233 316 | 232 938 | 232 352 |
+| `/tickets` | 250 417 | 249 690 | 249 859 |
+| `/controller/scanner` | 234 911 | 233 887 | 232 092 |
+| `/billet/hors-ligne` | 224 268 | 221 850 | 221 335 |
 
 ## 4. Runs
 
@@ -58,7 +58,9 @@ Budgets inchangés. Pour faire de la place, deux modules sortent du code chargé
 | 300 | `22b61315e` | Tests seuls, run complet (rouge attendu) | **Rouge pour la bonne raison** : seule `securite-deconnexion` rouge sur 459 suites (module absent, ancien code ; le témoin de la cause dans auth-js vert) ; e2e : seule la phase `deconnexion` rouge. Sans réseau, aucun message, et les cookies `sb-127-auth-token.0` et `.1` restent ; au retour du réseau, `/api/tickets` et `/api/auth/me` repartent avec l'ancienne session, et l'écran de connexion arrive sans le message. Dans ce run, le compte n'a pas été rouvert : le réseau est revenu pendant que l'ancien code réessayait encore, ce qui a fini par fermer la session. Job arrêté par sa limite de 90 min juste après l'e2e (machine lente, § 5). |
 | 303 | `8b7086287` | Correctif, mode rapide (43 suites qui lisent un fichier modifié, plus les suites d'audit de l'authentification) | **43/43**. Témoin : `auth.signOut` sans réseau rend `AuthRetryableFetchError` et laisse les deux cookies de session. Retour du réseau : 4 requêtes, la révocation en premier : déconnexion avec l'ancien jeton (refusée), nouveau jeton, déconnexion. |
 | 307 | `fa465ba71` | Run complet | Suites **459/459**, poids JavaScript vert (`/` 225 675 pour 226 342), toutes les phases e2e vertes sauf `deconnexion`, rouge sur un seul constat : au retour du réseau, l'écran de connexion n'est pas venu dans les 30 s (page restée sur l'écran « déconnecté »). Les autres constats étaient verts : message et cookies effacés sans réseau, révocation faite, aucun compte ensuite, aucune requête avec l'ancien jeton. Cause probable, non prouvée faute de trace : le rappel attendait un second effacement local avant de naviguer, ou le premier essai au retour du réseau est parti trop tôt, le suivant n'arrivant que 30 s plus tard. Corrigé (commit `e9b495f86`) : navigation d'abord, effacement ensuite sans l'attendre ; nouveaux essais à 1 s, 2 s, 4 s… jusqu'à 30 s, en repartant de 1 s au retour du réseau. |
-| RUN_COMPLET | COMPLET_SHA | Run complet final | COMPLET_RESULTAT |
+| 315 | `6d6d37706` | Run complet final | **Vert** : suites 459/459 (dont `tests/audit/` et `tests/audit-auth/`) ; build et poids JavaScript verts (§ 3) ; e2e : 11/11 phases vertes, dont `deconnexion` (verte) ; job success en 87 min. |
+
+Le run complet final a été poussé pendant le run 314 d'une autre branche (`ci/parallele`). La CI était occupée sans interruption par d'autres sessions depuis 11 h 46, et l'API de GitHub, partagée par les sessions de ce poste, refusait les interrogations pendant le seul créneau libre. Les runs de branches différentes ne s'annulent pas entre eux.
 
 ## 5. Tests et infrastructure
 
