@@ -273,3 +273,16 @@ describe('contre-vérification T4 : création d’un administrateur et grille de
         assert.match(perms, /const identity = await requireAdminIdentity\(req, auth\.user!\.id\);\s*if \(!identity\.ok\) return identity\.response;/);
     });
 });
+
+// ── Contre-vérification, T5 : routes de compte par requireActiveSession (code administrateur d'un admin) ───────────
+
+describe('contre-vérification T5 : routes de compte qui servaient un admin sans le code', () => {
+    test('GET /api/referrals/my-stats et DELETE /api/push/subscriptions passent par requireActiveSession', () => {
+        const stats = read('app/api/referrals/my-stats/route.ts');
+        assert.match(stats, /export async function GET[\s\S]*?const session = await requireActiveSession\(req[^)]*\);\s*if \(session\.response\) return session\.response;/);
+        assert.doesNotMatch(stats, /getAuthenticatedUser\(/, 'plus aucune lecture de session sans le contrôle de l’administration');
+        const push = read('app/api/push/subscriptions/route.ts');
+        assert.match(push, /export async function DELETE[\s\S]*?const session = await requireActiveSession\(req[^)]*\);\s*if \(session\.response\) return session\.response;/);
+        assert.doesNotMatch(push, /getServerSessionUser\(/, 'plus aucune lecture de session sans le contrôle de l’administration');
+    });
+});
