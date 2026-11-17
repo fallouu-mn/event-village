@@ -1,0 +1,264 @@
+TAP version 13
+[CVF3D-1a] début sans mot de passe récent : HTTP 403 {"error":"Par sécurité, saisissez votre mot de passe pour continuer.","code":"PASSWORD_CONFIRMATION_REQUIRED"} ; SMS au nouveau numéro : 0 ; demandes : 0
+# Subtest: 1. preuves exigées du SUPERADMIN
+    # Subtest: a. sans mot de passe récent : 403 PASSWORD_CONFIRMATION_REQUIRED, aucun SMS, aucune demande
+    ok 1 - a. sans mot de passe récent : 403 PASSWORD_CONFIRMATION_REQUIRED, aucun SMS, aucune demande
+      ---
+      duration_ms: 410.561247
+      type: 'test'
+      ...
+[CVF3D-1b] début sans code récent : HTTP 403 {"error":"Par sécurité, saisissez le code administrateur reçu par SMS pour continuer.","code":"ADMIN_CODE_CONFIRMATION_REQUIRED"} ; SMS : 0 ; demandes : 0
+    # Subtest: b. mot de passe saisi mais code administrateur de plus de 10 minutes : 403 ADMIN_CODE_CONFIRMATION_REQUIRED, aucun SMS
+    ok 2 - b. mot de passe saisi mais code administrateur de plus de 10 minutes : 403 ADMIN_CODE_CONFIRMATION_REQUIRED, aucun SMS
+      ---
+      duration_ms: 412.301002
+      type: 'test'
+      ...
+    1..2
+ok 1 - 1. preuves exigées du SUPERADMIN
+  ---
+  duration_ms: 823.590898
+  type: 'suite'
+  ...
+[CVF3D-1c] bon code après expiration : HTTP 410 {"error":"Le code a expiré : recommencez le changement.","code":"CODE_EXPIRED"} ; numéro du compte : +221774639565
+# Subtest: 1. preuve du nouveau numéro
+    # Subtest: c. code périmé (demande de plus de 10 minutes) : 410 CODE_EXPIRED, numéro inchangé
+    ok 1 - c. code périmé (demande de plus de 10 minutes) : 410 CODE_EXPIRED, numéro inchangé
+      ---
+      duration_ms: 552.811923
+      type: 'test'
+      ...
+[CVF3D-1d] code d'une autre demande : HTTP 400 {"error":"Code incorrect.","code":"INVALID_CODE"} ; demande remplacée : HTTP 409 {"error":"Cette demande n’est plus valable : recommencez le changement.","code":"REQUEST_CLOSED"} ; demande d'un autre Superadmin : HTTP 404 {"error":"Demande introuvable : recommencez le changement.","code":"REQUEST_NOT_FOUND"} ; numéros : +221774640415, +221774640708
+    # Subtest: d. nouveau numéro non prouvé : code d'une autre demande, demande remplacée, demande d'un autre Superadmin
+    ok 2 - d. nouveau numéro non prouvé : code d'une autre demande, demande remplacée, demande d'un autre Superadmin
+      ---
+      duration_ms: 1180.00753
+      type: 'test'
+      ...
+[CVF3D-1e] essais faux un à un : 400 INVALID_CODE | 400 INVALID_CODE | 400 INVALID_CODE | 400 INVALID_CODE | 429 TOO_MANY_ATTEMPTS ; bon code ensuite : HTTP 409 {"error":"Cette demande n’est plus valable : recommencez le changement.","code":"REQUEST_CLOSED"} ; demande : {"id":"6cb128d2-bd77-40bc-91a0-94fff4d055b8","status":"FAILED","attempts":5,"new_phone":"+221774641440","actor_id":"20a73a3b-0ef8-46cb-9a96-56146a4e234b"}
+[CVF3D-1e] 8 essais faux en parallèle : 400 INVALID_CODE | 400 INVALID_CODE | 429 TOO_MANY_ATTEMPTS | 400 INVALID_CODE | 400 INVALID_CODE | 409 REQUEST_CLOSED | 409 REQUEST_CLOSED | 409 REQUEST_CLOSED ; bon code ensuite : HTTP 409 {"error":"Cette demande n’est plus valable : recommencez le changement.","code":"REQUEST_CLOSED"} ; demande : {"id":"d99672c7-d014-467f-937c-5c8a6eb1a6ac","status":"FAILED","attempts":5,"new_phone":"+221774641971","actor_id":"78f4c9df-b05b-46f5-8de3-709e29712c92"}
+    # Subtest: e. code deviné : 5 essais faux puis le bon (refusé) ; 8 essais faux en parallèle : 5 comptés au plus, bon code refusé
+    ok 3 - e. code deviné : 5 essais faux puis le bon (refusé) ; 8 essais faux en parallèle : 5 comptés au plus, bon code refusé
+      ---
+      duration_ms: 1066.23379
+      type: 'test'
+      ...
+    1..3
+ok 2 - 1. preuve du nouveau numéro
+  ---
+  duration_ms: 2799.382377
+  type: 'suite'
+  ...
+[CVF3D-1f] cible SUPERADMIN : HTTP 409 {"error":"Le numéro d’un Superadmin ne se change pas ici : il le change lui-même, avec ses codes de secours.","code":"TARGET_IS_SUPERADMIN"} ; [CVF3D-1g] cible soi-même : HTTP 409 {"error":"Votre propre numéro se change depuis « Sécurité du compte », pas depuis la liste des comptes.","code":"SELF_TARGET"} ; SMS : 0
+# Subtest: 1. qui peut viser qui
+    # Subtest: f. cible SUPERADMIN : 409 TARGET_IS_SUPERADMIN ; g. cible soi-même : 409 SELF_TARGET ; aucun SMS
+    ok 1 - f. cible SUPERADMIN : 409 TARGET_IS_SUPERADMIN ; g. cible soi-même : 409 SELF_TARGET ; aucun SMS
+      ---
+      duration_ms: 444.033201
+      type: 'test'
+      ...
+[CVF3D-1h] ADMIN : HTTP 403 {"error":"Seul un Superadmin change le numéro d’un administrateur.","code":"SUPERADMIN_ONLY"} | HTTP 403 {"error":"Seul un Superadmin change le numéro d’un administrateur.","code":"SUPERADMIN_ONLY"} | HTTP 403 {"error":"Seul un Superadmin change le numéro d’un administrateur.","code":"SUPERADMIN_ONLY"} | HTTP 403 {"error":"Seul un Superadmin change le numéro d’un administrateur.","code":"SUPERADMIN_ONLY"}
+    # Subtest: h. ADMIN muni de users.write, identité confirmée, qui vise un ADMIN, un client ou lui-même : 403, aucun SMS
+    ok 2 - h. ADMIN muni de users.write, identité confirmée, qui vise un ADMIN, un client ou lui-même : 403, aucun SMS
+      ---
+      duration_ms: 882.055504
+      type: 'test'
+      ...
+    1..2
+ok 3 - 1. qui peut viser qui
+  ---
+  duration_ms: 1326.398319
+  type: 'suite'
+  ...
+[CVF3D-1i1] HTTP 200 {"ok":true,"sessions_revoked":1} | HTTP 409 {"error":"Cette demande n’est plus valable : recommencez le changement.","code":"REQUEST_CLOSED"} ; journal ADMIN_PHONE_CHANGED : 1 ; compte +221774643824 ; connexion 221774643824
+# Subtest: 1. requêtes simultanées
+    # Subtest: i1. deux validations du bon code en même temps : un seul changement
+    ok 1 - i1. deux validations du bon code en même temps : un seul changement
+      ---
+      duration_ms: 481.251573
+      type: 'test'
+      ...
+[CVF3D-1i2] débuts : HTTP 200 {"ok":true,"request_id":"8514f390-bd8e-4db0-8f8c-d93062072506","expires_at":"2026-11-17T20:07:24.901004+00:00"} | HTTP 200 {"ok":true,"request_id":"29e21d76-612b-4813-9508-cc18e0d2a895","expires_at":"2026-11-17T20:07:24.903048+00:00"} ; demandes ouvertes : 1 ; validations : 18 → 409 REQUEST_CLOSED | 19 → 200 ok ; compte +221774644319 ; connexion 221774644319
+    # Subtest: i2. deux débuts en même temps pour deux numéros : une seule demande ouverte, l'autre ne valide rien
+    ok 2 - i2. deux débuts en même temps pour deux numéros : une seule demande ouverte, l'autre ne valide rien
+      ---
+      duration_ms: 511.587777
+      type: 'test'
+      ...
+[CVF3D-1i3] validation : HTTP 409 {"error":"Le nouveau numéro n’a pas été prouvé par son code.","code":"NOT_VERIFIED"} ; nouveau début : HTTP 200 {"ok":true,"request_id":"017736bf-d8a7-425b-87b5-e36111fe4532","expires_at":"2026-11-17T20:07:25.423667+00:00"} ; demandes : CANCELLED, PENDING ; compte +221774644672 ; connexion 221774644672
+    # Subtest: i3. validation et nouveau début en même temps : numéro de connexion et numéro du compte identiques
+    ok 3 - i3. validation et nouveau début en même temps : numéro de connexion et numéro du compte identiques
+      ---
+      duration_ms: 486.869273
+      type: 'test'
+      ...
+    1..3
+ok 4 - 1. requêtes simultanées
+  ---
+  duration_ms: 1479.970987
+  type: 'suite'
+  ...
+[CVF3D-1j1] changement : HTTP 200 {"ok":true,"sessions_revoked":3} ; /api/auth/me : HTTP 401 {"authenticated":false,"profile":null,"roles":[]} ; /api/partner/team/organizers : HTTP 401 {"error":"Authentification requise.","code":"AUTH_REQUIRED"} ; rafraîchissement : 400 Invalid Refresh Token: Refresh Token Not Found ; sessions : 0 ; appareils : 0
+# Subtest: 1. sessions et appareils de l'ADMIN visé, après le changement
+    # Subtest: j1. routes de l'application, jeton de rafraîchissement, sessions et appareils : tout est refusé ou retiré
+    ok 1 - j1. routes de l'application, jeton de rafraîchissement, sessions et appareils : tout est refusé ou retiré
+      ---
+      duration_ms: 34.042218
+      type: 'test'
+      ...
+[CVF3D-1j2] comptes d'autrui lus par la REST : avant le changement 20 et 20 ; après : 20 et 20 ; lignes admin_session_codes restantes : 3
+    # Subtest: j2. jeton d'accès déjà ouvert, par la REST : plus aucun compte d'autrui (pouvoir d'administration retiré)
+    not ok 2 - j2. jeton d'accès déjà ouvert, par la REST : plus aucun compte d'autrui (pouvoir d'administration retiré)
+      ---
+      duration_ms: 15.253009
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:2:21831'
+      failureType: 'testCodeFailure'
+      error: |-
+        jeton de la session révoquée : 20 compte(s) d'autrui encore lus par la REST
+        
+        20 !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      actual: 20
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:324:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+[CVF3D-1j3] sentinelle ecd75b1f-b16a-476a-bb15-85800a922333 : reçue par le témoin ; reçue par l'ADMIN visé après la révocation : OUI
+    # Subtest: j3. abonnement temps réel ouvert avant le changement : plus aucun signal d'administration
+    not ok 3 - j3. abonnement temps réel ouvert avant le changement : plus aucun signal d'administration
+      ---
+      duration_ms: 3369.773043
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:2:22976'
+      failureType: 'testCodeFailure'
+      error: |-
+        ADMIN visé, session révoquée : aucun signal d'administration : 1 message(s) reçu(s)
+          INSERT admin_signals commit=2026-11-17T19:57:30.434Z reçu=2026-11-17T19:57:30.572Z retard=138 ms {"id":"b0f5060f-897b-4fe0-91bc-abb70e29f222","kind":"PARTNER_REGISTERED","ref_id":"ecd75b1f-b16a-476a-bb15-85800a922333","created_at":"2026-11-17T19:57:30.423532+00:00"}
+        + actual - expected
+        
+        + [
+        +   {
+        +     commitTimestamp: '2026-11-17T19:57:30.434Z',
+        +     eventType: 'INSERT',
+        +     new: {
+        +       created_at: '2026-11-17T19:57:30.423532+00:00',
+        +       id: 'b0f5060f-897b-4fe0-91bc-abb70e29f222',
+        +       kind: 'PARTNER_REGISTERED',
+        +       ref_id: 'ecd75b1f-b16a-476a-bb15-85800a922333'
+        +     },
+        +     old: {},
+        +     receivedAt: 1794945450572,
+        +     table: 'admin_signals'
+        +   }
+        + ]
+        - []
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+        0:
+          eventType: 'INSERT'
+          table: 'admin_signals'
+          new:
+            id: 'b0f5060f-897b-4fe0-91bc-abb70e29f222'
+            kind: 'PARTNER_REGISTERED'
+            ref_id: 'ecd75b1f-b16a-476a-bb15-85800a922333'
+            created_at: '2026-11-17T19:57:30.423532+00:00'
+          old:
+          commitTimestamp: '2026-11-17T19:57:30.434Z'
+          receivedAt: 1794945450572
+      operator: 'deepStrictEqual'
+      stack: |-
+        expectNothing (/home/runner/work/event-village/event-village/tests/helpers/realtime.ts:315:12)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:336:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 5 - 1. sessions et appareils de l'ADMIN visé, après le changement
+  ---
+  duration_ms: 8792.747461
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:2:18603'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CVF3D-1k] ADMIN (code de l'appareil vieux de 2 h, aucun Superadmin) : début HTTP 200 {"ok":true,"message":"Code de confirmation envoyé par SMS au nouveau numéro."} ; SMS au nouveau numéro : 1 ; validation HTTP 200 {"ok":true} ; numéro du compte : +221774653919 (avant : +221774653688)
+# Subtest: 1. autre chemin
+    # Subtest: k. l'ADMIN change lui-même son numéro par l'écran client (Profil), sans le Superadmin : refusé
+    not ok 1 - k. l'ADMIN change lui-même son numéro par l'écran client (Profil), sans le Superadmin : refusé
+      ---
+      duration_ms: 300.974296
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:2:23790'
+      failureType: 'testCodeFailure'
+      error: |-
+        numéro de l'ADMIN changé sans le Superadmin (+221774653919)
+        + actual - expected
+        
+        + '221774653919'
+        - '221774653688'
+                    ^
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: '221774653688'
+      actual: '221774653919'
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:354:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 6 - 1. autre chemin
+  ---
+  duration_ms: 301.097807
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvf3d-1-numero-admin.test.ts:2:23741'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] cvf3d-1-numero-admin — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf3d-1-numero-admin — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf3d-1-numero-admin — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf3d-1-numero-admin — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf3d-1-numero-admin — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf3d-1-numero-admin — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf3d-1-numero-admin — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cvf3d-1-numero-admin — envoyeur : 162 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cvf3d-1-numero-admin — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cvf3d-1-numero-admin — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cvf3d-1-numero-admin — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cvf3d-1-numero-admin — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cvf3d-1-numero-admin — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cvf3d-1-numero-admin — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cvf3d-1-numero-admin — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cvf3d-1-numero-admin — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cvf3d-1-numero-admin — (f) : 0 violation(s)
+[INVARIANT-FINITION3A] cvf3d-1-numero-admin : 0 violation(s)
+[INVARIANT-FINITION3B] cvf3d-1-numero-admin — (h1) : 0 violation(s)
+[INVARIANT-FINITION3D] cvf3d-1-numero-admin — (i1) : 0 violation(s)
+1..6
+# tests 14
+# suites 6
+# pass 11
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 25227.812549
