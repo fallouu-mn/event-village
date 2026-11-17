@@ -1,0 +1,117 @@
+[brouillon] brouillon ignoré (forme inattendue)
+[CVF2B-5] a. clés : ["ev-brouillon:v1:f0de16e1-232f-41be-85b1-6d4902c75f6c:fc2ab4c2-7db8-4033-b3a0-931f986af9c1","ev-brouillon:v1:f0de16e1-232f-41be-85b1-6d4902c75f6c:nouveau"] ; B lit modification=null création=null recopié=null ; clé recopiée restante=false
+[CVF2B-5] b. préfixe écrit « ev-brouillon:v1: », préfixe purgé « ev-brouillon: » ; avant ["ev-brouillon:v1:ef03e551-2f1e-423a-8627-9a12319388a5:nouveau","ev-brouillon:v1:f0de16e1-232f-41be-85b1-6d4902c75f6c:fc2ab4c2-7db8-4033-b3a0-931f986af9c1","ev-brouillon:v1:f0de16e1-232f-41be-85b1-6d4902c75f6c:nouveau","ev-brouillon:v2:ancien-format","ev-theme"] ; après ["ev-theme"]
+[CVF2B-5] c. branche « SIGNED_IN d'un autre compte » d'AuthProvider : else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) { void clearOfflineStore(); }
+[CVF2B-5] c. brouillon de A lisible en clair dans localStorage pendant la session de B : {"v":1,"userId":"f0de16e1-232f-41be-85b1-6d4902c75f6c","eventId":"fc2ab4c2-7db8-4033-b3a0-931f986af9c1","savedAt":"2026-11-17T20:46:08.375Z","data":{"title":"Gala privé de A","phone":"+221 77 000 00 01","note":"tarif négocié 15 000"}}
+[CVF2B-5] d. purges des brouillons dans l'écouteur : 1 ; hors SIGNED_OUT et hors condition sur previousUserId : 0 ; lastUserIdRef remis à null à chaque chargement : true
+[CVF2B-5] d. condition de la branche SIGNED_IN : else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) 
+GoTrueClient@sb-127-auth-token:1 (2.114.0) 2026-11-17T20:46:08.411Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key.
+TAP version 13
+# Subtest: a. clé et contenu propres au compte
+    # Subtest: B (même équipe, même événement, création comme modification) ne reprend jamais le brouillon de A
+    ok 1 - B (même équipe, même événement, création comme modification) ne reprend jamais le brouillon de A
+      ---
+      duration_ms: 10.477793
+      type: 'test'
+      ...
+    1..1
+ok 1 - a. clé et contenu propres au compte
+  ---
+  duration_ms: 11.592262
+  type: 'suite'
+  ...
+# Subtest: b. la purge couvre toutes les clés du module
+    # Subtest: préfixe de draft-purge ⊇ préfixe de local-draft ; brouillons de tous les comptes effacés, autres clés gardées
+    ok 1 - préfixe de draft-purge ⊇ préfixe de local-draft ; brouillons de tous les comptes effacés, autres clés gardées
+      ---
+      duration_ms: 7.738547
+      type: 'test'
+      ...
+    1..1
+ok 2 - b. la purge couvre toutes les clés du module
+  ---
+  duration_ms: 7.973786
+  type: 'suite'
+  ...
+# Subtest: c-d. changement de compte sans déconnexion explicite
+    # Subtest: c. SIGNED_IN d’un autre compte (onglet ouvert) : les brouillons de l’ancien compte sont effacés
+    not ok 1 - c. SIGNED_IN d’un autre compte (onglet ouvert) : les brouillons de l’ancien compte sont effacés
+      ---
+      duration_ms: 4.997798
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvf2b-5-brouillon.test.ts:2:5637'
+      failureType: 'testCodeFailure'
+      error: "SIGNED_IN d'un autre compte : les brouillons du compte précédent ne sont pas effacés (seuls les billets hors ligne le sont) — else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) { void clearOfflineStore(); }"
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
+                            void clearOfflineStore();
+                        }
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvf2b-5-brouillon.test.ts:104:16)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: d. session close à l’insu du navigateur puis connexion de B (page rechargée) : purge indépendante de la mémoire de l’onglet
+    not ok 2 - d. session close à l’insu du navigateur puis connexion de B (page rechargée) : purge indépendante de la mémoire de l’onglet
+      ---
+      duration_ms: 1.196621
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvf2b-5-brouillon.test.ts:2:6764'
+      failureType: 'testCodeFailure'
+      error: 'aucune purge des brouillons quand la session de A s’est close sans SIGNED_OUT (cookies effacés par le serveur) puis que B se connecte après un rechargement : la seule purge au changement de compte exige previousUserId (lastUserIdRef, perdu au rechargement), la seule autre exige SIGNED_OUT'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvf2b-5-brouillon.test.ts:122:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..2
+not ok 3 - c-d. changement de compte sans déconnexion explicite
+  ---
+  duration_ms: 6.411523
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvf2b-5-brouillon.test.ts:2:5548'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CVF2B-5] e. onglet 1 : SIGNED_IN, INITIAL_SESSION, SIGNED_OUT ; onglet 2 : INITIAL_SESSION, SIGNED_IN, SIGNED_OUT ; session lue par l'onglet 2 après : aucune
+[CVF2B-5] e. sauvegarde différée : tPayload(draft.data.values).payload) === JSON.stringify(baseline)) { clearDraft(userId, eventId); return; } setResumable(draft); }, [userId, isEdit, eventId, load.state, baseline]); useEffect(() => { if (!userId || resumable || leaving || !fieldsDirty && (isEdit || (categories.length === 0 && zones === null))) return undefined; const timer = window.setTimeout(() => { writeDraft(userId, eventId, { values, categories: isEdit ? [] : categories, zones: isEdit ? null : zones, step }); }, 800); return…
+# Subtest: e. autre onglet
+    # Subtest: « Se déconnecter » dans l’onglet 1 : l’onglet 2 reçoit SIGNED_OUT et efface les brouillons ; son formulaire s’arrête
+    ok 1 - « Se déconnecter » dans l’onglet 1 : l’onglet 2 reçoit SIGNED_OUT et efface les brouillons ; son formulaire s’arrête
+      ---
+      duration_ms: 65.413522
+      type: 'test'
+      ...
+    1..1
+ok 4 - e. autre onglet
+  ---
+  duration_ms: 65.783401
+  type: 'suite'
+  ...
+1..4
+# tests 5
+# suites 4
+# pass 3
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 100.619273
