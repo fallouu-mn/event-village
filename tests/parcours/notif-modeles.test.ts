@@ -1182,6 +1182,9 @@ function lot9quinquiesExpected(): ExpectedType[] {
         // Correctifs de la contre-vérification (migration 20261115000014) : contrôleur devenu compte d'administration,
         // retiré de l'équipe ; cloche, push et email, sans SMS. Ajout signalé.
         ess('CONTROLLER_BECAME_ADMIN', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Contrôleur retiré de votre équipe'),
+        // Finition 3d (point 4a, migration 20261120000002) : espèces marquées rendues par un admin, avis à l'organisatrice
+        // (cloche, push, email), reçu même fiche suspendue. Ajout signalé.
+        ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
     ];
 }
 

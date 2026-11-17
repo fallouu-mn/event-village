@@ -160,10 +160,18 @@ async function adminMark(admin: TestAdmin, c: CashCase, paymentId: string, body:
         ctx({ id: c.ev.eventId, paymentId }));
 }
 
-/** Lignes de la boîte d'envoi de l'événement créées après `since`, hors avis à l'organisatrice de la 3d. */
-async function clientSideNotices(eventId: string, since: string): Promise<Row[]> {
-    const { data, error } = await service.from('notification_outbox').select('type, channel, recipient_user_id, recipient_phone')
-        .eq('event_id', eventId).gt('created_at', since).neq('type', 'CASH_REFUND_MARKED_BY_ADMIN');
+/** Identifiants des lignes de la boîte d'envoi de l'événement, hors avis à l'organisatrice de la 3d. */
+async function outboxIds(eventId: string): Promise<Set<string>> {
+    const { data, error } = await service.from('notification_outbox').select('id').eq('event_id', eventId).neq('type', 'CASH_REFUND_MARKED_BY_ADMIN');
+    assert.equal(error, null, error?.message);
+    return new Set((data ?? []).map((r) => String(r.id)));
+}
+
+/** Lignes apparues entre deux instantanés (type, canal, destinataire). */
+async function addedRows(before: Set<string>, after: Set<string>): Promise<Row[]> {
+    const ids = [...after].filter((id) => !before.has(id));
+    if (ids.length === 0) return [];
+    const { data, error } = await service.from('notification_outbox').select('type, channel, recipient_user_id, recipient_phone').in('id', ids);
     assert.equal(error, null, error?.message);
     return (data ?? []) as Row[];
 }
@@ -227,16 +235,19 @@ describe('4a. espèces marquées rendues par un admin (refunds.manage), à la pl
 
     test('le client reçoit le même avis que si l’organisatrice avait marqué : aucun, dans un cas comme dans l’autre', async () => {
         const other = await cancelledEventWithCashSales('b');
-        const since = new Date(Date.now() - 1000).toISOString();
+        // Instantanés de la boîte d'envoi (run 294 : une fenêtre d'une seconde comptait les avis de l'annulation, faite juste avant)
+        const s0 = await outboxIds(other.ev.eventId);
         const handler = await routeHandler(PARTNER_MARK_ROUTE, 'POST', 'POST /api/partner/events/[id]/cash-refunds/[paymentId]');
         const own = await invoke(handler, jsonRequest(`/api/partner/events/${other.ev.eventId}/cash-refunds/${String(other.sales[0].id)}`, 'POST', other.owner.accessToken, {}),
             ctx({ id: other.ev.eventId, paymentId: String(other.sales[0].id) }));
         assert.equal(own.status, 200, show(own));
-        const byOwner = await clientSideNotices(other.ev.eventId, since);
+        const s1 = await outboxIds(other.ev.eventId);
         const r = await adminMark(refunder, other, String(other.sales[1].id), { reason: 'Rendues par la billetterie' });
         assert.equal(r.status, 200, show(r));
-        const both = await clientSideNotices(other.ev.eventId, since);
-        assert.deepEqual(both, byOwner, 'le marquage par un admin ne doit rien envoyer de plus au client');
+        const s2 = await outboxIds(other.ev.eventId);
+        const byOwner = await addedRows(s0, s1);
+        const byAdmin = await addedRows(s1, s2);
+        assert.deepEqual(byAdmin, byOwner, 'le marquage par un admin ne doit rien envoyer de plus au client que celui de l’organisatrice');
         assert.deepEqual(byOwner, [], 'aucun avis au client aujourd’hui quand l’organisatrice marque');
     });
 
