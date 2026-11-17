@@ -545,6 +545,12 @@ const FINITION3D_RPCS: Array<[string, Record<string, unknown>]> = [
     ['event_cash_refund_mark_admin', { p: {} }],
     ['admin_identity_check', { p: {} }],
     ['admin_role_change', { p: {} }],
+    ['admin_backup_codes_generate', { p: {} }],
+    ['admin_backup_codes_status', { p: {} }],
+    ['admin_backup_code_use', { p: {} }],
+    ['admin_phone_change_start', { p: {} }],
+    ['admin_phone_change_verify', { p: {} }],
+    ['admin_phone_change_finalize', { p: {} }],
 ];
 
 describe('R3 — finition 3d : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {

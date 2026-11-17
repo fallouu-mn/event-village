@@ -11,6 +11,13 @@
  *    ligne pour l'argent : « Argent qui attend : {n} versements à reprendre, {n} créances », qui mène au bloc
  *    (#argent-qui-attend). Composition dans une fonction pure (todoMoneyLine, lib/admin/todo.ts) : seules les parties
  *    ouvertes aux droits de l'administrateur ; un compteur illisible le dit, jamais 0 ; tout à zéro → groupe « À jour ».
+ * 2. Téléphone perdu, écrans : « J'ai perdu mon téléphone » dans la fenêtre du code administrateur (mot de passe et code de
+ *    secours, puis la page « Sécurité du compte » pour changer son numéro) ; proposition des codes de secours après la
+ *    double vérification ; page « Sécurité du compte » au menu du SUPERADMIN seulement ; codes montrés une seule fois avec
+ *    « Imprimez-les ou notez-les en lieu sûr » ; « Changer le numéro » sur la ligne d'un ADMIN ; « fait » seulement sur la
+ *    réponse du serveur.
+ * 3. Changer le rôle, écrans : bouton sur la ligne d'un compte pour le SUPERADMIN, « fait » seulement si le serveur rend le
+ *    rôle demandé ; plus de choix « Superadmin » à la création d'un compte.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -119,5 +126,95 @@ describe('5. accueil : une seule ligne pour l’argent dans « À faire aujourd�
         assert.match(src, /MONEY_KEYS/, 'les lignes to_resume et debts doivent sortir de la liste des cartes');
         assert.match(src, /["']#argent-qui-attend["']/, 'le bouton doit mener au bloc « Argent qui attend »');
         assert.match(src, /Voir l’argent qui attend/);
+    });
+});
+
+// ── 2. Téléphone perdu : écrans ───────────────────────────────────────────────────────────────────────────────────
+
+type NavItem = { name: string; href: string };
+type AdminNav = { groups: Array<{ label: string; items: NavItem[] }>; proItems: NavItem[]; mobile: NavItem[] };
+
+async function navHrefs(perms: string[], superadmin: boolean): Promise<{ menu: string[]; pro: string[] }> {
+    const mod = (await import('../../components/layout/admin-nav')) as { buildAdminNav: (can: (p: string) => boolean, s: boolean) => AdminNav };
+    const nav = mod.buildAdminNav((p) => superadmin || perms.includes(p), superadmin);
+    return { menu: nav.groups.flatMap((g) => g.items.map((i) => i.href)), pro: nav.proItems.map((i) => i.href) };
+}
+
+describe('2. téléphone perdu : écrans', () => {
+    test('fenêtre du code administrateur : « J’ai perdu mon téléphone », mot de passe et code de secours, puis la page Sécurité', () => {
+        const gate = read('components/admin/AdminStepUpGate.tsx');
+        assert.match(gate, /J’ai perdu mon téléphone/, 'lien « J’ai perdu mon téléphone » absent');
+        assert.match(gate, /['"]\/api\/admin\/step-up\/recovery['"]/, 'le code de secours doit passer par /api/admin/step-up/recovery');
+        assert.match(gate, /Code de secours/, 'champ « Code de secours » absent');
+        assert.match(gate, /autoComplete="current-password"/);
+        assert.match(gate, /['"]\/admin\/securite\?numero=1['"]/, 'après le code de secours, la page Sécurité doit mener au changement de numéro');
+        assert.match(gate, /reply\.ok === true/, 'la suite ne doit venir que sur la réponse du serveur');
+        assert.match(gate, /Demandez au Superadmin de changer votre numéro/, 'un ADMIN doit être invité à s’adresser au Superadmin');
+    });
+
+    test('après la double vérification, un SUPERADMIN sans codes de secours se les voit proposer', () => {
+        const gate = read('components/admin/AdminStepUpGate.tsx');
+        assert.match(gate, /Créez vos codes de secours/);
+        assert.match(gate, /['"]\/admin\/securite\?creer=1['"]/);
+        assert.match(gate, /Plus tard/);
+        assert.match(gate, /wasSms && hasRole\('SUPERADMIN'\)/, 'la proposition doit suivre le code reçu par SMS, pour un SUPERADMIN');
+    });
+
+    test('codes de secours : montrés une seule fois, « Imprimez-les ou notez-les en lieu sûr », nombre restant, remplacer annule', () => {
+        const panel = read('components/admin/BackupCodesPanel.tsx');
+        assert.ok(panel.includes('Imprimez-les ou notez-les en lieu sûr'), 'texte exact « Imprimez-les ou notez-les en lieu sûr » absent');
+        assert.match(panel, /Ils ne s’afficheront plus jamais/);
+        assert.match(panel, /Il vous reste/);
+        assert.match(panel, /Remplacer vos codes annule les anciens/);
+        assert.match(panel, /useIdentityConfirm\(/, 'créer des codes doit demander le mot de passe et le code administrateur');
+        assert.match(panel, /reply\.codes\.length === 10/, 'les codes affichés doivent être ceux rendus par le serveur');
+        assert.doesNotMatch(panel, /localStorage|sessionStorage/, 'les codes ne doivent jamais être gardés dans le navigateur');
+    });
+
+    test('changement de numéro : code au nouveau numéro, 6 chiffres, « Numéro changé » seulement sur la réponse du serveur', () => {
+        const flow = read('components/admin/PhoneChangeFlow.tsx');
+        for (const url of ['/api/admin/security/phone/start', '/api/admin/security/phone/confirm']) assert.ok(flow.includes(url), `${url} absente`);
+        assert.match(flow, /\/api\/admin\/users\/\$\{target\.id\}\/phone\/start/);
+        assert.match(flow, /<OtpInput\b/);
+        assert.match(flow, /Envoyer le code au nouveau numéro/);
+        assert.match(flow, /if \(reply\.ok === true\) \{\s*const n = Number\(reply\.sessions_revoked/, '« Numéro changé » sans la réponse du serveur');
+        assert.match(flow, /Motif \(obligatoire\)/, 'motif obligatoire pour le numéro d’un ADMIN');
+    });
+
+    test('« Changer le numéro » : sur la ligne d’un ADMIN, pour le SUPERADMIN, jamais sur la sienne', () => {
+        const page = read('app/admin/users/page.tsx');
+        assert.match(page, /isSuperadmin && isAdmin && !isDeleted && user\.id !== me\?\.id && \(\s*<Button[\s\S]{0,120}?setPhoneTarget\(user\)/);
+        assert.match(page, /<AdminPhoneChangeDialog\b/);
+    });
+
+    test('page « Sécurité du compte » : au menu du SUPERADMIN seulement ; un ADMIN y lit qu’elle lui est fermée', async () => {
+        const superadmin = await navHrefs([], true);
+        assert.ok(superadmin.menu.includes('/admin/securite'), 'menu du SUPERADMIN sans « Sécurité du compte »');
+        assert.ok(superadmin.pro.includes('/admin/securite'));
+        const admin = await navHrefs(['users.read', 'users.write', 'settings.read'], false);
+        assert.ok(!admin.menu.includes('/admin/securite') && !admin.pro.includes('/admin/securite'), '« Sécurité du compte » au menu d’un ADMIN');
+        const page = read('app/admin/securite/page.tsx');
+        assert.match(page, /<BackupCodesPanel\b/);
+        assert.match(page, /<PhoneChangeFlow target=\{\{ kind: 'SELF' \}\}/);
+        assert.match(page, /Réservé au Superadmin/);
+    });
+});
+
+// ── 3. Changer le rôle : écrans ───────────────────────────────────────────────────────────────────────────────────
+
+describe('3. changer le rôle : écrans', () => {
+    test('« Changer le rôle » sur la ligne d’un compte, pour le SUPERADMIN ; « Quitter le rôle de Superadmin » sur la sienne', () => {
+        const page = read('app/admin/users/page.tsx');
+        assert.match(page, /isSuperadmin && !isDeleted && !isPartner/);
+        assert.match(page, /Quitter le rôle de Superadmin/);
+        assert.match(page, /Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne\./);
+    });
+
+    test('« fait » seulement si le serveur rend le rôle demandé ; motif ; confirmation de la finition 1', () => {
+        const dlg = read('components/admin/RoleChangeDialog.tsx');
+        assert.match(dlg, /reply\.ok === true && reply\.role_after === to/);
+        assert.match(dlg, /STAFF_PROMOTION_CONFIRMATION/);
+        assert.match(dlg, /Motif \(obligatoire\)/);
+        assert.match(dlg, /useIdentityConfirm\(/);
     });
 });

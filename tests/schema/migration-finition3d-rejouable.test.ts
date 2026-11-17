@@ -23,6 +23,10 @@ const FINITION3D_MIGRATIONS = [
     '20261120000002_f3d_especes.sql',
     // 3 : changer le rôle (SUPERADMIN), mot de passe et code des actions sensibles, garde du rôle SUPERADMIN
     '20261120000003_f3d_role.sql',
+    // 2b et 2c : codes de secours du SUPERADMIN (empreintes seulement), « J'ai perdu mon téléphone »
+    '20261120000004_f3d_codes_secours.sql',
+    // 2a et 2c : changement du numéro d'un administrateur, prouvé par un code au nouveau numéro
+    '20261120000005_f3d_numero_admin.sql',
 ] as const;
 
 after(async () => {
