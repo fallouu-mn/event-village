@@ -89,18 +89,25 @@ export async function revokeHeld(t: HeldTokens): Promise<'fait' | 'reseau'> {
 let held: HeldTokens | null = null;
 let then: () => void = () => {};
 let timer: ReturnType<typeof setTimeout> | undefined;
+let tries = 0;
+
+/** Retour du réseau : nouvel essai tout de suite, puis de nouveau rapprochés (le réseau peut mettre un instant à servir). */
+const onOnline = () => {
+    tries = 0;
+    void retryRevocation();
+};
 
 /**
- * Un essai de révocation des jetons gardés ; sans réseau : refait au retour du réseau (événement « online ») et toutes les
- * 30 s (un réseau présent mais sans données ne déclenche pas « online »). Fait (ou rien à révoquer) : `then` (écran de
- * connexion). Exporté pour les tests.
+ * Un essai de révocation des jetons gardés. Échec (réseau absent ou pas encore prêt, serveur indisponible) : refait au
+ * retour du réseau (événement « online ») et par une attente qui double, de 1 s à 30 s au plus (un réseau présent mais
+ * sans données ne déclenche pas « online »). Fait (ou rien à révoquer) : `then` (écran de connexion). Exporté pour les tests.
  */
 export async function retryRevocation(): Promise<void> {
     clearTimeout(timer);
-    removeEventListener('online', retryRevocation);
+    removeEventListener('online', onOnline);
     if (held ? (await revokeHeld(held)) === 'reseau' : !navigator.onLine) {
-        addEventListener('online', retryRevocation, { once: true });
-        timer = setTimeout(retryRevocation, 30_000);
+        addEventListener('online', onOnline, { once: true });
+        timer = setTimeout(retryRevocation, Math.min(30_000, 1_000 * 2 ** tries++));
         return;
     }
     held = null;
@@ -111,5 +118,6 @@ export async function retryRevocation(): Promise<void> {
 export function revokeSoon(tokens: HeldTokens | null, next: () => void): void {
     held = tokens;
     then = next;
+    tries = 0;
     void retryRevocation();
 }

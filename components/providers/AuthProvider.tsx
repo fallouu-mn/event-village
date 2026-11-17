@@ -252,7 +252,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      *  - cookies de session effacés (dropLocalSession : SIGNED_OUT, ici et dans les autres onglets) ; abonnement aux
      *    notifications retiré de ce navigateur (lot 6, F4 ; unsubscribePush) ;
      *  - révocation côté serveur avec les jetons gardés en mémoire, refaite au retour du réseau (lib/auth/sign-out-here.ts) ;
-     *    faite : session de nouveau effacée (cookie qu'une réponse en vol aurait reposé), écran de connexion avec le même message.
+     *    faite : écran de connexion avec le même message, puis session de nouveau effacée (cookie qu'une réponse en vol
+     *    aurait reposé). Run 307 : l'écran de connexion n'est pas venu dans les 30 s ; la navigation n'attend plus rien.
      * « partout » : « Déconnecter tous mes appareils » (page Profil) ; sinon CET appareil seulement (lot 9 quinquies, B4).
      */
     const signOut = async (scope?: 'partout') => {
@@ -269,9 +270,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const auth = getBrowserClient().auth;
         await dropLocalSession(auth);
         void unsubscribePush();
-        revokeSoon(held, async () => {
-            await dropLocalSession(auth);
+        revokeSoon(held, () => {
             router.replace('/login?message=deconnecte');
+            void dropLocalSession(auth); // sans l'attendre : il prévient tous les abonnés (temps réel), l'écran n'en dépend pas
         });
     };
 
