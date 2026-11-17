@@ -8,6 +8,7 @@ import { clearOfflineStore } from '@/lib/tickets/offline-store';
 import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 import { clearAllDrafts } from '@/lib/events/draft-purge';
 import { dropLocalSession, revokeSoon, unsubscribePush } from '@/lib/auth/sign-out-here';
+import { sessionEnded } from '@/lib/auth/session-signal';
 import { LinkButton } from '@/components/ui/LinkButton';
 
 /**
@@ -197,6 +198,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     clearAllDrafts();
                 } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
                     void clearOfflineStore();
+                } else if (event === 'INITIAL_SESSION' && !nextUserId && sessionEnded()) {
+                    // Cvf2b 6.5 : page chargée sans session (close à l'insu du navigateur : « Déconnecter tous mes
+                    // appareils » depuis un autre appareil, signal du middleware) : tout ce que le compte a laissé sur
+                    // l'appareil est effacé, sans attendre un SIGNED_OUT qui ne viendra pas
+                    void clearOfflineStore(true);
+                    clearAllScanMemory();
+                    clearAllDrafts();
                 }
                 if (nextUserId) {
                     lastUserIdRef.current = nextUserId;

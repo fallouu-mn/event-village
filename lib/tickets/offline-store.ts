@@ -181,9 +181,13 @@ export async function purgeExpiredLots(deviceNow: number = Date.now()): Promise<
 /**
  * Vide le stockage hors ligne (déconnexion, autre compte). Ne lève jamais : rend false après avoir journalisé
  * l'échec, pour que la déconnexion qui l'accompagne ait lieu.
+ * `onlyIfPresent` (cvf2b 6.5, chargement d'une page sans session) : la base n'est ni ouverte ni créée quand le
+ * navigateur la dit absente (indexedDB.databases) ; navigateur sans cette fonction : effacement comme sans l'option.
  */
-export async function clearOfflineStore(): Promise<boolean> {
+export async function clearOfflineStore(onlyIfPresent = false): Promise<boolean> {
     try {
+        if (onlyIfPresent && typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function'
+            && !(await indexedDB.databases()).some((d) => d.name === DB_NAME)) return true;
         await withTx([LOTS, META], 'readwrite', 'effacement du stockage hors ligne', async (tx) => {
             await req(tx.objectStore(LOTS).clear());
             await req(tx.objectStore(META).clear());
