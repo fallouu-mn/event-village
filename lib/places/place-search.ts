@@ -4,7 +4,9 @@
  *
  * Politique d'usage de Nominatim (https://operations.osmfoundation.org/policies/nominatim/), respectée ainsi :
  *  - une requête par seconde au plus, toutes instances de l'application confondues : créneau réservé en base
- *    (public.place_search_slot, espacement de 1,1 s) avant chaque appel ;
+ *    (public.place_search_slot, espacement de 1,3 s) avant chaque appel ; finition 2b : l'appel attend l'heure de son
+ *    créneau et ne part que s'il n'est pas en retard sur lui (150 ms au plus) et qu'au moins une seconde s'est écoulée
+ *    depuis le dernier appel de ce processus ; sinon un autre créneau est réservé (waitForCall) ;
  *  - application identifiée : User-Agent « EventVillage/1.0 (+<adresse du site>; <contact>) », contact réglable
  *    (NOMINATIM_CONTACT) ;
  *  - résultats gardés (public.place_search_cache, 30 jours) : une recherche déjà faite ne rappelle pas le service ;
@@ -28,6 +30,14 @@ const MAX_RESULTS = 5;
 const REQUEST_TIMEOUT_MS = 6_000;
 /** Attente maximale d'un créneau d'appel ; au-delà, la recherche est indisponible (jamais de file d'attente longue). */
 const MAX_SLOT_WAIT_MS = 4_000;
+/**
+ * Finition 2b : retard admis d'un appel sur le début de son créneau. Les créneaux sont espacés de 1,3 s en base : deux
+ * appels partis chacun dans les 150 ms de leur créneau sont séparés de 1,15 s au moins, toutes instances confondues.
+ */
+const SLOT_LATE_MAX_MS = 150;
+/** Finition 2b : écart minimal entre deux appels de ce processus, mesuré au moment de l'appel (horloge monotone). */
+const MIN_CALL_GAP_MS = 1_000;
+let lastCallAt = Number.NEGATIVE_INFINITY;
 const LABEL_MAX = 200;
 
 export interface PlaceResult {
@@ -90,14 +100,41 @@ async function keepResults(key: string, results: PlaceResult[]): Promise<void> {
     if (error) console.warn(`[places] réponse non gardée (${key}) : ${error.message}`);
 }
 
-/** Créneau d'appel réservé en base (une requête par seconde au plus), puis attente jusqu'à ce créneau. */
-async function waitForSlot(): Promise<void> {
-    const { data, error } = await getServiceRoleClient().rpc('place_search_slot', { p_max_wait_ms: MAX_SLOT_WAIT_MS });
-    if (error) throw new PlaceSearchUnavailable(`créneau d'appel illisible : ${error.message}`);
-    const slot = data as { ok?: boolean; wait_ms?: number } | null;
-    if (slot?.ok !== true) throw new PlaceSearchUnavailable(`trop de recherches en cours (attente de ${slot?.wait_ms ?? '?'} ms)`);
-    const wait = Number(slot.wait_ms ?? 0);
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+/**
+ * Créneau d'appel réservé en base (une requête par seconde au plus), attente de l'heure du créneau, puis contrôle au
+ * moment de l'appel. Finition 2b (run 252 : 801 ms entre deux appels) : la base espaçait les RÉSERVATIONS, pas les
+ * appels ; un appel dont la réponse de réservation revenait en retard (charge du serveur) partait tard, trop près du
+ * suivant. Désormais :
+ *  - le créneau commence, sur l'horloge de ce processus, entre `envoi + attente` et `réception + attente` : l'appel attend
+ *    la borne haute (jamais avant son créneau) ;
+ *  - au moment de partir, son retard sur le créneau est au plus `maintenant − (envoi + attente)` : au-delà de 150 ms, ou
+ *    à moins d'une seconde du dernier appel de ce processus, le créneau est perdu et un autre est réservé (dans les 4 s
+ *    d'attente admises ; au-delà, la recherche est indisponible).
+ * Le dernier appel est noté avant de rendre la main (aucune attente entre le contrôle et l'appel).
+ */
+async function waitForCall(): Promise<void> {
+    const deadline = performance.now() + MAX_SLOT_WAIT_MS;
+    for (;;) {
+        const sent = performance.now();
+        const { data, error } = await getServiceRoleClient().rpc('place_search_slot', {
+            p_max_wait_ms: Math.max(0, Math.floor(deadline - sent)),
+        });
+        const received = performance.now();
+        if (error) throw new PlaceSearchUnavailable(`créneau d'appel illisible : ${error.message}`);
+        const slot = data as { ok?: boolean; wait_ms?: number } | null;
+        if (slot?.ok !== true) throw new PlaceSearchUnavailable(`trop de recherches en cours (attente de ${slot?.wait_ms ?? '?'} ms)`);
+        const wait = Math.max(0, Number(slot.wait_ms ?? 0));
+        await sleep(received + wait - performance.now());
+        const now = performance.now();
+        const late = now - (sent + wait);
+        if (late <= SLOT_LATE_MAX_MS && now - lastCallAt >= MIN_CALL_GAP_MS) {
+            lastCallAt = now;
+            return;
+        }
+        if (now >= deadline) throw new PlaceSearchUnavailable(`créneau d'appel manqué (retard de ${Math.round(late)} ms)`);
+    }
 }
 
 function toResults(rows: unknown): PlaceResult[] {
@@ -124,12 +161,13 @@ export async function searchPlaces(query: string): Promise<PlaceResult[]> {
     const kept = await cachedResults(key);
     if (kept) return kept;
 
-    await waitForSlot();
     const base = getServerEnv().NOMINATIM_URL.replace(/\/+$/, '');
     const params = new URLSearchParams({ q: query, format: 'jsonv2', countrycodes: 'sn', limit: String(MAX_RESULTS), 'accept-language': 'fr' });
+    const url = `${base}/search?${params.toString()}`;
+    await waitForCall();
     let response: Response;
     try {
-        response = await fetch(`${base}/search?${params.toString()}`, {
+        response = await fetch(url, {
             headers: { 'User-Agent': userAgent(), Accept: 'application/json', 'Accept-Language': 'fr' },
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
             cache: 'no-store',

@@ -4,6 +4,7 @@ import { PublicError } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '../supabase/server';
 import { EventLifecycleService } from './event-lifecycle.service';
 import { eventEndAt } from './event-end';
+import { priceMinimumMessage } from './price-minimum';
 import { pgEscapeLike } from '@/lib/security/postgrest-filter';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import {
@@ -45,6 +46,24 @@ export interface EventUpdateResult {
     place_notice_at: string | null;
     /** T4 : avis de lieu retenu (un avis de changement de lieu est déjà parti il y a moins d'une heure). */
     place_notice_held: boolean;
+    /**
+     * Finition 2b (D, E-27, E-28) : heure réelle de l'avis par SMS (lieu ou date : fin de la fenêtre de 10 minutes, de la
+     * retenue d'une heure, ou maintenant), null sans SMS ; tout de suite ; retenu par la cadence ; nombre de SMS.
+     */
+    sms_notice_at: string | null;
+    sms_notice_immediate: boolean;
+    sms_notice_held: boolean;
+    sms_recipients: number;
+}
+
+/** Finition 2b (D, E-27) : aperçu d'une modification (fenêtre « Prévenir »), calculé sans rien écrire. */
+export interface EventUpdatePreview {
+    changed_fields: string[];
+    sms_recipients: number;
+    sms_notice_at: string | null;
+    sms_notice_immediate: boolean;
+    sms_notice_held: boolean;
+    place_notice_at: string | null;
 }
 
 /**
@@ -100,6 +119,15 @@ const REFUSAL_HTTP: Record<string, number> = {
     QUOTA_BELOW_HELD: 409,
     PRICE_LOCKED_AFTER_SALES: 409,
     CATEGORY_HAS_SALES: 409,
+    // Finition 2b (A) : suppression qui laisserait une zone sans catégorie admise (étape « Contrôle à l'entrée » proposée)
+    CATEGORY_ONLY_IN_ZONE: 409,
+    // Finition 2b (A, E-26) : prix payant sous le minimum, refusé par la normalisation sous le chemin de la catégorie
+    // (même statut que le refus du déclencheur, priceBelowMinimum)
+    PRICE_BELOW_MINIMUM: 400,
+    // Finition 2b (B) : refus des zones à la création (mêmes statuts que PUT …/zones ; les autres codes des zones : 409)
+    ZONE_NAME_INVALID: 400,
+    TOO_MANY_ZONES: 400,
+    TOO_MANY_GATES: 400,
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -114,12 +142,18 @@ interface RpcRefusal {
     field?: string;
     categories?: unknown;
     suggestion?: string;
+    /** Finition 2b (A, E-26) : minimum du prix d'un billet payant (refus PRICE_BELOW_MINIMUM). */
+    minimum?: unknown;
 }
 
 /** Refus d'une RPC → EventServiceError (champ en cause recopié dans field et fields). */
 function refusalToError(body: RpcRefusal): EventServiceError {
     const code = body.code ?? 'INVALID_INPUT';
-    const message = body.message || 'Opération refusée.';
+    // Finition 2b (A, E-26) : texte du minimum écrit ici, comme pour le refus du déclencheur (séparateur des milliers)
+    const minimum = Number(body.minimum);
+    const message = code === 'PRICE_BELOW_MINIMUM' && Number.isFinite(minimum) && minimum > 0
+        ? priceMinimumMessage(minimum)
+        : body.message || 'Opération refusée.';
     const details: Record<string, unknown> = {};
     if (body.field) {
         details.field = body.field;
@@ -147,7 +181,7 @@ function priceBelowMinimum(error: { code: string; message: string; details?: str
     if (!shown) console.error(`[EventService] PRICE_BELOW_MINIMUM sans minimum lisible : ${String(error.details)}`);
     return new EventServiceError(400, 'PRICE_BELOW_MINIMUM',
         shown
-            ? `Le prix d’un billet payant est d’au moins ${shown} F CFA. Pour un billet gratuit, indiquez 0.`
+            ? priceMinimumMessage(min)
             : 'Le prix d’un billet payant est inférieur au minimum autorisé. Pour un billet gratuit, indiquez 0.',
         { field: 'price' });
 }
@@ -297,7 +331,7 @@ export class EventService {
         }
         const parsed = parseWithFrenchErrors(createEventSchema({ partnerId: partner.id }), input);
         if (!parsed.success) throw invalid(parsed.error);
-        const { ticket_categories: categories, ...event } = parsed.data;
+        const { ticket_categories: categories, zones, ...event } = parsed.data;
         // Finition 2a (1b) : affiche vérifiée pour une fiche VALIDE ; une autre fiche est refusée par event_create, avec
         // son propre texte (profil non validé, suspendu), qui garde ainsi la priorité
         if (partner.status === 'VALIDE') await assertPosterStored((event as { image_url?: string | null }).image_url ?? null);
@@ -305,6 +339,8 @@ export class EventService {
             actor_id: partnerUserId,
             event,
             ticket_categories: categories,
+            // Finition 2b (B) : portes et zones de la création (catégories désignées par leur ordre), même transaction
+            ...(zones && zones.length > 0 ? { zones } : {}),
         } }));
         return result.event;
     }
@@ -371,7 +407,13 @@ export class EventService {
      * par statut, verrous après ventes, file des notifications, fonds). Les SMS partent par le cron
      * event-change-notifications.
      */
-    public static async updateEvent(eventId: string, actorId: string, body: unknown): Promise<EventUpdateResult> {
+    /**
+     * Finition 2b (D, E-27) : contrôles communs à l'enregistrement et à son aperçu (corps, propriétaire et statut, champs
+     * non modifiables, schéma partagé, affiche déposée) ; rend le patch validé et la version attendue.
+     */
+    private static async prepareUpdate(eventId: string, actorId: string, body: unknown): Promise<{
+        event: DbRecord; patch: Record<string, unknown>; expected_updated_at: string; imageChanged: boolean;
+    }> {
         const shape = updateBodySchema.safeParse(body);
         if (!shape.success) {
             throw new EventServiceError(400, 'INVALID_BODY',
@@ -407,13 +449,18 @@ export class EventService {
         const nextImage = (parsed.data as { image_url?: string | null }).image_url;
         const imageChanged = nextImage !== undefined && (nextImage ?? null) !== (event.image_url ?? null);
         if (imageChanged) await assertPosterStored(nextImage ?? null);
+        return { event, patch: parsed.data as Record<string, unknown>, expected_updated_at, imageChanged };
+    }
 
+    public static async updateEvent(eventId: string, actorId: string, body: unknown): Promise<EventUpdateResult> {
+        const { event, patch, expected_updated_at, imageChanged } = await this.prepareUpdate(eventId, actorId, body);
         const result = await editionResult<{
             ok: true; event: DbRecord; notified_holders: number; sms_queued: number; place_notice_at?: string | null; place_notice_held?: boolean;
+            sms_notice_at?: string | null; sms_notice_immediate?: boolean; sms_notice_held?: boolean; sms_recipients?: number | null;
         }>('event_update', rpcWithRetry('event_update', { p: {
             event_id: eventId,
             actor_id: actorId,
-            patch: parsed.data,
+            patch,
             expected_updated_at,
         } }));
         // Finition 2a (1b) : l'affiche remplacée est effacée si aucun autre événement ne l'utilise (échec : journal, la
@@ -431,6 +478,36 @@ export class EventService {
             sms_queued: Number(result.sms_queued ?? 0),
             place_notice_at: typeof result.place_notice_at === 'string' ? result.place_notice_at : null,
             place_notice_held: result.place_notice_held === true,
+            sms_notice_at: typeof result.sms_notice_at === 'string' ? result.sms_notice_at : null,
+            sms_notice_immediate: result.sms_notice_immediate === true,
+            sms_notice_held: result.sms_notice_held === true,
+            sms_recipients: Number(result.sms_recipients ?? 0),
+        };
+    }
+
+    /**
+     * Finition 2b (D, E-27) : aperçu d'une modification avant de l'enregistrer (fenêtre « Prévenir ») : mêmes contrôles
+     * que updateEvent, puis RPC event_update_preview (event_update exécuté puis annulé : rien n'est écrit). Rend le nombre
+     * de SMS et l'heure réelle de l'avis ; mêmes refus que l'enregistrement.
+     */
+    public static async previewEventUpdate(eventId: string, actorId: string, body: unknown): Promise<EventUpdatePreview> {
+        const { patch, expected_updated_at } = await this.prepareUpdate(eventId, actorId, body);
+        const result = await editionResult<{
+            ok: true; changed_fields?: unknown; sms_recipients?: number | null; sms_notice_at?: string | null;
+            sms_notice_immediate?: boolean; sms_notice_held?: boolean; place_notice_at?: string | null;
+        }>('event_update_preview', rpcWithRetry('event_update_preview', { p: {
+            event_id: eventId,
+            actor_id: actorId,
+            patch,
+            expected_updated_at,
+        } }));
+        return {
+            changed_fields: Array.isArray(result.changed_fields) ? result.changed_fields.filter((f): f is string => typeof f === 'string') : [],
+            sms_recipients: Number(result.sms_recipients ?? 0),
+            sms_notice_at: typeof result.sms_notice_at === 'string' ? result.sms_notice_at : null,
+            sms_notice_immediate: result.sms_notice_immediate === true,
+            sms_notice_held: result.sms_notice_held === true,
+            place_notice_at: typeof result.place_notice_at === 'string' ? result.place_notice_at : null,
         };
     }
 
