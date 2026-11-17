@@ -88,6 +88,7 @@ const phases = [
     ['fumee', ['--project=fumee']],
     ['terrain', ['--project=terrain', '--workers=1']],
     ['pwa', ['--project=pwa', '--workers=1']],
+    ['deconnexion', ['--project=deconnexion', '--workers=1']],
     ['fake-prod', null],
     ['perf', ['--project=perf', '--workers=1']],
     ['recette', ['--project=recette', '--workers=1']],
