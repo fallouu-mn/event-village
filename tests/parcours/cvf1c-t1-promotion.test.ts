@@ -333,7 +333,8 @@ describe('e. promotion et invitation simultanées', () => {
                 [ev1b.eventId, g.userId, P1.userId]);
             const pending = promote(g.userId, { confirm_staff_promotion: true });
             try {
-                await waitForLockWaiters({ queryLike: 'user_roles_set' }, 8_000);
+                // Finition 3d (point 3) : la promotion passe par admin_role_change (qui appelle user_roles_set)
+                await waitForLockWaiters({ queryLike: 'admin_role_change' }, 8_000);
                 console.log('[CVF1C-PRO] promotion en attente de l’affectation en cours');
             } catch (err) {
                 console.log(`[CVF1C-PRO] promotion : aucune attente observée (${err instanceof Error ? err.message.slice(0, 200) : String(err)})`);
