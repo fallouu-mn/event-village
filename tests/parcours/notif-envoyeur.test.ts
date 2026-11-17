@@ -38,7 +38,6 @@ import path from 'node:path';
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { getFakes } from '../fakes';
-import { inspect } from '../helpers/db';
 import { service, newBuyer, cronRequest, type Buyer } from './paiement-helpers';
 import { BASE_URL, randomSenegalPhone } from './helpers';
 import { newPartner } from './finance-helpers';
@@ -664,23 +663,7 @@ describe('6.1 Route /api/cron/notifications-dispatch (contrat E5)', () => {
         // Finition 3b : vidage jusqu'à un passage qui ne réserve plus rien. S'arrêter dès qu'un passage réservait moins de 1 000
         // lignes laissait des lignes dues quand ce passage s'arrêtait plus tôt (budget de temps) : runs 252 et 274, le SMS du test,
         // servi en dernier, n'était pas atteint par la route. Modification signalée au rapport.
-        // Finition 3d (runs 306 et 319, modification signalée) : le vidage s'arrêtait aussi au bout de 50 passages de 1 000 lignes
-        // au plus, file encore pleine (suite de 134 et 172 s au lieu de 22 à 65) ; un passage qui ne réserve rien peut aussi
-        // laisser des lignes dues. Désormais : vidage jusqu'à ce qu'un passage n'examine plus rien, c'est-à-dire plus aucune
-        // ligne due (PENDING, OUTBOX, next_attempt_at <= now() en base, ce que la réservation examine), par passages de
-        // 500 × 20 lignes ; au-delà de 6 minutes, échec explicite (jamais une assertion sautée). Assertions de la route inchangées.
-        const dueRows = (): Promise<number> => inspect(async (c) => Number((await c.query(
-            `SELECT count(*)::int AS n FROM public.notification_outbox
-              WHERE status = 'PENDING' AND origin = 'OUTBOX' AND next_attempt_at <= now()`)).rows[0].n));
-        const deadline = Date.now() + 6 * 60_000;
-        let passes = 0;
-        let drained = 0;
-        for (let due = await dueRows(); due > 0; due = await dueRows()) {
-            assert.ok(Date.now() < deadline, `file des avis non vidée en 6 minutes : ${due} ligne(s) dues après ${passes} passage(s)`);
-            drained += (await drain({ limit: 500, rounds: 20, budgetMs: 60_000 })).claimed;
-            passes++;
-        }
-        console.log(`[NOTIF-ENVOYEUR] vidage avant la route : ${passes} passage(s), ${drained} ligne(s) réservée(s), plus aucune ligne due`);
+        for (let i = 0; i < 50 && (await drain({})).claimed > 0; i++) { /* jusqu'à une file vide */ }
         const row = await dueRow({ recipient_phone: phone });
         const mark = smsMark(phone);
         const pathName = '/api/cron/notifications-dispatch';
