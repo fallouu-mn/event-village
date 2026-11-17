@@ -7,6 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clearOfflineStore } from '@/lib/tickets/offline-store';
 import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 import { clearAllDrafts } from '@/lib/events/draft-purge';
+import { clearPaymentHandoffs } from '@/lib/payments/payment-handoff-purge';
 import { dropLocalSession, revokeSoon, unsubscribePush } from '@/lib/auth/sign-out-here';
 import { sessionEnded } from '@/lib/auth/session-signal';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -203,6 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Finition 2b (C) : brouillons du formulaire d'événement aussi (autre onglet, autre appareil, autres
                     // boutons de déconnexion : contrôleur, mot de passe réinitialisé)
                     clearAllDrafts();
+                    clearPaymentHandoffs(); // cvf2b 6.13b : liens de paiement de l'onglet
                     setSignedOut(true); // cvf2b 6.2 : la page affichée est remplacée, dans tous les onglets
                     // Cvf2b 6.9 : abonnement push de ce navigateur retiré sur toute fin de session (autre onglet, autre
                     // appareil, jeton de rafraîchissement refusé, mot de passe réinitialisé), pas seulement au bouton
@@ -219,6 +221,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     void clearOfflineStore(true);
                     clearAllScanMemory();
                     clearAllDrafts();
+                    clearPaymentHandoffs();
                     void unsubscribePush(); // cvf2b 6.9 : même règle que SIGNED_OUT
                 }
                 if (nextUserId) {
@@ -283,6 +286,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const held = session && { access: session.access_token, refresh: session.refresh_token, everywhere: scope === 'partout' };
         clearAllScanMemory();
         clearAllDrafts();
+        clearPaymentHandoffs(); // cvf2b 6.13b
         void clearOfflineStore();
         setSignedOut(true);
         setUser(null);
