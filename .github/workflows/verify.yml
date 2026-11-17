@@ -452,6 +452,29 @@ jobs:
           } > .env.e2e
           echo ".env.e2e généré : $(grep -c '=' .env.e2e) variables (URL=${API_URL}, valeurs secrètes masquées)"
 
+      # Run 314 : seed:demo lance Chromium (Playwright) ; il est donc installé avant la base de l'e2e, qui se prépare
+      # pendant le build (sans lui, seed:demo s'arrêtait sur « Executable doesn't exist » sans rendre la main).
+      - name: "E2E : version de Playwright"
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: "E2E : cache du navigateur Chromium"
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: "E2E : installer Chromium"
+        run: |
+          . /tmp/etape.sh e2e-chromium
+          set -o pipefail
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium 2>&1 | tee /tmp/e2e-install.log
+          else
+            npx playwright install --with-deps chromium 2>&1 | tee /tmp/e2e-install.log
+          fi
+
       # Chemin critique : la base de l'e2e (db reset, seed de test, seed de démonstration : mêmes commandes qu'en série)
       # se prépare pendant le build, qui ne lit pas la base ; attendue avant le démarrage de l'application.
       - name: "E2E : base propre en arrière-plan (db reset, seed de test puis seed de démonstration, pendant le build)"
@@ -477,30 +500,6 @@ jobs:
           . /tmp/etape.sh js-budget
           set -o pipefail
           node scripts/verify.mjs --etapes js-budget 2>&1 | tee -a /tmp/build.log
-
-      - name: "E2E : version de Playwright"
-        id: pw
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: "E2E : cache du navigateur Chromium"
-        id: pw-cache
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
-
-      - name: "E2E : installer Chromium"
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: |
-          . /tmp/etape.sh e2e-chromium
-          set -o pipefail
-          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
-            npx playwright install-deps chromium 2>&1 | tee /tmp/e2e-install.log
-          else
-            npx playwright install --with-deps chromium 2>&1 | tee /tmp/e2e-install.log
-          fi
 
       - name: "E2E : base propre (attendre db reset, seed de test et seed de démonstration)"
         id: e2e-seed
