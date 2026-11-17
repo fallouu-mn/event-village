@@ -523,6 +523,43 @@ const F3B_NEW_ADMIN_RIGHTS: StubResponse = {
     url: /\/api\/admin\/permissions\?adminId=/, method: 'GET', status: 200, body: { success: true, adminId: F3B_NEW_ADMIN_ID, assignedPermissions: [] },
 };
 
+// ── Finition 3d : réponses imposées (aucune écriture réelle : codes, numéro et étape de sécurité simulés) ─────────
+const F3D_BACKUP_URL = /\/api\/admin\/security\/backup-codes(\?.*)?$/;
+const F3D_BACKUP_STATUS: StubResponse = { url: F3D_BACKUP_URL, method: 'GET', status: 200, body: { remaining: 7, generated_at: '2026-11-02T09:15:00.000Z' } };
+const F3D_BACKUP_NONE: StubResponse = { url: F3D_BACKUP_URL, method: 'GET', status: 200, body: { remaining: 0, generated_at: null } };
+const F3D_BACKUP_CREATED: StubResponse = {
+    url: F3D_BACKUP_URL, method: 'POST', status: 200,
+    body: {
+        ok: true, remaining: 10, generated_at: '2026-11-17T10:00:00.000Z',
+        codes: ['K7M2Q-R9XWT', 'B4NHP-3ZC8D', 'TQ6W2-MV9KA', 'H3RX7-PE5NJ', 'Z8CFA-2LUQ6', 'D5VKM-W7T3R', 'P2JE9-XN4HC', 'U6GQ3-B8ZMW', 'A9TRL-5KD2F', 'M3WX8-HQ7PV'],
+    },
+};
+const F3D_PHONE_START: StubResponse = {
+    url: /\/api\/admin\/(security|users\/[^/]+)\/phone\/start(\?.*)?$/, method: 'POST', status: 200,
+    body: { ok: true, request_id: '00000000-0000-4000-8000-00000000f3d1', expires_at: '2026-11-17T10:10:00.000Z' },
+};
+/** Fenêtre du code administrateur (nouvel appareil) : le serveur garde la vraie session, seul l'état lu est imposé. */
+const F3D_STEP_UP_SMS: StubResponse = {
+    url: /\/api\/admin\/step-up(\?.*)?$/, method: 'GET', status: 200,
+    body: { required: 'ADMIN_SMS_REQUIRED', reason: null, idleMinutes: 30, phone: '+221 77 *** ** 67' },
+};
+/** Caisse de « ce soir » : une caisse fermée avec un écart de 2 500 F en attente de validation (point 4c). */
+const F3D_CASH: StubResponse = {
+    url: /\/api\/partner\/events\/[^/]+\/pilotage\/cash(\?.*)?$/, method: 'GET', status: 200,
+    body: {
+        shifts: [{
+            id: '00000000-0000-4000-8000-00000000f3d4', controller_id: '00000000-0000-4000-8000-00000000f3d5', controller_name: 'Moussa Ndiaye',
+            status: 'CLOTURE', opened_at: '2026-11-16T18:00:00.000Z', closed_at: '2026-11-16T23:40:00.000Z', opening_float: 20000,
+            cash_collected: 147500, expected: 167500, declared: 165000, difference: -2500, justification: 'Monnaie rendue en trop à la porte Nord',
+            pin_cosigned: true, discrepancy_validated_at: null, scan_count: 12, scan_amount: 126000, counter_count: 2, counter_amount: 21500,
+        }],
+        by_controller: [{ controller_id: '00000000-0000-4000-8000-00000000f3d5', name: 'Moussa Ndiaye', cash_collected: 147500, shifts: 1, open_shifts: 0 }],
+        totals: { cash_collected: 147500, open: 0, closed: 1, difference: -2500 },
+        pin: { hasPin: true, updatedAt: '2026-11-16T17:30:00.000Z' },
+        computed_at: '2026-11-16T23:45:00.000Z',
+    },
+};
+
 /** Ouvre la fenêtre de création d'un compte et choisit « Administrateur ». */
 async function f3bOpenCreateAdmin(page: Page): Promise<void> {
     await expectHeading(page, /^comptes et administrateurs$/i);
@@ -1393,6 +1430,95 @@ export const SCREENS: readonly Screen[] = [
             await rights.getByRole('button', { name: /^validation$/i }).click();
             await expect(rights.getByRole('checkbox', { name: /^gérer les événements/i })).toBeChecked();
             await expect(rights.getByRole('checkbox', { name: /^consulter les événements/i }), 'la lecture suit l’écriture').toBeChecked();
+        },
+    },
+    // ── Finition 3d : recours et suppléance (sous fumee-superadmin ; réponses imposées, aucune écriture réelle) ──
+    // Point 5 : la ligne unique de l'argent est capturée par admin-accueil (F3B_TODO : versements et créances).
+    // Points 2a et 3 : « Changer le numéro » et « Changer le rôle » s'ouvrent sur une ligne de /admin/users, page pas encore
+    // sur le système de design (badges de 10 px, noms de 12 px : contrôles bloquants des 14 px) ; aucune capture de la liste
+    // remplie. PhoneChangeFlow est capturé par admin-numero-apres-secours ; les deux boutons sont prouvés par f3d-ecrans.
+    {
+        id: 'admin-securite', titre: 'Administration — « Sécurité du compte » du Superadmin : codes de secours restants, son numéro',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/securite',
+        stubResponses: [F3D_BACKUP_STATUS],
+        ready: async ({ page }) => {
+            await expectHeading(page, /^sécurité du compte$/i);
+            await expect(page.getByText(/il vous reste/i)).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('heading', { name: /^mon numéro de téléphone$/i })).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-codes-de-secours', titre: 'Administration — codes de secours montrés une seule fois (« Imprimez-les ou notez-les en lieu sûr », création simulée)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/securite',
+        stubResponses: [F3D_BACKUP_NONE, F3D_BACKUP_CREATED],
+        ready: async ({ page }) => {
+            await expect(page.getByRole('button', { name: /^créer mes codes de secours$/i })).toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^créer mes codes de secours$/i }).click();
+            await expect(page.getByText(/^imprimez-les ou notez-les en lieu sûr$/i)).toBeVisible();
+            await expect(page.getByRole('list', { name: /^vos 10 codes de secours$/i }).getByRole('listitem')).toHaveCount(10);
+        },
+    },
+    {
+        id: 'admin-numero-apres-secours', titre: 'Administration — après un code de secours : son nouveau numéro, code envoyé au nouveau numéro (envoi simulé)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/securite?numero=1',
+        stubResponses: [F3D_BACKUP_STATUS, F3D_PHONE_START],
+        ready: async ({ page }) => {
+            await expect(page.getByText(/^code de secours accepté$/i)).toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            await page.getByLabel(/^nouveau numéro/i).fill('76 555 44 33');
+            await page.getByRole('button', { name: /^envoyer le code au nouveau numéro$/i }).click();
+            await expect(page.getByText(/saisissez les 6 chiffres reçus au 76 555 44 33/i)).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-telephone-perdu', titre: 'Administration — fenêtre du code administrateur : « J’ai perdu mon téléphone » (mot de passe et code de secours)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/mes-droits',
+        stubResponses: [F3D_STEP_UP_SMS],
+        ready: async ({ page }) => {
+            await expect(page.getByRole('button', { name: /^j[’']ai perdu mon téléphone$/i })).toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^j[’']ai perdu mon téléphone$/i }).click();
+            await expect(page.getByLabel(/^code de secours/i)).toBeVisible();
+            await expect(page.getByRole('button', { name: /^utiliser le code de secours$/i })).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-equipe-organisatrices', titre: 'Administration — page Équipe : choisir l’organisatrice dans une liste avec recherche',
+        role: 'fumee-superadmin', needsIds: true, path: () => '/partner/team',
+        ready: async ({ page }) => {
+            await expect(page.getByRole('heading', { name: /^choisissez l[’']organisatrice$/i })).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('list', { name: /^organisatrices$/i })).toBeVisible({ timeout: 30_000 });
+        },
+    },
+    {
+        id: 'admin-especes-rendues', titre: 'Administration — événement annulé : « Marquer rendu » à la place de l’organisatrice, motif (non confirmé)',
+        role: 'fumee-superadmin', needsIds: true, path: pilotage('annule'),
+        ready: async ({ page }) => {
+            const heading = page.getByRole('heading', { name: /^espèces à rembourser par l[’']organisateur/i });
+            await expect(heading).toBeVisible({ timeout: 30_000 });
+            await revealCenter(heading);
+        },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^marquer rendues les espèces/i }).first().click();
+            const dialog = anyDialog(page, /^marquer ces espèces rendues/i);
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByLabel(/^motif/i)).toBeVisible();
+        },
+    },
+    {
+        id: 'admin-ecart-a-valider', titre: 'Administration — Pilotage, Caisse : « Valider l’écart » pour un admin qui gère les événements',
+        role: 'fumee-superadmin', needsIds: true, path: pilotage('ceSoir'),
+        stubResponses: [F3D_CASH],
+        actions: async ({ page }) => {
+            await openTab(page, /^caisse/i);
+            const heading = page.getByRole('heading', { name: /^écarts à valider$/i });
+            await expect(heading).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('button', { name: /^valider l[’']écart de la caisse de moussa ndiaye$/i })).toBeVisible();
+            await revealCenter(heading);
         },
     },
     // ── Contrôle d'accès ────────────────────────────────────────────────────
