@@ -1839,7 +1839,8 @@ const CATALOG = {
             title: 'Nouveau Superadmin',
             content: `${text(d, 'user_name')} est maintenant Superadmin, nommé par ${text(d, 'actor_name')}. Si ce n’est pas prévu, réagissez tout de suite : changez son rôle depuis Comptes.`,
         }),
-        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 25)} est maintenant Superadmin, nommé par ${smsVar(text(d, 'actor_name'), 25)}. Si ce n'est pas prévu, réagissez tout de suite.`,
+        // Run 299 (R74) : nom tronqué (« ... ») sans point ajouté derrière (endWithPeriod)
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 25)} est maintenant Superadmin, nommé par ${endWithPeriod(smsVar(text(d, 'actor_name'), 25))} Si ce n'est pas prévu, réagissez tout de suite.`,
         sample: { user_name: 'Mame Diarra Bousso Ndiaye Diop', actor_name: 'Aminata Sophie Gueye Sarr Fall' },
     }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),

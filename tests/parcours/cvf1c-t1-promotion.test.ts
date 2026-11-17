@@ -21,7 +21,7 @@ import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { newBuyer, service, type SaleEvent } from './paiement-helpers';
-import { newPartner, superadminId, type TestPartner } from './finance-helpers';
+import { newPartner, type TestPartner } from './finance-helpers';
 import { newController, openShift } from './acces-helpers';
 import { newAdmin, outboxRows } from './notif-helpers';
 import { changeRoleByScreen, confirmIdentity } from './f3d-helpers';
@@ -59,7 +59,8 @@ before(async () => {
     const boss = await newAdmin('cvf1c-pro-boss', [], { role: 'SUPERADMIN' });
     await confirmIdentity(boss);
     SA = boss;
-    superId = await superadminId();
+    // Auteur de la promotion (annulation des invitations en attente, journal) : ce Superadmin
+    superId = boss.userId;
     P1 = await newPartner('cvf1c-pro-1');
     P2 = await newPartner('cvf1c-pro-2');
     P3 = await newPartner('cvf1c-pro-3');

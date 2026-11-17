@@ -832,6 +832,9 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             // Lot 9 quinquies (A1 : AUTH-01) : 160 septets avec l'URL de 27 caractères (texte de la consigne : 169, deux segments).
             ['ACCOUNT_LOGIN_FAILURES', {}, [],
                 `Event Village : plusieurs connexions ont échoué sur votre compte. Si ce n'est pas vous, changez votre mot de passe : ${U}/forgot-password`],
+            // Finition 3d (point 3) : alerte aux SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
+            ['SUPERADMIN_PROMOTED', { user_name: 'Awa Ndiaye', actor_name: 'Moussa Diop' }, [],
+                'Event Village : Awa Ndiaye est maintenant Superadmin, nommé par Moussa Diop. Si ce n\'est pas prévu, réagissez tout de suite.'],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).
