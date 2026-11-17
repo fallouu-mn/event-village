@@ -6,8 +6,12 @@
  *  - mot de passe saisi pour la session depuis moins de 12 heures (password_confirmations) ;
  *  - dans l'administration (/api/admin/*, verifyAdminAuth) : mot de passe redemandé après ADMIN_IDLE_TIMEOUT_MINUTES
  *    (30 par défaut) sans activité ; chaque appel accepté compte comme activité.
- * Ailleurs (routes d'un compte admin qui passent par requireActiveSession : actions d'un admin sur un événement, scan…),
- * les deux premières règles seulement. Les sessions des clients ne changent pas.
+ * Finition 3d (point 1) : la règle des 30 minutes vaut aussi sur les routes partenaire et contrôleur d'un compte admin
+ * (adminIdleScope : /api/partner, /api/controller, et les routes partenaire /api/withdrawals et /api/finance), et une
+ * relecture automatique (en-tête x-ev-input-age : aucune saisie depuis plus d'une minute, lib/admin/input-age.ts) est
+ * servie sans compter comme une activité, partout.
+ * Ailleurs (routes client d'un compte admin qui passent par requireActiveSession : ses billets, son compte…), les deux
+ * premières règles seulement. Les sessions des clients ne changent pas.
  *
  * Appareil : cookie httpOnly `ev_admin_device` (aléatoire, posé à la vérification du code, Secure en production), rangé en
  * empreinte SHA-256 ; un client sans ce cookie (appel par jeton) est son propre appareil : sa session.
@@ -19,6 +23,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
 import { secureCookies } from '@/lib/supabase/cookie-options';
+import { INPUT_AGE_HEADER, isAutomaticInputAge } from '@/lib/admin/input-age';
 
 export const ADMIN_DEVICE_COOKIE = 'ev_admin_device';
 const DEVICE_COOKIE_MAX_AGE = 365 * 24 * 3600;
@@ -39,6 +44,18 @@ export function adminIdleMinutes(): number {
 
 export function isAdminAccount(roles: readonly string[]): boolean {
     return roles.includes('ADMIN') || roles.includes('SUPERADMIN');
+}
+
+/** Finition 3d (point 1) : routes partenaire et contrôleur, où un compte admin suit la règle des 30 minutes. */
+const ADMIN_IDLE_PREFIXES = ['/api/partner', '/api/controller', '/api/withdrawals', '/api/finance'] as const;
+
+export function adminIdleScope(pathname: string): boolean {
+    return ADMIN_IDLE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** Finition 3d (point 1) : relecture automatique (aucune saisie depuis plus d'une minute) : jamais une activité. */
+export function isAutomaticRequest(req: NextRequest): boolean {
+    return isAutomaticInputAge(req.headers.get(INPUT_AGE_HEADER));
 }
 
 /** Clé de l'appareil : empreinte du cookie d'appareil, sinon la session (client sans cookie). */
@@ -93,7 +110,8 @@ export async function adminStepUpRefusal(
             session_id: current.sessionId,
             device_key: deviceKey(req, current.sessionId),
             idle_secs: mode === 'ADMIN' ? adminIdleMinutes() * 60 : null,
-            touch: opts.touch ?? mode === 'ADMIN',
+            // Finition 3d (point 1) : une relecture automatique est servie sans compter comme une activité
+            touch: opts.touch ?? (mode === 'ADMIN' && !isAutomaticRequest(req)),
         },
     });
     if (error) {

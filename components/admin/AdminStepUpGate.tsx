@@ -10,6 +10,7 @@ import { OtpInput } from '@/components/auth/OtpInput';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
+import { INPUT_AGE_HEADER } from '@/lib/admin/input-age';
 
 /**
  * Lot 9 quinquies (A3 : AUTH-05 ; A4 : AUTH-04) — fenêtre de sécurité de l'administration.
@@ -24,6 +25,14 @@ import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
  *    interrompue se relance une fois la fenêtre fermée.
  *  - Le serveur décide toujours (lib/admin/step-up.ts) : la fenêtre ne fait qu'aider.
  * Saisie du code : 6 cases, collage, clavier numérique, « one-time-code » (OtpInput) ; mot de passe : « current-password ».
+ *
+ * Finition 3d (point 1) :
+ *  - chaque appel /api/ de la page porte l'âge de la dernière saisie (en-tête x-ev-input-age, lib/admin/input-age.ts) :
+ *    une relecture automatique faite sans saisie depuis plus d'une minute ne compte plus comme une activité côté serveur,
+ *    une page laissée ouverte ne garde donc plus la session éveillée ;
+ *  - la fenêtre sert aussi sur les pages partenaire et contrôleur d'un compte admin, où le serveur applique désormais la
+ *    même règle des 30 minutes : AdminStepUpOverlay (sans enfants), chargé à la demande par AdminAccountStepUp pour un
+ *    compte admin seulement, posé à côté de la page (rien n'est remonté, rien n'est ajouté au code d'un contrôleur).
  */
 
 type Required = 'ADMIN_PASSWORD_REQUIRED' | 'ADMIN_SMS_REQUIRED' | null;
@@ -31,6 +40,20 @@ interface Status { required: Required; reason: string | null; idleMinutes: numbe
 
 const STEP_UP_CODES = new Set(['ADMIN_PASSWORD_REQUIRED', 'ADMIN_SMS_REQUIRED']);
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+
+/** Appel /api/ de la même origine : copie de l'appel avec l'âge de la dernière saisie, en secondes. Autre appel : inchangé. */
+function withInputAge(input: RequestInfo | URL, init: RequestInit | undefined, ageSecs: number): [RequestInfo | URL, RequestInit | undefined] {
+  let url: URL;
+  try {
+    url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, window.location.href);
+  } catch {
+    return [input, init];
+  }
+  if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return [input, init];
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+  headers.set(INPUT_AGE_HEADER, String(Math.max(0, ageSecs)));
+  return [input, { ...init, headers }];
+}
 
 export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status | null>(null);
@@ -61,10 +84,12 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
   useEffect(() => { void refresh(); }, [refresh]);
 
   // Tout refus d'étape de sécurité renvoyé par une route ouvre la fenêtre (la page reste affichée dessous).
+  // Finition 3d (point 1) : chaque appel /api/ porte l'âge de la dernière saisie.
   useEffect(() => {
     const original = window.fetch;
-    const patched: typeof window.fetch = async (...args) => {
-      const res = await original(...args);
+    const patched: typeof window.fetch = async (input, init) => {
+      const [i, n] = withInputAge(input, init, Math.floor((Date.now() - lastInput.current) / 1000));
+      const res = await original(i, n);
       if (res.status === 403) {
         res.clone().json().then((b: { code?: string } | null) => {
           if (b?.code && STEP_UP_CODES.has(b.code)) void refresh();
@@ -114,6 +139,15 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
       )}
     </>
   );
+}
+
+/**
+ * Finition 3d (point 1) — la même fenêtre sans enfants, posée à côté d'une page partenaire ou contrôleur d'un compte admin
+ * (chargée à la demande par AdminAccountStepUp) : état de la session, âge de la dernière saisie sur chaque appel /api/,
+ * minuterie d'inactivité et saisie du mot de passe ou du code, sans remonter la page.
+ */
+export function AdminStepUpOverlay() {
+  return <AdminStepUpGate>{null}</AdminStepUpGate>;
 }
 
 function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<Required, null>; reason: string | null; phone: string | null; onDone: () => void }) {

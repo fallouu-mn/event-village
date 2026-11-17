@@ -29,8 +29,9 @@ export async function GET(req: NextRequest) {
         }
         // Contre-vérification du lot 9 quinquies (point 1) : un compte ADMIN ou SUPERADMIN ne lit son profil qu'avec le code
         // administrateur de cet appareil et un mot de passe de moins de 12 h (même règle que requireActiveSession).
+        // Finition 3d (point 1) : route contrôleur, donc aussi la règle des 30 minutes d'inactivité (mode ADMIN).
         if (isAdminAccount(user.roles)) {
-            const stepUp = await adminStepUpRefusal(req, user.id, 'ACCOUNT');
+            const stepUp = await adminStepUpRefusal(req, user.id, 'ADMIN');
             if (stepUp) return stepUp;
         }
 
