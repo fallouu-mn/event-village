@@ -236,10 +236,11 @@ describe('6.7 K2 — aucun appel direct aux adaptateurs hors de l’envoyeur, de
         assert.deepEqual(problems, [], problems.join('\n'));
     });
 
-    test('contrat E7 : chaque appel .sendOtp( et .sendControllerInvite( de app/ passe `log:` (journal sans code)', () => {
+    test('contrat E7 : chaque appel .sendOtp( et .sendControllerInvite( de app/ et de la liste nominative passe `log:` (journal sans code)', () => {
         const problems: string[] = [];
         let count = 0;
-        for (const file of sourceFiles().filter((f) => f.startsWith('app/'))) {
+        // Finition 3d (modification signalée) : app/ et les fichiers de la liste nominative hors de app/ (lib/admin/phone-change.ts)
+        for (const file of sourceFiles().filter((f) => f.startsWith('app/') || f in SYNC_ROUTES)) {
             const src = source(file);
             for (const m of Array.from(src.matchAll(/\.(sendOtp|sendControllerInvite)\s*\(/g))) {
                 count++;
