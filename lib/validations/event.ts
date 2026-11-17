@@ -588,8 +588,16 @@ const scanColorField = z.custom<ScanCategoryColor>(
     (v) => typeof v === 'string' && (SCAN_CATEGORY_CHOOSABLE as readonly string[]).includes(v),
     { message: SCAN_COLOR_MESSAGE, params: { code: 'INVALID_INPUT' } },
 ).nullable();
+/**
+ * Contre-vérification 2b (2c) : caractères de contrôle (C0, DEL, C1) et marques ou contrôles de sens d'écriture refusés
+ * dans la consigne (un U+202E retourne le texte à l'écran du contrôleur) ; même liste en base (ticket_category_normalize,
+ * ticket_category_update, migration 20261121000008).
+ */
+const ENTRY_INSTRUCTION_INVISIBLE_RE = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+const ENTRY_INSTRUCTION_INVISIBLE_MESSAGE = 'La consigne d’entrée contient un caractère invisible ou de contrôle : retirez-le.';
 const entryInstructionField = z.custom<string>((v) => typeof v === 'string', { message: ENTRY_INSTRUCTION_MESSAGE, params: { code: 'INVALID_INPUT' } })
     .transform((v) => v.trim())
+    .refine((v) => !ENTRY_INSTRUCTION_INVISIBLE_RE.test(v), { message: ENTRY_INSTRUCTION_INVISIBLE_MESSAGE, params: { code: 'INVALID_INPUT' } })
     .refine((v) => v.length <= 60, { message: ENTRY_INSTRUCTION_MESSAGE, params: { code: 'INVALID_INPUT' } })
     .refine((v) => !hasContactInfo(v), { message: contactInfoMessage('La consigne'), params: { code: 'INVALID_INPUT' } })
     .nullable()
