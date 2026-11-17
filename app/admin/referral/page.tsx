@@ -201,7 +201,7 @@ export default function AdminReferralAmbassadorsPage() {
           loading={isLoading || config.status === 'loading'}
           hint={config.status === 'ready'
             ? (config.ambassador
-              ? `Taux ambassadeur : N1 ${rate(config.ambassador.rate_n1)}, N2 ${rate(config.ambassador.rate_n2)}`
+              ? `Taux ambassadeur : ${rate(config.ambassador.rate_n1)} sur les filleuls directs, ${rate(config.ambassador.rate_n2)} sur les filleuls de ses filleuls`
               : 'Taux ambassadeur non configuré')
             : 'Taux ambassadeur indisponible'}
         />
@@ -238,7 +238,7 @@ export default function AdminReferralAmbassadorsPage() {
               Répertoire des Utilisateurs
             </h2>
             <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-              Attribuez le statut Ambassadeur pour débloquer les commissions N1/N2 majorées.
+              Nommez un ambassadeur pour majorer ses commissions sur ses filleuls directs et sur les filleuls de ses filleuls.
             </p>
           </div>
 

@@ -157,7 +157,7 @@ type Phase = 'loading' | 'ready' | 'not-found' | 'error';
 const PUBLIC_STATUSES: readonly EventStatus[] = ['PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE'];
 
 const ROLE_LABELS: Record<string, string> = {
-  PARTENAIRE: 'Organisateur',
+  PARTENAIRE: 'Partenaire',
   ADMIN: 'Administration',
   SYSTEM: 'Automatique',
 };

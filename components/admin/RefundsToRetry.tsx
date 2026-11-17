@@ -278,7 +278,7 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
       } else {
         const message = isRecord(body) && typeof body.error === 'string' && body.error.trim() !== ''
           ? body.error
-          : `Décision refusée par le serveur (erreur ${res.status}). Relisez la liste avant de recommencer.`;
+          : 'Décision refusée par le serveur. Relisez la liste avant de recommencer ; si cela continue, prévenez l’équipe technique.';
         if (res.status === 400) {
           setRefusal({ title: 'Décision refusée', text: message });
           return;

@@ -20,7 +20,7 @@ import { AUDIT_ACTION_FILTER, AUDIT_OBJECT_LABELS, auditActionLabel, auditActorR
 
 const ACTOR_ROLE_LABELS: Record<string, string> = {
   CLIENT: 'Client',
-  PARTENAIRE: 'Organisateur',
+  PARTENAIRE: 'Partenaire',
   CONTROLEUR: 'Contrôleur',
   ADMIN: 'Administrateur',
   SUPERADMIN: 'Superadmin',

@@ -56,7 +56,7 @@ const STORAGE_KEY_ATTEMPTS = 'ev_login_failed_attempts';
 
 /** Codes ?error= posés par le middleware, la réinitialisation du mot de passe ou l'activation d'un contrôleur. */
 const ERROR_MESSAGES: Record<string, string> = {
-    unauthorized_admin: 'Accès restreint aux Administrateurs et Superadministrateurs.',
+    unauthorized_admin: 'Cet espace est réservé aux administrateurs.',
     unauthorized_partner: 'Accès restreint aux Partenaires professionnels validés.',
     unauthorized_scanner: 'Accès restreint aux Contrôleurs autorisés.',
     unauthorized_controller: 'Accès réservé aux contrôleurs.',
