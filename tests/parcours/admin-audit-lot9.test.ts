@@ -31,7 +31,9 @@ import { newAdminWith } from './terrain-helpers';
 type Row = Record<string, unknown>;
 
 const PAGE = 'app/admin/audit/page.tsx';
-const LAYOUT = 'components/layout/AppLayout.tsx';
+// Finition 3b (E-34) : le menu de l'administration vit dans components/layout/admin-nav.ts, chargé à la demande par
+// AppLayout (budget des pages publiques) ; les mêmes règles y sont vérifiées. Modification signalée au rapport.
+const LAYOUT = 'components/layout/admin-nav.ts';
 const DASHBOARD = 'app/admin/dashboard/page.tsx';
 const AUDIT_HREF = '/admin/audit';
 const RUN = randomUUID().slice(0, 8).toUpperCase();

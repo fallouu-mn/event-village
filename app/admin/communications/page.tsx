@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatInteger } from '@/lib/format';
+import { SERVER_TROUBLE } from '@/lib/finance/admin-client';
 
 /**
  * Campagnes de communication (admin, permission communications.manage). Lot 7 (7.0 f, D71) : page migrée sur le
@@ -125,7 +126,7 @@ export default function AdminCommunicationsPage() {
       const body = await readJson(res, 'historique');
       if (!res.ok) {
         const serverMessage = isRecord(body) && typeof body.error === 'string' && res.status < 500 ? body.error : null;
-        setLoadError(serverMessage ?? `Historique indisponible (erreur ${res.status}).`);
+        setLoadError(serverMessage ?? `Historique indisponible. ${SERVER_TROUBLE}`);
         return;
       }
       const parsed = parseCampaigns(body);
@@ -179,7 +180,7 @@ export default function AdminCommunicationsPage() {
       const body = await readJson(res, 'enregistrement');
       if (!res.ok) {
         const serverMessage = isRecord(body) && typeof body.error === 'string' && res.status < 500 ? body.error : null;
-        setSaveError(serverMessage ?? `Brouillon non enregistré (erreur ${res.status}).`);
+        setSaveError(serverMessage ?? `Brouillon non enregistré. ${SERVER_TROUBLE}`);
         return;
       }
       const recipients = isRecord(body) && typeof body.recipientCount === 'number' ? body.recipientCount : 0;

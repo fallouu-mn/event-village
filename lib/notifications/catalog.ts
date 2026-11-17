@@ -1333,7 +1333,7 @@ const CATALOG = {
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Plafond de SMS atteint',
-            content: `Le plafond de ${formatInteger(count(d, 'cap'))} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit (UTC, heure de Dakar).`,
+            content: `Le plafond de ${formatInteger(count(d, 'cap'))} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit, heure de Dakar.`,
         }),
         sample: { day: '2026-11-02', cap: 1_000 },
     }),
@@ -1342,7 +1342,7 @@ const CATALOG = {
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Quota de SMS hors code atteint',
-            content: `La part des SMS hors codes de connexion (${formatInteger(count(d, 'limit'))} sur ${formatInteger(count(d, 'cap'))} par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit (UTC, heure de Dakar).`,
+            content: `La part des SMS hors codes de connexion (${formatInteger(count(d, 'limit'))} sur ${formatInteger(count(d, 'cap'))} par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit, heure de Dakar.`,
         }),
         sample: { day: '2026-11-02', cap: 1_000, limit: 700 },
     }),
@@ -1352,7 +1352,7 @@ const CATALOG = {
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Codes d’inscription : part du jour atteinte',
-            content: `Les ${formatInteger(count(d, 'limit'))} codes du jour vers des numéros sans compte sont partis : plus aucune inscription ne reçoit de code jusqu'à minuit (UTC, heure de Dakar). Les codes des comptes existants partent toujours. Vérifiez s'il s'agit d'inscriptions en masse.`,
+            content: `Les ${formatInteger(count(d, 'limit'))} codes du jour vers des numéros sans compte sont partis : plus aucune inscription ne reçoit de code jusqu'à minuit, heure de Dakar. Les codes des comptes existants partent toujours. Vérifiez s'il s'agit d'inscriptions en masse.`,
         }),
         sample: { day: '2026-11-13', cap: 1_000, limit: 90 },
     }),

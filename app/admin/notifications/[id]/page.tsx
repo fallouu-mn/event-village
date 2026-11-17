@@ -20,6 +20,7 @@ import {
   outboxStatusLabel,
   outboxTypeLabel,
 } from '@/lib/notifications/outbox-labels';
+import { SERVER_TROUBLE } from '@/lib/finance/admin-client';
 
 /**
  * Détail d'une notification de la boîte d'envoi (lot 6, contrats L2 à L4).
@@ -285,12 +286,12 @@ export default function AdminNotificationDetailPage() {
       body = await res.json();
     } catch (err) {
       console.error(`[Détail de notification] réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
-      setErrorMessage(`Réponse inattendue du serveur (erreur ${res.status}).`);
+      setErrorMessage(SERVER_TROUBLE);
       setPhase('error');
       return;
     }
     if (!res.ok) {
-      setErrorMessage(isRecord(body) && typeof body.error === 'string' && body.error ? body.error : `Détail indisponible (erreur ${res.status}).`);
+      setErrorMessage(isRecord(body) && typeof body.error === 'string' && body.error ? body.error : `Détail indisponible. ${SERVER_TROUBLE}`);
       setPhase('error');
       return;
     }
@@ -360,7 +361,7 @@ export default function AdminNotificationDetailPage() {
         console.error(`[Détail de notification] réponse de relance illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
       }
       if (!res.ok) {
-        setRelaunchError(typeof body.error === 'string' && body.error ? body.error : `La relance a échoué (erreur ${res.status}).`);
+        setRelaunchError(typeof body.error === 'string' && body.error ? body.error : `La relance a échoué. ${SERVER_TROUBLE}`);
         setConfirmOpen(false);
         if (res.status === 403) setCanWrite(false);
         await load();
@@ -473,7 +474,7 @@ export default function AdminNotificationDetailPage() {
           {item.reason && <Info label="Motif">{outboxReasonLabel(item.reason)}</Info>}
           {item.reasonDetail && <Info label="Précision">{humanDetail(item.reasonDetail)}</Info>}
           {item.family && <Info label="Famille">{FAMILY_LABELS[item.family] ?? 'Famille non répertoriée'}</Info>}
-          <Info label="Origine">{isSyncLog ? 'Envoi immédiat journalisé (code à usage unique ou invitation)' : 'Boîte d’envoi'}</Info>
+          <Info label="Origine">{isSyncLog ? 'Envoyé tout de suite (code reçu par SMS ou invitation d’un contrôleur)' : 'Boîte d’envoi'}</Info>
           {item.eventTitle && (
             <Info label="Événement">
               <span className="inline-flex flex-wrap items-center gap-2">

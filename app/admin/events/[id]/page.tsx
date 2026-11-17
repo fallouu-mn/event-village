@@ -41,6 +41,7 @@ import { directionsUrl } from '@/lib/events/directions';
 import { isScanCategoryColor, SCAN_CATEGORY_COLOR_LABELS, ZONE_KIND_LABELS } from '@/lib/scan/scan-result';
 import { ScanColorDot } from '@/components/events/ScanColorPicker';
 import { SINGLE_ENTRANCE_TEXT } from '@/components/events/ZoneListEditor';
+import { noticesText } from '@/lib/admin/confirmations';
 
 // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
 const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
@@ -173,7 +174,7 @@ type Phase = 'loading' | 'ready' | 'not-found' | 'error';
 const PUBLIC_STATUSES: readonly EventStatus[] = ['PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE'];
 
 const ROLE_LABELS: Record<string, string> = {
-  PARTENAIRE: 'Organisateur',
+  PARTENAIRE: 'Partenaire',
   ADMIN: 'Administration',
   SYSTEM: 'Automatique',
 };
@@ -227,7 +228,7 @@ function actionCopy(action: SheetAction, from: string): ActionCopy {
     case 'SUSPENDU':
       return {
         title: 'Suspendre l’événement',
-        body: 'La vente et le contrôle d’accès s’arrêtent immédiatement. L’organisateur et les détenteurs de billets sont prévenus ; seul l’organisateur voit le motif.',
+        body: `La vente et le contrôle d’accès s’arrêtent immédiatement. ${noticesText('event_suspend')}`,
         success: 'Événement suspendu : la vente et le contrôle d’accès sont arrêtés.',
         variant: 'secondary',
       };
@@ -235,7 +236,7 @@ function actionCopy(action: SheetAction, from: string): ActionCopy {
       return from === 'SUSPENDU'
         ? {
           title: 'Réactiver l’événement ?',
-          body: 'La page publique, la vente et le contrôle d’accès reprennent. L’organisateur et les détenteurs de billets sont prévenus.',
+          body: `La page publique, la vente et le contrôle d’accès reprennent. ${noticesText('event_reactivate')}`,
           success: 'Événement réactivé : la vente reprend.',
           variant: 'primary',
         }
@@ -246,12 +247,20 @@ function actionCopy(action: SheetAction, from: string): ActionCopy {
           variant: 'primary',
         };
     case 'TERMINE':
-      return {
-        title: 'Terminer l’événement ?',
-        body: 'La vente est close. Le contrôle des entrées reste possible jusqu’à la fermeture de la fenêtre de scan.',
-        success: 'Événement terminé.',
-        variant: 'secondary',
-      };
+      // Finition 3b (E-32) : clore un événement suspendu n'est pas « terminer » un événement publié (avis différents)
+      return from === 'SUSPENDU'
+        ? {
+          title: 'Clore l’événement ?',
+          body: `L’événement passe « Terminé », sans annulation : personne n’est remboursé automatiquement. ${noticesText('event_close')} Si une caisse est encore ouverte, le partenaire reçoit aussi une alerte par SMS. Si les participants doivent être remboursés, choisissez plutôt « Annuler l’événement ».`,
+          success: 'Événement clos.',
+          variant: 'secondary',
+        }
+        : {
+          title: 'Terminer l’événement ?',
+          body: `La vente est close. Le contrôle des entrées reste possible jusqu’à la fermeture de la fenêtre de scan. ${noticesText('event_finish')} Si une caisse est encore ouverte, le partenaire reçoit à la place une alerte par SMS, notification et email. Les détenteurs de billets ne sont pas prévenus.`,
+          success: 'Événement terminé.',
+          variant: 'secondary',
+        };
     default:
       return {
         title: `${action.label} ?`,

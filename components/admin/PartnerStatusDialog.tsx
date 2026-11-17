@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { ReasonDialog } from '@/components/ui/ReasonDialog';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
+import { noticesText } from '@/lib/admin/confirmations';
 
 /**
  * Lot 9 bis, tâche 15 (R6, R55 ; contrat 4.2, 5.15, B16, B37) — suspension et réactivation d'un partenaire depuis sa
@@ -55,16 +56,16 @@ function countOf(list: unknown): number {
 const COPY: Record<PartnerStatusTarget, { title: string; description: (name: string) => string; label: string; hint: string; confirm: string }> = {
   SUSPENDU: {
     title: 'Suspendre le partenaire',
-    description: (name) => `« ${name} » ne pourra plus vendre : ses événements en ligne sont suspendus et ses fonds sont gelés jusqu’à la réactivation. Il est prévenu avec votre motif.`,
+    description: (name) => `« ${name} » ne pourra plus vendre : ses événements en ligne sont suspendus et ses fonds sont gelés jusqu’à la réactivation. ${noticesText('partner_suspend')}`,
     label: 'Motif de la suspension',
-    hint: 'Au moins 3 caractères. Ce motif est communiqué au partenaire et enregistré au journal.',
+    hint: 'Au moins 3 caractères. Envoyé au partenaire (le SMS n’en garde que le début) et enregistré au journal.',
     confirm: 'Suspendre le partenaire',
   },
   VALIDE: {
     title: 'Réactiver le partenaire',
-    description: (name) => `« ${name} » retrouve son compte. Seuls les événements suspendus avec le compte reviennent en ligne ; un événement suspendu pour une autre raison, ou terminé entre-temps, reste suspendu.`,
+    description: (name) => `« ${name} » retrouve son compte. Seuls les événements suspendus avec le compte reviennent en ligne ; un événement suspendu pour une autre raison, ou terminé entre-temps, reste suspendu. ${noticesText('partner_reactivate')}`,
     label: 'Motif de la réactivation',
-    hint: 'Au moins 3 caractères. Ce motif est communiqué au partenaire et enregistré au journal.',
+    hint: 'Au moins 3 caractères. Gardé au journal ; le partenaire ne le voit pas.',
     confirm: 'Réactiver le partenaire',
   },
 };

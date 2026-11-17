@@ -195,6 +195,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/admin/finance/RefundsToPayList.tsx',
     'components/admin/finance/WithdrawableDetail.tsx',
     'components/admin/finance/MoneyWaiting.tsx',
+    // Finition 3b : « À faire aujourd'hui » (E-29)
+    'components/admin/TodoToday.tsx',
+    // Finition 3b : « Mes droits » (E-34)
+    'app/admin/mes-droits/page.tsx',
     // 8.1 : page de développement du faux SamirPay (E5), hors du build de production
     'app/dev/paiements/page.dev.tsx',
     'app/dev/paiements/[id]/page.dev.tsx',

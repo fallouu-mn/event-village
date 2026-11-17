@@ -658,6 +658,12 @@ describe('6.1 Route /api/cron/notifications-dispatch (contrat E5)', () => {
             console.log(`[NOTIF-ENVOYEUR] vidage, passage ${passes} : ${left} ligne(s) dues avant, ${run.claimed} réservée(s), ${run.cancelled} annulée(s), ${run.skipped} écartée(s), ${run.waiting} en attente ; ${next} après`);
             left = next;
         }
+        // Fusion avec la finition 3b : son vidage (jusqu'à un passage qui ne réserve rien) est gardé à la suite ; après le
+        // vidage ci-dessus (lignes dues comptées en base jusqu'à zéro), il ne trouve plus rien à réserver.
+        // Finition 3b : vidage jusqu'à un passage qui ne réserve plus rien. S'arrêter dès qu'un passage réservait moins de 1 000
+        // lignes laissait des lignes dues quand ce passage s'arrêtait plus tôt (budget de temps) : runs 252 et 274, le SMS du test,
+        // servi en dernier, n'était pas atteint par la route. Modification signalée au rapport.
+        for (let i = 0; i < 50 && (await drain({})).claimed > 0; i++) { /* jusqu'à une file vide */ }
         const row = await dueRow({ recipient_phone: phone });
         const mark = smsMark(phone);
         const pathName = '/api/cron/notifications-dispatch';

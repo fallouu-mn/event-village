@@ -15,12 +15,12 @@ export const ADMIN_PERMISSIONS = [
     'referrals.manage',
     'communications.manage',
     'statistics.read',
-    'pricing.manage',
+    // Finition 3b (E-36) : pricing.manage retiré (« Tarification » : trois clés que rien ne relisait)
     // Lot 6 (contrat L1) : supervision de la boîte d'envoi (lecture) et relance d'un envoi en échec
     'notifications.read',
     'notifications.write',
-    // Lot 7 (7.0 c, contrat 3.7) : lecture des écarts de caisse consolidés (GET /api/admin/shifts/audit)
-    'shifts.read',
+    // Finition 3b (E-36) : shifts.read retiré (seule route, /api/admin/shifts/audit, appelée par aucun écran ; les écarts
+    // de caisse se valident dans l'onglet « Caisse » du pilotage, avec events.write)
     // Lot 9 quater (B4 : AUD-15) : scanner les billets et tenir une caisse sur un événement (ADMIN)
     'access.operate',
     // Lot 9 quater (B5 : AUD-37) : lire les réglages de la plateforme et les tarifs

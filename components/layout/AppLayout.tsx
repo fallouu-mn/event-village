@@ -15,21 +15,14 @@ import {
   Wallet,
   Building2,
   Utensils,
-  ShieldAlert,
   LogIn,
   LogOut,
   Briefcase,
   Users,
   DollarSign,
-  Radio,
-  Sliders,
   Activity,
   ShieldCheck,
   ArrowLeft,
-  FileText,
-  Megaphone,
-  Award,
-  BellRing,
   X,
   Menu,
   Search,
@@ -49,7 +42,7 @@ import { isDeliverableEmail } from '@/lib/notifications/channels';
 /** Interrupteur SUPERADMIN d'un service (features.halls_enabled, features.tables_enabled, features.orders_enabled). */
 type FeatureKey = keyof ClientFeatureFlags;
 
-interface NavItem {
+export interface NavItem {
   name: string;
   /** Libellé de la barre du bas (< 1024 px), 60 px au plus en 12 px : tient sans troncature dès 360 px. */
   short?: string;
@@ -79,7 +72,7 @@ const BARE_ROUTES = new Set(['/billet/hors-ligne']);
 
 /** Libellé humain du rôle principal (jamais le code brut). */
 const ROLE_LABELS: Record<string, string> = {
-  SUPERADMIN: 'Super administrateur',
+  SUPERADMIN: 'Superadmin',
   ADMIN: 'Administrateur',
   PARTENAIRE: 'Partenaire',
   CONTROLEUR: 'Contrôleur',
@@ -101,7 +94,7 @@ function navLinkClass(active: boolean): string {
 
 export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const pathname = usePathname();
-  const { user, profile, isAuthenticated, isLoading, signOut } = useAuth();
+  const { user, profile, isAuthenticated, isLoading, signOut, hasPermission } = useAuth();
   const featureFlags = useFeatureFlags();
   const visibleItems = (items: NavItem[]): NavItem[] => items.filter((item) => isFeatureVisible(item, featureFlags));
   const [mounted, setMounted] = useState(false);
@@ -124,6 +117,14 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const scannerNav = roles.includes('CONTROLEUR') && (isPartner || isAdmin || profile?.scanner_open !== false);
   const isController = scannerNav || isAdmin;
   const isAmbassador = mounted && (profile?.referral_status === 'AMBASSADEUR');
+  // Finition 3b (E-34) : menu de l'administration selon les droits, chargé à la demande (rien pour les autres pages).
+  const [adminNav, setAdminNav] = useState<import('./admin-nav').AdminNav | null>(null);
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    let live = true;
+    void import('./admin-nav').then((m) => { if (live) setAdminNav(m.buildAdminNav(hasPermission, isSuperAdmin)); });
+    return () => { live = false; };
+  }, [isAdmin, isSuperAdmin, hasPermission]);
 
   const isPartnerRoute = pathname.startsWith('/partner/') || pathname === '/partner';
   const isAdminRoute = pathname.startsWith('/admin/') || pathname === '/admin';
@@ -171,15 +172,6 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     { name: 'Profil', href: '/partner/profile', icon: User },
   ];
 
-  // Barre du bas de l'administration : une entrée par écran (lot 5 : plus de doublon /admin/dashboard).
-  const adminMobileItems: NavItem[] = [
-    { name: 'Accueil', href: '/admin/dashboard', icon: LayoutDashboard },
-    { name: 'Événements', short: 'Validation', href: '/admin/events', icon: Calendar },
-    { name: 'Utilisateurs', short: 'Comptes', href: '/admin/users', icon: Users },
-    { name: 'Finance', href: '/admin/finance', icon: DollarSign },
-    { name: 'Audit', href: '/admin/audit', icon: Activity },
-  ];
-
   const controllerMobileItems: NavItem[] = [
     { name: 'Accueil', href: '/', icon: Home },
     { name: 'Explorer', href: '/explore', icon: Compass },
@@ -192,17 +184,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const proItems: NavItem[] = [];
 
   if (isAdmin) {
-    proItems.push({ name: 'Administration', href: '/admin/dashboard', icon: LayoutDashboard });
-    proItems.push({ name: 'Événements à valider', href: '/admin/events', icon: Calendar });
-    proItems.push({ name: 'Utilisateurs et rôles', href: '/admin/users', icon: Users });
-    proItems.push({ name: 'Catalogues et services', href: '/admin/services', icon: Building2 });
-    proItems.push({ name: 'Finance et rapprochement', href: '/admin/finance', icon: DollarSign });
-    proItems.push({ name: 'Parrainage et ambassadeurs', href: '/admin/referral', icon: ShieldAlert });
-    proItems.push({ name: 'Tarification', href: '/admin/pricing', icon: Sliders });
-    proItems.push({ name: 'Communications et campagnes', href: '/admin/communications', icon: Radio });
-    if (isSuperAdmin) proItems.push({ name: 'Journal d’audit', href: '/admin/audit', icon: Activity });
-    proItems.push({ name: 'Notifications', href: '/admin/notifications', icon: BellRing });
-    proItems.push({ name: 'Scanner de contrôle', href: '/scan', icon: QrCode });
+    proItems.push(...(adminNav?.proItems ?? [{ name: 'Administration', href: '/admin/dashboard', icon: LayoutDashboard }]));
   } else if (isPartner && !isPartnerRoute) {
     proItems.push({ name: 'Espace partenaire', href: '/partner/dashboard', icon: LayoutDashboard });
   } else if (isController) {
@@ -213,38 +195,6 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     proItems.push({ name: 'Devenir partenaire', href: '/partner/register', icon: Briefcase });
   }
 
-  const adminNavGroups: Array<{ label: string; items: NavItem[] }> = isAdmin ? [
-    {
-      label: 'Gestion',
-      items: [
-        { name: 'Événements', href: '/admin/events', icon: Calendar },
-        { name: 'Utilisateurs', href: '/admin/users', icon: Users },
-        { name: 'Catalogues et services', href: '/admin/services', icon: Building2 },
-      ],
-    },
-    {
-      label: 'Finances',
-      items: [
-        { name: 'Finance', href: '/admin/finance', icon: DollarSign },
-        { name: 'Tarification', href: '/admin/pricing', icon: Sliders },
-      ],
-    },
-    {
-      label: 'Engagement',
-      items: [
-        { name: 'Parrainage', href: '/admin/referral', icon: Award },
-        { name: 'Communications', href: '/admin/communications', icon: Megaphone },
-      ],
-    },
-    {
-      label: 'Système',
-      items: [
-        ...(isSuperAdmin ? [{ name: 'Journal d’audit', href: '/admin/audit', icon: FileText }] : []),
-        { name: 'Notifications', href: '/admin/notifications', icon: BellRing },
-        { name: 'Scanner', href: '/scan', icon: QrCode },
-      ],
-    },
-  ] : [];
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -336,7 +286,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const mobileItems = canShowRoleNav && isPartnerRoute && isPartner
     ? partnerMobileItems
     : canShowRoleNav && isAdminRoute && isAdmin
-    ? adminMobileItems.filter((i) => i.href !== '/admin/audit' || isSuperAdmin)
+    ? (adminNav?.mobile ?? [{ name: 'Accueil', href: '/admin/dashboard', icon: LayoutDashboard }])
     : scannerNav
     ? controllerMobileItems
     : navItems;
@@ -347,7 +297,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
         <>
           {adminBadge}
           {renderNavLink({ name: 'Tableau de bord', href: '/admin/dashboard', icon: LayoutDashboard }, onNavigate)}
-          {adminNavGroups.map((group) => renderNavSection(group.label, group.items, onNavigate))}
+          {(adminNav?.groups ?? []).map((group) => renderNavSection(group.label, group.items, onNavigate))}
           <div className="border-t border-border pt-2">
             {renderNavLink({ name: 'Retour au site', href: '/', icon: ArrowLeft }, onNavigate)}
           </div>

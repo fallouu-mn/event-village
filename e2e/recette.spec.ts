@@ -203,7 +203,13 @@ async function editSetting(page: Page, label: string, apply: (row: Locator) => P
 }
 
 async function saveSetting(page: Page, label: string, row: Locator, value: string): Promise<void> {
-    await expectRoute(page, 'PUT', '/api/admin/finance-settings', () => row.getByRole('button', { name: /^enregistrer$/i }).click(), 200, `réglage « ${label} »`);
+    // Finition 3b (E-35) : « Vérifier et enregistrer » ouvre la confirmation « Avant → Après » ; rien n'est envoyé avant
+    // « Confirmer le changement ». Modification signalée au rapport.
+    await row.getByRole('button', { name: /^vérifier et enregistrer$/i }).click();
+    const confirm = page.getByRole('alertdialog', { name: /^confirmer le changement/i });
+    await expect(confirm, `confirmation du réglage « ${label} »`).toContainText(/Avant : .+Après : /);
+    await expectRoute(page, 'PUT', '/api/admin/finance-settings', () => confirm.getByRole('button', { name: /^confirmer le changement$/i }).click(), 200, `réglage « ${label} »`);
+    await expect(confirm).toBeHidden();
     await expect(settingRow(page, label).getByText(value, { exact: true }), `réglage « ${label} » affiché`).toBeVisible();
 }
 
@@ -324,7 +330,7 @@ test('acte 1 [admin] : délai de garde coupé à l’écran, motif exigé, histo
         const row = settingRow(page, hold);
         await row.getByRole('button', { name: `Modifier ${hold}` }).click();
         await row.getByLabel(/^nouvelle valeur/i).selectOption('false');
-        await row.getByRole('button', { name: /^enregistrer$/i }).click();
+        await row.getByRole('button', { name: /^vérifier et enregistrer$/i }).click();
         await expect(row.getByText(/indiquez le motif/i), 'sans motif, rien n’est envoyé').toBeVisible();
         await row.getByRole('button', { name: /^annuler$/i }).click();
 
@@ -344,7 +350,7 @@ test('acte 1 [admin] : délai de garde coupé à l’écran, motif exigé, histo
     await test.step('un ADMIN lit les réglages sans « Modifier » (R51), sa modification envoyée directement est refusée', async () => {
         const admin = await asRole(browser, testInfo, 'admin');
         await admin.goto('/admin/finance-settings');
-        await expect(admin.getByText(/^lecture seule : seul un superadministrateur peut modifier ces réglages\./i), 'lecture seule annoncée').toBeVisible();
+        await expect(admin.getByText(/^lecture seule : seul un superadmin peut modifier ces réglages\./i), 'lecture seule annoncée (finition 3b, E-37 : rôle nommé « Superadmin » ; signalé)').toBeVisible();
         await expect(settingRow(admin, hold).getByText('Désactivé', { exact: true }), 'réglage lu par un ADMIN').toBeVisible();
         await expect(admin.getByRole('button', { name: /^modifier /i }), 'aucun bouton « Modifier » sans le droit (R51, B34)').toHaveCount(0);
         // Le serveur reste juge : la même modification envoyée sans l'écran est refusée
