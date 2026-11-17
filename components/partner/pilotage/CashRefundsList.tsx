@@ -121,7 +121,7 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
         if (adminMarks) {
             return (
                 <Button variant="secondary" size="sm" onClick={() => { setMarkError(null); setReason(''); setPending(item); }}
-                    aria-label={`Marquer rendues les espèces de la vente ${item.reference}, ${formatFcfa(item.amount)}`}>
+                    aria-label={`Marquer rendu : espèces de la vente ${item.reference}, ${formatFcfa(item.amount)}`}>
                     Marquer rendu
                 </Button>
             );

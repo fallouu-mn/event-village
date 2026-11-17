@@ -1503,7 +1503,7 @@ export const SCREENS: readonly Screen[] = [
             await revealCenter(heading);
         },
         actions: async ({ page }) => {
-            await page.getByRole('button', { name: /^marquer rendues les espèces/i }).first().click();
+            await page.getByRole('button', { name: /^marquer rendu : espèces de la vente/i }).first().click();
             const dialog = anyDialog(page, /^marquer ces espèces rendues/i);
             await expect(dialog).toBeVisible();
             await expect(dialog.getByLabel(/^motif/i)).toBeVisible();
