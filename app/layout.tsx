@@ -6,6 +6,7 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
+import { THEME_BOOT_SCRIPT } from '@/lib/theme';
 
 // Plus Jakarta Sans auto-hébergée (police variable, sous-ensemble latin, graisses 200-800).
 // Source : @fontsource-variable/plus-jakarta-sans@5.3.0, licence SIL OFL 1.1 (app/fonts/OFL-PlusJakartaSans.txt).
@@ -49,7 +50,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#FF5722',
+  // Design 1a : barre du navigateur au fond de page de chaque thème
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#FFFFFF' },
+    { media: '(prefers-color-scheme: dark)', color: '#121212' },
+  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -63,8 +68,8 @@ export default function RootLayout({
   return (
     <html lang="fr" className={plusJakartaSans.variable} suppressHydrationWarning>
       <head>
-        {/* Script bloquant anti-FOUC : applique le thème AVANT le premier paint */}
-        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('ev-theme');if(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark');}catch(e){}` }} />
+        {/* Design 1a : thème posé avant le premier affichage (cookie ev-theme, thème du téléphone par défaut) : aucun flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-screen antialiased font-sans" suppressHydrationWarning>
         <AuthProvider>
