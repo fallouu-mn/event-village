@@ -4,8 +4,9 @@
  *
  * 4b. Page Équipe d'un admin : la liste avec recherche (OrganizerPicker) remplace « ?partnerId= » tapé à la main ; lien
  *     « Équipe de cet événement » sur la fiche admin d'un événement (onglet Équipe du pilotage).
- * 4c. Écart de caisse : garde-fou, le bouton « Valider l'écart » de l'onglet Caisse n'est caché à aucun rôle (la route et
- *     la base laissent valider un admin events.write depuis la 2a ; la capture le montre) ; vert dès l'écriture.
+ * 4c. Écart de caisse : la route et la base laissent valider un admin events.write depuis la 2a, mais l'écran cachait la
+ *     section « Écarts à valider » à tout admin (run 291) : elle s'affiche désormais pour la propriétaire, le SUPERADMIN et
+ *     un admin events.write (même règle que « Fermer cette caisse »).
  * 5. Accueil (décision 12 de la 3b) : « Argent qui attend » garde le détail ; « À faire aujourd'hui » n'a plus qu'une
  *    ligne pour l'argent : « Argent qui attend : {n} versements à reprendre, {n} créances », qui mène au bloc
  *    (#argent-qui-attend). Composition dans une fonction pure (todoMoneyLine, lib/admin/todo.ts) : seules les parties
@@ -38,7 +39,7 @@ describe('4b. Équipe d’un admin : choix de l’organisatrice et lien depuis l
         assert.match(page, /<OrganizerPicker\b/, 'la page Équipe doit proposer OrganizerPicker à un admin');
         assert.match(page, /Changer d’organisatrice/, 'un admin doit pouvoir revenir à la liste');
         const picker = read('components/partner/team/OrganizerPicker.tsx');
-        assert.match(picker, /'\/api\/partner\/team\/organizers/, 'la liste doit lire GET /api/partner/team/organizers');
+        assert.match(picker, /[`'"]\/api\/partner\/team\/organizers/, 'la liste doit lire GET /api/partner/team/organizers');
         assert.match(picker, /type="search"|inputMode="search"/, 'champ de recherche absent');
         assert.match(picker, /Aucune organisatrice ne correspond/, 'état vide de la recherche absent');
     });
@@ -50,13 +51,23 @@ describe('4b. Équipe d’un admin : choix de l’organisatrice et lien depuis l
     });
 });
 
-describe('4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write (garde-fou)', () => {
-    test('le bouton n’est filtré par aucun rôle ; l’onglet Caisse est proposé à tous', () => {
+describe('4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write', () => {
+    test('la section « Écarts à valider » s’affiche pour la propriétaire, le SUPERADMIN et un admin events.write', () => {
         const cash = read('components/partner/pilotage/CashTab.tsx');
-        const block = cash.slice(cash.indexOf('function DiscrepancyValidation'), cash.indexOf('function DiscrepancyValidation') + 4000);
-        assert.match(block, /Valider l’écart/);
-        assert.doesNotMatch(block, /hasAnyRole|hasPermission|viewerIsAdmin|isAdmin/, 'le bouton ne doit pas dépendre du rôle : la route décide');
-        assert.match(read('app/partner/events/[id]/page.tsx'), /\{ id: 'caisse', label: 'Caisse' \}/);
+        // Avant la 3d : {!hasAnyRole(['ADMIN', 'SUPERADMIN']) && <DiscrepancyValidation …/>} : cachée à tout admin, alors que la
+        // route et la base laissent valider un admin events.write depuis la 2a.
+        assert.doesNotMatch(cash, /!hasAnyRole\(\['ADMIN', 'SUPERADMIN'\]\) && <DiscrepancyValidation/, 'section cachée à tout administrateur');
+        const render = /\{(\w+) && <DiscrepancyValidation\b/.exec(cash);
+        assert.ok(render, 'la section doit dépendre d’un seul booléen nommé');
+        const decl = new RegExp(`const ${render[1]} = ([^;]+);`).exec(cash);
+        assert.ok(decl, `déclaration de ${render[1]} absente`);
+        assert.match(decl[1], /!hasAnyRole\(\['ADMIN', 'SUPERADMIN'\]\)/, 'la propriétaire (compte non admin) doit garder la section');
+        assert.match(decl[1], /hasRole\('SUPERADMIN'\)/, 'le SUPERADMIN doit voir la section');
+        assert.match(decl[1], /hasPermission\('events\.write'\)/, 'un admin events.write doit voir la section');
+        const start = cash.indexOf('function DiscrepancyValidation');
+        const end = cash.indexOf('\nfunction ', start + 10);
+        assert.match(cash.slice(start, end === -1 ? undefined : end), /Valider l’écart/);
+        assert.match(read('app/partner/events/[id]/page.tsx'), /\{ id: 'caisse', label: 'Caisse' \}/, 'onglet Caisse proposé à tous');
     });
 });
 

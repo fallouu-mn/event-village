@@ -579,6 +579,12 @@ export default function AdminEventSheetPage() {
                 Ouvrir le pilotage
               </LinkButton>
             )}
+            {/* Finition 3d (point 4b) : l'équipe de contrôle de cet événement (onglet Équipe du pilotage) */}
+            {hasPermission('events.read') && (
+              <LinkButton href={`/partner/events/${event.id}?tab=equipe`} variant="secondary" leftIcon={<Users size={16} />}>
+                Équipe de cet événement
+              </LinkButton>
+            )}
             {isPublic && (
               <LinkButton href={`/events/${event.id}`} variant="ghost" external rightIcon={<ExternalLink size={16} />}>
                 Page publique

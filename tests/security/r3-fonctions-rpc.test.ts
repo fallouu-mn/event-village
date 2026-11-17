@@ -537,6 +537,30 @@ describe('R3 — finition 3b : chaque fonction de la finition existe et reste r�
     }
 });
 
+// Finition 3d : chaque fonction nouvelle de la finition, appelée directement, est refusée à anon et à un compte (garde-fou
+// ajouté avec chaque migration de la finition ; ajout seul, signalé au rapport).
+const FINITION3D_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['admin_organizers_search', { p: { q: '' } }],
+    ['f3d_fold', { t: 'Gorée' }],
+];
+
+describe('R3 — finition 3d : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261120… de la finition 3d';
+    for (const [fn, args] of FINITION3D_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
 describe('R3 — aides RLS toujours appelables (sinon les politiques échouent)', () => {
     for (const [fn, args] of RLS_HELPERS) {
         test(`anon et authenticated : rpc(${fn}) acceptée`, async () => {

@@ -260,6 +260,8 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/admin/AdminAccountStepUp.tsx',
     'app/controller/scanner/layout.tsx',
     'app/controller/profile/layout.tsx',
+    // Finition 3d (point 4b) : choix de l'organisatrice dans la page Équipe d'un admin (liste avec recherche)
+    'components/partner/team/OrganizerPicker.tsx',
     'app/aide/page.tsx',
     // Finition 1 (E-14) : composant commun de l'équipe, page /partner/team et onglet Équipe du pilotage
     'components/partner/team/TeamPanel.tsx',
