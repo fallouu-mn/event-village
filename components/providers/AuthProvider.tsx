@@ -207,8 +207,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Cvf2b 6.9 : abonnement push de ce navigateur retiré sur toute fin de session (autre onglet, autre
                     // appareil, jeton de rafraîchissement refusé, mot de passe réinitialisé), pas seulement au bouton
                     void unsubscribePush();
-                } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
-                    void clearOfflineStore();
+                } else if (event === 'SIGNED_IN' && nextUserId) {
+                    // Cvf2b 5c / 5d : à toute connexion, brouillons d'un autre compte (et ceux de plus de 7 jours)
+                    // effacés, même quand le compte précédent n'est plus en mémoire (page rechargée)
+                    clearAllDrafts(nextUserId);
+                    if (previousUserId && nextUserId !== previousUserId) void clearOfflineStore();
                 } else if (event === 'INITIAL_SESSION' && !nextUserId && sessionEnded()) {
                     // Cvf2b 6.5 : page chargée sans session (close à l'insu du navigateur : « Déconnecter tous mes
                     // appareils » depuis un autre appareil, signal du middleware) : tout ce que le compte a laissé sur
