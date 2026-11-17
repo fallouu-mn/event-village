@@ -613,7 +613,7 @@ describe('13. inventaire des stockages du navigateur', () => {
         const known: Record<string, { what: string; compte: boolean; purge: string | null }> = {
             'lib/events/local-draft.ts': { what: 'brouillons du formulaire d’événement (localStorage)', compte: true, purge: 'clearAllDrafts' },
             'lib/scan/scan-session.ts': { what: 'mémoire du contrôle, scan en attente avec le QR lu (localStorage)', compte: true, purge: 'clearAllScanMemory' },
-            'lib/payments/payment-client.ts': { what: 'liens et QR de paiement de l’opérateur pour un paiement du compte (sessionStorage « event-village:paiement: »)', compte: true, purge: null },
+            'lib/payments/payment-client.ts': { what: 'liens et QR de paiement de l’opérateur pour un paiement du compte (sessionStorage « event-village:paiement: »)', compte: true, purge: 'clearPaymentHandoffs' },
             'app/events/[id]/page.tsx': { what: 'panier (catégories et quantités) gardé pendant la connexion, 30 min (sessionStorage)', compte: false, purge: null },
             'components/auth/LoginForm.tsx': { what: 'compteur d’échecs de connexion (localStorage)', compte: false, purge: null },
             'app/forgot-password/page.tsx': { what: 'compteur d’échecs ; drapeau « code vérifié » horodaté, sans valeur sans la session (sessionStorage)', compte: false, purge: null },
