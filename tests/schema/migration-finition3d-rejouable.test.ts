@@ -19,6 +19,8 @@ const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 const FINITION3D_MIGRATIONS = [
     // 4b : liste des organisatrices de la page Équipe d'un admin (recherche sans accents)
     '20261120000001_f3d_equipe.sql',
+    // 4a : espèces marquées rendues par un admin, avis à l'organisatrice
+    '20261120000002_f3d_especes.sql',
 ] as const;
 
 after(async () => {

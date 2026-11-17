@@ -1819,6 +1819,17 @@ const CATALOG = {
         sms: (_d, ctx) => `${SMS_PREFIX}une adresse email a été ajoutée à votre compte. Si ce n'est pas vous : ${appLink(ctx, '/aide')}`,
         sample: {},
     }),
+    // Finition 3d (point 4a) : espèces d'une vente au guichet marquées rendues par un admin, à la place de l'organisatrice ;
+    // le motif est écrit. Lien vers l'onglet Clôture du pilotage (liste des espèces à rembourser).
+    CASH_REFUND_MARKED_BY_ADMIN: define('CASH_REFUND_MARKED_BY_ADMIN', {
+        label: 'Espèces marquées rendues par l’administration', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        link: (d) => partnerEventPath(d, 'cloture'),
+        inApp: (d) => ({
+            title: 'Espèces marquées rendues par l’administration',
+            content: `L'administration a marqué rendues les espèces de la vente ${text(d, 'reference')} (${money(d, 'amount')}) pour ${q(text(d, 'title'))}. Motif : ${sentence(text(d, 'reason'))}`,
+        }),
+        sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, reference: '1F6E2B9C', amount: 6_000, reason: 'Espèces rendues par la billetterie du lieu' },
+    }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),

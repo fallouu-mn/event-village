@@ -248,6 +248,10 @@ export interface TemplateData {
     ACCOUNT_LOGIN_FAILURES: { day?: string };
     /** Lot 9 quinquies (C2 : AUTH-09) : nouvelle adresse email vérifiée sur le compte (aucune donnée : jamais l'adresse dans un SMS). */
     EMAIL_ADDED: Record<string, never>;
+
+    // ── Finition 3d (recours et suppléance) ──
+    /** Point 4a : espèces d'une vente au guichet marquées rendues par un admin, à la place de l'organisatrice (avec le motif). */
+    CASH_REFUND_MARKED_BY_ADMIN: EventData & { payment_id: string; reference: string; amount: number; reason: string };
 }
 
 export type NotificationType = keyof TemplateData;

@@ -218,6 +218,8 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_REVIEW_SMS: 'SMS aux administrateurs : à valider',
     ACCOUNT_LOGIN_FAILURES: 'Essais de connexion échoués',
     EMAIL_ADDED: 'Adresse email ajoutée au compte',
+    // Finition 3d (recours et suppléance)
+    CASH_REFUND_MARKED_BY_ADMIN: 'Espèces marquées rendues par l’administration',
 };
 
 export function outboxStatusLabel(status: string): string {
