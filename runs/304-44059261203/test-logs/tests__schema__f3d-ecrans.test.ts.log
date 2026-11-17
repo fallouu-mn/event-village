@@ -1,0 +1,2088 @@
+TAP version 13
+# Subtest: 4b. Équipe d’un admin : choix de l’organisatrice et lien depuis la fiche d’un événement
+    # Subtest: page Équipe : un admin sans organisatrice choisie voit la liste avec recherche (plus de « ?partnerId= » à taper)
+    ok 1 - page Équipe : un admin sans organisatrice choisie voit la liste avec recherche (plus de « ?partnerId= » à taper)
+      ---
+      duration_ms: 0.713001
+      type: 'test'
+      ...
+    # Subtest: fiche admin d’un événement : lien « Équipe de cet événement » vers l’onglet Équipe du pilotage
+    ok 2 - fiche admin d’un événement : lien « Équipe de cet événement » vers l’onglet Équipe du pilotage
+      ---
+      duration_ms: 0.196265
+      type: 'test'
+      ...
+    1..2
+ok 1 - 4b. Équipe d’un admin : choix de l’organisatrice et lien depuis la fiche d’un événement
+  ---
+  duration_ms: 1.491391
+  type: 'suite'
+  ...
+# Subtest: 4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write
+    # Subtest: la section « Écarts à valider » s’affiche pour la propriétaire, le SUPERADMIN et un admin events.write
+    ok 1 - la section « Écarts à valider » s’affiche pour la propriétaire, le SUPERADMIN et un admin events.write
+      ---
+      duration_ms: 0.375675
+      type: 'test'
+      ...
+    1..1
+ok 2 - 4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write
+  ---
+  duration_ms: 0.452921
+  type: 'suite'
+  ...
+# Subtest: 5. accueil : une seule ligne pour l’argent dans « À faire aujourd’hui »
+    # Subtest: versements et créances : « Argent qui attend : 2 versements à reprendre, 3 créances »
+    ok 1 - versements et créances : « Argent qui attend : 2 versements à reprendre, 3 créances »
+      ---
+      duration_ms: 6.269009
+      type: 'test'
+      ...
+    # Subtest: un versement, aucune créance : singulier et « aucune créance »
+    ok 2 - un versement, aucune créance : singulier et « aucune créance »
+      ---
+      duration_ms: 0.385088
+      type: 'test'
+      ...
+    # Subtest: seulement le droit de lire les créances : la partie des versements n’apparaît pas
+    ok 3 - seulement le droit de lire les créances : la partie des versements n’apparaît pas
+      ---
+      duration_ms: 0.331067
+      type: 'test'
+      ...
+    # Subtest: tout à zéro : ligne « À jour », jamais une carte
+    ok 4 - tout à zéro : ligne « À jour », jamais une carte
+      ---
+      duration_ms: 0.452751
+      type: 'test'
+      ...
+    # Subtest: compteur illisible : dit, jamais 0, et la carte reste affichée
+    ok 5 - compteur illisible : dit, jamais 0, et la carte reste affichée
+      ---
+      duration_ms: 0.321873
+      type: 'test'
+      ...
+    # Subtest: aucun des deux droits : pas de ligne pour l’argent
+    ok 6 - aucun des deux droits : pas de ligne pour l’argent
+      ---
+      duration_ms: 0.354553
+      type: 'test'
+      ...
+    # Subtest: TodoToday : une seule carte pour l’argent, qui mène au bloc « Argent qui attend »
+    ok 7 - TodoToday : une seule carte pour l’argent, qui mène au bloc « Argent qui attend »
+      ---
+      duration_ms: 0.314412
+      type: 'test'
+      ...
+    1..7
+ok 3 - 5. accueil : une seule ligne pour l’argent dans « À faire aujourd’hui »
+  ---
+  duration_ms: 8.748924
+  type: 'suite'
+  ...
+# Subtest: 2. téléphone perdu : écrans
+    # Subtest: fenêtre du code administrateur : « J’ai perdu mon téléphone », mot de passe et code de secours, puis la page Sécurité
+    not ok 1 - fenêtre du code administrateur : « J’ai perdu mon téléphone », mot de passe et code de secours, puis la page Sécurité
+      ---
+      duration_ms: 2.297272
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:7933'
+      failureType: 'testCodeFailure'
+      error: 'lien « J’ai perdu mon téléphone » absent'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+        import { KeyRound, LogOut, MessageSquareText, ShieldCheck } from 'lucide-react';
+        import { Modal } from '@/components/ui/Modal';
+        import { Button } from '@/components/ui/Button';
+        import { TextInput } from '@/components/ui/Field';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { OtpInput } from '@/components/auth/OtpInput';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
+        import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
+        import { INPUT_AGE_HEADER } from '@/lib/admin/input-age';
+        
+        /**
+         * Lot 9 quinquies (A3 : AUTH-05 ; A4 : AUTH-04) — fenêtre de sécurité de l'administration.
+         *
+         *  - À l'ouverture de /admin : GET /api/admin/step-up ; sur un nouvel appareil, ou après 12 h, la fenêtre demande le code
+         *    administrateur reçu par SMS (et le mot de passe d'abord si la session a plus de 12 h). La page est rendue tout de
+         *    suite, côté serveur compris, et la fenêtre se pose par-dessus : ses lectures sont refusées par le serveur tant que
+         *    l'étape manque, puis la page est rechargée une fois l'étape passée. (Run 171 : rendue seulement après la lecture de
+         *    l'état, la page créait ses champs de date hors du document, et Chrome les affichait en mm/dd/yyyy malgré lang="fr".)
+         *  - Après 30 minutes sans activité (minuterie locale, et tout refus 403 ADMIN_PASSWORD_REQUIRED ou ADMIN_SMS_REQUIRED
+         *    renvoyé par une route), la fenêtre redemande le mot de passe PAR-DESSUS la page : rien n'est perdu, l'action
+         *    interrompue se relance une fois la fenêtre fermée.
+         *  - Le serveur décide toujours (lib/admin/step-up.ts) : la fenêtre ne fait qu'aider.
+         * Saisie du code : 6 cases, collage, clavier numérique, « one-time-code » (OtpInput) ; mot de passe : « current-password ».
+         *
+         * Finition 3d (point 1) :
+         *  - chaque appel /api/ de la page porte l'âge de la dernière saisie (en-tête x-ev-input-age, lib/admin/input-age.ts) :
+         *    une relecture automatique faite sans saisie depuis plus d'une minute ne compte plus comme une activité côté serveur,
+         *    une page laissée ouverte ne garde donc plus la session éveillée ;
+         *  - la fenêtre sert aussi sur les pages partenaire et contrôleur d'un compte admin, où le serveur applique désormais la
+         *    même règle des 30 minutes : AdminStepUpOverlay (sans enfants), chargé à la demande par AdminAccountStepUp pour un
+         *    compte admin seulement, posé à côté de la page (rien n'est remonté, rien n'est ajouté au code d'un contrôleur).
+         */
+        
+        type Required = 'ADMIN_PASSWORD_REQUIRED' | 'ADMIN_SMS_REQUIRED' | null;
+        interface Status { required: Required; reason: string | null; idleMinutes: number; phone: string | null }
+        
+        const STEP_UP_CODES = new Set(['ADMIN_PASSWORD_REQUIRED', 'ADMIN_SMS_REQUIRED']);
+        const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+        
+        /** Appel /api/ de la même origine : copie de l'appel avec l'âge de la dernière saisie, en secondes. Autre appel : inchangé. */
+        function withInputAge(input: RequestInfo | URL, init: RequestInit | undefined, ageSecs: number): [RequestInfo | URL, RequestInit | undefined] {
+          let url: URL;
+          try {
+            url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, window.location.href);
+          } catch {
+            return [input, init];
+          }
+          if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return [input, init];
+          const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+          headers.set(INPUT_AGE_HEADER, String(Math.max(0, ageSecs)));
+          return [input, { ...init, headers }];
+        }
+        
+        export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
+          const [status, setStatus] = useState<Status | null>(null);
+          const [loadError, setLoadError] = useState<string | null>(null);
+          const lastInput = useRef<number>(Date.now());
+          // Page ouverte alors qu'une étape manquait : ses premières lectures ont été refusées, elle est rechargée après l'étape
+          const lockedAtLoad = useRef<boolean | null>(null);
+        
+          const refresh = useCallback(async (): Promise<Status | null> => {
+            try {
+              const res = await fetch('/api/admin/step-up', { cache: 'no-store' });
+              const body = (await res.json().catch(() => null)) as (Status & { error?: string }) | null;
+              if (!res.ok || !body) {
+                setLoadError(body?.error ?? 'Vérification de la session momentanément impossible. Rechargez la page.');
+                return null;
+              }
+              setLoadError(null);
+              setStatus(body);
+              if (lockedAtLoad.current === null) lockedAtLoad.current = body.required !== null;
+              return body;
+            } catch (err) {
+              console.error('[AdminStepUpGate] état de la session illisible :', err instanceof Error ? err.message : String(err));
+              setLoadError('Connexion impossible. Vérifiez votre réseau puis rechargez la page.');
+              return null;
+            }
+          }, []);
+        
+          useEffect(() => { void refresh(); }, [refresh]);
+        
+          // Tout refus d'étape de sécurité renvoyé par une route ouvre la fenêtre (la page reste affichée dessous).
+          // Finition 3d (point 1) : chaque appel /api/ porte l'âge de la dernière saisie.
+          useEffect(() => {
+            const original = window.fetch;
+            const patched: typeof window.fetch = async (input, init) => {
+              const [i, n] = withInputAge(input, init, Math.floor((Date.now() - lastInput.current) / 1000));
+              const res = await original(i, n);
+              if (res.status === 403) {
+                res.clone().json().then((b: { code?: string } | null) => {
+                  if (b?.code && STEP_UP_CODES.has(b.code)) void refresh();
+                }).catch((err: unknown) => {
+                  // Corps non JSON : ce refus n'est pas une étape de sécurité, rien à ouvrir
+                  console.debug('[AdminStepUpGate] refus 403 sans corps JSON :', err instanceof Error ? err.message : String(err));
+                });
+              }
+              return res;
+            };
+            window.fetch = patched;
+            return () => { if (window.fetch === patched) window.fetch = original; };
+          }, [refresh]);
+        
+          // Minuterie d'inactivité locale : la fenêtre se rouvre d'elle-même à l'échéance (le serveur l'exige aussi).
+          useEffect(() => {
+            const touch = () => { lastInput.current = Date.now(); };
+            for (const e of ACTIVITY_EVENTS) window.addEventListener(e, touch, { passive: true });
+            const timer = window.setInterval(() => {
+              const idle = (status?.idleMinutes ?? 30) * 60_000;
+              if (status && !status.required && Date.now() - lastInput.current > idle) {
+                setStatus((s) => (s ? { ...s, required: 'ADMIN_PASSWORD_REQUIRED', reason: 'IDLE' } : s));
+              }
+            }, 30_000);
+            return () => {
+              for (const e of ACTIVITY_EVENTS) window.removeEventListener(e, touch);
+              window.clearInterval(timer);
+            };
+          }, [status]);
+        
+          const done = async () => {
+            lastInput.current = Date.now();
+            const next = await refresh();
+            if (next && !next.required && lockedAtLoad.current) window.location.reload();
+          };
+        
+          return (
+            <>
+              {loadError && (
+                <div className="mx-auto max-w-lg px-4 pt-6">
+                  <StatusBanner tone="danger" announce="alert" title="Administration indisponible">{loadError}</StatusBanner>
+                </div>
+              )}
+              {children}
+              {status?.required && (
+                <StepUpDialog required={status.required} reason={status.reason} phone={status.phone} onDone={() => void done()} />
+              )}
+            </>
+          );
+        }
+        
+        /**
+         * Finition 3d (point 1) — la même fenêtre sans enfants, posée à côté d'une page partenaire ou contrôleur d'un compte admin
+         * (chargée à la demande par AdminAccountStepUp) : état de la session, âge de la dernière saisie sur chaque appel /api/,
+         * minuterie d'inactivité et saisie du mot de passe ou du code, sans remonter la page.
+         */
+        export function AdminStepUpOverlay() {
+          return <AdminStepUpGate>{null}</AdminStepUpGate>;
+        }
+        
+        function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<Required, null>; reason: string | null; phone: string | null; onDone: () => void }) {
+          const errorId = useId();
+          const { signOut } = useAuth();
+          const [password, setPassword] = useState('');
+          const [code, setCode] = useState('');
+          const [codeSent, setCodeSent] = useState(false);
+          const [busy, setBusy] = useState(false);
+          const [error, setError] = useState<string | null>(null);
+        
+          useEffect(() => { setError(null); setCode(''); setPassword(''); }, [required]);
+        
+          const failure = (err: unknown, fallback: string) => {
+            const wait = err instanceof ApiError && err.status === 429 ? retryAfterOf(err.body) : null;
+            setError(wait ? `${errorMessage(err, fallback)} ${formatRetryDelay(wait)}` : errorMessage(err, fallback));
+          };
+        
+          const submitPassword = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!password || busy) return;
+            setBusy(true); setError(null);
+            try {
+              await sendJson('/api/admin/step-up', 'POST', { password });
+              onDone();
+            } catch (err) {
+              failure(err, 'Mot de passe non vérifié. Réessayez.');
+            } finally { setBusy(false); }
+          };
+        
+          const sendCode = async () => {
+            setBusy(true); setError(null);
+            try {
+              await sendJson('/api/admin/step-up/sms', 'POST', {});
+              setCodeSent(true);
+            } catch (err) {
+              failure(err, 'Le code n’a pas pu être envoyé. Réessayez.');
+            } finally { setBusy(false); }
+          };
+        
+          const submitCode = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (code.length !== 6 || busy) return;
+            setBusy(true); setError(null);
+            try {
+              await sendJson('/api/admin/step-up/sms', 'POST', { code });
+              onDone();
+            } catch (err) {
+              failure(err, 'Code refusé. Réessayez.');
+            } finally { setBusy(false); }
+          };
+        
+          const isPassword = required === 'ADMIN_PASSWORD_REQUIRED';
+          const title = isPassword ? 'Confirmez votre mot de passe' : 'Code administrateur';
+          const subtitle = isPassword
+            ? (reason === 'IDLE'
+              ? 'Votre session d’administration est restée sans activité. Votre page est gardée : saisissez votre mot de passe pour continuer.'
+              : 'Par sécurité, votre mot de passe est redemandé toutes les 12 heures dans l’administration.')
+            : (reason === 'DEVICE_12H'
+              ? 'Par sécurité, un nouveau code est demandé toutes les 12 heures.'
+              : 'Première ouverture de l’administration sur cet appareil : un code vous est envoyé par SMS.');
+        
+          return (
+            <Modal
+              isOpen
+              onClose={() => undefined}
+              closeOnOverlayClick={false}
+              role="alertdialog"
+              title={title}
+              subtitle={subtitle}
+              icon={isPassword ? <KeyRound size={20} /> : <ShieldCheck size={20} />}
+              maxWidth="md"
+              busy={busy}
+            >
+              <div className="space-y-4">
+                {error && <StatusBanner tone="danger" announce="alert" title="Vérification impossible"><span id={errorId}>{error}</span></StatusBanner>}
+                {isPassword ? (
+                  <form className="space-y-4" onSubmit={(e) => void submitPassword(e)}>
+                    <TextInput label="Mot de passe" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                    <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} leftIcon={<KeyRound size={18} />}>Continuer</Button>
+                  </form>
+                ) : !codeSent ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-fg">Le code part par SMS{phone ? ` au ${phone}` : ''}. Ne le donnez à personne.</p>
+                    <Button type="button" variant="primary" size="lg" fullWidth isLoading={busy} onClick={() => void sendCode()} leftIcon={<MessageSquareText size={18} />}>
+                      Recevoir le code par SMS
+                    </Button>
+                  </div>
+                ) : (
+                  <form className="space-y-4" onSubmit={(e) => void submitCode(e)}>
+                    <p className="text-sm text-fg">Saisissez les 6 chiffres reçus{phone ? ` au ${phone}` : ''}. Le code est valable 10 minutes.</p>
+                    <OtpInput value={code} onChange={setCode} disabled={busy} hasError={!!error} describedBy={error ? errorId : undefined} />
+                    <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} disabled={code.length !== 6} leftIcon={<ShieldCheck size={18} />}>
+                      Valider le code
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" fullWidth onClick={() => void sendCode()} disabled={busy}>Recevoir un nouveau code</Button>
+                  </form>
+                )}
+                <Button type="button" variant="ghost" size="sm" fullWidth disabled={busy} leftIcon={<LogOut size={16} />}
+                  onClick={() => { void signOut().then(() => { window.location.assign('/login'); }); }}>
+                  Se déconnecter
+                </Button>
+              </div>
+            </Modal>
+          );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:146:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: après la double vérification, un SUPERADMIN sans codes de secours se les voit proposer
+    not ok 2 - après la double vérification, un SUPERADMIN sans codes de secours se les voit proposer
+      ---
+      duration_ms: 1.036748
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:9020'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /Créez vos codes de secours/. Input:
+        
+        "'use client';\n" +
+          '\n' +
+          "import React, { useCallback, useEffect, useId, useRef, useState } from 'react';\n" +
+          "import { KeyRound, LogOut, MessageSquareText, ShieldCheck } from 'lucide-react';\n" +
+          "import { Modal } from '@/components/ui/Modal';\n" +
+          "import { Button } from '@/components/ui/Button';\n" +
+          "import { TextInput } from '@/components/ui/Field';\n" +
+          "import { StatusBanner } from '@/components/ui/StatusBanner';\n" +
+          "import { OtpInput } from '@/components/auth/OtpInput';\n" +
+          "import { useAuth } from '@/components/providers/AuthProvider';\n" +
+          "import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';\n" +
+          "import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';\n" +
+          "import { INPUT_AGE_HEADER } from '@/lib/admin/input-age';\n" +
+          '\n' +
+          '/**\n' +
+          " * Lot 9 quinquies (A3 : AUTH-05 ; A4 : AUTH-04) — fenêtre de sécurité de l'administration.\n" +
+          ' *\n' +
+          " *  - À l'ouverture de /admin : GET /api/admin/step-up ; sur un nouvel appareil, ou après 12 h, la fenêtre demande le code\n" +
+          " *    administrateur reçu par SMS (et le mot de passe d'abord si la session a plus de 12 h). La page est rendue tout de\n" +
+          ' *    suite, côté serveur compris, et la fenêtre se pose par-dessus : ses lectures sont refusées par le serveur tant que\n' +
+          " *    l'étape manque, puis la page est rechargée une fois l'étape passée. (Run 171 : rendue seulement après la lecture de\n" +
+          ` *    l'état, la page créait ses champs de date hors du document, et Chrome les affichait en mm/dd/yyyy malgré lang="fr".)\n` +
+          ' *  - Après 30 minutes sans activité (minuterie locale, et tout refus 403 ADMIN_PASSWORD_REQUIRED ou ADMIN_SMS_REQUIRED\n' +
+          " *    renvoyé par une route), la fenêtre redemande le mot de passe PAR-DESSUS la page : rien n'est perdu, l'action\n" +
+          ' *    interrompue se relance une fois la fenêtre fermée.\n' +
+          " *  - Le serveur décide toujours (lib/admin/step-up.ts) : la fenêtre ne fait qu'aider.\n" +
+          ' * Saisie du code : 6 cases, collage, clavier numérique, « one-time-code » (OtpInput) ; mot de passe : « current-password ».\n' +
+          ' *\n' +
+          ' * Finition 3d (point 1) :\n' +
+          " *  - chaque appel /api/ de la page porte l'âge de la dernière saisie (en-tête x-ev-input-age, lib/admin/input-age.ts) :\n" +
+          " *    une relecture automatique faite sans saisie depuis plus d'une minute ne compte plus comme une activité côté serveur,\n" +
+          ' *    une page laissée ouverte ne garde donc plus la session éveillée ;\n' +
+          " *  - la fenêtre sert aussi sur les pages partenaire et contrôleur d'un compte admin, où le serveur applique désormais la\n" +
+          ' *    même règle des 30 minutes : AdminStepUpOverlay (sans enfants), chargé à la demande par AdminAccountStepUp pour un\n' +
+          " *    compte admin seulement, posé à côté de la page (rien n'est remonté, rien n'est ajouté au code d'un contrôleur).\n" +
+          ' */\n' +
+          '\n' +
+          "type Required = 'ADMIN_PASSWORD_REQUIRED' | 'ADMIN_SMS_REQUIRED' | null;\n" +
+          'interface Status { required: Required; reason: string | null; idleMinutes: number; phone: string | null }\n' +
+          '\n' +
+          "const STEP_UP_CODES = new Set(['ADMIN_PASSWORD_REQUIRED', 'ADMIN_SMS_REQUIRED']);\n" +
+          "const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;\n" +
+          '\n' +
+          "/** Appel /api/ de la même origine : copie de l'appel avec l'âge de la dernière saisie, en secondes. Autre appel : inchangé. */\n" +
+          'function withInputAge(input: RequestInfo | URL, init: RequestInit | undefined, ageSecs: number): [RequestInfo | URL, RequestInit | undefined] {\n' +
+          '  let url: URL;\n' +
+          '  try {\n' +
+          "    url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, window.location.href);\n" +
+          '  } catch {\n' +
+          '    return [input, init];\n' +
+          '  }\n' +
+          "  if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return [input, init];\n" +
+          '  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));\n' +
+          '  headers.set(INPUT_AGE_HEADER, String(Math.max(0, ageSecs)));\n' +
+          '  return [input, { ...init, headers }];\n' +
+          '}\n' +
+          '\n' +
+          'export function AdminStepUpGate({ children }: { children: React.ReactNode }) {\n' +
+          '  const [status, setStatus] = useState<Status | null>(null);\n' +
+          '  const [loadError, setLoadError] = useState<string | null>(null);\n' +
+          '  const lastInput = useRef<number>(Date.now());\n' +
+          "  // Page ouverte alors qu'une étape manquait : ses premières lectures ont été refusées, elle est rechargée après l'étape\n" +
+          '  const lockedAtLoad = useRef<boolean | null>(null);\n' +
+          '\n' +
+          '  const refresh = useCallback(async (): Promise<Status | null> => {\n' +
+          '    try {\n' +
+          "      const res = await fetch('/api/admin/step-up', { cache: 'no-store' });\n" +
+          '      const body = (await res.json().catch(() => null)) as (Status & { error?: string }) | null;\n' +
+          '      if (!res.ok || !body) {\n' +
+          "        setLoadError(body?.error ?? 'Vérification de la session momentanément impossible. Rechargez la page.');\n" +
+          '        return null;\n' +
+          '      }\n' +
+          '      setLoadError(null);\n' +
+          '      setStatus(body);\n' +
+          '      if (lockedAtLoad.current === null) lockedAtLoad.current = body.required !== null;\n' +
+          '      return body;\n' +
+          '    } catch (err) {\n' +
+          "      console.error('[AdminStepUpGate] état de la session illisible :', err instanceof Error ? err.message : String(err));\n" +
+          "      setLoadError('Connexion impossible. Vérifiez votre réseau puis rechargez la page.');\n" +
+          '      return null;\n' +
+          '    }\n' +
+          '  }, []);\n' +
+          '\n' +
+          '  useEffect(() => { void refresh(); }, [refresh]);\n' +
+          '\n' +
+          "  // Tout refus d'étape de sécurité renvoyé par une route ouvre la fenêtre (la page reste affichée dessous).\n" +
+          "  // Finition 3d (point 1) : chaque appel /api/ porte l'âge de la dernière saisie.\n" +
+          '  useEffect(() => {\n' +
+          '    const original = window.fetch;\n' +
+          '    const patched: typeof window.fetch = async (input, init) => {\n' +
+          '      const [i, n] = withInputAge(input, init, Math.floor((Date.now() - lastInput.current) / 1000));\n' +
+          '      const res = await original(i, n);\n' +
+          '      if (res.status === 403) {\n' +
+          '        res.clone().json().then((b: { code?: string } | null) => {\n' +
+          '          if (b?.code && STEP_UP_CODES.has(b.code)) void refresh();\n' +
+          '        }).catch((err: unknown) => {\n' +
+          "          // Corps non JSON : ce refus n'est pas une étape de sécurité, rien à ouvrir\n" +
+          "          console.debug('[AdminStepUpGate] refus 403 sans corps JSON :', err instanceof Error ? err.message : String(err));\n" +
+          '        });\n' +
+          '      }\n' +
+          '      return res;\n' +
+          '    };\n' +
+          '    window.fetch = patched;\n' +
+          '    return () => { if (window.fetch === patched) window.fetch = original; };\n' +
+          '  }, [refresh]);\n' +
+          '\n' +
+          "  // Minuterie d'inactivité locale : la fenêtre se rouvre d'elle-même à l'échéance (le serveur l'exige aussi).\n" +
+          '  useEffect(() => {\n' +
+          '    const touch = () => { lastInput.current = Date.now(); };\n' +
+          '    for (const e of ACTIVITY_EVENTS) window.addEventListener(e, touch, { passive: true });\n' +
+          '    const timer = window.setInterval(() => {\n' +
+          '      const idle = (status?.idleMinutes ?? 30) * 60_000;\n' +
+          '      if (status && !status.required && Date.now() - lastInput.current > idle) {\n' +
+          "        setStatus((s) => (s ? { ...s, required: 'ADMIN_PASSWORD_REQUIRED', reason: 'IDLE' } : s));\n" +
+          '      }\n' +
+          '    }, 30_000);\n' +
+          '    return () => {\n' +
+          '      for (const e of ACTIVITY_EVENTS) window.removeEventListener(e, touch);\n' +
+          '      window.clearInterval(timer);\n' +
+          '    };\n' +
+          '  }, [status]);\n' +
+          '\n' +
+          '  const done = async () => {\n' +
+          '    lastInput.current = Date.now();\n' +
+          '    const next = await refresh();\n' +
+          '    if (next && !next.required && lockedAtLoad.current) window.location.reload();\n' +
+          '  };\n' +
+          '\n' +
+          '  return (\n' +
+          '    <>\n' +
+          '      {loadError && (\n' +
+          '        <div className="mx-auto max-w-lg px-4 pt-6">\n' +
+          '          <StatusBanner tone="danger" announce="alert" title="Administration indisponible">{loadError}</StatusBanner>\n' +
+          '        </div>\n' +
+          '      )}\n' +
+          '      {children}\n' +
+          '      {status?.required && (\n' +
+          '        <StepUpDialog required={status.required} reason={status.reason} phone={status.phone} onDone={() => void done()} />\n' +
+          '      )}\n' +
+          '    </>\n' +
+          '  );\n' +
+          '}\n' +
+          '\n' +
+          '/**\n' +
+          " * Finition 3d (point 1) — la même fenêtre sans enfants, posée à côté d'une page partenaire ou contrôleur d'un compte admin\n" +
+          ' * (chargée à la demande par AdminAccountStepUp) : état de la session, âge de la dernière saisie sur chaque appel /api/,\n' +
+          " * minuterie d'inactivité et saisie du mot de passe ou du code, sans remonter la page.\n" +
+          ' */\n' +
+          'export function AdminStepUpOverlay() {\n' +
+          '  return <AdminStepUpGate>{null}</AdminStepUpGate>;\n' +
+          '}\n' +
+          '\n' +
+          'function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<Required, null>; reason: string | null; phone: string | null; onDone: () => void }) {\n' +
+          '  const errorId = useId();\n' +
+          '  const { signOut } = useAuth();\n' +
+          "  const [password, setPassword] = useState('');\n" +
+          "  const [code, setCode] = useState('');\n" +
+          '  const [codeSent, setCodeSent] = useState(false);\n' +
+          '  const [busy, setBusy] = useState(false);\n' +
+          '  const [error, setError] = useState<string | null>(null);\n' +
+          '\n' +
+          "  useEffect(() => { setError(null); setCode(''); setPassword(''); }, [required]);\n" +
+          '\n' +
+          '  const failure = (err: unknown, fallback: string) => {\n' +
+          '    const wait = err instanceof ApiError && err.status === 429 ? retryAfterOf(err.body) : null;\n' +
+          '    setError(wait ? `${errorMessage(err, fallback)} ${formatRetryDelay(wait)}` : errorMessage(err, fallback));\n' +
+          '  };\n' +
+          '\n' +
+          '  const submitPassword = async (e: React.FormEvent) => {\n' +
+          '    e.preventDefault();\n' +
+          '    if (!password || busy) return;\n' +
+          '    setBusy(true); setError(null);\n' +
+          '    try {\n' +
+          "      await sendJson('/api/admin/step-up', 'POST', { password });\n" +
+          '      onDone();\n' +
+          '    } catch (err) {\n' +
+          "      failure(err, 'Mot de passe non vérifié. Réessayez.');\n" +
+          '    } finally { setBusy(false); }\n' +
+          '  };\n' +
+          '\n' +
+          '  const sendCode = async () => {\n' +
+          '    setBusy(true); setError(null);\n' +
+          '    try {\n' +
+          "      await sendJson('/api/admin/step-up/sms', 'POST', {});\n" +
+          '      setCodeSent(true);\n' +
+          '    } catch (err) {\n' +
+          "      failure(err, 'Le code n’a pas pu être envoyé. Réessayez.');\n" +
+          '    } finally { setBusy(false); }\n' +
+          '  };\n' +
+          '\n' +
+          '  const submitCode = async (e: React.FormEvent) => {\n' +
+          '    e.preventDefault();\n' +
+          '    if (code.length !== 6 || busy) return;\n' +
+          '    setBusy(true); setError(null);\n' +
+          '    try {\n' +
+          "      await sendJson('/api/admin/step-up/sms', 'POST', { code });\n" +
+          '      onDone();\n' +
+          '    } catch (err) {\n' +
+          "      failure(err, 'Code refusé. Réessayez.');\n" +
+          '    } finally { setBusy(false); }\n' +
+          '  };\n' +
+          '\n' +
+          "  const isPassword = required === 'ADMIN_PASSWORD_REQUIRED';\n" +
+          "  const title = isPassword ? 'Confirmez votre mot de passe' : 'Code administrateur';\n" +
+          '  const subtitle = isPassword\n' +
+          "    ? (reason === 'IDLE'\n" +
+          "      ? 'Votre session d’administration est restée sa"... 2767 more characters
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+        import { KeyRound, LogOut, MessageSquareText, ShieldCheck } from 'lucide-react';
+        import { Modal } from '@/components/ui/Modal';
+        import { Button } from '@/components/ui/Button';
+        import { TextInput } from '@/components/ui/Field';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { OtpInput } from '@/components/auth/OtpInput';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
+        import { formatRetryDelay, retryAfterOf } from '@/lib/format-delay';
+        import { INPUT_AGE_HEADER } from '@/lib/admin/input-age';
+        
+        /**
+         * Lot 9 quinquies (A3 : AUTH-05 ; A4 : AUTH-04) — fenêtre de sécurité de l'administration.
+         *
+         *  - À l'ouverture de /admin : GET /api/admin/step-up ; sur un nouvel appareil, ou après 12 h, la fenêtre demande le code
+         *    administrateur reçu par SMS (et le mot de passe d'abord si la session a plus de 12 h). La page est rendue tout de
+         *    suite, côté serveur compris, et la fenêtre se pose par-dessus : ses lectures sont refusées par le serveur tant que
+         *    l'étape manque, puis la page est rechargée une fois l'étape passée. (Run 171 : rendue seulement après la lecture de
+         *    l'état, la page créait ses champs de date hors du document, et Chrome les affichait en mm/dd/yyyy malgré lang="fr".)
+         *  - Après 30 minutes sans activité (minuterie locale, et tout refus 403 ADMIN_PASSWORD_REQUIRED ou ADMIN_SMS_REQUIRED
+         *    renvoyé par une route), la fenêtre redemande le mot de passe PAR-DESSUS la page : rien n'est perdu, l'action
+         *    interrompue se relance une fois la fenêtre fermée.
+         *  - Le serveur décide toujours (lib/admin/step-up.ts) : la fenêtre ne fait qu'aider.
+         * Saisie du code : 6 cases, collage, clavier numérique, « one-time-code » (OtpInput) ; mot de passe : « current-password ».
+         *
+         * Finition 3d (point 1) :
+         *  - chaque appel /api/ de la page porte l'âge de la dernière saisie (en-tête x-ev-input-age, lib/admin/input-age.ts) :
+         *    une relecture automatique faite sans saisie depuis plus d'une minute ne compte plus comme une activité côté serveur,
+         *    une page laissée ouverte ne garde donc plus la session éveillée ;
+         *  - la fenêtre sert aussi sur les pages partenaire et contrôleur d'un compte admin, où le serveur applique désormais la
+         *    même règle des 30 minutes : AdminStepUpOverlay (sans enfants), chargé à la demande par AdminAccountStepUp pour un
+         *    compte admin seulement, posé à côté de la page (rien n'est remonté, rien n'est ajouté au code d'un contrôleur).
+         */
+        
+        type Required = 'ADMIN_PASSWORD_REQUIRED' | 'ADMIN_SMS_REQUIRED' | null;
+        interface Status { required: Required; reason: string | null; idleMinutes: number; phone: string | null }
+        
+        const STEP_UP_CODES = new Set(['ADMIN_PASSWORD_REQUIRED', 'ADMIN_SMS_REQUIRED']);
+        const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+        
+        /** Appel /api/ de la même origine : copie de l'appel avec l'âge de la dernière saisie, en secondes. Autre appel : inchangé. */
+        function withInputAge(input: RequestInfo | URL, init: RequestInit | undefined, ageSecs: number): [RequestInfo | URL, RequestInit | undefined] {
+          let url: URL;
+          try {
+            url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, window.location.href);
+          } catch {
+            return [input, init];
+          }
+          if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) return [input, init];
+          const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+          headers.set(INPUT_AGE_HEADER, String(Math.max(0, ageSecs)));
+          return [input, { ...init, headers }];
+        }
+        
+        export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
+          const [status, setStatus] = useState<Status | null>(null);
+          const [loadError, setLoadError] = useState<string | null>(null);
+          const lastInput = useRef<number>(Date.now());
+          // Page ouverte alors qu'une étape manquait : ses premières lectures ont été refusées, elle est rechargée après l'étape
+          const lockedAtLoad = useRef<boolean | null>(null);
+        
+          const refresh = useCallback(async (): Promise<Status | null> => {
+            try {
+              const res = await fetch('/api/admin/step-up', { cache: 'no-store' });
+              const body = (await res.json().catch(() => null)) as (Status & { error?: string }) | null;
+              if (!res.ok || !body) {
+                setLoadError(body?.error ?? 'Vérification de la session momentanément impossible. Rechargez la page.');
+                return null;
+              }
+              setLoadError(null);
+              setStatus(body);
+              if (lockedAtLoad.current === null) lockedAtLoad.current = body.required !== null;
+              return body;
+            } catch (err) {
+              console.error('[AdminStepUpGate] état de la session illisible :', err instanceof Error ? err.message : String(err));
+              setLoadError('Connexion impossible. Vérifiez votre réseau puis rechargez la page.');
+              return null;
+            }
+          }, []);
+        
+          useEffect(() => { void refresh(); }, [refresh]);
+        
+          // Tout refus d'étape de sécurité renvoyé par une route ouvre la fenêtre (la page reste affichée dessous).
+          // Finition 3d (point 1) : chaque appel /api/ porte l'âge de la dernière saisie.
+          useEffect(() => {
+            const original = window.fetch;
+            const patched: typeof window.fetch = async (input, init) => {
+              const [i, n] = withInputAge(input, init, Math.floor((Date.now() - lastInput.current) / 1000));
+              const res = await original(i, n);
+              if (res.status === 403) {
+                res.clone().json().then((b: { code?: string } | null) => {
+                  if (b?.code && STEP_UP_CODES.has(b.code)) void refresh();
+                }).catch((err: unknown) => {
+                  // Corps non JSON : ce refus n'est pas une étape de sécurité, rien à ouvrir
+                  console.debug('[AdminStepUpGate] refus 403 sans corps JSON :', err instanceof Error ? err.message : String(err));
+                });
+              }
+              return res;
+            };
+            window.fetch = patched;
+            return () => { if (window.fetch === patched) window.fetch = original; };
+          }, [refresh]);
+        
+          // Minuterie d'inactivité locale : la fenêtre se rouvre d'elle-même à l'échéance (le serveur l'exige aussi).
+          useEffect(() => {
+            const touch = () => { lastInput.current = Date.now(); };
+            for (const e of ACTIVITY_EVENTS) window.addEventListener(e, touch, { passive: true });
+            const timer = window.setInterval(() => {
+              const idle = (status?.idleMinutes ?? 30) * 60_000;
+              if (status && !status.required && Date.now() - lastInput.current > idle) {
+                setStatus((s) => (s ? { ...s, required: 'ADMIN_PASSWORD_REQUIRED', reason: 'IDLE' } : s));
+              }
+            }, 30_000);
+            return () => {
+              for (const e of ACTIVITY_EVENTS) window.removeEventListener(e, touch);
+              window.clearInterval(timer);
+            };
+          }, [status]);
+        
+          const done = async () => {
+            lastInput.current = Date.now();
+            const next = await refresh();
+            if (next && !next.required && lockedAtLoad.current) window.location.reload();
+          };
+        
+          return (
+            <>
+              {loadError && (
+                <div className="mx-auto max-w-lg px-4 pt-6">
+                  <StatusBanner tone="danger" announce="alert" title="Administration indisponible">{loadError}</StatusBanner>
+                </div>
+              )}
+              {children}
+              {status?.required && (
+                <StepUpDialog required={status.required} reason={status.reason} phone={status.phone} onDone={() => void done()} />
+              )}
+            </>
+          );
+        }
+        
+        /**
+         * Finition 3d (point 1) — la même fenêtre sans enfants, posée à côté d'une page partenaire ou contrôleur d'un compte admin
+         * (chargée à la demande par AdminAccountStepUp) : état de la session, âge de la dernière saisie sur chaque appel /api/,
+         * minuterie d'inactivité et saisie du mot de passe ou du code, sans remonter la page.
+         */
+        export function AdminStepUpOverlay() {
+          return <AdminStepUpGate>{null}</AdminStepUpGate>;
+        }
+        
+        function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<Required, null>; reason: string | null; phone: string | null; onDone: () => void }) {
+          const errorId = useId();
+          const { signOut } = useAuth();
+          const [password, setPassword] = useState('');
+          const [code, setCode] = useState('');
+          const [codeSent, setCodeSent] = useState(false);
+          const [busy, setBusy] = useState(false);
+          const [error, setError] = useState<string | null>(null);
+        
+          useEffect(() => { setError(null); setCode(''); setPassword(''); }, [required]);
+        
+          const failure = (err: unknown, fallback: string) => {
+            const wait = err instanceof ApiError && err.status === 429 ? retryAfterOf(err.body) : null;
+            setError(wait ? `${errorMessage(err, fallback)} ${formatRetryDelay(wait)}` : errorMessage(err, fallback));
+          };
+        
+          const submitPassword = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!password || busy) return;
+            setBusy(true); setError(null);
+            try {
+              await sendJson('/api/admin/step-up', 'POST', { password });
+              onDone();
+            } catch (err) {
+              failure(err, 'Mot de passe non vérifié. Réessayez.');
+            } finally { setBusy(false); }
+          };
+        
+          const sendCode = async () => {
+            setBusy(true); setError(null);
+            try {
+              await sendJson('/api/admin/step-up/sms', 'POST', {});
+              setCodeSent(true);
+            } catch (err) {
+              failure(err, 'Le code n’a pas pu être envoyé. Réessayez.');
+            } finally { setBusy(false); }
+          };
+        
+          const submitCode = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (code.length !== 6 || busy) return;
+            setBusy(true); setError(null);
+            try {
+              await sendJson('/api/admin/step-up/sms', 'POST', { code });
+              onDone();
+            } catch (err) {
+              failure(err, 'Code refusé. Réessayez.');
+            } finally { setBusy(false); }
+          };
+        
+          const isPassword = required === 'ADMIN_PASSWORD_REQUIRED';
+          const title = isPassword ? 'Confirmez votre mot de passe' : 'Code administrateur';
+          const subtitle = isPassword
+            ? (reason === 'IDLE'
+              ? 'Votre session d’administration est restée sans activité. Votre page est gardée : saisissez votre mot de passe pour continuer.'
+              : 'Par sécurité, votre mot de passe est redemandé toutes les 12 heures dans l’administration.')
+            : (reason === 'DEVICE_12H'
+              ? 'Par sécurité, un nouveau code est demandé toutes les 12 heures.'
+              : 'Première ouverture de l’administration sur cet appareil : un code vous est envoyé par SMS.');
+        
+          return (
+            <Modal
+              isOpen
+              onClose={() => undefined}
+              closeOnOverlayClick={false}
+              role="alertdialog"
+              title={title}
+              subtitle={subtitle}
+              icon={isPassword ? <KeyRound size={20} /> : <ShieldCheck size={20} />}
+              maxWidth="md"
+              busy={busy}
+            >
+              <div className="space-y-4">
+                {error && <StatusBanner tone="danger" announce="alert" title="Vérification impossible"><span id={errorId}>{error}</span></StatusBanner>}
+                {isPassword ? (
+                  <form className="space-y-4" onSubmit={(e) => void submitPassword(e)}>
+                    <TextInput label="Mot de passe" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                    <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} leftIcon={<KeyRound size={18} />}>Continuer</Button>
+                  </form>
+                ) : !codeSent ? (
+                  <div className="space-y-4">
+                    <p className="text-sm text-fg">Le code part par SMS{phone ? ` au ${phone}` : ''}. Ne le donnez à personne.</p>
+                    <Button type="button" variant="primary" size="lg" fullWidth isLoading={busy} onClick={() => void sendCode()} leftIcon={<MessageSquareText size={18} />}>
+                      Recevoir le code par SMS
+                    </Button>
+                  </div>
+                ) : (
+                  <form className="space-y-4" onSubmit={(e) => void submitCode(e)}>
+                    <p className="text-sm text-fg">Saisissez les 6 chiffres reçus{phone ? ` au ${phone}` : ''}. Le code est valable 10 minutes.</p>
+                    <OtpInput value={code} onChange={setCode} disabled={busy} hasError={!!error} describedBy={error ? errorId : undefined} />
+                    <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} disabled={code.length !== 6} leftIcon={<ShieldCheck size={18} />}>
+                      Valider le code
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" fullWidth onClick={() => void sendCode()} disabled={busy}>Recevoir un nouveau code</Button>
+                  </form>
+                )}
+                <Button type="button" variant="ghost" size="sm" fullWidth disabled={busy} leftIcon={<LogOut size={16} />}
+                  onClick={() => { void signOut().then(() => { window.location.assign('/login'); }); }}>
+                  Se déconnecter
+                </Button>
+              </div>
+            </Modal>
+          );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:157:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: codes de secours : montrés une seule fois, « Imprimez-les ou notez-les en lieu sûr », nombre restant, remplacer annule
+    not ok 3 - codes de secours : montrés une seule fois, « Imprimez-les ou notez-les en lieu sûr », nombre restant, remplacer annule
+      ---
+      duration_ms: 0.180431
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:9527'
+      failureType: 'testCodeFailure'
+      error: "ENOENT: no such file or directory, open '/home/runner/work/event-village/event-village/components/admin/BackupCodesPanel.tsx'"
+      code: 'ENOENT'
+      stack: |-
+        Object.readFileSync (node:fs:440:20)
+        read (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:42)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:164:23)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: changement de numéro : code au nouveau numéro, 6 chiffres, « Numéro changé » seulement sur la réponse du serveur
+    not ok 4 - changement de numéro : code au nouveau numéro, 6 chiffres, « Numéro changé » seulement sur la réponse du serveur
+      ---
+      duration_ms: 0.148613
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:10511'
+      failureType: 'testCodeFailure'
+      error: "ENOENT: no such file or directory, open '/home/runner/work/event-village/event-village/components/admin/PhoneChangeFlow.tsx'"
+      code: 'ENOENT'
+      stack: |-
+        Object.readFileSync (node:fs:440:20)
+        read (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:42)
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:175:22)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: « Changer le numéro » : sur la ligne d’un ADMIN, pour le SUPERADMIN, jamais sur la sienne
+    not ok 5 - « Changer le numéro » : sur la ligne d’un ADMIN, pour le SUPERADMIN, jamais sur la sienne
+      ---
+      duration_ms: 0.829056
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:11375'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /isSuperadmin && isAdmin && !isDeleted && user\.id !== me\?\.id && \(\s*<Button[\s\S]{0,120}?setPhoneTarget\(user\)/. Input:
+        
+        "'use client';\n" +
+          '\n' +
+          "import React, { useState, useEffect, useCallback, useRef } from 'react';\n" +
+          "import { StatusBanner } from '@/components/ui/StatusBanner';\n" +
+          "import Link from 'next/link';\n" +
+          'import {\n' +
+          '  ChevronLeft,\n' +
+          '  Users,\n' +
+          '  UserPlus,\n' +
+          '  Shield,\n' +
+          '  ShieldAlert,\n' +
+          '  ShieldCheck,\n' +
+          '  Search,\n' +
+          '  RefreshCw,\n' +
+          '  AlertCircle,\n' +
+          '  CheckCircle2,\n' +
+          '  Phone,\n' +
+          '  Mail,\n' +
+          '  Sliders,\n' +
+          '  XCircle,\n' +
+          '  CheckCircle,\n' +
+          '  Key,\n' +
+          '  User,\n' +
+          '  QrCode,\n' +
+          '  Sparkles,\n' +
+          '  Info,\n' +
+          '  Trash2,\n' +
+          "} from 'lucide-react';\n" +
+          "import { Button } from '@/components/ui/Button';\n" +
+          "import { Modal } from '@/components/ui/Modal';\n" +
+          "import { ConfirmDialog } from '@/components/ui/ConfirmDialog';\n" +
+          "import { ReasonDialog } from '@/components/ui/ReasonDialog';\n" +
+          "import { LinkButton } from '@/components/ui/LinkButton';\n" +
+          "import { Badge } from '@/components/ui/Badge';\n" +
+          "import { useToast } from '@/components/ui/Toast';\n" +
+          "import { useAuth } from '@/components/providers/AuthProvider';\n" +
+          "import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';\n" +
+          "import { permissionDescription, permissionLabel } from '@/lib/admin/permission-labels';\n" +
+          "import { PERMISSION_GROUPS, PERMISSION_PROFILES, dependentsOf, withDependencies } from '@/lib/admin/permission-profiles';\n" +
+          "import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';\n" +
+          "import { isDeliverableEmail } from '@/lib/notifications/channels';\n" +
+          "import { noticesText } from '@/lib/admin/confirmations';\n" +
+          "import { TextInput } from '@/components/ui/Field';\n" +
+          "import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';\n" +
+          '\n' +
+          'interface UserItem {\n' +
+          '  id: string;\n' +
+          '  first_name: string;\n' +
+          '  last_name: string;\n' +
+          '  phone: string;\n' +
+          '  email: string;\n' +
+          "  role: 'SUPERADMIN' | 'ADMIN' | 'PARTENAIRE' | 'CONTROLEUR' | 'CLIENT';\n" +
+          "  status: 'ACTIF' | 'EN_ATTENTE' | 'SUSPENDU' | 'SUPPRIME';\n" +
+          "  referral_status: 'STANDARD' | 'AMBASSADEUR';\n" +
+          '  created_at: string;\n' +
+          '  /** Lot 9 quinquies (A2) : compte créé par un admin pas encore activé (lien valable ou expiré). */\n' +
+          "  activation?: 'PENDING' | 'EXPIRED' | null;\n" +
+          '}\n' +
+          '\n' +
+          "/** Message français d'une réponse en échec (`{ error }` de la route), sinon le repli donné. */\n" +
+          'function refusalOf(data: unknown, fallback: string): string {\n' +
+          "  if (data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' && (data as { error: string }).error.trim()) {\n" +
+          '    return (data as { error: string }).error;\n' +
+          '  }\n' +
+          '  return fallback;\n' +
+          '}\n' +
+          '\n' +
+          '/**\n' +
+          " * Lot 9 bis (R51, B34 ; contrat 5.12) : les boutons qui écrivent ne s'affichent qu'avec la permission users.write\n" +
+          ' * (création, suspension, réactivation, anonymisation) ; « Permissions » et toute action sur un compte ADMIN restent\n' +
+          ' * au SUPERADMIN (R71, B33), comme côté serveur. Un refus éventuel de la route est affiché tel quel (texte français).\n' +
+          ' * Lot 9 bis (R75, contrat 5.41) : rôles et statuts par lib/labels/account.ts, jamais la valeur brute de la base.\n' +
+          " * Lot 9 bis (R6, R59, B38, B74 ; contrat 4.2, 5.15) : le statut d'un compte partenaire ne se change pas ici : la ligne\n" +
+          ' * propose « Voir la fiche partenaire » (/admin/dashboard?partenaires=ALL&dossier=<partnerId>, identifiant lu sur\n' +
+          ' * GET /api/admin/partners avec partners.read). Suspendre ou réactiver un autre compte demande un motif (ReasonDialog),\n' +
+          " * repris dans l'avis au titulaire (ACCOUNT_SUSPENDED, ACCOUNT_REACTIVATED).\n" +
+          ' */\n' +
+          'export default function AdminUsersManagementPage() {\n' +
+          '  const toast = useToast();\n' +
+          '  const { hasPermission, hasRole, user: me } = useAuth();\n' +
+          "  const canWrite = hasPermission('users.write');\n" +
+          "  const isSuperadmin = hasRole('SUPERADMIN');\n" +
+          '  const [users, setUsers] = useState<UserItem[]>([]);\n' +
+          "  const [search, setSearch] = useState('');\n" +
+          "  const [roleFilter, setRoleFilter] = useState('ALL');\n" +
+          '  const [isLoading, setIsLoading] = useState(true);\n' +
+          '  const [listError, setListError] = useState<string | null>(null);\n' +
+          '  /** Fiche partenaire de chaque compte partenaire (user_id → partners.id), lue avec partners.read. */\n' +
+          '  const [partnerIdByUser, setPartnerIdByUser] = useState<Record<string, string>>({});\n' +
+          "  const canReadPartners = hasPermission('partners.read');\n" +
+          '\n' +
+          "  // Changement de statut d'un compte non partenaire, avec motif (R59)\n" +
+          '  const [statusTarget, setStatusTarget] = useState<UserItem | null>(null);\n' +
+          '  const [isChangingStatus, setIsChangingStatus] = useState(false);\n' +
+          '  const [statusError, setStatusError] = useState<string | null>(null);\n' +
+          '\n' +
+          '  // Modal Création Utilisateur / Admin\n' +
+          '  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);\n' +
+          "  const [newFirstName, setNewFirstName] = useState('');\n" +
+          "  const [newLastName, setNewLastName] = useState('');\n" +
+          "  const [newPhone, setNewPhone] = useState('');\n" +
+          "  const [newEmail, setNewEmail] = useState('');\n" +
+          '  const [resendingId, setResendingId] = useState<string | null>(null);\n' +
+          "  // Finition 3d (point 3) : un SUPERADMIN ne se crée plus directement (créer l'administrateur, puis « Changer le rôle »)\n" +
+          "  const [newRole, setNewRole] = useState<'ADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');\n" +
+          "  // Finition 3d (point 3) : « Changer le rôle » d'un compte (SUPERADMIN seulement)\n" +
+          '  const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);\n' +
+          '  const [isCreating, setIsCreating] = useState(false);\n' +
+          '\n' +
+          '  // Dialog de confirmation suppression\n' +
+          '  const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);\n' +
+          '  const [isDeleting, setIsDeleting] = useState(false);\n' +
+          '\n' +
+          '  // Modal Permissions Granulaires pour Admin\n' +
+          '  const [selectedAdmin, setSelectedAdmin] = useState<UserItem | null>(null);\n' +
+          '  const [adminPermissions, setAdminPermissions] = useState<string[]>([]);\n' +
+          '  const [isPermModalOpen, setIsPermModalOpen] = useState(false);\n' +
+          '  const [isSavingPerms, setIsSavingPerms] = useState(false);\n' +
+          "  // Lot 9 quater (B7 : N-07, E-12) : état de la lecture des droits ; la grille n'affiche jamais les cases d'un autre admin\n" +
+          "  const [permsState, setPermsState] = useState<'loading' | 'ready' | 'error'>('loading');\n" +
+          '  const permsRequestFor = useRef<string | null>(null);\n' +
+          '\n' +
+          '  const fetchUsers = useCallback(async () => {\n' +
+          '    setIsLoading(true);\n' +
+          '    setListError(null);\n' +
+          '    try {\n' +
+          '      const res = await fetch(`/api/admin/users?role=${roleFilter}&search=${encodeURIComponent(search)}`);\n' +
+          '      const data: unknown = await res.json().catch(() => null);\n' +
+          "      const list = data && typeof data === 'object' ? (data as { users?: unknown }).users : undefined;\n" +
+          '      if (!res.ok || !Array.isArray(list)) {\n' +
+          '        // Lot 9 bis (R51) : refus de la route (permission users.read absente…) dit en français, jamais une liste vide muette.\n' +
+          '        setUsers([]);\n' +
+          "        setListError(refusalOf(data, 'Impossible de charger les comptes pour le moment. Réessayez.'));\n" +
+          '        return;\n' +
+          '      }\n' +
+          '      setUsers(list as UserItem[]);\n' +
+          '    } catch (err) {\n' +
+          "      console.error('[AdminUsers] Erreur chargement:', err);\n" +
+          '      setUsers([]);\n' +
+          "      setListError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');\n" +
+          '    } finally {\n' +
+          '      setIsLoading(false);\n' +
+          '    }\n' +
+          '  }, [roleFilter, search]);\n' +
+          '\n' +
+          '  useEffect(() => {\n' +
+          '    fetchUsers();\n' +
+          '  }, [fetchUsers]);\n' +
+          '\n' +
+          '  // Lot 9 bis (R6) : identifiant de la fiche de chaque partenaire, pour le lien « Voir la fiche partenaire ».\n' +
+          '  useEffect(() => {\n' +
+          '    if (!canReadPartners) return undefined;\n' +
+          '    let active = true;\n' +
+          '    (async () => {\n' +
+          '      try {\n' +
+          "        const res = await fetch('/api/admin/partners?status=ALL', { cache: 'no-store' });\n" +
+          '        const data: unknown = await res.json().catch(() => null);\n' +
+          "        const list = data && typeof data === 'object' ? (data as { partners?: unknown }).partners : undefined;\n" +
+          '        if (!res.ok || !Array.isArray(list)) {\n' +
+          '          console.error(`[AdminUsers] fiches partenaires non lues (HTTP ${res.status})`);\n' +
+          '          return;\n' +
+          '        }\n' +
+          '        const map: Record<string, string> = {};\n' +
+          '        for (const row of list as Array<{ id?: unknown; user_id?: unknown }>) {\n' +
+          "          if (typeof row.id === 'string' && typeof row.user_id === 'string') map[row.user_id] = row.id;\n" +
+          '        }\n' +
+          '        if (active) setPartnerIdByUser(map);\n' +
+          '      } catch (err) {\n' +
+          "        console.error('[AdminUsers] fiches partenaires non lues :', err);\n" +
+          '      }\n' +
+          '    })();\n' +
+          '    return () => {\n' +
+          '      active = false;\n' +
+          '    };\n' +
+          '  }, [canReadPartners]);\n' +
+          '\n' +
+          "  // Création d'un nouvel utilisateur ou administrateur\n" +
+          '  const handleCreateUser = async (e: React.FormEvent) => {\n' +
+          '    e.preventDefault();\n' +
+          '    setIsCreating(true);\n' +
+          '\n' +
+          '    try {\n' +
+          "      const res = await fetch('/api/admin/users', {\n" +
+          "        method: 'POST',\n" +
+          "        headers: { 'Content-Type': 'application/json' },\n" +
+          '        body: JSON.stringify({\n' +
+          '          firstName: newFirstName.trim(),\n' +
+          '          lastName: newLastName.trim(),\n' +
+          '          phone: newPhone.trim(),\n' +
+          '          email: newEmail.trim().toLowerCase() || undefined,\n' +
+          '          role: newRole,\n' +
+          '        }),\n' +
+          '      });\n' +
+          '\n' +
+          '      const data: unknown = await res.json().catch(() => null);\n' +
+          "      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));\n" +
+          '\n' +
+          '      // Lot 9 quinquies (A2) : le titulaire choisit son mot de passe par le lien reçu par SMS\n' +
+          '      const reply = (data ?? {}) as { activation?: string; message?: string; userId?: string };\n' +
+          "      const noRights = newRole === 'ADMIN' ? ' Il n’a encore aucun droit : choisissez-les maintenant.' : '';\n" +
+          "      if (reply.activation === 'SENT') {\n" +
+          '        toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).${noRights}`);\n' +
+          '      } else {\n' +
+          "        toast.error(reply.message ?? 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste.');\n" +
+          '      }\n' +
+          '      const created = { first_name: newFirstName.trim(), last_name: newLastName.trim() };\n' +
+          '      setIsCreateModalOpen(false);\n' +
+          "      setNewFirstName('');\n" +
+          "      setNewLastName('');\n" +
+          "      setNewPhone('');\n" +
+          "      setNewEmail('');\n" +
+          '      await fetchUsers();\n' +
+          "      // Finition 3b (E-36) : un administrateur créé n'a aucun droit ; la grille de ses droits s'ouvre tout de suite.\n" +
+          "      if (newRole === 'ADMIN' && reply.userId) {\n" +
+          '        void handleOpenPermissions({ ...created, id: reply.userId } as UserItem);\n' +
+          '      }\n' +
+          '    } catch (err: unknown) {\n' +
+          '      con'... 33098 more characters
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useState, useEffect, useCallback, useRef } from 'react';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import Link from 'next/link';
+        import {
+          ChevronLeft,
+          Users,
+          UserPlus,
+          Shield,
+          ShieldAlert,
+          ShieldCheck,
+          Search,
+          RefreshCw,
+          AlertCircle,
+          CheckCircle2,
+          Phone,
+          Mail,
+          Sliders,
+          XCircle,
+          CheckCircle,
+          Key,
+          User,
+          QrCode,
+          Sparkles,
+          Info,
+          Trash2,
+        } from 'lucide-react';
+        import { Button } from '@/components/ui/Button';
+        import { Modal } from '@/components/ui/Modal';
+        import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+        import { ReasonDialog } from '@/components/ui/ReasonDialog';
+        import { LinkButton } from '@/components/ui/LinkButton';
+        import { Badge } from '@/components/ui/Badge';
+        import { useToast } from '@/components/ui/Toast';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
+        import { permissionDescription, permissionLabel } from '@/lib/admin/permission-labels';
+        import { PERMISSION_GROUPS, PERMISSION_PROFILES, dependentsOf, withDependencies } from '@/lib/admin/permission-profiles';
+        import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
+        import { isDeliverableEmail } from '@/lib/notifications/channels';
+        import { noticesText } from '@/lib/admin/confirmations';
+        import { TextInput } from '@/components/ui/Field';
+        import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';
+        
+        interface UserItem {
+          id: string;
+          first_name: string;
+          last_name: string;
+          phone: string;
+          email: string;
+          role: 'SUPERADMIN' | 'ADMIN' | 'PARTENAIRE' | 'CONTROLEUR' | 'CLIENT';
+          status: 'ACTIF' | 'EN_ATTENTE' | 'SUSPENDU' | 'SUPPRIME';
+          referral_status: 'STANDARD' | 'AMBASSADEUR';
+          created_at: string;
+          /** Lot 9 quinquies (A2) : compte créé par un admin pas encore activé (lien valable ou expiré). */
+          activation?: 'PENDING' | 'EXPIRED' | null;
+        }
+        
+        /** Message français d'une réponse en échec (`{ error }` de la route), sinon le repli donné. */
+        function refusalOf(data: unknown, fallback: string): string {
+          if (data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' && (data as { error: string }).error.trim()) {
+            return (data as { error: string }).error;
+          }
+          return fallback;
+        }
+        
+        /**
+         * Lot 9 bis (R51, B34 ; contrat 5.12) : les boutons qui écrivent ne s'affichent qu'avec la permission users.write
+         * (création, suspension, réactivation, anonymisation) ; « Permissions » et toute action sur un compte ADMIN restent
+         * au SUPERADMIN (R71, B33), comme côté serveur. Un refus éventuel de la route est affiché tel quel (texte français).
+         * Lot 9 bis (R75, contrat 5.41) : rôles et statuts par lib/labels/account.ts, jamais la valeur brute de la base.
+         * Lot 9 bis (R6, R59, B38, B74 ; contrat 4.2, 5.15) : le statut d'un compte partenaire ne se change pas ici : la ligne
+         * propose « Voir la fiche partenaire » (/admin/dashboard?partenaires=ALL&dossier=<partnerId>, identifiant lu sur
+         * GET /api/admin/partners avec partners.read). Suspendre ou réactiver un autre compte demande un motif (ReasonDialog),
+         * repris dans l'avis au titulaire (ACCOUNT_SUSPENDED, ACCOUNT_REACTIVATED).
+         */
+        export default function AdminUsersManagementPage() {
+          const toast = useToast();
+          const { hasPermission, hasRole, user: me } = useAuth();
+          const canWrite = hasPermission('users.write');
+          const isSuperadmin = hasRole('SUPERADMIN');
+          const [users, setUsers] = useState<UserItem[]>([]);
+          const [search, setSearch] = useState('');
+          const [roleFilter, setRoleFilter] = useState('ALL');
+          const [isLoading, setIsLoading] = useState(true);
+          const [listError, setListError] = useState<string | null>(null);
+          /** Fiche partenaire de chaque compte partenaire (user_id → partners.id), lue avec partners.read. */
+          const [partnerIdByUser, setPartnerIdByUser] = useState<Record<string, string>>({});
+          const canReadPartners = hasPermission('partners.read');
+        
+          // Changement de statut d'un compte non partenaire, avec motif (R59)
+          const [statusTarget, setStatusTarget] = useState<UserItem | null>(null);
+          const [isChangingStatus, setIsChangingStatus] = useState(false);
+          const [statusError, setStatusError] = useState<string | null>(null);
+        
+          // Modal Création Utilisateur / Admin
+          const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+          const [newFirstName, setNewFirstName] = useState('');
+          const [newLastName, setNewLastName] = useState('');
+          const [newPhone, setNewPhone] = useState('');
+          const [newEmail, setNewEmail] = useState('');
+          const [resendingId, setResendingId] = useState<string | null>(null);
+          // Finition 3d (point 3) : un SUPERADMIN ne se crée plus directement (créer l'administrateur, puis « Changer le rôle »)
+          const [newRole, setNewRole] = useState<'ADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+          // Finition 3d (point 3) : « Changer le rôle » d'un compte (SUPERADMIN seulement)
+          const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);
+          const [isCreating, setIsCreating] = useState(false);
+        
+          // Dialog de confirmation suppression
+          const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+          const [isDeleting, setIsDeleting] = useState(false);
+        
+          // Modal Permissions Granulaires pour Admin
+          const [selectedAdmin, setSelectedAdmin] = useState<UserItem | null>(null);
+          const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
+          const [isPermModalOpen, setIsPermModalOpen] = useState(false);
+          const [isSavingPerms, setIsSavingPerms] = useState(false);
+          // Lot 9 quater (B7 : N-07, E-12) : état de la lecture des droits ; la grille n'affiche jamais les cases d'un autre admin
+          const [permsState, setPermsState] = useState<'loading' | 'ready' | 'error'>('loading');
+          const permsRequestFor = useRef<string | null>(null);
+        
+          const fetchUsers = useCallback(async () => {
+            setIsLoading(true);
+            setListError(null);
+            try {
+              const res = await fetch(`/api/admin/users?role=${roleFilter}&search=${encodeURIComponent(search)}`);
+              const data: unknown = await res.json().catch(() => null);
+              const list = data && typeof data === 'object' ? (data as { users?: unknown }).users : undefined;
+              if (!res.ok || !Array.isArray(list)) {
+                // Lot 9 bis (R51) : refus de la route (permission users.read absente…) dit en français, jamais une liste vide muette.
+                setUsers([]);
+                setListError(refusalOf(data, 'Impossible de charger les comptes pour le moment. Réessayez.'));
+                return;
+              }
+              setUsers(list as UserItem[]);
+            } catch (err) {
+              console.error('[AdminUsers] Erreur chargement:', err);
+              setUsers([]);
+              setListError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+            } finally {
+              setIsLoading(false);
+            }
+          }, [roleFilter, search]);
+        
+          useEffect(() => {
+            fetchUsers();
+          }, [fetchUsers]);
+        
+          // Lot 9 bis (R6) : identifiant de la fiche de chaque partenaire, pour le lien « Voir la fiche partenaire ».
+          useEffect(() => {
+            if (!canReadPartners) return undefined;
+            let active = true;
+            (async () => {
+              try {
+                const res = await fetch('/api/admin/partners?status=ALL', { cache: 'no-store' });
+                const data: unknown = await res.json().catch(() => null);
+                const list = data && typeof data === 'object' ? (data as { partners?: unknown }).partners : undefined;
+                if (!res.ok || !Array.isArray(list)) {
+                  console.error(`[AdminUsers] fiches partenaires non lues (HTTP ${res.status})`);
+                  return;
+                }
+                const map: Record<string, string> = {};
+                for (const row of list as Array<{ id?: unknown; user_id?: unknown }>) {
+                  if (typeof row.id === 'string' && typeof row.user_id === 'string') map[row.user_id] = row.id;
+                }
+                if (active) setPartnerIdByUser(map);
+              } catch (err) {
+                console.error('[AdminUsers] fiches partenaires non lues :', err);
+              }
+            })();
+            return () => {
+              active = false;
+            };
+          }, [canReadPartners]);
+        
+          // Création d'un nouvel utilisateur ou administrateur
+          const handleCreateUser = async (e: React.FormEvent) => {
+            e.preventDefault();
+            setIsCreating(true);
+        
+            try {
+              const res = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  firstName: newFirstName.trim(),
+                  lastName: newLastName.trim(),
+                  phone: newPhone.trim(),
+                  email: newEmail.trim().toLowerCase() || undefined,
+                  role: newRole,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
+        
+              // Lot 9 quinquies (A2) : le titulaire choisit son mot de passe par le lien reçu par SMS
+              const reply = (data ?? {}) as { activation?: string; message?: string; userId?: string };
+              const noRights = newRole === 'ADMIN' ? ' Il n’a encore aucun droit : choisissez-les maintenant.' : '';
+              if (reply.activation === 'SENT') {
+                toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).${noRights}`);
+              } else {
+                toast.error(reply.message ?? 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste.');
+              }
+              const created = { first_name: newFirstName.trim(), last_name: newLastName.trim() };
+              setIsCreateModalOpen(false);
+              setNewFirstName('');
+              setNewLastName('');
+              setNewPhone('');
+              setNewEmail('');
+              await fetchUsers();
+              // Finition 3b (E-36) : un administrateur créé n'a aucun droit ; la grille de ses droits s'ouvre tout de suite.
+              if (newRole === 'ADMIN' && reply.userId) {
+                void handleOpenPermissions({ ...created, id: reply.userId } as UserItem);
+              }
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de la création.';
+              toast.error(msg);
+            } finally {
+              setIsCreating(false);
+            }
+          };
+        
+          // Lot 9 quinquies (A2) : renvoi du lien d'activation (le précédent n'est plus valable)
+          const handleResendActivation = async (user: UserItem) => {
+            setResendingId(user.id);
+            try {
+              const res = await fetch('/api/admin/users/activation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id }),
+              });
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Le lien n’a pas pu être renvoyé.'));
+              const reply = (data ?? {}) as { activation?: string; message?: string };
+              if (reply.activation === 'SENT') toast.success(`Nouveau lien d’activation envoyé à ${user.first_name} ${user.last_name}.`);
+              else toast.error(reply.message ?? 'Le SMS n’est pas parti. Réessayez dans un instant.');
+              await fetchUsers();
+            } catch (err: unknown) {
+              toast.error(err instanceof Error ? err.message : 'Le lien n’a pas pu être renvoyé.');
+            } finally {
+              setResendingId(null);
+            }
+          };
+        
+          // Suspension ou réactivation d'un compte non partenaire, avec motif (lot 9 bis, R59 ; refus dits dans la boîte)
+          const handleToggleStatus = async (user: UserItem, reason: string) => {
+            const newStatus = user.status === 'SUSPENDU' ? 'ACTIF' : 'SUSPENDU';
+            setIsChangingStatus(true);
+            setStatusError(null);
+            try {
+              const res = await fetch('/api/admin/users', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  userId: user.id,
+                  status: newStatus,
+                  reason,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) {
+                setStatusError(refusalOf(data, 'Erreur lors du changement de statut.'));
+                return;
+              }
+        
+              toast.success(
+                newStatus === 'ACTIF'
+                  ? `Le compte de ${user.first_name} ${user.last_name} a été réactivé avec succès.`
+                  : `Le compte de ${user.first_name} ${user.last_name} a été suspendu.`
+              );
+              setStatusTarget(null);
+              await fetchUsers();
+            } catch (err: unknown) {
+              console.error('[AdminUsers] changement de statut en échec :', err);
+              setStatusError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+            } finally {
+              setIsChangingStatus(false);
+            }
+          };
+        
+          // Ouverture de la modal des permissions
+          const handleOpenPermissions = async (adminUser: UserItem) => {
+            // Lot 9 quater (B7 : N-07) : grille vidée et « Chargement… » AVANT la lecture ; une réponse arrivée pour un autre
+            // admin (fenêtre rouverte entre-temps) est ignorée ; un échec rend la grille illisible et « Enregistrer » inactif.
+            permsRequestFor.current = adminUser.id;
+            setAdminPermissions([]);
+            setPermsState('loading');
+            setSelectedAdmin(adminUser);
+            setIsPermModalOpen(true);
+        
+            try {
+              const res = await fetch(`/api/admin/permissions?adminId=${adminUser.id}`, { cache: 'no-store' });
+              const data = await res.json();
+              if (permsRequestFor.current !== adminUser.id) return;
+              if (!res.ok || !Array.isArray(data?.assignedPermissions)) {
+                console.error('[admin/users] droits illisibles :', res.status, data);
+                setPermsState('error');
+                return;
+              }
+              setAdminPermissions(data.assignedPermissions as string[]);
+              setPermsState('ready');
+            } catch (err) {
+              console.error('[admin/users] lecture des droits impossible :', err);
+              if (permsRequestFor.current === adminUser.id) setPermsState('error');
+            }
+          };
+        
+          // Sauvegarde des permissions
+          const handleSavePermissions = async () => {
+            if (!selectedAdmin || permsState !== 'ready') return;
+            setIsSavingPerms(true);
+        
+            try {
+              const res = await fetch('/api/admin/permissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  adminId: selectedAdmin.id,
+                  permissions: adminPermissions,
+                }),
+              });
+        
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
+        
+              toast.success(`Droits de ${selectedAdmin.first_name} ${selectedAdmin.last_name} enregistrés. Effet immédiat : il voit ses nouveaux écrans en rechargeant la page.`);
+              setIsPermModalOpen(false);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
+              toast.error(msg);
+            } finally {
+              setIsSavingPerms(false);
+            }
+          };
+        
+          // Finition 3b (E-36) : cocher un droit d'écriture coche sa lecture ; décocher une lecture décoche ce qui en dépend.
+          const togglePermissionItem = (perm: string) => {
+            if (adminPermissions.includes(perm)) {
+              const drop = new Set([perm, ...dependentsOf(perm)]);
+              setAdminPermissions(adminPermissions.filter((p) => !drop.has(p)));
+            } else {
+              setAdminPermissions(withDependencies([...adminPermissions, perm]));
+            }
+          };
+        
+          // Suppression définitive d'un compte utilisateur
+          const handleDeleteUser = (user: UserItem) => {
+            setUserToDelete(user);
+          };
+        
+          const handleConfirmDelete = async () => {
+            if (!userToDelete) return;
+            setIsDeleting(true);
+            try {
+              const res = await fetch(`/api/admin/users/${userToDelete.id}/anonymize`, {
+                method: 'POST',
+              });
+              const data: unknown = await res.json().catch(() => null);
+              if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de l\'anonymisation.'));
+        
+              toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement anonymisé (RGPD).`);
+              setUserToDelete(null);
+              await fetchUsers();
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Échec de l\'anonymisation.';
+              toast.error(msg);
+            } finally {
+              setIsDeleting(false);
+            }
+          };
+        
+          return (
+            <div className="space-y-8 pb-16">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/admin/dashboard"
+                    aria-label="Retour à l’accueil de l’administration"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-surface text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <ChevronLeft size={20} aria-hidden="true" />
+                  </Link>
+                  <div>
+                    <h1 className="text-2xl font-black tracking-tight text-fg sm:text-3xl">
+                      Comptes et administrateurs
+                    </h1>
+                  </div>
+                </div>
+        
+                <div className="flex items-center gap-2.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchUsers}
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+                    <span>Actualiser</span>
+                  </Button>
+        
+                  {canWrite && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setIsCreateModalOpen(true)}
+                      leftIcon={<UserPlus size={16} aria-hidden="true" />}
+                    >
+                      Créer un compte
+                    </Button>
+                  )}
+                </div>
+              </div>
+        
+              {/* Filtres & Recherche */}
+              <div className="space-y-6 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+                <div className="flex flex-col justify-between gap-4 border-b border-border pb-4 sm:flex-row sm:items-center">
+                  <div className="relative max-w-md flex-1">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
+                    <input
+                      type="search"
+                      aria-label="Rechercher un compte"
+                      placeholder="Rechercher par nom, email ou téléphone"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="min-h-11 w-full rounded-xl border border-border-strong bg-surface pl-9 pr-4 text-base text-fg outline-none placeholder:text-fg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </div>
+        
+                  <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrer par rôle">
+                    {['ALL', 'SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR', 'CLIENT'].map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        aria-pressed={roleFilter === role}
+                        onClick={() => setRoleFilter(role)}
+                        className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          roleFilter === role ? 'bg-brand text-on-brand' : 'border border-border text-fg-muted hover:bg-surface-sunken hover:text-fg'
+                        }`}
+                      >
+                        {role === 'ALL' ? 'Tous' : roleLabel(role)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+        
+                {/* Liste Réelle des Utilisateurs */}
+                {isLoading ? (
+                  <div role="status" className="py-12 text-center text-fg-muted">
+                    <RefreshCw size={24} className="mx-auto mb-2 text-brand-fg motion-safe:animate-spin" aria-hidden="true" />
+                    <p className="text-sm">Chargement des comptes…</p>
+                  </div>
+                ) : listError ? (
+                  <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
+                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <p>{listError}</p>
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="py-12 text-center text-fg-muted">
+                    <Users size={32} className="mx-auto mb-2" aria-hidden="true" />
+                    <p className="text-sm font-semibold">Aucun compte ne correspond à cette recherche.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {users.map((user) => {
+                      const isSuper = user.role === 'SUPERADMIN';
+                      const isAdmin = user.role === 'ADMIN';
+                      const isSuspended = user.status === 'SUSPENDU';
+                      const isDeleted = user.status === 'SUPPRIME';
+                      const partnerId = partnerIdByUser[user.id];
+                      const isPartner = user.role === 'PARTENAIRE' || partnerId !== undefined;
+        
+                      return (
+                        <div
+                          key={user.id}
+                          className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                            isDeleted
+                              ? 'bg-slate-100/60 dark:bg-zinc-950/40 border-slate-200 dark:border-zinc-800 opacity-75'
+                              : 'bg-slate-50 dark:bg-zinc-900/70 border-slate-200/80 dark:border-zinc-800/80'
+                          }`}
+                        >
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                                {user.first_name} {user.last_name}
+                              </h4>
+        
+                              <span
+                                className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                                  isSuper
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300'
+                                    : isAdmin
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
+                                    : user.role === 'PARTENAIRE'
+                                    ? 'bg-orange-100 text-[#FF5722] dark:bg-orange-950/40'
+                                    : 'bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
+                                }`}
+                              >
+                                {roleLabel(user.role)}
+                              </span>
+        
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                  isDeleted
+                                    ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 font-black'
+                                    : isSuspended
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                }`}
+                              >
+                                {isDeleted ? ERASED_ACCOUNT_LABEL : accountStatusLabel(user.status)}
+                              </span>
+        
+                              {user.activation && !isDeleted && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  {user.activation === 'PENDING' ? 'Activation en attente' : 'Activation en attente (lien expiré)'}
+                                </span>
+                              )}
+        
+                              {user.referral_status === 'AMBASSADEUR' && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  Ambassadeur
+                                </span>
+                              )}
+                            </div>
+        
+                            <div className="flex flex-wrap items-center gap-x-4 text-xs text-slate-500 dark:text-zinc-400">
+                              <span className="flex items-center gap-1">
+                                <Phone size={12} />
+                                <span>{user.phone || 'Non renseigné'}</span>
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Mail size={12} />
+                                {/* Lot 9 quater (A4) : une adresse technique n'est jamais affichée */}
+                                <span>{isDeliverableEmail(user.email) ? user.email : 'Non renseigné'}</span>
+                              </span>
+                            </div>
+                          </div>
+        
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* Bouton Permissions Granulaires pour Admin */}
+                            {isAdmin && !isDeleted && isSuperadmin && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleOpenPermissions(user)}
+                                className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-600 hover:text-white"
+                              >
+                                <Key size={13} className="mr-1" />
+                                Permissions
+                              </Button>
+                            )}
+        
+                            {/* Finition 3d (point 3) : changer le rôle (SUPERADMIN seulement ; jamais une organisatrice ; son propre rôle
+                                seulement pour quitter le rôle de Superadmin). Le serveur décide (mot de passe, code, motif). */}
+                            {isSuperadmin && !isDeleted && !isPartner && (user.id !== me?.id || isSuper) && (
+                              <Button variant="secondary" size="sm" onClick={() => setRoleTarget(user)}>
+                                {user.id === me?.id ? 'Quitter le rôle de Superadmin' : 'Changer le rôle'}
+                              </Button>
+                            )}
+        
+                            {/* Lot 9 quinquies (A2) : renvoi du lien d'activation d'un compte créé par un admin */}
+                            {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                isLoading={resendingId === user.id}
+                                onClick={() => void handleResendActivation(user)}
+                              >
+                                Renvoyer le lien
+                              </Button>
+                            )}
+        
+                            {/* Suspension / Réactivation / Suppression */}
+                            {/* Lot 9 bis (R6) : une partenaire se suspend ou se réactive depuis sa fiche, avec un motif */}
+                            {isPartner && !isDeleted && (
+                              partnerId !== undefined ? (
+                                <LinkButton
+                                  href={`/admin/dashboard?partenaires=ALL&dossier=${encodeURIComponent(partnerId)}`}
+                                  variant="secondary"
+                                  size="sm"
+                                >
+                                  Voir la fiche partenaire
+                                </LinkButton>
+                              ) : (
+                                <span className="text-sm text-fg-muted">Statut géré depuis la fiche partenaire</span>
+                              )
+                            )}
+        
+                            {!isSuper && !isDeleted && canWrite && (!isAdmin || isSuperadmin) && (
+                              <>
+                                {!isPartner && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    setStatusError(null);
+                                    setStatusTarget(user);
+                                  }}
+                                  className={`text-xs ${
+                                    isSuspended
+                                      ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                                      : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                                  }`}
+                                >
+                                  {isSuspended ? 'Réactiver' : 'Suspendre'}
+                                </Button>
+                                )}
+                                {/* Lot 9 quater (B2 : E-39, AUD-23) : aucune suppression depuis une ligne de partenaire */}
+                                {!isPartner && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteUser(user)}
+                                  title="Supprimer définitivement ce compte"
+                                  className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/30 flex items-center gap-1"
+                                >
+                                  <Trash2 size={13} />
+                                  <span>Supprimer</span>
+                                </Button>
+                                )}
+                              </>
+                            )}
+        
+                            {isDeleted && (
+                              <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 italic px-2">
+                                Compte supprimé
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+        
+                  </div>
+                )}
+              </div>
+        
+              {/* ====================================================================
+                  MODAL CRÉATION UTILISATEUR / ADMIN (SUPERADMIN ONLY)
+                  ==================================================================== */}
+              <Modal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                title="Créer un compte"
+                subtitle="Le compte est actif tout de suite ; le titulaire choisit lui-même son mot de passe."
+                icon={<UserPlus size={18} />}
+                maxWidth="lg"
+              >
+                <form onSubmit={handleCreateUser} className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <TextInput label="Prénom" required autoComplete="off" placeholder="Ex : Moussa" value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} />
+                    <TextInput label="Nom" required autoComplete="off" placeholder="Ex : Diop" value={newLastName} onChange={(e) => setNewLastName(e.target.value)} />
+                  </div>
+                  <TextInput label="Numéro de téléphone (Sénégal)" type="tel" required inputMode="tel" placeholder="77 123 45 67" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="tabular-nums" />
+                  <TextInput label="Email (facultatif)" type="email" placeholder="contact@domaine.sn" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+        
+                  <div className="rounded-xl border border-border bg-surface-sunken p-3 text-sm text-fg-muted">
+                    {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
+                    <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+                    <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.</p>
+                  </div>
+        
+                  <fieldset className="space-y-2">
+                    <legend className="text-sm font-semibold text-fg">Rôle</legend>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        aria-pressed={newRole === 'CONTROLEUR'}
+                        onClick={() => setNewRole('CONTROLEUR')}
+                        className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          newRole === 'CONTROLEUR' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                        }`}
+                      >
+                        <QrCode size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-fg">Contrôleur</span>
+                          <span className="block text-sm text-fg-muted">Scanne les billets des événements où un partenaire l’affecte</span>
+                        </span>
+                      </button>
+                      {/* Lot 9 bis (R71, B33) : créer un administrateur ou un superadmin est réservé au SUPERADMIN */}
+                      {isSuperadmin && (
+                        <>
+                      <button
+                        type="button"
+                        aria-pressed={newRole === 'ADMIN'}
+                        onClick={() => setNewRole('ADMIN')}
+                        className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          newRole === 'ADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                        }`}
+                      >
+                        <Key size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-fg">Administrateur</span>
+                          <span className="block text-sm text-fg-muted">Agit selon les droits que vous lui donnez</span>
+                        </span>
+                      </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        aria-pressed={newRole === 'CLIENT'}
+                        onClick={() => setNewRole('CLIENT')}
+                        className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          newRole === 'CLIENT' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                        }`}
+                      >
+                        <User size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-fg">Client</span>
+                          <span className="block text-sm text-fg-muted">Achète des billets, sans accès professionnel</span>
+                        </span>
+                      </button>
+                    </div>
+                  </fieldset>
+                  {isSuperadmin && (
+                    <p className="text-sm text-fg-muted">Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
+                  )}
+        
+                  <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-bg p-3 text-sm text-info-fg">
+                    <Info size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <span>
+                      {newRole === 'CONTROLEUR' && 'À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.'}
+                      {newRole === 'ADMIN' && 'Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.'}
+                      {newRole === 'CLIENT' && 'Achète des billets et parraine ses proches, sans accès professionnel.'}
+                    </span>
+                  </p>
+        
+                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+                    <Button variant="secondary" type="button" onClick={() => setIsCreateModalOpen(false)}>
+                      Annuler
+                    </Button>
+                    <Button variant="primary" type="submit" isLoading={isCreating} leftIcon={<UserPlus size={16} aria-hidden="true" />}>
+                      Créer le compte {roleLabel(newRole)}
+                    </Button>
+                  </div>
+                </form>
+              </Modal>
+        
+              {/* ====================================================================
+                  MODAL PERMISSIONS GRANULAIRES ADMIN (SUPERADMIN ONLY)
+                  ==================================================================== */}
+              {selectedAdmin && (
+                <Modal
+                  isOpen={isPermModalOpen}
+                  onClose={() => setIsPermModalOpen(false)}
+                  title={`Droits de ${selectedAdmin.first_name} ${selectedAdmin.last_name}`}
+                  subtitle="Effet immédiat ; la personne voit ses nouveaux écrans en rechargeant la page. Elle n’est pas prévenue."
+                  icon={<Key size={20} />}
+                  maxWidth="lg"
+                >
+                  <div className="space-y-4">
+                    <p className="text-sm text-fg-muted">
+                      Partez d’un profil prêt, puis ajustez les cases. Un droit qui modifie amène toujours le droit de voir.
+                    </p>
+        
+                    {permsState === 'loading' && (
+                      <p role="status" className="py-6 text-center text-sm text-fg-muted">Chargement…</p>
+                    )}
+                    {permsState === 'error' && (
+                      <StatusBanner tone="danger" announce="alert" title="Droits illisibles">
+                        Droits illisibles : fermez et rouvrez.
+                      </StatusBanner>
+                    )}
+                    {permsState === 'ready' && (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap gap-2" role="group" aria-label="Profils prêts">
+                        {PERMISSION_PROFILES.map((profile) => (
+                          <Button
+                            key={profile.key}
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            title={profile.hint}
+                            onClick={() => setAdminPermissions(withDependencies(profile.permissions))}
+                          >
+                            {profile.label}
+                          </Button>
+                        ))}
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setAdminPermissions([])}>
+                          Aucun droit
+                        </Button>
+                      </div>
+                      <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
+                        {PERMISSION_GROUPS.map((group) => (
+                          <fieldset key={group.title} className="space-y-2 rounded-2xl border border-border p-3">
+                            <legend className="px-1 text-sm font-semibold text-fg">{group.title}</legend>
+                            {group.permissions.filter((perm) => (ADMIN_PERMISSIONS as readonly string[]).includes(perm)).map((perm) => {
+                              const isChecked = adminPermissions.includes(perm);
+                              const inputId = `droit-${perm.replace('.', '-')}`;
+                              return (
+                                <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-surface-sunken">
+                                  <input
+                                    id={inputId}
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => togglePermissionItem(perm)}
+                                    className="mt-1 h-5 w-5 flex-shrink-0 rounded border-border-strong accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  />
+                                  <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-fg">{permissionLabel(perm)}</span>
+                                    <span className="block text-sm text-fg-muted">{permissionDescription(perm)}</span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </fieldset>
+                        ))}
+                      </div>
+                    </div>
+                    )}
+        
+                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+                      <Button variant="secondary" type="button" onClick={() => setIsPermModalOpen(false)}>
+                        Annuler
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        onClick={handleSavePermissions}
+                        isLoading={isSavingPerms}
+                        disabled={permsState !== 'ready'}
+                        leftIcon={<ShieldCheck size={16} aria-hidden="true" />}
+                      >
+                        Enregistrer les droits
+                      </Button>
+                    </div>
+                  </div>
+                </Modal>
+              )}
+        
+              {/* Lot 9 bis (R59) : motif de la suspension ou de la réactivation, repris dans l'avis au titulaire */}
+              <ReasonDialog
+                isOpen={statusTarget !== null}
+                onClose={() => {
+                  if (!isChangingStatus) setStatusTarget(null);
+                }}
+                onConfirm={(reason) => {
+                  if (statusTarget) void handleToggleStatus(statusTarget, reason);
+                }}
+                title={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+                description={statusTarget
+                  ? statusTarget.status === 'SUSPENDU'
+                    ? `${statusTarget.first_name} ${statusTarget.last_name} pourra de nouveau se connecter. ${noticesText('account_reactivate')}`
+                    : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. ${noticesText('account_suspend')}`
+                  : undefined}
+                label={statusTarget?.status === 'SUSPENDU' ? 'Motif de la réactivation' : 'Motif de la suspension'}
+                hint={statusTarget?.status === 'SUSPENDU'
+                  ? 'Au moins 3 caractères. Gardé au journal ; la personne ne le voit pas.'
+                  : 'Au moins 3 caractères. Envoyé à la personne (le SMS n’en garde que le début) et gardé au journal.'}
+                confirmLabel={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
+                variant={statusTarget?.status === 'SUSPENDU' ? 'primary' : 'danger'}
+                isLoading={isChangingStatus}
+                error={statusError ?? undefined}
+                maxLength={500}
+              />
+        
+              {/* Finition 3d (point 3) : changer le rôle ; un compte qui devient administrateur ouvre aussitôt sa grille de droits */}
+              {roleTarget && (
+                <RoleChangeDialog
+                  user={roleTarget}
+                  self={roleTarget.id === me?.id}
+                  onClose={() => setRoleTarget(null)}
+                  onChanged={(role: RoleLevel) => {
+                    const changed = roleTarget;
+                    setRoleTarget(null);
+                    void fetchUsers();
+                    if (role === 'ADMIN' && roleLevelOf(changed.role) === 'CLIENT') void handleOpenPermissions({ ...changed, role: 'ADMIN' });
+                  }}
+                />
+              )}
+        
+              {/* ConfirmDialog Anonymisation RGPD */}
+              <ConfirmDialog
+                isOpen={!!userToDelete}
+                onClose={() => setUserToDelete(null)}
+                onConfirm={handleConfirmDelete}
+                variant="danger"
+                title={userToDelete ? `Supprimer définitivement ${userToDelete.first_name} ${userToDelete.last_name} ?` : 'Supprimer définitivement ce compte ?'}
+                message="Nom, téléphone et email sont effacés pour toujours ; ce compte ne pourra plus jamais se connecter. Ses paiements et ses billets restent dans l’historique. La personne n’est pas prévenue. Cette action est irréversible."
+                confirmLabel="Supprimer définitivement"
+                cancelLabel="Annuler"
+                isLoading={isDeleting}
+              />
+            </div>
+          );
+        }
+        
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:186:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: page « Sécurité du compte » : au menu du SUPERADMIN seulement ; un ADMIN y lit qu’elle lui est fermée
+    not ok 6 - page « Sécurité du compte » : au menu du SUPERADMIN seulement ; un ADMIN y lit qu’elle lui est fermée
+      ---
+      duration_ms: 98.419027
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:11771'
+      failureType: 'testCodeFailure'
+      error: 'menu du SUPERADMIN sans « Sécurité du compte »'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:192:16)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..6
+not ok 4 - 2. téléphone perdu : écrans
+  ---
+  duration_ms: 103.187782
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:7863'
+  failureType: 'subtestsFailed'
+  error: '6 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 3. changer le rôle : écrans
+    # Subtest: « Changer le rôle » sur la ligne d’un compte, pour le SUPERADMIN ; « Quitter le rôle de Superadmin » sur la sienne
+    ok 1 - « Changer le rôle » sur la ligne d’un compte, pour le SUPERADMIN ; « Quitter le rôle de Superadmin » sur la sienne
+      ---
+      duration_ms: 0.256555
+      type: 'test'
+      ...
+    # Subtest: « fait » seulement si le serveur rend le rôle demandé ; motif ; confirmation de la finition 1
+    ok 2 - « fait » seulement si le serveur rend le rôle demandé ; motif ; confirmation de la finition 1
+      ---
+      duration_ms: 0.122273
+      type: 'test'
+      ...
+    1..2
+ok 5 - 3. changer le rôle : écrans
+  ---
+  duration_ms: 0.536066
+  type: 'suite'
+  ...
+1..5
+# tests 18
+# suites 5
+# pass 12
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 142.352434
