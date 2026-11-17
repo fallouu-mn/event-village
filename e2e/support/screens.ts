@@ -977,6 +977,28 @@ export const SCREENS: readonly Screen[] = [
         actions: async ({ page }) => {
             await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: /accès/i }).click();
             await expect(page.getByRole('heading', { name: /^accès et informations pratiques$/i })).toBeVisible();
+            // Finition 2b (C) : écran tactile (vues téléphone), le bouton « Déplacer la carte » est amené sur la barre d'actions
+            // fixe ; au point commun, c'est la barre qui reçoit l'appui (« Suivant » jamais recouvert) ; puis haut de page
+            if (await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches)) {
+                const move = page.getByRole('button', { name: /^déplacer la carte$/i });
+                await expect(move, 'bouton « Déplacer la carte » (écran tactile)').toBeVisible();
+                const hit = await move.evaluate((btn) => {
+                    const bar = document.querySelector('.form-action-bar');
+                    if (!bar) return 'barre d’actions absente';
+                    const start = btn.getBoundingClientRect();
+                    const barStart = bar.getBoundingClientRect();
+                    const shift = start.top + start.height / 2 - (barStart.top + barStart.height / 2);
+                    window.scrollTo({ top: window.scrollY + shift, behavior: 'instant' });
+                    const r = btn.getBoundingClientRect();
+                    const b = bar.getBoundingClientRect();
+                    const y = b.top + b.height / 2;
+                    const el = document.elementFromPoint(r.left + r.width / 2, y);
+                    window.scrollTo({ top: 0, behavior: 'instant' });
+                    if (!(r.top < y && r.bottom > y)) return `bouton non amené sur la barre (bouton ${Math.round(r.top)} à ${Math.round(r.bottom)}, milieu de la barre ${Math.round(y)})`;
+                    return el && bar.contains(el) ? 'barre' : `barre recouverte par « ${(el?.textContent ?? '').trim().slice(0, 40)} »`;
+                });
+                expect(hit, 'appui au point commun du bouton de la carte et de la barre d’actions').toBe('barre');
+            }
         },
     },
     // Finition 2a (captures « après » seulement) : la même étape descendue jusqu'à la recherche et à la carte (aucun repère
@@ -1021,6 +1043,9 @@ export const SCREENS: readonly Screen[] = [
         actions: async ({ page }) => {
             await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: stepButton }).click();
             await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+            // Une seule barre fixe en bas : « Navigation rapide » masquée tant que la barre du formulaire est affichée (règle
+            // :has() de app/globals.css ; au-delà de 1 024 px, elle l'est de toute façon)
+            await expect(page.getByRole('navigation', { name: /^navigation rapide$/i }), 'barre « Navigation rapide » sous le formulaire').toBeHidden();
         },
     })),
     {

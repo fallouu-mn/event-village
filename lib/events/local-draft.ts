@@ -8,10 +8,13 @@
  *  - stockage absent ou refusé (navigation privée, quota, réglages) : rien n'est gardé, aucune erreur ne remonte à
  *    l'écran (message dans la console) ;
  *  - contenu illisible, d'une autre forme ou trop gros (64 Kio au plus) : ignoré et effacé ;
- *  - effacé à l'enregistrement, à l'envoi, sur « Effacer », et à la déconnexion (tous les brouillons du compte).
+ *  - effacé à l'enregistrement, à l'envoi, sur « Effacer » ; à la déconnexion et à toute fin de session signalée au
+ *    navigateur, tous les brouillons de ce navigateur, quel que soit le compte (lib/events/draft-purge.ts, module à
+ *    part : celui-ci reste hors du JavaScript de chaque page).
  * Le contenu (`data`) est contrôlé par l'appelant (`validate`), champ par champ, avant toute reprise.
  */
 
+/** Préfixe des clés ; tout « ev-brouillon: » est effacé à la déconnexion (lib/events/draft-purge.ts). */
 const PREFIX = 'ev-brouillon:v1:';
 const MAX_BYTES = 64 * 1024;
 
@@ -116,21 +119,5 @@ export function clearDraft(userId: string, eventId: string | null): void {
         store.removeItem(key);
     } catch (err) {
         console.warn('[brouillon] effacement refusé', err);
-    }
-}
-
-/** Tous les brouillons d'un compte (déconnexion). */
-export function clearUserDrafts(userId: string): void {
-    const store = storage();
-    if (!store || !SAFE_ID.test(userId)) return;
-    try {
-        const mine: string[] = [];
-        for (let i = 0; i < store.length; i++) {
-            const k = store.key(i);
-            if (k && k.startsWith(`${PREFIX}${userId}:`)) mine.push(k);
-        }
-        for (const k of mine) store.removeItem(k);
-    } catch (err) {
-        console.warn('[brouillon] effacement des brouillons du compte refusé', err);
     }
 }

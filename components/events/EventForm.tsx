@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Check, ChevronLeft, ChevronRight, Lock, Plus, Save, Send, Trash2 } from 'lucide-react';
@@ -693,6 +693,20 @@ function categoryErrorsFor(errors: ErrorMap, key: string): CategoryErrors {
 }
 
 // ── Composant ──────────────────────────────────────────────────────────────
+
+/**
+ * Finition 2b (C) — rendu dans la barre d'actions fixe : tant qu'elle est affichée, l'attribut `data-form-action-bar` est
+ * posé sur body, et app/globals.css masque la barre « Navigation rapide » de l'application (deux barres fixes ne
+ * s'empilent pas), dans tous les navigateurs. Posé avant l'affichage (useLayoutEffect), retiré au démontage. Code du
+ * seul formulaire : rien dans le JavaScript de chaque page (run complet 275, budgets de scripts/js-budget.json).
+ */
+function QuickNavHidden() {
+    useLayoutEffect(() => {
+        document.body.setAttribute('data-form-action-bar', '');
+        return () => document.body.removeAttribute('data-form-action-bar');
+    }, []);
+    return null;
+}
 
 export type EventFormProps = { mode: 'create' } | { mode: 'edit'; eventId: string };
 
@@ -1866,8 +1880,9 @@ export function EventForm(props: EventFormProps) {
                 )}
 
                 {/* Finition 2b (C) : barre d'actions fixe en bas sous 1024 px (téléphone, tablette), à sa place au-delà ; la
-                    barre « Navigation rapide » de l'application est masquée sur ce formulaire (AppLayout) */}
+                    barre « Navigation rapide » de l'application est masquée tant que celle-ci est affichée (QuickNavHidden) */}
                 <div className="form-action-bar fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface px-4 pt-3 shadow-lg lg:static lg:z-auto lg:gap-3 lg:bg-transparent lg:px-0 lg:pt-4 lg:shadow-none">
+                    <QuickNavHidden />
                     <Button type="button" variant="ghost" onClick={handlePrevious} disabled={stepIndex === 0} leftIcon={<ChevronLeft size={18} />}>
                         Précédent
                     </Button>

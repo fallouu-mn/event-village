@@ -363,7 +363,10 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
                 </Button>
             </div>
 
-            <div className="relative">
+            {/* Finition 2b (C) : bloc isolé (contexte d'empilement propre) : « Déplacer la carte » (z-[500]) reste au-dessus
+                de la carte, et tout le bloc passe sous la barre d'actions fixe du formulaire en défilant (« Suivant » n'est
+                jamais recouvert) */}
+            <div className="relative isolate">
                 <div
                     ref={mapRef}
                     role="region"

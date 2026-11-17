@@ -46,9 +46,6 @@ import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
-/** Finition 2b (C) : formulaire d'un événement (création, modification) : barre d'actions fixe propre, sans « Navigation rapide ». */
-const EVENT_FORM_ROUTE = /^\/partner\/events\/(?:new|[^/]+\/edit)\/?$/;
-
 /** Interrupteur SUPERADMIN d'un service (features.halls_enabled, features.tables_enabled, features.orders_enabled). */
 type FeatureKey = keyof ClientFeatureFlags;
 
@@ -553,9 +550,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
         </main>
       </div>
 
-      {/* 3. Barre du bas (< 1024 px) ; finition 2b (C) : masquée sur le formulaire d'un événement (création, modification),
-          qui pose sa propre barre « Précédent / Suivant » au même endroit (deux barres fixes ne s'empilent pas) */}
-      {!EVENT_FORM_ROUTE.test(pathname ?? '') && (
+      {/* 3. Barre du bas (< 1024 px) */}
       <nav aria-label="Navigation rapide" className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-1 py-1 shadow-lg lg:hidden">
         <div className="flex items-stretch justify-around">
           {mobileItems.map((item) => {
@@ -579,7 +574,6 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           })}
         </div>
       </nav>
-      )}
     </div>
   );
 };
