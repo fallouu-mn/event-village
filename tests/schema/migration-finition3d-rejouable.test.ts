@@ -29,6 +29,8 @@ const FINITION3D_MIGRATIONS = [
     '20261120000005_f3d_numero_admin.sql',
     // Contre-vérification T1 : account_phone_finalize refuse un compte ADMIN ou SUPERADMIN (profil client)
     '20261120000006_f3d_cv_numero_profil.sql',
+    // Contre-vérification T2 : révocation immédiate (session encore ouverte exigée, codes effacés)
+    '20261120000007_f3d_cv_revocation.sql',
 ] as const;
 
 after(async () => {
