@@ -159,7 +159,7 @@ Ce qui ne rentre pas : `docs/apres-lancement.md`, section « Création d'un év�
 select max(version) from supabase_migrations.schema_migrations;
 
 -- B. catégories sans couleur au contrôle (garder le nombre) : la migration 03 les remplit
-select count(*) as sans_couleur, count(*) filter (where scan_color is not null) as avec_couleur from public.ticket_categories;
+select count(*) filter (where scan_color is null) as sans_couleur, count(*) filter (where scan_color is not null) as avec_couleur from public.ticket_categories;
 
 -- C. zones qui n'admettent qu'une catégorie (garder la liste) : la suppression de cette catégorie sera refusée
 select e.title, z.name as zone, count(zc.category_id) as categories
@@ -206,7 +206,7 @@ select p.proname, has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
                      'event_notice_recipient_count', 'event_update_preview')
  order by 1;
 
--- C. attendu : sans_couleur = 0, avec_couleur = total de B avant
+-- C. attendu : sans_couleur = 0, avec_couleur = sans_couleur + avec_couleur de B avant
 select count(*) filter (where scan_color is null) as sans_couleur, count(*) filter (where scan_color is not null) as avec_couleur
   from public.ticket_categories;
 
