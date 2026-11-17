@@ -31,6 +31,8 @@ const FINITION3D_MIGRATIONS = [
     '20261120000006_f3d_cv_numero_profil.sql',
     // Contre-vérification T2 : révocation immédiate (session encore ouverte exigée, codes effacés)
     '20261120000007_f3d_cv_revocation.sql',
+    // Contre-vérification T3 : règle d'inactivité des routes appliquée à la REST et au temps réel
+    '20261120000008_f3d_cv_inactivite.sql',
 ] as const;
 
 after(async () => {
