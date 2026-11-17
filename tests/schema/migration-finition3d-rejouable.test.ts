@@ -27,6 +27,8 @@ const FINITION3D_MIGRATIONS = [
     '20261120000004_f3d_codes_secours.sql',
     // 2a et 2c : changement du numéro d'un administrateur, prouvé par un code au nouveau numéro
     '20261120000005_f3d_numero_admin.sql',
+    // Contre-vérification T1 : account_phone_finalize refuse un compte ADMIN ou SUPERADMIN (profil client)
+    '20261120000006_f3d_cv_numero_profil.sql',
 ] as const;
 
 after(async () => {

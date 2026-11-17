@@ -230,3 +230,26 @@ describe('3. changer le rôle : écrans', () => {
         assert.match(dlg, /useIdentityConfirm\(/);
     });
 });
+
+// ── Contre-vérification, T1 : le numéro d'un compte d'administration ne se change pas par le profil client ──────────
+
+describe('contre-vérification T1 : profil d’un compte d’administration', () => {
+    test('chemin du changement de numéro selon le rôle : ADMIN par le Superadmin, SUPERADMIN par « Sécurité du compte », client ici', async () => {
+        const mod = (await import('../../lib/admin/phone-path')) as { adminPhonePath: (roles: string[]) => { code: string; message: string } | null };
+        assert.deepEqual(mod.adminPhonePath(['CLIENT', 'ADMIN']), { code: 'PHONE_CHANGE_BY_SUPERADMIN', message: 'Demandez au super-administrateur de changer votre numéro.' });
+        assert.equal(mod.adminPhonePath(['CLIENT', 'SUPERADMIN'])?.code, 'PHONE_CHANGE_SECURITY_PAGE');
+        assert.match(mod.adminPhonePath(['SUPERADMIN'])?.message ?? '', /« Sécurité du compte »/);
+        for (const roles of [['CLIENT'], ['CLIENT', 'PARTENAIRE'], ['CLIENT', 'CONTROLEUR'], []]) assert.equal(mod.adminPhonePath(roles), null, roles.join(','));
+    });
+
+    test('écran du profil : plus de « Changer de numéro » pour un ADMIN ou un SUPERADMIN, le message du bon chemin à la place', () => {
+        const form = read('components/profile/ProfileForm.tsx');
+        assert.match(form, /const adminPath = adminPhonePath\(profile\.roles/);
+        assert.match(form, /\{!adminPath \? \(\s*<Button[^]*?Changer de numéro/, '« Changer de numéro » doit dépendre du rôle');
+        assert.match(form, /\{!adminPath && <PhoneChangeDialog\b/, 'la fenêtre du changement ne doit pas exister pour un admin');
+        assert.match(form, /SECURITY_PAGE_HREF/, 'le Superadmin doit être mené à « Sécurité du compte »');
+        for (const route of ['app/api/account/phone/start/route.ts', 'app/api/account/phone/confirm/route.ts']) {
+            assert.match(read(route), /const adminPath = adminPhonePath\(user\.roles\);\s*if \(adminPath\) return/, `${route} : garde du rôle absente`);
+        }
+    });
+});
