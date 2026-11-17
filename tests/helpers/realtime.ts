@@ -183,14 +183,18 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
     if (target.filter) filter.filter = target.filter;
 
     // Lot CI rapide (lots de tests en parallèle, run 309) : SUBSCRIBED n'est que la réponse à la jonction du canal ;
-    // l'abonnement postgres_changes est créé ensuite par le serveur, qui l'annonce par un message « system »
-    // (extension postgres_changes, statut ok, « Subscribed to PostgreSQL »). Sur un Realtime qui vient de démarrer
-    // (première suite temps réel d'un lot), un changement fait entre les deux est perdu : evenements-fin-valide ne
-    // passait en série que parce que d'autres suites temps réel l'avaient précédée. `ready` attend donc les deux, dans
-    // le même délai ; un statut d'erreur du serveur se lit comme un refus d'abonnement (CHANNEL_ERROR).
-    let joined = false;
-    let pgReady: boolean | string = false;
-    let onState: () => void = () => {};
+    // le serveur traite ensuite l'abonnement postgres_changes et annonce le résultat par un message « system »
+    // (extension postgres_changes : statut ok « Subscribed to PostgreSQL », ou error pour une table hors publication).
+    // Sur un Realtime qui vient de démarrer (première suite temps réel d'un lot), un changement fait entre les deux est
+    // perdu : evenements-fin-valide ne passait en série que parce que d'autres suites temps réel l'avaient précédée.
+    // `ready` attend donc aussi cette réponse du serveur, dans le même délai (compté depuis l'ouverture du canal).
+    // `outcome` est inchangé (statut de la jonction) ; une réponse « error » ne change pas l'issue (comme avant : le
+    // canal reste SUBSCRIBED et ne reçoit rien), elle est seulement écrite dans les états du canal (run 310).
+    const opened = Date.now();
+    let answer: (answered: boolean) => void = () => {};
+    const serverAnswered = new Promise<boolean>((resolve) => {
+        answer = resolve;
+    });
     const channel: RealtimeChannel = client
         .channel(`ev-test-${target.table}-${randomBytes(4).toString('hex')}`)
         .on('postgres_changes', filter, (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
@@ -206,8 +210,7 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
         .on('system', {}, (payload: { extension?: string; status?: string; message?: string }) => {
             if (payload?.extension !== 'postgres_changes') return;
             states.push(`system postgres_changes ${payload.status ?? '?'}${payload.message ? ` : ${payload.message}` : ''}`);
-            pgReady = payload.status === 'ok' ? true : (payload.message ?? `statut ${payload.status ?? '?'}`);
-            onState();
+            answer(true);
         });
 
     const outcome = new Promise<SubscribeOutcome>((resolve) => {
@@ -218,22 +221,10 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
             clearTimeout(timer);
             resolve(o);
         };
-        const timer = setTimeout(() => settle({
-            status: 'TIMED_OUT',
-            error: joined ? `SUBSCRIBED sans confirmation postgres_changes du serveur en ${timeoutMs} ms` : `abonnement non confirmé en ${timeoutMs} ms`,
-        }), timeoutMs);
-        onState = () => {
-            if (typeof pgReady === 'string') settle({ status: 'CHANNEL_ERROR', error: `postgres_changes refusé par le serveur : ${pgReady}` });
-            else if (joined && pgReady) settle({ status: 'SUBSCRIBED', error: null });
-        };
+        const timer = setTimeout(() => settle({ status: 'TIMED_OUT', error: `abonnement non confirmé en ${timeoutMs} ms` }), timeoutMs);
         channel.subscribe((status, err) => {
             states.push(err ? `${status} : ${err.message}` : status);
-            if (status === 'SUBSCRIBED') {
-                joined = true;
-                onState();
-            } else {
-                settle({ status, error: err?.message ?? `état ${status}` });
-            }
+            settle({ status, error: status === 'SUBSCRIBED' ? null : (err?.message ?? `état ${status}`) });
         });
     });
 
@@ -245,8 +236,17 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
         outcome,
         // Promesse créée à la lecture : un test qui ne lit que `outcome` ne laisse aucun rejet non traité.
         get ready(): Promise<void> {
-            return outcome.then((o) => {
+            return outcome.then(async (o) => {
                 if (o.status !== 'SUBSCRIBED') throw new Error(`abonnement Realtime ${label} : ${o.status}${o.error ? ` ${o.error}` : ''} (${channelTrace({ states })})`);
+                let timer: ReturnType<typeof setTimeout> | undefined;
+                const answered = await Promise.race([
+                    serverAnswered,
+                    new Promise<boolean>((resolve) => {
+                        timer = setTimeout(() => resolve(false), Math.max(0, opened + timeoutMs - Date.now()));
+                    }),
+                ]);
+                clearTimeout(timer);
+                if (!answered) throw new Error(`abonnement Realtime ${label} : SUBSCRIBED sans réponse postgres_changes du serveur en ${timeoutMs} ms (${channelTrace({ states })})`);
             });
         },
         clear() {
