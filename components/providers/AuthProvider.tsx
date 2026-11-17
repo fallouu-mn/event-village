@@ -3,11 +3,12 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { getBrowserClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
-import { detachPushSubscription } from '@/lib/push/client';
+import { usePathname, useRouter } from 'next/navigation';
 import { clearOfflineStore } from '@/lib/tickets/offline-store';
 import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 import { clearAllDrafts } from '@/lib/events/draft-purge';
+import { dropLocalSession, revokeSoon, unsubscribePush } from '@/lib/auth/sign-out-here';
+import { LinkButton } from '@/components/ui/LinkButton';
 
 /**
  * Lot 7 (7.5) — synchronisation des billets hors ligne chargée à la demande.
@@ -104,7 +105,8 @@ interface AuthContextType {
     session: Session | null;
     isLoading: boolean;
     isAuthenticated: boolean;
-    signOut: () => Promise<void>;
+    /** Ferme la session sur ce téléphone, avec ou sans réseau ; « partout » : « Déconnecter tous mes appareils ». */
+    signOut: (scope?: 'partout') => Promise<void>;
     refreshProfile: () => Promise<void>;
     hasRole: (role: string) => boolean;
     hasAnyRole: (roles: string[]) => boolean;
@@ -124,7 +126,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    /** Sécurité (déconnexion sans réseau) : « Vous êtes déconnecté de ce téléphone. » à la place de la page (signOut). */
+    const [signedOut, setSignedOut] = useState(false);
     const router = useRouter();
+    const pathname = usePathname();
     /** Lot 7 (7.1) : compte de la dernière session vue, pour purger le stockage hors ligne d'un autre compte. */
     const lastUserIdRef = useRef<string | null>(null);
 
@@ -193,8 +198,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
                     void clearOfflineStore();
                 }
-                if (nextUserId) lastUserIdRef.current = nextUserId;
-                else if (event === 'SIGNED_OUT') lastUserIdRef.current = null;
+                if (nextUserId) {
+                    lastUserIdRef.current = nextUserId;
+                    setSignedOut(false); // un compte connecté referme l'écran « déconnecté »
+                } else if (event === 'SIGNED_OUT') lastUserIdRef.current = null;
                 setSession(newSession);
                 setUser(newSession?.user ?? null);
 
@@ -235,33 +242,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
     }, [user, profile, session, fetchUserProfile]);
 
-    const signOut = async () => {
-        try {
-            // Lot 7 (7.1) : billets hors ligne effacés avant la déconnexion (au cas où SIGNED_OUT n'arrive pas).
-            await clearOfflineStore();
-            // Lot 7 (A10) : mémoire du contrôle effacée aussi (scan partenaire et scanner contrôleur)
-            clearAllScanMemory();
-            // Finition 2b (C) : brouillons du formulaire d'événement gardés dans ce navigateur effacés, tous comptes, avant la
-            // fermeture de la session (au cas où SIGNED_OUT n'arrive pas) ; ne lève jamais ; module à part, sans dépendance :
-            // lib/events/local-draft.ts reste hors du JavaScript de chaque page
-            clearAllDrafts();
-            // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
-            await detachPushSubscription();
-            const supabase = getBrowserClient();
-            // Lot 9 quinquies (B4 : AUTH-07) : « Se déconnecter » ne ferme que CET appareil (les autres gardent leur session et
-            // leurs billets hors ligne) ; « Déconnecter tous mes appareils » (page Profil) appelle /api/auth/sign-out-global.
-            await supabase.auth.signOut({ scope: 'local' });
-        } catch (e) {
-            console.warn('[AuthProvider] Signout notice:', e);
-        } finally {
-            setUser(null);
-            setProfile(null);
-            setPartner(null);
-            setAdminPermissions([]);
-            setSession(null);
-            router.push('/login');
-            router.refresh();
-        }
+    /**
+     * Sécurité (déconnexion sans réseau) : la session est fermée sur ce téléphone TOUT DE SUITE, avec ou sans réseau, avant
+     * tout appel réseau. Avant : auth.signOut, sans réseau et avec un jeton d'accès échu, gardait la session (cookies), et le
+     * compte revenait au retour du réseau. Dans l'ordre, sans jamais lever :
+     *  - mémoire du contrôle (lot 7, A10), brouillons (finition 2b, C), billets hors ligne (lot 7, 7.1) : effacés ;
+     *  - état de la session remis à zéro, « Vous êtes déconnecté de ce téléphone. » à la place de la page (pas de navigation :
+     *    sans réseau, /login ne se charge pas, et la page d'erreur du navigateur perdrait les jetons gardés) ;
+     *  - cookies de session effacés (dropLocalSession : SIGNED_OUT, ici et dans les autres onglets) ; abonnement aux
+     *    notifications retiré de ce navigateur (lot 6, F4 ; unsubscribePush) ;
+     *  - révocation côté serveur avec les jetons gardés en mémoire, refaite au retour du réseau (lib/auth/sign-out-here.ts) ;
+     *    faite : session de nouveau effacée (cookie qu'une réponse en vol aurait reposé), écran de connexion avec le même message.
+     * « partout » : « Déconnecter tous mes appareils » (page Profil) ; sinon CET appareil seulement (lot 9 quinquies, B4).
+     */
+    const signOut = async (scope?: 'partout') => {
+        const held = session && { access: session.access_token, refresh: session.refresh_token, everywhere: scope === 'partout' };
+        clearAllScanMemory();
+        clearAllDrafts();
+        void clearOfflineStore();
+        setSignedOut(true);
+        setUser(null);
+        setProfile(null);
+        setPartner(null);
+        setAdminPermissions([]);
+        setSession(null);
+        const auth = getBrowserClient().auth;
+        await dropLocalSession(auth);
+        void unsubscribePush();
+        revokeSoon(held, async () => {
+            await dropLocalSession(auth);
+            router.replace('/login?message=deconnecte');
+        });
     };
 
     const hasRole = useCallback((role: string): boolean => {
@@ -297,7 +308,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }}
         >
             {syncOfflineTickets && <LazyOfflineTicketsSync />}
-            {children}
+            {signedOut && pathname !== '/login' ? (
+                <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface-sunken p-6 text-center text-fg">
+                    <p role="status" className="text-lg font-semibold">Vous êtes déconnecté de ce téléphone.</p>
+                    <LinkButton href="/login?message=deconnecte">Se connecter</LinkButton>
+                </main>
+            ) : children}
         </AuthContext.Provider>
     );
 };

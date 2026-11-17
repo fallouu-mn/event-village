@@ -25,7 +25,8 @@ import path from 'node:path';
 import { importModule } from './paiement-helpers';
 
 const ROOT = process.cwd();
-const read = (file: string) => fs.readFileSync(path.join(ROOT, file), 'utf8');
+/** Fichier lu en fins de ligne LF (copie de travail Windows en CRLF, CI en LF : les ancres `$` des contrôles valent partout). */
+const read = (file: string) => fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\r\n/g, '\n');
 
 /** Source sans commentaires (même règle que tests/parcours/hors-ligne-client.test.ts). */
 function stripComments(src: string): string {
@@ -212,12 +213,15 @@ describe('e. écran', () => {
     test('déconnexion : brouillons effacés avant la fermeture de la session et à toute fin de session, module à part', () => {
         const auth = stripComments(read('components/providers/AuthProvider.tsx'));
         assert.match(auth, /import \{ clearAllDrafts \} from '@\/lib\/events\/draft-purge';/);
-        const signOutAt = auth.search(/const signOut = async \(\) => \{/);
+        // Lot sécurité (déconnexion sans réseau) : signOut(scope ?) et fermeture locale de la session par dropLocalSession
+        // (lib/auth/sign-out-here.ts) au lieu de supabase.auth.signOut, qui la gardait sans réseau ; même exigence d'ordre
+        const signOutAt = auth.search(/const signOut = async \((?:scope\?: 'partout')?\) => \{/);
         assert.ok(signOutAt >= 0, 'fonction signOut lisible dans AuthProvider');
         const signOutBody = balanced(auth, auth.indexOf('{', auth.indexOf('=>', signOutAt)), '{}');
         const purgeAt = signOutBody.search(/^\s*clearAllDrafts\(\);$/m);
         assert.ok(purgeAt >= 0, 'signOut : clearAllDrafts(); sans condition');
-        assert.ok(purgeAt < signOutBody.search(/\.auth\.signOut\(/), 'purge avant supabase.auth.signOut() (au cas où SIGNED_OUT n’arrive pas)');
+        const closeAt = signOutBody.search(/dropLocalSession\(/);
+        assert.ok(closeAt >= 0 && purgeAt < closeAt, 'purge avant la fermeture de la session (au cas où SIGNED_OUT n’arrive pas)');
         const listenerAt = auth.search(/onAuthStateChange\(/);
         assert.ok(listenerAt >= 0, 'écouteur onAuthStateChange');
         const listener = balanced(auth, auth.indexOf('(', listenerAt), '()');

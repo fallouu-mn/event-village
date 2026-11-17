@@ -2,9 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { User, LogOut, ArrowLeft } from 'lucide-react';
-import { createBrowserClient } from '@supabase/ssr';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconButton } from '@/components/ui/IconButton';
@@ -12,8 +11,6 @@ import { Logo } from '@/components/ui/Logo';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate, formatTime } from '@/lib/format';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import { detachPushSubscription } from '@/lib/push/client';
-import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 
 /**
  * En-tête de l'espace contrôleur (relecture des captures du run 50) : tokens du système de design, cibles
@@ -24,8 +21,7 @@ import { clearAllScanMemory } from '@/lib/scan/scan-memory';
  * portée par l'en-tête compact du scanner (un seul bouton de déconnexion par écran).
  */
 export default function ControllerLayout({ children }: { children: React.ReactNode }) {
-    const { profile } = useAuth();
-    const router = useRouter();
+    const { profile, signOut } = useAuth();
     const pathname = usePathname();
     const onScanner = pathname?.startsWith('/controller/scanner') ?? false;
     const [showLogout, setShowLogout] = useState(false);
@@ -51,19 +47,10 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
     }, [onScanner, controllerOnly]);
     const scannerClosed = onScanner && controllerOnly && scanner !== null && !scanner.open;
 
-    const handleLogout = async () => {
-        // Lot 7 (A10) : mémoire du contrôle (événement, mode, scan en attente) effacée à la déconnexion
-        clearAllScanMemory();
-        // Lot 6 (contrat F4) : l'appareil est détaché du compte avant la déconnexion (ne lève jamais).
-        await detachPushSubscription();
-        const supabase = createBrowserClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        );
-        // Lot 9 quinquies (B4 : AUTH-07) : cet appareil seulement
-        await supabase.auth.signOut({ scope: 'local' });
-        router.push('/login');
-    };
+    // Sécurité (déconnexion sans réseau) : la déconnexion de toute l'application (useAuth().signOut) : mémoire du contrôle
+    // (lot 7, A10), notifications de l'appareil (lot 6, F4) et session effacées tout de suite, avec ou sans réseau ; cet
+    // appareil seulement (lot 9 quinquies, B4) ; révocation côté serveur refaite au retour du réseau.
+    const handleLogout = () => signOut();
 
     const displayName = profile
         ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Contrôleur'

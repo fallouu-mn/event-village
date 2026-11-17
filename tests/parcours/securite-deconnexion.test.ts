@@ -215,7 +215,7 @@ describe('d. « Déconnecter tous mes appareils » sans réseau', () => {
 describe('e. écrans', () => {
     test('AuthProvider : effacement avant tout appel réseau, écran sur place, plus d’auth.signOut', () => {
         const auth = read('components/providers/AuthProvider.tsx');
-        assert.match(auth, /import \{ dropLocalSession, revokeSoon \} from '@\/lib\/auth\/sign-out-here';/);
+        assert.match(auth, /import \{ dropLocalSession, revokeSoon, unsubscribePush \} from '@\/lib\/auth\/sign-out-here';/);
         assert.doesNotMatch(auth, /\.auth\.signOut\(/, 'auth.signOut ne ferme pas la session sans réseau (a)');
         const at = auth.search(/const signOut = async \(scope\?: 'partout'\) => \{/);
         assert.ok(at >= 0, 'signOut(scope?: « partout »)');
