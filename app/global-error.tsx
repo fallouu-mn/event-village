@@ -3,9 +3,26 @@
 import { useEffect } from 'react';
 
 /**
- * Dernier recours : remplace le layout racine, donc aucun composant de components/ui ni fournisseur. Le texte de
- * l'exception reste au journal (8.2 i) : en anglais ou technique, il n'apprend rien à la personne.
+ * Dernier recours : remplace le layout racine, donc ni feuille de style globale, ni composant de components/ui, ni
+ * fournisseur. Design 1a (point 6) : mêmes textes que la page d'erreur, couleurs de la charte écrites ici (clair, et
+ * sombre selon le téléphone), bouton principal B en clair et A en sombre. SÉCURITÉ : le texte de l'exception reste au
+ * journal (8.2 i), jamais à l'écran.
  */
+const STYLE = `
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;
+font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#FFFFFF;color:#3A3A3A}
+h1{margin:0 0 12px;font-size:24px;line-height:1.25;font-weight:800;color:#1A1A1A}
+p{margin:0 0 24px;font-size:16px;line-height:1.5;color:#666666}
+.actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+button,a{min-height:44px;display:inline-flex;align-items:center;padding:0 18px;border-radius:12px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none}
+button{border:1px solid transparent;background:#C2410C;color:#FFFFFF}
+a{border:1px solid #E6E6E6;background:#FFFFFF;color:#1A1A1A}
+:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px #FFFFFF,0 0 0 4px #FF8A3D,0 0 0 6px #1A1A1A}
+@media (prefers-color-scheme:dark){body{background:#121212;color:#F2F2F2}h1{color:#FFFFFF}p{color:#A6A6A6}
+button{background:#FF8A3D;color:#1A1A1A}a{background:#1A1A1A;border-color:#333333;color:#FFFFFF}
+:focus-visible{box-shadow:0 0 0 2px #121212,0 0 0 4px #FF8A3D,0 0 0 6px #121212}}
+`;
+
 export default function GlobalError({
   error,
   reset,
@@ -14,22 +31,23 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error('[global-error]', error.digest ?? 'sans empreinte', error);
+    console.error('[global-error]', error.digest ?? 'sans empreinte');
   }, [error]);
 
   return (
     <html lang="fr">
-      <body className="bg-[#F8F9FA] dark:bg-[#0F0F11] text-slate-900 dark:text-white min-h-screen flex items-center justify-center p-6 text-center">
-        <div role="alert" className="space-y-4 max-w-md p-8 bg-white dark:bg-[#1D1D22] rounded-3xl border border-slate-200 dark:border-zinc-800 shadow-xl">
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white">Erreur critique</h2>
-          <p className="text-sm text-slate-500 dark:text-zinc-400">Une interruption inattendue est survenue. Rechargez l&apos;application pour reprendre.</p>
-          <button
-            onClick={() => reset()}
-            className="min-h-11 px-5 py-2.5 bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] hover:from-[#FF5722] hover:to-[#F02D58] text-white rounded-xl text-sm font-bold shadow-md shadow-[#FF5722]/30 active:scale-[0.98] transition-all"
-          >
-            Recharger l&apos;application
-          </button>
-        </div>
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: STYLE }} />
+      </head>
+      <body>
+        <main role="alert">
+          <h1>Quelque chose s’est mal passé de notre côté.</h1>
+          <p>Réessayez dans un instant. Si cela continue, revenez à l’accueil.</p>
+          <div className="actions">
+            <button type="button" onClick={() => reset()}>Réessayer</button>
+            <a href="/">Accueil</a>
+          </div>
+        </main>
       </body>
     </html>
   );

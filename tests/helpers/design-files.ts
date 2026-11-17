@@ -270,4 +270,8 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/events/EntryControlEditor.tsx',
     // Finition 2b (C, E-24) : écran « Vérifier avant d'envoyer » (récapitulatif, manques)
     'components/events/EventReview.tsx',
+    // Design 1a (point 6) : gabarit des pages spéciales et page hors ligne. app/global-error.tsx n'y est pas : il remplace le
+    // layout racine (ni feuille globale ni jetons), ses couleurs de la charte sont donc écrites dans son propre <style>.
+    'components/ui/SpecialPage.tsx',
+    'app/hors-ligne/page.tsx',
 ];
