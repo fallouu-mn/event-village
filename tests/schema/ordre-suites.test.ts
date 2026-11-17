@@ -138,6 +138,10 @@ describe('Lot 8 — ordre des suites : les écritures massives après la derniè
         assert.deepEqual(direct, [], `suites à écriture massive que le lanceur ne déplacera pas (règle massHolders de scripts/run-tests.mjs) : ${direct.join(', ')}`);
     });
 
+    test('CASSÉ EXPRÈS — lot CI rapide : preuve que le verdict passe au rouge (commit annulé ensuite)', () => {
+        assert.equal(1, 2, 'échec volontaire');
+    });
+
     test('cette suite n’est classée ni temps réel ni lourde par le lanceur', () => {
         const own = read(SELF);
         assert.ok(!isRealtime(own), `${SELF} serait classée temps réel : elle déplacerait les suites lourdes`);
