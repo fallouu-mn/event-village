@@ -61,7 +61,7 @@ import {
   type OfflineAvailability,
   type OfflineLot,
 } from '@/lib/tickets/offline-clock';
-import { getOfflineLot, hasCachedOfflineShell, OFFLINE_SHELL_PATH, updateLotClock } from '@/lib/tickets/offline-store';
+import { getOfflineLot, hasCachedOfflineShell, OFFLINE_SHELL_PATH, updateLotClock } from '@/lib/tickets/offline-lots';
 import { ensureOfflineLot, OFFLINE_LOTS_CHANGED, requestOfflineShell } from '@/components/tickets/OfflineTicketsSync';
 import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBadge';
 

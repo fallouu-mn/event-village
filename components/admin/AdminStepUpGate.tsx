@@ -365,7 +365,7 @@ function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<R
           </Button>
         )}
         <Button type="button" variant="ghost" size="sm" fullWidth disabled={busy} leftIcon={<LogOut size={16} />}
-          onClick={() => { void signOut().then(() => { window.location.assign('/login'); }); }}>
+          onClick={() => void signOut()}>
           Se déconnecter
         </Button>
       </div>

@@ -867,16 +867,30 @@ const ENTRIES_ZONES_STUB = {
     computed_at: '2026-11-07T21:00:00.000Z',
 };
 
-/** Onglet Équipe de l'événement à zones de la graine v4 (organisateur ; C.1.4, ZonesEditor au-dessus des contrôleurs). */
+/** Onglet Équipe de l'événement à zones de la graine v4 (organisateur). */
 function zonesTeamPath(i: DemoIds | null): string {
     return `/partner/events/${seedEvent(i, 'zones').id}?tab=equipe`;
 }
 
-/** Éditeur des zones chargé avec les deux zones et les trois portes de la graine v4 (D.3.2). */
+/**
+ * Finition 2b (B, E-23) : étape « Contrôle à l'entrée » du formulaire de modification de l'événement à zones de la graine
+ * v4 (cible de « Modifier les portes et les couleurs ») ; l'éditeur des zones a quitté l'onglet Équipe.
+ */
+function zonesStepPath(i: DemoIds | null): string {
+    return `/partner/events/${seedEvent(i, 'zones').id}/edit?etape=controle`;
+}
+
+/** Onglet Équipe ouvert (?tab=equipe). */
+async function teamTabReady(page: Page): Promise<void> {
+    await expect(page.getByRole('tab', { name: /^équipe/i })).toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
+}
+
+/** Éditeur des zones chargé avec les deux zones et les trois portes de la graine v4 (D.3.2), à l'étape du formulaire. */
 async function zonesEditorReady(page: Page): Promise<Locator> {
-    await expect(page.getByRole('tab', { name: /^équipe/i })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('heading', { name: /^contrôle à l.entrée \(facultatif\)$/i }), 'étape « Contrôle à l’entrée » ouverte')
+        .toBeVisible({ timeout: 30_000 });
     const heading = page.getByRole('heading', { name: /^zones et portes$/i });
-    await expect(heading, 'section « Zones et portes » de l’onglet Équipe (C.1.4)').toBeVisible({ timeout: 30_000 });
+    await expect(heading, 'section « Zones et portes » de l’étape « Contrôle à l’entrée »').toBeVisible({ timeout: 30_000 });
     const zoneNames = page.getByLabel(/^nom de la zone/i);
     await expect(zoneNames, 'deux zones de la graine v4').toHaveCount(2);
     await expect(zoneNames.nth(0)).toHaveValue('Entrée générale');
@@ -1059,6 +1073,28 @@ export const SCREENS: readonly Screen[] = [
         actions: async ({ page }) => {
             await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: /accès/i }).click();
             await expect(page.getByRole('heading', { name: /^accès et informations pratiques$/i })).toBeVisible();
+            // Finition 2b (C) : écran tactile (vues téléphone), le bouton « Déplacer la carte » est amené sur la barre d'actions
+            // fixe ; au point commun, c'est la barre qui reçoit l'appui (« Suivant » jamais recouvert) ; puis haut de page
+            if (await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches)) {
+                const move = page.getByRole('button', { name: /^déplacer la carte$/i });
+                await expect(move, 'bouton « Déplacer la carte » (écran tactile)').toBeVisible();
+                const hit = await move.evaluate((btn) => {
+                    const bar = document.querySelector('.form-action-bar');
+                    if (!bar) return 'barre d’actions absente';
+                    const start = btn.getBoundingClientRect();
+                    const barStart = bar.getBoundingClientRect();
+                    const shift = start.top + start.height / 2 - (barStart.top + barStart.height / 2);
+                    window.scrollTo({ top: window.scrollY + shift, behavior: 'instant' });
+                    const r = btn.getBoundingClientRect();
+                    const b = bar.getBoundingClientRect();
+                    const y = b.top + b.height / 2;
+                    const el = document.elementFromPoint(r.left + r.width / 2, y);
+                    window.scrollTo({ top: 0, behavior: 'instant' });
+                    if (!(r.top < y && r.bottom > y)) return `bouton non amené sur la barre (bouton ${Math.round(r.top)} à ${Math.round(r.bottom)}, milieu de la barre ${Math.round(y)})`;
+                    return el && bar.contains(el) ? 'barre' : `barre recouverte par « ${(el?.textContent ?? '').trim().slice(0, 40)} »`;
+                });
+                expect(hit, 'appui au point commun du bouton de la carte et de la barre d’actions').toBe('barre');
+            }
         },
     },
     // Finition 2a (captures « après » seulement) : la même étape descendue jusqu'à la recherche et à la carte (aucun repère
@@ -1089,9 +1125,44 @@ export const SCREENS: readonly Screen[] = [
             await retained.evaluate((el) => el.scrollIntoView({ block: 'center' }));
         },
     },
+    // Finition 2b : les cinq étapes de la création (Informations : partenaire-creation ; Accès : partenaire-creation-acces),
+    // l'écran « Vérifier avant d'envoyer » (formulaire vide : liste de ce qui manque) et la fenêtre « Prévenir »
+    ...([
+        ['partenaire-creation-programme', 'Création d’un événement — étape 2, Programme', /programme/i, /^programme$/i],
+        // Nom accessible d'une case du pas à pas : le titre de l'étape (« Billetterie »), le libellé visible est masqué (run 263)
+        ['partenaire-creation-billets', 'Création d’un événement — étape 4, Billets (couleur au contrôle, prix minimum)', /billetterie/i, /^billetterie$/i],
+        ['partenaire-creation-controle', 'Création d’un événement — étape 5, Contrôle à l’entrée (facultatif)', /contrôle/i, /^contrôle à l’entrée \(facultatif\)$/i],
+        ['partenaire-creation-verifier', 'Création d’un événement — Vérifier avant d’envoyer (ce qui manque)', /vérifier/i, /^vérifier avant d’envoyer$/i],
+    ] as const).map(([id, titre, stepButton, heading]): Screen => ({
+        id, titre, role: 'organisateur', needsIds: true,
+        path: () => '/partner/events/new',
+        actions: async ({ page }) => {
+            await page.getByRole('navigation', { name: /^étapes du formulaire$/i }).getByRole('button', { name: stepButton }).click();
+            await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+            // Une seule barre fixe en bas : « Navigation rapide » masquée tant que la barre du formulaire est affichée (règle
+            // :has() de app/globals.css ; au-delà de 1 024 px, elle l'est de toute façon)
+            await expect(page.getByRole('navigation', { name: /^navigation rapide$/i }), 'barre « Navigation rapide » sous le formulaire').toBeHidden();
+        },
+    })),
     {
         id: 'partenaire-edition', titre: 'Édition d’un événement publié avec ventes (champs verrouillés)', role: 'organisateur', needsIds: true,
         path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
+    },
+    // Finition 2b (D, E-27) : lieu changé, « Enregistrer les modifications » : fenêtre « Prévenir » (jamais confirmée :
+    // rien n'est enregistré)
+    {
+        id: 'partenaire-edition-prevenir', titre: 'Modifier un événement publié — fenêtre « Prévenir les détenteurs de billets »', role: 'organisateur', needsIds: true,
+        path: (i) => `/partner/events/${ids(i).events.publie.id}/edit`,
+        actions: async ({ page }) => {
+            const place = page.locator('#ev-location');
+            await expect(place, 'champ « Lieu »').toBeVisible({ timeout: 30_000 });
+            await place.fill(`${await place.inputValue()} — salle B`);
+            await page.getByRole('button', { name: /^enregistrer les modifications$/i }).click();
+            const dialog = page.getByRole('alertdialog', { name: /^prévenir les détenteurs de billets$/i });
+            await expect(dialog, 'fenêtre « Prévenir »').toBeVisible({ timeout: 30_000 });
+            await expect(dialog.getByText(/(seront prévenus|sera prévenu) par SMS (à \d{2}:\d{2}|tout de suite)\./)).toBeVisible();
+            await expect(dialog.getByRole('button', { name: /^enregistrer et prévenir$/i })).toBeVisible();
+        },
     },
     {
         id: 'partenaire-categorie-canaux', titre: 'Catégorie « Carré presse » : deux canaux, sur place uniquement', role: 'organisateur', needsIds: true,
@@ -2094,14 +2165,14 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'partenaire-zones', titre: 'Pilotage — Équipe : zones et portes de l’événement (éditeur)', role: 'organisateur', needsIds: true,
-        path: zonesTeamPath,
+        id: 'partenaire-zones', titre: 'Modifier l’événement — Contrôle à l’entrée : zones et portes (éditeur)', role: 'organisateur', needsIds: true,
+        path: zonesStepPath,
         ready: async ({ page }) => { await revealCenter(await zonesEditorReady(page)); },
     },
     {
         id: 'partenaire-equipe-portes', titre: 'Pilotage — Équipe : porte d’un contrôleur et droit de changer de porte', role: 'organisateur', needsIds: true,
         path: zonesTeamPath,
-        ready: async ({ page }) => { await zonesEditorReady(page); },
+        ready: async ({ page }) => { await teamTabReady(page); },
         // Finition 1 (E-14) : la porte se règle dans la fenêtre « Modifier » (un seul « Enregistrer ») ; la ligne en donne le
         // résumé « Porte : Porte Nord · Entrée générale » (capture recalée, signalée au rapport)
         actions: async ({ page }) => {

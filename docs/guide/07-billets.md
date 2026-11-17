@@ -227,7 +227,7 @@ Règles communes à tout le fichier :
 5. **Ce que voient les autres rôles.** Le contrôleur lit ce QR comme un QR en ligne (05).
 6. **Refus (texte exact).** Navigateur sans stockage : « Stockage hors ligne indisponible sur ce téléphone. » / « Ce
    navigateur ne permet pas de garder le billet sur le téléphone (navigation privée, stockage effacé ou plein). »
-   (`lib/tickets/offline-store.ts:28`, `app/billet/hors-ligne/page.tsx:109-116`) ; serveur : « Les codes hors ligne sont
+   (`lib/tickets/offline-lots.ts:18`, `app/billet/hors-ligne/page.tsx:109-116`) ; serveur : « Les codes hors ligne sont
    disponibles de 24 h avant le début de l'événement jusqu'à la fin du contrôle des entrées. », « Cet événement n'est
    pas ouvert : les codes hors ligne ne sont pas disponibles. », « Ce billet est en cours de transfert : les codes hors
    ligne ne sont pas disponibles. », « Trop de téléchargements des codes hors ligne : réessayez plus tard. »

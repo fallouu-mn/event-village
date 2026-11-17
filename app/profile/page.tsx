@@ -34,7 +34,6 @@ import { AvatarEditor } from '@/components/profile/AvatarEditor';
 import { ProfileForm } from '@/components/profile/ProfileForm';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { getBrowserClient } from '@/lib/supabase/client';
 
 /**
  * Profil et réglages du compte (lot 6, contrat H4 : migré sur le système de design pour recevoir le lien
@@ -104,23 +103,10 @@ export default function ProfilePage() {
   const { theme, setTheme } = useTheme();
   const { profile, partner, isLoading, isAuthenticated, signOut, refreshProfile } = useAuth();
 
-  // Lot 9 quinquies (B4 : AUTH-07) : toutes les sessions du compte sont révoquées par le serveur (jetons de rafraîchissement
-  // compris), puis cet appareil se déconnecte. Un refus du serveur est remonté à l'écran, rien n'est fermé en silence. Ici
-  // et pas dans AuthProvider : seule cette page s'en sert (poids JavaScript commun à toutes les pages, run 173).
-  const signOutEverywhere = async () => {
-    const { data } = await getBrowserClient().auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) throw new Error('Session absente : reconnectez-vous.');
-    const res = await fetch('/api/auth/sign-out-global', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(body?.error ?? 'Déconnexion de tous les appareils impossible. Réessayez.');
-    }
-    await signOut();
-  };
-  // Lot 9 quinquies (B4 : AUTH-07) : « Déconnecter tous mes appareils », avec confirmation
+  // Lot 9 quinquies (B4 : AUTH-07) : « Déconnecter tous mes appareils », avec confirmation. Sécurité (déconnexion sans
+  // réseau) : signOut('partout') ferme CE téléphone tout de suite, avec ou sans réseau, puis révoque toutes les sessions du
+  // compte par /api/auth/sign-out-global (refait au retour du réseau tant que la page reste ouverte : lib/auth/sign-out-here.ts).
   const [confirmEverywhere, setConfirmEverywhere] = useState(false);
-  const [everywhereError, setEverywhereError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
 
   const retryProfile = async () => {
@@ -350,21 +336,13 @@ export default function ProfilePage() {
         Se déconnecter
       </Button>
       <p className="text-center text-sm text-fg-muted">« Se déconnecter » ferme seulement cet appareil.</p>
-      <Button variant="ghost" fullWidth onClick={() => { setEverywhereError(null); setConfirmEverywhere(true); }}>
+      <Button variant="ghost" fullWidth onClick={() => setConfirmEverywhere(true)}>
         Déconnecter tous mes appareils
       </Button>
-      {everywhereError && <p role="alert" className="text-center text-sm text-danger-fg">{everywhereError}</p>}
       <ConfirmDialog
         isOpen={confirmEverywhere}
         onClose={() => setConfirmEverywhere(false)}
-        onConfirm={async () => {
-          try {
-            await signOutEverywhere();
-          } catch (err) {
-            setConfirmEverywhere(false);
-            setEverywhereError(err instanceof Error ? err.message : 'Déconnexion de tous les appareils impossible. Réessayez.');
-          }
-        }}
+        onConfirm={() => signOut('partout')}
         title="Déconnecter tous mes appareils ?"
         message="Vos billets hors ligne seront effacés sur les autres téléphones."
         confirmLabel="Tout déconnecter"

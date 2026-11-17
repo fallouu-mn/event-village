@@ -276,4 +276,12 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/partner/team/CategoryPills.tsx',
     // Finition 2a (2 et 3) : onglet « Infos » du pilotage (dates, fin retenue, lieu, petite carte, « Voir l’itinéraire »)
     'components/partner/pilotage/InfosTab.tsx',
+    // Finition 2b (A, E-22) : couleur au contrôle en pastilles nommées (groupe radio), à la création et en modification
+    'components/events/ScanColorPicker.tsx',
+    // Finition 2b (B, E-23) : étape « Contrôle à l'entrée » (création, modification) et liste des zones partagée
+    'components/events/ZoneListEditor.tsx',
+    'components/events/EntryControlStep.tsx',
+    'components/events/EntryControlEditor.tsx',
+    // Finition 2b (C, E-24) : écran « Vérifier avant d'envoyer » (récapitulatif, manques)
+    'components/events/EventReview.tsx',
 ];

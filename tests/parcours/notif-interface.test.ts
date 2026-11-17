@@ -757,8 +757,20 @@ describe('6.2 — autorisation des notifications après un geste seulement, dét
         assert.deepEqual(outside, [], `enablePush appelée hors d'un gestionnaire onClick : ${outside.join(', ')}`);
     });
 
-    test('detachPushSubscription() avant chaque supabase.auth.signOut() du navigateur (AuthProvider, contrôleur, scanner, connexion, réinitialisation)', () => {
-        const REQUIRED = [AUTH_PROVIDER, CONTROLLER_LAYOUT, SCANNER, RESET_PAGE];
+    test('detachPushSubscription() avant chaque supabase.auth.signOut() du navigateur (connexion, réinitialisation) ; AuthProvider ; contrôleur et scanner par useAuth().signOut', () => {
+        // Lot sécurité (déconnexion sans réseau) : AuthProvider ne passe plus par supabase.auth.signOut (session fermée sur place,
+        // lib/auth/sign-out-here.ts). L'abonnement de ce navigateur est retiré APRÈS l'effacement, sans réseau (unsubscribePush) :
+        // la session ne dépend plus du réseau, et le retrait côté serveur, refusé sans session, n'est plus tenté ; l'abonnement
+        // resté côté serveur est supprimé au premier envoi refusé (404 ou 410, lib/push/client.ts). Contrôleur et scanner : la
+        // même déconnexion, useAuth().signOut.
+        const REQUIRED = [RESET_PAGE];
+        const provider = codeOf(AUTH_PROVIDER);
+        assert.match(provider, /\bunsubscribePush\(\)/, `${AUTH_PROVIDER} : abonnement de ce navigateur retiré à la déconnexion (contrat F4)`);
+        assert.doesNotMatch(provider, /['"]@\/lib\/push\/client['"]/, `${AUTH_PROVIDER} : module des notifications hors du JavaScript de chaque page`);
+        assert.match(codeOf('lib/auth/sign-out-here.ts'), /pushManager\.getSubscription\(\)\)\?\.unsubscribe\(\)/, 'désabonnement du navigateur');
+        for (const f of [CONTROLLER_LAYOUT, SCANNER]) {
+            assert.match(codeOf(f), /\bsignOut\b[^;]*=\s*useAuth\(\)/, `${f} : déconnexion par useAuth().signOut (abonnement retiré par AuthProvider)`);
+        }
         const clientFiles = appSources().filter((f) => /\.tsx?$/.test(f) && hasUseClient(f));
         const faults: string[] = [];
         for (const f of clientFiles) {

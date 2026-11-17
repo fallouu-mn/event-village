@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconButton } from '@/components/ui/IconButton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import { Select, TextInput, Textarea } from '@/components/ui/Field';
+import { TextInput, Textarea } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
 import { CATEGORY_CHANNEL_HELP, categoryChannelLabel } from '@/lib/events/category-channels';
 import { formatInteger, toDakarDateTimeLocal } from '@/lib/format';
 import { DEFAULT_MAX_PER_ORDER, EVENT_LIMITS } from '@/lib/validations/event';
-import { SCAN_CATEGORY_COLORS, SCAN_CATEGORY_COLOR_LABELS, isScanCategoryColor } from '@/lib/scan/scan-result';
+import { isScanCategoryColor, proposeScanColor } from '@/lib/scan/scan-result';
+import { isBelowMinimum, priceMinimumMessage } from '@/lib/events/price-minimum';
+import { ScanColorPicker } from './ScanColorPicker';
 
 /**
  * Lot 5 (contrats F1, F4, F6) — billetterie du formulaire d'événement.
@@ -23,7 +25,7 @@ import { SCAN_CATEGORY_COLORS, SCAN_CATEGORY_COLOR_LABELS, isScanCategoryColor }
  *  - Lot 9 ter (R93) : « il y a des ventes » vient du serveur (edit_locks.categories[].has_sales : un billet de tout
  *    statut ou une réservation active), jamais des compteurs ; le plancher du quota reste vendus + en cours.
  *  - Lot 9 ter (consigne 1 et 2, K8) : couleur au contrôle et consigne d'entrée d'une catégorie déjà créée (PATCH) ;
- *    jamais à la création de l'événement, que le serveur refuse.
+ *    finition 2b (A, E-22) : aussi à la création de l'événement et sur une catégorie nouvelle en modification (POST).
  */
 
 export type Row = Record<string, unknown>;
@@ -52,11 +54,6 @@ export const CATEGORY_FIELD_LABELS: Record<CategoryField, string> = {
 /** Longueur maximale de la consigne d'entrée (contrainte ticket_categories_entry_instruction_check). */
 const ENTRY_INSTRUCTION_MAX = 60;
 
-const SCAN_COLOR_OPTIONS = [
-    { value: '', label: 'Aucune couleur' },
-    ...SCAN_CATEGORY_COLORS.map((c) => ({ value: c, label: SCAN_CATEGORY_COLOR_LABELS[c] })),
-];
-
 export interface CategoryDraft {
     /** Clé stable de l'interface (identifiants des champs, erreurs). */
     key: string;
@@ -72,7 +69,7 @@ export interface CategoryDraft {
     sale_online: boolean;
     sale_counter: boolean;
     is_active: boolean;
-    /** Couleur au contrôle (une des 8 clés) ou '' (aucune). */
+    /** Couleur au contrôle (une des 8 clés) ; finition 2b : proposée à l'ajout, posée par la base si elle manque. */
     scan_color: string;
     /** Consigne d'entrée affichée au contrôleur ('' : aucune). */
     entry_instruction: string;
@@ -163,8 +160,12 @@ export function numberInput(raw: string): number | undefined {
     return Number(cleaned);
 }
 
-/** Corps d'une catégorie pour la création (avec l'événement ou par POST /categories). */
+/**
+ * Corps d'une catégorie pour la création (avec l'événement ou par POST /categories). Finition 2b (A) : couleur au
+ * contrôle et consigne d'entrée comprises (null : aucune consigne ; couleur absente : posée par la base).
+ */
 export function categoryCreateBody(d: CategoryDraft): Row {
+    const instruction = d.entry_instruction.trim();
     return {
         name: d.name,
         description: d.description.trim() === '' ? null : d.description,
@@ -176,17 +177,14 @@ export function categoryCreateBody(d: CategoryDraft): Row {
         sale_online: d.sale_online,
         sale_counter: d.sale_counter,
         is_active: d.is_active,
-    };
-}
-
-/** Corps d'une catégorie déjà créée : celui de la création, plus la couleur et la consigne (null : effacées). */
-function categoryEditBody(d: CategoryDraft): Row {
-    const instruction = d.entry_instruction.trim();
-    return {
-        ...categoryCreateBody(d),
         scan_color: d.scan_color === '' ? null : d.scan_color,
         entry_instruction: instruction === '' ? null : instruction,
     };
+}
+
+/** Corps d'une catégorie déjà créée : le même que la création (couleur et consigne comprises). */
+function categoryEditBody(d: CategoryDraft): Row {
+    return categoryCreateBody(d);
 }
 
 /** Champs modifiés d'une catégorie existante (PATCH) : seul ce qui a changé est envoyé. */
@@ -226,6 +224,16 @@ export function priceLockText(d: CategoryDraft): string {
 
 // ── Champs d'une catégorie ─────────────────────────────────────────────────
 
+/**
+ * Finition 2b (A, E-26) : aide du prix. Minimum connu (lu par le serveur) : « Billet payant : 100 F CFA au moins. 0 pour
+ * une entrée gratuite. » ; pas encore lu : l'aide d'avant (le serveur contrôle de toute façon).
+ */
+function priceHint(minPaidPrice: number | null): string {
+    return minPaidPrice !== null
+        ? `Billet payant : ${formatInteger(minPaidPrice)} F CFA au moins. 0 pour une entrée gratuite.`
+        : 'Montant entier ; 0 pour une entrée gratuite.';
+}
+
 interface CategoryFieldsProps {
     draft: CategoryDraft;
     onChange: (next: CategoryDraft) => void;
@@ -233,14 +241,17 @@ interface CategoryFieldsProps {
     disabled?: boolean;
     /** Affiche les verrous liés aux ventes (édition). */
     showLocks?: boolean;
+    /** Finition 2b (A) : autres catégories de l'événement (nom, couleur), pour signaler une couleur partagée. */
+    others?: ReadonlyArray<{ name: string; color: string }>;
+    /** Finition 2b (A, E-26) : prix minimum d'un billet payant lu par le serveur ; null tant qu'il n'est pas lu. */
+    minPaidPrice?: number | null;
 }
 
-export function CategoryFields({ draft, onChange, errors = {}, disabled = false, showLocks = false }: CategoryFieldsProps) {
+export function CategoryFields({ draft, onChange, errors = {}, disabled = false, showLocks = false, others = [], minPaidPrice = null }: CategoryFieldsProps) {
     const set = <K extends keyof CategoryDraft>(field: K, value: CategoryDraft[K]) => onChange({ ...draft, [field]: value });
     const priceLocked = showLocks && draft.id !== null && hasSales(draft);
     const id = (field: CategoryField) => categoryFieldId(draft.key, field);
 
-    const scanFields = showLocks && draft.id !== null;
     const quotaHint = showLocks && countedSales(draft)
         ? `Jamais sous les ventes : ${plural(draft.sold, 'billet vendu', 'billets vendus')}, ${formatInteger(draft.held)} en cours de paiement.`
         : 'Nombre de billets de cette catégorie (1 à 100 000).';
@@ -270,7 +281,7 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                 step={1}
                 value={draft.price}
                 onChange={(e) => set('price', e.target.value)}
-                hint={priceLocked ? undefined : 'Montant entier ; 0 pour une entrée gratuite.'}
+                hint={priceLocked ? undefined : priceHint(minPaidPrice)}
                 error={errors.price}
                 disabled={disabled || priceLocked}
                 aside={priceLocked ? <Lock size={16} aria-hidden="true" /> : undefined}
@@ -378,32 +389,33 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                     </p>
                 )}
             </fieldset>
-            {scanFields && (
-                <fieldset className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
-                    <legend className="mb-3 text-sm font-semibold text-fg">Au contrôle des entrées</legend>
-                    <Select
+            {/* Finition 2b (A, E-22) : couleur et consigne pour toute catégorie, dès la création */}
+            <fieldset className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
+                <legend className="mb-3 text-sm font-semibold text-fg">Au contrôle des entrées</legend>
+                <div className="sm:col-span-2">
+                    <ScanColorPicker
                         id={id('scan_color')}
                         label={CATEGORY_FIELD_LABELS.scan_color}
                         value={draft.scan_color}
-                        onChange={(e) => set('scan_color', e.target.value)}
-                        options={SCAN_COLOR_OPTIONS}
-                        hint="Bande de couleur montrée au contrôleur avec le nom de la catégorie."
+                        onChange={(color) => set('scan_color', color)}
+                        others={others}
+                        hint="Bande de couleur montrée au contrôleur avec le nom de la catégorie. Proposée automatiquement, modifiable."
                         error={errors.scan_color}
                         disabled={disabled}
                     />
-                    <TextInput
-                        id={id('entry_instruction')}
-                        label={CATEGORY_FIELD_LABELS.entry_instruction}
-                        maxLength={ENTRY_INSTRUCTION_MAX}
-                        value={draft.entry_instruction}
-                        onChange={(e) => set('entry_instruction', e.target.value)}
-                        placeholder="Par exemple : Remettre bracelet doré"
-                        hint="Facultative, 60 caractères au plus. Affichée en gros au contrôleur quand le billet est validé à l’entrée."
-                        error={errors.entry_instruction}
-                        disabled={disabled}
-                    />
-                </fieldset>
-            )}
+                </div>
+                <TextInput
+                    id={id('entry_instruction')}
+                    label={CATEGORY_FIELD_LABELS.entry_instruction}
+                    maxLength={ENTRY_INSTRUCTION_MAX}
+                    value={draft.entry_instruction}
+                    onChange={(e) => set('entry_instruction', e.target.value)}
+                    placeholder="Par exemple : Remettre bracelet doré"
+                    hint="Facultative, 60 caractères au plus. Affichée en gros au contrôleur quand le billet est validé à l’entrée."
+                    error={errors.entry_instruction}
+                    disabled={disabled}
+                />
+            </fieldset>
             <div className="sm:col-span-2">
                 <ToggleField
                     id={id('is_active')}
@@ -509,6 +521,10 @@ interface EventTicketingManagerProps {
     onSaved?: () => void;
     /** has_sales par identifiant de catégorie (edit_locks.categories), relu après chaque enregistrement. */
     categoryLocks?: Record<string, boolean> | null;
+    /** Finition 2b (A, E-26) : prix minimum d'un billet payant lu par le serveur (null : pas encore lu). */
+    minPaidPrice?: number | null;
+    /** Finition 2b (B) : couleurs enregistrées ailleurs (étape « Contrôle à l'entrée ») : identifiant → couleur. */
+    externalColors?: Record<string, string> | null;
 }
 
 /** Libellé d'une catégorie non enregistrée dans la fenêtre « Quitter sans enregistrer ? ». */
@@ -520,7 +536,7 @@ function dirtyLabel(d: CategoryDraft): string {
 
 const NETWORK_MESSAGE = 'Connexion impossible : la catégorie n’a pas été enregistrée. Vérifiez votre réseau, puis réessayez.';
 
-export function EventTicketingManager({ eventId, initialCategories, onDirtyChange, onSaved, categoryLocks = null }: EventTicketingManagerProps) {
+export function EventTicketingManager({ eventId, initialCategories, onDirtyChange, onSaved, categoryLocks = null, minPaidPrice = null, externalColors = null }: EventTicketingManagerProps) {
     const [items, setItems] = useState<ManagedCategory[]>(() => initialCategories.map((row) => {
         const draft = categoryDraftFromRow(row);
         return { draft, base: { ...draft }, errors: {}, message: null, suggestDeactivate: false, busy: false };
@@ -553,12 +569,24 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
         }));
     }, [categoryLocks]);
 
+    // Finition 2b (B) : couleurs enregistrées à l'étape « Contrôle à l'entrée » : reprises ici (valeur enregistrée)
+    useEffect(() => {
+        if (!externalColors) return;
+        setItems((list) => list.map((it) => {
+            const id = it.draft.id;
+            if (!id || !(id in externalColors)) return it;
+            const color = externalColors[id];
+            return { ...it, draft: { ...it.draft, scan_color: color }, base: it.base ? { ...it.base, scan_color: color } : null };
+        }));
+    }, [externalColors]);
+
     const update = (key: string, change: (item: ManagedCategory) => ManagedCategory) => {
         setItems((list) => list.map((item) => (item.draft.key === key ? change(item) : item)));
     };
 
     const addCategory = () => {
-        const draft = newCategoryDraft();
+        // Finition 2b (A) : couleur proposée, distincte de celles des autres catégories de l'événement
+        const draft = { ...newCategoryDraft(), scan_color: proposeScanColor(items.map((it) => it.draft.scan_color)) };
         setItems((list) => [...list, { draft, base: null, errors: {}, message: null, suggestDeactivate: false, busy: false }]);
         window.requestAnimationFrame(() => document.getElementById(categoryFieldId(draft.key, 'name'))?.focus());
     };
@@ -597,6 +625,13 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
     const save = (item: ManagedCategory) => {
         const { draft, base } = item;
         const key = draft.key;
+        // Finition 2b (A, E-26) : prix payant sous le minimum dit sous le prix, avant tout envoi (le serveur le refuse aussi)
+        if (minPaidPrice !== null && isBelowMinimum(draft.price, minPaidPrice) && (draft.id === null || base === null || draft.price !== base.price)) {
+            const message = priceMinimumMessage(minPaidPrice);
+            update(key, (it) => ({ ...it, errors: { ...it.errors, price: message }, message: { tone: 'danger', text: message } }));
+            window.requestAnimationFrame(() => document.getElementById(categoryFieldId(key, 'price'))?.focus());
+            return;
+        }
         if (draft.id === null || base === null) {
             void send(key, `/api/partner/events/${eventId}/categories`, {
                 method: 'POST',
@@ -703,6 +738,8 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
                             errors={item.errors}
                             disabled={item.busy}
                             showLocks
+                            others={items.filter((it) => it.draft.key !== draft.key).map((it) => ({ name: it.draft.name, color: it.draft.scan_color }))}
+                            minPaidPrice={minPaidPrice}
                         />
 
                         {item.message && (

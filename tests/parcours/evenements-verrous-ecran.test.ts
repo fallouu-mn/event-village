@@ -194,7 +194,9 @@ describe('9t.9 (R93) : écrans de modification', () => {
         assert.ok(!/sold_quantity|held_quantity/.test(sales), `salesStarted ne lit plus sold_quantity ni held_quantity : ${sales.trim()}`);
         assert.match(sales, /editLocks/, `salesStarted lit editLocks : ${sales.trim()}`);
         for (const t of [
-            'Catégorie d\'événement : verrouillée dès qu\'un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.',
+            // Finition 2b (A, E-66 ; modification signalée au rapport) : « Type d'événement : verrouillé » (avant : « Catégorie
+            // d'événement : verrouillée »), même règle
+            'Type d\'événement : verrouillé dès qu\'un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.',
             'Des billets sont vendus ou réservés : la jauge ne peut plus être retirée ni descendre sous',
             'Facultative. Elle ne descend pas sous la somme des quantités des catégories actives :',
             'Facultative. La somme des quantités des catégories actives ne peut pas la dépasser.',

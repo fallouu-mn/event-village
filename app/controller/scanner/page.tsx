@@ -64,7 +64,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Calendar, Camera, Keyboard, Loader2, LogOut, Settings2, Users } from 'lucide-react';
 import { getBrowserClient } from '@/lib/supabase/client';
-import { detachPushSubscription } from '@/lib/push/client';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -80,7 +80,7 @@ import {
     titleFor, type ScanOutcome, type ScanRequest,
 } from '@/components/scan/scan-client';
 import {
-    clearAllScanMemory, clearPendingScan, clearScanSession, isVerdictReceived, pendingPayload, readPendingScan,
+    clearPendingScan, clearScanSession, isVerdictReceived, pendingPayload, readPendingScan,
     readScanSession, savePendingScan, saveScanSession, useScannerReturn, type ScanArea, type ScanInputMode,
     type ScanReturnReason,
 } from '@/lib/scan/scan-session';
@@ -294,6 +294,7 @@ function toNumber(v: unknown): number {
 
 export default function ControllerScannerPage() {
     const router = useRouter();
+    const { signOut } = useAuth();
     // Affectations
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [loading, setLoading] = useState(true);
@@ -846,17 +847,10 @@ export default function ControllerScannerPage() {
         return runScanRef.current({ eventId: id, guestTicketId, identityVerified: true, gateId: gateIdRef.current }, null);
     }, []);
 
-    const handleLogout = async () => {
-        // A10 : la mémoire du contrôle (événement, mode, scan en attente) ne survit pas à la déconnexion
-        clearAllScanMemory();
-        const supabase = getBrowserClient();
-        // Lot 6 (contrat F4) : l'appareil ne reçoit plus les notifications push du compte après la déconnexion
-        // (erreur journalisée par detachPushSubscription, la déconnexion continue).
-        await detachPushSubscription();
-        // Lot 9 quinquies (B4 : AUTH-07) : cet appareil seulement
-        await supabase.auth.signOut({ scope: 'local' });
-        router.push('/login');
-    };
+    // Sécurité (déconnexion sans réseau) : la déconnexion de toute l'application (useAuth().signOut) : mémoire du contrôle
+    // (A10), notifications de l'appareil (lot 6, F4) et session effacées tout de suite, avec ou sans réseau ; cet appareil
+    // seulement (lot 9 quinquies, B4) ; révocation côté serveur refaite au retour du réseau.
+    const handleLogout = () => signOut();
 
     const changeAutoReturn = (value: number) => {
         setAutoReturnMs(value);

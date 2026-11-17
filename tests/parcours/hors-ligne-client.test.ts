@@ -258,11 +258,14 @@ describe('7.1 Purge du stockage local (contrat 5.1, 5.2)', () => {
     test('AuthProvider : clearOfflineStore dans signOut, sur SIGNED_OUT et sur SIGNED_IN d’un autre compte ; pas de /api/auth/me hors ligne', () => {
         const src = stripComments(read('components/providers/AuthProvider.tsx', 'fournisseur de session'));
         assert.ok(storeImports(src).includes('clearOfflineStore'), 'AuthProvider importe clearOfflineStore de lib/tickets/offline-store');
-        const signOutAt = src.search(/const\s+signOut\s*=\s*(useCallback\s*\(\s*)?async\s*\(\s*\)\s*=>\s*\{/);
+        // Lot sécurité (déconnexion sans réseau) : signOut(scope ?) ; la session est fermée sur place par dropLocalSession
+        // (lib/auth/sign-out-here.ts) au lieu de supabase.auth.signOut, qui la gardait sans réseau ; même exigence d'ordre
+        const signOutAt = src.search(/const\s+signOut\s*=\s*(useCallback\s*\(\s*)?async\s*\([^)]*\)\s*=>\s*\{/);
         assert.ok(signOutAt >= 0, 'fonction signOut lisible dans AuthProvider');
         const signOutBody = balanced(src, src.indexOf('{', src.indexOf('=>', signOutAt)), '{}');
         assert.match(signOutBody, /clearOfflineStore\s*\(/, 'signOut purge le stockage hors ligne avant la déconnexion');
-        assert.ok(signOutBody.search(/clearOfflineStore\s*\(/) < signOutBody.search(/\.auth\.signOut\s*\(/), 'purge avant supabase.auth.signOut() (au cas où l’événement n’arrive pas)');
+        const closeAt = signOutBody.search(/dropLocalSession\s*\(/);
+        assert.ok(closeAt >= 0 && signOutBody.search(/clearOfflineStore\s*\(/) < closeAt, 'purge avant la fermeture de la session (au cas où l’événement n’arrive pas)');
         const listenerAt = src.search(/onAuthStateChange\s*\(/);
         assert.ok(listenerAt >= 0, 'écouteur onAuthStateChange');
         const listener = balanced(src, src.indexOf('(', listenerAt));
