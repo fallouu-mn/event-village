@@ -1,0 +1,468 @@
+TAP version 13
+# Subtest: 4b. Équipe d’un admin : choix de l’organisatrice et lien depuis la fiche d’un événement
+    # Subtest: page Équipe : un admin sans organisatrice choisie voit la liste avec recherche (plus de « ?partnerId= » à taper)
+    ok 1 - page Équipe : un admin sans organisatrice choisie voit la liste avec recherche (plus de « ?partnerId= » à taper)
+      ---
+      duration_ms: 0.599468
+      type: 'test'
+      ...
+    # Subtest: fiche admin d’un événement : lien « Équipe de cet événement » vers l’onglet Équipe du pilotage
+    ok 2 - fiche admin d’un événement : lien « Équipe de cet événement » vers l’onglet Équipe du pilotage
+      ---
+      duration_ms: 0.180467
+      type: 'test'
+      ...
+    1..2
+ok 1 - 4b. Équipe d’un admin : choix de l’organisatrice et lien depuis la fiche d’un événement
+  ---
+  duration_ms: 1.336171
+  type: 'suite'
+  ...
+# Subtest: 4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write
+    # Subtest: la section « Écarts à valider » s’affiche pour la propriétaire, le SUPERADMIN et un admin events.write
+    not ok 1 - la section « Écarts à valider » s’affiche pour la propriétaire, le SUPERADMIN et un admin events.write
+      ---
+      duration_ms: 1.423065
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:3185'
+      failureType: 'testCodeFailure'
+      error: 'section cachée à tout administrateur'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useState } from 'react';
+        import dynamic from 'next/dynamic';
+        import { Banknote, Check, Copy, KeyRound, Lock, Scale, ShieldCheck, Store, Unlock } from 'lucide-react';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { Button } from '@/components/ui/Button';
+        import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+        import { DataList, type DataColumn } from '@/components/ui/DataList';
+        import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+        import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
+        import { Modal } from '@/components/ui/Modal';
+        import { useToast } from '@/components/ui/Toast';
+        import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
+        import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
+        import { useServerData } from '@/components/partner/useServerData';
+        import { DefinitionRow, KpiAmount, PilotageSection } from './PilotageBlocks';
+        import type { ShiftSummary } from '@/lib/shifts/shift.service';
+        import { shiftStatusLabel, type CashShift, type PilotageCash } from './types';
+        
+        // Fenêtres de clôture et de Z (lot 9 bis, R17) chargées à l'ouverture seulement : même route que le scanner
+        const CloseShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CloseShiftModal), { ssr: false });
+        const ZSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.ZSummaryModal), { ssr: false });
+        const PasswordConfirmDialog = dynamic(() => import('@/components/auth/PasswordConfirmDialog').then((m) => m.PasswordConfirmDialog), { ssr: false });
+        
+        function differenceText(value: number | null): string {
+            if (value === null) return 'Caisse ouverte';
+            if (value === 0) return 'Aucun écart';
+            return value > 0 ? `+${formatFcfa(value)}` : formatFcfa(value);
+        }
+        
+        function differenceTone(value: number | null): string {
+            if (value === null || value === 0) return 'text-fg';
+            return 'text-danger-fg';
+        }
+        
+        const SHIFT_COLUMNS: DataColumn<CashShift>[] = [
+            { key: 'controller', header: 'Contrôleur', hideOnCard: true, render: (s) => <span className="font-semibold">{s.controller_name || 'Compte sans nom'}</span> },
+            { key: 'state', header: 'État', render: (s) => shiftStatusLabel(s.status) },
+            { key: 'opened', header: 'Ouverte le', render: (s) => (s.opened_at ? <time dateTime={s.opened_at}>{formatDateTime(s.opened_at)}</time> : 'Date inconnue') },
+            { key: 'float', header: 'Fonds de caisse', align: 'right', render: (s) => formatFcfa(s.opening_float) },
+            { key: 'collected', header: 'Encaissé', align: 'right', render: (s) => formatFcfa(s.cash_collected) },
+            { key: 'declared', header: 'Déclaré', align: 'right', render: (s) => (s.declared === null ? 'Pas encore' : formatFcfa(s.declared)) },
+            {
+                key: 'difference',
+                header: 'Écart',
+                align: 'right',
+                render: (s) => (
+                    <span className={`font-semibold ${differenceTone(s.difference)}`}>
+                        {differenceText(s.difference)}
+                        {s.justification && <span className="mt-0.5 block font-normal text-fg-muted">{s.justification}</span>}
+                    </span>
+                ),
+            },
+        ];
+        
+        /** Colonne d'action (R17) : « Fermer cette caisse » sur chaque caisse encore ouverte, pour qui peut la clôturer. */
+        function closeColumn(onCloseShift: (s: CashShift) => void): DataColumn<CashShift> {
+            return {
+                key: 'action',
+                header: 'Action',
+                align: 'right',
+                render: (s) => (s.status === 'OUVERT' ? (
+                    <Button variant="secondary" leftIcon={<Lock size={18} />} onClick={() => onCloseShift(s)}
+                        aria-label={`Fermer cette caisse (${s.controller_name || 'compte sans nom'})`}>
+                        Fermer cette caisse
+                    </Button>
+                ) : null),
+            };
+        }
+        
+        /**
+         * Onglet Caisse (contrat I) : caisses ouvertes et clôturées, espèces par contrôleur, écarts (pilotage_cash),
+         * et PIN régisseur (présence et date seulement ; régénération par la route du lot 4, toujours confirmée,
+         * seconde confirmation si des caisses sont ouvertes).
+         * Lot 9 bis : R17 (B49) « Fermer cette caisse » sur chaque caisse ouverte, par CloseShiftModal et la route de clôture
+         * du scanner (POST /api/controller/shifts/close) ; bouton montré à la partenaire et à l'admin `events.write` (ou
+         * SUPERADMIN), la route décide ; R97 textes de l'onglet justes ; R42 le PIN sert aussi à ouvrir une caisse.
+         */
+        /**
+         * Lot 9 quater (C7 : AUD-16) — écarts de caisse à valider par l'organisatrice, dans l'onglet Caisse du pilotage.
+         * Une caisse fermée avec un écart n'est plus co-signée par le PIN régisseur saisi sur le téléphone du contrôleur :
+         * l'organisatrice valide l'écart depuis sa session (POST /api/partner/shifts/<id>/validate-discrepancy), mot de passe
+         * saisi depuis moins de 10 minutes (sinon la saisie du mot de passe s'ouvre, puis l'action repart). Les caisses viennent
+         * de la RPC du pilotage (pilotage_compute_cash : discrepancy_validated_at) ; rien ne s'affiche sans écart en attente.
+         */
+        function DiscrepancyValidation({ shifts, onValidated }: { shifts: CashShift[]; onValidated: () => unknown }) {
+            const toast = useToast();
+            const [busy, setBusy] = useState<string | null>(null);
+            const [needsPassword, setNeedsPassword] = useState<string | null>(null);
+        
+            const pending = shifts.filter((s) => s.status === 'CLOTURE' && Number(s.difference ?? 0) !== 0 && !s.discrepancy_validated_at);
+        
+            const validate = async (shiftId: string): Promise<void> => {
+                setBusy(shiftId);
+                try {
+                    await sendJson(`/api/partner/shifts/${shiftId}/validate-discrepancy`, 'POST', {});
+                    toast.success('Écart validé.');
+                    await onValidated();
+                } catch (err) {
+                    if (err instanceof ApiError && err.code === 'PASSWORD_CONFIRMATION_REQUIRED') {
+                        setNeedsPassword(shiftId);
+                        return;
+                    }
+                    toast.error(errorMessage(err, 'L’écart n’a pas pu être validé.'));
+                } finally {
+                    setBusy(null);
+                }
+            };
+        
+            if (pending.length === 0) return null;
+        
+            return (
+                <PilotageSection
+                    title="Écarts à valider"
+                    description="Une caisse fermée avec un écart attend votre validation. Vérifiez la justification du contrôleur avant de valider."
+                >
+                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                        {pending.map((s) => {
+                            const name = s.controller_name || 'Compte sans nom';
+                            return (
+                                <li key={s.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0 space-y-1 text-sm">
+                                        <p className="font-semibold text-fg">
+                                            {name} · écart de <span className="tabular-nums">{differenceText(s.difference)}</span>
+                                        </p>
+                                        {s.justification && <p className="text-fg-muted">« {s.justification} »</p>}
+                                        {s.closed_at && (
+                                            <p className="text-fg-muted">Fermée le <time dateTime={s.closed_at}>{formatDateTime(s.closed_at)}</time></p>
+                                        )}
+                                    </div>
+                                    <Button variant="primary" leftIcon={<ShieldCheck size={18} aria-hidden="true" />} isLoading={busy === s.id}
+                                        onClick={() => void validate(s.id)} aria-label={`Valider l’écart de la caisse de ${name}`}>
+                                        Valider l’écart
+                                    </Button>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    {needsPassword && (
+                        <PasswordConfirmDialog
+                            isOpen={needsPassword !== null}
+                            onClose={() => setNeedsPassword(null)}
+                            onConfirmed={() => {
+                                const id = needsPassword;
+                                setNeedsPassword(null);
+                                if (id) void validate(id);
+                            }}
+                        />
+                    )}
+                </PilotageSection>
+            );
+        }
+        
+        export function CashTab({ eventId, signal }: { eventId: string; signal: number }) {
+            const toast = useToast();
+            const { hasAnyRole, hasRole, hasPermission } = useAuth();
+            const { data, error, loading, refreshing, reload } = useServerData<PilotageCash>(`/api/partner/events/${eventId}/pilotage/cash`, signal);
+            const [closing, setClosing] = useState<CashShift | null>(null);
+            const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
+            // Partenaire propriétaire (sinon la route de pilotage n'aurait rien servi), ou admin muni de events.write
+            const canCloseShifts = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
+            const columns = canCloseShifts ? [...SHIFT_COLUMNS, closeColumn(setClosing)] : SHIFT_COLUMNS;
+            const [pinStep, setPinStep] = useState<{ step: 'confirm' } | { step: 'open_shifts'; count: number } | null>(null);
+            const [generating, setGenerating] = useState(false);
+            const [pin, setPin] = useState<string | null>(null);
+            const [copied, setCopied] = useState(false);
+        
+            const requestPin = async (confirmOpenShifts: boolean): Promise<void> => {
+                setGenerating(true);
+                try {
+                    const res = await sendJson<{ pin?: string }>(`/api/partner/events/${eventId}/regisseur-pin`, 'POST', { confirm: true, confirmOpenShifts });
+                    setPinStep(null);
+                    if (!res.pin) {
+                        toast.error('Le code n’a pas été renvoyé par le serveur. Réessayez.');
+                        return;
+                    }
+                    setPin(res.pin);
+                    setCopied(false);
+                    toast.success('Nouveau code PIN régisseur généré.');
+                    await reload();
+                } catch (err) {
+                    if (err instanceof ApiError && err.status === 409 && err.code === 'OPEN_SHIFTS') {
+                        setPinStep({ step: 'open_shifts', count: Number(err.body?.open_shifts) || 0 });
+                        return;
+                    }
+                    setPinStep(null);
+                    toast.error(errorMessage(err, 'Génération du code PIN impossible.'));
+                } finally {
+                    setGenerating(false);
+                }
+            };
+        
+            const copyPin = async (): Promise<void> => {
+                if (!pin) return;
+                try {
+                    await navigator.clipboard.writeText(pin);
+                    setCopied(true);
+                    toast.success('Code PIN copié.');
+                } catch (err) {
+                    console.error('[caisse] copie du PIN impossible', err);
+                    toast.error('Copie impossible : notez le code affiché.');
+                }
+            };
+        
+            if (loading) {
+                return (
+                    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la caisse">
+                        <KpiCardSkeleton />
+                        <KpiCardSkeleton />
+                        <KpiCardSkeleton />
+                        <KpiCardSkeleton />
+                    </div>
+                );
+            }
+            if (error || !data) {
+                return <ErrorState title="Caisse indisponible" description={error ?? undefined} onRetry={() => void reload()} isRetrying={refreshing} />;
+            }
+        
+            const { totals } = data;
+        
+            return (
+                <div className="flex flex-col gap-6">
+                    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                        <KpiCard label="Espèces encaissées" value={<KpiAmount value={formatFcfa(totals.cash_collected)} />} hint="Ventes au guichet, toutes caisses" tone="warning" icon={<Banknote size={18} />} />
+                        <KpiCard label="Caisses ouvertes" value={formatInteger(totals.open)} hint="Contrôleurs en service" tone="info" icon={<Unlock size={18} />} />
+                        <KpiCard label="Caisses clôturées" value={formatInteger(totals.closed)} hint="Caisses fermées" tone="neutral" icon={<Store size={18} />} />
+                        <KpiCard
+                            label="Écart cumulé"
+                            value={<KpiAmount value={differenceText(totals.closed > 0 ? totals.difference : 0)} />}
+                            hint="Déclaré moins attendu, caisses clôturées"
+                            tone={totals.difference === 0 ? 'success' : 'danger'}
+                            icon={<Scale size={18} />}
+                        />
+                    </div>
+        
+                    <PilotageSection
+                        title="Code PIN régisseur"
+                        description="Le PIN est exigé à l’ouverture de chaque caisse. Un écart de clôture se valide ici, depuis votre compte, et non plus par le PIN. Il n’est affiché qu’une fois, à sa génération."
+                    >
+                        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                            <p className="flex items-start gap-3 text-sm text-fg">
+                                <KeyRound size={20} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                                {data.pin.hasPin ? (
+                                    <span>
+                                        Un code est en place
+                                        {data.pin.updatedAt && (
+                                            <>
+                                                {' depuis le '}
+                                                <time dateTime={data.pin.updatedAt}>{formatDateTime(data.pin.updatedAt)}</time>
+                                            </>
+                                        )}
+                                        .
+                                    </span>
+                                ) : (
+                                    <span>Aucun code PIN : vos contrôleurs ne peuvent pas ouvrir de caisse.</span>
+                                )}
+                            </p>
+                            <Button variant={data.pin.hasPin ? 'secondary' : 'primary'} leftIcon={<KeyRound size={18} />} onClick={() => setPinStep({ step: 'confirm' })}>
+                                {data.pin.hasPin ? 'Régénérer le code PIN' : 'Générer le code PIN'}
+                            </Button>
+                        </div>
+                    </PilotageSection>
+        
+                    <PilotageSection title="Espèces par contrôleur">
+                        {data.by_controller.length === 0 ? (
+                            <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune caisse ouverte pour cet événement.</p>
+                        ) : (
+                            <dl className="rounded-2xl border border-border bg-surface px-4 py-1">
+                                {data.by_controller.map((c) => (
+                                    <DefinitionRow
+                                        key={c.controller_id}
+                                        label={`${c.name || 'Compte sans nom'} · ${formatInteger(c.shifts)} caisse${c.shifts > 1 ? 's' : ''}${c.open_shifts > 0 ? ', dont une ouverte' : ''}`}
+                                        value={formatFcfa(c.cash_collected)}
+                                    />
+                                ))}
+                            </dl>
+                        )}
+                    </PilotageSection>
+        
+                    <PilotageSection title="Sessions de caisse" description="Le Z détaillé de chaque caisse figure dans l’onglet Clôture.">
+                        <DataList
+                            items={data.shifts}
+                            columns={columns}
+                            getKey={(s) => s.id}
+                            caption="Sessions de caisse de l’événement"
+                            cardTitle={(s) => SHIFT_COLUMNS[0].render(s)}
+                            empty={<EmptyState title="Aucune caisse" description="Les caisses ouvertes par vos contrôleurs s’affichent ici en direct." className="my-0" />}
+                        />
+                    </PilotageSection>
+        
+                    {/* Lot 9 quater (C7 : AUD-16) : l'organisatrice valide elle-même les écarts de clôture */}
+                    {!hasAnyRole(['ADMIN', 'SUPERADMIN']) && <DiscrepancyValidation shifts={data.shifts} onValidated={reload} />}
+        
+                    <ConfirmDialog
+                        isOpen={pinStep !== null}
+                        onClose={() => {
+                            if (!generating) setPinStep(null);
+                        }}
+                        onConfirm={() => void requestPin(pinStep?.step === 'open_shifts')}
+                        title={pinStep?.step === 'open_shifts' ? 'Des caisses sont ouvertes' : 'Générer un nouveau code PIN ?'}
+                        message={
+                            pinStep?.step === 'open_shifts'
+                                ? (pinStep.count > 1
+                                    ? `${formatInteger(pinStep.count)} caisses sont ouvertes : le nouveau code servira aux prochaines ouvertures de caisse.`
+                                    : 'Une caisse est ouverte : le nouveau code servira aux prochaines ouvertures de caisse.')
+                                : 'L’ancien code cesse aussitôt d’être valable. Le nouveau code ne sera affiché qu’une seule fois.'
+                        }
+                        confirmLabel={pinStep?.step === 'open_shifts' ? 'Générer quand même' : 'Générer le code'}
+                        variant="warning"
+                        isLoading={generating}
+                    />
+        
+                    <Modal
+                        isOpen={pin !== null}
+                        onClose={() => setPin(null)}
+                        title="Nouveau code PIN régisseur"
+                        subtitle="Notez-le maintenant : il ne sera plus affiché."
+                        maxWidth="sm"
+                        footer={
+                            <Button variant="primary" onClick={() => setPin(null)} className="flex-1 sm:flex-none">
+                                J’ai noté le code
+                            </Button>
+                        }
+                    >
+                        <div className="flex flex-col items-center gap-4 py-2">
+                            <p className="rounded-2xl border border-border bg-surface-sunken px-6 py-4 font-mono text-3xl font-bold tracking-widest text-fg tabular-nums" aria-label={pin ? `Code PIN : ${pin.split('').join(' ')}` : undefined}>
+                                {pin}
+                            </p>
+                            <Button variant="secondary" leftIcon={copied ? <Check size={18} /> : <Copy size={18} />} onClick={() => void copyPin()}>
+                                {copied ? 'Code copié' : 'Copier le code'}
+                            </Button>
+                        </div>
+                    </Modal>
+        
+                    {closing && (
+                        <CloseShiftModal
+                            isOpen={closing !== null}
+                            onClose={() => setClosing(null)}
+                            shift={{ id: closing.id, opening_float_amount: closing.opening_float, expected_cash_total: closing.expected ?? closing.cash_collected }}
+                            byOrganizer={{ controllerName: closing.controller_name || 'compte sans nom' }}
+                            onShiftClosed={(summary) => {
+                                setClosing(null);
+                                setZSummary(summary);
+                                toast.success('Caisse fermée.');
+                                void reload();
+                            }}
+                        />
+                    )}
+                    {zSummary && <ZSummaryModal isOpen={zSummary !== null} onClose={() => setZSummary(null)} summary={zSummary} />}
+                </div>
+            );
+        }
+        
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:59:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    1..1
+not ok 2 - 4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write
+  ---
+  duration_ms: 1.518757
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:3043'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 5. accueil : une seule ligne pour l’argent dans « À faire aujourd’hui »
+    # Subtest: versements et créances : « Argent qui attend : 2 versements à reprendre, 3 créances »
+    ok 1 - versements et créances : « Argent qui attend : 2 versements à reprendre, 3 créances »
+      ---
+      duration_ms: 6.198229
+      type: 'test'
+      ...
+    # Subtest: un versement, aucune créance : singulier et « aucune créance »
+    ok 2 - un versement, aucune créance : singulier et « aucune créance »
+      ---
+      duration_ms: 0.281632
+      type: 'test'
+      ...
+    # Subtest: seulement le droit de lire les créances : la partie des versements n’apparaît pas
+    ok 3 - seulement le droit de lire les créances : la partie des versements n’apparaît pas
+      ---
+      duration_ms: 0.290049
+      type: 'test'
+      ...
+    # Subtest: tout à zéro : ligne « À jour », jamais une carte
+    ok 4 - tout à zéro : ligne « À jour », jamais une carte
+      ---
+      duration_ms: 0.351256
+      type: 'test'
+      ...
+    # Subtest: compteur illisible : dit, jamais 0, et la carte reste affichée
+    ok 5 - compteur illisible : dit, jamais 0, et la carte reste affichée
+      ---
+      duration_ms: 0.334888
+      type: 'test'
+      ...
+    # Subtest: aucun des deux droits : pas de ligne pour l’argent
+    ok 6 - aucun des deux droits : pas de ligne pour l’argent
+      ---
+      duration_ms: 0.27002
+      type: 'test'
+      ...
+    # Subtest: TodoToday : une seule carte pour l’argent, qui mène au bloc « Argent qui attend »
+    ok 7 - TodoToday : une seule carte pour l’argent, qui mène au bloc « Argent qui attend »
+      ---
+      duration_ms: 0.287619
+      type: 'test'
+      ...
+    1..7
+ok 3 - 5. accueil : une seule ligne pour l’argent dans « À faire aujourd’hui »
+  ---
+  duration_ms: 8.352967
+  type: 'suite'
+  ...
+1..3
+# tests 10
+# suites 3
+# pass 9
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 27.729209
