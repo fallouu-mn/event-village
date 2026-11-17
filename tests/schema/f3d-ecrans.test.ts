@@ -261,7 +261,7 @@ describe('contre-vérification T4 : création d’un administrateur et grille de
         const page = read('app/admin/users/page.tsx');
         assert.match(page, /useIdentityConfirm\(\)/);
         assert.match(page, /runWithIdentity\(\(\) => sendJson<[^>]*>\('\/api\/admin\/users', 'POST'/, 'création sans la fenêtre d’identité');
-        assert.match(page, /runWithIdentity\(\(\) => sendJson\('\/api\/admin\/permissions', 'POST'/, 'droits enregistrés sans la fenêtre d’identité');
+        assert.match(page, /runWithIdentity\(async \(\) => \{\s*const res = await fetch\('\/api\/admin\/permissions'/, 'droits enregistrés sans la fenêtre d’identité');
         assert.match(page, /\{identityDialog\}/);
     });
 

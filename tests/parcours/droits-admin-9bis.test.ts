@@ -108,6 +108,9 @@ describe('R71 — POST /api/admin/users : créer un administrateur', () => {
     });
 
     test('témoin (vert dès l’écriture) : le SUPERADMIN crée un ADMIN → 200, rôle ADMIN dans user_roles', async () => {
+        // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : créer un ADMIN exige le mot de passe et le code
+        // administrateur de moins de 10 minutes. Assertions inchangées.
+        await confirmIdentity(superadmin);
         const res = await postUser(superadmin.accessToken, newUserBody('ADMIN'));
         assert.equal(res.status, 200, `création d’un ADMIN par le SUPERADMIN : ${show(res)}`);
         assert.ok((await rolesOf(String(res.body.userId))).includes('ADMIN'), 'rôle ADMIN posé');

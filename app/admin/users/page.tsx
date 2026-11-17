@@ -44,7 +44,7 @@ import { TextInput } from '@/components/ui/Field';
 import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';
 import { AdminPhoneChangeDialog } from '@/components/admin/PhoneChangeFlow';
 import { useIdentityConfirm } from '@/components/admin/IdentityConfirm';
-import { errorMessage, sendJson } from '@/components/partner/fetch-json';
+import { apiErrorOf, errorMessage, sendJson } from '@/components/partner/fetch-json';
 
 interface UserItem {
   id: string;
@@ -316,10 +316,16 @@ export default function AdminUsersManagementPage() {
     setIsSavingPerms(true);
 
     try {
-      const saved = await runWithIdentity(() => sendJson('/api/admin/permissions', 'POST', {
-        adminId: selectedAdmin.id,
-        permissions: adminPermissions,
-      }));
+      const saved = await runWithIdentity(async () => {
+        const res = await fetch('/api/admin/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adminId: selectedAdmin.id, permissions: adminPermissions }),
+        });
+        // Refus du serveur (dont mot de passe ou code à confirmer) : ApiError, lue par la fenêtre d'identité
+        if (!res.ok) throw await apiErrorOf(res);
+        return true;
+      });
       // Fenêtre « mot de passe et code » fermée sans valider : droits inchangés
       if (saved === null) return;
 

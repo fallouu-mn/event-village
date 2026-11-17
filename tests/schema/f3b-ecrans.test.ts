@@ -305,13 +305,16 @@ function appFiles(): string[] {
 
 /** Phrase dictée mot pour mot par la consigne (point 2) : seule forme longue du rôle admise à l'écran. */
 const DICTATED_NO_RIGHTS = norm("Vous n'avez encore aucun droit : demandez-les au super-administrateur.");
+// Contre-vérification de la finition 3d (T1 ; modification signalée au rapport) : refus du changement de numéro d'un
+// ADMIN par le profil client, phrase dictée mot pour mot par la consigne (lib/admin/phone-path.ts).
+const DICTATED_ADMIN_PHONE = norm('Demandez au super-administrateur de changer votre numéro.');
 
 describe('6 bis. E-37 — table des libellés de la revue (5.2) : rôles, codes HTTP, alertes SMS, origine d’un envoi, parrainage', () => {
     test('rôle SUPERADMIN : « Superadmin » à l’écran (G-45 : menu, profil, connexion, réglages), sauf la phrase dictée par la consigne', () => {
         const faults: string[] = [];
         for (const f of appFiles()) {
             for (const line of code(f).split('\n')) {
-                const rest = norm(line).replace(DICTATED_NO_RIGHTS, '');
+                const rest = norm(line).replace(DICTATED_NO_RIGHTS, '').replace(DICTATED_ADMIN_PHONE, '');
                 const hit = /super[- ]?administrat\w*/i.exec(rest);
                 if (hit) faults.push(`${f} : « ${hit[0]} »`);
             }

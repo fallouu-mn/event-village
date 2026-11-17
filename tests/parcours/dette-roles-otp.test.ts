@@ -38,7 +38,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { NextRequest } from 'next/server';
 import { resetServerEnvCache } from '../../lib/env';
-import { inspect } from '../helpers/db';
+import { inspect, openConcurrentClient } from '../helpers/db';
 import { bearer, signInAs } from '../helpers/fixtures';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { jsonRequest as rawJsonRequest, randomSenegalPhone } from './helpers';
@@ -236,7 +236,22 @@ describe('C4 — user_roles_set : tout ou rien', () => {
         const before = await rolesOf(ctrl.userId);
         assert.ok(before.includes('CONTROLEUR'), 'précondition : rôle CONTROLEUR');
         try {
-            const reply = await rpc('user_roles_set', { user_id: ctrl.userId, roles: ['CLIENT', 'ADMIN'], actor_id: await superadminId() });
+            // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : sans le drapeau de l'écran, user_roles_set refuse
+            // d'abord le rôle ADMIN (ROLE_SCREEN_REQUIRED) ; avec lui, levé dans la transaction comme le fait
+            // admin_role_change, la caisse ouverte refuse encore. Assertions inchangées.
+            const actor = await superadminId();
+            const noScreen = await rpc('user_roles_set', { user_id: ctrl.userId, roles: ['CLIENT', 'ADMIN'], actor_id: actor });
+            assert.equal(refusalCode(noScreen), 'ROLE_SCREEN_REQUIRED', `sans le drapeau de l'écran : ${JSON.stringify(noScreen)}`);
+            const tx = await openConcurrentClient({ applicationName: 'dette-roles-rpc-refus' });
+            let reply: RpcReply;
+            try {
+                await tx.query(`SELECT set_config('event_village.role_screen', 'on', true)`);
+                const { rows } = await tx.query<{ r: RpcReply['data'] }>('SELECT public.user_roles_set($1::jsonb) AS r',
+                    [JSON.stringify({ user_id: ctrl.userId, roles: ['CLIENT', 'ADMIN'], actor_id: actor })]);
+                reply = { data: rows[0].r, error: null };
+            } finally {
+                await tx.close();
+            }
             assert.ok(isOpenShiftRefusal(reply), `refus CONTROLLER_HAS_OPEN_SHIFT attendu : ${JSON.stringify(reply)}`);
             assert.deepEqual(await rolesOf(ctrl.userId), before, 'aucun rôle modifié (ADMIN non accordé, CONTROLEUR conservé)');
         } finally {
