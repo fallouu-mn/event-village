@@ -274,4 +274,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     // layout racine (ni feuille globale ni jetons), ses couleurs de la charte sont donc écrites dans son propre <style>.
     'components/ui/SpecialPage.tsx',
     'app/hors-ligne/page.tsx',
+    // Design 1a (point 7) : squelettes de l'accueil, de l'espace partenaire, du pilotage et de l'administration ; barre de progression
+    'app/loading.tsx',
+    'app/partner/loading.tsx',
+    'app/partner/events/[id]/loading.tsx',
+    'app/admin/loading.tsx',
+    'components/ui/NavigationProgress.tsx',
 ];

@@ -3,23 +3,25 @@ import { cn } from './cn';
 
 /**
  * Squelettes de chargement (lot 6, contrat A7) sur les tokens du système de design :
- *  - bloc `bg-surface-sunken` (MASTER : « puits, pistes, squelettes ») cerné d'un filet `ring-border`, pour
- *    rester visible aussi bien dans une carte (`bg-surface`) que posé sur le fond de page (lui-même
- *    `surface-sunken`), en clair comme en sombre ;
+ *  - bloc de fond `muted` (voir plus bas, design 1a) ;
  *  - pulsation en `motion-safe:` seulement (prefers-reduced-motion respecté) ;
- *  - cartes `bg-surface border-border`.
+ *  - cartes `bg-card border-border`.
  * Décoratifs : les écrans qui les affichent portent eux-mêmes l'annonce « Chargement… » (role="status").
+ *
+ * Design 1a (direction.md, section 5) : bloc `muted` de la charte (puits, squelettes), même taille que le contenu attendu ;
+ * affiche de la carte d'événement en 16/10 comme les vraies cartes (place réservée, aucun saut). Pulsation légère, coupée si
+ * « réduire les animations ».
  */
 export const Skeleton: React.FC<{ className?: string }> = ({ className }) => (
-  <div aria-hidden="true" className={cn('rounded-xl bg-surface-sunken ring-1 ring-inset ring-border motion-safe:animate-pulse', className)} />
+  <div aria-hidden="true" className={cn('rounded-xl bg-muted motion-safe:animate-pulse', className)} />
 );
 
 /** Carte d'un squelette : même surface et même bordure que les cartes des écrans migrés. */
-export const SKELETON_CARD = 'rounded-3xl border border-border bg-surface';
+export const SKELETON_CARD = 'rounded-3xl border border-border bg-card';
 
 export const EventCardSkeleton: React.FC = () => (
   <div className={cn(SKELETON_CARD, 'space-y-3 p-3')}>
-    <Skeleton className="h-48 w-full rounded-2xl" />
+    <Skeleton className="aspect-[16/10] w-full rounded-2xl" />
     <div className="space-y-2 px-1">
       <Skeleton className="h-4 w-1/3 rounded-md" />
       <Skeleton className="h-5 w-3/4 rounded-md" />
@@ -33,7 +35,7 @@ export const EventCardSkeleton: React.FC = () => (
 );
 
 export const StatCardSkeleton: React.FC = () => (
-  <div className="space-y-3 rounded-2xl border border-border bg-surface p-5">
+  <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
     <div className="flex items-center justify-between">
       <Skeleton className="h-10 w-10 rounded-xl" />
       <Skeleton className="h-5 w-16 rounded-full" />
