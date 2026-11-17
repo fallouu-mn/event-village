@@ -35,9 +35,12 @@ import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
-import { permissionLabel } from '@/lib/admin/permission-labels';
+import { permissionDescription, permissionLabel } from '@/lib/admin/permission-labels';
+import { PERMISSION_GROUPS, PERMISSION_PROFILES, dependentsOf, withDependencies } from '@/lib/admin/permission-profiles';
 import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/labels/account';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
+import { noticesText } from '@/lib/admin/confirmations';
+import { TextInput } from '@/components/ui/Field';
 
 interface UserItem {
   id: string;
@@ -189,18 +192,24 @@ export default function AdminUsersManagementPage() {
       if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
 
       // Lot 9 quinquies (A2) : le titulaire choisit son mot de passe par le lien reçu par SMS
-      const reply = (data ?? {}) as { activation?: string; message?: string };
+      const reply = (data ?? {}) as { activation?: string; message?: string; userId?: string };
+      const noRights = newRole === 'ADMIN' ? ' Il n’a encore aucun droit : choisissez-les maintenant.' : '';
       if (reply.activation === 'SENT') {
-        toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).`);
+        toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).${noRights}`);
       } else {
         toast.error(reply.message ?? 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste.');
       }
+      const created = { first_name: newFirstName.trim(), last_name: newLastName.trim() };
       setIsCreateModalOpen(false);
       setNewFirstName('');
       setNewLastName('');
       setNewPhone('');
       setNewEmail('');
       await fetchUsers();
+      // Finition 3b (E-36) : un administrateur créé n'a aucun droit ; la grille de ses droits s'ouvre tout de suite.
+      if (newRole === 'ADMIN' && reply.userId) {
+        void handleOpenPermissions({ ...created, id: reply.userId } as UserItem);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de la création.';
       toast.error(msg);
@@ -313,7 +322,7 @@ export default function AdminUsersManagementPage() {
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
 
-      toast.success(`Les permissions de l'administrateur ${selectedAdmin.first_name} ${selectedAdmin.last_name} ont été enregistrées.`);
+      toast.success(`Droits de ${selectedAdmin.first_name} ${selectedAdmin.last_name} enregistrés. Effet immédiat : il voit ses nouveaux écrans en rechargeant la page.`);
       setIsPermModalOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
@@ -323,11 +332,13 @@ export default function AdminUsersManagementPage() {
     }
   };
 
+  // Finition 3b (E-36) : cocher un droit d'écriture coche sa lecture ; décocher une lecture décoche ce qui en dépend.
   const togglePermissionItem = (perm: string) => {
     if (adminPermissions.includes(perm)) {
-      setAdminPermissions(adminPermissions.filter((p) => p !== perm));
+      const drop = new Set([perm, ...dependentsOf(perm)]);
+      setAdminPermissions(adminPermissions.filter((p) => !drop.has(p)));
     } else {
-      setAdminPermissions([...adminPermissions, perm]);
+      setAdminPermissions(withDependencies([...adminPermissions, perm]));
     }
   };
 
@@ -364,16 +375,14 @@ export default function AdminUsersManagementPage() {
         <div className="flex items-center gap-3">
           <Link
             href="/admin/dashboard"
-            className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            aria-label="Retour à l’accueil de l’administration"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-surface text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ChevronLeft size={20} />
+            <ChevronLeft size={20} aria-hidden="true" />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
-              Console Superadmin HQ
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Gestion des Utilisateurs & Permissions RBAC
+            <h1 className="text-2xl font-black tracking-tight text-fg sm:text-3xl">
+              Comptes et administrateurs
             </h1>
           </div>
         </div>
@@ -395,39 +404,38 @@ export default function AdminUsersManagementPage() {
               variant="primary"
               size="sm"
               onClick={() => setIsCreateModalOpen(true)}
-              className="flex items-center gap-1.5 bg-[#FF5722] text-white"
+              leftIcon={<UserPlus size={16} aria-hidden="true" />}
             >
-              <UserPlus size={15} />
-              <span>Créer un Compte / Admin</span>
+              Créer un compte
             </Button>
           )}
         </div>
       </div>
 
       {/* Filtres & Recherche */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
-          <div className="relative flex-1 max-w-md">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      <div className="space-y-6 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <div className="flex flex-col justify-between gap-4 border-b border-border pb-4 sm:flex-row sm:items-center">
+          <div className="relative max-w-md flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
             <input
-              type="text"
-              placeholder="Rechercher par nom, email, téléphone..."
+              type="search"
+              aria-label="Rechercher un compte"
+              placeholder="Rechercher par nom, email ou téléphone"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-[#FF5722]"
+              className="min-h-11 w-full rounded-xl border border-border-strong bg-surface pl-9 pr-4 text-base text-fg outline-none placeholder:text-fg-muted focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-zinc-800/80">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrer par rôle">
             {['ALL', 'SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR', 'CLIENT'].map((role) => (
               <button
                 key={role}
                 type="button"
+                aria-pressed={roleFilter === role}
                 onClick={() => setRoleFilter(role)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  roleFilter === role
-                    ? 'bg-gradient-to-r from-[#FF6A3D] to-[#FF3D68] text-white shadow-md shadow-[#FF5722]/30 font-bold'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  roleFilter === role ? 'bg-brand text-on-brand' : 'border border-border text-fg-muted hover:bg-surface-sunken hover:text-fg'
                 }`}
               >
                 {role === 'ALL' ? 'Tous' : roleLabel(role)}
@@ -438,9 +446,9 @@ export default function AdminUsersManagementPage() {
 
         {/* Liste Réelle des Utilisateurs */}
         {isLoading ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
-            <p className="text-xs">Chargement des utilisateurs...</p>
+          <div role="status" className="py-12 text-center text-fg-muted">
+            <RefreshCw size={24} className="mx-auto mb-2 text-brand-fg motion-safe:animate-spin" aria-hidden="true" />
+            <p className="text-sm">Chargement des comptes…</p>
           </div>
         ) : listError ? (
           <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
@@ -448,9 +456,9 @@ export default function AdminUsersManagementPage() {
             <p>{listError}</p>
           </div>
         ) : users.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <Users size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" />
-            <p className="text-xs font-bold">Aucun utilisateur trouvé.</p>
+          <div className="py-12 text-center text-fg-muted">
+            <Users size={32} className="mx-auto mb-2" aria-hidden="true" />
+            <p className="text-sm font-semibold">Aucun compte ne correspond à cette recherche.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -478,7 +486,7 @@ export default function AdminUsersManagementPage() {
                       </h4>
 
                       <span
-                        className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                        className={`text-[10px] font-black px-2 py-0.5 rounded ${
                           isSuper
                             ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300'
                             : isAdmin
@@ -596,7 +604,7 @@ export default function AdminUsersManagementPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleDeleteUser(user)}
-                          title="Anonymiser définitivement ce compte (RGPD)"
+                          title="Supprimer définitivement ce compte"
                           className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/30 flex items-center gap-1"
                         >
                           <Trash2 size={13} />
@@ -608,7 +616,7 @@ export default function AdminUsersManagementPage() {
 
                     {isDeleted && (
                       <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 italic px-2">
-                        Compte Anonymisé & Banni
+                        Compte supprimé
                       </span>
                     )}
                   </div>
@@ -626,248 +634,107 @@ export default function AdminUsersManagementPage() {
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        title="Créer un Compte Métier"
-        subtitle="Attribution de rôle sécurisée et synchronisation instantanée"
+        title="Créer un compte"
+        subtitle="Le compte est actif tout de suite ; le titulaire choisit lui-même son mot de passe."
         icon={<UserPlus size={18} />}
         maxWidth="lg"
       >
-        <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
-          {/* Prénom et Nom */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Prénom <span className="text-[#FF5722]">*</span>
-              </label>
-              <div className="relative">
-                <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex : Moussa"
-                  value={newFirstName}
-                  onChange={(e) => setNewFirstName(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Nom <span className="text-[#FF5722]">*</span>
-              </label>
-              <div className="relative">
-                <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex : Diop"
-                  value={newLastName}
-                  onChange={(e) => setNewLastName(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-                />
-              </div>
-            </div>
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TextInput label="Prénom" required autoComplete="off" placeholder="Ex : Moussa" value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} />
+            <TextInput label="Nom" required autoComplete="off" placeholder="Ex : Diop" value={newLastName} onChange={(e) => setNewLastName(e.target.value)} />
+          </div>
+          <TextInput label="Numéro de téléphone (Sénégal)" type="tel" required inputMode="tel" placeholder="77 123 45 67" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="tabular-nums" />
+          <TextInput label="Email (facultatif)" type="email" placeholder="contact@domaine.sn" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+
+          <div className="rounded-xl border border-border bg-surface-sunken p-3 text-sm text-fg-muted">
+            {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
+            <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+            <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.</p>
           </div>
 
-          {/* Numéro de Téléphone (Sénégal) */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-              Numéro de Téléphone (Sénégal) <span className="text-[#FF5722]">*</span>
-            </label>
-            <div className="relative">
-              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-[11px] font-black text-slate-700 dark:text-zinc-300 border border-slate-300/60 dark:border-zinc-700 pointer-events-none">
-                <span>+221</span>
-              </div>
-              <input
-                type="tel"
-                required
-                placeholder="77 123 45 67"
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                className="w-full h-10 pl-22 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-bold tabular-nums focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-              />
-            </div>
-          </div>
-
-          {/* Email et note d'activation sur 2 colonnes pour économiser de la hauteur */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1">
-                Email (Optionnel)
-              </label>
-              <div className="relative">
-                <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
-                <input
-                  type="email"
-                  placeholder="contact@domaine.sn"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-zinc-700/80 bg-slate-50/70 hover:bg-slate-50 focus:bg-white dark:bg-zinc-900/80 dark:focus:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-xs font-semibold focus:outline-none focus:border-[#FF5722] focus:ring-2 focus:ring-[#FF5722]/15 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-surface-sunken p-3 text-xs text-fg-muted">
-              {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
-              <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
-              <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures, où il choisit lui-même son mot de passe.</p>
-            </div>
-          </div>
-
-          {/* Rôle Attribué (Sélecteur Compact 2x2) */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
-              Rôle Attribué <span className="text-[#FF5722]">*</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {/* CONTROLEUR */}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-semibold text-fg">Rôle</legend>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
+                aria-pressed={newRole === 'CONTROLEUR'}
                 onClick={() => setNewRole('CONTROLEUR')}
-                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                  newRole === 'CONTROLEUR'
-                    ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-[#FF5722]'
-                    : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'CONTROLEUR' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
                 }`}
               >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                  newRole === 'CONTROLEUR' ? 'bg-[#FF5722] text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                }`}>
-                  <QrCode size={14} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-xs text-slate-900 dark:text-white">CONTRÔLEUR</span>
-                    {newRole === 'CONTROLEUR' && <CheckCircle2 size={13} className="text-[#FF5722]" />}
-                  </div>
-                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                    Scanner de billets sur site (/scan)
-                  </p>
-                </div>
+                <QrCode size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Contrôleur</span>
+                  <span className="block text-sm text-fg-muted">Scanne les billets des événements où un partenaire l’affecte</span>
+                </span>
               </button>
-
               {/* Lot 9 bis (R71, B33) : créer un administrateur ou un superadmin est réservé au SUPERADMIN */}
               {isSuperadmin && (
                 <>
-                {/* ADMIN */}
-                <button
-                  type="button"
-                  onClick={() => setNewRole('ADMIN')}
-                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                    newRole === 'ADMIN'
-                      ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-purple-500'
-                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    newRole === 'ADMIN' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                  }`}>
-                    <Key size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs text-slate-900 dark:text-white">ADMINISTRATEUR</span>
-                      {newRole === 'ADMIN' && <CheckCircle2 size={13} className="text-purple-600" />}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                      Supervision avec permissions
-                    </p>
-                  </div>
-                </button>
-
-                {/* SUPERADMIN */}
-                <button
-                  type="button"
-                  onClick={() => setNewRole('SUPERADMIN')}
-                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                    newRole === 'SUPERADMIN'
-                      ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-amber-500'
-                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    newRole === 'SUPERADMIN' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                  }`}>
-                    <ShieldCheck size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs text-slate-900 dark:text-white">SUPERADMIN</span>
-                      {newRole === 'SUPERADMIN' && <CheckCircle2 size={13} className="text-amber-500" />}
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                      Accès maître absolu HQ
-                    </p>
-                  </div>
-                </button>
-                </>
-              )}
-
-              {/* CLIENT */}
               <button
                 type="button"
-                onClick={() => setNewRole('CLIENT')}
-                className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                  newRole === 'CLIENT'
-                    ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/30 text-slate-900 dark:text-white shadow-xs ring-1 ring-emerald-500'
-                    : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
+                aria-pressed={newRole === 'ADMIN'}
+                onClick={() => setNewRole('ADMIN')}
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'ADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
                 }`}
               >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                  newRole === 'CLIENT' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                }`}>
-                  <User size={14} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-xs text-slate-900 dark:text-white">CLIENT STANDARD</span>
-                    {newRole === 'CLIENT' && <CheckCircle2 size={13} className="text-emerald-600" />}
-                  </div>
-                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                    Utilisateur public standard
-                  </p>
-                </div>
+                <Key size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Administrateur</span>
+                  <span className="block text-sm text-fg-muted">Agit selon les droits que vous lui donnez</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={newRole === 'SUPERADMIN'}
+                onClick={() => setNewRole('SUPERADMIN')}
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'SUPERADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                }`}
+              >
+                <ShieldCheck size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Superadmin</span>
+                  <span className="block text-sm text-fg-muted">Tous les droits, dont les réglages et la création d’administrateurs</span>
+                </span>
+              </button>
+                </>
+              )}
+              <button
+                type="button"
+                aria-pressed={newRole === 'CLIENT'}
+                onClick={() => setNewRole('CLIENT')}
+                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  newRole === 'CLIENT' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                }`}
+              >
+                <User size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-fg">Client</span>
+                  <span className="block text-sm text-fg-muted">Achète des billets, sans accès professionnel</span>
+                </span>
               </button>
             </div>
-          </div>
+          </fieldset>
 
-          {/* Note Contextuelle Rapide */}
-          <div className="p-2.5 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/50 dark:border-orange-900/30 flex items-center gap-2 text-[11px] text-slate-700 dark:text-zinc-300">
-            <Info size={14} className="text-[#FF5722] flex-shrink-0" />
-            <p className="leading-tight">
-              {newRole === 'CONTROLEUR' && (
-                <span><strong>Routage :</strong> Redirigé automatiquement vers le scanner de billets (<code>/scan</code>) dès sa connexion.</span>
-              )}
-              {newRole === 'ADMIN' && (
-                <span><strong>Gestion :</strong> Accès console administration avec attribution de permissions personnalisées.</span>
-              )}
-              {newRole === 'SUPERADMIN' && (
-                <span><strong>Accès Maître :</strong> Tous les privilèges administratifs et financiers de la plateforme.</span>
-              )}
-              {newRole === 'CLIENT' && (
-                <span><strong>Catalogue :</strong> Accès aux réservations d&apos;événements et au portefeuille de parrainage.</span>
-              )}
-            </p>
-          </div>
+          <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-bg p-3 text-sm text-info-fg">
+            <Info size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <span>
+              {newRole === 'CONTROLEUR' && 'À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.'}
+              {newRole === 'ADMIN' && 'Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.'}
+              {newRole === 'SUPERADMIN' && 'Tous les droits, dont les réglages de la plateforme et la création d’administrateurs.'}
+              {newRole === 'CLIENT' && 'Achète des billets et parraine ses proches, sans accès professionnel.'}
+            </span>
+          </p>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-2.5 border-t border-slate-100 dark:border-zinc-800">
-            <Button
-              variant="secondary"
-              size="md"
-              type="button"
-              onClick={() => setIsCreateModalOpen(false)}
-              className="rounded-xl px-4 h-10 font-bold text-xs"
-            >
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+            <Button variant="secondary" type="button" onClick={() => setIsCreateModalOpen(false)}>
               Annuler
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              type="submit"
-              isLoading={isCreating}
-              leftIcon={<UserPlus size={15} />}
-              className="rounded-xl px-5 h-10 font-black text-xs bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
-            >
+            <Button variant="primary" type="submit" isLoading={isCreating} leftIcon={<UserPlus size={16} aria-hidden="true" />}>
               Créer le compte {roleLabel(newRole)}
             </Button>
           </div>
@@ -881,18 +748,18 @@ export default function AdminUsersManagementPage() {
         <Modal
           isOpen={isPermModalOpen}
           onClose={() => setIsPermModalOpen(false)}
-          title="Permissions Granulaires"
-          subtitle={`Attribution des droits d'administration pour ${selectedAdmin.first_name} ${selectedAdmin.last_name}`}
+          title={`Droits de ${selectedAdmin.first_name} ${selectedAdmin.last_name}`}
+          subtitle="Effet immédiat ; la personne voit ses nouveaux écrans en rechargeant la page. Elle n’est pas prévenue."
           icon={<Key size={20} />}
           maxWidth="lg"
         >
-          <div className="space-y-4 text-xs">
-            <p className="text-slate-500 dark:text-zinc-400">
-              Sélectionnez les permissions spécifiques que cet administrateur est autorisé à exercer au quotidien.
+          <div className="space-y-4">
+            <p className="text-sm text-fg-muted">
+              Partez d’un profil prêt, puis ajustez les cases. Un droit qui modifie amène toujours le droit de voir.
             </p>
 
             {permsState === 'loading' && (
-              <p role="status" className="py-6 text-center text-sm text-slate-500 dark:text-zinc-400">Chargement…</p>
+              <p role="status" className="py-6 text-center text-sm text-fg-muted">Chargement…</p>
             )}
             {permsState === 'error' && (
               <StatusBanner tone="danger" announce="alert" title="Droits illisibles">
@@ -900,42 +767,55 @@ export default function AdminUsersManagementPage() {
               </StatusBanner>
             )}
             {permsState === 'ready' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto p-1">
-              {ADMIN_PERMISSIONS.map((perm) => {
-                const isChecked = adminPermissions.includes(perm);
-                return (
-                  <button
-                    key={perm}
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Profils prêts">
+                {PERMISSION_PROFILES.map((profile) => (
+                  <Button
+                    key={profile.key}
                     type="button"
-                    onClick={() => togglePermissionItem(perm)}
-                    className={`p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
-                      isChecked
-                        ? 'border-[#FF5722] bg-orange-50/80 dark:bg-orange-950/30 text-slate-900 dark:text-white font-bold ring-1 ring-[#FF5722]'
-                        : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 text-slate-600 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'
-                    }`}
+                    variant="secondary"
+                    size="sm"
+                    title={profile.hint}
+                    onClick={() => setAdminPermissions(withDependencies(profile.permissions))}
                   >
-                    <span className="text-[11px] font-bold">{permissionLabel(perm)}</span>
-                    <span
-                      className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black transition-all ${
-                        isChecked ? 'bg-[#FF5722] text-white shadow-xs' : 'border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
-                      }`}
-                    >
-                      {isChecked ? '✓' : ''}
-                    </span>
-                  </button>
-                );
-              })}
+                    {profile.label}
+                  </Button>
+                ))}
+                <Button type="button" variant="ghost" size="sm" onClick={() => setAdminPermissions([])}>
+                  Aucun droit
+                </Button>
+              </div>
+              <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
+                {PERMISSION_GROUPS.map((group) => (
+                  <fieldset key={group.title} className="space-y-2 rounded-2xl border border-border p-3">
+                    <legend className="px-1 text-sm font-semibold text-fg">{group.title}</legend>
+                    {group.permissions.filter((perm) => (ADMIN_PERMISSIONS as readonly string[]).includes(perm)).map((perm) => {
+                      const isChecked = adminPermissions.includes(perm);
+                      const inputId = `droit-${perm.replace('.', '-')}`;
+                      return (
+                        <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-surface-sunken">
+                          <input
+                            id={inputId}
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => togglePermissionItem(perm)}
+                            className="mt-1 h-5 w-5 flex-shrink-0 rounded border-border-strong accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-fg">{permissionLabel(perm)}</span>
+                            <span className="block text-sm text-fg-muted">{permissionDescription(perm)}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+                ))}
+              </div>
             </div>
             )}
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
-              <Button
-                variant="secondary"
-                size="md"
-                type="button"
-                onClick={() => setIsPermModalOpen(false)}
-                className="rounded-xl px-5 font-bold"
-              >
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+              <Button variant="secondary" type="button" onClick={() => setIsPermModalOpen(false)}>
                 Annuler
               </Button>
               <Button
@@ -944,10 +824,9 @@ export default function AdminUsersManagementPage() {
                 onClick={handleSavePermissions}
                 isLoading={isSavingPerms}
                 disabled={permsState !== 'ready'}
-                leftIcon={<ShieldCheck size={16} />}
-                className="rounded-xl px-6 font-black bg-[#FF5722] hover:bg-[#E8551F] text-white shadow-md shadow-[#FF5722]/25"
+                leftIcon={<ShieldCheck size={16} aria-hidden="true" />}
               >
-                Enregistrer les permissions
+                Enregistrer les droits
               </Button>
             </div>
           </div>
@@ -966,11 +845,13 @@ export default function AdminUsersManagementPage() {
         title={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
         description={statusTarget
           ? statusTarget.status === 'SUSPENDU'
-            ? `${statusTarget.first_name} ${statusTarget.last_name} retrouvera l’accès à son compte. Il est prévenu avec votre motif.`
-            : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. Il est prévenu avec votre motif.`
+            ? `${statusTarget.first_name} ${statusTarget.last_name} pourra de nouveau se connecter. ${noticesText('account_reactivate')}`
+            : `${statusTarget.first_name} ${statusTarget.last_name} ne pourra plus se connecter : ses sessions sont fermées. Ses billets payés restent valables à l’entrée. ${noticesText('account_suspend')}`
           : undefined}
         label={statusTarget?.status === 'SUSPENDU' ? 'Motif de la réactivation' : 'Motif de la suspension'}
-        hint="Au moins 3 caractères. Ce motif est communiqué au titulaire du compte."
+        hint={statusTarget?.status === 'SUSPENDU'
+          ? 'Au moins 3 caractères. Gardé au journal ; la personne ne le voit pas.'
+          : 'Au moins 3 caractères. Envoyé à la personne (le SMS n’en garde que le début) et gardé au journal.'}
         confirmLabel={statusTarget?.status === 'SUSPENDU' ? 'Réactiver le compte' : 'Suspendre le compte'}
         variant={statusTarget?.status === 'SUSPENDU' ? 'primary' : 'danger'}
         isLoading={isChangingStatus}
@@ -984,9 +865,9 @@ export default function AdminUsersManagementPage() {
         onClose={() => setUserToDelete(null)}
         onConfirm={handleConfirmDelete}
         variant="danger"
-        title="Anonymiser définitivement ce compte ?"
-        message="Attention : Cette action va anonymiser définitivement cet utilisateur (conformité RGPD). Ses données personnelles seront effacées et il sera banni, mais son historique financier sera conservé. Cette action est irréversible."
-        confirmLabel="Anonymiser & Supprimer"
+        title={userToDelete ? `Supprimer définitivement ${userToDelete.first_name} ${userToDelete.last_name} ?` : 'Supprimer définitivement ce compte ?'}
+        message="Nom, téléphone et email sont effacés pour toujours ; ce compte ne pourra plus jamais se connecter. Ses paiements et ses billets restent dans l’historique. La personne n’est pas prévenue. Cette action est irréversible."
+        confirmLabel="Supprimer définitivement"
         cancelLabel="Annuler"
         isLoading={isDeleting}
       />

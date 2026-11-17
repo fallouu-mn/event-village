@@ -16,10 +16,11 @@ import {
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
+import { AUDIT_ACTION_FILTER, AUDIT_OBJECT_LABELS, auditActionLabel, auditActorRoleLabel, auditObjectLabel } from '@/lib/labels/audit';
 
 const ACTOR_ROLE_LABELS: Record<string, string> = {
   CLIENT: 'Client',
-  PARTENAIRE: 'Organisateur',
+  PARTENAIRE: 'Partenaire',
   CONTROLEUR: 'Contrôleur',
   ADMIN: 'Administrateur',
   SUPERADMIN: 'Superadmin',
@@ -111,11 +112,8 @@ export default function AdminAuditLogPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#FF5722]">
-              Console Superadmin HQ
-            </span>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Journal d&apos;Audit Inaltérable & Traçabilité
+              Journal d’audit
             </h1>
           </div>
         </div>
@@ -155,12 +153,7 @@ export default function AdminAuditLogPage() {
                 className="p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
               >
                 <option value="ALL">Toutes les actions</option>
-                <option value="INSERT">INSERT (Création)</option>
-                <option value="UPDATE">UPDATE (Modification)</option>
-                <option value="STATUS_CHANGE">STATUS_CHANGE (Changement Statut)</option>
-                <option value="UPDATE_PERMISSIONS">UPDATE_PERMISSIONS (Droits RBAC)</option>
-                <option value="UPDATE_PRICING">UPDATE_PRICING (Tarifs)</option>
-                <option value="SEND_COMMUNICATION">SEND_COMMUNICATION (Campagne)</option>
+                {AUDIT_ACTION_FILTER.map((a) => <option key={a} value={a}>{auditActionLabel(a)}</option>)}
               </select>
             </div>
 
@@ -172,12 +165,7 @@ export default function AdminAuditLogPage() {
                 className="p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
               >
                 <option value="ALL">Tous les objets</option>
-                <option value="partners">Partenaires (partners)</option>
-                <option value="users">Utilisateurs (users)</option>
-                <option value="admin_permissions">Permissions (admin_permissions)</option>
-                <option value="platform_settings">Tarifs (platform_settings)</option>
-                <option value="campaigns">Communications (campaigns)</option>
-                <option value="payments">Paiements (payments)</option>
+                {Object.keys(AUDIT_OBJECT_LABELS).map((o) => <option key={o} value={o}>{auditObjectLabel(o)}</option>)}
               </select>
             </div>
           </div>
@@ -232,14 +220,14 @@ export default function AdminAuditLogPage() {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 font-bold text-purple-600 dark:text-purple-400">{log.user_role || 'SYSTEM'}</td>
+                    <td className="py-3 font-bold text-purple-600 dark:text-purple-400">{auditActorRoleLabel(log.user_role)}</td>
                     <td className="py-3 font-black text-slate-900 dark:text-white">
                       <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">
-                        {log.action}
+                        {auditActionLabel(log.action)}
                       </span>
                     </td>
-                    <td className="py-3 font-bold text-[#FF5722]">{log.object_type}</td>
-                    <td className="py-3 font-mono text-slate-400 truncate max-w-[120px]">{log.object_id || 'N/A'}</td>
+                    <td className="py-3 font-bold text-[#FF5722]">{auditObjectLabel(log.object_type)}</td>
+                    <td className="py-3 font-mono text-slate-400 truncate max-w-[120px]">{log.object_id || '—'}</td>
                     <td className="py-3 text-right">
                       <Button
                         variant="secondary"
@@ -265,7 +253,7 @@ export default function AdminAuditLogPage() {
         <Modal
           isOpen={!!selectedLog}
           onClose={() => setSelectedLog(null)}
-          title={`Audit Log #${selectedLog.id.slice(0, 8)} • ${selectedLog.action}`}
+          title={`Détail : ${auditActionLabel(selectedLog.action)}`}
         >
           <div className="space-y-4 text-xs">
             <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-zinc-400">
@@ -274,14 +262,14 @@ export default function AdminAuditLogPage() {
               {selectedLog.user_id && (
                 <div className="break-all"><strong className="text-slate-900 dark:text-white">Identifiant:</strong> {selectedLog.user_id}</div>
               )}
-              <div><strong className="text-slate-900 dark:text-white">Rôle à l’action:</strong> {selectedLog.user_role}</div>
-              <div><strong className="text-slate-900 dark:text-white">Objet:</strong> {selectedLog.object_type}</div>
-              <div><strong className="text-slate-900 dark:text-white">ID Objet:</strong> {selectedLog.object_id}</div>
+              <div><strong className="text-slate-900 dark:text-white">Rôle à l’action:</strong> {auditActorRoleLabel(selectedLog.user_role)}</div>
+              <div><strong className="text-slate-900 dark:text-white">Objet :</strong> {auditObjectLabel(selectedLog.object_type)}</div>
+              <div><strong className="text-slate-900 dark:text-white">Identifiant de l’objet :</strong> {selectedLog.object_id}</div>
             </div>
 
             {selectedLog.old_value && (
               <div>
-                <span className="block font-bold text-red-500 mb-1">Ancienne Valeur (Old Value)</span>
+                <span className="block font-bold text-red-500 mb-1">Avant</span>
                 <pre className="p-3 rounded-xl bg-red-50/60 dark:bg-red-950/20 text-red-700 dark:text-red-300 font-mono text-[10px] overflow-x-auto border border-red-200 dark:border-red-900">
                   {JSON.stringify(selectedLog.old_value, null, 2)}
                 </pre>
@@ -290,7 +278,7 @@ export default function AdminAuditLogPage() {
 
             {selectedLog.new_value && (
               <div>
-                <span className="block font-bold text-emerald-500 mb-1">Nouvelle Valeur (New Value)</span>
+                <span className="block font-bold text-emerald-500 mb-1">Après</span>
                 <pre className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] overflow-x-auto border border-emerald-200 dark:border-emerald-900">
                   {JSON.stringify(selectedLog.new_value, null, 2)}
                 </pre>

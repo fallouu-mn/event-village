@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carte des événements</title>
+<meta name="description" content="Maquette de la carte des événements avec la feuille glissante, fond de carte dessiné, données fictives.">
+<link rel="stylesheet" href="../jetons.css">
+<link rel="stylesheet" href="../composants.css">
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; }
+  .appli { position: relative; height: 100dvh; display: grid; grid-template-rows: 1fr; }
+  @media (min-width: 1024px) { .appli { grid-template-rows: auto 1fr; } }
+  .site-header { display: none; }
+  @media (min-width: 1024px) { .site-header { display: block; position: relative; } }
+  .corps { position: relative; min-height: 0; display: grid; }
+  @media (min-width: 1024px) { .corps { grid-template-columns: 420px 1fr; } }
+  .plan { position: relative; overflow: hidden; min-height: 0; }
+  @media (min-width: 1024px) { .plan { grid-column: 2; grid-row: 1; } .feuille { grid-column: 1; } }
+  .plan svg.fond { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .haut { position: absolute; z-index: 5; left: 0; right: 0; top: 0; display: grid; gap: var(--space-2); padding: calc(env(safe-area-inset-top, 0px) + 12px) var(--gutter) 8px; }
+  .haut .rangee { display: flex; gap: var(--space-2); }
+  .haut .search { flex: 1; }
+  .haut .search .input { background: var(--popover); border-color: var(--border); box-shadow: var(--shadow-md); }
+  .bascule { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--radius); background: var(--popover); box-shadow: var(--shadow-md); border: 1px solid var(--border); }
+  .bascule a { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 9px; font-size: var(--text-sm); font-weight: 700; color: var(--foreground-strong); text-decoration: none; }
+  .bascule a[aria-current='page'] { background: var(--primary); color: var(--primary-foreground); }
+  .haut .chips .chip { box-shadow: var(--shadow-sm); }
+  @media (min-width: 1024px) { .haut { left: 0; right: auto; width: 100%; } .haut .rangee .search, .haut .bascule { display: none; } }
+  .outils-plan { position: absolute; z-index: 5; right: var(--gutter); display: grid; gap: var(--space-2); top: 132px; }
+  .outils-plan .btn-icon { background: var(--popover); color: var(--foreground-strong); border: 1px solid var(--border); box-shadow: var(--shadow-md); }
+  .vous { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #2563EB; border: 3px solid #FFFFFF; box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.22); transform: translate(-50%, -50%); }
+  .legende-plan { position: absolute; left: var(--gutter); bottom: calc(46% + 8px); z-index: 4; font-size: var(--text-caption); color: var(--muted-foreground); background: color-mix(in srgb, var(--popover) 85%, transparent); padding: 2px 8px; border-radius: 6px; }
+  @media (min-width: 1024px) { .legende-plan { bottom: 12px; left: auto; right: 12px; } }
+  /* Feuille glissante (téléphone) / panneau (ordinateur) */
+  .feuille {
+    position: absolute; z-index: 10; left: 0; right: 0; bottom: 0; height: 46%; display: grid; grid-template-rows: auto auto 1fr;
+    transition: height var(--duration-slow) var(--ease-out);
+  }
+  .feuille[data-etat='ouverte'] { height: 88%; }
+  .feuille-tete { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--gutter) var(--space-2); }
+  .feuille-tete h1 { font-size: var(--text-lg); font-weight: 800; }
+  .feuille-liste { overflow-y: auto; padding: 0 var(--gutter) var(--space-4); display: grid; gap: var(--space-3); align-content: start; }
+  @media (min-width: 1024px) {
+    .feuille { position: relative; height: auto; border-radius: 0; border: 0; border-right: 1px solid var(--border); box-shadow: none; grid-row: 1; padding-top: var(--space-4); }
+    .feuille .sheet-handle, .feuille [data-agrandir] { display: none; }
+  }
+  .choisi { display: grid; grid-template-columns: 96px 1fr; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius); border: 1px solid var(--primary-text); background: var(--primary-soft); }
+  .choisi .vignette { position: relative; border-radius: var(--radius-sm); overflow: hidden; min-height: 96px; }
+  .choisi .vignette svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .choisi h2 { font-size: var(--text-base); font-weight: 800; }
+  .choisi .actions { grid-column: 1 / -1; display: flex; gap: var(--space-2); }
+  .choisi .actions .btn { flex: 1; }
+  .ligne { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-2); border-radius: var(--radius); text-decoration: none; color: inherit; border: 1px solid var(--border); background: var(--card); }
+  .ligne .vignette { position: relative; width: 64px; height: 64px; border-radius: var(--radius-sm); overflow: hidden; }
+  .ligne .vignette svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ligne b { display: block; color: var(--foreground-strong); font-size: var(--text-sm); }
+  .ligne .prix { font-weight: 800; color: var(--foreground-strong); font-size: var(--text-sm); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="appli">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="accueil.html" aria-label="Event Village, accueil">
+        <img class="logo-light" src="../logo/svg/bras-leves-horizontal.svg" alt="" style="height:28px">
+        <img class="logo-dark" src="../logo/svg/bras-leves-horizontal-sombre.svg" alt="" style="height:28px">
+      </a>
+      <nav class="nav-links" aria-label="Navigation principale"><a href="accueil.html">Explorer</a><a href="carte.html" aria-current="page">Carte</a><a href="#">Mes billets</a></nav>
+      <div class="header-search search"><span data-icone="recherche"></span><label class="sr-only" for="q0">Rechercher un lieu ou un quartier</label><input class="input" id="q0" type="search" placeholder="Lieu, quartier…"></div>
+      <span class="spacer"></span>
+      <a class="btn btn-primary" href="#">Se connecter</a>
+    </div>
+  </header>
+
+  <div class="corps">
+    <div class="plan" data-plan>
+      <div class="haut">
+        <div class="rangee">
+          <div class="search"><span data-icone="recherche"></span><label class="sr-only" for="q1">Rechercher un lieu ou un quartier</label><input class="input" id="q1" type="search" placeholder="Lieu, quartier…"></div>
+          <nav class="bascule" aria-label="Affichage"><a href="accueil.html"><span data-icone="liste" data-taille="icon-sm"></span>Liste</a><a href="carte.html" aria-current="page"><span data-icone="carte" data-taille="icon-sm"></span>Carte</a></nav>
+        </div>
+        <div class="chips" role="group" aria-label="Filtrer">
+          <button class="chip" type="button" aria-pressed="true">Ce soir</button>
+          <button class="chip" type="button" aria-pressed="false">Demain</button>
+          <button class="chip" type="button" aria-pressed="false">Ce week-end</button>
+          <button class="chip" type="button" aria-pressed="false">Gratuit</button>
+        </div>
+      </div>
+      <div class="outils-plan">
+        <button class="btn btn-icon" type="button" aria-label="Me situer"><span data-icone="viser"></span></button>
+        <button class="btn btn-icon" type="button" aria-label="Agrandir le plan"><span data-icone="plus"></span></button>
+        <button class="btn btn-icon" type="button" aria-label="Réduire le plan"><span data-icone="moins"></span></button>
+      </div>
+      <span class="legende-plan">Fond de carte schématique</span>
+    </div>
+
+    <section class="feuille sheet" data-etat="mi" aria-labelledby="t-feuille">
+      <button class="sheet-handle" type="button" aria-label="Agrandir la liste" data-poignee><span></span></button>
+      <div class="feuille-tete">
+        <h1 id="t-feuille">9 événements dans cette zone</h1>
+        <button class="btn btn-ghost" type="button" data-agrandir><span data-icone="agrandir"></span>Tout afficher</button>
+      </div>
+      <div class="feuille-liste" data-liste></div>
+    </section>
+  </div>
+</div>
+
+<script src="../commun.js"></script>
+<script src="donnees.js"></script>
+<script src="maquettes.js"></script>
+<script>
+  (function () {
+    var D = EVD;
+    // Événements de la zone (Dakar) : trois de l'accueil, trois de plus pour la carte. Données fictives.
+    var zone = [
+      { e: D.evenements[0], x: 250, y: 372 },
+      { e: D.evenements[1], x: 128, y: 196 },
+      { e: D.evenements[2], x: 66, y: 238 },
+      { e: D.evenements[4], x: 362, y: 452 },
+      { e: { id: 'yoff', titre: 'Mbalax sous les étoiles', orga: 'Sunu Scène', date: 'ce soir à 22:00', lieu: 'Plage de Yoff', ville: 'Dakar', court: '3 000 F', affiche: 'coucher' }, x: 296, y: 202 },
+      { e: { id: 'cine', titre: 'Ciné en plein air', orga: 'Atelier Cap-Vert', date: 'ce soir à 20:30', lieu: 'Jardin de Mermoz', ville: 'Dakar', court: 'Gratuit', affiche: 'scene' }, x: 236, y: 312 },
+    ];
+    var plan = document.querySelector('[data-plan]');
+    var reperes = zone.map(function (z, i) {
+      var b = EVM.repere({ texte: z.e.court, une: i === 0, bouton: true });
+      b.setAttribute('aria-label', z.e.titre + ', ' + z.e.court);
+      b.setAttribute('aria-pressed', i === 1 ? 'true' : 'false');
+      b.addEventListener('click', function () { choisir(i); });
+      plan.appendChild(b);
+      return { x: z.x, y: z.y, el: b };
+    });
+    // Regroupement : trois événements trop proches à cette échelle (Médina).
+    var groupe = EVM.repere({ groupe: 3, bouton: true });
+    groupe.setAttribute('aria-label', 'Trois événements à Médina : agrandir le plan');
+    plan.appendChild(groupe);
+    reperes.push({ x: 326, y: 404, el: groupe });
+    var vous = document.createElement('span'); vous.className = 'vous'; vous.setAttribute('aria-label', 'Vous êtes ici'); vous.setAttribute('role', 'img');
+    plan.appendChild(vous);
+    reperes.push({ x: 214, y: 334, el: vous });
+    var large = matchMedia('(min-width: 1024px)').matches;
+    EVM.carte(plan, reperes, { vue: large ? '20 130 560 462' : '30 50 370 800' });
+
+    var liste = document.querySelector('[data-liste]');
+    function choisir(i) {
+      reperes.forEach(function (r, j) { if (j < zone.length) r.el.setAttribute('aria-pressed', String(j === i)); });
+      var z = zone[i].e;
+      var autres = zone.filter(function (_, j) { return j !== i; });
+      liste.innerHTML =
+        '<article class="choisi"><div class="vignette">' + D.affiche(z.affiche, 'ch' + i) + '</div>' +
+        '<div class="stack gap-1"><span class="caption strong">' + z.date + '</span><h2>' + z.titre + '</h2><p class="small muted">' + z.lieu + ', ' + z.ville + '</p>' +
+        '<p class="small strong">' + (z.court === 'Gratuit' ? 'Gratuit' : 'Dès ' + z.court + ' CFA') + '</p></div>' +
+        '<div class="actions"><a class="btn btn-primary" href="fiche.html">Voir l\'événement</a><a class="btn btn-secondary" href="#">' + D.icone('lieu', 'icon-sm') + 'Itinéraire</a></div></article>' +
+        autres.map(function (o, k) {
+          return '<a class="ligne" href="fiche.html"><span class="vignette">' + D.affiche(o.e.affiche, 'li' + k) + '</span><span><b>' + o.e.titre + '</b><span class="small muted">' + o.e.date + ' · ' + o.e.lieu + '</span></span><span class="prix">' + o.e.court + '</span></a>';
+        }).join('') + '<p class="small muted">Et 3 événements à Médina : agrandissez le plan pour les voir.</p>';
+    }
+    choisir(1);
+    // Poignée et bouton : alternative au glissement (WCAG 2.5.7), état annoncé.
+    var feuille = document.querySelector('.feuille');
+    function basculer() {
+      var ouverte = feuille.getAttribute('data-etat') === 'ouverte';
+      feuille.setAttribute('data-etat', ouverte ? 'mi' : 'ouverte');
+      document.querySelector('[data-poignee]').setAttribute('aria-label', ouverte ? 'Agrandir la liste' : 'Réduire la liste');
+    }
+    document.querySelector('[data-poignee]').addEventListener('click', basculer);
+    document.querySelector('[data-agrandir]').addEventListener('click', basculer);
+  })();
+</script>
+</body>
+</html>

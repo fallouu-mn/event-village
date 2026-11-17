@@ -5,6 +5,7 @@ import { observedCashoutFeeRates } from '@/lib/admin/finance-reconciliation';
 import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { rpcWithRetry } from '@/lib/payments/rpc';
+import { settingRefusal } from '@/lib/settings/catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,14 +26,27 @@ export async function GET(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'settings.read' });
     if (!auth.authorized) return auth.errorResponse!;
     const supabase = getServiceRoleClient();
-    const [{ data: settings, error }, { data: history, error: histErr }] = await Promise.all([
+    const [{ data: settings, error }, { data: history, error: histErr }, { data: defaults, error: defErr }] = await Promise.all([
         supabase.from('platform_settings').select('key, value, description, updated_by, updated_at').or(SETTING_KEYS_FILTER).order('key'),
         supabase.from('platform_settings_history').select('key, old_value, new_value, changed_by, reason, changed_at')
             .or(SETTING_KEYS_FILTER).order('changed_at', { ascending: false }).limit(100),
+        // Finition 3b (E-35) : valeur d'origine de chaque réglage (premier état de l'historique)
+        supabase.rpc('platform_settings_defaults'),
     ]);
-    if (error || histErr) {
-        console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message);
+    if (error || histErr || defErr) {
+        console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message ?? defErr?.message);
         return NextResponse.json({ error: 'Réglages indisponibles.' }, { status: 500 });
+    }
+    // Finition 3b (E-35) : l'historique dit qui a changé quoi ; un changement sans compte (migration, automate) est « Automatique ».
+    const authorIds = [...new Set((history ?? []).map((h) => h.changed_by).filter((id): id is string => typeof id === 'string'))];
+    const names = new Map<string, string>();
+    if (authorIds.length > 0) {
+        const { data: authors, error: authErr } = await supabase.from('users').select('id, first_name, last_name').in('id', authorIds);
+        if (authErr) {
+            console.error('[API /api/admin/finance-settings] auteurs illisibles :', authErr.message);
+            return NextResponse.json({ error: 'Réglages indisponibles.' }, { status: 500 });
+        }
+        for (const a of authors ?? []) names.set(String(a.id), `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim() || 'Compte sans nom');
     }
     // Lot 9 bis (H7, X5, B29) : frais SamirPay réels constatés sur 90 jours, pour l'avertissement de l'écran
     // quand le taux de retrait réglé leur est inférieur (null tant qu'aucun frais réel n'est connu).
@@ -44,7 +58,11 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({
         settings: (settings ?? []).map((s) => ({ ...s, value: (s.value as { value?: unknown })?.value })),
-        history: history ?? [],
+        history: (history ?? []).map((h) => ({
+            ...h,
+            author: h.changed_by ? (names.get(String(h.changed_by)) ?? 'Compte supprimé') : 'Automatique',
+        })),
+        defaults: (defaults ?? {}) as Record<string, unknown>,
         observed_cashout_fee_rate: observed.rate,
         observed_cashout_fee_max: observed.max,
     });
@@ -81,7 +99,11 @@ export async function PUT(req: NextRequest) {
     }
     if (!data.ok) {
         const status = data.code === 'FORBIDDEN' ? 403 : 400;
-        return NextResponse.json({ error: data.message, code: data.code }, { status });
+        // Finition 3b (E-35) : refus en français, avec le nom du réglage et ses bornes, jamais la clé technique.
+        const message = data.code === 'INVALID_VALUE' ? settingRefusal(parsed.data.key, parsed.data.value)
+            : data.code === 'UNKNOWN_KEY' ? 'Ce réglage n’existe pas.'
+            : data.message;
+        return NextResponse.json({ error: message, code: data.code }, { status });
     }
     return NextResponse.json({ ok: true, key: data.key, value: data.value });
 }

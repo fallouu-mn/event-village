@@ -215,13 +215,10 @@ describe('R100 et R107 — textes du scanner', () => {
 // ── R21 et R67 : pages admin ───────────────────────────────────────────────
 
 describe('R21 et R67 — pages admin sans effet ni valeur codée en dur', () => {
-    test('app/admin/pricing/page.tsx : sans handleSaveSection(, sans Wave, sans « (§11 »', () => {
-        const src = read('app/admin/pricing/page.tsx');
-        const found: string[] = [];
-        if (src.includes('handleSaveSection(')) found.push('handleSaveSection( (:143, :223, :273 : sections enregistrées et lues nulle part)');
-        if (/wave/i.test(src)) found.push('Wave (:34 : 1,0 % alors que le moteur applique 1,5 %)');
-        if (src.includes('(§11')) found.push('(§11… (:114, :137, :217, :267)');
-        assert.deepEqual(found, [], 'sections de tarification sans effet');
+    // Finition 3b (E-36) : la page « Tarification » est retirée (ce n'était plus qu'un renvoi vers les Réglages) ; la règle
+    // R21 tient a fortiori. Modification signalée au rapport de la finition 3b.
+    test('app/admin/pricing/page.tsx : page retirée (finition 3b)', () => {
+        assert.ok(!fs.existsSync(path.join(process.cwd(), 'app/admin/pricing/page.tsx')), 'app/admin/pricing/page.tsx existe encore');
     });
 
     test('app/admin/referral/page.tsx : sans « 24 Mois » ni « N1 7% » (durées et taux lus dans la configuration)', () => {

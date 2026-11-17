@@ -698,8 +698,12 @@ describe('6.7 — destinataires admin actifs', () => {
         assert.ok(rows, 'fonction public.notif_admin_recipients absente (contrat D)');
         assert.ok(rows.length > 0, 'au moins un destinataire (SUPERADMIN du seed)');
         assert.ok(!rows.includes(unknown), 'identifiant inconnu');
-        const { data, error } = await service.from('users').select('id, status').in('id', rows);
-        assert.equal(error, null, `comptes destinataires : ${error?.message}`);
-        assert.ok((data ?? []).every((u) => u.status === 'ACTIF'), `destinataires ACTIF seulement : ${JSON.stringify((data ?? []).filter((u) => u.status !== 'ACTIF'))}`);
+        // Finition 3b : les comptes lus en SQL. La liste des identifiants dans l'adresse de l'API (« in.(…) ») dépassait la longueur
+        // admise une fois plus de deux cents administrateurs créés par les suites (run 274 : « URI too long »). Mêmes assertions.
+        // Modification signalée au rapport.
+        const data = await inspect(async (db) => (await db.query<{ id: string; status: string }>(
+            `SELECT id::text AS id, status::text AS status FROM public.users WHERE id = ANY($1::uuid[])`, [rows])).rows);
+        assert.equal(data.length, rows.length, 'chaque destinataire est un compte existant');
+        assert.ok(data.every((u) => u.status === 'ACTIF'), `destinataires ACTIF seulement : ${JSON.stringify(data.filter((u) => u.status !== 'ACTIF'))}`);
     });
 });

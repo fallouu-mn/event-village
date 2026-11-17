@@ -50,6 +50,12 @@ export async function PATCH(
     const params = await props.params;
     const auth = await verifyAdminAuth(req);
     if (!auth.authorized) return auth.errorResponse!;
+    // Finition 3b (inventaire de sécurité) : sans aucun des deux droits, refus avant toute lecture du corps
+    // (auparavant : 400 « Statut partenaire invalide » à un ADMIN sans droit, avant le contrôle de la permission).
+    const perms = auth.permissions ?? [];
+    if (!perms.includes('partners.validate') && !perms.includes('partners.suspend')) {
+        return permissionMissingResponse('partners.validate');
+    }
 
     try {
         const { id: partnerId } = await Promise.resolve(params);

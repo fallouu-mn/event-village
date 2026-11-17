@@ -29,6 +29,7 @@ import {
   outboxTypeLabel,
   type OutboxStatus,
 } from '@/lib/notifications/outbox-labels';
+import { SERVER_TROUBLE } from '@/lib/finance/admin-client';
 
 /**
  * Supervision des notifications (lot 6, contrats L2 à L4).
@@ -122,10 +123,10 @@ async function fetchJson<T>(url: string, parse: (body: unknown) => T | null, wha
     body = await res.json();
   } catch (err) {
     console.error(`[Supervision des notifications] ${what} illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
-    return { ok: false, status: res.status, message: `Réponse inattendue du serveur (erreur ${res.status}).` };
+    return { ok: false, status: res.status, message: SERVER_TROUBLE };
   }
   if (!res.ok) {
-    const message = isRecord(body) && typeof body.error === 'string' && body.error ? body.error : `Chargement impossible (erreur ${res.status}).`;
+    const message = isRecord(body) && typeof body.error === 'string' && body.error ? body.error : `Chargement impossible. ${SERVER_TROUBLE}`;
     return { ok: false, status: res.status, message };
   }
   const data = parse(body);

@@ -70,10 +70,25 @@ export async function GET(req: NextRequest) {
 
         if (error) return apiFailure('GET /api/admin/partners', error, PARTNERS_FALLBACK);
 
+        // Finition 3b (E-29) : nombre de fiches par statut, servi avec partners.read (les onglets de l'accueil ne
+        // dépendent plus de statistics.read). Lecture séparée : le filtre de statut ne change pas ces nombres.
+        const head = { count: 'exact' as const, head: true };
+        const keys = ['EN_ATTENTE', 'VALIDE', 'REJETE', 'SUSPENDU', 'ALL'] as const;
+        const replies = await Promise.all(keys.map((k) => (k === 'ALL'
+            ? supabase.from('partners').select('id', head)
+            : supabase.from('partners').select('id', head).eq('status', k as never))));
+        const counts: Record<string, number> = {};
+        for (const [i, k] of keys.entries()) {
+            const r = replies[i];
+            if (r.error || typeof r.count !== 'number') return apiFailure('GET /api/admin/partners, nombres', r.error ?? new Error('nombre absent'), PARTNERS_FALLBACK);
+            counts[k] = r.count;
+        }
+
         return NextResponse.json({
             success: true,
             partners: partners || [],
             total: partners?.length || 0,
+            counts,
         });
     } catch (err: unknown) {
         return apiFailure('GET /api/admin/partners', err, PARTNERS_FALLBACK);
