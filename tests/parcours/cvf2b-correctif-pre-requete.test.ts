@@ -10,25 +10,33 @@
  *  3. REST : sans jeton (clé anon seule), jeton anon et rôle de service servis ; jeton authenticated sans session_id
  *     refusé (fabriqué avec le secret JWT de l'instance locale).
  *  4. Coût : plan de la lecture (EXPLAIN ANALYZE) et mesure en boucle (10 000 appels) ; chiffre imprimé `[CVF2B-PRE]`.
- * Écrit en base : comptes. after() → invariants.
+ *  5. Temps réel : un jeton court (échéance à +25 s, même secret) abonné à postgres_changes ne reçoit plus rien après
+ *     son échéance (témoin anon qui reçoit le même changement), le serveur coupe le canal.
+ * Écrit en base : comptes, un partenaire et un événement publié (vivacité du temps réel). after() → invariants.
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { inRolledBackTransaction, inspect } from '../helpers/db';
 import { gotrueEmail } from '../helpers/gotrue-email';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
+import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
+import { anonClient, disposeClients, produceUntilReceived, subscribeCollect, waitForEvent, RECEIVE_TIMEOUT_MS } from '../helpers/realtime';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
+import { newPartner } from './finance-helpers';
+import { createEventInStatus } from './cycle-helpers';
 import { STRONG_PASSWORD } from './helpers';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 after(async () => {
+    await assertLifecycleInvariants('cvf2b-correctif-pre-requete');
     await assertFinition1Invariants('cvf2b-correctif-pre-requete');
 });
 
@@ -232,6 +240,54 @@ describe('4. coût de la pré-requête', () => {
         console.log(`[CVF2B-PRE] 4. plan (auth.sessions : ${result.sessions} ligne(s)) :\n  ${result.plan.join('\n  ')}`);
         console.log(`[CVF2B-PRE] 4. coût : ${perCall.toFixed(1)} µs par appel de securite.db_pre_request (${N} appels, ${result.m.avec_ms.toFixed(1)} ms) ; témoin auth.jwt() seul : ${baseline.toFixed(1)} µs ; part de la lecture de la session : ${(perCall - baseline).toFixed(1)} µs`);
         assert.ok(perCall < 1000, `coût par appel trop élevé : ${perCall.toFixed(1)} µs`);
+    });
+});
+
+// ── 5. Temps réel ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('5. temps réel : jeton échu', () => {
+    test('un abonnement postgres_changes ne reçoit plus rien après l’échéance de son jeton (témoin anon qui reçoit)', async () => {
+        const secret = localJwtSecret();
+        const partner = await newPartner('cvf2b-pre-rt');
+        const live = await createEventInStatus(partner, 'cvf2b-pre-rt', [{ name: 'Standard', price: 3000, total: 10 }], 'PUBLIE', { startsInHours: 96 });
+        let pulse = 0;
+        const retitle = async (): Promise<string> => {
+            pulse += 1;
+            const title = `${live.title} · cvf2b ${pulse}`;
+            const { error } = await service.from('events').update({ title }).eq('id', live.eventId);
+            assert.equal(error, null, `titre : ${error?.message}`);
+            return title;
+        };
+        const target = { table: 'public_event_state', filter: `event_id=eq.${live.eventId}` };
+
+        const witness = anonClient();
+        let short: SupabaseClient | null = null;
+        try {
+            const w = subscribeCollect(witness, target, { label: 'témoin anon' });
+            await produceUntilReceived(w, retitle, (e) => e.new.event_id === live.eventId, { what: 'vivacité du témoin' });
+
+            const buyer = await newBuyer('cvf2b-pre-rt-acheteur');
+            const real = claimsOf((await session(buyer)).access);
+            const now = Math.floor(Date.now() / 1000);
+            const exp = now + 25;
+            const token = mint(secret, { ...real, iat: now, exp });
+            short = createClient(SUPABASE_URL, ANON, { accessToken: async () => token });
+            const c = subscribeCollect(short, target, { label: `jeton court (échéance ${new Date(exp * 1000).toISOString()})` });
+            const first = await produceUntilReceived(c, retitle, (e) => e.new.event_id === live.eventId, { what: 'vivacité du jeton court', timeoutMs: 20_000 });
+            assert.ok(first.receivedAt < exp * 1000, 'précondition : le jeton court reçoit avant son échéance');
+
+            // Échéance passée (+8 s de marge : minuterie du serveur, horloges)
+            await sleep(Math.max(0, exp * 1000 - Date.now()) + 8_000);
+            c.clear();
+            const title = await retitle();
+            await waitForEvent(w, (e) => e.new.title === title, RECEIVE_TIMEOUT_MS, 'le témoin reçoit le changement fait après l’échéance');
+            await sleep(3_000);
+            const leaked = c.events.filter((e) => e.new.title === title);
+            console.log(`[CVF2B-PRE] 5. après l'échéance : témoin reçu ; jeton court : ${leaked.length} message(s) ; états du canal : ${c.states.join(' → ')}`);
+            assert.equal(leaked.length, 0, `le jeton échu reçoit encore les changements : ${JSON.stringify(leaked.map((e) => e.new))}`);
+        } finally {
+            await disposeClients(witness, ...(short ? [short] : []));
+        }
     });
 });
 
