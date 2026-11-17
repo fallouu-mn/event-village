@@ -275,7 +275,6 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/ui/SpecialPage.tsx',
     'app/hors-ligne/page.tsx',
     // Design 1a (point 7) : squelettes de l'accueil, de l'espace partenaire, du pilotage et de l'administration ; barre de progression
-    'app/loading.tsx',
     'app/partner/loading.tsx',
     'app/partner/events/[id]/loading.tsx',
     'app/admin/loading.tsx',
@@ -285,4 +284,5 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/ui/FilterChip.tsx',
     'components/ui/BottomSheet.tsx',
     'app/vitrine-design/Vitrine.tsx',
+    'app/vitrine-design/page.tsx',
 ];

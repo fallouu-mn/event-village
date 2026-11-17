@@ -12,7 +12,7 @@ import { TextInput } from '@/components/ui/Field';
 import { FilterChip } from '@/components/ui/FilterChip';
 import { clusterLabel, mapMarkerHtml } from '@/components/ui/MapMarker';
 import { EventCardSkeleton, ListRowSkeleton, StatCardSkeleton } from '@/components/ui/Skeleton';
-import { Tabs } from '@/components/ui/Tabs';
+import { TabPanel, Tabs } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
 import { EventCard } from '@/components/events/EventCard';
 
@@ -37,7 +37,7 @@ export function Vitrine() {
         <h2 id="v-boutons" className="text-xl font-bold text-foreground-strong">Boutons</h2>
         <div className="flex flex-wrap items-center gap-3">
           <Button>Enregistrer</Button>
-          <Button variant="secondary">Annuler</Button>
+          <Button variant="secondary">Retour</Button>
           <Button variant="outline">Voir le programme</Button>
           <Button variant="ghost">Plus tard</Button>
           <Button variant="danger">Rembourser 10 000 F CFA</Button>
@@ -84,6 +84,9 @@ export function Vitrine() {
           onChange={setTab}
           tabs={[{ id: 'programme', label: 'Programme' }, { id: 'billets', label: 'Billets', count: 3 }, { id: 'lieu', label: 'Lieu' }]}
         />
+        <TabPanel idPrefix="vitrine" tabIdValue={tab} className="text-sm text-muted-foreground">
+          {tab === 'programme' ? 'Ouverture des portes à 19 h.' : tab === 'billets' ? 'Trois formules en vente.' : 'Place Faidherbe, Saint-Louis.'}
+        </TabPanel>
         <div className="flex flex-wrap gap-2">
           <Badge variant="success">Gratuit</Badge>
           <Badge variant="warning">Dernières places</Badge>
@@ -147,12 +150,15 @@ export function Vitrine() {
         </div>
       </section>
 
-      <BottomSheet title="12 événements autour de vous" initial="replie">
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Search size={16} aria-hidden="true" />
-          Liste des événements visibles sur la carte.
-        </p>
-      </BottomSheet>
+      <section aria-labelledby="v-feuille" className="space-y-4">
+        <h2 id="v-feuille" className="text-xl font-bold text-foreground-strong">Feuille glissante</h2>
+        <BottomSheet title="12 événements autour de vous" initial="moitie" preview>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Search size={16} aria-hidden="true" />
+            Liste des événements visibles sur la carte.
+          </p>
+        </BottomSheet>
+      </section>
     </div>
   );
 }

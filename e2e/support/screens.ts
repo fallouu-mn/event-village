@@ -904,14 +904,15 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'design-page-introuvable', titre: 'Design 1a — page introuvable', role: 'anonyme', needsIds: false, path: () => '/evenements-qui-n-existent-pas',
+        id: 'design-page-introuvable', titre: 'Design 1a — page introuvable', role: 'anonyme', needsIds: false, path: () => '/events/00000000-0000-4000-8000-00000000d1a0',
         allowFailures: [/404/],
         ready: async ({ page }) => { await expectHeading(page, /^page introuvable$/i); },
     },
     {
         id: 'design-erreur', titre: 'Design 1a — page d’erreur (« Quelque chose s’est mal passé de notre côté. »)', role: 'anonyme', needsIds: false,
         path: () => '/vitrine-design?erreur=1',
-        allowFailures: [/500|vitrine/i],
+        // Erreur volontaire de la vitrine : message générique de Next et empreinte journalisée par app/error.tsx
+        allowFailures: [/500|vitrine/i, /Server Components render/, /\[AppError\]/],
         ready: async ({ page }) => { await expectHeading(page, /^quelque chose s.est mal passé de notre côté\.$/i); },
     },
     {

@@ -20,11 +20,14 @@ export function BottomSheet({
   title,
   children,
   initial = 'moitie',
+  preview = false,
   className,
 }: {
   title: string;
   children: React.ReactNode;
   initial?: SheetState;
+  /** Aperçu dans le flux de la page (vitrine), au lieu d'être fixée en bas de l'écran. */
+  preview?: boolean;
   className?: string;
 }) {
   const [state, setState] = useState<SheetState>(initial);
@@ -40,11 +43,12 @@ export function BottomSheet({
     <section
       aria-labelledby={titleId}
       className={cn(
-        'fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-[20px] border-t border-border bg-popover shadow-popover',
+        preview ? 'relative flex flex-col overflow-hidden rounded-t-[20px] border border-border bg-popover shadow-popover'
+          : 'fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-[20px] border-t border-border bg-popover shadow-popover',
         'motion-safe:transition-[height] motion-safe:duration-slow motion-safe:ease-out',
         className,
       )}
-      style={{ height: HEIGHTS[state] }}
+      style={{ height: preview ? (state === 'replie' ? '5.5rem' : '16rem') : HEIGHTS[state] }}
     >
       <div
         className="flex touch-none flex-col items-center pt-2"
