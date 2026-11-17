@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { KeyRound, LogOut, MessageSquareText, ShieldCheck } from 'lucide-react';
+import { KeyRound, LifeBuoy, LogOut, MessageSquareText, ShieldCheck, Smartphone } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/Field';
@@ -33,6 +33,12 @@ import { INPUT_AGE_HEADER } from '@/lib/admin/input-age';
  *  - la fenêtre sert aussi sur les pages partenaire et contrôleur d'un compte admin, où le serveur applique désormais la
  *    même règle des 30 minutes : AdminStepUpOverlay (sans enfants), chargé à la demande par AdminAccountStepUp pour un
  *    compte admin seulement, posé à côté de la page (rien n'est remonté, rien n'est ajouté au code d'un contrôleur).
+ *
+ * Finition 3d (point 2) :
+ *  - « J'ai perdu mon téléphone » dans la fenêtre du code administrateur : mot de passe et code de secours remplacent le
+ *    SMS (POST /api/admin/step-up/recovery, SUPERADMIN seulement ; un ADMIN est invité à s'adresser au Superadmin), puis
+ *    la page « Sécurité du compte » mène au changement de son numéro (/admin/securite?numero=1) ;
+ *  - après le code reçu par SMS, un SUPERADMIN qui n'a aucun code de secours se les voit proposer (« Plus tard » possible).
  */
 
 type Required = 'ADMIN_PASSWORD_REQUIRED' | 'ADMIN_SMS_REQUIRED' | null;
@@ -61,6 +67,9 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
   const lastInput = useRef<number>(Date.now());
   // Page ouverte alors qu'une étape manquait : ses premières lectures ont été refusées, elle est rechargée après l'étape
   const lockedAtLoad = useRef<boolean | null>(null);
+  const { hasRole } = useAuth();
+  // Finition 3d (point 2b) : proposition des codes de secours après la double vérification d'un SUPERADMIN qui n'en a pas
+  const [offerCodes, setOfferCodes] = useState(false);
 
   const refresh = useCallback(async (): Promise<Status | null> => {
     try {
@@ -122,8 +131,19 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
 
   const done = async () => {
     lastInput.current = Date.now();
+    const wasSms = status?.required === 'ADMIN_SMS_REQUIRED';
     const next = await refresh();
-    if (next && !next.required && lockedAtLoad.current) window.location.reload();
+    if (!next || next.required) return;
+    if (wasSms && hasRole('SUPERADMIN') && (await hasNoBackupCodes())) {
+      setOfferCodes(true);
+      return;
+    }
+    if (lockedAtLoad.current) window.location.reload();
+  };
+
+  const later = () => {
+    setOfferCodes(false);
+    if (lockedAtLoad.current) window.location.reload();
   };
 
   return (
@@ -137,6 +157,7 @@ export function AdminStepUpGate({ children }: { children: React.ReactNode }) {
       {status?.required && (
         <StepUpDialog required={status.required} reason={status.reason} phone={status.phone} onDone={() => void done()} />
       )}
+      {offerCodes && !status?.required && <BackupCodesOffer onLater={later} />}
     </>
   );
 }
@@ -150,6 +171,95 @@ export function AdminStepUpOverlay() {
   return <AdminStepUpGate>{null}</AdminStepUpGate>;
 }
 
+/** Le SUPERADMIN n'a aucun code de secours valable (lecture refusée ou illisible : rien n'est proposé). */
+async function hasNoBackupCodes(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/admin/security/backup-codes', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const body = (await res.json().catch(() => null)) as { remaining?: number } | null;
+    return Number(body?.remaining ?? -1) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Finition 3d (point 2b) — proposition des codes de secours, juste après la double vérification. */
+function BackupCodesOffer({ onLater }: { onLater: () => void }) {
+  return (
+    <Modal
+      isOpen
+      onClose={onLater}
+      title="Créez vos codes de secours"
+      subtitle="Si vous perdez votre téléphone, un code de secours remplace le code reçu par SMS. Sans eux, vous ne pourrez plus ouvrir l’administration."
+      icon={<LifeBuoy size={20} />}
+      maxWidth="md"
+    >
+      <div className="flex flex-col gap-2">
+        <Button variant="primary" size="lg" fullWidth leftIcon={<KeyRound size={18} />} onClick={() => window.location.assign('/admin/securite?creer=1')}>
+          Créer mes codes maintenant
+        </Button>
+        <Button variant="ghost" size="sm" fullWidth onClick={onLater}>Plus tard</Button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Finition 3d (point 2c) — « J'ai perdu mon téléphone » : mot de passe et un code de secours. Réussi : la page « Sécurité du
+ * compte » s'ouvre pour changer le numéro. Un ADMIN n'a pas de codes : on lui dit de s'adresser au Superadmin.
+ */
+function RecoveryForm({ onBack }: { onBack: () => void }) {
+  const errorId = useId();
+  const { hasRole } = useAuth();
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!hasRole('SUPERADMIN')) {
+    return (
+      <div className="space-y-4">
+        <StatusBanner tone="info" icon={<Smartphone size={20} aria-hidden="true" />} title="Téléphone perdu">
+          Demandez au Superadmin de changer votre numéro de téléphone. Il vous fera saisir un code reçu sur votre nouveau numéro.
+        </StatusBanner>
+        <Button type="button" variant="secondary" size="sm" fullWidth onClick={onBack}>Retour au code par SMS</Button>
+      </div>
+    );
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password || !code.trim() || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const reply = await sendJson<{ ok?: boolean }>('/api/admin/step-up/recovery', 'POST', { password, code: code.trim() });
+      if (reply.ok === true) {
+        window.location.assign('/admin/securite?numero=1');
+        return;
+      }
+      setError('Le serveur n’a pas confirmé le code de secours. Réessayez.');
+    } catch (err) {
+      const wait = err instanceof ApiError && err.status === 429 ? retryAfterOf(err.body) : null;
+      const text = errorMessage(err, 'Mot de passe ou code de secours incorrect.');
+      setError(wait ? `${text} ${formatRetryDelay(wait)}` : text);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <form className="space-y-4" onSubmit={(e) => void submit(e)}>
+      {error && <StatusBanner tone="danger" announce="alert" title="Accès refusé"><span id={errorId}>{error}</span></StatusBanner>}
+      <p className="text-sm text-fg">Saisissez votre mot de passe et l’un de vos codes de secours. Le code ne servira qu’une fois ; un SMS d’alerte part à votre ancien numéro.</p>
+      <TextInput label="Mot de passe" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+      <TextInput label="Code de secours" autoComplete="off" autoCapitalize="characters" spellCheck={false} required value={code}
+        onChange={(e) => setCode(e.target.value)} className="tracking-wider" />
+      <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} disabled={!password || !code.trim()} leftIcon={<LifeBuoy size={18} />}>
+        Utiliser le code de secours
+      </Button>
+      <Button type="button" variant="ghost" size="sm" fullWidth onClick={onBack} disabled={busy}>Retour au code par SMS</Button>
+    </form>
+  );
+}
+
 function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<Required, null>; reason: string | null; phone: string | null; onDone: () => void }) {
   const errorId = useId();
   const { signOut } = useAuth();
@@ -158,8 +268,9 @@ function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<R
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState(false);
 
-  useEffect(() => { setError(null); setCode(''); setPassword(''); }, [required]);
+  useEffect(() => { setError(null); setCode(''); setPassword(''); setRecovery(false); }, [required]);
 
   const failure = (err: unknown, fallback: string) => {
     const wait = err instanceof ApiError && err.status === 429 ? retryAfterOf(err.body) : null;
@@ -201,7 +312,7 @@ function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<R
   };
 
   const isPassword = required === 'ADMIN_PASSWORD_REQUIRED';
-  const title = isPassword ? 'Confirmez votre mot de passe' : 'Code administrateur';
+  const title = isPassword ? 'Confirmez votre mot de passe' : recovery ? 'J’ai perdu mon téléphone' : 'Code administrateur';
   const subtitle = isPassword
     ? (reason === 'IDLE'
       ? 'Votre session d’administration est restée sans activité. Votre page est gardée : saisissez votre mot de passe pour continuer.'
@@ -223,8 +334,10 @@ function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<R
       busy={busy}
     >
       <div className="space-y-4">
-        {error && <StatusBanner tone="danger" announce="alert" title="Vérification impossible"><span id={errorId}>{error}</span></StatusBanner>}
-        {isPassword ? (
+        {error && !recovery && <StatusBanner tone="danger" announce="alert" title="Vérification impossible"><span id={errorId}>{error}</span></StatusBanner>}
+        {!isPassword && recovery ? (
+          <RecoveryForm onBack={() => setRecovery(false)} />
+        ) : isPassword ? (
           <form className="space-y-4" onSubmit={(e) => void submitPassword(e)}>
             <TextInput label="Mot de passe" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} leftIcon={<KeyRound size={18} />}>Continuer</Button>
@@ -245,6 +358,11 @@ function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<R
             </Button>
             <Button type="button" variant="ghost" size="sm" fullWidth onClick={() => void sendCode()} disabled={busy}>Recevoir un nouveau code</Button>
           </form>
+        )}
+        {!isPassword && !recovery && (
+          <Button type="button" variant="ghost" size="sm" fullWidth disabled={busy} leftIcon={<Smartphone size={16} />} onClick={() => { setError(null); setRecovery(true); }}>
+            J’ai perdu mon téléphone
+          </Button>
         )}
         <Button type="button" variant="ghost" size="sm" fullWidth disabled={busy} leftIcon={<LogOut size={16} />}
           onClick={() => { void signOut().then(() => { window.location.assign('/login'); }); }}>

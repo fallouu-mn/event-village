@@ -265,6 +265,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     // Finition 3d (point 3) : fenêtre « mot de passe et code » des actions sensibles, « Changer le rôle »
     'components/admin/IdentityConfirm.tsx',
     'components/admin/RoleChangeDialog.tsx',
+    // Finition 3d (point 2) : page « Sécurité du compte », codes de secours, changement du numéro d'un administrateur
+    'app/admin/securite/page.tsx',
+    'components/admin/BackupCodesPanel.tsx',
+    'components/admin/PhoneChangeFlow.tsx',
     'app/aide/page.tsx',
     // Finition 1 (E-14) : composant commun de l'équipe, page /partner/team et onglet Équipe du pilotage
     'components/partner/team/TeamPanel.tsx',

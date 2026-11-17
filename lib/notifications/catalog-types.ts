@@ -51,7 +51,9 @@ export type AdminPermission =
 /** Types journalisés seulement (OTP et invitation d'un contrôleur) : le code n'est jamais stocké. */
 export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE'
     /** Lot 9 quinquies : lien d'activation d'un compte créé par un admin (A2) ; code administrateur (A3). */
-    | 'ACCOUNT_ACTIVATION' | 'OTP_ADMIN';
+    | 'ACCOUNT_ACTIVATION' | 'OTP_ADMIN'
+    /** Finition 3d (point 2a) : code au nouveau numéro d'un administrateur, à dicter au Superadmin. */
+    | 'OTP_ADMIN_PHONE';
 
 /** Lot 9 bis (11.1 N26) : email synchrone, journal seulement ; le jeton du lien n'est jamais stocké. */
 export type EmailSyncType = 'EMAIL_VERIFICATION';
@@ -188,6 +190,7 @@ export interface TemplateData {
     CONTROLLER_INVITE: { purpose?: string };
     ACCOUNT_ACTIVATION: { purpose?: string };
     OTP_ADMIN: { purpose?: string };
+    OTP_ADMIN_PHONE: { purpose?: string };
 
     // ── Lot 9 bis (contrat 11.1, N1 à N26) ──
     REFUND_DELAYED: OptionalEventData & { cashout_id: string; amount: number };
@@ -254,6 +257,12 @@ export interface TemplateData {
     CASH_REFUND_MARKED_BY_ADMIN: EventData & { payment_id: string; reference: string; amount: number; reason: string };
     /** Point 3 : un compte devient SUPERADMIN ; alerte à chaque SUPERADMIN actif (nom du compte promu et de l'auteur). */
     SUPERADMIN_PROMOTED: { user_name: string; actor_name: string };
+    /** Point 2c : un code de secours a servi ; SMS à l'ancien numéro et email (codes restants). */
+    ADMIN_BACKUP_CODE_USED: { remaining: number };
+    /** Points 2a et 2c : SMS à l'ANCIEN numéro (by_self : changé par le Superadmin lui-même, avec ou sans code de secours). */
+    ADMIN_PHONE_CHANGED: { by_self: boolean };
+    /** Points 2a et 2c : SMS au NOUVEAU numéro et cloche. */
+    ADMIN_PHONE_CONFIRMED: { by_self: boolean };
 }
 
 export type NotificationType = keyof TemplateData;

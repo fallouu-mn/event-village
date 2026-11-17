@@ -207,6 +207,10 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     // Finition 3d (migrations 20261120…) : types nouveaux de la finition, ajout signalé
     ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A'),
     ess('SUPERADMIN_PROMOTED', [I, S], 'ADMIN', 'A'),
+    ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A'),
+    ess('ADMIN_PHONE_CHANGED', [S], 'ANY', 'A'),
+    ess('ADMIN_PHONE_CONFIRMED', [I, S], 'ADMIN', 'A'),
+    sync('OTP_ADMIN_PHONE'),
 ];
 
 const LOT6_TABLES = ['notification_outbox', 'notification_types', 'notification_preferences', 'push_subscriptions'] as const;

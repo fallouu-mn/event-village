@@ -835,6 +835,17 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             // Finition 3d (point 3) : alerte aux SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
             ['SUPERADMIN_PROMOTED', { user_name: 'Awa Ndiaye', actor_name: 'Moussa Diop' }, [],
                 'Event Village : Awa Ndiaye est maintenant Superadmin, nommé par Moussa Diop. Si ce n\'est pas prévu, réagissez tout de suite.'],
+            // Finition 3d (point 2) : code de secours utilisé, numéro d'un administrateur remplacé (ancien et nouveau numéro). Ajout signalé.
+            ['ADMIN_BACKUP_CODE_USED', { remaining: 9 }, [],
+                'Event Village : un code de secours de votre compte Superadmin vient de servir. Si ce n\'est pas vous, alertez tout de suite un autre Superadmin.'],
+            ['ADMIN_PHONE_CHANGED', { by_self: false }, [],
+                'Event Village : le Superadmin a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.'],
+            ['ADMIN_PHONE_CHANGED', { by_self: true }, [],
+                'Event Village : le numéro de votre compte Superadmin a été remplacé. Si ce n\'est pas vous, alertez tout de suite un autre Superadmin.'],
+            ['ADMIN_PHONE_CONFIRMED', { by_self: false }, [],
+                'Event Village : ce numéro est maintenant celui de votre compte administrateur. Reconnectez-vous avec votre mot de passe.'],
+            ['ADMIN_PHONE_CONFIRMED', { by_self: true }, [],
+                'Event Village : ce numéro est maintenant celui de votre compte Superadmin. Vos autres appareils sont déconnectés.'],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).
@@ -1190,6 +1201,12 @@ function lot9quinquiesExpected(): ExpectedType[] {
         ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
         // Finition 3d (point 3, migration 20261120000003) : alerte à chaque SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
         ess('SUPERADMIN_PROMOTED', [I, S], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau Superadmin'),
+        // Finition 3d (point 2, migrations 20261120000004 et …05) : code de secours utilisé, numéro d'un administrateur
+        // remplacé (ancien et nouveau numéro), code au nouveau numéro. Ajout signalé.
+        ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A', null, ['/admin/securite'], null),
+        ess('ADMIN_PHONE_CHANGED', [S], 'ANY', 'A', null, null, null),
+        ess('ADMIN_PHONE_CONFIRMED', [I, S], 'ADMIN', 'A', 'SECURITY', ['/profile'], 'Numéro de téléphone changé'),
+        sync('OTP_ADMIN_PHONE'),
     ];
 }
 

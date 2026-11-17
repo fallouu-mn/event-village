@@ -1,4 +1,4 @@
-import { Activity, Award, BellRing, Building2, Calendar, DollarSign, FileText, KeyRound, LayoutDashboard, Megaphone, QrCode, Settings2, Users } from 'lucide-react';
+import { Activity, Award, BellRing, Building2, Calendar, DollarSign, FileText, KeyRound, LayoutDashboard, Megaphone, QrCode, Settings2, ShieldCheck, Users } from 'lucide-react';
 import type { NavItem } from './AppLayout';
 
 export interface AdminNav {
@@ -14,7 +14,8 @@ export interface AdminNav {
  * Finition 3b (E-34) — menu de l'administration selon les droits servis par /api/auth/me (`hasPermission` : lignes d'un
  * ADMIN, toutes pour un SUPERADMIN). Chargé à la demande par AppLayout (`import('./admin-nav')`) : rien de ce module
  * n'alourdit les pages publiques. « Scanner » seulement avec access.operate ; « Réglages » avec settings.read ; « Mes
- * droits » pour un ADMIN ; plus de « Tarification » (retirée). Le menu n'est qu'un confort : chaque page et chaque route
+ * droits » pour un ADMIN ; plus de « Tarification » (retirée). Finition 3d (point 2) : « Sécurité du compte » (codes de
+ * secours, son numéro) pour un SUPERADMIN. Le menu n'est qu'un confort : chaque page et chaque route
  * refusent toujours côté serveur sans le droit (tests/parcours/f3b-securite.test.ts).
  */
 export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin: boolean): AdminNav {
@@ -50,6 +51,7 @@ export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin
         ...(can('notifications.read') ? [{ name: 'Notifications', href: '/admin/notifications', icon: BellRing }] : []),
         ...(can('access.operate') ? [{ name: 'Scanner', href: '/scan', icon: QrCode }] : []),
         ...(isAdminOnly ? [{ name: 'Mes droits', href: '/admin/mes-droits', icon: KeyRound }] : []),
+        ...(isSuperAdmin ? [{ name: 'Sécurité du compte', href: '/admin/securite', icon: ShieldCheck }] : []),
       ],
     },
   ];
@@ -66,6 +68,7 @@ export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin
   if (can('notifications.read')) proItems.push({ name: 'Notifications', href: '/admin/notifications', icon: BellRing });
   if (can('access.operate')) proItems.push({ name: 'Scanner de contrôle', href: '/scan', icon: QrCode });
   if (isAdminOnly) proItems.push({ name: 'Mes droits', href: '/admin/mes-droits', icon: KeyRound });
+  if (isSuperAdmin) proItems.push({ name: 'Sécurité du compte', href: '/admin/securite', icon: ShieldCheck });
 
   // Barre du bas : une entrée par écran ; chaque case suit le droit de sa page.
   const adminMobileItems: NavItem[] = [

@@ -42,6 +42,7 @@ import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { noticesText } from '@/lib/admin/confirmations';
 import { TextInput } from '@/components/ui/Field';
 import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';
+import { AdminPhoneChangeDialog } from '@/components/admin/PhoneChangeFlow';
 
 interface UserItem {
   id: string;
@@ -105,6 +106,8 @@ export default function AdminUsersManagementPage() {
   const [newRole, setNewRole] = useState<'ADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
   // Finition 3d (point 3) : « Changer le rôle » d'un compte (SUPERADMIN seulement)
   const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);
+  // Finition 3d (point 2a) : « Changer le numéro » d'un ADMIN qui a perdu son téléphone (SUPERADMIN seulement)
+  const [phoneTarget, setPhoneTarget] = useState<UserItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Dialog de confirmation suppression
@@ -563,6 +566,13 @@ export default function AdminUsersManagementPage() {
                       </Button>
                     )}
 
+                    {/* Finition 3d (point 2a) : le SUPERADMIN change le numéro d'un ADMIN (jamais d'un SUPERADMIN, jamais le sien ici) */}
+                    {isSuperadmin && isAdmin && !isDeleted && user.id !== me?.id && (
+                      <Button variant="secondary" size="sm" onClick={() => setPhoneTarget(user)}>
+                        Changer le numéro
+                      </Button>
+                    )}
+
                     {/* Lot 9 quinquies (A2) : renvoi du lien d'activation d'un compte créé par un admin */}
                     {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
                       <Button
@@ -871,6 +881,14 @@ export default function AdminUsersManagementPage() {
             void fetchUsers();
             if (role === 'ADMIN' && roleLevelOf(changed.role) === 'CLIENT') void handleOpenPermissions({ ...changed, role: 'ADMIN' });
           }}
+        />
+      )}
+
+      {phoneTarget && (
+        <AdminPhoneChangeDialog
+          user={{ id: phoneTarget.id, first_name: phoneTarget.first_name, last_name: phoneTarget.last_name, phone: phoneTarget.phone || null }}
+          onClose={() => setPhoneTarget(null)}
+          onChanged={() => { void fetchUsers(); }}
         />
       )}
 
