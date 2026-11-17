@@ -21,7 +21,7 @@ import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBa
 import { OfflineTicketView } from '@/components/tickets/offline/OfflineTicketView';
 import { formatDateTime } from '@/lib/format';
 import type { OfflineLot } from '@/lib/tickets/offline-clock';
-import { listCurrentOfflineLots, OFFLINE_SHELL_PATH, OFFLINE_STORE_UNAVAILABLE } from '@/lib/tickets/offline-store';
+import { listCurrentOfflineLots, OFFLINE_SHELL_PATH, OFFLINE_STORE_UNAVAILABLE } from '@/lib/tickets/offline-lots';
 
 type Phase =
   | { kind: 'loading' }

@@ -305,3 +305,33 @@ export async function createControllerAccount(label: string): Promise<Controller
     if (rolesErr) throw new Error(`[e2e] rôles du contrôleur ${label} : ${rolesErr.message}`);
     return { userId, email, phone, local, firstName, lastName };
 }
+
+/**
+ * Sécurité (déconnexion sans réseau) : compte client établi (rôle CLIENT, ACTIF, numéro vérifié, mot de passe de test), propre
+ * au test qui le déconnecte et révoque sa session (jamais l'état enregistré d'un rôle : la révocation le fermerait pour les
+ * autres phases). Préparation de données de la base LOCALE, jamais une route.
+ */
+export async function createClientAccount(label: string): Promise<ControllerAccount> {
+    if (!/^[a-z0-9-]{1,40}$/.test(label)) throw new Error(`[e2e] createClientAccount : libellé attendu en minuscules et tirets, reçu « ${label} »`);
+    const phone = await unusedPhone('77');
+    const local = phone.replace(/^\+221/, '');
+    const firstName = 'Awa';
+    const lastName = 'Sarr';
+    const email = `c1.${label}.${local}@recette.eventvillage.local`;
+    const admin = serviceClient();
+    const { data, error } = await admin.auth.admin.createUser({
+        email, password: TEST_PASSWORD, email_confirm: true, phone, phone_confirm: true,
+        user_metadata: { first_name: firstName, last_name: lastName, phone },
+    });
+    if (error || !data.user) throw new Error(`[e2e] compte client ${label} : ${error?.message ?? 'utilisateur absent'}`);
+    const userId = data.user.id;
+    const now = new Date().toISOString();
+    const { error: profileErr } = await admin.from('users').upsert({
+        id: userId, first_name: firstName, last_name: lastName, phone, email, role: 'CLIENT', status: 'ACTIF',
+        referral_status: 'STANDARD', phone_verified_at: now, updated_at: now,
+    }, { onConflict: 'id' });
+    if (profileErr) throw new Error(`[e2e] profil du client ${label} : ${profileErr.message}`);
+    const { error: rolesErr } = await admin.from('user_roles').upsert([{ user_id: userId, role: 'CLIENT' }], { onConflict: 'user_id,role' });
+    if (rolesErr) throw new Error(`[e2e] rôle du client ${label} : ${rolesErr.message}`);
+    return { userId, email, phone, local, firstName, lastName };
+}

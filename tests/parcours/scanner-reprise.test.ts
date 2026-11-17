@@ -249,22 +249,26 @@ describe('A10 — mémoire du contrôle effacée à la déconnexion', () => {
         assert.deepEqual(store.keys().sort(), ['ev-theme', 'ev_scanner_auto_return_ms'], `clés restantes : ${JSON.stringify(store.keys())}`);
     });
 
-    test('appel avant supabase.auth.signOut() : AuthProvider (signOut et SIGNED_OUT), en-tête du contrôleur, scanner', () => {
+    test('appel avant la fermeture de la session : AuthProvider (signOut et SIGNED_OUT) ; en-tête du contrôleur et scanner par useAuth().signOut', () => {
         const faults: string[] = [];
-        for (const file of [AUTH_PROVIDER, CONTROLLER_LAYOUT, SCANNER_PAGE]) {
-            const src = code(file);
-            if (!/import\s*\{[^}]*\bclearAllScanMemory\b[^}]*\}\s*from\s*['"]@\/lib\/scan\/scan-(?:memory|session)['"]/.test(src)) {
-                faults.push(`${file} : clearAllScanMemory non importée de lib/scan/scan-memory`);
-            }
-            for (const name of file === AUTH_PROVIDER ? ['signOut'] : ['handleLogout']) {
-                const body = functionBody(src, name);
-                const clear = body.search(/clearAllScanMemory\s*\(/);
-                const out = body.search(/\.auth\.signOut\s*\(/);
-                if (clear < 0) faults.push(`${file} : ${name} n’efface pas la mémoire du contrôle`);
-                else if (out >= 0 && clear > out) faults.push(`${file} : ${name} efface la mémoire après supabase.auth.signOut()`);
-            }
-        }
         const auth = code(AUTH_PROVIDER);
+        if (!/import\s*\{[^}]*\bclearAllScanMemory\b[^}]*\}\s*from\s*['"]@\/lib\/scan\/scan-(?:memory|session)['"]/.test(auth)) {
+            faults.push(`${AUTH_PROVIDER} : clearAllScanMemory non importée de lib/scan/scan-memory`);
+        }
+        // Lot sécurité (déconnexion sans réseau) : la session est fermée sur place par dropLocalSession (lib/auth/sign-out-here.ts)
+        // au lieu de supabase.auth.signOut, qui la gardait sans réseau ; la mémoire du contrôle est effacée avant
+        const body = functionBody(auth, 'signOut');
+        const clear = body.search(/clearAllScanMemory\s*\(/);
+        const out = body.search(/dropLocalSession\s*\(/);
+        if (clear < 0) faults.push(`${AUTH_PROVIDER} : signOut n’efface pas la mémoire du contrôle`);
+        else if (out < 0 || clear > out) faults.push(`${AUTH_PROVIDER} : signOut efface la mémoire après la fermeture de la session`);
+        // L'en-tête du contrôleur et le scanner n'ont plus leur propre déconnexion : useAuth().signOut (la même partout)
+        for (const file of [CONTROLLER_LAYOUT, SCANNER_PAGE]) {
+            const src = code(file);
+            if (!/\bsignOut\b[^;]*=\s*useAuth\(\)/.test(src)) faults.push(`${file} : signOut ne vient pas de useAuth()`);
+            if (!/const handleLogout = \(\) => signOut\(\);/.test(src)) faults.push(`${file} : handleLogout ne passe pas par signOut()`);
+            if (/\.auth\.signOut\s*\(/.test(src)) faults.push(`${file} : supabase.auth.signOut encore appelé`);
+        }
         const listener = balanced(auth, auth.search(/onAuthStateChange\s*\(/), '(', ')');
         const signedOut = listener.indexOf("'SIGNED_OUT'");
         assert.ok(signedOut >= 0, 'écouteur SIGNED_OUT');

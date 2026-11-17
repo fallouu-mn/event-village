@@ -4,6 +4,8 @@
  * contact, historique des statuts (motifs de refus et de suspension compris), actions possibles
  * (event_actions, contrat D5) et annulation éventuelle. Lecture par le service_role, après le contrôle
  * verifyAdminAuth(events.read) de la route. Toute erreur de lecture remonte (500 explicite).
+ * Finition 2b (D, E-25) : avec les zones et leurs portes (catégories admises par identifiant), dans l'ordre de l'éditeur
+ * (position, nom) ; les catégories portent déjà leur couleur au contrôle et leur consigne d'entrée.
  */
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PilotageError } from '@/lib/events/pilotage.service';
@@ -29,19 +31,26 @@ export class AdminEventsService {
         if (evErr) throw failed(`événement ${eventId}`, evErr.message);
         if (!event) throw new PilotageError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
 
-        const [cats, partner, history, cancellation, actions] = await Promise.all([
+        const [cats, partner, history, cancellation, actions, zoneRows, admissions, gateRows] = await Promise.all([
             supabase.from('ticket_categories').select('*').eq('event_id', eventId).order('created_at', { ascending: true }),
             supabase.from('partners').select('id, user_id, company_name, commercial_name, phone, email, city, status').eq('id', event.partner_id).maybeSingle(),
             supabase.from('event_status_history').select('id, old_status, new_status, actor_id, actor_role, reason, channel, created_at')
                 .eq('event_id', eventId).order('created_at', { ascending: true }).order('txid', { ascending: true }).order('id', { ascending: true }),
             supabase.from('event_cancellations').select('public_notice, internal_reason, cancelled_at, cancelled_by').eq('event_id', eventId).maybeSingle(),
             supabase.rpc('event_actions', { p: { event_id: eventId, actor_id: adminId } }),
+            // Finition 2b (D) : portes et zones de l'événement
+            supabase.from('event_zones').select('id, name, kind, position').eq('event_id', eventId).order('position', { ascending: true }).order('name', { ascending: true }),
+            supabase.from('zone_categories').select('zone_id, category_id').eq('event_id', eventId),
+            supabase.from('event_gates').select('id, zone_id, name').eq('event_id', eventId).order('name', { ascending: true }),
         ]);
         if (cats.error) throw failed('catégories', cats.error.message);
         if (partner.error) throw failed('organisateur', partner.error.message);
         if (history.error) throw failed('historique des statuts', history.error.message);
         if (cancellation.error) throw failed('annulation', cancellation.error.message);
         if (actions.error) throw failed('event_actions', actions.error.message);
+        if (zoneRows.error) throw failed('zones', zoneRows.error.message);
+        if (admissions.error) throw failed('catégories admises', admissions.error.message);
+        if (gateRows.error) throw failed('portes', gateRows.error.message);
         const actionsBody = (actions.data ?? null) as Row | null;
         if (!actionsBody || actionsBody.ok !== true) {
             throw failed('event_actions', `refus inattendu ${JSON.stringify(actionsBody)}`);
@@ -60,9 +69,18 @@ export class AdminEventsService {
         }
 
         const owner = partnerRow && typeof partnerRow.user_id === 'string' ? users.get(partnerRow.user_id) : undefined;
+        const zones = ((zoneRows.data ?? []) as Row[]).map((z) => ({
+            id: z.id,
+            name: z.name,
+            kind: z.kind,
+            position: z.position,
+            category_ids: ((admissions.data ?? []) as Row[]).filter((a) => a.zone_id === z.id).map((a) => String(a.category_id)).sort(),
+            gates: ((gateRows.data ?? []) as Row[]).filter((g) => g.zone_id === z.id).map((g) => ({ id: g.id, name: g.name })),
+        }));
         return {
             event,
             categories: (cats.data ?? []) as Row[],
+            zones,
             organizer: partnerRow ? {
                 id: partnerRow.id,
                 company_name: partnerRow.company_name,

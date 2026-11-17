@@ -20,14 +20,14 @@
  */
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { purgeExpiredLots } from '@/lib/tickets/offline-store';
 import {
   getOfflineLot,
   hasCachedOfflineShell,
-  purgeExpiredLots,
   reconcileOfflineLots,
   saveOfflineLot,
   setCurrentOfflineUser,
-} from '@/lib/tickets/offline-store';
+} from '@/lib/tickets/offline-lots';
 import {
   needsDownload,
   offsetFromFetch,

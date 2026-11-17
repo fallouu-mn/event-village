@@ -218,7 +218,8 @@ const cityField = z.string().trim()
     .max(EVENT_LIMITS.cityMax, `La ville compte au plus ${EVENT_LIMITS.cityMax} caractères.`)
     .refine((v) => !hasContactInfo(v), contactInfoMessage('La ville'))
     .transform(canonicalCity);
-const categoryField = z.enum(EVENT_CATEGORY_VALUES, { error: 'Choisissez une catégorie d’événement dans la liste.' });
+// Finition 2b (E-66) : « Type d'événement » à l'écran
+const categoryField = z.enum(EVENT_CATEGORY_VALUES, { error: 'Choisissez un type d’événement dans la liste.' });
 // Finition 2a (3) : bornes du Sénégal contrôlées avec la paire (checkPosition), plus de bornes -90/90 et -180/180 ici
 const latitudeField = z.number().finite().nullable();
 const longitudeField = z.number().finite().nullable();
@@ -365,7 +366,6 @@ const categoryCreateShape = {
     is_active: z.boolean().default(true),
 };
 
-const categoryCreateObject = z.object(categoryCreateShape).strict();
 
 /** Fenêtre de vente : début < fin ≤ fin de l'événement ; début avant la fin de l'événement. */
 function checkSaleWindow(
@@ -389,6 +389,22 @@ function checkSaleWindow(
 }
 
 // ── Événement : création ───────────────────────────────────────────────────
+
+/**
+ * Finition 2b (B, E-23) : portes et zones réglées dès la création. Chaque zone désigne ses catégories par leur ordre dans
+ * ticket_categories (category_refs : 0 pour la première). Comme pour PUT …/zones, le schéma ne borne que la forme et la
+ * taille ; les règles (20 zones, 50 portes, noms de 1 à 40 caractères, doublons, zone sans porte ou sans catégorie, au
+ * moins une zone d'entrée, toute catégorie admise par une zone d'entrée, catégorie inconnue) sont celles de la base
+ * (event_zones_form_refusal et event_zones_write), avec leur code et leur texte.
+ */
+const zoneGateCreateObject = z.object({ name: z.string().max(60) }).strict();
+const zoneCreateObject = z.object({
+    name: z.string().max(60),
+    kind: z.enum(['ENTREE', 'CONTROLE']),
+    position: z.number().int().min(0).max(99).nullable().optional(),
+    category_refs: z.array(z.number().int().min(0).max(99)).max(100),
+    gates: z.array(zoneGateCreateObject).max(100),
+}).strict();
 
 export interface EventSchemaContext {
     /** Partenaire propriétaire (dossier des affiches). */
@@ -471,9 +487,13 @@ export function createEventSchema(ctx: EventSchemaContext) {
         capacity: capacityField.optional(),
         program: programField.default([]),
         practical_info: practicalInfoField().optional(),
-        ticket_categories: z.array(categoryCreateObject)
+        // Finition 2b (A) : couleur au contrôle et consigne d'entrée acceptées dès la création (même objet que la route
+        // des catégories ; ticket_category_normalize les contrôle aussi, sous le chemin de la catégorie)
+        ticket_categories: z.array(ticketCategoryCreateObject)
             .max(EVENT_LIMITS.categoriesMax, `Un événement compte au plus ${EVENT_LIMITS.categoriesMax} catégories de billets.`)
             .default([]),
+        // Finition 2b (B) : facultatif ; absent ou vide : une seule entrée (aucune zone)
+        zones: z.array(zoneCreateObject).max(100).optional(),
     }).strict().superRefine((v, c) => {
         const now = (ctx.now ?? new Date()).getTime();
         checkPosition(c, v);
@@ -557,8 +577,8 @@ export interface TicketCategorySchemaContext {
 /**
  * Lot 9 ter (9t.15, contrat D.2.3, X2) : couleur de la catégorie au scan (une des 8 clés de SCAN_CATEGORY_COLORS,
  * seule liste, ou null) et consigne d'entrée (60 caractères au plus, vide → null), acceptées par les seules routes des
- * catégories : categoryCreateObject (création d'événement) ne les connaît pas, event_create les refuserait
- * (rectification 13). Refus INVALID_INPUT avec le champ en cause, comme la RPC ; messages explicites, jamais
+ * catégories ; finition 2b (A) : aussi par la création de l'événement (ticket_categories de createEventSchema), que
+ * event_create accepte désormais. Refus INVALID_INPUT avec le champ en cause, comme la RPC ; messages explicites, jamais
  * remplacés par frenchErrorMap.
  */
 const SCAN_COLOR_MESSAGE = 'Choisissez une couleur dans la liste.';

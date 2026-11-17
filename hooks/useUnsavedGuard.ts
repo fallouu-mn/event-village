@@ -11,7 +11,10 @@ import { useRouter } from 'next/navigation';
  *    hors ancre « # ») : le clic est arrêté en capture sur le document, la fenêtre de confirmation s'ouvre avec la
  *    liste rendue par `describe()` ; `leave()` lève la garde puis suit le lien, `stay()` ferme la fenêtre.
  *  - `guard(proceed)` : même fenêtre avant une action de l'écran qui perdrait les saisies (rechargement).
- * Limite connue : le bouton « Précédent » du navigateur (popstate) n'est pas intercepté.
+ *  - Finition 2b (C) : bouton Retour du navigateur (celui d'Android compris) : tant que `dirty`, une entrée d'historique
+ *    sentinelle est posée (même adresse, état de Next.js gardé) ; un retour la consomme, l'écran la repose et ouvre la
+ *    fenêtre. « Quitter sans enregistrer » recule de deux entrées (sentinelle comprise) ; « Rester » ne change rien.
+ *    Sans modification en cours, le retour n'est pas arrêté.
  * Aucun rendu ici : la fenêtre (ConfirmDialog) est rendue par l'écran.
  */
 export interface UnsavedGuard {
@@ -80,6 +83,32 @@ export function useUnsavedGuard(dirty: boolean, describe: () => string[]): Unsav
         document.addEventListener('click', onClick, true);
         return () => document.removeEventListener('click', onClick, true);
     }, [dirty, router]);
+
+    // Finition 2b (C) : bouton Retour (Android) protégé tant que `dirty`
+    const sentinel = useRef(false);
+    useEffect(() => {
+        if (!dirty || sentinel.current || typeof window === 'undefined') return;
+        window.history.pushState({ ...(window.history.state ?? {}), evUnsavedGuard: true }, '');
+        sentinel.current = true;
+    }, [dirty]);
+    useEffect(() => {
+        const onPop = () => {
+            if (!sentinel.current) return;
+            sentinel.current = false;
+            if (released.current || !dirtyRef.current) return;
+            window.history.pushState({ ...(window.history.state ?? {}), evUnsavedGuard: true }, '');
+            sentinel.current = true;
+            setPending({
+                items: describeRef.current(),
+                run: () => {
+                    released.current = true;
+                    window.history.go(-2);
+                },
+            });
+        };
+        window.addEventListener('popstate', onPop);
+        return () => window.removeEventListener('popstate', onPop);
+    }, []);
 
     const stay = useCallback(() => setPending(null), []);
 

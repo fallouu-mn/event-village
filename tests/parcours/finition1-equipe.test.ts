@@ -132,7 +132,9 @@ describe('E-13, E-14 — une seule lecture pour la page et pour l’onglet', () 
         const z = byEvent.get(evZones.eventId) as Row;
         const f = byEvent.get(evFree.eventId) as Row;
         assert.ok(z && f, `deux événements pour le contrôleur : ${JSON.stringify(m.assignments)}`);
-        assert.deepEqual(z.gate, { id: gateId, name: 'Porte Nord', zone_name: 'Pelouse', categories: [{ name: 'Standard', scan_color: null }] }, `porte : ${JSON.stringify(z)}`);
+        // Finition 2b (A, modification signalée au rapport) : la base pose une couleur au contrôle à toute catégorie qui n'en a
+        // pas (première proposée : BLANC) ; avant, Standard restait sans couleur (null)
+        assert.deepEqual(z.gate, { id: gateId, name: 'Porte Nord', zone_name: 'Pelouse', categories: [{ name: 'Standard', scan_color: 'BLANC' }] }, `porte : ${JSON.stringify(z)}`);
         assert.equal(z.gate_change_allowed, true);
         assert.equal(z.can_accept_cash, true);
         assert.equal(z.open_shift, true, 'caisse ouverte servie');
@@ -143,7 +145,7 @@ describe('E-13, E-14 — une seule lecture pour la page et pour l’onglet', () 
         assert.equal(f.open_shift, false);
         const evRow = ((page.events ?? []) as Row[]).find((e) => e.id === evZones.eventId);
         assert.ok(evRow, 'événement servi avec ses portes');
-        assert.deepEqual(evRow.gates, [{ id: gateId, name: 'Porte Nord', zone_name: 'Pelouse', categories: [{ name: 'Standard', scan_color: null }] }]);
+        assert.deepEqual(evRow.gates, [{ id: gateId, name: 'Porte Nord', zone_name: 'Pelouse', categories: [{ name: 'Standard', scan_color: 'BLANC' }] }]);
         assert.equal(evRow.has_zones, true);
 
         const tab = await teamGet(partner.accessToken, `?eventId=${evFree.eventId}`);
@@ -422,7 +424,8 @@ describe('Complément 9 — portes et couleurs dans l’équipe', () => {
         assert.deepEqual((a.gate as Row).categories, [{ name: 'VIP', scan_color: 'OR' }, { name: 'VVIP', scan_color: 'VIOLET' }],
             `« Porte VIP — laisse entrer : VIP (or), VVIP (violet) » : ${JSON.stringify(a.gate)}`);
         const evRow = ((view.events ?? []) as Row[])[0];
-        assert.deepEqual(evRow.uncovered_categories, [{ name: 'Simple', scan_color: null }], 'catégorie en vente acceptée par aucune porte');
+        // Finition 2b (A, modification signalée au rapport) : Simple, insérée la première, a reçu BLANC de la base (avant : null)
+        assert.deepEqual(evRow.uncovered_categories, [{ name: 'Simple', scan_color: 'BLANC' }], 'catégorie en vente acceptée par aucune porte');
         assert.deepEqual(evRow.gates_without_controller, ['Porte Est'], 'porte sans contrôleur');
 
         const free = await settings(partner.accessToken, { eventId: ev.eventId, controllerId: c.userId, entryPoint: 'Entrée libre', canAcceptCash: false });

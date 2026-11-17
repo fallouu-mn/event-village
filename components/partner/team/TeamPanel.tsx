@@ -267,9 +267,11 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
             text: `${e.gates_without_controller.join(', ')} : personne ne contrôle cette porte. Choisissez-la pour un contrôleur avec « Modifier ».`,
         }] : []),
     ]);
-    const gatesLink = (id: string, variant: 'secondary' | 'ghost') => (scope === 'event'
-        ? <LinkButton href="#portes-et-couleurs" variant={variant} size="sm">Modifier les portes et les couleurs</LinkButton>
-        : <LinkButton href={`/partner/events/${id}?tab=equipe#portes-et-couleurs`} variant={variant} size="sm">Modifier les portes et les couleurs</LinkButton>);
+    // Finition 2b (B, E-23) : portes, zones et couleurs se règlent à l'étape « Contrôle à l'entrée » du formulaire de
+    // l'événement (avant : l'éditeur des zones sous la liste de l'onglet Équipe, qui ne changeait pas les couleurs)
+    const gatesLink = (id: string, variant: 'secondary' | 'ghost') => (
+        <LinkButton href={`/partner/events/${id}/edit?etape=controle`} variant={variant} size="sm">Modifier les portes et les couleurs</LinkButton>
+    );
 
     const eventLines = (m: TeamMember) => {
         const upcoming = m.assignments.filter((a) => !a.past);

@@ -147,6 +147,22 @@ const FROZEN_FINITION1: Readonly<Record<string, string>> = {
     '20261115000014_cvf1_promotion_admin.sql': '44748fc947219a47a7549d609c15b8e40e531f0978e070fd807a5aacecef6be8',
 };
 
+/**
+ * Finition 2b (consigne : les migrations précédentes gelées) : empreintes SHA-256 (LF) des migrations de la finition 2a
+ * et de ses correctifs (20261116…), calculées sur main fb3dcbcd6 (appliquées sur event-village-dev le 16/11) ; toute
+ * correction passe par une migration 20261119….
+ */
+const FROZEN_FINITION2A: Readonly<Record<string, string>> = {
+    '20261116000001_f2a_fiche_suspendue.sql': '0e6f8acf7427d67850b67cf291ee6a88d4c5d833c61720c44fa7436a536888b0',
+    '20261116000002_f2a_fin_retenue.sql': '851f8aa29fb500b0955eb8915024c6f65007be4e2c3a2f807324365be602b442',
+    '20261116000003_f2a_carte.sql': '4645b84add7cd4f9a514abf055605583b26d01636002631cc58d4d40d13f750a',
+    '20261116000004_f2acv_equipe_suspendue.sql': 'c363b60c23bb63112107797022c1299e317baa031cc64fbe8633c258f9878903',
+    '20261116000005_f2acv_ecart_caisse.sql': 'c92d81eee3f11932d3f8153d1cd10d1be676a0117e1c1e74a6e753e9ae71e399',
+    '20261116000006_f2acv_avis_de_lieu.sql': '891d03ab4e7ed946e57db7010f2cda1083d8b80cdcabee1df10da16a39ceb838',
+    '20261116000007_f2acv_affiche_format.sql': '162806d7a464a0e9d1349cb4585d72f4414feb2a092749cbecce0abf4947e97b',
+    '20261116000008_f2acv_stockage_cite.sql': 'b6d323de463996875db59bdbc83f3d42807c2e0406dfcc01da9550f0b1ae6ddd',
+};
+
 const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> = [
     ['20261103', 'lot 6', FROZEN_LOT6],
     ['20261105', 'lot 7', FROZEN_LOT7],
@@ -157,6 +173,7 @@ const FROZEN: ReadonlyArray<[string, string, Readonly<Record<string, string>>]> 
     ['20261111', 'lot 9 quater', FROZEN_LOT9QUATER],
     ['20261112', 'lot 9 quinquies', FROZEN_LOT9QUINQUIES],
     ['20261115', 'finition 1', FROZEN_FINITION1],
+    ['20261116', 'finition 2a', FROZEN_FINITION2A],
 ];
 
 function sha256Lf(name: string): string {
@@ -164,7 +181,7 @@ function sha256Lf(name: string): string {
     return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
-describe('Migrations gelées : 20261103… à 20261115… (finition 2a : 20261112… et 20261115… gelées, correction par 20261116…)', () => {
+describe('Migrations gelées : 20261103… à 20261116… (finition 2b : 20261116… gelées, correction par 20261119…)', () => {
     for (const [prefix, lot, frozen] of FROZEN) {
         test(`${prefix}… : la liste des fichiers du ${lot} reste exacte (gelée, toute correction passe par une migration 20261110…)`, () => {
             const present = fs.readdirSync(DIR).filter((f) => f.startsWith(prefix)).sort();
