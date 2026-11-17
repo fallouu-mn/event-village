@@ -11,12 +11,41 @@
  * variables déjà présentes dans le shell). Comme Next.js ne remplace jamais une
  * variable déjà définie dans process.env, `next build` voit ainsi l'instance locale
  * même si un `.env.local` pointant sur le projet distant existe sur la machine.
+ *
+ * Lot CI rapide (CI parallèle, .github/workflows/verify.yml) : sans option, rien ne change (les cinq étapes, en
+ * série). Options, pour qu'un job de CI ne fasse que sa part, dans le même environnement :
+ *   --etapes <a,b…>    étapes à faire, parmi typecheck, lint, test, build, js-budget (ordre de la liste ci-dessous) ;
+ *   --lot <k>/<n>      l'étape test ne lance que le lot k sur n (scripts/ci-lots.mjs, même lanceur run-tests.mjs) ;
+ *   --graine <g>       avec --lot : répartition mélangée de graine g (scripts/ci-lots.mjs).
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = process.cwd();
+
+const options = { etapes: null, lot: null, graine: null };
+{
+    const argv = process.argv.slice(2);
+    for (let i = 0; i < argv.length; i += 1) {
+        const a = argv[i];
+        if (a === '--etapes') options.etapes = (argv[++i] || '').split(',').map((e) => e.trim()).filter(Boolean);
+        else if (a === '--lot') options.lot = argv[++i];
+        else if (a === '--graine') options.graine = argv[++i];
+        else {
+            console.error(`[verify] option inconnue : ${a}`);
+            process.exit(2);
+        }
+    }
+    if (options.lot !== null && !/^\d+\/\d+$/.test(options.lot)) {
+        console.error(`[verify] --lot attend k/n (reçu : ${options.lot}).`);
+        process.exit(2);
+    }
+    if (options.graine !== null && (options.lot === null || !/^\d+$/.test(options.graine))) {
+        console.error("[verify] --graine attend un entier et s'utilise avec --lot.");
+        process.exit(2);
+    }
+}
 const ENV_FILE = process.env.EV_ENV_FILE || '.env.test';
 const envPath = path.resolve(ROOT, ENV_FILE);
 
@@ -87,8 +116,27 @@ const steps = [
     ['js-budget', 'node scripts/js-budget.mjs'],
 ];
 
+// Lot CI rapide : --etapes ne garde que les étapes citées (dans l'ordre ci-dessus) ; --lot remplace la commande de
+// l'étape test par le lot demandé (scripts/ci-lots.mjs, qui lance scripts/run-tests.mjs sur les suites du lot).
+if (options.etapes !== null) {
+    const inconnues = options.etapes.filter((e) => !steps.some(([name]) => name === e));
+    if (inconnues.length > 0 || options.etapes.length === 0) {
+        console.error(`[verify] --etapes : étape(s) inconnue(s) ou liste vide (${inconnues.join(', ')}) ; attendues : ${steps.map(([n]) => n).join(', ')}.`);
+        process.exit(2);
+    }
+}
+const lotCommand = options.lot === null
+    ? null
+    : `node scripts/ci-lots.mjs lot ${options.lot}${options.graine === null ? '' : ` --graine ${options.graine}`}`;
+const selected = steps
+    .filter(([name]) => options.etapes === null || options.etapes.includes(name))
+    .map(([name, command]) => [name, name === 'test' && lotCommand !== null ? lotCommand : command]);
+if (options.etapes !== null || options.lot !== null) {
+    console.log(`[verify] étapes : ${selected.map(([n]) => n).join(' → ')}${options.lot === null ? '' : ` ; tests : lot ${options.lot}${options.graine === null ? '' : `, graine ${options.graine}`}`}`);
+}
+
 const started = Date.now();
-for (const [name, command] of steps) {
+for (const [name, command] of selected) {
     console.log(`\n═══════════════ verify › ${name} : ${command} ═══════════════`);
     const env = name === 'build' ? buildEnv() : process.env;
     const result = spawnSync(command, { cwd: ROOT, env, stdio: 'inherit', shell: true });
@@ -97,4 +145,4 @@ for (const [name, command] of steps) {
         process.exit(result.status ?? 1);
     }
 }
-console.log(`\n[verify] OK — ${steps.length} étapes réussies en ${((Date.now() - started) / 1000).toFixed(0)}s.`);
+console.log(`\n[verify] OK — ${selected.length} étapes réussies en ${((Date.now() - started) / 1000).toFixed(0)}s.`);
