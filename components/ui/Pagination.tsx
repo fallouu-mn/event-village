@@ -48,7 +48,7 @@ export const Pagination: React.FC<PaginationProps> = ({
       >
         Précédent
       </Button>
-      <p className="text-sm text-fg-muted tabular-nums" aria-live="polite">
+      <p className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
         Page {current} sur {pageCount}
         <span className="hidden sm:inline"> · {formatInteger(total)} résultat{total > 1 ? 's' : ''}</span>
       </p>

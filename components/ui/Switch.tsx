@@ -41,17 +41,17 @@ export function Switch({ label, checked, onChange, description, loading = false,
     <div className={cn('flex flex-col gap-1', className)}>
       <div className="flex min-h-11 items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <label htmlFor={controlId} className={cn('block cursor-pointer text-sm font-semibold text-fg', inactive && 'cursor-not-allowed')}>
+          <label htmlFor={controlId} className={cn('block cursor-pointer text-sm font-semibold text-foreground-strong', inactive && 'cursor-not-allowed')}>
             {label}
           </label>
           {description && (
-            <p id={descriptionId} className="text-sm leading-snug text-fg-muted">
+            <p id={descriptionId} className="text-sm leading-snug text-muted-foreground">
               {description}
             </p>
           )}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
-          <span className="text-sm text-fg-muted" aria-hidden="true">
+          <span className="text-sm text-muted-foreground" aria-hidden="true">
             {checked ? 'Activé' : 'Désactivé'}
           </span>
           <button
@@ -66,31 +66,31 @@ export function Switch({ label, checked, onChange, description, loading = false,
             onClick={() => onChange(!checked)}
             className={cn(
               'relative inline-flex h-11 min-h-11 w-16 flex-shrink-0 cursor-pointer items-center rounded-full p-1',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
               'disabled:cursor-not-allowed disabled:opacity-60',
             )}
           >
             <span
               className={cn(
                 'relative inline-flex h-7 w-14 items-center rounded-full border transition-colors duration-200',
-                checked ? 'border-brand bg-brand' : 'border-border-strong bg-surface-sunken',
+                checked ? 'border-primary bg-primary' : 'border-input bg-background',
               )}
               aria-hidden="true"
             >
               <span
                 className={cn(
-                  'absolute left-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-surface shadow-sm transition-transform duration-200',
+                  'absolute left-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-card shadow-sm transition-transform duration-200',
                   checked ? 'translate-x-7' : 'translate-x-0',
                 )}
               >
-                {loading && <Loader2 size={14} className="text-fg-muted motion-safe:animate-spin" />}
+                {loading && <Loader2 size={14} className="text-muted-foreground motion-safe:animate-spin" />}
               </span>
             </span>
           </button>
         </div>
       </div>
       {error && (
-        <p id={errorId} className="flex items-start gap-1.5 text-sm font-medium leading-snug text-danger-fg">
+        <p id={errorId} className="flex items-start gap-1.5 text-sm font-medium leading-snug text-danger-text">
           <AlertCircle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
           <span>{error}</span>
         </p>

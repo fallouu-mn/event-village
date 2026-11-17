@@ -280,4 +280,9 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/partner/events/[id]/loading.tsx',
     'app/admin/loading.tsx',
     'components/ui/NavigationProgress.tsx',
+    // Design 1a (point 5) : composants de base nouveaux et vitrine des captures
+    'components/ui/Card.tsx',
+    'components/ui/FilterChip.tsx',
+    'components/ui/BottomSheet.tsx',
+    'app/vitrine-design/Vitrine.tsx',
 ];

@@ -3,7 +3,7 @@ import { extendTailwindMerge } from 'tailwind-merge';
 
 /**
  * Fusion de classes Tailwind (clsx puis tailwind-merge) qui connaît les utilitaires du système de design :
- * `text-caption` est une taille de texte (et non une couleur), pour qu'elle ne remplace pas `text-fg`.
+ * `text-caption` est une taille de texte (et non une couleur), pour qu'elle ne remplace pas `text-foreground-strong`.
  */
 const merge = extendTailwindMerge({
     extend: {

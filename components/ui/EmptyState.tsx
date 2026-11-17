@@ -25,12 +25,12 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   className,
 }) => {
   return (
-    <div className={cn('my-4 flex flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-surface p-8 text-center', className)}>
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+    <div className={cn('my-4 flex flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-card p-8 text-center', className)}>
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
         {icon || <FolderSearch size={28} />}
       </div>
-      <h3 className="mb-1 text-base font-semibold text-fg">{title}</h3>
-      <p className="mb-5 max-w-sm text-sm leading-relaxed text-fg-muted">{description}</p>
+      <h3 className="mb-1 text-base font-semibold text-foreground-strong">{title}</h3>
+      <p className="mb-5 max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p>
 
       {actionLabel && actionHref && (
         <LinkButton href={actionHref} variant="primary">{actionLabel}</LinkButton>
@@ -62,12 +62,12 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
   className,
 }) => {
   return (
-    <div role="alert" className={cn('my-4 flex flex-col items-center justify-center rounded-3xl border border-danger-border bg-danger-bg p-8 text-center', className)}>
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-danger-fg" aria-hidden="true">
+    <div role="alert" className={cn('my-4 flex flex-col items-center justify-center rounded-3xl border border-danger-border bg-danger-soft p-8 text-center', className)}>
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-card text-danger-text" aria-hidden="true">
         <AlertCircle size={28} />
       </div>
-      <h3 className="mb-1 text-base font-semibold text-danger-fg">{title}</h3>
-      <p className="mb-5 max-w-sm text-sm leading-relaxed text-fg">{description}</p>
+      <h3 className="mb-1 text-base font-semibold text-danger-text">{title}</h3>
+      <p className="mb-5 max-w-sm text-sm leading-relaxed text-foreground-strong">{description}</p>
       <Button variant="secondary" onClick={onRetry} isLoading={isRetrying} leftIcon={<RefreshCw size={16} />}>
         Réessayer
       </Button>

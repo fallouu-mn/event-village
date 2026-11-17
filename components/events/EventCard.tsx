@@ -73,14 +73,14 @@ export const EventCard: React.FC<EventCardProps> = ({
   const when = timeFormatted ? `${dateFormatted} à ${timeFormatted}` : dateFormatted;
 
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-surface shadow-sm transition-shadow duration-200 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-surface hover:shadow-lg">
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-surface-sunken">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-shadow duration-fast focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card hover:shadow-lg">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-background">
         <Image
           src={eventImageSrc(imageUrl)}
           alt=""
           fill
           priority={priority}
-          className="object-cover motion-safe:transition-transform motion-safe:duration-500 motion-safe:group-hover:scale-[1.03]"
+          className="object-cover motion-safe:transition-transform motion-safe:duration-slow motion-safe:group-hover:scale-[1.03]"
           sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
         />
       </div>
@@ -89,7 +89,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         <div className="flex min-w-0 items-start gap-3">
           {dayNumber && monthShort && (
             <div
-              className="flex min-w-14 flex-shrink-0 flex-col items-center justify-center rounded-2xl border border-brand-fg/20 bg-brand-bg px-2.5 py-2 text-brand-fg"
+              className="flex min-w-14 flex-shrink-0 flex-col items-center justify-center rounded-2xl border border-primary-text/20 bg-primary-soft px-2.5 py-2 text-primary-text"
               aria-hidden="true"
             >
               <span className="text-xl font-bold leading-none tabular-nums">{dayNumber}</span>
@@ -97,8 +97,8 @@ export const EventCard: React.FC<EventCardProps> = ({
             </div>
           )}
           <div className="min-w-0 flex-1 space-y-1">
-            {subtitle && <p className="truncate text-sm font-semibold text-brand-fg">{subtitle}</p>}
-            <h3 className="line-clamp-2 text-lg font-bold leading-snug tracking-tight text-fg">
+            {subtitle && <p className="truncate text-sm font-semibold text-primary-text">{subtitle}</p>}
+            <h3 className="line-clamp-2 text-lg font-bold leading-snug tracking-tight text-foreground-strong">
               <Link
                 href={`/events/${id}`}
                 className="rounded-sm after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
@@ -116,13 +116,13 @@ export const EventCard: React.FC<EventCardProps> = ({
           </div>
         )}
 
-        <ul className="space-y-1.5 text-sm text-fg-muted">
+        <ul className="space-y-1.5 text-sm text-muted-foreground">
           <li className="flex min-w-0 items-center gap-2">
-            <CalendarDays size={16} className="flex-shrink-0 text-fg-muted" aria-hidden="true" />
+            <CalendarDays size={16} className="flex-shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="truncate">{when}</span>
           </li>
           <li className="flex min-w-0 items-center gap-2">
-            <MapPin size={16} className="flex-shrink-0 text-fg-muted" aria-hidden="true" />
+            <MapPin size={16} className="flex-shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="truncate">{place}</span>
           </li>
         </ul>
@@ -130,17 +130,17 @@ export const EventCard: React.FC<EventCardProps> = ({
         <div className="mt-auto flex items-end justify-between gap-3 border-t border-border pt-3">
           {onSaleSoon ? (
             <div className="min-w-0">
-              <p className="text-sm text-fg-muted">Billetterie</p>
-              <p className="text-base font-bold text-fg">{saleLabel || 'Bientôt en vente'}</p>
+              <p className="text-sm text-muted-foreground">Billetterie</p>
+              <p className="text-base font-bold text-foreground-strong">{saleLabel || 'Bientôt en vente'}</p>
             </div>
           ) : (
             <div className="min-w-0">
-              <p className="text-sm text-fg-muted">À partir de</p>
-              <p className="text-base font-bold tabular-nums text-fg">{price === 0 ? 'Gratuit' : formatFcfa(price)}</p>
+              <p className="text-sm text-muted-foreground">À partir de</p>
+              <p className="text-base font-bold tabular-nums text-foreground-strong">{price === 0 ? 'Gratuit' : formatFcfa(price)}</p>
             </div>
           )}
           <span
-            className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg transition-colors duration-200 group-hover:bg-brand group-hover:text-on-brand"
+            className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text transition-colors duration-200 group-hover:bg-primary group-hover:text-primary-foreground"
             aria-hidden="true"
           >
             <ArrowRight size={18} />

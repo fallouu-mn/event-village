@@ -38,13 +38,13 @@ export function DataList<T>({ items, columns, getKey, caption, captionHidden = t
   if (items.length === 0 && empty) return <>{empty}</>;
   return (
     <div className={className}>
-      <div className="hidden md:block overflow-hidden rounded-2xl border border-border bg-surface">
+      <div className="hidden md:block overflow-hidden rounded-2xl border border-border bg-card">
         <table className="w-full border-collapse text-sm">
-          <caption className={cn('px-4 py-3 text-left text-sm font-semibold text-fg', captionHidden && 'sr-only')}>{caption}</caption>
-          <thead className="bg-surface-sunken">
+          <caption className={cn('px-4 py-3 text-left text-sm font-semibold text-foreground-strong', captionHidden && 'sr-only')}>{caption}</caption>
+          <thead className="bg-background">
             <tr>
               {columns.map((c) => (
-                <th key={c.key} scope="col" className={cn('px-4 py-3 font-semibold text-fg-muted', ALIGN[c.align ?? 'left'], c.className)}>
+                <th key={c.key} scope="col" className={cn('px-4 py-3 font-semibold text-muted-foreground', ALIGN[c.align ?? 'left'], c.className)}>
                   {c.header}
                 </th>
               ))}
@@ -54,7 +54,7 @@ export function DataList<T>({ items, columns, getKey, caption, captionHidden = t
             {items.map((item) => (
               <tr key={getKey(item)} className="border-t border-border">
                 {columns.map((c) => (
-                  <td key={c.key} className={cn('px-4 py-3 align-middle text-fg', ALIGN[c.align ?? 'left'], c.className)}>
+                  <td key={c.key} className={cn('px-4 py-3 align-middle text-foreground-strong', ALIGN[c.align ?? 'left'], c.className)}>
                     {c.render(item)}
                   </td>
                 ))}
@@ -66,17 +66,17 @@ export function DataList<T>({ items, columns, getKey, caption, captionHidden = t
 
       <ul className="md:hidden flex flex-col gap-3" aria-label={caption}>
         {items.map((item) => (
-          <li key={getKey(item)} className="rounded-2xl border border-border bg-surface p-4">
+          <li key={getKey(item)} className="rounded-2xl border border-border bg-card p-4">
             {renderCard ? (
               renderCard(item)
             ) : (
               <>
-                {cardTitle && <div className="mb-3 text-base font-semibold text-fg">{cardTitle(item)}</div>}
+                {cardTitle && <div className="mb-3 text-base font-semibold text-foreground-strong">{cardTitle(item)}</div>}
                 <dl className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-3 gap-y-2 text-sm">
                   {columns.filter((c) => !c.hideOnCard).map((c) => (
                     <React.Fragment key={c.key}>
-                      <dt className="text-fg-muted">{c.header}</dt>
-                      <dd className="min-w-0 break-words text-fg">{c.render(item)}</dd>
+                      <dt className="text-muted-foreground">{c.header}</dt>
+                      <dd className="min-w-0 break-words text-foreground-strong">{c.render(item)}</dd>
                     </React.Fragment>
                   ))}
                 </dl>

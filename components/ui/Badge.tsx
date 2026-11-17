@@ -27,12 +27,12 @@ export const Badge: React.FC<BadgeProps> = ({
     warning: TONE_SOFT.warning,
     danger: TONE_SOFT.danger,
     info: TONE_SOFT.info,
-    neutral: 'bg-surface-sunken text-fg-muted border-border',
+    neutral: 'bg-muted text-muted-foreground border-border',
   };
 
   const sizes = {
-    sm: 'text-caption px-2 py-0.5 font-semibold rounded-md gap-1',
-    md: 'text-caption px-2.5 py-1 font-semibold rounded-lg gap-1.5',
+    sm: 'text-caption px-2 py-0.5 font-bold rounded-md gap-1',
+    md: 'text-caption px-2.5 py-1 font-bold rounded-lg gap-1.5',
   };
 
   return (

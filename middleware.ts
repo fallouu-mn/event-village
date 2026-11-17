@@ -70,6 +70,10 @@ const PUBLIC_EXACT_ROUTES = [
     '/activation',
     // Lot 9 quinquies (B1 : AUTH-06) : page publique d'aide et de contact du support
     '/aide',
+    // Design 1a (point 6) : page hors ligne statique (aucune session lue, aucune donnée)
+    '/hors-ligne',
+    // Design 1a : vitrine des composants pour les captures de l'e2e (introuvable sans EV_VITRINE_DESIGN=1)
+    '/vitrine-design',
 ];
 
 const USER_ID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -330,30 +330,30 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
                         </Button>
                     </div>
                     <div aria-live="polite" aria-busy={searching} className="flex flex-col gap-2">
-                        {searchMessage && <p className="text-sm leading-snug text-warning-fg">{searchMessage}</p>}
+                        {searchMessage && <p className="text-sm leading-snug text-warning-text">{searchMessage}</p>}
                         {results && results.length > 0 && (
-                            <ul className="flex flex-col overflow-hidden rounded-2xl border border-border bg-surface" aria-label="Lieux trouvés">
+                            <ul className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card" aria-label="Lieux trouvés">
                                 {results.map((r) => (
                                     <li key={`${r.label}-${r.latitude}-${r.longitude}`} className="border-b border-border last:border-b-0">
                                         <button
                                             type="button"
                                             onClick={() => choose(r)}
-                                            className="flex min-h-11 w-full items-start gap-2 px-3 py-2 text-left text-sm text-fg transition-colors duration-150 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                            className="flex min-h-11 w-full items-start gap-2 px-3 py-2 text-left text-sm text-foreground-strong transition-colors duration-150 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                         >
-                                            <MapPin size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-muted" />
+                                            <MapPin size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-muted-foreground" />
                                             <span className="min-w-0 break-words">{r.label}</span>
                                         </button>
                                     </li>
                                 ))}
                             </ul>
                         )}
-                        <small className="text-caption text-fg-muted">Lieux : &copy; contributeurs OpenStreetMap</small>
+                        <small className="text-caption text-muted-foreground">Lieux : &copy; contributeurs OpenStreetMap</small>
                     </div>
                 </div>
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <p id={helpId} className="min-w-0 flex-1 basis-56 text-sm leading-snug text-fg-muted">
+                <p id={helpId} className="min-w-0 flex-1 basis-56 text-sm leading-snug text-muted-foreground">
                     {touch
                         ? 'Touchez la carte pour placer le repère à l’entrée du lieu. Un doigt fait défiler la page ; deux doigts, ou « Déplacer la carte », déplacent la carte.'
                         : 'Cliquez sur la carte ou déplacez le repère pour indiquer l’entrée du lieu. Vous pouvez aussi saisir les coordonnées.'}
@@ -372,7 +372,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
                     role="region"
                     aria-label="Carte du lieu"
                     aria-describedby={helpId}
-                    className="isolate h-64 w-full overflow-hidden rounded-2xl border border-border bg-surface-sunken sm:h-72"
+                    className="isolate h-64 w-full overflow-hidden rounded-2xl border border-border bg-background sm:h-72"
                 />
                 {touch && (
                     <Button
@@ -390,7 +390,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
             </div>
 
             {geoMessage && (
-                <p role="status" className="text-sm leading-snug text-warning-fg">{geoMessage}</p>
+                <p role="status" className="text-sm leading-snug text-warning-text">{geoMessage}</p>
             )}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -418,7 +418,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
             </div>
 
             {chosen && !shownError && (
-                <p role="status" className="inline-flex items-center gap-2 self-start rounded-xl border border-success-border bg-success-bg px-3 py-2 text-sm font-medium text-success-fg">
+                <p role="status" className="inline-flex items-center gap-2 self-start rounded-xl border border-success-border bg-success-soft px-3 py-2 text-sm font-medium text-success-text">
                     <MapPin size={16} aria-hidden="true" className="shrink-0" />
                     <span className="min-w-0 break-words">{chosenLabel ? `Position choisie : ${chosenLabel}` : 'Position choisie'}</span>
                 </p>

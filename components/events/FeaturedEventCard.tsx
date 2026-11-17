@@ -45,28 +45,28 @@ export const FeaturedEventCard: React.FC<FeaturedEventCardProps> = ({
   imageUrl,
 }) => {
   return (
-    <article className="group relative w-full overflow-hidden rounded-3xl border border-border bg-surface p-2.5 shadow-sm transition-shadow duration-200 focus-within:ring-2 focus-within:ring-ring hover:shadow-lg">
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-surface-sunken">
+    <article className="group relative w-full overflow-hidden rounded-3xl border border-border bg-card p-2.5 shadow-sm transition-shadow duration-200 focus-within:ring-2 focus-within:ring-ring hover:shadow-lg">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-background">
         <Image
           src={eventImageSrc(imageUrl)}
           alt=""
           fill
-          className="object-cover motion-safe:transition-transform motion-safe:duration-500 motion-safe:group-hover:scale-[1.03]"
+          className="object-cover motion-safe:transition-transform motion-safe:duration-slow motion-safe:group-hover:scale-[1.03]"
           sizes="(max-width: 640px) 100vw, 50vw"
         />
 
         <div
-          className="absolute right-3 top-3 flex h-14 w-14 flex-col items-center justify-center rounded-full border border-border bg-surface text-fg shadow-md"
+          className="absolute right-3 top-3 flex h-14 w-14 flex-col items-center justify-center rounded-full border border-border bg-card text-foreground-strong shadow-md"
           aria-hidden="true"
         >
           <span className="text-base font-bold leading-none tabular-nums">{dateDay}</span>
-          <span className="text-sm font-semibold leading-tight text-brand-fg">{dateMonth}</span>
+          <span className="text-sm font-semibold leading-tight text-primary-text">{dateMonth}</span>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-3 px-1.5 pb-1 pt-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-brand-bg text-sm font-bold text-brand-fg">
+          <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-soft text-sm font-bold text-primary-text">
             {isProjectStorageImage(artistAvatarUrl) ? (
               <Image src={artistAvatarUrl} alt="" fill className="object-cover" sizes="44px" />
             ) : (
@@ -74,18 +74,18 @@ export const FeaturedEventCard: React.FC<FeaturedEventCardProps> = ({
             )}
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-base font-bold leading-tight text-fg">
+            <h3 className="truncate text-base font-bold leading-tight text-foreground-strong">
               <Link href={`/events/${id}`} className="after:absolute after:inset-0 focus-visible:outline-none">
                 {title}
               </Link>
             </h3>
-            <p className="truncate text-sm text-fg-muted">
+            <p className="truncate text-sm text-muted-foreground">
               {artistName} · {location}
             </p>
           </div>
         </div>
 
-        <p className="flex-shrink-0 rounded-full bg-surface-sunken px-3.5 py-2 text-sm font-bold tabular-nums text-fg">
+        <p className="flex-shrink-0 rounded-full bg-background px-3.5 py-2 text-sm font-bold tabular-nums text-foreground-strong">
           {priceFormatted}
         </p>
       </div>

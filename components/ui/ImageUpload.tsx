@@ -123,11 +123,11 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
 
     return (
         <div className={cn('flex flex-col gap-1.5', className)}>
-            <span id={titleId} className="text-sm font-semibold text-fg">
+            <span id={titleId} className="text-sm font-semibold text-foreground-strong">
                 {label}
                 {required && (
                     <>
-                        <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+                        <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
                         <span className="sr-only"> (obligatoire)</span>
                     </>
                 )}
@@ -147,15 +147,15 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
             />
 
             {value ? (
-                <div className="overflow-hidden rounded-2xl border border-border bg-surface-sunken peer-focus-visible:ring-2 peer-focus-visible:ring-ring">
+                <div className="overflow-hidden rounded-2xl border border-border bg-background peer-focus-visible:ring-2 peer-focus-visible:ring-ring">
                     {/* eslint-disable-next-line @next/next/no-img-element -- aperçu de l'image déposée (URL du stockage du projet) */}
                     <img src={value} alt={`Aperçu : ${label}`} className={cn('w-full object-cover', cardPreview ? 'aspect-[16/10]' : 'aspect-video')} />
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface p-2">
-                        <span className="px-2 text-sm text-fg-muted">{cardPreview ? 'Aperçu sur les cartes du site' : 'Image enregistrée'}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card p-2">
+                        <span className="px-2 text-sm text-muted-foreground">{cardPreview ? 'Aperçu sur les cartes du site' : 'Image enregistrée'}</span>
                         <div className="flex items-center gap-1">
                             <label
                                 htmlFor={inputId}
-                                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-semibold text-fg transition-colors duration-200 hover:bg-surface-sunken"
+                                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-semibold text-foreground-strong transition-colors duration-200 hover:bg-background"
                             >
                                 <RefreshCw size={16} aria-hidden="true" />
                                 Remplacer l’image
@@ -174,17 +174,17 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
                     onDrop={handleDrop}
                     className={cn(
                         'flex min-h-32 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-6 text-center transition-colors duration-200',
-                        'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface',
-                        dragOver ? 'border-brand-fg bg-brand-bg' : 'border-border-strong bg-surface-sunken hover:border-brand-fg',
+                        'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-card',
+                        dragOver ? 'border-primary-text bg-primary-soft' : 'border-input bg-background hover:border-primary-text',
                         shownError && !dragOver && 'border-danger',
                     )}
                 >
-                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                         {isUploading ? (
                             <span className="inline-block h-5 w-5 rounded-full border-2 border-current border-t-transparent motion-safe:animate-spin" />
                         ) : dragOver ? <Upload size={20} /> : <ImageIcon size={20} />}
                     </span>
-                    <span className="text-sm font-semibold text-fg">
+                    <span className="text-sm font-semibold text-foreground-strong">
                         {isUploading ? 'Envoi de l’image en cours…' : 'Choisir une image ou la déposer ici'}
                     </span>
                 </label>
@@ -193,9 +193,9 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
             {isUploading && (
                 <p id={statusId} role="status" className="sr-only">Envoi de l’image en cours.</p>
             )}
-            <p id={hintId} className="text-sm leading-snug text-fg-muted">{hint}</p>
+            <p id={hintId} className="text-sm leading-snug text-muted-foreground">{hint}</p>
             {shownError && (
-                <p id={errorId} role="alert" className="flex items-start gap-1.5 text-sm font-medium leading-snug text-danger-fg">
+                <p id={errorId} role="alert" className="flex items-start gap-1.5 text-sm font-medium leading-snug text-danger-text">
                     <AlertCircle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                     <span>{shownError}</span>
                 </p>

@@ -21,18 +21,18 @@ export interface KpiCardProps {
 export const KpiCard: React.FC<KpiCardProps> = ({ label, value, hint, tone = 'neutral', icon, loading = false, className }) => {
   if (loading) return <KpiCardSkeleton className={className} />;
   return (
-    <div className={cn('flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5', className)}>
+    <div className={cn('flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:p-5', className)}>
       <div className="flex items-start justify-between gap-3">
         {/* Césure : à 390 px, un mot long (« Encaissements ») débordait sous l'icône (relecture du run 77) */}
-        <p className="min-w-0 break-words text-sm font-medium leading-snug text-fg-muted hyphens-auto">{label}</p>
+        <p className="min-w-0 break-words text-sm font-medium leading-snug text-muted-foreground hyphens-auto">{label}</p>
         {icon && (
           <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', TONE_ICON[tone])} aria-hidden="true">
             {icon}
           </span>
         )}
       </div>
-      <p className="break-words text-2xl font-bold leading-tight tracking-tight text-fg tabular-nums">{value}</p>
-      {hint && <p className="text-sm leading-snug text-fg-muted">{hint}</p>}
+      <p className="break-words text-2xl font-bold leading-tight tracking-tight text-foreground-strong tabular-nums">{value}</p>
+      {hint && <p className="text-sm leading-snug text-muted-foreground">{hint}</p>}
     </div>
   );
 };
@@ -44,16 +44,16 @@ export interface KpiCardSkeletonProps {
 /** Squelette d'un KpiCard (même gabarit), annoncé comme chargement. */
 export const KpiCardSkeleton: React.FC<KpiCardSkeletonProps> = ({ className }) => (
   <div
-    className={cn('flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5', className)}
+    className={cn('flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:p-5', className)}
     role="status"
     aria-busy="true"
     aria-label="Chargement de l’indicateur"
   >
     <div className="flex items-start justify-between gap-3">
-      <span className="h-4 w-28 rounded bg-surface-sunken motion-safe:animate-pulse" />
-      <span className="h-9 w-9 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+      <span className="h-4 w-28 rounded bg-background motion-safe:animate-pulse" />
+      <span className="h-9 w-9 rounded-xl bg-background motion-safe:animate-pulse" />
     </div>
-    <span className="h-8 w-24 rounded bg-surface-sunken motion-safe:animate-pulse" />
-    <span className="h-4 w-36 rounded bg-surface-sunken motion-safe:animate-pulse" />
+    <span className="h-8 w-24 rounded bg-background motion-safe:animate-pulse" />
+    <span className="h-4 w-36 rounded bg-background motion-safe:animate-pulse" />
   </div>
 );

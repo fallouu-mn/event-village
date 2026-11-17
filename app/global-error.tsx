@@ -45,6 +45,7 @@ export default function GlobalError({
           <p>Réessayez dans un instant. Si cela continue, revenez à l’accueil.</p>
           <div className="actions">
             <button type="button" onClick={() => reset()}>Réessayer</button>
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- gabarit racine en panne : rechargement complet voulu */}
             <a href="/">Accueil</a>
           </div>
         </main>

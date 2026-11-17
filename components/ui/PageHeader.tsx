@@ -28,8 +28,8 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, description, acti
     <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
       <div className="min-w-0 flex-1 basis-64">
         {eyebrow && <div className="mb-2 flex flex-wrap items-center gap-2">{eyebrow}</div>}
-        <h1 className="break-words text-2xl font-bold leading-tight tracking-tight text-fg sm:text-3xl">{title}</h1>
-        {description && <p className="mt-1.5 max-w-prose text-base leading-relaxed text-fg-muted">{description}</p>}
+        <h1 className="break-words text-2xl font-bold leading-tight tracking-tight text-foreground-strong sm:text-3xl">{title}</h1>
+        {description && <p className="mt-1.5 max-w-prose text-base leading-relaxed text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 sm:gap-3">{actions}</div>}
     </div>
