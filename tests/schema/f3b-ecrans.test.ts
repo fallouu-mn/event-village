@@ -5,6 +5,9 @@
  *     au super-administrateur. » ; une phrase et un bouton par ligne ; « Compteur indisponible », jamais 0 ; plus de bloc
  *     « À traiter » ; onglets des candidatures comptés par GET /api/admin/partners (plus par les indicateurs) ; indicateurs
  *     seulement avec statistics.read, sinon le refus nomme la permission (plus « Vérifiez votre connexion »).
+ *  6 bis. Libellés (E-37, revue 5.2) restés ouverts au run complet 277 : « Superadmin » à l'écran sauf la phrase dictée par
+ *     la consigne ; « Partenaire » (journal, historique) ; aucun code HTTP dans un message ; alertes SMS sans « UTC » ;
+ *     origine d'un envoi en mots ; parrainage sans « N1 » ni « N2 ».
  * Sans base : aucune écriture, donc aucun appel d'invariants (écart signalé).
  */
 import '../helpers/env';
@@ -280,5 +283,79 @@ describe('6. E-37, E-39 — français simple, statuts sans capitales, aucun code
         assert.equal(roleBadge, false, 'rôle affiché en capitales forcées');
         assert.match(users, /Supprimer définitivement/, '« Supprimer définitivement » absent');
         assert.ok(norm(users).includes(norm('La personne n’est pas prévenue.')), 'la confirmation ne dit pas que la personne n’est pas prévenue');
+    });
+});
+
+// ── 6 bis. Lignes de la table des libellés de la revue (section 5.2) restées ouvertes après le run complet 277 ────────
+
+/** Fichiers .ts et .tsx de l'application (app/, components/, lib/), lus sur le disque. */
+function appFiles(): string[] {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+        for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+            const rel = `${dir}/${e.name}`;
+            if (e.isDirectory()) walk(rel);
+            else if (/\.tsx?$/.test(e.name)) out.push(rel);
+        }
+    };
+    for (const dir of ['app', 'components', 'lib']) walk(dir);
+    return out.sort();
+}
+
+/** Phrase dictée mot pour mot par la consigne (point 2) : seule forme longue du rôle admise à l'écran. */
+const DICTATED_NO_RIGHTS = norm("Vous n'avez encore aucun droit : demandez-les au super-administrateur.");
+
+describe('6 bis. E-37 — table des libellés de la revue (5.2) : rôles, codes HTTP, alertes SMS, origine d’un envoi, parrainage', () => {
+    test('rôle SUPERADMIN : « Superadmin » à l’écran (G-45 : menu, profil, connexion, réglages), sauf la phrase dictée par la consigne', () => {
+        const faults: string[] = [];
+        for (const f of appFiles()) {
+            for (const line of code(f).split('\n')) {
+                const rest = norm(line).replace(DICTATED_NO_RIGHTS, '');
+                const hit = /super[- ]?administrat\w*/i.exec(rest);
+                if (hit) faults.push(`${f} : « ${hit[0]} »`);
+            }
+        }
+        assert.deepEqual(faults, [], faults.join('\n'));
+        assert.match(code('components/layout/AppLayout.tsx'), /SUPERADMIN: 'Superadmin',/, 'menu : rôle SUPERADMIN mal nommé');
+        assert.match(code('app/profile/page.tsx'), /SUPERADMIN: 'Superadmin',/, 'profil : rôle SUPERADMIN mal nommé');
+        assert.ok(norm(code('components/auth/LoginForm.tsx')).includes(norm("unauthorized_admin: 'Cet espace est réservé aux administrateurs.'")),
+            'connexion : message différent de celui des redirections (lib/auth/access-errors.ts)');
+    });
+
+    test('rôle PARTENAIRE : « Partenaire » dans le journal d’audit et l’historique d’un événement (plus « Organisateur »)', () => {
+        for (const f of ['app/admin/audit/page.tsx', 'app/admin/events/[id]/page.tsx']) {
+            const c = code(f);
+            assert.doesNotMatch(c, /PARTENAIRE: 'Organisateur'/, `${f} : rôle PARTENAIRE affiché « Organisateur »`);
+            assert.match(c, /PARTENAIRE: 'Partenaire'/, `${f} : rôle PARTENAIRE sans libellé « Partenaire »`);
+        }
+    });
+
+    test('aucun code HTTP dans un message de l’administration : le message du serveur, sinon SERVER_TROUBLE', () => {
+        const faults: string[] = [];
+        for (const f of adminFiles()) {
+            for (const [i, line] of code(f).split('\n').entries()) {
+                if (/console\.(error|warn|log|info)\(/.test(line)) continue;
+                if (/erreur \$\{[^}]*\}/.test(line)) faults.push(`${f} (ligne de code ${i + 1}) : ${line.trim().slice(0, 140)}`);
+            }
+        }
+        assert.deepEqual(faults, [], faults.join('\n'));
+    });
+
+    test('alertes de SMS aux administrateurs : « minuit, heure de Dakar », sans « UTC »', () => {
+        const catalog = read('lib/notifications/catalog.ts');
+        assert.ok(!catalog.includes('(UTC, heure de Dakar)'), '« minuit (UTC, heure de Dakar) » encore dans les alertes');
+        assert.equal((catalog.match(/minuit, heure de Dakar/g) ?? []).length, 3, 'les trois alertes de plafond disent « minuit, heure de Dakar »');
+    });
+
+    test('détail d’un envoi : origine en mots simples', () => {
+        const page = norm(code('app/admin/notifications/[id]/page.tsx'));
+        assert.ok(!page.includes('Envoi immédiat journalisé'), '« Envoi immédiat journalisé » encore affiché');
+        assert.ok(page.includes(norm("Envoyé tout de suite (code reçu par SMS ou invitation d'un contrôleur)")), 'origine simple absente');
+    });
+
+    test('parrainage : « filleuls directs » et « filleuls de ses filleuls », plus « N1 » ni « N2 »', () => {
+        const page = code('app/admin/referral/page.tsx');
+        assert.doesNotMatch(page, /\bN[12]\b/, '« N1 » ou « N2 » encore à l’écran');
+        assert.ok(page.includes('filleuls directs') && page.includes('filleuls de ses filleuls'), 'niveaux du parrainage non dits en mots');
     });
 });
