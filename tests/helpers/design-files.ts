@@ -255,6 +255,11 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/activation/page.tsx',
     'app/admin/layout.tsx',
     'components/admin/AdminStepUpGate.tsx',
+    // Finition 3d (point 1) : fenêtre de sécurité posée sur les pages partenaire et contrôleur d'un compte admin (chargée à
+    // la demande), mises en page imbriquées du scanner et du profil de l'espace contrôleur (ajout signalé au rapport)
+    'components/admin/AdminAccountStepUp.tsx',
+    'app/controller/scanner/layout.tsx',
+    'app/controller/profile/layout.tsx',
     'app/aide/page.tsx',
     // Finition 1 (E-14) : composant commun de l'équipe, page /partner/team et onglet Équipe du pilotage
     'components/partner/team/TeamPanel.tsx',
