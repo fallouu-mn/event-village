@@ -543,6 +543,8 @@ const FINITION3D_RPCS: Array<[string, Record<string, unknown>]> = [
     ['admin_organizers_search', { p: { q: '' } }],
     ['f3d_fold', { t: 'Gorée' }],
     ['event_cash_refund_mark_admin', { p: {} }],
+    ['admin_identity_check', { p: {} }],
+    ['admin_role_change', { p: {} }],
 ];
 
 describe('R3 — finition 3d : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {

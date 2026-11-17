@@ -45,6 +45,8 @@ import { jsonRequest as rawJsonRequest, randomSenegalPhone } from './helpers';
 import { importModule, newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { jsonRequest, newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { createTimedEvent, newController, openShift, type RouteResult } from './acces-helpers';
+import { newAdmin } from './notif-helpers';
+import { changeRoleByScreen, confirmIdentity } from './f3d-helpers';
 
 const ROOT = process.cwd();
 const OTP_STORE = '../../lib/auth/otp-store';
@@ -242,16 +244,22 @@ describe('C4 — user_roles_set : tout ou rien', () => {
         }
     });
 
-    test('PATCH /api/admin/users (SUPERADMIN, roles: [ADMIN]) sur un contrôleur à caisse ouverte → 409 CONTROLLER_HAS_OPEN_SHIFT ; rôles et users.role inchangés', async () => {
+    // Finition 3d (point 3 ; modification signalée au rapport) : le rôle ADMIN ne se donne plus par PATCH /api/admin/users
+    // (409 ROLE_SCREEN_REQUIRED) mais par « Changer le rôle » ; la caisse ouverte y refuse la promotion de la même façon.
+    test('« Changer le rôle » (SUPERADMIN, ADMIN) sur un contrôleur à caisse ouverte → 409 CONTROLLER_HAS_OPEN_SHIFT ; rôles et users.role inchangés ; le PATCH refuse aussi', async () => {
         const ctrl = await controllerWithOpenShift('roles-route-refus');
         const before = await rolesOf(ctrl.userId);
         const legacyBefore = await legacyRoleOf(ctrl.userId);
-        const superadmin = await signInAs('SUPERADMIN');
+        const superadmin = await newAdmin('roles-route-boss', [], { role: 'SUPERADMIN' });
+        await confirmIdentity(superadmin);
         try {
             const { PATCH } = await importModule('../../app/api/admin/users/route');
-            const res = await invoke(PATCH as Handler, rawJsonRequest('/api/admin/users', { userId: ctrl.userId, roles: ['ADMIN'] }, bearer(superadmin.accessToken), 'PATCH'));
-            assert.equal(res.status, 409, `changement de rôles refusé : ${show(res)}`);
-            assert.equal(res.body.code, 'CONTROLLER_HAS_OPEN_SHIFT', `code CONTROLLER_HAS_OPEN_SHIFT : ${show(res)}`);
+            const viaPatch = await invoke(PATCH as Handler, rawJsonRequest('/api/admin/users', { userId: ctrl.userId, roles: ['ADMIN'] }, bearer(superadmin.accessToken), 'PATCH'));
+            assert.deepEqual([viaPatch.status, viaPatch.body.code], [409, 'ROLE_SCREEN_REQUIRED'], `PATCH : ${show(viaPatch)}`);
+            const r = await changeRoleByScreen(superadmin.accessToken, ctrl.userId, { role: 'ADMIN', reason: 'Promotion refusée : caisse ouverte', confirm_staff_promotion: true });
+            const res = { status: r.status, body: r.body };
+            assert.equal(res.status, 409, `changement de rôles refusé : ${JSON.stringify(res)}`);
+            assert.equal(res.body.code, 'CONTROLLER_HAS_OPEN_SHIFT', `code CONTROLLER_HAS_OPEN_SHIFT : ${JSON.stringify(res)}`);
             assert.deepEqual(await rolesOf(ctrl.userId), before, 'aucun rôle modifié : ADMIN ne doit pas être accordé par une requête refusée');
             assert.equal(await legacyRoleOf(ctrl.userId), legacyBefore, 'users.role inchangé');
         } finally {

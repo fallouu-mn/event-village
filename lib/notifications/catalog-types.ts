@@ -252,6 +252,8 @@ export interface TemplateData {
     // ── Finition 3d (recours et suppléance) ──
     /** Point 4a : espèces d'une vente au guichet marquées rendues par un admin, à la place de l'organisatrice (avec le motif). */
     CASH_REFUND_MARKED_BY_ADMIN: EventData & { payment_id: string; reference: string; amount: number; reason: string };
+    /** Point 3 : un compte devient SUPERADMIN ; alerte à chaque SUPERADMIN actif (nom du compte promu et de l'auteur). */
+    SUPERADMIN_PROMOTED: { user_name: string; actor_name: string };
 }
 
 export type NotificationType = keyof TemplateData;

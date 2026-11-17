@@ -41,6 +41,7 @@ import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/label
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { noticesText } from '@/lib/admin/confirmations';
 import { TextInput } from '@/components/ui/Field';
+import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';
 
 interface UserItem {
   id: string;
@@ -76,7 +77,7 @@ function refusalOf(data: unknown, fallback: string): string {
  */
 export default function AdminUsersManagementPage() {
   const toast = useToast();
-  const { hasPermission, hasRole } = useAuth();
+  const { hasPermission, hasRole, user: me } = useAuth();
   const canWrite = hasPermission('users.write');
   const isSuperadmin = hasRole('SUPERADMIN');
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -100,7 +101,10 @@ export default function AdminUsersManagementPage() {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
-  const [newRole, setNewRole] = useState<'ADMIN' | 'SUPERADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+  // Finition 3d (point 3) : un SUPERADMIN ne se crée plus directement (créer l'administrateur, puis « Changer le rôle »)
+  const [newRole, setNewRole] = useState<'ADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+  // Finition 3d (point 3) : « Changer le rôle » d'un compte (SUPERADMIN seulement)
+  const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Dialog de confirmation suppression
@@ -551,6 +555,14 @@ export default function AdminUsersManagementPage() {
                       </Button>
                     )}
 
+                    {/* Finition 3d (point 3) : changer le rôle (SUPERADMIN seulement ; jamais une organisatrice ; son propre rôle
+                        seulement pour quitter le rôle de Superadmin). Le serveur décide (mot de passe, code, motif). */}
+                    {isSuperadmin && !isDeleted && !isPartner && (user.id !== me?.id || isSuper) && (
+                      <Button variant="secondary" size="sm" onClick={() => setRoleTarget(user)}>
+                        {user.id === me?.id ? 'Quitter le rôle de Superadmin' : 'Changer le rôle'}
+                      </Button>
+                    )}
+
                     {/* Lot 9 quinquies (A2) : renvoi du lien d'activation d'un compte créé par un admin */}
                     {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
                       <Button
@@ -687,20 +699,6 @@ export default function AdminUsersManagementPage() {
                   <span className="block text-sm text-fg-muted">Agit selon les droits que vous lui donnez</span>
                 </span>
               </button>
-              <button
-                type="button"
-                aria-pressed={newRole === 'SUPERADMIN'}
-                onClick={() => setNewRole('SUPERADMIN')}
-                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'SUPERADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
-                }`}
-              >
-                <ShieldCheck size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Superadmin</span>
-                  <span className="block text-sm text-fg-muted">Tous les droits, dont les réglages et la création d’administrateurs</span>
-                </span>
-              </button>
                 </>
               )}
               <button
@@ -719,13 +717,15 @@ export default function AdminUsersManagementPage() {
               </button>
             </div>
           </fieldset>
+          {isSuperadmin && (
+            <p className="text-sm text-fg-muted">Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
+          )}
 
           <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-bg p-3 text-sm text-info-fg">
             <Info size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <span>
               {newRole === 'CONTROLEUR' && 'À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.'}
               {newRole === 'ADMIN' && 'Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.'}
-              {newRole === 'SUPERADMIN' && 'Tous les droits, dont les réglages de la plateforme et la création d’administrateurs.'}
               {newRole === 'CLIENT' && 'Achète des billets et parraine ses proches, sans accès professionnel.'}
             </span>
           </p>
@@ -858,6 +858,21 @@ export default function AdminUsersManagementPage() {
         error={statusError ?? undefined}
         maxLength={500}
       />
+
+      {/* Finition 3d (point 3) : changer le rôle ; un compte qui devient administrateur ouvre aussitôt sa grille de droits */}
+      {roleTarget && (
+        <RoleChangeDialog
+          user={roleTarget}
+          self={roleTarget.id === me?.id}
+          onClose={() => setRoleTarget(null)}
+          onChanged={(role: RoleLevel) => {
+            const changed = roleTarget;
+            setRoleTarget(null);
+            void fetchUsers();
+            if (role === 'ADMIN' && roleLevelOf(changed.role) === 'CLIENT') void handleOpenPermissions({ ...changed, role: 'ADMIN' });
+          }}
+        />
+      )}
 
       {/* ConfirmDialog Anonymisation RGPD */}
       <ConfirmDialog

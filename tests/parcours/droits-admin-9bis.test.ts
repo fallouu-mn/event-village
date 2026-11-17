@@ -24,6 +24,7 @@ import type { RouteResult } from './acces-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { newAdminWith } from './terrain-helpers';
 import type { TestAdmin } from './notif-helpers';
+import { changeRoleByScreen, confirmIdentity } from './f3d-helpers';
 
 after(async () => {
     await assertLot9bisInvariants('droits-admin-9bis');
@@ -145,18 +146,23 @@ describe('R71 — PATCH /api/admin/users : promouvoir, rétrograder, suspendre u
         assert.deepEqual(await rolesOf(target.userId), ['CLIENT', 'CONTROLEUR']);
     });
 
+    // Finition 3d (point 3 ; modification signalée au rapport) : promotion et rétrogradation par « Changer le rôle » (mot de
+    // passe, code, motif) ; le PATCH n'accorde plus ni ne retire ADMIN (409 ROLE_SCREEN_REQUIRED) ; le statut ne change pas.
     test('témoin (vert dès l’écriture) : le SUPERADMIN promeut, rétrograde et suspend un ADMIN → 200', async () => {
         const target = await newBuyer('r71-super-cible');
-        const up = await patchUser(superadmin.accessToken, { userId: target.userId, roles: ['CLIENT', 'ADMIN'] });
-        assert.equal(up.status, 200, `promotion par le SUPERADMIN : ${show(up)}`);
+        await confirmIdentity(superadmin);
+        const viaPatch = await patchUser(superadmin.accessToken, { userId: target.userId, roles: ['CLIENT', 'ADMIN'] });
+        assert.deepEqual([viaPatch.status, viaPatch.body.code], [409, 'ROLE_SCREEN_REQUIRED'], `PATCH : ${show(viaPatch)}`);
+        const up = await changeRoleByScreen(superadmin.accessToken, target.userId, { role: 'ADMIN', reason: 'Témoin R71 : promotion' });
+        assert.equal(up.status, 200, `promotion par le SUPERADMIN : ${JSON.stringify(up)}`);
         assert.ok((await rolesOf(target.userId)).includes('ADMIN'), 'ADMIN ajouté');
         const susp = await patchUser(superadmin.accessToken, { userId: target.userId, status: 'SUSPENDU', reason: REASON });
         assert.equal(susp.status, 200, `suspension d’un ADMIN par le SUPERADMIN : ${show(susp)}`);
         assert.equal(await statusOf(target.userId), 'SUSPENDU');
         const back = await patchUser(superadmin.accessToken, { userId: target.userId, status: 'ACTIF', reason: REASON });
         assert.equal(back.status, 200, `réactivation par le SUPERADMIN : ${show(back)}`);
-        const down = await patchUser(superadmin.accessToken, { userId: target.userId, roles: ['CLIENT'] });
-        assert.equal(down.status, 200, `rétrogradation par le SUPERADMIN : ${show(down)}`);
+        const down = await changeRoleByScreen(superadmin.accessToken, target.userId, { role: 'CLIENT', reason: 'Témoin R71 : rétrogradation' });
+        assert.equal(down.status, 200, `rétrogradation par le SUPERADMIN : ${JSON.stringify(down)}`);
         assert.deepEqual(await rolesOf(target.userId), ['CLIENT'], 'ADMIN retiré');
     });
 });

@@ -23,8 +23,8 @@ import assert from 'node:assert/strict';
 import { newBuyer, service, type SaleEvent } from './paiement-helpers';
 import { newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { newController, openShift } from './acces-helpers';
-import { outboxRows } from './notif-helpers';
-import { signInAs } from '../helpers/fixtures';
+import { newAdmin, outboxRows } from './notif-helpers';
+import { changeRoleByScreen, confirmIdentity } from './f3d-helpers';
 import { openConcurrentClient, waitForLockWaiters } from '../helpers/db';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
 import {
@@ -54,7 +54,11 @@ let ev2: SaleEvent;
 let ev3: SaleEvent;
 
 before(async () => {
-    SA = await signInAs('SUPERADMIN');
+    // Finition 3d (point 3 ; modification signalée au rapport) : la promotion passe par « Changer le rôle » (mot de passe et
+    // code saisis par les routes de l'étape de sécurité, motif) ; Superadmin neuf : son propre numéro reçoit le code.
+    const boss = await newAdmin('cvf1c-pro-boss', [], { role: 'SUPERADMIN' });
+    await confirmIdentity(boss);
+    SA = boss;
     superId = await superadminId();
     P1 = await newPartner('cvf1c-pro-1');
     P2 = await newPartner('cvf1c-pro-2');
@@ -97,7 +101,7 @@ async function invitationStatus(id: string): Promise<Row> {
 }
 
 function promote(userId: string, extra: Row = {}): Promise<Reply> {
-    return api('PATCH', 'admin/users', { token: SA.accessToken, body: { userId, roles: ['ADMIN'], ...extra } });
+    return changeRoleByScreen(SA.accessToken, userId, { role: 'ADMIN', reason: 'Promotion d’un contrôleur (contre-vérification de la finition 1)', ...extra });
 }
 
 async function rpcRow(name: string, p: Row): Promise<Row> {

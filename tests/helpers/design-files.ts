@@ -262,6 +262,9 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/controller/profile/layout.tsx',
     // Finition 3d (point 4b) : choix de l'organisatrice dans la page Équipe d'un admin (liste avec recherche)
     'components/partner/team/OrganizerPicker.tsx',
+    // Finition 3d (point 3) : fenêtre « mot de passe et code » des actions sensibles, « Changer le rôle »
+    'components/admin/IdentityConfirm.tsx',
+    'components/admin/RoleChangeDialog.tsx',
     'app/aide/page.tsx',
     // Finition 1 (E-14) : composant commun de l'équipe, page /partner/team et onglet Équipe du pilotage
     'components/partner/team/TeamPanel.tsx',

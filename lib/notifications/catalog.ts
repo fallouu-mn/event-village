@@ -1830,6 +1830,18 @@ const CATALOG = {
         }),
         sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, reference: '1F6E2B9C', amount: 6_000, reason: 'Espèces rendues par la billetterie du lieu' },
     }),
+    // Finition 3d (point 3) : un compte devient SUPERADMIN ; alerte (SMS et cloche) à chaque SUPERADMIN actif, l'auteur
+    // compris. Pire cas : deux noms tronqués à 25 caractères, 152 septets, un segment GSM-7.
+    SUPERADMIN_PROMOTED: define('SUPERADMIN_PROMOTED', {
+        label: 'Nouveau Superadmin (alerte)', channels: ['IN_APP', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        link: () => '/admin/users',
+        inApp: (d) => ({
+            title: 'Nouveau Superadmin',
+            content: `${text(d, 'user_name')} est maintenant Superadmin, nommé par ${text(d, 'actor_name')}. Si ce n’est pas prévu, réagissez tout de suite : changez son rôle depuis Comptes.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 25)} est maintenant Superadmin, nommé par ${smsVar(text(d, 'actor_name'), 25)}. Si ce n'est pas prévu, réagissez tout de suite.`,
+        sample: { user_name: 'Mame Diarra Bousso Ndiaye Diop', actor_name: 'Aminata Sophie Gueye Sarr Fall' },
+    }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),

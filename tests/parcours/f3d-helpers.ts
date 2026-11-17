@@ -47,13 +47,21 @@ export async function lastSmsCode(phoneE164: string): Promise<string> {
     return m[1];
 }
 
-/** Mot de passe puis code administrateur, par les routes de l'étape de sécurité (identité confirmée 10 minutes). */
-export async function confirmIdentity(admin: Buyer): Promise<void> {
-    const pwd = await callRoute('../../app/api/admin/step-up/route', 'POST', '/api/admin/step-up', admin.accessToken, { password: STRONG_PASSWORD });
+/**
+ * Mot de passe puis code administrateur, par les routes de l'étape de sécurité (identité confirmée 10 minutes). Un compte
+ * de test neuf (newAdmin) a le mot de passe STRONG_PASSWORD ; un compte de référence (signInAs) passe le sien et son numéro.
+ */
+export async function confirmIdentity(admin: Pick<Buyer, 'accessToken' | 'phoneE164'>, password: string = STRONG_PASSWORD): Promise<void> {
+    const pwd = await callRoute('../../app/api/admin/step-up/route', 'POST', '/api/admin/step-up', admin.accessToken, { password });
     assert.equal(pwd.status, 200, `mot de passe : ${show(pwd)}`);
     const send = await callRoute('../../app/api/admin/step-up/sms/route', 'POST', '/api/admin/step-up/sms', admin.accessToken, {});
     assert.equal(send.status, 200, `envoi du code administrateur : ${show(send)}`);
     const code = await lastSmsCode(admin.phoneE164);
     const verify = await callRoute('../../app/api/admin/step-up/sms/route', 'POST', '/api/admin/step-up/sms', admin.accessToken, { code });
     assert.equal(verify.status, 200, `code administrateur : ${show(verify)}`);
+}
+
+/** Changement de rôle par l'écran « Changer le rôle » (identité déjà confirmée). */
+export async function changeRoleByScreen(actorToken: string, targetId: string, body: Record<string, unknown>): Promise<CallResult> {
+    return callRoute('../../app/api/admin/users/[id]/role/route', 'POST', `/api/admin/users/${targetId}/role`, actorToken, body, { id: targetId });
 }

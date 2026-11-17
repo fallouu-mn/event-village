@@ -21,6 +21,8 @@ const FINITION3D_MIGRATIONS = [
     '20261120000001_f3d_equipe.sql',
     // 4a : espèces marquées rendues par un admin, avis à l'organisatrice
     '20261120000002_f3d_especes.sql',
+    // 3 : changer le rôle (SUPERADMIN), mot de passe et code des actions sensibles, garde du rôle SUPERADMIN
+    '20261120000003_f3d_role.sql',
 ] as const;
 
 after(async () => {

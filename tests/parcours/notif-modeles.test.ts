@@ -1185,6 +1185,8 @@ function lot9quinquiesExpected(): ExpectedType[] {
         // Finition 3d (point 4a, migration 20261120000002) : espèces marquées rendues par un admin, avis à l'organisatrice
         // (cloche, push, email), reçu même fiche suspendue. Ajout signalé.
         ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
+        // Finition 3d (point 3, migration 20261120000003) : alerte à chaque SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
+        ess('SUPERADMIN_PROMOTED', [I, S], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau Superadmin'),
     ];
 }
 
