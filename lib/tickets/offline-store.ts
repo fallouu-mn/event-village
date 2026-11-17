@@ -5,7 +5,10 @@
  * Base `event-village-offline` version 1 :
  *  - magasin `lots`, clé `"<userId>:<ticketId>:<secretVersion>"`, index `ticketId` et `expiresAt` (heure du
  *    serveur, ms) ; une seule version par billet : enregistrer une version supprime les autres ;
- *  - magasin `meta`, enregistrement `currentUserId` : la page hors ligne n'affiche que les lots de ce compte.
+ *  - magasin `meta`, enregistrement `currentUserId` : la page hors ligne n'affiche que les lots de ce compte ;
+ *    enregistrement `generation` (cvf2b 6.4) : valeur changée par chaque purge (clearOfflineStore). Un téléchargement
+ *    la lit avant sa requête et la revérifie dans la transaction de son écriture : une réponse partie avant
+ *    « Se déconnecter » (dans cet onglet ou un autre) n'écrit plus rien après la purge (lib/tickets/offline-lots.ts).
  *
  * Purge : à la déconnexion et à la connexion d'un autre compte (AuthProvider, clearOfflineStore), au
  * transfert (TransferModal, deleteOfflineLots), quand un billet disparaît de la liste ou change de version
@@ -27,6 +30,7 @@ const DB_VERSION = 1;
 export const LOTS = 'lots';
 export const META = 'meta';
 export const CURRENT_USER_KEY = 'currentUserId';
+export const GENERATION_KEY = 'generation';
 
 export class OfflineStoreError extends Error {
     constructor(message: string, readonly cause?: unknown) {
@@ -183,6 +187,8 @@ export async function clearOfflineStore(): Promise<boolean> {
         await withTx([LOTS, META], 'readwrite', 'effacement du stockage hors ligne', async (tx) => {
             await req(tx.objectStore(LOTS).clear());
             await req(tx.objectStore(META).clear());
+            // Cvf2b 6.4 : nouvelle génération, dans la même transaction que la purge
+            await req(tx.objectStore(META).put({ key: GENERATION_KEY, value: Math.random().toString(36) } satisfies MetaRecord));
         });
         return true;
     } catch (err) {

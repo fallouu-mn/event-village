@@ -9,7 +9,7 @@
  */
 import type { OfflineLot } from './offline-clock';
 import {
-    CURRENT_USER_KEY, describeError, LOTS, lotsOfTicket, META, req, withTx, type LotRecord, type MetaRecord,
+    CURRENT_USER_KEY, describeError, GENERATION_KEY, LOTS, lotsOfTicket, META, req, withTx, type LotRecord, type MetaRecord,
 } from './offline-store';
 
 /** Chemin de la coquille mise en cache par public/sw.js (D35). */
@@ -27,8 +27,40 @@ function expiryOf(lot: OfflineLot): number {
     return t;
 }
 
-/** Enregistre le lot du billet pour ce compte ; les autres versions du même billet sont supprimées. */
-export async function saveOfflineLot(userId: string, lot: OfflineLot): Promise<void> {
+/**
+ * Cvf2b 6.4 — génération du stockage (meta `generation`, changée par chaque purge : clearOfflineStore, déconnexion).
+ * Lue AVANT une requête dont la réponse sera écrite, puis revérifiée dans la transaction de l'écriture
+ * (setCurrentOfflineUser, saveOfflineLot) : une purge survenue entre-temps, dans cet onglet ou dans un autre, annule
+ * l'écriture. Une réponse partie avec les cookies de A avant « Se déconnecter » ne réécrit donc ni le compte courant
+ * ni le lot de A, que la page publique /billet/hors-ligne remontrerait.
+ */
+export async function offlineGeneration(): Promise<string> {
+    return withTx([META], 'readonly', 'lecture de la génération du stockage', generationIn);
+}
+
+async function generationIn(tx: IDBTransaction): Promise<string> {
+    const row = await req(tx.objectStore(META).get(GENERATION_KEY) as IDBRequest<MetaRecord | undefined>);
+    return row?.value ?? '';
+}
+
+/** Désigne le compte courant dans la transaction `tx` : les lots d'un autre compte sont supprimés. */
+async function designate(tx: IDBTransaction, userId: string): Promise<void> {
+    const meta = tx.objectStore(META);
+    const row = await req(meta.get(CURRENT_USER_KEY) as IDBRequest<MetaRecord | undefined>);
+    if (row?.value === userId) return;
+    const lots = tx.objectStore(LOTS);
+    for (const r of await req(lots.getAll() as IDBRequest<LotRecord[]>)) {
+        if (r.userId !== userId) await req(lots.delete(r.key));
+    }
+    await req(meta.put({ key: CURRENT_USER_KEY, value: userId } satisfies MetaRecord));
+}
+
+/**
+ * Enregistre le lot du billet pour ce compte ; les autres versions du même billet sont supprimées. Avec `generation`
+ * (cvf2b 6.4, valeur lue avant la requête) : dans la même transaction, rien n'est écrit si une purge a eu lieu depuis
+ * (rend false) ; sinon le compte devient le compte courant (lots d'un autre compte supprimés), puis le lot est écrit.
+ */
+export async function saveOfflineLot(userId: string, lot: OfflineLot, generation?: string): Promise<boolean> {
     const record: LotRecord = {
         key: lotKey(userId, lot.ticket_id, Number(lot.secret_version)),
         userId,
@@ -37,12 +69,17 @@ export async function saveOfflineLot(userId: string, lot: OfflineLot): Promise<v
         expiresAt: expiryOf(lot),
         lot,
     };
-    await withTx([LOTS], 'readwrite', `enregistrement du lot du billet ${lot.ticket_id}`, async (tx) => {
+    return withTx(generation === undefined ? [LOTS] : [LOTS, META], 'readwrite', `enregistrement du lot du billet ${lot.ticket_id}`, async (tx) => {
+        if (generation !== undefined) {
+            if ((await generationIn(tx)) !== generation) return false;
+            await designate(tx, userId);
+        }
         const store = tx.objectStore(LOTS);
         for (const old of await lotsOfTicket(tx, lot.ticket_id)) {
             if (old.key !== record.key) await req(store.delete(old.key));
         }
         await req(store.put(record));
+        return true;
     });
 }
 
@@ -65,18 +102,14 @@ export async function getCurrentOfflineUser(): Promise<string | null> {
 
 /**
  * Désigne le compte courant (meta.currentUserId). Les lots d'un autre compte sont supprimés dans la même
- * transaction : un téléphone partagé ne montre jamais le billet du compte précédent.
+ * transaction : un téléphone partagé ne montre jamais le billet du compte précédent. Avec `generation` (cvf2b 6.4) :
+ * rien n'est écrit si une purge a eu lieu depuis la lecture de cette valeur (rend false).
  */
-export async function setCurrentOfflineUser(userId: string): Promise<void> {
-    await withTx([LOTS, META], 'readwrite', 'changement du compte courant', async (tx) => {
-        const meta = tx.objectStore(META);
-        const row = await req(meta.get(CURRENT_USER_KEY) as IDBRequest<MetaRecord | undefined>);
-        if (row?.value === userId) return;
-        const lots = tx.objectStore(LOTS);
-        for (const r of await req(lots.getAll() as IDBRequest<LotRecord[]>)) {
-            if (r.userId !== userId) await req(lots.delete(r.key));
-        }
-        await req(meta.put({ key: CURRENT_USER_KEY, value: userId } satisfies MetaRecord));
+export async function setCurrentOfflineUser(userId: string, generation?: string): Promise<boolean> {
+    return withTx([LOTS, META], 'readwrite', 'changement du compte courant', async (tx) => {
+        if (generation !== undefined && (await generationIn(tx)) !== generation) return false;
+        await designate(tx, userId);
+        return true;
     });
 }
 
