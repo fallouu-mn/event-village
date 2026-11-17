@@ -198,6 +198,18 @@ describe('2. téléphone perdu : écrans', () => {
         assert.match(page, /<PhoneChangeFlow target=\{\{ kind: 'SELF' \}\}/);
         assert.match(page, /Réservé au Superadmin/);
     });
+
+    // Garde-fou (vert dès l'écriture, signalé au rapport) : le code envoyé au nouveau numéro est un envoi synchrone, hors de
+    // la boucle du catalogue de textes-sms-9bis (liste fixe de 7 types) ; texte exact, GSM-7 de base, un segment.
+    test('SMS du code au nouveau numéro (OTP_ADMIN_PHONE) : texte exact, GSM-7 de base, un seul segment', async () => {
+        const mod = (await import('../../lib/notifications/catalog')) as { renderSyncSms: (type: string, d: Record<string, unknown>) => string };
+        const text = mod.renderSyncSms('OTP_ADMIN_PHONE', { code: '483920' });
+        assert.equal(text, 'Event Village : code 483920 pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au Superadmin. Valable 10 minutes.');
+        const gsm7 = new Set(Array.from('@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà'));
+        const outside = Array.from(text).filter((c) => !gsm7.has(c));
+        assert.deepEqual(outside, [], `caractères hors GSM-7 de base : ${outside.join(' ')}`);
+        assert.ok(Array.from(text).length <= 160, `${Array.from(text).length} septets : plus d'un segment`);
+    });
 });
 
 // ── 3. Changer le rôle : écrans ───────────────────────────────────────────────────────────────────────────────────
