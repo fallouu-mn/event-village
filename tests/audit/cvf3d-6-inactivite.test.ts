@@ -9,6 +9,8 @@
  *  b. Admin inactif depuis 31 minutes : refusé par les routes partenaire (témoin), mais par la REST et le temps réel ?
  *  c. Relecture automatique (en-tête x-ev-input-age) sur une route contrôleur : servie sans compter comme activité, puis
  *     refusée après 31 minutes sans saisie.
+ *  d. DELETE /api/push/subscriptions (méthode sans contrôle du second facteur dans un fichier dont le POST est contrôlé,
+ *     donc hors de l'inventaire a) : appelée avec un corps valide par un admin sans le code.
  * Sortie brute `[CVF3D-6]`.
  */
 import '../helpers/env';
@@ -109,6 +111,17 @@ describe('6. routes de compte d\'un admin sans le code', () => {
         console.log(`[CVF3D-6a] SERVIES sans le code : ${served.length === 0 ? 'aucune' : served.join(' | ')}`);
         assert.ok(refused.length > 30, `trop peu de routes refusées : ${refused.length}`);
         assert.deepEqual(served, [], `routes de compte servies à un admin sans le code :\n${served.join('\n')}`);
+    });
+
+    test('d. méthode d\'un fichier qui a aussi une méthode contrôlée : DELETE /api/push/subscriptions avec un corps valide, sans le code', async () => {
+        const admin = await newAdmin('cvf3d6-d', ['events.read']);
+        const s = await freshSession(admin.email);
+        await confirmPasswordOnly(s.token, STRONG_PASSWORD);
+        const post = await call('POST', 'push/subscriptions', { token: s.token, body: { endpoint: 'https://push.example.invalid/cvf3d', keys: { p256dh: 'x', auth: 'y' } } });
+        const del = await call('DELETE', 'push/subscriptions', { token: s.token, body: { endpoint: 'https://push.example.invalid/cvf3d' } });
+        console.log(`[CVF3D-6d] admin sans le code : POST (témoin, contrôlé) ${show(post)} ; DELETE ${show(del)}`);
+        assert.ok((post.status === 401 || post.status === 403) && STEP_UP.has(String(post.body.code)), `témoin : ${show(post)}`);
+        assert.ok((del.status === 401 || del.status === 403) && STEP_UP.has(String(del.body.code)), `DELETE servi sans le code : ${show(del)}`);
     });
 });
 
