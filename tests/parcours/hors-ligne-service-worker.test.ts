@@ -49,7 +49,7 @@ const SW_FILE = path.join(ROOT, 'public', 'sw.js');
 const ORIGIN = 'https://app.eventvillage.sn';
 const OFFLINE_PATH = '/billet/hors-ligne';
 const CURRENT_CACHE = 'ev-hors-ligne-lot7-1';
-const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
+const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/branding/bras-leves-symbole.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 const TICKET_ID = '7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01';
 
 // ── Ressources servies par le faux réseau ──────────────────────────────────
@@ -581,7 +581,8 @@ function functionBody(src: string, name: string): { start: number; text: string 
 describe('7.1 public/sw.js : source (contrat 5.3)', () => {
     test('un seul .put( dans cachePut, pas d’addAll ; règle /api/ avant tout respondWith ; aucun motif interdit ; constantes', () => {
         const src = stripComments(fs.readFileSync(SW_FILE, 'utf8'));
-        assert.match(src, /SW_VERSION\s*=\s*['"]lot7-1['"]/, 'SW_VERSION = \'lot7-1\'');
+        // Design 1a : version renouvelée (nouveau logo sous les mêmes noms d'icônes ; modification signalée au rapport)
+        assert.match(src, /SW_VERSION\s*=\s*['"]design1a-1['"]/, 'SW_VERSION = \'design1a-1\'');
         assert.match(src, /LEGACY_CACHES\s*=\s*\[[^\]]*['"]event-village-v1['"]/, 'LEGACY_CACHES garde event-village-v1 (ancien cache purgé à l’activation, public/sw.js)');
         assert.match(src, /OFFLINE_PATH\s*=\s*['"]\/billet\/hors-ligne['"]/, 'OFFLINE_PATH = \'/billet/hors-ligne\'');
         // Constantes qui valent '/api/' (ex. const API_PREFIX = '/api/') : acceptées à la place du littéral.

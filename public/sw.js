@@ -23,7 +23,7 @@
  *  - Push : inchangé depuis le lot 6. Un clic n'ouvre qu'un chemin INTERNE de l'application ; tout autre lien
  *    mène à /notifications ; un renouvellement d'abonnement décidé par le navigateur est réenregistré.
  */
-const SW_VERSION = 'lot7-1';
+const SW_VERSION = 'design1a-1'; // Design 1a : nouveau logo sous les mêmes noms d'icônes, cache renouvelé
 const LEGACY_CACHES = ['event-village-v1'];
 const LEGACY_CACHE_PREFIX = 'event-village-';
 const CACHE_PREFIX = 'ev-hors-ligne-';
@@ -31,7 +31,7 @@ const CACHE_NAME = CACHE_PREFIX + SW_VERSION;
 const OFFLINE_PATH = '/billet/hors-ligne';
 const API_PREFIX = '/api/';
 const STATIC_PREFIX = '/_next/static/';
-const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
+const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/branding/bras-leves-symbole.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 const FALLBACK_NAV = new Set(['/', '/tickets']);
 /** Ressources de Next citées par la coquille (balises, charge RSC échappée) ou par ses CSS (url()). */
 const ASSET_RE = /(?:\/_next\/)?static\/(?:chunks|css|media)\/[^"'\s)\\]+/g;

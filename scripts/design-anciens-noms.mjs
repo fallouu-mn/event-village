@@ -34,7 +34,7 @@ const OLD_VAR = '(?:bg-main|bg-surface|bg-card|text-main|text-secondary|text-mut
 export const OLD_NAME_RE = new RegExp(
     `(?<![a-zA-Z0-9-])${PREFIX}-${OLD_COLOR}(?![a-zA-Z0-9-])`
     + `|var\\(--${OLD_VAR}\\)`
-    + '|(?<![a-zA-Z0-9-])(?:ev-btn-primary|ev-gradient-text|ev-glass|ev-card(?:-hover)?|ev-ticket-card)(?![a-zA-Z0-9-])',
+    + '|(?<![a-zA-Z0-9-])(?:ev-btn-primary|ev-gradient-text|ev-glass|ev-card-hover|ev-ticket-card)(?![a-zA-Z0-9-])',
     'g',
 );
 

@@ -28,12 +28,22 @@ export const metadata: Metadata = {
   description:
     'Découvrez les meilleurs événements, concerts, festivals, restaurants et salles au Sénégal. Réservation en ligne sécurisée avec SamirPay (Wave / Orange Money).',
   manifest: '/manifest.json',
+  // Design 1a : image de partage 1200 × 630 du logo « Bras levés » (docs/design/logo/export/og-image-1200x630.png)
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+  openGraph: {
+    type: 'website',
+    siteName: 'Event Village',
+    locale: 'fr_SN',
+    images: [{ url: '/images/og-image.png', width: 1200, height: 630, alt: 'Event Village' }],
+  },
+  twitter: { card: 'summary_large_image', images: ['/images/og-image.png'] },
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
       { url: '/branding/event-village-mark.svg', type: 'image/svg+xml' },
     ],
-    // iPhone : icône opaque 180 × 180 (iOS remplit la transparence en noir), générée par scripts/generate-pwa-icons.mjs
+    // iPhone : icône opaque 180 × 180 (iOS remplit la transparence en noir). Design 1a : logo « Bras levés », fichiers
+    // générés par docs/design/outils/logos.mjs (docs/design/logo/export), copiés sous les mêmes noms.
     apple: '/icons/apple-touch-icon.png',
   },
   // iPhone : écran plein (apple-mobile-web-app-capable), titre sous l'icône, barre d'état sur fond clair
