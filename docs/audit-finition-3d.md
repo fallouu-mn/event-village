@@ -145,7 +145,7 @@ Résultats sur `origin/ci-results`, dossier `runs/<numéro>-<identifiant>/`.
 |---|---|---|---|
 | 333 | `440fbf0a2` | rapide, 37 suites (mes 6 et les 31 d'audit) | 33/37. Les 31 suites d'audit sont vertes. Rouges : cvf3d-1 (j2, j3, k), cvf3d-2 (h, i), cvf3d-3 (g), cvf3d-6 (a, b), soit exactement les trous ci-dessus. typecheck et lint OK. |
 | 334 | `8b5acac30` | rapide, cvf3d-6 | rouge voulu : a, b et d rouges, c verte. 6d confirme T5 : `DELETE` servi sans le code. |
-RUN_COMPLET_LIGNE
+| 335 | `154b57e34` | complet | **coupé à 120 min** (limite du job ; CI en série héritée de la 3d, run concurrent d'autres runs), vérification arrêtée vers la 358e suite sur environ 470, e2e non lancé. Rouges : les 9 attaques attendues (cvf3d-1 j2, j3, k ; cvf3d-2 h, i ; cvf3d-3 g ; cvf3d-6 a, b, d) et `rappels-gratuits` cas 6 (SMS encore `PENDING` au lieu de `SENT`, délai d'envoi ; sans lien : l'audit n'ajoute que des tests). Toutes les autres suites passées sont vertes, dont les 31 suites d'audit existantes. Un run complet entier demande la CI parallèle de main, donc une fusion de main dans cette branche : non faite (consigne : ne rien fusionner), à décider. |
 
 ## Remarques
 
