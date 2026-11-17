@@ -99,3 +99,94 @@ Le run complet final a été poussé pendant le run 314 d'une autre branche (`ci
 3. Même essai avec l'application fermée pendant le mode avion : à la réouverture, aucun compte.
 4. « Déconnecter tous mes appareils » en mode avion, puis quitter le mode avion sans fermer l'application : sur un autre appareil connecté au même compte, la session est fermée.
 5. Scanner (contrôleur) : même essai qu'au point 1.
+
+## 8. Correctifs de la contre-vérification (finition 2b et déconnexion)
+
+Branche `correctifs/cvf2b`, partie de `main` à `08d854851`. La contre-vérification y est fusionnée (`origin/audit/finition-2b`, `6ccf12e9c`). Ses suites `tests/audit/cvf2b-*` sont les tests rouges ; leurs assertions sont inchangées. Une seule donnée a été renseignée, voir 6.13b. Un commit par point. Non fusionnée.
+
+### Graves
+
+| Point | Constat | Correctif | Test | Commit |
+|---|---|---|---|---|
+| 6.4 | Un téléchargement de billets parti avant « Se déconnecter » réécrivait, après la purge, le compte hors ligne et ses codes. | Génération du stockage hors ligne, changée par chaque purge dans la même transaction que l'effacement. Le téléchargement et la liste `/api/tickets` la lisent avant leur requête et la revérifient dans la transaction d'écriture : après une purge, rien n'est écrit. Fichiers : `lib/tickets/offline-store.ts`, `offline-lots.ts`, `components/tickets/OfflineTicketsSync.tsx`. | cvf2b-6, cas 4 | `6afff9fd7` |
+| 6.5 | Une session fermée ailleurs laissait au téléphone ses billets, la mémoire du contrôle et les brouillons. | Au chargement sans session, si aucun cookie de session ne reste, ou si le middleware a posé `ev-session-close=1` (5 min, posé quand il vide une session révoquée) : effacement des billets hors ligne, de la mémoire du contrôle, des brouillons, des liens de paiement et de l'abonnement push. | cvf2b-6, cas 5 | `97daaabab` |
+| 6.6 | Un jeton de session fermée lisait encore la REST jusqu'à 1 h. | Migration `20261121000001` : `securite.db_pre_request()`, pré-requête de PostgREST. Une lecture par clé primaire de `auth.sessions`. Si la session est absente, échue ou appartient à un autre compte : 401 `SESSION_FERMEE`. Sans jeton, avec anon ou avec le rôle de service : rien. Coût mesuré au run : COUT_PRE_REQUETE. | cvf2b-6, cas 6 et 7 ; `cvf2b-correctif-pre-requete` (nouvelle) | `695def1af` |
+| 6.7 | Jetons d'une heure. | `supabase/config.toml` : `jwt_expiry = 600`. Le temps réel coupe un canal à l'échéance de son jeton (testé avec un jeton de 25 s). | `cvf2b-correctif-pre-requete`, section 5 | `e77468e48` |
+
+### Moyens
+
+| Point | Constat | Correctif | Test | Commit |
+|---|---|---|---|---|
+| 6.2 | Les autres onglets gardaient la page après « Se déconnecter ». | Sur tout SIGNED_OUT, dans tous les onglets, l'écran « Vous êtes déconnecté de ce téléphone. » remplace la page. Jamais sur `/login`, `/register`, `/forgot-password` ni `/reset-password`. | cvf2b-6, cas 2 | `9aa0cb5e7` |
+| 6.8 / 6.9 | Les autres appareils restaient abonnés aux notifications ; SIGNED_OUT ne désabonnait pas le navigateur. | `sign-out-global` supprime les abonnements push du compte, avant et après la révocation. Tout SIGNED_OUT désabonne le navigateur. | cvf2b-6, cas 8 et 9 | `02f639006` |
+| 4d | La retenue d'une heure ignorait les avis en cours d'envoi : deux SMS à 11 min. | Migration `20261121000005` : les SMS en cours d'envoi comptent dès leur réservation ; plancher d'une heure depuis le dernier SMS réservé ou parti ; retenue repoussée au départ réel. | cvf2b-4, bloc d | `d8079a59f` |
+| 4f | Reporter le début rouvrait le plafond : 4 SMS en 37 s. | Migration `20261121000006` : jamais plus de 2 SMS par détenteur et par événement dans l'heure glissante, quelle que soit l'heure de début (trace `LAST_HOUR_CAP`). Pendant l'événement : 2 SMS par heure glissante. | cvf2b-4, bloc f | `ab8bfedac` |
+
+### Faibles
+
+| Point | Constat | Correctif | Test | Commit |
+|---|---|---|---|---|
+| 2b | OR (#FACC15) à 5,1 de l'ambre « hors fenêtre » du scanner. | OR est retiré du choix : sélecteur, schéma, migration `20261121000007` (normalize, update). Le choix automatique ne le proposait déjà pas. Une catégorie déjà en OR garde sa couleur, affichée en vieil or #685400 (texte blanc 7,35:1). Chaque couleur choisissable est à 25 au moins de chaque verdict. | cvf2b-2, bloc b ; `cvf2b-couleur-choisissable` (nouvelle) | `0c4d406a4`, `4de809067` |
+| 2c | La consigne acceptait les caractères de contrôle et les contrôles bidirectionnels. | Refusés par le schéma et, en base, par la migration `20261121000008` (normalize, update), comme les noms de zone et de porte. | cvf2b-2, bloc c ; `cvf2b-consigne-controle` (nouvelle) | `f587cfbda` |
+| 5c / 5d | Les brouillons d'un autre compte restaient ; aucune durée de vie. | À toute connexion, les brouillons des autres comptes sont effacés ; un brouillon de plus de 7 jours est effacé. | cvf2b-5 | `2e9ed8551` |
+| 6.13b | Les liens de paiement (`event-village:paiement:`) survivaient à la déconnexion. | `clearPaymentHandoffs()` (`lib/payments/payment-handoff-purge.ts`) est appelée dans « Se déconnecter », sur tout SIGNED_OUT et dans le cas de la 6.5. | cvf2b-6, cas 13b | `91053a0f7` |
+
+### Écarts et décisions à relire
+1. **6.8.** L'abonnement de l'appareil qui demande est supprimé aussi : cet appareil est lui-même déconnecté (`signOut('partout')`). Garder sa ligne laisserait arriver des notifications du compte si le désabonnement du navigateur échouait.
+2. **6.6.** La fonction est dans le schéma `securite`, non exposé, et non dans `public` : dans `public`, elle aurait été appelable par la REST, contrairement au garde-fou des privilèges. Storage et le temps réel ne passent pas par la pré-requête : ils acceptent un jeton jusqu'à son échéance, soit 10 min au plus.
+3. **6.7.** Le job e2e de la CI garde des jetons d'une heure, parce qu'il rejoue un état de connexion pendant plus de 30 min. Toutes les suites tournent à 10 min.
+4. **6.13b.** Dans `tests/audit/cvf2b-6-deconnexion.test.ts`, la table des stockages disait « aucune purge » pour `payment-client.ts`. Elle vaut maintenant `clearPaymentHandoffs` (commit `f6ee3d776`), assertion inchangée. Sans cela, le test ne pouvait passer qu'en perdant les liens de paiement.
+5. **Tests existants adaptés.**
+   - `changement-role-admin` et `lot9quater-droits` attendaient un jeton de session révoquée encore servi ; ils vérifient maintenant le 401.
+   - `f2b-couleur-auto`, `zones-scan` et `e2e/recette.spec.ts` : OR n'est plus choisissable.
+6. **Signalé, non traité (hors consigne).**
+   - `/api/auth/reset-password` révoque les sessions sans supprimer les abonnements push des autres appareils : c'est le même trou que la 6.8.
+   - `docs/apres-lancement.md` : la ligne sur le brouillon gardé est devenue fausse avec 5c et 5d.
+
+### Migrations, dans l'ordre (les 7 et 8 redéfinissent les mêmes fonctions)
+`20261121000001_cvf2b_jeton_session_revoquee`, `20261121000005_cvf2b_avis_en_cours_envoi`, `20261121000006_cvf2b_plafond_heure_glissante`, `20261121000007_cvf2b_couleur_or`, `20261121000008_cvf2b_consigne_controle`.
+
+### Contrôles (lecture seule, event-village-dev)
+
+| Contrôle | Avant | Après |
+|---|---|---|
+| pré-requête : réglage de `authenticator` | aucune ligne | `pgrst.db_pre_request=securite.db_pre_request` |
+| pré-requête : fonction présente | f | t |
+| 4d | f, f, f | t, t, t |
+| 4f | t, f | f, t |
+| 2b | t, t | f, f |
+| 2c | f, f | t, t |
+| catégories en OR | à noter | identique |
+
+```sql
+SELECT c FROM pg_db_role_setting rs, unnest(rs.setconfig) c
+ WHERE rs.setrole = 'authenticator'::regrole AND c LIKE 'pgrst.db_pre_request=%';
+SELECT to_regprocedure('securite.db_pre_request()') IS NOT NULL AS pre_requete;
+SELECT position('o.status = ''SENDING''' IN pg_get_functiondef('public.event_update(jsonb)'::regprocedure)) > 0,
+       position('v_hdue' IN pg_get_functiondef('public.event_change_notify(jsonb)'::regprocedure)) > 0,
+       position('held_until = CASE' IN pg_get_functiondef('public.notif_place_notice_sent()'::regprocedure)) > 0;
+SELECT position('p->>''last_hour_from''' IN pg_get_functiondef('public.event_change_notify(jsonb)'::regprocedure)) > 0,
+       position('v_cap_from := v_hdue - interval' IN pg_get_functiondef('public.event_change_notify(jsonb)'::regprocedure)) > 0;
+SELECT position('''OR''' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
+       position('''OR''' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
+SELECT position('‪-‮' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
+       position('‪-‮' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
+SELECT count(*) AS categories_or FROM public.ticket_categories WHERE scan_color = 'OR';
+```
+
+Avec un jeton de session fermée, `GET /rest/v1/users?select=id&limit=1` répond 401 `SESSION_FERMEE` ; avec la clé anon seule, 200.
+
+### Réglage à faire sur le tableau de bord
+Supabase, projet event-village-dev :
+- **Chemin** : Project Settings > JWT Keys. Si le projet est passé aux nouvelles clés de signature, ouvrir l'onglet « Legacy JWT Secret ».
+- **Champ** : « Access token expiry time » = **600**.
+- **Sans le tableau de bord** : `PATCH /v1/projects/<ref>/config/auth` avec `{"jwt_exp": 600}`.
+
+La nouvelle durée vaut pour les jetons émis ou rafraîchis après le changement.
+
+### Runs
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+RUN_RAPIDE_LIGNE
+RUN_COMPLET_LIGNE
