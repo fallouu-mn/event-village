@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Calendar, Plus, RefreshCw } from 'lucide-react';
 import { EventCalendar, type CalendarEvent } from '@/components/events/EventCalendar';
@@ -12,7 +12,9 @@ export default function PartnerCalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  // Design 1a : chargement nommé pour que « Réessayer » le relance tel quel.
+  const load = useCallback(() => {
+    setIsLoading(true);
     fetch('/api/partner/events')
       .then((res) => res.json())
       .then((data) => {
@@ -28,9 +30,13 @@ export default function PartnerCalendarPage() {
           );
         }
       })
-      .catch(() => { toast.error('Impossible de charger le calendrier des événements.'); })
+      .catch(() => { toast.error('Impossible de charger le calendrier des événements.', { onRetry: () => load() }); })
       .finally(() => setIsLoading(false));
   }, [toast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div className="space-y-6 pb-16">

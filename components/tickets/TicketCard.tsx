@@ -395,7 +395,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
       if (!res.ok) {
         const message = await readErrorMessage(res, 'PDF');
-        toast.error(message ?? 'Le billet PDF n’a pas pu être généré. Réessayez dans un instant.');
+        toast.error(message ?? 'Le billet PDF n’a pas pu être généré. Réessayez dans un instant.', { onRetry: () => void handleDownloadPdf() });
         return;
       }
 
@@ -411,7 +411,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       toast.success('Billet PDF téléchargé.');
     } catch (err) {
       console.error('[TicketCard] téléchargement du PDF impossible :', err instanceof Error ? err.message : String(err));
-      toast.error('Connexion impossible : le PDF n’a pas été téléchargé. Vérifiez votre réseau, puis réessayez.');
+      toast.error('Connexion impossible : le PDF n’a pas été téléchargé. Vérifiez votre réseau, puis réessayez.', { onRetry: () => void handleDownloadPdf() });
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -433,7 +433,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         return;
       }
       const message = await readErrorMessage(res, 'remboursement');
-      toast.error(message ?? `Le remboursement n’a pas pu être demandé (erreur ${res.status}).`);
+      toast.error(message ?? 'Le remboursement n’a pas pu être demandé. Réessayez dans un instant.');
     } catch (err) {
       console.error('[TicketCard] demande de remboursement impossible :', err instanceof Error ? err.message : String(err));
       toast.error('Connexion impossible : le remboursement n’a pas été demandé. Vérifiez votre réseau, puis réessayez.');
@@ -466,10 +466,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         return;
       }
       const message = await readErrorMessage(res, 'annulation du transfert');
-      toast.error(message ?? `Le transfert n’a pas pu être annulé (erreur ${res.status}).`);
+      toast.error(message ?? 'Le transfert n’a pas pu être annulé. Réessayez dans un instant.');
     } catch (err) {
       console.error('[TicketCard] annulation du transfert impossible :', err instanceof Error ? err.message : String(err));
-      toast.error('Connexion impossible : le transfert n’a pas été annulé. Vérifiez votre réseau, puis réessayez.');
+      toast.error('Connexion impossible : le transfert n’a pas été annulé. Vérifiez votre réseau, puis réessayez.', { onRetry: () => void handleCancelTransfer() });
     } finally {
       setIsCancelling(false);
     }
@@ -478,7 +478,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   return (
     <article className="mx-auto flex w-full max-w-md flex-col" aria-label={`Billet pour ${eventTitle}`}>
       {/* 1. Carte billet */}
-      <div className="relative w-full overflow-hidden rounded-3xl border border-border bg-surface shadow-md">
+      <div className="relative w-full overflow-hidden rounded-3xl border border-border bg-card shadow-md">
         {/* Visuel de l'événement, au ratio de la fiche : à hauteur fixe, le recadrage coupait le texte des affiches (run 98) */}
         <div className="relative aspect-[16/9] w-full overflow-hidden bg-scrim">
           <Image
@@ -506,14 +506,14 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         {/* Titre sous l'affiche, jamais posé dessus : une affiche porte souvent son propre texte (titre, lieu),
             que la surimpression rendait illisible et doublait (relecture du run 77, mes-billets). */}
         <div className="px-5 pt-4">
-          <h2 className="text-lg font-bold leading-tight tracking-tight text-fg">{eventTitle}</h2>
-          {eventSubtitle && <p className="mt-0.5 truncate text-sm font-medium text-fg-muted">{eventSubtitle}</p>}
+          <h2 className="text-lg font-bold leading-tight tracking-tight text-foreground-strong">{eventTitle}</h2>
+          {eventSubtitle && <p className="mt-0.5 truncate text-sm font-medium text-muted-foreground">{eventSubtitle}</p>}
         </div>
 
         {/* Ligne de découpe et ses encoches (décor) */}
         <div aria-hidden="true" className="relative mt-4">
-          <span className="absolute -left-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
-          <span className="absolute -right-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-surface-sunken" />
+          <span className="absolute -left-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-background" />
+          <span className="absolute -right-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-background" />
           <div className="mx-5 border-t-2 border-dashed border-border" />
         </div>
 
@@ -521,31 +521,31 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           {/* Informations d'accès */}
           <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
             <div className="min-w-0">
-              <dt className="text-sm font-medium text-fg-muted">Date</dt>
-              <dd className="mt-0.5 text-base font-semibold text-fg">{dateFormatted}</dd>
+              <dt className="text-sm font-medium text-muted-foreground">Date</dt>
+              <dd className="mt-0.5 text-base font-semibold text-foreground-strong">{dateFormatted}</dd>
             </div>
             <div className="min-w-0 text-right">
-              <dt className="text-sm font-medium text-fg-muted">Heure d’accès</dt>
-              <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg">{timeFormatted}</dd>
+              <dt className="text-sm font-medium text-muted-foreground">Heure d’accès</dt>
+              <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground-strong">{timeFormatted}</dd>
             </div>
             <div className="min-w-0">
-              <dt className="text-sm font-medium text-fg-muted">Lieu</dt>
-              <dd className="mt-0.5 truncate text-base font-semibold text-fg">{venue}</dd>
+              <dt className="text-sm font-medium text-muted-foreground">Lieu</dt>
+              <dd className="mt-0.5 truncate text-base font-semibold text-foreground-strong">{venue}</dd>
             </div>
             <div className="min-w-0 text-right">
-              <dt className="text-sm font-medium text-fg-muted">Catégorie</dt>
-              <dd className="mt-0.5 truncate text-base font-semibold text-fg">{seat}</dd>
+              <dt className="text-sm font-medium text-muted-foreground">Catégorie</dt>
+              <dd className="mt-0.5 truncate text-base font-semibold text-foreground-strong">{seat}</dd>
             </div>
             {priceLabel && (
               <div className="min-w-0">
-                <dt className="text-sm font-medium text-fg-muted">Prix</dt>
-                <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg">{priceLabel}</dd>
+                <dt className="text-sm font-medium text-muted-foreground">Prix</dt>
+                <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground-strong">{priceLabel}</dd>
               </div>
             )}
             {serviceFee > 0 && (
               <div className="min-w-0 text-right">
-                <dt className="text-sm font-medium text-fg-muted">Frais de service</dt>
-                <dd className="mt-0.5 text-base font-semibold tabular-nums text-fg">{formatFcfa(serviceFee)}</dd>
+                <dt className="text-sm font-medium text-muted-foreground">Frais de service</dt>
+                <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground-strong">{formatFcfa(serviceFee)}</dd>
               </div>
             )}
           </dl>
@@ -568,7 +568,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
           {isTransferLocked ? (
             /* Billet verrouillé pendant un transfert */
-            <div className="space-y-3 rounded-2xl border border-warning-border bg-warning-bg p-4 text-center text-warning-fg">
+            <div className="space-y-3 rounded-2xl border border-warning-border bg-warning-soft p-4 text-center text-warning-text">
               <Clock size={24} aria-hidden="true" className="mx-auto motion-safe:animate-spin" style={{ animationDuration: '4s' }} />
               <div className="space-y-1">
                 <h3 className="text-base font-semibold">
@@ -603,7 +603,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               <div
                 className={cn(
                   'flex h-[178px] w-[178px] items-center justify-center rounded-2xl border border-border p-3',
-                  showQr || localCode ? 'bg-white' : 'bg-surface-sunken',
+                  showQr || localCode ? 'bg-white' : 'bg-background',
                 )}
               >
                 {liveCode && showQr ? (
@@ -613,26 +613,26 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                     <QRCodeSVG value={localCode.payload} size={152} level="M" includeMargin={false} title="QR d’entrée, billet enregistré sur ce téléphone" />
                   </span>
                 ) : liveCodeUnavailable ? (
-                  <p role="status" className="px-2 text-center text-sm font-medium text-fg">{liveCodeUnavailable}</p>
+                  <p role="status" className="px-2 text-center text-sm font-medium text-foreground-strong">{liveCodeUnavailable}</p>
                 ) : isOffline ? (
                   <div role="status" className="flex flex-col items-center gap-2 px-2 text-center">
-                    <WifiOff size={28} aria-hidden="true" className="text-warning-fg" />
-                    <p className="text-sm font-medium text-fg">Connexion requise pour afficher le code d’entrée.</p>
+                    <WifiOff size={28} aria-hidden="true" className="text-warning-text" />
+                    <p className="text-sm font-medium text-foreground-strong">Connexion requise pour afficher le code d’entrée.</p>
                   </div>
                 ) : (
-                  <div role="status" className="flex flex-col items-center gap-2 text-fg-muted">
-                    <QrCode size={28} aria-hidden="true" className="text-brand-fg motion-safe:animate-pulse" />
+                  <div role="status" className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <QrCode size={28} aria-hidden="true" className="text-primary-text motion-safe:animate-pulse" />
                     <span className="text-sm font-medium">Code d’entrée…</span>
                   </div>
                 )}
               </div>
-              <p className="mt-2 text-sm text-fg-muted">
+              <p className="mt-2 text-sm text-muted-foreground">
                 <span className="sr-only">Numéro du billet : </span>
                 <span className="font-mono font-semibold tabular-nums">{ticketNumber}</span>
               </p>
 
-              <div className="mt-3 w-full space-y-2 rounded-xl border border-border bg-surface-sunken p-3">
-                <div className="flex items-center justify-between gap-2 text-sm font-semibold text-fg">
+              <div className="mt-3 w-full space-y-2 rounded-xl border border-border bg-background p-3">
+                <div className="flex items-center justify-between gap-2 text-sm font-semibold text-foreground-strong">
                   <span className="flex items-center gap-2">
                     <span
                       aria-hidden="true"
@@ -641,7 +641,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                     {localCode ? 'Hors connexion : billet enregistré' : isOffline ? 'Hors connexion' : 'Code renouvelé toutes les 20 s'}
                   </span>
                   {(showQr || localCode) && (
-                    <span className="text-sm font-bold tabular-nums text-brand-fg">
+                    <span className="text-sm font-bold tabular-nums text-primary-text">
                       <span aria-hidden="true">{showQr ? secondsLeft : localSecondsLeft} s</span>
                       <span className="sr-only">Nouveau code dans {showQr ? secondsLeft : localSecondsLeft} secondes</span>
                     </span>
@@ -650,19 +650,19 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 {liveCode && showQr && (
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-border" aria-hidden="true">
                     <div
-                      className="h-full rounded-full bg-brand-decor transition-[width] duration-1000 ease-linear"
+                      className="h-full rounded-full bg-brand-vif transition-[width] duration-1000 ease-linear"
                       style={{ width: `${Math.max(5, Math.min(100, ((secondsLeft * 1000) / liveCode.stepMs) * 100))}%` }}
                     />
                   </div>
                 )}
-                <p className="text-center text-sm leading-snug text-fg-muted">
+                <p className="text-center text-sm leading-snug text-muted-foreground">
                   {localCode
                     ? 'Code calculé sur ce téléphone, renouvelé toutes les 20 s. Une capture d’écran n’est pas acceptée.'
                     : isOffline
                       ? 'Le code s’affichera dès le retour du réseau. Une capture d’écran n’est pas acceptée.'
                       : 'Une capture d’écran n’est pas acceptée au contrôle.'}
                 </p>
-                <p className="flex items-start justify-center gap-1.5 text-left text-sm leading-snug text-fg-muted">
+                <p className="flex items-start justify-center gap-1.5 text-left text-sm leading-snug text-muted-foreground">
                   <IdCard size={16} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
                   <span>Sans téléphone : numéro du billet et pièce d’identité au contrôle.</span>
                 </p>
@@ -687,22 +687,22 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                 </div>
               )}
 
-              <p className="mt-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-success-fg">
+              <p className="mt-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-success-text">
                 <CheckCircle2 size={16} aria-hidden="true" />
                 <span>Billet authentique, émis par Event Village</span>
               </p>
-              <p className="mt-3 w-full rounded-xl border border-brand-fg/20 bg-brand-bg p-3 text-center text-sm font-medium text-brand-fg">
+              <p className="mt-3 w-full rounded-xl border border-primary-text/20 bg-primary-soft p-3 text-center text-sm font-medium text-primary-text">
                 Présentez ce code au contrôle, billet ouvert dans l’application.
               </p>
             </div>
           ) : status === 'UTILISE' ? (
-            <div className="space-y-1 rounded-xl border border-border bg-surface-sunken p-3 text-center">
-              <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-fg">
-                <CheckCircle2 size={16} aria-hidden="true" className="text-fg-muted" />
+            <div className="space-y-1 rounded-xl border border-border bg-background p-3 text-center">
+              <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-foreground-strong">
+                <CheckCircle2 size={16} aria-hidden="true" className="text-muted-foreground" />
                 <span>{meta.description}</span>
               </p>
               {usedAt && (
-                <p className="text-sm text-fg-muted">
+                <p className="text-sm text-muted-foreground">
                   Contrôlé le <time dateTime={usedAt}>{formatDateTime(usedAt)}</time>
                 </p>
               )}
@@ -733,7 +733,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           variant="secondary"
           size="sm"
           onClick={handleShareWhatsapp}
-          leftIcon={<MessageCircle size={16} aria-hidden="true" className="text-success-fg" />}
+          leftIcon={<MessageCircle size={16} aria-hidden="true" className="text-success-text" />}
           aria-label="Partager le lien de l’événement sur WhatsApp"
         >
           WhatsApp

@@ -181,7 +181,7 @@ export default function PartnerOrdersPage() {
                 toast.error(data.error || toastMessages.orders.updateError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleStatusUpdate(); } });
         } finally {
             setIsUpdating(false);
         }

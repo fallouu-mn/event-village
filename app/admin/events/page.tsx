@@ -85,7 +85,7 @@ function ListSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Chargement des événements" className="flex flex-col gap-3">
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 md:flex-row md:items-center md:justify-between">
+        <div key={i} className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <Skeleton className="h-5 w-3/4 max-w-sm" />
             <Skeleton className="h-4 w-1/2 max-w-xs" />
@@ -110,6 +110,8 @@ export default function AdminEventsPage() {
 
   const requestSeq = useRef(0);
   const hasData = useRef(false);
+  /** « Réessayer » d'une actualisation discrète : relance la dernière version de load (page, onglet et recherche courants). */
+  const retrySilentRef = useRef<() => void>(() => {});
 
   // Recherche : appliquée 300 ms après la dernière frappe (ou tout de suite à la validation du champ).
   useEffect(() => {
@@ -148,7 +150,7 @@ export default function AdminEventsPage() {
         : 'Impossible de charger les événements. Vérifiez votre connexion, puis réessayez.';
       console.error('[admin/events] chargement de la liste en échec', err);
       if (silent && hasData.current) {
-        toast.error('La liste n’a pas pu être mise à jour. Les informations affichées sont celles du dernier chargement.');
+        toast.error('La liste n’a pas pu être mise à jour. Les informations affichées sont celles du dernier chargement.', { onRetry: () => retrySilentRef.current() });
         return;
       }
       setErrorMessage(message);
@@ -158,6 +160,10 @@ export default function AdminEventsPage() {
 
   useEffect(() => {
     void load(false);
+  }, [load]);
+
+  useEffect(() => {
+    retrySilentRef.current = () => void load(true);
   }, [load]);
 
   const refreshSilently = useCallback(() => load(true), [load]);
@@ -208,12 +214,12 @@ export default function AdminEventsPage() {
         <div className="flex min-w-0 flex-col gap-1">
           <Link
             href={`/admin/events/${ev.id}`}
-            className="flex min-h-11 items-center rounded font-semibold text-fg underline-offset-4 hover:text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex min-h-11 items-center rounded font-semibold text-foreground-strong underline-offset-4 hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {ev.title}
           </Link>
           {(ev.location || ev.city) && (
-            <span className="text-sm text-fg-muted">{[ev.location, ev.city].filter(Boolean).join(', ')}</span>
+            <span className="text-sm text-muted-foreground">{[ev.location, ev.city].filter(Boolean).join(', ')}</span>
           )}
         </div>
       ),
@@ -237,8 +243,8 @@ export default function AdminEventsPage() {
       key: 'submitted',
       header: 'Soumis le',
       render: (ev) => (ev.submitted_at
-        ? <time dateTime={toDakarDateTimeLocal(ev.submitted_at)} className="whitespace-nowrap text-sm tabular-nums text-fg-muted">{formatDateTime(ev.submitted_at)}</time>
-        : <span className="text-sm text-fg-muted">Jamais soumis</span>),
+        ? <time dateTime={toDakarDateTimeLocal(ev.submitted_at)} className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{formatDateTime(ev.submitted_at)}</time>
+        : <span className="text-sm text-muted-foreground">Jamais soumis</span>),
     },
     {
       key: 'action',
@@ -257,16 +263,16 @@ export default function AdminEventsPage() {
       <div className="flex items-center justify-between gap-3">
         <Link
           href={`/admin/events/${ev.id}`}
-          className="flex min-h-11 min-w-0 items-center break-words rounded text-base font-semibold text-fg underline-offset-4 hover:text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-11 min-w-0 items-center break-words rounded text-base font-semibold text-foreground-strong underline-offset-4 hover:text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {ev.title}
         </Link>
         <StatusBadge domain="event" status={ev.status} size="sm" className="flex-shrink-0" />
       </div>
-      <dl className="flex flex-col gap-1.5 text-sm text-fg-muted">
+      <dl className="flex flex-col gap-1.5 text-sm text-muted-foreground">
         <div className="flex items-start gap-2">
           <dt className="sr-only">Organisateur</dt>
-          <dd className="font-medium text-fg">{ev.partner?.company_name ?? 'Organisateur inconnu'}</dd>
+          <dd className="font-medium text-foreground-strong">{ev.partner?.company_name ?? 'Organisateur inconnu'}</dd>
         </div>
         <div className="flex items-start gap-2">
           <dt className="mt-0.5 flex-shrink-0"><CalendarDays size={16} aria-hidden="true" /><span className="sr-only">Date</span></dt>
@@ -363,7 +369,7 @@ export default function AdminEventsPage() {
       <ScrollableTabs tabs={tabs} value={tab} onChange={changeTab} ariaLabel="Statut des événements" idPrefix={ID_PREFIX} />
 
       <TabPanel idPrefix={ID_PREFIX} tabIdValue={tab} className="flex flex-col gap-4">
-        <p className="text-sm text-fg-muted">{currentStatusHint}</p>
+        <p className="text-sm text-muted-foreground">{currentStatusHint}</p>
 
         {phase === 'loading' && <ListSkeleton />}
 

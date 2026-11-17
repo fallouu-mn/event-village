@@ -20,7 +20,7 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { formatDateTime, formatEventDateTime, formatTime } from '@/lib/format';
 import { EventCancelDialog } from '@/components/events/EventCancelDialog';
 import { RefundProgress } from '@/components/events/RefundProgress';
-import { errorMessage, sendJson } from '@/components/partner/fetch-json';
+import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
 import { OverviewTab } from '@/components/partner/pilotage/OverviewTab';
 import { InfosTab } from '@/components/partner/pilotage/InfosTab';
@@ -118,8 +118,26 @@ export default function PartnerEventPilotagePage() {
             return true;
         } catch (err) {
             const message = errorMessage(err, 'Changement de statut impossible pour le moment.');
-            toast.error(message);
-            if (reason !== undefined) setReasonError(message);
+            // Design 1a : un motif refusé s'affiche sous le champ du motif ; une erreur générale passe par un toast qui reste
+            if (reason !== undefined && err instanceof ApiError && err.code === 'REASON_REQUIRED') {
+                setReasonError(message);
+                return false;
+            }
+            const general = !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
+            if (general) {
+                toast.error(message, {
+                    onRetry: () => {
+                        void runTransition(action, reason).then((ok) => {
+                            if (ok) {
+                                setPublishAction(null);
+                                setReasonAction(null);
+                            }
+                        });
+                    },
+                });
+            } else {
+                toast.error(message);
+            }
             return false;
         } finally {
             setPendingTo(null);
@@ -141,9 +159,9 @@ export default function PartnerEventPilotagePage() {
         return (
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 py-6 lg:py-8" role="status" aria-busy="true" aria-label="Chargement du pilotage">
                 <div className="flex flex-col gap-3">
-                    <span className="h-5 w-40 rounded bg-surface-sunken motion-safe:animate-pulse" />
-                    <span className="h-8 w-3/4 rounded bg-surface-sunken motion-safe:animate-pulse" />
-                    <span className="h-5 w-1/2 rounded bg-surface-sunken motion-safe:animate-pulse" />
+                    <span className="h-5 w-40 rounded bg-background motion-safe:animate-pulse" />
+                    <span className="h-8 w-3/4 rounded bg-background motion-safe:animate-pulse" />
+                    <span className="h-5 w-1/2 rounded bg-background motion-safe:animate-pulse" />
                 </div>
                 <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
                     <KpiCardSkeleton />
@@ -222,7 +240,7 @@ export default function PartnerEventPilotagePage() {
                             </LinkButton>
                         )}
                         {ov.can_cancel && (
-                            <Button variant="ghost" leftIcon={<Ban size={18} />} onClick={() => setCancelOpen(true)} disabled={busy} className="text-danger-fg">
+                            <Button variant="ghost" leftIcon={<Ban size={18} />} onClick={() => setCancelOpen(true)} disabled={busy} className="text-danger-text">
                                 Annuler l’événement
                             </Button>
                         )}
@@ -297,7 +315,7 @@ export default function PartnerEventPilotagePage() {
                     </>
                 }
             >
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     La page publique sera visible de tous et la billetterie ouverte selon les dates de vente de chaque catégorie.
                     Après la publication, les changements de date, de lieu ou de titre seront notifiés aux acheteurs.
                 </p>

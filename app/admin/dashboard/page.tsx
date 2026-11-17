@@ -203,6 +203,8 @@ export default function AdminDashboardPage() {
   const partnersSeq = useRef(0);
   /** Lien profond ?dossier= : lu une fois, puis la fiche s'ouvre quand la liste est chargée. */
   const deepLinkRef = useRef<string | null | undefined>(undefined);
+  /** « Réessayer » d'une actualisation discrète de la liste : relance la dernière version de loadPartners (onglet courant). */
+  const retryPartnersSilentRef = useRef<() => void>(() => {});
 
   // Visionneuse sécurisée de documents KYC
   // Lot 1C.2 : URL demandée par dossier et type de pièce ; le chemin est lu côté serveur.
@@ -218,13 +220,13 @@ export default function AdminDashboardPage() {
       window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       console.error(`[admin/dashboard] ouverture du document « ${docName} » en échec`, err);
-      toast.error(toastMessages.admin.docLoadError);
+      toast.error(toastMessages.admin.docLoadError, { onRetry: () => void handleViewDocument(partnerId, docType, filePath, docName) });
     } finally {
       setLoadingDoc(null);
     }
   };
 
-  const loadMetrics = useCallback(async (silent: boolean) => {
+  const loadMetrics: (silent: boolean) => Promise<void> = useCallback(async (silent: boolean) => {
     if (!silent) setMetricsPhase('loading');
     try {
       const res = await fetch('/api/admin/metrics', { cache: 'no-store' });
@@ -236,7 +238,7 @@ export default function AdminDashboardPage() {
       setLastLoadedAt(new Date());
     } catch (err) {
       console.error('[admin/dashboard] indicateurs en échec', err);
-      if (silent) toast.error(toastMessages.admin.loadError);
+      if (silent) toast.error(toastMessages.admin.loadError, { onRetry: () => void loadMetrics(true) });
       else setMetricsPhase('error');
     }
   }, [toast]);
@@ -261,13 +263,17 @@ export default function AdminDashboardPage() {
       if (seq !== partnersSeq.current) return;
       console.error('[admin/dashboard] liste des partenaires en échec', err);
       if (silent) {
-        toast.error(toastMessages.admin.loadError);
+        toast.error(toastMessages.admin.loadError, { onRetry: () => retryPartnersSilentRef.current() });
         return;
       }
       setPartnersError(err instanceof Error && !/fetch|network/i.test(err.message) ? err.message : 'Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
       setPartnersPhase('error');
     }
   }, [activeTab, toast]);
+
+  useEffect(() => {
+    retryPartnersSilentRef.current = () => void loadPartners(true);
+  }, [loadPartners]);
 
   useEffect(() => {
     if (canReadStats) void loadMetrics(false);
@@ -322,7 +328,7 @@ export default function AdminDashboardPage() {
     const error = await updatePartnerStatus(partner, { status: 'VALIDE' });
     setIsActionLoading(false);
     if (error) {
-      toast.error(error);
+      toast.error(error, { onRetry: () => void confirmValidate() });
       return;
     }
     toast.success(toastMessages.admin.partnerValidated(partner.company_name));
@@ -416,7 +422,7 @@ export default function AdminDashboardPage() {
         </Button>
       )}
       {canValidate && partner.status === 'EN_ATTENTE' && (
-        <Button variant="ghost" size="sm" leftIcon={<XCircle size={16} />} onClick={() => askReject(partner)} disabled={isActionLoading} className="text-danger-fg">
+        <Button variant="ghost" size="sm" leftIcon={<XCircle size={16} />} onClick={() => askReject(partner)} disabled={isActionLoading} className="text-danger-text">
           Refuser
         </Button>
       )}
@@ -429,8 +435,8 @@ export default function AdminDashboardPage() {
       header: 'Partenaire',
       render: (p) => (
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="font-semibold text-fg">{p.company_name}</span>
-          {p.commercial_name && p.commercial_name !== p.company_name && <span className="text-sm text-fg-muted">{p.commercial_name}</span>}
+          <span className="font-semibold text-foreground-strong">{p.company_name}</span>
+          {p.commercial_name && p.commercial_name !== p.company_name && <span className="text-sm text-muted-foreground">{p.commercial_name}</span>}
           {activitiesOf(p).length > 0 && (
             <span className="flex flex-wrap gap-1">
               {activitiesOf(p).map((a, i) => <Badge key={`${a}-${i}`} variant="brand" size="sm">{a}</Badge>)}
@@ -444,9 +450,9 @@ export default function AdminDashboardPage() {
       header: 'Responsable',
       render: (p) => (
         <div className="flex min-w-0 flex-col gap-0.5 text-sm">
-          <span className="text-fg">{managerName(p)}</span>
-          {(p.phone || p.users?.phone) && <span className="text-fg-muted">{p.phone || p.users?.phone}</span>}
-          {p.city && <span className="text-fg-muted">{p.city}</span>}
+          <span className="text-foreground-strong">{managerName(p)}</span>
+          {(p.phone || p.users?.phone) && <span className="text-muted-foreground">{p.phone || p.users?.phone}</span>}
+          {p.city && <span className="text-muted-foreground">{p.city}</span>}
         </div>
       ),
     },
@@ -454,7 +460,7 @@ export default function AdminDashboardPage() {
     {
       key: 'created',
       header: 'Inscrit le',
-      render: (p) => <time dateTime={toDakarDateTimeLocal(p.created_at)} className="whitespace-nowrap text-sm tabular-nums text-fg-muted">{formatDateTime(p.created_at)}</time>,
+      render: (p) => <time dateTime={toDakarDateTimeLocal(p.created_at)} className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{formatDateTime(p.created_at)}</time>,
     },
     { key: 'actions', header: 'Actions', align: 'right', render: (p) => partnerActions(p) },
   ];
@@ -463,8 +469,8 @@ export default function AdminDashboardPage() {
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="break-words text-base font-semibold text-fg">{p.company_name}</p>
-          <p className="text-sm text-fg-muted">{managerName(p)}{p.city ? ` · ${p.city}` : ''}</p>
+          <p className="break-words text-base font-semibold text-foreground-strong">{p.company_name}</p>
+          <p className="text-sm text-muted-foreground">{managerName(p)}{p.city ? ` · ${p.city}` : ''}</p>
         </div>
         <Badge variant={partnerStatus(p.status).variant} size="sm" className="flex-shrink-0">{partnerStatus(p.status).label}</Badge>
       </div>
@@ -473,7 +479,7 @@ export default function AdminDashboardPage() {
           {activitiesOf(p).map((a, i) => <Badge key={`${a}-${i}`} variant="brand" size="sm">{a}</Badge>)}
         </div>
       )}
-      <p className="text-sm text-fg-muted">
+      <p className="text-sm text-muted-foreground">
         Inscrit le <time dateTime={toDakarDateTimeLocal(p.created_at)} className="tabular-nums">{formatDateTime(p.created_at)}</time>
       </p>
       {partnerActions(p, true)}
@@ -510,9 +516,9 @@ export default function AdminDashboardPage() {
       )}
 
       <section aria-labelledby="indicateurs" className="flex flex-col gap-3">
-        <h2 id="indicateurs" className="text-lg font-bold tracking-tight text-fg">Indicateurs</h2>
+        <h2 id="indicateurs" className="text-lg font-bold tracking-tight text-foreground-strong">Indicateurs</h2>
         {!authLoading && !canReadStats ? (
-          <p className="text-sm text-fg-muted">{permissionMissingMessage('statistics.read')}</p>
+          <p className="text-sm text-muted-foreground">{permissionMissingMessage('statistics.read')}</p>
         ) : metricsPhase === 'error' && !kpis ? (
           <ErrorState
             title="Indicateurs indisponibles"
@@ -559,10 +565,10 @@ export default function AdminDashboardPage() {
 
       {/* Finition 3b (E-34) : candidatures seulement avec partners.read (la route décide toujours) */}
       {canReadPartners && (
-        <section id="partenaires" aria-labelledby="partenaires-titre" className="flex scroll-mt-20 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+        <section id="partenaires" aria-labelledby="partenaires-titre" className="flex scroll-mt-20 flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:p-6">
           <div>
-            <h2 id="partenaires-titre" className="text-lg font-bold tracking-tight text-fg">Candidatures des partenaires</h2>
-            <p className="mt-1 text-sm text-fg-muted">Validez ou refusez les organisateurs, restaurants et gestionnaires de salles après examen de leur dossier.</p>
+            <h2 id="partenaires-titre" className="text-lg font-bold tracking-tight text-foreground-strong">Candidatures des partenaires</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Validez ou refusez les organisateurs, restaurants et gestionnaires de salles après examen de leur dossier.</p>
           </div>
 
           <Tabs
@@ -608,7 +614,7 @@ export default function AdminDashboardPage() {
       )}
 
       <section aria-labelledby="raccourcis" className="flex flex-col gap-3">
-        <h2 id="raccourcis" className="text-lg font-bold tracking-tight text-fg">Raccourcis</h2>
+        <h2 id="raccourcis" className="text-lg font-bold tracking-tight text-foreground-strong">Raccourcis</h2>
         <div className="flex flex-wrap gap-2">
           <LinkButton href="/admin/referral" variant="secondary" leftIcon={<Award size={16} />}>
             Parrainage et ambassadeurs
@@ -648,7 +654,7 @@ export default function AdminDashboardPage() {
                 </Button>
               )}
               {canValidate && selectedPartner.status === 'EN_ATTENTE' && (
-                <Button variant="ghost" leftIcon={<XCircle size={16} />} onClick={() => askReject(selectedPartner)} className="flex-1 text-danger-fg sm:flex-none">
+                <Button variant="ghost" leftIcon={<XCircle size={16} />} onClick={() => askReject(selectedPartner)} className="flex-1 text-danger-text sm:flex-none">
                   Refuser
                 </Button>
               )}
@@ -676,38 +682,38 @@ export default function AdminDashboardPage() {
             )}
 
             <section aria-labelledby="dossier-structure">
-              <h3 id="dossier-structure" className="mb-2 text-base font-semibold text-fg">Structure</h3>
-              <dl className="grid gap-3 rounded-2xl border border-border bg-surface-sunken p-4 sm:grid-cols-2">
+              <h3 id="dossier-structure" className="mb-2 text-base font-semibold text-foreground-strong">Structure</h3>
+              <dl className="grid gap-3 rounded-2xl border border-border bg-background p-4 sm:grid-cols-2">
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">Raison sociale</dt>
-                  <dd className="break-words text-base font-medium text-fg">{selectedPartner.company_name}</dd>
+                  <dt className="text-sm text-muted-foreground">Raison sociale</dt>
+                  <dd className="break-words text-base font-medium text-foreground-strong">{selectedPartner.company_name}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">Nom commercial</dt>
-                  <dd className="break-words text-base font-medium text-fg">{selectedPartner.commercial_name || 'Identique à la raison sociale'}</dd>
+                  <dt className="text-sm text-muted-foreground">Nom commercial</dt>
+                  <dd className="break-words text-base font-medium text-foreground-strong">{selectedPartner.commercial_name || 'Identique à la raison sociale'}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">Ville</dt>
-                  <dd className="flex items-center gap-1.5 break-words text-base font-medium text-fg">
-                    <MapPin size={16} className="flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                  <dt className="text-sm text-muted-foreground">Ville</dt>
+                  <dd className="flex items-center gap-1.5 break-words text-base font-medium text-foreground-strong">
+                    <MapPin size={16} className="flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                     {selectedPartner.city || 'Non renseignée'}
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">Adresse</dt>
-                  <dd className="break-words text-base font-medium text-fg">{selectedPartner.address || 'Non renseignée'}</dd>
+                  <dt className="text-sm text-muted-foreground">Adresse</dt>
+                  <dd className="break-words text-base font-medium text-foreground-strong">{selectedPartner.address || 'Non renseignée'}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">NINEA</dt>
-                  <dd className="break-words text-base font-medium text-fg">{selectedPartner.ninea || 'Non renseigné'}</dd>
+                  <dt className="text-sm text-muted-foreground">NINEA</dt>
+                  <dd className="break-words text-base font-medium text-foreground-strong">{selectedPartner.ninea || 'Non renseigné'}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">RCCM</dt>
-                  <dd className="break-words text-base font-medium text-fg">{selectedPartner.rccm || 'Non renseigné'}</dd>
+                  <dt className="text-sm text-muted-foreground">RCCM</dt>
+                  <dd className="break-words text-base font-medium text-foreground-strong">{selectedPartner.rccm || 'Non renseigné'}</dd>
                 </div>
               </dl>
               {selectedPartner.resubmitted_at && (
-                <p className="mt-2 text-sm text-fg-muted">
+                <p className="mt-2 text-sm text-muted-foreground">
                   Dossier complété par le partenaire le{' '}
                   <time dateTime={toDakarDateTimeLocal(selectedPartner.resubmitted_at)} className="tabular-nums">{formatDateTime(selectedPartner.resubmitted_at)}</time>
                   {' '}après un refus.
@@ -716,14 +722,14 @@ export default function AdminDashboardPage() {
             </section>
 
             <section aria-labelledby="dossier-contact">
-              <h3 id="dossier-contact" className="mb-2 text-base font-semibold text-fg">Responsable du compte</h3>
-              <dl className="grid gap-3 rounded-2xl border border-border bg-surface-sunken p-4 sm:grid-cols-3">
+              <h3 id="dossier-contact" className="mb-2 text-base font-semibold text-foreground-strong">Responsable du compte</h3>
+              <dl className="grid gap-3 rounded-2xl border border-border bg-background p-4 sm:grid-cols-3">
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">Nom</dt>
-                  <dd className="break-words text-base font-medium text-fg">{managerName(selectedPartner)}</dd>
+                  <dt className="text-sm text-muted-foreground">Nom</dt>
+                  <dd className="break-words text-base font-medium text-foreground-strong">{managerName(selectedPartner)}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+                  <dt className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                     Téléphone
                     {selectedPartner.phone_verified ? (
                       <Badge variant="success" size="sm" icon={<CheckCircle2 size={12} aria-hidden="true" />}>Numéro vérifié</Badge>
@@ -733,22 +739,22 @@ export default function AdminDashboardPage() {
                   </dt>
                   <dd className="text-base font-medium">
                     {(selectedPartner.phone || selectedPartner.users?.phone) ? (
-                      <a href={`tel:${selectedPartner.phone || selectedPartner.users?.phone}`} className="inline-flex min-h-11 items-center gap-1.5 text-brand-fg underline-offset-4 hover:underline">
+                      <a href={`tel:${selectedPartner.phone || selectedPartner.users?.phone}`} className="inline-flex min-h-11 items-center gap-1.5 text-primary-text underline-offset-4 hover:underline">
                         <Phone size={16} aria-hidden="true" />
                         {selectedPartner.phone || selectedPartner.users?.phone}
                       </a>
-                    ) : <span className="text-fg-muted">Non renseigné</span>}
+                    ) : <span className="text-muted-foreground">Non renseigné</span>}
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-sm text-fg-muted">Email</dt>
+                  <dt className="text-sm text-muted-foreground">Email</dt>
                   <dd className="text-base font-medium">
                     {(selectedPartner.email || selectedPartner.users?.email) ? (
-                      <a href={`mailto:${selectedPartner.email || selectedPartner.users?.email}`} className="inline-flex min-h-11 items-center gap-1.5 break-all text-brand-fg underline-offset-4 hover:underline">
+                      <a href={`mailto:${selectedPartner.email || selectedPartner.users?.email}`} className="inline-flex min-h-11 items-center gap-1.5 break-all text-primary-text underline-offset-4 hover:underline">
                         <Mail size={16} className="flex-shrink-0" aria-hidden="true" />
                         {selectedPartner.email || selectedPartner.users?.email}
                       </a>
-                    ) : <span className="text-fg-muted">Non renseigné</span>}
+                    ) : <span className="text-muted-foreground">Non renseigné</span>}
                   </dd>
                 </div>
               </dl>
@@ -756,24 +762,24 @@ export default function AdminDashboardPage() {
 
             {selectedPartner.description && (
               <section aria-labelledby="dossier-activite">
-                <h3 id="dossier-activite" className="mb-2 text-base font-semibold text-fg">Présentation de l’activité</h3>
-                <p className="whitespace-pre-line break-words rounded-2xl border border-border bg-surface-sunken p-4 text-base leading-relaxed text-fg">
+                <h3 id="dossier-activite" className="mb-2 text-base font-semibold text-foreground-strong">Présentation de l’activité</h3>
+                <p className="whitespace-pre-line break-words rounded-2xl border border-border bg-background p-4 text-base leading-relaxed text-foreground-strong">
                   {selectedPartner.description}
                 </p>
               </section>
             )}
 
             <section aria-labelledby="dossier-pieces">
-              <h3 id="dossier-pieces" className="mb-2 text-base font-semibold text-fg">Pièces justificatives</h3>
+              <h3 id="dossier-pieces" className="mb-2 text-base font-semibold text-foreground-strong">Pièces justificatives</h3>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface-sunken p-4">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background p-4">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                       <FileText size={18} />
                     </span>
                     <div className="min-w-0">
-                      <p className="truncate text-base font-semibold text-fg">Pièce d’identité</p>
-                      <p className="truncate text-sm text-fg-muted">{selectedPartner.id_card_url ? 'Document téléversé' : 'Non fournie'}</p>
+                      <p className="truncate text-base font-semibold text-foreground-strong">Pièce d’identité</p>
+                      <p className="truncate text-sm text-muted-foreground">{selectedPartner.id_card_url ? 'Document téléversé' : 'Non fournie'}</p>
                     </div>
                   </div>
                   {selectedPartner.id_card_url ? (
@@ -792,14 +798,14 @@ export default function AdminDashboardPage() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface-sunken p-4">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background p-4">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-info-bg text-info-fg" aria-hidden="true">
+                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-info-soft text-info-text" aria-hidden="true">
                       <FileText size={18} />
                     </span>
                     <div className="min-w-0">
-                      <p className="truncate text-base font-semibold text-fg">NINEA ou RCCM</p>
-                      <p className="truncate text-sm text-fg-muted">{selectedPartner.business_doc_url ? 'Document téléversé' : 'Non fourni'}</p>
+                      <p className="truncate text-base font-semibold text-foreground-strong">NINEA ou RCCM</p>
+                      <p className="truncate text-sm text-muted-foreground">{selectedPartner.business_doc_url ? 'Document téléversé' : 'Non fourni'}</p>
                     </div>
                   </div>
                   {selectedPartner.business_doc_url ? (
