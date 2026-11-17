@@ -350,7 +350,7 @@ test('acte 1 [admin] : délai de garde coupé à l’écran, motif exigé, histo
     await test.step('un ADMIN lit les réglages sans « Modifier » (R51), sa modification envoyée directement est refusée', async () => {
         const admin = await asRole(browser, testInfo, 'admin');
         await admin.goto('/admin/finance-settings');
-        await expect(admin.getByText(/^lecture seule : seul un superadministrateur peut modifier ces réglages\./i), 'lecture seule annoncée').toBeVisible();
+        await expect(admin.getByText(/^lecture seule : seul un superadmin peut modifier ces réglages\./i), 'lecture seule annoncée (finition 3b, E-37 : rôle nommé « Superadmin » ; signalé)').toBeVisible();
         await expect(settingRow(admin, hold).getByText('Désactivé', { exact: true }), 'réglage lu par un ADMIN').toBeVisible();
         await expect(admin.getByRole('button', { name: /^modifier /i }), 'aucun bouton « Modifier » sans le droit (R51, B34)').toHaveCount(0);
         // Le serveur reste juge : la même modification envoyée sans l'écran est refusée

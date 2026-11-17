@@ -1208,13 +1208,13 @@ Remarque : ______________________________
 
 **Appareil :** ordinateur.
 
-**Préparation :** Compte `superadmin`, page Finances de l’administration, lien « Réglages de la plateforme ».
+**Préparation :** Compte `superadmin`, entrée « Réglages » du menu (ou page Finances, lien « Réglages de la plateforme »).
 
-1. Touchez Modifier sur un réglage.
-2. Tentez d’enregistrer sans motif.
-3. Ajoutez un motif et enregistrez.
+1. Touchez Modifier sur un réglage et changez sa valeur.
+2. Touchez « Vérifier et enregistrer » sans motif.
+3. Ajoutez un motif, touchez « Vérifier et enregistrer », lisez la fenêtre, puis touchez « Confirmer le changement ».
 
-**Résultat attendu :** Sans motif, rien n’est enregistré. Ensuite, valeur, auteur et motif s’affichent dans l’historique.
+**Résultat attendu :** Sans motif, « Indiquez le motif de la modification (3 caractères au moins). » s’affiche et rien n’est envoyé. Avec le motif, la fenêtre « Confirmer le changement ? » montre « Avant : … → Après : … » et le motif ; rien n’est enregistré avant « Confirmer le changement ». Ensuite, valeur, auteur et motif s’affichent dans l’historique (finition 3b).
 
 - [ ] OK
 - [ ] Anomalie
@@ -1230,7 +1230,7 @@ Remarque : ______________________________
 1. Ouvrez la même page des réglages.
 2. Cherchez un bouton Modifier.
 
-**Résultat attendu :** La page dit « Lecture seule : seul un superadministrateur peut modifier ces réglages. ». Aucun bouton Modifier n’est proposé, et les valeurs sont celles enregistrées à l’essai 52.
+**Résultat attendu :** La page dit « Lecture seule : seul un Superadmin peut modifier ces réglages. ». Aucun bouton Modifier n’est proposé, et les valeurs sont celles enregistrées à l’essai 52.
 
 - [ ] OK
 - [ ] Anomalie
