@@ -171,7 +171,10 @@ describe('b. six onglets sur la même version, enregistrements simultanés', () 
         const { ev, holders } = await published(P, 'meme-version', 48, 1);
         const version = await versionOf(ev.eventId);
         const tag = letters();
-        const patches: Row[] = await Promise.all(Array.from({ length: 6 }, async (_, i) => change(ev.eventId, i, tag)()));
+        // Run 337 : le seul enregistrement accepté était un pas de repère de 150 m, qui ne prévient pas (règle des 200 m,
+        // 20261119000006:690-699) : 0 SMS, défaut du montage et non trou. Les six onglets n'envoient donc que des
+        // changements qui préviennent (fin, lieu, ville : indices 0, 1, 3, 4, 5, 7), et un SMS exactement reste exigé.
+        const patches: Row[] = await Promise.all([0, 1, 3, 4, 5, 7].map(async (i) => change(ev.eventId, i, tag)()));
         const replies = await Promise.all(patches.map((patch) => putVersioned(P.accessToken, ev.eventId, patch, version)));
         replies.forEach((r, i) => log(`onglet ${i + 1} ${JSON.stringify(patches[i])} → ${show(r).slice(0, 160)}`));
         const ok = replies.filter((r) => r.status === 200);
