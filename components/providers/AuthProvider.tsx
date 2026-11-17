@@ -204,6 +204,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // boutons de déconnexion : contrôleur, mot de passe réinitialisé)
                     clearAllDrafts();
                     setSignedOut(true); // cvf2b 6.2 : la page affichée est remplacée, dans tous les onglets
+                    // Cvf2b 6.9 : abonnement push de ce navigateur retiré sur toute fin de session (autre onglet, autre
+                    // appareil, jeton de rafraîchissement refusé, mot de passe réinitialisé), pas seulement au bouton
+                    void unsubscribePush();
                 } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
                     void clearOfflineStore();
                 } else if (event === 'INITIAL_SESSION' && !nextUserId && sessionEnded()) {
@@ -213,6 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     void clearOfflineStore(true);
                     clearAllScanMemory();
                     clearAllDrafts();
+                    void unsubscribePush(); // cvf2b 6.9 : même règle que SIGNED_OUT
                 }
                 if (nextUserId) {
                     lastUserIdRef.current = nextUserId;
