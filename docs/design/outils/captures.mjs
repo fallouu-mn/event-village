@@ -1,5 +1,5 @@
 // Event Village — design phase 0 : captures du logo et des maquettes.
-// 390 px (densité 2) et 1440 px (densité 1), thème clair et sombre, boutons A et B → docs/design/captures/*.jpg.
+// 390 px (densité 2) et 1440 px (densité 1), thème clair (boutons B) et sombre (boutons A) → docs/design/captures/*.jpg.
 //
 // Lancer depuis la racine du dépôt (Playwright et sharp d'une copie du dépôt où « npm ci » a été fait) :
 //   DEPENDANCES=<chemin vers un node_modules contenant playwright et sharp> node docs/design/outils/captures.mjs [page…]
@@ -28,7 +28,6 @@ const PAGES = [
 ];
 const LARGEURS = [{ l: 390, h: 844, d: 2 }, { l: 1440, h: 900, d: 1 }];
 const THEMES = ['clair', 'sombre'];
-const BOUTONS = ['a', 'b'];
 
 const choix = process.argv.slice(2);
 const sortie = join(racine, 'docs/design/captures');
@@ -39,9 +38,8 @@ let n = 0;
 for (const p of PAGES.filter((x) => choix.length === 0 || choix.includes(x.nom))) {
     for (const v of LARGEURS) {
         for (const theme of THEMES) {
-            for (const b of BOUTONS) {
                 const page = await navigateur.newPage({ viewport: { width: v.l, height: v.h }, deviceScaleFactor: v.d, reducedMotion: 'reduce' });
-                const url = `${pathToFileURL(join(racine, p.fichier)).href}?theme=${theme}&boutons=${b}&capture=1${p.requete ? `&${p.requete}` : ''}`;
+                const url = `${pathToFileURL(join(racine, p.fichier)).href}?theme=${theme}&capture=1${p.requete ? `&${p.requete}` : ''}`;
                 await page.goto(url, { waitUntil: 'load' });
                 await page.evaluate(() => document.fonts.ready);
                 if (!p.ecran) {
@@ -51,12 +49,11 @@ for (const p of PAGES.filter((x) => choix.length === 0 || choix.includes(x.nom))
                 }
                 await page.waitForTimeout(150);
                 const png = await page.screenshot({ fullPage: false });
-                const fichier = `${p.nom}__${v.l}__${theme}__${b}.jpg`;
+                const fichier = `${p.nom}__${v.l}__${theme}.jpg`;
                 await sharp(png).jpeg({ quality: 72, mozjpeg: true }).toFile(join(sortie, fichier));
                 await page.close();
                 n += 1;
                 console.log(fichier);
-            }
         }
     }
 }

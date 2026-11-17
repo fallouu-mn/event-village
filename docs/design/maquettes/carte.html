@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" data-btn="a">
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -64,8 +64,8 @@
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href="accueil.html" aria-label="Event Village, accueil">
-        <img class="logo-light" src="../logo/svg/repere-horizontal.svg" alt="" style="height:28px">
-        <img class="logo-dark" src="../logo/svg/repere-horizontal-sombre.svg" alt="" style="height:28px">
+        <img class="logo-light" src="../logo/svg/bras-leves-horizontal.svg" alt="" style="height:28px">
+        <img class="logo-dark" src="../logo/svg/bras-leves-horizontal-sombre.svg" alt="" style="height:28px">
       </a>
       <nav class="nav-links" aria-label="Navigation principale"><a href="accueil.html">Explorer</a><a href="carte.html" aria-current="page">Carte</a><a href="#">Mes billets</a></nav>
       <div class="header-search search"><span data-icone="recherche"></span><label class="sr-only" for="q0">Rechercher un lieu ou un quartier</label><input class="input" id="q0" type="search" placeholder="Lieu, quartier…"></div>
@@ -99,7 +99,7 @@
     <section class="feuille sheet" data-etat="mi" aria-labelledby="t-feuille">
       <button class="sheet-handle" type="button" aria-label="Agrandir la liste" data-poignee><span></span></button>
       <div class="feuille-tete">
-        <h1 id="t-feuille">6 événements dans cette zone</h1>
+        <h1 id="t-feuille">9 événements dans cette zone</h1>
         <button class="btn btn-ghost" type="button" data-agrandir><span data-icone="agrandir"></span>Tout afficher</button>
       </div>
       <div class="feuille-liste" data-liste></div>
@@ -124,21 +124,23 @@
     ];
     var plan = document.querySelector('[data-plan]');
     var reperes = zone.map(function (z, i) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'marker';
-      b.textContent = z.e.court;
+      var b = EVM.repere({ texte: z.e.court, une: i === 0, bouton: true });
       b.setAttribute('aria-label', z.e.titre + ', ' + z.e.court);
-      b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+      b.setAttribute('aria-pressed', i === 1 ? 'true' : 'false');
       b.addEventListener('click', function () { choisir(i); });
       plan.appendChild(b);
       return { x: z.x, y: z.y, el: b };
     });
+    // Regroupement : trois événements trop proches à cette échelle (Médina).
+    var groupe = EVM.repere({ groupe: 3, bouton: true });
+    groupe.setAttribute('aria-label', 'Trois événements à Médina : agrandir le plan');
+    plan.appendChild(groupe);
+    reperes.push({ x: 326, y: 404, el: groupe });
     var vous = document.createElement('span'); vous.className = 'vous'; vous.setAttribute('aria-label', 'Vous êtes ici'); vous.setAttribute('role', 'img');
     plan.appendChild(vous);
     reperes.push({ x: 214, y: 334, el: vous });
     var large = matchMedia('(min-width: 1024px)').matches;
-    EVM.carte(plan, reperes, { vue: large ? '20 130 560 462' : '30 73 370 800' });
+    EVM.carte(plan, reperes, { vue: large ? '20 130 560 462' : '30 50 370 800' });
 
     var liste = document.querySelector('[data-liste]');
     function choisir(i) {
@@ -152,9 +154,9 @@
         '<div class="actions"><a class="btn btn-primary" href="fiche.html">Voir l\'événement</a><a class="btn btn-secondary" href="#">' + D.icone('lieu', 'icon-sm') + 'Itinéraire</a></div></article>' +
         autres.map(function (o, k) {
           return '<a class="ligne" href="fiche.html"><span class="vignette">' + D.affiche(o.e.affiche, 'li' + k) + '</span><span><b>' + o.e.titre + '</b><span class="small muted">' + o.e.date + ' · ' + o.e.lieu + '</span></span><span class="prix">' + o.e.court + '</span></a>';
-        }).join('');
+        }).join('') + '<p class="small muted">Et 3 événements à Médina : agrandissez le plan pour les voir.</p>';
     }
-    choisir(0);
+    choisir(1);
     // Poignée et bouton : alternative au glissement (WCAG 2.5.7), état annoncé.
     var feuille = document.querySelector('.feuille');
     function basculer() {

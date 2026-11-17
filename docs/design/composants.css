@@ -56,7 +56,7 @@
 }
 .btn-cta:hover { filter: brightness(1.05) saturate(1.05); box-shadow: 0 14px 30px -10px rgba(219, 39, 119, 0.6); }
 .btn-cta:active { transform: scale(0.98); }
-.btn-cta:focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; border-radius: var(--radius-pill); }
+.btn-cta:focus-visible { border-radius: var(--radius-pill); }
 
 /* ── Champs ───────────────────────────────────────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -133,7 +133,7 @@
   transition: color var(--duration-fast) var(--ease-standard);
 }
 .tab[aria-selected='true'] { color: var(--foreground-strong); }
-.tab[aria-selected='true']::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--primary-text); }
+.tab[aria-selected='true']::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--brand); }
 
 /* ── Squelettes et états vides ───────────────────────────────────────────── */
 .skeleton { background: var(--muted); border-radius: var(--radius-sm); position: relative; overflow: hidden; }
@@ -171,7 +171,7 @@
   background: var(--popover); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .bottom-nav a { display: grid; justify-items: center; gap: 2px; padding: 8px 4px 10px; min-height: 56px; color: var(--muted-foreground); text-decoration: none; font-size: var(--text-caption); font-weight: 700; }
-.bottom-nav a[aria-current='page'] { color: var(--primary-text); }
+.bottom-nav a[aria-current='page'] { color: var(--primary-text); box-shadow: inset 0 3px 0 var(--brand); }
 .bottom-nav .icon { width: 22px; height: 22px; }
 @media (min-width: 1024px) { .bottom-nav { display: none; } }
 .has-bottom-nav { padding-bottom: 72px; }
@@ -223,17 +223,36 @@
 .toast-timer span { display: block; height: 100%; background: var(--success); transform-origin: left; animation: timer linear both; }
 @keyframes timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
-/* ── Repères de carte ─────────────────────────────────────────────────────── */
+/* ── Repères de carte : la forme « Repère » (billet, encoches, talon perforé, pointe) ─────────────── */
+/* Prix sur fond clair du thème ; choisi ou « À la une » sur l'orange de la marque (texte #1A1A1A, 7,42:1) ;
+   regroupement : pile de billets avec le nombre. Zone tactile de 44 px au moins. */
 .marker {
-  position: absolute; transform: translate(-50%, -100%); display: inline-flex; align-items: center; gap: 4px;
-  min-height: 32px; padding: 0 10px; border-radius: 10px; border: 0; cursor: pointer;
-  background: var(--popover); color: var(--foreground-strong); font-size: var(--text-sm); font-weight: 800;
-  box-shadow: var(--shadow-md); font-variant-numeric: tabular-nums; white-space: nowrap;
+  --m-bg: var(--popover); --m-fg: var(--foreground-strong); --m-perfo: var(--brand);
+  position: absolute; transform: translate(-50%, -100%); display: inline-grid; justify-items: center;
+  padding: 0 0 9px; border: 0; background: none; cursor: pointer; color: var(--m-fg);
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.28));
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
-.marker::after { content: ''; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: inherit; transform: translateX(-50%) rotate(45deg); border-radius: 2px; z-index: -1; }
-.marker[aria-pressed='true'] { background: var(--primary); color: var(--primary-foreground); }
-/* La cible tactile fait 44 px : zone élargie invisible autour du repère. */
-.marker::before { content: ''; position: absolute; inset: -6px -4px; }
+.marker::before { content: ''; position: absolute; inset: -6px -4px -2px; } /* cible tactile élargie */
+.marker::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 16px; height: 10px; transform: translateX(-50%); background: var(--m-bg); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.billet-m {
+  position: relative; display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 12px 0 13px;
+  border-radius: 8px; background: var(--m-bg); color: var(--m-fg); font-size: var(--text-sm); font-weight: 800; line-height: 1.1;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  -webkit-mask: radial-gradient(circle 4.5px at 0 50%, #0000 96%, #000) left / 51% 100% no-repeat, radial-gradient(circle 4.5px at 100% 50%, #0000 96%, #000) right / 51% 100% no-repeat;
+          mask: radial-gradient(circle 4.5px at 0 50%, #0000 96%, #000) left / 51% 100% no-repeat, radial-gradient(circle 4.5px at 100% 50%, #0000 96%, #000) right / 51% 100% no-repeat;
+}
+.billet-m::before { content: ''; align-self: stretch; margin-block: 6px; border-left: 2px dotted var(--m-perfo); }
+.marker[aria-pressed='true'] { --m-bg: var(--brand); --m-fg: var(--brand-foreground); --m-perfo: var(--brand-foreground); transform: translate(-50%, -100%) scale(1.06); z-index: 3; }
+.marker-une { --m-bg: var(--brand); --m-fg: var(--brand-foreground); --m-perfo: var(--brand-foreground); z-index: 2; }
+.marker-une .billet-m { min-height: 40px; padding: 0 14px 0 14px; flex-direction: row; }
+.marker-une .billet-m small { display: block; font-size: var(--text-caption); font-weight: 700; }
+.marker-une .billet-m span { display: grid; gap: 1px; }
+.marker-groupe .billet-m { gap: 6px; }
+.marker-groupe .billet-m b { font-size: var(--text-base); }
+.marker-groupe .pile { position: absolute; top: -5px; left: 6px; right: -6px; height: 30px; border-radius: 8px; background: var(--m-bg); opacity: 0.55; }
+.marker-groupe .pile + .pile { top: -9px; left: 11px; right: -11px; opacity: 0.3; }
+:root[data-theme='dark'] .marker { filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.6)); }
 
 /* ── Barre d'outils des maquettes (ne fait pas partie de l'application) ──── */
 .proto-bar {

@@ -1,7 +1,8 @@
 /*
  * Données FICTIVES des maquettes : artistes, organisateurs et événements inventés, lieux réels du Sénégal.
  * Aucun chiffre sur la plateforme (pas de nombre de clients, de note ni de classement) : seulement ce qu'une
- * fiche d'événement afficherait. Affiches : compositions abstraites en SVG, aucune image externe.
+ * fiche d'événement afficherait. Affiches : compositions abstraites en SVG, en aplats (jamais de dégradé : décision du
+ * 17/11/2026), aucune image externe.
  */
 (function () {
   'use strict';
@@ -19,6 +20,8 @@
       lieu: 'Théâtre de verdure', ville: 'Dakar', quartier: 'Plateau', prix: 'Gratuit', court: 'Gratuit', badge: ['success', 'Gratuit'], affiche: 'scene', x: 74, y: 78 },
     { id: 'marche', titre: 'Marché créatif de fin d’année', orga: 'Teranga Ateliers', jour: '19', mois: 'déc.', date: 'sam. 19 déc. 2026 à 10:00',
       lieu: 'Place du village artisanal', ville: 'Saly', quartier: 'Saly Portudal', prix: 'Gratuit', court: 'Gratuit', affiche: 'tisse', x: 58, y: 47 },
+    { id: 'slam', titre: 'Slam et kora au jardin', orga: 'Collectif Kasa Slam', jour: '09', mois: 'janv.', date: 'sam. 9 janv. 2027 à 18:00',
+      lieu: 'Jardin du centre culturel', ville: 'Ziguinchor', quartier: 'Escale', prix: '2 000 F CFA', court: '2 000 F', affiche: 'kora', x: 0, y: 0 },
   ];
 
   // ── Affiches abstraites (320 × 200, recadrées par preserveAspectRatio) ──────────────────────────────
@@ -35,19 +38,16 @@
             pts += '<circle cx="' + (160 + r[0] * Math.cos(a)).toFixed(1) + '" cy="' + (104 + r[0] * 0.62 * Math.sin(a)).toFixed(1) + '" r="' + r[2] + '"/>';
           }
         });
-        return debut + '<defs><radialGradient id="' + g + '" cx="50%" cy="52%" r="70%"><stop offset="0" stop-color="#7C2D6B"/><stop offset="1" stop-color="#1B0F2E"/></radialGradient></defs>' +
-          '<rect width="320" height="200" fill="url(#' + g + ')"/><g fill="#FF8A3D" opacity="0.9">' + pts + '</g><circle cx="160" cy="104" r="20" fill="#F472B6"/>' + fin;
+        return debut + '<rect width="320" height="200" fill="#2A1240"/><ellipse cx="160" cy="104" rx="120" ry="78" fill="#3D1A55"/><g fill="#FF8A3D" opacity="0.9">' + pts + '</g><circle cx="160" cy="104" r="20" fill="#F472B6"/>' + fin;
       case 'kora': // cordes et arc de kora, bleu nuit et néons
         var cordes = '';
         for (var k = 0; k < 11; k++) cordes += '<path d="M' + (96 + k * 13) + ' 30 L' + (128 + k * 6.5) + ' 180" stroke="' + (k % 2 ? '#38BDF8' : '#F472B6') + '" stroke-width="2.2" opacity="0.85"/>';
-        return debut + '<defs><linearGradient id="' + g + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B1F3A"/><stop offset="1" stop-color="#1E1B4B"/></linearGradient></defs>' +
-          '<rect width="320" height="200" fill="url(#' + g + ')"/><ellipse cx="164" cy="168" rx="70" ry="34" fill="#FF8A3D" opacity="0.9"/>' + cordes +
+        return debut + '<rect width="320" height="200" fill="#13203F"/><ellipse cx="164" cy="168" rx="70" ry="34" fill="#FF8A3D" opacity="0.9"/>' + cordes +
           '<path d="M86 28 Q164 -6 240 28" fill="none" stroke="#FBBF24" stroke-width="5" stroke-linecap="round"/>' + fin;
       case 'coucher': // soleil couchant sur l'océan
         var lignes = '';
         for (var l = 0; l < 7; l++) lignes += '<rect x="' + (60 - l * 6) + '" y="' + (128 + l * 10) + '" width="' + (200 + l * 12) + '" height="4" rx="2" fill="#FFE1C7" opacity="' + (0.75 - l * 0.08).toFixed(2) + '"/>';
-        return debut + '<defs><linearGradient id="' + g + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EA580C"/><stop offset="0.55" stop-color="#DB2777"/><stop offset="1" stop-color="#4C1D95"/></linearGradient></defs>' +
-          '<rect width="320" height="200" fill="url(#' + g + ')"/><circle cx="160" cy="118" r="44" fill="#FFD9A8"/><rect y="122" width="320" height="78" fill="#3B0F5C" opacity="0.55"/>' + lignes + fin;
+        return debut + '<rect width="320" height="200" fill="#E0612A"/><rect y="62" width="320" height="60" fill="#C43D5E"/><circle cx="160" cy="118" r="44" fill="#FFD9A8"/><rect y="122" width="320" height="78" fill="#3B0F5C" opacity="0.55"/>' + lignes + fin;
       case 'vague': // fleuve, vagues superposées
         var vagues = '';
         ['#0EA5E9', '#0284C7', '#075985', '#0C4A6E'].forEach(function (c, i) {

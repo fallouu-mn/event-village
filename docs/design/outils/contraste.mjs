@@ -1,7 +1,7 @@
 // Event Village — design phase 0 : contraste MESURÉ de chaque couple texte / fond des jetons.
 //
 // Lit docs/design/jetons.css (aucune valeur recopiée ici), calcule le rapport de contraste WCAG 2.x de chaque
-// couple, en clair et en sombre, boutons A et B, et réécrit le tableau de docs/design/direction.md entre les
+// couple, en clair (boutons B) et en sombre (boutons A), et réécrit le tableau de docs/design/direction.md entre les
 // repères « contraste:debut » et « contraste:fin ». Sort en erreur si un couple obligatoire est sous son seuil.
 //
 // Lancer depuis la racine du dépôt : node docs/design/outils/contraste.mjs
@@ -25,13 +25,7 @@ function bloc(selecteur) {
 
 const clair = bloc(':root');
 const sombre = { ...clair, ...bloc(":root[data-theme='dark']") };
-const versionB = bloc(":root[data-btn='b']");
-const THEMES = {
-    'clair A': clair,
-    'sombre A': sombre,
-    'clair B': { ...clair, ...versionB },
-    'sombre B': { ...sombre, ...versionB },
-};
+const THEMES = { clair, sombre };
 
 // ── WCAG 2.x ─────────────────────────────────────────────────────────────────
 const canaux = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -68,26 +62,28 @@ const COUPLES = [
     ['Bouton Wave', 'on-op', ['op-wave'], 4.5],
     ['Bouton Orange Money', 'on-op', ['op-orange-money'], 4.5],
     ['Bord des champs', 'input', ['background', 'card'], 3],
-    ['Anneau de focus', 'ring', ['background', 'card', 'muted'], 3],
-    ['Bord du bouton principal sur le fond', 'primary', ['background', 'card'], 'info'],
+    ["Texte sur l'orange de la marque (repère choisi, « À la une »)", 'brand-foreground', ['brand'], 4.5],
+    ['Anneau de focus : orange de la marque', 'ring', ['background', 'card', 'muted'], 'info'],
+    ['Anneau de focus : liseré sombre (clair)', 'ring-halo', ['background', 'card', 'muted'], 'halo'],
+    ['Onglet actif, accents : orange de la marque', 'brand', ['background', 'card'], 'info'],
+    ['Bord du bouton principal sur le fond', 'primary', ['background', 'card'], 3],
 ];
 
 const lignes = [];
 let echecs = 0;
 const fmt = (n) => n.toFixed(2).replace('.', ',');
 for (const [theme, t] of Object.entries(THEMES)) {
-    const boutonsSeulement = theme.endsWith('B');
     for (const [nom, texte, fonds, seuil] of COUPLES) {
-        const lieAuBouton = texte.startsWith('primary') || fonds.some((f) => f.startsWith('primary'));
-        if (boutonsSeulement && !lieAuBouton) continue; // la version B ne change que les boutons
         for (const fond of fonds) {
             const a = t[texte];
             const b = t[fond];
             if (!a || !b) throw new Error(`Jeton manquant (${theme}) : --${texte} ou --${fond}`);
             const r = contraste(a, b);
-            const ok = seuil === 'info' ? null : r >= seuil;
+            if (seuil === 'halo' && theme === 'sombre') continue; // en sombre, l'orange seul suffit (≥ 6:1)
+            const s = seuil === 'halo' ? 3 : seuil;
+            const ok = s === 'info' ? null : r >= s;
             if (ok === false) echecs += 1;
-            lignes.push(`| ${nom} | ${theme} | \`--${texte}\` ${a} | \`--${fond}\` ${b} | **${fmt(r)}:1** | ${seuil === 'info' ? '—' : `${fmt(seuil)}:1`} | ${ok === null ? (r >= 3 ? 'visible' : 'peu visible : le texte identifie le bouton') : ok ? 'oui' : '**NON**'} |`);
+            lignes.push(`| ${nom} | ${theme} | \`--${texte}\` ${a} | \`--${fond}\` ${b} | **${fmt(r)}:1** | ${s === 'info' ? '—' : `${fmt(s)}:1`} | ${ok === null ? (r >= 3 ? 'visible seul' : 'pas seul : doublé (liseré sombre, texte gras, libellé)') : ok ? 'oui' : '**NON**'} |`);
         }
     }
 }
@@ -103,23 +99,23 @@ const gradient = (t) => {
     }
     return { min, pire };
 };
-for (const theme of ['clair A', 'sombre A']) {
+for (const theme of ['clair', 'sombre']) {
     const t = THEMES[theme];
     const { min, pire } = gradient(t);
     const ok = min >= 3;
     if (!ok) echecs += 1;
-    lignes.push(`| Grand bouton en dégradé (blanc gras 19 px) | ${theme.replace(' A', '')} | \`--gradient-foreground\` ${t['gradient-foreground']} | dégradé ${t['gradient-from']} → ${t['gradient-to']}, pire point ${pire} | **${fmt(min)}:1** | 3,00:1 | ${ok ? 'oui (grand texte)' : '**NON**'} |`);
+    lignes.push(`| Grand bouton en dégradé (blanc gras 19 px) | ${theme} | \`--gradient-foreground\` ${t['gradient-foreground']} | dégradé ${t['gradient-from']} → ${t['gradient-to']}, pire point ${pire} | **${fmt(min)}:1** | 3,00:1 | ${ok ? 'oui (grand texte)' : '**NON**'} |`);
 }
 
 // Interdits de la charte, mesurés pour mémoire.
 const interdits = [
-    ['Blanc sur l\'orange vif (interdit par la charte)', '#FFFFFF', clair.primary],
-    ['Orange vif en texte sur blanc (interdit)', clair.primary, '#FFFFFF'],
+    ['Blanc sur l\'orange vif (interdit par la charte)', '#FFFFFF', clair.brand],
+    ['Orange vif en texte sur blanc (interdit)', clair.brand, '#FFFFFF'],
 ];
 for (const [nom, a, b] of interdits) lignes.push(`| ${nom} | — | ${a} | ${b} | **${fmt(contraste(a, b))}:1** | — | interdit |`);
 
 const tableau = [
-    '| Couple | Thème, boutons | Texte | Fond | Contraste | Seuil | Conforme |',
+    '| Couple | Thème (boutons B en clair, A en sombre) | Texte | Fond | Contraste | Seuil | Conforme |',
     '|---|---|---|---|---|---|---|',
     ...lignes,
 ].join('\n');

@@ -12,9 +12,35 @@
   document.querySelectorAll('[data-cartes]').forEach(function (el) {
     el.innerHTML = el.getAttribute('data-cartes').split(',').map(function (i) { return D.carte(D.evenements[Number(i)], 'c' + i); }).join('');
   });
+  // Rangée « À la une » : la première carte, plus grande, porte le seul grand bouton de la page. Le défilement est en CSS.
+  document.querySelectorAll('[data-une]').forEach(function (el) {
+    el.innerHTML = el.getAttribute('data-une').split(',').map(function (i, n) {
+      var e = D.evenements[Number(i)];
+      if (n > 0) return '<li>' + D.carte(e, 'u' + i) + '</li>';
+      return '<li class="une-grande"><article class="event-card"><div class="poster">' + D.affiche(e.affiche, 'ug') +
+        (e.badge ? '<span class="badge badge-' + e.badge[0] + '">' + e.badge[1] + '</span>' : '') +
+        '<span class="date-tag"><b class="num">' + e.jour + '</b><time>' + e.mois + '</time></span></div>' +
+        '<div class="event-body"><h2 class="une-titre"><a href="fiche.html">' + e.titre + '</a></h2>' +
+        '<p class="event-meta">' + D.icone('calendrier', 'icon-sm') + '<span>' + e.date + '</span></p>' +
+        '<p class="event-meta">' + D.icone('lieu', 'icon-sm') + '<span>' + e.lieu + ', ' + e.ville + '</span></p>' +
+        '<div class="une-bas"><p class="price-line" style="margin:0"><span class="lead">Dès</span>&nbsp;<span class="price">' + e.prix + '</span></p>' +
+        '<a class="btn-cta" href="fiche.html">Choisir mes billets</a></div></div></article></li>';
+    }).join('');
+  });
   document.querySelectorAll('[data-affiche]').forEach(function (el, n) {
     el.insertAdjacentHTML('afterbegin', D.affiche(el.getAttribute('data-affiche'), 'h' + n));
   });
+
+  /** Repère de carte (forme « Repère ») : { texte, une, groupe, bouton }. */
+  function repere(o) {
+    var b = document.createElement(o.bouton ? 'button' : 'span');
+    if (o.bouton) b.type = 'button';
+    b.className = 'marker' + (o.une ? ' marker-une' : '') + (o.groupe ? ' marker-groupe' : '');
+    b.innerHTML = o.groupe
+      ? '<span class="pile"></span><span class="pile"></span><span class="billet-m"><b>' + o.groupe + '</b> événements</span>'
+      : o.une ? '<span class="billet-m"><span><small>À la une</small>' + o.texte + '</span></span>' : '<span class="billet-m">' + o.texte + '</span>';
+    return b;
+  }
 
   /** Fond de carte schématique de la presqu'île du Cap-Vert (repère 600 × 600). */
   function fondDakar(sombre) {
@@ -67,10 +93,8 @@
 
   // Aperçu de carte de l'accueil.
   document.querySelectorAll('[data-map-teaser]').forEach(function (boite) {
-    var reperes = [[250, 372, '10 000 F'], [128, 196, '7 500 F'], [362, 452, 'Gratuit'], [296, 202, '3 000 F']].map(function (r) {
-      var b = document.createElement('span');
-      b.className = 'marker';
-      b.textContent = r[2];
+    var reperes = [[250, 372, '10 000 F', true], [128, 196, '7 500 F'], [362, 452, 'Gratuit'], [296, 202, '3 000 F']].map(function (r) {
+      var b = repere({ texte: r[2], une: r[3] });
       b.setAttribute('aria-hidden', 'true');
       boite.appendChild(b);
       return { x: r[0], y: r[1], el: b };
@@ -78,5 +102,5 @@
     carte(boite, reperes, { vue: '40 140 440 360' });
   });
 
-  window.EVM = { carte: carte };
+  window.EVM = { carte: carte, repere: repere };
 })();

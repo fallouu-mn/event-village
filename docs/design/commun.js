@@ -1,22 +1,26 @@
 /*
  * Event Village — script commun des maquettes (design phase 0). Aucun appel réseau.
- *  - Bascules : ?theme=clair|sombre, ?boutons=a|b, ?capture=1 (masque la barre d'outils, fige les animations) ;
- *    sans paramètre, le thème suit le téléphone.
+ *  - Thème (décision du 17/11/2026) : celui du téléphone par défaut ; le choix « Clair » ou « Sombre » est mémorisé
+ *    (localStorage « ev-theme » : system | light | dark, comme l'application). ?theme=clair|sombre l'impose pour une
+ *    capture ; ?capture=1 masque la barre d'outils et fige les toasts.
+ *  - Boutons : B (orange profond) en clair, A (orange vif) en sombre : plus de bascule, c'est décidé.
  *  - EV.toast(...) : le système unique de retours (règle de direction.md, section 6).
  */
 (function () {
   'use strict';
   var html = document.documentElement;
   var params = new URLSearchParams(location.search);
+  var CLE = 'ev-theme';
 
-  function appliquerTheme(t) {
-    if (t === 'sombre' || t === 'dark') html.setAttribute('data-theme', 'dark');
-    else if (t === 'clair' || t === 'light') html.setAttribute('data-theme', 'light');
-    else html.removeAttribute('data-theme');
+  function lire() { try { return localStorage.getItem(CLE); } catch (e) { return null; } }
+  function ecrire(v) { try { localStorage.setItem(CLE, v); } catch (e) { /* navigation privée : le choix vaut pour la page */ } }
+  function appliquer(choix) {
+    if (choix === 'dark') html.setAttribute('data-theme', 'dark');
+    else if (choix === 'light') html.setAttribute('data-theme', 'light');
+    else html.removeAttribute('data-theme'); // system : suit le téléphone (prefers-color-scheme)
   }
-  function appliquerBoutons(b) { html.setAttribute('data-btn', b === 'b' ? 'b' : 'a'); }
-  appliquerTheme(params.get('theme'));
-  appliquerBoutons(params.get('boutons'));
+  var impose = params.get('theme');
+  appliquer(impose === 'sombre' ? 'dark' : impose === 'clair' ? 'light' : lire() || 'system');
   if (params.get('capture') === '1') html.setAttribute('data-capture', '');
 
   function themeActuel() {
@@ -25,39 +29,29 @@
     return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
 
-  // ── Barre d'outils de la maquette (hors application) ──────────────────────
+  // ── Barre d'outils de la maquette (hors application) : Système, Clair, Sombre ──
   function barre() {
     if (html.hasAttribute('data-capture')) return;
     var bar = document.createElement('div');
     bar.className = 'proto-bar';
-    bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', 'Réglages de la maquette');
-    function bouton(libelle, actif, action) {
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Thème');
+    var titre = document.createElement('span'); titre.textContent = 'Thème'; bar.appendChild(titre);
+    var choix = [['system', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']];
+    var boutons = choix.map(function (c) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.textContent = libelle;
-      b.setAttribute('aria-pressed', String(actif()));
-      b.addEventListener('click', function () { action(); maj(); });
+      b.textContent = c[1];
+      b.addEventListener('click', function () { ecrire(c[0]); appliquer(c[0]); maj(); });
       bar.appendChild(b);
-      return { el: b, actif: actif };
-    }
-    var titre1 = document.createElement('span'); titre1.textContent = 'Thème'; bar.appendChild(titre1);
-    var boutons = [
-      bouton('Clair', function () { return themeActuel() === 'light'; }, function () { appliquerTheme('clair'); }),
-      bouton('Sombre', function () { return themeActuel() === 'dark'; }, function () { appliquerTheme('sombre'); }),
-    ];
-    var titre2 = document.createElement('span'); titre2.textContent = 'Boutons'; bar.appendChild(titre2);
-    boutons.push(
-      bouton('A', function () { return html.getAttribute('data-btn') === 'a'; }, function () { appliquerBoutons('a'); }),
-      bouton('B', function () { return html.getAttribute('data-btn') === 'b'; }, function () { appliquerBoutons('b'); })
-    );
+      return { el: b, v: c[0] };
+    });
     function maj() {
-      boutons.forEach(function (x) { x.el.setAttribute('aria-pressed', String(x.actif())); });
-      var u = new URL(location.href);
-      u.searchParams.set('theme', themeActuel() === 'dark' ? 'sombre' : 'clair');
-      u.searchParams.set('boutons', html.getAttribute('data-btn'));
-      history.replaceState(null, '', u);
+      var courant = impose ? (impose === 'sombre' ? 'dark' : 'light') : lire() || 'system';
+      if (html.getAttribute('data-theme') !== (courant === 'system' ? null : courant)) courant = html.getAttribute('data-theme') || 'system';
+      boutons.forEach(function (x) { x.el.setAttribute('aria-pressed', String(x.v === courant)); });
     }
+    maj();
     document.body.appendChild(bar);
   }
 
