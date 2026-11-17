@@ -148,20 +148,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      * répond pas, aucun rôle n'est accordé (profil null) et l'erreur est journalisée.
      * Lot 7 (7.1) : sans réseau (navigator.onLine faux, billet hors ligne), /api/auth/me n'est pas appelé ;
      * le profil est relu au retour du réseau.
+     * Cvf2b (poids de chaque page) : plus de message pour le profil différé hors ligne ni pour une réponse illisible
+     * (le message suivant donne le statut HTTP).
      */
     const fetchUserProfile = useCallback(async (_userId: string, currentSession?: Session | null) => {
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-            console.warn('[AuthProvider] hors ligne : profil différé');
-            return;
-        }
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
         try {
             const res = await fetch('/api/auth/me', {
                 headers: currentSession?.access_token ? { 'Authorization': `Bearer ${currentSession.access_token}` } : {}
             });
-            const data = await res.json().catch((err: unknown) => {
-                console.error('[AuthProvider] /api/auth/me illisible', res.status, err);
-                return null;
-            });
+            const data = await res.json().catch(() => null);
             if (!res.ok || !data?.authenticated || !data?.profile) {
                 console.error('[AuthProvider] /api/auth/me', res.status, data?.error ?? '');
                 setProfile(null);

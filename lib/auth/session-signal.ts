@@ -29,10 +29,10 @@ export const SESSION_COOKIE = /^sb-.+-auth-token(?:\.\d+)?$/;
  */
 export function sessionEnded(): boolean {
     try {
-        const jar = document.cookie.split(/;\s*/).map((c) => [c.slice(0, c.indexOf('=')), c.slice(c.indexOf('=') + 1)]);
-        const signalled = jar.some(([name, value]) => name === SESSION_CLOSED_COOKIE && value === '1');
+        const signalled = /(?:^|;\s*)ev-session-close=1(?:;|$)/.test(document.cookie);
         if (signalled) document.cookie = `${SESSION_CLOSED_COOKIE}=; path=/; max-age=0`;
-        return signalled || !jar.some(([name, value]) => SESSION_COOKIE.test(name) && value !== '');
+        // Cookie de session non vide (même règle que SESSION_COOKIE, valeur en plus)
+        return signalled || !/(?:^|;\s*)sb-[^=;]+-auth-token(?:\.\d+)?=[^;]/.test(document.cookie);
     } catch {
         return false;
     }
