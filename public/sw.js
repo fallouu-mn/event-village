@@ -23,7 +23,7 @@
  *  - Push : inchangé depuis le lot 6. Un clic n'ouvre qu'un chemin INTERNE de l'application ; tout autre lien
  *    mène à /notifications ; un renouvellement d'abonnement décidé par le navigateur est réenregistré.
  */
-const SW_VERSION = 'design1a-1'; // Design 1a : nouveau logo sous les mêmes noms d'icônes, cache renouvelé
+const SW_VERSION = 'lot7-1';
 const LEGACY_CACHES = ['event-village-v1'];
 const LEGACY_CACHE_PREFIX = 'event-village-';
 const CACHE_PREFIX = 'ev-hors-ligne-';
