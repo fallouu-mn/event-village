@@ -16,7 +16,6 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { cssToken, deltaE00 } from '../audit/cvf2b-12-helpers';
 
 const ROOT = process.cwd();
 const PALETTE = ['BLANC', 'OR', 'ARGENT', 'ROSE', 'TURQUOISE', 'BLEU', 'VIOLET', 'NOIR'];
@@ -41,6 +40,59 @@ interface ScanResultModule {
 async function load<T>(rel: string): Promise<T> {
     const target = rel;
     return (await import(target)) as T;
+}
+
+// ── Écart de couleur perçu (CIEDE2000) : recopie de tests/audit/cvf2b-12-helpers.ts (suite sans base) ──
+
+function cssToken(name: string): [number, number, number] {
+    const css = fs.readFileSync(path.join(ROOT, 'app/globals.css'), 'utf8');
+    const m = new RegExp(`--${name}:[ ]*([0-9]+)[ ]+([0-9]+)[ ]+([0-9]+)[ ]*;`).exec(css);
+    assert.ok(m, `jeton --${name} absent d'app/globals.css`);
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function lab([r8, g8, b8]: [number, number, number]): [number, number, number] {
+    const lin = (c: number) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const [r, g, b] = [lin(r8), lin(g8), lin(b8)];
+    const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
+    const y = 0.2126729 * r + 0.7151522 * g + 0.072175 * b;
+    const z = (0.0193339 * r + 0.119192 * g + 0.9503041 * b) / 1.08883;
+    const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+}
+
+/** Écart CIEDE2000 (même formule que tests/parcours/f2b-couleur-auto.test.ts). */
+function deltaE00(c1: [number, number, number], c2: [number, number, number]): number {
+    const [L1, a1, b1] = lab(c1);
+    const [L2, a2, b2] = lab(c2);
+    const rad = Math.PI / 180;
+    const C1 = Math.hypot(a1, b1);
+    const C2 = Math.hypot(a2, b2);
+    const Cb = (C1 + C2) / 2;
+    const G = 0.5 * (1 - Math.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)));
+    const a1p = (1 + G) * a1;
+    const a2p = (1 + G) * a2;
+    const C1p = Math.hypot(a1p, b1);
+    const C2p = Math.hypot(a2p, b2);
+    const h1p = (Math.atan2(b1, a1p) / rad + 360) % 360;
+    const h2p = (Math.atan2(b2, a2p) / rad + 360) % 360;
+    const dLp = L2 - L1;
+    const dCp = C2p - C1p;
+    let dhp = 0;
+    if (C1p * C2p !== 0) { dhp = h2p - h1p; if (dhp > 180) dhp -= 360; else if (dhp < -180) dhp += 360; }
+    const dHp = 2 * Math.sqrt(C1p * C2p) * Math.sin((dhp / 2) * rad);
+    const Lbp = (L1 + L2) / 2;
+    const Cbp = (C1p + C2p) / 2;
+    let hbp = h1p + h2p;
+    if (C1p * C2p !== 0) hbp = Math.abs(h1p - h2p) <= 180 ? (h1p + h2p) / 2 : (h1p + h2p < 360 ? (h1p + h2p + 360) / 2 : (h1p + h2p - 360) / 2);
+    const T = 1 - 0.17 * Math.cos((hbp - 30) * rad) + 0.24 * Math.cos(2 * hbp * rad) + 0.32 * Math.cos((3 * hbp + 6) * rad) - 0.2 * Math.cos((4 * hbp - 63) * rad);
+    const dTheta = 30 * Math.exp(-(((hbp - 275) / 25) ** 2));
+    const Rc = 2 * Math.sqrt(Cbp ** 7 / (Cbp ** 7 + 25 ** 7));
+    const Sl = 1 + (0.015 * (Lbp - 50) ** 2) / Math.sqrt(20 + (Lbp - 50) ** 2);
+    const Sc = 1 + 0.045 * Cbp;
+    const Sh = 1 + 0.015 * Cbp * T;
+    const Rt = -Math.sin(2 * dTheta * rad) * Rc;
+    return Math.sqrt((dLp / Sl) ** 2 + (dCp / Sc) ** 2 + (dHp / Sh) ** 2 + Rt * (dCp / Sc) * (dHp / Sh));
 }
 
 function read(rel: string): string {
