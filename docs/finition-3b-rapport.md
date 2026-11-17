@@ -302,7 +302,7 @@ Avec le compte Superadmin, sur event-village-dev, une fois l'application déploy
 
 ## À faire de ton côté
 
-1. **Décider la fusion.** `main` (`fdaa6c365`) est l'ancêtre de la branche, donc une avance rapide est possible. Si la 2b est fusionnée avant, il faudra fusionner `main` dans la branche (ses migrations `20261119…` passent déjà après les `20261118…`). Pour information : les runs complets de la 2b (263 et 275) dépassent le budget JS de « / » de 585 octets, et la 3b en retire 821 ; le run complet qui suivra la seconde fusion le vérifiera.
+1. **Décider la fusion.** La branche part de `fdaa6c365`. Depuis, `main` a reçu la phase 0 du design (`144e4fd7a`, commit du 17/11 à 02 h 37 TU) : 84 fichiers, tous sous `docs/design/`, aucun en commun avec la 3b ; une fusion d'essai (`git merge-tree`) passe sans conflit. Une avance rapide n'est donc plus possible : il faudra fusionner `main` dans la branche, ce que je n'ai pas fait (« Tu ne fusionnes pas »). Même chose si la 2b est fusionnée avant (ses migrations `20261119…` passent déjà après les `20261118…`). Pour information : les runs complets de la 2b (263 et 275) dépassent le budget JS de « / » de 585 octets, et la 3b en retire 821 ; le run complet qui suivra la seconde fusion le vérifiera.
 2. **Appliquer les trois migrations `20261118…` sur event-village-dev**, après les `20261117…`, avec les contrôles ci-dessus avant et après. Noter le nombre de droits `pricing.manage` et `shifts.read` effacés (contrôle C avant).
 3. **Déployer l'application juste après**, car le menu et les écrans lisent les nouvelles routes.
 4. **Ne pas fusionner** les branches de preuve `finition-3b/rouges-5` et `finition-3b/rouges-6`.
