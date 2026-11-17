@@ -1,0 +1,1514 @@
+TAP version 13
+# Subtest: 4b. Équipe d’un admin : choix de l’organisatrice et lien depuis la fiche d’un événement
+    # Subtest: page Équipe : un admin sans organisatrice choisie voit la liste avec recherche (plus de « ?partnerId= » à taper)
+    not ok 1 - page Équipe : un admin sans organisatrice choisie voit la liste avec recherche (plus de « ?partnerId= » à taper)
+      ---
+      duration_ms: 1.544104
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:1799'
+      failureType: 'testCodeFailure'
+      error: 'la page Équipe doit proposer OrganizerPicker à un admin'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        /**
+         * Équipe de contrôle de l'organisateur — finition 1 (E-13, E-14, E-17) : la liste est le composant commun TeamPanel
+         * (portée « tous les événements »), le même que l'onglet Équipe du pilotage, sur une seule lecture serveur
+         * (GET /api/partner/team). Un admin arrive ici avec ?partnerId= (organisateur choisi) ; sans lui, le serveur répond
+         * « Choisissez l’organisateur dont vous gérez l’équipe. ».
+         * Temps réel : les changements de statut des événements (event_status_history) relancent la lecture ; relecture de
+         * secours toutes les 60 s dans TeamPanel (acceptation, refus, expiration d'une invitation).
+         */
+        import React, { useCallback, useEffect, useState } from 'react';
+        import { TeamPanel } from '@/components/partner/team/TeamPanel';
+        import { PageHeader } from '@/components/ui/PageHeader';
+        import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+        
+        export default function PartnerTeamPage() {
+            const [scopePartnerId, setScopePartnerId] = useState<string | null>(null);
+            const [ready, setReady] = useState(false);
+            useEffect(() => {
+                const value = new URLSearchParams(window.location.search).get('partnerId');
+                setScopePartnerId(value && /^[0-9a-f-]{36}$/i.test(value) ? value : null);
+                setReady(true);
+            }, []);
+        
+            const [signal, setSignal] = useState(0);
+            const bump = useCallback(() => setSignal((n) => n + 1), []);
+            const { status: liveStatus } = useRealtimeRefresh({
+                channelKey: 'partner-team-statuts',
+                subscriptions: [{ table: 'event_status_history', event: 'INSERT' }],
+                onSignal: bump,
+            });
+        
+            return (
+                <div className="mx-auto max-w-6xl space-y-6 py-6 pb-24">
+                    <PageHeader
+                        title="Équipe de contrôle"
+                        description="Les personnes qui scannent les billets à l’entrée de vos événements : leur état, leur porte et leurs espèces, événement par événement."
+                    />
+                    {ready && <TeamPanel scope="all" partnerId={scopePartnerId} signal={signal} liveStatus={liveStatus} />}
+                </div>
+            );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:38:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    # Subtest: fiche admin d’un événement : lien « Équipe de cet événement » vers l’onglet Équipe du pilotage
+    not ok 2 - fiche admin d’un événement : lien « Équipe de cet événement » vers l’onglet Équipe du pilotage
+      ---
+      duration_ms: 0.287064
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:2630'
+      failureType: 'testCodeFailure'
+      error: 'lien vers l’onglet Équipe absent'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useCallback, useEffect, useRef, useState } from 'react';
+        import { useParams } from 'next/navigation';
+        import dynamic from 'next/dynamic';
+        import {
+          Building2,
+          CalendarDays,
+          Clock,
+          ExternalLink,
+          Gauge,
+          Image as ImageIcon,
+          Mail,
+          MapPin,
+          Navigation,
+          Phone,
+          Users,
+        } from 'lucide-react';
+        import { PageHeader } from '@/components/ui/PageHeader';
+        import { StatusBadge } from '@/components/ui/StatusBadge';
+        import { StatusBanner } from '@/components/ui/StatusBanner';
+        import { Badge } from '@/components/ui/Badge';
+        import { Button, type ButtonVariant } from '@/components/ui/Button';
+        import { LinkButton } from '@/components/ui/LinkButton';
+        import { Modal } from '@/components/ui/Modal';
+        import { ReasonDialog } from '@/components/ui/ReasonDialog';
+        import { DataList, type DataColumn } from '@/components/ui/DataList';
+        import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+        import { Skeleton } from '@/components/ui/Skeleton';
+        import { useToast } from '@/components/ui/Toast';
+        import { useAuth } from '@/components/providers/AuthProvider';
+        import { EventCancelDialog } from '@/components/events/EventCancelDialog';
+        import { RefundProgress } from '@/components/events/RefundProgress';
+        import { categoryChannelLabel } from '@/lib/events/category-channels';
+        import { EVENT_STATUS_META, eventStatusLabel, isEventStatus, type EventStatus } from '@/lib/events/event-status';
+        import { getCategoryLabel } from '@/lib/constants/event-categories';
+        import { PROGRAM_KIND_LABELS, type ProgramKind } from '@/lib/validations/event';
+        import { formatDateTime, formatEventDateTime, formatFcfa, formatInteger, formatShortDate, toDakarDateTimeLocal } from '@/lib/format';
+        import { retainedEnd } from '@/lib/events/event-end';
+        import { directionsUrl } from '@/lib/events/directions';
+        import { noticesText } from '@/lib/admin/confirmations';
+        
+        // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
+        const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
+          ssr: false,
+          loading: () => <div className="h-48 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
+        });
+        
+        /**
+         * Lot 5 (tâche 5.7, contrat G ; 5.8, contrat J) — fiche complète d'un événement pour l'administration.
+         *  - Lecture : GET /api/admin/events/[id] (affiche, dates, lieu, programme, catégories et prix, tous canaux et
+         *    inactives comprises, organisateur et contact, historique des statuts avec les motifs, actions).
+         *  - Actions : uniquement celles renvoyées par event_actions (D5). Une action avec `reason_required`
+         *    (refuser, suspendre) ouvre ReasonDialog ; les autres (valider, publier, réactiver, terminer) une
+         *    confirmation. Envoi : POST /api/admin/events/[id]/transition { to, reason? }.
+         *  - Annulation : EventCancelDialog (portée admin, impact et titre à retaper), puis RefundProgress.
+         */
+        
+        interface SheetEvent {
+          id: string;
+          title: string;
+          status: string;
+          description: string | null;
+          category: string | null;
+          image_url: string | null;
+          start_date: string | null;
+          start_time: string | null;
+          end_date: string | null;
+          end_time: string | null;
+          location: string | null;
+          city: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          capacity: number | null;
+          program: unknown;
+          practical_info: Record<string, unknown> | null;
+          created_at: string | null;
+          updated_at: string | null;
+          /** Lot 9 ter (R106 a) : VALIDE jamais publié terminé par le cron ; jamais public. */
+          ended_unpublished?: boolean | null;
+        }
+        
+        interface SheetCategory {
+          id: string;
+          name: string;
+          description: string | null;
+          price: number | string;
+          total_quantity: number;
+          sale_start: string | null;
+          sale_end: string | null;
+          max_per_order: number | null;
+          sale_online: boolean;
+          sale_counter: boolean;
+          is_active: boolean | null;
+        }
+        
+        interface SheetOrganizer {
+          id: string;
+          company_name: string | null;
+          commercial_name: string | null;
+          phone: string | null;
+          email: string | null;
+          city: string | null;
+          status: string | null;
+          contact_name: string | null;
+          contact_phone: string | null;
+          contact_email: string | null;
+        }
+        
+        interface SheetHistoryRow {
+          id: string;
+          old_status: string | null;
+          new_status: string;
+          actor_role: string | null;
+          actor_name: string | null;
+          reason: string | null;
+          channel: string | null;
+          created_at: string;
+        }
+        
+        interface SheetAction {
+          to: string;
+          reason_required: boolean;
+          label: string;
+        }
+        
+        interface SheetActions {
+          status: string;
+          actions: SheetAction[];
+          can_edit: boolean;
+          can_cancel: boolean;
+          last_reason: { kind: 'REFUS' | 'SUSPENSION'; reason: string | null; at: string } | null;
+        }
+        
+        interface Sheet {
+          event: SheetEvent;
+          categories: SheetCategory[];
+          organizer: SheetOrganizer | null;
+          history: SheetHistoryRow[];
+          actions: SheetActions;
+          cancellation: { public_notice: string | null; internal_reason: string | null; cancelled_at: string | null } | null;
+        }
+        
+        interface ProgramItem {
+          id: string;
+          time: string | null;
+          kind: string | null;
+          title: string;
+          participant: string | null;
+          description: string | null;
+          day: string | null;
+        }
+        
+        type Phase = 'loading' | 'ready' | 'not-found' | 'error';
+        
+        /** Statuts où la page publique existe (contrat E). */
+        const PUBLIC_STATUSES: readonly EventStatus[] = ['PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE'];
+        
+        const ROLE_LABELS: Record<string, string> = {
+          PARTENAIRE: 'Partenaire',
+          ADMIN: 'Administration',
+          SYSTEM: 'Automatique',
+        };
+        
+        const CHANNEL_LABELS: Record<string, string> = {
+          CREATION: 'Création',
+          TRANSITION: 'Changement de statut',
+          CANCELLATION: 'Annulation',
+          CRON: 'Fin automatique',
+        };
+        
+        const PARTNER_STATUS: Record<string, { label: string; variant: 'success' | 'warning' | 'danger' | 'neutral' }> = {
+          VALIDE: { label: 'Compte validé', variant: 'success' },
+          EN_ATTENTE: { label: 'Compte en attente de validation', variant: 'warning' },
+          REJETE: { label: 'Compte refusé', variant: 'danger' },
+          SUSPENDU: { label: 'Compte suspendu', variant: 'danger' },
+        };
+        
+        const PRACTICAL_LABELS: Record<string, string> = {
+          address: 'Adresse',
+          accessNotes: 'Accès',
+          parking: 'Stationnement',
+          contactPhone: 'Téléphone sur place',
+          rules: 'Règlement',
+        };
+        
+        /** Textes des confirmations et des motifs, choisis d'après la cible et le statut courant (jamais affichés bruts). */
+        interface ActionCopy {
+          title: string;
+          body: string;
+          success: string;
+          variant: ButtonVariant;
+        }
+        
+        function actionCopy(action: SheetAction, from: string): ActionCopy {
+          switch (action.to) {
+            case 'VALIDE':
+              return {
+                title: 'Valider l’événement ?',
+                body: 'L’organisateur est prévenu et pourra publier l’événement. La fiche ne repasse pas en validation.',
+                success: 'Événement validé : l’organisateur peut maintenant le publier.',
+                variant: 'primary',
+              };
+            case 'BROUILLON':
+              return {
+                title: 'Refuser l’événement',
+                body: 'L’événement revient en brouillon chez l’organisateur, qui voit votre motif sur sa fiche et peut le soumettre de nouveau.',
+                success: 'Refus envoyé : l’organisateur voit votre motif.',
+                variant: 'secondary',
+              };
+            case 'SUSPENDU':
+              return {
+                title: 'Suspendre l’événement',
+                body: `La vente et le contrôle d’accès s’arrêtent immédiatement. ${noticesText('event_suspend')}`,
+                success: 'Événement suspendu : la vente et le contrôle d’accès sont arrêtés.',
+                variant: 'secondary',
+              };
+            case 'PUBLIE':
+              return from === 'SUSPENDU'
+                ? {
+                  title: 'Réactiver l’événement ?',
+                  body: `La page publique, la vente et le contrôle d’accès reprennent. ${noticesText('event_reactivate')}`,
+                  success: 'Événement réactivé : la vente reprend.',
+                  variant: 'primary',
+                }
+                : {
+                  title: 'Publier l’événement ?',
+                  body: 'La page publique devient visible de tous et la billetterie s’ouvre selon les dates de vente.',
+                  success: 'Événement publié.',
+                  variant: 'primary',
+                };
+            case 'TERMINE':
+              // Finition 3b (E-32) : clore un événement suspendu n'est pas « terminer » un événement publié (avis différents)
+              return from === 'SUSPENDU'
+                ? {
+                  title: 'Clore l’événement ?',
+                  body: `L’événement passe « Terminé », sans annulation : personne n’est remboursé automatiquement. ${noticesText('event_close')} Si une caisse est encore ouverte, le partenaire reçoit aussi une alerte par SMS. Si les participants doivent être remboursés, choisissez plutôt « Annuler l’événement ».`,
+                  success: 'Événement clos.',
+                  variant: 'secondary',
+                }
+                : {
+                  title: 'Terminer l’événement ?',
+                  body: `La vente est close. Le contrôle des entrées reste possible jusqu’à la fermeture de la fenêtre de scan. ${noticesText('event_finish')} Si une caisse est encore ouverte, le partenaire reçoit à la place une alerte par SMS, notification et email. Les détenteurs de billets ne sont pas prévenus.`,
+                  success: 'Événement terminé.',
+                  variant: 'secondary',
+                };
+            default:
+              return {
+                title: `${action.label} ?`,
+                body: 'Confirmez le changement de statut de cet événement.',
+                success: 'Statut de l’événement mis à jour.',
+                variant: 'primary',
+              };
+          }
+        }
+        
+        function readError(body: unknown): string | null {
+          if (body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string') {
+            return (body as { error: string }).error;
+          }
+          return null;
+        }
+        
+        function isSheet(body: unknown): body is Sheet {
+          const b = body as Sheet | null;
+          return !!b && typeof b === 'object' && !!b.event && typeof b.event.id === 'string' && Array.isArray(b.categories)
+            && Array.isArray(b.history) && !!b.actions && Array.isArray(b.actions.actions);
+        }
+        
+        function str(v: unknown): string | null {
+          return typeof v === 'string' && v.trim() !== '' ? v : null;
+        }
+        
+        /** Programme lu tel qu'il est stocké, trié par jour puis heure (contrat F1). */
+        function programOf(raw: unknown): ProgramItem[] {
+          if (!Array.isArray(raw)) return [];
+          return raw
+            .filter((l): l is Record<string, unknown> => !!l && typeof l === 'object')
+            .map((l, i) => ({
+              id: str(l.id) ?? `ligne-${i}`,
+              time: str(l.time),
+              kind: str(l.kind),
+              title: str(l.title) ?? 'Sans titre',
+              participant: str(l.participant) ?? str(l.artistOrSpeaker),
+              description: str(l.description),
+              day: str(l.day),
+            }))
+            .sort((a, b) => `${a.day ?? ''} ${a.time ?? ''}`.localeCompare(`${b.day ?? ''} ${b.time ?? ''}`));
+        }
+        
+        function kindLabel(kind: string | null): string | null {
+          return kind && kind in PROGRAM_KIND_LABELS ? PROGRAM_KIND_LABELS[kind as ProgramKind] : null;
+        }
+        
+        function amount(v: number | string): number {
+          return typeof v === 'number' ? v : Number(v);
+        }
+        
+        function Section({ title, children, id }: { title: string; children: React.ReactNode; id: string }) {
+          return (
+            <section aria-labelledby={id} className="rounded-2xl border border-border bg-surface p-4 sm:p-6">
+              <h2 id={id} className="mb-4 text-lg font-bold tracking-tight text-fg">{title}</h2>
+              {children}
+            </section>
+          );
+        }
+        
+        /**
+         * Ligne « libellé : valeur » d'une liste de définitions, avec pastille d'icône. Le <div> n'enveloppe que
+         * <dt> et <dd> (structure exigée dans un <dl>) : l'icône, décorative, est posée dans le <dt>.
+         */
+        function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+          return (
+            <div className="relative min-h-9 min-w-0 pl-12">
+              <dt className="text-sm text-fg-muted">
+                <span className="absolute left-0 top-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-surface-sunken text-fg-muted" aria-hidden="true">
+                  {icon}
+                </span>
+                {label}
+              </dt>
+              <dd className="break-words text-base font-medium text-fg">{children}</dd>
+            </div>
+          );
+        }
+        
+        function SheetSkeleton() {
+          return (
+            <div role="status" aria-busy="true" aria-label="Chargement de la fiche" className="flex flex-col gap-4">
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-9 w-3/4 max-w-xl" />
+              <div className="grid gap-4 lg:grid-cols-3">
+                <Skeleton className="h-72 lg:col-span-2" />
+                <Skeleton className="h-72" />
+              </div>
+              <Skeleton className="h-48" />
+            </div>
+          );
+        }
+        
+        export default function AdminEventSheetPage() {
+          const params = useParams<{ id: string }>();
+          const eventId = typeof params?.id === 'string' ? params.id : '';
+          const toast = useToast();
+          // Lot 9 bis (R51, B31, B34) : valider, suspendre, annuler… demandent events.write. event_actions ne sert déjà ces
+          // actions qu'à un admin qui l'a (M08) ; l'écran ne montre pas de bouton qui mènerait à un refus.
+          const { hasPermission } = useAuth();
+          const canWriteEvents = hasPermission('events.write');
+        
+          const [sheet, setSheet] = useState<Sheet | null>(null);
+          const [phase, setPhase] = useState<Phase>('loading');
+          const [errorMessage, setErrorMessage] = useState<string | null>(null);
+          const [isRetrying, setIsRetrying] = useState(false);
+        
+          const [confirmAction, setConfirmAction] = useState<SheetAction | null>(null);
+          const [reasonAction, setReasonAction] = useState<SheetAction | null>(null);
+          const [actionError, setActionError] = useState<string | null>(null);
+          const [isSubmitting, setIsSubmitting] = useState(false);
+          const [isCancelOpen, setIsCancelOpen] = useState(false);
+        
+          const requestSeq = useRef(0);
+        
+          const load = useCallback(async (silent: boolean) => {
+            if (!eventId) return;
+            const seq = ++requestSeq.current;
+            if (!silent) {
+              setPhase('loading');
+              setErrorMessage(null);
+            }
+            try {
+              const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}`, { cache: 'no-store' });
+              const body: unknown = await res.json().catch(() => null);
+              if (seq !== requestSeq.current) return;
+              if (res.status === 404) {
+                setPhase('not-found');
+                return;
+              }
+              if (!res.ok || !isSheet(body)) {
+                throw new Error(readError(body) ?? 'Impossible de charger la fiche de l’événement pour le moment.');
+              }
+              setSheet(body);
+              setPhase('ready');
+            } catch (err) {
+              if (seq !== requestSeq.current) return;
+              console.error('[admin/events/[id]] chargement de la fiche en échec', err);
+              const message = err instanceof Error && err.message && !/fetch|network/i.test(err.message)
+                ? err.message
+                : 'Impossible de charger la fiche. Vérifiez votre connexion, puis réessayez.';
+              if (silent) {
+                toast.error('La fiche n’a pas pu être actualisée. Rechargez la page pour voir son état actuel.');
+                return;
+              }
+              setErrorMessage(message);
+              setPhase('error');
+            }
+          }, [eventId, toast]);
+        
+          useEffect(() => {
+            void load(false);
+          }, [load]);
+        
+          const retry = async (): Promise<void> => {
+            setIsRetrying(true);
+            try {
+              await load(false);
+            } finally {
+              setIsRetrying(false);
+            }
+          };
+        
+          const openAction = (action: SheetAction): void => {
+            setActionError(null);
+            if (action.reason_required) setReasonAction(action);
+            else setConfirmAction(action);
+          };
+        
+          const closeDialogs = (): void => {
+            if (isSubmitting) return;
+            setConfirmAction(null);
+            setReasonAction(null);
+            setActionError(null);
+          };
+        
+          const runTransition = async (action: SheetAction, reason?: string): Promise<void> => {
+            if (!sheet || isSubmitting) return;
+            const from = sheet.actions.status;
+            setIsSubmitting(true);
+            setActionError(null);
+            try {
+              const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/transition`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reason !== undefined ? { to: action.to, reason } : { to: action.to }),
+              });
+              const body: unknown = await res.json().catch(() => null);
+              if (!res.ok) {
+                const message = readError(body) ?? 'Le changement de statut a échoué. Réessayez dans un instant.';
+                setActionError(message);
+                // L'état a pu changer entre-temps (autre administrateur, fin automatique) : on relit la fiche.
+                if (res.status === 409) void load(true);
+                return;
+              }
+              toast.success(actionCopy(action, from).success);
+              setConfirmAction(null);
+              setReasonAction(null);
+              await load(true);
+            } catch (err) {
+              console.error('[admin/events/[id]] transition en échec', err);
+              setActionError('Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.');
+            } finally {
+              setIsSubmitting(false);
+            }
+          };
+        
+          if (phase === 'loading' && !sheet) {
+            return (
+              <div className="flex flex-col gap-4">
+                <SheetSkeleton />
+              </div>
+            );
+          }
+        
+          if (phase === 'not-found') {
+            return (
+              <div className="flex flex-col gap-4">
+                <PageHeader title="Événement introuvable" back={{ href: '/admin/events', label: 'Retour aux événements' }} />
+                <EmptyState
+                  title="Cet événement n’existe pas ou a été supprimé"
+                  description="Le brouillon a peut-être été supprimé par son organisateur. Revenez à la liste pour continuer."
+                  actionLabel="Voir les événements"
+                  actionHref="/admin/events"
+                />
+              </div>
+            );
+          }
+        
+          if (phase === 'error' || !sheet) {
+            return (
+              <div className="flex flex-col gap-4">
+                <PageHeader title="Fiche de l’événement" back={{ href: '/admin/events', label: 'Retour aux événements' }} />
+                <ErrorState
+                  title="Fiche indisponible"
+                  description={errorMessage ?? 'Impossible de charger la fiche. Vérifiez votre connexion, puis réessayez.'}
+                  onRetry={() => void retry()}
+                  isRetrying={isRetrying}
+                />
+              </div>
+            );
+          }
+        
+          const { event, categories, organizer, history, actions, cancellation } = sheet;
+          const currentStatus = actions.status;
+          const program = programOf(event.program);
+          const practical = event.practical_info && typeof event.practical_info === 'object'
+            ? Object.entries(PRACTICAL_LABELS)
+              .map(([key, label]) => ({ key, label, value: str(event.practical_info?.[key]) }))
+              .filter((r): r is { key: string; label: string; value: string } => r.value !== null)
+            : [];
+          const isPublic = isEventStatus(currentStatus) && PUBLIC_STATUSES.includes(currentStatus) && event.ended_unpublished !== true;
+          const isCancelled = currentStatus === 'ANNULE';
+          const partnerStatus = organizer?.status ? PARTNER_STATUS[organizer.status] : undefined;
+          const historyNewestFirst = history.slice().reverse();
+          const startLabel = formatEventDateTime(event.start_date, event.start_time);
+          // Finition 2a (2, E-01) : la fin retenue (même règle que la base), jamais « Non précisée »
+          const end = retainedEnd({ start_date: event.start_date, start_time: event.start_time, end_date: event.end_date, end_time: event.end_time });
+          const hasPosition = typeof event.latitude === 'number' && typeof event.longitude === 'number';
+          const confirmCopy = confirmAction ? actionCopy(confirmAction, currentStatus) : null;
+          const reasonCopy = reasonAction ? actionCopy(reasonAction, currentStatus) : null;
+        
+          const categoryColumns: DataColumn<SheetCategory>[] = [
+            {
+              key: 'name',
+              header: 'Catégorie',
+              render: (c) => (
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="font-semibold text-fg">{c.name}</span>
+                  {c.description && <span className="text-sm text-fg-muted">{c.description}</span>}
+                </div>
+              ),
+            },
+            { key: 'price', header: 'Prix', align: 'right', render: (c) => <span className="whitespace-nowrap tabular-nums">{amount(c.price) === 0 ? 'Gratuit' : formatFcfa(amount(c.price))}</span> },
+            { key: 'quota', header: 'Quota', align: 'right', render: (c) => <span className="tabular-nums">{formatInteger(c.total_quantity)}</span> },
+            {
+              key: 'sale',
+              header: 'Période de vente',
+              render: (c) => (
+                <span className="text-sm">
+                  {c.sale_start ? `Du ${formatDateTime(c.sale_start)}` : 'Dès la publication'}
+                  {' · '}
+                  {c.sale_end ? `jusqu’au ${formatDateTime(c.sale_end)}` : 'jusqu’à l’événement'}
+                </span>
+              ),
+            },
+            { key: 'max', header: 'Par commande', align: 'right', render: (c) => <span className="tabular-nums">{c.max_per_order ? `${formatInteger(c.max_per_order)} au plus` : '—'}</span> },
+            {
+              key: 'state',
+              header: 'Canaux et état',
+              render: (c) => (
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge variant={c.sale_online || c.sale_counter ? 'info' : 'neutral'} size="sm">{categoryChannelLabel(c)}</Badge>
+                  <Badge variant={c.is_active === false ? 'warning' : 'success'} size="sm">{c.is_active === false ? 'Inactive' : 'Active'}</Badge>
+                </div>
+              ),
+            },
+          ];
+        
+          return (
+            <div className="flex flex-col gap-4">
+              <PageHeader
+                back={{ href: '/admin/events', label: 'Retour aux événements' }}
+                eyebrow={(
+                  <>
+                    <StatusBadge domain="event" status={currentStatus} />
+                    <span className="text-sm text-fg-muted">{getCategoryLabel(event.category)}</span>
+                  </>
+                )}
+                title={event.title}
+                description={`${organizer?.company_name ?? 'Organisateur inconnu'} · ${startLabel}`}
+                actions={(
+                  <>
+                    {canWriteEvents && actions.actions.filter((a) => a.to !== 'ANNULE').map((a) => (
+                      <Button
+                        key={a.to}
+                        variant={actionCopy(a, currentStatus).variant}
+                        onClick={() => openAction(a)}
+                        disabled={isSubmitting}
+                      >
+                        {a.label}
+                      </Button>
+                    ))}
+                    {canWriteEvents && actions.can_cancel && (
+                      <Button variant="danger" onClick={() => setIsCancelOpen(true)} disabled={isSubmitting}>
+                        Annuler l’événement
+                      </Button>
+                    )}
+                    {/* Lot 9 bis (R105, D-txt E.41) : le pilotage de l'organisateur (ventes, équipe, caisses, remboursements),
+                        lisible par un admin events.read (route et RPC décident). */}
+                    {hasPermission('events.read') && (
+                      <LinkButton href={`/partner/events/${event.id}`} variant="secondary" leftIcon={<Gauge size={16} />}>
+                        Ouvrir le pilotage
+                      </LinkButton>
+                    )}
+                    {isPublic && (
+                      <LinkButton href={`/events/${event.id}`} variant="ghost" external rightIcon={<ExternalLink size={16} />}>
+                        Page publique
+                      </LinkButton>
+                    )}
+                  </>
+                )}
+              />
+        
+              {actions.last_reason && (
+                <StatusBanner
+                  tone={actions.last_reason.kind === 'SUSPENSION' ? 'suspended' : 'warning'}
+                  title={actions.last_reason.kind === 'SUSPENSION' ? 'Motif de la suspension' : 'Motif du refus'}
+                >
+                  <p>{actions.last_reason.reason ?? 'Aucun motif enregistré.'}</p>
+                  <p className="mt-1 text-fg-muted">
+                    Communiqué à l’organisateur le{' '}
+                    <time dateTime={toDakarDateTimeLocal(actions.last_reason.at)}>{formatDateTime(actions.last_reason.at)}</time>.
+                  </p>
+                </StatusBanner>
+              )}
+        
+              {isCancelled && (
+                <StatusBanner tone="danger" title="Événement annulé">
+                  {cancellation?.public_notice && <p><span className="font-semibold">Avis public : </span>{cancellation.public_notice}</p>}
+                  {cancellation?.internal_reason && <p className="mt-1"><span className="font-semibold">Motif interne : </span>{cancellation.internal_reason}</p>}
+                  {cancellation?.cancelled_at && (
+                    <p className="mt-1">
+                      Annulé le <time dateTime={toDakarDateTimeLocal(cancellation.cancelled_at)}>{formatDateTime(cancellation.cancelled_at)}</time>.
+                    </p>
+                  )}
+                </StatusBanner>
+              )}
+        
+              {isCancelled && <RefundProgress eventId={event.id} isAdmin />}
+        
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
+                  <Section id="fiche-infos" title="Dates et lieu">
+                    <dl className="grid gap-4 sm:grid-cols-2">
+                      <InfoRow icon={<CalendarDays size={18} />} label="Début">{startLabel}</InfoRow>
+                      <InfoRow icon={<Clock size={18} />} label="Fin">
+                        {end ? end.text : '—'}
+                        {end?.note && <span className="block text-sm font-normal text-fg-muted">{end.note}</span>}
+                      </InfoRow>
+                      <InfoRow icon={<MapPin size={18} />} label="Lieu">
+                        {[event.location, event.city].filter(Boolean).join(', ') || 'Non renseigné'}
+                        {!hasPosition && <span className="block text-sm font-normal text-fg-muted">Aucun repère sur la carte.</span>}
+                      </InfoRow>
+                      <InfoRow icon={<Users size={18} />} label="Jauge déclarée">
+                        <span className="tabular-nums">{event.capacity ? `${formatInteger(event.capacity)} personnes` : 'Non limitée'}</span>
+                      </InfoRow>
+                    </dl>
+                    {hasPosition && (
+                      <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
+                        <EventMap latitude={event.latitude as number} longitude={event.longitude as number} venueName={event.location ?? undefined} />
+                        <LinkButton
+                          href={directionsUrl(event.latitude as number, event.longitude as number)}
+                          external
+                          variant="secondary"
+                          leftIcon={<Navigation size={18} />}
+                          rightIcon={<ExternalLink size={16} />}
+                          className="self-start"
+                        >
+                          Voir l’itinéraire
+                        </LinkButton>
+                      </div>
+                    )}
+                    {practical.length > 0 && (
+                      <dl className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
+                        {practical.map((p) => (
+                          <div key={p.key} className="min-w-0">
+                            <dt className="text-sm text-fg-muted">{p.label}</dt>
+                            <dd className="whitespace-pre-line break-words text-base text-fg">{p.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                  </Section>
+        
+                  <Section id="fiche-description" title="Description">
+                    {event.description
+                      ? <p className="whitespace-pre-line break-words text-base leading-relaxed text-fg">{event.description}</p>
+                      : <p className="text-sm text-fg-muted">L’organisateur n’a pas rédigé de description.</p>}
+                  </Section>
+        
+                  <Section id="fiche-programme" title="Programme">
+                    {program.length === 0 ? (
+                      <p className="text-sm text-fg-muted">Aucun programme renseigné.</p>
+                    ) : (
+                      <ol className="flex flex-col gap-3">
+                        {program.map((line) => (
+                          <li key={line.id} className="flex gap-3 rounded-xl border border-border bg-surface-sunken/60 p-3">
+                            <div className="w-24 flex-shrink-0 text-sm font-semibold tabular-nums text-fg">
+                              {line.day && <span className="block font-normal text-fg-muted">{formatShortDate(line.day)}</span>}
+                              {line.time ?? '—'}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-fg">{line.title}</span>
+                                {kindLabel(line.kind) && <Badge variant="neutral" size="sm">{kindLabel(line.kind)}</Badge>}
+                              </div>
+                              {line.participant && <p className="text-sm text-fg-muted">{line.participant}</p>}
+                              {line.description && <p className="mt-1 whitespace-pre-line break-words text-sm text-fg">{line.description}</p>}
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </Section>
+        
+                  <Section id="fiche-categories" title="Catégories et prix">
+                    <DataList
+                      items={categories}
+                      columns={categoryColumns}
+                      getKey={(c) => c.id}
+                      caption="Catégories de billets, tous canaux et inactives comprises"
+                      cardTitle={(c) => c.name}
+                      empty={<p className="text-sm text-fg-muted">Aucune catégorie de billet : l’événement ne peut pas être vendu.</p>}
+                    />
+                  </Section>
+                </div>
+        
+                <div className="flex min-w-0 flex-col gap-4">
+                  <Section id="fiche-affiche" title="Affiche">
+                    {event.image_url ? (
+                      // Affiche servie par le stockage du projet (local en e2e) : pas d'optimiseur next/image.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={event.image_url}
+                        alt={`Affiche de « ${event.title} »`}
+                        loading="lazy"
+                        className="mx-auto block h-auto max-h-[36rem] w-auto max-w-full rounded-xl border border-border bg-surface-sunken object-contain"
+                      />
+                    ) : (
+                      <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-sunken text-fg-muted">
+                        <ImageIcon size={28} aria-hidden="true" />
+                        <span className="text-sm">Aucune affiche</span>
+                      </div>
+                    )}
+                  </Section>
+        
+                  <Section id="fiche-organisateur" title="Organisateur">
+                    {organizer ? (
+                      <dl className="flex flex-col gap-4">
+                        <InfoRow icon={<Building2 size={18} />} label="Structure">
+                          {organizer.company_name ?? 'Non renseignée'}
+                          {organizer.commercial_name && organizer.commercial_name !== organizer.company_name && (
+                            <span className="block text-sm font-normal text-fg-muted">{organizer.commercial_name}</span>
+                          )}
+                          {partnerStatus && (
+                            <span className="mt-1 block">
+                              <Badge variant={partnerStatus.variant} size="sm">{partnerStatus.label}</Badge>
+                            </span>
+                          )}
+                        </InfoRow>
+                        {organizer.contact_name && (
+                          <InfoRow icon={<Users size={18} />} label="Responsable">{organizer.contact_name}</InfoRow>
+                        )}
+                        {(organizer.phone || organizer.contact_phone) && (
+                          <InfoRow icon={<Phone size={18} />} label="Téléphone">
+                            <a href={`tel:${organizer.phone ?? organizer.contact_phone}`} className="inline-flex min-h-11 items-center text-brand-fg underline-offset-4 hover:underline">
+                              {organizer.phone ?? organizer.contact_phone}
+                            </a>
+                          </InfoRow>
+                        )}
+                        {(organizer.email || organizer.contact_email) && (
+                          <InfoRow icon={<Mail size={18} />} label="Email">
+                            <a href={`mailto:${organizer.email ?? organizer.contact_email}`} className="inline-flex min-h-11 items-center break-all text-brand-fg underline-offset-4 hover:underline">
+                              {organizer.email ?? organizer.contact_email}
+                            </a>
+                          </InfoRow>
+                        )}
+                        {organizer.city && <InfoRow icon={<MapPin size={18} />} label="Ville">{organizer.city}</InfoRow>}
+                      </dl>
+                    ) : (
+                      <p className="text-sm text-fg-muted">Organisateur introuvable.</p>
+                    )}
+                  </Section>
+        
+                  <Section id="fiche-historique" title="Historique des statuts">
+                    {historyNewestFirst.length === 0 ? (
+                      <p className="text-sm text-fg-muted">Aucun changement de statut enregistré.</p>
+                    ) : (
+                      <ol className="flex flex-col gap-4">
+                        {historyNewestFirst.map((h) => (
+                          <li key={h.id} className="relative border-l-2 border-border pl-4">
+                            <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-fg-muted" aria-hidden="true" />
+                            <p className="text-base font-semibold text-fg">
+                              {h.old_status ? `${eventStatusLabel(h.old_status)} → ${eventStatusLabel(h.new_status)}` : `Création : ${eventStatusLabel(h.new_status)}`}
+                            </p>
+                            <p className="text-sm text-fg-muted">
+                              {h.actor_name ?? ROLE_LABELS[h.actor_role ?? ''] ?? 'Auteur inconnu'}
+                              {h.actor_name && h.actor_role && ROLE_LABELS[h.actor_role] ? ` (${ROLE_LABELS[h.actor_role]})` : ''}
+                              {h.channel && CHANNEL_LABELS[h.channel] ? ` · ${CHANNEL_LABELS[h.channel]}` : ''}
+                            </p>
+                            <p className="text-sm text-fg-muted">
+                              <time dateTime={toDakarDateTimeLocal(h.created_at)}>{formatDateTime(h.created_at)}</time>
+                            </p>
+                            {h.reason && (
+                              <blockquote className="mt-2 rounded-xl bg-surface-sunken px-3 py-2 text-sm text-fg">
+                                <span className="sr-only">Motif : </span>{h.reason}
+                              </blockquote>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </Section>
+                </div>
+              </div>
+        
+              <Modal
+                isOpen={!!confirmAction}
+                onClose={closeDialogs}
+                title={confirmCopy?.title}
+                subtitle={event.title}
+                maxWidth="md"
+                busy={isSubmitting}
+                footer={confirmAction ? (
+                  <>
+                    <Button variant="secondary" onClick={closeDialogs} disabled={isSubmitting} className="flex-1 sm:flex-none">
+                      Annuler
+                    </Button>
+                    <Button
+                      variant="primary"
+                      onClick={() => void runTransition(confirmAction)}
+                      isLoading={isSubmitting}
+                      className="flex-1 sm:flex-none"
+                    >
+                      {confirmAction.label}
+                    </Button>
+                  </>
+                ) : undefined}
+              >
+                <div className="flex flex-col gap-3">
+                  <p className="text-base leading-relaxed text-fg">{confirmCopy?.body}</p>
+                  {actionError && (
+                    <StatusBanner tone="danger" title="Action impossible" announce="alert">
+                      {actionError}
+                    </StatusBanner>
+                  )}
+                </div>
+              </Modal>
+        
+              <ReasonDialog
+                isOpen={!!reasonAction}
+                onClose={closeDialogs}
+                onConfirm={(reason) => {
+                  if (reasonAction) void runTransition(reasonAction, reason);
+                }}
+                title={reasonCopy?.title ?? 'Motif'}
+                description={reasonCopy?.body}
+                label={reasonAction?.to === 'SUSPENDU' ? 'Motif de la suspension' : reasonAction?.to === 'TERMINE' ? 'Motif de la clôture' : 'Motif du refus'}
+                hint="Au moins 3 caractères. Ce motif est communiqué à l’organisateur et reste dans l’historique."
+                confirmLabel={reasonAction?.label ?? 'Confirmer'}
+                variant="danger"
+                isLoading={isSubmitting}
+                error={actionError ?? undefined}
+              />
+        
+              <EventCancelDialog
+                eventId={event.id}
+                eventTitle={event.title}
+                scope="admin"
+                open={isCancelOpen}
+                onClose={() => setIsCancelOpen(false)}
+                onCancelled={() => {
+                  setIsCancelOpen(false);
+                  void load(true);
+                }}
+              />
+            </div>
+          );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:48:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..2
+not ok 1 - 4b. Équipe d’un admin : choix de l’organisatrice et lien depuis la fiche d’un événement
+  ---
+  duration_ms: 2.40133
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:1654'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write (garde-fou)
+    # Subtest: le bouton n’est filtré par aucun rôle ; l’onglet Caisse est proposé à tous
+    not ok 1 - le bouton n’est filtré par aucun rôle ; l’onglet Caisse est proposé à tous
+      ---
+      duration_ms: 0.234544
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:3193'
+      failureType: 'testCodeFailure'
+      error: 'le bouton ne doit pas dépendre du rôle : la route décide'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        function DiscrepancyValidation({ shifts, onValidated }: { shifts: CashShift[]; onValidated: () => unknown }) {
+            const toast = useToast();
+            const [busy, setBusy] = useState<string | null>(null);
+            const [needsPassword, setNeedsPassword] = useState<string | null>(null);
+        
+            const pending = shifts.filter((s) => s.status === 'CLOTURE' && Number(s.difference ?? 0) !== 0 && !s.discrepancy_validated_at);
+        
+            const validate = async (shiftId: string): Promise<void> => {
+                setBusy(shiftId);
+                try {
+                    await sendJson(`/api/partner/shifts/${shiftId}/validate-discrepancy`, 'POST', {});
+                    toast.success('Écart validé.');
+                    await onValidated();
+                } catch (err) {
+                    if (err instanceof ApiError && err.code === 'PASSWORD_CONFIRMATION_REQUIRED') {
+                        setNeedsPassword(shiftId);
+                        return;
+                    }
+                    toast.error(errorMessage(err, 'L’écart n’a pas pu être validé.'));
+                } finally {
+                    setBusy(null);
+                }
+            };
+        
+            if (pending.length === 0) return null;
+        
+            return (
+                <PilotageSection
+                    title="Écarts à valider"
+                    description="Une caisse fermée avec un écart attend votre validation. Vérifiez la justification du contrôleur avant de valider."
+                >
+                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                        {pending.map((s) => {
+                            const name = s.controller_name || 'Compte sans nom';
+                            return (
+                                <li key={s.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0 space-y-1 text-sm">
+                                        <p className="font-semibold text-fg">
+                                            {name} · écart de <span className="tabular-nums">{differenceText(s.difference)}</span>
+                                        </p>
+                                        {s.justification && <p className="text-fg-muted">« {s.justification} »</p>}
+                                        {s.closed_at && (
+                                            <p className="text-fg-muted">Fermée le <time dateTime={s.closed_at}>{formatDateTime(s.closed_at)}</time></p>
+                                        )}
+                                    </div>
+                                    <Button variant="primary" leftIcon={<ShieldCheck size={18} aria-hidden="true" />} isLoading={busy === s.id}
+                                        onClick={() => void validate(s.id)} aria-label={`Valider l’écart de la caisse de ${name}`}>
+                                        Valider l’écart
+                                    </Button>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    {needsPassword && (
+                        <PasswordConfirmDialog
+                            isOpen={needsPassword !== null}
+                            onClose={() => setNeedsPassword(null)}
+                            onConfirmed={() => {
+                                const id = needsPassword;
+                                setNeedsPassword(null);
+                                if (id) void validate(id);
+                            }}
+                        />
+                    )}
+                </PilotageSection>
+            );
+        }
+        
+        export function CashTab({ eventId, signal }: { eventId: string; signal: number }) {
+            const toast = useToast();
+            const { hasAnyRole, hasRole, hasPermission } = useAuth();
+            const { data, error, loading, refreshing, reload } = useServerData<PilotageCash>(`/api/partner/events/${eventId}/pilotage/cash`, signal);
+            const [closing, setClosing] = useState<CashShift | null>(null);
+            const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
+            // Partenaire propriétaire (sinon la route de pilotage n'aurait rien servi), ou admin muni de events.write
+            const canCloseShifts = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
+            const columns = canCloseShifts ? [...SHIFT_COLUMNS, closeColumn(set
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:58:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    1..1
+not ok 2 - 4c. écart de caisse : « Valider l’écart » à l’écran d’un admin events.write (garde-fou)
+  ---
+  duration_ms: 0.298712
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:3039'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 5. accueil : une seule ligne pour l’argent dans « À faire aujourd’hui »
+    # Subtest: versements et créances : « Argent qui attend : 2 versements à reprendre, 3 créances »
+    not ok 1 - versements et créances : « Argent qui attend : 2 versements à reprendre, 3 créances »
+      ---
+      duration_ms: 5.272481
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:3956'
+      failureType: 'testCodeFailure'
+      error: |-
+        todoMoneyLine absente de lib/admin/todo.ts
+        + actual - expected
+        
+        + 'undefined'
+        - 'function'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'function'
+      actual: 'undefined'
+      operator: 'strictEqual'
+      stack: |-
+        moneyLineFn (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:12)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:65:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: un versement, aucune créance : singulier et « aucune créance »
+    not ok 2 - un versement, aucune créance : singulier et « aucune créance »
+      ---
+      duration_ms: 0.41053
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:4469'
+      failureType: 'testCodeFailure'
+      error: |-
+        todoMoneyLine absente de lib/admin/todo.ts
+        + actual - expected
+        
+        + 'undefined'
+        - 'function'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'function'
+      actual: 'undefined'
+      operator: 'strictEqual'
+      stack: |-
+        moneyLineFn (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:12)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:74:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: seulement le droit de lire les créances : la partie des versements n’apparaît pas
+    not ok 3 - seulement le droit de lire les créances : la partie des versements n’apparaît pas
+      ---
+      duration_ms: 0.389228
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:4859'
+      failureType: 'testCodeFailure'
+      error: |-
+        todoMoneyLine absente de lib/admin/todo.ts
+        + actual - expected
+        
+        + 'undefined'
+        - 'function'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'function'
+      actual: 'undefined'
+      operator: 'strictEqual'
+      stack: |-
+        moneyLineFn (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:12)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:81:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: tout à zéro : ligne « À jour », jamais une carte
+    not ok 4 - tout à zéro : ligne « À jour », jamais une carte
+      ---
+      duration_ms: 0.464102
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:5167'
+      failureType: 'testCodeFailure'
+      error: |-
+        todoMoneyLine absente de lib/admin/todo.ts
+        + actual - expected
+        
+        + 'undefined'
+        - 'function'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'function'
+      actual: 'undefined'
+      operator: 'strictEqual'
+      stack: |-
+        moneyLineFn (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:12)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:87:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: compteur illisible : dit, jamais 0, et la carte reste affichée
+    not ok 5 - compteur illisible : dit, jamais 0, et la carte reste affichée
+      ---
+      duration_ms: 0.35739
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:5527'
+      failureType: 'testCodeFailure'
+      error: |-
+        todoMoneyLine absente de lib/admin/todo.ts
+        + actual - expected
+        
+        + 'undefined'
+        - 'function'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'function'
+      actual: 'undefined'
+      operator: 'strictEqual'
+      stack: |-
+        moneyLineFn (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:12)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:94:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: aucun des deux droits : pas de ligne pour l’argent
+    not ok 6 - aucun des deux droits : pas de ligne pour l’argent
+      ---
+      duration_ms: 0.454978
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:5929'
+      failureType: 'testCodeFailure'
+      error: |-
+        todoMoneyLine absente de lib/admin/todo.ts
+        + actual - expected
+        
+        + 'undefined'
+        - 'function'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'function'
+      actual: 'undefined'
+      operator: 'strictEqual'
+      stack: |-
+        moneyLineFn (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:28:12)
+        async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:101:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: TodoToday : une seule carte pour l’argent, qui mène au bloc « Argent qui attend »
+    not ok 7 - TodoToday : une seule carte pour l’argent, qui mène au bloc « Argent qui attend »
+      ---
+      duration_ms: 0.33048
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:6148'
+      failureType: 'testCodeFailure'
+      error: 'TodoToday doit composer la ligne de l’argent par todoMoneyLine'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        'use client';
+        
+        import React, { useCallback, useEffect, useId, useState } from 'react';
+        import { AlertOctagon, ArrowRight, Building2, CalendarClock, CalendarX2, CheckCircle2, MessageSquareWarning, RotateCcw, Scale, Wallet } from 'lucide-react';
+        import Link from 'next/link';
+        import { Button } from '@/components/ui/Button';
+        import { LinkButton } from '@/components/ui/LinkButton';
+        import { cn } from '@/components/ui/cn';
+        import { getJson } from '@/lib/finance/admin-client';
+        import { formatFcfaPrecise, formatInteger } from '@/lib/format';
+        import type { TodoLine, TodoLineKey, TodoReply } from '@/lib/admin/todo';
+        
+        /** « 3 événements », « 1 événement ». */
+        function plural(n: number, one: string, many: string): string {
+            return `${formatInteger(n)} ${n > 1 ? many : one}`;
+        }
+        
+        /** Ancienneté en mots simples : « moins d'une heure », « 5 heures », « 2 jours ». */
+        export function waitingFor(iso: string | null | undefined, now: Date = new Date()): string | null {
+            if (!iso) return null;
+            const ms = now.getTime() - new Date(iso).getTime();
+            if (!Number.isFinite(ms)) return null;
+            const hours = Math.floor(ms / 3_600_000);
+            if (hours < 1) return 'moins d’une heure';
+            if (hours < 48) return plural(hours, 'heure', 'heures');
+            return plural(Math.floor(hours / 24), 'jour', 'jours');
+        }
+        
+        interface Spec {
+            icon: React.ReactNode;
+            title: (l: TodoLine) => string;
+            explain: (l: TodoLine) => React.ReactNode;
+            upToDate: string;
+            action: string;
+            href: (l: TodoLine) => string;
+        }
+        
+        const amount = (x: number | undefined) => <span className="font-semibold text-fg tabular-nums">{formatFcfaPrecise(Number(x ?? 0))}</span>;
+        
+        /** Textes et liens de chaque ligne, dans l'ordre de l'écran (lib/admin/todo.ts). */
+        export const TODO_SPECS: Record<TodoLineKey, Spec> = {
+            to_resume: {
+                icon: <RotateCcw size={20} />,
+                title: (l) => plural(Number(l.count), 'versement à reprendre', 'versements à reprendre'),
+                explain: (l) => <>{amount(l.amount)} que des clients ou des partenaires attendent depuis plus de 30 minutes.</>,
+                upToDate: 'Versements à reprendre : aucun',
+                action: 'Voir l’argent qui attend',
+                href: () => '#argent-qui-attend',
+            },
+            events_to_validate: {
+                icon: <CalendarClock size={20} />,
+                title: (l) => plural(Number(l.count), 'événement à valider', 'événements à valider'),
+                explain: (l) => {
+                    const since = waitingFor(l.oldest_at);
+                    return since ? <>Le plus ancien attend depuis {since}.</> : <>Soumis par les partenaires, en attente de votre examen.</>;
+                },
+                upToDate: 'Événements à valider : aucun',
+                action: 'Examiner les événements',
+                href: () => '/admin/events?status=EN_ATTENTE',
+            },
+            partners_to_validate: {
+                icon: <Building2 size={20} />,
+                title: (l) => plural(Number(l.count), 'candidature de partenaire', 'candidatures de partenaires'),
+                explain: (l) => (Number(l.resubmitted) > 0
+                    ? <>Dont {plural(Number(l.resubmitted), 'dossier complété', 'dossiers complétés')} après un refus.</>
+                    : <>Inscriptions avec leurs pièces justificatives.</>),
+                upToDate: 'Candidatures de partenaires : aucune',
+                action: 'Examiner les candidatures',
+                href: () => '/admin/dashboard?partenaires=EN_ATTENTE#partenaires',
+            },
+            events_suspended: {
+                icon: <CalendarX2 size={20} />,
+                title: (l) => plural(Number(l.count), 'événement suspendu à décider', 'événements suspendus à décider'),
+                explain: (l) => {
+                    const past = Number(l.past ?? 0);
+                    const upcoming = Number(l.upcoming ?? 0);
+                    return (
+                        <>
+                            {past > 0 && (past > 1
+                                ? <><span className="tabular-nums">{formatInteger(past)}</span> dont la date est passée : clôturez-les ou annulez-les. </>
+                                : <>1 dont la date est passée : clôturez-le ou annulez-le. </>)}
+                            {upcoming > 0 && (upcoming > 1
+                                ? <><span className="tabular-nums">{formatInteger(upcoming)}</span> à venir : réactivez-les ou annulez-les.</>
+                                : <>1 à venir : réactivez-le ou annulez-le.</>)}
+                        </>
+                    );
+                },
+                upToDate: 'Événements suspendus : aucun',
+                action: 'Voir les événements suspendus',
+                href: () => '/admin/events?status=SUSPENDU',
+            },
+            cash_discrepancies: {
+                icon: <Wallet size={20} />,
+                title: (l) => plural(Number(l.count), 'écart de caisse à valider', 'écarts de caisse à valider'),
+                explain: (l) => {
+                    const first = l.events?.[0];
+                    const k = Number(l.events_count ?? 0);
+                    return (
+                        <>
+                            {k > 1 ? <>Sur <span className="tabular-nums">{formatInteger(k)}</span> événements. </> : null}
+                            {first ? <>{k > 1 ? 'Le plus ancien' : 'Événement'} : « {first.title} ». </> : null}
+                            Recomptez l’argent avec le contrôleur avant de valider.
+                        </>
+                    );
+                },
+                upToDate: 'Écarts de caisse à valider : aucun',
+                action: 'Voir la caisse',
+                href: (l) => (l.events?.[0] ? `/partner/events/${l.events[0].event_id}?tab=caisse` : '/admin/events'),
+            },
+            failed_sends: {
+                icon: <AlertOctagon size={20} />,
+                title: (l) => plural(Number(l.count), 'envoi en échec aujourd’hui', 'envois en échec aujourd’hui'),
+                explain: () => <>SMS, emails ou notifications qui ne sont pas partis.</>,
+                upToDate: 'Envois en échec aujourd’hui : aucun',
+                action: 'Voir les envois en échec',
+                href: () => '/admin/notifications?status=FAILED',
+            },
+            sms_cap: {
+                icon: <MessageSquareWarning size={20} />,
+                title: (l) => `SMS optionnels : ${formatInteger(Number(l.count))} sur ${formatInteger(Number(l.cap ?? 0))} aujourd’hui`,
+                explain: (l) => <>Au-delà de <span className="tabular-nums">{formatInteger(Number(l.cap ?? 0))}</span>, les rappels et les annonces partent sans SMS.</>,
+                upToDate: 'SMS optionnels : sous le seuil d’alerte',
+                action: 'Voir les envois',
+                href: () => '/admin/notifications',
+            },
+            debts: {
+                icon: <Scale size={20} />,
+                title: (l) => plural(Number(l.count), 'créance', 'créances'),
+                explain: (l) => <>{amount(l.amount)} que des partenaires ou des parrains doivent encore à Event Village, repris sur leurs prochains gains.</>,
+                upToDate: 'Créances : aucune',
+                action: 'Voir les créances',
+                href: () => '/admin/finance#creances',
+            },
+        };
+        
+        export const NOTHING_URGENT = 'Rien d’urgent aujourd’hui.';
+        export const NO_RIGHTS_YET = 'Vous n’avez encore aucun droit : demandez-les au super-administrateur.';
+        
+        /**
+         * Finition 3b (E-29) — « À faire aujourd'hui », en tête de l'accueil de l'administration : une carte par ligne à traiter
+         * (nombre, phrase simple, un bouton vers la bonne liste), les lignes à jour regroupées, « Rien d'urgent aujourd'hui. »
+         * quand tout est à jour. Le serveur ne rend que les lignes que l'administrateur peut traiter ; un compteur illisible dit
+         * « Compteur indisponible », jamais 0.
+         */
+        export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRight: boolean; isSuperadmin: boolean; signal?: number }) {
+            const id = useId();
+            const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
+            const [reply, setReply] = useState<TodoReply | null>(null);
+            const [retrying, setRetrying] = useState(false);
+        
+            const load = useCallback(async () => {
+                const r = await getJson<TodoReply>('/api/admin/todo', 'à faire aujourd’hui');
+                setRetrying(false);
+                if (!r.ok || !Array.isArray(r.data.lines)) {
+                    setPhase('error');
+                    return;
+                }
+                setReply(r.data);
+                setPhase('ready');
+            }, []);
+        
+            useEffect(() => {
+                void load();
+            }, [load, signal]);
+        
+            useEffect(() => {
+                const timer = window.setInterval(() => { void load(); }, 60_000);
+                return () => window.clearInterval(timer);
+            }, [load]);
+        
+            const allowed = reply?.allowed ?? [];
+            const lines = reply?.lines ?? [];
+            const upToDate = reply?.upToDate ?? [];
+        
+            return (
+                <section aria-labelledby={`${id}-titre`} className="flex flex-col gap-3">
+                    <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-fg">À faire aujourd’hui</h2>
+                    {phase === 'loading' && (
+                        <div role="status" aria-busy="true" aria-label="Chargement de ce qui est à faire aujourd’hui" className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            {[0, 1, 2].map((i) => <span key={i} className="h-36 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />)}
+                        </div>
+                    )}
+                    {phase === 'error' && (
+                        <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-border bg-danger-bg p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm font-semibold text-danger-fg">Liste indisponible pour le moment. Les files restent ouvertes depuis le menu.</p>
+                            <Button variant="secondary" size="sm" isLoading={retrying} onClick={() => { setRetrying(true); void load(); }}>Réessayer</Button>
+                        </div>
+                    )}
+                    {phase === 'ready' && allowed.length === 0 && (
+                        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm text-fg">{hasAnyRight ? 'Aucune des files à traiter ne vous est ouverte.' : NO_RIGHTS_YET}</p>
+                            <LinkButton href="/admin/mes-droits" variant="secondary" size="sm" rightIcon={<ArrowRight size={16} />}>Voir mes droits</LinkButton>
+                        </div>
+                    )}
+                    {phase === 'ready' && allowed.length > 0 && (
+                        <>
+                            {lines.length === 0 && (
+                                <p className="flex items-center gap-2 rounded-2xl border border-success-border bg-success-bg p-4 text-base font-semibold text-success-fg">
+                                    <CheckCircle2 size={20} className="flex-shrink-0" aria-hidden="true" />
+                                    {NOTHING_URGENT}
+                                </p>
+                            )}
+                            {lines.length > 0 && (
+                                <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                    {lines.map((l) => {
+                                        const s = TODO_SPECS[l.key];
+                                        const unavailable = l.unavailable === true;
+                                        return (
+                                            <li key={l.key} className={cn('flex flex-col gap-3 rounded-2xl border bg-surface p-4 sm:p-5', unavailable ? 'border-border' : 'border-warning-border')}>
+                                                <div className="flex items-start gap-3">
+                                                    <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', unavailable ? 'bg-surface-sunken text-fg-muted' : 'bg-warning-bg text-warning-fg')} aria-hidden="true">{s.icon}</span>
+                                                    <p className="min-w-0 break-words text-base font-semibold leading-snug text-fg tabular-nums">
+                                                        {unavailable ? s.upToDate.split(' :')[0] : s.title(l)}
+                                                    </p>
+                                                </div>
+                                                <p className="text-sm leading-relaxed text-fg-muted">{unavailable ? 'Compteur indisponible pour le moment.' : s.explain(l)}</p>
+                                                <LinkButton href={s.href(l)} variant={unavailable ? 'secondary' : 'primary'} rightIcon={<ArrowRight size={16} />} className="mt-auto w-full sm:w-auto">
+                                                    {s.action}
+                                                </LinkButton>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                            {upToDate.length > 0 && (
+                                <ul className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4" aria-label="À jour">
+                                    {upToDate.map((k) => (
+                                        <li key={k} className="flex items-center gap-2 text-sm text-fg">
+                                            <CheckCircle2 size={18} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+                                            {TODO_SPECS[k].upToDate}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            {reply?.partial && !isSuperadmin && (
+                                <p className="text-sm text-fg-muted">
+                                    Vous ne voyez que ce que vos droits vous permettent de traiter.{' '}
+                                    <Link href="/admin/mes-droits" className="inline-flex min-h-11 items-center font-semibold text-brand-fg underline-offset-2 hover:underline">Voir mes droits</Link>
+                                </p>
+                            )}
+                        </>
+                    )}
+                </section>
+            );
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:107:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..7
+not ok 3 - 5. accueil : une seule ligne pour l’argent dans « À faire aujourd’hui »
+  ---
+  duration_ms: 7.959974
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f3d-ecrans.test.ts:2:3832'
+  failureType: 'subtestsFailed'
+  error: '7 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..3
+# tests 10
+# suites 3
+# pass 0
+# fail 10
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 29.407871
