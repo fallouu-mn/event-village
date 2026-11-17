@@ -1,0 +1,151 @@
+TAP version 13
+[CVF1-6] annulée : dans la liste du titulaire → false ; acceptation par la route → HTTP 410 {"error":"L’organisateur a annulé cette invitation.","code":"INVITATION_CANCELLED"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+[CVF1-6] annulée : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+[CVF1-6] annulée puis réinvitée : acceptation de l'ancien lien → HTTP 410 {"error":"L’organisateur a annulé cette invitation.","code":"INVITATION_CANCELLED"}
+# Subtest: a. annulée, effacée, échue, refusée : plus acceptable, plus renvoyable
+    # Subtest: annulée, puis « Inviter de nouveau » : l’ancien lien ne mène à rien
+    ok 1 - annulée, puis « Inviter de nouveau » : l’ancien lien ne mène à rien
+      ---
+      duration_ms: 484.313552
+      type: 'test'
+      ...
+[CVF1-6] effacée : dans la liste du titulaire → false ; acceptation par la route → HTTP 410 {"error":"L’organisateur a annulé cette invitation.","code":"INVITATION_CANCELLED"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+[CVF1-6] effacée : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+    # Subtest: effacée (annulée puis effacée) : ni acceptée, ni renvoyée
+    ok 2 - effacée (annulée puis effacée) : ni acceptée, ni renvoyée
+      ---
+      duration_ms: 317.337618
+      type: 'test'
+      ...
+[CVF1-6] échue : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+[CVF1-6] échue : « Annuler » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse.","code":"INVITATION_NOT_PENDING"}
+[CVF1-6] échue : dans la liste du titulaire → false ; acceptation par la route → HTTP 410 {"error":"Cette invitation a expiré.","code":"INVITATION_EXPIRED"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+    # Subtest: échue : ni acceptée, ni renvoyée, ni annulée
+    ok 3 - échue : ni acceptée, ni renvoyée, ni annulée
+      ---
+      duration_ms: 322.878285
+      type: 'test'
+      ...
+[CVF1-6] refusée : dans la liste du titulaire → false ; acceptation par la route → HTTP 409 {"error":"Cette invitation a déjà reçu une réponse.","code":"INVITATION_NOT_PENDING"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+[CVF1-6] refusée : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+    # Subtest: refusée par le titulaire : ni acceptée ensuite, ni renvoyée
+    ok 4 - refusée par le titulaire : ni acceptée ensuite, ni renvoyée
+      ---
+      duration_ms: 298.961779
+      type: 'test'
+      ...
+    1..4
+ok 1 - a. annulée, effacée, échue, refusée : plus acceptable, plus renvoyable
+  ---
+  duration_ms: 1932.432677
+  type: 'suite'
+  ...
+[CVF1-6] 6 renvois simultanés : 429, 200, 429, 429, 200, 429 ; SMS d'invitation : 3 ; send_count 3 (plafond 3 par numéro et par jour)
+# Subtest: b. « Renvoyer » ne permet pas d’envoyer des SMS en masse
+    # Subtest: même invitation, 6 renvois en parallèle : plafond du numéro tenu
+    ok 1 - même invitation, 6 renvois en parallèle : plafond du numéro tenu
+      ---
+      duration_ms: 593.0552
+      type: 'test'
+      ...
+[CVF1-6] 5 renvois de B sur l'invitation d'une autre organisatrice : 404, 404, 404, 404, 404
+[CVF1-6] renvoi de l'organisatrice ensuite → HTTP 200 {"ok":true,"expires_at":"2026-11-20T15:14:35.46152+00:00","message":"Invitation renvoyée par SMS : réponse attendue avant le ven. 20 nov. 2026 à 15:14."}
+    # Subtest: une autre partenaire tente de brûler le quota du numéro : sans effet
+    ok 2 - une autre partenaire tente de brûler le quota du numéro : sans effet
+      ---
+      duration_ms: 554.113181
+      type: 'test'
+      ...
+[CVF1-6] 5 invitations du même numéro : 201, 201, 201, 429, 429 ; renvoi → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"} ; SMS : 3
+    # Subtest: invitations répétées vers un même numéro (annuler, inviter de nouveau) puis renvoi : plafond partagé
+    ok 3 - invitations répétées vers un même numéro (annuler, inviter de nouveau) puis renvoi : plafond partagé
+      ---
+      duration_ms: 661.237061
+      type: 'test'
+      ...
+[CVF1-6] 25 renvois simultanés vers 25 numéros : {"200":20,"429":5} ; SMS : 20 (plafond 20 par organisatrice et par heure)
+    # Subtest: 25 invitations vers 25 numéros, renvoyées en parallèle : plafond de l’organisatrice tenu
+    ok 4 - 25 invitations vers 25 numéros, renvoyées en parallèle : plafond de l’organisatrice tenu
+      ---
+      duration_ms: 5298.964186
+      type: 'test'
+      ...
+    1..4
+ok 2 - b. « Renvoyer » ne permet pas d’envoyer des SMS en masse
+  ---
+  duration_ms: 7108.295827
+  type: 'suite'
+  ...
+[CVF1-6] numéro d'un ADMIN : première étape → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"} ; confirmation → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+[CVF1-6] numéro d'un ADMIN : invitations créées 0 ; SMS 0 ; rôles ADMIN,CLIENT → ADMIN,CLIENT
+[CVF1-6] numéro d'un SUPERADMIN : première étape → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"} ; confirmation → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+[CVF1-6] numéro d'un SUPERADMIN : invitations créées 0 ; SMS 0 ; rôles CLIENT,SUPERADMIN → CLIENT,SUPERADMIN
+# Subtest: c. le numéro d’un admin ne s’invite pas
+    # Subtest: ADMIN et SUPERADMIN : aucune invitation, aucun SMS, aucun rôle
+    ok 1 - ADMIN et SUPERADMIN : aucune invitation, aucun SMS, aucun rôle
+      ---
+      duration_ms: 810.526952
+      type: 'test'
+      ...
+[CVF1-6] ADMIN (suite) : invitation → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+    # Subtest: suite de l’essai : l’ADMIN invité qui accepte devient contrôleur de l’organisatrice, qui lit son nom et son numéro
+    ok 2 - suite de l’essai : l’ADMIN invité qui accepte devient contrôleur de l’organisatrice, qui lit son nom et son numéro
+      ---
+      duration_ms: 551.984773
+      type: 'test'
+      ...
+    1..2
+ok 3 - c. le numéro d’un admin ne s’invite pas
+  ---
+  duration_ms: 1362.77285
+  type: 'suite'
+  ...
+[CVF1-6] un autre compte accepte → HTTP 404 {"error":"Invitation introuvable.","code":"INVITATION_NOT_FOUND"} ; fonction au nom du titulaire → refus 42501 permission denied for function controller_invitation_respond ; le titulaire annule à la place de l'organisatrice → HTTP 403 {"error":"Accès réservé aux organisateurs.","code":"FORBIDDEN"}
+# Subtest: d. se faire passer pour un autre
+    # Subtest: accepter l’invitation d’un autre, ou l’annuler à la place de l’organisatrice : refusé
+    ok 1 - accepter l’invitation d’un autre, ou l’annuler à la place de l’organisatrice : refusé
+      ---
+      duration_ms: 726.11528
+      type: 'test'
+      ...
+[CVF1-6] invitation avec nom, organisatrice et société d'une autre dans le corps → HTTP 201 {"success":true,"assignments":[],"assignment":null,"is_new_user":false,"invitation_id":"2bf593b1-b8bb-4c95-b0d6-df7b8b989f88","invitation_expires_at":"2026-11-20T15:14:43.978985+00:00","notification":"QUEUED","message":"Invitation envoyée à Se*** G*** : réponse attendue avant le ven. 20 nov. 2026 à 15:14."}
+[CVF1-6] société dans le SMS : Finance cvf1-inv-nom (attendu Finance cvf1-inv-nom)
+    # Subtest: l’invitation ne renomme pas un compte existant et ne porte jamais le nom d’une autre organisatrice
+    ok 2 - l’invitation ne renomme pas un compte existant et ne porte jamais le nom d’une autre organisatrice
+      ---
+      duration_ms: 477.731579
+      type: 'test'
+      ...
+    1..2
+ok 4 - d. se faire passer pour un autre
+  ---
+  duration_ms: 1204.066339
+  type: 'suite'
+  ...
+[INVARIANT] cvf1-6-invitations — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf1-6-invitations — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf1-6-invitations — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf1-6-invitations — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf1-6-invitations — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf1-6-invitations — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf1-6-invitations — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cvf1-6-invitations — envoyeur : 243 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cvf1-6-invitations — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cvf1-6-invitations — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cvf1-6-invitations — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cvf1-6-invitations — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cvf1-6-invitations — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cvf1-6-invitations — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cvf1-6-invitations — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cvf1-6-invitations — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cvf1-6-invitations — (f) : 0 violation(s)
+1..4
+# tests 12
+# suites 4
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12659.119104
