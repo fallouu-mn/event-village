@@ -81,10 +81,14 @@ function signInRefusalMessage(code: string | undefined): string {
     }
 }
 
-/** Codes ?message= (information, pas une erreur) posés par l'activation d'un contrôleur. */
+/**
+ * Codes ?message= (information, pas une erreur) posés par l'activation d'un contrôleur, et par la déconnexion
+ * (components/providers/AuthProvider.tsx, signOut : écran de connexion ouvert une fois la session révoquée).
+ */
 const INFO_MESSAGES: Record<string, string> = {
     account_activated: 'Compte activé avec succès. Connectez-vous avec votre mot de passe.',
     already_configured: 'Ce compte est déjà activé : connectez-vous.',
+    deconnecte: 'Vous êtes déconnecté de ce téléphone.',
 };
 
 /** Codes ?reset= posés par app/reset-password après la pose du nouveau mot de passe. */

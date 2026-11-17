@@ -90,11 +90,16 @@ describe('B1 — joindre le support', () => {
 
 describe('B4 — se déconnecter', () => {
     test('« Se déconnecter » : cet appareil seulement ; « Déconnecter tous mes appareils » avec confirmation ; scanner', () => {
+        // Lot sécurité (déconnexion sans réseau) : la session est fermée sur place (lib/auth/sign-out-here.ts) ; la révocation côté
+        // serveur y garde les deux portées : cet appareil (logout?scope=local) par défaut, toutes les sessions
+        // (/api/auth/sign-out-global) seulement pour « Déconnecter tous mes appareils » (signOut('partout'), page Profil)
         const provider = read('components/providers/AuthProvider.tsx');
-        assert.match(provider, /signOut\(\{ scope: 'local' \}\)/, 'AuthProvider : portée locale');
+        const signOutHere = read('lib/auth/sign-out-here.ts');
+        assert.match(signOutHere, /\/auth\/v1\/logout\?scope=local/, 'révocation : portée locale');
+        assert.match(provider, /everywhere: scope === 'partout'/, 'AuthProvider : toutes les sessions seulement sur demande');
         const profile = read('app/profile/page.tsx');
-        // Run 173 : déconnexion de tous les appareils dans la page Profil (seule à s'en servir), hors du fournisseur commun
-        assert.ok(profile.includes('/api/auth/sign-out-global'), 'signOutEverywhere : révocation de toutes les sessions');
+        assert.ok(signOutHere.includes('/api/auth/sign-out-global'), 'révocation de toutes les sessions');
+        assert.match(profile, /signOut\('partout'\)/, 'page Profil : « Déconnecter tous mes appareils »');
         assert.ok(profile.includes('Déconnecter tous mes appareils'));
         assert.ok(profile.includes('Vos billets hors ligne seront effacés sur les autres téléphones.'));
         for (const rel of ['app/controller/layout.tsx', 'app/controller/scanner/page.tsx']) {
