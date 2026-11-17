@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="fr" data-btn="a">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fiche d'un événement</title>
+<meta name="description" content="Maquette de la fiche d'un événement avec la barre d'achat fixe, données fictives.">
+<link rel="stylesheet" href="../jetons.css">
+<link rel="stylesheet" href="../composants.css">
+<style>
+  .site-header { display: none; }
+  @media (min-width: 1024px) { .site-header { display: block; } }
+  .cover { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--muted); }
+  .cover svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cover-actions { position: absolute; inset: calc(env(safe-area-inset-top, 0px) + 12px) 12px auto; display: flex; justify-content: space-between; }
+  .cover-actions .btn-icon { background: color-mix(in srgb, var(--popover) 88%, transparent); color: var(--foreground-strong); backdrop-filter: blur(8px); border-radius: var(--radius-pill); box-shadow: var(--shadow-sm); }
+  @media (min-width: 1024px) {
+    .cover { aspect-ratio: auto; height: 360px; border-radius: var(--radius-lg); margin-top: var(--space-6); }
+    .cover-actions { display: none; }
+  }
+  .layout { display: grid; gap: var(--space-6); padding-block: var(--space-5) var(--space-8); }
+  @media (min-width: 1024px) { .layout { grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr); gap: var(--space-10); align-items: start; padding-top: var(--space-8); } }
+  .head { display: grid; gap: var(--space-3); }
+  .head h1 { font-size: var(--text-3xl); font-weight: 800; line-height: 1.1; }
+  @media (min-width: 1024px) { .head h1 { font-size: var(--text-4xl); } }
+  .orga-line { font-size: var(--text-sm); color: var(--muted-foreground); }
+  .orga-line a { font-weight: 700; text-decoration: none; }
+  .infos { display: grid; gap: var(--space-3); margin-top: var(--space-2); }
+  .info { display: grid; grid-template-columns: 40px 1fr; gap: var(--space-3); align-items: start; }
+  .info .ic { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius); background: var(--primary-soft); color: var(--primary-text); }
+  .info b { display: block; color: var(--foreground-strong); }
+  .bloc { display: grid; gap: var(--space-3); padding-top: var(--space-6); border-top: 1px solid var(--border); }
+  .bloc h2 { font-size: var(--text-xl); }
+  .programme { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+  .programme li { display: grid; grid-template-columns: 64px 1fr; gap: var(--space-3); }
+  .programme time { font-weight: 800; color: var(--primary-text); font-variant-numeric: tabular-nums; }
+  .mini-plan { position: relative; height: 170px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+  .mini-plan svg.fond { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .pratique { display: grid; gap: var(--space-2); margin: 0; }
+  .pratique div { display: grid; grid-template-columns: 130px 1fr; gap: var(--space-3); padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .pratique dt { color: var(--muted-foreground); font-size: var(--text-sm); }
+  .pratique dd { margin: 0; color: var(--foreground-strong); font-size: var(--text-sm); font-weight: 600; }
+  /* Billetterie */
+  .billets { display: grid; gap: var(--space-3); }
+  @media (min-width: 1024px) { .billets { position: sticky; top: 84px; padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-md); } }
+  .billets h2 { font-size: var(--text-xl); }
+  .cat { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-3); align-items: center; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+  .cat[data-choisi] { border-color: var(--primary-text); background: var(--primary-soft); }
+  .cat-nom { font-weight: 700; color: var(--foreground-strong); }
+  .cat-prix { font-weight: 800; color: var(--foreground-strong); font-variant-numeric: tabular-nums; }
+  .cat .etat { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
+  .stepper { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+  .stepper button { width: var(--tap); height: var(--tap); border: 0; background: none; color: var(--foreground-strong); cursor: pointer; display: grid; place-items: center; border-radius: var(--radius); }
+  .stepper button:disabled { color: var(--muted-foreground); cursor: not-allowed; opacity: 0.6; }
+  .stepper output { min-width: 24px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--foreground-strong); }
+  .total { display: flex; justify-content: space-between; align-items: baseline; padding-top: var(--space-2); }
+  .total b { font-size: var(--text-xl); font-weight: 800; color: var(--foreground-strong); font-variant-numeric: tabular-nums; }
+  .paiement-ops { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+  .op { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: 8px; font-size: var(--text-caption); font-weight: 800; color: var(--on-op); }
+  .op-wave { background: var(--op-wave); } .op-om { background: var(--op-orange-money); }
+  .desk-cta { display: none; }
+  @media (min-width: 1024px) { .desk-cta { display: flex; } }
+  /* Barre d'achat fixe (téléphone) */
+  .buy-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    background: var(--popover); border-top: 1px solid var(--border); box-shadow: 0 -8px 24px -12px rgba(0, 0, 0, 0.25);
+  }
+  .buy-bar .resume { display: grid; min-width: 0; flex: 1; }
+  .buy-bar .resume span { font-size: var(--text-sm); color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .buy-bar .resume b { font-size: var(--text-lg); font-weight: 800; color: var(--foreground-strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .buy-bar .btn-cta { min-height: 52px; padding: 0 var(--space-5); }
+  @media (min-width: 1024px) { .buy-bar { display: none; } }
+  body { padding-bottom: 96px; }
+  @media (min-width: 1024px) { body { padding-bottom: 0; } }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="accueil.html" aria-label="Event Village, accueil">
+      <img class="logo-light" src="../logo/svg/repere-horizontal.svg" alt="" style="height:28px">
+      <img class="logo-dark" src="../logo/svg/repere-horizontal-sombre.svg" alt="" style="height:28px">
+    </a>
+    <nav class="nav-links" aria-label="Navigation principale"><a href="accueil.html">Explorer</a><a href="carte.html">Carte</a><a href="#">Mes billets</a></nav>
+    <span class="spacer"></span>
+    <a class="btn btn-secondary" href="#"><span data-icone="partager"></span>Partager</a>
+    <a class="btn btn-primary" href="#">Se connecter</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap" style="padding:0" id="cover-wrap">
+    <div class="cover" data-affiche="geew">
+      <div class="cover-actions">
+        <a class="btn btn-icon" href="accueil.html" aria-label="Retour"><span data-icone="retour"></span></a>
+        <button class="btn btn-icon" type="button" aria-label="Partager l'événement"><span data-icone="partager"></span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap layout">
+    <article class="stack gap-6">
+      <div class="head">
+        <div class="row gap-2" style="flex-wrap:wrap"><span class="badge badge-brand">Concert</span><span class="badge badge-warning">Dernières places</span></div>
+        <h1>Nuit Sabar sur la Corniche</h1>
+        <p class="orga-line">Organisé par <a href="#">Collectif Sabar Nuit</a></p>
+        <div class="infos">
+          <div class="info"><span class="ic"><span data-icone="calendrier"></span></span><p><b>sam. 28 nov. 2026 à 21:00</b><span class="small muted">Fin prévue dim. 29 nov. à 02:00 · ouverture des portes à 20:30</span></p></div>
+          <div class="info"><span class="ic"><span data-icone="lieu"></span></span><p><b>Esplanade de la Corniche Ouest</b><span class="small muted">Fann, Dakar · <a href="carte.html">Voir sur la carte</a></span></p></div>
+          <div class="info"><span class="ic"><span data-icone="billet"></span></span><p><b>Billet dans l'application</b><span class="small muted">Présentez le QR à l'entrée, même sans réseau.</span></p></div>
+        </div>
+      </div>
+
+      <section class="bloc" aria-labelledby="t-propos">
+        <h2 id="t-propos">À propos</h2>
+        <p>Une nuit de sabar en plein air face à l'océan : les percussions du collectif, des danseuses invitées et un DJ pour finir la nuit. Places debout, sur l'esplanade.</p>
+      </section>
+
+      <section class="bloc" aria-labelledby="t-prog">
+        <h2 id="t-prog">Programme</h2>
+        <ol class="programme">
+          <li><time>20:30</time><span>Ouverture des portes</span></li>
+          <li><time>21:00</time><span>Collectif Sabar Nuit, première partie</span></li>
+          <li><time>22:30</time><span>Cercle de danse avec les danseuses invitées</span></li>
+          <li><time>00:30</time><span>DJ Lamine K. jusqu'à la fin</span></li>
+        </ol>
+      </section>
+
+      <section class="bloc" aria-labelledby="t-lieu">
+        <h2 id="t-lieu">Lieu</h2>
+        <div class="mini-plan" data-plan></div>
+        <p class="small muted">Esplanade de la Corniche Ouest, Fann, Dakar. Fond de carte schématique.</p>
+      </section>
+
+      <section class="bloc" aria-labelledby="t-prat">
+        <h2 id="t-prat">Infos pratiques</h2>
+        <dl class="pratique">
+          <div><dt>Âge</dt><dd>À partir de 16 ans</dd></div>
+          <div><dt>Accès</dt><dd>Entrée par la porte nord, côté Corniche</dd></div>
+          <div><dt>Paiement</dt><dd>Wave ou Orange Money, en ligne ; espèces au guichet sur place</dd></div>
+          <div><dt>Remboursement</dt><dd>Si l'événement est annulé ou reporté de plus de 24 h</dd></div>
+        </dl>
+      </section>
+    </article>
+
+    <aside class="billets" id="billets" aria-labelledby="t-billets">
+      <h2 id="t-billets">Choisissez vos billets</h2>
+      <div class="cat" data-prix="10000" data-nom="Standard">
+        <span class="cat-nom">Standard</span><span class="cat-prix">10 000 F CFA</span>
+        <div class="etat"><span class="badge badge-success">Disponible</span>
+          <div class="stepper"><button type="button" aria-label="Retirer un billet Standard" data-moins disabled><span data-icone="moins"></span></button><output aria-live="polite">0</output><button type="button" aria-label="Ajouter un billet Standard" data-plus><span data-icone="plus"></span></button></div></div>
+      </div>
+      <div class="cat" data-prix="25000" data-nom="Carré VIP">
+        <span class="cat-nom">Carré VIP</span><span class="cat-prix">25 000 F CFA</span>
+        <div class="etat"><span class="badge badge-warning">Plus que 8 places</span>
+          <div class="stepper"><button type="button" aria-label="Retirer un billet Carré VIP" data-moins disabled><span data-icone="moins"></span></button><output aria-live="polite">0</output><button type="button" aria-label="Ajouter un billet Carré VIP" data-plus><span data-icone="plus"></span></button></div></div>
+      </div>
+      <div class="cat" aria-disabled="true">
+        <span class="cat-nom">Avant-première</span><span class="cat-prix">7 500 F CFA</span>
+        <div class="etat"><span class="badge">Vente en ligne terminée</span><span class="small muted">Guichet sur place</span></div>
+      </div>
+      <div class="total"><span class="muted">Total des billets</span><b data-total>0 F CFA</b></div>
+      <p class="small muted">Les frais de service s'affichent avant le paiement, avec le total exact.</p>
+      <div class="paiement-ops"><span class="small muted">Payer avec</span><span class="op op-wave">Wave</span><span class="op op-om">Orange Money</span></div>
+      <div class="desk-cta"><a class="btn-cta btn-block" href="#" data-cta>Choisir mes billets</a></div>
+    </aside>
+  </div>
+</main>
+
+<div class="buy-bar" role="region" aria-label="Achat">
+  <div class="resume"><span data-resume>Billetterie</span><b data-montant>Dès 10 000 F CFA</b></div>
+  <a class="btn-cta" href="#billets" data-cta>Choisir mes billets</a>
+</div>
+
+<script src="../commun.js"></script>
+<script src="donnees.js"></script>
+<script src="maquettes.js"></script>
+<script>
+  (function () {
+    var fmt = function (n) { return n.toLocaleString('fr-FR').replace(/ |\s/g, ' ') + ' F CFA'; };
+    var cats = Array.prototype.slice.call(document.querySelectorAll('.cat[data-prix]'));
+    function maj() {
+      var n = 0, total = 0, noms = [];
+      cats.forEach(function (c) {
+        var q = Number(c.querySelector('output').value || c.querySelector('output').textContent);
+        n += q; total += q * Number(c.getAttribute('data-prix'));
+        if (q) { noms.push(q + ' × ' + c.getAttribute('data-nom')); c.setAttribute('data-choisi', ''); } else c.removeAttribute('data-choisi');
+        c.querySelector('[data-moins]').disabled = q === 0;
+      });
+      document.querySelector('[data-total]').textContent = fmt(total);
+      document.querySelectorAll('[data-cta]').forEach(function (b) {
+        b.textContent = n ? 'Acheter (' + n + ')' : 'Choisir mes billets';
+        b.setAttribute('href', n ? '#' : '#billets');
+      });
+      document.querySelector('[data-resume]').textContent = n ? noms.join(', ') : 'Billetterie';
+      document.querySelector('[data-montant]').textContent = n ? fmt(total) : 'Dès 10 000 F CFA';
+    }
+    cats.forEach(function (c) {
+      var o = c.querySelector('output');
+      c.querySelector('[data-plus]').addEventListener('click', function () { o.textContent = String(Number(o.textContent) + 1); maj(); });
+      c.querySelector('[data-moins]').addEventListener('click', function () { o.textContent = String(Math.max(0, Number(o.textContent) - 1)); maj(); });
+    });
+    // ?panier=2 : deux billets Standard déjà choisis (état « Acheter »).
+    var p = Number(new URLSearchParams(location.search).get('panier') || 0);
+    if (p) cats[0].querySelector('output').textContent = String(p);
+    maj();
+    var plan = document.querySelector('[data-plan]');
+    var m = document.createElement('span'); m.className = 'marker'; m.setAttribute('aria-pressed', 'true'); m.textContent = 'Nuit Sabar'; plan.appendChild(m);
+    EVM.carte(plan, [{ x: 250, y: 372, el: m }], { vue: '110 250 320 230' });
+  })();
+</script>
+</body>
+</html>
