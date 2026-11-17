@@ -40,7 +40,7 @@ export interface StartChoice {
 // à la demande, hors du premier chargement du scanner ; pendant son arrivée, une ligne d'état
 const Modal = dynamic(() => import('@/components/ui/Modal').then((m) => m.Modal), {
     ssr: false,
-    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement des portes…</p>,
+    loading: () => <p role="status" className="text-sm text-muted-foreground">Chargement des portes…</p>,
 });
 
 interface GateOption { id: string; name: string; zone: { name: string; kind: ZoneKind } }
@@ -63,12 +63,17 @@ function GatePicker({ eventId, onClose, onChanged }: { eventId: string; onClose:
         if (!res.ok) throw new Error(typeof body.error === 'string' ? body.error : 'Portes momentanément indisponibles : réessayez.');
         return body;
     };
+    // Design 1a : seul un message public de l'API (Error levée par call) s'affiche ; une coupure réseau (TypeError) ou une
+    // réponse illisible (SyntaxError) donne une phrase simple, jamais un message technique.
+    const publicMessage = (err: unknown): string => (err instanceof Error && err.name === 'Error' && err.message
+        ? err.message
+        : 'Portes momentanément indisponibles : vérifiez votre connexion, puis réessayez.');
     useEffect(() => {
         call(`/api/controller/gates?eventId=${encodeURIComponent(eventId)}`)
             .then((b) => setGates(Array.isArray(b.gates) ? (b.gates as GateOption[]) : []))
             .catch((err: unknown) => {
                 console.warn('[scanner] portes non lues :', err instanceof Error ? err.message : String(err));
-                setProblem(err instanceof Error ? err.message : String(err));
+                setProblem(publicMessage(err));
                 setGates([]);
             });
     }, [eventId]);
@@ -85,7 +90,7 @@ function GatePicker({ eventId, onClose, onChanged }: { eventId: string; onClose:
             onClose();
         } catch (err) {
             console.warn('[scanner] porte non changée :', err instanceof Error ? err.message : String(err));
-            setProblem(err instanceof Error ? err.message : String(err));
+            setProblem(publicMessage(err));
         } finally {
             setBusy(false);
         }
@@ -96,13 +101,13 @@ function GatePicker({ eventId, onClose, onChanged }: { eventId: string; onClose:
             footer={<Button variant="primary" onClick={() => void save()} isLoading={busy} disabled={!choice}>Enregistrer cette porte</Button>}>
             <div className="flex flex-col gap-2">
                 {problem && <StatusBanner tone="danger" title="Porte non changée" announce="alert">{problem}</StatusBanner>}
-                {gates === null ? <p role="status" className="text-sm text-fg-muted">Lecture des portes…</p> : (
+                {gates === null ? <p role="status" className="text-sm text-muted-foreground">Lecture des portes…</p> : (
                     <fieldset className="flex flex-col gap-2">
                         <legend className="sr-only">Portes de l’événement</legend>
                         {gates.map((g) => (
-                            <label key={g.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border bg-surface p-3 text-base text-fg">
+                            <label key={g.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border bg-card p-3 text-base text-foreground-strong">
                                 <input type="radio" name={name} value={g.id} checked={choice === g.id} onChange={() => setChoice(g.id)}
-                                    className="h-5 w-5 flex-shrink-0 cursor-pointer accent-brand" />
+                                    className="h-5 w-5 flex-shrink-0 cursor-pointer accent-primary" />
                                 {`${g.name} · ${g.zone.name} (${ZONE_KIND_LABELS[g.zone.kind] ?? g.zone.kind})`}
                             </label>
                         ))}
@@ -133,19 +138,19 @@ export function ScannerStartScreen({ choices, selectedId, onSelect, onStart, con
     return (
         <div className="flex flex-col gap-4">
             <div className="flex items-start gap-3">
-                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
                     <ScanLine size={22} />
                 </span>
                 <div className="min-w-0">
-                    <h1 className="text-xl font-bold leading-tight text-fg">Commencer le contrôle</h1>
-                    <p className="text-sm leading-relaxed text-fg-muted">
+                    <h1 className="text-xl font-bold leading-tight text-foreground-strong">Commencer le contrôle</h1>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
                         {controllerName ? `${controllerName}, choisissez` : 'Choisissez'} l’événement, vérifiez votre porte, puis lancez la caméra.
                     </p>
                 </div>
             </div>
 
             <fieldset aria-labelledby={legendId} className="flex flex-col gap-2">
-                <legend id={legendId} className="mb-1 text-sm font-semibold text-fg">Événement à contrôler</legend>
+                <legend id={legendId} className="mb-1 text-sm font-semibold text-foreground-strong">Événement à contrôler</legend>
                 {choices.map((c) => {
                     const checked = c.id === selectedId;
                     const inputId = `${groupName}-${c.id}`;
@@ -154,8 +159,8 @@ export function ScannerStartScreen({ choices, selectedId, onSelect, onStart, con
                             key={c.id}
                             htmlFor={inputId}
                             className={cn(
-                                'flex min-h-14 cursor-pointer items-start gap-3 rounded-2xl border-2 bg-surface p-3 transition-colors duration-200',
-                                checked ? 'border-brand-fg' : 'border-border hover:border-border-strong',
+                                'flex min-h-14 cursor-pointer items-start gap-3 rounded-2xl border-2 bg-card p-3 transition-colors duration-200',
+                                checked ? 'border-primary-text' : 'border-border hover:border-input',
                             )}
                         >
                             <input
@@ -165,12 +170,12 @@ export function ScannerStartScreen({ choices, selectedId, onSelect, onStart, con
                                 value={c.id}
                                 checked={checked}
                                 onChange={() => onSelect(c.id)}
-                                className="mt-1 h-5 w-5 flex-shrink-0 cursor-pointer accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="mt-1 h-5 w-5 flex-shrink-0 cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             />
                             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                <span className="break-words text-base font-semibold text-fg">{c.title}</span>
-                                <span className="text-sm text-fg-muted">{[c.dateLabel, c.location].filter(Boolean).join(' · ')}</span>
-                                {c.closedLabel && <span className="text-sm font-semibold text-warning-fg">{c.closedLabel} : contrôle fermé</span>}
+                                <span className="break-words text-base font-semibold text-foreground-strong">{c.title}</span>
+                                <span className="text-sm text-muted-foreground">{[c.dateLabel, c.location].filter(Boolean).join(' · ')}</span>
+                                {c.closedLabel && <span className="text-sm font-semibold text-warning-text">{c.closedLabel} : contrôle fermé</span>}
                             </span>
                         </label>
                     );
@@ -184,8 +189,8 @@ export function ScannerStartScreen({ choices, selectedId, onSelect, onStart, con
             )}
 
             {selected && (!zoned || selected.gateLabel) && (
-                <p className="flex items-start gap-2 rounded-2xl border border-border bg-surface-sunken p-3 text-sm text-fg">
-                    <DoorOpen size={18} aria-hidden="true" className="mt-0.5 flex-shrink-0 text-fg-muted" />
+                <p className="flex items-start gap-2 rounded-2xl border border-border bg-background p-3 text-sm text-foreground-strong">
+                    <DoorOpen size={18} aria-hidden="true" className="mt-0.5 flex-shrink-0 text-muted-foreground" />
                     <span>
                         {zoned
                             ? <>Votre porte : <strong>{selected.gateLabel}</strong> · {selected.zoneLabel} ({ZONE_KIND_LABELS[selected.zoneKind === 'CONTROLE' ? 'CONTROLE' : 'ENTREE']}). Le compteur affichera les {selected.zoneKind === 'CONTROLE' ? 'contrôles' : 'entrées'} de cette porte.</>
