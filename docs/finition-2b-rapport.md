@@ -4,9 +4,14 @@ Branche `finition-2b/creation` (worktree `event-village-finition2b`), partie de 
 
 ## À lire en premier
 
+**Faille trouvée hors de la 2b, non corrigée : décision demandée (déconnexion sans réseau).** Trouvée par la relecture du correctif du run 275 ; elle existait avant la 2b.
+- **Scénario.** Téléphone partagé, sans réseau depuis plus d'une heure. « Se déconnecter » affiche l'écran de connexion, mais la session n'est pas fermée : sans réseau, la fermeture échoue et l'erreur est ignorée (`AuthProvider.signOut`, et les deux boutons « Se déconnecter » du contrôleur). Au retour du réseau, la personne suivante qui ouvre l'application se retrouve dans le compte précédent.
+- **Pourquoi pas dans la 2b.** C'est l'authentification, pas la création d'un événement. Il faut décider ce que l'écran dit quand la déconnexion est impossible. Et la correction ajoute du code à chaque page : il reste une quarantaine d'octets sous le budget de la page d'accueil.
+- **Proposition.** Sans réseau, ne pas faire croire à la déconnexion (« Déconnexion impossible sans connexion : réessayez une fois connecté. ») et la terminer d'elle-même au retour du réseau ; test rouge puis vert sur ce scénario.
+
 **Faille trouvée et corrigée en premier (A4, sécurité faible).** Supprimer une catégorie sans vente effaçait aussi ses admissions dans les zones (clé étrangère `ON DELETE CASCADE` de `zone_categories`), sans revérifier les zones. Une zone pouvait ainsi rester sans aucune catégorie admise : chaque billet présenté à ses portes était alors refusé au scanner. Désormais, la suppression est refusée (`CATEGORY_ONLY_IN_ZONE`, 409), avec un message qui nomme la ou les zones et l'étape où les régler. Migration `20261119000001` ; test `f2b-categorie-zone` (rouge : la suppression réussissait et vidait la zone).
 
-Aucune autre faille. Contrôles faits :
+Aucune autre faille dans le périmètre de la 2b. Contrôles faits :
 - **Route nouvelle** `POST /api/partner/events/[id]/notice-preview` : mêmes contrôles que `PUT` (session active, organisatrice, propriétaire, statut, version attendue) par une validation commune (`prepareUpdate`).
   - Fiche suspendue : refusée par la garde de la session, comme toute écriture sous `/api/partner/events/`.
   - La base calcule l'aperçu en exécutant `event_update` puis en l'annulant : mêmes refus, rien d'écrit (§ 3.4).
@@ -41,8 +46,8 @@ Aucune autre faille. Contrôles faits :
 | A. « Type d'événement » (E-66) ; « Leaflet » retiré du pied des cartes, « © contributeurs OpenStreetMap » gardé | Fait | `f2b-type-evenement`, `f2b-pied-cartes` |
 | B. Étape 5 « Contrôle à l'entrée (facultatif) » (E-23) | Fait.<br>• Partie écriture de `event_zones_save` sortie dans `event_zones_write` (règles du formulaire : `event_zones_form_refusal`).<br>• Catégories insérées avant les zones, désignées par leur ordre, dans la même transaction que l'événement.<br>• En modification, la même étape utilise l'enregistrement des zones ; les couleurs y sont modifiables.<br>• Le lien de la page Équipe y mène. | `f2b-zones-creation` (mêmes verdicts au scanner, zones créées avec l'événement ou ajoutées après) |
 | C. Vérifier avant d'envoyer (E-24) | Fait.<br>• Récapitulatif avec « Modifier » par étape.<br>• Liste des manques identique au refus de la base : mêmes textes, même ordre.<br>• « Envoyer pour validation » depuis le formulaire ; la soumission depuis la liste reste. | `f2b-verifier-envoyer` (parité écran / base sur 4 cas) |
-| C. Téléphone : nom de l'étape visible, barre fixe « Précédent / Suivant » | Fait | `f2b-telephone`, captures 390 px |
-| C. Brouillon dans le navigateur, par compte et par événement | Fait.<br>• Lectures et écritures protégées, 64 Kio au plus, rien côté serveur.<br>• Au retour : « Reprendre votre saisie du {date} à {heure} ? », avec « Reprendre » et « Effacer ».<br>• Effacé à l'envoi et à la déconnexion. | `f2b-brouillon-local` |
+| C. Téléphone : nom de l'étape visible, barre fixe « Précédent / Suivant » | Fait.<br>• La barre « Navigation rapide » de l'application est masquée tant que celle du formulaire est affichée : attribut posé par le formulaire, règle CSS, tous navigateurs (rien dans le JavaScript de chaque page, § 6).<br>• Étape Accès : en défilant, la carte passe sous la barre ; « Suivant » n'est jamais recouvert. | `f2b-telephone`, captures 390 px (« Navigation rapide » masquée et carte sous la barre, contrôlées dans le navigateur) |
+| C. Brouillon dans le navigateur, par compte et par événement | Fait.<br>• Lectures et écritures protégées, 64 Kio au plus, rien côté serveur.<br>• Au retour : « Reprendre votre saisie du {date} à {heure} ? », avec « Reprendre » et « Effacer ».<br>• Effacé à l'envoi.<br>• À la déconnexion et à toute fin de session signalée au navigateur, tous les brouillons de ce navigateur sont effacés, quel que soit le compte (appareil partagé ; § 6). | `f2b-brouillon-local` |
 | C. Bouton Retour d'Android | Fait : entrée d'historique sentinelle, la fenêtre « Quitter sans enregistrer ? » s'ouvre | `f2b-brouillon-local` |
 | D. Fiche admin de validation : couleurs, consignes, portes, zones (E-25) | Fait | `f2b-fiche-admin` |
 | D. Message de validation : prochaines étapes (cloche, push, email ; SMS inchangé) | Fait | `f2b-message-validation` |
@@ -254,7 +259,20 @@ Mode rapide pendant le travail (ligne `ci-rapide:` du commit : typecheck, lint, 
 | 261 | `d0ada3ebf` | D3, D4, fusion de main, ajout (points 1 à 3) (rapide, 29 suites) | **29/29**, dont 5 passages chacune pour :<br>• `cvf2a-3-recherche` : écarts entre appels de 1 296 à 1 303 ms ;<br>• `notif-envoyeur` : vidage en 3 passes à chaque fois (2 516 → 1 516 → 516 → 0, dont 0 ligne réservée sur 1 000 examinées à la 1re passe : l'ancien vidage se serait arrêté là).<br>`f2b-recherche-cadence` : 1 300 ms malgré la réservation revenue 450 ms en retard. |
 | 262 | `4beb4d668` (branche `finition-2b/rouges`) | Tests seuls sur main (`fdaa6c365`), sans aucun correctif | **0/19, chaque suite rouge pour la bonne raison** :<br>• code absent (modules, routes, fonctions : `PGRST202` pour r3, aucune migration `20261119…`) ;<br>• anciens textes à l'écran ; suppression qui vide la zone (HTTP 200) ; champs `scan_color` et `zones` refusés ;<br>• `f2b-recherche-cadence` : 646 ms entre deux appels ;<br>• `notif-envoyeur` : avec l'ancien vidage et la file d'essai, le passage de la route ne réserve pas la ligne du test (cas du run 252). |
 | 263 | `c879fba9e` | Premier run complet | Rouge, deux erreurs de ma part :<br>• suites 457/458 : `recette-matrice`, car mes ajouts dans `e2e/recette.spec.ts` et `zones-scan` décalaient les lignes citées par `docs/recette-billetterie.md` (recalées) ;<br>• e2e 517 réussis, 4 en échec : la capture `partenaire-creation-billets` cherchait la case « Billets », dont le nom accessible est « Billetterie » (corrigé).<br>Autres corrections après examen des captures :<br>• l'étape 1 s'affichait « Informati… » à 390 px : libellé court « Infos » sous 1 024 px ;<br>• fenêtre « Prévenir » : « 12 détenteurs seront prévenus par SMS à 21:40. ». |
+| 275 | `f47921b77` | Run complet après corrections | Rouge sur un seul point, **le poids JavaScript**. Typecheck, lint, suites **458/458** (dont `tests/audit/` et `tests/audit-auth/`), build, e2e et captures verts.<br>• `/` à 226 927 octets gzip pour un budget de 226 342 (+585) ; `/events/[id]` à 233 567 pour 233 316 (+251).<br>• Erreur de ma part : chaque page avait pris 661 octets (détail sous le tableau). Le dépassement figurait déjà dans la mesure du run 263 (`js-budget.tsv`) ; je ne l'avais pas relevé.<br>• Corrigé sans relever les budgets (commit `804bed0e1`). |
 | RUN_COMPLET | RUN_COMPLET_SHA | Run complet après corrections (typecheck, lint, toutes les suites, build, poids JavaScript, e2e et captures) | RESULTAT_COMPLET |
+
+**Poids JavaScript (run 275) : cause et correctif.**
+- **Cause.** `AuthProvider`, chargé par chaque page, importait la purge des brouillons depuis `lib/events/local-draft.ts` : tout ce module entrait dans le code commun. `AppLayout` portait en plus le test d'adresse qui masque « Navigation rapide ». Main est à 226 266 octets sur `/` : la branche ne pouvait ajouter que 76 octets au code commun.
+- **Correctif**, budgets inchangés :
+  - la purge est dans un module à part, sans dépendance (`lib/events/draft-purge.ts`). Elle efface tous les brouillons de ce navigateur, quel que soit le compte (avant : ceux du compte seul), au bouton « Se déconnecter » et à toute fin de session signalée au navigateur (autre onglet, autre appareil, déconnexion du contrôleur). Elle ne lève jamais : la déconnexion continue ;
+  - `AppLayout` est remis à l'identique de main. Le formulaire pose un attribut sur la page tant que sa barre est affichée ; une règle CSS masque alors « Navigation rapide », dans tous les navigateurs.
+- **Relecture du correctif** (quatre relecteurs, chaque constat important contre-vérifié). Trois corrections :
+  - ma première règle CSS (`:has()`) laissait, dans un navigateur ancien, la navigation par-dessus les boutons du formulaire : remplacée par l'attribut ;
+  - à l'étape Accès sur téléphone, le bouton « Déplacer la carte » passait au-dessus de la barre fixe en défilant et prenait l'appui destiné à « Suivant » (défaut de la 2b, barre fixe) : bloc de la carte isolé ;
+  - les brouillons n'étaient effacés qu'au bouton « Se déconnecter » de l'application : effacés aussi à toute fin de session signalée.
+- **Mesure sur ce poste**, avec le build et l'environnement de la CI : `/` passe de 226 953 à 226 328 octets (−625) ; toutes les routes baissent de 624 à 626 octets. Sur le même code (`f47921b77`), ce poste mesure 25 à 32 octets de plus que la CI : attendu à la CI, environ 226 302 pour un budget de 226 342 (résultat réel au run complet ci-dessus).
+- **Tests.** `f2b-telephone` et `f2b-brouillon-local` rouges avant chaque correction (6, puis 4 tests), verts après. Les captures vérifient dans le navigateur que « Navigation rapide » est masquée sur les étapes de création, et qu'à l'étape Accès la barre reçoit l'appui au-dessus du bouton de la carte.
 
 Remarque sur la recherche de lieu : sur 18 recherches simultanées (cvf2a-3), 3 sont servies et 15 reçoivent « Recherche indisponible pour le moment » (attente admise de 4 s). C'était 4 sur 18 avec l'ancien espacement. Une recherche isolée n'attend pas.
 
@@ -277,9 +295,9 @@ Remarque sur la recherche de lieu : sur 18 recherches simultanées (cvf2a-3), 3 
 | `r3-fonctions-rpc` | Bloc « finition 2b » ajouté (5 fonctions) ; conflit de fusion avec la 3a résolu en gardant les deux blocs | Ajout seul |
 | `notif-envoyeur` | Vidage de la file par comptage des lignes dues, file d'essai de 2 500 lignes | Ajout, point 2 ; assertions inchangées |
 | `design-files` | `ScanColorPicker`, `ZoneListEditor`, `EntryControlStep`, `EntryControlEditor`, `EventReview` déclarés | Fichiers nouveaux soumis aux règles du système de design |
-| `e2e/recette.spec.ts`, `e2e/fumee.spec.ts`, `e2e/support/screens.ts` | Création par les 5 étapes et « Vérifier » ; zones par `?etape=controle` ; radio « Or » ; captures nouvelles | Parcours de création changé (B, C) |
+| `e2e/recette.spec.ts`, `e2e/fumee.spec.ts`, `e2e/support/screens.ts` | Création par les 5 étapes et « Vérifier » ; zones par `?etape=controle` ; radio « Or » ; captures nouvelles ; « Navigation rapide » masquée (étapes de création) ; carte sous la barre (étape Accès, téléphone) | Parcours de création changé (B, C) |
 
-Documents dont les numéros de ligne cités ont été recalés : `docs/recette-billetterie.md` (contrôlé par `recette-matrice`) et `docs/parcours-evenement-complet.md` (correspondances exactes seulement ; voir l'après-lancement).
+Documents dont les numéros de ligne cités ont été recalés : `docs/recette-billetterie.md` (contrôlé par `recette-matrice`) et `docs/parcours-evenement-complet.md` (correspondances exactes seulement ; voir l'après-lancement). Après le run 275, 9 citations du parcours complet : 4 d'`AppLayout`, remises aux numéros de main ; 5 calées sur l'état du run 263, décalées depuis.
 
 `notif-modeles` est inchangé. Au run 256, il a refusé mon bouton « Ouvrir l'événement » : le message de validation garde le bouton commun « Ouvrir Event Village » (contrat G4).
 
@@ -293,6 +311,9 @@ Documents dont les numéros de ligne cités ont été recalés : `docs/recette-b
 4. **Sur téléphone** : commencer un événement, fermer l'onglet, revenir.
    - « Reprendre votre saisie du … ? » s'affiche.
    - Le bouton Retour d'Android ouvre « Quitter sans enregistrer ? ».
+   - Une seule barre en bas de l'écran : celle du formulaire.
+   - Étape Accès : faire défiler jusqu'à la carte ; « Suivant » répond toujours, même quand la carte passe sous la barre.
+   - Se déconnecter, puis se reconnecter : la reprise n'est plus proposée (brouillon effacé à la déconnexion).
 5. **Admin, fiche de validation** : couleurs, consignes, zones et portes visibles. Valider : l'organisatrice reçoit les prochaines étapes (cloche, email).
 6. **Publier l'événement et prendre un billet avec un compte de test.** Côté organisatrice :
    - changer le lieu : la fenêtre « 1 détenteur sera prévenu par SMS à HH:MM. » s'ouvre ; « Annuler » ne change rien ;
