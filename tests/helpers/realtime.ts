@@ -182,6 +182,15 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
     };
     if (target.filter) filter.filter = target.filter;
 
+    // Lot CI rapide (lots de tests en parallèle, run 309) : SUBSCRIBED n'est que la réponse à la jonction du canal ;
+    // l'abonnement postgres_changes est créé ensuite par le serveur, qui l'annonce par un message « system »
+    // (extension postgres_changes, statut ok, « Subscribed to PostgreSQL »). Sur un Realtime qui vient de démarrer
+    // (première suite temps réel d'un lot), un changement fait entre les deux est perdu : evenements-fin-valide ne
+    // passait en série que parce que d'autres suites temps réel l'avaient précédée. `ready` attend donc les deux, dans
+    // le même délai ; un statut d'erreur du serveur se lit comme un refus d'abonnement (CHANNEL_ERROR).
+    let joined = false;
+    let pgReady: boolean | string = false;
+    let onState: () => void = () => {};
     const channel: RealtimeChannel = client
         .channel(`ev-test-${target.table}-${randomBytes(4).toString('hex')}`)
         .on('postgres_changes', filter, (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
@@ -193,6 +202,12 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
                 commitTimestamp: payload.commit_timestamp,
                 receivedAt: Date.now(),
             });
+        })
+        .on('system', {}, (payload: { extension?: string; status?: string; message?: string }) => {
+            if (payload?.extension !== 'postgres_changes') return;
+            states.push(`system postgres_changes ${payload.status ?? '?'}${payload.message ? ` : ${payload.message}` : ''}`);
+            pgReady = payload.status === 'ok' ? true : (payload.message ?? `statut ${payload.status ?? '?'}`);
+            onState();
         });
 
     const outcome = new Promise<SubscribeOutcome>((resolve) => {
@@ -203,10 +218,22 @@ export function subscribeCollect(client: SupabaseClient, target: RealtimeTarget,
             clearTimeout(timer);
             resolve(o);
         };
-        const timer = setTimeout(() => settle({ status: 'TIMED_OUT', error: `abonnement non confirmé en ${timeoutMs} ms` }), timeoutMs);
+        const timer = setTimeout(() => settle({
+            status: 'TIMED_OUT',
+            error: joined ? `SUBSCRIBED sans confirmation postgres_changes du serveur en ${timeoutMs} ms` : `abonnement non confirmé en ${timeoutMs} ms`,
+        }), timeoutMs);
+        onState = () => {
+            if (typeof pgReady === 'string') settle({ status: 'CHANNEL_ERROR', error: `postgres_changes refusé par le serveur : ${pgReady}` });
+            else if (joined && pgReady) settle({ status: 'SUBSCRIBED', error: null });
+        };
         channel.subscribe((status, err) => {
             states.push(err ? `${status} : ${err.message}` : status);
-            settle({ status, error: status === 'SUBSCRIBED' ? null : (err?.message ?? `état ${status}`) });
+            if (status === 'SUBSCRIBED') {
+                joined = true;
+                onState();
+            } else {
+                settle({ status, error: err?.message ?? `état ${status}` });
+            }
         });
     });
 
