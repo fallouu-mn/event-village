@@ -189,12 +189,18 @@ describe('R71 — user_roles_set en direct (acteur en paramètre)', () => {
         assert.deepEqual(await rolesOf(admin.userId), before, 'rôles inchangés');
     });
 
-    test('témoin (vert dès l’écriture) : acteur SUPERADMIN → ajout puis retrait du rôle ADMIN acceptés', async () => {
+    // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : le rôle ADMIN ne se donne plus en direct par
+    // user_roles_set, même par un SUPERADMIN : seulement par « Changer le rôle » ou à la création du compte, avec mot de passe
+    // et code (ROLE_SCREEN_REQUIRED sinon). Le témoin d'origine (ajout puis retrait acceptés) devient ce refus.
+    test('acteur SUPERADMIN en direct : ajout puis retrait du rôle ADMIN refusés (ROLE_SCREEN_REQUIRED) ; rôles inchangés', async () => {
         const client = await newBuyer('r71-rpc-super');
         const add = await rolesSet(client.userId, superadmin.userId, ['CLIENT', 'ADMIN']);
-        assert.equal(add.ok, true, JSON.stringify(add));
-        const remove = await rolesSet(client.userId, superadmin.userId, ['CLIENT']);
-        assert.equal(remove.ok, true, JSON.stringify(remove));
+        assert.deepEqual([add.ok, add.code], [false, 'ROLE_SCREEN_REQUIRED'], JSON.stringify(add));
         assert.deepEqual(await rolesOf(client.userId), ['CLIENT']);
+        const admin = await anotherAdmin('r71-rpc-super-retrait');
+        const before = await rolesOf(admin.userId);
+        const remove = await rolesSet(admin.userId, superadmin.userId, ['CLIENT']);
+        assert.deepEqual([remove.ok, remove.code], [false, 'ROLE_SCREEN_REQUIRED'], JSON.stringify(remove));
+        assert.deepEqual(await rolesOf(admin.userId), before, 'rôles inchangés');
     });
 });

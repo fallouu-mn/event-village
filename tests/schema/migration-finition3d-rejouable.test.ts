@@ -33,6 +33,8 @@ const FINITION3D_MIGRATIONS = [
     '20261120000007_f3d_cv_revocation.sql',
     // Contre-vérification T3 : règle d'inactivité des routes appliquée à la REST et au temps réel
     '20261120000008_f3d_cv_inactivite.sql',
+    // Contre-vérification T4 : rôle ADMIN gardé comme SUPERADMIN, création d'un ADMIN avec mot de passe et code
+    '20261120000009_f3d_cv_role_admin.sql',
 ] as const;
 
 after(async () => {

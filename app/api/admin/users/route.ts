@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireAdminIdentity } from '@/lib/admin/identity-check';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { AdminService } from '@/lib/admin/admin.service';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
@@ -168,6 +169,14 @@ export async function POST(req: NextRequest) {
         }
         // Finition 3d (point 3) : un SUPERADMIN ne se crée pas directement (créer l'administrateur, puis « Changer le rôle »)
         if (targetRole === 'SUPERADMIN') return roleScreenRequired();
+        // Contre-vérification de la finition 3d (T4) : créer un ADMIN exige le mot de passe et le code administrateur de
+        // moins de 10 minutes, comme « Changer le rôle » ; revérifiés en base par admin_account_admin_role. Avant tout compte.
+        let identity: { sessionId: string; deviceKey: string } | null = null;
+        if (targetRole === 'ADMIN') {
+            const checked = await requireAdminIdentity(req, auth.user!.id);
+            if (!checked.ok) return checked.response;
+            identity = { sessionId: checked.sessionId, deviceKey: checked.deviceKey };
+        }
 
         const normalizedPhone = phone.trim().startsWith('+') ? phone.trim() : `+221${phone.trim().replace(/^0+/, '').replace(/\s+/g, '')}`;
         // Lot 9 bis (R87, B96, contrat 4.6, fix(9b.48-SB)) : GoTrue et users.email reçoivent l'adresse technique du
@@ -210,7 +219,16 @@ export async function POST(req: NextRequest) {
         //       (B45, R71) : par la RPC user_roles_set, qui refait le contrôle du rôle ADMIN et écrit son journal
         //       ROLES_SET dans la transaction.
         try {
-            await setUserRoles(userId, [targetRole], auth.user!.id);
+            if (identity) {
+                // T4 : rôle ADMIN d'un compte neuf, identité de l'auteur revérifiée en base (user_roles_set garde ADMIN)
+                const { data: granted, error: grantErr } = await supabase.rpc('admin_account_admin_role', {
+                    p: { actor_id: auth.user!.id, user_id: userId, session_id: identity.sessionId, device_key: identity.deviceKey },
+                });
+                const grant = granted as { ok?: boolean; code?: string } | null;
+                if (grantErr || grant?.ok !== true) throw new Error(`admin_account_admin_role : ${grantErr?.message ?? grant?.code ?? 'réponse vide'}`);
+            } else {
+                await setUserRoles(userId, [targetRole], auth.user!.id);
+            }
         } catch (roleErr) {
             console.error('[API /api/admin/users POST] Attribution du rôle impossible:', roleErr);
             return NextResponse.json({ error: 'Compte créé mais attribution du rôle impossible. Réessayez.' }, { status: 500 });

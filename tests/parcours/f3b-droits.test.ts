@@ -24,6 +24,7 @@ import { inspect } from '../helpers/db';
 import { assertFinition3bInvariants } from '../helpers/finition3b-invariants';
 import { jsonRequest } from './finance-helpers';
 import { newAdmin, type TestAdmin } from './notif-helpers';
+import { confirmIdentity } from './f3d-helpers';
 import { importModule } from './paiement-helpers';
 import { randomSenegalPhone } from './helpers';
 
@@ -35,6 +36,9 @@ let target: TestAdmin;
 
 before(async () => {
     superadmin = await newAdmin('f3b-droits-super', [], { role: 'SUPERADMIN' });
+    // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : créer un ADMIN et enregistrer ses droits
+    // exigent le mot de passe et le code administrateur de moins de 10 minutes.
+    await confirmIdentity(superadmin);
     target = await newAdmin('f3b-droits-cible', []);
 });
 

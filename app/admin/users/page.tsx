@@ -43,6 +43,8 @@ import { noticesText } from '@/lib/admin/confirmations';
 import { TextInput } from '@/components/ui/Field';
 import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';
 import { AdminPhoneChangeDialog } from '@/components/admin/PhoneChangeFlow';
+import { useIdentityConfirm } from '@/components/admin/IdentityConfirm';
+import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 
 interface UserItem {
   id: string;
@@ -81,6 +83,9 @@ export default function AdminUsersManagementPage() {
   const { hasPermission, hasRole, user: me } = useAuth();
   const canWrite = hasPermission('users.write');
   const isSuperadmin = hasRole('SUPERADMIN');
+  // Contre-vérification de la finition 3d (T4) : créer un ADMIN et enregistrer ses droits exigent mot de passe et code
+  // récents ; la fenêtre les demande quand le serveur répond PASSWORD_CONFIRMATION_REQUIRED ou ADMIN_CODE_CONFIRMATION_REQUIRED.
+  const { run: runWithIdentity, dialog: identityDialog } = useIdentityConfirm();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
@@ -183,23 +188,18 @@ export default function AdminUsersManagementPage() {
     setIsCreating(true);
 
     try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: newFirstName.trim(),
-          lastName: newLastName.trim(),
-          phone: newPhone.trim(),
-          email: newEmail.trim().toLowerCase() || undefined,
-          role: newRole,
-        }),
-      });
-
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
+      const data = await runWithIdentity(() => sendJson<{ activation?: string; message?: string; userId?: string }>('/api/admin/users', 'POST', {
+        firstName: newFirstName.trim(),
+        lastName: newLastName.trim(),
+        phone: newPhone.trim(),
+        email: newEmail.trim().toLowerCase() || undefined,
+        role: newRole,
+      }));
+      // Fenêtre « mot de passe et code » fermée sans valider : rien n'est créé
+      if (data === null) return;
 
       // Lot 9 quinquies (A2) : le titulaire choisit son mot de passe par le lien reçu par SMS
-      const reply = (data ?? {}) as { activation?: string; message?: string; userId?: string };
+      const reply = data ?? {};
       const noRights = newRole === 'ADMIN' ? ' Il n’a encore aucun droit : choisissez-les maintenant.' : '';
       if (reply.activation === 'SENT') {
         toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).${noRights}`);
@@ -218,8 +218,7 @@ export default function AdminUsersManagementPage() {
         void handleOpenPermissions({ ...created, id: reply.userId } as UserItem);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la création.';
-      toast.error(msg);
+      toast.error(errorMessage(err, 'Échec de la création.'));
     } finally {
       setIsCreating(false);
     }
@@ -317,23 +316,17 @@ export default function AdminUsersManagementPage() {
     setIsSavingPerms(true);
 
     try {
-      const res = await fetch('/api/admin/permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adminId: selectedAdmin.id,
-          permissions: adminPermissions,
-        }),
-      });
-
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
+      const saved = await runWithIdentity(() => sendJson('/api/admin/permissions', 'POST', {
+        adminId: selectedAdmin.id,
+        permissions: adminPermissions,
+      }));
+      // Fenêtre « mot de passe et code » fermée sans valider : droits inchangés
+      if (saved === null) return;
 
       toast.success(`Droits de ${selectedAdmin.first_name} ${selectedAdmin.last_name} enregistrés. Effet immédiat : il voit ses nouveaux écrans en rechargeant la page.`);
       setIsPermModalOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
-      toast.error(msg);
+      toast.error(errorMessage(err, 'Échec de l’enregistrement des permissions.'));
     } finally {
       setIsSavingPerms(false);
     }
@@ -884,6 +877,8 @@ export default function AdminUsersManagementPage() {
           }}
         />
       )}
+
+      {identityDialog}
 
       {phoneTarget && (
         <AdminPhoneChangeDialog

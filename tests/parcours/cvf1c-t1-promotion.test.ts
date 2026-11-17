@@ -151,7 +151,20 @@ describe('a. caisse ouverte : promotion refusée, rien ne change', () => {
         assert.equal(viaRoute.body.code, 'CONTROLLER_HAS_OPEN_SHIFT', show(viaRoute));
         assert.equal(viaRoute.body.error, openShiftText(title), show(viaRoute));
 
-        const viaRpc = await rpcRow('user_roles_set', { user_id: c.userId, roles: ['CLIENT', 'ADMIN'], actor_id: superId });
+        // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : sans le drapeau de l'écran, user_roles_set refuse
+        // d'abord le rôle ADMIN (ROLE_SCREEN_REQUIRED) ; avec lui (comme admin_role_change), la caisse ouverte refuse encore.
+        const noScreen = await rpcRow('user_roles_set', { user_id: c.userId, roles: ['CLIENT', 'ADMIN'], actor_id: superId });
+        assert.deepEqual([noScreen.ok, noScreen.code], [false, 'ROLE_SCREEN_REQUIRED'], JSON.stringify(noScreen));
+        const tx = await openConcurrentClient({ applicationName: 'cvf1c-pro-rpc' });
+        let viaRpc: Row;
+        try {
+            await tx.query(`SELECT set_config('event_village.role_screen', 'on', true)`);
+            const { rows } = await tx.query<{ r: Row }>('SELECT public.user_roles_set($1::jsonb) AS r',
+                [JSON.stringify({ user_id: c.userId, roles: ['CLIENT', 'ADMIN'], actor_id: superId })]);
+            viaRpc = rows[0].r;
+        } finally {
+            await tx.close();
+        }
         assert.equal(viaRpc.ok, false, JSON.stringify(viaRpc));
         assert.equal(viaRpc.code, 'CONTROLLER_HAS_OPEN_SHIFT', JSON.stringify(viaRpc));
         assert.equal(viaRpc.message, openShiftText(title), JSON.stringify(viaRpc));
@@ -273,6 +286,9 @@ describe('e. promotion et invitation simultanées', () => {
     async function duringPromotion(userId: string, waitingOn: string, start: () => Promise<Reply>, label: string): Promise<Reply> {
         const tx = await openConcurrentClient({ applicationName: `cvf1c-pro-${label}` });
         try {
+            // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : drapeau de l'écran levé dans la transaction, comme
+            // le fait admin_role_change (sans lui, user_roles_set refuse le rôle ADMIN : ROLE_SCREEN_REQUIRED).
+            await tx.query(`SELECT set_config('event_village.role_screen', 'on', true)`);
             const { rows } = await tx.query<{ r: Row }>('SELECT public.user_roles_set($1::jsonb) AS r',
                 [JSON.stringify({ user_id: userId, roles: ['CLIENT', 'ADMIN'], actor_id: superId })]);
             assert.equal(rows[0].r.ok, true, `promotion (transaction concurrente) : ${JSON.stringify(rows[0].r)}`);

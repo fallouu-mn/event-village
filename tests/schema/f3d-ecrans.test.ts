@@ -253,3 +253,23 @@ describe('contre-vérification T1 : profil d’un compte d’administration', ()
         }
     });
 });
+
+// ── Contre-vérification, T4 : créer un ADMIN et régler ses droits demandent mot de passe et code ───────────────────
+
+describe('contre-vérification T4 : création d’un administrateur et grille des droits', () => {
+    test('écran des comptes : création et enregistrement des droits passent par la fenêtre « mot de passe et code »', () => {
+        const page = read('app/admin/users/page.tsx');
+        assert.match(page, /useIdentityConfirm\(\)/);
+        assert.match(page, /runWithIdentity\(\(\) => sendJson<[^>]*>\('\/api\/admin\/users', 'POST'/, 'création sans la fenêtre d’identité');
+        assert.match(page, /runWithIdentity\(\(\) => sendJson\('\/api\/admin\/permissions', 'POST'/, 'droits enregistrés sans la fenêtre d’identité');
+        assert.match(page, /\{identityDialog\}/);
+    });
+
+    test('routes : requireAdminIdentity pour créer un ADMIN et pour la grille des droits ; rôle ADMIN par admin_account_admin_role', () => {
+        const users = read('app/api/admin/users/route.ts');
+        assert.match(users, /if \(targetRole === 'ADMIN'\) \{\s*const checked = await requireAdminIdentity\(req, auth\.user!\.id\);/);
+        assert.match(users, /rpc\('admin_account_admin_role'/);
+        const perms = read('app/api/admin/permissions/route.ts');
+        assert.match(perms, /const identity = await requireAdminIdentity\(req, auth\.user!\.id\);\s*if \(!identity\.ok\) return identity\.response;/);
+    });
+});

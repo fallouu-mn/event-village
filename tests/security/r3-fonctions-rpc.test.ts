@@ -588,6 +588,8 @@ const FINITION3D_RPCS: Array<[string, Record<string, unknown>]> = [
     ['admin_phone_change_start', { p: {} }],
     ['admin_phone_change_verify', { p: {} }],
     ['admin_phone_change_finalize', { p: {} }],
+    // Contre-vérification T4 : rôle ADMIN d'un compte neuf, identité de l'auteur revérifiée
+    ['admin_account_admin_role', { p: {} }],
 ];
 
 describe('R3 — finition 3d : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {
