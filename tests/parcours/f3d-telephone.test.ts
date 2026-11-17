@@ -200,6 +200,10 @@ describe('2c. « J’ai perdu mon téléphone » : mot de passe et code de secou
         assert.deepEqual(after, [current], 'seule la session en cours reste');
         assert.equal((await outbox('ADMIN_PHONE_CHANGED', { phone: oldPhone })).length, 1, 'SMS à l’ancien numéro');
         assert.equal((await outbox('ADMIN_PHONE_CONFIRMED', { phone: newPhone })).filter((x) => x.channel === 'SMS').length, 1, 'SMS au nouveau numéro');
+        // Règle G.49 (run 306) : un seul email au compte (adresse vérifiée), porté par ADMIN_PHONE_CONFIRMED ; la ligne à
+        // l'ancien numéro reste SMS seul, sans seconde ligne au compte
+        assert.equal((await outbox('ADMIN_PHONE_CONFIRMED', { userId: sa.userId })).filter((x) => x.channel === 'EMAIL').length, 1, 'email au compte');
+        assert.equal((await outbox('ADMIN_PHONE_CHANGED', { userId: sa.userId })).length, 0, 'aucune ligne ADMIN_PHONE_CHANGED au compte');
     });
 
     test('code deviné : 5 essais faux, puis même le bon code est refusé (429)', async () => {

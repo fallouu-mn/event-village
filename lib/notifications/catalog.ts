@@ -1833,7 +1833,7 @@ const CATALOG = {
     // Finition 3d (point 3) : un compte devient SUPERADMIN ; alerte (SMS et cloche) à chaque SUPERADMIN actif, l'auteur
     // compris. Pire cas : deux noms tronqués à 25 caractères, 152 septets, un segment GSM-7.
     SUPERADMIN_PROMOTED: define('SUPERADMIN_PROMOTED', {
-        label: 'Nouveau Superadmin (alerte)', channels: ['IN_APP', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        label: 'Nouveau Superadmin (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/admin/users',
         inApp: (d) => ({
             title: 'Nouveau Superadmin',
@@ -1854,9 +1854,18 @@ const CATALOG = {
         sms: () => `${SMS_PREFIX}un code de secours de votre compte Superadmin vient de servir. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`,
         sample: { remaining: 9 },
     }),
-    // Finition 3d (points 2a et 2c) : SMS à l'ANCIEN numéro (sans compte : l'envoyeur viserait le nouveau)
+    // Finition 3d (points 2a et 2c) : SMS à l'ANCIEN numéro (sans compte : l'envoyeur viserait le nouveau). EMAIL déclaré
+    // (G.49) comme PHONE_CHANGED ; la ligne à l'ancien numéro reste SMS seul, l'email au compte part avec
+    // ADMIN_PHONE_CONFIRMED (un seul email pour un seul changement).
     ADMIN_PHONE_CHANGED: define('ADMIN_PHONE_CHANGED', {
-        label: 'Numéro d’un administrateur remplacé (ancien numéro)', channels: ['SMS'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null, link: null,
+        label: 'Numéro d’un administrateur remplacé (ancien numéro)', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null,
+        link: () => '/profile',
+        inApp: (d) => ({
+            title: 'Numéro de téléphone remplacé',
+            content: bool(d, 'by_self')
+                ? 'Le numéro de votre compte Superadmin a été remplacé. Si ce n’est pas vous, alertez tout de suite un autre Superadmin.'
+                : 'Le Superadmin a remplacé le numéro de votre compte administrateur. L’ancien téléphone ne sert plus pour vos codes.',
+        }),
         sms: (d) => (bool(d, 'by_self')
             ? `${SMS_PREFIX}le numéro de votre compte Superadmin a été remplacé. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`
             : `${SMS_PREFIX}le Superadmin a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.`),
@@ -1864,7 +1873,7 @@ const CATALOG = {
     }),
     // Finition 3d (points 2a et 2c) : SMS au NOUVEAU numéro et cloche au compte
     ADMIN_PHONE_CONFIRMED: define('ADMIN_PHONE_CONFIRMED', {
-        label: 'Numéro d’un administrateur confirmé (nouveau numéro)', channels: ['IN_APP', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        label: 'Numéro d’un administrateur confirmé (nouveau numéro)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/profile',
         inApp: (d) => ({
             title: 'Numéro de téléphone changé',

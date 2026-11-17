@@ -45,8 +45,8 @@ REVOKE ALL ON TABLE public.admin_phone_changes FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.admin_phone_changes TO service_role;
 
 INSERT INTO public.notification_types (type, family, topic, channels, audience, suspended_policy, sync_only, admin_permission) VALUES
-    ('ADMIN_PHONE_CHANGED',   'ESSENTIAL', NULL, ARRAY['SMS'],           'ANY',   'ALLOW', FALSE, NULL),
-    ('ADMIN_PHONE_CONFIRMED', 'ESSENTIAL', NULL, ARRAY['IN_APP','SMS'],  'ADMIN', 'ALLOW', FALSE, NULL),
+    ('ADMIN_PHONE_CHANGED',   'ESSENTIAL', NULL, ARRAY['SMS','EMAIL'],          'ANY',   'ALLOW', FALSE, NULL),
+    ('ADMIN_PHONE_CONFIRMED', 'ESSENTIAL', NULL, ARRAY['IN_APP','SMS','EMAIL'], 'ADMIN', 'ALLOW', FALSE, NULL),
     ('OTP_ADMIN_PHONE',       'ESSENTIAL', NULL, ARRAY['SMS'],           'ANY',   'ALLOW', TRUE,  NULL)
 ON CONFLICT (type) DO UPDATE SET
     family = EXCLUDED.family, topic = EXCLUDED.topic, channels = EXCLUDED.channels, audience = EXCLUDED.audience,
@@ -358,13 +358,15 @@ BEGIN
             END IF;
         END LOOP;
 
-        -- SMS à l'ANCIEN numéro, écrit dans la ligne d'envoi (sans compte : sinon l'envoyeur viserait le nouveau)
+        -- SMS à l'ANCIEN numéro, écrit dans la ligne d'envoi (sans compte : sinon l'envoyeur viserait le nouveau). Le
+        -- registre déclare aussi EMAIL (G.49) ; cette ligne reste SMS seul, l'email au compte part avec ADMIN_PHONE_CONFIRMED.
         PERFORM public.notif_enqueue(jsonb_build_object(
             'type', 'ADMIN_PHONE_CHANGED', 'key', 'ADMIN_PHONE_CHANGED:' || r.id::text,
             'phone', v_old_e164, 'actor_id', v_actor,
-            'data', jsonb_build_object('by_self', r.kind = 'SELF')));
+            'data', jsonb_build_object('by_self', r.kind = 'SELF'),
+            'channels', jsonb_build_array('SMS')));
     END IF;
-    -- SMS au NOUVEAU numéro (écrit dans la ligne) et cloche au compte
+    -- SMS au NOUVEAU numéro (écrit dans la ligne), cloche et email (adresse vérifiée) au compte
     PERFORM public.notif_enqueue(jsonb_build_object(
         'type', 'ADMIN_PHONE_CONFIRMED', 'key', 'ADMIN_PHONE_CONFIRMED:' || r.id::text,
         'user_id', r.target_id, 'phone', r.new_phone, 'actor_id', v_actor,

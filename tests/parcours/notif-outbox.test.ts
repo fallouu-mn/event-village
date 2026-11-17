@@ -206,10 +206,10 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('CONTROLLER_BECAME_ADMIN', [I, P, M], 'PARTNER', 'B'), // migration 20261115000014, ajout signalé
     // Finition 3d (migrations 20261120…) : types nouveaux de la finition, ajout signalé
     ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A'),
-    ess('SUPERADMIN_PROMOTED', [I, S], 'ADMIN', 'A'),
+    ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A'),
     ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A'),
-    ess('ADMIN_PHONE_CHANGED', [S], 'ANY', 'A'),
-    ess('ADMIN_PHONE_CONFIRMED', [I, S], 'ADMIN', 'A'),
+    ess('ADMIN_PHONE_CHANGED', [S, M], 'ANY', 'A'),
+    ess('ADMIN_PHONE_CONFIRMED', [I, S, M], 'ADMIN', 'A'),
     sync('OTP_ADMIN_PHONE'),
 ];
 

@@ -58,7 +58,7 @@ GRANT EXECUTE ON FUNCTION public.admin_identity_check(jsonb) TO service_role;
 -- 2. Alerte aux SUPERADMIN quand un compte devient SUPERADMIN
 -- ----------------------------------------------------------------------------
 INSERT INTO public.notification_types (type, family, topic, channels, audience, suspended_policy, sync_only, admin_permission) VALUES
-    ('SUPERADMIN_PROMOTED', 'ESSENTIAL', NULL, ARRAY['IN_APP','SMS'], 'ADMIN', 'ALLOW', FALSE, NULL)
+    ('SUPERADMIN_PROMOTED', 'ESSENTIAL', NULL, ARRAY['IN_APP','SMS','EMAIL'], 'ADMIN', 'ALLOW', FALSE, NULL)
 ON CONFLICT (type) DO UPDATE SET
     family = EXCLUDED.family, topic = EXCLUDED.topic, channels = EXCLUDED.channels, audience = EXCLUDED.audience,
     suspended_policy = EXCLUDED.suspended_policy, sync_only = EXCLUDED.sync_only, admin_permission = EXCLUDED.admin_permission;

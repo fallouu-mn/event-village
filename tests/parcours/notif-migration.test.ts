@@ -175,6 +175,9 @@ const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendController
     'app/api/partner/team/invite/route.ts': { method: 'sendControllerInvite', why: "code d'activation d'un nouveau contrôleur" },
     // Lot 9 quinquies (A3 ; ajout signalé au rapport)
     'app/api/admin/step-up/sms/route.ts': { method: 'sendOtp', why: 'code administrateur (nouvel appareil, 12 h)' },
+    // Finition 3d (point 2 ; ajout signalé au rapport) : code au nouveau numéro d'un administrateur, envoyé par le module
+    // commun des routes /api/admin/users/[id]/phone/start et /api/admin/security/phone/start (journal `log:` compris)
+    'lib/admin/phone-change.ts': { method: 'sendOtp', why: "code au nouveau numéro d'un administrateur" },
 };
 
 function fullyWhitelisted(file: string): boolean {

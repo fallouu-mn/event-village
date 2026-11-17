@@ -1200,12 +1200,12 @@ function lot9quinquiesExpected(): ExpectedType[] {
         // (cloche, push, email), reçu même fiche suspendue. Ajout signalé.
         ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
         // Finition 3d (point 3, migration 20261120000003) : alerte à chaque SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
-        ess('SUPERADMIN_PROMOTED', [I, S], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau Superadmin'),
+        ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau Superadmin'),
         // Finition 3d (point 2, migrations 20261120000004 et …05) : code de secours utilisé, numéro d'un administrateur
         // remplacé (ancien et nouveau numéro), code au nouveau numéro. Ajout signalé.
         ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A', null, ['/admin/securite'], null),
-        ess('ADMIN_PHONE_CHANGED', [S], 'ANY', 'A', null, null, null),
-        ess('ADMIN_PHONE_CONFIRMED', [I, S], 'ADMIN', 'A', 'SECURITY', ['/profile'], 'Numéro de téléphone changé'),
+        ess('ADMIN_PHONE_CHANGED', [S, M], 'ANY', 'A', null, ['/profile'], null),
+        ess('ADMIN_PHONE_CONFIRMED', [I, S, M], 'ADMIN', 'A', 'SECURITY', ['/profile'], 'Numéro de téléphone changé'),
         sync('OTP_ADMIN_PHONE'),
     ];
 }
