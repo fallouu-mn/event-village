@@ -544,7 +544,8 @@ export default function AdminUsersManagementPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Finition 3d (point 2a) : boutons repliés sur plusieurs lignes (un de plus sur la ligne d'un ADMIN, 390 px) */}
+                  <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                     {/* Bouton Permissions Granulaires pour Admin */}
                     {isAdmin && !isDeleted && isSuperadmin && (
                       <Button
