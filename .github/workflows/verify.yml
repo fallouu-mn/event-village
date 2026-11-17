@@ -22,27 +22,83 @@ concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  verify:
-    name: typecheck · lint · tests (Supabase local) · build
-    runs-on: ubuntu-latest
-    # Lot 7 (A2, contrat 11.7) : 90 min pour le run « avant » (captures à 15 s d'attente), remis à 60 en vague F
-    # (fix(7.7)) : attente des captures plafonnée à 3 s (D84) ; durée mesurée runs 72 à 74 : 43 à 46 min dont
-    # 24 min de captures ; estimation après D84 : ≈ 40 min (job_elapsed_s de run.txt fait foi au run suivant)
-    # Lot 8 (AR11, L77) : 75 min pour le run « avant » (36 captures rouges de plus, parcours de recette, pire cas
-    # projeté ≈ 68 min) ; retour à 60 si trois runs « après » restent sous 50 min, sinon 75 justifié au rapport.
-    # Finition 2a : 90 min. Runs 217 à 219 : 63 à 73 min ; run 220 (« avant » de la finition 2a) arrêté par la limite à
-    # 75 min 32 s, verify vert en 2 462 s, parcours e2e encore en cours (acte 5 de la recette passé) ; la finition ajoute
-    # environ 2 min de tests. Justifié au rapport de la finition 2a (§ 6).
-    timeout-minutes: 90
+# ── Lot CI rapide : la vérification complète en jobs parallèles ─────────────────────────────────────────────────────
+# Avant : un seul job, en série (verify ≈ 2 600 à 3 000 s, puis e2e ≈ 2 000 s), 85 à 91 min, au-delà de la limite.
+# Après : mêmes contrôles, mêmes suites, mêmes commandes, répartis sur des runners distincts qui tournent en même temps :
+#   mode     lit le message du commit (ligne « ci-rapide: », ligne « ci-lots-graine: ») ; quelques secondes
+#   qualite  typecheck · lint (scripts/verify.mjs --etapes typecheck,lint) ; liste des suites (run-tests.mjs --list)
+#   tests    4 lots équilibrés par durée (scripts/ci-lots.mjs, durées : scripts/ci-durees.json), chacun sur SA base
+#            Supabase locale : mêmes migrations depuis zéro, même seed, mêmes invariants (after() de chaque suite),
+#            même lanceur scripts/run-tests.mjs (garde-fou, délai par suite, temps réel avant suites lourdes)
+#   e2e      build et poids JavaScript (verify.mjs --etapes build puis js-budget), puis l'e2e complet, inchangé
+#            (connexion, captures, emails, dev-page, fumée, terrain, pwa, fake-prod, perf, recette)
+#   verdict  vert seulement si TOUS les jobs le sont ET si les lots couvrent exactement la liste des suites, chacune
+#            une fois ; publie les journaux et captures sur ci-results (un seul dossier par run, scripts/ci-verdict.mjs)
+# Mode rapide (ligne « ci-rapide: <suites> ») : un seul job « rapide », identique à l'ancien mode rapide, puis verdict.
+# Chaque job : 60 min au plus. Étapes chronométrées comme avant (/tmp/etape.sh → etapes.txt → run.txt, par job).
 
+jobs:
+  mode:
+    name: mode (complet ou rapide)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      t0: ${{ steps.t0.outputs.t0 }}
+      rapide: ${{ steps.mode.outputs.rapide }}
+      suites: ${{ steps.mode.outputs.suites }}
+      graine: ${{ steps.mode.outputs.graine }}
+      lots: ${{ steps.mode.outputs.lots }}
     steps:
-      # Lot 7 (contrat 11.7) : durée du job (délai de 60 min), écrite dans run.txt sur ci-results
-      # Lot 8 (contrat 15.9, PO16 : 766 s hors verify et e2e au run 93, cause non établie) : chaque étape `run`
-      # s'ouvre par `. /tmp/etape.sh <nom>`, qui note son début, sa fin et son code de sortie dans /tmp/etapes.txt ;
-      # recopié dans run.txt. Mesure seule. Le temps des étapes `uses` (checkout, Node, CLI, cache) se lit dans
-      # l'écart entre deux étapes. Une étape coupée par son délai ne laisse aucune ligne.
-      - name: Horodatage du début du job
+      - name: Horodatage du début du run
+        id: t0
+        run: echo "t0=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Finition 3a : mode rapide pendant le travail d'un lot. Une ligne « ci-rapide: <suites> » dans le message du
+      # commit poussé fait tourner typecheck, lint et ces seules suites (scripts/ci-rapide.mjs), sans build, sans e2e
+      # ni mesure du poids JavaScript. Sans cette ligne : vérification complète. La CI complète reste la seule preuve
+      # finale d'un lot.
+      # Lot CI rapide : une ligne « ci-lots-graine: <entier> » mélange la répartition des suites dans les lots
+      # (scripts/ci-lots.mjs --graine) : d'autres voisinages, pour montrer qu'aucune suite ne dépend d'une autre.
+      - name: Mode de vérification (lignes « ci-rapide » et « ci-lots-graine » du message du commit)
+        id: mode
+        run: |
+          message="$(git log -1 --format=%B "$GITHUB_SHA")"
+          ligne="$(printf '%s\n' "$message" | grep -m1 -E '^ci-rapide:' || true)"
+          if [ -n "$ligne" ]; then
+            suites="$(printf '%s' "${ligne#ci-rapide:}" | xargs)"
+            if [ -z "$suites" ]; then echo "Ligne ci-rapide sans suite : rien à vérifier"; exit 1; fi
+            echo "rapide=1" >> "$GITHUB_OUTPUT"
+            echo "suites=$suites" >> "$GITHUB_OUTPUT"
+            echo "Mode rapide : $suites"
+          else
+            echo "rapide=0" >> "$GITHUB_OUTPUT"
+            echo "Mode complet"
+          fi
+          graine="$(printf '%s\n' "$message" | grep -m1 -E '^ci-lots-graine:' | sed -E 's/^ci-lots-graine:[[:space:]]*//' | xargs || true)"
+          if [ -n "$graine" ]; then
+            if ! printf '%s' "$graine" | grep -qE '^[0-9]+$'; then echo "ci-lots-graine : entier attendu (reçu : $graine)"; exit 1; fi
+            echo "graine=$graine" >> "$GITHUB_OUTPUT"
+            echo "Répartition mélangée des lots, graine $graine"
+          fi
+          echo "lots=4" >> "$GITHUB_OUTPUT"
+
+  # ── Mode rapide : inchangé (typecheck, lint, suites citées), sur une base locale ──────────────────────────────────
+  rapide:
+    name: rapide (typecheck · lint · suites citées)
+    needs: mode
+    if: ${{ needs.mode.outputs.rapide == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EV_RAPIDE_SUITES: ${{ needs.mode.outputs.suites }}
+    steps:
+      # Lot 8 (contrat 15.9) : chaque étape `run` s'ouvre par `. /tmp/etape.sh <nom>`, qui note son début, sa fin et
+      # son code de sortie dans /tmp/etapes.txt ; recopié dans run.txt (par job). Mesure seule.
+      - &horodatage
+        name: Horodatage du début du job
         run: |
           echo "EV_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
           cat > /tmp/etape.sh <<'EOS'
@@ -51,47 +107,34 @@ jobs:
           trap 'code=$?; echo "$EV_ETAPE $EV_ETAPE_DEBUT $(date +%s) $code" >> /tmp/etapes.txt' EXIT
           EOS
 
-      - name: Checkout
+      - &checkout
+        name: Checkout
         uses: actions/checkout@v4
 
-      # Finition 3a : mode rapide pendant le travail d'un lot. Une ligne « ci-rapide: <suites> » dans le message du
-      # commit poussé fait tourner typecheck, lint et ces seules suites (scripts/ci-rapide.mjs), sans build, sans e2e
-      # ni mesure du poids JavaScript. Sans cette ligne : vérification complète, inchangée. La CI complète reste la
-      # seule preuve finale d'un lot.
-      - name: Mode de vérification (ligne « ci-rapide » du message du commit)
-        run: |
-          . /tmp/etape.sh mode
-          ligne="$(git log -1 --format=%B "$GITHUB_SHA" | grep -m1 -E '^ci-rapide:' || true)"
-          if [ -n "$ligne" ]; then
-            suites="$(printf '%s' "${ligne#ci-rapide:}" | xargs)"
-            if [ -z "$suites" ]; then echo "Ligne ci-rapide sans suite : rien à vérifier"; exit 1; fi
-            echo "EV_RAPIDE=1" >> "$GITHUB_ENV"
-            echo "EV_RAPIDE_SUITES=$suites" >> "$GITHUB_ENV"
-            echo "Mode rapide : $suites"
-          else
-            echo "Mode complet"
-          fi
-
-      - name: Node.js
+      - &node
+        name: Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       # Lot 8 (AR11, L71) : le lock régénéré exige npm 10 (npm 11 le réécrit) ; version lue dans le journal et run.txt
-      - name: Installer les dépendances
+      - &npm-ci
+        name: Installer les dépendances
         run: |
           . /tmp/etape.sh npm-ci
           npm --version
           echo "EV_NPM_VERSION=$(npm --version)" >> "$GITHUB_ENV"
           npm ci
 
-      - name: Supabase CLI
+      - &supabase-cli
+        name: Supabase CLI
         uses: supabase/setup-cli@v1
         with:
           version: 2.122.0
 
-      - name: Démarrer Supabase local (services nécessaires aux tests uniquement)
+      - &supabase-start
+        name: Démarrer Supabase local (services nécessaires aux tests uniquement)
         # Lot 7 (runs 81 et 82) : le runner a refusé deux fois le port 54322 (« address already in use ») avant tout
         # test. On journalise qui écoute sur les ports locaux, puis une seule nouvelle tentative après un arrêt propre.
         run: |
@@ -107,13 +150,15 @@ jobs:
             supabase start -x studio,imgproxy,logflare,vector,edge-runtime 2>&1 | tee -a /tmp/supabase-start.log
           fi
 
-      - name: Appliquer toutes les migrations depuis zéro (supabase db reset)
+      - &db-reset
+        name: Appliquer toutes les migrations depuis zéro (supabase db reset)
         run: |
           . /tmp/etape.sh db-reset
           set -o pipefail
           supabase db reset 2>&1 | tee /tmp/db-reset.log
 
-      - name: Générer .env.test depuis l'instance locale
+      - &env-test
+        name: Générer .env.test depuis l'instance locale
         run: |
           . /tmp/etape.sh env-test
           supabase status -o env > /tmp/supabase.env
@@ -133,62 +178,220 @@ jobs:
               .env.test.example > .env.test
           echo ".env.test généré : $(grep -c . .env.test) lignes (URL=${API_URL})"
 
-      - name: Seed de test (idempotent, données fictives)
+      - &seed-test
+        name: Seed de test (idempotent, données fictives)
         run: |
           . /tmp/etape.sh seed-test
           set -o pipefail
           npm run seed:test 2>&1 | tee /tmp/seed.log
 
-      - name: Vérification complète (typecheck → lint → tests → build)
-        id: verify
-        if: ${{ env.EV_RAPIDE != '1' }}
-        run: |
-          . /tmp/etape.sh verify
-          set -o pipefail
-          npm run verify 2>&1 | tee /tmp/verify.log
-
-      # Finition 3a : mode rapide (étape « Mode de vérification ») ; « verify » est alors sautée, donc ni le build de
-      # mesure ni les phases e2e ne tournent (elles attendent verify en succès ou en échec).
       - name: Vérification rapide (typecheck, lint, suites citées par le commit)
-        id: verify-rapide
-        if: ${{ env.EV_RAPIDE == '1' }}
         run: |
           . /tmp/etape.sh verify-rapide
           set -o pipefail
           # shellcheck disable=SC2086
           node scripts/ci-rapide.mjs $EV_RAPIDE_SUITES 2>&1 | tee /tmp/verify.log
 
-      # Lot 7 (contrat 9, 11.7, 14.1) : au run « avant », les tests rouges arrêtent verify à l'étape test ; sans ce
-      # build, ni la mesure du poids JavaScript (js-budget) ni les phases e2e (terrain, pwa, perf) ne tourneraient.
-      # Le build est refait dans l'environnement de verify (scripts/e2e/build-mesure.mjs) ; le job reste en échec.
-      - name: "Build de mesure (verify en échec : poids JavaScript et e2e quand même mesurés)"
-        id: build-mesure
-        if: ${{ !cancelled() && steps.verify.outcome == 'failure' }}
+      - &diagnostic
+        name: Journal des conteneurs Supabase (diagnostic en cas d'échec)
+        if: failure()
         run: |
-          . /tmp/etape.sh build-mesure
-          set -o pipefail
-          node scripts/e2e/build-mesure.mjs 2>&1 | tee /tmp/build-mesure.log
+          . /tmp/etape.sh diagnostic-conteneurs
+          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_(auth|db)_" ); do
+            echo "===== $c =====" >> /tmp/containers.log
+            docker logs --tail 300 "$c" >> /tmp/containers.log 2>&1 || true
+          done
+          # Lot 7 (temps-reel-billets, runs 83, 86, 87) : journal de Realtime, filtré sur la durée de tout le job
+          # (et non les 300 dernières lignes) : limites de débit (MessagePerSecondRateLimitReached), erreurs et reprises
+          # du lecteur de changements, arrêts du flux.
+          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_realtime_" ); do
+            echo "===== $c (filtré) =====" >> /tmp/containers.log
+            # -A 14 : le corps multiligne d'une erreur Postgrex (code, message, requête) suit la ligne d'en-tête ;
+            # au run 88, sans lui, la cause des deux PoolingReplicationError restait illisible.
+            docker logs -t "$c" 2>&1 | grep -iE -A 14 "PoolingReplicationError|ReplicationConnectionDown" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g' | tail -300 >> /tmp/containers.log || true
+            echo "----- $c (autres lignes filtrées) -----" >> /tmp/containers.log
+            docker logs -t "$c" 2>&1 | grep -iE "ratelimit|rate_limit|too many|error|warn|retry|stopping|slot|poller|subscri" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g; s/(access_token|apikey|token)=[^ &"]+/\1=<masqué>/gI' | tail -400 >> /tmp/containers.log || true
+          done
+          # Lot 7 (run 88) : côté Postgres, sur tout le job, les annulations et erreurs des appels du lecteur de
+          # changements de Realtime (realtime.list_changes, fente de réplication), avec leur instruction.
+          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_db_" ); do
+            echo "===== $c (lecteur Realtime, filtré) =====" >> /tmp/containers.log
+            docker logs -t "$c" 2>&1 | grep -iE -A 3 "canceling statement|statement timeout|list_changes|replication slot|logical decoding" | grep -viE "password|secret" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g' | tail -200 >> /tmp/containers.log || true
+          done
+          grep -iE "error|sqlstate|failed" /tmp/containers.log | tail -60 || true
 
-      # ── Lot 5.1 : Playwright sur le build de verify (captures d'écran et test de fumée) ─────────
-      # Étapes exécutées seulement si verify a réussi (lot 7 : ou si le build de mesure a abouti après un
-      # échec de verify) ; chacune garde son propre résultat : un seed de
-      # démonstration en échec (attendu tant que le lot 5 n'est pas livré) n'empêche ni les captures
-      # possibles ni la fumée, et le job reste en échec.
+      - &annotations
+        name: Annotations d'erreur (extraits bruts des journaux)
+        if: failure()
+        run: |
+          for f in /tmp/db-reset.log /tmp/seed.log /tmp/verify.log /tmp/build.log /tmp/e2e-seed.log /tmp/e2e.log; do
+            [ -f "$f" ] || continue
+            msg=$(tail -c 1800 "$f" | tr '\r\n' '  ' | sed 's/%/%25/g')
+            echo "::error title=$(basename "$f")::${msg}"
+          done
+
+      # Journaux du job, réunis pour le job « verdict » (qui publie seul sur ci-results)
+      - &rassembler
+        name: Rassembler les journaux du job
+        if: always()
+        run: |
+          mkdir -p /tmp/sortie
+          for f in supabase-start db-reset seed verify build containers e2e-install e2e-seed fake-services next-start e2e; do
+            [ -f "/tmp/$f.log" ] && cp "/tmp/$f.log" "/tmp/sortie/$f.log"
+          done
+          [ -f /tmp/etapes.txt ] && cp /tmp/etapes.txt /tmp/sortie/etapes.txt
+          [ -f /tmp/liste-suites.txt ] && cp /tmp/liste-suites.txt /tmp/sortie/liste-suites.txt
+          if [ -d "$GITHUB_WORKSPACE/.test-logs" ]; then cp -r "$GITHUB_WORKSPACE/.test-logs" /tmp/sortie/test-logs; fi
+          {
+            echo "debut=${EV_JOB_STARTED_AT:-}"
+            echo "fin=$(date +%s)"
+            echo "statut=${{ job.status }}"
+            echo "npm_version=${EV_NPM_VERSION:-}"
+          } > /tmp/sortie/job.txt
+          echo "journaux du job : $(find /tmp/sortie -type f | wc -l) fichier(s)"
+
+      - &deposer
+        name: Déposer les journaux du job (artefact pour le verdict)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journaux-${{ github.job }}${{ matrix.lot && format('-{0}', matrix.lot) || '' }}
+          path: /tmp/sortie/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── Typecheck et lint ──────────────────────────────────────────────────────────────────────────────────────────────
+  qualite:
+    name: typecheck · lint
+    needs: mode
+    if: ${{ needs.mode.outputs.rapide == '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - *horodatage
+      - *checkout
+      - *node
+      - *npm-ci
+
+      # Aucune base ici : .env.test reprend l'exemple (URL locale, exigée par verify.mjs ; ni typecheck ni lint ne s'y
+      # connectent)
+      - name: Typecheck puis lint (scripts/verify.mjs --etapes typecheck,lint)
+        id: verify
+        run: |
+          . /tmp/etape.sh verify
+          set -o pipefail
+          cp .env.test.example .env.test
+          node scripts/verify.mjs --etapes typecheck,lint 2>&1 | tee /tmp/verify.log
+
+      # Liste de référence des suites (même découverte que le run série) : le verdict vérifie que les lots la couvrent
+      # exactement, chaque suite une fois
+      - name: Liste des suites (scripts/run-tests.mjs --list)
+        if: ${{ !cancelled() }}
+        run: |
+          . /tmp/etape.sh liste-suites
+          set -o pipefail
+          [ -f .env.test ] || cp .env.test.example .env.test
+          node scripts/ci-lots.mjs liste > /tmp/liste-suites.txt
+          echo "$(wc -l < /tmp/liste-suites.txt) suite(s)"
+
+      - *annotations
+      - *rassembler
+      - *deposer
+
+  # ── Tests : 4 lots en parallèle, chacun sur sa propre base Supabase locale ───────────────────────────────────────
+  tests:
+    name: tests ${{ matrix.lot }}/4 (Supabase local)
+    needs: mode
+    if: ${{ needs.mode.outputs.rapide == '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        lot: [1, 2, 3, 4]
+    env:
+      EV_GRAINE: ${{ needs.mode.outputs.graine }}
+    steps:
+      - *horodatage
+      - *checkout
+      - *node
+      - *npm-ci
+      - *supabase-cli
+      - *supabase-start
+      - *db-reset
+      - *env-test
+      - *seed-test
+
+      - name: Tests du lot ${{ matrix.lot }}/4 (scripts/verify.mjs --etapes test --lot ${{ matrix.lot }}/4)
+        id: verify
+        run: |
+          . /tmp/etape.sh verify
+          set -o pipefail
+          # shellcheck disable=SC2086
+          node scripts/verify.mjs --etapes test --lot ${{ matrix.lot }}/4 ${EV_GRAINE:+--graine $EV_GRAINE} 2>&1 | tee /tmp/verify.log
+
+      - *diagnostic
+      - *annotations
+      - *rassembler
+      - *deposer
+
+  # ── Build, poids JavaScript et e2e complet (recette, captures, fumée, terrain, pwa, perf…) ───────────────────────
+  e2e:
+    name: build · js-budget · e2e
+    needs: mode
+    if: ${{ needs.mode.outputs.rapide == '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      build: ${{ steps.build.outcome }}
+      js_budget: ${{ steps.js-budget.outcome }}
+      e2e_seed: ${{ steps.e2e-seed.outcome }}
+      e2e: ${{ steps.e2e.outcome }}
+    steps:
+      - *horodatage
+      - *checkout
+      - *node
+      - *npm-ci
+      - *supabase-cli
+      - *supabase-start
+      # Le build ne lit pas la base ; supabase start a déjà appliqué toutes les migrations depuis zéro, et l'étape
+      # « base propre » ci-dessous refait db reset, seed de test et seed de démonstration avant l'e2e, comme en série.
+      - *env-test
+
+      # Mêmes commandes et même environnement qu'en série (verify.mjs : .env.test chargé, build sans EV_INTEGRATIONS,
+      # clés de .env.local neutralisées). Le poids JavaScript est une étape à part : au-dessus du budget, le job est
+      # rouge mais l'e2e tourne quand même sur le build (comme le build de mesure du run série).
+      - name: Build (scripts/verify.mjs --etapes build)
+        id: build
+        run: |
+          . /tmp/etape.sh build
+          set -o pipefail
+          node scripts/verify.mjs --etapes build 2>&1 | tee /tmp/build.log
+
+      - name: Poids JavaScript (scripts/verify.mjs --etapes js-budget)
+        id: js-budget
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          . /tmp/etape.sh js-budget
+          set -o pipefail
+          node scripts/verify.mjs --etapes js-budget 2>&1 | tee -a /tmp/build.log
+
       - name: "E2E : version de Playwright"
         id: pw
-        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: "E2E : cache du navigateur Chromium"
         id: pw-cache
-        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
       - name: "E2E : installer Chromium"
-        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           . /tmp/etape.sh e2e-chromium
           set -o pipefail
@@ -199,7 +402,7 @@ jobs:
           fi
 
       - name: "E2E : générer .env.e2e (instance locale, faux services, secrets aléatoires du run)"
-        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           . /tmp/etape.sh e2e-env
           set -euo pipefail
@@ -275,7 +478,7 @@ jobs:
 
       - name: "E2E : base propre (db reset), seed de test puis seed de démonstration"
         id: e2e-seed
-        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           . /tmp/etape.sh e2e-seed
           set -o pipefail
@@ -288,7 +491,7 @@ jobs:
 
       - name: "E2E : démarrer les faux services et l'application (next start, arrière-plan)"
         id: e2e-start
-        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           . /tmp/etape.sh e2e-demarrage
           nohup node scripts/e2e/fake-services.mjs > /tmp/fake-services.log 2>&1 &
@@ -305,9 +508,10 @@ jobs:
 
       - name: "E2E : captures d'écran et test de fumée (npm run e2e)"
         id: e2e
-        if: ${{ !cancelled() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') && steps.e2e-start.outcome == 'success' }}
-        # Lot 8 (contrat 15.9) : délai propre, pour qu'une recette bloquée laisse le temps de publier les journaux
-        timeout-minutes: 65
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        # Lot 8 (contrat 15.9) : délai propre, pour qu'une recette bloquée laisse le temps de déposer les journaux ;
+        # lot CI rapide : 47 min, sous la limite de 60 min du job (installation, build et seed ≈ 8 min avant)
+        timeout-minutes: 47
         run: |
           . /tmp/etape.sh e2e
           set -o pipefail
@@ -322,134 +526,41 @@ jobs:
           fi
           echo "next-start.log : aucune mention sharp-missing-in-production"
 
-      - name: Journal du conteneur Supabase Auth (diagnostic en cas d'échec)
-        if: failure()
-        run: |
-          . /tmp/etape.sh diagnostic-conteneurs
-          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_(auth|db)_" ); do
-            echo "===== $c =====" >> /tmp/containers.log
-            docker logs --tail 300 "$c" >> /tmp/containers.log 2>&1 || true
-          done
-          # Lot 7 (temps-reel-billets, runs 83, 86, 87) : journal de Realtime, filtré sur la durée de tout le job
-          # (et non les 300 dernières lignes, qui ne couvrent que l'e2e) : limites de débit
-          # (MessagePerSecondRateLimitReached), erreurs et reprises du lecteur de changements, arrêts du flux.
-          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_realtime_" ); do
-            echo "===== $c (filtré) =====" >> /tmp/containers.log
-            # -A 14 : le corps multiligne d'une erreur Postgrex (code, message, requête) suit la ligne d'en-tête ;
-            # au run 88, sans lui, la cause des deux PoolingReplicationError restait illisible.
-            docker logs -t "$c" 2>&1 | grep -iE -A 14 "PoolingReplicationError|ReplicationConnectionDown" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g' | tail -300 >> /tmp/containers.log || true
-            echo "----- $c (autres lignes filtrées) -----" >> /tmp/containers.log
-            docker logs -t "$c" 2>&1 | grep -iE "ratelimit|rate_limit|too many|error|warn|retry|stopping|slot|poller|subscri" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g; s/(access_token|apikey|token)=[^ &"]+/\1=<masqué>/gI' | tail -400 >> /tmp/containers.log || true
-          done
-          # Lot 7 (run 88) : côté Postgres, sur tout le job, les annulations et erreurs des appels du lecteur de
-          # changements de Realtime (realtime.list_changes, fente de réplication), avec leur instruction.
-          for c in $(docker ps -a --format "{{.Names}}" | grep -E "supabase_db_" ); do
-            echo "===== $c (lecteur Realtime, filtré) =====" >> /tmp/containers.log
-            docker logs -t "$c" 2>&1 | grep -iE -A 3 "canceling statement|statement timeout|list_changes|replication slot|logical decoding" | grep -viE "password|secret" | sed -E 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/<jeton masqué>/g' | tail -200 >> /tmp/containers.log || true
-          done
-          grep -iE "error|sqlstate|failed" /tmp/containers.log | tail -60 || true
+      - *diagnostic
+      - *annotations
 
-      - name: Annotations d'erreur (extraits bruts des journaux)
-        if: failure()
-        run: |
-          for f in /tmp/db-reset.log /tmp/seed.log /tmp/verify.log /tmp/e2e-seed.log /tmp/e2e.log; do
-            [ -f "$f" ] || continue
-            msg=$(tail -c 1800 "$f" | tr '\r\n' '  ' | sed 's/%/%25/g')
-            echo "::error title=$(basename "$f")::${msg}"
-          done
-
-      - name: Publier les journaux bruts sur la branche ci-results
+      # Captures, emails, mesures, poids JavaScript et diagnostic Playwright, pour le verdict (mêmes règles qu'en série)
+      - name: Rassembler les captures et mesures de l'e2e
         if: always()
-        env:
-          RUN_DIR: runs/${{ github.run_number }}-${{ github.run_id }}
-          JOB_STATUS: ${{ job.status }}
         run: |
-          set -e
-          mkdir -p /tmp/ci-results && cd /tmp/ci-results
-          git init -q
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          # Pointe seule (--depth=1) : l'historique contient les captures des anciens runs
-          if git fetch -q --depth=1 origin ci-results 2>/dev/null; then
-            git checkout -q -b ci-results FETCH_HEAD
-          else
-            git checkout -q --orphan ci-results
+          mkdir -p /tmp/sortie
+          W="$GITHUB_WORKSPACE"
+          if [ -d "$W/.e2e-captures/captures" ]; then
+            mkdir -p /tmp/sortie/captures && cp -r "$W/.e2e-captures/captures/." /tmp/sortie/captures/
+            echo "captures : $(find /tmp/sortie/captures -name '*.png' | wc -l) PNG"
           fi
-          mkdir -p "$RUN_DIR"
-          for f in supabase-start db-reset seed verify build-mesure containers e2e-install e2e-seed fake-services next-start e2e; do
-            [ -f "/tmp/$f.log" ] && cp "/tmp/$f.log" "$RUN_DIR/$f.log"
-          done
-          if [ -d "$GITHUB_WORKSPACE/.test-logs" ]; then cp -r "$GITHUB_WORKSPACE/.test-logs" "$RUN_DIR/test-logs"; fi
-          # Lot 5.1 : captures (PNG + index.txt) dans runs/<n>-<id>/captures/
-          if [ -d "$GITHUB_WORKSPACE/.e2e-captures/captures" ]; then
-            mkdir -p "$RUN_DIR/captures"
-            cp -r "$GITHUB_WORKSPACE/.e2e-captures/captures/." "$RUN_DIR/captures/"
-            echo "captures publiées : $(find "$RUN_DIR/captures" -name '*.png' | wc -l) PNG"
+          if [ -f "$W/.verify/js-budget.tsv" ]; then cp "$W/.verify/js-budget.tsv" /tmp/sortie/js-budget.tsv; fi
+          if [ -d "$W/.e2e-captures/emails" ]; then
+            mkdir -p /tmp/sortie/emails
+            find "$W/.e2e-captures/emails" -maxdepth 1 -type f \( -name '*.html' -o -name '*.txt' \) -exec cp {} /tmp/sortie/emails/ \;
           fi
-          # Lot 7 (contrat 9 et 11.6) : mesures (poids JavaScript post-build, scan, performance, durée des phases e2e),
-          # sous le régime des journaux conservés (pas de rotation)
-          if [ -f "$GITHUB_WORKSPACE/.verify/js-budget.tsv" ]; then cp "$GITHUB_WORKSPACE/.verify/js-budget.tsv" "$RUN_DIR/js-budget.tsv"; fi
-          # Lot 7 (7.9, contrat 19.9) : emails rendus (HTML et texte), relus avec leurs captures
-          if [ -d "$GITHUB_WORKSPACE/.e2e-captures/emails" ]; then
-            mkdir -p "$RUN_DIR/emails"
-            find "$GITHUB_WORKSPACE/.e2e-captures/emails" -maxdepth 1 -type f \( -name '*.html' -o -name '*.txt' \) -exec cp {} "$RUN_DIR/emails/" \;
-            echo "emails publiés : $(find "$RUN_DIR/emails" -type f | wc -l) fichier(s)"
-          fi
-          if [ -d "$GITHUB_WORKSPACE/.e2e-captures/perf" ]; then
-            mkdir -p "$RUN_DIR/perf"
-            find "$GITHUB_WORKSPACE/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' \) -exec cp {} "$RUN_DIR/perf/" \;
-            echo "mesures publiées : $(find "$RUN_DIR/perf" -type f | wc -l) fichier(s)"
+          if [ -d "$W/.e2e-captures/perf" ]; then
+            mkdir -p /tmp/sortie/perf
+            find "$W/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' \) -exec cp {} /tmp/sortie/perf/ \;
           fi
           # Diagnostic des échecs Playwright : error-context.md (< 512 Kio) et captures test-failed-*.png
-          # (< 1,5 Mio, 80 au plus), arborescence de test-results/ conservée, dans runs/<n>-<id>/playwright/
-          if [ -d "$GITHUB_WORKSPACE/test-results" ]; then
-            mkdir -p "$RUN_DIR/playwright"
-            ( cd "$GITHUB_WORKSPACE" && find test-results -type f -name 'error-context.md' -size -512k -print0 ) | while IFS= read -r -d '' f; do mkdir -p "$RUN_DIR/playwright/$(dirname "$f")"; cp "$GITHUB_WORKSPACE/$f" "$RUN_DIR/playwright/$f"; done
-            ( cd "$GITHUB_WORKSPACE" && find test-results -type f -name 'test-failed-*.png' -size -1536k -print0 | sort -z | head -z -n 80 ) | while IFS= read -r -d '' f; do mkdir -p "$RUN_DIR/playwright/$(dirname "$f")"; cp "$GITHUB_WORKSPACE/$f" "$RUN_DIR/playwright/$f"; done
-            echo "diagnostic Playwright publié : $(find "$RUN_DIR/playwright" -name 'error-context.md' | wc -l) contexte(s), $(find "$RUN_DIR/playwright" -name '*.png' | wc -l) capture(s) d'échec"
+          # (< 1,5 Mio, 80 au plus), arborescence de test-results/ conservée
+          if [ -d "$W/test-results" ]; then
+            mkdir -p /tmp/sortie/playwright
+            ( cd "$W" && find test-results -type f -name 'error-context.md' -size -512k -print0 ) | while IFS= read -r -d '' f; do mkdir -p "/tmp/sortie/playwright/$(dirname "$f")"; cp "$W/$f" "/tmp/sortie/playwright/$f"; done
+            ( cd "$W" && find test-results -type f -name 'test-failed-*.png' -size -1536k -print0 | sort -z | head -z -n 80 ) | while IFS= read -r -d '' f; do mkdir -p "/tmp/sortie/playwright/$(dirname "$f")"; cp "$W/$f" "/tmp/sortie/playwright/$f"; done
           fi
-          # Rétention : captures et diagnostic Playwright des 5 derniers runs à la pointe de ci-results ; les journaux restent
-          for kind in captures playwright; do
-            for d in $(find runs -mindepth 2 -maxdepth 2 -type d -name "$kind" | sed -e 's#^runs/##' -e "s#/${kind}##" | sort -t- -k1,1n | head -n -5); do
-              rm -rf "runs/${d}/${kind}"
-              echo "${kind} purgé(es) de la pointe : runs/${d}/${kind}"
-            done
-          done
-          {
-            echo "run_id=${{ github.run_id }}"
-            echo "run_number=${{ github.run_number }}"
-            echo "sha=${{ github.sha }}"
-            echo "ref=${{ github.ref }}"
-            echo "job_status=${JOB_STATUS}"
-            echo "build_mesure=${{ steps.build-mesure.outcome }}"
-            echo "e2e_seed=${{ steps.e2e-seed.outcome }}"
-            echo "e2e=${{ steps.e2e.outcome }}"
-            # Finition 3a : mode de la vérification (rapide : suites citées par le commit)
-            if [ "${EV_RAPIDE:-}" = "1" ]; then echo "mode=rapide"; echo "suites=${EV_RAPIDE_SUITES:-}"; else echo "mode=complet"; fi
-            echo "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            if [ -n "${EV_JOB_STARTED_AT:-}" ]; then echo "job_elapsed_s=$(( $(date +%s) - EV_JOB_STARTED_AT ))"; fi
-            # Lot 8 (L71, contrat 15.9) : version de npm, puis une ligne par étape, secondes comptées depuis le début du job
-            echo "npm_version=${EV_NPM_VERSION:-inconnue}"
-            if [ -n "${EV_JOB_STARTED_AT:-}" ] && [ -f /tmp/etapes.txt ]; then
-              awk -v t0="$EV_JOB_STARTED_AT" '{ printf "etape_%s=debut_s:%d duree_s:%d code:%s\n", $1, $2 - t0, $3 - $2, $4 }' /tmp/etapes.txt
-            fi
-          } > "$RUN_DIR/run.txt"
-          git add -A
-          git commit -q -m "ci-results: run ${{ github.run_number }} (${{ github.sha }}) — ${JOB_STATUS}"
-          git push -q origin ci-results
-          echo "Journaux publiés : ${{ github.server_url }}/${{ github.repository }}/tree/ci-results/${RUN_DIR}"
 
-      - name: Journaux des suites de tests (artefact)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-logs
-          path: .test-logs/
-          if-no-files-found: ignore
+      - *rassembler
+      - *deposer
 
       - name: "E2E : rapport Playwright et traces (artefact)"
-        if: ${{ always() && (steps.verify.outcome == 'success' || steps.build-mesure.outcome == 'success') }}
+        if: ${{ always() && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
@@ -458,3 +569,90 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  # ── Verdict : vert seulement si tout est vert ; seul job qui publie sur ci-results ───────────────────────────────
+  verdict:
+    name: verdict (tous les jobs verts) · journaux sur ci-results
+    needs: [mode, rapide, qualite, tests, e2e]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout (scripts du verdict)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Récupérer les journaux des jobs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: journaux-*
+          path: /tmp/artefacts
+
+      - name: Assembler le dossier du run et décider du verdict (scripts/ci-verdict.mjs)
+        id: verdict
+        env:
+          EV_NEEDS: ${{ toJSON(needs) }}
+          EV_T0: ${{ needs.mode.outputs.t0 }}
+          RUN_DIR: /tmp/run
+        run: node scripts/ci-verdict.mjs /tmp/artefacts "$RUN_DIR"
+
+      - name: Journaux des suites de tests, tous lots (artefact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: /tmp/run/test-logs/
+          if-no-files-found: ignore
+
+      - name: Publier les journaux bruts sur la branche ci-results
+        if: always()
+        env:
+          RUN_DIR: runs/${{ github.run_number }}-${{ github.run_id }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+        run: |
+          set -e
+          mkdir -p /tmp/ci-results && cd /tmp/ci-results
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          # Pointe seule (--depth=1) : l'historique contient les captures des anciens runs. Une poussée refusée (un autre
+          # run a publié entre-temps) est retentée sur la nouvelle pointe, cinq fois au plus.
+          for essai in 1 2 3 4 5; do
+            if git fetch -q --depth=1 origin ci-results 2>/dev/null; then
+              git checkout -q -f -B ci-results FETCH_HEAD
+              git clean -fdq
+            else
+              git checkout -q --orphan ci-results
+            fi
+            mkdir -p "$RUN_DIR"
+            if [ -d /tmp/run ]; then cp -r /tmp/run/. "$RUN_DIR/"; fi
+            if [ -d "$RUN_DIR/captures" ]; then echo "captures publiées : $(find "$RUN_DIR/captures" -name '*.png' | wc -l) PNG"; fi
+            # Rétention : captures et diagnostic Playwright des 5 derniers runs à la pointe de ci-results ; les journaux restent
+            for kind in captures playwright; do
+              for d in $(find runs -mindepth 2 -maxdepth 2 -type d -name "$kind" | sed -e 's#^runs/##' -e "s#/${kind}##" | sort -t- -k1,1n | head -n -5); do
+                rm -rf "runs/${d}/${kind}"
+                echo "${kind} purgé(es) de la pointe : runs/${d}/${kind}"
+              done
+            done
+            git add -A
+            git commit -q -m "ci-results: run ${{ github.run_number }} (${{ github.sha }}) — ${VERDICT:-failure}"
+            if git push -q origin ci-results; then
+              echo "Journaux publiés : ${{ github.server_url }}/${{ github.repository }}/tree/ci-results/${RUN_DIR}"
+              exit 0
+            fi
+            echo "::warning::poussée sur ci-results refusée (essai ${essai}), nouvelle tentative"
+            sleep $((essai * 5))
+          done
+          echo "::error::journaux non publiés sur ci-results après 5 essais"; exit 1
+
+      - name: Verdict
+        run: |
+          echo "verdict : ${{ steps.verdict.outputs.verdict }} (mode ${{ needs.mode.outputs.rapide == '1' && 'rapide' || 'complet' }}) ; jobs : mode ${{ needs.mode.result }}, rapide ${{ needs.rapide.result }}, qualite ${{ needs.qualite.result }}, tests ${{ needs.tests.result }}, e2e ${{ needs.e2e.result }}"
+          [ "${{ steps.verdict.outputs.verdict }}" = "success" ]
