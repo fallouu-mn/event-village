@@ -404,16 +404,22 @@ const ROOT_VARS = (): Map<string, string> => cssVars(CSS_RULES(), (s) => s.inclu
 const DARK_VARS = (): Map<string, string> => cssVars(CSS_RULES(), (s) => s.some((x) => DARK_SELECTOR.test(x)));
 
 const STATUS_TONES = ['success', 'warning', 'danger', 'info'];
+// Design 1a : noms de la charte (docs/design/direction.md, section 2). Les anciens noms restent des alias
+// (tests/schema/design-anciens-noms.test.ts les interdit dans un fichier nouveau ou modifié). Modification signalée au rapport.
 const ROOT_TOKENS = [
-    'surface', 'surface-raised', 'surface-sunken', 'fg', 'fg-muted', 'border', 'ring',
-    'brand', 'brand-hover', 'on-brand', 'brand-decor',
-    ...STATUS_TONES.flatMap((t) => [t, `${t}-bg`, `${t}-fg`, `${t}-border`]),
+    'background', 'foreground', 'foreground-strong', 'card', 'popover', 'muted', 'muted-foreground', 'border', 'input',
+    'ring', 'ring-halo', 'scrim', 'brand', 'brand-foreground', 'primary', 'primary-hover', 'primary-foreground',
+    'primary-text', 'primary-soft', 'gradient-from', 'gradient-to', 'gradient-foreground',
+    ...STATUS_TONES.flatMap((t) => [t, `${t}-soft`, `${t}-text`, `${t}-border`]),
 ];
-/** Tokens qui doivent basculer en sombre (la marque peut rester identique). */
+/** Tokens qui doivent basculer en sombre (la marque et le dégradé restent identiques). */
 const DARK_TOKENS = [
-    'surface', 'surface-raised', 'surface-sunken', 'fg', 'fg-muted', 'border', 'ring',
-    ...STATUS_TONES.flatMap((t) => [`${t}-bg`, `${t}-fg`, `${t}-border`]),
+    'background', 'foreground', 'foreground-strong', 'card', 'popover', 'muted', 'muted-foreground', 'border', 'input',
+    'ring-halo', 'primary', 'primary-hover', 'primary-foreground', 'primary-text', 'primary-soft',
+    ...STATUS_TONES.flatMap((t) => [`${t}-soft`, `${t}-text`, `${t}-border`]),
 ];
+/** Nom Tailwind d'un jeton : `brand` (orange de la marque) s'écrit `brand-vif` tant que l'alias `brand` vit. */
+const TAILWIND_NAME: Record<string, string> = { brand: 'brand-vif', 'brand-foreground': 'brand-vif-foreground' };
 
 // ── tailwind.config (configuration chargée) ────────────────────────────────
 
@@ -1052,21 +1058,21 @@ describe('Q — tokens sémantiques (globals.css, tailwind.config)', () => {
         assert.deepEqual(missing, [], `variables absentes de :root : ${missing.map((t) => `--${t}`).join(', ')}`);
     });
 
-    test('app/globals.css : le thème sombre (.dark) redéfinit surfaces, textes, bordures, anneau et tons', () => {
+    test('app/globals.css : le thème sombre (.dark) redéfinit fonds, textes, bordures, liseré du focus, bouton principal et tons', () => {
         const dark = DARK_VARS();
         const root = ROOT_VARS();
         const missing = DARK_TOKENS.filter((t) => !dark.has(`--${t}`));
         assert.deepEqual(missing, [], `variables absentes de .dark : ${missing.map((t) => `--${t}`).join(', ')}`);
-        for (const t of ['surface', 'fg', 'border']) {
+        for (const t of ['background', 'foreground', 'border', 'primary']) {
             assert.notEqual(dark.get(`--${t}`), root.get(`--${t}`), `--${t} identique en clair et en sombre : le token ne bascule pas`);
         }
     });
 
-    test('tailwind.config : couleurs branchées sur les variables (bg-surface, text-fg, bg-brand, text-on-brand, bg-success-bg…)', async () => {
+    test('tailwind.config : couleurs branchées sur les variables (bg-background, text-foreground, bg-primary, bg-success-soft…)', async () => {
         const colors = flattenColors(themeSection(await loadTailwindConfig(), 'colors'));
         const problems: string[] = [];
         for (const t of ROOT_TOKENS) {
-            const v = colors.get(t);
+            const v = colors.get(TAILWIND_NAME[t] ?? t);
             if (v === undefined) problems.push(`${t} : absent des couleurs Tailwind`);
             else if (!referencesVar(v, t)) problems.push(`${t} = ${v} : ne lit pas var(--${t})`);
         }
@@ -1109,43 +1115,32 @@ describe('Q — tokens sémantiques (globals.css, tailwind.config)', () => {
         assert.deepEqual(problems, [], problems.join('\n'));
     });
 
-    test('contraste WCAG : --brand avec le blanc ≥ 4,5:1, --on-brand sur --brand ≥ 4,5:1 (clair et sombre) ; --brand-decor = #FF5722', async () => {
+    test('contraste WCAG (charte) : bouton principal B en clair et A en sombre ≥ 4,5:1, texte sur l’orange de la marque ≥ 4,5:1 ; --brand = #FF8A3D', () => {
         const root = ROOT_VARS();
         const dark = DARK_VARS();
-        const colors = flattenColors(themeSection(await loadTailwindConfig(), 'colors'));
-        const brandRaw = root.get('--brand') ?? colors.get('brand');
-        assert.ok(brandRaw, 'ni --brand dans :root ni brand dans tailwind.config');
-        const brand = parseColor(resolveVarRefs(brandRaw, [root]));
-        assert.ok(brand, `--brand = ${brandRaw} : couleur illisible`);
-        const white = contrastRatio(brand, WHITE);
-        assert.ok(white >= 4.5, `--brand = ${brandRaw} : contraste avec le blanc ${white.toFixed(2)}:1 < 4,5:1 (texte blanc des boutons primaires)`);
-
-        const onBrandRaw = root.get('--on-brand');
-        assert.ok(onBrandRaw, '--on-brand absent de :root');
-        const onBrand = parseColor(resolveVarRefs(onBrandRaw, [root]));
-        assert.ok(onBrand, `--on-brand = ${onBrandRaw} : couleur illisible`);
-        const pair = contrastRatio(brand, onBrand);
-        assert.ok(pair >= 4.5, `clair : --on-brand sur --brand ${pair.toFixed(2)}:1 < 4,5:1`);
-
-        if (dark.has('--brand') || dark.has('--on-brand')) {
-            const scopes = [dark, root];
-            const db = parseColor(resolveVarRefs(dark.get('--brand') ?? brandRaw, scopes));
-            const dob = parseColor(resolveVarRefs(dark.get('--on-brand') ?? onBrandRaw, scopes));
-            assert.ok(db && dob, 'sombre : --brand ou --on-brand illisible');
-            const darkPair = contrastRatio(db, dob);
-            assert.ok(darkPair >= 4.5, `sombre : --on-brand sur --brand ${darkPair.toFixed(2)}:1 < 4,5:1`);
+        const color = (name: string, scopes: Array<Map<string, string>>): Rgb => {
+            const raw = scopes.map((s) => s.get(`--${name}`)).find((v) => v !== undefined);
+            assert.ok(raw, `--${name} absent`);
+            const rgb = parseColor(resolveVarRefs(raw, scopes));
+            assert.ok(rgb, `--${name} = ${raw} : couleur illisible`);
+            return rgb;
+        };
+        for (const [theme, scopes] of [['clair', [root]], ['sombre', [dark, root]]] as const) {
+            const pair = contrastRatio(color('primary', [...scopes]), color('primary-foreground', [...scopes]));
+            assert.ok(pair >= 4.5, `${theme} : --primary-foreground sur --primary ${pair.toFixed(2)}:1 < 4,5:1`);
+            const onBrand = contrastRatio(color('brand', [...scopes]), color('brand-foreground', [...scopes]));
+            assert.ok(onBrand >= 4.5, `${theme} : --brand-foreground sur --brand ${onBrand.toFixed(2)}:1 < 4,5:1`);
         }
-
-        const decorRaw = root.get('--brand-decor');
-        assert.ok(decorRaw, '--brand-decor absent de :root');
-        assert.deepEqual(parseColor(resolveVarRefs(decorRaw, [root])), [255, 87, 34], `--brand-decor = ${decorRaw}, attendu #FF5722 (décor seulement)`);
+        assert.deepEqual(color('brand', [root]), [255, 138, 61], '--brand doit valoir #FF8A3D (orange de la marque)');
+        assert.deepEqual(color('primary', [root]), [194, 65, 12], 'clair : --primary doit valoir #C2410C (bouton B)');
+        assert.deepEqual(color('primary', [dark, root]), [255, 138, 61], 'sombre : --primary doit valoir #FF8A3D (bouton A)');
     });
 });
 
 // ── Q. Composants partagés ─────────────────────────────────────────────────
 
 describe('Q — composants partagés (components/ui)', () => {
-    test('Button : au moins 44 px à toutes les tailles (min-h-11, icône min-w-11), primaire plein bg-brand et text-on-brand', () => {
+    test('Button : au moins 44 px à toutes les tailles (min-h-11, icône min-w-11), primaire plein bg-primary et text-primary-foreground, grand bouton en dégradé', () => {
         const file = 'components/ui/Button.tsx';
         const sf = sourceOf(file);
         const literals = allStringLiterals(sf);
@@ -1161,9 +1156,16 @@ describe('Q — composants partagés (components/ui)', () => {
         assert.ok(!literals.some((s) => /(?<![\w-])sm:h-13(?![\w-])/.test(s)), `${file} : sm:h-13 n'existe pas dans l'échelle Tailwind`);
         const primary = objectStrings(sf, 'variants')?.get('primary');
         assert.ok(primary !== undefined, `${file} : variante primary introuvable`);
-        assert.match(primary, /(?<![\w-])bg-brand(?![\w-])/, `${file} : primaire sans fond plein bg-brand (${primary})`);
-        assert.match(primary, /(?<![\w-])text-on-brand(?![\w-])/, `${file} : primaire sans text-on-brand (${primary})`);
-        assert.doesNotMatch(primary, /bg-gradient|from-|to-\[/, `${file} : primaire encore en dégradé (${primary})`);
+        assert.match(primary, /(?<![\w-])bg-primary(?![\w-])/, `${file} : primaire sans fond plein bg-primary (${primary})`);
+        assert.match(primary, /(?<![\w-])text-primary-foreground(?![\w-])/, `${file} : primaire sans text-primary-foreground (${primary})`);
+        assert.doesNotMatch(primary, /bg-gradient|from-|to-\[/, `${file} : primaire en dégradé (${primary}) : le dégradé est réservé au grand bouton`);
+        // Design 1a : grand bouton (un par page) en dégradé, texte blanc gras de 19 px (« grand texte » du WCAG, 3,56:1)
+        const grand = objectStrings(sf, 'variants')?.get('gradient');
+        assert.ok(grand !== undefined, `${file} : variante gradient (grand bouton) introuvable`);
+        assert.match(grand, /(?<![\w-])from-gradient-from(?![\w-])/, `${file} : grand bouton sans from-gradient-from (${grand})`);
+        assert.match(grand, /(?<![\w-])to-gradient-to(?![\w-])/, `${file} : grand bouton sans to-gradient-to (${grand})`);
+        assert.match(grand, /(?<![\w-])font-bold(?![\w-])/, `${file} : grand bouton sans texte gras (${grand})`);
+        assert.match(grand, /text-\[1\.1875rem\]/, `${file} : grand bouton sans texte de 19 px (${grand})`);
     });
 
     test('Modal : role dialog, aria-modal, aria-labelledby, Escape, piège de focus, focus restitué, bouton Fermer de 44 px avec aria-label', () => {
