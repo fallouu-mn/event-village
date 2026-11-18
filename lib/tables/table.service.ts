@@ -1,348 +1,209 @@
+import { z } from 'zod';
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
+import { tableStateLabel } from './booking';
 
-/** Refus rédigés en français par create_table_reservation_atomic (0010_table_reservations_exclusion.sql). */
-const TABLE_RESERVATION_REFUSALS: ReadonlySet<string> = new Set([
-    'Table introuvable ou indisponible.',
-    'La table est déjà réservée pour cette période (dates conflictuelles).',
-    "Le nombre d'invités dépasse la capacité de la table.",
-]);
+/**
+ * Lot 11a — service des tables côté partenaire : établissements (restaurant, bar, espace), horaires, zones et tables.
+ * Écritures avec le rôle de service, toujours limitées à la partenaire de la session ; la base revérifie tout
+ * (déclencheurs trg_venues_validation_guard et trg_restaurant_*_venue_guard : établissement de la même partenaire,
+ * zone du même établissement, statut de validation jamais écrit ici). Une réservation n'est jamais écrite ici : elle
+ * ne change que par les fonctions en base (table_reserve, table_reservation_cancel, table_reservation_respond,
+ * table_reservation_presence, table_onsite_payment_record), sous verrou et avec journal.
+ */
 
-export interface CreateZoneInput {
-    name: string;
-    description?: string;
+const time = z.string().regex(/^([01]\d|2[0-4]):[0-5]\d$/, 'Heure au format HH:MM.');
+
+export const VenueInputSchema = z.object({
+    kind: z.enum(['RESTAURANT', 'BAR', 'ESPACE']).default('RESTAURANT'),
+    name: z.string().trim().min(2, 'Nom de l’établissement trop court.').max(120),
+    description: z.string().trim().max(2000).optional().nullable(),
+    address: z.string().trim().max(300).optional().nullable(),
+    city: z.string().trim().max(120).optional().nullable(),
+    latitude: z.number().min(12.2).max(16.8).optional().nullable(),
+    longitude: z.number().min(-17.6).max(-11.3).optional().nullable(),
+    slot_minutes: z.number().int().min(30).max(360).refine((n) => n % 15 === 0, 'Durée au quart d’heure.').optional().nullable(),
+    deposit_per_person: z.number().int().min(100).max(1_000_000).optional().nullable(),
+    confirmation_mode: z.enum(['AUTO', 'MANUELLE']).default('AUTO'),
+    is_active: z.boolean().optional(),
+    hours: z.array(z.object({ weekday: z.number().int().min(1).max(7), opens_at: time, closes_at: time })).max(28).optional(),
+});
+export type VenueInput = z.infer<typeof VenueInputSchema>;
+
+export const ZoneInputSchema = z.object({
+    venue_id: z.string().uuid('Choisissez l’établissement.').optional(),
+    name: z.string().trim().min(1).max(80).optional(),
+    description: z.string().trim().max(500).optional().nullable(),
+    is_active: z.boolean().optional(),
+});
+
+export const TableInputSchema = z.object({
+    venue_id: z.string().uuid('Choisissez l’établissement.').optional(),
+    zone_id: z.string().uuid().optional().nullable(),
+    table_number: z.string().trim().min(1).max(20).optional(),
+    capacity: z.number().int().min(1).max(50).optional(),
+    min_capacity: z.number().int().min(1).max(50).optional(),
+    is_active: z.boolean().optional(),
+});
+
+function firstIssue(error: z.ZodError): string {
+    return error.issues[0]?.message ?? 'Données invalides.';
 }
 
-export interface UpdateZoneInput {
-    name?: string;
-    description?: string;
-    is_active?: boolean;
-}
-
-export interface Zone {
-    id: string;
-    partner_id: string;
-    name: string;
-    description?: string;
-    is_active: boolean;
-    created_at: string;
-    updated_at: string;
-}
-
-export interface CreateTableInput {
-    zone_id: string;
-    table_number: string;
-    capacity: number;
-    min_capacity?: number;
-}
-
-export interface UpdateTableInput {
-    zone_id?: string;
-    table_number?: string;
-    capacity?: number;
-    min_capacity?: number;
-    is_active?: boolean;
-}
-
-export interface Table {
-    id: string;
-    partner_id: string;
-    zone_id: string;
-    table_number: string;
-    capacity: number;
-    min_capacity: number;
-    is_active: boolean;
-    created_at: string;
-    updated_at: string;
-}
-
-export interface CreateTableReservationInput {
-    tableId: string;
-    clientId: string;
-    reservationDate: string; // YYYY-MM-DD
-    reservationTime: string; // HH:mm:ss
-    guestCount: number;
-    notes?: string;
-}
-
-export interface TableReservation {
-    id: string;
-    partner_id: string;
-    table_id: string;
-    zone_id: string;
-    client_id: string;
-    reservation_date: string;
-    reservation_time: string;
-    guest_count: number;
-    deposit_amount: number;
-    is_platform_payment: boolean;
-    payment_status: string;
-    status: string;
-    special_requests?: string;
-    created_at: string;
-    updated_at: string;
-}
-
-export interface ReservationFilters {
-    status?: string;
-    date?: string;
+/** Message d'une erreur de la base, rédigé en français par les déclencheurs (raise_exception), sinon générique. */
+function dbRefusal(error: { message?: string; code?: string } | null, fallback: string): Error {
+    if (error?.code === 'P0001' && error.message) return new PublicError(error.message);
+    if (error?.code === '23505') return new PublicError('Ce numéro de table existe déjà dans cet établissement.');
+    if (error?.code === '23503') return new PublicError('Cet élément est utilisé par des réservations : désactivez-le au lieu de le supprimer.');
+    if (error?.code === '23514') return new PublicError('Valeur refusée : vérifiez les champs saisis.');
+    return new Error(`${fallback} : ${error?.message ?? 'réponse vide'}`);
 }
 
 export class TableService {
-    /**
-     * Résout l'ID partenaire à partir de l'ID utilisateur authentifié
-     */
+    /** Fiche partenaire de la session. */
     public static async resolvePartnerId(userId: string): Promise<string> {
-        const supabase = getServiceRoleClient();
-        const { data: partner, error } = await supabase
-            .from('partners')
-            .select('id, status')
-            .eq('user_id', userId)
-            .single();
-
-        if (error || !partner) {
-            throw new PublicError('Profil partenaire introuvable.');
-        }
-
+        const { data: partner, error } = await getServiceRoleClient()
+            .from('partners').select('id, status').eq('user_id', userId).maybeSingle();
+        if (error || !partner) throw new PublicError('Profil partenaire introuvable.');
         return partner.id;
     }
 
-    // CRUD Zones
-    public static async createZone(partnerUserId: string, input: CreateZoneInput): Promise<Zone> {
-        const supabase = getServiceRoleClient();
+    // ── Établissements ─────────────────────────────────────────────────────
+
+    public static async listVenues(partnerUserId: string) {
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data, error } = await supabase
-            .from('restaurant_zones')
-            .insert({
-                partner_id: partnerId,
-                name: input.name,
-                description: input.description,
-                is_active: true
-            })
-            .select('*')
-            .single();
-
-        if (error || !data) throw new Error(`Échec création zone: ${error?.message}`);
-        return data as Zone;
+        const { data, error } = await getServiceRoleClient()
+            .from('venues').select('*, venue_opening_hours(weekday, opens_at, closes_at)')
+            .eq('partner_id', partnerId).order('created_at', { ascending: false });
+        if (error) throw new Error(`établissements : ${error.message}`);
+        return data ?? [];
     }
 
-    public static async getPartnerZones(partnerUserId: string): Promise<Zone[]> {
-        const supabase = getServiceRoleClient();
+    public static async createVenue(partnerUserId: string, raw: unknown) {
+        const parsed = VenueInputSchema.safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
+        const { hours, ...fields } = parsed.data;
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data, error } = await supabase
-            .from('restaurant_zones')
-            .select('*')
-            .eq('partner_id', partnerId)
-            .order('created_at', { ascending: false });
-
-        if (error) throw new Error(`Erreur récupération zones: ${error.message}`);
-        return (data || []) as Zone[];
+        const { data, error } = await getServiceRoleClient().from('venues').insert({ ...fields, partner_id: partnerId }).select('*').single();
+        if (error || !data) throw dbRefusal(error, 'création de l’établissement');
+        if (hours) await this.setHours(partnerUserId, data.id, hours);
+        return data;
     }
 
-    public static async updateZone(zoneId: string, partnerUserId: string, input: UpdateZoneInput): Promise<Zone> {
-        const supabase = getServiceRoleClient();
+    public static async updateVenue(partnerUserId: string, venueId: string, raw: unknown) {
+        const parsed = VenueInputSchema.partial().safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
+        const { hours, ...fields } = parsed.data;
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const updateData: any = { updated_at: new Date().toISOString() };
-        if (input.name !== undefined) updateData.name = input.name;
-        if (input.description !== undefined) updateData.description = input.description;
-        if (input.is_active !== undefined) updateData.is_active = input.is_active;
-
-        const { data, error } = await supabase
-            .from('restaurant_zones')
-            .update(updateData)
-            .eq('id', zoneId)
-            .eq('partner_id', partnerId)
-            .select('*')
-            .single();
-
-        if (error || !data) throw new Error(`Échec modification zone: ${error?.message}`);
-        return data as Zone;
+        const { data, error } = await getServiceRoleClient().from('venues')
+            .update({ ...fields, updated_at: new Date().toISOString() }).eq('id', venueId).eq('partner_id', partnerId).select('*').maybeSingle();
+        if (error) throw dbRefusal(error, 'modification de l’établissement');
+        if (!data) throw new PublicError('Établissement introuvable.');
+        if (hours) await this.setHours(partnerUserId, venueId, hours);
+        return data;
     }
 
-    public static async deleteZone(zoneId: string, partnerUserId: string): Promise<{success: boolean}> {
-        const supabase = getServiceRoleClient();
+    /** Horaires par la fonction en base (partenaire propriétaire seulement, plages vérifiées, journal). */
+    public static async setHours(partnerUserId: string, venueId: string, hours: VenueInput['hours']) {
+        const { data, error } = await getServiceRoleClient().rpc('venue_hours_set', { p: { actor_id: partnerUserId, venue_id: venueId, hours } });
+        if (error) throw new Error(`venue_hours_set : ${error.message}`);
+        const r = data as { ok?: boolean; message?: string };
+        if (r?.ok !== true) throw new PublicError(r?.message ?? 'Horaires refusés.');
+        return r;
+    }
+
+    // ── Zones et tables ────────────────────────────────────────────────────
+
+    public static async getPartnerZones(partnerUserId: string) {
         const partnerId = await this.resolvePartnerId(partnerUserId);
+        const { data, error } = await getServiceRoleClient().from('restaurant_zones').select('*').eq('partner_id', partnerId).order('created_at', { ascending: false });
+        if (error) throw new Error(`zones : ${error.message}`);
+        return data ?? [];
+    }
 
-        const { error } = await supabase
-            .from('restaurant_zones')
-            .delete()
-            .eq('id', zoneId)
-            .eq('partner_id', partnerId);
+    public static async createZone(partnerUserId: string, raw: unknown) {
+        const parsed = ZoneInputSchema.safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
+        if (!parsed.data.venue_id || !parsed.data.name) throw new PublicError('Choisissez l’établissement et le nom de la zone.');
+        const partnerId = await this.resolvePartnerId(partnerUserId);
+        const { data, error } = await getServiceRoleClient().from('restaurant_zones')
+            .insert({ partner_id: partnerId, venue_id: parsed.data.venue_id, name: parsed.data.name, description: parsed.data.description ?? null, is_active: true })
+            .select('*').single();
+        if (error || !data) throw dbRefusal(error, 'création de la zone');
+        return data;
+    }
 
-        if (error) throw new Error(`Échec suppression zone: ${error.message}`);
+    public static async updateZone(zoneId: string, partnerUserId: string, raw: unknown) {
+        const parsed = ZoneInputSchema.omit({ venue_id: true }).safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
+        const partnerId = await this.resolvePartnerId(partnerUserId);
+        const { data, error } = await getServiceRoleClient().from('restaurant_zones')
+            .update({ ...parsed.data, updated_at: new Date().toISOString() }).eq('id', zoneId).eq('partner_id', partnerId).select('*').maybeSingle();
+        if (error) throw dbRefusal(error, 'modification de la zone');
+        if (!data) throw new PublicError('Zone introuvable.');
+        return data;
+    }
+
+    public static async deleteZone(zoneId: string, partnerUserId: string) {
+        const partnerId = await this.resolvePartnerId(partnerUserId);
+        const { error } = await getServiceRoleClient().from('restaurant_zones').delete().eq('id', zoneId).eq('partner_id', partnerId);
+        if (error) throw dbRefusal(error, 'suppression de la zone');
         return { success: true };
     }
 
-    // CRUD Tables
-    public static async createTable(partnerUserId: string, input: CreateTableInput): Promise<Table> {
-        const supabase = getServiceRoleClient();
+    public static async getPartnerTables(partnerUserId: string) {
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data, error } = await supabase
-            .from('restaurant_tables')
-            .insert({
-                partner_id: partnerId,
-                zone_id: input.zone_id,
-                table_number: input.table_number,
-                capacity: input.capacity,
-                min_capacity: input.min_capacity || 1,
-                is_active: true
-            })
-            .select('*')
-            .single();
-
-        if (error || !data) throw new Error(`Échec création table: ${error?.message}`);
-        return data as Table;
+        const { data, error } = await getServiceRoleClient().from('restaurant_tables').select('*').eq('partner_id', partnerId).order('created_at', { ascending: false });
+        if (error) throw new Error(`tables : ${error.message}`);
+        return data ?? [];
     }
 
-    public static async getPartnerTables(partnerUserId: string): Promise<Table[]> {
-        const supabase = getServiceRoleClient();
+    public static async createTable(partnerUserId: string, raw: unknown) {
+        const parsed = TableInputSchema.safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
+        const t = parsed.data;
+        if (!t.venue_id || !t.table_number || !t.capacity) throw new PublicError('Choisissez l’établissement, le numéro et la capacité de la table.');
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data, error } = await supabase
-            .from('restaurant_tables')
-            .select('*')
-            .eq('partner_id', partnerId)
-            .order('created_at', { ascending: false });
-
-        if (error) throw new Error(`Erreur récupération tables: ${error.message}`);
-        return (data || []) as Table[];
+        const { data, error } = await getServiceRoleClient().from('restaurant_tables').insert({
+            partner_id: partnerId, venue_id: t.venue_id, zone_id: t.zone_id ?? null, table_number: t.table_number,
+            capacity: t.capacity, min_capacity: t.min_capacity ?? 1, is_active: true,
+        }).select('*').single();
+        if (error || !data) throw dbRefusal(error, 'création de la table');
+        return data;
     }
 
-    public static async updateTable(tableId: string, partnerUserId: string, input: UpdateTableInput): Promise<Table> {
-        const supabase = getServiceRoleClient();
+    public static async updateTable(tableId: string, partnerUserId: string, raw: unknown) {
+        const parsed = TableInputSchema.omit({ venue_id: true }).safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const updateData: any = { updated_at: new Date().toISOString() };
-        if (input.zone_id !== undefined) updateData.zone_id = input.zone_id;
-        if (input.table_number !== undefined) updateData.table_number = input.table_number;
-        if (input.capacity !== undefined) updateData.capacity = input.capacity;
-        if (input.min_capacity !== undefined) updateData.min_capacity = input.min_capacity;
-        if (input.is_active !== undefined) updateData.is_active = input.is_active;
-
-        const { data, error } = await supabase
-            .from('restaurant_tables')
-            .update(updateData)
-            .eq('id', tableId)
-            .eq('partner_id', partnerId)
-            .select('*')
-            .single();
-
-        if (error || !data) throw new Error(`Échec modification table: ${error?.message}`);
-        return data as Table;
+        const { data, error } = await getServiceRoleClient().from('restaurant_tables')
+            .update({ ...parsed.data, updated_at: new Date().toISOString() }).eq('id', tableId).eq('partner_id', partnerId).select('*').maybeSingle();
+        if (error) throw dbRefusal(error, 'modification de la table');
+        if (!data) throw new PublicError('Table introuvable.');
+        return data;
     }
 
-    public static async deleteTable(tableId: string, partnerUserId: string): Promise<{success: boolean}> {
-        const supabase = getServiceRoleClient();
+    public static async deleteTable(tableId: string, partnerUserId: string) {
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { error } = await supabase
-            .from('restaurant_tables')
-            .delete()
-            .eq('id', tableId)
-            .eq('partner_id', partnerId);
-
-        if (error) throw new Error(`Échec suppression table: ${error.message}`);
+        const { error } = await getServiceRoleClient().from('restaurant_tables').delete().eq('id', tableId).eq('partner_id', partnerId);
+        if (error) throw dbRefusal(error, 'suppression de la table');
         return { success: true };
     }
 
-    // Réservations
-    public static async createReservation(input: CreateTableReservationInput): Promise<TableReservation> {
-        const supabase = getServiceRoleClient();
+    // ── Réservations (lecture ; les changements passent par les fonctions en base) ──
 
-        // RPC call for atomic creation
-        const { data, error } = await supabase.rpc('create_table_reservation_atomic', {
-            p_table_id: input.tableId,
-            p_client_id: input.clientId,
-            p_reservation_date: input.reservationDate,
-            p_reservation_time: input.reservationTime,
-            p_guest_count: input.guestCount,
-            p_notes: input.notes || null
-        });
-
-        if (error) {
-            throw new Error(`Échec création réservation: ${error.message}`);
-        }
-
-        if (!data || !data.success) {
-            // Lot 8 (8.2 i) : seuls les refus rédigés par la RPC atteignent l'écran ; son repli est SQLERRM.
-            const refusal = data?.error;
-            if (typeof refusal === 'string' && TABLE_RESERVATION_REFUSALS.has(refusal)) throw new PublicError(refusal);
-            throw new Error(`Échec réservation: ${refusal || 'réponse vide'}`);
-        }
-
-        return data.reservation as TableReservation;
-    }
-
-    public static async getPartnerReservations(partnerUserId: string, filters?: ReservationFilters): Promise<TableReservation[]> {
-        const supabase = getServiceRoleClient();
+    public static async getPartnerReservations(partnerUserId: string, filters?: { date?: string; venueId?: string }) {
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        let query = supabase
+        let query = getServiceRoleClient()
             .from('table_reservations')
-            .select('*')
+            .select('id, venue_id, table_id, zone_id, reservation_date, reservation_time, slot_minutes, guest_count, booking_state, deposit_amount, service_fee_amount, total_amount, paid_amount, refunded_amount, response_due_at, special_requests, onsite_amount, offline_payment_method, created_at')
             .eq('partner_id', partnerId)
             .order('reservation_date', { ascending: true })
             .order('reservation_time', { ascending: true });
-
-        if (filters?.status) {
-            query = query.eq('status', filters.status);
-        }
-        if (filters?.date) {
-            query = query.eq('reservation_date', filters.date);
-        }
-
+        if (filters?.date && /^\d{4}-\d{2}-\d{2}$/.test(filters.date)) query = query.eq('reservation_date', filters.date);
+        if (filters?.venueId && /^[0-9a-f-]{36}$/i.test(filters.venueId)) query = query.eq('venue_id', filters.venueId);
         const { data, error } = await query;
-        if (error) throw new Error(`Erreur récupération réservations: ${error.message}`);
-        return (data || []) as TableReservation[];
-    }
-
-    public static async updateReservationStatus(reservationId: string, partnerUserId: string, status: string): Promise<TableReservation> {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data, error } = await supabase
-            .from('table_reservations')
-            .update({ status, updated_at: new Date().toISOString() })
-            .eq('id', reservationId)
-            .eq('partner_id', partnerId)
-            .select('*')
-            .single();
-
-        if (error || !data) throw new Error(`Échec modification réservation: ${error?.message}`);
-        return data as TableReservation;
-    }
-
-    public static async cancelReservation(reservationId: string, actorId: string, reason: string): Promise<{success: boolean}> {
-        const supabase = getServiceRoleClient();
-
-        const { data: existing, error: findErr } = await supabase
-            .from('table_reservations')
-            .select('*, partners(user_id)')
-            .eq('id', reservationId)
-            .single();
-
-        if (findErr || !existing) throw new PublicError('Réservation introuvable.');
-
-        const isOwner = existing.partners?.user_id === actorId;
-        const isClient = existing.client_id === actorId;
-
-        if (!isOwner && !isClient) throw new PublicError('Action non autorisée.');
-
-        const { error } = await supabase
-            .from('table_reservations')
-            .update({
-                status: 'ANNULEE',
-                payment_status: 'CANCELLED',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', reservationId);
-
-        if (error) throw new Error(`Échec annulation: ${error.message}`);
-
-        return { success: true };
+        if (error) throw new Error(`réservations : ${error.message}`);
+        return (data ?? []).map((r) => ({ ...r, state: tableStateLabel(r.booking_state) }));
     }
 }

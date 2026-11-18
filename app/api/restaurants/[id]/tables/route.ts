@@ -1,133 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { pgIlikeContains } from '@/lib/security/postgrest-filter';
+import { apiFailure } from '@/lib/api/public-error';
 import { guardFeature } from '@/lib/features/flags';
+import { VENUE_KIND_LABELS } from '@/lib/tables/booking';
 
 export const dynamic = 'force-dynamic';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * GET /api/restaurants/[id]/tables
- * Récupère les tables et zones disponibles pour un restaurant
+ * GET /api/restaurants/[id]/tables — un établissement (restaurant, bar, espace) : horaires, zones et tables.
+ * Lot 11a : [id] est l'identifiant de l'établissement ; seul un établissement actif, validé par l'administration et
+ * d'une partenaire VALIDE est montré (404 sinon). Avant, la route cherchait la partenaire par son nom, prenait la
+ * première partenaire venue à défaut et inventait des zones d'exemple. Aucune réservation, aucune donnée personnelle.
  */
-export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
-    const params = await props.params;
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     try {
         // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
         const closed = await guardFeature('tables', 'GET /api/restaurants/[id]/tables');
         if (closed) return closed;
-        const partnerIdOrSlug = params.id;
+        const { id } = await props.params;
+        const notFound = NextResponse.json({ error: 'Cet établissement n’existe pas ou n’est plus proposé.', code: 'VENUE_NOT_FOUND' }, { status: 404 });
+        if (!UUID.test(id)) return notFound;
         const supabase = getServiceRoleClient();
 
-        // 1. Détection format UUID pour éviter toute erreur de syntaxe SQL PostgreSQL
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(partnerIdOrSlug);
+        const { data: venue, error } = await supabase
+            .from('venues')
+            .select('id, kind, name, description, address, city, latitude, longitude, slot_minutes, deposit_per_person, confirmation_mode, partners!inner(status)')
+            .eq('id', id)
+            .eq('is_active', true)
+            .eq('validation_status', 'VALIDEE')
+            .eq('partners.status', 'VALIDE')
+            .maybeSingle();
+        if (error) throw new Error(`établissement ${id} : ${error.message}`);
+        if (!venue) return notFound;
 
-        let partner: { id: string; company_name: string; commercial_name?: string | null } | null = null;
-
-        if (isUuid) {
-            const { data } = await supabase
-                .from('partners')
-                .select('id, company_name, commercial_name')
-                .eq('id', partnerIdOrSlug)
-                .maybeSingle();
-            partner = data;
-        } else {
-            const cleanSlug = partnerIdOrSlug.replace(/^(rest|restaurant)-/, '').replace(/-/g, ' ');
-            const { data } = await supabase
-                .from('partners')
-                .select('id, company_name, commercial_name')
-                .or(`commercial_name.ilike.${pgIlikeContains(cleanSlug)},company_name.ilike.${pgIlikeContains(cleanSlug)}`) // lot 1C.1
-                .limit(1)
-                .maybeSingle();
-            partner = data;
-        }
-
-        // Si aucun partenaire spécifique trouvé, chercher le premier partenaire disponible
-        if (!partner) {
-            const { data: fallbackPartner } = await supabase
-                .from('partners')
-                .select('id, company_name, commercial_name')
-                .limit(1)
-                .maybeSingle();
-            partner = fallbackPartner;
-        }
-
-        // Si aucun partenaire n'existe en base
-        if (!partner) {
-            return NextResponse.json({
-                partnerId: null,
-                partnerName: 'Restaurant & Lounge',
-                zones: [
-                    { id: 'TERRASSE', name: 'Terrasse Vue Mer', description: 'Ambiance lounge en plein air', capacityMax: 8, tables: [] },
-                    { id: 'SALLE', name: 'Grande Salle Panoramique', description: 'Cadre feutré et climatisé', capacityMax: 12, tables: [] },
-                    { id: 'VIP', name: 'Salon VIP Privé', description: 'Espace discret avec maître d’hôtel dédié', capacityMax: 6, tables: [] },
-                ],
-                rawTables: [],
-            });
-        }
-
-        const partnerId = partner.id;
-
-        // Récupération des tables réelles associées
-        const { data: tables, error } = await supabase
-            .from('restaurant_tables')
-            .select(`
-                id,
-                table_number,
-                capacity,
-                is_active,
-                partner_id,
-                zone_id,
-                restaurant_zones(id, name, description)
-            `)
-            .eq('partner_id', partnerId)
-            .eq('is_active', true);
-
-        if (error) {
-            console.error('[API /api/restaurants/[id]/tables] Erreur Supabase:', error);
-            return NextResponse.json({ error: 'Impossible de charger les tables.' }, { status: 500 });
-        }
-
-        // Regroupement par zone
-        const zonesMap = new Map<string, { id: string; name: string; description: string; capacityMax: number; tables: any[] }>();
-
-        (tables || []).forEach((t: any) => {
-            const zoneId = t.restaurant_zones?.id || 'ZONE_GENERALE';
-            const zoneName = t.restaurant_zones?.name || 'Salle Principale';
-            const zoneDesc = t.restaurant_zones?.description || 'Espace de restauration chaleureux';
-
-            if (!zonesMap.has(zoneId)) {
-                zonesMap.set(zoneId, {
-                    id: zoneId,
-                    name: zoneName,
-                    description: zoneDesc,
-                    capacityMax: t.capacity,
-                    tables: [],
-                });
-            }
-
-            const zone = zonesMap.get(zoneId)!;
-            zone.capacityMax = Math.max(zone.capacityMax, t.capacity);
-            zone.tables.push({
-                id: t.id,
-                tableNumber: t.table_number,
-                capacity: t.capacity,
-            });
-        });
-
-        const zones = Array.from(zonesMap.values());
+        const [hours, zones, tables, slot] = await Promise.all([
+            supabase.from('venue_opening_hours').select('weekday, opens_at, closes_at').eq('venue_id', id).order('weekday').order('opens_at'),
+            supabase.from('restaurant_zones').select('id, name, description').eq('venue_id', id).eq('is_active', true).order('name'),
+            supabase.from('restaurant_tables').select('id, table_number, capacity, min_capacity, zone_id').eq('venue_id', id).eq('is_active', true).order('table_number'),
+            supabase.from('platform_settings').select('value').eq('key', 'tables.slot_minutes').maybeSingle(),
+        ]);
+        for (const r of [hours, zones, tables]) if (r.error) throw new Error(`établissement ${id} : ${r.error.message}`);
 
         return NextResponse.json({
-            partnerId,
-            partnerName: partner?.commercial_name || partner?.company_name || 'Restaurant & Lounge',
-            zones: zones.length > 0 ? zones : [
-                { id: 'TERRASSE', name: 'Terrasse Vue Mer', description: 'Ambiance lounge en plein air', capacityMax: 8, tables: [] },
-                { id: 'SALLE', name: 'Grande Salle Panoramique', description: 'Cadre feutré et climatisé', capacityMax: 12, tables: [] },
-                { id: 'VIP', name: 'Salon VIP Privé', description: 'Espace discret avec maître d’hôtel dédié', capacityMax: 6, tables: [] },
-            ],
-            rawTables: tables || [],
+            venue: {
+                id: venue.id,
+                kind: VENUE_KIND_LABELS[String(venue.kind)] ?? 'Établissement',
+                name: venue.name,
+                description: venue.description,
+                address: venue.address,
+                city: venue.city,
+                latitude: venue.latitude,
+                longitude: venue.longitude,
+                slotMinutes: venue.slot_minutes ?? Number((slot.data?.value as { value?: unknown } | null)?.value ?? 120),
+                depositPerPerson: venue.deposit_per_person === null ? 0 : Number(venue.deposit_per_person),
+                confirmation: venue.confirmation_mode === 'MANUELLE' ? 'Sur acceptation de l’établissement' : 'Confirmation immédiate',
+            },
+            hours: (hours.data ?? []).map((h) => ({ weekday: h.weekday, opensAt: String(h.opens_at).slice(0, 5), closesAt: String(h.closes_at).slice(0, 5) })),
+            zones: (zones.data ?? []).map((z) => ({ id: z.id, name: z.name, description: z.description })),
+            tables: (tables.data ?? []).map((t) => ({ id: t.id, number: t.table_number, capacity: t.capacity, minCapacity: t.min_capacity, zoneId: t.zone_id })),
         });
     } catch (err: unknown) {
-        console.error('[API /api/restaurants/[id]/tables] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+        return apiFailure('GET /api/restaurants/[id]/tables', err, { message: 'Établissement momentanément indisponible.', code: 'VENUE_UNAVAILABLE', status: 500 });
     }
 }
