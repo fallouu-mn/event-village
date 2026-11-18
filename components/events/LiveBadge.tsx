@@ -14,6 +14,7 @@ export function LiveBadge({ window, className }: { window: LiveWindow | null; cl
     if (!live) return null;
     return (
         <span
+            data-ev-caption
             className={cn(
                 'pointer-events-none inline-flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-xs font-bold text-white shadow-sm',
                 className,
