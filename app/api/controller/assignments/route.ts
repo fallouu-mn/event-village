@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSessionUser, serverHasAnyRole } from '@/lib/auth/session';
+import { requireActiveSession, serverHasAnyRole } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { gateOut, readEventGates } from '../gate-info';
 
@@ -70,8 +70,12 @@ async function readOpenShifts(userId: string, eventIds: string[]): Promise<Map<s
  */
 export async function GET(req: NextRequest) {
     try {
-        const user = await getServerSessionUser(req);
-        if (!user) return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
+        // Finition 3d (point 1, écart) : la session passe par requireActiveSession (compte actif ; pour un compte admin,
+        // code de l'appareil, mot de passe de moins de 12 h et 30 minutes d'inactivité) ; avant, un compte admin lisait
+        // ses affectations sans aucun contrôle du second facteur.
+        const session = await requireActiveSession(req);
+        if (session.response) return session.response;
+        const { user } = session;
         if (!serverHasAnyRole(user, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN'])) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }

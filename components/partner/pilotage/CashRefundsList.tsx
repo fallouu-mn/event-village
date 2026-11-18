@@ -2,7 +2,10 @@
 
 import React, { useState } from 'react';
 import { BadgeCheck, Banknote, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { Textarea } from '@/components/ui/Field';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
 import { KpiCard, KpiCardSkeleton } from '@/components/ui/KpiCard';
@@ -22,6 +25,9 @@ import { PilotageSection } from './PilotageBlocks';
  *    un admin lit la liste sans case. Chaque marquage passe par une confirmation, il est définitif et journalisé
  *    (POST …/cash-refunds/[paymentId], audit CASH_REFUND_MARKED dans la même transaction). Un second marquage de la
  *    même vente rend la marque existante (ALREADY_MARKED), sans rien écrire.
+ * Finition 3d (point 4a) : un admin muni de « Gérer les remboursements » (ou le SUPERADMIN) marque à la place de
+ * l'organisatrice, à tout moment, avec un motif obligatoire (POST /api/admin/events/[id]/cash-refunds/[paymentId]) ; la
+ * fenêtre dit ce qui se passe vraiment : l'organisatrice est prévenue avec le motif, l'acheteur ne reçoit aucun message.
  */
 
 interface CashRefundItem {
@@ -68,7 +74,7 @@ function ticketsLabel(n: number): string {
 function refundedLine(item: CashRefundItem): React.ReactNode {
     if (!item.refunded_at) return null;
     return (
-        <span className="inline-flex items-start gap-1.5 text-sm font-medium text-success-fg">
+        <span className="inline-flex items-start gap-1.5 text-sm font-medium text-success-text">
             <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <span>
                 Remboursé le <time dateTime={item.refunded_at}>{formatDateTime(item.refunded_at)}</time>
@@ -80,17 +86,24 @@ function refundedLine(item: CashRefundItem): React.ReactNode {
 
 export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
     const toast = useToast();
+    const { hasAnyRole, hasRole, hasPermission } = useAuth();
     const { data, error, loading, refreshing, reload } = useServerData<CashRefundsReply>(`/api/partner/events/${eventId}/cash-refunds`, signal);
     const [pending, setPending] = useState<CashRefundItem | null>(null);
     const [marking, setMarking] = useState(false);
     const [markError, setMarkError] = useState<string | null>(null);
+    const [reason, setReason] = useState('');
+    // Finition 3d (point 4a) : un admin « Gérer les remboursements » (ou le SUPERADMIN) marque à la place de l'organisatrice
+    const adminMarks = !data?.can_mark && hasAnyRole(['ADMIN', 'SUPERADMIN']) && (hasRole('SUPERADMIN') || hasPermission('refunds.manage'));
+    const reasonOk = reason.trim().length >= 3;
 
     const confirmMark = async (): Promise<void> => {
-        if (!pending || marking) return;
+        if (!pending || marking || (adminMarks && !reasonOk)) return;
         setMarking(true);
         setMarkError(null);
         try {
-            const reply = await sendJson<MarkReply>(`/api/partner/events/${eventId}/cash-refunds/${pending.payment_id}`, 'POST', {});
+            const reply = adminMarks
+                ? await sendJson<MarkReply>(`/api/admin/events/${eventId}/cash-refunds/${pending.payment_id}`, 'POST', { reason: reason.trim() })
+                : await sendJson<MarkReply>(`/api/partner/events/${eventId}/cash-refunds/${pending.payment_id}`, 'POST', {});
             toast.success(reply.code === 'ALREADY_MARKED'
                 ? `La vente ${pending.reference} était déjà marquée remboursée.`
                 : `Vente ${pending.reference} marquée remboursée.`);
@@ -105,9 +118,17 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
 
     const stateCell = (item: CashRefundItem): React.ReactNode => {
         if (item.refunded_at) return refundedLine(item);
-        if (!data?.can_mark) return <span className="text-sm font-medium text-warning-fg">À rembourser par l’organisateur</span>;
+        if (adminMarks) {
+            return (
+                <Button variant="secondary" size="sm" onClick={() => { setMarkError(null); setReason(''); setPending(item); }}
+                    aria-label={`Marquer rendu : espèces de la vente ${item.reference}, ${formatFcfa(item.amount)}`}>
+                    Marquer rendu
+                </Button>
+            );
+        }
+        if (!data?.can_mark) return <span className="text-sm font-medium text-warning-text">À rembourser par l’organisateur</span>;
         return (
-            <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-fg">
+            <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-foreground-strong">
                 <input
                     type="checkbox"
                     checked={false}
@@ -116,7 +137,7 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                         setPending(item);
                     }}
                     aria-label={`Remboursé : vente ${item.reference}, ${formatFcfa(item.amount)}`}
-                    className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-border-strong accent-brand"
+                    className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-input accent-primary"
                 />
                 Remboursé
             </label>
@@ -162,9 +183,14 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                             icon={<BadgeCheck size={18} />}
                         />
                     </div>
-                    {!data.can_mark && data.count > 0 && (
+                    {!data.can_mark && !adminMarks && data.count > 0 && (
                         <StatusBanner tone="info" title="Lecture seule">
                             Seul l’organisateur de l’événement coche « Remboursé », après avoir rendu les espèces.
+                        </StatusBanner>
+                    )}
+                    {adminMarks && data.count > data.refunded_count && (
+                        <StatusBanner tone="info" title="À la place de l’organisatrice">
+                            Si l’organisatrice ne peut pas le faire, marquez rendues les espèces d’une vente avec un motif : elle en est prévenue.
                         </StatusBanner>
                     )}
                     {data.items.length === 0 ? (
@@ -176,18 +202,18 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                         />
                     ) : (
                         // Une seule liste, en cartes à toute largeur (une case par vente, jamais en double dans le DOM)
-                        <ul aria-label="Ventes au guichet à rembourser en espèces" className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-surface">
+                        <ul aria-label="Ventes au guichet à rembourser en espèces" className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-card">
                             {data.items.map((r) => (
                                 <li key={r.payment_id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="min-w-0 space-y-1">
-                                        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base font-semibold text-fg tabular-nums">
+                                        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base font-semibold text-foreground-strong tabular-nums">
                                             <span>Vente {r.reference}</span>
                                             <span>{formatFcfa(r.amount)}</span>
                                         </p>
-                                        <p className="text-sm text-fg-muted tabular-nums">
+                                        <p className="text-sm text-muted-foreground tabular-nums">
                                             {ticketsLabel(r.ticket_count)} · {r.phone_masked ?? 'Numéro non saisi'}
                                         </p>
-                                        <p className="text-sm text-fg-muted">
+                                        <p className="text-sm text-muted-foreground">
                                             Vendue le <time dateTime={r.sold_at}>{formatDateTime(r.sold_at)}</time>
                                             {r.seller ? ` par ${r.seller}` : ''}
                                         </p>
@@ -206,17 +232,20 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                     if (!marking) setPending(null);
                 }}
                 onConfirm={() => void confirmMark()}
-                title="Marquer cette vente remboursée ?"
+                title={adminMarks ? 'Marquer ces espèces rendues ?' : 'Marquer cette vente remboursée ?'}
                 message={pending
-                    ? `Confirmez-vous avoir rendu ${formatFcfa(pending.amount)} en espèces pour la vente ${pending.reference} ? Ce marquage est définitif.`
+                    ? (adminMarks
+                        ? `Vente ${pending.reference} : ${formatFcfa(pending.amount)}. Faites-le seulement si l’argent a bien été rendu à l’acheteur. Ce marquage est définitif. L’organisatrice est prévenue (cloche, notification et email), avec votre motif ; l’acheteur ne reçoit aucun message.`
+                        : `Confirmez-vous avoir rendu ${formatFcfa(pending.amount)} en espèces pour la vente ${pending.reference} ? Ce marquage est définitif.`)
                     : undefined}
-                confirmLabel="Oui, les espèces sont rendues"
+                confirmLabel={adminMarks ? 'Marquer rendu' : 'Oui, les espèces sont rendues'}
                 cancelLabel="Pas encore"
                 variant="warning"
                 isLoading={marking}
+                confirmDisabled={adminMarks && !reasonOk}
             >
                 {pending && (
-                    <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 rounded-2xl border border-border bg-surface-sunken p-4 text-sm text-fg tabular-nums">
+                    <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 rounded-2xl border border-border bg-background p-4 text-sm text-foreground-strong tabular-nums">
                         <dt className="font-semibold">Vente</dt>
                         <dd>{pending.reference}</dd>
                         <dt className="font-semibold">Billets</dt>
@@ -224,6 +253,17 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                         <dt className="font-semibold">Acheteur</dt>
                         <dd>{pending.phone_masked ?? 'Numéro non saisi'}</dd>
                     </dl>
+                )}
+                {pending && adminMarks && (
+                    <Textarea
+                        label="Motif (obligatoire)"
+                        hint="3 caractères au moins. L’organisatrice le lit dans son avis ; il reste dans le journal."
+                        required
+                        rows={3}
+                        maxLength={500}
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                    />
                 )}
                 {markError && (
                     <StatusBanner tone="danger" title="Marquage non enregistré" announce="alert">

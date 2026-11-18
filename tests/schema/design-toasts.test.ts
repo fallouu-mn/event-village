@@ -65,6 +65,10 @@ describe('design 1a — toasts', () => {
         console.log(`[DESIGN-TOASTS] messages techniques remplacés : ${technical.length - leaked.length}/${technical.length} ; phrases simples gardées : ${plain.length - changed.length}/${plain.length}`);
         assert.deepEqual(leaked, []);
         assert.deepEqual(changed, []);
+        // Fusion de la finition 3d : coupure réseau (message brut de fetch) remplacée par une phrase sur la connexion
+        for (const raw of ['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetch resource.']) {
+            assert.equal(humanToastMessage(raw), 'Connexion impossible. Vérifiez votre réseau, puis réessayez.', raw);
+        }
     });
 
     test('f. un seul système : ni bibliothèque de toasts, ni autre fournisseur, ni alert()', () => {

@@ -28,6 +28,7 @@ import { inRolledBackTransaction } from '../helpers/db';
 import { assertFinition1Invariants } from '../helpers/finition1-invariants';
 import { jsonRequest, newPartner, type TestPartner } from './finance-helpers';
 import { newAdmin, type TestAdmin } from './notif-helpers';
+import { confirmIdentity } from './f3d-helpers';
 import { importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 
 type Row = Record<string, unknown>;
@@ -47,6 +48,9 @@ before(async () => {
     suspender = await newAdmin('f3a-suspend', ['partners.read', 'partners.suspend']);
     both = await newAdmin('f3a-tout', ['partners.read', 'partners.validate', 'partners.suspend', 'users.write']);
     superadmin = await newAdmin('f3a-super', [], { role: 'SUPERADMIN' });
+    // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : la grille des droits exige le mot de
+    // passe et le code administrateur de moins de 10 minutes.
+    await confirmIdentity(superadmin);
 });
 
 after(async () => {

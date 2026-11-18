@@ -121,10 +121,11 @@ describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »',
         }
     });
 
+    // Finition 3d (point 2) : « Sécurité du compte » (/admin/securite) ajoutée au menu du SUPERADMIN (test existant modifié, signalé)
     test('SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »', async () => {
         const nav = await navFor([], true);
         assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/users', '/admin/services', '/admin/finance', '/admin/referral',
-            '/admin/communications', '/admin/finance-settings', '/admin/audit', '/admin/notifications', '/scan']);
+            '/admin/communications', '/admin/finance-settings', '/admin/audit', '/admin/notifications', '/scan', '/admin/securite']);
         assert.deepEqual(nav.mobile.map((i) => i.href), ['/admin/dashboard', '/admin/events', '/admin/users', '/admin/finance', '/admin/audit']);
         assert.ok(!JSON.stringify(nav).includes('/admin/pricing'), '« Tarification » encore au menu');
     });
@@ -304,13 +305,16 @@ function appFiles(): string[] {
 
 /** Phrase dictée mot pour mot par la consigne (point 2) : seule forme longue du rôle admise à l'écran. */
 const DICTATED_NO_RIGHTS = norm("Vous n'avez encore aucun droit : demandez-les au super-administrateur.");
+// Contre-vérification de la finition 3d (T1 ; modification signalée au rapport) : refus du changement de numéro d'un
+// ADMIN par le profil client, phrase dictée mot pour mot par la consigne (lib/admin/phone-path.ts).
+const DICTATED_ADMIN_PHONE = norm('Demandez au super-administrateur de changer votre numéro.');
 
 describe('6 bis. E-37 — table des libellés de la revue (5.2) : rôles, codes HTTP, alertes SMS, origine d’un envoi, parrainage', () => {
     test('rôle SUPERADMIN : « Superadmin » à l’écran (G-45 : menu, profil, connexion, réglages), sauf la phrase dictée par la consigne', () => {
         const faults: string[] = [];
         for (const f of appFiles()) {
             for (const line of code(f).split('\n')) {
-                const rest = norm(line).replace(DICTATED_NO_RIGHTS, '');
+                const rest = norm(line).replace(DICTATED_NO_RIGHTS, '').replace(DICTATED_ADMIN_PHONE, '');
                 const hit = /super[- ]?administrat\w*/i.exec(rest);
                 if (hit) faults.push(`${f} : « ${hit[0]} »`);
             }

@@ -71,10 +71,18 @@ async function postPublic(modulePath: string, url: string, body: unknown, ip: st
  * gardée. Modification signalée au rapport du lot 9 quater (avant : `signUp` public de GoTrue).
  */
 export async function signUpAttacker(label: string, metadata: Record<string, unknown> = {}): Promise<AttackerAccount> {
-    const phone = attackerPhone();
+    // Numéro tiré au hasard, sans réservation : s'il est déjà pris par une autre suite du même run (409
+    // PHONE_ALREADY_REGISTERED, runs 285 et 346), un autre est tiré, trois essais au plus. Finition 3d, signalé au rapport ;
+    // aucune assertion changée (docs/apres-lancement.md).
+    let phone = attackerPhone();
     const ip = attackerIp();
-    const since = getFakes().sms.messagesTo(phone).length;
-    const start = await postPublic('../../app/api/auth/register/start/route', '/api/auth/register/start', { phone }, ip);
+    let since = getFakes().sms.messagesTo(phone).length;
+    let start = await postPublic('../../app/api/auth/register/start/route', '/api/auth/register/start', { phone }, ip);
+    for (let retry = 0; retry < 2 && start.status === 409 && start.body.code === 'PHONE_ALREADY_REGISTERED'; retry++) {
+        phone = attackerPhone();
+        since = getFakes().sms.messagesTo(phone).length;
+        start = await postPublic('../../app/api/auth/register/start/route', '/api/auth/register/start', { phone }, ip);
+    }
     if (start.status !== 200) throw new Error(`inscription (${label}) : démarrage HTTP ${start.status} ${JSON.stringify(start.body)}`);
     const code = getFakes().sms.messagesTo(phone).slice(since).map((m) => m.message.match(/\b(\d{6})\b/)?.[1]).filter(Boolean).pop();
     if (!code) throw new Error(`inscription (${label}) : aucun code reçu par SMS`);

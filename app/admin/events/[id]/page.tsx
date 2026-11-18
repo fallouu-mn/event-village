@@ -46,7 +46,7 @@ import { noticesText } from '@/lib/admin/confirmations';
 // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
 const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
   ssr: false,
-  loading: () => <div className="h-48 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
+  loading: () => <div className="h-48 w-full rounded-xl bg-background motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
 });
 
 /**
@@ -315,8 +315,8 @@ function amount(v: number | string): number {
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id: string }) {
   return (
-    <section aria-labelledby={id} className="rounded-2xl border border-border bg-surface p-4 sm:p-6">
-      <h2 id={id} className="mb-4 text-lg font-bold tracking-tight text-fg">{title}</h2>
+    <section aria-labelledby={id} className="rounded-2xl border border-border bg-card p-4 sm:p-6">
+      <h2 id={id} className="mb-4 text-lg font-bold tracking-tight text-foreground-strong">{title}</h2>
       {children}
     </section>
   );
@@ -329,13 +329,13 @@ function Section({ title, children, id }: { title: string; children: React.React
 function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
     <div className="relative min-h-9 min-w-0 pl-12">
-      <dt className="text-sm text-fg-muted">
-        <span className="absolute left-0 top-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-surface-sunken text-fg-muted" aria-hidden="true">
+      <dt className="text-sm text-muted-foreground">
+        <span className="absolute left-0 top-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-background text-muted-foreground" aria-hidden="true">
           {icon}
         </span>
         {label}
       </dt>
-      <dd className="break-words text-base font-medium text-fg">{children}</dd>
+      <dd className="break-words text-base font-medium text-foreground-strong">{children}</dd>
     </div>
   );
 }
@@ -530,8 +530,8 @@ export default function AdminEventSheetPage() {
       header: 'Catégorie',
       render: (c) => (
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="font-semibold text-fg">{c.name}</span>
-          {c.description && <span className="text-sm text-fg-muted">{c.description}</span>}
+          <span className="font-semibold text-foreground-strong">{c.name}</span>
+          {c.description && <span className="text-sm text-muted-foreground">{c.description}</span>}
         </div>
       ),
     },
@@ -559,7 +559,7 @@ export default function AdminEventSheetPage() {
             <ScanColorDot color={c.scan_color} />
             <span>{isScanCategoryColor(c.scan_color) ? SCAN_CATEGORY_COLOR_LABELS[c.scan_color] : 'Sans couleur'}</span>
           </span>
-          {c.entry_instruction ? <span className="break-words text-fg">{`Consigne : ${c.entry_instruction}`}</span> : <span className="text-fg-muted">Aucune consigne</span>}
+          {c.entry_instruction ? <span className="break-words text-foreground-strong">{`Consigne : ${c.entry_instruction}`}</span> : <span className="text-muted-foreground">Aucune consigne</span>}
         </div>
       ),
     },
@@ -582,7 +582,7 @@ export default function AdminEventSheetPage() {
         eyebrow={(
           <>
             <StatusBadge domain="event" status={currentStatus} />
-            <span className="text-sm text-fg-muted">{getCategoryLabel(event.category)}</span>
+            <span className="text-sm text-muted-foreground">{getCategoryLabel(event.category)}</span>
           </>
         )}
         title={event.title}
@@ -611,6 +611,12 @@ export default function AdminEventSheetPage() {
                 Ouvrir le pilotage
               </LinkButton>
             )}
+            {/* Finition 3d (point 4b) : l'équipe de contrôle de cet événement (onglet Équipe du pilotage) */}
+            {hasPermission('events.read') && (
+              <LinkButton href={`/partner/events/${event.id}?tab=equipe`} variant="secondary" leftIcon={<Users size={16} />}>
+                Équipe de cet événement
+              </LinkButton>
+            )}
             {isPublic && (
               <LinkButton href={`/events/${event.id}`} variant="ghost" external rightIcon={<ExternalLink size={16} />}>
                 Page publique
@@ -626,7 +632,7 @@ export default function AdminEventSheetPage() {
           title={actions.last_reason.kind === 'SUSPENSION' ? 'Motif de la suspension' : 'Motif du refus'}
         >
           <p>{actions.last_reason.reason ?? 'Aucun motif enregistré.'}</p>
-          <p className="mt-1 text-fg-muted">
+          <p className="mt-1 text-muted-foreground">
             Communiqué à l’organisateur le{' '}
             <time dateTime={toDakarDateTimeLocal(actions.last_reason.at)}>{formatDateTime(actions.last_reason.at)}</time>.
           </p>
@@ -654,11 +660,11 @@ export default function AdminEventSheetPage() {
               <InfoRow icon={<CalendarDays size={18} />} label="Début">{startLabel}</InfoRow>
               <InfoRow icon={<Clock size={18} />} label="Fin">
                 {end ? end.text : '—'}
-                {end?.note && <span className="block text-sm font-normal text-fg-muted">{end.note}</span>}
+                {end?.note && <span className="block text-sm font-normal text-muted-foreground">{end.note}</span>}
               </InfoRow>
               <InfoRow icon={<MapPin size={18} />} label="Lieu">
                 {[event.location, event.city].filter(Boolean).join(', ') || 'Non renseigné'}
-                {!hasPosition && <span className="block text-sm font-normal text-fg-muted">Aucun repère sur la carte.</span>}
+                {!hasPosition && <span className="block text-sm font-normal text-muted-foreground">Aucun repère sur la carte.</span>}
               </InfoRow>
               <InfoRow icon={<Users size={18} />} label="Jauge déclarée">
                 <span className="tabular-nums">{event.capacity ? `${formatInteger(event.capacity)} personnes` : 'Non limitée'}</span>
@@ -683,8 +689,8 @@ export default function AdminEventSheetPage() {
               <dl className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
                 {practical.map((p) => (
                   <div key={p.key} className="min-w-0">
-                    <dt className="text-sm text-fg-muted">{p.label}</dt>
-                    <dd className="whitespace-pre-line break-words text-base text-fg">{p.value}</dd>
+                    <dt className="text-sm text-muted-foreground">{p.label}</dt>
+                    <dd className="whitespace-pre-line break-words text-base text-foreground-strong">{p.value}</dd>
                   </div>
                 ))}
               </dl>
@@ -693,28 +699,28 @@ export default function AdminEventSheetPage() {
 
           <Section id="fiche-description" title="Description">
             {event.description
-              ? <p className="whitespace-pre-line break-words text-base leading-relaxed text-fg">{event.description}</p>
-              : <p className="text-sm text-fg-muted">L’organisateur n’a pas rédigé de description.</p>}
+              ? <p className="whitespace-pre-line break-words text-base leading-relaxed text-foreground-strong">{event.description}</p>
+              : <p className="text-sm text-muted-foreground">L’organisateur n’a pas rédigé de description.</p>}
           </Section>
 
           <Section id="fiche-programme" title="Programme">
             {program.length === 0 ? (
-              <p className="text-sm text-fg-muted">Aucun programme renseigné.</p>
+              <p className="text-sm text-muted-foreground">Aucun programme renseigné.</p>
             ) : (
               <ol className="flex flex-col gap-3">
                 {program.map((line) => (
-                  <li key={line.id} className="flex gap-3 rounded-xl border border-border bg-surface-sunken/60 p-3">
-                    <div className="w-24 flex-shrink-0 text-sm font-semibold tabular-nums text-fg">
-                      {line.day && <span className="block font-normal text-fg-muted">{formatShortDate(line.day)}</span>}
+                  <li key={line.id} className="flex gap-3 rounded-xl border border-border bg-background/60 p-3">
+                    <div className="w-24 flex-shrink-0 text-sm font-semibold tabular-nums text-foreground-strong">
+                      {line.day && <span className="block font-normal text-muted-foreground">{formatShortDate(line.day)}</span>}
                       {line.time ?? '—'}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-fg">{line.title}</span>
+                        <span className="font-semibold text-foreground-strong">{line.title}</span>
                         {kindLabel(line.kind) && <Badge variant="neutral" size="sm">{kindLabel(line.kind)}</Badge>}
                       </div>
-                      {line.participant && <p className="text-sm text-fg-muted">{line.participant}</p>}
-                      {line.description && <p className="mt-1 whitespace-pre-line break-words text-sm text-fg">{line.description}</p>}
+                      {line.participant && <p className="text-sm text-muted-foreground">{line.participant}</p>}
+                      {line.description && <p className="mt-1 whitespace-pre-line break-words text-sm text-foreground-strong">{line.description}</p>}
                     </div>
                   </li>
                 ))}
@@ -729,36 +735,36 @@ export default function AdminEventSheetPage() {
               getKey={(c) => c.id}
               caption="Catégories de billets, tous canaux et inactives comprises"
               cardTitle={(c) => c.name}
-              empty={<p className="text-sm text-fg-muted">Aucune catégorie de billet : l’événement ne peut pas être vendu.</p>}
+              empty={<p className="text-sm text-muted-foreground">Aucune catégorie de billet : l’événement ne peut pas être vendu.</p>}
             />
           </Section>
 
           {/* Finition 2b (D, E-25) : portes et zones réglées par l'organisateur */}
           <Section id="fiche-controle" title="Contrôle à l’entrée">
             {zones.length === 0 ? (
-              <p className="text-sm text-fg">{SINGLE_ENTRANCE_TEXT}</p>
+              <p className="text-sm text-foreground-strong">{SINGLE_ENTRANCE_TEXT}</p>
             ) : (
               <ul className="flex flex-col gap-3">
                 {zones.map((z) => (
-                  <li key={z.id} className="flex flex-col gap-2 rounded-xl border border-border bg-surface-sunken/60 p-3">
+                  <li key={z.id} className="flex flex-col gap-2 rounded-xl border border-border bg-background/60 p-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-fg">{z.name}</span>
+                      <span className="font-semibold text-foreground-strong">{z.name}</span>
                       <Badge variant={z.kind === 'CONTROLE' ? 'info' : 'neutral'} size="sm">{z.kind === 'CONTROLE' ? ZONE_KIND_LABELS.CONTROLE : ZONE_KIND_LABELS.ENTREE}</Badge>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 text-sm">
-                      <span className="text-fg-muted">Laisse entrer :</span>
-                      {z.category_ids.length === 0 && <span className="font-semibold text-warning-fg">aucune catégorie</span>}
+                      <span className="text-muted-foreground">Laisse entrer :</span>
+                      {z.category_ids.length === 0 && <span className="font-semibold text-warning-text">aucune catégorie</span>}
                       {z.category_ids.map((id) => {
                         const c = categories.find((x) => x.id === id);
                         return (
-                          <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-fg">
+                          <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-foreground-strong">
                             <ScanColorDot color={c?.scan_color} className="h-3 w-3" />
                             <span>{c?.name ?? 'Catégorie retirée'}</span>
                           </span>
                         );
                       })}
                     </div>
-                    <p className="text-sm text-fg-muted">{`${z.gates.length > 1 ? 'Portes' : 'Porte'} : ${z.gates.map((g) => g.name).join(', ') || 'aucune'}`}</p>
+                    <p className="text-sm text-muted-foreground">{`${z.gates.length > 1 ? 'Portes' : 'Porte'} : ${z.gates.map((g) => g.name).join(', ') || 'aucune'}`}</p>
                   </li>
                 ))}
               </ul>
@@ -775,10 +781,10 @@ export default function AdminEventSheetPage() {
                 src={event.image_url}
                 alt={`Affiche de « ${event.title} »`}
                 loading="lazy"
-                className="mx-auto block h-auto max-h-[36rem] w-auto max-w-full rounded-xl border border-border bg-surface-sunken object-contain"
+                className="mx-auto block h-auto max-h-[36rem] w-auto max-w-full rounded-xl border border-border bg-background object-contain"
               />
             ) : (
-              <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-sunken text-fg-muted">
+              <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-background text-muted-foreground">
                 <ImageIcon size={28} aria-hidden="true" />
                 <span className="text-sm">Aucune affiche</span>
               </div>
@@ -791,7 +797,7 @@ export default function AdminEventSheetPage() {
                 <InfoRow icon={<Building2 size={18} />} label="Structure">
                   {organizer.company_name ?? 'Non renseignée'}
                   {organizer.commercial_name && organizer.commercial_name !== organizer.company_name && (
-                    <span className="block text-sm font-normal text-fg-muted">{organizer.commercial_name}</span>
+                    <span className="block text-sm font-normal text-muted-foreground">{organizer.commercial_name}</span>
                   )}
                   {partnerStatus && (
                     <span className="mt-1 block">
@@ -804,14 +810,14 @@ export default function AdminEventSheetPage() {
                 )}
                 {(organizer.phone || organizer.contact_phone) && (
                   <InfoRow icon={<Phone size={18} />} label="Téléphone">
-                    <a href={`tel:${organizer.phone ?? organizer.contact_phone}`} className="inline-flex min-h-11 items-center text-brand-fg underline-offset-4 hover:underline">
+                    <a href={`tel:${organizer.phone ?? organizer.contact_phone}`} className="inline-flex min-h-11 items-center text-primary-text underline-offset-4 hover:underline">
                       {organizer.phone ?? organizer.contact_phone}
                     </a>
                   </InfoRow>
                 )}
                 {(organizer.email || organizer.contact_email) && (
                   <InfoRow icon={<Mail size={18} />} label="Email">
-                    <a href={`mailto:${organizer.email ?? organizer.contact_email}`} className="inline-flex min-h-11 items-center break-all text-brand-fg underline-offset-4 hover:underline">
+                    <a href={`mailto:${organizer.email ?? organizer.contact_email}`} className="inline-flex min-h-11 items-center break-all text-primary-text underline-offset-4 hover:underline">
                       {organizer.email ?? organizer.contact_email}
                     </a>
                   </InfoRow>
@@ -819,31 +825,31 @@ export default function AdminEventSheetPage() {
                 {organizer.city && <InfoRow icon={<MapPin size={18} />} label="Ville">{organizer.city}</InfoRow>}
               </dl>
             ) : (
-              <p className="text-sm text-fg-muted">Organisateur introuvable.</p>
+              <p className="text-sm text-muted-foreground">Organisateur introuvable.</p>
             )}
           </Section>
 
           <Section id="fiche-historique" title="Historique des statuts">
             {historyNewestFirst.length === 0 ? (
-              <p className="text-sm text-fg-muted">Aucun changement de statut enregistré.</p>
+              <p className="text-sm text-muted-foreground">Aucun changement de statut enregistré.</p>
             ) : (
               <ol className="flex flex-col gap-4">
                 {historyNewestFirst.map((h) => (
                   <li key={h.id} className="relative border-l-2 border-border pl-4">
-                    <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-fg-muted" aria-hidden="true" />
-                    <p className="text-base font-semibold text-fg">
+                    <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-muted-foreground" aria-hidden="true" />
+                    <p className="text-base font-semibold text-foreground-strong">
                       {h.old_status ? `${eventStatusLabel(h.old_status)} → ${eventStatusLabel(h.new_status)}` : `Création : ${eventStatusLabel(h.new_status)}`}
                     </p>
-                    <p className="text-sm text-fg-muted">
+                    <p className="text-sm text-muted-foreground">
                       {h.actor_name ?? ROLE_LABELS[h.actor_role ?? ''] ?? 'Auteur inconnu'}
                       {h.actor_name && h.actor_role && ROLE_LABELS[h.actor_role] ? ` (${ROLE_LABELS[h.actor_role]})` : ''}
                       {h.channel && CHANNEL_LABELS[h.channel] ? ` · ${CHANNEL_LABELS[h.channel]}` : ''}
                     </p>
-                    <p className="text-sm text-fg-muted">
+                    <p className="text-sm text-muted-foreground">
                       <time dateTime={toDakarDateTimeLocal(h.created_at)}>{formatDateTime(h.created_at)}</time>
                     </p>
                     {h.reason && (
-                      <blockquote className="mt-2 rounded-xl bg-surface-sunken px-3 py-2 text-sm text-fg">
+                      <blockquote className="mt-2 rounded-xl bg-background px-3 py-2 text-sm text-foreground-strong">
                         <span className="sr-only">Motif : </span>{h.reason}
                       </blockquote>
                     )}
@@ -879,7 +885,7 @@ export default function AdminEventSheetPage() {
         ) : undefined}
       >
         <div className="flex flex-col gap-3">
-          <p className="text-base leading-relaxed text-fg">{confirmCopy?.body}</p>
+          <p className="text-base leading-relaxed text-foreground-strong">{confirmCopy?.body}</p>
           {actionError && (
             <StatusBanner tone="danger" title="Action impossible" announce="alert">
               {actionError}

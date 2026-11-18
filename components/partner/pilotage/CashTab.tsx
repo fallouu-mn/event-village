@@ -30,8 +30,8 @@ function differenceText(value: number | null): string {
 }
 
 function differenceTone(value: number | null): string {
-    if (value === null || value === 0) return 'text-fg';
-    return 'text-danger-fg';
+    if (value === null || value === 0) return 'text-foreground-strong';
+    return 'text-danger-text';
 }
 
 const SHIFT_COLUMNS: DataColumn<CashShift>[] = [
@@ -48,7 +48,7 @@ const SHIFT_COLUMNS: DataColumn<CashShift>[] = [
         render: (s) => (
             <span className={`font-semibold ${differenceTone(s.difference)}`}>
                 {differenceText(s.difference)}
-                {s.justification && <span className="mt-0.5 block font-normal text-fg-muted">{s.justification}</span>}
+                {s.justification && <span className="mt-0.5 block font-normal text-muted-foreground">{s.justification}</span>}
             </span>
         ),
     },
@@ -115,18 +115,18 @@ function DiscrepancyValidation({ shifts, onValidated }: { shifts: CashShift[]; o
             title="Écarts à valider"
             description="Une caisse fermée avec un écart attend votre validation. Vérifiez la justification du contrôleur avant de valider."
         >
-            <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+            <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
                 {pending.map((s) => {
                     const name = s.controller_name || 'Compte sans nom';
                     return (
                         <li key={s.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                             <div className="min-w-0 space-y-1 text-sm">
-                                <p className="font-semibold text-fg">
+                                <p className="font-semibold text-foreground-strong">
                                     {name} · écart de <span className="tabular-nums">{differenceText(s.difference)}</span>
                                 </p>
-                                {s.justification && <p className="text-fg-muted">« {s.justification} »</p>}
+                                {s.justification && <p className="text-muted-foreground">« {s.justification} »</p>}
                                 {s.closed_at && (
-                                    <p className="text-fg-muted">Fermée le <time dateTime={s.closed_at}>{formatDateTime(s.closed_at)}</time></p>
+                                    <p className="text-muted-foreground">Fermée le <time dateTime={s.closed_at}>{formatDateTime(s.closed_at)}</time></p>
                                 )}
                             </div>
                             <Button variant="primary" leftIcon={<ShieldCheck size={18} aria-hidden="true" />} isLoading={busy === s.id}
@@ -160,6 +160,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
     const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
     // Partenaire propriétaire (sinon la route de pilotage n'aurait rien servi), ou admin muni de events.write
     const canCloseShifts = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
+    // Finition 3d (point 4c) : la section « Écarts à valider » était cachée à tout admin, alors que la route et la base
+    // laissent valider un admin muni de events.write depuis la 2a ; même règle que « Fermer cette caisse ».
+    const canValidateDiscrepancies = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
     const columns = canCloseShifts ? [...SHIFT_COLUMNS, closeColumn(setClosing)] : SHIFT_COLUMNS;
     const [pinStep, setPinStep] = useState<{ step: 'confirm' } | { step: 'open_shifts'; count: number } | null>(null);
     const [generating, setGenerating] = useState(false);
@@ -238,9 +241,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 title="Code PIN régisseur"
                 description="Le PIN est exigé à l’ouverture de chaque caisse. Un écart de clôture se valide ici, depuis votre compte, et non plus par le PIN. Il n’est affiché qu’une fois, à sa génération."
             >
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                    <p className="flex items-start gap-3 text-sm text-fg">
-                        <KeyRound size={20} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                    <p className="flex items-start gap-3 text-sm text-foreground-strong">
+                        <KeyRound size={20} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                         {data.pin.hasPin ? (
                             <span>
                                 Un code est en place
@@ -264,9 +267,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
 
             <PilotageSection title="Espèces par contrôleur">
                 {data.by_controller.length === 0 ? (
-                    <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune caisse ouverte pour cet événement.</p>
+                    <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">Aucune caisse ouverte pour cet événement.</p>
                 ) : (
-                    <dl className="rounded-2xl border border-border bg-surface px-4 py-1">
+                    <dl className="rounded-2xl border border-border bg-card px-4 py-1">
                         {data.by_controller.map((c) => (
                             <DefinitionRow
                                 key={c.controller_id}
@@ -289,8 +292,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 />
             </PilotageSection>
 
-            {/* Lot 9 quater (C7 : AUD-16) : l'organisatrice valide elle-même les écarts de clôture */}
-            {!hasAnyRole(['ADMIN', 'SUPERADMIN']) && <DiscrepancyValidation shifts={data.shifts} onValidated={reload} />}
+            {/* Lot 9 quater (C7 : AUD-16) : l'organisatrice valide elle-même les écarts de clôture ; finition 3d (point 4c) :
+                un admin events.write (ou le SUPERADMIN) aussi, à sa place */}
+            {canValidateDiscrepancies && <DiscrepancyValidation shifts={data.shifts} onValidated={reload} />}
 
             <ConfirmDialog
                 isOpen={pinStep !== null}
@@ -324,7 +328,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 }
             >
                 <div className="flex flex-col items-center gap-4 py-2">
-                    <p className="rounded-2xl border border-border bg-surface-sunken px-6 py-4 font-mono text-3xl font-bold tracking-widest text-fg tabular-nums" aria-label={pin ? `Code PIN : ${pin.split('').join(' ')}` : undefined}>
+                    <p className="rounded-2xl border border-border bg-background px-6 py-4 font-mono text-3xl font-bold tracking-widest text-foreground-strong tabular-nums" aria-label={pin ? `Code PIN : ${pin.split('').join(' ')}` : undefined}>
                         {pin}
                     </p>
                     <Button variant="secondary" leftIcon={copied ? <Check size={18} /> : <Copy size={18} />} onClick={() => void copyPin()}>

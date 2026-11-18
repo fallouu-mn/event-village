@@ -6,6 +6,7 @@ import { MailCheck, MailWarning, RotateCcw, Save } from 'lucide-react';
 import { useAuth, type UserProfile } from '@/components/providers/AuthProvider';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { TextInput } from '@/components/ui/Field';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
@@ -13,6 +14,7 @@ import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-jso
 import { PhoneChangeDialog } from '@/components/profile/PhoneChangeDialog';
 import { PasswordChangeDialog } from '@/components/profile/PasswordChangeDialog';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
+import { adminPhonePath, SECURITY_PAGE_HREF } from '@/lib/admin/phone-path';
 import { AccountProfileSchema } from '@/lib/validations/account';
 
 // Lot 9 bis (R57) : la saisie du mot de passe n'est chargée qu'au premier refus PASSWORD_CONFIRMATION_REQUIRED.
@@ -99,6 +101,8 @@ function feedbackAfterSave(reply: SaveReply): EmailFeedback | null {
 
 export function ProfileForm({ profile }: { profile: UserProfile }) {
   const { refreshProfile } = useAuth();
+  // Contre-vérification de la finition 3d (T1) : le numéro d'un compte d'administration ne se change pas ici
+  const adminPath = adminPhonePath(profile.roles ?? []);
   const toast = useToast();
   const emailState = emailStateOf(profile);
   const [values, setValues] = useState<Payload>({
@@ -219,8 +223,8 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
   };
 
   return (
-    <section aria-labelledby="profil-informations" className="space-y-4 rounded-2xl border border-border bg-surface p-5">
-      <h2 id="profil-informations" className="text-base font-semibold text-fg">Mes informations</h2>
+    <section aria-labelledby="profil-informations" className="space-y-4 rounded-2xl border border-border bg-card p-5">
+      <h2 id="profil-informations" className="text-base font-semibold text-foreground-strong">Mes informations</h2>
 
       <form noValidate onSubmit={(e) => void submit(e)} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -262,9 +266,9 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
           hint="Recommandé : recevez vos billets et confirmations par email"
         />
         {emailState.address && emailState.verified && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-surface-sunken p-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-background p-3">
             <Badge variant="success" icon={<MailCheck size={14} aria-hidden="true" />}>Email vérifié</Badge>
-            <span className="min-w-0 flex-1 basis-40 break-all text-sm text-fg">{emailState.address}</span>
+            <span className="min-w-0 flex-1 basis-40 break-all text-sm text-foreground-strong">{emailState.address}</span>
           </div>
         )}
         {/* Lot 9 quinquies (B5 : A7 de la revue) : bandeau « Adresse email non vérifiée » ; tant qu'elle ne l'est pas, la
@@ -306,25 +310,31 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="min-w-0 flex-1 basis-48">
-          <p className="text-sm font-semibold text-fg">Numéro de téléphone</p>
-          <p className="text-sm text-fg-muted">Un code envoyé au nouveau numéro confirme le changement.</p>
+          <p className="text-sm font-semibold text-foreground-strong">Numéro de téléphone</p>
+          <p className="text-sm text-muted-foreground">
+            {adminPath ? adminPath.message : 'Un code envoyé au nouveau numéro confirme le changement.'}
+          </p>
         </div>
-        <Button type="button" variant="secondary" onClick={() => setIsPhoneDialogOpen(true)}>
-          Changer de numéro
-        </Button>
+        {!adminPath ? (
+          <Button type="button" variant="secondary" onClick={() => setIsPhoneDialogOpen(true)}>
+            Changer de numéro
+          </Button>
+        ) : adminPath.code === 'PHONE_CHANGE_SECURITY_PAGE' ? (
+          <LinkButton href={SECURITY_PAGE_HREF} variant="secondary">Sécurité du compte</LinkButton>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="min-w-0 flex-1 basis-48">
-          <p className="text-sm font-semibold text-fg">Mot de passe</p>
-          <p className="text-sm text-fg-muted">Les autres appareils seront déconnectés.</p>
+          <p className="text-sm font-semibold text-foreground-strong">Mot de passe</p>
+          <p className="text-sm text-muted-foreground">Les autres appareils seront déconnectés.</p>
         </div>
         <Button type="button" variant="secondary" onClick={() => setIsPasswordDialogOpen(true)}>
           Changer de mot de passe
         </Button>
       </div>
 
-      <PhoneChangeDialog isOpen={isPhoneDialogOpen} onClose={() => setIsPhoneDialogOpen(false)} onChanged={onPhoneChanged} />
+      {!adminPath && <PhoneChangeDialog isOpen={isPhoneDialogOpen} onClose={() => setIsPhoneDialogOpen(false)} onChanged={onPhoneChanged} />}
       <PasswordChangeDialog isOpen={isPasswordDialogOpen} onClose={() => setIsPasswordDialogOpen(false)} />
       {isConfirmOpen && (
         <PasswordConfirmDialog

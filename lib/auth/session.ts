@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient, getAuthenticatedUser } from '../supabase/server';
 import { type UserRoleType } from './roles';
 import { partnerFicheRefusal } from './partner-fiche-guard';
-import { adminStepUpRefusal, isAdminAccount } from '../admin/step-up';
+import { adminIdleScope, adminStepUpRefusal, isAdminAccount } from '../admin/step-up';
 import { contactSupport } from '../support-contact';
 
 export interface ServerUser {
@@ -86,8 +86,11 @@ export async function requireActiveSession(
     if (ficheRefusal) return { response: ficheRefusal };
     // Lot 9 quinquies (A3 : AUTH-05) : un compte ADMIN ou SUPERADMIN n'agit qu'avec le code SMS de cet appareil et un mot
     // de passe de moins de 12 h, sur toutes les routes (actions d'un admin sur un événement, scan, compte).
+    // Finition 3d (point 1) : sur les routes partenaire et contrôleur, aussi la règle des 30 minutes d'inactivité de
+    // l'administration (un appel accepté y compte comme activité, une relecture automatique non).
     if (isAdminAccount(user.roles)) {
-        const stepUp = await adminStepUpRefusal(req, user.id, 'ACCOUNT');
+        const mode = adminIdleScope(new URL(req.url).pathname) ? 'ADMIN' : 'ACCOUNT';
+        const stepUp = await adminStepUpRefusal(req, user.id, mode);
         if (stepUp) return { response: stepUp };
     }
     return { user };

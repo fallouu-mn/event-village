@@ -58,6 +58,8 @@ export const GENERIC_ERROR = 'Quelque chose s’est mal passé. Réessayez dans 
 /** Garde-fou « jamais de code technique » : rend le message, ou une phrase simple s'il ressemble à un code. */
 export function humanToastMessage(message: string): string {
   const m = message.trim();
+  // Coupure réseau : message brut du navigateur (fetch) jamais affiché
+  if (/^(?:Failed to fetch|Load failed|NetworkError\b|fetch failed)/i.test(m)) return 'Connexion impossible. Vérifiez votre réseau, puis réessayez.';
   if (/\b[A-Z][A-Z0-9]+_[A-Z0-9_]+\b|\bHTTP\s?\d{3}\b|\b(?:Type|Reference|Syntax)?Error:|\bat\s+\S+\s+\(|^[[{]|<\/?[a-z][^>]*>|\bundefined\b|\bnull\b/.test(m)) {
     return GENERIC_ERROR;
   }

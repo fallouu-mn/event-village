@@ -10,6 +10,7 @@ import { technicalEmailFor } from '@/lib/auth/technical-email';
 import { otpFailureMessage, verifyStoredOtp } from '@/lib/auth/otp-store';
 import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
+import { adminPhonePath } from '@/lib/admin/phone-path';
 import { getServerEnv } from '@/lib/env';
 import { reserveQuota } from '@/lib/security/quota';
 import { quotaRefusalResponse } from '@/lib/security/quota-http';
@@ -34,6 +35,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const { user } = session;
+    // Contre-vérification de la finition 3d (T1) : un compte ADMIN ou SUPERADMIN ne change jamais son numéro ici (il reçoit
+    // les codes administrateur) ; le message renvoie vers le bon chemin. Avant le mot de passe et avant tout SMS facturé.
+    const adminPath = adminPhonePath(user.roles);
+    if (adminPath) return NextResponse.json({ error: adminPath.message, code: adminPath.code }, { status: 403 });
 
     // Avant la consommation du code : sans session_id, ni écriture ni révocation totale (AR2).
     const current = await getAuthenticatedSession(req);
@@ -113,6 +118,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
             if (!(await compensateAuthIdentity(user.id, 'phone_change', 'phone_email'))) return refuse(SYNC_FAILED());
             if (reply?.code === 'PHONE_TAKEN') return refuse(PHONE_TAKEN);
             if (reply?.code === 'PHONE_CONFLICT') return refuse(PHONE_CONFLICT);
+            // T1 : rôle d'administration donné entre la garde de la route et la base ; message du bon chemin
+            if (reply?.code === 'ADMIN_PHONE_PATH') {
+                const path = adminPhonePath(user.roles) ?? adminPhonePath(['ADMIN'])!;
+                return NextResponse.json({ error: path.message, code: path.code }, { status: 403 });
+            }
             return NextResponse.json({ error: FALLBACK.message, code: FALLBACK.code }, { status: 500 });
         }
 
@@ -126,6 +136,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
  * POST /api/account/phone/confirm — fin du changement de numéro (lot 9, 9.2, contrat 4.3, 5.3, AR2, AM1).
  * Ordre : session et session_id, quota, code consommé, identité libre, auth.admin.updateUserById, RPC account_phone_finalize
  * (profil, autres sessions révoquées, SMS PHONE_CHANGED à l'ancien numéro, audit). RPC en échec : compensation vers la valeur relue.
+ * Contre-vérification de la finition 3d (T1) : refusé à un compte ADMIN ou SUPERADMIN, ici puis en base (ADMIN_PHONE_PATH).
  */
 export async function POST(req: NextRequest) {
     return noStore(await handle(req));

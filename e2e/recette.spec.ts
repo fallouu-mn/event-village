@@ -1249,13 +1249,14 @@ test('acte 10 [partenaire] [contrôleur] [client] : grande soirée, deux zones, 
         await openTicketing(partner);
         const vipSection = categorySection(partner, 'VIP');
         // Finition 2b (A, E-22) : couleur en pastilles nommées (groupe de boutons radio) au lieu d'une liste (recalé, signalé)
-        await vipSection.getByRole('radio', { name: /^or$/i }).click();
+        // Contre-vérification 2b (2b) : OR n'est plus choisissable ; Rose au lieu d'Or (recalé, signalé)
+        await vipSection.getByRole('radio', { name: /^rose$/i }).click();
         await vipSection.getByLabel('Consigne d’entrée').fill(GRANDE_SOIREE_VIP_INSTRUCTION);
         await expectRoute(partner, 'PATCH', CATEGORY_ROUTE, () => vipSection.getByRole('button', { name: /^enregistrer la catégorie$/i }).click(), 200, 'couleur et consigne de VIP');
         await expect(vipSection.getByText('Catégorie enregistrée.', { exact: true }), 'VIP enregistrée').toBeVisible();
         const { data: vipRow, error: vipErr } = await serviceClient().from('ticket_categories').select('scan_color, entry_instruction').eq('event_id', eventId).eq('name', 'VIP').single();
         if (vipErr || !vipRow) throw new Error(`[e2e] catégorie VIP de la grande soirée : ${vipErr?.message ?? 'introuvable'}`);
-        expect(vipRow, 'couleur et consigne de VIP en base').toEqual({ scan_color: 'OR', entry_instruction: GRANDE_SOIREE_VIP_INSTRUCTION });
+        expect(vipRow, 'couleur et consigne de VIP en base').toEqual({ scan_color: 'ROSE', entry_instruction: GRANDE_SOIREE_VIP_INSTRUCTION });
 
         // Finition 2b (B, E-23) : zones et portes à l'étape « Contrôle à l'entrée » du formulaire (avant : sous l'équipe de
         // l'onglet Équipe ; recalé, signalé) ; l'éditeur et l'enregistrement sont les mêmes

@@ -41,6 +41,10 @@ import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/label
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { noticesText } from '@/lib/admin/confirmations';
 import { TextInput } from '@/components/ui/Field';
+import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';
+import { AdminPhoneChangeDialog } from '@/components/admin/PhoneChangeFlow';
+import { useIdentityConfirm } from '@/components/admin/IdentityConfirm';
+import { apiErrorOf, errorMessage, sendJson } from '@/components/partner/fetch-json';
 
 interface UserItem {
   id: string;
@@ -76,9 +80,12 @@ function refusalOf(data: unknown, fallback: string): string {
  */
 export default function AdminUsersManagementPage() {
   const toast = useToast();
-  const { hasPermission, hasRole } = useAuth();
+  const { hasPermission, hasRole, user: me } = useAuth();
   const canWrite = hasPermission('users.write');
   const isSuperadmin = hasRole('SUPERADMIN');
+  // Contre-vérification de la finition 3d (T4) : créer un ADMIN et enregistrer ses droits exigent mot de passe et code
+  // récents ; la fenêtre les demande quand le serveur répond PASSWORD_CONFIRMATION_REQUIRED ou ADMIN_CODE_CONFIRMATION_REQUIRED.
+  const { run: runWithIdentity, dialog: identityDialog } = useIdentityConfirm();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
@@ -100,7 +107,12 @@ export default function AdminUsersManagementPage() {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
-  const [newRole, setNewRole] = useState<'ADMIN' | 'SUPERADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+  // Finition 3d (point 3) : un SUPERADMIN ne se crée plus directement (créer l'administrateur, puis « Changer le rôle »)
+  const [newRole, setNewRole] = useState<'ADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+  // Finition 3d (point 3) : « Changer le rôle » d'un compte (SUPERADMIN seulement)
+  const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);
+  // Finition 3d (point 2a) : « Changer le numéro » d'un ADMIN qui a perdu son téléphone (SUPERADMIN seulement)
+  const [phoneTarget, setPhoneTarget] = useState<UserItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Dialog de confirmation suppression
@@ -176,23 +188,18 @@ export default function AdminUsersManagementPage() {
     setIsCreating(true);
 
     try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: newFirstName.trim(),
-          lastName: newLastName.trim(),
-          phone: newPhone.trim(),
-          email: newEmail.trim().toLowerCase() || undefined,
-          role: newRole,
-        }),
-      });
-
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
+      const data = await runWithIdentity(() => sendJson<{ activation?: string; message?: string; userId?: string }>('/api/admin/users', 'POST', {
+        firstName: newFirstName.trim(),
+        lastName: newLastName.trim(),
+        phone: newPhone.trim(),
+        email: newEmail.trim().toLowerCase() || undefined,
+        role: newRole,
+      }));
+      // Fenêtre « mot de passe et code » fermée sans valider : rien n'est créé
+      if (data === null) return;
 
       // Lot 9 quinquies (A2) : le titulaire choisit son mot de passe par le lien reçu par SMS
-      const reply = (data ?? {}) as { activation?: string; message?: string; userId?: string };
+      const reply = data ?? {};
       const noRights = newRole === 'ADMIN' ? ' Il n’a encore aucun droit : choisissez-les maintenant.' : '';
       if (reply.activation === 'SENT') {
         toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).${noRights}`);
@@ -211,8 +218,7 @@ export default function AdminUsersManagementPage() {
         void handleOpenPermissions({ ...created, id: reply.userId } as UserItem);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la création.';
-      toast.error(msg);
+      toast.error(errorMessage(err, 'Échec de la création.'));
     } finally {
       setIsCreating(false);
     }
@@ -310,23 +316,23 @@ export default function AdminUsersManagementPage() {
     setIsSavingPerms(true);
 
     try {
-      const res = await fetch('/api/admin/permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adminId: selectedAdmin.id,
-          permissions: adminPermissions,
-        }),
+      const saved = await runWithIdentity(async () => {
+        const res = await fetch('/api/admin/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adminId: selectedAdmin.id, permissions: adminPermissions }),
+        });
+        // Refus du serveur (dont mot de passe ou code à confirmer) : ApiError, lue par la fenêtre d'identité
+        if (!res.ok) throw await apiErrorOf(res);
+        return true;
       });
-
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
+      // Fenêtre « mot de passe et code » fermée sans valider : droits inchangés
+      if (saved === null) return;
 
       toast.success(`Droits de ${selectedAdmin.first_name} ${selectedAdmin.last_name} enregistrés. Effet immédiat : il voit ses nouveaux écrans en rechargeant la page.`);
       setIsPermModalOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
-      toast.error(msg);
+      toast.error(errorMessage(err, 'Échec de l’enregistrement des permissions.'));
     } finally {
       setIsSavingPerms(false);
     }
@@ -376,12 +382,12 @@ export default function AdminUsersManagementPage() {
           <Link
             href="/admin/dashboard"
             aria-label="Retour à l’accueil de l’administration"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-surface text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronLeft size={20} aria-hidden="true" />
           </Link>
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-fg sm:text-3xl">
+            <h1 className="text-2xl font-black tracking-tight text-foreground-strong sm:text-3xl">
               Comptes et administrateurs
             </h1>
           </div>
@@ -413,17 +419,17 @@ export default function AdminUsersManagementPage() {
       </div>
 
       {/* Filtres & Recherche */}
-      <div className="space-y-6 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+      <div className="space-y-6 rounded-3xl border border-border bg-card p-4 sm:p-6">
         <div className="flex flex-col justify-between gap-4 border-b border-border pb-4 sm:flex-row sm:items-center">
           <div className="relative max-w-md flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <input
               type="search"
               aria-label="Rechercher un compte"
               placeholder="Rechercher par nom, email ou téléphone"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="min-h-11 w-full rounded-xl border border-border-strong bg-surface pl-9 pr-4 text-base text-fg outline-none placeholder:text-fg-muted focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-11 w-full rounded-xl border border-input bg-card pl-9 pr-4 text-base text-foreground-strong outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
@@ -435,7 +441,7 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={roleFilter === role}
                 onClick={() => setRoleFilter(role)}
                 className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  roleFilter === role ? 'bg-brand text-on-brand' : 'border border-border text-fg-muted hover:bg-surface-sunken hover:text-fg'
+                  roleFilter === role ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-background hover:text-foreground-strong'
                 }`}
               >
                 {role === 'ALL' ? 'Tous' : roleLabel(role)}
@@ -446,17 +452,17 @@ export default function AdminUsersManagementPage() {
 
         {/* Liste Réelle des Utilisateurs */}
         {isLoading ? (
-          <div role="status" className="py-12 text-center text-fg-muted">
-            <RefreshCw size={24} className="mx-auto mb-2 text-brand-fg motion-safe:animate-spin" aria-hidden="true" />
+          <div role="status" className="py-12 text-center text-muted-foreground">
+            <RefreshCw size={24} className="mx-auto mb-2 text-primary-text motion-safe:animate-spin" aria-hidden="true" />
             <p className="text-sm">Chargement des comptes…</p>
           </div>
         ) : listError ? (
-          <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
+          <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-soft p-4 text-sm text-danger-text">
             <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <p>{listError}</p>
           </div>
         ) : users.length === 0 ? (
-          <div className="py-12 text-center text-fg-muted">
+          <div className="py-12 text-center text-muted-foreground">
             <Users size={32} className="mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-semibold">Aucun compte ne correspond à cette recherche.</p>
           </div>
@@ -537,7 +543,8 @@ export default function AdminUsersManagementPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Finition 3d (point 2a) : boutons repliés sur plusieurs lignes (un de plus sur la ligne d'un ADMIN, 390 px) */}
+                  <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                     {/* Bouton Permissions Granulaires pour Admin */}
                     {isAdmin && !isDeleted && isSuperadmin && (
                       <Button
@@ -548,6 +555,21 @@ export default function AdminUsersManagementPage() {
                       >
                         <Key size={13} className="mr-1" />
                         Permissions
+                      </Button>
+                    )}
+
+                    {/* Finition 3d (point 3) : changer le rôle (SUPERADMIN seulement ; jamais une organisatrice ; son propre rôle
+                        seulement pour quitter le rôle de Superadmin). Le serveur décide (mot de passe, code, motif). */}
+                    {isSuperadmin && !isDeleted && !isPartner && (user.id !== me?.id || isSuper) && (
+                      <Button variant="secondary" size="sm" onClick={() => setRoleTarget(user)}>
+                        {user.id === me?.id ? 'Quitter le rôle de Superadmin' : 'Changer le rôle'}
+                      </Button>
+                    )}
+
+                    {/* Finition 3d (point 2a) : le SUPERADMIN change le numéro d'un ADMIN (jamais d'un SUPERADMIN, jamais le sien ici) */}
+                    {isSuperadmin && isAdmin && !isDeleted && user.id !== me?.id && (
+                      <Button variant="secondary" size="sm" onClick={() => setPhoneTarget(user)}>
+                        Changer le numéro
                       </Button>
                     )}
 
@@ -575,7 +597,7 @@ export default function AdminUsersManagementPage() {
                           Voir la fiche partenaire
                         </LinkButton>
                       ) : (
-                        <span className="text-sm text-fg-muted">Statut géré depuis la fiche partenaire</span>
+                        <span className="text-sm text-muted-foreground">Statut géré depuis la fiche partenaire</span>
                       )
                     )}
 
@@ -647,27 +669,27 @@ export default function AdminUsersManagementPage() {
           <TextInput label="Numéro de téléphone (Sénégal)" type="tel" required inputMode="tel" placeholder="77 123 45 67" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="tabular-nums" />
           <TextInput label="Email (facultatif)" type="email" placeholder="contact@domaine.sn" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
 
-          <div className="rounded-xl border border-border bg-surface-sunken p-3 text-sm text-fg-muted">
+          <div className="rounded-xl border border-border bg-background p-3 text-sm text-muted-foreground">
             {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
-            <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+            <p className="font-semibold text-foreground-strong">Mot de passe choisi par le titulaire</p>
             <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.</p>
           </div>
 
           <fieldset className="space-y-2">
-            <legend className="text-sm font-semibold text-fg">Rôle</legend>
+            <legend className="text-sm font-semibold text-foreground-strong">Rôle</legend>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 aria-pressed={newRole === 'CONTROLEUR'}
                 onClick={() => setNewRole('CONTROLEUR')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'CONTROLEUR' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                  newRole === 'CONTROLEUR' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
                 }`}
               >
-                <QrCode size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <QrCode size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Contrôleur</span>
-                  <span className="block text-sm text-fg-muted">Scanne les billets des événements où un partenaire l’affecte</span>
+                  <span className="block text-sm font-semibold text-foreground-strong">Contrôleur</span>
+                  <span className="block text-sm text-muted-foreground">Scanne les billets des événements où un partenaire l’affecte</span>
                 </span>
               </button>
               {/* Lot 9 bis (R71, B33) : créer un administrateur ou un superadmin est réservé au SUPERADMIN */}
@@ -678,27 +700,13 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={newRole === 'ADMIN'}
                 onClick={() => setNewRole('ADMIN')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'ADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                  newRole === 'ADMIN' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
                 }`}
               >
-                <Key size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <Key size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Administrateur</span>
-                  <span className="block text-sm text-fg-muted">Agit selon les droits que vous lui donnez</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-pressed={newRole === 'SUPERADMIN'}
-                onClick={() => setNewRole('SUPERADMIN')}
-                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'SUPERADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
-                }`}
-              >
-                <ShieldCheck size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Superadmin</span>
-                  <span className="block text-sm text-fg-muted">Tous les droits, dont les réglages et la création d’administrateurs</span>
+                  <span className="block text-sm font-semibold text-foreground-strong">Administrateur</span>
+                  <span className="block text-sm text-muted-foreground">Agit selon les droits que vous lui donnez</span>
                 </span>
               </button>
                 </>
@@ -708,24 +716,26 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={newRole === 'CLIENT'}
                 onClick={() => setNewRole('CLIENT')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'CLIENT' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                  newRole === 'CLIENT' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
                 }`}
               >
-                <User size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <User size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Client</span>
-                  <span className="block text-sm text-fg-muted">Achète des billets, sans accès professionnel</span>
+                  <span className="block text-sm font-semibold text-foreground-strong">Client</span>
+                  <span className="block text-sm text-muted-foreground">Achète des billets, sans accès professionnel</span>
                 </span>
               </button>
             </div>
           </fieldset>
+          {isSuperadmin && (
+            <p className="text-sm text-muted-foreground">Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
+          )}
 
-          <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-bg p-3 text-sm text-info-fg">
+          <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-soft p-3 text-sm text-info-text">
             <Info size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <span>
               {newRole === 'CONTROLEUR' && 'À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.'}
               {newRole === 'ADMIN' && 'Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.'}
-              {newRole === 'SUPERADMIN' && 'Tous les droits, dont les réglages de la plateforme et la création d’administrateurs.'}
               {newRole === 'CLIENT' && 'Achète des billets et parraine ses proches, sans accès professionnel.'}
             </span>
           </p>
@@ -754,12 +764,12 @@ export default function AdminUsersManagementPage() {
           maxWidth="lg"
         >
           <div className="space-y-4">
-            <p className="text-sm text-fg-muted">
+            <p className="text-sm text-muted-foreground">
               Partez d’un profil prêt, puis ajustez les cases. Un droit qui modifie amène toujours le droit de voir.
             </p>
 
             {permsState === 'loading' && (
-              <p role="status" className="py-6 text-center text-sm text-fg-muted">Chargement…</p>
+              <p role="status" className="py-6 text-center text-sm text-muted-foreground">Chargement…</p>
             )}
             {permsState === 'error' && (
               <StatusBanner tone="danger" announce="alert" title="Droits illisibles">
@@ -788,22 +798,22 @@ export default function AdminUsersManagementPage() {
               <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
                 {PERMISSION_GROUPS.map((group) => (
                   <fieldset key={group.title} className="space-y-2 rounded-2xl border border-border p-3">
-                    <legend className="px-1 text-sm font-semibold text-fg">{group.title}</legend>
+                    <legend className="px-1 text-sm font-semibold text-foreground-strong">{group.title}</legend>
                     {group.permissions.filter((perm) => (ADMIN_PERMISSIONS as readonly string[]).includes(perm)).map((perm) => {
                       const isChecked = adminPermissions.includes(perm);
                       const inputId = `droit-${perm.replace('.', '-')}`;
                       return (
-                        <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-surface-sunken">
+                        <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-background">
                           <input
                             id={inputId}
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => togglePermissionItem(perm)}
-                            className="mt-1 h-5 w-5 flex-shrink-0 rounded border-border-strong accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="mt-1 h-5 w-5 flex-shrink-0 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           />
                           <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-fg">{permissionLabel(perm)}</span>
-                            <span className="block text-sm text-fg-muted">{permissionDescription(perm)}</span>
+                            <span className="block text-sm font-semibold text-foreground-strong">{permissionLabel(perm)}</span>
+                            <span className="block text-sm text-muted-foreground">{permissionDescription(perm)}</span>
                           </span>
                         </label>
                       );
@@ -858,6 +868,31 @@ export default function AdminUsersManagementPage() {
         error={statusError ?? undefined}
         maxLength={500}
       />
+
+      {/* Finition 3d (point 3) : changer le rôle ; un compte qui devient administrateur ouvre aussitôt sa grille de droits */}
+      {roleTarget && (
+        <RoleChangeDialog
+          user={roleTarget}
+          self={roleTarget.id === me?.id}
+          onClose={() => setRoleTarget(null)}
+          onChanged={(role: RoleLevel) => {
+            const changed = roleTarget;
+            setRoleTarget(null);
+            void fetchUsers();
+            if (role === 'ADMIN' && roleLevelOf(changed.role) === 'CLIENT') void handleOpenPermissions({ ...changed, role: 'ADMIN' });
+          }}
+        />
+      )}
+
+      {identityDialog}
+
+      {phoneTarget && (
+        <AdminPhoneChangeDialog
+          user={{ id: phoneTarget.id, first_name: phoneTarget.first_name, last_name: phoneTarget.last_name, phone: phoneTarget.phone || null }}
+          onClose={() => setPhoneTarget(null)}
+          onChanged={() => { void fetchUsers(); }}
+        />
+      )}
 
       {/* ConfirmDialog Anonymisation RGPD */}
       <ConfirmDialog

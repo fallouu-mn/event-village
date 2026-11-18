@@ -149,7 +149,13 @@ site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = ["https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
-jwt_expiry = 3600
+# Contre-vérification 2B (6.6, 6.7) : 10 minutes. L'API REST refuse aussitôt le jeton d'une session fermée (pré-requête
+# securite.db_pre_request) ; le temps réel et le stockage ne lisent pas auth.sessions et l'acceptent jusqu'à son échéance.
+# Production : tableau de bord Supabase, Project Settings > JWT Keys (https://supabase.com/dashboard/project/<ref>/settings/jwt),
+# champ « Access token expiry time » (onglet « Legacy JWT Secret » si le projet est passé aux nouvelles clés) = 600.
+# Équivalent par l'API de gestion : PATCH /v1/projects/<ref>/config/auth, {"jwt_exp": 600}.
+# Job e2e de la CI seulement : 3600 (.github/workflows/verify.yml, états de connexion capturés une fois et rejoués).
+jwt_expiry = 600
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
 # jwt_issuer = ""
 # Path to JWT signing key. DO NOT commit your signing keys file to git.

@@ -24,6 +24,7 @@ import type { RouteResult } from './acces-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { newAdminWith } from './terrain-helpers';
 import type { TestAdmin } from './notif-helpers';
+import { changeRoleByScreen, confirmIdentity } from './f3d-helpers';
 
 after(async () => {
     await assertLot9bisInvariants('droits-admin-9bis');
@@ -107,6 +108,9 @@ describe('R71 — POST /api/admin/users : créer un administrateur', () => {
     });
 
     test('témoin (vert dès l’écriture) : le SUPERADMIN crée un ADMIN → 200, rôle ADMIN dans user_roles', async () => {
+        // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : créer un ADMIN exige le mot de passe et le code
+        // administrateur de moins de 10 minutes. Assertions inchangées.
+        await confirmIdentity(superadmin);
         const res = await postUser(superadmin.accessToken, newUserBody('ADMIN'));
         assert.equal(res.status, 200, `création d’un ADMIN par le SUPERADMIN : ${show(res)}`);
         assert.ok((await rolesOf(String(res.body.userId))).includes('ADMIN'), 'rôle ADMIN posé');
@@ -145,18 +149,23 @@ describe('R71 — PATCH /api/admin/users : promouvoir, rétrograder, suspendre u
         assert.deepEqual(await rolesOf(target.userId), ['CLIENT', 'CONTROLEUR']);
     });
 
+    // Finition 3d (point 3 ; modification signalée au rapport) : promotion et rétrogradation par « Changer le rôle » (mot de
+    // passe, code, motif) ; le PATCH n'accorde plus ni ne retire ADMIN (409 ROLE_SCREEN_REQUIRED) ; le statut ne change pas.
     test('témoin (vert dès l’écriture) : le SUPERADMIN promeut, rétrograde et suspend un ADMIN → 200', async () => {
         const target = await newBuyer('r71-super-cible');
-        const up = await patchUser(superadmin.accessToken, { userId: target.userId, roles: ['CLIENT', 'ADMIN'] });
-        assert.equal(up.status, 200, `promotion par le SUPERADMIN : ${show(up)}`);
+        await confirmIdentity(superadmin);
+        const viaPatch = await patchUser(superadmin.accessToken, { userId: target.userId, roles: ['CLIENT', 'ADMIN'] });
+        assert.deepEqual([viaPatch.status, viaPatch.body.code], [409, 'ROLE_SCREEN_REQUIRED'], `PATCH : ${show(viaPatch)}`);
+        const up = await changeRoleByScreen(superadmin.accessToken, target.userId, { role: 'ADMIN', reason: 'Témoin R71 : promotion' });
+        assert.equal(up.status, 200, `promotion par le SUPERADMIN : ${JSON.stringify(up)}`);
         assert.ok((await rolesOf(target.userId)).includes('ADMIN'), 'ADMIN ajouté');
         const susp = await patchUser(superadmin.accessToken, { userId: target.userId, status: 'SUSPENDU', reason: REASON });
         assert.equal(susp.status, 200, `suspension d’un ADMIN par le SUPERADMIN : ${show(susp)}`);
         assert.equal(await statusOf(target.userId), 'SUSPENDU');
         const back = await patchUser(superadmin.accessToken, { userId: target.userId, status: 'ACTIF', reason: REASON });
         assert.equal(back.status, 200, `réactivation par le SUPERADMIN : ${show(back)}`);
-        const down = await patchUser(superadmin.accessToken, { userId: target.userId, roles: ['CLIENT'] });
-        assert.equal(down.status, 200, `rétrogradation par le SUPERADMIN : ${show(down)}`);
+        const down = await changeRoleByScreen(superadmin.accessToken, target.userId, { role: 'CLIENT', reason: 'Témoin R71 : rétrogradation' });
+        assert.equal(down.status, 200, `rétrogradation par le SUPERADMIN : ${JSON.stringify(down)}`);
         assert.deepEqual(await rolesOf(target.userId), ['CLIENT'], 'ADMIN retiré');
     });
 });
@@ -183,12 +192,18 @@ describe('R71 — user_roles_set en direct (acteur en paramètre)', () => {
         assert.deepEqual(await rolesOf(admin.userId), before, 'rôles inchangés');
     });
 
-    test('témoin (vert dès l’écriture) : acteur SUPERADMIN → ajout puis retrait du rôle ADMIN acceptés', async () => {
+    // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : le rôle ADMIN ne se donne plus en direct par
+    // user_roles_set, même par un SUPERADMIN : seulement par « Changer le rôle » ou à la création du compte, avec mot de passe
+    // et code (ROLE_SCREEN_REQUIRED sinon). Le témoin d'origine (ajout puis retrait acceptés) devient ce refus.
+    test('acteur SUPERADMIN en direct : ajout puis retrait du rôle ADMIN refusés (ROLE_SCREEN_REQUIRED) ; rôles inchangés', async () => {
         const client = await newBuyer('r71-rpc-super');
         const add = await rolesSet(client.userId, superadmin.userId, ['CLIENT', 'ADMIN']);
-        assert.equal(add.ok, true, JSON.stringify(add));
-        const remove = await rolesSet(client.userId, superadmin.userId, ['CLIENT']);
-        assert.equal(remove.ok, true, JSON.stringify(remove));
+        assert.deepEqual([add.ok, add.code], [false, 'ROLE_SCREEN_REQUIRED'], JSON.stringify(add));
         assert.deepEqual(await rolesOf(client.userId), ['CLIENT']);
+        const admin = await anotherAdmin('r71-rpc-super-retrait');
+        const before = await rolesOf(admin.userId);
+        const remove = await rolesSet(admin.userId, superadmin.userId, ['CLIENT']);
+        assert.deepEqual([remove.ok, remove.code], [false, 'ROLE_SCREEN_REQUIRED'], JSON.stringify(remove));
+        assert.deepEqual(await rolesOf(admin.userId), before, 'rôles inchangés');
     });
 });

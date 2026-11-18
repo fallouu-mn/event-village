@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth, ADMIN_PERMISSIONS, AdminPermission } from '@/lib/admin/admin-auth';
+import { requireAdminIdentity } from '@/lib/admin/identity-check';
 import { withDependencies } from '@/lib/admin/permission-profiles';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
@@ -52,10 +53,14 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/admin/permissions
  * Attribue ou révoque des permissions granulaires pour un profil ADMIN (SUPERADMIN STRICT)
+ * Contre-vérification de la finition 3d (T4) : mot de passe et code administrateur de moins de 10 minutes exigés
+ * (requireAdminIdentity), comme pour créer un ADMIN : une session de Superadmin laissée ouverte ne suffit plus.
  */
 export async function POST(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requireSuperadmin: true });
     if (!auth.authorized) return auth.errorResponse!;
+    const identity = await requireAdminIdentity(req, auth.user!.id);
+    if (!identity.ok) return identity.response;
 
     try {
         let body: { adminId: string; permissions: string[] };

@@ -1836,6 +1836,73 @@ const CATALOG = {
         sms: (_d, ctx) => `${SMS_PREFIX}une adresse email a été ajoutée à votre compte. Si ce n'est pas vous : ${appLink(ctx, '/aide')}`,
         sample: {},
     }),
+    // Finition 3d (point 4a) : espèces d'une vente au guichet marquées rendues par un admin, à la place de l'organisatrice ;
+    // le motif est écrit. Lien vers l'onglet Clôture du pilotage (liste des espèces à rembourser).
+    CASH_REFUND_MARKED_BY_ADMIN: define('CASH_REFUND_MARKED_BY_ADMIN', {
+        label: 'Espèces marquées rendues par l’administration', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        link: (d) => partnerEventPath(d, 'cloture'),
+        inApp: (d) => ({
+            title: 'Espèces marquées rendues par l’administration',
+            content: `L'administration a marqué rendues les espèces de la vente ${text(d, 'reference')} (${money(d, 'amount')}) pour ${q(text(d, 'title'))}. Motif : ${sentence(text(d, 'reason'))}`,
+        }),
+        sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, reference: '1F6E2B9C', amount: 6_000, reason: 'Espèces rendues par la billetterie du lieu' },
+    }),
+    // Finition 3d (point 3) : un compte devient SUPERADMIN ; alerte (SMS et cloche) à chaque SUPERADMIN actif, l'auteur
+    // compris. Pire cas : deux noms tronqués à 25 caractères, 152 septets, un segment GSM-7.
+    SUPERADMIN_PROMOTED: define('SUPERADMIN_PROMOTED', {
+        label: 'Nouveau Superadmin (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        link: () => '/admin/users',
+        inApp: (d) => ({
+            title: 'Nouveau Superadmin',
+            content: `${text(d, 'user_name')} est maintenant Superadmin, nommé par ${text(d, 'actor_name')}. Si ce n’est pas prévu, réagissez tout de suite : changez son rôle depuis Comptes.`,
+        }),
+        // Run 299 (R74) : nom tronqué (« ... ») sans point ajouté derrière (endWithPeriod)
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 25)} est maintenant Superadmin, nommé par ${endWithPeriod(smsVar(text(d, 'actor_name'), 25))} Si ce n'est pas prévu, réagissez tout de suite.`,
+        sample: { user_name: 'Mame Diarra Bousso Ndiaye Diop', actor_name: 'Aminata Sophie Gueye Sarr Fall' },
+    }),
+    // Finition 3d (point 2c) : un code de secours a servi (SMS à l'ancien numéro, écrit dans la ligne d'envoi ; email).
+    ADMIN_BACKUP_CODE_USED: define('ADMIN_BACKUP_CODE_USED', {
+        label: 'Code de secours utilisé (alerte)', channels: ['SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: null,
+        link: () => '/admin/securite',
+        inApp: (d) => ({
+            title: 'Code de secours utilisé',
+            content: `Un code de secours de votre compte Superadmin vient de servir pour ouvrir l’administration. Il vous en reste ${formatInteger(count(d, 'remaining'))}. Si ce n’est pas vous, alertez tout de suite un autre Superadmin et créez de nouveaux codes.`,
+        }),
+        sms: () => `${SMS_PREFIX}un code de secours de votre compte Superadmin vient de servir. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`,
+        sample: { remaining: 9 },
+    }),
+    // Finition 3d (points 2a et 2c) : SMS à l'ANCIEN numéro (sans compte : l'envoyeur viserait le nouveau). EMAIL déclaré
+    // (G.49) comme PHONE_CHANGED ; la ligne à l'ancien numéro reste SMS seul, l'email au compte part avec
+    // ADMIN_PHONE_CONFIRMED (un seul email pour un seul changement).
+    ADMIN_PHONE_CHANGED: define('ADMIN_PHONE_CHANGED', {
+        label: 'Numéro d’un administrateur remplacé (ancien numéro)', channels: ['SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: null,
+        link: () => '/profile',
+        inApp: (d) => ({
+            title: 'Numéro de téléphone remplacé',
+            content: bool(d, 'by_self')
+                ? 'Le numéro de votre compte Superadmin a été remplacé. Si ce n’est pas vous, alertez tout de suite un autre Superadmin.'
+                : 'Le Superadmin a remplacé le numéro de votre compte administrateur. L’ancien téléphone ne sert plus pour vos codes.',
+        }),
+        sms: (d) => (bool(d, 'by_self')
+            ? `${SMS_PREFIX}le numéro de votre compte Superadmin a été remplacé. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`
+            : `${SMS_PREFIX}le Superadmin a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.`),
+        sample: { by_self: false },
+    }),
+    // Finition 3d (points 2a et 2c) : SMS au NOUVEAU numéro et cloche au compte
+    ADMIN_PHONE_CONFIRMED: define('ADMIN_PHONE_CONFIRMED', {
+        label: 'Numéro d’un administrateur confirmé (nouveau numéro)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        link: () => '/profile',
+        inApp: (d) => ({
+            title: 'Numéro de téléphone changé',
+            content: bool(d, 'by_self')
+                ? 'Le numéro de votre compte Superadmin a été remplacé. Vos autres appareils sont déconnectés.'
+                : 'Le Superadmin a remplacé le numéro de votre compte administrateur. Les codes administrateur arrivent désormais sur ce numéro.',
+        }),
+        sms: (d) => (bool(d, 'by_self')
+            ? `${SMS_PREFIX}ce numéro est maintenant celui de votre compte Superadmin. Vos autres appareils sont déconnectés.`
+            : `${SMS_PREFIX}ce numéro est maintenant celui de votre compte administrateur. Reconnectez-vous avec votre mot de passe.`),
+        sample: { by_self: false },
+    }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
     OTP_PASSWORD_RESET: defineSync('OTP_PASSWORD_RESET', 'Code de réinitialisation du mot de passe'),
@@ -1846,6 +1913,8 @@ const CATALOG = {
     // Lot 9 quinquies (A2, A3)
     ACCOUNT_ACTIVATION: defineSync('ACCOUNT_ACTIVATION', 'Lien d’activation d’un compte créé par un administrateur'),
     OTP_ADMIN: defineSync('OTP_ADMIN', 'Code administrateur'),
+    // Finition 3d (point 2a) : code au nouveau numéro d'un administrateur, à dicter au Superadmin
+    OTP_ADMIN_PHONE: defineSync('OTP_ADMIN_PHONE', 'Code au nouveau numéro d’un administrateur'),
     // N26 (tâche 48) : lien de vérification d'une adresse email, seul envoi vers une adresse non vérifiée.
     EMAIL_VERIFICATION: defineSyncEmail('EMAIL_VERIFICATION', 'Vérification de l’adresse email'),
 } satisfies { readonly [T in NotificationType]: NotificationTemplate<TemplateData[T]> };
@@ -1989,6 +2058,9 @@ export function renderSyncSms(type: SyncType, data: { code?: string; firstName?:
         // Lot 9 quinquies (A3 : AUTH-05) : texte du chef de projet
         case 'OTP_ADMIN':
             return `${SMS_PREFIX}code administrateur ${code}. Ne le donnez à personne. Valable 10 minutes.`;
+        // Finition 3d (point 2a) : la personne dicte ce code au Superadmin qui change son numéro
+        case 'OTP_ADMIN_PHONE':
+            return `${SMS_PREFIX}code ${code} pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au Superadmin. Valable 10 minutes.`;
         case 'CONTROLLER_INVITE': {
             const link = typeof data.setupLink === 'string' ? data.setupLink.trim() : '';
             if (!/^https?:\/\//.test(link)) throw new TemplateDataError('setupLink', 'absent ou illisible');
