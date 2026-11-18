@@ -312,4 +312,9 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/events/CardLiveBadge.tsx',
     'app/admin/a-la-une/page.tsx',
     'app/admin/a-la-une/FeaturedDialogs.tsx',
+    'components/event-page/EventTicketing.tsx',
+    'components/event-page/LiveOnPoster.tsx',
+    'components/event-page/PendingPaymentSlot.tsx',
+    'components/event-page/ShareButton.tsx',
+    'components/event-page/VenueMap.tsx',
 ];

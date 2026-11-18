@@ -967,7 +967,31 @@ export const SCREENS: readonly Screen[] = [
         id: 'design-hors-ligne', titre: 'Design 1a — page hors ligne (« Vous n’avez pas de réseau. »)', role: 'anonyme', needsIds: false, path: () => '/hors-ligne',
         ready: async ({ page }) => { await expectHeading(page, /^vous n.avez pas de réseau\.$/i); },
     },
-    { id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200 },
+    {
+        id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200,
+        // Design 1b (point 6) : fiche préparée par le serveur ; billetterie (îlot) prête quand son titre est affiché
+        ready: async ({ page }) => { await expect(page.getByRole('heading', { name: /^billetterie$/i }).first()).toBeVisible({ timeout: 30_000 }); },
+    },
+    // Design 1b (point 11) : « En cours · se termine vers {heure} », calculé sur le téléphone. « ce soir » commence 45 min
+    // après la graine, pour 5 h : l'horloge de la page est avancée de 2 h (page.clock), dans sa fenêtre.
+    {
+        id: 'fiche-en-cours', titre: 'Fiche — événement en cours (« En cours · se termine vers … »)', role: 'anonyme', needsIds: true,
+        path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200,
+        actions: async ({ page }) => {
+            await page.clock.setFixedTime(new Date(Date.now() + 2 * 3600_000));
+            await page.reload();
+            await expect(page.getByText(/en cours · se termine vers \d{2}:\d{2}/i).first()).toBeVisible({ timeout: 30_000 });
+        },
+    },
+    // Design 1b (point 7) : bandeau de paiement en attente sur la fiche, tant que le serveur bloque un nouvel achat
+    {
+        id: 'fiche-paiement-en-attente', titre: 'Fiche — paiement déjà en attente (« Suivre le paiement », « Annuler ce paiement »)', role: 'client', needsIds: true,
+        path: (i) => `/events/${ids(i).events.publieComplet.id}`, expectStatus: 200,
+        ready: async ({ page }) => {
+            await expect(page.getByText(/un paiement est déjà en attente pour cet événement/i).first()).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('button', { name: /^annuler ce paiement$/i }).first()).toBeVisible();
+        },
+    },
     {
         id: 'evenement-suspendu', titre: 'Page publique — événement suspendu (bandeau, sans achat)', role: 'anonyme', needsIds: true,
         path: (i) => `/events/${ids(i).events.suspendu.id}`, expectStatus: 200,
@@ -1860,6 +1884,8 @@ export const SCREENS: readonly Screen[] = [
             // (lg:hidden) porte aussi « Acheter (…) », même action ; /^acheter/ visait les deux (run 77, mode strict).
             await page.getByRole('button', { name: /^acheter \d+ billets? \(/i }).click();
             await expect(page.getByRole('dialog').or(page.getByRole('alertdialog'))).toBeVisible();
+            // Design 1b (point 7) : opérateur choisi (grand bouton Wave sélectionné)
+            await page.getByRole('radio', { name: /^wave/i }).first().click();
         },
     },
     {
