@@ -46,7 +46,9 @@ export type Topic = 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY';
 export type Audience = 'CLIENT' | 'PARTNER' | 'CONTROLLER' | 'ADMIN' | 'ANY';
 export type SuspendedPolicy = 'BLOCK' | 'ALLOW';
 export type AdminPermission =
-    | 'events.read' | 'partners.read' | 'refunds.manage' | 'payments.read' | 'notifications.read';
+    | 'events.read' | 'partners.read' | 'refunds.manage' | 'payments.read' | 'notifications.read'
+    /** Lot 11a : établissement à valider. */
+    | 'partners.validate';
 
 /** Types journalisés seulement (OTP et invitation d'un contrôleur) : le code n'est jamais stocké. */
 export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE'
@@ -163,6 +165,21 @@ export interface TemplateData {
     HALL_RESERVATION_CANCELLED_PRO: HallReservationData & HallCancelData;
     HALL_PAYMENT_REFUNDED: HallReservationData & { payment_id: string; amount: number; operator?: string | null };
     HALL_VALIDATION_DECIDED: { hall_id: string; hall_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
+    // Lot 11a : données de table_notif_data (réservation de table), plus les champs propres à chaque avis
+    TABLE_RESERVATION_CONFIRMED: TableReservationData;
+    TABLE_REQUEST_SENT: TableReservationData;
+    TABLE_REQUEST_TO_ANSWER: TableReservationData;
+    TABLE_NEW_RESERVATION: TableReservationData;
+    TABLE_REQUEST_REFUSED: TableReservationData & TableCancelData;
+    TABLE_REQUEST_EXPIRED: TableReservationData & TableCancelData;
+    TABLE_HOLD_EXPIRED: TableReservationData;
+    TABLE_RESERVATION_CANCELLED: TableReservationData & TableCancelData;
+    TABLE_RESERVATION_CANCELLED_PRO: TableReservationData & TableCancelData;
+    TABLE_NO_SHOW: TableReservationData & Partial<TableCancelData>;
+    TABLE_PAYMENT_REFUNDED: TableReservationData & { payment_id: string; amount: number; operator?: string | null };
+    TABLE_REMINDER: TableReservationData;
+    VENUE_VALIDATION_DECIDED: { venue_id: string; venue_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
+    ADMIN_VENUE_SUBMITTED: { venue_id: string; venue_name: string; kind?: string; city?: string | null; resubmitted?: boolean };
     PROMOTION_DECIDED: EventData & { promotion_id: string; status: 'APPROUVEE' | 'REFUSEE' | string; reason?: string | null };
     CONTROLLER_ASSIGNED: Partial<EventData> & { assignment_id?: string; entry_point: string | null; can_accept_cash: boolean; events?: ControllerEventRef[] };
     CONTROLLER_UNASSIGNED: Partial<EventData> & { assignment_id?: string; events?: ControllerEventRef[] };
@@ -251,7 +268,7 @@ export interface TemplateData {
      * complétés, `event_count` = événements soumis, `company` = société de l'unique candidature nouvelle (absente dès qu'il y
      * a plus d'un élément), `refs` = références déjà comptées.
      */
-    ADMIN_REVIEW_SMS: { partner_count: number; event_count: number; company?: string | null; refs?: string[] };
+    ADMIN_REVIEW_SMS: { partner_count: number; event_count: number; venue_count?: number; company?: string | null; refs?: string[] };
     /** Lot 9 quinquies (A1 : AUTH-01) : 10e échec de mot de passe sur le compte, une fois par jour (`day` de Dakar). */
     ACCOUNT_LOGIN_FAILURES: { day?: string };
     /** Lot 9 quinquies (C2 : AUTH-09) : nouvelle adresse email vérifiée sur le compte (aucune donnée : jamais l'adresse dans un SMS). */
@@ -287,6 +304,30 @@ export interface HallReservationData {
     balance_amount?: number | null;
     balance_due_at?: string | null;
     cancellation_policy?: string | null;
+}
+
+/** Lot 11a : données communes d'un avis de réservation de table (table_notif_data). */
+export interface TableReservationData {
+    reservation_id: string;
+    venue_id?: string;
+    venue_name?: string | null;
+    date: string;
+    time: string;
+    end_time?: string | null;
+    guests: number;
+    table_number?: string | null;
+    deposit_amount: number;
+    total_amount: number;
+    paid_amount: number;
+    response_due_at?: string | null;
+}
+
+/** Lot 11a : fin d'une réservation de table (table_close_apply). */
+export interface TableCancelData {
+    origin: 'CLIENT' | 'ETABLISSEMENT' | 'EVENT_VILLAGE' | 'SANS_REPONSE' | 'REFUSEE' | 'ABSENT' | string;
+    refund_amount: number;
+    refund_percent?: number | null;
+    reason?: string | null;
 }
 
 /** Lot 10a : annulation ou délai dépassé (hall_cancel_apply). */

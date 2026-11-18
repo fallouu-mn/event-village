@@ -386,6 +386,12 @@ const SAMPLE_ID = {
 /** Lot 10a : données d'exemple d'une réservation de salle (rendu des modèles et tests). */
 const HALL_SAMPLE_DATA = { reservation_id: SAMPLE_ID.reservation, hall_id: SAMPLE_ID.reservation, hall_name: 'Salle des fêtes de Ngor', start_date: '2026-12-05', end_date: '2026-12-06', mode: 'JOUR', total_amount: 420000, paid_amount: 126000 } as const;
 
+/** Lot 11a : données d'exemple d'une réservation de table (rendu des modèles et tests). */
+const TABLE_SAMPLE_DATA = {
+    reservation_id: SAMPLE_ID.reservation, venue_id: SAMPLE_ID.reservation, venue_name: 'Le Grand Bleu', date: '2026-12-05', time: '20:00',
+    end_time: '22:00', guests: 4, table_number: '12', deposit_amount: 20000, total_amount: 21000, paid_amount: 21000,
+} as const;
+
 /** Finition 1 (E-20) : données d'exemple des avis d'invitation de contrôleur à la partenaire. */
 const SAMPLE_TEAM_NOTICE = {
     invitation_id: 'b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04',
@@ -1242,6 +1248,180 @@ const CATALOG = {
         },
         sample: { hall_id: SAMPLE_ID.reservation, hall_name: 'Salle des fêtes de Ngor', decision: 'REFUSER', reason: 'Photos manquantes.' },
     }),
+    // Lot 11a : parcours de réservation d'une table (avis mis en file par table_reserve, table_payment_confirm,
+    // table_close_apply, table_reservation_respond, table_reservations_tick et venue_validation_decide). Décision du
+    // client : chaque étape sur les 4 canaux (cloche, push, email, SMS d'un segment GSM-7) ; le rappel est optionnel
+    // (sujet « Rappels »). Aucun mot technique.
+    TABLE_RESERVATION_CONFIRMED: define('TABLE_RESERVATION_CONFIRMED', {
+        label: 'Réservation de table confirmée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => ({
+            title: 'Table réservée',
+            content: `Votre table chez ${venueName(d)} est réservée ${tablePeriod(d)} pour ${guestsText(d)}.${num(d, 'paid_amount') > 0 ? ` Acompte payé : ${money(d, 'paid_amount')}.` : ''} En cas d’empêchement, annulez depuis vos réservations.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}table réservée chez ${smsVar(text(d, 'venue_name'), 25)} ${smsTablePeriod(d)} pour ${count(d, 'guests')} pers. ${num(d, 'paid_amount') > 0 ? `Acompte payé : ${smsAmount(num(d, 'paid_amount'))}.` : 'Bon appétit !'}`,
+        sample: TABLE_SAMPLE_DATA,
+    }),
+    TABLE_REQUEST_SENT: define('TABLE_REQUEST_SENT', {
+        label: 'Demande de table envoyée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => ({
+            title: 'Demande envoyée',
+            content: `Votre demande de table chez ${venueName(d)} ${tablePeriod(d)} pour ${guestsText(d)} est envoyée. L’établissement répond au plus tard le ${formatDateTime(iso(d, 'response_due_at'))} ; sans réponse, la demande est annulée${num(d, 'paid_amount') > 0 ? ' et l’acompte vous est rendu' : ''}.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}demande envoyée à ${smsVar(text(d, 'venue_name'), 25)} pour ${smsTablePeriod(d)}, ${count(d, 'guests')} pers. Réponse avant le ${smsShortDateTime(iso(d, 'response_due_at'))}, sinon ${num(d, 'paid_amount') > 0 ? 'acompte rendu.' : 'elle est annulée.'}`,
+        sample: { ...TABLE_SAMPLE_DATA, response_due_at: '2026-12-05T18:00:00Z' },
+    }),
+    TABLE_REQUEST_TO_ANSWER: define('TABLE_REQUEST_TO_ANSWER', {
+        label: 'Demande de table à accepter', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'TABLE_RESERVATION',
+        link: () => '/partner/tables',
+        inApp: (d) => ({
+            title: 'Demande à accepter',
+            content: `Nouvelle demande chez ${venueName(d)} : ${guestsText(d)} ${tablePeriod(d)}${optText(d, 'table_number') ? `, table ${text(d, 'table_number')}` : ''}. Acceptez-la ou refusez-la avant le ${formatDateTime(iso(d, 'response_due_at'))} ; sans réponse, elle est annulée${num(d, 'paid_amount') > 0 ? ' et le client remboursé' : ''}.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}demande de table chez ${smsVar(text(d, 'venue_name'), 20)} : ${count(d, 'guests')} pers. ${smsTablePeriod(d)}. Répondez avant le ${smsShortDateTime(iso(d, 'response_due_at'))}, sinon elle sera annulée.`,
+        sample: { ...TABLE_SAMPLE_DATA, response_due_at: '2026-12-05T18:00:00Z' },
+    }),
+    TABLE_NEW_RESERVATION: define('TABLE_NEW_RESERVATION', {
+        label: 'Nouvelle réservation de table', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'TABLE_RESERVATION',
+        link: () => '/partner/tables',
+        inApp: (d) => ({
+            title: 'Nouvelle réservation',
+            content: `${venueName(d, true)} : ${guestsText(d)} ${tablePeriod(d)}${optText(d, 'table_number') ? `, table ${text(d, 'table_number')}` : ''}.${num(d, 'paid_amount') > 0 ? ` Acompte payé : ${money(d, 'paid_amount')}.` : ''}`,
+        }),
+        sms: (d) => `${SMS_PREFIX}nouvelle réservation chez ${smsVar(text(d, 'venue_name'), 20)} : ${count(d, 'guests')} pers. ${smsTablePeriod(d)}${optText(d, 'table_number') ? `, table ${smsVar(text(d, 'table_number'), 10)}` : ''}.`,
+        sample: TABLE_SAMPLE_DATA,
+    }),
+    TABLE_REQUEST_REFUSED: define('TABLE_REQUEST_REFUSED', {
+        label: 'Demande de table refusée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => {
+            const reason = optText(d, 'reason');
+            return {
+                title: 'Demande refusée',
+                content: `${venueName(d, true)} ne peut pas vous recevoir ${tablePeriod(d)}.${reason ? ` Motif : ${sentence(reason)}` : ''} ${tableRefundSentence(d)}`,
+            };
+        },
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'venue_name'), 25)} ne peut pas vous recevoir ${smsTablePeriod(d)}. ${num(d, 'refund_amount') > 0 ? `Acompte de ${smsAmount(num(d, 'refund_amount'))} remboursé.` : 'Essayez une autre heure.'}`,
+        sample: { ...TABLE_SAMPLE_DATA, origin: 'REFUSEE', refund_amount: 21_000, refund_percent: 100, reason: 'Complet ce soir-là.' },
+    }),
+    TABLE_REQUEST_EXPIRED: define('TABLE_REQUEST_EXPIRED', {
+        label: 'Demande de table sans réponse', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => ({
+            title: 'Demande sans réponse',
+            content: `${venueName(d, true)} n’a pas répondu à temps : votre demande ${tablePeriod(d)} est annulée. ${tableRefundSentence(d)}`,
+        }),
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'venue_name'), 25)} n'a pas répondu à temps : demande du ${smsDay(iso(d, 'date'))} à ${text(d, 'time')} annulée. ${num(d, 'refund_amount') > 0 ? `Acompte de ${smsAmount(num(d, 'refund_amount'))} remboursé.` : 'Essayez une autre heure.'}`,
+        sample: { ...TABLE_SAMPLE_DATA, origin: 'SANS_REPONSE', refund_amount: 21_000, refund_percent: 100 },
+    }),
+    TABLE_HOLD_EXPIRED: define('TABLE_HOLD_EXPIRED', {
+        label: 'Acompte de table non payé à temps', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => ({
+            title: 'Acompte non payé à temps',
+            content: `L’acompte n’a pas été payé à temps : la table chez ${venueName(d)} ${tablePeriod(d)} est libérée. Vous pouvez refaire une demande.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}acompte non payé à temps : la table chez ${smsVar(text(d, 'venue_name'), 25)} ${smsTablePeriod(d)} est libérée. Refaites une demande si besoin.`,
+        sample: { ...TABLE_SAMPLE_DATA, paid_amount: 0 },
+    }),
+    TABLE_RESERVATION_CANCELLED: define('TABLE_RESERVATION_CANCELLED', {
+        label: 'Réservation de table annulée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => {
+            const origin = text(d, 'origin');
+            const reason = optText(d, 'reason');
+            const who = origin === 'ETABLISSEMENT' ? ' par l’établissement' : origin === 'EVENT_VILLAGE' ? ' par Event Village' : '';
+            return {
+                title: 'Réservation annulée',
+                content: `Votre réservation chez ${venueName(d)} ${tablePeriod(d)} est annulée${who}.${reason ? ` Motif : ${sentence(reason)}` : ''} ${tableRefundSentence(d)}`.trim(),
+            };
+        },
+        sms: (d) => {
+            const origin = text(d, 'origin');
+            const name = smsVar(text(d, 'venue_name'), 25);
+            const refund = num(d, 'refund_amount') > 0 ? `Acompte de ${smsAmount(num(d, 'refund_amount'))} remboursé.`
+                : num(d, 'paid_amount') > 0 ? 'Acompte non remboursé, annulation tardive.' : '';
+            if (origin === 'ETABLISSEMENT') return `${SMS_PREFIX}${name} a annulé votre réservation ${smsTablePeriod(d)}. ${refund || 'Désolé pour ce contretemps.'}`;
+            if (origin === 'EVENT_VILLAGE') return `${SMS_PREFIX}notre équipe a annulé votre réservation chez ${name} ${smsTablePeriod(d)}. ${refund}`.trim();
+            return `${SMS_PREFIX}réservation chez ${name} ${smsTablePeriod(d)} annulée. ${refund}`.trim();
+        },
+        sample: { ...TABLE_SAMPLE_DATA, origin: 'ETABLISSEMENT', refund_amount: 21_000, refund_percent: 100, reason: 'Cuisine fermée ce soir.' },
+    }),
+    TABLE_RESERVATION_CANCELLED_PRO: define('TABLE_RESERVATION_CANCELLED_PRO', {
+        label: 'Réservation de table annulée (établissement)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'TABLE_RESERVATION',
+        link: () => '/partner/tables',
+        inApp: (d) => {
+            const origin = text(d, 'origin');
+            const how = origin === 'CLIENT' ? 'annulée par le client' : origin === 'EVENT_VILLAGE' ? 'annulée par Event Village'
+                : origin === 'SANS_REPONSE' ? 'annulée faute de réponse dans le délai' : 'annulée';
+            return {
+                title: 'Réservation annulée',
+                content: `La réservation chez ${venueName(d)} ${tablePeriod(d)} (${guestsText(d)}) est ${how}. ${num(d, 'refund_amount') > 0 ? `Le client récupère ${money(d, 'refund_amount')}. ` : ''}La table est de nouveau libre.`,
+            };
+        },
+        sms: (d) => {
+            const origin = text(d, 'origin');
+            const name = smsVar(text(d, 'venue_name'), 20);
+            if (origin === 'SANS_REPONSE') return `${SMS_PREFIX}demande chez ${name} ${smsTablePeriod(d)} (${count(d, 'guests')} pers.) annulée faute de réponse. Le client est remboursé.`;
+            const by = origin === 'EVENT_VILLAGE' ? 'par Event Village' : 'par le client';
+            return `${SMS_PREFIX}réservation chez ${name} ${smsTablePeriod(d)} (${count(d, 'guests')} pers.) annulée ${by}. La table est libre.`;
+        },
+        sample: { ...TABLE_SAMPLE_DATA, origin: 'CLIENT', refund_amount: 21_000, refund_percent: 100 },
+    }),
+    TABLE_NO_SHOW: define('TABLE_NO_SHOW', {
+        label: 'Absence à une réservation de table', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => ({
+            title: 'Absence constatée',
+            content: `Vous n’êtes pas venu chez ${venueName(d)} ${tablePeriod(d)} : la table est libérée.${num(d, 'paid_amount') > 0 ? ' Selon les conditions de réservation, l’acompte n’est pas remboursé.' : ''}`,
+        }),
+        sms: (d) => `${SMS_PREFIX}absence constatée chez ${smsVar(text(d, 'venue_name'), 25)} ${smsTablePeriod(d)} : la table est libérée${num(d, 'paid_amount') > 0 ? " et l'acompte n'est pas remboursé." : '.'}`,
+        sample: TABLE_SAMPLE_DATA,
+    }),
+    TABLE_PAYMENT_REFUNDED: define('TABLE_PAYMENT_REFUNDED', {
+        label: 'Paiement de table remboursé', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TABLE_RESERVATION',
+        link: () => '/orders',
+        inApp: (d) => ({
+            title: 'Paiement remboursé',
+            content: `Votre paiement de ${money(d, 'amount')} pour ${venueName(d)} est arrivé alors que la réservation n’était plus possible (table reprise, réservation annulée ou déjà payée). Il vous est remboursé sur votre compte ${operatorLabel(field(d, 'operator'))}.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}votre paiement de ${smsAmount(num(d, 'amount'))} pour ${smsVar(text(d, 'venue_name'), 25)} n'a pas pu servir. Il vous est remboursé sur ${operatorLabel(field(d, 'operator'))}.`,
+        sample: { ...TABLE_SAMPLE_DATA, paid_amount: 0, payment_id: SAMPLE_ID.payment, amount: 21_000, operator: 'WAVE' },
+    }),
+    TABLE_REMINDER: define('TABLE_REMINDER', {
+        label: 'Rappel de réservation de table', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'REMINDER',
+        link: () => '/orders',
+        inApp: (d) => ({
+            title: 'Rappel de votre réservation',
+            content: `Votre table chez ${venueName(d)} vous attend ${tablePeriod(d)} pour ${guestsText(d)}. Un imprévu ? Annulez depuis vos réservations pour libérer la table.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}rappel : table chez ${smsVar(text(d, 'venue_name'), 25)} ${smsTablePeriod(d)} pour ${count(d, 'guests')} pers. Imprévu ? Annulez depuis l'application.`,
+        sample: TABLE_SAMPLE_DATA,
+    }),
+    VENUE_VALIDATION_DECIDED: define('VENUE_VALIDATION_DECIDED', {
+        label: 'Décision sur un établissement', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'TABLE_RESERVATION',
+        link: () => '/partner/tables',
+        inApp: (d) => {
+            const decision = text(d, 'decision');
+            const reason = optText(d, 'reason');
+            const name = venueName(d, true);
+            if (decision === 'VALIDER') return { title: 'Établissement validé', content: `${name} est validé : il est visible et réservable dès l’ouverture du service.` };
+            if (decision === 'REACTIVER') return { title: 'Établissement réactivé', content: `${name} est de nouveau visible et réservable.` };
+            if (decision === 'SUSPENDRE') return { title: 'Établissement suspendu', content: `${name} est suspendu : il n’est plus visible ni réservable.${reason ? ` Motif : ${sentence(reason)}` : ''} Les réservations déjà prises sont maintenues.` };
+            return { title: 'Établissement refusé', content: `${name} n’est pas accepté.${reason ? ` Motif : ${sentence(reason)}` : ''} Modifiez-le pour le proposer de nouveau.` };
+        },
+        sms: (d) => {
+            const decision = text(d, 'decision');
+            const reason = optText(d, 'reason');
+            const name = smsVar(text(d, 'venue_name'), 25);
+            if (decision === 'VALIDER') return `${SMS_PREFIX}votre établissement ${name} est validé : il est visible et réservable.`;
+            if (decision === 'REACTIVER') return `${SMS_PREFIX}votre établissement ${name} est de nouveau visible et réservable.`;
+            const what = decision === 'SUSPENDRE' ? 'est suspendu' : "n'est pas accepté";
+            return `${SMS_PREFIX}votre établissement ${name} ${what}.${reason ? ` Motif : ${dot(smsVar(reason, 50))}` : ''}`;
+        },
+        sample: { venue_id: SAMPLE_ID.reservation, venue_name: 'Le Grand Bleu', decision: 'REFUSER', reason: 'Photos manquantes.' },
+    }),
     PROMOTION_DECIDED: define('PROMOTION_DECIDED', {
         label: 'Décision sur une mise en avant', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'PROMOTION',
         link: (d) => partnerEventPath(d),
@@ -1340,6 +1520,16 @@ const CATALOG = {
             return { title: 'Événement à valider', content: `${q(text(d, 'title'))}${company ? ` de ${company}` : ''} attend votre validation.` };
         },
         sample: { ...SAMPLE_EVENT, company: 'Sabar Events' },
+    }),
+    // Lot 11a : établissement soumis à la validation (créé, ou refusé puis modifié) ; le SMS passe par ADMIN_REVIEW_SMS
+    ADMIN_VENUE_SUBMITTED: define('ADMIN_VENUE_SUBMITTED', {
+        label: 'Établissement à valider', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
+        link: () => '/admin/services',
+        inApp: (d) => ({
+            title: 'Établissement à valider',
+            content: `${q(text(d, 'venue_name'))}${optText(d, 'city') ? ` (${text(d, 'city')})` : ''} ${field(d, 'resubmitted') === true ? 'a été modifié et ' : ''}attend votre validation.`,
+        }),
+        sample: { venue_id: SAMPLE_ID.reservation, venue_name: 'Le Grand Bleu', kind: 'RESTAURANT', city: 'Dakar' },
     }),
     ADMIN_PARTNER_REGISTERED: define('ADMIN_PARTNER_REGISTERED', {
         label: 'Nouvelle candidature partenaire', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.read', inAppType: 'KYC',
@@ -2016,16 +2206,44 @@ const CATALOG = {
 export function adminReviewSms(d: object, ctx: RenderContext): string {
     const partners = count(d, 'partner_count');
     const events = count(d, 'event_count');
+    // Lot 11a : établissements soumis à la validation (absent des SMS mis en file avant le lot : 0)
+    const venues = optNum(d, 'venue_count') ?? 0;
     const company = optText(d, 'company');
     const link = appLink(ctx, '/admin/dashboard');
-    if (partners === 1 && events === 0 && company) {
+    if (partners === 1 && events === 0 && venues === 0 && company) {
         return `${SMS_PREFIX}nouvelle demande de partenaire "${smsVar(company, 40)}". Vérifiez son dossier : ${link}`;
     }
     const parts: string[] = [];
     if (partners > 0) parts.push(`${partners} demande(s) de partenaire`);
     if (events > 0) parts.push(`${events} événement(s)`);
-    if (parts.length === 0) throw new TemplateDataError('partner_count', 'et event_count à zéro : rien à valider');
+    if (venues > 0) parts.push(`${venues} établissement(s)`);
+    if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count et venue_count à zéro : rien à valider');
     return `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
+}
+
+/** Lot 11a : nom de l'établissement entre guillemets, sinon « votre établissement ». */
+function venueName(d: object, capital = false): string {
+    const name = optText(d, 'venue_name');
+    return name ? q(name) : capital ? 'Votre établissement' : 'votre établissement';
+}
+
+/** Lot 11a : « le 5 décembre 2026 à 20:00 » ; version SMS : « le 5 déc. à 20:00 ». */
+function tablePeriod(d: object): string {
+    return `le ${formatDate(iso(d, 'date'))} à ${text(d, 'time')}`;
+}
+
+function smsTablePeriod(d: object): string {
+    return `le ${smsDay(iso(d, 'date'))} à ${text(d, 'time')}`;
+}
+
+function guestsText(d: object): string {
+    const n = count(d, 'guests');
+    return `${formatInteger(n)} personne${n > 1 ? 's' : ''}`;
+}
+
+function tableRefundSentence(d: object): string {
+    if (num(d, 'refund_amount') > 0) return `Vous êtes remboursé de ${money(d, 'refund_amount')} sur votre compte de paiement.`;
+    return num(d, 'paid_amount') > 0 ? 'Selon les conditions de réservation, l’acompte n’est pas remboursé.' : '';
 }
 
 function hallName(d: object, capital = false): string {
