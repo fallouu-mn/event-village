@@ -7,7 +7,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
 import { THEME_BOOT_SCRIPT } from '@/lib/theme';
-import { NavigationProgress } from '@/components/ui/NavigationProgress';
+import { NavigationProgressDifferee } from '@/components/ui/NavigationProgressDifferee';
 
 // Plus Jakarta Sans auto-hébergée (police variable, sous-ensemble latin, graisses 200-800).
 // Source : @fontsource-variable/plus-jakarta-sans@5.3.0, licence SIL OFL 1.1 (app/fonts/OFL-PlusJakartaSans.txt).
@@ -87,7 +87,7 @@ export default function RootLayout({
           <ThemeProvider>
             <ServiceWorkerRegister />
             {/* Design 1a (point 7) : barre de progression des changements de page */}
-            <NavigationProgress />
+            <NavigationProgressDifferee />
             {/* Lot 7 (7.1, 7.5) : la synchronisation des billets hors ligne (téléchargés dans leur fenêtre, purgés
                 quand ils ne servent plus) est montée par AuthProvider et chargée à la demande, pour un compte
                 client seulement : elle n'est plus dans le JavaScript de chaque page. */}

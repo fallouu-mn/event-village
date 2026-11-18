@@ -35,13 +35,13 @@ describe('design 1a — toasts', () => {
         assert.equal(TOAST_DURATIONS.info, 4000);
         assert.equal(TOAST_DURATIONS.undoable, 6000);
         assert.equal(MAX_TOASTS, 3);
-        const src = read('components/ui/Toast.tsx');
+        const src = read('components/ui/Toast.tsx') + read('components/ui/ToastCard.tsx');
         assert.match(src, /type === 'error'[^?]*\?\s*null/, 'une erreur générale doit rester (durée null)');
         assert.match(src, /slice\(-\(MAX_TOASTS - 1\)\)/, 'au plus MAX_TOASTS toasts à la fois');
     });
 
     test('b et c. boutons « Annuler » et « Réessayer » de 44 px, Fermer étiqueté ; rôles status et alert', () => {
-        const src = read('components/ui/Toast.tsx');
+        const src = read('components/ui/Toast.tsx') + read('components/ui/ToastCard.tsx');
         assert.match(src, /label: 'Annuler'/);
         assert.match(src, /label: 'Réessayer'/);
         assert.match(src, /min-h-11[^"']*px-3/, 'bouton d\'action d\'au moins 44 px');
@@ -52,7 +52,7 @@ describe('design 1a — toasts', () => {
     });
 
     test('d. en bas sur téléphone, en haut à droite sur ordinateur', () => {
-        const src = read('components/ui/Toast.tsx');
+        const src = read('components/ui/Toast.tsx') + read('components/ui/ToastCard.tsx');
         assert.match(src, /fixed inset-x-4 bottom-24[^"]*sm:right-5[^"]*lg:bottom-auto lg:top-20/);
     });
 

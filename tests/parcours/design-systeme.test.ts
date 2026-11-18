@@ -1000,6 +1000,7 @@ const PRE_LOT5_UI_FILES = new Set<string>([
     'components/ui/Skeleton.tsx',
     'components/ui/ThemeToggle.tsx',
     'components/ui/Toast.tsx',
+    'components/ui/ToastCard.tsx',
 ]);
 
 // ── B. EVENT_STATUS_META ───────────────────────────────────────────────────

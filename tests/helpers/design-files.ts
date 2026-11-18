@@ -41,6 +41,7 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/ui/ThemeToggle.tsx',
     'components/notifications/NotificationBell.tsx',
     'components/ui/Toast.tsx',
+    'components/ui/ToastCard.tsx',
     'components/ui/EventMap.tsx',
     'app/controller/layout.tsx',
     'app/partner/layout.tsx',
@@ -293,6 +294,7 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/partner/events/[id]/loading.tsx',
     'app/admin/loading.tsx',
     'components/ui/NavigationProgress.tsx',
+    'components/ui/NavigationProgressDifferee.tsx',
     // Design 1a (point 5) : composants de base nouveaux et vitrine des captures
     'components/ui/Card.tsx',
     'components/ui/FilterChip.tsx',

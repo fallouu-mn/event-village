@@ -1,9 +1,10 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, Info, AlertTriangle, X, type LucideIcon } from 'lucide-react';
-import { IconButton } from './IconButton';
-import { cn } from './cn';
+import React, { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+
+// Cartes, icônes et minuterie : chargées au premier toast (et préchargées quand le navigateur est libre), jamais avec la page
+const loadToastList = () => import('./ToastCard');
+const ToastList = lazy(loadToastList);
 
 /**
  * Design 1a (direction.md, section 6) — LE système de retours de toute l'application.
@@ -18,6 +19,7 @@ import { cn } from './cn';
  *  - Jamais de code technique : un message qui en a l'air (CODE_EN_CAPITALES, « HTTP 500 », « Error: », JSON, balise) est
  *    remplacé par une phrase simple (garde-fou ; les textes viennent normalement de lib/api/public-error et de la base).
  * Animations : arrivée 200 ms décélérée, départ 150 ms accéléré, coupées si « réduire les animations » (app/globals.css).
+ * Affichage (ToastCard.tsx) chargé à la demande : la zone annoncée aux lecteurs d'écran est, elle, présente dès la page.
  */
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -52,7 +54,6 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const TOAST_DURATIONS = { success: 4000, undoable: 6000, info: 4000, warning: 6000 } as const;
 export const MAX_TOASTS = 3;
-const EXIT_MS = 150;
 export const GENERIC_ERROR = 'Quelque chose s’est mal passé. Réessayez dans un instant.';
 
 /** Garde-fou « jamais de code technique » : rend le message, ou une phrase simple s'il ressemble à un code. */
@@ -65,98 +66,6 @@ export function humanToastMessage(message: string): string {
   }
   return m;
 }
-
-const TOAST_CONFIG: Record<ToastType, { icon: LucideIcon; label: string; role: 'status' | 'alert'; iconClass: string; labelClass: string; borderClass: string }> = {
-  success: { icon: CheckCircle2, label: 'C’est fait', role: 'status', iconClass: 'bg-success-soft text-success-text', labelClass: 'text-success-text', borderClass: 'border-success-border' },
-  error: { icon: XCircle, label: 'Erreur', role: 'alert', iconClass: 'bg-danger-soft text-danger-text', labelClass: 'text-danger-text', borderClass: 'border-danger-border' },
-  info: { icon: Info, label: 'Information', role: 'status', iconClass: 'bg-info-soft text-info-text', labelClass: 'text-info-text', borderClass: 'border-info-border' },
-  warning: { icon: AlertTriangle, label: 'Attention', role: 'alert', iconClass: 'bg-warning-soft text-warning-text', labelClass: 'text-warning-text', borderClass: 'border-warning-border' },
-};
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-const ToastCard: React.FC<{ toast: ToastItem; onDismiss: (id: string) => void }> = ({ toast, onDismiss }) => {
-  const [isExiting, setIsExiting] = useState(false);
-  const paused = useRef({ hover: false, focus: false });
-  const remaining = useRef(toast.durationMs ?? 0);
-  const startedAt = useRef(Date.now());
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const config = TOAST_CONFIG[toast.type];
-  const Icon = config.icon;
-
-  const dismiss = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    if (prefersReducedMotion()) {
-      onDismiss(toast.id);
-      return;
-    }
-    setIsExiting(true);
-    setTimeout(() => onDismiss(toast.id), EXIT_MS);
-  }, [onDismiss, toast.id]);
-
-  const run = useCallback(() => {
-    if (toast.durationMs === null || remaining.current <= 0) return;
-    startedAt.current = Date.now();
-    timer.current = setTimeout(dismiss, remaining.current);
-  }, [dismiss, toast.durationMs]);
-
-  const pause = (key: 'hover' | 'focus', on: boolean): void => {
-    const wasPaused = paused.current.hover || paused.current.focus;
-    paused.current[key] = on;
-    const isPaused = paused.current.hover || paused.current.focus;
-    if (!wasPaused && isPaused && timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-      remaining.current -= Date.now() - startedAt.current;
-    } else if (wasPaused && !isPaused) {
-      run();
-    }
-  };
-
-  useEffect(() => {
-    run();
-    return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [run]);
-
-  return (
-    <div
-      onMouseEnter={() => pause('hover', true)}
-      onMouseLeave={() => pause('hover', false)}
-      onFocus={() => pause('focus', true)}
-      onBlur={() => pause('focus', false)}
-      role={config.role}
-      aria-atomic="true"
-      className={cn(
-        'pointer-events-auto flex items-start gap-3 rounded-xl border bg-popover p-3 pr-1.5 text-foreground shadow-popover',
-        config.borderClass,
-        isExiting ? 'toast-exit' : 'toast-enter',
-      )}
-    >
-      <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg', config.iconClass)} aria-hidden="true">
-        <Icon size={18} />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-1">
-        <p className={cn('text-sm font-semibold', config.labelClass)}>{config.label}</p>
-        <p className="break-words text-sm leading-relaxed text-foreground">{toast.message}</p>
-      </div>
-      {toast.action && (
-        <button
-          type="button"
-          onClick={() => { toast.action?.run(); dismiss(); }}
-          className="min-h-11 flex-shrink-0 rounded-lg px-3 text-sm font-bold text-primary-text hover:bg-primary-soft"
-        >
-          {toast.action.label}
-        </button>
-      )}
-      <IconButton aria-label="Fermer le message" onClick={dismiss}>
-        <X size={18} />
-      </IconButton>
-    </div>
-  );
-};
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -185,6 +94,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  useEffect(() => {
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    const warm = () => { void loadToastList(); };
+    if (w.requestIdleCallback) w.requestIdleCallback(warm);
+    else setTimeout(warm, 3000);
+  }, []);
+
   const toast = useMemo<ToastContextType['toast']>(
     () => ({
       success: (msg, options) => addToast('success', msg, options),
@@ -201,9 +117,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {children}
       {/* Téléphone : en bas, au-dessus de la barre de navigation ; ordinateur : en haut à droite, sous l'en-tête */}
       <div className="pointer-events-none fixed inset-x-4 bottom-24 z-[100] flex flex-col gap-3 sm:inset-x-auto sm:right-5 sm:w-full sm:max-w-md lg:bottom-auto lg:top-20">
-        {toasts.map((t) => (
-          <ToastCard key={t.id} toast={t} onDismiss={removeToast} />
-        ))}
+        {toasts.length > 0 && (
+          <Suspense fallback={null}>
+            <ToastList toasts={toasts} onDismiss={removeToast} />
+          </Suspense>
+        )}
       </div>
     </ToastContext.Provider>
   );
