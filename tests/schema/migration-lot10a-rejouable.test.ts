@@ -28,6 +28,9 @@ const LOT10A_MIGRATIONS = [
     '20261122000006_l10a_validation.sql',
     // Messages du parcours
     '20261122000007_l10a_messages.sql',
+    // Correctifs de la contre-vérification (docs/audit-lot10a.md ; ajouts signalés au rapport) :
+    // T3, paiement confirmé après l'échéance du solde sans payer toute la réservation : rendu en entier
+    '20261122000008_l10a_cv_paiement_tardif.sql',
 ] as const;
 
 after(async () => {
