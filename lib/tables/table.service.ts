@@ -149,8 +149,10 @@ export class TableService {
 
     public static async deleteZone(zoneId: string, partnerUserId: string) {
         const partnerId = await this.resolvePartnerId(partnerUserId);
-        const { error } = await getServiceRoleClient().from('restaurant_zones').delete().eq('id', zoneId).eq('partner_id', partnerId);
+        const { data, error } = await getServiceRoleClient().from('restaurant_zones').delete().eq('id', zoneId).eq('partner_id', partnerId).select('id');
         if (error) throw dbRefusal(error, 'suppression de la zone');
+        // Contre-vérification de la 11a (constat) : zone d'une autre partenaire ou inconnue, rien supprimé → 404, jamais un faux succès
+        if (!data || data.length === 0) throw new PublicError('Zone introuvable.', 'ZONE_NOT_FOUND', 404);
         return { success: true };
     }
 
@@ -188,8 +190,10 @@ export class TableService {
 
     public static async deleteTable(tableId: string, partnerUserId: string) {
         const partnerId = await this.resolvePartnerId(partnerUserId);
-        const { error } = await getServiceRoleClient().from('restaurant_tables').delete().eq('id', tableId).eq('partner_id', partnerId);
+        const { data, error } = await getServiceRoleClient().from('restaurant_tables').delete().eq('id', tableId).eq('partner_id', partnerId).select('id');
         if (error) throw dbRefusal(error, 'suppression de la table');
+        // Contre-vérification de la 11a (constat) : table d'une autre partenaire ou inconnue, rien supprimé → 404, jamais un faux succès
+        if (!data || data.length === 0) throw new PublicError('Table introuvable.', 'TABLE_NOT_FOUND', 404);
         return { success: true };
     }
 

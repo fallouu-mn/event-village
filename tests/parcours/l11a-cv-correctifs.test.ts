@@ -9,6 +9,7 @@
  *  T5 acceptation par un établissement suspendu ou une partenaire suspendue : refusée, remboursée en entier.
  *  T6 menu public : identifiant exact seulement (nom complet, partiel ou « rest-<nom> » : 404).
  *  T7 réglages halls.* et tables.* par la route du SUPERADMIN : les 22, bornes de la base.
+ *  Constat : suppression d'une table ou d'une zone d'une autre partenaire : 404, jamais un faux succès.
  * Temps simulé comme dans les suites du lot (shiftReservation), jamais l'horloge. Faux SamirPay.
  */
 import '../helpers/env';
@@ -20,7 +21,7 @@ import { api, clientCancel, partnerAction, routeId, service, sql } from '../audi
 import { withFeatureFlags } from './terrain-helpers';
 import { setFiche } from '../audit/cvf1-helpers';
 import {
-    allChannels, dayFromNow, decideVenue, newBuyer, newPartner, newTable, newVenue, openTablesService, outboxOf, payConfirmed, refundsOf, reservation, reserveRpc,
+    allChannels, dayFromNow, decideVenue, newBuyer, newPartner, newTable, newVenue, newZone, openTablesService, outboxOf, payConfirmed, refundsOf, reservation, reserveRpc,
     shiftReservation, startIn, startPayment, tick, type Row, type TestPartner,
 } from './l11a-helpers';
 
@@ -258,5 +259,29 @@ describe('T7 — PUT /api/admin/finance-settings : les 22 réglages des salles e
         const client = await newBuyer('l11a-cv-reglages');
         const forbidden = await api('PUT', 'admin/finance-settings', { token: client.accessToken, body: { key: 'tables.hold_minutes', value: 15, reason: 'correctif T7 : client' } });
         assert.ok(forbidden.status === 401 || forbidden.status === 403, `client : ${forbidden.status}`);
+    });
+});
+
+describe('Constat — DELETE /api/partner/tables/[id] : jamais un faux succès', () => {
+    test('table ou zone d’une autre partenaire : 404, rien supprimé ; les siennes (sans réservation) : 200, supprimées', async () => {
+        const owner = await newPartner('l11a-cv-suppr-proprietaire');
+        const other = await newPartner('l11a-cv-suppr-autre');
+        const venue = await newVenue(owner);
+        const zone = await newZone(owner, venue, 'Terrasse');
+        const table = await newTable(owner, venue, 4, { zoneId: zone });
+        const otherTable = await routeId('DELETE', 'partner/tables/[id]', table, other.accessToken);
+        const otherZone = await routeId('DELETE', 'partner/tables/[id]', zone, other.accessToken, undefined, '?type=zone');
+        assert.deepEqual([otherTable.status, (otherTable.body as Row).error, otherZone.status, (otherZone.body as Row).error],
+            [404, 'Table introuvable.', 404, 'Zone introuvable.']);
+        assert.equal((await sql(`SELECT id FROM public.restaurant_tables WHERE id = $1`, [table])).length, 1, 'table d’une autre supprimée');
+        assert.equal((await sql(`SELECT id FROM public.restaurant_zones WHERE id = $1`, [zone])).length, 1, 'zone d’une autre supprimée');
+        const unknown = await routeId('DELETE', 'partner/tables/[id]', '00000000-0000-4000-8000-000000000000', owner.accessToken);
+        assert.equal(unknown.status, 404, JSON.stringify(unknown.body));
+        const mine = await routeId('DELETE', 'partner/tables/[id]', table, owner.accessToken);
+        assert.equal(mine.status, 200, JSON.stringify(mine.body));
+        assert.equal((await sql(`SELECT id FROM public.restaurant_tables WHERE id = $1`, [table])).length, 0);
+        const myZone = await routeId('DELETE', 'partner/tables/[id]', zone, owner.accessToken, undefined, '?type=zone');
+        assert.equal(myZone.status, 200, JSON.stringify(myZone.body));
+        assert.equal((await sql(`SELECT id FROM public.restaurant_zones WHERE id = $1`, [zone])).length, 0);
     });
 });
