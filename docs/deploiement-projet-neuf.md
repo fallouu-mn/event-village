@@ -872,7 +872,7 @@ Limites : sur iPhone, le push web ne fonctionne que pour l'application installé
 
 L'hébergeur n'est pas choisi : la planification est portée par la base, avec **pg_cron** (planificateur) et **pg_net** (appels HTTP), et ne dépend pas de l'hébergeur. Chaque tâche appelle une route `/api/cron/*` de l'application en POST avec l'en-tête `Authorization` construit depuis Vault ; les routes sont publiques au middleware et se protègent elles-mêmes (`CRON_SECRET`, comparaison à temps constant ; 503 sans `CRON_SECRET`, 401 sans le bon jeton). L'URL de l'application et le secret sont lus dans **Supabase Vault à chaque exécution** : aucun d'eux n'est écrit dans la définition des tâches (`cron.job`).
 
-### 7.1 Les 9 tâches
+### 7.1 Les 10 tâches
 
 | Tâche | Route | Expression (UTC) | Fréquence | Raison |
 |---|---|---|---|---|
@@ -884,6 +884,7 @@ L'hébergeur n'est pas choisi : la planification est portée par la base, avec *
 | `ev_ticket_transfers` | `/api/cron/ticket-transfers` | `17 * * * *` | horaire, à la minute 17 | expiration des transferts de billets non acceptés sous 48 h (l'expéditeur est prévenu) |
 | `ev_moratoriums` | `/api/cron/moratoriums` | `27 * * * *` | horaire, à la minute 27 | moratoires des réservations de salle |
 | `ev_referral_commissions` | `/api/cron/referral-commissions` | `37 * * * *` | horaire, à la minute 37 | commissions de parrainage arrivées à échéance : EN ATTENTE → DISPONIBLE (le solde les rend déjà disponibles à leur date ; la tâche met le statut affiché à jour) |
+| `ev_tables` | `/api/cron/tables` | `4-59/5 * * * *` | toutes les 5 minutes, à 4, 9, 14… | réservations de table (lot 11a) : acompte non payé à la fin de l'attente de 15 min (table rendue), demande sans réponse de l'établissement (annulée, tout rendu), client absent 30 min après l'heure (table libérée), rappel 3 h avant |
 | `ev_cron_history_purge` | aucune (SQL) | `30 3 * * *` | chaque nuit à 03:30 | purge de `cron.job_run_details` au-delà de 7 jours (la table grossit d'environ 1 900 lignes par jour) |
 
 Les tâches horaires sont décalées (7, 17, 27, 37) pour éviter quatre appels simultanés. Pg_cron compte en UTC, qui est aussi l'heure de Dakar.

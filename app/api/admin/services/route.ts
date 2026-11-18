@@ -42,9 +42,10 @@ export async function GET(req: NextRequest) {
         }
 
         if (serviceType === 'tables') {
+            // Lot 11a : tables avec leur établissement (statut de validation) et leur partenaire
             const { data: tables, error } = await supabase
                 .from('restaurant_tables')
-                .select('*, restaurant_zones(*, partners(company_name))')
+                .select('*, restaurant_zones(*), venues(id, name, kind, validation_status), partners(company_name)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -85,7 +86,9 @@ export async function GET(req: NextRequest) {
  */
 const MODERATION_TABLES: Record<string, { column: 'status' | 'order_status'; from: string[]; to: string[] }> = {
     hall_reservations: { column: 'status', from: ['EN_ATTENTE'], to: ['ANNULEE', 'REJETEE'] },
-    table_reservations: { column: 'status', from: ['EN_ATTENTE'], to: ['ANNULEE', 'REJETEE'] },
+    // Lot 11a : une demande de table passe par table_reservation_cancel (fonction en base, verrou, journal) ; la clé
+    // reste admise par la route, l'écriture directe n'existe plus
+    'table_reservations': { column: 'status', from: ['EN_ATTENTE'], to: ['ANNULEE', 'REJETEE'] },
     orders: { column: 'order_status', from: ['EN_ATTENTE'], to: ['ANNULEE', 'REJETEE'] },
 };
 
@@ -144,6 +147,24 @@ export async function PATCH(req: NextRequest) {
             });
             if (cancelErr) throw new Error(`hall_reservation_cancel ${id} : ${cancelErr.message}`);
             const c = cancelled as { ok?: boolean; code?: string; message?: string; booking_state?: string };
+            if (c?.ok !== true) {
+                return NextResponse.json({ error: c?.message ?? 'Annulation impossible.', code: 'INVALID_SERVICE_TRANSITION' }, { status: c?.code === 'RESERVATION_NOT_FOUND' ? 404 : 409 });
+            }
+            return NextResponse.json({ success: true, updated: { id, status: 'ANNULEE' }, message: 'Réservation annulée.' });
+        }
+        // Lot 11a (C2) : de même, une demande de table jamais payée est annulée au nom d'Event Village par la fonction en base
+        if (table === 'table_reservations') {
+            const { data: req0, error: reqErr } = await supabase.from('table_reservations').select('booking_state, paid_amount').eq('id', id).maybeSingle();
+            if (reqErr) throw new Error(`lecture de table_reservations ${id} : ${reqErr.message}`);
+            if (!req0) return NextResponse.json({ error: 'Élément introuvable.', code: 'NOT_FOUND' }, { status: 404 });
+            if (!['EN_ATTENTE_PAIEMENT', 'EN_ATTENTE_ACCEPTATION'].includes(String(req0.booking_state)) || Number(req0.paid_amount) > 0) {
+                return NextResponse.json({ error: 'Seule une demande en attente et non payée peut être annulée ou refusée ici.', code: 'INVALID_SERVICE_TRANSITION' }, { status: 409 });
+            }
+            const { data: cancelled, error: cancelErr } = await supabase.rpc('table_reservation_cancel', {
+                p: { reservation_id: id, actor_id: auth.user!.id, origin: 'EVENT_VILLAGE', reason: reason && reason.length >= 5 ? reason : 'Annulation par la modération' },
+            });
+            if (cancelErr) throw new Error(`table_reservation_cancel ${id} : ${cancelErr.message}`);
+            const c = cancelled as { ok?: boolean; code?: string; message?: string };
             if (c?.ok !== true) {
                 return NextResponse.json({ error: c?.message ?? 'Annulation impossible.', code: 'INVALID_SERVICE_TRANSITION' }, { status: c?.code === 'RESERVATION_NOT_FOUND' ? 404 : 409 });
             }

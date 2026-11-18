@@ -4,6 +4,12 @@ import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
 import { guardFeature } from '@/lib/features/flags';
 
+/**
+ * GET /api/partner/tables/reservations?date=AAAA-MM-JJ&venueId=… — réservations des établissements de la partenaire.
+ * Lot 11a : plus de POST ici. Une réservation se crée seulement par la fonction en base table_reserve (route
+ * POST /api/restaurants/reserve-table, compte du client) ; l'ancienne création par la partenaire passait par
+ * create_table_reservation_atomic, sans contrôle de l'établissement, de l'heure ni de l'argent (retirée).
+ */
 export async function GET(request: NextRequest) {
     try {
         const activeSession = await requireActiveSession(request);
@@ -13,38 +19,15 @@ export async function GET(request: NextRequest) {
         if (closed) return closed;
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
-            return NextResponse.json({ error: 'Non autorise.' }, { status: 401 });
+            return NextResponse.json({ error: 'Réservé aux partenaires.' }, { status: 403 });
         }
-
         const url = new URL(request.url);
-        const status = url.searchParams.get('status') || undefined;
-        const date = url.searchParams.get('date') || undefined;
-
-        const reservations = await TableService.getPartnerReservations(user.id, { status, date });
+        const reservations = await TableService.getPartnerReservations(user.id, {
+            date: url.searchParams.get('date') || undefined,
+            venueId: url.searchParams.get('venueId') || undefined,
+        });
         return NextResponse.json({ success: true, reservations });
     } catch (error: unknown) {
         return apiFailure('GET /api/partner/tables/reservations', error, { message: 'Réservations momentanément indisponibles.', code: 'TABLE_RESERVATIONS_UNAVAILABLE', status: 500 });
-    }
-}
-
-export async function POST(request: NextRequest) {
-    try {
-        const activeSession = await requireActiveSession(request);
-        if (activeSession.response) return activeSession.response;
-        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
-        const closed = await guardFeature('tables', '/api/partner/tables/reservations');
-        if (closed) return closed;
-        const user = activeSession.user;
-        if (!user) {
-            return NextResponse.json({ error: 'Non autorise.' }, { status: 401 });
-        }
-
-        const body = await request.json();
-        body.clientId = user.id;
-
-        const reservation = await TableService.createReservation(body);
-        return NextResponse.json({ success: true, reservation }, { status: 201 });
-    } catch (error: unknown) {
-        return apiFailure('POST /api/partner/tables/reservations', error, { message: 'Réservation non enregistrée. Réessayez.', code: 'TABLE_RESERVATION_SAVE_FAILED', status: 400 });
     }
 }

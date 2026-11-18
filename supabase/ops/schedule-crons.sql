@@ -85,6 +85,7 @@ CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 --   payments-reconcile      toutes les 5 min (seul moyen de connaître les paiements échoués).
 --   events-finish           toutes les 15 min, décalé de 3 min.
 --   tâches horaires         décalées (7, 17, 27, 37) pour éviter quatre appels simultanés.
+--   tables                  toutes les 5 min, décalé de 4 min (lot 11a : attentes de 15 min, absences à 30 min).
 --   ev_cron_history_purge   chaque nuit à 03:30 UTC : cron.job_run_details grossit d'environ
 --                           1 900 lignes par jour ; 7 jours d'historique gardés.
 DO $plan$
@@ -102,7 +103,9 @@ BEGIN
             ('ev_stock_reservations',     '7 * * * *',       '/api/cron/stock-reservations',     60000),
             ('ev_ticket_transfers',       '17 * * * *',      '/api/cron/ticket-transfers',       60000),
             ('ev_moratoriums',            '27 * * * *',      '/api/cron/moratoriums',            60000),
-            ('ev_referral_commissions',   '37 * * * *',      '/api/cron/referral-commissions',   60000)
+            ('ev_referral_commissions',   '37 * * * *',      '/api/cron/referral-commissions',   60000),
+            -- Lot 11a : réservations de table (attente de 15 min, réponse sous 2 h, absence 30 min après l'heure)
+            ('ev_tables',                 '4-59/5 * * * *',  '/api/cron/tables',                 60000)
           ) AS e(jobname, schedule, path, timeout_ms)
     LOOP
         -- URL et secret relus dans Vault à chaque exécution de la tâche : rien de secret dans cron.job.
