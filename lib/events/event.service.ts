@@ -17,6 +17,7 @@ import {
     validationFailure,
     type ProgramLine,
 } from '@/lib/validations/event';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
 
 export type EventStatus = 'BROUILLON' | 'EN_ATTENTE' | 'VALIDE' | 'PUBLIE' | 'SUSPENDU' | 'TERMINE' | 'ANNULE';
 
@@ -463,6 +464,8 @@ export class EventService {
             patch,
             expected_updated_at,
         } }));
+        // Design 1b : date, heure, lieu (report compris) visibles tout de suite sur les pages publiques
+        invalidatePublicEvent(eventId, 'modification');
         // Finition 2a (1b) : l'affiche remplacée est effacée si aucun autre événement ne l'utilise (échec : journal, la
         // tâche planifiée la reprendra au bout de 7 jours)
         if (imageChanged && event.image_url) {

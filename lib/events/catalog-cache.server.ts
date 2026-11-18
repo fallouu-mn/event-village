@@ -11,7 +11,7 @@ import { readCatalogEvents } from '@/lib/events/catalog-read.server';
 /** Durée du cache des pages publiques (secondes). */
 export const PUBLIC_REVALIDATE_SECONDS = 60;
 
-const cachedRead = unstable_cache(readCatalogEvents, ['catalogue-public', 'v1'], { revalidate: PUBLIC_REVALIDATE_SECONDS });
+const cachedRead = unstable_cache(readCatalogEvents, ['catalogue-public', 'v1'], { revalidate: PUBLIC_REVALIDATE_SECONDS, tags: ['catalogue-public'] });
 
 /**
  * Catalogue mis en cache 60 s pour les pages serveur. Les événements terminés depuis la lecture sont retirés à chaque

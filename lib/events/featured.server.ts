@@ -1,6 +1,7 @@
 import { CATALOG_SELECT, formatCatalogEvent, type CatalogEventDto, type CatalogRow } from '@/lib/events/catalog.server';
 import { lowStockThreshold } from '@/lib/events/low-stock.server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
 
 /**
  * Design 1b (À LA UNE) — événements « À la une » de l'accueil, choisis par le Superadmin (page /admin/a-la-une).
@@ -205,6 +206,8 @@ type FeaturedRpc =
  * erreur ordinaire (journalisée par la route, jamais montrée) pour une panne ou une réponse inattendue. Base pas encore
  * migrée : refus 503 « pas encore disponible ».
  */
+const FEATURED_WRITES: ReadonlySet<FeaturedRpc> = new Set<FeaturedRpc>(['home_featured_add', 'home_featured_reorder', 'home_featured_set_window', 'home_featured_remove']);
+
 export async function callFeaturedAdmin(fn: FeaturedRpc, p: Record<string, unknown>): Promise<Record<string, unknown>> {
     const { data, error } = await getServiceRoleClient().rpc(fn, { p });
     if (error) {
@@ -215,7 +218,11 @@ export async function callFeaturedAdmin(fn: FeaturedRpc, p: Record<string, unkno
     }
     const reply = data as { ok?: unknown; code?: unknown; message?: unknown } | null;
     if (!reply || typeof reply !== 'object') throw new Error(`${fn} : réponse vide`);
-    if (reply.ok === true) return reply as Record<string, unknown>;
+    if (reply.ok === true) {
+        // Design 1b : un ajout, un retrait, un nouvel ordre ou une nouvelle période se voient tout de suite sur l'accueil
+        if (FEATURED_WRITES.has(fn)) invalidatePublicEvent(null, fn);
+        return reply as Record<string, unknown>;
+    }
     const status = FEATURED_REFUSALS[String(reply.code)];
     if (!status || typeof reply.message !== 'string') throw new Error(`${fn} : refus inattendu ${JSON.stringify(reply)}`);
     throw new FeaturedRefusal(reply.message, String(reply.code), status);
