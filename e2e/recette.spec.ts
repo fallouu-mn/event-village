@@ -1042,7 +1042,9 @@ test('acte 9 [partenaire] [client] [contrôleur] : invitation d’un numéro san
         await expect(invitee.getByRole('tab', { name: /^reçus/i }), '« Reçus » ouvert d’office (R45)').toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
         const offer = invitee.locator('li, article, section').filter({ hasText: r.e1.title }).filter({ has: invitee.getByRole('button', { name: /^accepter le billet$/i }) }).last();
         await expect(offer, 'invitation dans l’onglet Reçus').toBeVisible({ timeout: 30_000 });
-        await expect(offer, 'expéditeur affiché').toContainText(/l.organisateur de l.événement/i);
+        // Design 1b (point 8, run 385) : expéditeur d'une invitation écrit « Invitation de l’organisateur » partout côté client
+        // (senderLine, components/tickets/wallet.ts : seule source), au lieu de « l’organisateur de l’événement »
+        await expect(offer, 'expéditeur affiché').toContainText(/Invitation de l.organisateur/i);
         await offer.getByRole('button', { name: /^accepter le billet$/i }).click();
         const confirm = invitee.getByRole('dialog').or(invitee.getByRole('alertdialog'));
         await expect(confirm).toBeVisible();
