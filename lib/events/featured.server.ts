@@ -19,7 +19,7 @@ export type HomeFeaturedEvent = CatalogEventDto & { featuredLabel: FeaturedLabel
 
 export const HOME_FEATURED_MAX = 20;
 
-interface FeaturedRow { event_id: string; position: number; label: string }
+interface FeaturedRow { event_id: string; sort_order: number; label: string }
 
 /** Fonction ou table absente (base pas encore migrée) : PostgREST PGRST202 / PGRST205, Postgres 42883 / 42P01. */
 function isMissing(error: { code?: string | null }): boolean {
@@ -51,7 +51,7 @@ export async function readHomeFeaturedPlacements(limit: number): Promise<Array<{
         }
         return ((data ?? []) as FeaturedRow[])
             .slice()
-            .sort((a, b) => a.position - b.position)
+            .sort((a, b) => a.sort_order - b.sort_order)
             .map((r) => ({ eventId: r.event_id, label: labelOf(r.label) }));
     } catch (e) {
         console.error('[à la une] lecture impossible :', e instanceof Error ? e.message : e);
