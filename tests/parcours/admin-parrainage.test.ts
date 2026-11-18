@@ -100,6 +100,21 @@ function localFunctions(sf: ts.SourceFile): Map<string, ts.Node> {
     return out;
 }
 
+/**
+ * Design 1b (« À la une ») : aides réseau communes de components/partner/fetch-json.ts (sendJson, fetchJson). Elles
+ * appellent fetch elles-mêmes : vérifié au chargement du test, sinon la liste est vide et l'exigence reste celle d'avant.
+ */
+const NETWORK_HELPERS: ReadonlySet<string> = (() => {
+    const src = fs.readFileSync(path.join(process.cwd(), 'components', 'partner', 'fetch-json.ts'), 'utf8');
+    // fetchJson appelle fetch ; sendJson appelle fetchJson (corps de chaque fonction, jusqu'à la fonction exportée suivante)
+    const body = (h: string): string => (new RegExp(`export (?:async )?function ${h}\\b([\\s\\S]*?)(?=\\nexport |$)`).exec(src)?.[1] ?? '');
+    const callsFetch = body('fetchJson').includes('fetch(');
+    const helpers = new Set<string>();
+    if (callsFetch) helpers.add('fetchJson');
+    if (callsFetch && /\bfetchJson\s*[<(]/.test(body('sendJson'))) helpers.add('sendJson');
+    return helpers;
+})();
+
 function reachesNetwork(node: ts.Node, fns: Map<string, ts.Node>, seen: Set<ts.Node> = new Set()): boolean {
     if (seen.has(node)) return false;
     seen.add(node);
@@ -109,7 +124,7 @@ function reachesNetwork(node: ts.Node, fns: Map<string, ts.Node>, seen: Set<ts.N
         if (ts.isCallExpression(n)) {
             const callee = n.expression;
             const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : '';
-            if (name === 'fetch') {
+            if (name === 'fetch' || NETWORK_HELPERS.has(name)) {
                 found = true;
                 return;
             }

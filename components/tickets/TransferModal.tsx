@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Clock, HelpCircle, Lock, Send, Share2, ShieldCheck } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Clock, HelpCircle, Lock, MessageCircle, Send, Share2, ShieldCheck } from 'lucide-react';
+import { Button, buttonClasses } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { formatDateTime } from '@/lib/format';
 import { deleteOfflineLots } from '@/lib/tickets/offline-store';
+import { siteUrl, transferMessage, transferWhatsappUrl } from '@/components/tickets/transfer-whatsapp';
 
 /** Boîte « mot de passe » chargée à la demande (lot 9 bis, R57 ; contrat 5.13 : hors du premier chargement). */
 const PasswordConfirmDialog = dynamic(
@@ -32,6 +33,10 @@ const PasswordConfirmDialog = dynamic(
  *  - Lot 9 bis (R57, contrat 4.2 et 5.13) : la route refuse en 403 PASSWORD_CONFIRMATION_REQUIRED quand le mot de passe
  *    n'a pas été saisi sur la session depuis moins de 10 minutes. Ce refus ouvre PasswordConfirmDialog ; une fois le mot
  *    de passe accepté (clic « Confirmer »), le même transfert, vers le même numéro, repart une fois.
+ *  - Design 1b (point 8) : après l'envoi, « Prévenir par WhatsApp » ouvre la conversation avec le numéro du destinataire
+ *    retenu par le serveur (wa.me, chiffres E.164 sans « + »), message avec l'adresse du site (configuration
+ *    NEXT_PUBLIC_APP_URL), l'adresse où accepter le billet et la vraie échéance du transfert (expires_at du serveur) ;
+ *    numéro inconnu : repli « Prévenir mon proche » (partage du téléphone ou copie du message).
  */
 
 export interface TransferTicketData {
@@ -95,10 +100,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
     onClose();
   };
 
-  const shareMessage = (): string => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `Je vous ai transféré un billet pour « ${ticket.eventTitle} » sur Event Village. Connectez-vous avec votre numéro, puis ouvrez Mes billets, onglet Reçus, pour l'accepter sous 48 h : ${origin}/tickets?tab=recus`;
-  };
+  const shareMessage = (): string => transferMessage({ eventTitle: ticket.eventTitle, expiresAt: success?.expiresAt, site: siteUrl() });
+  const whatsappUrl = success
+    ? transferWhatsappUrl({ phone: success.recipient, eventTitle: ticket.eventTitle, expiresAt: success.expiresAt, site: siteUrl() })
+    : null;
 
   const handleShare = async () => {
     const text = shareMessage();
@@ -187,9 +192,16 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
 
   const footer = success ? (
     <div className="flex w-full flex-wrap justify-end gap-2">
-      <Button variant="secondary" onClick={() => void handleShare()} leftIcon={<Share2 size={18} aria-hidden="true" />}>
-        Prévenir mon proche
-      </Button>
+      {whatsappUrl ? (
+        <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className={buttonClasses({ variant: 'secondary' })}>
+          <MessageCircle size={18} aria-hidden="true" className="text-success-text" />
+          Prévenir par WhatsApp
+        </a>
+      ) : (
+        <Button variant="secondary" onClick={() => void handleShare()} leftIcon={<Share2 size={18} aria-hidden="true" />}>
+          Prévenir mon proche
+        </Button>
+      )}
       <Button variant="primary" onClick={handleClose}>
         Terminer
       </Button>
@@ -243,41 +255,41 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
           <StatusBanner tone="success" title="Transfert lancé">
             Le billet est réservé pour le numéro {success.recipient}, qui va recevoir un SMS.
           </StatusBanner>
-          <dl className="space-y-3 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+          <dl className="space-y-3 rounded-2xl border border-border bg-background p-4 text-sm">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <dt className="text-fg-muted">Événement</dt>
-              <dd className="min-w-0 break-words font-semibold text-fg">{ticket.eventTitle}</dd>
+              <dt className="text-muted-foreground">Événement</dt>
+              <dd className="min-w-0 break-words font-semibold text-foreground-strong">{ticket.eventTitle}</dd>
             </div>
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <dt className="flex items-center gap-1.5 text-fg-muted">
+              <dt className="flex items-center gap-1.5 text-muted-foreground">
                 <Clock size={16} aria-hidden="true" />
                 À accepter avant
               </dt>
-              <dd className="font-semibold text-fg tabular-nums">{success.expiresAt ? formatDateTime(success.expiresAt) : '48 h après l’envoi'}</dd>
+              <dd className="font-semibold text-foreground-strong tabular-nums">{success.expiresAt ? formatDateTime(success.expiresAt) : '48 h après l’envoi'}</dd>
             </div>
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <dt className="flex items-center gap-1.5 text-fg-muted">
+              <dt className="flex items-center gap-1.5 text-muted-foreground">
                 <Lock size={16} aria-hidden="true" />
                 Votre billet
               </dt>
-              <dd className="font-semibold text-fg">Verrouillé jusqu’à l’acceptation</dd>
+              <dd className="font-semibold text-foreground-strong">Verrouillé jusqu’à l’acceptation</dd>
             </div>
           </dl>
-          <p className="text-sm leading-relaxed text-fg-muted">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             S’il n’est pas accepté sous 48 h, le billet vous revient automatiquement. Vous pouvez annuler le transfert depuis la carte du billet tant qu’il n’est pas accepté.
           </p>
         </div>
       ) : (
         <form id="transfert-billet" noValidate onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
-          <div className="rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
-            <p className="font-semibold text-fg">{ticket.eventTitle}</p>
+          <div className="rounded-2xl border border-border bg-background p-4 text-sm">
+            <p className="font-semibold text-foreground-strong">{ticket.eventTitle}</p>
             {(ticket.dateFormatted || ticket.timeFormatted) && (
-              <p className="mt-1 text-fg-muted">
+              <p className="mt-1 text-muted-foreground">
                 {[ticket.dateFormatted, ticket.timeFormatted ? `à ${ticket.timeFormatted}` : null].filter(Boolean).join(' ')}
               </p>
             )}
-            {ticket.venue && <p className="mt-1 text-fg-muted">{ticket.venue}</p>}
-            <p className="mt-2 font-semibold text-success-fg">Transfert gratuit</p>
+            {ticket.venue && <p className="mt-1 text-muted-foreground">{ticket.venue}</p>}
+            <p className="mt-2 font-semibold text-success-text">Transfert gratuit</p>
           </div>
 
           <TextInput
@@ -303,12 +315,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
             </StatusBanner>
           )}
 
-          <div className="space-y-2 rounded-2xl border border-border bg-surface p-4 text-sm text-fg">
+          <div className="space-y-2 rounded-2xl border border-border bg-card p-4 text-sm text-foreground-strong">
             <p className="flex items-center gap-2 font-semibold">
-              <ShieldCheck size={18} className="text-brand-fg" aria-hidden="true" />
+              <ShieldCheck size={18} className="text-primary-text" aria-hidden="true" />
               Ce qui se passe ensuite
             </p>
-            <ul className="list-disc space-y-1 pl-5 text-fg-muted">
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
               <li>Dès l’acceptation, un nouveau QR code est créé pour votre proche ; le vôtre ne sert plus.</li>
               <li>Sans acceptation sous 48 h, le billet vous revient automatiquement.</li>
               <li>Vous pouvez annuler le transfert tant qu’il n’est pas accepté.</li>

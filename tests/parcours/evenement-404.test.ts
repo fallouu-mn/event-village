@@ -40,6 +40,7 @@ const PUBLIC_STATUS = 'lib/events/public-status.ts';
 const PUBLIC_STATUS_MODULE = '../../lib/events/public-status';
 const API_ROUTE = 'app/api/events/[id]/route.ts';
 const PAGE = 'app/events/[id]/page.tsx';
+const SHEET_READER = 'lib/events/event-detail.server.ts';
 
 const PUBLIC: readonly EventStatus[] = ['PUBLIE', 'SUSPENDU', 'ANNULE', 'TERMINE'];
 const NOT_PUBLIC: readonly EventStatus[] = ['BROUILLON', 'EN_ATTENTE', 'VALIDE'];
@@ -155,27 +156,40 @@ async function apiStatus(id: string): Promise<number> {
     return res.status;
 }
 
-describe('8.2 h — statique : layout serveur, constante partagée, page inchangée', () => {
-    test('le layout est un composant serveur, force-dynamic, qui appelle notFound()', () => {
+describe('8.2 h — statique : layout serveur, constante partagée, page serveur en cache (design 1b)', () => {
+    // Design 1b (point 1, modification signalée) : la fiche est préparée par le serveur et mise en cache 60 s. Le
+    // layout garde le vrai 404 (notFound côté serveur) mais lit la fiche publique EN CACHE (readPublicSheet, fondée sur
+    // isPublicEvent de lib/events/public-status) : force-dynamic interdirait tout cache. Même exigence de sécurité :
+    // non public → 404 sans rien laisser paraître ; panne → jamais un 404 (tests « base locale » ci-dessous, inchangés).
+    test('le layout est un composant serveur qui appelle notFound() sur la fiche publique en cache', () => {
         const sf = source(LAYOUT);
         assert.ok(!directives(sf).includes('use client'), `${LAYOUT} : 'use client' interdit, notFound() doit agir côté serveur`);
         assert.ok(callsOf(sf, 'notFound') >= 1, `${LAYOUT} n'appelle pas notFound()`);
         assert.ok(imports(sf, /^next\/navigation$/, 'notFound'), `${LAYOUT} n'importe pas notFound de next/navigation`);
-        assert.ok(imports(sf, /lib\/events\/public-status$/, 'readPublicEventStatus'), `${LAYOUT} ne lit pas le statut par readPublicEventStatus`);
-        assert.match(sf.text, /export\s+const\s+dynamic\s*=\s*['"]force-dynamic['"]/, `${LAYOUT} : force-dynamic attendu (contrat 8.1)`);
+        assert.ok(imports(sf, /lib\/events\/event-detail\.server$/, 'readPublicSheet'), `${LAYOUT} ne lit pas la fiche publique par readPublicSheet`);
+        assert.doesNotMatch(sf.text, /export\s+const\s+dynamic\s*=\s*['"]force-dynamic['"]/, `${LAYOUT} : force-dynamic empêcherait le cache de 60 s de la fiche`);
+        const reader = source(SHEET_READER);
+        assert.ok(imports(reader, /lib\/events\/public-status$/, 'isPublicEvent'), `${SHEET_READER} : la visibilité publique doit venir d'isPublicEvent`);
+        assert.ok(imports(reader, /^next\/cache$/, 'unstable_cache'), `${SHEET_READER} : lecture mise en cache (unstable_cache)`);
+        assert.match(reader.text, /revalidate:\s*PUBLIC_SHEET_REVALIDATE_SECONDS/, `${SHEET_READER} : durée du cache absente`);
+        assert.match(reader.text, /PUBLIC_SHEET_REVALIDATE_SECONDS\s*=\s*60\b/, `${SHEET_READER} : cache de 60 s attendu`);
     });
 
-    test('la route partage PUBLIC_EVENT_STATUSES : un seul exemplaire', () => {
-        const sf = source(API_ROUTE);
-        assert.ok(imports(sf, /lib\/events\/public-status$/, 'PUBLIC_EVENT_STATUSES') || imports(sf, /lib\/events\/public-status$/, 'isPublicEvent'), `${API_ROUTE} n'importe ni PUBLIC_EVENT_STATUSES ni isPublicEvent (lot 9 ter, R106 a : la constante partagée y est lue)`);
-        const local: string[] = [];
-        (function visit(n: ts.Node): void {
-            if (ts.isStringLiteral(n) && n.text === 'SUSPENDU' && !ts.isPropertyAssignment(n.parent) && !ts.isBinaryExpression(n.parent)) {
-                local.push(n.parent.getText(sf).slice(0, 80));
-            }
-            ts.forEachChild(n, visit);
-        })(sf);
-        assert.deepEqual(local, [], `${API_ROUTE} garde une liste de statuts locale`);
+    test('la fiche partage PUBLIC_EVENT_STATUSES : un seul exemplaire (route et lecture serveur)', () => {
+        const route = source(API_ROUTE);
+        assert.ok(imports(route, /lib\/events\/event-detail\.server$/, 'buildPublicEventDetail'), `${API_ROUTE} : la route doit servir la fiche de lib/events/event-detail.server (source unique)`);
+        for (const file of [API_ROUTE, SHEET_READER]) {
+            const sf = source(file);
+            const local: string[] = [];
+            (function visit(n: ts.Node): void {
+                if (ts.isStringLiteral(n) && n.text === 'SUSPENDU' && !ts.isPropertyAssignment(n.parent) && !ts.isBinaryExpression(n.parent)) {
+                    local.push(n.parent.getText(sf).slice(0, 80));
+                }
+                ts.forEachChild(n, visit);
+            })(sf);
+            assert.deepEqual(local, [], `${file} garde une liste de statuts locale`);
+        }
+        assert.ok(imports(source(SHEET_READER), /lib\/events\/public-status$/, 'isPublicEvent'), `${SHEET_READER} n'importe pas isPublicEvent (lot 9 ter, R106 a : la constante partagée y est lue)`);
     });
 
     test('PUBLIC_EVENT_STATUSES : exactement les statuts publics', async () => {
@@ -183,10 +197,17 @@ describe('8.2 h — statique : layout serveur, constante partagée, page inchang
         assert.deepEqual(Array.from(PUBLIC_EVENT_STATUSES).sort(), [...PUBLIC].sort());
     });
 
-    test('D79 : la page reste un composant client, sans notFound()', () => {
+    // Design 1b (point 1, modification signalée) : D79 levée par la consigne de l'utilisateur (« pages publiques préparées
+    // par le serveur et mises en cache 60 s »). La page devient un composant serveur mis en cache ; elle ne lit aucune
+    // session (rien de personnel dans le HTML en cache) et garde son propre notFound() (événement retiré entre le layout
+    // et la page).
+    test('design 1b : la page est un composant serveur mis en cache 60 s, sans session lue', () => {
         const sf = source(PAGE);
-        assert.ok(directives(sf).includes('use client'), `${PAGE} : la page doit rester 'use client' (D79, hors périmètre)`);
-        assert.equal(callsOf(sf, 'notFound'), 0, `${PAGE} : notFound() appartient au layout`);
+        assert.ok(!directives(sf).includes('use client'), `${PAGE} : composant serveur attendu (pas de 'use client')`);
+        assert.match(sf.text, /export\s+const\s+revalidate\s*=\s*60\s*;/, `${PAGE} : export const revalidate = 60 attendu`);
+        assert.ok(callsOf(sf, 'notFound') >= 1, `${PAGE} : notFound() attendu pour une fiche non publique`);
+        assert.ok(!imports(sf, /^next\/headers$/), `${PAGE} : cookies() ou headers() rendraient la page personnelle (et sans cache)`);
+        assert.doesNotMatch(sf.text, /\buseAuth\b|\bgetSession\b|\bcookies\s*\(/, `${PAGE} : aucune session lue dans la page en cache`);
     });
 });
 

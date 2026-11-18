@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { eventEndAt } from '@/lib/events/event-end';
+import { eventStartAt } from '@/lib/events/live-status';
+import { isScanCategoryColor } from '@/lib/scan/scan-result';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
 
@@ -78,7 +80,7 @@ export async function GET(req: NextRequest) {
                 event_id,
                 events(id, title, location, city, start_date, start_time, end_date, end_time, image_url, partners(company_name, commercial_name)),
                 category_id,
-                ticket_categories(id, name, price)
+                ticket_categories(id, name, price, scan_color)
             `)
             .eq('user_id', effectiveUserId)
             .order('created_at', { ascending: false });
@@ -203,7 +205,12 @@ export async function GET(req: NextRequest) {
             const dateFormatted = `${dayNumber} ${monthShort} ${startDate.getFullYear()}`;
             // Lot 5 : à venir tant que l'événement n'est pas fini (fin, ou début + 6 h, lot 9 bis : event_end_at) ; un
             // billet pour ce soir n'est plus classé dans l'historique dès minuit UTC du jour.
-            const isUpcoming = t.status === 'VALIDE' && Boolean(t.events?.start_date) && eventEndAt(t.events).getTime() >= Date.now();
+            const endsAt = t.events?.start_date ? eventEndAt(t.events) : null;
+            const isUpcoming = t.status === 'VALIDE' && endsAt !== null && endsAt.getTime() >= Date.now();
+            // Design 1b (point 8) : début et fin retenue en instants ISO (compte à rebours calculé sur le téléphone, tri
+            // « le prochain d'abord ») ; couleur de la catégorie au contrôle (palette fermée, sinon null : carte neutre).
+            const startsAt = t.events?.start_date ? eventStartAt(t.events) : null;
+            const scanColor = t.ticket_categories?.scan_color;
             const activeTransfer = pendingTransfersMap[t.id] || null;
             const isTransferLocked = Boolean(t.transfer_locked) || Boolean(activeTransfer);
 
@@ -213,10 +220,15 @@ export async function GET(req: NextRequest) {
                 ticketNumber: t.ticket_number,
                 eventTitle: t.events?.title || 'Événement',
                 eventSubtitle: t.events?.partners?.commercial_name || t.events?.partners?.company_name || 'Organisateur',
-                eventImageUrl: t.events?.image_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80',
+                // Design 1b (point 8) : plus de photo de démonstration distante en repli (poids du premier affichage) : sans
+                // affiche, la carte montre un pictogramme.
+                eventImageUrl: t.events?.image_url || null,
                 dateFormatted,
                 timeFormatted,
                 rawStartDate: t.events?.start_date || null,
+                startsAt: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt.toISOString() : null,
+                endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt.toISOString() : null,
+                categoryColor: isScanCategoryColor(scanColor) ? scanColor : null,
                 venue: t.events?.location || 'Dakar, Sénégal',
                 seat: t.ticket_categories?.name || 'Catégorie inconnue',
                 status: t.status,
@@ -238,7 +250,8 @@ export async function GET(req: NextRequest) {
             };
         });
 
-        return NextResponse.json({ tickets: formatted });
+        // Design 1b (point 8) : réponse personnelle, jamais mise en cache (navigateur, mandataire ou CDN).
+        return NextResponse.json({ tickets: formatted }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (err: unknown) {
         return apiFailure('GET /api/tickets', err, { message: 'Impossible de charger vos billets.', code: 'TICKETS_UNAVAILABLE' });
     }

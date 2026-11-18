@@ -21,7 +21,7 @@
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlertCircle, CheckCircle2, Clock, Loader2, LogIn, ShieldCheck, Smartphone, X } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, Clock, Loader2, LogIn, ShieldCheck, Smartphone, Ticket as TicketIcon, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -155,8 +155,14 @@ interface RedirectState {
  * par tests/parcours/client-interface.test.ts), jamais écrites en dur (D59).
  */
 export const OPERATOR_VISUALS: Record<SamirPayOperatorName, { mark: string; tile: string }> = {
-  WAVE: { mark: 'W', tile: 'bg-op-wave text-on-op-wave' },
-  ORANGE_MONEY: { mark: 'OM', tile: 'bg-op-orange-money text-on-op-orange-money' },
+  WAVE: { mark: 'W', tile: 'bg-op-wave text-on-op' },
+  ORANGE_MONEY: { mark: 'OM', tile: 'bg-op-orange-money text-on-op' },
+};
+
+/** Design 1b (point 7) : grand bouton de choix, tout entier à la couleur de l'opérateur (texte noir, 7,99:1 au moins). */
+const OPERATOR_TILE: Record<SamirPayOperatorName, string> = {
+  WAVE: 'bg-op-wave',
+  ORANGE_MONEY: 'bg-op-orange-money',
 };
 
 /* ─────────────────────────── Utilitaires internes ─────────────────────────── */
@@ -270,6 +276,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
   const phoneRef = useRef<HTMLInputElement | null>(null);
 
   const payerPhone = normalizePayerPhone(phoneInput);
+  const ticketCount = props.checkoutItems !== undefined ? props.checkoutItems.reduce((sum, item) => sum + item.quantity, 0) : 0;
   const chosenLabel = operator ? operatorLabel(operator) : null;
   const retryRemaining = retryAt === null ? 0 : Math.max(0, Math.ceil((retryAt - now) / 1000));
   const phoneError =
@@ -505,21 +512,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
         /* ── Initiation réussie : ouverture de l'opérateur et renvoi vers le suivi ── */
         <div className="flex flex-col items-center gap-5 py-6 text-center" role="status" aria-live="polite">
           <div className="relative flex items-center justify-center">
-            <span className="absolute h-16 w-16 rounded-full bg-brand-decor/20 motion-safe:animate-ping" aria-hidden="true" />
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-border bg-brand-bg text-brand-fg">
+            <span className="absolute h-16 w-16 rounded-full bg-brand-vif/20 motion-safe:animate-ping" aria-hidden="true" />
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-border bg-primary-soft text-primary-text">
               <Smartphone size={28} aria-hidden="true" />
             </div>
           </div>
 
           <div className="space-y-1.5 px-2">
-            <h3 className="text-base font-bold text-fg">
+            <h3 className="text-base font-bold text-foreground-strong">
               {redirect.kind === 'settled'
                 ? 'Paiement déjà traité'
                 : redirect.opened
                 ? `${redirect.label} est ouvert`
                 : `Demande ${redirect.label} créée`}
             </h3>
-            <p className="text-sm leading-relaxed text-fg-muted">
+            <p className="text-sm leading-relaxed text-muted-foreground">
               {redirect.kind === 'settled'
                 ? 'Affichage du statut de ce paiement…'
                 : redirect.opened
@@ -527,7 +534,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                 : `Sur la page de suivi, ouvrez ${redirect.label} ou scannez le QR code pour valider ${payableText}.`}
             </p>
             {reservationClock && redirect.expiresAt && (
-              <p className="inline-flex items-center gap-1.5 pt-1 text-sm font-semibold text-brand-fg">
+              <p className="inline-flex items-center gap-1.5 pt-1 text-sm font-semibold text-primary-text">
                 <Clock size={16} aria-hidden="true" />
                 <span>
                   Réservation valable jusqu’à <time dateTime={redirect.expiresAt}>{reservationClock}</time>
@@ -536,7 +543,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
             )}
           </div>
 
-          <p className="flex items-center gap-2 text-sm text-fg-muted">
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 size={16} className="motion-safe:animate-spin" aria-hidden="true" />
             <span>Redirection vers le suivi du paiement…</span>
           </p>
@@ -554,61 +561,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
           }}
           className="space-y-5"
         >
-          {/* Récapitulatif */}
-          {props.checkoutItems !== undefined ? (
-            <div className="space-y-3 rounded-2xl border border-border bg-surface-sunken p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-fg-muted">Récapitulatif</p>
-                <p className="line-clamp-2 text-sm font-semibold leading-snug text-fg">{title}</p>
-              </div>
-              {quote ? (
-                <dl className="space-y-1.5 text-sm" aria-live="polite">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-fg-muted">Prix des billets</dt>
-                    <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">{formatFcfa(quote.facialAmount)}</dd>
-                  </div>
-                  <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-fg-muted">
-                      Frais de service{quote.serviceRatePercent !== null && quote.serviceFee > 0 ? ` (${quote.serviceRatePercent.toLocaleString('fr-FR')} %)` : ''}
-                    </dt>
-                    <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">{formatFcfa(quote.serviceFee)}</dd>
-                  </div>
-                  <div className="flex items-baseline justify-between gap-3 border-t border-border pt-2">
-                    <dt className="font-semibold text-fg">Total à payer</dt>
-                    <dd className="whitespace-nowrap text-lg font-bold tabular-nums text-fg">{formatFcfa(quote.totalAmount)}</dd>
-                  </div>
-                </dl>
-              ) : (
-                <div className="space-y-2" role="status" aria-live="polite">
-                  <span className="sr-only">Calcul du total en cours…</span>
-                  <Skeleton className="h-4 w-2/3 rounded" />
-                  <Skeleton className="h-4 w-1/2 rounded" />
-                  <Skeleton className="h-6 w-1/3 rounded" />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2 rounded-2xl border border-border bg-surface-sunken p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-fg-muted">Récapitulatif</p>
-                  <p className="line-clamp-2 text-sm font-semibold leading-snug text-fg">{title}</p>
-                </div>
-                <span className="shrink-0 whitespace-nowrap rounded-xl border border-border bg-surface px-3 py-1 text-base font-bold tabular-nums text-fg">
-                  {props.amountFormatted}
-                </span>
-              </div>
-              {feesComputedLater && (
-                <p className="text-sm leading-relaxed text-fg-muted">
-                  Montant hors frais de service : le total exact, frais de service compris, s’affiche sur la page de suivi du paiement.
-                </p>
-              )}
-            </div>
-          )}
+          {/* Design 1b (point 7) : le moins d'étapes possible. 1. l'opérateur, visible tout de suite (grands boutons à ses
+              couleurs, rien de présélectionné) ; 2. le numéro, prérempli depuis le profil ; 3. le récapitulatif, frais
+              compris, puis UNE seule confirmation (« Payer … avec … »). */}
 
           {/* Erreur */}
           {failure && (
-            <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-danger-border bg-danger-bg p-3.5 text-danger-fg">
+            <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-danger-border bg-danger-soft p-3.5 text-danger-text">
               <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
               <div className="min-w-0 flex-1 space-y-2">
                 <p className="text-sm font-semibold">{failureTitle(failure)}</p>
@@ -617,7 +576,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                     {failure.problems.map((problem, index) => {
                       const label = categoryLabel(problem.categoryId);
                       return (
-                        <li key={`${problem.categoryId ?? 'panier'}-${problem.code}-${index}`} className="text-sm leading-relaxed text-fg">
+                        <li key={`${problem.categoryId ?? 'panier'}-${problem.code}-${index}`} className="text-sm leading-relaxed text-foreground-strong">
                           {label && <span className="font-semibold">{label} : </span>}
                           {problem.message}
                         </li>
@@ -625,7 +584,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                     })}
                   </ul>
                 ) : (
-                  <p className="text-sm leading-relaxed text-fg">{failure.message}</p>
+                  <p className="text-sm leading-relaxed text-foreground-strong">{failure.message}</p>
                 )}
                 {failure.pendingStatusPath && (
                   <LinkButton href={failure.pendingStatusPath} variant="secondary" size="sm" leftIcon={<Clock size={16} />}>
@@ -646,17 +605,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
             </div>
           )}
 
-          {/* Opérateur : choix explicite obligatoire */}
+          {/* 1. Opérateur : choix explicite obligatoire, en grands boutons aux couleurs de l'opérateur */}
           <fieldset aria-describedby={operatorMissing ? operatorErrorId : undefined}>
-            <legend className="mb-2 text-sm font-semibold text-fg">
-              Moyen de paiement <span className="text-brand-fg" aria-hidden="true">*</span>
+            <legend className="mb-2 text-base font-semibold text-foreground-strong">
+              Payer avec <span className="text-primary-text" aria-hidden="true">*</span>
             </legend>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3">
               {SAMIRPAY_OPERATORS.map((op, index) => {
                 const selected = operator === op;
-                const visual = OPERATOR_VISUALS[op];
                 return (
-                  <label key={op} className="relative block cursor-pointer">
+                  <label key={op} className="ev-press relative block cursor-pointer">
                     <input
                       ref={index === 0 ? firstOperatorRef : undefined}
                       type="radio"
@@ -669,55 +627,44 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                     />
                     <span
                       className={cn(
-                        'flex min-h-16 items-center gap-3 rounded-2xl border-2 p-3 transition-colors duration-200',
-                        'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface-raised',
+                        'flex min-h-[4.5rem] flex-col items-start justify-center gap-0.5 rounded-xl px-4 py-3 text-on-op shadow-sm transition-shadow duration-200',
+                        OPERATOR_TILE[op],
+                        'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-popover',
                         selected
-                          ? 'border-brand-fg bg-brand-bg'
+                          ? 'ring-[3px] ring-foreground-strong ring-offset-2 ring-offset-popover'
                           : operatorMissing
-                          ? 'border-danger-border bg-surface'
-                          : 'border-border bg-surface hover:border-border-strong',
+                          ? 'ring-2 ring-danger ring-offset-2 ring-offset-popover'
+                          : '',
                       )}
                     >
-                      <span
-                        aria-hidden="true"
-                        className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold tracking-tight', visual.tile)}
-                      >
-                        {visual.mark}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-fg">{operatorLabel(op)}</span>
-                        <span className="block text-sm text-fg-muted">Mobile Money</span>
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-                          selected ? 'border-brand bg-brand' : 'border-border-strong',
-                        )}
-                      >
-                        {selected && <span className="h-2 w-2 rounded-full bg-on-brand" />}
-                      </span>
+                      <span className="block text-lg font-extrabold leading-tight">{operatorLabel(op)}</span>
+                      <span className="block text-sm font-semibold">Mobile Money</span>
                     </span>
+                    {selected && (
+                      <span aria-hidden="true" className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-foreground-strong text-background">
+                        <Check size={16} strokeWidth={3} />
+                      </span>
+                    )}
                   </label>
                 );
               })}
             </div>
             {operatorMissing && (
-              <p id={operatorErrorId} className="mt-1.5 text-sm font-medium text-danger-fg">
+              <p id={operatorErrorId} className="mt-1.5 text-sm font-medium text-danger-text">
                 Choisissez l’opérateur avec lequel vous allez payer.
               </p>
             )}
           </fieldset>
 
-          {/* Téléphone payeur */}
+          {/* 2. Téléphone payeur */}
           <div>
-            <label htmlFor={phoneFieldId} className="mb-1.5 block text-sm font-semibold text-fg">
-              Numéro {chosenLabel ?? 'Mobile Money'} du payeur <span className="text-brand-fg" aria-hidden="true">*</span>
+            <label htmlFor={phoneFieldId} className="mb-1.5 block text-sm font-semibold text-foreground-strong">
+              Numéro {chosenLabel ?? 'Mobile Money'} du payeur <span className="text-primary-text" aria-hidden="true">*</span>
             </label>
             <div className="relative">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-base font-semibold text-fg-muted"
+                className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-base font-semibold text-muted-foreground"
               >
                 +221
               </span>
@@ -745,53 +692,111 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                   if (normalized) setPhoneInput(formatLocalPhone(normalized));
                 }}
                 className={cn(
-                  'h-12 w-full rounded-xl border bg-surface pl-[3.75rem] pr-10 text-base font-semibold tabular-nums tracking-wide text-fg transition-colors',
-                  'placeholder:text-fg-muted/70 focus:outline-none focus:ring-2 focus:ring-ring',
-                  phoneError ? 'border-danger' : 'border-border-strong',
+                  'h-12 w-full rounded-xl border bg-card pl-[3.75rem] pr-10 text-base font-semibold tabular-nums tracking-wide text-foreground-strong transition-colors',
+                  'placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring',
+                  phoneError ? 'border-danger' : 'border-input',
                 )}
               />
               {payerPhone && !phoneRejected && (
-                <CheckCircle2 size={18} aria-hidden="true" className="absolute right-3.5 top-1/2 -translate-y-1/2 text-success-fg" />
+                <CheckCircle2 size={18} aria-hidden="true" className="absolute right-3.5 top-1/2 -translate-y-1/2 text-success-text" />
               )}
             </div>
-            <p id={phoneHelpId} className={cn('mt-1.5 text-sm leading-relaxed', phoneError ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
+            <p id={phoneHelpId} className={cn('mt-1.5 text-sm leading-relaxed', phoneError ? 'font-medium text-danger-text' : 'text-muted-foreground')}>
               {phoneError ?? phoneHelp}
             </p>
             {/* Lot 9 quater (C3 : AUD-27) : numéro payeur différent de celui du compte, dit avant l'envoi de la demande */}
             {payerPhone && !phoneRejected && normalizePayerPhone(profile?.phone) !== null && normalizePayerPhone(profile?.phone) !== payerPhone && (
-              <p role="status" className="mt-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-sm font-medium text-warning-fg">
+              <p role="status" className="mt-2 rounded-xl border border-warning-border bg-warning-soft px-3 py-2 text-sm font-medium text-warning-text">
                 Le paiement sera demandé au <span className="whitespace-nowrap tabular-nums">+221 {formatLocalPhone(payerPhone)}</span>.
               </p>
             )}
           </div>
 
-          {/* Ce qui va se passer */}
-          {(chosenLabel && payerPhone) || props.checkoutItems !== undefined ? (
-            <ul className="space-y-1.5 text-sm text-fg-muted">
-              {chosenLabel && payerPhone && (
+          {/* 3. Récapitulatif : frais affichés avant le paiement */}
+          {props.checkoutItems !== undefined ? (
+            <div className="space-y-3 rounded-xl border border-border bg-background p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-muted-foreground">Récapitulatif</p>
+                <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground-strong">{title}</p>
+              </div>
+              {quote ? (
+                <dl className="space-y-1.5 text-sm" aria-live="polite">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-muted-foreground">Prix des billets</dt>
+                    <dd className="whitespace-nowrap font-semibold tabular-nums text-foreground-strong">{formatFcfa(quote.facialAmount)}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-muted-foreground">
+                      Frais de service{quote.serviceRatePercent !== null && quote.serviceFee > 0 ? ` (${quote.serviceRatePercent.toLocaleString('fr-FR')} %)` : ''}
+                    </dt>
+                    <dd className="whitespace-nowrap font-semibold tabular-nums text-foreground-strong">{formatFcfa(quote.serviceFee)}</dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3 border-t border-border pt-2">
+                    <dt className="font-semibold text-foreground-strong">Total à payer</dt>
+                    <dd className="whitespace-nowrap text-lg font-bold tabular-nums text-foreground-strong">{formatFcfa(quote.totalAmount)}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <div className="space-y-2" role="status" aria-live="polite">
+                  <span className="sr-only">Calcul du total en cours…</span>
+                  <Skeleton className="h-4 w-2/3 rounded" />
+                  <Skeleton className="h-4 w-1/2 rounded" />
+                  <Skeleton className="h-6 w-1/3 rounded" />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-xl border border-border bg-background p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-muted-foreground">Récapitulatif</p>
+                  <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground-strong">{title}</p>
+                </div>
+                <span className="shrink-0 whitespace-nowrap rounded-xl border border-border bg-card px-3 py-1 text-base font-bold tabular-nums text-foreground-strong">
+                  {props.amountFormatted}
+                </span>
+              </div>
+              {feesComputedLater && (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Montant hors frais de service : le total exact, frais de service compris, s’affiche sur la page de suivi du paiement.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Ce qui va se passer, ce que vous recevrez */}
+          <ul className="space-y-1.5 text-sm text-muted-foreground">
+            {chosenLabel && payerPhone && (
+              <li className="flex items-start gap-2">
+                <Smartphone size={16} className="mt-0.5 shrink-0 text-primary-text" aria-hidden="true" />
+                <span>
+                  Vous validerez ensuite le paiement dans {chosenLabel}, depuis le{' '}
+                  <span className="whitespace-nowrap font-semibold tabular-nums text-foreground-strong">+221 {formatLocalPhone(payerPhone)}</span>.
+                </span>
+              </li>
+            )}
+            {props.checkoutItems !== undefined && (
+              <>
                 <li className="flex items-start gap-2">
-                  <Smartphone size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
+                  <Clock size={16} className="mt-0.5 shrink-0 text-primary-text" aria-hidden="true" />
+                  <span>Vos places restent réservées pendant le paiement ; le temps restant s’affiche à l’étape suivante.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <TicketIcon size={16} className="mt-0.5 shrink-0 text-primary-text" aria-hidden="true" />
                   <span>
-                    Vous validerez ensuite le paiement dans {chosenLabel}, depuis le{' '}
-                    <span className="whitespace-nowrap font-semibold tabular-nums text-fg">+221 {formatLocalPhone(payerPhone)}</span>.
+                    {ticketCount > 1 ? `Vous recevrez vos ${ticketCount} billets, avec leur QR code,` : 'Vous recevrez votre billet, avec son QR code,'} dans Mes billets dès la confirmation.
                   </span>
                 </li>
-              )}
-              {props.checkoutItems !== undefined && (
-                <li className="flex items-start gap-2">
-                  <Clock size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
-                  <span>Vos billets restent réservés pendant le paiement ; le temps restant s’affiche à l’étape suivante.</span>
-                </li>
-              )}
-            </ul>
-          ) : null}
+              </>
+            )}
+          </ul>
 
           <Button type="submit" variant="primary" fullWidth size="lg" isLoading={isSubmitting} disabled={retryRemaining > 0 || awaitingQuote}>
             {ctaLabel}
           </Button>
 
-          <p className="flex items-center justify-center gap-1.5 text-center text-sm text-fg-muted">
-            <ShieldCheck size={16} className="shrink-0 text-success-fg" aria-hidden="true" />
+          <p className="flex items-center justify-center gap-1.5 text-center text-sm text-muted-foreground">
+            <ShieldCheck size={16} className="shrink-0 text-success-text" aria-hidden="true" />
             <span>Paiement sécurisé par SamirPay. Votre code secret ne vous sera jamais demandé ici.</span>
           </p>
         </form>

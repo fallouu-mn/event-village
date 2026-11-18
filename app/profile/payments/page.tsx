@@ -19,6 +19,8 @@ import Loading from './loading';
  * Date, libellé, montant, opérateur et statut viennent déjà traduits de la route.
  *
  * Une seule liste pour toutes les largeurs : DataList rendrait deux fois chaque lien, le premier masqué sur mobile.
+ * Design 1b (point 8) : « Remboursement en cours » dès qu'un billet du paiement l'est (demande faite, argent pas encore
+ * versé : décidé par la route) ; pastille orange (en attente), liste en cascade, pression au toucher.
  */
 
 interface PaymentRow {
@@ -46,7 +48,8 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
   Confirmé: 'success',
   'En attente': 'warning',
   Échoué: 'danger',
-  'Remboursement en cours': 'info',
+  // Design 1b (point 8) : dès qu'un billet du paiement est en remboursement (règle de GET /api/account/payments)
+  'Remboursement en cours': 'warning',
   Remboursé: 'info',
   'Remboursé en partie': 'info',
 };
@@ -106,28 +109,28 @@ export default function PaymentsPage() {
             <KpiCard label="Total remboursé" value={formatFcfa(data.total_refunded)} tone="info" icon={<RotateCcw size={18} />} />
           </div>
 
-          <ul className="space-y-3" aria-label="Liste de vos paiements">
+          <ul className="ev-stagger space-y-3" aria-label="Liste de vos paiements">
             {data.items.map((item) => (
               <li key={item.id}>
                 <Link
                   href={`/paiement/${item.id}`}
-                  className="group flex min-h-11 items-center gap-3 rounded-2xl border border-border bg-surface p-4 transition-colors duration-200 hover:border-brand-fg/40 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="ev-press group flex min-h-11 items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-colors duration-200 hover:border-primary-text/40 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span className="min-w-0 flex-1 space-y-1">
-                    <span className="block break-words text-sm font-semibold text-fg group-hover:text-brand-fg">{item.event_title ?? item.target_label}</span>
-                    <span className="block text-sm text-fg-muted">
+                    <span className="block break-words text-sm font-semibold text-foreground-strong group-hover:text-primary-text">{item.event_title ?? item.target_label}</span>
+                    <span className="block text-sm text-muted-foreground">
                       <time dateTime={item.created_at} className="tabular-nums">{formatDateTime(item.created_at)}</time>
                     </span>
-                    <span className="block text-sm text-fg-muted">{item.operator_label}</span>
+                    <span className="block text-sm text-muted-foreground">{item.operator_label}</span>
                     {item.refunded_amount > 0 && item.refunded_amount !== item.amount && (
-                      <span className="block text-sm text-fg-muted tabular-nums">{`Remboursé : ${formatFcfa(item.refunded_amount)}`}</span>
+                      <span className="block text-sm text-muted-foreground tabular-nums">{`Remboursé : ${formatFcfa(item.refunded_amount)}`}</span>
                     )}
                   </span>
                   <span className="flex flex-shrink-0 flex-col items-end gap-1.5">
-                    <span className="text-sm font-bold text-fg tabular-nums">{formatFcfa(item.amount)}</span>
+                    <span className="text-sm font-bold text-foreground-strong tabular-nums">{formatFcfa(item.amount)}</span>
                     <Badge variant={STATUS_VARIANTS[item.status_label] ?? 'neutral'} className="whitespace-nowrap">{item.status_label}</Badge>
                   </span>
-                  <ChevronRight size={18} className="flex-shrink-0 text-fg-muted group-hover:text-brand-fg" aria-hidden="true" />
+                  <ChevronRight size={18} className="flex-shrink-0 text-muted-foreground group-hover:text-primary-text" aria-hidden="true" />
                 </Link>
               </li>
             ))}

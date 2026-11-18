@@ -1,4 +1,4 @@
-import { Activity, Award, BellRing, Building2, Calendar, DollarSign, FileText, KeyRound, LayoutDashboard, Megaphone, QrCode, Settings2, ShieldCheck, Users } from 'lucide-react';
+import { Activity, Award, BellRing, Building2, Calendar, DollarSign, FileText, KeyRound, LayoutDashboard, Megaphone, QrCode, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react';
 import type { NavItem } from './AppLayout';
 
 export interface AdminNav {
@@ -15,8 +15,8 @@ export interface AdminNav {
  * ADMIN, toutes pour un SUPERADMIN). Chargé à la demande par AppLayout (`import('./admin-nav')`) : rien de ce module
  * n'alourdit les pages publiques. « Scanner » seulement avec access.operate ; « Réglages » avec settings.read ; « Mes
  * droits » pour un ADMIN ; plus de « Tarification » (retirée). Finition 3d (point 2) : « Sécurité du compte » (codes de
- * secours, son numéro) pour un SUPERADMIN. Le menu n'est qu'un confort : chaque page et chaque route
- * refusent toujours côté serveur sans le droit (tests/parcours/f3b-securite.test.ts).
+ * secours, son numéro) pour un SUPERADMIN. Design 1b : « À la une » (événements en tête de l'accueil) pour un
+ * SUPERADMIN. Le menu n'est qu'un confort : chaque page et chaque route refusent toujours côté serveur sans le droit (tests/parcours/f3b-securite.test.ts).
  */
 export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin: boolean): AdminNav {
   const finance = can('payments.read') || can('refunds.manage');
@@ -41,6 +41,7 @@ export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin
       items: [
         ...(referral ? [{ name: 'Parrainage', href: '/admin/referral', icon: Award }] : []),
         ...(can('communications.manage') ? [{ name: 'Campagnes', href: '/admin/communications', icon: Megaphone }] : []),
+        ...(isSuperAdmin ? [{ name: 'À la une', href: '/admin/a-la-une', icon: Sparkles }] : []),
       ],
     },
     {
@@ -63,6 +64,7 @@ export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin
   if (finance) proItems.push({ name: 'Finance', href: '/admin/finance', icon: DollarSign });
   if (referral) proItems.push({ name: 'Parrainage et ambassadeurs', href: '/admin/referral', icon: Award });
   if (can('communications.manage')) proItems.push({ name: 'Campagnes', href: '/admin/communications', icon: Megaphone });
+  if (isSuperAdmin) proItems.push({ name: 'À la une de l’accueil', href: '/admin/a-la-une', icon: Sparkles });
   if (can('settings.read')) proItems.push({ name: 'Réglages de la plateforme', href: '/admin/finance-settings', icon: Settings2 });
   if (isSuperAdmin) proItems.push({ name: 'Journal d’audit', href: '/admin/audit', icon: Activity });
   if (can('notifications.read')) proItems.push({ name: 'Notifications', href: '/admin/notifications', icon: BellRing });

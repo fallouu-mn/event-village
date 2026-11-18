@@ -19,6 +19,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CashoutService } from '@/lib/payments/cashout.service';
 import { EventLifecycleError, refusalToError, type LifecycleRefusal } from '@/lib/events/event-lifecycle.service';
 import { permissionMissingMessage } from '@/lib/admin/permission-labels';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
 
 export interface EventCancellationInput {
     publicNotice: string;
@@ -116,6 +117,8 @@ export class EventCancellationService {
             internal_reason: input.internalReason,
             confirm_title: input.confirmTitle,
         }, 'Annulation de l’événement');
+        // Design 1b : avis d'annulation visible tout de suite sur la fiche, l'accueil et l'Explorer
+        invalidatePublicEvent(eventId, 'annulation');
 
         const cashoutIds = Array.isArray(result.cashout_ids) ? result.cashout_ids.map(String) : [];
         // L'annulation est acquise : un échec d'envoi laisse les remboursements A_ENVOYER, repris par l'admin.

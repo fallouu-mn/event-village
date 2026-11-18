@@ -60,10 +60,15 @@ const CATEGORY_HELP = 'Pour vendre des places supplémentaires à un autre prix,
 /** Colonnes de public_event_state (contrat O1 du lot 5 + stock_level, D.2.2 (1)) ; de public_category_stock (inchangées). */
 const STATE_COLUMNS = ['event_id', 'status', 'title', 'start_at', 'end_at', 'location', 'city', 'image_url', 'min_price', 'has_purchasable', 'updated_at', 'stock_level'];
 const STOCK_COLUMNS = ['category_id', 'event_id', 'availability', 'remaining_hint', 'updated_at'];
-/** Clés actuelles de la carte (CatalogEventDto, lib/events/catalog.server.ts:63-85), plus `stock`. */
+/**
+ * Clés actuelles de la carte (CatalogEventDto, lib/events/catalog.server.ts), plus `stock`. Design 1b (lot CATALOGUE) :
+ * plus `startsAt`, `endsAt` (instants, « En cours » calculé sur le téléphone) et `paidFrom` (« Gratuit ou dès … ») ; toujours
+ * aucun nombre de places.
+ */
 const CARD_KEYS = [
     'id', 'slug', 'title', 'subtitle', 'imageUrl', 'dateFormatted', 'dayNumber', 'monthShort', 'timeFormatted', 'venue', 'category',
     'categoryLabel', 'city', 'price', 'priceFormatted', 'onSaleSoon', 'saleLabel', 'endFormatted', 'status', 'stock',
+    'startsAt', 'endsAt', 'paidFrom',
 ];
 const SETTLE_MS = 1_500;
 
@@ -214,9 +219,12 @@ describe('9t.19 — stock au public : carte, fiche, temps réel, ordre', () => {
         assert.equal(s.purchasable, true, 'fiche achetable');
     });
 
-    test('15 VIP de plus : carte « Dernières places », fiche « Plus que 5 places » sur VIP', async () => {
+    // Design 1b (lot CATALOGUE) : « Dernières places » sur la carte quand les places restantes en ligne ne dépassent pas 10 %
+    // de la jauge en ligne (lowStockLimit, testé sans base dans tests/schema/design1b-catalogue) : 5 restantes sur 30 → aucun
+    // badge (avant : seuil absolu de 10). La fiche garde sa tranche par catégorie (« Plus que 5 places »).
+    test('15 VIP de plus : carte sans badge (5 places sur 30), fiche « Plus que 5 places » sur VIP', async () => {
         await buy(evS, VIP, 15);
-        assert.deepEqual(cardView(await card(evS.eventId)), { price: 15_000, saleLabel: priceLabel(15_000), stock: 'LOW' }, 'carte après S2');
+        assert.deepEqual(cardView(await card(evS.eventId)), { price: 15_000, saleLabel: priceLabel(15_000), stock: null }, 'carte après S2');
         const vip = sheetCategory(await sheet(evS.eventId), VIP);
         assert.deepEqual({ availability: vip.availability, remainingHint: vip.remainingHint }, { availability: 'LOW', remainingHint: 5 }, 'fiche : VIP, plus que 5 places');
     });
@@ -230,7 +238,8 @@ describe('9t.19 — stock au public : carte, fiche, temps réel, ordre', () => {
 
     test('hausse de SIMPLE à 15 : la jauge bloque et dit quoi faire ; jauge à 35 puis hausse : carte et fiche disponibles', async () => {
         await raiseSimpleTo15(evS);
-        assert.deepEqual(cardView(await card(evS.eventId)), { price: 5_000, saleLabel: priceLabel(5_000), stock: 'LOW' }, 'carte après S4');
+        // Design 1b : 5 places restantes sur une jauge en ligne de 35 → aucun badge (limite 3)
+        assert.deepEqual(cardView(await card(evS.eventId)), { price: 5_000, saleLabel: priceLabel(5_000), stock: null }, 'carte après S4');
         const s = await sheet(evS.eventId);
         const simple = sheetCategory(s, SIMPLE);
         assert.deepEqual({ availability: simple.availability, remainingHint: simple.remainingHint, purchasable: s.purchasable },
@@ -330,7 +339,8 @@ describe('9t.19 — stock au public : carte, fiche, temps réel, ordre', () => {
         } finally {
             await disposeClients(anon);
         }
-        assert.deepEqual(cardView(await card(ev.eventId)), { price: 5_000, saleLabel: priceLabel(5_000), stock: 'LOW' }, 'carte après la garde');
+        // Design 1b : 2 places rendues sur une jauge en ligne de 3 → aucun badge (limite : 1 place)
+        assert.deepEqual(cardView(await card(ev.eventId)), { price: 5_000, saleLabel: priceLabel(5_000), stock: null }, 'carte après la garde');
         assert.equal((await sheet(ev.eventId)).purchasable, true, 'fiche achetable');
     });
 
@@ -429,7 +439,10 @@ describe('9t.19 — stock au public : carte, fiche, temps réel, ordre', () => {
         const discovery = readSource('components/events/HomeDiscovery.tsx');
         assert.ok(/\bliveTick\b/.test(discovery), 'HomeDiscovery lit liveTick');
         assert.ok(!/\buseRealtimeRefresh\b/.test(discovery), 'HomeDiscovery n’ouvre aucun abonnement (useRealtimeRefresh)');
-        assert.match(readSource('app/page.tsx'), /<HomeDiscovery\b[^>]*\bliveTick=\{/, 'app/page.tsx passe liveTick à HomeDiscovery');
+        // Design 1b : l'accueil est préparé par le serveur ; l'îlot du temps réel (HomeLive, seul abonné) transmet ses signaux
+        // à « Près de chez vous » par le compteur partagé de components/events/catalogSignal.ts (liveTick), sans abonnement de plus.
+        assert.match(discovery, /\bliveTick\s*=\s*useCatalogSignal\(\)/, 'HomeDiscovery reçoit liveTick des signaux de l’accueil');
+        assert.match(readSource('app/_accueil/HomeLive.tsx'), /\bemitCatalogSignal\(\)/, 'HomeLive transmet chaque signal');
     });
 
     test('non-régression : un événement sans épuisement ni seuil garde sa carte et son ordre', async () => {

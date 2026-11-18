@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+// Design 1b (décision du 18/11) : liens préchargés à l'intention (survol, toucher, focus), pas à l'affichage
+import Link from '@/components/ui/IntentLink';
 import { usePathname } from 'next/navigation';
 import {
   Home,
@@ -88,7 +89,7 @@ function navLinkClass(active: boolean): string {
   return cn(
     'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-    active ? 'bg-brand-bg font-semibold text-brand-fg' : 'text-fg-muted hover:bg-surface-sunken hover:text-fg',
+    active ? 'bg-primary-soft font-semibold text-primary-text' : 'text-muted-foreground hover:bg-background hover:text-foreground-strong',
   );
 }
 
@@ -239,7 +240,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
         aria-current={active ? 'page' : undefined}
         className={navLinkClass(active)}
       >
-        <Icon size={18} className={active ? 'text-brand-fg' : 'text-fg-muted'} />
+        <Icon size={18} className={active ? 'text-primary-text' : 'text-muted-foreground'} />
         <span className="min-w-0 truncate">{item.name}</span>
       </Link>
     );
@@ -247,15 +248,15 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const renderNavSection = (label: string, items: NavItem[], onNavigate?: () => void) => (
     <div key={label}>
-      <p className="mb-1.5 block px-3 text-sm font-semibold text-fg-muted">{label}</p>
+      <p className="mb-1.5 block px-3 text-sm font-semibold text-muted-foreground">{label}</p>
       <div className="flex flex-col gap-0.5">{items.map((item) => renderNavLink(item, onNavigate))}</div>
     </div>
   );
 
   const adminBadge = (
-    <div className="flex items-center gap-2.5 rounded-xl border border-border bg-surface-sunken px-3 py-2">
-      <ShieldCheck size={16} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
-      <span className="text-sm font-semibold text-fg">Administration</span>
+    <div className="flex items-center gap-2.5 rounded-xl border border-border bg-background px-3 py-2">
+      <ShieldCheck size={16} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
+      <span className="text-sm font-semibold text-foreground-strong">Administration</span>
     </div>
   );
 
@@ -325,9 +326,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-surface-sunken text-fg transition-colors duration-200 lg:flex-row">
+    <div className="flex min-h-screen flex-col bg-background text-foreground-strong transition-colors duration-200 lg:flex-row">
       {/* 1. Barre latérale (à partir de lg : 1024 px) */}
-      <aside className="sticky top-0 z-30 hidden h-screen w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-surface p-5 shadow-subtle lg:flex xl:w-72">
+      <aside className="sticky top-0 z-30 hidden h-screen w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-card p-5 shadow-subtle lg:flex xl:w-72">
         <div className="mb-6 py-2">
           <Logo variant="full" />
         </div>
@@ -342,8 +343,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               <Link href="/profile" className="group flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {avatar}
                 <span className="min-w-0 leading-tight">
-                  <span className="block truncate text-sm font-semibold text-fg group-hover:text-brand-fg">{displayName}</span>
-                  <span className="block truncate text-sm text-fg-muted">{accountSubtitle}</span>
+                  <span className="block truncate text-sm font-semibold text-foreground-strong group-hover:text-primary-text">{displayName}</span>
+                  <span className="block truncate text-sm text-muted-foreground">{accountSubtitle}</span>
                 </span>
               </Link>
               <div className="flex flex-shrink-0 items-center gap-1">
@@ -355,7 +356,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
             </div>
           ) : (
             <div className="flex w-full items-center justify-between gap-2">
-              <LinkButton href="/login" variant="outline" size="sm" leftIcon={<LogIn size={16} />}>
+              <LinkButton href="/login" prefetch={false} variant="outline" size="sm" leftIcon={<LogIn size={16} />}>
                 Se connecter
               </LinkButton>
               <ThemeToggle />
@@ -378,7 +379,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           aria-modal="true"
           aria-label="Menu"
           className={cn(
-            'absolute bottom-0 left-0 top-0 flex w-[85vw] max-w-[320px] flex-col bg-surface-raised shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none',
+            'absolute bottom-0 left-0 top-0 flex w-[85vw] max-w-[320px] flex-col bg-popover shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none',
             isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full',
           )}
         >
@@ -393,7 +394,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
             <Link
               href="/explore"
               onClick={closeMobileMenu}
-              className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface-sunken px-3.5 text-sm text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3.5 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Search size={16} aria-hidden="true" />
               <span>Rechercher un événement</span>
@@ -410,8 +411,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 <Link href="/profile" onClick={closeMobileMenu} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {avatar}
                   <span className="min-w-0 leading-tight">
-                    <span className="block truncate text-sm font-semibold text-fg">{displayName}</span>
-                    <span className="block truncate text-sm text-fg-muted">{accountSubtitle}</span>
+                    <span className="block truncate text-sm font-semibold text-foreground-strong">{displayName}</span>
+                    <span className="block truncate text-sm text-muted-foreground">{accountSubtitle}</span>
                   </span>
                 </Link>
                 <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => { closeMobileMenu(); signOut(); }}>
@@ -419,7 +420,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 </IconButton>
               </div>
             ) : (
-              <LinkButton href="/login" onClick={closeMobileMenu} fullWidth leftIcon={<LogIn size={16} />}>
+              <LinkButton href="/login" prefetch={false} onClick={closeMobileMenu} fullWidth leftIcon={<LogIn size={16} />}>
                 Se connecter
               </LinkButton>
             )}
@@ -429,7 +430,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
       {/* 2. Zone principale : en-tête et contenu */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 shadow-subtle lg:px-8">
+        <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-2 shadow-subtle lg:px-8">
           <div className="flex min-w-0 items-center gap-1.5">
             <IconButton
               ref={menuButtonRef}
@@ -448,7 +449,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="hidden max-w-lg flex-1 items-center sm:flex">
             <Link
               href="/explore"
-              className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-sunken px-4 text-sm text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Search size={16} aria-hidden="true" />
               <span className="truncate">Rechercher un événement, un concert, un restaurant…</span>
@@ -462,7 +463,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 avec ses trois boutons de 44 px. */}
             {scannerNav && (
               <div className="hidden sm:block">
-                <LinkButton href="/controller/scanner" size="sm" leftIcon={<QrCode size={16} />}>
+                <LinkButton href="/controller/scanner" prefetch={false} size="sm" leftIcon={<QrCode size={16} />}>
                   Scanner
                 </LinkButton>
               </div>
@@ -486,7 +487,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               <Link
                 href="/login"
                 aria-label="Se connecter"
-                className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-brand-bg text-brand-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-primary-soft text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
               >
                 <LogIn size={18} aria-hidden="true" />
               </Link>
@@ -501,7 +502,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       </div>
 
       {/* 3. Barre du bas (< 1024 px) */}
-      <nav aria-label="Navigation rapide" className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-1 py-1 shadow-lg lg:hidden">
+      <nav aria-label="Navigation rapide" className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card px-1 py-1 shadow-lg lg:hidden">
         <div className="flex items-stretch justify-around">
           {mobileItems.map((item) => {
             const active = isNavActive(item.href);
@@ -514,7 +515,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 className={cn(
                   'flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 transition-colors duration-150',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                  active ? 'text-brand-fg' : 'text-fg-muted hover:text-fg',
+                  active ? 'text-primary-text' : 'text-muted-foreground hover:text-foreground-strong',
                 )}
               >
                 <Icon size={20} aria-hidden="true" />

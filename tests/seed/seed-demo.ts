@@ -83,8 +83,8 @@
  *    crée son lien partner_controllers, x5 ; jamais controller_assignments_sync, X7), porte Nord par
  *    event_controller_gate_set, sans droit d'en changer ; une invitation VIP nommée « Awa Diop » à un numéro sans compte
  *    (ticket_invitation_create), non réclamée ; aucun scan (un VALIDE n'est pas scannable, ED7) ;
- *  - événement « dernieresPlaces » d'organisateur2, PUBLIE à J+1 : « Standard » 3 000 F ×20, 14 billets vendus par le
- *    checkout réel (6 restants, au plus le seuil de 10 : « Dernières places ») ;
+ *  - événement « dernieresPlaces » d'organisateur2, PUBLIE à J+1 : « Standard » 3 000 F ×20, 18 billets vendus par le
+ *    checkout réel (2 restants : design 1b, seuil relatif de 10 % de la jauge en ligne : « Dernières places ») ;
  *  - fin par assertLot9terInvariants('seed-demo') : (a) à (w), schéma du lot 9 ter, puis (x1) à (x13).
  *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
@@ -444,11 +444,11 @@ function sales(list: Array<[string, number[]]>): SaleSeed[] {
 }
 
 /**
- * Lot 9 ter (D.3.2) : ventes de « dernieresPlaces » (14 billets), passées en fin de seed par des acheteurs fixes : les
+ * Lot 9 ter (D.3.2) : ventes de « dernieresPlaces » (18 billets depuis le design 1b, 14 avant), passées en fin de seed par des acheteurs fixes : les
  * tirages du générateur pseudo-aléatoire des lots précédents (acheteurs, entrées de « ce soir », horodatages) restent
  * ceux d'avant la graine v4.
  */
-const DERNIERES_PLACES_SALES = [2, 3, 2, 3, 2, 2];
+const DERNIERES_PLACES_SALES = [3, 3, 3, 3, 3, 3];
 
 /** Lot 9 ter (D.3.2) : consigne d'entrée de la catégorie VIP de l'événement à zones (60 caractères au plus). */
 const ZONES_VIP_INSTRUCTION = 'Remettre bracelet doré — orienter vers le carré VIP';
@@ -742,7 +742,8 @@ const EVENTS: EventSeed[] = [
         lifecycle: 'VALIDE', sales: [],
     },
     {
-        // Lot 9 ter (D.3.2) : 14 places vendues sur 20 (DERNIERES_PLACES_SALES, en fin de seed), 6 restantes (seuil 10) :
+        // Lot 9 ter (D.3.2) : 18 places vendues sur 20 (DERNIERES_PLACES_SALES, en fin de seed), 2 restantes (design 1b :
+        // seuil relatif, 10 % de la jauge en ligne) :
         // « Dernières places » à l'accueil
         key: 'dernieresPlaces', organizer: 'organisateur2', title: 'Nuit du slam de Kaolack', category: 'CONCERT',
         venue: 'Centre culturel régional', city: 'Kaolack', lat: 14.1460, lng: -16.0730, start: dayAt(1, 21), hours: 3, capacity: 20,
@@ -1512,14 +1513,14 @@ async function main(): Promise<void> {
     }
     await spreadScans(ceSoir.id, new Date(NOW.getTime() - 100 * 60_000), new Date(NOW.getTime() - 2 * 60_000));
 
-    // Lot 9 ter (D.3.2) : « dernieresPlaces », 14 places vendues sur 20 par le checkout réel (même chemin que publieComplet),
+    // Lot 9 ter (D.3.2) : « dernieresPlaces », 18 places vendues sur 20 (design 1b : seuil relatif, 10 % de la jauge) par le checkout réel (même chemin que publieComplet),
     // après tous les tirages des lots précédents ; leurs SMS de confirmation partent avec l'envoyeur des invariants
     const lastSeats = byKey('dernieresPlaces');
     for (let i = 0; i < DERNIERES_PLACES_SALES.length; i++) await buyOnline(lastSeats, buyers[2 + i], 'Standard', DERNIERES_PLACES_SALES[i]);
     const { data: lastCat, error: lastCatErr } = await service.from('ticket_categories').select('total_quantity, sold_quantity').eq('id', lastSeats.categories.Standard.id).single();
     if (lastCatErr || !lastCat) fail('stock de « dernieresPlaces »', lastCatErr);
-    if (Number(lastCat.total_quantity) - Number(lastCat.sold_quantity) !== 6) fail('stock de « dernieresPlaces »', `reste ${Number(lastCat.total_quantity) - Number(lastCat.sold_quantity)} place(s) au lieu de 6`);
-    log(`« ${lastSeats.seed.title} » : 14 places vendues sur 20, 6 restantes`);
+    if (Number(lastCat.total_quantity) - Number(lastCat.sold_quantity) !== 2) fail('stock de « dernieresPlaces »', `reste ${Number(lastCat.total_quantity) - Number(lastCat.sold_quantity)} place(s) au lieu de 2`);
+    log(`« ${lastSeats.seed.title} » : 18 places vendues sur 20, 2 restantes`);
 
     const demoEvent = (ev: CreatedEvent, status: string): DemoEvent => ({ id: ev.id, title: ev.seed.title, status, organizer: ev.seed.organizer });
     const finalStatus: Record<Lifecycle, string> = {

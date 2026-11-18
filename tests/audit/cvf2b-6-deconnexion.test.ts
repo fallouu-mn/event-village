@@ -614,7 +614,8 @@ describe('13. inventaire des stockages du navigateur', () => {
             'lib/events/local-draft.ts': { what: 'brouillons du formulaire d’événement (localStorage)', compte: true, purge: 'clearAllDrafts' },
             'lib/scan/scan-session.ts': { what: 'mémoire du contrôle, scan en attente avec le QR lu (localStorage)', compte: true, purge: 'clearAllScanMemory' },
             'lib/payments/payment-client.ts': { what: 'liens et QR de paiement de l’opérateur pour un paiement du compte (sessionStorage « event-village:paiement: »)', compte: true, purge: 'clearPaymentHandoffs' },
-            'app/events/[id]/page.tsx': { what: 'panier (catégories et quantités) gardé pendant la connexion, 30 min (sessionStorage)', compte: false, purge: null },
+            // Design 1b (point 1) : panier de la fiche déplacé dans son îlot de billetterie, même clé, même contenu
+            'components/event-page/EventTicketing.tsx': { what: 'panier (catégories et quantités) gardé pendant la connexion, 30 min (sessionStorage)', compte: false, purge: null },
             'components/auth/LoginForm.tsx': { what: 'compteur d’échecs de connexion (localStorage)', compte: false, purge: null },
             'app/forgot-password/page.tsx': { what: 'compteur d’échecs ; drapeau « code vérifié » horodaté, sans valeur sans la session (sessionStorage)', compte: false, purge: null },
             'app/reset-password/page.tsx': { what: 'compteur d’échecs (localStorage)', compte: false, purge: null },
@@ -622,6 +623,9 @@ describe('13. inventaire des stockages du navigateur', () => {
             'components/providers/ThemeProvider.tsx': { what: 'thème (localStorage)', compte: false, purge: null },
             'lib/events/city-preference.ts': { what: 'ville préférée de l’appareil, visiteurs compris (localStorage)', compte: false, purge: null },
             'app/controller/scanner/page.tsx': { what: 'délai de retour automatique du scanner (localStorage)', compte: false, purge: null },
+            // Design 1b (point 9) : réglage de l'appareil « notifications désactivées ici » (valeur fixe « desactive »), sans
+            // identifiant ni donnée du compte, lu par le réabonnement automatique après une reconnexion
+            'lib/push/client.ts': { what: 'notifications désactivées sur cet appareil, valeur fixe sans donnée du compte (localStorage)', compte: false, purge: null },
         };
         const writers = [...src].filter(([, s]) => /\b(?:localStorage|sessionStorage)\b/.test(s) && /\.setItem\(/.test(s)).map(([f]) => f);
         const unknown = writers.filter((f) => !(f in known));

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { warmWhenIdle } from '@/lib/ui/warm-when-idle';
 
 // Cartes, icônes et minuterie : chargées au premier toast (et préchargées quand le navigateur est libre), jamais avec la page
 // Hors ligne, le morceau peut manquer (absent du cache du service worker) : repli minimal en texte, jamais d'erreur.
@@ -107,13 +108,9 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  useEffect(() => {
-    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
-    // Sans réseau : pas de préchargement (le morceau viendra au premier toast, ou le repli en texte)
-    const warm = () => { if (navigator.onLine !== false) void loadToastList(); };
-    if (w.requestIdleCallback) w.requestIdleCallback(warm);
-    else setTimeout(warm, 3000);
-  }, []);
+  // Préchargement quand le navigateur est libre, jamais pendant le chargement du premier écran d'une page (design 1b,
+  // scanner : lib/ui/warm-when-idle.ts). Sans réseau : rien (le morceau viendra au premier toast, ou le repli en texte).
+  useEffect(() => warmWhenIdle(() => { void loadToastList(); }), []);
 
   const toast = useMemo<ToastContextType['toast']>(
     () => ({

@@ -148,6 +148,13 @@ export interface Screen {
 }
 
 const UUID = '[0-9a-f-]{36}';
+/**
+ * Design 1b (garde-fou des mots) : nœud de texte fait d'un identifiant brut seul, admis seulement sur les écrans de la
+ * finance de l'administration (hors du design 1b, lot exclu par la consigne : à reprendre au lot de la finance).
+ */
+const RAW_ID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Design 1b : préchargement (next/link) d'une fiche fictive de la vitrine ou d'une fiche imposée : 404 attendu. */
+const fakeEventPrefetch = (id: string): RegExp => new RegExp(`/events/${id}(\\?_rsc=[^/]*)?$`);
 /** Lot 8 (8.2 h) : UUID bien formé qu'aucun événement ne porte. */
 const UNKNOWN_EVENT_ID = '00000000-0000-4000-8000-000000000404';
 const NOT_AN_EVENT_ID = 'pas-un-identifiant';
@@ -910,19 +917,32 @@ export const SCREENS: readonly Screen[] = [
     // ── Public ──────────────────────────────────────────────────────────────
     {
         id: 'accueil', titre: 'Accueil', role: 'anonyme', needsIds: false, path: () => '/',
-        // Lot 9 : section sous « À l'affiche », chargée après la page ; le seed y place des ventes récentes (spreadPurchases)
-        ready: async ({ page }) => { await expect(page.getByRole('region', { name: /^populaires/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 }); },
+        // Design 1b : rangée « À la une » (choix du Superadmin) ou, sans choix, « Populaires » (ventes récentes du seed,
+        // spreadPurchases), rendue par le serveur
+        ready: async ({ page }) => { await expect(page.getByRole('region', { name: /^(à la une|populaires)/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 }); },
     },
     { id: 'catalogue', titre: 'Catalogue des événements', role: 'anonyme', needsIds: false, path: () => '/explore' },
+    // Design 1b (point 5) : Explorer avec filtres (adresse ?quand=&gratuit=&categorie=), puces aria-pressed, pagination
+    {
+        id: 'explorer-semaine-gratuits', titre: 'Explorer — filtres « Cette semaine » et « Gratuit »', role: 'anonyme', needsIds: false,
+        path: () => '/explore?quand=semaine&gratuit=1',
+        ready: async ({ page }) => { await expect(page.getByRole('button', { name: /^cette semaine$/i })).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 }); },
+    },
+    {
+        id: 'explorer-concerts', titre: 'Explorer — catégorie « Concerts »', role: 'anonyme', needsIds: false, path: () => '/explore?categorie=CONCERT',
+        ready: async ({ page }) => { await expectHeading(page, /^explorer les événements$/i); },
+    },
     // Design 1a : en-tête et logo, composants de base, toasts, fenêtre de confirmation, pages spéciales (vitrine ouverte par
     // scripts/e2e/start-app.mjs, EV_VITRINE_DESIGN=1 ; données fictives)
     {
         id: 'design-composants', titre: 'Design 1a — en-tête, composants de base, repères, squelettes et état vide', role: 'anonyme', needsIds: false,
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000001')],
         path: () => '/vitrine-design',
         ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
     },
     {
         id: 'design-toasts', titre: 'Design 1a — toasts : réussite, action annulable, erreur qui reste avec « Réessayer »', role: 'anonyme', needsIds: false,
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000001')],
         path: () => '/vitrine-design',
         ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
         actions: async ({ page }) => {
@@ -933,6 +953,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'design-confirmation', titre: 'Design 1a — confirmation : le bouton dit l’action et le montant', role: 'anonyme', needsIds: false,
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000001')],
         path: () => '/vitrine-design',
         ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
         actions: async ({ page }) => {
@@ -960,7 +981,36 @@ export const SCREENS: readonly Screen[] = [
         id: 'design-hors-ligne', titre: 'Design 1a — page hors ligne (« Vous n’avez pas de réseau. »)', role: 'anonyme', needsIds: false, path: () => '/hors-ligne',
         ready: async ({ page }) => { await expectHeading(page, /^vous n.avez pas de réseau\.$/i); },
     },
-    { id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200 },
+    {
+        id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200,
+        // Design 1b (point 6) : fiche préparée par le serveur ; billetterie (îlot) prête quand son titre est affiché
+        ready: async ({ page }) => { await expect(page.getByRole('heading', { name: /^billetterie$/i }).first()).toBeVisible({ timeout: 30_000 }); },
+    },
+    // Design 1b (point 11) : « En cours · se termine vers {heure} », calculé sur le téléphone. « ce soir » commence 45 min
+    // après la graine, pour 5 h : l'horloge de la page est avancée de 2 h (page.clock), dans sa fenêtre.
+    {
+        id: 'fiche-en-cours', titre: 'Fiche — événement en cours (« En cours · se termine vers … »)', role: 'anonyme', needsIds: true,
+        path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200,
+        // Décision du 18/11 (erreur d'hydratation n° 418, run 401) : trois chargements de suite, heure du téléphone avancée de
+        // 2 h (événement en cours) ; toute exception de page est bloquante (contrôles de la capture). Badge calculé une fois la
+        // page chargée dans le navigateur (useLiveNow), jamais au rendu serveur.
+        actions: async ({ page }) => {
+            await page.clock.setFixedTime(new Date(Date.now() + 2 * 3600_000));
+            for (let passage = 1; passage <= 3; passage++) {
+                await page.reload();
+                await expect(page.getByText(/en cours · se termine vers \d{2}:\d{2}/i).first(), `badge « En cours », chargement ${passage}/3`).toBeVisible({ timeout: 30_000 });
+            }
+        },
+    },
+    // Design 1b (point 7) : bandeau de paiement en attente sur la fiche, tant que le serveur bloque un nouvel achat
+    {
+        id: 'fiche-paiement-en-attente', titre: 'Fiche — paiement déjà en attente (« Suivre le paiement », « Annuler ce paiement »)', role: 'client', needsIds: true,
+        path: (i) => `/events/${ids(i).events.publieComplet.id}`, expectStatus: 200,
+        ready: async ({ page }) => {
+            await expect(page.getByText(/un paiement est déjà en attente pour cet événement/i).first()).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('button', { name: /^annuler ce paiement$/i }).first()).toBeVisible();
+        },
+    },
     {
         id: 'evenement-suspendu', titre: 'Page publique — événement suspendu (bandeau, sans achat)', role: 'anonyme', needsIds: true,
         path: (i) => `/events/${ids(i).events.suspendu.id}`, expectStatus: 200,
@@ -1034,6 +1084,24 @@ export const SCREENS: readonly Screen[] = [
     {
         id: 'mes-billets', titre: 'Mes billets (QR masqué)', role: 'client', needsIds: true, path: () => '/tickets?tab=a-venir', // A10 : sans onglet, « Reçus » d'office (transfert entrant du seed)
         masks: (page) => [page.getByRole('img', { name: /QR/i })],
+        // Design 1b (point 8) : portefeuille, cartes de billet à la couleur de la catégorie
+        ready: async ({ page }) => { await expect(page.locator('article[aria-label^="Billet pour"]').first()).toBeVisible({ timeout: 30_000 }); },
+    },
+    // Design 1b (point 8) : QR en grand, fond blanc (la luminosité du téléphone ne se règle pas depuis le web)
+    {
+        id: 'mes-billets-qr-grand', titre: 'Mes billets — QR en grand sur fond blanc', role: 'client', needsIds: true, path: () => '/tickets?tab=a-venir',
+        masks: (page) => [page.getByRole('img', { name: /QR/i })],
+        ready: async ({ page }) => { await expect(page.locator('article[aria-label^="Billet pour"]').first()).toBeVisible({ timeout: 30_000 }); },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: 'Agrandir le QR code en plein écran' }).first().click();
+            await expect(page.getByRole('dialog').first()).toBeVisible({ timeout: 15_000 });
+        },
+    },
+    // Design 1b (point 8) : petite fête après l'achat (retour du paiement réussi : ?fete=1), annoncée par un toast
+    {
+        id: 'mes-billets-fete', titre: 'Mes billets — après l’achat (« Vos billets sont là. »)', role: 'client', needsIds: true, path: () => '/tickets?tab=a-venir&fete=1',
+        masks: (page) => [page.getByRole('img', { name: /QR/i })],
+        ready: async ({ page }) => { await expect(page.getByText('Vos billets sont là.').first()).toBeVisible({ timeout: 30_000 }); },
     },
     {
         id: 'mes-billets-recus', titre: 'Mes billets — onglet « Reçus » (transfert entrant à accepter)', role: 'client', needsIds: true,
@@ -1350,6 +1418,7 @@ export const SCREENS: readonly Screen[] = [
     {
         // Lot 9 bis (7.3, B114) : sous fumee-superadmin, réponse au format du contrat 4.1 ; voir l'en-tête du fichier
         id: 'admin-remboursements-a-reprendre', titre: 'Administration — finances : versements à reprendre (Renvoyer, Marquer versé ; réponses imposées)',
+        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => {
@@ -1554,6 +1623,15 @@ export const SCREENS: readonly Screen[] = [
     // Points 2a et 3 : « Changer le numéro » et « Changer le rôle » s'ouvrent sur une ligne de /admin/users, page pas encore
     // sur le système de design (badges de 10 px, noms de 12 px : contrôles bloquants des 14 px) ; aucune capture de la liste
     // remplie. PhoneChangeFlow est capturé par admin-numero-apres-secours ; les deux boutons sont prouvés par f3d-ecrans.
+    // Design 1b (point 3) : « À la une » choisi par le Superadmin (ajouter, ordonner, retirer, dates, motif, journal)
+    {
+        id: 'admin-a-la-une', titre: 'Administration — « À la une » de l’accueil (Superadmin)', role: 'fumee-superadmin', needsIds: false,
+        path: () => '/admin/a-la-une',
+        ready: async ({ page }) => {
+            await expect(page.getByText(/étiquette vue par les visiteurs/i).first()).toBeVisible({ timeout: 30_000 });
+            await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
+        },
+    },
     {
         id: 'admin-securite', titre: 'Administration — « Sécurité du compte » du Superadmin : codes de secours restants, son numéro',
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/securite',
@@ -1844,6 +1922,10 @@ export const SCREENS: readonly Screen[] = [
             // (lg:hidden) porte aussi « Acheter (…) », même action ; /^acheter/ visait les deux (run 77, mode strict).
             await page.getByRole('button', { name: /^acheter \d+ billets? \(/i }).click();
             await expect(page.getByRole('dialog').or(page.getByRole('alertdialog'))).toBeVisible();
+            // Design 1b (point 7) : opérateur choisi (grand bouton Wave sélectionné)
+            // Bouton radio visuellement masqué : on touche son étiquette, comme une personne
+            await page.locator('label').filter({ has: page.locator('input[type="radio"][value="WAVE"]') }).first().click();
+            await expect(page.getByRole('radio', { name: /^wave/i }).first()).toBeChecked();
         },
     },
     {
@@ -1998,20 +2080,13 @@ export const SCREENS: readonly Screen[] = [
             await revealCenter(nearbySection(page).getByRole('combobox'));
         },
     },
-    {
-        id: 'accueil-populaires-erreur', titre: 'Accueil — Populaires, état d’erreur (Réessayer)', role: 'anonyme', needsIds: false, path: () => '/',
-        injectError: /\/api\/events\/popular/,
-        injectErrorMessage: 'Populaires momentanément indisponibles.',
-        // Section sous « À l'affiche » : hors de l'image sans défilement
-        ready: async (c) => {
-            await expectRetry(c);
-            await revealCenter(c.page.getByRole('button', { name: /réessayer/i }));
-        },
-    },
+    // Design 1b : « accueil-populaires-erreur » retiré : « Populaires » est rendu par le serveur (cache de 60 s, dernière page
+    // réussie gardée en cas de panne), le navigateur ne le lit plus.
     // ── Lot 9 bis : versements, droits, transferts, email (contrat 7.3, T9) ──
     // Rouges jusqu'à leurs écrans (vague E) et aux données du seed (fix(9b.seed)) ; aucune boîte n'est confirmée.
     {
         id: 'admin-versements-marquer-verse', titre: 'Administration — versements à reprendre : boîte « Marquer versé » (justification, référence ; réponses imposées)',
+        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => { await cashoutsReady(page); },
@@ -2277,6 +2352,7 @@ export const SCREENS: readonly Screen[] = [
     // ── Lot 9 ter : versements, retraits retardés, clôture, édition (A.2.6, B.6) ──
     {
         id: 'admin-versements-constater-non-verse', titre: 'Administration — versements à reprendre : boîte « Constater non versé » (référence, motif ; réponses imposées)',
+        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => { await cashoutsReady(page); },
@@ -2306,6 +2382,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'admin-cloture-motif', titre: 'Administration — clôture d’un événement suspendu : champ « Motif de la clôture » (fiche imposée, rien n’est envoyé)',
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000931')],
         role: 'fumee-superadmin', needsIds: true, path: (i) => `/admin/events/${ids(i).events.termine.id}`,
         stubResponses: [{ url: new RegExp(`/api/admin/events/${UUID}$`), method: 'GET', status: 200, body: CLOSING_SHEET }],
         ready: async ({ page }) => { await expectHeading(page, /^festival des lumières de saint-louis$/i); },

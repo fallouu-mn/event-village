@@ -326,8 +326,9 @@ function confirmationIssues(mail: { html: string; text: string }, exp: Confirmat
         for (const s of exp.secrets ?? []) if (s && v.includes(s)) issues.push(`${at} : valeur secrète d'un billet présente`);
         issues.push(...textDefects(at, where === 'texte' ? mail.text : visibleText(mail.html), { phrasesAllowed: true }));
     }
-    if (!mail.html.includes(`href="${exp.appUrl}/tickets"`)) issues.push(`${exp.label} (HTML) : bouton sans lien ${exp.appUrl}/tickets`);
-    if (!mail.text.includes(`${exp.appUrl}/tickets`)) issues.push(`${exp.label} (texte) : lien ${exp.appUrl}/tickets absent`);
+    // Design 1b (point 8) : le bouton ouvre l'onglet « À venir », où sont les billets confirmés ou reçus.
+    if (!mail.html.includes(`href="${exp.appUrl}/tickets?tab=a-venir"`)) issues.push(`${exp.label} (HTML) : bouton sans lien ${exp.appUrl}/tickets?tab=a-venir`);
+    if (!mail.text.includes(`${exp.appUrl}/tickets?tab=a-venir`)) issues.push(`${exp.label} (texte) : lien ${exp.appUrl}/tickets?tab=a-venir absent`);
     for (const s of exp.secrets ?? []) if (s && mail.html.includes(s)) issues.push(`${exp.label} (HTML brut) : valeur secrète d'un billet présente`);
     issues.push(...htmlDefects(exp.label, mail.html, exp.appUrl));
     return issues;

@@ -69,6 +69,7 @@ import {
 } from '@/lib/payments/payment-client';
 import { REFUND_DELAYED_LABEL } from '@/lib/payments/payment-labels';
 import { OPERATOR_LABELS } from '@/lib/samirpay/types';
+import { TICKETS_AFTER_PURCHASE } from '@/components/event-page/signals';
 
 /* ──────────────────────────────── Réglages ──────────────────────────────── */
 
@@ -160,6 +161,11 @@ function internalPath(value: unknown): string | null {
   return path && INTERNAL_PATH.test(path) ? path : null;
 }
 
+/** Billets confirmés : Mes billets, onglet « À venir », avec la petite fête (le lot BILLETS retire le paramètre). */
+function afterPurchase(path: string): string {
+  return path === '/tickets' ? TICKETS_AFTER_PURCHASE : path;
+}
+
 function readItems(value: unknown): PaymentWaitingItem[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw: unknown) => {
@@ -213,7 +219,8 @@ function parseStatusBody(body: unknown): PaymentStatusView | null {
     items: readItems(b.items),
     payerPhoneMasked: nonEmptyString(b.payer_phone_masked),
     receiptChannels: channels,
-    successUrl: internalPath(b.success_url) ?? (targetType === 'SUBSCRIPTION' ? '/partner/subscription' : '/tickets'),
+    // Design 1b (point 7) : billets confirmés → Mes billets, onglet « À venir », avec la petite fête du lot BILLETS.
+    successUrl: afterPurchase(internalPath(b.success_url) ?? (targetType === 'SUBSCRIPTION' ? '/partner/subscription' : '/tickets')),
     retryUrl: internalPath(b.retry_url),
   };
 }

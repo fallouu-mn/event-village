@@ -256,3 +256,20 @@ Vues : 390 px et 1440 px, en clair et en sombre.
 7. **Accessibilité.**
    - Activez « Réduire les animations » sur le téléphone : plus aucun mouvement.
    - Au clavier, la touche Tab montre un contour orange doublé de sombre sur chaque élément.
+
+## Addendum : run complet de fin, sur `main` après la fusion (18/11)
+
+| Run | Commit de `main` | Résultat |
+|---|---|---|
+| 367 | `28ef60f07` (fusion du design 1a) | tests 493/493 verts, budgets JS tenus ; **e2e rouge** (voir ci-dessous) |
+| 371 | `7b1284dfc` (correctifs du 367) | e2e rouge sur un seul test : « terrain 9 » (scanner) |
+| 375 | `c011e2cb8` (correctif du terrain 9) | **vert** : tests, e2e, budgets JS |
+
+**Run 367, e2e rouge.** Trois causes, corrigées par `7b1284dfc` :
+- la barre de progression et l'affichage des toasts, chargés à la demande, échouaient hors ligne : billet hors ligne sans titre ;
+- le panneau d'onglet faisait moins de 44 px ;
+- deux captures de la vitrine attendaient un 404 qu'elles ne déclaraient pas.
+
+**Terrain 9, rouge depuis le run 342.** La règle « réduire les animations » donnait aux transitions une durée de 0,01 ms sur tous les éléments. Le design 1a a retiré la transition propre de `<body>`, qui limitait les propriétés animées. Depuis, tout style posé à la main sur `<body>` devenait une transition, et le test lisait l'ancienne valeur. Reproduit en local, puis corrigé par `c011e2cb8` : transitions à 0 s.
+
+Poids JS au run 375, en CI, mesurés par `js-budget` (tableau du run dans `ci-results`), tous sous leur budget.

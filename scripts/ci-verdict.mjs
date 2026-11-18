@@ -15,6 +15,8 @@
  *                      sortie de scripts/ci-rapide.mjs
  *   test-logs/         journal brut de chaque suite (tous lots réunis, mêmes noms qu'en série)
  *   captures/, emails/, perf/, playwright/, js-budget.tsv, e2e*.log, fake-services.log, next-start.log : job e2e
+ *                      (design 1b, lot PERF : perf/lighthouse.tsv|txt, toucher.tsv, lighthouse-resume.json,
+ *                      lighthouse-<page>.json.gz et perf-mobile.log, étape bloquante « performance mobile mesurée »)
  *   supabase-start.log, db-reset.log, seed.log, containers.log : ceux de chaque job, l'un après l'autre (en-tête)
  *   jobs/<job>/        journaux bruts de chaque job (dont verify.log de chaque lot), job.txt, etapes.txt
  *   run.txt            métadonnées du run, résultat et durée de chaque job, étapes de chaque job
@@ -68,7 +70,7 @@ for (const nom of ['supabase-start', 'db-reset', 'seed', 'containers']) {
 // Journaux et mesures du job e2e, aux mêmes noms qu'en série
 const e2e = job('e2e');
 if (e2e) {
-    for (const nom of ['e2e-install', 'e2e-seed', 'fake-services', 'next-start', 'e2e', 'build']) copier(path.join(e2e.dir, `${nom}.log`), path.join(runDir, `${nom}.log`));
+    for (const nom of ['e2e-install', 'e2e-seed', 'fake-services', 'next-start', 'e2e', 'build', 'perf-mobile']) copier(path.join(e2e.dir, `${nom}.log`), path.join(runDir, `${nom}.log`));
     for (const d of ['captures', 'emails', 'perf', 'playwright']) copier(path.join(e2e.dir, d), path.join(runDir, d));
     copier(path.join(e2e.dir, 'js-budget.tsv'), path.join(runDir, 'js-budget.tsv'));
 }
@@ -126,6 +128,8 @@ const lignes = [
 if (!rapide) {
     const o = needs.e2e?.outputs ?? {};
     lignes.push(`build=${o.build || 'skipped'}`, `js_budget=${o.js_budget || 'skipped'}`, `e2e_seed=${o.e2e_seed || 'skipped'}`, `e2e=${o.e2e || 'skipped'}`);
+    // Design 1b (lot PERF) : étape bloquante du job e2e (son échec rend le job, donc le run, rouge)
+    lignes.push(`perf_mobile=${o.perf_mobile || 'skipped'}`);
     lignes.push(`controle_lots=${controle}`, `lots=${lots.length}`);
     if (graine) lignes.push(`graine=${graine}`);
 }

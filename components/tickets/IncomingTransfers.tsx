@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { CalendarClock, DoorOpen, Gift, Hourglass, MapPin, ShieldCheck, Ticket, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
@@ -12,7 +11,10 @@ import dynamic from 'next/dynamic';
 // Lot 9 quinquies (run 173, budget de /tickets) : fenêtre « Confirmer mon numéro » chargée à la demande, hors du premier
 // chargement de « Mes billets » (elle ne sert qu'à un compte dont le numéro n'est pas encore confirmé).
 const PhoneVerifyDialog = dynamic(() => import('@/components/tickets/PhoneVerifyDialog').then((m) => m.PhoneVerifyDialog), { ssr: false });
+// Design 1b (point 1, budget JS de /tickets) : fenêtres de confirmation (et Modal) chargées après le premier affichage.
+const ConfirmDialog = dynamic(() => import('@/components/ui/ConfirmDialog').then((m) => m.ConfirmDialog), { ssr: false });
 import { formatDate, formatDateTime, formatEventDateTime, formatFcfa, formatTime } from '@/lib/format';
+import { senderLine } from '@/components/tickets/wallet';
 
 /**
  * Billets reçus (lot 6, contrat B3 à B5 et amendement 2) : onglet « Reçus » de « Mes billets ».
@@ -29,6 +31,8 @@ import { formatDate, formatDateTime, formatEventDateTime, formatFcfa, formatTime
  *  - Lot 9 ter (9t.17, contrat C.3.5) : une invitation déjà validée à la porte par la liste des invités (`used`, servi par
  *    le serveur) dit « Entrée déjà validée à la porte le … » ; « Ajouter à mes billets » la rattache au compte (elle
  *    apparaît comme utilisée), sans « Refuser » ni échéance.
+ *  - Design 1b (point 8) : expéditeur dit en mots vrais (senderLine) : « Envoyé par Awa D. » quand le serveur donne un
+ *    nom, « Invitation de l’organisateur », sinon « Billet reçu » (jamais « Envoyé par Un utilisateur »).
  */
 
 export interface IncomingTransfer {
@@ -74,7 +78,8 @@ function toTransfer(raw: unknown): IncomingTransfer | null {
     transfer_id: raw.transfer_id,
     kind: raw.kind === 'INVITATION' ? 'INVITATION' : 'TRANSFER',
     expires_at: typeof raw.expires_at === 'string' ? raw.expires_at : '',
-    sender_display: typeof raw.sender_display === 'string' && raw.sender_display ? raw.sender_display : 'Un utilisateur',
+    // Design 1b (point 8) : plus de repli « Un utilisateur » ; la ligne affichée vient de senderLine (wallet.ts).
+    sender_display: typeof raw.sender_display === 'string' ? raw.sender_display : '',
     used: raw.used === true,
     checked_in_at: typeof raw.checked_in_at === 'string' ? raw.checked_in_at : null,
     ticket: {
@@ -235,10 +240,10 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
         <div className="space-y-3" aria-busy="true">
           <span className="sr-only">Chargement des billets reçus…</span>
           {[0, 1].map((i) => (
-            <div key={i} className="space-y-3 rounded-2xl border border-border bg-surface p-5" aria-hidden="true">
-              <div className="h-5 w-2/3 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-              <div className="h-4 w-1/2 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-              <div className="h-11 w-40 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+            <div key={i} className="space-y-3 rounded-2xl border border-border bg-card p-5" aria-hidden="true">
+              <div className="h-5 w-2/3 rounded-md bg-background motion-safe:animate-pulse" />
+              <div className="h-4 w-1/2 rounded-md bg-background motion-safe:animate-pulse" />
+              <div className="h-11 w-40 rounded-xl bg-background motion-safe:animate-pulse" />
             </div>
           ))}
         </div>
@@ -261,40 +266,40 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
             const place = [t.event.location, t.event.city].filter(Boolean).join(', ');
             return (
               <li key={t.transfer_id} className="min-w-0">
-                <article aria-labelledby={`recu-${t.transfer_id}`} className="space-y-4 rounded-2xl border border-brand-fg/30 bg-surface p-4 sm:p-5">
+                <article aria-labelledby={`recu-${t.transfer_id}`} className="space-y-4 rounded-2xl border border-primary-text/30 bg-card p-4 sm:p-5">
                   <div className="flex items-start gap-3">
-                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                       <Ticket size={20} />
                     </span>
                     <div className="min-w-0 space-y-1">
-                      <h3 id={`recu-${t.transfer_id}`} className="break-words text-base font-semibold leading-snug text-fg">{t.event.title}</h3>
-                      <p className="flex items-center gap-1.5 text-sm text-fg-muted">
+                      <h3 id={`recu-${t.transfer_id}`} className="break-words text-base font-semibold leading-snug text-foreground-strong">{t.event.title}</h3>
+                      <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         <UserRound size={16} aria-hidden="true" />
-                        {t.kind === 'INVITATION' ? `Invitation de ${t.sender_display}` : `Envoyé par ${t.sender_display}`}
+                        {senderLine(t.kind, t.sender_display)}
                       </p>
                     </div>
                   </div>
                   <dl className="space-y-2 text-sm">
                     <div>
                       <dt className="sr-only">Date</dt>
-                      <dd className="flex items-start gap-2 text-fg">
-                        <CalendarClock size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                      <dd className="flex items-start gap-2 text-foreground-strong">
+                        <CalendarClock size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span className="min-w-0">{formatEventDateTime(t.event.start_date, t.event.start_time)}</span>
                       </dd>
                     </div>
                     {place && (
                       <div>
                         <dt className="sr-only">Lieu</dt>
-                        <dd className="flex items-start gap-2 text-fg">
-                          <MapPin size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                        <dd className="flex items-start gap-2 text-foreground-strong">
+                          <MapPin size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                           <span className="min-w-0 break-words">{place}</span>
                         </dd>
                       </div>
                     )}
                     <div>
                       <dt className="sr-only">Billet</dt>
-                      <dd className="flex items-start gap-2 text-fg">
-                        <Ticket size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                      <dd className="flex items-start gap-2 text-foreground-strong">
+                        <Ticket size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span className="min-w-0 tabular-nums">
                           {t.ticket.category_name ?? 'Billet'}
                           {t.kind === 'INVITATION' ? ' · Invitation' : t.ticket.price > 0 ? ` · ${formatFcfa(t.ticket.price)}` : ' · Gratuit'}
@@ -304,8 +309,8 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                     {t.used ? (
                       <div>
                         <dt className="sr-only">Entrée</dt>
-                        <dd className="flex items-start gap-2 font-semibold text-fg">
-                          <DoorOpen size={16} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                        <dd className="flex items-start gap-2 font-semibold text-foreground-strong">
+                          <DoorOpen size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                           <span className="min-w-0 tabular-nums">
                             {t.checked_in_at
                               ? `Entrée déjà validée à la porte le ${formatDate(t.checked_in_at)} à ${formatTime(t.checked_in_at)}.`
@@ -316,7 +321,7 @@ export function IncomingTransfers({ phase, data, error, onRetry, isRetrying = fa
                     ) : (
                       <div>
                         <dt className="sr-only">Délai</dt>
-                        <dd className="flex items-start gap-2 font-semibold text-warning-fg">
+                        <dd className="flex items-start gap-2 font-semibold text-warning-text">
                           <Hourglass size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                           <span className="min-w-0">
                             {t.expires_at ? `À accepter avant le ${formatDateTime(t.expires_at)}` : 'À accepter sous 48 h'}

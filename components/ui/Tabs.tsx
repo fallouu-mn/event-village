@@ -76,9 +76,24 @@ export function Tabs({ tabs, value, onChange, ariaLabel, idPrefix, className }: 
     refs.current.get(value)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [value]);
 
+  // Design 1b (point 10) : indicateur orange qui glisse d'un onglet à l'autre (translateX + scaleX d'une barre de 1 px :
+  // transform seulement, 250 ms ; coupé si « réduire les animations »). Avant la première mesure, la bordure de l'onglet
+  // choisi tient lieu d'indicateur (rendu serveur, aucun saut).
+  const [bar, setBar] = useState<{ x: number; w: number } | null>(null);
+  const measure = useCallback(() => {
+    const el = refs.current.get(value);
+    if (!el) return;
+    setBar({ x: el.offsetLeft, w: el.offsetWidth });
+  }, [value]);
+  useEffect(() => {
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [measure, tabs.length]);
+
   return (
     <div className={cn('-mx-4 overflow-x-auto px-4 no-scrollbar sm:mx-0 sm:px-0', className)}>
-      <div role="tablist" aria-label={ariaLabel} aria-orientation="horizontal" className="flex w-max min-w-full gap-1 border-b border-border">
+      <div role="tablist" aria-label={ariaLabel} aria-orientation="horizontal" className="relative flex w-max min-w-full gap-1 border-b border-border">
         {tabs.map((tab) => {
           const selected = tab.id === value;
           return (
@@ -103,7 +118,9 @@ export function Tabs({ tabs, value, onChange, ariaLabel, idPrefix, className }: 
                 'disabled:cursor-not-allowed disabled:opacity-50',
                 // Design 1a (direction.md, section 5) : souligné de 3 px à l'orange de la marque, libellé foncé et gras (l'orange vif
                 // n'est jamais un texte sur fond clair)
-                selected ? 'border-brand-vif font-bold text-foreground-strong' : 'border-transparent text-muted-foreground hover:border-input hover:text-foreground-strong',
+                selected
+                  ? cn('font-bold text-foreground-strong', bar ? 'border-transparent' : 'border-brand-vif')
+                  : 'border-transparent text-muted-foreground hover:border-input hover:text-foreground-strong',
               )}
             >
               <span>{tab.label}</span>
@@ -121,6 +138,13 @@ export function Tabs({ tabs, value, onChange, ariaLabel, idPrefix, className }: 
             </button>
           );
         })}
+        {bar && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-[-1px] left-0 h-[3px] w-px origin-left bg-brand-vif motion-safe:transition-transform motion-safe:duration-slow motion-safe:ease-out"
+            style={{ transform: `translateX(${bar.x}px) scaleX(${bar.w})` }}
+          />
+        )}
       </div>
     </div>
   );

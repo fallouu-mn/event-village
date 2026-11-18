@@ -143,6 +143,9 @@ function inspectDom(arg: { enums: string[]; captionSelector: string; references:
     const enumRe = new RegExp(`(?<![\\p{L}\\p{N}_])(${arg.enums.map(escape).join('|')})(?![\\p{L}\\p{N}_])`, 'gu');
     // Constructeur plutôt que littéral : le tsconfig du projet ne cible pas ES6 (drapeau « u »)
     const codeRe = new RegExp('(?<![\\p{L}\\p{N}_])[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+(?![\\p{L}\\p{N}_])', 'gu');
+    // Design 1b (point 2) : mots techniques et codes bruts jamais affichés (RPC, API, token, null, undefined, UUID et
+    // identifiants bruts, NaN, erreur ou statut HTTP chiffré, messages bruts du navigateur et de JavaScript)
+    const techRe = new RegExp('(?<![\\p{L}\\p{N}_])(?:RPC|API|[Tt]oken|null|undefined|NaN|UUID|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[Ee]rreur \\d{3}|HTTP \\d{3}|Failed to fetch|NetworkError|Load failed|Internal Server Error|TypeError|SyntaxError)(?![\\p{L}\\p{N}_])', 'gu');
     const skipTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
     const isVisible = (el: Element): boolean => {
         const withApi = el as Element & { checkVisibility?: (o?: Record<string, boolean>) => boolean };
@@ -181,7 +184,7 @@ function inspectDom(arg: { enums: string[]; captionSelector: string; references:
     const seenCodes = new Set<string>();
     const scan = (text: string, where: string) => {
         if (text.includes('§')) sectionSigns.push(`${where} : « ${text.trim().slice(0, 80)} »`);
-        for (const re of [enumRe, codeRe]) {
+        for (const re of [enumRe, codeRe, techRe]) {
             re.lastIndex = 0;
             let m: RegExpExecArray | null = re.exec(text);
             while (m !== null) {

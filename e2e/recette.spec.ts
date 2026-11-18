@@ -569,7 +569,14 @@ test('acte 4 [client] : découverte, fiche, refus direct, inscription depuis l�
         await client.getByLabel(/^rechercher un événement/i).fill(r.e1.title);
         await client.getByLabel(/^ville/i).selectOption({ label: 'Dakar' });
         await expect(client.getByRole('link', { name: /Nuit du Sabar/ }), 'recherche : un autre événement de Dakar disparaît').toHaveCount(0);
-        await client.getByRole('link', { name: new RegExp(escapeRe(r.e1.title)) }).first().click();
+        // Design 1b : catalogue d'Explorer en cache 60 s (servi périmé une fois puis renouvelé) : l'événement publié à l'acte
+        // précédent peut manquer au plus une minute ; la page est rechargée (filtres gardés dans l'adresse) jusqu'à 90 s.
+        const e1Link = client.getByRole('link', { name: new RegExp(escapeRe(r.e1.title)) }).first();
+        await expect(async () => {
+            if (await e1Link.count() === 0) await client.reload();
+            await expect(e1Link).toBeVisible({ timeout: 5_000 });
+        }, 'recherche : l’événement publié apparaît (cache de 60 s)').toPass({ timeout: 90_000, intervals: [5_000, 10_000, 15_000] });
+        await e1Link.click();
         await client.waitForURL(new RegExp(`/events/${r.e1.id}`));
         await expect(client.getByRole('heading', { level: 1, name: r.e1.title })).toBeVisible();
 
@@ -577,7 +584,9 @@ test('acte 4 [client] : découverte, fiche, refus direct, inscription depuis l�
         await expect(client.getByText(PROGRAM.title, { exact: true }), 'A15 : ligne du programme').toBeVisible();
         await expect(client.getByText(PROGRAM.participant), 'A15 : artiste du programme').toBeVisible();
         await expect(client.getByRole('heading', { name: /^lieu et accès$/i }), 'A15 : section des infos pratiques').toBeVisible();
-        for (const text of [PRACTICAL.address, PRACTICAL.access, PRACTICAL.parking, PRACTICAL.rules]) {
+        // Design 1b : l'adresse est affichée avec la ville (« 12, route de la Corniche, Ngor · Dakar ») : texte contenu
+        await expect(client.getByText(PRACTICAL.address).first(), `A15 : info pratique « ${PRACTICAL.address} »`).toBeVisible();
+        for (const text of [PRACTICAL.access, PRACTICAL.parking, PRACTICAL.rules]) {
             await expect(client.getByText(text, { exact: true }), `A15 : info pratique « ${text} »`).toBeVisible();
         }
 
@@ -1033,7 +1042,9 @@ test('acte 9 [partenaire] [client] [contrôleur] : invitation d’un numéro san
         await expect(invitee.getByRole('tab', { name: /^reçus/i }), '« Reçus » ouvert d’office (R45)').toHaveAttribute('aria-selected', 'true', { timeout: 30_000 });
         const offer = invitee.locator('li, article, section').filter({ hasText: r.e1.title }).filter({ has: invitee.getByRole('button', { name: /^accepter le billet$/i }) }).last();
         await expect(offer, 'invitation dans l’onglet Reçus').toBeVisible({ timeout: 30_000 });
-        await expect(offer, 'expéditeur affiché').toContainText(/l.organisateur de l.événement/i);
+        // Design 1b (point 8, run 385) : expéditeur d'une invitation écrit « Invitation de l’organisateur » partout côté client
+        // (senderLine, components/tickets/wallet.ts : seule source), au lieu de « l’organisateur de l’événement »
+        await expect(offer, 'expéditeur affiché').toContainText(/Invitation de l.organisateur/i);
         await offer.getByRole('button', { name: /^accepter le billet$/i }).click();
         const confirm = invitee.getByRole('dialog').or(invitee.getByRole('alertdialog'));
         await expect(confirm).toBeVisible();

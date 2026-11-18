@@ -4,10 +4,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic';
 import { HelpCircle, RefreshCw, Sparkles, Ticket, WifiOff } from 'lucide-react';
 import { TicketCard, type TicketCardProps } from '@/components/tickets/TicketCard';
+import { TicketWallet, useMinuteNow } from '@/components/tickets/TicketWallet';
+import { byStart } from '@/components/tickets/wallet';
 import type { TransferTicketData } from '@/components/tickets/TransferModal';
 import { IncomingTransfers, readIncomingTransfers, type IncomingTransfersData } from '@/components/tickets/IncomingTransfers';
 import { reconcileWithServerTickets } from '@/components/tickets/OfflineTicketsSync';
 import { Button, buttonClasses } from '@/components/ui/Button';
+import { Skeleton, SKELETON_CARD } from '@/components/ui/Skeleton';
+import { cn } from '@/components/ui/cn';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
@@ -17,11 +21,14 @@ import { TabPanel, useTabParam } from '@/components/ui/Tabs';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { usePageSettled } from '@/hooks/usePageSettled';
 import type { OfflineAvailability } from '@/lib/tickets/offline-clock';
 
 // Lot 7 (7.5) : les modales ne sont chargées qu'à leur ouverture (poids JS de /tickets).
 const TransferModal = dynamic(() => import('@/components/tickets/TransferModal').then((m) => m.TransferModal), { ssr: false });
 const TransferExplainerModal = dynamic(() => import('@/components/tickets/TransferExplainerModal').then((m) => m.TransferExplainerModal), { ssr: false });
+// Design 1b (point 8) : petite fête après l'achat, chargée seulement avec ?fete=1 (contrat avec le lot FICHE).
+const PurchaseCelebration = dynamic(() => import('@/components/tickets/PurchaseCelebration').then((m) => m.PurchaseCelebration), { ssr: false });
 
 /**
  * Mes billets (lot 5, tâche 5.13 ; contrats O3, O5, Q).
@@ -40,6 +47,17 @@ const TransferExplainerModal = dynamic(() => import('@/components/tickets/Transf
  *  - Lot 9 bis : R45 (A10) au premier chargement, un billet reçu qui attend et aucun onglet demandé dans l'URL
  *    ouvrent « Reçus » (les SMS gardent leur lien) ; R25, R66, R32, B9 : la carte reçoit ce que le serveur sert
  *    (codeVisible, transferAllowed, eventNotice, prix, frais, refundDelayed, postponementRefund).
+ *  - Design 1b (point 8) : portefeuille façon Wallet (TicketWallet : on glisse d'un billet à l'autre, boutons et flèches
+ *    du clavier) ; « À venir » trié du plus proche au plus lointain (le jour J, le QR du prochain billet d'abord, E-58) ;
+ *    compte à rebours à la minute (une minuterie pour la page) ; petite fête après un achat (?fete=1, paramètre retiré
+ *    ensuite).
+ *  - Design 1b (point 1, performance) : chargement côté navigateur, choisi parce que cette page est personnelle : le HTML
+ *    servi ne contient AUCUNE donnée du compte (rien de personnel ne peut finir dans un cache, et le service worker du
+ *    contrat 5.3 reste tel quel). Pour afficher vite : la liste est demandée dès le montage, en parallèle de la lecture
+ *    de la session et du profil (avant : après /api/auth/me) ; la réponse n'est utilisée qu'une fois le compte connu, et
+ *    jamais si personne n'est connecté ; GET /api/tickets répond « private, no-store ». Plus de grande affiche avant le
+ *    contenu (vignette de 56 px) ; squelettes à la taille de la carte (aucun saut) ; modales, QR en grand et fête chargés
+ *    à la demande (budget JS de /tickets).
  */
 
 type TicketStatus = TicketCardProps['status'];
@@ -50,7 +68,7 @@ interface MyTicket {
   ticketNumber: string;
   eventTitle: string;
   eventSubtitle?: string;
-  eventImageUrl: string;
+  eventImageUrl: string | null;
   dateFormatted: string;
   timeFormatted: string;
   venue: string;
@@ -70,6 +88,9 @@ interface MyTicket {
   eventNotice?: string | null;
   refundDelayed?: boolean;
   postponementRefund?: TicketCardProps['postponementRefund'];
+  startsAt?: string | null;
+  endsAt?: string | null;
+  categoryColor?: string | null;
 }
 
 const TABS = ['a-venir', 'tous', 'historique', 'recus'] as const;
@@ -126,17 +147,37 @@ function isActiveUpcoming(t: MyTicket): boolean {
   return t.status === 'VALIDE' && t.isUpcoming;
 }
 
+/** Squelette à la forme de la carte Wallet (talon, informations, QR de 216 px, encadré), aucun saut à l'arrivée. */
 function TicketSkeleton() {
   return (
-    <div className="overflow-hidden rounded-3xl border border-border bg-surface" aria-hidden="true">
-      <div className="h-32 w-full bg-surface-sunken motion-safe:animate-pulse" />
-      <div className="space-y-3 p-5">
-        <div className="h-5 w-2/3 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-        <div className="h-4 w-1/2 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-        <div className="mx-auto h-40 w-40 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
+    <div className={cn(SKELETON_CARD, 'overflow-hidden rounded-2xl')} aria-hidden="true">
+      <div className="flex gap-3 bg-muted px-4 pb-6 pt-4">
+        <Skeleton className="h-14 w-14 flex-shrink-0 bg-card" />
+        <div className="flex-1 space-y-2 pt-1">
+          <Skeleton className="h-4 w-1/3 bg-card" />
+          <Skeleton className="h-6 w-3/4 bg-card" />
+          <Skeleton className="h-4 w-1/2 bg-card" />
+        </div>
+      </div>
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-11" />
+          <Skeleton className="h-11" />
+          <Skeleton className="col-span-2 h-11" />
+        </div>
+        <Skeleton className="mx-auto h-[216px] w-[216px] rounded-2xl" />
+        <Skeleton className="h-36" />
       </div>
     </div>
   );
+}
+
+/** Retire ?fete=1 de l'adresse sans recharger ni déplacer la page (l'onglet demandé reste). */
+function dropCelebrationParam(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('fete')) return;
+  url.searchParams.delete('fete');
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 export default function TicketsPage() {
@@ -156,10 +197,31 @@ export default function TicketsPage() {
 
   const [transferTicket, setTransferTicket] = useState<TransferTicketData | null>(null);
   const [isExplainerOpen, setIsExplainerOpen] = useState(false);
+  const now = useMinuteNow();
+
+  // Design 1b (point 8) : retour d'un paiement réussi (/tickets?tab=a-venir&fete=1) : petite fête une fois les billets
+  // affichés, puis le paramètre est retiré (un rechargement ne la rejoue pas).
+  const [celebrate, setCelebrate] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('fete') === '1') setCelebrate(true);
+  }, []);
+  const endCelebration = useCallback(() => {
+    setCelebrate(false);
+    dropCelebrationParam();
+  }, []);
+
+  // Design 1b (point 1) : liste demandée dès le montage, sans attendre la session ni le profil (même cookie de session
+  // que le fournisseur de session). La réponse n'est lue qu'une fois le compte connu (effet de chargement ci-dessous).
+  const earlyRef = useRef<Promise<LoadResult> | null>(null);
+  useEffect(() => {
+    earlyRef.current = readTickets();
+  }, []);
 
   /** « initial » : écran d'erreur si l'échec survient ; « silent » : la liste reste, un bandeau le signale. */
-  const load = useCallback(async (mode: 'initial' | 'silent') => {
-    const result = await readTickets();
+  const load = useCallback(async (mode: 'initial' | 'silent', early?: Promise<LoadResult> | null) => {
+    // Réponse anticipée gardée seulement si elle a réussi (session encore à renouveler : nouvelle demande, même règle).
+    const anticipated = early ? await early : null;
+    const result = anticipated?.ok ? anticipated : await readTickets();
     if (result.ok) {
       setTickets(result.tickets);
       setLoadError(null);
@@ -208,13 +270,18 @@ export default function TicketsPage() {
     await Promise.all([load('silent'), loadIncoming('silent')]);
   }, [load, loadIncoming]);
 
+  // Compte connu (sans attendre le profil) : billets et billets reçus. La réponse anticipée ne sert qu'au premier compte vu.
   useEffect(() => {
-    if (isAuthLoading || !userId) return;
-    void load('initial');
+    if (!userId) return;
+    const early = earlyRef.current;
+    earlyRef.current = null;
+    void load('initial', early);
     void loadIncoming('initial');
-  }, [isAuthLoading, userId, load, loadIncoming]);
+  }, [userId, load, loadIncoming]);
 
-  // Temps réel (contrat O5) : billets du porteur et notifications (transfert reçu, accepté, annulé).
+  // Temps réel (contrat O5) : billets du porteur et notifications (transfert reçu, accepté, annulé). Design 1b (décision
+  // du 18/11) : abonnement ouvert une fois la page chargée et le téléphone libre.
+  const pageSettled = usePageSettled();
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: `mes-billets-${userId ?? 'anonyme'}`,
     subscriptions: [
@@ -222,7 +289,7 @@ export default function TicketsPage() {
       { table: 'notifications', filter: `user_id=eq.${userId ?? ''}`, event: 'INSERT' },
     ],
     onSignal: refreshAll,
-    enabled: Boolean(userId),
+    enabled: Boolean(userId) && pageSettled,
   });
 
   const retry = async () => {
@@ -244,7 +311,7 @@ export default function TicketsPage() {
   };
 
   const shown = useMemo(() => {
-    if (tab === 'a-venir') return tickets.filter(isActiveUpcoming);
+    if (tab === 'a-venir') return tickets.filter(isActiveUpcoming).sort(byStart);
     if (tab === 'historique') return tickets.filter((t) => !isActiveUpcoming(t));
     return tickets;
   }, [tickets, tab]);
@@ -276,18 +343,18 @@ export default function TicketsPage() {
     <div className="space-y-6 pb-24 lg:pb-12">
       <PageHeader
         title="Mes billets"
-        description="Présentez le QR code de votre billet à l’entrée. Il se renouvelle tout seul : gardez la page ouverte."
+        description="Présentez le QR code à l’entrée : il se renouvelle tout seul. Glissez d’un billet à l’autre, et touchez le QR pour l’afficher en grand."
         eyebrow={<LiveIndicator status={liveStatus} />}
         actions={(
           <>
-            <a href="/billet/hors-ligne" className={buttonClasses({ variant: 'secondary' })}>
-              <WifiOff size={18} aria-hidden="true" />
-              Afficher mes billets hors ligne
+            <a href="/billet/hors-ligne" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+              <WifiOff size={16} aria-hidden="true" />
+              Mes billets sans réseau
             </a>
-            <Button variant="secondary" onClick={() => setIsExplainerOpen(true)} leftIcon={<HelpCircle size={18} />}>
+            <Button variant="secondary" size="sm" onClick={() => setIsExplainerOpen(true)} leftIcon={<HelpCircle size={16} />}>
               Comment marche le transfert ?
             </Button>
-            <LinkButton href="/explore" leftIcon={<Sparkles size={18} />}>
+            <LinkButton href="/explore" size="sm" leftIcon={<Sparkles size={16} />}>
               Réserver un billet
             </LinkButton>
           </>
@@ -330,10 +397,11 @@ export default function TicketsPage() {
           </StatusBanner>
         )}
 
-        {isAuthLoading || phase === 'loading' ? (
-          <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2" aria-busy="true">
-            <TicketSkeleton />
-            <TicketSkeleton />
+        {phase === 'loading' ? (
+          <div className="flex items-start gap-3 overflow-hidden md:grid md:grid-cols-2 md:gap-6" aria-busy="true">
+            <span className="sr-only">Chargement de vos billets…</span>
+            <div className="w-[calc(100%-2rem)] shrink-0 md:w-auto"><TicketSkeleton /></div>
+            <div className="w-[calc(100%-2rem)] shrink-0 md:w-auto"><TicketSkeleton /></div>
           </div>
         ) : phase === 'error' ? (
           <ErrorState
@@ -343,10 +411,14 @@ export default function TicketsPage() {
             isRetrying={isRetrying}
           />
         ) : shown.length > 0 ? (
-          <ul className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
-            {shown.map((ticket) => (
-              <li key={ticket.id} className="min-w-0">
+          <TicketWallet
+            label={tab === 'a-venir' ? 'Billets à venir' : tab === 'historique' ? 'Historique de vos billets' : 'Tous vos billets'}
+            items={shown.map((ticket, index) => ({
+              key: ticket.id,
+              node: (
                 <TicketCard
+                  // Design 1b (décision du 18/11) : seul le premier billet démarre tout de suite (code, lot hors ligne, QR)
+                  eager={index === 0}
                   id={ticket.id}
                   eventId={ticket.eventId}
                   ticketNumber={ticket.ticketNumber}
@@ -371,6 +443,10 @@ export default function TicketsPage() {
                   eventNotice={ticket.eventNotice ?? null}
                   refundDelayed={ticket.refundDelayed === true}
                   postponementRefund={ticket.postponementRefund ?? null}
+                  categoryColor={ticket.categoryColor ?? null}
+                  startsAt={ticket.startsAt ?? null}
+                  endsAt={ticket.endsAt ?? null}
+                  now={now}
                   onRefunded={() => void refreshTickets()}
                   onTransferClick={() =>
                     setTransferTicket({
@@ -386,9 +462,9 @@ export default function TicketsPage() {
                   onCancelTransferSuccess={() => void refreshTickets()}
                   onOpenExplainer={() => setIsExplainerOpen(true)}
                 />
-              </li>
-            ))}
-          </ul>
+              ),
+            }))}
+          />
         ) : (
           <EmptyState
             icon={<Ticket size={28} />}
@@ -416,6 +492,8 @@ export default function TicketsPage() {
       )}
 
       {isExplainerOpen && <TransferExplainerModal isOpen onClose={() => setIsExplainerOpen(false)} />}
+
+      {celebrate && phase === 'ready' && <PurchaseCelebration onDone={endCelebration} />}
     </div>
   );
 }
