@@ -27,7 +27,8 @@ export const SEUILS = Object.freeze({
     toucherMs: 200,
 });
 
-export const PASSAGES = 3;
+/** Décision du 18/11 (oscillation de ± 5 au run 417, ralentissement calibré) : médiane de 5 passages, seuils inchangés. */
+export const PASSAGES = 5;
 
 /**
  * Décision du 18/11 — téléphone de référence de Lighthouse : le préréglage mobile ralentit le processeur ×4 pour un poste

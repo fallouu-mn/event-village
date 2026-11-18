@@ -63,10 +63,10 @@ const DEMO_IDS_FILE = path.join(ROOT, '.e2e-captures', 'demo-ids.json');
 const CLIENT_STATE_FILE = path.join(ROOT, '.auth', 'client.json');
 const ENV_FILE = path.join(ROOT, process.env.EV_E2E_ENV_FILE || '.env.e2e');
 
-/** Temps imparti (l'étape CI a timeout-minutes: 10) : au-delà, les passages restants sont notés en erreur. */
-const BUDGET_MS = 8 * 60_000;
+/** Temps imparti (l'étape CI a timeout-minutes: 15 ; 5 passages depuis le 18/11) : au-delà, les passages restants sont notés en erreur. */
+const BUDGET_MS = 13 * 60_000;
 /** Chien de garde : rapport partiel écrit et sortie 1, avant que la CI ne coupe l'étape. */
-const WATCHDOG_MS = 9 * 60_000;
+const WATCHDOG_MS = 14 * 60_000;
 const LIGHTHOUSE_TIMEOUT_MS = 150_000;
 const TOUCHERS_PAR_PAGE = 5;
 const HOST_RESOLVER = '--host-resolver-rules=MAP localhost 127.0.0.1';
