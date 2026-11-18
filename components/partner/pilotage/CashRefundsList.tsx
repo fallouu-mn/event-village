@@ -74,7 +74,7 @@ function ticketsLabel(n: number): string {
 function refundedLine(item: CashRefundItem): React.ReactNode {
     if (!item.refunded_at) return null;
     return (
-        <span className="inline-flex items-start gap-1.5 text-sm font-medium text-success-fg">
+        <span className="inline-flex items-start gap-1.5 text-sm font-medium text-success-text">
             <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <span>
                 Remboursé le <time dateTime={item.refunded_at}>{formatDateTime(item.refunded_at)}</time>
@@ -126,9 +126,9 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                 </Button>
             );
         }
-        if (!data?.can_mark) return <span className="text-sm font-medium text-warning-fg">À rembourser par l’organisateur</span>;
+        if (!data?.can_mark) return <span className="text-sm font-medium text-warning-text">À rembourser par l’organisateur</span>;
         return (
-            <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-fg">
+            <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm font-semibold text-foreground-strong">
                 <input
                     type="checkbox"
                     checked={false}
@@ -137,7 +137,7 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                         setPending(item);
                     }}
                     aria-label={`Remboursé : vente ${item.reference}, ${formatFcfa(item.amount)}`}
-                    className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-border-strong accent-brand"
+                    className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-input accent-primary"
                 />
                 Remboursé
             </label>
@@ -202,18 +202,18 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                         />
                     ) : (
                         // Une seule liste, en cartes à toute largeur (une case par vente, jamais en double dans le DOM)
-                        <ul aria-label="Ventes au guichet à rembourser en espèces" className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-surface">
+                        <ul aria-label="Ventes au guichet à rembourser en espèces" className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-card">
                             {data.items.map((r) => (
                                 <li key={r.payment_id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="min-w-0 space-y-1">
-                                        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base font-semibold text-fg tabular-nums">
+                                        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base font-semibold text-foreground-strong tabular-nums">
                                             <span>Vente {r.reference}</span>
                                             <span>{formatFcfa(r.amount)}</span>
                                         </p>
-                                        <p className="text-sm text-fg-muted tabular-nums">
+                                        <p className="text-sm text-muted-foreground tabular-nums">
                                             {ticketsLabel(r.ticket_count)} · {r.phone_masked ?? 'Numéro non saisi'}
                                         </p>
-                                        <p className="text-sm text-fg-muted">
+                                        <p className="text-sm text-muted-foreground">
                                             Vendue le <time dateTime={r.sold_at}>{formatDateTime(r.sold_at)}</time>
                                             {r.seller ? ` par ${r.seller}` : ''}
                                         </p>
@@ -245,7 +245,7 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                 confirmDisabled={adminMarks && !reasonOk}
             >
                 {pending && (
-                    <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 rounded-2xl border border-border bg-surface-sunken p-4 text-sm text-fg tabular-nums">
+                    <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 rounded-2xl border border-border bg-background p-4 text-sm text-foreground-strong tabular-nums">
                         <dt className="font-semibold">Vente</dt>
                         <dd>{pending.reference}</dd>
                         <dt className="font-semibold">Billets</dt>

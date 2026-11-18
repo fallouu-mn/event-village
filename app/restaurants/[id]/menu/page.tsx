@@ -105,13 +105,16 @@ export default function RestaurantMenuPage(props: { params: Promise<{ id: string
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Impossible de créer la commande.');
+        // Message de l'API (texte public) ; une exception JavaScript brute n'est jamais montrée.
+        toast.error(typeof data?.error === 'string' && data.error ? data.error : 'Impossible de créer la commande.');
+        return;
       }
 
       setActiveOrderId(data.order.id);
       setIsPaymentOpen(true);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erreur lors de la validation.');
+      console.error('[Commande] échec :', err instanceof Error ? err.message : String(err));
+      toast.error('La commande n’a pas abouti. Vérifiez votre connexion puis réessayez.');
     } finally {
       setIsSubmitting(false);
     }

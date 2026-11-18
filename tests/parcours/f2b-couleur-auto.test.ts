@@ -3,8 +3,10 @@
  * l'événement, choisie dans la palette existante du scanner, jamais confondable avec le vert « valide », le rouge
  * « refusé » ou l'orange « mauvaise porte » ; posée par la base si elle manque ; modifiable.
  *  a. Écart de couleur mesuré (CIEDE2000, jetons d'app/globals.css) : chaque couleur proposée est à 25 au moins du vert
- *     « valide », des deux rouges (« déjà utilisé », « refusé ») et de l'orange « mauvaise zone » ; OR (24,0 de l'orange,
- *     5,1 de l'ambre « hors fenêtre ») est exclu des propositions, il reste choisissable à la main.
+ *     « valide », des deux rouges (« déjà utilisé », « refusé ») et de l'orange « mauvaise zone » ; OR est exclu des
+ *     propositions. Contre-vérification 2b (2b, modification signalée au rapport) : OR n'est plus choisissable et son
+ *     affichage (vieil or) est lui aussi à 25 au moins des verdicts (avant : #FACC15, 24,0 de l'orange, 5,1 de l'ambre).
+ *     Mesure complète (choisissables × 5 verdicts) : tests/parcours/cvf2b-couleur-choisissable.test.ts.
  *  b. proposeScanColor : ordre BLANC, NOIR, VIOLET, ROSE, TURQUOISE, BLEU, ARGENT (chaque nouvelle couleur la plus éloignée
  *     des précédentes) ; couleur déjà prise sautée ; les 7 prises : la moins employée, dans cet ordre ; jamais OR.
  *  c. Base : une catégorie insérée sans couleur en reçoit une, distincte de celles de l'événement, dans le même ordre ;
@@ -95,17 +97,17 @@ function deltaE00(c1: [number, number, number], c2: [number, number, number]): n
 describe('a. jamais confondable avec un verdict (écart mesuré)', () => {
     const css = fs.readFileSync(path.join(ROOT, 'app/globals.css'), 'utf8');
     const verdicts = { 'vert valide': 'scan-accept-bg', 'rouge déjà utilisé': 'scan-used-bg', 'rouge refusé': 'scan-refuse-bg', 'orange mauvaise zone': 'scan-orient-bg' };
-    test('chaque couleur proposée est à 25 au moins des verdicts ; OR ne l’est pas', () => {
+    test('chaque couleur proposée, et OR encore affiché, est à 25 au moins des verdicts', () => {
         const table: Record<string, Record<string, number>> = {};
         for (const key of [...ORDER, 'OR']) {
             const c = token(css, `scan-cat-${key.toLowerCase()}-bg`);
             table[key] = Object.fromEntries(Object.entries(verdicts).map(([label, t]) => [label, Math.round(deltaE00(c, token(css, t)) * 10) / 10]));
         }
         console.log(`[F2B-A2] écarts CIEDE2000 avec les verdicts : ${JSON.stringify(table)}`);
-        for (const key of ORDER) {
+        // Contre-vérification 2b (2b, signalé) : OR recoloré, plus choisissable ; avant : OR < 25 exigé (« serait proposable »)
+        for (const key of [...ORDER, 'OR']) {
             for (const [label, d] of Object.entries(table[key])) assert.ok(d >= 25, `${key} trop proche du ${label} : ${d}`);
         }
-        assert.ok(Math.min(...Object.values(table.OR)) < 25, `OR serait proposable : ${JSON.stringify(table.OR)}`);
     });
 });
 

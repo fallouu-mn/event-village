@@ -282,17 +282,19 @@ describe('7.0 c — un admin anonymisé n’a plus aucune permission et sa sessi
             assert.ok(notifsAfter.status === 401 || notifsAfter.status === 403, `/api/admin/notifications avec l’ancien jeton : ${show(notifsAfter)}`);
 
             // REST, clé anon + ancien jeton : is_admin() ne vaut plus vrai, aucun signal lisible
+            // Contre-vérification 2b (6.6) : l’anonymisation ferme les sessions ; la pré-requête de PostgREST refuse donc l’ancien
+            // jeton (401 SESSION_FERMEE) avant tout appel, refus admis ici au même titre qu’un jeton rejeté.
             const isAdminAfter = await rest.rpc('is_admin');
             if (isAdminAfter.error === null) {
                 assert.equal(isAdminAfter.data, false, 'is_admin() vaut encore vrai avec l’ancien jeton (rôle ADMIN ou SUPERADMIN resté dans user_roles)');
             } else {
-                assert.match(`${isAdminAfter.error.code} ${isAdminAfter.error.message}`, /PGRST30|JWT|401|jwt/i, `rpc(is_admin) : refus inattendu ${isAdminAfter.error.code} ${isAdminAfter.error.message}`);
+                assert.match(`${isAdminAfter.error.code} ${isAdminAfter.error.message}`, /PGRST30|JWT|401|jwt|SESSION_FERMEE/i, `rpc(is_admin) : refus inattendu ${isAdminAfter.error.code} ${isAdminAfter.error.message}`);
             }
             const signalsAfter = await rest.from('admin_signals').select('id').eq('ref_id', partner.partnerId);
             if (signalsAfter.error === null) {
                 assert.deepEqual(signalsAfter.data ?? [], [], 'admin_signals lisible avec l’ancien jeton d’un compte anonymisé');
             } else {
-                assert.match(`${signalsAfter.error.code} ${signalsAfter.error.message}`, /PGRST30|JWT|42501|permission denied/i, `admin_signals : refus inattendu ${signalsAfter.error.code} ${signalsAfter.error.message}`);
+                assert.match(`${signalsAfter.error.code} ${signalsAfter.error.message}`, /PGRST30|JWT|42501|permission denied|SESSION_FERMEE/i, `admin_signals : refus inattendu ${signalsAfter.error.code} ${signalsAfter.error.message}`);
             }
         });
     }

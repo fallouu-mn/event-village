@@ -153,7 +153,7 @@ function IdentityDialog({ step, onRetry, onCancel }: { step: Step; onRetry: () =
                     </Button>
                 ) : (
                     <form className="space-y-4" onSubmit={(e) => void submitCode(e)}>
-                        <p className="text-sm text-fg">Saisissez les 6 chiffres reçus par SMS. Le code est valable 10 minutes.</p>
+                        <p className="text-sm text-foreground-strong">Saisissez les 6 chiffres reçus par SMS. Le code est valable 10 minutes.</p>
                         <OtpInput value={code} onChange={setCode} disabled={busy} hasError={!!error} describedBy={error ? errorId : undefined} />
                         <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} disabled={code.length !== 6} leftIcon={<ShieldCheck size={18} />}>
                             Valider le code

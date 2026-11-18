@@ -47,6 +47,7 @@ describe('Finition 2b — migrations 20261119… rejouables (transaction annulé
         const all = fs.readdirSync(DIR).filter((f) => /^\d{14}_.+\.sql$/.test(f)).sort();
         // Finition 3d (modification signalée au rapport) : ses migrations 20261120… viennent après celles de la 2b,
         // fusionnée et appliquée sur event-village-dev avant elle ; la règle vaut pour toutes les migrations antérieures.
+        // Correctifs de la contre-vérification 2b : leurs migrations 20261121… viennent aussi après (même règle).
         const others = all.filter((f) => !f.startsWith('20261119') && f < '20261120');
         const last = others[others.length - 1];
         console.log(`[F2B-MIG] dernière migration hors finition 2b : ${last} ; première de la finition 2b : ${FINITION2B_MIGRATIONS[0]}`);

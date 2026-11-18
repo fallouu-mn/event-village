@@ -382,12 +382,12 @@ export default function AdminUsersManagementPage() {
           <Link
             href="/admin/dashboard"
             aria-label="Retour à l’accueil de l’administration"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-surface text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronLeft size={20} aria-hidden="true" />
           </Link>
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-fg sm:text-3xl">
+            <h1 className="text-2xl font-black tracking-tight text-foreground-strong sm:text-3xl">
               Comptes et administrateurs
             </h1>
           </div>
@@ -419,17 +419,17 @@ export default function AdminUsersManagementPage() {
       </div>
 
       {/* Filtres & Recherche */}
-      <div className="space-y-6 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+      <div className="space-y-6 rounded-3xl border border-border bg-card p-4 sm:p-6">
         <div className="flex flex-col justify-between gap-4 border-b border-border pb-4 sm:flex-row sm:items-center">
           <div className="relative max-w-md flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <input
               type="search"
               aria-label="Rechercher un compte"
               placeholder="Rechercher par nom, email ou téléphone"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="min-h-11 w-full rounded-xl border border-border-strong bg-surface pl-9 pr-4 text-base text-fg outline-none placeholder:text-fg-muted focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-11 w-full rounded-xl border border-input bg-card pl-9 pr-4 text-base text-foreground-strong outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
@@ -441,7 +441,7 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={roleFilter === role}
                 onClick={() => setRoleFilter(role)}
                 className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  roleFilter === role ? 'bg-brand text-on-brand' : 'border border-border text-fg-muted hover:bg-surface-sunken hover:text-fg'
+                  roleFilter === role ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-background hover:text-foreground-strong'
                 }`}
               >
                 {role === 'ALL' ? 'Tous' : roleLabel(role)}
@@ -452,17 +452,17 @@ export default function AdminUsersManagementPage() {
 
         {/* Liste Réelle des Utilisateurs */}
         {isLoading ? (
-          <div role="status" className="py-12 text-center text-fg-muted">
-            <RefreshCw size={24} className="mx-auto mb-2 text-brand-fg motion-safe:animate-spin" aria-hidden="true" />
+          <div role="status" className="py-12 text-center text-muted-foreground">
+            <RefreshCw size={24} className="mx-auto mb-2 text-primary-text motion-safe:animate-spin" aria-hidden="true" />
             <p className="text-sm">Chargement des comptes…</p>
           </div>
         ) : listError ? (
-          <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-fg">
+          <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-soft p-4 text-sm text-danger-text">
             <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <p>{listError}</p>
           </div>
         ) : users.length === 0 ? (
-          <div className="py-12 text-center text-fg-muted">
+          <div className="py-12 text-center text-muted-foreground">
             <Users size={32} className="mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-semibold">Aucun compte ne correspond à cette recherche.</p>
           </div>
@@ -597,7 +597,7 @@ export default function AdminUsersManagementPage() {
                           Voir la fiche partenaire
                         </LinkButton>
                       ) : (
-                        <span className="text-sm text-fg-muted">Statut géré depuis la fiche partenaire</span>
+                        <span className="text-sm text-muted-foreground">Statut géré depuis la fiche partenaire</span>
                       )
                     )}
 
@@ -669,27 +669,27 @@ export default function AdminUsersManagementPage() {
           <TextInput label="Numéro de téléphone (Sénégal)" type="tel" required inputMode="tel" placeholder="77 123 45 67" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="tabular-nums" />
           <TextInput label="Email (facultatif)" type="email" placeholder="contact@domaine.sn" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
 
-          <div className="rounded-xl border border-border bg-surface-sunken p-3 text-sm text-fg-muted">
+          <div className="rounded-xl border border-border bg-background p-3 text-sm text-muted-foreground">
             {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
-            <p className="font-semibold text-fg">Mot de passe choisi par le titulaire</p>
+            <p className="font-semibold text-foreground-strong">Mot de passe choisi par le titulaire</p>
             <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.</p>
           </div>
 
           <fieldset className="space-y-2">
-            <legend className="text-sm font-semibold text-fg">Rôle</legend>
+            <legend className="text-sm font-semibold text-foreground-strong">Rôle</legend>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 aria-pressed={newRole === 'CONTROLEUR'}
                 onClick={() => setNewRole('CONTROLEUR')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'CONTROLEUR' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                  newRole === 'CONTROLEUR' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
                 }`}
               >
-                <QrCode size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <QrCode size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Contrôleur</span>
-                  <span className="block text-sm text-fg-muted">Scanne les billets des événements où un partenaire l’affecte</span>
+                  <span className="block text-sm font-semibold text-foreground-strong">Contrôleur</span>
+                  <span className="block text-sm text-muted-foreground">Scanne les billets des événements où un partenaire l’affecte</span>
                 </span>
               </button>
               {/* Lot 9 bis (R71, B33) : créer un administrateur ou un superadmin est réservé au SUPERADMIN */}
@@ -700,13 +700,13 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={newRole === 'ADMIN'}
                 onClick={() => setNewRole('ADMIN')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'ADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                  newRole === 'ADMIN' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
                 }`}
               >
-                <Key size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <Key size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Administrateur</span>
-                  <span className="block text-sm text-fg-muted">Agit selon les droits que vous lui donnez</span>
+                  <span className="block text-sm font-semibold text-foreground-strong">Administrateur</span>
+                  <span className="block text-sm text-muted-foreground">Agit selon les droits que vous lui donnez</span>
                 </span>
               </button>
                 </>
@@ -716,22 +716,22 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={newRole === 'CLIENT'}
                 onClick={() => setNewRole('CLIENT')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'CLIENT' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
+                  newRole === 'CLIENT' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
                 }`}
               >
-                <User size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                <User size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Client</span>
-                  <span className="block text-sm text-fg-muted">Achète des billets, sans accès professionnel</span>
+                  <span className="block text-sm font-semibold text-foreground-strong">Client</span>
+                  <span className="block text-sm text-muted-foreground">Achète des billets, sans accès professionnel</span>
                 </span>
               </button>
             </div>
           </fieldset>
           {isSuperadmin && (
-            <p className="text-sm text-fg-muted">Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
+            <p className="text-sm text-muted-foreground">Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
           )}
 
-          <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-bg p-3 text-sm text-info-fg">
+          <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-soft p-3 text-sm text-info-text">
             <Info size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <span>
               {newRole === 'CONTROLEUR' && 'À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.'}
@@ -764,12 +764,12 @@ export default function AdminUsersManagementPage() {
           maxWidth="lg"
         >
           <div className="space-y-4">
-            <p className="text-sm text-fg-muted">
+            <p className="text-sm text-muted-foreground">
               Partez d’un profil prêt, puis ajustez les cases. Un droit qui modifie amène toujours le droit de voir.
             </p>
 
             {permsState === 'loading' && (
-              <p role="status" className="py-6 text-center text-sm text-fg-muted">Chargement…</p>
+              <p role="status" className="py-6 text-center text-sm text-muted-foreground">Chargement…</p>
             )}
             {permsState === 'error' && (
               <StatusBanner tone="danger" announce="alert" title="Droits illisibles">
@@ -798,22 +798,22 @@ export default function AdminUsersManagementPage() {
               <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
                 {PERMISSION_GROUPS.map((group) => (
                   <fieldset key={group.title} className="space-y-2 rounded-2xl border border-border p-3">
-                    <legend className="px-1 text-sm font-semibold text-fg">{group.title}</legend>
+                    <legend className="px-1 text-sm font-semibold text-foreground-strong">{group.title}</legend>
                     {group.permissions.filter((perm) => (ADMIN_PERMISSIONS as readonly string[]).includes(perm)).map((perm) => {
                       const isChecked = adminPermissions.includes(perm);
                       const inputId = `droit-${perm.replace('.', '-')}`;
                       return (
-                        <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-surface-sunken">
+                        <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-background">
                           <input
                             id={inputId}
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => togglePermissionItem(perm)}
-                            className="mt-1 h-5 w-5 flex-shrink-0 rounded border-border-strong accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="mt-1 h-5 w-5 flex-shrink-0 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           />
                           <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-fg">{permissionLabel(perm)}</span>
-                            <span className="block text-sm text-fg-muted">{permissionDescription(perm)}</span>
+                            <span className="block text-sm font-semibold text-foreground-strong">{permissionLabel(perm)}</span>
+                            <span className="block text-sm text-muted-foreground">{permissionDescription(perm)}</span>
                           </span>
                         </label>
                       );

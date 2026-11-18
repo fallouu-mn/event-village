@@ -8,6 +8,8 @@
  *  - stockage absent ou refusé (navigation privée, quota, réglages) : rien n'est gardé, aucune erreur ne remonte à
  *    l'écran (message dans la console) ;
  *  - contenu illisible, d'une autre forme ou trop gros (64 Kio au plus) : ignoré et effacé ;
+ *  - cvf2b 5d : brouillon de plus de 7 jours (MAX_AGE_MS) : ignoré et effacé (aussi à chaque connexion, tous les
+ *    brouillons du navigateur : lib/events/draft-purge.ts) ;
  *  - effacé à l'enregistrement, à l'envoi, sur « Effacer » ; à la déconnexion et à toute fin de session signalée au
  *    navigateur, tous les brouillons de ce navigateur, quel que soit le compte (lib/events/draft-purge.ts, module à
  *    part : celui-ci reste hors du JavaScript de chaque page).
@@ -17,6 +19,8 @@
 /** Préfixe des clés ; tout « ev-brouillon: » est effacé à la déconnexion (lib/events/draft-purge.ts). */
 const PREFIX = 'ev-brouillon:v1:';
 const MAX_BYTES = 64 * 1024;
+/** Cvf2b 5d : durée de vie d'un brouillon (même règle dans lib/events/draft-purge.ts). */
+const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 
 export interface LocalDraft<T> {
     savedAt: string;
@@ -81,6 +85,7 @@ export function readDraft<T>(userId: string, eventId: string | null, validate: (
         || typeof s.savedAt !== 'string' || !Number.isFinite(Date.parse(s.savedAt))) {
         return drop('forme inattendue');
     }
+    if (Date.now() - Date.parse(s.savedAt) >= MAX_AGE_MS) return drop('plus de 7 jours');
     const data = validate(s.data);
     if (data === null) return drop('contenu refusé');
     return { savedAt: s.savedAt, data };

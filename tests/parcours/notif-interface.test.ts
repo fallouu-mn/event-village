@@ -642,15 +642,16 @@ describe('6.0 g — détails du lot 5 (A7)', () => {
         assert.deepEqual(faults, [], `${SCANNER} :\n  ${faults.join('\n  ')}`);
     });
 
-    test('components/ui/Skeleton.tsx sur les tokens : bg-surface-sunken, cartes bg-surface border-border, motion-safe:animate-pulse, aucune palette brute', () => {
+    // Design 1a : noms de la charte (bloc `muted`, cartes `card`) ; modification signalée au rapport du design 1a
+    test('components/ui/Skeleton.tsx sur les tokens : bg-muted, cartes bg-card border-border, motion-safe:animate-pulse, aucune palette brute', () => {
         const faults: string[] = [];
         const tokens = classTokens(SKELETON);
         const raw = rawColors(SKELETON);
         if (raw.length > 0) faults.push(`palette brute : ${Array.from(new Set(raw)).join(', ')}`);
         const anim = unsafeAnimations(SKELETON);
         if (anim.length > 0) faults.push(`animations hors motion-safe: (${Array.from(new Set(anim)).join(', ')})`);
-        if (!tokens.includes('bg-surface-sunken')) faults.push('Skeleton sans bg-surface-sunken');
-        if (!tokens.includes('bg-surface') || !tokens.includes('border-border')) faults.push('cartes sans bg-surface et border-border');
+        if (!tokens.includes('bg-muted')) faults.push('Skeleton sans bg-muted');
+        if (!tokens.includes('bg-card') || !tokens.includes('border-border')) faults.push('cartes sans bg-card et border-border');
         if (!tokens.includes('motion-safe:animate-pulse')) faults.push('aucun motion-safe:animate-pulse');
         assert.deepEqual(faults, [], `${SKELETON} :\n  ${faults.join('\n  ')}`);
     });

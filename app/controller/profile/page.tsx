@@ -118,7 +118,7 @@ export default function ControllerProfilePage() {
             const res = await fetch('/api/controller/profile', { cache: 'no-store' });
             const body = await readJson(res, 'lecture');
             if (!res.ok) {
-                setLoadError(isRecord(body) && typeof body.error === 'string' && res.status < 500 ? body.error : `Profil indisponible (erreur ${res.status}).`);
+                setLoadError(isRecord(body) && typeof body.error === 'string' && res.status < 500 ? body.error : 'Profil indisponible : réessayez dans un instant.');
                 return;
             }
             const parsed = parseProfile(body);
@@ -168,7 +168,7 @@ export default function ControllerProfilePage() {
             });
             const body = await readJson(res, 'changement du mot de passe');
             if (!res.ok) {
-                setPwdError(isRecord(body) && typeof body.error === 'string' && body.error ? body.error : `Mot de passe non modifié (erreur ${res.status}).`);
+                setPwdError(isRecord(body) && typeof body.error === 'string' && body.error ? body.error : 'Mot de passe non modifié : réessayez dans un instant.');
                 return;
             }
             toast.success('Mot de passe modifié.');
@@ -214,23 +214,23 @@ export default function ControllerProfilePage() {
         <div className="space-y-6 pb-24">
             {header}
 
-            <section aria-labelledby={`${uid}-identite`} className="space-y-3 rounded-2xl border border-border bg-surface p-4">
+            <section aria-labelledby={`${uid}-identite`} className="space-y-3 rounded-2xl border border-border bg-card p-4">
                 <div className="flex items-center gap-3">
-                    <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-lg font-bold text-brand-fg" aria-hidden="true">
+                    <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-lg font-bold text-primary-text" aria-hidden="true">
                         {displayName[0]?.toUpperCase() ?? 'C'}
                     </span>
                     <div className="min-w-0 space-y-1">
-                        <h2 id={`${uid}-identite`} className="break-words text-base font-semibold text-fg">{displayName}</h2>
+                        <h2 id={`${uid}-identite`} className="break-words text-base font-semibold text-foreground-strong">{displayName}</h2>
                         <Badge variant="brand" size="sm" icon={<ShieldCheck size={12} aria-hidden="true" />}>Contrôleur</Badge>
                     </div>
                 </div>
-                <p className="flex items-center gap-2 text-sm text-fg">
-                    <Phone size={16} className="text-fg-muted" aria-hidden="true" />
+                <p className="flex items-center gap-2 text-sm text-foreground-strong">
+                    <Phone size={16} className="text-muted-foreground" aria-hidden="true" />
                     <span className="sr-only">Téléphone :</span>
                     <span className="font-semibold tabular-nums">{displayPhone(profile.phone)}</span>
                 </p>
                 {profile.createdAt && (
-                    <p className="flex items-center gap-2 text-sm text-fg-muted">
+                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Calendar size={16} aria-hidden="true" />
                         <span>Compte créé le <time dateTime={profile.createdAt}>{formatDate(profile.createdAt)}</time></span>
                     </p>
@@ -247,7 +247,7 @@ export default function ControllerProfilePage() {
             </LinkButton>
 
             <section aria-labelledby={`${uid}-evenements`} className="space-y-3">
-                <h2 id={`${uid}-evenements`} className="text-lg font-semibold text-fg">
+                <h2 id={`${uid}-evenements`} className="text-lg font-semibold text-foreground-strong">
                     {assignments.length === 1 ? 'Mon événement' : `Mes événements (${assignments.length})`}
                 </h2>
                 {assignments.length === 0 ? (
@@ -260,9 +260,9 @@ export default function ControllerProfilePage() {
                 ) : (
                     <ul className="space-y-3">
                         {assignments.map((a) => (
-                            <li key={a.id} className="space-y-2 rounded-2xl border border-border bg-surface p-4">
-                                <p className="break-words text-base font-semibold text-fg">{a.title}</p>
-                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-muted">
+                            <li key={a.id} className="space-y-2 rounded-2xl border border-border bg-card p-4">
+                                <p className="break-words text-base font-semibold text-foreground-strong">{a.title}</p>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                                     {a.startDate && (
                                         <span className="flex items-center gap-1.5">
                                             <Calendar size={16} aria-hidden="true" />
@@ -285,9 +285,9 @@ export default function ControllerProfilePage() {
                 )}
             </section>
 
-            <section aria-labelledby={`${uid}-securite`} className="space-y-4 rounded-2xl border border-border bg-surface p-4">
-                <h2 id={`${uid}-securite`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-                    <KeyRound size={20} className="text-brand-fg" aria-hidden="true" />
+            <section aria-labelledby={`${uid}-securite`} className="space-y-4 rounded-2xl border border-border bg-card p-4">
+                <h2 id={`${uid}-securite`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+                    <KeyRound size={20} className="text-primary-text" aria-hidden="true" />
                     Changer le mot de passe
                 </h2>
 
@@ -328,19 +328,19 @@ export default function ControllerProfilePage() {
                         onChange={(e) => setNewPwd(e.target.value)}
                         hint={PASSWORD_HINT}
                     />
-                    <ul className="space-y-1.5 rounded-2xl border border-border bg-surface-sunken p-3" aria-label="Règles du mot de passe">
+                    <ul className="space-y-1.5 rounded-2xl border border-border bg-background p-3" aria-label="Règles du mot de passe">
                         {rules.map((r) => (
                             <li key={r.key} className="flex items-center gap-2 text-sm">
                                 <span
                                     aria-hidden="true"
                                     className={cn(
                                         'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border',
-                                        r.passed ? 'border-success bg-success text-on-tone' : 'border-border bg-surface text-fg-muted',
+                                        r.passed ? 'border-success bg-success text-on-tone' : 'border-border bg-card text-muted-foreground',
                                     )}
                                 >
                                     {r.passed ? <Check size={12} strokeWidth={3} /> : <X size={12} strokeWidth={3} />}
                                 </span>
-                                <span className={r.passed ? 'font-medium text-success-fg' : 'text-fg-muted'}>
+                                <span className={r.passed ? 'font-medium text-success-text' : 'text-muted-foreground'}>
                                     {r.label}
                                     <span className="sr-only">{r.passed ? ' : respecté' : ' : manquant'}</span>
                                 </span>

@@ -85,7 +85,7 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
             ref={mapRef}
             role="region"
             aria-label={venueName ? `Carte : ${venueName}` : 'Carte du lieu'}
-            className="isolate h-48 w-full overflow-hidden rounded-xl border border-border bg-surface-sunken sm:h-56"
+            className="isolate h-48 w-full overflow-hidden rounded-xl border border-border bg-background sm:h-56"
         />
     );
 };

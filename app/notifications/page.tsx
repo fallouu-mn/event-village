@@ -157,12 +157,12 @@ function relativeTime(iso: string, now: number): string {
 
 function NotificationSkeleton() {
   return (
-    <div className="flex gap-3 rounded-2xl border border-border bg-surface p-4" aria-hidden="true">
-      <div className="h-10 w-10 flex-shrink-0 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+    <div className="flex gap-3 rounded-2xl border border-border bg-card p-4" aria-hidden="true">
+      <div className="h-10 w-10 flex-shrink-0 rounded-xl bg-background motion-safe:animate-pulse" />
       <div className="flex-1 space-y-2">
-        <div className="h-4 w-1/2 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-        <div className="h-4 w-5/6 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-        <div className="h-4 w-1/4 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
+        <div className="h-4 w-1/2 rounded-md bg-background motion-safe:animate-pulse" />
+        <div className="h-4 w-5/6 rounded-md bg-background motion-safe:animate-pulse" />
+        <div className="h-4 w-1/4 rounded-md bg-background motion-safe:animate-pulse" />
       </div>
     </div>
   );
@@ -275,13 +275,13 @@ export default function NotificationsPage() {
       const res = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
       if (!res.ok) {
         console.error(`[Notifications] marquage comme lue refusé (HTTP ${res.status})`);
-        toast.error('Cette notification n’a pas pu être marquée comme lue. Réessayez.');
+        toast.error('Cette notification n’a pas pu être marquée comme lue.', { onRetry: () => void markAsRead(id) });
         return;
       }
       await refresh();
     } catch (err) {
       console.error('[Notifications] marquage comme lue impossible :', err instanceof Error ? err.message : String(err));
-      toast.error(NETWORK_MESSAGE);
+      toast.error(NETWORK_MESSAGE, { onRetry: () => void markAsRead(id) });
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev);
@@ -297,14 +297,14 @@ export default function NotificationsPage() {
       const res = await fetch('/api/notifications', { method: 'PATCH' });
       if (!res.ok) {
         console.error(`[Notifications] marquage de toutes les notifications refusé (HTTP ${res.status})`);
-        toast.error('Vos notifications n’ont pas pu être marquées comme lues. Réessayez.');
+        toast.error('Vos notifications n’ont pas pu être marquées comme lues.', { onRetry: () => void markAllAsRead() });
         return;
       }
       toast.success('Toutes vos notifications sont marquées comme lues.');
       await refresh();
     } catch (err) {
       console.error('[Notifications] marquage de toutes les notifications impossible :', err instanceof Error ? err.message : String(err));
-      toast.error(NETWORK_MESSAGE);
+      toast.error(NETWORK_MESSAGE, { onRetry: () => void markAllAsRead() });
     } finally {
       setIsMarkingAll(false);
     }
@@ -413,7 +413,7 @@ export default function NotificationsPage() {
                     key={notif.id}
                     className={cn(
                       'rounded-2xl border p-4 sm:p-5',
-                      notif.isRead ? 'border-border bg-surface' : 'border-brand-fg/30 bg-brand-bg',
+                      notif.isRead ? 'border-border bg-card' : 'border-primary-text/30 bg-primary-soft',
                     )}
                   >
                     <div className="flex items-start gap-3">
@@ -422,10 +422,10 @@ export default function NotificationsPage() {
                       </span>
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <h2 className="break-words text-base font-semibold leading-snug text-fg">{notif.title}</h2>
+                          <h2 className="break-words text-base font-semibold leading-snug text-foreground-strong">{notif.title}</h2>
                           {!notif.isRead && (
-                            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-fg">
-                              <span className="h-2 w-2 rounded-full bg-brand-decor" aria-hidden="true" />
+                            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-text">
+                              <span className="h-2 w-2 rounded-full bg-brand-vif" aria-hidden="true" />
                               Non lue
                             </span>
                           )}
@@ -434,9 +434,9 @@ export default function NotificationsPage() {
                           <Badge variant="neutral" size="sm">{meta.label}</Badge>
                         )}
                         {notif.content && notif.content !== notif.title && (
-                          <p className="break-words text-sm leading-relaxed text-fg">{notif.content}</p>
+                          <p className="break-words text-sm leading-relaxed text-foreground-strong">{notif.content}</p>
                         )}
-                        <p className="text-sm text-fg-muted">
+                        <p className="text-sm text-muted-foreground">
                           <time dateTime={notif.createdAt}>{relativeTime(notif.createdAt, now)}</time>
                         </p>
                       </div>

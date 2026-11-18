@@ -73,7 +73,7 @@ export default function PartnerHallsPage() {
                 setHalls(data.halls || []);
             }
         } catch {
-            toast.error(toastMessages.halls.loadError);
+            toast.error(toastMessages.halls.loadError, { onRetry: () => { void fetchHalls(); } });
         } finally {
             setIsLoading(false);
         }
@@ -102,7 +102,7 @@ export default function PartnerHallsPage() {
                 toast.error(data.error || toastMessages.halls.confirmError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleConfirmReservation(); } });
         } finally {
             setActionLoading(null);
             setConfirmAction({ isOpen: false, type: 'confirm', id: null });
@@ -127,7 +127,7 @@ export default function PartnerHallsPage() {
                 toast.error(data.error || toastMessages.halls.cancelError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleCancelReservation(); } });
         } finally {
             setActionLoading(null);
             setConfirmAction({ isOpen: false, type: 'cancel', id: null });
@@ -148,7 +148,7 @@ export default function PartnerHallsPage() {
                 toast.error(data.error || toastMessages.halls.deleteError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleDeleteHall(); } });
         } finally {
             setActionLoading(null);
             setConfirmAction({ isOpen: false, type: 'delete', id: null });

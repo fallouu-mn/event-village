@@ -6,6 +6,8 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
+import { THEME_BOOT_SCRIPT } from '@/lib/theme';
+import { NavigationProgressDifferee } from '@/components/ui/NavigationProgressDifferee';
 
 // Plus Jakarta Sans auto-hébergée (police variable, sous-ensemble latin, graisses 200-800).
 // Source : @fontsource-variable/plus-jakarta-sans@5.3.0, licence SIL OFL 1.1 (app/fonts/OFL-PlusJakartaSans.txt).
@@ -27,12 +29,22 @@ export const metadata: Metadata = {
   description:
     'Découvrez les meilleurs événements, concerts, festivals, restaurants et salles au Sénégal. Réservation en ligne sécurisée avec SamirPay (Wave / Orange Money).',
   manifest: '/manifest.json',
+  // Design 1a : image de partage 1200 × 630 du logo « Bras levés » (docs/design/logo/export/og-image-1200x630.png)
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+  openGraph: {
+    type: 'website',
+    siteName: 'Event Village',
+    locale: 'fr_SN',
+    images: [{ url: '/images/og-image.png', width: 1200, height: 630, alt: 'Event Village' }],
+  },
+  twitter: { card: 'summary_large_image', images: ['/images/og-image.png'] },
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
       { url: '/branding/event-village-mark.svg', type: 'image/svg+xml' },
     ],
-    // iPhone : icône opaque 180 × 180 (iOS remplit la transparence en noir), générée par scripts/generate-pwa-icons.mjs
+    // iPhone : icône opaque 180 × 180 (iOS remplit la transparence en noir). Design 1a : logo « Bras levés », fichiers
+    // générés par docs/design/outils/logos.mjs (docs/design/logo/export), copiés sous les mêmes noms.
     apple: '/icons/apple-touch-icon.png',
   },
   // iPhone : écran plein (apple-mobile-web-app-capable), titre sous l'icône, barre d'état sur fond clair
@@ -49,7 +61,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#FF5722',
+  // Design 1a : barre du navigateur au fond de page de chaque thème
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#FFFFFF' },
+    { media: '(prefers-color-scheme: dark)', color: '#121212' },
+  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -63,13 +79,15 @@ export default function RootLayout({
   return (
     <html lang="fr" className={plusJakartaSans.variable} suppressHydrationWarning>
       <head>
-        {/* Script bloquant anti-FOUC : applique le thème AVANT le premier paint */}
-        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('ev-theme');if(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark');}catch(e){}` }} />
+        {/* Design 1a : thème posé avant le premier affichage (cookie ev-theme, thème du téléphone par défaut) : aucun flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-screen antialiased font-sans" suppressHydrationWarning>
         <AuthProvider>
           <ThemeProvider>
             <ServiceWorkerRegister />
+            {/* Design 1a (point 7) : barre de progression des changements de page */}
+            <NavigationProgressDifferee />
             {/* Lot 7 (7.1, 7.5) : la synchronisation des billets hors ligne (téléchargés dans leur fenêtre, purgés
                 quand ils ne servent plus) est montée par AuthProvider et chargée à la demande, pour un compte
                 client seulement : elle n'est plus dans le JavaScript de chaque page. */}

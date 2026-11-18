@@ -16,15 +16,19 @@ import { PATCH as adminPatchUser } from '../../app/api/admin/users/route';
 import { jsonRequest, randomEmail, STRONG_PASSWORD } from './helpers';
 import { gotrueEmail } from '../helpers/gotrue-email';
 
-async function newAccount(label: string): Promise<{ userId: string; client: SupabaseClient }> {
+async function signedIn(email: string): Promise<SupabaseClient> {
+    const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { error: signErr } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
+    assert.equal(signErr, null, `connexion : ${signErr?.message}`);
+    return client;
+}
+
+async function newAccount(label: string): Promise<{ userId: string; email: string; client: SupabaseClient }> {
     const service = getServiceRoleClient();
     const email = randomEmail(label);
     const { data, error } = await service.auth.admin.createUser({ email, password: STRONG_PASSWORD, email_confirm: true });
     assert.equal(error, null, `création du compte : ${error?.message}`);
-    const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { error: signErr } = await client.auth.signInWithPassword({ email: await gotrueEmail(email), password: STRONG_PASSWORD });
-    assert.equal(signErr, null, `connexion : ${signErr?.message}`);
-    return { userId: data.user!.id, client };
+    return { userId: data.user!.id, email, client: await signedIn(email) };
 }
 
 async function rolesOf(userId: string): Promise<string[]> {
@@ -59,8 +63,14 @@ describe('Changement de rôle par un admin', () => {
         assert.equal(res.status, 200, `PATCH : HTTP ${res.status} ${JSON.stringify(body)}`);
 
         assert.deepEqual(await rolesOf(target.userId), ['CLIENT'], 'user_roles ne doit plus contenir CONTROLEUR');
-        assert.equal(await isController(target.client), false, 'is_controller() doit être faux');
-        const { data: afterTickets, error } = await target.client.from('tickets').select('id').eq('event_id', fx.events.A_PUBLIE.id);
+        // Contre-vérification 2B (6.6 ; modification signalée) : le retrait du rôle ferme les sessions du compte ; l'ancien
+        // jeton est maintenant refusé par la REST (pré-requête securite.db_pre_request, 401). La RLS est éprouvée sur une
+        // session ouverte après le retrait.
+        const stale = await target.client.rpc('is_controller');
+        assert.equal(stale.status, 401, `ancien jeton refusé par la REST : HTTP ${stale.status} ${stale.error?.message}`);
+        const fresh = await signedIn(target.email);
+        assert.equal(await isController(fresh), false, 'is_controller() doit être faux');
+        const { data: afterTickets, error } = await fresh.from('tickets').select('id').eq('event_id', fx.events.A_PUBLIE.id);
         assert.equal(error, null, `lecture des billets : ${error?.message}`);
         assert.deepEqual(afterTickets, [], 'la RLS ne doit plus donner accès aux billets de l’événement');
 

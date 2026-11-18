@@ -126,7 +126,8 @@ const [ouvre, ferme] = ['<!-- contraste:debut -->', '<!-- contraste:fin -->'];
 const i = doc.indexOf(ouvre);
 const j = doc.indexOf(ferme);
 if (i < 0 || j < i) throw new Error('Repères contraste:debut / contraste:fin absents de direction.md');
-writeFileSync(cible, `${doc.slice(0, i + ouvre.length)}\n${tableau}\n${doc.slice(j)}`);
+// Design 1a : `--verifier` (CI, tests/schema/design-jetons.test.ts) mesure sans réécrire direction.md.
+if (!process.argv.includes('--verifier')) writeFileSync(cible, `${doc.slice(0, i + ouvre.length)}\n${tableau}\n${doc.slice(j)}`);
 
 console.log(tableau);
 console.log(`\n${lignes.length} couples mesurés, ${echecs} sous le seuil.`);

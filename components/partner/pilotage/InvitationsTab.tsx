@@ -273,7 +273,7 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
             title="Inviter par SMS"
             description="Chaque numéro reçoit un SMS avec un lien vers Mes billets. Sans compte, ses billets l’attendent jusqu’à son inscription avec ce numéro."
         >
-            <form ref={formRef} onSubmit={review} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 sm:p-5" noValidate>
+            <form ref={formRef} onSubmit={review} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:p-5" noValidate>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] sm:items-start">
                     <Select
                         ref={categoryRef}
@@ -309,15 +309,15 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                     />
                 </div>
                 <fieldset className="flex flex-col gap-3">
-                    <legend className="mb-1 flex w-full items-baseline justify-between gap-3 text-sm font-semibold text-fg">
+                    <legend className="mb-1 flex w-full items-baseline justify-between gap-3 text-sm font-semibold text-foreground-strong">
                         <span>Numéros de téléphone</span>
-                        <span className="font-normal tabular-nums text-fg-muted">{lineCount} / {MAX_INVITATION_PHONES}</span>
+                        <span className="font-normal tabular-nums text-muted-foreground">{lineCount} / {MAX_INVITATION_PHONES}</span>
                     </legend>
                     <ol className="flex flex-col gap-3">
                         {lines.map((line, index) => {
                             const lineError = errorLine?.line === index ? phonesError : undefined;
                             return (
-                                <li key={line.key} className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-surface-sunken p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-start">
+                                <li key={line.key} className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-start">
                                     <TextInput
                                         data-line={`${index}-phone`}
                                         label={`Numéro ${index + 1}`}
@@ -355,7 +355,7 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                             );
                         })}
                     </ol>
-                    {phonesError && !errorLine && <p role="alert" className="text-sm font-medium text-danger-fg">{phonesError}</p>}
+                    {phonesError && !errorLine && <p role="alert" className="text-sm font-medium text-danger-text">{phonesError}</p>}
                     <div>
                         <Button
                             variant="ghost"
@@ -397,27 +397,27 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                 maxWidth="md"
             >
                 {draft && (
-                    <dl className="rounded-2xl border border-border bg-surface-sunken px-4 py-1 text-sm">
+                    <dl className="rounded-2xl border border-border bg-background px-4 py-1 text-sm">
                         <div className="flex items-baseline justify-between gap-3 border-b border-border py-2">
-                            <dt className="text-fg-muted">Catégorie</dt>
-                            <dd className="min-w-0 break-words text-right font-semibold text-fg">{draft.categoryName}</dd>
+                            <dt className="text-muted-foreground">Catégorie</dt>
+                            <dd className="min-w-0 break-words text-right font-semibold text-foreground-strong">{draft.categoryName}</dd>
                         </div>
                         <div className="flex flex-col gap-1 border-b border-border py-2">
-                            <dt className="flex justify-between gap-3 text-fg-muted"><span>{draft.phones.length > 1 ? 'Numéros' : 'Numéro'}</span><span>Invité</span></dt>
+                            <dt className="flex justify-between gap-3 text-muted-foreground"><span>{draft.phones.length > 1 ? 'Numéros' : 'Numéro'}</span><span>Invité</span></dt>
                             {draft.phones.map((phone, index) => (
                                 <dd key={phone} className="flex items-baseline justify-between gap-3">
-                                    <span className="font-semibold tabular-nums text-fg">{maskPhone(phone)}</span>
-                                    <span className="min-w-0 break-words text-right text-fg">{draft.guestNames[index] ?? '—'}</span>
+                                    <span className="font-semibold tabular-nums text-foreground-strong">{maskPhone(phone)}</span>
+                                    <span className="min-w-0 break-words text-right text-foreground-strong">{draft.guestNames[index] ?? '—'}</span>
                                 </dd>
                             ))}
                         </div>
                         <div className="flex items-baseline justify-between gap-3 border-b border-border py-2">
-                            <dt className="text-fg-muted">Billets par numéro</dt>
-                            <dd className="font-semibold tabular-nums text-fg">{formatInteger(draft.quantity)}</dd>
+                            <dt className="text-muted-foreground">Billets par numéro</dt>
+                            <dd className="font-semibold tabular-nums text-foreground-strong">{formatInteger(draft.quantity)}</dd>
                         </div>
                         <div className="flex items-baseline justify-between gap-3 py-2">
-                            <dt className="text-fg-muted">Billets au total</dt>
-                            <dd className="font-semibold tabular-nums text-fg">{formatInteger(draft.phones.length * draft.quantity)}</dd>
+                            <dt className="text-muted-foreground">Billets au total</dt>
+                            <dd className="font-semibold tabular-nums text-foreground-strong">{formatInteger(draft.phones.length * draft.quantity)}</dd>
                         </div>
                     </dl>
                 )}
@@ -481,7 +481,10 @@ function InvitationHistory({
             onCancelled();
             await reload();
         } catch (err) {
-            toast.error(errorMessage(err, 'Annulation impossible pour le moment.'));
+            const message = errorMessage(err, 'Annulation impossible pour le moment.');
+            const general = !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
+            if (general) toast.error(message, { onRetry: () => { void confirmCancel(); } });
+            else toast.error(message);
             if (err instanceof ApiError && err.code !== null && STALE_CANCEL_CODES.has(err.code)) {
                 setTarget(null);
                 await reload();
@@ -519,12 +522,12 @@ function InvitationHistory({
                         leftIcon={<Ban size={16} />}
                         aria-label={`Annuler l’invitation de ${row.phone_masked ?? row.category}`}
                         onClick={() => setTarget(row)}
-                        className="text-danger-fg"
+                        className="text-danger-text"
                     >
                         Annuler l’invitation
                     </Button>
                 </span>
-            ) : <span className="text-fg-muted">Aucune</span>),
+            ) : <span className="text-muted-foreground">Aucune</span>),
         },
     ];
 

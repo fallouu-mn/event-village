@@ -106,7 +106,7 @@ export function PhoneChangeFlow({ target, onDone, onCancel }: {
             {error && <StatusBanner tone="danger" announce="alert" title="Numéro non changé"><span id={errorId}>{error}</span></StatusBanner>}
             {!requestId ? (
                 <form className="space-y-4" onSubmit={(e) => void start(e)}>
-                    {byAdmin && target.phone && <p className="text-sm text-fg">Numéro actuel : <span className="font-semibold tabular-nums">{target.phone}</span></p>}
+                    {byAdmin && target.phone && <p className="text-sm text-foreground-strong">Numéro actuel : <span className="font-semibold tabular-nums">{target.phone}</span></p>}
                     <TextInput
                         label="Nouveau numéro (Sénégal)"
                         type="tel"
@@ -130,7 +130,7 @@ export function PhoneChangeFlow({ target, onDone, onCancel }: {
                             onChange={(e) => setReason(e.target.value)}
                         />
                     )}
-                    <p className="text-sm text-fg-muted">Votre mot de passe et le code administrateur peuvent vous être demandés.</p>
+                    <p className="text-sm text-muted-foreground">Votre mot de passe et le code administrateur peuvent vous être demandés.</p>
                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                         {onCancel && <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>Annuler</Button>}
                         <Button type="submit" variant="primary" isLoading={busy} disabled={!phone.trim() || !reasonOk} leftIcon={<MessageSquareText size={18} />}>
@@ -140,7 +140,7 @@ export function PhoneChangeFlow({ target, onDone, onCancel }: {
                 </form>
             ) : (
                 <form className="space-y-4" onSubmit={(e) => void confirm(e)}>
-                    <p className="text-sm text-fg">
+                    <p className="text-sm text-foreground-strong">
                         {byAdmin
                             ? `Demandez à ${target.name} les 6 chiffres reçus au ${phone.trim()}. Le code est valable 10 minutes.`
                             : `Saisissez les 6 chiffres reçus au ${phone.trim()}. Le code est valable 10 minutes.`}

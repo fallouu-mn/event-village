@@ -49,7 +49,7 @@ const SW_FILE = path.join(ROOT, 'public', 'sw.js');
 const ORIGIN = 'https://app.eventvillage.sn';
 const OFFLINE_PATH = '/billet/hors-ligne';
 const CURRENT_CACHE = 'ev-hors-ligne-lot7-1';
-const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
+const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/branding/bras-leves-symbole.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 const TICKET_ID = '7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01';
 
 // ── Ressources servies par le faux réseau ──────────────────────────────────

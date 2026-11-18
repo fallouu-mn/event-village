@@ -1,59 +1,47 @@
-'use client';
-
-import React, { useId } from 'react';
+import React from 'react';
 import Link from 'next/link';
 
 export interface LogoProps {
   /** full : symbole et nom ; mark : symbole seul ; auto : nom masqué sous 640 px. */
   variant?: 'full' | 'mark' | 'auto';
-  /** Conservé pour compatibilité : les couleurs suivent désormais le thème par les tokens. */
+  /** Conservé pour compatibilité : les couleurs suivent le thème par les jetons. */
   theme?: 'light' | 'dark' | 'auto';
   className?: string;
   linkToHome?: boolean;
 }
 
 /**
- * Logo Event Village, en tokens du système de design.
+ * Design 1a (direction.md, section 9, décision 1) — logo « Bras levés ».
  *
- * Correctif lot 5 : l'ancien symbole remplissait son fond par url(#logo-mark-grad), un identifiant fixe
- * répété à chaque instance. Le logo de la barre latérale, masqué (display: none) sous 1024 px, venait en
- * premier dans le document : le navigateur résolvait l'url() vers ce dégradé non rendu, et le symbole de
- * l'en-tête mobile perdait son fond. Il ne restait que trois points (les deux encoches et la balise).
- * Désormais : identifiant unique par instance (useId) et encoches découpées par un masque, donc
- * transparentes sur n'importe quel fond, clair ou sombre.
+ * Symbole : public/branding/bras-leves-symbole.svg (docs/design/logo/svg, dégradé #EA580C → #DB2777, lisible en clair
+ * et en sombre), en image : aucun octet de JavaScript, mis en cache par le service worker pour la page hors ligne.
+ * Nom : « Event Village » en Plus Jakarta Sans graisse 800, resserré de 0,012 em, comme le nom vectorisé du logo
+ * (docs/design/outils/logos.mjs) ; couleur `foreground-strong` (#1A1A1A en clair, blanc en sombre). Place réservée
+ * (largeur et hauteur fixes) : rien ne saute au chargement. Nom accessible : « Event Village » (une seule fois).
  */
 export const Logo: React.FC<LogoProps> = ({
   variant = 'full',
   className = '',
   linkToHome = true,
 }) => {
-  const maskId = `ev-logo-mask-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const showName = variant === 'full' || variant === 'auto';
-
   const content = (
-    <span className={`flex select-none items-center gap-2.5 ${className}`}>
-      <svg viewBox="0 0 100 100" className="h-9 w-9 flex-shrink-0 sm:h-10 sm:w-10" aria-hidden="true" focusable="false">
-        <defs>
-          <mask id={maskId}>
-            <rect x="0" y="0" width="100" height="100" fill="white" />
-            <circle cx="8" cy="50" r="7" fill="black" />
-            <circle cx="92" cy="50" r="7" fill="black" />
-          </mask>
-        </defs>
-        <rect x="8" y="8" width="84" height="84" rx="26" mask={`url(#${maskId})`} className="fill-brand-decor" />
-        <path d="M50 24 L72 46 H60 V70 H40 V46 H28 Z" className="fill-on-brand" />
-        <circle cx="50" cy="52" r="5" className="fill-brand-decor" />
-      </svg>
-
+    <span className={`flex select-none items-center gap-2 ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- SVG statique du logo : next/image n'apporte rien et coûterait du JavaScript */}
+      <img
+        src="/branding/bras-leves-symbole.svg"
+        alt=""
+        aria-hidden="true"
+        width={40}
+        height={36}
+        decoding="async"
+        className="h-8 w-[2.2rem] flex-shrink-0 sm:h-9 sm:w-10"
+      />
       {showName && (
         <span
-          className={`${variant === 'auto' ? 'hidden sm:flex' : 'flex'} items-center text-lg font-black leading-none tracking-tight sm:text-xl`}
+          className={`${variant === 'auto' ? 'hidden sm:inline' : 'inline'} whitespace-nowrap text-xl font-extrabold leading-none tracking-[-0.012em] text-foreground-strong sm:text-[1.375rem]`}
         >
-          {/* Espace réelle entre les deux mots (ignorée par la mise en page flex, l'écart vient de ml-1) :
-              sans elle, le texte lu était « EVENTVILLAGE », absent du nom « Event Village, accueil »
-              (axe label-content-name-mismatch, relecture des captures du run 50). */}
-          <span className="text-fg">EVENT</span>{' '}
-          <span className="ml-1 text-brand-fg">VILLAGE</span>
+          Event Village
         </span>
       )}
     </span>

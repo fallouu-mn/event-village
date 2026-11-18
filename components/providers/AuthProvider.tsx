@@ -7,7 +7,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clearOfflineStore } from '@/lib/tickets/offline-store';
 import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 import { clearAllDrafts } from '@/lib/events/draft-purge';
+import { clearPaymentHandoffs } from '@/lib/payments/payment-handoff-purge';
 import { dropLocalSession, revokeSoon, unsubscribePush } from '@/lib/auth/sign-out-here';
+import { sessionEnded } from '@/lib/auth/session-signal';
 import { LinkButton } from '@/components/ui/LinkButton';
 
 /**
@@ -68,6 +70,9 @@ function LazyOfflineTicketsSync() {
  * fermé » signalé par le scanner. */
 const SCANNER_EVENTS = ['visibilitychange', 'ev:scanner-refresh'];
 
+/** Cvf2b 6.2 : pages d'authentification, sans donnée du compte, jamais remplacées par l'écran « déconnecté ». */
+const AUTH_PAGES = ['/login', '/register', '/forgot-password', '/reset-password'];
+
 export interface UserProfile {
     id: string;
     first_name: string;
@@ -126,7 +131,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [adminPermissions, setAdminPermissions] = useState<string[]>([]);
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    /** Sécurité (déconnexion sans réseau) : « Vous êtes déconnecté de ce téléphone. » à la place de la page (signOut). */
+    /**
+     * Sécurité (déconnexion sans réseau) : « Vous êtes déconnecté de ce téléphone. » à la place de la page (signOut).
+     * Cvf2b 6.2 : aussi sur tout SIGNED_OUT, dans TOUS les onglets (autre onglet, autre appareil, session refusée) : un
+     * écran personnel déjà affiché (administration, scanner, portefeuille…) ne reste pas lisible.
+     */
     const [signedOut, setSignedOut] = useState(false);
     const router = useRouter();
     const pathname = usePathname();
@@ -139,20 +148,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      * répond pas, aucun rôle n'est accordé (profil null) et l'erreur est journalisée.
      * Lot 7 (7.1) : sans réseau (navigator.onLine faux, billet hors ligne), /api/auth/me n'est pas appelé ;
      * le profil est relu au retour du réseau.
+     * Cvf2b (poids de chaque page) : plus de message pour le profil différé hors ligne ni pour une réponse illisible
+     * (le message suivant donne le statut HTTP).
      */
     const fetchUserProfile = useCallback(async (_userId: string, currentSession?: Session | null) => {
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-            console.warn('[AuthProvider] hors ligne : profil différé');
-            return;
-        }
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
         try {
             const res = await fetch('/api/auth/me', {
                 headers: currentSession?.access_token ? { 'Authorization': `Bearer ${currentSession.access_token}` } : {}
             });
-            const data = await res.json().catch((err: unknown) => {
-                console.error('[AuthProvider] /api/auth/me illisible', res.status, err);
-                return null;
-            });
+            const data = await res.json().catch(() => null);
             if (!res.ok || !data?.authenticated || !data?.profile) {
                 console.error('[AuthProvider] /api/auth/me', res.status, data?.error ?? '');
                 setProfile(null);
@@ -195,8 +200,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Finition 2b (C) : brouillons du formulaire d'événement aussi (autre onglet, autre appareil, autres
                     // boutons de déconnexion : contrôleur, mot de passe réinitialisé)
                     clearAllDrafts();
-                } else if (event === 'SIGNED_IN' && nextUserId && previousUserId && nextUserId !== previousUserId) {
-                    void clearOfflineStore();
+                    clearPaymentHandoffs(); // cvf2b 6.13b : liens de paiement de l'onglet
+                    setSignedOut(true); // cvf2b 6.2 : la page affichée est remplacée, dans tous les onglets
+                    // Cvf2b 6.9 : abonnement push de ce navigateur retiré sur toute fin de session (autre onglet, autre
+                    // appareil, jeton de rafraîchissement refusé, mot de passe réinitialisé), pas seulement au bouton
+                    void unsubscribePush();
+                } else if (event === 'SIGNED_IN' && nextUserId) {
+                    // Cvf2b 5c / 5d : à toute connexion, brouillons d'un autre compte (et ceux de plus de 7 jours)
+                    // effacés, même quand le compte précédent n'est plus en mémoire (page rechargée)
+                    clearAllDrafts(nextUserId);
+                    if (previousUserId && nextUserId !== previousUserId) void clearOfflineStore();
+                } else if (event === 'INITIAL_SESSION' && !nextUserId && sessionEnded()) {
+                    // Cvf2b 6.5 : page chargée sans session (close à l'insu du navigateur : « Déconnecter tous mes
+                    // appareils » depuis un autre appareil, signal du middleware) : tout ce que le compte a laissé sur
+                    // l'appareil est effacé, sans attendre un SIGNED_OUT qui ne viendra pas
+                    void clearOfflineStore(true);
+                    clearAllScanMemory();
+                    clearAllDrafts();
+                    clearPaymentHandoffs();
+                    void unsubscribePush(); // cvf2b 6.9 : même règle que SIGNED_OUT
                 }
                 if (nextUserId) {
                     lastUserIdRef.current = nextUserId;
@@ -260,6 +282,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const held = session && { access: session.access_token, refresh: session.refresh_token, everywhere: scope === 'partout' };
         clearAllScanMemory();
         clearAllDrafts();
+        clearPaymentHandoffs(); // cvf2b 6.13b
         void clearOfflineStore();
         setSignedOut(true);
         setUser(null);
@@ -309,8 +332,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }}
         >
             {syncOfflineTickets && <LazyOfflineTicketsSync />}
-            {signedOut && pathname !== '/login' ? (
-                <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface-sunken p-6 text-center text-fg">
+            {signedOut && !AUTH_PAGES.includes(pathname) ? (
+                <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background p-6 text-center text-foreground-strong">
                     <p role="status" className="text-lg font-semibold">Vous êtes déconnecté de ce téléphone.</p>
                     <LinkButton href="/login?message=deconnecte">Se connecter</LinkButton>
                 </main>

@@ -38,6 +38,8 @@ export default function HallDetailPage(props: { params: Promise<{ id: string }> 
 
   const [startDate, setStartDate] = useState('2026-10-15');
   const [durationDays, setDurationDays] = useState(1);
+  // Erreur liée aux dates choisies (salle déjà prise) : affichée sous le champ de date, effacée à la correction.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isLiked, setIsLiked] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -131,13 +133,23 @@ export default function HallDetailPage(props: { params: Promise<{ id: string }> 
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Impossible de réserver cette salle.');
+        // Message de l'API (texte public) ; une exception JavaScript brute n'est jamais montrée.
+        const message = typeof data?.error === 'string' && data.error ? data.error : 'Impossible de réserver cette salle.';
+        if (res.status === 409) {
+          // Salle déjà réservée aux dates choisies : l'erreur va sous le champ de date.
+          setFieldErrors({ startDate: message });
+          document.getElementById('salle-date-debut')?.focus();
+        } else {
+          toast.error(message);
+        }
+        return;
       }
 
       setActiveReservationId(data.reservation.id);
       setIsPaymentOpen(true);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erreur lors de la réservation.');
+      console.error('[Réservation de salle] échec :', err instanceof Error ? err.message : String(err));
+      toast.error('La réservation n’a pas abouti. Vérifiez votre connexion puis réessayez.');
     } finally {
       setIsSubmitting(false);
     }
@@ -272,15 +284,26 @@ export default function HallDetailPage(props: { params: Promise<{ id: string }> 
 
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-zinc-300 block mb-1">
+              <label htmlFor="salle-date-debut" className="text-xs font-bold text-slate-700 dark:text-zinc-300 block mb-1">
                 Date de début de l’événement
               </label>
               <input
+                id="salle-date-debut"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setFieldErrors({});
+                }}
+                aria-invalid={fieldErrors.startDate ? true : undefined}
+                aria-describedby={fieldErrors.startDate ? 'salle-date-debut-erreur' : undefined}
                 className="w-full h-11 px-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs font-bold focus:outline-none focus:border-[#FF5722]"
               />
+              {fieldErrors.startDate && (
+                <p id="salle-date-debut-erreur" role="alert" className="mt-1 text-sm text-danger-text">
+                  {fieldErrors.startDate}
+                </p>
+              )}
             </div>
 
             <div>
@@ -292,7 +315,10 @@ export default function HallDetailPage(props: { params: Promise<{ id: string }> 
                   <button
                     key={d}
                     type="button"
-                    onClick={() => setDurationDays(d)}
+                    onClick={() => {
+                      setDurationDays(d);
+                      setFieldErrors({});
+                    }}
                     className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                       durationDays === d
                         ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-xs'

@@ -24,7 +24,7 @@ const LABELS: Record<RealtimeStatus, string> = {
 const DOTS: Record<RealtimeStatus, string> = {
   live: 'bg-success motion-safe:animate-pulse',
   connecting: 'bg-warning',
-  offline: 'border border-fg-muted bg-transparent',
+  offline: 'border border-muted-foreground bg-transparent',
 };
 
 /**
@@ -44,12 +44,12 @@ export const LiveIndicator: React.FC<LiveIndicatorProps> = ({ status, salesLive 
       aria-live="polite"
       className={cn(
         'inline-flex items-center gap-2 whitespace-nowrap text-sm font-medium',
-        status === 'live' && salesLive ? 'text-success-fg' : 'text-fg-muted',
+        status === 'live' && salesLive ? 'text-success-text' : 'text-muted-foreground',
         className,
       )}
       title={status === 'offline' ? 'Les chiffres affichés sont ceux du dernier chargement.' : undefined}
     >
-      <span className={cn('h-2 w-2 flex-shrink-0 rounded-full', notFollowed ? 'bg-fg-muted' : DOTS[status])} aria-hidden="true" />
+      <span className={cn('h-2 w-2 flex-shrink-0 rounded-full', notFollowed ? 'bg-muted-foreground' : DOTS[status])} aria-hidden="true" />
       {label}
     </span>
   );

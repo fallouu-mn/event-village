@@ -84,7 +84,7 @@ import {
 
 const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => m.MapPicker), {
     ssr: false,
-    loading: () => <div className="h-64 w-full rounded-2xl bg-surface-sunken motion-safe:animate-pulse" aria-hidden="true" />,
+    loading: () => <div className="h-64 w-full rounded-2xl bg-background motion-safe:animate-pulse" aria-hidden="true" />,
 });
 
 type StepId = 'infos' | 'programme' | 'acces' | 'billetterie' | 'controle';
@@ -883,7 +883,7 @@ export function EventForm(props: EventFormProps) {
             setEditLocks(readEditLocks(body.edit_locks));
         } catch (err) {
             console.error('[EventForm] relecture des verrous', err);
-            toast.error('Les règles de la jauge n’ont pas pu être relues : rechargez la page pour les voir à jour.');
+            toast.error('Les règles de la jauge n’ont pas pu être relues : rechargez la page pour les voir à jour.', { onRetry: () => { void refreshLocks(); } });
         }
     }, [eventId, toast]);
 
@@ -1285,8 +1285,8 @@ export function EventForm(props: EventFormProps) {
                 {header}
                 <div className="flex flex-col gap-4" aria-busy="true" aria-live="polite">
                     <span className="sr-only">Chargement de l’événement…</span>
-                    <div className="h-11 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
-                    <div className="h-96 w-full rounded-3xl bg-surface-sunken motion-safe:animate-pulse" />
+                    <div className="h-11 w-full rounded-xl bg-background motion-safe:animate-pulse" />
+                    <div className="h-96 w-full rounded-3xl bg-background motion-safe:animate-pulse" />
                 </div>
             </div>
         );
@@ -1485,7 +1485,7 @@ export function EventForm(props: EventFormProps) {
             )}
 
             <nav aria-label="Étapes du formulaire" className="mb-4">
-                <p className="mb-2 text-sm font-medium text-fg-muted">
+                <p className="mb-2 text-sm font-medium text-muted-foreground">
                     {onReview ? 'Dernière étape : vérifier avant d’envoyer' : `Étape ${stepIndex + 1} sur ${STEPS.length} : ${currentStep.heading}`}
                 </p>
                 {/* Finition 2b (C) : nom de chaque étape visible, sur téléphone aussi (3 colonnes, 6 sur grand écran) */}
@@ -1502,8 +1502,8 @@ export function EventForm(props: EventFormProps) {
                                     className={cn(
                                         'flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border px-2 text-sm font-semibold transition-colors duration-200',
                                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                        active ? 'border-brand-fg bg-brand-bg text-brand-fg' : 'border-border bg-surface text-fg-muted hover:bg-surface-sunken hover:text-fg',
-                                        hasError && !active && 'border-danger text-danger-fg',
+                                        active ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-border bg-card text-muted-foreground hover:bg-background hover:text-foreground-strong',
+                                        hasError && !active && 'border-danger text-danger-text',
                                     )}
                                 >
                                     <span aria-hidden="true" className="tabular-nums">{s.id === 'verifier' ? <Check size={16} /> : i + 1}</span>
@@ -1523,15 +1523,15 @@ export function EventForm(props: EventFormProps) {
                 </ol>
             </nav>
 
-            <form noValidate onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-6 rounded-3xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+            <form noValidate onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-6 rounded-3xl border border-border bg-card p-4 shadow-sm sm:p-6">
                 {showSummary && (
-                    <div ref={summaryRef} tabIndex={-1} role="alert" aria-labelledby="ev-erreurs-titre" className="rounded-2xl border border-danger-border bg-danger-bg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                        <p id="ev-erreurs-titre" className="text-base font-semibold text-danger-fg">
+                    <div ref={summaryRef} tabIndex={-1} role="alert" aria-labelledby="ev-erreurs-titre" className="rounded-2xl border border-danger-border bg-danger-soft p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <p id="ev-erreurs-titre" className="text-base font-semibold text-danger-text">
                             {errorEntries.length > 0
                                 ? `Le formulaire contient ${errorEntries.length > 1 ? `${errorEntries.length} points à corriger` : 'un point à corriger'}`
                                 : 'Enregistrement impossible'}
                         </p>
-                        {formError && <p className="mt-1 text-sm leading-relaxed text-fg">{formError}</p>}
+                        {formError && <p className="mt-1 text-sm leading-relaxed text-foreground-strong">{formError}</p>}
                         {errorEntries.length > 0 && (
                             <ul className="mt-2 flex flex-col gap-1">
                                 {errorEntries.map(([key, message]) => (
@@ -1539,7 +1539,7 @@ export function EventForm(props: EventFormProps) {
                                         <button
                                             type="button"
                                             onClick={() => focusField(key)}
-                                            className="min-h-11 cursor-pointer text-left text-sm font-medium text-danger-fg underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            className="min-h-11 cursor-pointer text-left text-sm font-medium text-danger-text underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                         >
                                             {`${labelOfKey(key, values, categories)} : ${message}`}
                                         </button>
@@ -1552,7 +1552,7 @@ export function EventForm(props: EventFormProps) {
 
                 {formInfo && <StatusBanner tone="info" title={formInfo} />}
 
-                <h2 ref={headingRef} tabIndex={-1} className="text-xl font-bold text-fg focus-visible:outline-none">
+                <h2 ref={headingRef} tabIndex={-1} className="text-xl font-bold text-foreground-strong focus-visible:outline-none">
                     {currentStep.heading}
                 </h2>
 
@@ -1602,7 +1602,7 @@ export function EventForm(props: EventFormProps) {
                         />
 
                         <fieldset className="flex flex-col gap-4 rounded-2xl border border-border p-4">
-                            <legend className="px-1 text-base font-semibold text-fg">Dates et horaires (heure de Dakar)</legend>
+                            <legend className="px-1 text-base font-semibold text-foreground-strong">Dates et horaires (heure de Dakar)</legend>
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <TextInput id="ev-start_date" type="date" label="Date de début" required value={values.start_date}
                                     onChange={(e) => set('start_date', e.target.value)} error={errors.start_date} hint={hint(undefined, true)} />
@@ -1616,9 +1616,9 @@ export function EventForm(props: EventFormProps) {
                                     hint={hint('Facultative ; avec une heure de fin, la date de fin est demandée.', true)} />
                             </div>
                             {retained && (
-                                <div className="rounded-xl bg-surface-sunken px-4 py-3">
-                                    <p className="text-base font-semibold text-fg">Fin retenue : {retained.text}</p>
-                                    <p className="mt-1 text-sm leading-relaxed text-fg-muted">{RETAINED_END_HELP}</p>
+                                <div className="rounded-xl bg-background px-4 py-3">
+                                    <p className="text-base font-semibold text-foreground-strong">Fin retenue : {retained.text}</p>
+                                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{RETAINED_END_HELP}</p>
                                 </div>
                             )}
                         </fieldset>
@@ -1666,12 +1666,12 @@ export function EventForm(props: EventFormProps) {
 
                 {step === 'programme' && (
                     <div className="flex flex-col gap-4">
-                        <p className="text-sm leading-relaxed text-fg-muted">
+                        <p className="text-sm leading-relaxed text-muted-foreground">
                             Facultatif. Les lignes vides sont ignorées et le programme est trié par heure à l’enregistrement.
                         </p>
-                        {errors.program && <p role="alert" className="text-sm font-medium text-danger-fg">{errors.program}</p>}
+                        {errors.program && <p role="alert" className="text-sm font-medium text-danger-text">{errors.program}</p>}
                         {values.program.length === 0 && (
-                            <div className="rounded-2xl border border-dashed border-border bg-surface-sunken p-6 text-center text-sm text-fg-muted">
+                            <div className="rounded-2xl border border-dashed border-border bg-background p-6 text-center text-sm text-muted-foreground">
                                 Aucune ligne de programme pour le moment.
                             </div>
                         )}
@@ -1682,7 +1682,7 @@ export function EventForm(props: EventFormProps) {
                             return (
                                 <section key={row.key} aria-labelledby={fid('titre')} className="flex flex-col gap-4 rounded-2xl border border-border p-4">
                                     <div className="flex items-center justify-between gap-2">
-                                        <h3 id={fid('titre')} className="text-base font-semibold text-fg">Ligne {index + 1}</h3>
+                                        <h3 id={fid('titre')} className="text-base font-semibold text-foreground-strong">Ligne {index + 1}</h3>
                                         <IconButton
                                             aria-label={`Supprimer la ligne ${index + 1} du programme`}
                                             variant="danger"
@@ -1738,8 +1738,8 @@ export function EventForm(props: EventFormProps) {
                 {step === 'acces' && (
                     <div className="flex flex-col gap-5">
                         <fieldset className="flex flex-col gap-3">
-                            <legend className="mb-1 text-base font-semibold text-fg">Position sur la carte</legend>
-                            <p className="text-sm leading-snug text-fg-muted">Obligatoire pour soumettre l’événement à la validation.</p>
+                            <legend className="mb-1 text-base font-semibold text-foreground-strong">Position sur la carte</legend>
+                            <p className="text-sm leading-snug text-muted-foreground">Obligatoire pour soumettre l’événement à la validation.</p>
                             <MapPicker
                                 idPrefix={MAP_PREFIX}
                                 latitude={values.latitude}
@@ -1791,19 +1791,19 @@ export function EventForm(props: EventFormProps) {
 
                 {step === 'billetterie' && !isEdit && (
                     <div className="flex flex-col gap-4">
-                        <p className="text-sm leading-relaxed text-fg-muted">
+                        <p className="text-sm leading-relaxed text-muted-foreground">
                             Ajoutez au moins une catégorie de billets pour pouvoir soumettre l’événement. Les catégories sont enregistrées avec le brouillon.
                         </p>
-                        {errors.ticket_categories && <p role="alert" className="text-sm font-medium text-danger-fg">{errors.ticket_categories}</p>}
+                        {errors.ticket_categories && <p role="alert" className="text-sm font-medium text-danger-text">{errors.ticket_categories}</p>}
                         {categories.length === 0 && (
-                            <div className="rounded-2xl border border-dashed border-border bg-surface-sunken p-6 text-center text-sm text-fg-muted">
+                            <div className="rounded-2xl border border-dashed border-border bg-background p-6 text-center text-sm text-muted-foreground">
                                 Aucune catégorie de billets pour le moment.
                             </div>
                         )}
                         {categories.map((cat, index) => (
                             <section key={cat.key} aria-labelledby={`${cat.key}-titre`} className="flex flex-col gap-4 rounded-2xl border border-border p-4">
                                 <div className="flex items-center justify-between gap-2">
-                                    <h3 id={`${cat.key}-titre`} className="min-w-0 break-words text-base font-semibold text-fg">
+                                    <h3 id={`${cat.key}-titre`} className="min-w-0 break-words text-base font-semibold text-foreground-strong">
                                         {cat.name.trim() || `Catégorie ${index + 1}`}
                                     </h3>
                                     <IconButton
@@ -1881,7 +1881,7 @@ export function EventForm(props: EventFormProps) {
 
                 {/* Finition 2b (C) : barre d'actions fixe en bas sous 1024 px (téléphone, tablette), à sa place au-delà ; la
                     barre « Navigation rapide » de l'application est masquée tant que celle-ci est affichée (QuickNavHidden) */}
-                <div className="form-action-bar fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface px-4 pt-3 shadow-lg lg:static lg:z-auto lg:gap-3 lg:bg-transparent lg:px-0 lg:pt-4 lg:shadow-none">
+                <div className="form-action-bar fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 pt-3 shadow-lg lg:static lg:z-auto lg:gap-3 lg:bg-transparent lg:px-0 lg:pt-4 lg:shadow-none">
                     <QuickNavHidden />
                     <Button type="button" variant="ghost" onClick={handlePrevious} disabled={stepIndex === 0} leftIcon={<ChevronLeft size={18} />}>
                         Précédent
@@ -1906,7 +1906,7 @@ export function EventForm(props: EventFormProps) {
                     </div>
                 </div>
                 {isEdit && lastStep && (
-                    <p className="text-sm text-fg-muted">
+                    <p className="text-sm text-muted-foreground">
                         « Enregistrer les modifications » concerne les informations de l’événement ; chaque catégorie de billets s’enregistre avec son propre bouton.
                     </p>
                 )}
@@ -1941,8 +1941,8 @@ export function EventForm(props: EventFormProps) {
             >
                 {notice && (
                     <div className="flex flex-col gap-2 tabular-nums">
-                        <p className="text-base font-semibold text-fg">{noticeSentence(notice)}</p>
-                        <p className="text-sm leading-relaxed text-fg-muted">{noticeDetail(notice)}</p>
+                        <p className="text-base font-semibold text-foreground-strong">{noticeSentence(notice)}</p>
+                        <p className="text-sm leading-relaxed text-muted-foreground">{noticeDetail(notice)}</p>
                     </div>
                 )}
             </ConfirmDialog>
@@ -1978,9 +1978,9 @@ function CategoryRadios({ value, onChange, locked, error }: {
 
     return (
         <div className="flex flex-col gap-1.5">
-            <span id="ev-category-label" className="text-sm font-semibold text-fg">
+            <span id="ev-category-label" className="text-sm font-semibold text-foreground-strong">
                 Type d’événement
-                <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+                <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
                 <span className="sr-only"> (obligatoire)</span>
             </span>
             <div
@@ -2009,7 +2009,7 @@ function CategoryRadios({ value, onChange, locked, error }: {
                             className={cn(
                                 'flex min-h-11 cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left text-sm font-semibold transition-colors duration-200',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60',
-                                checked ? 'border-brand-fg bg-brand-bg text-brand-fg' : 'border-border-strong bg-surface text-fg hover:bg-surface-sunken',
+                                checked ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-input bg-card text-foreground-strong hover:bg-background',
                                 error && !checked && 'border-danger',
                             )}
                         >
@@ -2020,12 +2020,12 @@ function CategoryRadios({ value, onChange, locked, error }: {
                 })}
             </div>
             {locked && (
-                <p id={hintId} className="flex items-start gap-1.5 text-sm text-fg-muted">
+                <p id={hintId} className="flex items-start gap-1.5 text-sm text-muted-foreground">
                     <Lock size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                     Verrouillé : des billets ont déjà été vendus ou réservés.
                 </p>
             )}
-            {error && <p id={errorId} className="text-sm font-medium text-danger-fg">{error}</p>}
+            {error && <p id={errorId} className="text-sm font-medium text-danger-text">{error}</p>}
         </div>
     );
 }

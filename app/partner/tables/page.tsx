@@ -122,7 +122,7 @@ export default function PartnerTablesPage() {
             if (zData.success) setZones(zData.zones || []);
             if (tData.success) setTables(tData.tables || []);
         } catch {
-            toast.error(toastMessages.tables.loadError);
+            toast.error(toastMessages.tables.loadError, { onRetry: () => { void fetchZonesAndTables(); } });
         } finally {
             setIsLoading(false);
         }
@@ -135,7 +135,7 @@ export default function PartnerTablesPage() {
             const data = await res.json();
             if (data.success) setReservations(data.reservations || []);
         } catch {
-            toast.error(toastMessages.tables.loadReservationsError);
+            toast.error(toastMessages.tables.loadReservationsError, { onRetry: () => { void fetchReservations(date); } });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -201,7 +201,7 @@ export default function PartnerTablesPage() {
                 toast.error(data.error || toastMessages.tables.operationError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleSaveZone(); } });
         } finally {
             setZoneSaving(false);
         }
@@ -271,7 +271,7 @@ export default function PartnerTablesPage() {
                 toast.error(data.error || toastMessages.tables.operationError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleSaveTable(); } });
         } finally {
             setTableSaving(false);
         }
@@ -292,7 +292,7 @@ export default function PartnerTablesPage() {
                 toast.error(data.error || toastMessages.tables.deleteError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleDelete(); } });
         } finally {
             setDeleteLoading(false);
             setDeleteConfirm({ isOpen: false, type: 'zone', id: null, label: '' });
@@ -332,7 +332,7 @@ export default function PartnerTablesPage() {
                 }
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleReservationAction(); } });
         } finally {
             setResActionLoading(false);
             setResAction({ isOpen: false, type: 'confirm', id: null });
