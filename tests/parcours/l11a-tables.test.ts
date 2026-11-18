@@ -23,6 +23,12 @@ import { BASE_URL } from './helpers';
 import * as partnerReservationsRoute from '../../app/api/partner/tables/reservations/route';
 import { PATCH as partnerActionRoute } from '../../app/api/partner/tables/reservations/[id]/route';
 import { POST as createVenueRoute } from '../../app/api/partner/venues/route';
+import { PATCH as updateVenueRoute } from '../../app/api/partner/venues/[id]/route';
+import { GET as partnerTablesGet } from '../../app/api/partner/tables/route';
+import { PATCH as partnerTablePatch, DELETE as partnerTableDelete } from '../../app/api/partner/tables/[id]/route';
+import { GET as partnerReservationsGet } from '../../app/api/partner/tables/reservations/route';
+import { GET as menuRoute } from '../../app/api/restaurants/[id]/menu/route';
+import { withFeatureFlags } from './terrain-helpers';
 import {
     ALWAYS_OPEN, allChannels, dayFromNow, decideVenue, isoWeekday, ledgerOfPayment, newBuyer, newPartner, newTable, newVenue, newZone,
     openTablesService, outboxOf, payConfirmed, platformSetting, releasePending, reservation, reserveRoute, reserveRpc, setHours,
@@ -578,6 +584,104 @@ describe('Établissements : création par la route', () => {
         const { data: notices } = await service.from('notification_outbox').select('channel, template_data').eq('type', 'ADMIN_VENUE_SUBMITTED');
         const mine = (notices ?? []).filter((n) => (n.template_data as Row | null)?.venue_id === v.id);
         assert.ok(mine.some((n) => n.channel === 'IN_APP'), 'administrateurs prévenus (cloche)');
+    });
+});
+
+// Contre-vérification de la 10a (T1, T2), équivalent côté tables : routes partenaire par la clé de service, relance
+// d'une attente échue sans refaire les contrôles
+describe('Routes partenaire et publiques : jamais la ligne d’une autre partenaire, jamais une partenaire au hasard', () => {
+    type Handler = (req: NextRequest, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
+    async function call(handler: Handler, method: string, path: string, token: string | null, id?: string, body?: Row) {
+        const res = await handler(new NextRequest(`${BASE_URL}${path}`, {
+            method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+        }), { params: Promise.resolve({ id: id ?? '' }) });
+        return { status: res.status, text: await res.text() };
+    }
+
+    test('une autre partenaire ne lit ni ne modifie les zones, tables, établissements et réservations d’une partenaire', async () => {
+        const venue = await newVenue(partner, { deposit_per_person: 2_000 });
+        const zone = await newZone(partner, venue, 'Patio');
+        const table = await newTable(partner, venue, 4, { zoneId: zone });
+        const resa = String((await reserveRpc(client, venue, { date: dayFromNow(45), notes: 'Anniversaire de Fatou' })).reservation_id);
+        const stranger = await newPartner('l11a-routes-etrangere');
+        const t = stranger.accessToken;
+        for (const type of ['zones', 'tables']) {
+            const r = await call(partnerTablesGet as unknown as Handler, 'GET', `/api/partner/tables?type=${type}`, t);
+            assert.equal(r.status, 200, r.text);
+            assert.ok(!r.text.includes(zone) && !r.text.includes(table), `${type} d’une autre partenaire servies`);
+        }
+        const list = await call(partnerReservationsGet as unknown as Handler, 'GET', `/api/partner/tables/reservations?venueId=${venue}`, t);
+        assert.equal(list.status, 200, list.text);
+        assert.ok(!list.text.includes(resa) && !list.text.includes('Fatou'), 'réservation d’une autre partenaire servie');
+        const patchTable = await call(partnerTablePatch, 'PATCH', `/api/partner/tables/${table}`, t, table, { capacity: 50 });
+        assert.ok(patchTable.status >= 400, `table d’une autre partenaire modifiée : ${patchTable.text}`);
+        const patchZone = await call(partnerTablePatch, 'PATCH', `/api/partner/tables/${zone}`, t, zone, { type: 'zone', name: 'Volée' });
+        assert.ok(patchZone.status >= 400, `zone d’une autre partenaire modifiée : ${patchZone.text}`);
+        await call(partnerTableDelete, 'DELETE', `/api/partner/tables/${table}`, t, table);
+        const patchVenue = await call(updateVenueRoute, 'PATCH', `/api/partner/venues/${venue}`, t, venue, { deposit_per_person: 100 });
+        assert.ok(patchVenue.status >= 400, `établissement d’une autre partenaire modifié : ${patchVenue.text}`);
+        const { data: tRow } = await service.from('restaurant_tables').select('capacity, is_active').eq('id', table).single();
+        const { data: zRow } = await service.from('restaurant_zones').select('name').eq('id', zone).single();
+        const { data: vRow } = await service.from('venues').select('deposit_per_person').eq('id', venue).single();
+        assert.deepEqual([tRow!.capacity, tRow!.is_active, zRow!.name, n(vRow!.deposit_per_person)], [4, true, 'Patio', 2_000], 'rien de changé');
+    });
+
+    test('menu public : un identifiant inconnu ou une partenaire non validée → 404, jamais « la première partenaire venue »', async () => {
+        const pending = await newPartner('l11a-menu-attente');
+        await service.from('partners').update({ status: 'EN_ATTENTE' }).eq('id', pending.partnerId);
+        const { error } = await service.from('products').insert({ partner_id: pending.partnerId, name: 'TEST Plat caché 11a', price: 1_000, status: 'DISPONIBLE' });
+        assert.equal(error, null, error?.message);
+        await withFeatureFlags({ orders: true }, async () => {
+            for (const id of ['00000000-0000-4000-8000-000000000000', 'restaurant-qui-nexiste-pas-11a', pending.partnerId]) {
+                const r = await call(menuRoute, 'GET', `/api/restaurants/${id}/menu`, null, id);
+                assert.equal(r.status, 404, `${id} : ${r.text}`);
+                assert.ok(!r.text.includes('TEST Plat caché 11a'));
+            }
+        });
+    });
+});
+
+describe('Relance d’une attente échue : tous les contrôles refaits', () => {
+    test('attente échue, établissement suspendu entre-temps : le paiement n’est pas lancé', async () => {
+        const venue = await newVenue(partner, { deposit_per_person: 2_000 });
+        await newTable(partner, venue, 4);
+        const id = String((await reserveRpc(client, venue, { date: dayFromNow(46) })).reservation_id);
+        await shiftReservation(id, { holdMinutes: -1 });
+        assert.equal((await decideVenue(venue, 'SUSPENDRE', 'Contrôle d’hygiène en cours.')).ok, true);
+        const r = await startPayment(client, id);
+        assert.deepEqual([r.status, r.body.code, r.body.error], [409, 'VENUE_NOT_AVAILABLE', 'Cet établissement n’accepte pas de réservation pour le moment.']);
+        assert.equal(r.payment, null, 'aucun paiement créé');
+    });
+
+    test('attente échue, table retirée ou horaires changés : le paiement n’est pas lancé', async () => {
+        const venue = await newVenue(partner, { deposit_per_person: 2_000 });
+        const table = await newTable(partner, venue, 4);
+        const date = dayFromNow(47);
+        const a = String((await reserveRpc(client, venue, { date, time: '20:00' })).reservation_id);
+        await shiftReservation(a, { holdMinutes: -1 });
+        await service.from('restaurant_tables').update({ is_active: false }).eq('id', table);
+        assert.equal((await startPayment(client, a)).body.code, 'TABLE_NOT_FOUND');
+        await service.from('restaurant_tables').update({ is_active: true }).eq('id', table);
+        await setHours(partner, venue, [{ weekday: isoWeekday(date), opens_at: '12:00', closes_at: '15:00' }]);
+        assert.equal((await startPayment(client, a)).body.code, 'OUTSIDE_HOURS');
+    });
+
+    test('paiement lancé à temps, établissement suspendu avant la confirmation : remboursé en entier, jamais confirmé', async () => {
+        const venue = await newVenue(partner, { deposit_per_person: 2_000 });
+        await newTable(partner, venue, 4);
+        const id = String((await reserveRpc(client, venue, { date: dayFromNow(48), guests: 2 })).reservation_id);
+        const started = await startPayment(client, id);
+        assert.equal(started.status, 201, JSON.stringify(started.body));
+        await shiftReservation(id, { holdMinutes: -1 });
+        assert.equal((await decideVenue(venue, 'SUSPENDRE', 'Fermeture administrative.')).ok, true);
+        providerSays(started.payment!, 'SUCCESS');
+        await deliverWebhook(started.payment!);
+        const pay = await paymentById(started.payment!.id);
+        assert.ok(['REFUND_PENDING', 'REFUNDED'].includes(String(pay.status)), String(pay.status));
+        const row = await reservation(id);
+        assert.notEqual(row.booking_state, 'CONFIRMEE');
+        assert.equal(n(row.paid_amount), 0);
     });
 });
 
