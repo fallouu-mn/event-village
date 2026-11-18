@@ -206,12 +206,11 @@ export async function tick(): Promise<Row> {
 
 /** Avis en file pour un destinataire et une réservation : « TYPE:CANAL », triés. */
 export async function outboxOf(userId: string, reservationId: string): Promise<string[]> {
-    const { data, error } = await service.from('notification_outbox').select('type, channel, template_data').eq('recipient_user_id', userId);
+    // Filtre en base (la lecture REST s'arrête à 1 000 lignes)
+    const { data, error } = await service.from('notification_outbox').select('type, channel')
+        .eq('recipient_user_id', userId).eq('template_data->>reservation_id', reservationId);
     assert.equal(error, null, `boîte d'envoi : ${error?.message}`);
-    return (data ?? [])
-        .filter((r) => (r.template_data as Row | null)?.reservation_id === reservationId)
-        .map((r) => `${String(r.type)}:${String(r.channel)}`)
-        .sort();
+    return (data ?? []).map((r) => `${String(r.type)}:${String(r.channel)}`).sort();
 }
 
 /** Les 4 canaux d'un type : cloche, push, email, SMS. */

@@ -566,11 +566,17 @@ describe('Établissements : création par la route', () => {
     };
 
     test('attaque : une fiche partenaire en attente ou suspendue ne crée pas d’établissement', async () => {
-        for (const status of ['EN_ATTENTE', 'SUSPENDU']) {
+        // Fiche en attente : refusée par la garde existante des fiches (403) ; fiche suspendue : la garde la laisse
+        // passer (lectures et écritures hors événements), le service des tables la refuse (400)
+        const cases: Array<[string, number, string]> = [
+            ['EN_ATTENTE', 403, 'Votre profil d’organisateur doit être validé avant cette action.'],
+            ['SUSPENDU', 400, 'Votre compte partenaire doit être validé avant de créer un établissement.'],
+        ];
+        for (const [status, code, message] of cases) {
             const p = await newPartner(`l11a-fiche-${status.toLowerCase()}`);
             await service.from('partners').update({ status }).eq('id', p.partnerId);
             const res = await createVenue(p.accessToken, body);
-            assert.deepEqual([res.status, res.body.error], [400, 'Votre compte partenaire doit être validé avant de créer un établissement.'], status);
+            assert.deepEqual([res.status, res.body.error], [code, message], status);
             const { count } = await service.from('venues').select('id', { count: 'exact', head: true }).eq('partner_id', p.partnerId);
             assert.equal(count, 0, `${status} : aucun établissement`);
         }
@@ -583,9 +589,11 @@ describe('Établissements : création par la route', () => {
         assert.deepEqual([v.validation_status, v.status, v.kindLabel], ['EN_ATTENTE_VALIDATION', 'En attente de validation', 'Bar']);
         const { data: hours } = await service.from('venue_opening_hours').select('weekday, opens_at, closes_at').eq('venue_id', String(v.id));
         assert.deepEqual(hours, [{ weekday: 5, opens_at: '19:00:00', closes_at: '03:00:00' }]);
-        const { data: notices } = await service.from('notification_outbox').select('channel, template_data').eq('type', 'ADMIN_VENUE_SUBMITTED');
-        const mine = (notices ?? []).filter((n) => (n.template_data as Row | null)?.venue_id === v.id);
-        assert.ok(mine.some((n) => n.channel === 'IN_APP'), 'administrateurs prévenus (cloche)');
+        // Filtre en base : la lecture REST s'arrête à 1 000 lignes (chaque établissement des suites prévient tous les admins)
+        const { data: mine, error: outErr } = await service.from('notification_outbox').select('channel')
+            .eq('type', 'ADMIN_VENUE_SUBMITTED').eq('template_data->>venue_id', String(v.id));
+        assert.equal(outErr, null, outErr?.message);
+        assert.ok((mine ?? []).some((n) => n.channel === 'IN_APP'), 'administrateurs prévenus (cloche)');
     });
 });
 
