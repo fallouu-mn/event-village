@@ -14,6 +14,10 @@ on:
       - 'securite/**'
       # Lot CI rapide : branches de la CI elle-même (ci/parallele, ci/reference-serie)
       - 'ci/**'
+      # Design 1a (fondations) et lots de design suivants : runs rapides pendant le travail, run complet à la fin
+      - 'design-*/**'
+      # Correctifs des contre-vérifications (correctifs/cvf2b…) : run rapide puis run complet exigés par la consigne
+      - 'correctifs/**'
   pull_request:
   workflow_dispatch:
 
@@ -355,6 +359,18 @@ jobs:
       - *horodatage
       - *checkout
       - *supabase-cli
+
+      # Contre-vérification 2B (6.7) : supabase/config.toml ramène les jetons d'accès à 600 s (production et suites de tests).
+      # L'e2e capture l'état de connexion de chaque rôle UNE fois (e2e/auth.setup.ts) puis le rejoue dans des dizaines de
+      # contextes pendant plus de 30 min : au-delà de 10 min, chaque contexte rafraîchirait le même jeton de rafraîchissement,
+      # et GoTrue (détection de réutilisation) fermerait la session, comme il le doit face à un vol. Ce job seul garde donc
+      # 3 600 s ; l'échéance de 600 s et la coupure du temps réel sont prouvées par tests/parcours/cvf2b-correctif-pre-requete.
+      - name: "E2E : jetons d'accès à 3 600 s pour ce job seulement (états de connexion rejoués)"
+        run: |
+          . /tmp/etape.sh e2e-jwt-expiry
+          sed -i -E 's/^jwt_expiry = 600$/jwt_expiry = 3600/' supabase/config.toml
+          grep -qx 'jwt_expiry = 3600' supabase/config.toml || { echo "::error::jwt_expiry non remplacé dans supabase/config.toml"; exit 1; }
+          echo "jwt_expiry du job e2e : $(grep -E '^jwt_expiry' supabase/config.toml)"
 
       # Chemin critique du run : Supabase démarre pendant npm ci (même script, mêmes tentatives) ; attendu juste après
       - name: Démarrer Supabase local en arrière-plan (pendant npm ci)

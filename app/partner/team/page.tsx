@@ -66,8 +66,8 @@ export default function PartnerTeamPage() {
             {ready && !showPicker && (
                 <>
                     {actsAsAdmin && (
-                        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm text-fg">
+                        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm text-foreground-strong">
                                 {pickedName
                                     ? <>Organisatrice : <span className="font-semibold">{pickedName}</span></>
                                     : <>Équipe de l’organisatrice choisie.</>}

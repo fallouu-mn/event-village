@@ -88,10 +88,10 @@ const DELIVERY_MODE_LABELS: Record<string, string> = {
 };
 
 const ACTIVITY_ICONS: Record<PartnerActivityItem['type'], { icon: React.ElementType; className: string }> = {
-    SALE: { icon: Ticket, className: 'bg-info-bg text-info-fg' },
-    CHECKIN: { icon: QrCode, className: 'bg-success-bg text-success-fg' },
-    ORDER: { icon: ShoppingBag, className: 'bg-brand-bg text-brand-fg' },
-    WITHDRAWAL: { icon: Wallet, className: 'bg-surface-sunken text-fg' },
+    SALE: { icon: Ticket, className: 'bg-info-soft text-info-text' },
+    CHECKIN: { icon: QrCode, className: 'bg-success-soft text-success-text' },
+    ORDER: { icon: ShoppingBag, className: 'bg-primary-soft text-primary-text' },
+    WITHDRAWAL: { icon: Wallet, className: 'bg-background text-foreground-strong' },
 };
 
 type DossierDoc = 'id_card' | 'business_doc';
@@ -182,13 +182,13 @@ function DossierCompleteModal({ isOpen, onClose, onDone }: { isOpen: boolean; on
     };
 
     const fileField = (key: 'idCard' | 'businessDoc', id: string, label: string, hint: string, file: File | null, setFile: (f: File | null) => void) => (
-        <div className={cn('space-y-2 rounded-2xl border border-dashed p-4', file ? 'border-success-border bg-success-bg' : 'border-border-strong bg-surface-sunken', errors[key] && 'border-danger')}>
-            <label htmlFor={id} className="block text-sm font-semibold text-fg">
+        <div className={cn('space-y-2 rounded-2xl border border-dashed p-4', file ? 'border-success-border bg-success-soft' : 'border-input bg-background', errors[key] && 'border-danger')}>
+            <label htmlFor={id} className="block text-sm font-semibold text-foreground-strong">
                 {label}
-                <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+                <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
                 <span className="sr-only"> (obligatoire)</span>
             </label>
-            <p id={`${id}-aide`} className="text-sm text-fg-muted">{hint}</p>
+            <p id={`${id}-aide`} className="text-sm text-muted-foreground">{hint}</p>
             <input
                 id={id}
                 type="file"
@@ -200,15 +200,15 @@ function DossierCompleteModal({ isOpen, onClose, onDone }: { isOpen: boolean; on
                     setFile(ev.target.files?.[0] ?? null);
                     setErrors((prev) => ({ ...prev, [key]: undefined }));
                 }}
-                className="block w-full text-sm text-fg file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-brand file:px-4 file:text-sm file:font-semibold file:text-on-brand"
+                className="block w-full text-sm text-foreground-strong file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-primary file:px-4 file:text-sm file:font-semibold file:text-primary-foreground"
             />
             {file && (
-                <p className="flex items-center gap-1.5 text-sm font-medium text-success-fg">
+                <p className="flex items-center gap-1.5 text-sm font-medium text-success-text">
                     <CheckCircle2 size={16} aria-hidden="true" />
                     <span className="break-all">{`Fichier choisi : ${file.name}`}</span>
                 </p>
             )}
-            {errors[key] && <p id={`${id}-erreur`} className="text-sm font-medium text-danger-fg">{errors[key]}</p>}
+            {errors[key] && <p id={`${id}-erreur`} className="text-sm font-medium text-danger-text">{errors[key]}</p>}
         </div>
     );
 
@@ -229,7 +229,7 @@ function DossierCompleteModal({ isOpen, onClose, onDone }: { isOpen: boolean; on
             }
         >
             <form id="complement-dossier" noValidate onSubmit={(ev) => void submit(ev)} className="space-y-4">
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     Déposez de nouveau vos deux pièces, en tenant compte du motif du refus. PDF, JPEG, PNG ou WebP, 10 Mo au plus.
                     Après cet envoi, le dossier ne pourra plus être complété ici.
                 </p>
@@ -241,7 +241,7 @@ function DossierCompleteModal({ isOpen, onClose, onDone }: { isOpen: boolean; on
                     <TextInput id="complement-rccm" label="RCCM (facultatif)" value={rccm} maxLength={REGISTRY_ID_MAX} disabled={isSending}
                         onChange={(ev) => { setRccm(ev.target.value); setErrors((prev) => ({ ...prev, rccm: undefined })); }} error={errors.rccm} />
                 </div>
-                {progress && <p role="status" className="text-sm text-fg-muted">{progress}</p>}
+                {progress && <p role="status" className="text-sm text-muted-foreground">{progress}</p>}
                 {failure && (
                     <StatusBanner tone="danger" announce="alert" title="Dossier non envoyé">
                         {failure}
@@ -281,33 +281,37 @@ export default function PartnerDashboardPage() {
     // Démarrage de l'essai à la première visite d'un partenaire validé (action idempotente du serveur),
     // puis relecture : la durée et la date de fin affichées sont celles que le serveur a posées.
     const activationAsked = useRef(false);
+    /** Design 1a : appel nommé pour que « Réessayer » le relance tel quel (action idempotente du serveur). */
+    const startTrial = useCallback(async (): Promise<void> => {
+        try {
+            const res = await fetch('/api/partner/activation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) {
+                const reply = (await res.json().catch((err: unknown) => {
+                    console.error('[tableau de bord] réponse d’activation illisible :', err);
+                    return null;
+                })) as { error?: string } | null;
+                console.error('[tableau de bord] activation de l’essai refusée, HTTP', res.status, reply);
+                const message = reply?.error ?? 'La période d’essai n’a pas pu démarrer. Rechargez la page pour réessayer.';
+                if (res.status >= 500) toast.error(message, { onRetry: () => { void startTrial(); } });
+                else toast.error(message);
+                return;
+            }
+            await reload();
+        } catch (err) {
+            console.error('[tableau de bord] activation de l’essai impossible :', err);
+            toast.error('Connexion impossible : la période d’essai démarrera à votre prochaine visite.', { onRetry: () => { void startTrial(); } });
+        }
+    }, [reload, toast]);
     useEffect(() => {
         if (!partner || !trial || activationAsked.current) return;
         if (partner.status !== 'VALIDE' || trial.started_at) return;
         activationAsked.current = true;
-        void (async () => {
-            try {
-                const res = await fetch('/api/partner/activation', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({}),
-                });
-                if (!res.ok) {
-                    const reply = (await res.json().catch((err: unknown) => {
-                        console.error('[tableau de bord] réponse d’activation illisible :', err);
-                        return null;
-                    })) as { error?: string } | null;
-                    console.error('[tableau de bord] activation de l’essai refusée, HTTP', res.status, reply);
-                    toast.error(reply?.error ?? 'La période d’essai n’a pas pu démarrer. Rechargez la page pour réessayer.');
-                    return;
-                }
-                await reload();
-            } catch (err) {
-                console.error('[tableau de bord] activation de l’essai impossible :', err);
-                toast.error('Connexion impossible : la période d’essai démarrera à votre prochaine visite.');
-            }
-        })();
-    }, [partner, trial, reload, toast]);
+        void startTrial();
+    }, [partner, trial, startTrial]);
 
     const handleRefresh = useCallback(() => {
         void reload();
@@ -319,7 +323,7 @@ export default function PartnerDashboardPage() {
             header: 'Événement',
             render: (ev) => (
                 <div className="flex min-w-0 flex-col items-start gap-1.5">
-                    <span className="break-words font-semibold text-fg">{ev.title}</span>
+                    <span className="break-words font-semibold text-foreground-strong">{ev.title}</span>
                     <StatusBadge domain="event" status={ev.status} size="sm" />
                 </div>
             ),
@@ -329,8 +333,8 @@ export default function PartnerDashboardPage() {
             header: 'Date et lieu',
             render: (ev) => (
                 <div className="flex flex-col">
-                    <time dateTime={ev.startAt ?? undefined} className="text-sm text-fg">{formatDateTime(ev.startAt)}</time>
-                    <span className="text-sm text-fg-muted">{ev.city || ev.location || '—'}</span>
+                    <time dateTime={ev.startAt ?? undefined} className="text-sm text-foreground-strong">{formatDateTime(ev.startAt)}</time>
+                    <span className="text-sm text-muted-foreground">{ev.city || ev.location || '—'}</span>
                 </div>
             ),
         },
@@ -340,8 +344,8 @@ export default function PartnerDashboardPage() {
             align: 'right',
             render: (ev) => (
                 <div className="flex flex-col tabular-nums">
-                    <span className="font-semibold text-fg">{formatInteger(ev.ticketsSold)} / {formatInteger(ev.capacity)}</span>
-                    <span className="text-sm text-fg-muted">{formatInteger(ev.fillRatePercent)} % rempli</span>
+                    <span className="font-semibold text-foreground-strong">{formatInteger(ev.ticketsSold)} / {formatInteger(ev.capacity)}</span>
+                    <span className="text-sm text-muted-foreground">{formatInteger(ev.fillRatePercent)} % rempli</span>
                 </div>
             ),
         },
@@ -351,8 +355,8 @@ export default function PartnerDashboardPage() {
             align: 'right',
             render: (ev) => (
                 <div className="flex flex-col tabular-nums">
-                    <span className="font-semibold text-fg">{formatInteger(ev.ticketsCheckedIn)}</span>
-                    <span className="text-sm text-fg-muted">{formatInteger(ev.checkInRatePercent)} % des vendus</span>
+                    <span className="font-semibold text-foreground-strong">{formatInteger(ev.ticketsCheckedIn)}</span>
+                    <span className="text-sm text-muted-foreground">{formatInteger(ev.checkInRatePercent)} % des vendus</span>
                 </div>
             ),
         },
@@ -360,13 +364,13 @@ export default function PartnerDashboardPage() {
             key: 'gross',
             header: 'Ventes en ligne',
             align: 'right',
-            render: (ev) => <span className="font-semibold tabular-nums text-fg">{formatFcfa(ev.grossRevenue)}</span>,
+            render: (ev) => <span className="font-semibold tabular-nums text-foreground-strong">{formatFcfa(ev.grossRevenue)}</span>,
         },
         {
             key: 'net',
             header: 'Net partenaire',
             align: 'right',
-            render: (ev) => <span className="font-bold tabular-nums text-brand-fg">{formatFcfa(ev.netRevenue)}</span>,
+            render: (ev) => <span className="font-bold tabular-nums text-primary-text">{formatFcfa(ev.netRevenue)}</span>,
         },
         {
             key: 'actions',
@@ -403,7 +407,7 @@ export default function PartnerDashboardPage() {
     return (
         <div className="mx-auto max-w-6xl space-y-6 py-6 pb-24 sm:space-y-8">
             <PageHeader
-                eyebrow={<span className="text-sm font-medium text-fg-muted">Espace partenaire</span>}
+                eyebrow={<span className="text-sm font-medium text-muted-foreground">Espace partenaire</span>}
                 title={title}
                 description="Ventes, entrées et solde de vos événements."
                 actions={
@@ -472,13 +476,13 @@ export default function PartnerDashboardPage() {
                             {partner.rejectionReason ? <>Motif : {partner.rejectionReason}</> : 'Aucun motif n’a été précisé.'}{' '}
                             {canCompleteDossier
                                 ? 'Vous pouvez compléter votre dossier une fois : il repasse alors en vérification.'
-                                : <>Votre dossier a déjà été complété une fois. Pour la suite, <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">contactez le support</Link>.</>}
+                                : <>Votre dossier a déjà été complété une fois. Pour la suite, <Link href="/aide" className="font-semibold text-primary-text underline underline-offset-4">contactez le support</Link>.</>}
                         </StatusBanner>
                     )}
                     {partner?.status === 'SUSPENDU' && (
                         <StatusBanner tone="suspended" title="Compte partenaire suspendu">
                             {partner.suspendedReason ? <>Motif : {partner.suspendedReason}. </> : null}
-                            Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu’à la réactivation du compte. <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">Contactez le support Event Village</Link>.
+                            Vos événements en ligne sont suspendus et vos fonds sont gelés jusqu’à la réactivation du compte. <Link href="/aide" className="font-semibold text-primary-text underline underline-offset-4">Contactez le support Event Village</Link>.
                         </StatusBanner>
                     )}
 
@@ -531,7 +535,7 @@ export default function PartnerDashboardPage() {
                             />
                         </div>
                         {kpis && (
-                            <p className="text-sm tabular-nums text-fg-muted">
+                            <p className="text-sm tabular-nums text-muted-foreground">
                                 Les ventes en espèces au guichet ({formatFcfa(kpis.cashSales)}) et les invitations n’alimentent pas le solde.{' '}
                                 <LinkButton href="/partner/finance" variant="ghost" size="sm" className="-ml-2 align-middle">Voir mes finances</LinkButton>
                             </p>
@@ -542,8 +546,8 @@ export default function PartnerDashboardPage() {
                     <section aria-labelledby="evenements-titre" className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
-                                <h2 id="evenements-titre" className="flex items-center gap-2 text-lg font-bold text-fg">
-                                    <CalendarDays size={20} className="text-brand-fg" aria-hidden="true" />
+                                <h2 id="evenements-titre" className="flex items-center gap-2 text-lg font-bold text-foreground-strong">
+                                    <CalendarDays size={20} className="text-primary-text" aria-hidden="true" />
                                     Mes événements
                                 </h2>
                                 {kpis && (
@@ -557,8 +561,8 @@ export default function PartnerDashboardPage() {
                         {loading || !dashboard ? (
                             <div className="space-y-2" role="status" aria-busy="true">
                                 <span className="sr-only">Chargement des événements…</span>
-                                <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
-                                <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
+                                <div className="h-20 rounded-2xl bg-background motion-safe:animate-pulse" />
+                                <div className="h-20 rounded-2xl bg-background motion-safe:animate-pulse" />
                             </div>
                         ) : (
                             <DataList
@@ -583,12 +587,12 @@ export default function PartnerDashboardPage() {
                     {/* Activité récente et commandes en direct */}
                     <div className={ordersOpen ? 'grid grid-cols-1 gap-6 lg:grid-cols-2' : 'grid grid-cols-1 gap-6'}>
                         <section aria-labelledby="activite-titre" className="space-y-3">
-                            <h2 id="activite-titre" className="flex items-center gap-2 text-lg font-bold text-fg">
-                                <Activity size={20} className="text-brand-fg" aria-hidden="true" />
+                            <h2 id="activite-titre" className="flex items-center gap-2 text-lg font-bold text-foreground-strong">
+                                <Activity size={20} className="text-primary-text" aria-hidden="true" />
                                 Activité récente
                             </h2>
                             {loading || !dashboard ? (
-                                <div className="h-40 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" role="status" aria-busy="true">
+                                <div className="h-40 rounded-2xl bg-background motion-safe:animate-pulse" role="status" aria-busy="true">
                                     <span className="sr-only">Chargement de l’activité…</span>
                                 </div>
                             ) : dashboard.recentActivity.length === 0 ? (
@@ -598,7 +602,7 @@ export default function PartnerDashboardPage() {
                                     icon={<Activity size={28} />}
                                 />
                             ) : (
-                                <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                                <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
                                     {dashboard.recentActivity.map((item) => {
                                         const visual = ACTIVITY_ICONS[item.type];
                                         const Icon = visual.icon;
@@ -609,11 +613,11 @@ export default function PartnerDashboardPage() {
                                                         <Icon size={16} />
                                                     </span>
                                                     <div className="min-w-0">
-                                                        <p className="truncate text-sm font-semibold text-fg">{item.title}</p>
-                                                        <p className="truncate text-sm text-fg-muted">{item.description}</p>
+                                                        <p className="truncate text-sm font-semibold text-foreground-strong">{item.title}</p>
+                                                        <p className="truncate text-sm text-muted-foreground">{item.description}</p>
                                                     </div>
                                                 </div>
-                                                <time dateTime={item.createdAt} className="flex-shrink-0 text-caption text-fg-muted">
+                                                <time dateTime={item.createdAt} className="flex-shrink-0 text-caption text-muted-foreground">
                                                     {formatDateTime(item.createdAt)}
                                                 </time>
                                             </li>
@@ -626,11 +630,11 @@ export default function PartnerDashboardPage() {
                         {ordersOpen && (
                             <section aria-labelledby="commandes-titre" className="space-y-3">
                                 <div className="flex items-center justify-between gap-2">
-                                    <h2 id="commandes-titre" className="flex items-center gap-2 text-lg font-bold text-fg">
-                                        <ShoppingBag size={20} className="text-brand-fg" aria-hidden="true" />
+                                    <h2 id="commandes-titre" className="flex items-center gap-2 text-lg font-bold text-foreground-strong">
+                                        <ShoppingBag size={20} className="text-primary-text" aria-hidden="true" />
                                         Commandes en direct
                                     </h2>
-                                    <span className="text-sm text-fg-muted" role="status">{connected ? 'En direct' : 'Connexion…'}</span>
+                                    <span className="text-sm text-muted-foreground" role="status">{connected ? 'En direct' : 'Connexion…'}</span>
                                 </div>
                                 {liveOrders.length === 0 ? (
                                     <EmptyState
@@ -639,22 +643,22 @@ export default function PartnerDashboardPage() {
                                         icon={<ShoppingBag size={28} />}
                                     />
                                 ) : (
-                                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                                    <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
                                         {liveOrders.slice(0, 6).map((order) => {
                                             const st = ORDER_STATUS_LABELS[order.order_status] ?? { label: 'Statut inconnu', variant: 'neutral' as BadgeVariant };
                                             return (
                                                 <li key={order.id} className="flex items-center justify-between gap-3 p-4">
                                                     <div className="min-w-0">
                                                         <div className="flex flex-wrap items-center gap-2">
-                                                            <span className="text-sm font-semibold text-fg">{order.order_number}</span>
+                                                            <span className="text-sm font-semibold text-foreground-strong">{order.order_number}</span>
                                                             <Badge variant={st.variant} size="sm">{st.label}</Badge>
                                                         </div>
-                                                        <p className="text-sm text-fg-muted">
+                                                        <p className="text-sm text-muted-foreground">
                                                             {DELIVERY_MODE_LABELS[order.delivery_mode] ?? 'Commande'} ·{' '}
                                                             <time dateTime={order.created_at} className="text-sm">{formatDateTime(order.created_at)}</time>
                                                         </p>
                                                     </div>
-                                                    <span className="flex-shrink-0 text-sm font-bold tabular-nums text-fg">{formatFcfa(order.total_amount)}</span>
+                                                    <span className="flex-shrink-0 text-sm font-bold tabular-nums text-foreground-strong">{formatFcfa(order.total_amount)}</span>
                                                 </li>
                                             );
                                         })}

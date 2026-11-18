@@ -115,11 +115,11 @@ function PreferencesSkeleton() {
   return (
     <div className="space-y-4" aria-hidden="true">
       {[0, 1].map((i) => (
-        <div key={i} className="space-y-3 rounded-2xl border border-border bg-surface p-5">
-          <div className="h-5 w-1/2 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-          <div className="h-4 w-5/6 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-          <div className="h-11 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
-          <div className="h-11 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+        <div key={i} className="space-y-3 rounded-2xl border border-border bg-card p-5">
+          <div className="h-5 w-1/2 rounded-md bg-background motion-safe:animate-pulse" />
+          <div className="h-4 w-5/6 rounded-md bg-background motion-safe:animate-pulse" />
+          <div className="h-11 w-full rounded-xl bg-background motion-safe:animate-pulse" />
+          <div className="h-11 w-full rounded-xl bg-background motion-safe:animate-pulse" />
         </div>
       ))}
     </div>
@@ -215,7 +215,7 @@ export default function NotificationPreferencesPage() {
         } catch (err) {
           console.error(`[Préférences] refus illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
         }
-        failure = message ?? `Préférence non enregistrée (erreur ${res.status}).`;
+        failure = message ?? 'Préférence non enregistrée.';
       }
     } catch (err) {
       console.error('[Préférences] enregistrement injoignable :', err instanceof Error ? err.message : String(err));
@@ -224,9 +224,12 @@ export default function NotificationPreferencesPage() {
     if (failure) {
       setChannel(topic.topic, channel.channel, !next);
       setErrors((prev) => ({ ...prev, [key]: failure as string }));
-      toast.error(`« ${channel.label} » pour « ${topic.label} » n’a pas été modifié. ${failure}`);
+      toast.error(`« ${channel.label} » pour « ${topic.label} » n’a pas été modifié. ${failure}`, {
+        onRetry: () => void toggle(topic, channel, next),
+      });
     } else {
-      toast.success(`${topic.label} : ${channel.label} ${next ? 'activé' : 'désactivé'}.`);
+      // « Annuler » rétablit le réglage précédent par la même bascule.
+      toast.undoable(`${topic.label} : ${channel.label} ${next ? 'activé' : 'désactivé'}.`, () => void toggle(topic, channel, !next));
     }
     setSaving((prev) => {
       const nextSet = new Set(prev);
@@ -275,8 +278,8 @@ export default function NotificationPreferencesPage() {
         <>
           <section aria-labelledby="prefs-choix" className="space-y-4">
             <div className="space-y-1">
-              <h2 id="prefs-choix" className="text-lg font-semibold text-fg">Vous choisissez</h2>
-              <p className="text-sm leading-relaxed text-fg-muted">
+              <h2 id="prefs-choix" className="text-lg font-semibold text-foreground-strong">Vous choisissez</h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 Pour chaque sujet, activez ou coupez un canal. Un canal coupé n’envoie plus rien sur ce sujet ; vous gardez les autres.
               </p>
             </div>
@@ -290,7 +293,7 @@ export default function NotificationPreferencesPage() {
               </StatusBanner>
             )}
             {data.topics.length === 0 ? (
-              <p className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg-muted">
+              <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
                 Aucun réglage optionnel pour votre compte.
               </p>
             ) : (
@@ -304,17 +307,17 @@ export default function NotificationPreferencesPage() {
                     tabIndex={-1}
                     aria-labelledby={headingId}
                     className={cn(
-                      'scroll-mt-24 space-y-3 rounded-2xl border bg-surface p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5',
-                      highlighted === topic.topic ? 'border-brand-fg ring-2 ring-ring/40' : 'border-border',
+                      'scroll-mt-24 space-y-3 rounded-2xl border bg-card p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5',
+                      highlighted === topic.topic ? 'border-primary-text ring-2 ring-ring/40' : 'border-border',
                     )}
                   >
                     <div className="flex items-start gap-3">
-                      <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                      <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                         <Icon size={20} />
                       </span>
                       <div className="min-w-0 space-y-1">
-                        <h3 id={headingId} className="text-base font-semibold text-fg">{topic.label}</h3>
-                        {topic.description && <p className="text-sm leading-relaxed text-fg-muted">{topic.description}</p>}
+                        <h3 id={headingId} className="text-base font-semibold text-foreground-strong">{topic.label}</h3>
+                        {topic.description && <p className="text-sm leading-relaxed text-muted-foreground">{topic.description}</p>}
                       </div>
                     </div>
                     <ul className="divide-y divide-border">
@@ -343,22 +346,22 @@ export default function NotificationPreferencesPage() {
             )}
           </section>
 
-          <section aria-labelledby="prefs-toujours" className="space-y-3 rounded-2xl border border-border bg-surface-sunken p-4 sm:p-5">
+          <section aria-labelledby="prefs-toujours" className="space-y-3 rounded-2xl border border-border bg-background p-4 sm:p-5">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-success-bg text-success-fg" aria-hidden="true">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-success-soft text-success-text" aria-hidden="true">
                 <ShieldCheck size={20} />
               </span>
               <div className="min-w-0 space-y-1">
-                <h2 id="prefs-toujours" className="text-lg font-semibold text-fg">Toujours envoyées</h2>
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <h2 id="prefs-toujours" className="text-lg font-semibold text-foreground-strong">Toujours envoyées</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                   Ces messages protègent votre compte, votre argent et vos billets : ils ne se désactivent pas.
                 </p>
               </div>
             </div>
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {data.essentials.map((e) => (
-                <li key={e} className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm text-fg">
-                  <ShieldCheck size={16} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+                <li key={e} className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground-strong">
+                  <ShieldCheck size={16} className="flex-shrink-0 text-success-text" aria-hidden="true" />
                   {e}
                 </li>
               ))}

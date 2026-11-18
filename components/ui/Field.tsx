@@ -44,16 +44,16 @@ export function Field({ label, hint, error, required, id, className, hideLabel =
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
       <div className={cn('flex items-baseline justify-between gap-3', hideLabel && 'sr-only')}>
-        <label htmlFor={controlId} className="text-sm font-semibold text-fg">
+        <label htmlFor={controlId} className="text-sm font-semibold text-foreground-strong">
           {label}
           {required && (
             <>
-              <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+              <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
               <span className="sr-only"> (obligatoire)</span>
             </>
           )}
         </label>
-        {aside && <span className="text-sm text-fg-muted">{aside}</span>}
+        {aside && <span className="text-sm text-muted-foreground">{aside}</span>}
       </div>
       {children({
         id: controlId,
@@ -62,12 +62,12 @@ export function Field({ label, hint, error, required, id, className, hideLabel =
         'aria-required': required ? true : undefined,
       })}
       {hint && (
-        <p id={hintId} className="text-sm leading-snug text-fg-muted">
+        <p id={hintId} className="text-sm leading-snug text-muted-foreground">
           {hint}
         </p>
       )}
       {error && (
-        <p id={errorId} className="flex items-start gap-1.5 text-sm font-medium leading-snug text-danger-fg">
+        <p id={errorId} className="flex items-start gap-1.5 text-sm font-medium leading-snug text-danger-text">
           <AlertCircle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
           <span>{error}</span>
         </p>
@@ -77,9 +77,9 @@ export function Field({ label, hint, error, required, id, className, hideLabel =
 }
 
 const CONTROL =
-  'w-full min-h-11 rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-base text-fg placeholder:text-fg-muted transition-colors duration-200 '
+  'w-full min-h-12 rounded-xl border border-input bg-card px-3.5 py-2.5 text-base text-foreground-strong placeholder:text-muted-foreground transition-colors duration-fast '
   + 'focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 '
-  + 'disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:opacity-70 '
+  + 'disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-70 '
   + 'aria-[invalid=true]:border-danger aria-[invalid=true]:focus-visible:ring-danger/40';
 
 interface FieldWrapperProps {
@@ -184,7 +184,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function 
             ))}
             {children}
           </select>
-          <ChevronDown size={18} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
+          <ChevronDown size={18} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
     </Field>

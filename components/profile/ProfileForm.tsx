@@ -223,8 +223,8 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
   };
 
   return (
-    <section aria-labelledby="profil-informations" className="space-y-4 rounded-2xl border border-border bg-surface p-5">
-      <h2 id="profil-informations" className="text-base font-semibold text-fg">Mes informations</h2>
+    <section aria-labelledby="profil-informations" className="space-y-4 rounded-2xl border border-border bg-card p-5">
+      <h2 id="profil-informations" className="text-base font-semibold text-foreground-strong">Mes informations</h2>
 
       <form noValidate onSubmit={(e) => void submit(e)} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -266,9 +266,9 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
           hint="Recommandé : recevez vos billets et confirmations par email"
         />
         {emailState.address && emailState.verified && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-surface-sunken p-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-background p-3">
             <Badge variant="success" icon={<MailCheck size={14} aria-hidden="true" />}>Email vérifié</Badge>
-            <span className="min-w-0 flex-1 basis-40 break-all text-sm text-fg">{emailState.address}</span>
+            <span className="min-w-0 flex-1 basis-40 break-all text-sm text-foreground-strong">{emailState.address}</span>
           </div>
         )}
         {/* Lot 9 quinquies (B5 : A7 de la revue) : bandeau « Adresse email non vérifiée » ; tant qu'elle ne l'est pas, la
@@ -310,8 +310,8 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="min-w-0 flex-1 basis-48">
-          <p className="text-sm font-semibold text-fg">Numéro de téléphone</p>
-          <p className="text-sm text-fg-muted">
+          <p className="text-sm font-semibold text-foreground-strong">Numéro de téléphone</p>
+          <p className="text-sm text-muted-foreground">
             {adminPath ? adminPath.message : 'Un code envoyé au nouveau numéro confirme le changement.'}
           </p>
         </div>
@@ -326,8 +326,8 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="min-w-0 flex-1 basis-48">
-          <p className="text-sm font-semibold text-fg">Mot de passe</p>
-          <p className="text-sm text-fg-muted">Les autres appareils seront déconnectés.</p>
+          <p className="text-sm font-semibold text-foreground-strong">Mot de passe</p>
+          <p className="text-sm text-muted-foreground">Les autres appareils seront déconnectés.</p>
         </div>
         <Button type="button" variant="secondary" onClick={() => setIsPasswordDialogOpen(true)}>
           Changer de mot de passe

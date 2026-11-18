@@ -12,6 +12,7 @@
  */
 import { useCallback, useRef } from 'react';
 import { OPERATOR_LABELS, SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+import { HANDOFF_PREFIX } from '@/lib/payments/payment-handoff-purge';
 
 /* ──────────────────────────────── Types ──────────────────────────────── */
 
@@ -286,7 +287,7 @@ export function formatLocalPhone(nineDigits: string): string {
 
 /* ─────────────────────── Passage vers la page de suivi ─────────────────────── */
 
-const HANDOFF_PREFIX = 'event-village:paiement:';
+// Préfixe HANDOFF_PREFIX : lib/payments/payment-handoff-purge.ts (clés effacées à la déconnexion, cvf2b 6.13b)
 
 export function savePaymentHandoff(paymentId: string, handoff: PaymentHandoff): void {
   try {

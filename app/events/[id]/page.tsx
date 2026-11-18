@@ -64,7 +64,7 @@ const PaymentModal = dynamic(
 );
 
 function MapPlaceholder() {
-  return <div className="h-48 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:h-56" aria-hidden="true" />;
+  return <div className="h-48 w-full rounded-xl bg-background motion-safe:animate-pulse sm:h-56" aria-hidden="true" />;
 }
 
 /**
@@ -304,18 +304,18 @@ function readPublicEvent(body: unknown): PublicEvent | null {
 function PageSkeleton() {
   return (
     <div className="space-y-6 pb-24 lg:pb-12" aria-busy="true" aria-label="Chargement de l’événement">
-      <div className="h-11 w-48 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+      <div className="h-11 w-48 rounded-xl bg-background motion-safe:animate-pulse" />
       <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <div className="aspect-[16/9] w-full rounded-3xl bg-surface-sunken motion-safe:animate-pulse" />
-          <div className="h-9 w-3/4 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+          <div className="aspect-[16/9] w-full rounded-3xl bg-background motion-safe:animate-pulse" />
+          <div className="h-9 w-3/4 rounded-xl bg-background motion-safe:animate-pulse" />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
-            <div className="h-20 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />
+            <div className="h-20 rounded-2xl bg-background motion-safe:animate-pulse" />
+            <div className="h-20 rounded-2xl bg-background motion-safe:animate-pulse" />
           </div>
-          <div className="h-40 rounded-3xl bg-surface-sunken motion-safe:animate-pulse" />
+          <div className="h-40 rounded-3xl bg-background motion-safe:animate-pulse" />
         </div>
-        <div className="h-96 rounded-3xl bg-surface-sunken motion-safe:animate-pulse" />
+        <div className="h-96 rounded-3xl bg-background motion-safe:animate-pulse" />
       </div>
     </div>
   );
@@ -325,12 +325,12 @@ function PageSkeleton() {
 function EventNotFound() {
   return (
     <div className="mx-auto flex min-h-[55vh] max-w-lg flex-col items-center justify-center gap-4 px-2 pb-24 text-center lg:pb-12">
-      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
         <SearchX size={32} />
       </span>
-      <p className="text-sm font-semibold text-fg-muted">Erreur 404</p>
-      <h1 className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">Événement introuvable</h1>
-      <p className="text-base leading-relaxed text-fg-muted">
+      <p className="text-sm font-semibold text-muted-foreground">Erreur 404</p>
+      <h1 className="text-2xl font-bold tracking-tight text-foreground-strong sm:text-3xl">Événement introuvable</h1>
+      <p className="text-base leading-relaxed text-muted-foreground">
         Cet événement n’existe pas ou n’est pas ouvert au public. Vérifiez le lien reçu, ou parcourez les événements à venir.
       </p>
       <div className="flex flex-wrap justify-center gap-3 pt-2">
@@ -347,13 +347,13 @@ function EventNotFound() {
 
 function InfoTile({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-border bg-surface p-4">
-      <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+    <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-border bg-card p-4">
+      <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-sm text-fg-muted">{label}</p>
-        <div className="break-words text-base font-semibold text-fg">{children}</div>
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <div className="break-words text-base font-semibold text-foreground-strong">{children}</div>
       </div>
     </div>
   );
@@ -361,9 +361,9 @@ function InfoTile({ icon, label, children }: { icon: React.ReactNode; label: str
 
 function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="space-y-4 rounded-3xl border border-border bg-surface p-5 sm:p-6">
-      <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-fg">
-        {icon && <span className="text-brand-fg" aria-hidden="true">{icon}</span>}
+    <section className="space-y-4 rounded-3xl border border-border bg-card p-5 sm:p-6">
+      <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground-strong">
+        {icon && <span className="text-primary-text" aria-hidden="true">{icon}</span>}
         {title}
       </h2>
       {children}
@@ -374,22 +374,22 @@ function Section({ title, icon, children }: { title: string; icon?: React.ReactN
 function PracticalRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-fg-muted" aria-hidden="true">
+      <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground" aria-hidden="true">
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-fg">{label}</p>
-        <div className="whitespace-pre-line break-words text-sm leading-relaxed text-fg-muted">{children}</div>
+        <p className="text-sm font-semibold text-foreground-strong">{label}</p>
+        <div className="whitespace-pre-line break-words text-sm leading-relaxed text-muted-foreground">{children}</div>
       </div>
     </div>
   );
 }
 
 const AVAILABILITY_TEXT: Record<'success' | 'warning' | 'danger' | 'neutral', string> = {
-  success: 'text-success-fg',
-  warning: 'text-warning-fg',
-  danger: 'text-danger-fg',
-  neutral: 'text-fg-muted',
+  success: 'text-success-text',
+  warning: 'text-warning-text',
+  danger: 'text-danger-text',
+  neutral: 'text-muted-foreground',
 };
 
 export default function EventDetailPage(props: { params: Promise<{ id: string }> }) {
@@ -638,7 +638,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
           setQuoteState({
             kind: 'error',
             key,
-            message: serverErrorMessage(body) ?? `Le total n’a pas pu être calculé (erreur ${res.status}).`,
+            message: serverErrorMessage(body) ?? 'Le total n’a pas pu être calculé.',
           });
           return;
         }
@@ -776,7 +776,8 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
     // Panier avec au moins un billet payant : PaymentModal envoie TOUT le panier (gratuits compris,
     // émis à la confirmation du paiement). Le total affiché est celui du devis serveur à jour.
     if (!quote) {
-      toast.error(quoteError ?? 'Calcul du total en cours : patientez un instant.');
+      if (quoteError) toast.error(quoteError, { onRetry: () => setQuoteRetry((n) => n + 1) });
+      else toast.error('Calcul du total en cours : patientez un instant.');
       return;
     }
     setPaymentRequested(true);
@@ -844,10 +845,10 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
         <StatusBanner tone={BANNER_TONE[event.banner.kind]} title={event.banner.title}>
           <p>{event.banner.message}</p>
           {event.cancellation && (
-            <div className="mt-3 space-y-1 rounded-xl border border-danger-border bg-surface p-3 text-fg">
+            <div className="mt-3 space-y-1 rounded-xl border border-danger-border bg-card p-3 text-foreground-strong">
               <p className="font-semibold">Message de l’organisateur</p>
               <p className="whitespace-pre-line">{event.cancellation.publicNotice}</p>
-              <p className="text-fg-muted">
+              <p className="text-muted-foreground">
                 Annulé le <time dateTime={event.cancellation.cancelledAt}>{formatDateTime(event.cancellation.cancelledAt)}</time>
               </p>
             </div>
@@ -877,7 +878,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
       <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
         {/* Colonne principale */}
         <div className="min-w-0 space-y-6 lg:col-span-2">
-          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-3xl border border-border bg-surface-sunken shadow-sm">
+          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
             <Image
               src={eventImageSrc(event.posterUrl)}
               alt={`Affiche de l’événement ${event.title}`}
@@ -894,10 +895,10 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                 <Badge variant="brand">{event.categoryLabel}</Badge>
               </div>
             )}
-            <h1 className="break-words text-3xl font-bold leading-tight tracking-tight text-fg sm:text-4xl">{event.title}</h1>
+            <h1 className="break-words text-3xl font-bold leading-tight tracking-tight text-foreground-strong sm:text-4xl">{event.title}</h1>
             {event.organizer?.name && (
-              <p className="text-base text-fg-muted">
-                Organisé par <span className="font-semibold text-fg">{event.organizer.name}</span>
+              <p className="text-base text-muted-foreground">
+                Organisé par <span className="font-semibold text-foreground-strong">{event.organizer.name}</span>
               </p>
             )}
           </header>
@@ -906,7 +907,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
             <InfoTile icon={<CalendarDays size={20} />} label="Date et heure">
               {capitalize(event.dateFormatted)} à&nbsp;{event.time}
               {event.endFormatted && (
-                <span className="block text-sm font-normal text-fg-muted">{capitalize(event.endFormatted)}</span>
+                <span className="block text-sm font-normal text-muted-foreground">{capitalize(event.endFormatted)}</span>
               )}
             </InfoTile>
             <InfoTile icon={<MapPin size={20} />} label="Lieu">
@@ -915,7 +916,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
           </div>
 
           <Section title="À propos de l’événement">
-            <p className="whitespace-pre-line break-words text-base leading-relaxed text-fg-muted">{event.description}</p>
+            <p className="whitespace-pre-line break-words text-base leading-relaxed text-muted-foreground">{event.description}</p>
           </Section>
 
           {program.length > 0 && (
@@ -923,10 +924,10 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
               <ol className="space-y-4 border-l-2 border-border pl-5">
                 {program.map((item, idx) => (
                   <li key={item.id || `${item.time ?? ''}-${idx}`} className="relative">
-                    <span className="absolute -left-[27px] top-1.5 h-3 w-3 rounded-full border-2 border-surface bg-brand" aria-hidden="true" />
+                    <span className="absolute -left-[27px] top-1.5 h-3 w-3 rounded-full border-2 border-card bg-primary" aria-hidden="true" />
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                       {(item.day || item.time) && (
-                        <p className="text-sm font-semibold tabular-nums text-brand-fg">
+                        <p className="text-sm font-semibold tabular-nums text-primary-text">
                           {[item.day ? formatDate(item.day) : null, item.time].filter(Boolean).join(' à ')}
                         </p>
                       )}
@@ -934,9 +935,9 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                         <Badge variant="neutral" size="sm">{PROGRAM_KIND_LABEL[item.kind]}</Badge>
                       )}
                     </div>
-                    <p className="mt-1 text-base font-semibold text-fg">{item.title}</p>
-                    {item.participant && <p className="text-sm text-fg">{item.participant}</p>}
-                    {item.description && <p className="mt-0.5 text-sm leading-relaxed text-fg-muted">{item.description}</p>}
+                    <p className="mt-1 text-base font-semibold text-foreground-strong">{item.title}</p>
+                    {item.participant && <p className="text-sm text-foreground-strong">{item.participant}</p>}
+                    {item.description && <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{item.description}</p>}
                   </li>
                 ))}
               </ol>
@@ -946,8 +947,8 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
           {(hasCoordinates || info?.address || info?.accessNotes || info?.parking || info?.contactPhone || info?.rules) && (
             <Section title="Lieu et accès" icon={<MapPin size={20} />}>
               <div>
-                <p className="text-base font-semibold text-fg">{event.venue}</p>
-                {info?.address && <p className="text-sm text-fg-muted">{info.address}</p>}
+                <p className="text-base font-semibold text-foreground-strong">{event.venue}</p>
+                {info?.address && <p className="text-sm text-muted-foreground">{info.address}</p>}
               </div>
 
               {hasCoordinates && (
@@ -977,7 +978,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                     <PracticalRow icon={<Phone size={18} />} label="Contact de l’organisateur">
                       <a
                         href={`tel:${info.contactPhoneTel ?? info.contactPhone.replace(/\s+/g, '')}`}
-                        className="inline-flex min-h-11 items-center font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="inline-flex min-h-11 items-center font-semibold text-primary-text underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {info.contactPhone}
                       </a>
@@ -992,8 +993,8 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
           )}
 
           {event.organizer?.name && (
-            <section className="flex items-center gap-4 rounded-3xl border border-border bg-surface p-5">
-              <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-brand-bg text-base font-bold text-brand-fg">
+            <section className="flex items-center gap-4 rounded-3xl border border-border bg-card p-5">
+              <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-primary-soft text-base font-bold text-primary-text">
                 {isProjectStorageImage(event.organizer.avatar) ? (
                   <Image src={event.organizer.avatar} alt="" fill className="object-cover" sizes="48px" />
                 ) : (
@@ -1001,20 +1002,20 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                 )}
               </div>
               <div className="min-w-0">
-                <p className="text-sm text-fg-muted">Organisateur</p>
-                <h2 className="truncate text-base font-bold text-fg">{event.organizer.name}</h2>
+                <p className="text-sm text-muted-foreground">Organisateur</p>
+                <h2 className="truncate text-base font-bold text-foreground-strong">{event.organizer.name}</h2>
               </div>
             </section>
           )}
         </div>
 
         {/* Billetterie */}
-        <aside aria-labelledby="billetterie-titre" className="min-w-0 space-y-5 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-6 lg:sticky lg:top-20">
+        <aside aria-labelledby="billetterie-titre" className="min-w-0 space-y-5 rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6 lg:sticky lg:top-20">
           {event.purchasable ? (
             <>
               <div>
-                <h2 id="billetterie-titre" className="text-lg font-bold tracking-tight text-fg">Choisissez vos billets</h2>
-                <p className="mt-1 text-sm text-fg-muted">Places et disponibilités mises à jour en direct.</p>
+                <h2 id="billetterie-titre" className="text-lg font-bold tracking-tight text-foreground-strong">Choisissez vos billets</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Places et disponibilités mises à jour en direct.</p>
               </div>
 
               <ul className="space-y-3">
@@ -1028,15 +1029,15 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                       key={cat.id}
                       className={cn(
                         'rounded-2xl border-2 p-4 transition-colors duration-200',
-                        !cat.isAvailable ? 'border-border bg-surface-sunken' : qty > 0 ? 'border-brand-fg bg-brand-bg' : 'border-border',
+                        !cat.isAvailable ? 'border-border bg-background' : qty > 0 ? 'border-primary-text bg-primary-soft' : 'border-border',
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <h3 className="break-words text-base font-semibold text-fg">{cat.name}</h3>
-                          <p className="text-base font-bold tabular-nums text-fg">{priceLabel(cat.price)}</p>
+                          <h3 className="break-words text-base font-semibold text-foreground-strong">{cat.name}</h3>
+                          <p className="text-base font-bold tabular-nums text-foreground-strong">{priceLabel(cat.price)}</p>
                           <p className={cn('mt-0.5 text-sm font-medium', AVAILABILITY_TEXT[avail.tone])}>{avail.label}</p>
-                          {cat.description && <p className="mt-1 text-sm leading-relaxed text-fg-muted">{cat.description}</p>}
+                          {cat.description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{cat.description}</p>}
                         </div>
                         {cat.isAvailable && (
                           <div className="flex flex-shrink-0 items-center gap-2" role="group" aria-label={`Quantité ${cat.name}`}>
@@ -1048,7 +1049,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                             >
                               <Minus size={18} />
                             </IconButton>
-                            <output className="w-7 text-center text-base font-bold tabular-nums text-fg" aria-live="polite">
+                            <output className="w-7 text-center text-base font-bold tabular-nums text-foreground-strong" aria-live="polite">
                               {qty}
                             </output>
                             <IconButton
@@ -1063,7 +1064,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                         )}
                       </div>
                       {qty > 0 && cat.price > 0 && (
-                        <p className="mt-2 text-sm tabular-nums text-fg-muted">
+                        <p className="mt-2 text-sm tabular-nums text-muted-foreground">
                           {qty} × {priceLabel(cat.price)}
                           {line ? ` : ${formatFcfa(line.lineFacial)}` : ''}
                         </p>
@@ -1078,28 +1079,28 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                   {hasPaidItems && (
                     <dl className="space-y-1.5 text-sm" aria-busy={quoteLoading || undefined}>
                       <div className="flex items-baseline justify-between gap-3">
-                        <dt className="text-fg-muted">Billets</dt>
-                        <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">
-                          {quote ? formatFcfa(quote.facialAmount) : <span className="inline-block h-4 w-16 rounded bg-surface-sunken align-middle motion-safe:animate-pulse" aria-hidden="true" />}
+                        <dt className="text-muted-foreground">Billets</dt>
+                        <dd className="whitespace-nowrap font-semibold tabular-nums text-foreground-strong">
+                          {quote ? formatFcfa(quote.facialAmount) : <span className="inline-block h-4 w-16 rounded bg-background align-middle motion-safe:animate-pulse" aria-hidden="true" />}
                         </dd>
                       </div>
                       <div className="flex items-baseline justify-between gap-3">
-                        <dt className="text-fg-muted">Frais de service</dt>
-                        <dd className="whitespace-nowrap font-semibold tabular-nums text-fg">
-                          {quote ? formatFcfa(quote.serviceFee) : <span className="inline-block h-4 w-12 rounded bg-surface-sunken align-middle motion-safe:animate-pulse" aria-hidden="true" />}
+                        <dt className="text-muted-foreground">Frais de service</dt>
+                        <dd className="whitespace-nowrap font-semibold tabular-nums text-foreground-strong">
+                          {quote ? formatFcfa(quote.serviceFee) : <span className="inline-block h-4 w-12 rounded bg-background align-middle motion-safe:animate-pulse" aria-hidden="true" />}
                         </dd>
                       </div>
                     </dl>
                   )}
                   <div className="flex items-baseline justify-between gap-3" aria-live="polite">
-                    <span className="text-sm font-semibold text-fg-muted">
+                    <span className="text-sm font-semibold text-muted-foreground">
                       Total ({cartTotalQty} billet{cartTotalQty > 1 ? 's' : ''})
                     </span>
-                    <span className={cn('text-xl font-bold tabular-nums', hasFreeOnly ? 'text-success-fg' : 'text-fg')}>
+                    <span className={cn('text-xl font-bold tabular-nums', hasFreeOnly ? 'text-success-text' : 'text-foreground-strong')}>
                       {hasFreeOnly ? 'Gratuit' : quote ? formatFcfa(quote.totalAmount) : quoteError ? '—' : (
                         <>
                           <span className="sr-only">Calcul du total en cours…</span>
-                          <span className="inline-block h-6 w-24 rounded-lg bg-surface-sunken align-middle motion-safe:animate-pulse" aria-hidden="true" />
+                          <span className="inline-block h-6 w-24 rounded-lg bg-background align-middle motion-safe:animate-pulse" aria-hidden="true" />
                         </>
                       )}
                     </span>
@@ -1132,17 +1133,17 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                     {buyLabel(false)}
                   </Button>
                   {hasPaidItems && (
-                    <p className="text-center text-sm leading-relaxed text-fg-muted">
+                    <p className="text-center text-sm leading-relaxed text-muted-foreground">
                       Paiement Wave ou Orange Money. Frais de service calculés par Event Village sur chaque billet.
                     </p>
                   )}
-                  <p className="flex items-center justify-center gap-2 text-sm text-fg-muted">
-                    <ShieldCheck size={16} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+                  <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <ShieldCheck size={16} className="flex-shrink-0 text-success-text" aria-hidden="true" />
                     Billet avec QR code émis dès le paiement
                   </p>
                 </div>
               ) : (
-                <p className="border-t border-border pt-4 text-sm text-fg-muted">
+                <p className="border-t border-border pt-4 text-sm text-muted-foreground">
                   Choisissez au moins un billet avec le bouton « + ».
                 </p>
               )}
@@ -1150,8 +1151,8 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
           ) : (
             <>
               <div>
-                <h2 id="billetterie-titre" className="text-lg font-bold tracking-tight text-fg">Billetterie</h2>
-                <p className="mt-1 text-sm text-fg-muted">
+                <h2 id="billetterie-titre" className="text-lg font-bold tracking-tight text-foreground-strong">Billetterie</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
                   {event.banner
                     ? 'La vente de billets est fermée pour cet événement.'
                     : event.salesEnded
@@ -1165,7 +1166,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
               </div>
 
               {event.cancellation && (
-                <div className="space-y-3 rounded-2xl border border-info-border bg-info-bg p-4 text-info-fg">
+                <div className="space-y-3 rounded-2xl border border-info-border bg-info-soft p-4 text-info-text">
                   <p className="flex items-center gap-2 text-base font-semibold">
                     <Undo2 size={18} aria-hidden="true" />
                     Remboursement
@@ -1182,12 +1183,12 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
                   {categories.map((cat) => {
                     const avail = availabilityOf(cat);
                     return (
-                      <li key={cat.id} className="flex items-start justify-between gap-3 rounded-2xl border border-border bg-surface-sunken p-4">
+                      <li key={cat.id} className="flex items-start justify-between gap-3 rounded-2xl border border-border bg-background p-4">
                         <div className="min-w-0">
-                          <p className="break-words text-base font-semibold text-fg">{cat.name}</p>
+                          <p className="break-words text-base font-semibold text-foreground-strong">{cat.name}</p>
                           {!event.banner && <p className={cn('text-sm font-medium', AVAILABILITY_TEXT[avail.tone])}>{avail.label}</p>}
                         </div>
-                        <p className="whitespace-nowrap text-base font-bold tabular-nums text-fg">{priceLabel(cat.price)}</p>
+                        <p className="whitespace-nowrap text-base font-bold tabular-nums text-foreground-strong">{priceLabel(cat.price)}</p>
                       </li>
                     );
                   })}
@@ -1205,7 +1206,7 @@ export default function EventDetailPage(props: { params: Promise<{ id: string }>
       {/* Barre d'achat mobile, collée à la barre de navigation du bas : 53 px (bordure 1, marge haute 4, liens 48) plus
           la zone sûre, que .safe-bottom ajoute à la navigation (AppLayout). Hauteur relevée sur la capture du run 98. */}
       {showMobileBar && (
-        <div className="fixed inset-x-0 bottom-[calc(3.3125rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-surface px-4 py-3 shadow-lg lg:hidden">
+        <div className="fixed inset-x-0 bottom-[calc(3.3125rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-card px-4 py-3 shadow-lg lg:hidden">
           <Button
             variant="primary"
             size="lg"

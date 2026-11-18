@@ -94,6 +94,8 @@ try {
 
 const env = { ...process.env, NEXT_TELEMETRY_DISABLED: '1', HOSTNAME: '127.0.0.1', PORT: String(port) };
 delete env.EV_INTEGRATIONS;
+// Design 1a : vitrine des composants (app/vitrine-design) ouverte pour les captures de l'e2e seulement ; 404 partout ailleurs
+env.EV_VITRINE_DESIGN = '1';
 delete env.NODE_ENV;
 const neutralized = [];
 for (const name of ['.env.production.local', '.env.local', '.env.production', '.env']) {

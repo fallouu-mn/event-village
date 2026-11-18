@@ -50,10 +50,10 @@ export function EarnedDetail({ earned, range }: { earned: EarnedBlock; range: st
     lines.push({ label: 'Gagné par Event Village', value: formatFcfaPrecise(earned.total), total: true });
 
     return (
-        <section id="detail-gagne" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <section id="detail-gagne" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-card p-4 sm:p-6">
             <div className="flex flex-col gap-1">
-                <h2 id={`${id}-titre`} className="text-lg font-semibold text-fg">Détail de ce qui a été gagné</h2>
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <h2 id={`${id}-titre`} className="text-lg font-semibold text-foreground-strong">Détail de ce qui a été gagné</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     Chaque ligne dit la date qu’elle utilise : paiements encaissés, retraits versés ou versements confirmés {range}.
                 </p>
             </div>

@@ -137,15 +137,20 @@ export default function AdminReferralAmbassadorsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erreur lors de la mise à jour.');
 
-      toast.success(
+      // « Annuler » : la même bascule, relancée sur la fiche à jour, remet le statut d'avant.
+      toast.undoable(
         newReferralStatus === 'AMBASSADEUR'
           ? `Le statut Ambassadeur a bien été attribué à ${user.first_name} ${user.last_name}.`
-          : `Le statut Ambassadeur a été retiré pour ${user.first_name} ${user.last_name}.`
+          : `Le statut Ambassadeur a été retiré pour ${user.first_name} ${user.last_name}.`,
+        () => void handleToggleAmbassador({ ...user, referral_status: newReferralStatus })
       );
       await fetchUsers();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la mise à jour.';
-      toast.error(msg);
+      // Message de l'API dit tel quel ; une exception du navigateur (réseau, réponse illisible) devient une phrase simple.
+      const msg = err instanceof Error && !(err instanceof TypeError) && !(err instanceof SyntaxError)
+        ? err.message
+        : 'La mise à jour a échoué. Vérifiez votre connexion, puis réessayez.';
+      toast.error(msg, { onRetry: () => void handleToggleAmbassador(user) });
     } finally {
       setIsUpdating(null);
     }

@@ -39,7 +39,7 @@ export const Avatar: React.FC<AvatarProps> = ({ src, initials, size = 'sm', alt 
 
   return (
     <span
-      className={cn('flex flex-shrink-0 items-center justify-center overflow-hidden border border-border bg-brand-bg font-bold text-brand-fg', box, className)}
+      className={cn('flex flex-shrink-0 items-center justify-center overflow-hidden border border-border bg-primary-soft font-bold text-primary-text', box, className)}
       aria-hidden={alt ? undefined : true}
     >
       {photo ? (

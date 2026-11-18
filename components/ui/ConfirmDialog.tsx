@@ -31,9 +31,9 @@ export interface ConfirmDialogProps {
 }
 
 const ICON_TONE = {
-  danger: 'bg-danger-bg text-danger-fg',
-  warning: 'bg-warning-bg text-warning-fg',
-  default: 'bg-brand-bg text-brand-fg',
+  danger: 'bg-danger-soft text-danger-text',
+  warning: 'bg-warning-soft text-warning-text',
+  default: 'bg-primary-soft text-primary-text',
 } as const;
 
 /**
@@ -99,7 +99,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             <div className={cn('flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl', ICON_TONE[variant])} aria-hidden="true">
               <Icon size={20} />
             </div>
-            <p className="pt-2 text-sm leading-relaxed text-fg-muted">{message}</p>
+            <p className="pt-2 text-sm leading-relaxed text-muted-foreground">{message}</p>
           </div>
         )}
         {children}

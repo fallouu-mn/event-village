@@ -406,7 +406,8 @@ describe('9t.15 Couleur, consigne et origine servies au scanneur', () => {
         const patch = await routeHandler('../../app/api/partner/events/[id]/categories/[categoryId]/route', 'PATCH', 'PATCH de la catégorie (F54)');
         const vipId = ev.categories[VIP].id;
         const set = await invoke(patch, authed(`/api/partner/events/${ev.eventId}/categories/${vipId}`, 'PATCH', partner,
-            { scan_color: 'OR', entry_instruction: instruction }), routeContext({ id: ev.eventId, categoryId: vipId }));
+            // Contre-vérification 2b (2b, signalé) : OR n'est plus choisissable ; ROSE au lieu de OR
+            { scan_color: 'ROSE', entry_instruction: instruction }), routeContext({ id: ev.eventId, categoryId: vipId }));
         assert.equal(set.status, 200, `couleur et consigne de la catégorie VIP (route de D, F54) : ${show(set)}`);
 
         const porteVip = await controllerAt(ev, 'Porte VIP', 'zs-coul-vip');
@@ -414,13 +415,13 @@ describe('9t.15 Couleur, consigne et origine servies au scanneur', () => {
         const id = String((await oneTicket(ev, VIP)).id);
         const ok = await scanAtGate(porteVip, await qr(ev, id), gateOf(ev, 'Porte VIP'));
         expectResult(ok, 'valid', 'VIP à la Porte VIP');
-        assert.equal(ticketOf(ok).category_color, 'OR', show(ok));
+        assert.equal(ticketOf(ok).category_color, 'ROSE', show(ok));
         assert.equal(ticketOf(ok).entry_instruction, instruction, show(ok));
         assert.equal(ticketOf(ok).origin, 'ONLINE', show(ok));
         const zoneOk = await scanAtGate(carre, await qr(ev, id), gateOf(ev, 'Accès carré'));
         expectResult(zoneOk, 'zone_ok', 'VIP au carré');
         assert.ok(!JSON.stringify(zoneOk.body).includes(instruction), `consigne absente d’un contrôle de zone : ${show(zoneOk)}`);
-        assert.equal(ticketOf(zoneOk).category_color, 'OR', show(zoneOk));
+        assert.equal(ticketOf(zoneOk).category_color, 'ROSE', show(zoneOk));
         const again = await scanAtGate(porteVip, await qr(ev, id), gateOf(ev, 'Porte VIP'));
         expectResult(again, 'already_used', 'second passage');
         assert.ok(!JSON.stringify(again.body).includes(instruction), `consigne absente d’un billet déjà utilisé : ${show(again)}`);

@@ -4,8 +4,9 @@
  * auth.admin.signOut(jwt, scope) attend le JWT de l'utilisateur, pas son identifiant ; les appels
  * signOut(userId) étaient sans effet. revokeUserSessions supprime les sessions et révoque les
  * jetons de rafraîchissement en base (fonction public.revoke_user_sessions, service_role).
- * Le jeton d'accès déjà émis reste valable jusqu'à son expiration (1 h au plus) ; les droits sont
- * de toute façon relus en base (user_roles, users.status) à chaque requête.
+ * Contre-vérification 2B (6.6, 6.7) : le jeton d'accès déjà émis est refusé aussitôt par l'API REST (pré-requête
+ * securite.db_pre_request : sa session n'existe plus) ; GoTrue le refuse aussi. Le temps réel et le stockage (Storage) ne
+ * lisent pas auth.sessions : ils l'acceptent jusqu'à son échéance (jwt_expiry = 600 s). Les droits sont de toute façon relus en base (user_roles, users.status) à chaque requête.
  *
  * Un échec est journalisé en erreur et signalé à l'appelant (false), jamais ignoré.
  */

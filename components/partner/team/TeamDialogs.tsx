@@ -14,20 +14,21 @@ import { Select, TextInput, Textarea } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toast';
-import { errorMessage, sendJson } from '@/components/partner/fetch-json';
+import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { assignmentSummary, eventWhen, firstNameOf, memberName, normalizeTyped, PHONE_ERROR } from './team-format';
 import { GateAdmits } from './CategoryPills';
 import type { TeamAssignment, TeamEvent, TeamMember } from './team-types';
 
 const SN_MOBILE_RE = /^7[0-8]\d{7}$/;
 
-/** Motif d'un admin (5 caractères au moins), inscrit au journal. */
-export function ReasonField({ value, onChange, id }: { value: string; onChange: (v: string) => void; id: string }) {
+/** Motif d'un admin (5 caractères au moins), inscrit au journal ; `error` : refus du serveur, affiché sous le champ. */
+export function ReasonField({ value, onChange, id, error }: { value: string; onChange: (v: string) => void; id: string; error?: string }) {
     return (
         <Textarea
             id={id}
             label="Motif"
             hint="Obligatoire pour un administrateur : il est inscrit au journal."
+            error={error}
             value={value}
             maxLength={500}
             rows={2}
@@ -38,6 +39,21 @@ export function ReasonField({ value, onChange, id }: { value: string; onChange: 
 
 export function reasonOk(actsAsAdmin: boolean, reason: string): boolean {
     return !actsAsAdmin || reason.trim().length >= 5;
+}
+
+/** Design 1a : refus du serveur qui vise le motif (`field: 'reason'`) : il s'affiche sous le champ, pas dans un toast. */
+export function reasonRefusal(err: unknown): string | null {
+    return err instanceof ApiError && err.body?.field === 'reason' ? err.message : null;
+}
+
+/** Design 1a : erreur générale (réseau, serveur) que « Réessayer » peut relancer telle quelle ; un refus ne l'est pas. */
+export function retryable(err: unknown): boolean {
+    return !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
+}
+
+/** Met le focus sur le champ en erreur, une fois l'erreur affichée. */
+export function focusField(id: string): void {
+    window.setTimeout(() => document.getElementById(id)?.focus(), 50);
 }
 
 interface InviteReply {
@@ -64,6 +80,7 @@ export function InviteDialog({ isOpen, onClose, events, defaultEventIds, actsAsA
     const [selectedIds, setSelectedIds] = useState<string[]>(defaultEventIds);
     const [cash, setCash] = useState(false);
     const [reason, setReason] = useState('');
+    const [reasonError, setReasonError] = useState<string | undefined>(undefined);
     const [busy, setBusy] = useState(false);
     const [existing, setExisting] = useState<{ display_name: string; phone: string; message: string } | null>(null);
 
@@ -76,6 +93,7 @@ export function InviteDialog({ isOpen, onClose, events, defaultEventIds, actsAsA
         setSelectedIds(defaultEventIds);
         setCash(false);
         setReason('');
+        setReasonError(undefined);
         setExisting(null);
         // Réinitialisation à chaque ouverture seulement
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,7 +129,19 @@ export function InviteDialog({ isOpen, onClose, events, defaultEventIds, actsAsA
             onClose();
             await onDone();
         } catch (err) {
-            toast.error(errorMessage(err, 'Invitation impossible pour le moment. Réessayez.'));
+            // Design 1a : un refus qui vise un champ (motif, numéro) s'affiche sous ce champ, dans la fenêtre d'invitation
+            const onReason = reasonRefusal(err);
+            const onPhone = err instanceof ApiError && err.code === 'INVALID_PHONE' ? err.message : null;
+            if (onReason || onPhone) {
+                setExisting(null);
+                if (onReason) setReasonError(onReason);
+                if (onPhone) setPhoneError(onPhone);
+                focusField(onPhone ? 'invite-telephone' : 'invite-motif');
+                return;
+            }
+            const message = errorMessage(err, 'Invitation impossible pour le moment. Réessayez.');
+            if (retryable(err)) toast.error(message, { onRetry: () => { void send(confirm); } });
+            else toast.error(message);
         } finally {
             setBusy(false);
         }
@@ -151,22 +181,22 @@ export function InviteDialog({ isOpen, onClose, events, defaultEventIds, actsAsA
                         placeholder="77 123 45 67"
                         value={phone}
                         error={phoneError}
-                        onChange={(e) => setPhone(e.target.value)}
+                        onChange={(e) => { setPhone(e.target.value); setPhoneError(undefined); }}
                     />
                     <fieldset className="flex flex-col gap-2">
-                        <legend className="mb-1 text-sm font-semibold text-fg">Événements</legend>
+                        <legend className="mb-1 text-sm font-semibold text-foreground-strong">Événements</legend>
                         {assignable.length === 0 ? (
-                            <p className="text-sm text-fg-muted">Aucun événement validé ou publié : l’invitation sera possible après la validation.</p>
+                            <p className="text-sm text-muted-foreground">Aucun événement validé ou publié : l’invitation sera possible après la validation.</p>
                         ) : assignable.map((e) => (
-                            <label key={e.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border px-3 text-sm text-fg hover:bg-surface-sunken">
-                                <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggle(e.id)} className="h-5 w-5 cursor-pointer rounded border-border-strong accent-brand" />
+                            <label key={e.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border px-3 text-sm text-foreground-strong hover:bg-background">
+                                <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggle(e.id)} className="h-5 w-5 cursor-pointer rounded border-input accent-primary" />
                                 <span className="min-w-0 flex-1 break-words">{e.title}</span>
-                                <span className="text-sm tabular-nums text-fg-muted">{eventWhen(e.start_at)}</span>
+                                <span className="text-sm tabular-nums text-muted-foreground">{eventWhen(e.start_at)}</span>
                             </label>
                         ))}
                     </fieldset>
                     <Switch label="Encaisser les espèces" description="Vend des billets au guichet de ces événements." checked={cash} onChange={setCash} />
-                    {actsAsAdmin && <ReasonField id="invite-motif" value={reason} onChange={setReason} />}
+                    {actsAsAdmin && <ReasonField id="invite-motif" value={reason} error={reasonError} onChange={(v) => { setReason(v); setReasonError(undefined); }} />}
                 </form>
             </Modal>
             <Modal
@@ -183,7 +213,7 @@ export function InviteDialog({ isOpen, onClose, events, defaultEventIds, actsAsA
                     </>
                 }
             >
-                {existing && <p className="text-sm text-fg">{existing.message}</p>}
+                {existing && <p className="text-sm text-foreground-strong">{existing.message}</p>}
             </Modal>
         </>
     );
@@ -203,6 +233,7 @@ export function SettingsDialog({ target, event, actsAsAdmin, onClose, onDone }: 
     const [entryPoint, setEntryPoint] = useState('');
     const [cash, setCash] = useState(false);
     const [reason, setReason] = useState('');
+    const [reasonError, setReasonError] = useState<string | undefined>(undefined);
     const [busy, setBusy] = useState(false);
     const [confirmCashOff, setConfirmCashOff] = useState(false);
 
@@ -213,6 +244,7 @@ export function SettingsDialog({ target, event, actsAsAdmin, onClose, onDone }: 
         setEntryPoint(target.slot.entry_point ?? '');
         setCash(target.slot.can_accept_cash);
         setReason('');
+        setReasonError(undefined);
         setConfirmCashOff(false);
     }, [target]);
 
@@ -236,7 +268,17 @@ export function SettingsDialog({ target, event, actsAsAdmin, onClose, onDone }: 
             onClose();
             await onDone();
         } catch (err) {
-            toast.error(errorMessage(err, 'Enregistrement impossible pour le moment. Réessayez.'));
+            // Design 1a : un refus qui vise le motif s'affiche sous le champ, dans la fenêtre des réglages
+            const onReason = reasonRefusal(err);
+            if (onReason) {
+                setConfirmCashOff(false);
+                setReasonError(onReason);
+                focusField('reglage-motif');
+                return;
+            }
+            const message = errorMessage(err, 'Enregistrement impossible pour le moment. Réessayez.');
+            if (retryable(err)) toast.error(message, { onRetry: () => { void save(); } });
+            else toast.error(message);
         } finally {
             setBusy(false);
         }
@@ -282,7 +324,7 @@ export function SettingsDialog({ target, event, actsAsAdmin, onClose, onDone }: 
                         <TextInput id="reglage-point" label="Point d’entrée" placeholder="Porte Nord, Entrée VIP…" maxLength={80} value={entryPoint} onChange={(e) => setEntryPoint(e.target.value)} />
                     )}
                     <Switch label="Encaisser les espèces" description="Vend des billets au guichet de cet événement." checked={cash} onChange={setCash} />
-                    {actsAsAdmin && <ReasonField id="reglage-motif" value={reason} onChange={setReason} />}
+                    {actsAsAdmin && <ReasonField id="reglage-motif" value={reason} error={reasonError} onChange={(v) => { setReason(v); setReasonError(undefined); }} />}
                 </div>
             </Modal>
             <ConfirmDialog
@@ -301,7 +343,7 @@ export function SettingsDialog({ target, event, actsAsAdmin, onClose, onDone }: 
 }
 
 /** Confirmation d'une action de l'équipe, avec le motif d'un admin. */
-export function ActionDialog({ isOpen, onClose, onConfirm, title, lines, confirmLabel, variant, busy, actsAsAdmin, reason, onReason }: {
+export function ActionDialog({ isOpen, onClose, onConfirm, title, lines, confirmLabel, variant, busy, actsAsAdmin, reason, onReason, reasonError }: {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: () => void;
@@ -313,6 +355,8 @@ export function ActionDialog({ isOpen, onClose, onConfirm, title, lines, confirm
     actsAsAdmin: boolean;
     reason: string;
     onReason: (v: string) => void;
+    /** Refus du serveur qui vise le motif, affiché sous le champ. */
+    reasonError?: string;
 }) {
     return (
         <ConfirmDialog
@@ -325,9 +369,9 @@ export function ActionDialog({ isOpen, onClose, onConfirm, title, lines, confirm
             variant={variant}
             isLoading={busy}
         >
-            <div className="flex flex-col gap-3 text-sm text-fg">
+            <div className="flex flex-col gap-3 text-sm text-foreground-strong">
                 {lines.map((l) => <p key={l}>{l}</p>)}
-                {actsAsAdmin && <ReasonField id="action-motif" value={reason} onChange={onReason} />}
+                {actsAsAdmin && <ReasonField id="action-motif" value={reason} error={reasonError} onChange={onReason} />}
             </div>
         </ConfirmDialog>
     );

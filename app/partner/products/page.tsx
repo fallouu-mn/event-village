@@ -49,7 +49,7 @@ export default function PartnerProductsPage() {
                 setProducts(data.products || []);
             }
         } catch {
-            toast.error(toastMessages.products.loadError);
+            toast.error(toastMessages.products.loadError, { onRetry: () => { void fetchProducts(); } });
         } finally {
             setIsLoading(false);
         }
@@ -74,12 +74,16 @@ export default function PartnerProductsPage() {
                 setProducts((prev) =>
                     prev.map((p) => (p.id === product.id ? { ...p, status: newStatus } : p))
                 );
-                toast.success(newStatus === 'DISPONIBLE' ? toastMessages.products.stockIn(product.name) : toastMessages.products.stockOut(product.name));
+                // « Annuler » : le même appel, dans l'autre sens, remet le statut d'avant.
+                toast.undoable(
+                    newStatus === 'DISPONIBLE' ? toastMessages.products.stockIn(product.name) : toastMessages.products.stockOut(product.name),
+                    () => { void handleToggleStock({ ...product, status: newStatus }); },
+                );
             } else {
                 toast.error(data.error || toastMessages.products.statusError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void handleToggleStock(product); } });
         } finally {
             setToggleLoading(null);
         }
@@ -99,7 +103,7 @@ export default function PartnerProductsPage() {
                 toast.error(data.error || toastMessages.products.deleteError);
             }
         } catch {
-            toast.error(toastMessages.common.networkError);
+            toast.error(toastMessages.common.networkError, { onRetry: () => { void confirmDeleteProduct(); } });
         } finally {
             setDeleteLoading(false);
             setDeleteConfirm({ isOpen: false, productId: null });

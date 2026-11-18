@@ -43,11 +43,10 @@ function ProductFormContent() {
     const [isStockManaged, setIsStockManaged] = useState(false);
     const [stockQuantity, setStockQuantity] = useState<number | ''>('');
 
-    useEffect(() => {
-        if (!editId) return;
-
+    // Chargement du produit à modifier (fonction nommée pour que « Réessayer » puisse la relancer).
+    const loadProduct = (productId: string) => {
         setIsLoadingProduct(true);
-        fetch(`/api/partner/products/${editId}`)
+        fetch(`/api/partner/products/${productId}`)
             .then((res) => res.json())
             .then((data) => {
                 if (data.success && data.product) {
@@ -65,9 +64,14 @@ function ProductFormContent() {
                 }
             })
             .catch(() => {
-                toast.error(toastMessages.common.networkError);
+                toast.error(toastMessages.common.networkError, { onRetry: () => loadProduct(productId) });
             })
             .finally(() => setIsLoadingProduct(false));
+    };
+
+    useEffect(() => {
+        if (!editId) return;
+        loadProduct(editId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editId]);
 

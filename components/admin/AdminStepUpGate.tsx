@@ -248,7 +248,7 @@ function RecoveryForm({ onBack }: { onBack: () => void }) {
   return (
     <form className="space-y-4" onSubmit={(e) => void submit(e)}>
       {error && <StatusBanner tone="danger" announce="alert" title="Accès refusé"><span id={errorId}>{error}</span></StatusBanner>}
-      <p className="text-sm text-fg">Saisissez votre mot de passe et l’un de vos codes de secours. Le code ne servira qu’une fois ; un SMS d’alerte part à votre ancien numéro.</p>
+      <p className="text-sm text-foreground-strong">Saisissez votre mot de passe et l’un de vos codes de secours. Le code ne servira qu’une fois ; un SMS d’alerte part à votre ancien numéro.</p>
       <TextInput label="Mot de passe" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
       <TextInput label="Code de secours" autoComplete="off" autoCapitalize="characters" spellCheck={false} required value={code}
         onChange={(e) => setCode(e.target.value)} className="tracking-wider" />
@@ -344,14 +344,14 @@ function StepUpDialog({ required, reason, phone, onDone }: { required: Exclude<R
           </form>
         ) : !codeSent ? (
           <div className="space-y-4">
-            <p className="text-sm text-fg">Le code part par SMS{phone ? ` au ${phone}` : ''}. Ne le donnez à personne.</p>
+            <p className="text-sm text-foreground-strong">Le code part par SMS{phone ? ` au ${phone}` : ''}. Ne le donnez à personne.</p>
             <Button type="button" variant="primary" size="lg" fullWidth isLoading={busy} onClick={() => void sendCode()} leftIcon={<MessageSquareText size={18} />}>
               Recevoir le code par SMS
             </Button>
           </div>
         ) : (
           <form className="space-y-4" onSubmit={(e) => void submitCode(e)}>
-            <p className="text-sm text-fg">Saisissez les 6 chiffres reçus{phone ? ` au ${phone}` : ''}. Le code est valable 10 minutes.</p>
+            <p className="text-sm text-foreground-strong">Saisissez les 6 chiffres reçus{phone ? ` au ${phone}` : ''}. Le code est valable 10 minutes.</p>
             <OtpInput value={code} onChange={setCode} disabled={busy} hasError={!!error} describedBy={error ? errorId : undefined} />
             <Button type="submit" variant="primary" size="lg" fullWidth isLoading={busy} disabled={code.length !== 6} leftIcon={<ShieldCheck size={18} />}>
               Valider le code

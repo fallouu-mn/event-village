@@ -914,6 +914,52 @@ export const SCREENS: readonly Screen[] = [
         ready: async ({ page }) => { await expect(page.getByRole('region', { name: /^populaires/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 }); },
     },
     { id: 'catalogue', titre: 'Catalogue des événements', role: 'anonyme', needsIds: false, path: () => '/explore' },
+    // Design 1a : en-tête et logo, composants de base, toasts, fenêtre de confirmation, pages spéciales (vitrine ouverte par
+    // scripts/e2e/start-app.mjs, EV_VITRINE_DESIGN=1 ; données fictives)
+    {
+        id: 'design-composants', titre: 'Design 1a — en-tête, composants de base, repères, squelettes et état vide', role: 'anonyme', needsIds: false,
+        path: () => '/vitrine-design',
+        ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
+    },
+    {
+        id: 'design-toasts', titre: 'Design 1a — toasts : réussite, action annulable, erreur qui reste avec « Réessayer »', role: 'anonyme', needsIds: false,
+        path: () => '/vitrine-design',
+        ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^montrer les toasts$/i }).click();
+            await expect(page.getByRole('button', { name: /^réessayer$/i })).toBeVisible();
+            await expect(page.getByRole('button', { name: /^annuler$/i })).toBeVisible();
+        },
+    },
+    {
+        id: 'design-confirmation', titre: 'Design 1a — confirmation : le bouton dit l’action et le montant', role: 'anonyme', needsIds: false,
+        path: () => '/vitrine-design',
+        ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^ouvrir la confirmation$/i }).click();
+            await expect(anyDialog(page, /^rembourser ce billet/i)).toBeVisible();
+        },
+    },
+    {
+        id: 'design-page-introuvable', titre: 'Design 1a — page introuvable', role: 'anonyme', needsIds: false, path: () => '/events/00000000-0000-4000-8000-00000000d1a0',
+        // Vrai 404 attendu : la page et sa lecture d'API (comparés par URL, e2e/support/network.ts)
+        expectStatus: 404,
+        allowFailures: [/\/events\/00000000-0000-4000-8000-00000000d1a0$/, /\/api\/events\/00000000-0000-4000-8000-00000000d1a0(\?.*)?$/],
+        ready: async ({ page }) => { await expectHeading(page, /^page introuvable$/i); },
+    },
+    {
+        id: 'design-erreur', titre: 'Design 1a — page d’erreur (« Quelque chose s’est mal passé de notre côté. »)', role: 'anonyme', needsIds: false,
+        path: () => '/vitrine-design?erreur=1',
+        // Erreur volontaire de la vitrine : message générique de Next et empreinte journalisée par app/error.tsx
+        // Comparés par URL : la page en erreur (500) et les deux journaux attendus, émis par les morceaux de Next
+        // (erreur du rendu serveur) et de app/error.tsx (empreinte)
+        allowFailures: [/\/vitrine-design\?erreur=1$/, /\/_next\/static\/chunks\/(?:app\/error-|\d+-)[0-9a-f]+\.js$/],
+        ready: async ({ page }) => { await expectHeading(page, /^quelque chose s.est mal passé de notre côté\.$/i); },
+    },
+    {
+        id: 'design-hors-ligne', titre: 'Design 1a — page hors ligne (« Vous n’avez pas de réseau. »)', role: 'anonyme', needsIds: false, path: () => '/hors-ligne',
+        ready: async ({ page }) => { await expectHeading(page, /^vous n.avez pas de réseau\.$/i); },
+    },
     { id: 'evenement-publie', titre: 'Page publique — événement publié (ce soir)', role: 'anonyme', needsIds: true, path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200 },
     {
         id: 'evenement-suspendu', titre: 'Page publique — événement suspendu (bandeau, sans achat)', role: 'anonyme', needsIds: true,

@@ -12,10 +12,10 @@ export interface IconButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLBut
 }
 
 const variants: Record<IconButtonVariant, string> = {
-  ghost: 'bg-transparent text-fg-muted hover:bg-surface-sunken hover:text-fg',
-  secondary: 'bg-surface-sunken text-fg hover:bg-border border border-border',
-  primary: 'bg-brand text-on-brand hover:bg-brand-hover',
-  danger: 'bg-transparent text-danger-fg hover:bg-danger-bg',
+  ghost: 'bg-transparent text-muted-foreground hover:bg-background hover:text-foreground-strong',
+  secondary: 'bg-background text-foreground-strong hover:bg-border border border-border',
+  primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
+  danger: 'bg-transparent text-danger-text hover:bg-danger-soft',
 };
 
 /** Bouton icône de 44 × 44 px, l'icône est masquée aux lecteurs d'écran (le nom vient d'aria-label). */
@@ -32,7 +32,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(f
       disabled={disabled || isLoading}
       className={cn(
         'inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl cursor-pointer transition-colors duration-200',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
         'disabled:cursor-not-allowed disabled:opacity-50',
         variants[variant],
         className,

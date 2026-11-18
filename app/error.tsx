@@ -1,15 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
-import { AlertCircle, Home, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { LinkButton } from '@/components/ui/LinkButton';
+import { useEffect, useState } from 'react';
+import { ErrorContent, OfflineContent } from '@/components/ui/SpecialPage';
 
 /**
- * Erreur d'une section (lot 7, 7.3) : message générique en français, jamais le texte brut de l'erreur
- * (il peut contenir un détail technique ou une erreur de base). L'erreur complète part dans la console,
- * avec son identifiant `digest` côté serveur pour la retrouver dans les journaux. « Réessayer » relance le
- * rendu de la section (reset) ; l'accueil reste accessible.
+ * Design 1a (point 6) : page d'erreur d'une section. Sans réseau (navigator.onLine faux), c'est la page hors ligne qui
+ * s'affiche (« Vous n'avez pas de réseau. Vos billets restent disponibles. », « Mes billets ») : une navigation dans
+ * l'application a échoué faute de réseau, et le service worker n'intercepte que / et /tickets (contrat 5.3).
+ * SÉCURITÉ : ni le message, ni la pile, ni l'empreinte de l'erreur ne s'affichent ; l'empreinte reste dans la console.
  */
 export default function Error({
   error,
@@ -18,27 +16,12 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [offline, setOffline] = useState(false);
+
   useEffect(() => {
-    console.error('[AppError]', error.digest ? `digest ${error.digest}` : '', error);
+    console.error('[AppError]', error.digest ? `empreinte ${error.digest}` : 'sans empreinte');
+    setOffline(typeof navigator !== 'undefined' && navigator.onLine === false);
   }, [error]);
 
-  return (
-    <div role="alert" className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center gap-4 px-2 py-10 text-center">
-      <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-danger-bg text-danger-fg" aria-hidden="true">
-        <AlertCircle size={32} />
-      </span>
-      <h1 className="text-2xl font-bold tracking-tight text-fg">Une erreur est survenue</h1>
-      <p className="text-base leading-relaxed text-fg-muted">
-        Cette section n’a pas pu s’afficher. Vérifiez votre connexion, puis réessayez. Si le problème persiste, revenez dans quelques minutes.
-      </p>
-      <div className="flex flex-wrap justify-center gap-3 pt-2">
-        <Button variant="primary" onClick={() => reset()} leftIcon={<RotateCcw size={16} />}>
-          Réessayer
-        </Button>
-        <LinkButton href="/" variant="secondary" leftIcon={<Home size={16} />}>
-          Retour à l’accueil
-        </LinkButton>
-      </div>
-    </div>
-  );
+  return offline ? <OfflineContent /> : <ErrorContent retry={() => reset()} />;
 }

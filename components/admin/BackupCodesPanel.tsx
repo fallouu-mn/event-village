@@ -68,12 +68,12 @@ export function BackupCodesPanel({ autoStart = false }: { autoStart?: boolean })
 
     const remaining = status?.remaining ?? 0;
     return (
-        <section aria-labelledby={`${id}-titre`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+        <section aria-labelledby={`${id}-titre`} className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-6">
             <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true"><KeyRound size={20} /></span>
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true"><KeyRound size={20} /></span>
                 <div className="min-w-0 space-y-1">
-                    <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-fg">Codes de secours</h2>
-                    <p className="text-sm text-fg-muted">
+                    <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-foreground-strong">Codes de secours</h2>
+                    <p className="text-sm text-muted-foreground">
                         Si vous perdez votre téléphone, un code de secours remplace le code reçu par SMS pour ouvrir l’administration. Chaque code ne sert qu’une fois.
                     </p>
                 </div>
@@ -87,7 +87,7 @@ export function BackupCodesPanel({ autoStart = false }: { autoStart?: boolean })
                     </StatusBanner>
                     <ol className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="Vos 10 codes de secours">
                         {codes.map((c) => (
-                            <li key={c} className="rounded-xl border border-border bg-surface-sunken px-4 py-3 text-base font-semibold tracking-wider text-fg tabular-nums">{c}</li>
+                            <li key={c} className="rounded-xl border border-border bg-background px-4 py-3 text-base font-semibold tracking-wider text-foreground-strong tabular-nums">{c}</li>
                         ))}
                     </ol>
                     <div className="flex flex-col gap-2 sm:flex-row">
@@ -98,7 +98,7 @@ export function BackupCodesPanel({ autoStart = false }: { autoStart?: boolean })
             ) : (
                 <div className="space-y-3">
                     {status && (
-                        <p className="text-sm text-fg">
+                        <p className="text-sm text-foreground-strong">
                             {remaining > 0
                                 ? <>Il vous reste <span className="font-semibold tabular-nums">{remaining}</span> code{remaining > 1 ? 's' : ''} sur 10{status.generated_at ? <>, créés le {formatDateTime(status.generated_at)}</> : null}.</>
                                 : <>Aucun code de secours : si vous perdez votre téléphone, vous ne pourrez plus ouvrir l’administration.</>}
@@ -107,7 +107,7 @@ export function BackupCodesPanel({ autoStart = false }: { autoStart?: boolean })
                     <Button variant={remaining > 0 ? 'secondary' : 'primary'} isLoading={busy} onClick={() => void create()} leftIcon={<KeyRound size={18} />}>
                         {remaining > 0 ? 'Remplacer mes codes' : 'Créer mes codes de secours'}
                     </Button>
-                    {remaining > 0 && <p className="text-sm text-fg-muted">Remplacer vos codes annule les anciens.</p>}
+                    {remaining > 0 && <p className="text-sm text-muted-foreground">Remplacer vos codes annule les anciens.</p>}
                 </div>
             )}
             {dialog}

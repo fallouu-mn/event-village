@@ -24,6 +24,7 @@ import { purgeExpiredLots } from '@/lib/tickets/offline-store';
 import {
   getOfflineLot,
   hasCachedOfflineShell,
+  offlineGeneration,
   reconcileOfflineLots,
   saveOfflineLot,
   setCurrentOfflineUser,
@@ -53,6 +54,8 @@ export type OfflineDownloadOutcome =
   | { kind: 'refused'; code: string }
   | { kind: 'rate_limited'; retryAfterSeconds: number }
   | { kind: 'network' }
+  /** Cvf2b 6.4 : session fermée (purge) pendant le téléchargement, lot abandonné. */
+  | { kind: 'signed_out' }
   | { kind: 'storage' }
   | { kind: 'server' };
 
@@ -109,7 +112,10 @@ const inFlight = new Map<string, Promise<OfflineDownloadOutcome>>();
 
 async function downloadIfNeeded(userId: string, ticketId: string, offline: OfflineAvailability): Promise<OfflineDownloadOutcome> {
   let current: OfflineLot | null;
+  let generation: string;
   try {
+    // Cvf2b 6.4 : génération lue AVANT la requête, revérifiée dans la transaction de l'écriture
+    generation = await offlineGeneration();
     current = await getOfflineLot(userId, ticketId);
   } catch (err) {
     console.warn(`[hors-ligne] billet ${ticketId} : stockage illisible, aucun téléchargement`, err instanceof Error ? err.message : String(err));
@@ -151,9 +157,13 @@ async function downloadIfNeeded(userId: string, ticketId: string, offline: Offli
     }
     const stored: OfflineLot = { ...lot, offsetMs, downloadedAtDevice: t1, downloadedAtServer: Date.parse(lot.server_time) };
     try {
-      // Le compte de la session devient le compte affiché par la page hors ligne (lots d'un autre compte purgés).
-      await setCurrentOfflineUser(userId);
-      await saveOfflineLot(userId, stored);
+      // Le compte de la session devient le compte affiché par la page hors ligne (lots d'un autre compte purgés), dans
+      // la même transaction que le lot, et seulement si aucune purge (déconnexion) n'a eu lieu depuis le départ de la
+      // requête (cvf2b 6.4) : sinon rien n'est écrit.
+      if (!(await saveOfflineLot(userId, stored, generation))) {
+        console.warn(`[hors-ligne] billet ${ticketId} : session fermée pendant le téléchargement, lot abandonné`);
+        return { kind: 'signed_out' };
+      }
     } catch (err) {
       console.warn(`[hors-ligne] billet ${ticketId} : lot non enregistré`, err instanceof Error ? err.message : String(err));
       return { kind: 'storage' };
@@ -206,16 +216,20 @@ function keptVersion(t: ServerTicketForOffline): number | null | undefined {
 
 /**
  * Réconciliation après chaque chargement réussi de /api/tickets : supprime les lots des billets disparus,
- * non valables, en transfert ou d'une autre version. Rend false si le stockage est indisponible (journalisé).
+ * non valables, en transfert ou d'une autre version. Rend false si le stockage est indisponible (journalisé), ou si une
+ * purge a eu lieu depuis `generation`.
+ * Cvf2b 6.4 : une liste partie avant « Se déconnecter » ne réécrit jamais le compte courant. Avec `generation` (lue avant
+ * la requête de la liste) : compte désigné seulement si aucune purge n'a eu lieu depuis ; sans (Mes billets) : aucune
+ * désignation, seulement des suppressions (le compte est désigné par la synchronisation et par chaque lot enregistré).
  */
-export async function reconcileWithServerTickets(userId: string, tickets: ServerTicketForOffline[]): Promise<boolean> {
+export async function reconcileWithServerTickets(userId: string, tickets: ServerTicketForOffline[], generation?: string): Promise<boolean> {
   const keep = new Map<string, number | null>();
   for (const t of tickets) {
     const v = keptVersion(t);
     if (v !== undefined) keep.set(t.id, v);
   }
   try {
-    await setCurrentOfflineUser(userId);
+    if (generation !== undefined && !(await setCurrentOfflineUser(userId, generation))) return false;
     const removed = await reconcileOfflineLots(userId, keep);
     if (removed > 0) notifyOfflineChange();
     return true;
@@ -228,8 +242,10 @@ export async function reconcileWithServerTickets(userId: string, tickets: Server
 /** Synchronisation complète : purge, lecture de /api/tickets, réconciliation, téléchargements nécessaires. */
 export async function syncOfflineTickets(userId: string, why: string): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  let generation: string;
   try {
     await setCurrentOfflineUser(userId);
+    generation = await offlineGeneration(); // cvf2b 6.4 : avant la requête de la liste
     if ((await purgeExpiredLots()) > 0) notifyOfflineChange();
   } catch (err) {
     console.warn(`[hors-ligne] synchronisation (${why}) : stockage indisponible`, err instanceof Error ? err.message : String(err));
@@ -255,7 +271,7 @@ export async function syncOfflineTickets(userId: string, why: string): Promise<v
     console.warn(`[hors-ligne] synchronisation (${why}) : réponse illisible`, err instanceof Error ? err.message : String(err));
     return;
   }
-  if (!(await reconcileWithServerTickets(userId, tickets))) return;
+  if (!(await reconcileWithServerTickets(userId, tickets, generation))) return;
   for (const t of tickets) {
     if (t.offline?.available) await ensureOfflineLot(userId, t.id, t.offline);
   }

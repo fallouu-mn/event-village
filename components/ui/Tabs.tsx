@@ -98,10 +98,12 @@ export function Tabs({ tabs, value, onChange, ariaLabel, idPrefix, className }: 
               onClick={() => onChange(tab.id)}
               onKeyDown={(e) => onKeyDown(e, tab.id)}
               className={cn(
-                'relative -mb-px inline-flex min-h-11 flex-shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-semibold transition-colors duration-200',
+                'relative -mb-px inline-flex min-h-11 flex-shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap border-b-[3px] px-3 text-sm font-semibold transition-colors duration-fast',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                 'disabled:cursor-not-allowed disabled:opacity-50',
-                selected ? 'border-brand-fg text-brand-fg' : 'border-transparent text-fg-muted hover:border-border-strong hover:text-fg',
+                // Design 1a (direction.md, section 5) : souligné de 3 px à l'orange de la marque, libellé foncé et gras (l'orange vif
+                // n'est jamais un texte sur fond clair)
+                selected ? 'border-brand-vif font-bold text-foreground-strong' : 'border-transparent text-muted-foreground hover:border-input hover:text-foreground-strong',
               )}
             >
               <span>{tab.label}</span>
@@ -109,7 +111,7 @@ export function Tabs({ tabs, value, onChange, ariaLabel, idPrefix, className }: 
                 <span
                   className={cn(
                     'inline-flex min-w-6 items-center justify-center rounded-full px-1.5 text-sm font-semibold tabular-nums',
-                    selected ? 'bg-brand-bg text-brand-fg' : 'bg-surface-sunken text-fg-muted',
+                    selected ? 'bg-primary-soft text-primary-text' : 'bg-background text-muted-foreground',
                   )}
                 >
                   <span className="sr-only">, </span>
@@ -134,7 +136,7 @@ export interface TabPanelProps {
 /** Panneau d'un onglet, relié à son onglet (aria-labelledby). */
 export function TabPanel({ idPrefix, tabIdValue, children, className }: TabPanelProps) {
   return (
-    <div role="tabpanel" id={tabPanelId(idPrefix, tabIdValue)} aria-labelledby={tabId(idPrefix, tabIdValue)} tabIndex={0} className={cn('focus-visible:outline-none', className)}>
+    <div role="tabpanel" id={tabPanelId(idPrefix, tabIdValue)} aria-labelledby={tabId(idPrefix, tabIdValue)} tabIndex={0} className={cn('min-h-11 focus-visible:outline-none', className)}>
       {children}
     </div>
   );

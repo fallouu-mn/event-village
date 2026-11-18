@@ -62,13 +62,13 @@ export default function SecurityPage() {
             </StatusBanner>
           )}
           <BackupCodesPanel autoStart={flags.creer} />
-          <section aria-labelledby="numero-titre" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+          <section aria-labelledby="numero-titre" className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-6">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true"><Smartphone size={20} /></span>
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true"><Smartphone size={20} /></span>
               <div className="min-w-0 space-y-1">
-                <h2 id="numero-titre" className="text-lg font-bold tracking-tight text-fg">Mon numéro de téléphone</h2>
-                <p className="text-sm text-fg-muted">
-                  Numéro actuel : <span className="font-semibold text-fg tabular-nums">{user?.phone || 'non renseigné'}</span>. Le code administrateur arrive à ce numéro.
+                <h2 id="numero-titre" className="text-lg font-bold tracking-tight text-foreground-strong">Mon numéro de téléphone</h2>
+                <p className="text-sm text-muted-foreground">
+                  Numéro actuel : <span className="font-semibold text-foreground-strong tabular-nums">{user?.phone || 'non renseigné'}</span>. Le code administrateur arrive à ce numéro.
                 </p>
               </div>
             </div>
