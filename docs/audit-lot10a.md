@@ -218,4 +218,9 @@ renvoie que les colonnes utiles.
 | 379 | `1009830f0` | rapide : cv10a + audit (41 suites) | rouge ; défauts de montage ci-dessus, cascade de l'invariant (d) |
 | 381 | `1a78fab07` | rapide : cv10a + audit (41 suites) | 38/41 : seules cv10a-1, -2, -4 rouges (trous) ; cv10a-3 et les 37 autres suites d'audit vertes |
 | 382 | `3b597ef51` | rapide : cv10a-1 | 21/24 : les 3 rouges sont T3, T4, T6 |
-| à venir | ce commit | complet | — |
+| **383** | `4e4903cfd` | **complet** (4 lots, 488 suites) | **485/488** ; seules cv10a-1 (21/24), cv10a-2 (15/19), cv10a-4 (9/12) rouges, exactement les tests des trous T1 à T6 ; cv10a-3 (14/14) et les 37 autres suites d'audit vertes ; build, budgets JS, e2e verts ; 38 min 13 s |
+
+Run 383, mêmes trous, valeurs du jour : T5 `{"replies":[200,429,200,429,200,429,429,429,200,429],"pending":4}` (4 attentes
+au lieu de 5 : la course dépend de l'ordre d'arrivée) ; T2 `{"relances":[201,201],"held":"5"}` ; T4 solde dû dans 23 min ;
+T3 `{"confirm":"ACOMPTE_PAYE","solde":"409 BALANCE_DEADLINE_PASSED","state":"DELAI_DEPASSE","paid":126000,"refunded":0}`.
+Journaux bruts : branche `ci-results`, `runs/383-44305228735/test-logs/tests__audit__cv10a-*.log`.
