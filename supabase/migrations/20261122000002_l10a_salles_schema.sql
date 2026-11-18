@@ -15,7 +15,8 @@
 --  3. créneau hall_slot(dates, heures) : réservation à l'heure possible le même jour ; la contrainte d'exclusion
 --     no_overlapping_hall_slots remplace no_overlapping_hall_reservations (dates seules) ; check_hall_availability
 --     (recopie de 20261112000014_lot9quinquies_salles_concurrence.sql:25-44) compare les créneaux, sous le même verrou ;
---  4. lecture publique des salles : active, VALIDEE, partenaire VALIDE (sinon la partenaire propriétaire ou un admin) ;
+--  4. lecture publique des salles : active et VALIDEE (sinon la partenaire propriétaire ou un admin) ; les routes publiques
+--     et la réservation exigent en plus une partenaire VALIDE (la règle ne lit pas partners, refusée à anon) ;
 --     lecture des réservations inchangée (client, partenaire propriétaire, admin avec le code administrateur).
 -- Rejouable : ADD COLUMN IF NOT EXISTS, DROP … IF EXISTS puis ADD, CREATE OR REPLACE.
 -- ============================================================================
@@ -276,7 +277,6 @@ CREATE TRIGGER trg_check_hall_conflict
 DROP POLICY IF EXISTS "halls_read_public" ON public.halls;
 CREATE POLICY "halls_read_public" ON public.halls
     FOR SELECT USING (
-        (is_active = TRUE AND validation_status = 'VALIDEE'
-         AND EXISTS (SELECT 1 FROM public.partners pa WHERE pa.id = halls.partner_id AND pa.status::text = 'VALIDE'))
+        (is_active = TRUE AND validation_status = 'VALIDEE')
         OR public.is_partner_owner(partner_id)
         OR public.is_admin());

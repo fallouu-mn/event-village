@@ -83,6 +83,9 @@ describe('R30 — réservations de salle : chacun ne lit que ce qui le regarde',
         const bare = await newBuyer('r30-admin-sans-code');
         const { error } = await service.from('user_roles').upsert([{ user_id: bare.userId, role: 'ADMIN' }], { onConflict: 'user_id,role' });
         assert.equal(error, null, error?.message);
+        // Les sessions de test passent le code administrateur par défaut (newBuyer) : code retiré pour ce compte
+        const { error: delErr } = await service.from('admin_session_codes').delete().eq('user_id', bare.userId);
+        assert.equal(delErr, null, delErr?.message);
         assert.deepEqual(await visibleReservations(bare.accessToken, [aliceRes, bobRes]), [], 'sans le code administrateur');
     });
 });

@@ -6,6 +6,8 @@
 -- des salles par l'administration activée, trois règles d'annulation dont les seuils sont des réglages.
 --  1. valeurs par défaut (platform_settings, ON CONFLICT DO NOTHING : une valeur déjà réglée est gardée) ;
 --  2. finance_setting_set : recopie de 20261117000002_f3a_reserve.sql:101-143, clés halls.* ajoutées à la liste ;
+--  4. platform_settings_defaults : recopie de 20261118000002_f3b_reglages.sql:10-26, clés halls.* comprises (valeur d'origine de
+--     chaque réglage, lue par la page des réglages).
 --  3. fin_setting_valid : recopie de 20261117000002_f3a_reserve.sql:27-95, bornes des clés halls.* (identiques à lib/settings/catalog.ts).
 -- Rejouable : ON CONFLICT DO NOTHING, CREATE OR REPLACE (droits d'exécution conservés).
 -- ============================================================================
@@ -154,4 +156,23 @@ BEGIN
         WHEN 'halls.cancel_stricte_partial_days' THEN n = trunc(n) AND n >= 1 AND n <= 365
         ELSE FALSE END;
 END;
+$$;
+
+-- Recopie de 20261118000002_f3b_reglages.sql:10-26 ; changement : préfixe halls ajouté.
+CREATE OR REPLACE FUNCTION public.platform_settings_defaults()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT COALESCE(jsonb_object_agg(s.key, COALESCE(
+               (SELECT COALESCE(h.old_value, h.new_value)
+                  FROM public.platform_settings_history h
+                 WHERE h.key = s.key
+                 ORDER BY h.changed_at, h.id
+                 LIMIT 1),
+               s.value) -> 'value'), '{}'::jsonb)
+      FROM public.platform_settings s
+     WHERE s.key ~ '^(finance|access|notif|features|support|halls)\.'
 $$;

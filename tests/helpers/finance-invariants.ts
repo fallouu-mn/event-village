@@ -27,9 +27,13 @@ WITH refund_sums AS (
      WHERE p.is_platform_payment AND p.status IN ('SUCCESS', 'PARTIAL', 'REFUNDED')
 ), credited AS (
     -- paiements passés par SUCCESS (un panier non honorable va de PENDING à REFUND_PENDING puis REFUNDED, sans billet)
+    -- Lot 10a (modification signalée au rapport) : de même, un paiement de salle impossible à honorer (date reprise,
+    -- réservation annulée ou déjà payée : metadata.refund_reason) va de PENDING à REFUND_PENDING puis REFUNDED, sans vente
     SELECT p.* FROM confirmed p
      WHERE p.status IN ('SUCCESS', 'PARTIAL')
-        OR (p.status = 'REFUNDED' AND (p.payment_target <> 'TICKET' OR EXISTS (SELECT 1 FROM public.tickets t WHERE t.payment_id = p.id)))
+        OR (p.status = 'REFUNDED' AND (p.payment_target NOT IN ('TICKET', 'HALL_RESERVATION')
+                                       OR (p.payment_target = 'HALL_RESERVATION' AND NOT (p.metadata ? 'refund_reason'))
+                                       OR EXISTS (SELECT 1 FROM public.tickets t WHERE t.payment_id = p.id)))
 ), accounts AS (
     SELECT owner_id, account_kind, sum(amount) AS total,
            coalesce(sum(amount) FILTER (WHERE available_at <= now()), 0) AS available

@@ -71,6 +71,7 @@ describe('3. SMS du parcours : un segment GSM-7 dans le pire cas', () => {
             assert.deepEqual([m.encoding, m.segments], ['GSM7', 1], `${m.length} : ${text}`);
             assert.doesNotMatch(text, TECHNICAL, text);
             assert.doesNotMatch(text, /(?<!\.)\.\.(?!\.)/, `double point : ${text}`);
+            assert.doesNotMatch(text, /\.{4}/, `points de suspension suivis d’un point : ${text}`);
         });
     }
     test('SMS seulement pour la confirmation, le rappel, le délai dépassé, l’annulation et le remboursement', () => {

@@ -12,7 +12,7 @@
  * Faux SamirPay seulement. Base LOCALE. Invariants du lot (h1 à h4) et des livraisons précédentes à la fin.
  */
 import '../helpers/env';
-import { after, before, describe, test } from 'node:test';
+import { after, before, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLot10aInvariants } from '../helpers/lot10a-invariants';
 import { service, deliverWebhook, providerSays, paymentById, type Buyer } from './paiement-helpers';
@@ -34,6 +34,13 @@ before(async () => {
     restore = await openHallsService();
     partner = await newPartner('l10a-salles');
     client = await newBuyer('l10a-client');
+});
+
+// Limite de 3 réservations non payées par client : les attentes laissées par les tests précédents sont échues
+beforeEach(async () => {
+    if (!client) return;
+    await service.from('hall_reservations').update({ hold_expires_at: new Date(Date.now() - 60_000).toISOString() })
+        .eq('client_id', client.userId).eq('booking_state', 'EN_ATTENTE_PAIEMENT');
 });
 
 after(async () => {

@@ -1148,8 +1148,8 @@ const CATALOG = {
                 : `Votre réservation de ${hallName(d)} ${hallPeriod(d)} est confirmée et entièrement payée.`,
         }),
         sms: (d) => optNum(d, 'balance_amount') !== null
-            ? `${SMS_PREFIX}salle ${smsVar(text(d, 'hall_name'), 25)} réservée ${dot(smsHallPeriod(d))} Reste ${smsAmount(num(d, 'balance_amount'))} à payer avant le ${dot(smsDay(iso(d, 'balance_due_at')))}`
-            : `${SMS_PREFIX}salle ${smsVar(text(d, 'hall_name'), 25)} réservée ${smsHallPeriod(d)} et payée en totalité. Merci !`,
+            ? `${SMS_PREFIX}réservation confirmée : ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} Reste ${smsAmount(num(d, 'balance_amount'))} à payer avant le ${dot(smsDay(iso(d, 'balance_due_at')))}`
+            : `${SMS_PREFIX}réservation confirmée et payée : ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} Merci !`,
         sample: { ...HALL_SAMPLE_DATA, balance_amount: 294000, balance_due_at: '2026-11-28T00:00:00Z' },
     }),
     HALL_BALANCE_PAID: define('HALL_BALANCE_PAID', {
@@ -1170,7 +1170,7 @@ const CATALOG = {
             title: 'Solde à payer',
             content: `Il reste ${money(d, 'balance_amount')} à payer pour votre réservation de ${hallName(d)} ${hallPeriod(d)}, au plus tard le ${formatDate(iso(d, 'balance_due_at'))}. Sans paiement, la réservation sera annulée.`,
         }),
-        sms: (d) => `${SMS_PREFIX}il reste ${smsAmount(num(d, 'balance_amount'))} à payer pour la salle ${smsVar(text(d, 'hall_name'), 25)} avant le ${dot(smsDay(iso(d, 'balance_due_at')))} Sans paiement, la réservation sera annulée.`,
+        sms: (d) => `${SMS_PREFIX}il reste ${smsAmount(num(d, 'balance_amount'))} à payer pour ${smsVar(text(d, 'hall_name'), 25)} avant le ${dot(smsDay(iso(d, 'balance_due_at')))} Sans paiement, la réservation sera annulée.`,
         sample: { ...HALL_SAMPLE_DATA, balance_amount: 294000, balance_due_at: '2026-11-28T00:00:00Z' },
     }),
     HALL_PAYMENT_DEADLINE_PASSED: define('HALL_PAYMENT_DEADLINE_PASSED', {
@@ -1180,7 +1180,7 @@ const CATALOG = {
             title: 'Délai de paiement dépassé',
             content: `Le solde n’a pas été payé à temps : votre réservation de ${hallName(d)} ${hallPeriod(d)} est annulée. ${hallRefundSentence(d)}`,
         }),
-        sms: (d) => `${SMS_PREFIX}délai de paiement dépassé : réservation de la salle ${smsVar(text(d, 'hall_name'), 25)} annulée. ${smsHallRefund(d)}`,
+        sms: (d) => `${SMS_PREFIX}délai de paiement dépassé, réservation annulée : ${dot(smsVar(text(d, 'hall_name'), 25))} ${smsHallRefund(d)}`,
         sample: { ...HALL_SAMPLE_DATA, origin: 'DELAI', refund_amount: 63000, refund_percent: 50 },
     }),
     HALL_RESERVATION_CANCELLED: define('HALL_RESERVATION_CANCELLED', {
@@ -1199,9 +1199,9 @@ const CATALOG = {
             const origin = text(d, 'origin');
             const name = smsVar(text(d, 'hall_name'), 25);
             if (origin === 'SALLE' || origin === 'EVENT_VILLAGE') {
-                return `${SMS_PREFIX}votre réservation de la salle ${name} est annulée par ${origin === 'SALLE' ? 'la salle' : 'Event Village'}. Remboursement total de ${smsAmount(num(d, 'refund_amount'))} en cours.`;
+                return `${SMS_PREFIX}${origin === 'SALLE' ? 'la salle' : 'notre équipe'} a annulé votre réservation : ${dot(name)} Remboursement total de ${smsAmount(num(d, 'refund_amount'))} en cours.`;
             }
-            return `${SMS_PREFIX}réservation de la salle ${name} annulée. ${smsHallRefund(d)}`;
+            return `${SMS_PREFIX}réservation annulée : ${dot(name)} ${smsHallRefund(d)}`;
         },
         sample: { ...HALL_SAMPLE_DATA, origin: 'SALLE', refund_amount: 126000, refund_percent: 100, reason: 'Travaux imprévus dans la salle.' },
     }),
@@ -1225,7 +1225,7 @@ const CATALOG = {
             title: 'Paiement remboursé',
             content: `Votre paiement de ${money(d, 'amount')} pour ${hallName(d)} est arrivé alors que la réservation n’était plus possible (date reprise, réservation annulée ou déjà payée). Il vous est remboursé sur votre compte ${operatorLabel(field(d, 'operator'))}.`,
         }),
-        sms: (d) => `${SMS_PREFIX}votre paiement de ${smsAmount(num(d, 'amount'))} pour la salle ${smsVar(text(d, 'hall_name'), 25)} n'a pas pu servir. Il vous est remboursé sur ${operatorLabel(field(d, 'operator'))}.`,
+        sms: (d) => `${SMS_PREFIX}votre paiement de ${smsAmount(num(d, 'amount'))} pour ${smsVar(text(d, 'hall_name'), 25)} n'a pas pu servir. Il vous est remboursé sur ${operatorLabel(field(d, 'operator'))}.`,
         sample: { ...HALL_SAMPLE_DATA, paid_amount: 0, payment_id: SAMPLE_ID.payment, amount: 126000, operator: 'ORANGE_MONEY' },
     }),
     HALL_VALIDATION_DECIDED: define('HALL_VALIDATION_DECIDED', {

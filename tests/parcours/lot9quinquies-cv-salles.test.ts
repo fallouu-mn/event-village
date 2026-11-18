@@ -78,6 +78,8 @@ describe('Point 5 — réservations de salle simultanées', () => {
             }
             const { count } = await service.from('hall_reservations').select('id', { count: 'exact', head: true }).eq('hall_id', hallId);
             if (ok !== 1 || count !== 1) wrong.push(`tour ${round} : ${ok} réussite(s), ${count} ligne(s) en base`);
+            // Lot 10a (signalé) : attente du gagnant rendue (au plus 3 réservations non payées par client)
+            await service.from('hall_reservations').update({ hold_expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('hall_id', hallId);
         }
         console.log(`[CV-5] ${ROUNDS} tours × ${CONCURRENT} : blocages mutuels ${deadlocks.length} ; autres écarts ${wrong.length}${deadlocks[0] ? ` ; ex. ${deadlocks[0]}` : ''}`);
         assert.deepEqual(deadlocks, [], `blocages mutuels :\n${deadlocks.join('\n')}`);
