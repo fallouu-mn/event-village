@@ -263,12 +263,22 @@ test('fumée : créer, soumettre, valider, publier, acheter, scanner, piloter', 
             const liveCode = client.waitForResponse((r) => r.url().includes(`/api/tickets/${ticketId}/live-code`) && r.ok());
             await client.goto('/tickets');
             const payload = String(((await (await liveCode).json()) as { payload?: string }).payload ?? '');
-            const ticketCard = client.locator('li, article, section, div')
+            // Run 414 de main : l'ancien repère (« li, article, section ou div qui contient le titre ET un QR », le dernier)
+            // remontait à la LISTE des billets tant que le QR de ce billet n'était pas encore dessiné (design 1b : seul le
+            // premier billet démarre tout de suite) ; il photographiait alors le seul QR présent, celui d'un AUTRE billet
+            // (autre événement) → wrong_event. La carte est désormais celle de ce billet exactement (article « Billet pour
+            // <titre> »), et le QR photographié est vérifié dans cette carte.
+            const legacy = client.locator('li, article, section, div')
                 .filter({ has: client.getByText(title) })
                 .filter({ has: client.getByRole('img', { name: /QR d.entrée dynamique/i }) })
                 .last();
+            const legacyTarget = await legacy.evaluate((el) => `${el.tagName.toLowerCase()} « ${el.getAttribute('aria-label') ?? el.getAttribute('aria-roledescription') ?? ''} »`, null, { timeout: 30_000 }).catch(() => 'introuvable');
+            console.log(`[e2e][fumée] étape 5 : l'ancien repère visait ${legacyTarget}`);
+            const ticketCard = client.getByRole('article', { name: `Billet pour ${title}`, exact: true });
+            await expect(ticketCard, 'carte du billet acheté').toHaveCount(1);
             const qr = ticketCard.getByRole('img', { name: /QR d.entrée dynamique/i });
-            await expect(qr).toBeVisible();
+            await expect(qr, 'QR du billet acheté dessiné dans sa carte').toBeVisible({ timeout: 30_000 });
+            expect(await qr.evaluate((el) => el.closest('article')?.getAttribute('aria-label') ?? null), 'QR photographié dans la carte du billet acheté').toBe(`Billet pour ${title}`);
             const png = await qr.screenshot();
             const before = await cameraDiagSnapshot(partner);
             await partner.evaluate(async ({ dataUrl, p }) => {
