@@ -32,6 +32,9 @@ export const CODE_RE = /(?<![\p{L}\p{N}_])[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+(?![\p{L}
 const EXCEPTIONS = new Map<string, string>([
 ]);
 
+/** Champs d'un message rendu que la personne lit (lib/notifications/catalog.ts, RenderedNotification et emails). */
+const SHOWN_FIELDS = new Set(['title', 'content', 'body', 'text', 'subject', 'html']);
+
 function faultsOf(text: string): string[] {
     const out: string[] = [];
     const t = TECH_RE.exec(text);
@@ -56,28 +59,33 @@ describe('a. modèles de messages : aucun mot technique', () => {
                 const readable = text.replace(/https?:\/\/\S+/g, ' ').replace(/(?:^|\s)\/[\w\-/?=&.%]+/g, ' ');
                 for (const f of faultsOf(readable)) faults.push(`${where} : ${f} — « ${readable.trim().slice(0, 120)} »`);
             } else if (value && typeof value === 'object') {
+                // Seuls les champs lus par la personne : titre, contenu, corps, texte, sujet, HTML (pas type, canal, mesure, en-têtes, liens)
                 for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-                    if (k === 'link' || k === 'url' || k === 'href' || k === 'actionUrl') continue;
+                    if (!SHOWN_FIELDS.has(k)) continue;
                     visit(`${where}.${k}`, v);
                 }
             }
         };
         let rendered = 0;
+        const syncTypes: string[] = [];
         for (const [type, template] of Object.entries(catalog.NOTIFICATION_CATALOG)) {
-            const tpl = template as unknown as { channels: readonly string[]; sample: unknown };
+            const tpl = template as unknown as { channels: readonly string[]; sample: unknown; syncOnly?: boolean };
+            // Types synchrones (code, invitation) : rendus par renderSyncSms ci-dessous, jamais par renderNotification
+            if (tpl.syncOnly) { syncTypes.push(type); continue; }
             for (const channel of tpl.channels) {
                 const out = catalog.renderNotification(type, channel as never, tpl.sample, ctx);
                 rendered += 1;
                 visit(`${type}/${channel}`, out);
             }
         }
-        for (const sync of ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_RESET', 'INVITATION', 'PASSWORD_RESET', 'ACTIVATION', 'CONTROLLER_ACTIVATION'] as const) {
-            try {
-                visit(`sms-synchrone/${sync}`, catalog.renderSyncSms(sync as never, { code: '123456', firstName: 'Awa', setupLink: 'https://app.eventvillage.sn/activation?t=x' }));
-            } catch { /* type synchrone inconnu de ce catalogue : ignoré */ }
+        for (const sync of syncTypes) {
+            const tpl = (catalog.NOTIFICATION_CATALOG as Record<string, { channels: readonly string[] }>)[sync];
+            if (!tpl.channels.includes('SMS')) continue; // emails synchrones : rendus plus bas (vérification, mot de passe)
+            visit(`sms-synchrone/${sync}`, catalog.renderSyncSms(sync as never, { code: '123456', firstName: 'Awa', setupLink: 'https://app.eventvillage.sn/activation?t=Abcdefghijklmnop1234' }));
+            rendered += 1;
         }
-        visit('email/verification', catalog.renderEmailVerification('jeton-exemple', ctx));
-        visit('email/mot-de-passe-oublie', catalog.renderPasswordResetEmail('jeton-exemple', ctx));
+        visit('email/verification', catalog.renderEmailVerification('AbcdefghijklmnopqrstuvwxyzABCDEFGHIJ0123456', ctx));
+        visit('email/mot-de-passe-oublie', catalog.renderPasswordResetEmail('AbcdefghijklmnopqrstuvwxyzABCDEFGHIJ0123456', ctx));
         visit('email/changement-adresse', catalog.renderEmailChangedOld(ctx));
         console.log(`[DESIGN1B-MOTS] a. ${rendered} rendus de modèles relus ; fautes : ${faults.length}`);
         assert.ok(rendered > 50, `catalogue lu (${rendered} rendus)`);
