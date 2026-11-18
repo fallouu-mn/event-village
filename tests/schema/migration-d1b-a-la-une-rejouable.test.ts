@@ -56,9 +56,9 @@ describe('Design 1b — migration « À la une » rejouable (transaction annulé
             console.log(`[D1B-MIG] ${fns.map((f) => `${f.sig} svc=${f.svc}`).join(' ; ')}`);
             assert.deepEqual(fns.filter((f) => f.anon || f.auth).map((f) => f.sig), [], 'fonction exécutable par anon ou authenticated');
             assert.deepEqual(fns.filter((f) => !f.secdef || !f.path).map((f) => f.sig), [], 'fonction sans SECURITY DEFINER ni search_path fixé');
-            const callable = fns.filter((f) => f.svc).map((f) => f.sig.replace(/^public\./, '').replace(/\(.*$/, '')).sort();
-            assert.deepEqual(callable, ['home_featured_add', 'home_featured_admin_list', 'home_featured_candidates', 'home_featured_public',
-                'home_featured_remove', 'home_featured_reorder', 'home_featured_set_window'], 'fonctions appelables par le service_role');
+            // Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toutes exécutables par service_role
+            assert.deepEqual(fns.filter((f) => !f.svc).map((f) => f.sig), [], 'fonction non exécutable par le service_role');
+            assert.equal(fns.length, 14, `14 fonctions home_featured : ${fns.map((f) => f.sig).join(', ')}`);
 
             const trg = (await db.query<{ n: number }>(`
                 SELECT count(*)::int AS n FROM pg_trigger

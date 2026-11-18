@@ -114,7 +114,10 @@ BEGIN
     RETURN v;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.home_featured_clean_reason(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.home_featured_clean_reason(jsonb) FROM PUBLIC, anon, authenticated;
+-- Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toute fonction publique reste exécutable par
+-- service_role (le serveur), jamais par anon ni authenticated
+GRANT EXECUTE ON FUNCTION public.home_featured_clean_reason(jsonb) TO service_role;
 
 -- Code du refus d'un motif (pour un message juste) : REASON_REQUIRED ou REASON_INVALID_CHARACTERS.
 CREATE OR REPLACE FUNCTION public.home_featured_reason_refusal(p_raw jsonb)
@@ -133,7 +136,10 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif (3 à 500 caractères).');
 END;
 $$;
-REVOKE ALL ON FUNCTION public.home_featured_reason_refusal(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.home_featured_reason_refusal(jsonb) FROM PUBLIC, anon, authenticated;
+-- Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toute fonction publique reste exécutable par
+-- service_role (le serveur), jamais par anon ni authenticated
+GRANT EXECUTE ON FUNCTION public.home_featured_reason_refusal(jsonb) TO service_role;
 
 -- Superadmin actif (user_roles, jamais users.role) puis mot de passe et code administrateur de moins de 10 minutes.
 -- NULL si l'auteur peut écrire ; sinon le refus.
@@ -164,7 +170,10 @@ BEGIN
     RETURN NULL;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.home_featured_actor_refusal(jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.home_featured_actor_refusal(jsonb, boolean) FROM PUBLIC, anon, authenticated;
+-- Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toute fonction publique reste exécutable par
+-- service_role (le serveur), jamais par anon ni authenticated
+GRANT EXECUTE ON FUNCTION public.home_featured_actor_refusal(jsonb, boolean) TO service_role;
 
 -- Horodatage facultatif lu dans p->key : (ok, valeur). Une chaîne vide ou null vaut « aucun ».
 CREATE OR REPLACE FUNCTION public.home_featured_ts(p jsonb, p_key text, OUT ok boolean, OUT value timestamptz)
@@ -191,7 +200,10 @@ BEGIN
     END;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.home_featured_ts(jsonb, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.home_featured_ts(jsonb, text) FROM PUBLIC, anon, authenticated;
+-- Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toute fonction publique reste exécutable par
+-- service_role (le serveur), jamais par anon ni authenticated
+GRANT EXECUTE ON FUNCTION public.home_featured_ts(jsonb, text) TO service_role;
 
 -- Fenêtre d'affichage contrôlée contre la fin de l'événement : NULL si valable, sinon le refus.
 CREATE OR REPLACE FUNCTION public.home_featured_window_refusal(p_starts timestamptz, p_ends timestamptz, p_event_end timestamptz)
@@ -214,7 +226,10 @@ BEGIN
     RETURN NULL;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.home_featured_window_refusal(timestamptz, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.home_featured_window_refusal(timestamptz, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated;
+-- Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toute fonction publique reste exécutable par
+-- service_role (le serveur), jamais par anon ni authenticated
+GRANT EXECUTE ON FUNCTION public.home_featured_window_refusal(timestamptz, timestamptz, timestamptz) TO service_role;
 
 -- Rangs des placements actifs remis à 1..n dans l'ordre courant.
 CREATE OR REPLACE FUNCTION public.home_featured_renumber()
@@ -230,7 +245,10 @@ AS $$
               FROM public.home_featured h WHERE h.removed_at IS NULL) s
      WHERE f.id = s.id AND f.sort_order <> s.rn;
 $$;
-REVOKE ALL ON FUNCTION public.home_featured_renumber() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.home_featured_renumber() FROM PUBLIC, anon, authenticated;
+-- Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toute fonction publique reste exécutable par
+-- service_role (le serveur), jamais par anon ni authenticated
+GRANT EXECUTE ON FUNCTION public.home_featured_renumber() TO service_role;
 
 -- ----------------------------------------------------------------------------
 -- 2. Lecture publique (accueil)
@@ -713,7 +731,10 @@ BEGIN
     RETURN NULL;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.home_featured_on_event_status() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.home_featured_on_event_status() FROM PUBLIC, anon, authenticated;
+-- Règle du projet (fonctions-privileges, groupe b ; 03-verification 1A.3) : toute fonction publique reste exécutable par
+-- service_role (le serveur), jamais par anon ni authenticated
+GRANT EXECUTE ON FUNCTION public.home_featured_on_event_status() TO service_role;
 
 DROP TRIGGER IF EXISTS trg_home_featured_on_event_status ON public.events;
 CREATE TRIGGER trg_home_featured_on_event_status
