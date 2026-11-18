@@ -178,3 +178,77 @@ Puis `03-verification.sql`.
 - Les SMS optionnels (rappel) ne partent pas la nuit : la règle existante les **saute**, elle ne les reporte pas à 8 h (seul le SMS groupé des administrateurs est reporté).
 - Une absence marquée par erreur ne se corrige pas encore (à prévoir avec l'écran de l'établissement).
 - Supprimer une zone utilisée par des réservations est refusé par la garde (message générique) : à proposer comme « désactiver » à l'écran.
+
+## Correctifs de la contre-vérification
+
+Contre-vérification : `docs/audit-lot11a.md` (branche `audit/lot11a`, `1c4ad9b27`), fusionnée dans cette branche (`5476147f7`), puis main à jour (`4e043098b`, fusion `da51d1a35`). Ses suites `tests/audit/cv11a-1` à `-5` sont les tests rouges, **assertions inchangées**. Migrations `20261123000110` à `…113`, sans BEGIN ni COMMIT, rejouables ; chaque fonction recopiée part de sa dernière définition (fichier et lignes cités en tête de migration).
+
+| # | Trou (gravité) | Correctif | Commit |
+|---|---|---|---|
+| T1 | Attente reprise ou prolongée de 15 min par un paiement refusé (plafond du numéro payeur) (moyenne) | `table_payment_create` : le plafond de 3 paiements en attente par numéro est contrôlé **avant** de reprendre ou de prolonger l'attente ; après lui, plus aucun refus (migration 110) | `96912febb` |
+| T2 | Réservations gratuites sans limite : 6 tables sur 6 pour un compte (moyenne) | Au plus `tables.max_pending_per_client` (3) réservations **à venir non payées** par client : attente de paiement en cours, demande sans acompte payé en attente de réponse, gratuite confirmée dont l'heure n'est pas passée (`table_client_unpaid_refusal`) ; **une seule table par client et par créneau** dans un établissement (`table_client_slot_refusal`, « Vous avez déjà une table dans cet établissement à cette heure-là. ») ; sous le verrou par client, à la réservation et à la relance d'une attente échue (migration 111) | `1a9eabf0c` |
+| T3 | Demande payée jamais acceptée, annulée à moins de 2 h : 0 F rendu (moyenne) | Une demande « En attente de réponse » annulée par le client est remboursée **en entier**, quelle que soit l'heure ; la règle des 2 h ne vaut que pour une réservation confirmée (migration 112) | `217a8e8f5` |
+| T4 | Remboursement promis alors qu'il est déjà impossible (faible) | `tableCancellationText` reçoit l'heure de la réservation : à moins de 2 h, « Réservation à moins de 2 h de l'heure : si vous annulez, l'acompte payé ne sera pas remboursé. » | `b206740b0` |
+| T5 | Acceptation par un établissement ou une partenaire suspendus (faible) | `table_reservation_respond` : l'acceptation refait les contrôles de `table_reserve` (établissement actif et validé, partenaire VALIDE) ; sinon demande refusée (par le système), client remboursé en entier, avis du refus ; route : 409 (migration 113) | `254bb13e3` |
+| T6 | Menu par nom partiel (faible) | `GET /api/restaurants/[id]/menu` : identifiant exact d'une partenaire VALIDE seulement ; tout nom (complet, partiel, « rest-<nom> ») : 404 ; panne de lecture : 500 au lieu d'un 404 muet. Aucune colonne d'identifiant public (slug) n'existe | `0b5b334da` |
+| T7 | Les 22 réglages `halls.*` et `tables.*` refusés par la route du SUPERADMIN (moyenne) | `PUT /api/admin/finance-settings` accepte `halls.*` et `tables.*` ; validation inchangée (`finance_setting_set` → `fin_setting_valid`) | `bf167b0fe` |
+| Constat | `DELETE /api/partner/tables/[id]` sur la table d'une autre : 200 sans rien supprimer | 404 « Table introuvable. » (« Zone introuvable. » avec `?type=zone`) quand aucune ligne n'est supprimée | `81e1dd810` |
+
+### Choix à connaître
+
+- T2 : une demande dont l'acompte est **payé** et qui attend la réponse de l'établissement **n'est plus comptée** dans la limite (de l'argent est engagé ; avant, toute demande en attente l'était). Le message des demandes en attente est inchangé ; dès qu'une gratuite confirmée est comptée : « Vous avez déjà 3 réservations à venir sans acompte payé. Annulez-en une pour réserver une autre table. » Libellé du réglage : « Réservations non payées au plus par client » (page des réglages, catalogue).
+- T4 : le texte est calculé au moment de la réservation ; un client qui réserve à 2 h 05 et paie 10 minutes plus tard lit encore la règle des 2 h (la règle appliquée à l'annulation, elle, reste exacte).
+
+### Tests ajoutés et modifiés (signalés)
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `tests/parcours/l11a-cv-correctifs.test.ts` (nouvelle) | 13 tests : T2 (créneau, limite, annulée ou passée, demande payée, relance, demandes simultanées), T3, T5, T6, T7 (les 22 réglages : même valeur 200, hors bornes 400 et valeur inchangée), constat | autour de chaque correctif |
+| `tests/parcours/l11a-cv-correctifs.test.ts` | T2 relance : l'attente non reprise se prouve par son **échéance** restée passée, pas par son état (`7403c5079`) | défaut de **mon** test au run 410 : attente échue jamais passée par la tâche, donc encore « En attente de paiement » ; le refus 429 était vérifié juste avant |
+| `tests/parcours/l11a-helpers.ts` (`releasePending`) | clôt aussi les réservations gratuites confirmées du client (« Annulée par le client ») | `l11a-tables` partage un client entre ses tests : la nouvelle limite aurait refusé ses réservations à partir du 4e test |
+| `tests/schema/l11a-textes.test.ts` | test ajouté : texte d'annulation avec l'heure (moins de 2 h, 2 h pile, 3 h réglées, sans acompte, date illisible) | T4 |
+| `tests/schema/migration-lot11a-rejouable.test.ts` | migrations 110 à 113 ajoutées à la liste | liste exacte des migrations du lot |
+| `tests/security/r3-fonctions-rpc.test.ts` | `table_client_unpaid_refusal`, `table_client_slot_refusal` ajoutées (réservées au rôle de service) | fonctions nouvelles |
+
+Aucune assertion de `tests/audit/cv11a-*` n'a changé.
+
+### Runs
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 410 | `2595ceee6` | rapide, 62 suites (52 d'audit dont cv11a-1 à 5, et les suites du lot touchées) | 61/62 : **les 5 suites cv11a vertes** ; seul rouge, mon test T2 relance (voir ci-dessus) ; typecheck et lint verts |
+| 412 | `7403c5079` | rapide, `l11a-cv-correctifs` | **vert, 13/13** |
+| 413 | `a2c926b35` | **complet** | **vert : 513/513** (4 lots, 513 attendues, 513 exécutées), build, budgets JS, e2e (connexion, captures, courriels, fumée, terrain, PWA, déconnexion, recette, perf) ; 39 min 36 s |
+
+Run 413, sorties brutes des anciens trous :
+
+```
+[CV11A] 2.3c : {"relances":[{"http":429,"code":"PAYER_PENDING_LIMIT","payment":false,"state":"EXPIREE","hold":null},{"http":429,"code":"PAYER_PENDING_LIMIT","payment":false,"state":"EXPIREE","hold":null},{"http":429,"code":"PAYER_PENDING_LIMIT","payment":false,"state":"EXPIREE","hold":null}],"paiementsDeLaReservation":0,"rival":"OK"}
+[CV11A] 2.3d : {"http":429,"code":"PAYER_PENDING_LIMIT","before":"2026-11-18T17:54:51.31084+00:00","after":"2026-11-18T17:54:51.31084+00:00","gainedMin":0,"payment":false}
+[CV11A] 2.3e : {"replies":["OK","CLIENT_SLOT_TAKEN","CLIENT_SLOT_TAKEN","CLIENT_SLOT_TAKEN","CLIENT_SLOT_TAKEN","CLIENT_SLOT_TAKEN"],"held":["CONFIRMEE"],"rival":"OK"}
+[CV11A] 3.3b : {"avant":"EN_ATTENTE_ACCEPTATION","http":200,"message":"Réservation annulée. Vous êtes remboursé de 21 000 F CFA sur votre compte de paiement.","state":"ANNULEE_CLIENT","paid":21000,"rendu":21000}
+[CV11A] 3.3c : {"cancellation":"Réservation à moins de 2 h de l’heure : si vous annulez, l’acompte payé ne sera pas remboursé."}
+[CV11A] 4.6a : {"accept":"HTTP 409 {\"error\":\"Cet établissement n’accepte plus de réservation pour le moment : la demande est refusée et le client remboursé en entier.\",\"code\":\"VENUE_NOT_AVAILABLE\"}","state":"REFUSEE"}
+[CV11A] 4.6b : {"accept":"HTTP 409 {\"error\":\"Cet établissement n’accepte plus de réservation pour le moment : la demande est refusée et le client remboursé en entier.\",\"code\":\"VENUE_NOT_AVAILABLE\"}","state":"REFUSEE"}
+[CV11A] 4.7b : {"partial":"404 ","fragment":"404 "}
+[CV11A] 5.2b : {"halls.balance_due_days":200,"halls.cancel_moderee_full_days":200, … 22 réglages halls.* et tables.* : 200}
+[INVARIANT-LOT11A] cv11a-2-reservation — (t1)(t2)(t3)(t4)(t5)(t6) : 0 violation(s)
+TOTAL : 513 suite(s) — 513 réussie(s), 0 en échec, 0 expirée(s)
+[ci-lots] contrôle : 513 suite(s) attendue(s) (run-tests.mjs --list), 513 exécutée(s) dans 4 lot(s)
+[e2e] résumé :connexion OK · captures OK · emails OK · dev-page OK · fumee OK · terrain OK · pwa OK · deconnexion OK · fake-prod OK · perf OK · recette OK
+```
+
+Journaux bruts : branche `ci-results`, `runs/410-44359885385/`, `runs/412-44362137408/`, `runs/413-44363052881/`.
+
+### Mise en service (event-village-dev)
+
+Migrations à appliquer : `20261123000101` à `…113` (lot 11a et correctifs), puis `supabase/ops/schedule-crons.sql` (tâche `ev_tables`). **Non appliquées le 18/11** : la migration `20261123000001` (design 1b) n'est pas encore appliquée sur event-village-dev (dernière : `20261122000012`, `migration list --linked`) ; elle doit passer avant celles-ci. Contrôles « avant » : `docs/lot11a-rapport.md`, Mise en service, requêtes A à C.
+
+Contrôles « avant » (18/11, `db query --linked`, lecture seule) :
+
+```
+A  dernière migration                        : 20261122000012
+A2 versions 20261123*                        : aucune (ni 20261123000001 du design 1b, ni celles du lot)
+B  fonctions table_/venue_, table venues      : 0, 0
+C  tables, réservations, recouvrements       : 0, 0, 0
+```
