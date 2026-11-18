@@ -38,6 +38,8 @@ const LOT11A_MIGRATIONS = [
     '20261123000110_l11a_cv_paiement_plafond.sql',
     // T2 : une table par client et par créneau, au plus 3 réservations à venir non payées (gratuites confirmées comprises)
     '20261123000111_l11a_cv_limite_client.sql',
+    // T3 : demande en attente de réponse annulée par le client, remboursée en entier
+    '20261123000112_l11a_cv_annulation_demande.sql',
 ] as const;
 
 /** Recopies de fonctions communes : fichier de la recopie, et lignes de la définition précédente qu'elle remplace. */

@@ -5,6 +5,7 @@
  *  T2 une seule table par client et par créneau dans un établissement ; au plus tables.max_pending_per_client
  *     réservations à venir non payées (gratuites confirmées comprises) ; une réservation annulée, passée ou dont
  *     l'acompte est payé ne compte plus ; même règle à la relance d'une attente échue ; demandes simultanées.
+ *  T3 demande en attente de réponse annulée par le client : remboursée en entier, quelle que soit l'heure.
  * Temps simulé comme dans les suites du lot (shiftReservation), jamais l'horloge. Faux SamirPay.
  */
 import '../helpers/env';
@@ -13,8 +14,8 @@ import assert from 'node:assert/strict';
 import { assertLot11aInvariants } from '../helpers/lot11a-invariants';
 import { clientCancel } from '../audit/cv11a-helpers';
 import {
-    dayFromNow, newBuyer, newPartner, newTable, newVenue, openTablesService, payConfirmed, reservation, reserveRpc,
-    shiftReservation, startPayment, tick, type Row, type TestPartner,
+    dayFromNow, newBuyer, newPartner, newTable, newVenue, openTablesService, payConfirmed, refundsOf, reservation, reserveRpc,
+    shiftReservation, startIn, startPayment, tick, type Row, type TestPartner,
 } from './l11a-helpers';
 
 let restore: () => Promise<void>;
@@ -129,5 +130,35 @@ describe('T2 — une table par client et par créneau, au plus 3 réservations �
         const spread = await Promise.all(venues.map((v) => reserveRpc(cl2, v, { date, time: '20:00', guests: 2 })));
         assert.equal(spread.filter((r) => r.ok === true).length, 3, JSON.stringify(spread.map(code)));
         assert.ok(spread.filter((r) => r.ok !== true).every((r) => r.code === 'TOO_MANY_PENDING'), JSON.stringify(spread.map(code)));
+    });
+});
+
+describe('T3 — demande en attente de réponse annulée par le client : remboursée en entier, quelle que soit l’heure', () => {
+    test('demande payée (21 000 F), annulée à 1 h 30 de l’heure : 21 000 rendus, message du remboursement ; réservation confirmée annulée à 1 h 30 : rien rendu', async () => {
+        const venue = await newVenue(partner, { deposit_per_person: 5_000, confirmation_mode: 'MANUELLE' });
+        await newTable(partner, venue, 4);
+        const cl = await newBuyer('l11a-cv-annule-demande');
+        const id = String((await reserveRpc(cl, venue, { ...startIn(180), guests: 4 })).reservation_id);
+        await payConfirmed(cl, id);
+        await shiftReservation(id, { startMinutes: 90, responseMinutes: 30 });
+        assert.equal((await reservation(id)).booking_state, 'EN_ATTENTE_ACCEPTATION');
+        const r = await clientCancel(id, cl.accessToken);
+        assert.equal(r.status, 200, JSON.stringify(r.body));
+        assert.equal((r.body as Row).message, 'Réservation annulée. Vous êtes remboursé de 21 000 F CFA sur votre compte de paiement.');
+        const row = await reservation(id);
+        assert.deepEqual([row.booking_state, Number(row.refund_percent), Number(row.refunded_amount)], ['ANNULEE_CLIENT', 100, 21_000]);
+        assert.deepEqual((await refundsOf(id)).map((f) => Number(f.amount)), [21_000]);
+
+        // Garde-fou : la règle des 2 h vaut toujours pour une réservation confirmée
+        const auto = await newVenue(partner, { deposit_per_person: 5_000 });
+        await newTable(partner, auto, 4);
+        const cl2 = await newBuyer('l11a-cv-annule-confirmee');
+        const confirmed = String((await reserveRpc(cl2, auto, { ...startIn(180), guests: 4 })).reservation_id);
+        await payConfirmed(cl2, confirmed);
+        await shiftReservation(confirmed, { startMinutes: 90 });
+        assert.equal((await reservation(confirmed)).booking_state, 'CONFIRMEE');
+        const late = await clientCancel(confirmed, cl2.accessToken);
+        assert.equal(late.status, 200, JSON.stringify(late.body));
+        assert.deepEqual([(await reservation(confirmed)).booking_state, (await refundsOf(confirmed)).length], ['ANNULEE_CLIENT', 0]);
     });
 });
