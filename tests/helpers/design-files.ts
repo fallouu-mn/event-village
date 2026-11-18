@@ -301,4 +301,15 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/ui/BottomSheet.tsx',
     'app/vitrine-design/Vitrine.tsx',
     'app/vitrine-design/page.tsx',
+    // Design 1b : pages publiques (socle, catalogue, À la une)
+    'components/events/LiveBadge.tsx',
+    'app/explore/ExploreView.tsx',
+    'app/_accueil/HomeLive.tsx',
+    'app/_accueil/HomeNearby.tsx',
+    'app/_accueil/LiveNow.tsx',
+    'app/_accueil/sections.tsx',
+    'components/events/CardLink.tsx',
+    'components/events/CardLiveBadge.tsx',
+    'app/admin/a-la-une/page.tsx',
+    'app/admin/a-la-une/FeaturedDialogs.tsx',
 ];

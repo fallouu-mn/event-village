@@ -910,10 +910,21 @@ export const SCREENS: readonly Screen[] = [
     // ── Public ──────────────────────────────────────────────────────────────
     {
         id: 'accueil', titre: 'Accueil', role: 'anonyme', needsIds: false, path: () => '/',
-        // Lot 9 : section sous « À l'affiche », chargée après la page ; le seed y place des ventes récentes (spreadPurchases)
-        ready: async ({ page }) => { await expect(page.getByRole('region', { name: /^populaires/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 }); },
+        // Design 1b : rangée « À la une » (choix du Superadmin) ou, sans choix, « Populaires » (ventes récentes du seed,
+        // spreadPurchases), rendue par le serveur
+        ready: async ({ page }) => { await expect(page.getByRole('region', { name: /^(à la une|populaires)/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 }); },
     },
     { id: 'catalogue', titre: 'Catalogue des événements', role: 'anonyme', needsIds: false, path: () => '/explore' },
+    // Design 1b (point 5) : Explorer avec filtres (adresse ?quand=&gratuit=&categorie=), puces aria-pressed, pagination
+    {
+        id: 'explorer-semaine-gratuits', titre: 'Explorer — filtres « Cette semaine » et « Gratuit »', role: 'anonyme', needsIds: false,
+        path: () => '/explore?quand=semaine&gratuit=1',
+        ready: async ({ page }) => { await expect(page.getByRole('button', { name: /^cette semaine$/i })).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 }); },
+    },
+    {
+        id: 'explorer-concerts', titre: 'Explorer — catégorie « Concerts »', role: 'anonyme', needsIds: false, path: () => '/explore?categorie=CONCERT',
+        ready: async ({ page }) => { await expectHeading(page, /^explorer les événements$/i); },
+    },
     // Design 1a : en-tête et logo, composants de base, toasts, fenêtre de confirmation, pages spéciales (vitrine ouverte par
     // scripts/e2e/start-app.mjs, EV_VITRINE_DESIGN=1 ; données fictives)
     {
@@ -1550,6 +1561,15 @@ export const SCREENS: readonly Screen[] = [
     // Points 2a et 3 : « Changer le numéro » et « Changer le rôle » s'ouvrent sur une ligne de /admin/users, page pas encore
     // sur le système de design (badges de 10 px, noms de 12 px : contrôles bloquants des 14 px) ; aucune capture de la liste
     // remplie. PhoneChangeFlow est capturé par admin-numero-apres-secours ; les deux boutons sont prouvés par f3d-ecrans.
+    // Design 1b (point 3) : « À la une » choisi par le Superadmin (ajouter, ordonner, retirer, dates, motif, journal)
+    {
+        id: 'admin-a-la-une', titre: 'Administration — « À la une » de l’accueil (Superadmin)', role: 'fumee-superadmin', needsIds: false,
+        path: () => '/admin/a-la-une',
+        ready: async ({ page }) => {
+            await expect(page.getByText(/étiquette vue par les visiteurs/i).first()).toBeVisible({ timeout: 30_000 });
+            await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
+        },
+    },
     {
         id: 'admin-securite', titre: 'Administration — « Sécurité du compte » du Superadmin : codes de secours restants, son numéro',
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/securite',
@@ -1994,16 +2014,8 @@ export const SCREENS: readonly Screen[] = [
             await revealCenter(nearbySection(page).getByRole('combobox'));
         },
     },
-    {
-        id: 'accueil-populaires-erreur', titre: 'Accueil — Populaires, état d’erreur (Réessayer)', role: 'anonyme', needsIds: false, path: () => '/',
-        injectError: /\/api\/events\/popular/,
-        injectErrorMessage: 'Populaires momentanément indisponibles.',
-        // Section sous « À l'affiche » : hors de l'image sans défilement
-        ready: async (c) => {
-            await expectRetry(c);
-            await revealCenter(c.page.getByRole('button', { name: /réessayer/i }));
-        },
-    },
+    // Design 1b : « accueil-populaires-erreur » retiré : « Populaires » est rendu par le serveur (cache de 60 s, dernière page
+    // réussie gardée en cas de panne), le navigateur ne le lit plus.
     // ── Lot 9 bis : versements, droits, transferts, email (contrat 7.3, T9) ──
     // Rouges jusqu'à leurs écrans (vague E) et aux données du seed (fix(9b.seed)) ; aucune boîte n'est confirmée.
     {
