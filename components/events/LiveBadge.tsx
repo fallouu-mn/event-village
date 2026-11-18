@@ -13,15 +13,14 @@ export function LiveBadge({ window, className }: { window: LiveWindow | null; cl
     const live = useLiveNow(window);
     if (!live) return null;
     return (
-        <span
-            data-ev-caption
+        <small
             className={cn(
-                'pointer-events-none inline-flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-xs font-bold text-white shadow-sm',
+                'pointer-events-none inline-flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-caption font-bold text-white shadow-sm',
                 className,
             )}
         >
             <span aria-hidden="true" className="ev-live-dot relative inline-flex h-2 w-2 rounded-full bg-scan-accept-bg" />
             En cours
-        </span>
+        </small>
     );
 }
