@@ -58,10 +58,10 @@ export async function tableReservationFixture(opts: {
                  partner_id, venue_id, table_id, client_id, reservation_date, reservation_time, guest_count, slot_minutes,
                  booking_state, confirmation_mode, deposit_per_person, deposit_amount, service_fee_rate, service_fee_amount,
                  total_amount, commission_rate, is_platform_payment, payment_status, hold_expires_at, confirmed_at)
-             VALUES ($1, $2, $3, $4, $5::date, $6::time, $7, 120,
-                     $8, 'AUTO', $9, $10, CASE WHEN $10 > 0 THEN 5 END, $11,
-                     $10 + $11, CASE WHEN $10 > 0 THEN 0 END, $10 > 0, 'PENDING',
-                     CASE WHEN $10 > 0 THEN now() + interval '15 minutes' END, CASE WHEN $10 = 0 THEN now() END)
+             VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::date, $6::time, $7::int, 120,
+                     $8::text, 'AUTO', $9::numeric, $10::numeric, CASE WHEN $10::numeric > 0 THEN 5 END, $11::numeric,
+                     $10::numeric + $11::numeric, CASE WHEN $10::numeric > 0 THEN 0 END, $10::numeric > 0, 'PENDING',
+                     CASE WHEN $10::numeric > 0 THEN now() + interval '15 minutes' END, CASE WHEN $10::numeric = 0 THEN now() END)
              RETURNING id`,
             [opts.partnerId, venue!.id, table!.id, opts.clientId, opts.date, opts.time ?? '20:00', guests,
              deposit > 0 ? 'EN_ATTENTE_PAIEMENT' : 'CONFIRMEE', perPerson, deposit, fee]);
