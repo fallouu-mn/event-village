@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 /** Préfixes des réglages exposés par cette route (validation des valeurs : finance_setting_set). */
 // Lot 9 quinquies (B1) : + support.* (contact du support)
-const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%,key.like.halls.%';
+const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%,key.like.halls.%,key.like.tables.%';
 
 /**
  * Lot 3 — réglages financiers (clés finance.*), lot 4 — réglages du contrôle d'accès (clés access.*),

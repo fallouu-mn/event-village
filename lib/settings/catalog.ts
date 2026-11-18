@@ -17,6 +17,8 @@ export const SETTING_SECTIONS: ReadonlyArray<{ prefix: string; anchor: string; t
     { prefix: 'features.', anchor: 'services', title: 'Services en préparation' },
     // Lot 10a : réservation de salles (prix, acompte, délais, annulation, validation)
     { prefix: 'halls.', anchor: 'salles', title: 'Salles de fête' },
+    // Lot 11a : réservation de tables (frais, créneau, attentes, absence, annulation, validation)
+    { prefix: 'tables.', anchor: 'tables', title: 'Restaurants et tables' },
 ];
 
 export interface SettingBounds {
@@ -68,6 +70,16 @@ export const SETTING_BOUNDS: Readonly<Record<string, SettingBounds>> = {
     'halls.cancel_moderee_full_days': int(1, 365, 'Règle modérée : remboursement total jusqu’à', 'jours'),
     'halls.cancel_moderee_partial_days': int(1, 365, 'Règle modérée : remboursement partiel jusqu’à', 'jours'),
     'halls.cancel_stricte_partial_days': int(1, 365, 'Règle stricte : remboursement partiel jusqu’à', 'jours'),
+    // Lot 11a : réservation de tables (bornes identiques à fin_setting_valid, migration 20261123000101)
+    'tables.service_fee_rate': rate(0, 50, 'Frais de service des tables'),
+    'tables.commission_rate': rate(0, 50, 'Commission sur l’acompte des tables'),
+    'tables.slot_minutes': { min: 30, max: 360, integer: true, step: 15, label: 'Durée d’une réservation de table par défaut', unit: 'min' },
+    'tables.hold_minutes': int(5, 60, 'Durée de garde d’une table non payée', 'min'),
+    'tables.response_minutes': int(15, 1440, 'Délai de réponse d’un établissement', 'min'),
+    'tables.no_show_minutes': int(5, 180, 'Client absent : table libérée après', 'min'),
+    'tables.cancel_free_hours': int(0, 72, 'Acompte rendu si le client annule au moins', 'h'),
+    'tables.max_pending_per_client': int(1, 10, 'Demandes en attente au plus par client', 'demandes'),
+    'tables.reminder_hours': int(1, 24, 'Rappel au client avant l’heure', 'h'),
 };
 
 /** Nombre écrit à la française, sans unité : « 1 000 000 », « 1,5 ». */

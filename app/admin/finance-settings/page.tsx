@@ -19,7 +19,7 @@
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
-import { Bell, Building2, History, Pencil, RefreshCw, Save, ScanLine, ToggleRight, Wallet, X } from 'lucide-react';
+import { Bell, Building2, History, Pencil, RefreshCw, Save, ScanLine, ToggleRight, UtensilsCrossed, Wallet, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -121,6 +121,17 @@ const META: Record<string, SettingMeta> = {
   'halls.cancel_moderee_full_days': { label: 'Règle modérée : remboursement total jusqu’à', help: 'Jours avant la date.', kind: 'integer', unit: 'jours' },
   'halls.cancel_moderee_partial_days': { label: 'Règle modérée : remboursement partiel jusqu’à', help: 'Jours avant la date. Plus tard, rien n’est remboursé.', kind: 'integer', unit: 'jours' },
   'halls.cancel_stricte_partial_days': { label: 'Règle stricte : remboursement partiel jusqu’à', help: 'Jours avant la date. Plus tard, rien n’est remboursé.', kind: 'integer', unit: 'jours' },
+  // Lot 11a : réservation de tables (libellés identiques à lib/settings/catalog.ts)
+  'tables.service_fee_rate': { label: 'Frais de service des tables', help: 'Payés par le client en plus de l’acompte, arrondis au franc CFA supérieur. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'tables.commission_rate': { label: 'Commission sur l’acompte des tables', help: 'Part de l’acompte gardée par Event Village. 0 % au lancement. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'tables.validation_required': { label: 'Validation des établissements', help: 'Activé : un nouveau restaurant, bar ou espace n’est visible qu’après validation par l’administration.', kind: 'boolean' },
+  'tables.slot_minutes': { label: 'Durée d’une réservation de table par défaut', help: 'Temps pendant lequel la table est réservée au client. Chaque établissement peut choisir la sienne. De 30 à 360, par quart d’heure.', kind: 'integer', unit: 'min' },
+  'tables.hold_minutes': { label: 'Durée de garde d’une table non payée', help: 'Temps pendant lequel la table est tenue pour le client qui paie l’acompte. Ensuite, elle est rendue. Entier de 5 à 60.', kind: 'integer', unit: 'min' },
+  'tables.response_minutes': { label: 'Délai de réponse d’un établissement', help: 'Pour un établissement qui accepte les demandes lui-même : sans réponse dans ce délai, la demande est annulée et l’acompte rendu. Entier de 15 à 1440.', kind: 'integer', unit: 'min' },
+  'tables.no_show_minutes': { label: 'Client absent : table libérée après', help: 'Minutes après l’heure de la réservation. Le client est alors marqué absent et l’acompte n’est pas rendu. Entier de 5 à 180.', kind: 'integer', unit: 'min' },
+  'tables.cancel_free_hours': { label: 'Acompte rendu si le client annule au moins', help: 'Heures avant l’heure de la réservation. Plus tard, l’acompte n’est pas rendu. Entier de 0 à 72.', kind: 'integer', unit: 'h' },
+  'tables.max_pending_per_client': { label: 'Demandes en attente au plus par client', help: 'Demandes non payées ou sans réponse qu’un client peut avoir en même temps. Entier de 1 à 10.', kind: 'integer', unit: 'demandes' },
+  'tables.reminder_hours': { label: 'Rappel au client avant l’heure', help: 'Heures avant l’heure de la réservation. Entier de 1 à 24.', kind: 'integer', unit: 'h' },
   'features.orders_enabled': { label: 'Commandes de repas', help: 'Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés.', kind: 'boolean' },
 };
 
@@ -137,6 +148,8 @@ const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: Lucid
   // Lot 9 quater (B1 : E-08, AUD-22, G-01) : les trois services ne sont pas prêts pour le public (paiements non audités)
   // Lot 10a : réglages de la réservation de salles (service fermé tant que son interrupteur l'est)
   { prefix: 'halls.', title: 'Salles de fête', help: 'Frais, acompte, délais de paiement, règles d’annulation et validation des salles.', icon: Building2 },
+  // Lot 11a : réglages de la réservation de tables (service fermé tant que son interrupteur l'est)
+  { prefix: 'tables.', title: 'Restaurants et tables', help: 'Frais, durée d’une réservation, délais d’attente et de réponse, absence, annulation et validation des établissements.', icon: UtensilsCrossed },
   { prefix: 'features.', title: 'Services en préparation', help: 'Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER.', icon: ToggleRight },
 ];
 
