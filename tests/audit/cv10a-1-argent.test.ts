@@ -8,10 +8,12 @@ import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLot10aInvariants } from '../helpers/lot10a-invariants';
+import { inRolledBackTransaction } from '../helpers/db';
+import { FINANCE_INVARIANT_SQL } from '../helpers/finance-invariants';
 import {
     DAY_MS, adminCancel, decideHall, agePayment, clientCancel, confirmByWebhook, dayFromNow, expireHold, halfHourSlot, ledgerSum, n,
-    newBuyer, newHall, newPartner, openHallsService, partnerAction, payConfirmed, paymentsOfReservation, platformSetting,
-    refundsOf, reservation, reservationsOf, reserveRoute, reserveRpc, routeId, service, setPlatformSetting, show, startPayment,
+    newBuyer, newHall, newPartner, openHallsService, partnerAction, payConfirmed, paymentsOfReservation,
+    refundsOf, reservation, reservationsOf, reserveRoute, reserveRpc, routeId, service, show, startPayment,
     started, tick, trace, type Row, type TestPartner,
 } from './cv10a-helpers';
 import { newAdmin } from '../parcours/notif-helpers';
@@ -202,46 +204,71 @@ describe('1.5 Arrondis, grand livre et parrainage au franc près', () => {
             assert.equal(await ledgerSum(String(r.payment_id), 'REMBOURSEMENT'), -n(r.facial_part));
         }
     });
+});
 
-    test('commission de 10 % et parrain : acompte 126 000 → salle 108 000, Event Village 16 110 net ; 50 % rendu → salle −54 000, commission au prorata', async () => {
-        const before = await platformSetting('halls.commission_rate');
-        await setPlatformSetting('halls.commission_rate', 10, 'contre-vérification 10a');
-        try {
-            const sponsor = await newBuyer('cv10a-parrain');
-            const client = await newBuyer('cv10a-filleul');
-            const { data: cfg } = await service.from('referral_config').select('rate_n1, rate_n2, duration_months')
-                .eq('sponsor_status', 'STANDARD').eq('referral_type', 'CLIENT_TO_CLIENT').eq('is_active', true).maybeSingle();
-            const rate = n(cfg?.rate_n1 ?? 5);
-            const { error } = await service.from('referral_relationships').insert({
-                sponsor_id: sponsor.userId, referred_id: client.userId, referral_type: 'CLIENT_TO_CLIENT', sponsor_status_at_creation: 'STANDARD',
-                rate_n1_at_creation: rate, rate_n2_at_creation: n(cfg?.rate_n2 ?? 2), duration_months: n(cfg?.duration_months ?? 12),
-                expires_at: new Date(Date.now() + 365 * DAY_MS).toISOString(), is_active: true,
-            });
-            assert.equal(error, null, error?.message);
-            const id = String((await reserveRpc(client, await newHall(partner, { price_per_day: 200_000 }), { days: 2, startInDays: 20 })).reservation_id);
-            const dep = await payConfirmed(client, id, 'ACOMPTE');
-            trace('1.5b paiement', { amount: dep.amount, payout: dep.partner_payout_amount, net: dep.net_event_village_revenue, agg: dep.aggregator_fee });
-            assert.deepEqual([n(dep.amount), n(dep.facial_amount), n(dep.service_fee), n(dep.partner_payout_amount), n(dep.aggregator_fee), n(dep.net_event_village_revenue)],
-                [126_000, 120_000, 6_000, 108_000, 1_890, 16_110]);
-            assert.equal(await ledgerSum(dep.id, 'VENTE'), 108_000);
-            const { data: comm } = await service.from('referral_commissions').select('id, amount, status').eq('payment_id', dep.id).eq('generation', 'N1').eq('kind', 'COMMISSION');
-            const expected = Math.round(16_110 * rate) / 100;
-            assert.deepEqual((comm ?? []).map((c) => n(c.amount)), [expected], `commission N1 ${rate} % : ${JSON.stringify(comm)}`);
-            const c = await clientCancel(id, client.accessToken);
-            assert.equal(c.status, 200, show(c));
-            const refunds = await refundsOf(id);
-            trace('1.5b remboursement', refunds);
-            assert.deepEqual(refunds.map((r) => [n(r.amount), n(r.facial_part), n(r.service_part), n(r.net_revenue_reversal)]), [[63_000, 54_000, 9_000, 9_000]]);
-            assert.equal(await ledgerSum(dep.id, 'REMBOURSEMENT'), -54_000, 'la salle rend la moitié de sa part');
-            const { data: after } = await service.from('referral_commissions').select('amount, status, cancellation_reason').eq('payment_id', dep.id).eq('generation', 'N1').eq('kind', 'COMMISSION').order('created_at');
-            trace('1.5b commissions', after);
-            const live = (after ?? []).filter((x) => x.status !== 'CANCELLED').reduce((s, x) => s + n(x.amount), 0);
-            assert.equal(live, Math.round(expected * 50) / 100, 'commission recalculée à 50 %');
-            const { data: led } = await service.from('finance_ledger').select('amount').eq('owner_id', sponsor.userId).eq('account_kind', 'PARRAINAGE');
-            assert.equal(Math.round((led ?? []).reduce((s, x) => s + n(x.amount), 0) * 100) / 100, Math.round(expected * 50) / 100, 'grand livre du parrain');
-        } finally {
-            await setPlatformSetting('halls.commission_rate', before, 'contre-vérification 10a : valeur d’origine');
-        }
+/**
+ * Commission de 10 % (réglage halls.commission_rate, 0 à 50 % pour l'administration) et parrain : tout se passe dans une
+ * transaction ANNULÉE (base locale), pour ne pas laisser dans la base partagée un paiement qui casse l'invariant
+ * financier (d) des autres suites (constat du run 379). Mêmes fonctions que la route et le webhook : hall_reserve,
+ * hall_payment_create, hall_payment_confirm (source WEBHOOK), hall_reservation_cancel.
+ */
+describe('1.5 bis Commission de 10 % et parrainage (transaction annulée)', () => {
+    let out: Row = {};
+    before(async () => {
+        const sponsor = await newBuyer('cv10a-parrain');
+        const client = await newBuyer('cv10a-filleul');
+        const hall = await newHall(partner, { price_per_day: 200_000 });
+        const { data: cfg } = await service.from('referral_config').select('rate_n1, rate_n2, duration_months')
+            .eq('sponsor_status', 'STANDARD').eq('referral_type', 'CLIENT_TO_CLIENT').eq('is_active', true).maybeSingle();
+        const rate = n(cfg?.rate_n1 ?? 5);
+        out = await inRolledBackTransaction(async (c) => {
+            const one = async <T extends Row>(q: string, params: unknown[] = []): Promise<T> => (await c.query<T>(q, params)).rows[0];
+            await c.query(`UPDATE public.platform_settings SET value = '{"value": 10}'::jsonb WHERE key = 'halls.commission_rate'`);
+            await c.query(`INSERT INTO public.referral_relationships (sponsor_id, referred_id, referral_type, sponsor_status_at_creation,
+                               rate_n1_at_creation, rate_n2_at_creation, duration_months, expires_at, is_active)
+                           VALUES ($1, $2, 'CLIENT_TO_CLIENT', 'STANDARD', $3, $4, $5, now() + interval '365 days', true)`,
+                [sponsor.userId, client.userId, rate, n(cfg?.rate_n2 ?? 2), n(cfg?.duration_months ?? 12)]);
+            const q = (await one<{ r: Row }>(`SELECT public.hall_reserve($1::jsonb) AS r`,
+                [JSON.stringify({ client_id: client.userId, hall_id: hall, mode: 'JOUR', start_date: dayFromNow(20), units: 2 })])).r;
+            const tag = `CV10A-${Date.now()}`;
+            const created = (await one<{ r: Row }>(`SELECT public.hall_payment_create($1::jsonb) AS r`, [JSON.stringify({
+                client_id: client.userId, reservation_id: q.reservation_id, part: 'ACOMPTE', operator: 'WAVE', payer_phone: client.phone9,
+                transaction_id: `TX-${tag}`, external_order_id: `ORD-${tag}`, callback_token_hash: 'x' })])).r;
+            const confirm = (await one<{ r: Row }>(`SELECT public.hall_payment_confirm($1::uuid, 'WEBHOOK') AS r`, [created.payment_id])).r;
+            const pay = await one(`SELECT amount, facial_amount, service_fee, partner_payout_amount, aggregator_fee, net_event_village_revenue
+                                     FROM public.payments WHERE id = $1`, [created.payment_id]);
+            const vente = await one(`SELECT COALESCE(sum(amount), 0) AS s FROM public.finance_ledger WHERE payment_id = $1 AND entry_type = 'VENTE'`, [created.payment_id]);
+            const comm = await one(`SELECT COALESCE(sum(amount), 0) AS s FROM public.referral_commissions
+                                     WHERE payment_id = $1 AND generation = 'N1' AND kind = 'COMMISSION' AND status <> 'CANCELLED'`, [created.payment_id]);
+            const violations = (await c.query<Row>(FINANCE_INVARIANT_SQL)).rows.filter((v) => v.objet === created.payment_id);
+            const cancel = (await one<{ r: Row }>(`SELECT public.hall_reservation_cancel($1::jsonb) AS r`,
+                [JSON.stringify({ reservation_id: q.reservation_id, actor_id: client.userId, origin: 'CLIENT' })])).r;
+            const refund = await one(`SELECT amount, facial_part, service_part, net_revenue_reversal FROM public.refunds WHERE payment_id = $1`, [created.payment_id]);
+            const rembt = await one(`SELECT COALESCE(sum(amount), 0) AS s FROM public.finance_ledger WHERE payment_id = $1 AND entry_type = 'REMBOURSEMENT'`, [created.payment_id]);
+            const commAfter = await one(`SELECT COALESCE(sum(amount), 0) AS s FROM public.referral_commissions
+                                          WHERE payment_id = $1 AND generation = 'N1' AND kind = 'COMMISSION' AND status <> 'CANCELLED'`, [created.payment_id]);
+            const sponsorLedger = await one(`SELECT COALESCE(sum(amount), 0) AS s FROM public.finance_ledger WHERE owner_id = $1 AND account_kind = 'PARRAINAGE'`, [sponsor.userId]);
+            return { rate, quote: q.total_amount, confirm, pay, vente: vente.s, comm: comm.s, violations, cancel: cancel.ok, refund, rembt: rembt.s, commAfter: commAfter.s, sponsorLedger: sponsorLedger.s };
+        });
+        trace('1.5b', out);
+    });
+
+    test('acompte 126 000 : salle 108 000 au grand livre, Event Village 16 110 net, commission du parrain sur 16 110 ; 50 % rendu : salle −54 000, Event Village −9 000, commission à 50 %', () => {
+        const pay = out.pay as Row;
+        const expected = Math.round(16_110 * n(out.rate)) / 100;
+        assert.deepEqual([n(pay.amount), n(pay.facial_amount), n(pay.service_fee), n(pay.partner_payout_amount), n(pay.aggregator_fee), n(pay.net_event_village_revenue)],
+            [126_000, 120_000, 6_000, 108_000, 1_890, 16_110]);
+        assert.equal(n(out.vente), 108_000);
+        assert.equal(n(out.comm), expected);
+        const refund = out.refund as Row;
+        assert.deepEqual([n(refund.amount), n(refund.facial_part), n(refund.service_part), n(refund.net_revenue_reversal)], [63_000, 54_000, 9_000, 9_000]);
+        assert.equal(n(out.rembt), -54_000, 'la salle rend la moitié de sa part');
+        assert.equal(n(out.commAfter), Math.round(expected * 50) / 100, 'commission recalculée à 50 %');
+        assert.equal(Math.round(n(out.sponsorLedger) * 100) / 100, Math.round(expected * 50) / 100, 'grand livre du parrain');
+    });
+
+    test('un paiement de salle avec commission respecte l’invariant financier (d) de la plateforme', () => {
+        assert.deepEqual(out.violations, [], `invariant (d) violé par un paiement avec commission : ${JSON.stringify(out.violations)}`);
     });
 });
 

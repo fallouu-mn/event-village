@@ -42,9 +42,13 @@ before(async () => {
     for (const permission of ['events.read', 'refunds.manage', 'partners.validate']) {
         await service.from('admin_permissions').upsert({ user_id: adminNoCode.userId, permission }, { onConflict: 'user_id,permission' });
     }
-    // Les sessions de test passent le code administrateur par défaut : retiré pour ce compte
-    const { error: delErr } = await service.from('admin_session_codes').delete().eq('user_id', adminNoCode.userId);
-    assert.equal(delErr, null, delErr?.message);
+    // Les sessions de test passent le code administrateur par défaut (stepUpTestSession) : retiré pour ce compte, en base
+    // (admin_session_codes, lu par is_admin()) comme pour les routes (appareil vérifié par SMS, activité de la session).
+    // Run 379 : seul admin_session_codes retiré, les routes acceptaient encore la session (défaut de montage corrigé).
+    for (const table of ['admin_session_codes', 'admin_devices', 'admin_session_activity']) {
+        const { error: delErr } = await service.from(table).delete().eq('user_id', adminNoCode.userId);
+        assert.equal(delErr, null, `${table} : ${delErr?.message}`);
+    }
     hall = await newHall(owner);
     pendingHall = await newHall(owner, { validate: false });
     const { data, error: rErr } = await service.rpc('hall_reserve', {
