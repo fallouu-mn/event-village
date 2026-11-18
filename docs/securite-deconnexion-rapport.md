@@ -149,9 +149,23 @@ Branche `correctifs/cvf2b`, partie de `main` à `08d854851`. La contre-vérifica
    - realtime-js 2.114 s'abonne avant que le rappel `accessToken`, asynchrone, ait rendu le jeton. Le canal tournait donc avec la seule clé anon, qui n'expire pas.
 
    Le test vise maintenant les notifications du compte, une table privée, et le jeton est remis au client avant l'abonnement. Une réception avant l'échéance prouve donc que le canal porte bien ce jeton ; un contrôle vérifie aussi que la clé anon ne reçoit rien. L'assertion « rien après l'échéance » est inchangée. Au run 352, aucun message n'arrive après l'échéance et le canal est fermé par le serveur. Le code de Realtime v2.147.1 programme d'ailleurs cette vérification à l'échéance exacte du jeton.
-8. **Signalé, non traité (hors consigne).**
-   - `/api/auth/reset-password` révoque les sessions sans supprimer les abonnements push des autres appareils : c'est le même trou que la 6.8.
-   - `docs/apres-lancement.md` : la ligne sur le brouillon gardé est devenue fausse avec 5c et 5d.
+8. **Signalé, non traité (hors consigne).** `docs/apres-lancement.md` : la ligne sur le brouillon gardé est devenue fausse avec 5c et 5d.
+
+### Après validation (18/11)
+
+La 6.8, plus stricte que la consigne, et les jetons d'une heure en e2e sont acceptés par l'utilisateur. Trois ajouts :
+
+| Ajout | Ce qui change | Preuve | Commits |
+|---|---|---|---|
+| « Mot de passe oublié » supprime les abonnements push | `/api/auth/reset-password` ferme toutes les sessions. Comme la 6.8, la route supprime maintenant tous les abonnements push du compte, après la révocation, par le code SMS comme par le lien email. La suppression est commune aux deux routes (`removeAllPushSubscriptions`, `lib/push/subscriptions.ts`). Un échec renvoie un 500 `PASSWORD_PUSH_NOT_REMOVED` avec un message clair. | `cvf2b-reinit-push` (nouvelle) : rouge au run 361 (l'abonnement de l'autre appareil reste après une réinitialisation réussie), puis verte | test `ba0b229fb`, correctif `6e7b110c3` |
+| Fusion de main (finition 3d) | Un seul conflit : `migration-finition2b-rejouable`, le même filtre retouché des deux côtés. La règle de main (`f < '20261120'`) est gardée ; elle exclut aussi les migrations 20261121. Aucune fonction SQL n'est redéfinie à la fois par la 3d et par ces correctifs. | recette, tsc et lint ; run rapide ci-dessous | `0b8a685f7` |
+| Pré-requête et `admin_session_code_valid()` de la 3d se cumulent | Une session admin active reste admin. Une session inactive depuis 31 min est servie (200) sans pouvoir d'administration (`is_admin()` faux). Une session fermée est refusée par la pré-requête avant toute politique (401 `SESSION_FERMEE`), même si sa ligne `admin_session_codes` existe encore. L'autre session du compte reste admin. | `cvf2b-cumul-3d` (nouvelle) | `40c61f3da` |
+
+Contrôles « avant » relevés sur event-village-dev le 18/11, conformes :
+- réglage absent, fonction absente ;
+- 4d `f, f, f`, 4f `t, f`, 2b `t, t`, 2c `f, f` ;
+- **1 catégorie en OR**, qui garde sa couleur ;
+- les 9 migrations 20261120 (3d) appliquées, aucune 20261121.
 
 ### Migrations, dans l'ordre (les 7 et 8 redéfinissent les mêmes fonctions)
 `20261121000001_cvf2b_jeton_session_revoquee`, `20261121000005_cvf2b_avis_en_cours_envoi`, `20261121000006_cvf2b_plafond_heure_glissante`, `20261121000007_cvf2b_couleur_or`, `20261121000008_cvf2b_consigne_controle`.
@@ -166,7 +180,7 @@ Branche `correctifs/cvf2b`, partie de `main` à `08d854851`. La contre-vérifica
 | 4f | t, f | f, t |
 | 2b | t, t | f, f |
 | 2c | f, f | t, t |
-| catégories en OR | à noter | identique |
+| catégories en OR | 1 | 1 (couleur gardée, affichée en vieil or) |
 
 ```sql
 SELECT c FROM pg_db_role_setting rs, unnest(rs.setconfig) c
@@ -179,8 +193,8 @@ SELECT position('p->>''last_hour_from''' IN pg_get_functiondef('public.event_cha
        position('v_cap_from := v_hdue - interval' IN pg_get_functiondef('public.event_change_notify(jsonb)'::regprocedure)) > 0;
 SELECT position('''OR''' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
        position('''OR''' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
-SELECT position('‪-‮' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
-       position('‪-‮' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
+SELECT position('\u202a-\u202e' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
+       position('\u202a-\u202e' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
 SELECT count(*) AS categories_or FROM public.ticket_categories WHERE scan_color = 'OR';
 ```
 
@@ -204,5 +218,8 @@ La nouvelle durée vaut pour les jetons émis ou rafraîchis après le changemen
 | 353 | `6adcd63ac` | complet, 4 lots | 471/475 ; rouges : `securite-admin-lot7`, `migration-finition2b-rejouable`, `recette-matrice` (suites anciennes, écart 5), `f2b-recherche-cadence` (fragile) ; e2e, build et budget JS verts |
 | 354 | `cb0a1ad67` | rapide, ces 4 suites | 3/4 ; `recette-matrice` encore rouge : deux citations décalées par le commentaire ajouté à `securite-admin-lot7` |
 | 355 | `f2753e3ea` | complet, 4 lots, 44 min | 474/475 ; seule rouge : `invitations-annulation`, GoTrue répond 504 (« Processing this request timed out ») à la création d'un compte de test. La suite était verte au run 353 avec le même code ; GoTrue ne passe pas par la pré-requête. e2e, build et budget JS verts |
+
+| 361 | `ba0b229fb` | rapide, `cvf2b-reinit-push` (test seul, sans correctif) | rouge attendu : 0/2, l'abonnement de l'autre appareil reste |
+| 362 | `40c61f3da` | rapide après la fusion de main, 63 suites : `cvf2b-*`, `cvf3d-*`, `tests/audit/`, `tests/audit-auth/`, `f3d-*`, suites adaptées, récupération du mot de passe | vert, 63/63 ; typecheck et lint OK |
 
 Poids JS au run 355, en octets compressés : `/` 225 259 (main au run 336 : 224 866, soit +393 ; budget 226 342), `/events/[id]` 231 901 (233 316), `/tickets` 249 591 (250 417), `/controller/scanner` 231 668 (234 911), `/billet/hors-ligne` 221 089 (224 268). Budgets non relevés.
