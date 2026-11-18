@@ -54,6 +54,7 @@ let victim: Buyer;
 let suspended: Buyer;
 let productId: string;
 let hallId: string;
+let venueId: string;
 
 before(async () => {
     partner = await newPartner('urgence');
@@ -76,8 +77,14 @@ before(async () => {
     assert.equal(hallErr, null, `salle : ${hallErr?.message}`);
     hallId = hall.id;
 
+    // Lot 11a (modification signalée au rapport) : une table appartient à un établissement de la partenaire
+    const { data: venue, error: venueErr } = await service.from('venues').insert({
+        partner_id: partner.partnerId, name: `TEST Restaurant urgence ${randomUUID().slice(0, 8)}`, city: 'Dakar',
+    }).select('id').single();
+    assert.equal(venueErr, null, `établissement : ${venueErr?.message}`);
+    venueId = venue.id;
     const { error: tableErr } = await service.from('restaurant_tables').insert({
-        partner_id: partner.partnerId, table_number: `T-${randomUUID().slice(0, 8)}`, capacity: 6, is_active: true,
+        partner_id: partner.partnerId, venue_id: venueId, table_number: `T-${randomUUID().slice(0, 8)}`, capacity: 6, is_active: true,
     });
     assert.equal(tableErr, null, `table : ${tableErr?.message}`);
 });
@@ -131,10 +138,8 @@ const TARGETS: Target[] = [
         path: '/api/restaurants/reserve-table',
         module: '../../app/api/restaurants/reserve-table/route',
         table: 'table_reservations',
-        body: (clientId) => ({
-            partnerId: partner.partnerId, reservationDate: futureDate(60), reservationTime: '20:00',
-            guestCount: 2, isPlatformPayment: true, clientId,
-        }),
+        // Lot 11a : corps de la route réécrite (établissement, date, heure, personnes) ; clientId toujours ignoré
+        body: (clientId) => ({ venueId, date: futureDate(60), time: '20:00', guests: 2, clientId }),
         createdId: (b) => (b.reservation as { id?: string } | undefined)?.id,
     },
 ];

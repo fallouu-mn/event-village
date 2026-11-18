@@ -83,9 +83,12 @@ before(async () => {
             `INSERT INTO public.halls (partner_id, name, capacity, price_per_day, deposit_percentage, city, is_active)
              VALUES ($1, 'Salle R25', 80, 40000, 30, 'Dakar', true) RETURNING id::text AS id`, [partnerId]);
         hallId = String(h.id);
+        // Lot 11a (modification signalée au rapport) : une table appartient à un établissement de la partenaire
+        const [v] = await q(
+            `INSERT INTO public.venues (partner_id, name, city) VALUES ($1, 'Restaurant R25', 'Dakar') RETURNING id::text AS id`, [partnerId]);
         const [t] = await q(
-            `INSERT INTO public.restaurant_tables (partner_id, table_number, capacity, is_active)
-             VALUES ($1, $2, 4, true) RETURNING id::text AS id`, [partnerId, `R25-${randomUUID().slice(0, 8)}`]);
+            `INSERT INTO public.restaurant_tables (partner_id, venue_id, table_number, capacity, is_active)
+             VALUES ($1, $2, $3, 4, true) RETURNING id::text AS id`, [partnerId, String(v.id), `R25-${randomUUID().slice(0, 8)}`]);
         tableId = String(t.id);
         const day = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString().slice(0, 10);
         const [bo] = await q(
@@ -98,11 +101,17 @@ before(async () => {
                                                    balance_amount, status, payment_status)
              VALUES ($1, $2, $3, $4::date, $4::date, 40000, 12000, 28000, 'EN_ATTENTE', 'PENDING') RETURNING id::text AS id`,
             [hallId, b.userId, partnerId, day]);
+        // Lot 11a : une réservation de table ne s'écrit que par les fonctions en base (drapeau de la transaction) ;
+        // montants du lot : acompte 1 000 × 3 = 3 000, frais 150, à payer 3 150
+        await q(`SELECT set_config('event_village.table_booking', 'on', true)`);
         const [bt] = await q(
-            `INSERT INTO public.table_reservations (partner_id, table_id, client_id, reservation_date, reservation_time, guest_count,
-                                                    deposit_amount, is_platform_payment, status, payment_status)
-             VALUES ($1, $2, $3, $4::date, '20:00:00', 3, 5000, true, 'EN_ATTENTE', 'PENDING') RETURNING id::text AS id`,
-            [partnerId, tableId, b.userId, day]);
+            `INSERT INTO public.table_reservations (partner_id, venue_id, table_id, client_id, reservation_date, reservation_time, guest_count,
+                                                    slot_minutes, booking_state, confirmation_mode, deposit_per_person, deposit_amount,
+                                                    service_fee_rate, service_fee_amount, total_amount, commission_rate,
+                                                    is_platform_payment, payment_status, hold_expires_at)
+             VALUES ($1, $5, $2, $3, $4::date, '20:00:00', 3, 120, 'EN_ATTENTE_PAIEMENT', 'AUTO', 1000, 3000, 5, 150, 3150, 0,
+                     true, 'PENDING', now() + interval '15 minutes') RETURNING id::text AS id`,
+            [partnerId, tableId, b.userId, day, String(v.id)]);
         victimIds.push(String(bo.id), String(bh.id), String(bt.id));
         const [ao] = await q(
             `INSERT INTO public.orders (order_number, client_id, partner_id, subtotal, total_amount, paid_amount, balance_amount,

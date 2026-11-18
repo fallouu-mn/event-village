@@ -138,6 +138,20 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A'),
     ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
     ess('HALL_VALIDATION_DECIDED', [I, P, M], 'PARTNER', 'A'),
+    // Lot 11a (migration 20261123000108, ajout signalé au rapport) : parcours de réservation d'une table
+    ess('TABLE_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('TABLE_REQUEST_SENT', [I, P, M, S], 'CLIENT', 'B'),
+    ess('TABLE_REQUEST_TO_ANSWER', [I, P, M, S], 'PARTNER', 'B'),
+    ess('TABLE_NEW_RESERVATION', [I, P, M, S], 'PARTNER', 'B'),
+    ess('TABLE_REQUEST_REFUSED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('TABLE_REQUEST_EXPIRED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('TABLE_HOLD_EXPIRED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('TABLE_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('TABLE_RESERVATION_CANCELLED_PRO', [I, P, M, S], 'PARTNER', 'A'),
+    ess('TABLE_NO_SHOW', [I, P, M, S], 'CLIENT', 'A'),
+    ess('TABLE_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
+    opt('TABLE_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT'),
+    ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A'),
     ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B'), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
@@ -145,6 +159,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('SHIFT_CLOSED_BY_OTHER', [I, P, M], 'CONTROLLER', 'A'), // G.49
     ess('CONTROLLER_ACTIVATED', [I, S, M], 'CONTROLLER', 'B'), // G.49
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'events.read'),
+    ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'partners.validate'), // lot 11a (ajout signalé)
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'partners.read'),
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'refunds.manage'), // lot 8, tâche 8.2 a (L32, migration 20261106000003)

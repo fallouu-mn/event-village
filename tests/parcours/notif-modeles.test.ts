@@ -262,6 +262,21 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Délai de paiement dépassé'),
     ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Paiement remboursé'),
     ess('HALL_VALIDATION_DECIDED', [I, P, M], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls'], 'Salle refusée'),
+    // Lot 11a (migration 20261123000108, ajout signalé au rapport) : parcours de réservation d'une table, 4 canaux à chaque étape
+    ess('TABLE_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'TABLE_RESERVATION', ['/orders'], 'Table réservée'),
+    ess('TABLE_REQUEST_SENT', [I, P, M, S], 'CLIENT', 'B', 'TABLE_RESERVATION', ['/orders'], 'Demande envoyée'),
+    ess('TABLE_REQUEST_TO_ANSWER', [I, P, M, S], 'PARTNER', 'B', 'TABLE_RESERVATION', ['/partner/tables'], 'Demande à accepter'),
+    ess('TABLE_NEW_RESERVATION', [I, P, M, S], 'PARTNER', 'B', 'TABLE_RESERVATION', ['/partner/tables'], 'Nouvelle réservation'),
+    ess('TABLE_REQUEST_REFUSED', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/orders'], 'Demande refusée'),
+    ess('TABLE_REQUEST_EXPIRED', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/orders'], 'Demande sans réponse'),
+    ess('TABLE_HOLD_EXPIRED', [I, P, M, S], 'CLIENT', 'B', 'TABLE_RESERVATION', ['/orders'], 'Acompte non payé à temps'),
+    ess('TABLE_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/orders'], 'Réservation annulée'),
+    ess('TABLE_RESERVATION_CANCELLED_PRO', [I, P, M, S], 'PARTNER', 'A', 'TABLE_RESERVATION', ['/partner/tables'], 'Réservation annulée'),
+    ess('TABLE_NO_SHOW', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/orders'], 'Absence constatée'),
+    ess('TABLE_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/orders'], 'Paiement remboursé'),
+    opt('TABLE_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT', 'REMINDER', ['/orders'], 'Rappel de votre réservation'),
+    ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'TABLE_RESERVATION', ['/partner/tables'], 'Établissement refusé'),
+    ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/services'], 'Établissement à valider', 'partners.validate'),
     ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)
@@ -400,7 +415,9 @@ function variants(type: string, base: Data): Data[] {
         return [{ ...base, can_accept_cash: false }, { ...base, can_accept_cash: true }, { ...base, entry_point: null }];
     }
     // Lot 9 quinquies (D1) : texte nominatif (une candidature) et texte regroupé au pire cas (99 et 99).
-    if (type === 'ADMIN_REVIEW_SMS') return [base, dataFrom(base, { partner_count: 99, event_count: 99 }, ['company']), dataFrom(base, { partner_count: 0, event_count: 99 }, ['company'])];
+    if (type === 'ADMIN_REVIEW_SMS') return [base, dataFrom(base, { partner_count: 99, event_count: 99 }, ['company']), dataFrom(base, { partner_count: 0, event_count: 99 }, ['company']),
+        // Lot 11a (ajout signalé) : établissements à valider, pire cas des trois parties
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99 }, ['company'])];
     return type === 'ADMIN_EVENT_CHANGED' ? adminChangeVariants(base) : [base]; // lot 9 ter (B.7 T-B3) : parties PRICE et CHANNELS
 }
 
@@ -871,6 +888,41 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 'Event Village : réservation annulée : Salle des fetes de Ngor. Remboursement de 63 000 F CFA en cours.'],
             ['HALL_PAYMENT_REFUNDED', {}, [],
                 'Event Village : votre paiement de 126 000 F CFA pour Salle des fetes de Ngor n\'a pas pu servir. Il vous est remboursé sur Orange Money.'],
+            // Lot 11a (migration 20261123000108) : SMS du parcours de réservation d'une table, texte exact (exemples du catalogue). Ajout signalé.
+            ['TABLE_RESERVATION_CONFIRMED', {}, [],
+                'Event Village : table réservée chez Le Grand Bleu le 5 déc. à 20:00 pour 4 pers. Acompte payé : 21 000 F CFA.'],
+            ['TABLE_RESERVATION_CONFIRMED', { paid_amount: 0, total_amount: 0, deposit_amount: 0 }, [],
+                'Event Village : table réservée chez Le Grand Bleu le 5 déc. à 20:00 pour 4 pers. Bon appétit !'],
+            ['TABLE_REQUEST_SENT', {}, [],
+                'Event Village : demande envoyée à Le Grand Bleu pour le 5 déc. à 20:00, 4 pers. Réponse avant le 5 déc. à 18:00, sinon acompte rendu.'],
+            ['TABLE_REQUEST_TO_ANSWER', {}, [],
+                'Event Village : demande de table chez Le Grand Bleu : 4 pers. le 5 déc. à 20:00. Répondez avant le 5 déc. à 18:00, sinon elle sera annulée.'],
+            ['TABLE_NEW_RESERVATION', {}, [],
+                'Event Village : nouvelle réservation chez Le Grand Bleu : 4 pers. le 5 déc. à 20:00, table 12.'],
+            ['TABLE_REQUEST_REFUSED', {}, [],
+                'Event Village : Le Grand Bleu ne peut pas vous recevoir le 5 déc. à 20:00. Acompte de 21 000 F CFA remboursé.'],
+            ['TABLE_REQUEST_EXPIRED', {}, [],
+                'Event Village : Le Grand Bleu n\'a pas répondu à temps : demande du 5 déc. à 20:00 annulée. Acompte de 21 000 F CFA remboursé.'],
+            ['TABLE_HOLD_EXPIRED', {}, [],
+                'Event Village : acompte non payé à temps : la table chez Le Grand Bleu le 5 déc. à 20:00 est libérée. Refaites une demande si besoin.'],
+            ['TABLE_RESERVATION_CANCELLED', {}, [],
+                'Event Village : Le Grand Bleu a annulé votre réservation le 5 déc. à 20:00. Acompte de 21 000 F CFA remboursé.'],
+            ['TABLE_RESERVATION_CANCELLED', { origin: 'CLIENT', refund_amount: 0 }, [],
+                'Event Village : réservation chez Le Grand Bleu le 5 déc. à 20:00 annulée. Acompte non remboursé, annulation tardive.'],
+            ['TABLE_RESERVATION_CANCELLED_PRO', {}, [],
+                'Event Village : réservation chez Le Grand Bleu le 5 déc. à 20:00 (4 pers.) annulée par le client. La table est libre.'],
+            ['TABLE_NO_SHOW', {}, [],
+                'Event Village : absence constatée chez Le Grand Bleu le 5 déc. à 20:00 : la table est libérée et l\'acompte n\'est pas remboursé.'],
+            ['TABLE_PAYMENT_REFUNDED', {}, [],
+                'Event Village : votre paiement de 21 000 F CFA pour Le Grand Bleu n\'a pas pu servir. Il vous est remboursé sur Wave.'],
+            ['TABLE_REMINDER', {}, [],
+                'Event Village : rappel : table chez Le Grand Bleu le 5 déc. à 20:00 pour 4 pers. Imprévu ? Annulez depuis l\'application.'],
+            ['VENUE_VALIDATION_DECIDED', {}, [],
+                'Event Village : votre établissement Le Grand Bleu n\'est pas accepté. Motif : Photos manquantes.'],
+            ['VENUE_VALIDATION_DECIDED', { decision: 'VALIDER' }, ['reason'],
+                'Event Village : votre établissement Le Grand Bleu est validé : il est visible et réservable.'],
+            ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 0, venue_count: 1 }, ['company'],
+                `Event Village : 1 établissement(s) attendent votre validation : ${U}/admin/dashboard`],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).

@@ -24,6 +24,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { assertFinanceInvariants } from '../helpers/finance-invariants';
+import { tableReservationFixture } from '../helpers/table-fixtures';
 import { getSetting, jsonRequest, newPartner, round2, superadminId, type TestPartner } from './finance-helpers';
 import { withFeatureFlags, type FeatureFlag } from './terrain-helpers';
 import {
@@ -106,19 +107,11 @@ async function createHallReservation(facial: number): Promise<string> {
     return String(r.reservation_id);
 }
 
+// Lot 11a (modification signalée au rapport) : une réservation de table ne s'écrit plus directement ; préparation par
+// l'aide commune, acompte = facial (acompte par personne × 2 personnes), frais 5 % calculés comme en base
 async function createTableReservation(facial: number): Promise<string> {
-    const { data: table, error: tableErr } = await service.from('restaurant_tables').insert({
-        partner_id: partner.partnerId, table_number: `T-${randomUUID().slice(0, 8)}`, capacity: 4, is_active: true,
-    }).select('id').single();
-    assert.equal(tableErr, null, `table : ${tableErr?.message}`);
-    const { data: reservation, error } = await service.from('table_reservations').insert({
-        partner_id: partner.partnerId, table_id: table.id, client_id: client.userId,
-        reservation_date: futureDate(), reservation_time: '20:00:00', guest_count: 2,
-        deposit_amount: facial, is_platform_payment: true,
-        status: 'EN_ATTENTE', payment_status: 'PENDING',
-    }).select('id').single();
-    assert.equal(error, null, `réservation de table : ${error?.message}`);
-    return reservation.id;
+    const f = await tableReservationFixture({ partnerId: partner.partnerId, clientId: client.userId, date: futureDate(), guests: 2, depositPerPerson: facial / 2 });
+    return f.reservationId;
 }
 
 async function createPlan(price: number): Promise<string> {
@@ -277,13 +270,18 @@ describe('Réservation de table (TABLE_RESERVATION)', () => {
         assert.equal(reservation.status, 'CONFIRMEE');
     });
 
-    test('échec chez SamirPay, réconciliation → FAILED, réservation annulée (table libérée)', async () => {
+    // Lot 11a (modification signalée au rapport) : un paiement de table en échec ne touche plus la réservation : elle garde
+    // la table jusqu'à la fin de son attente de 15 minutes (le client peut réessayer), puis la rend (tâche ev_tables).
+    // Assertion d'origine (réservation annulée) remplacée par : réservation toujours en attente de paiement, rien de payé.
+    test('échec chez SamirPay, réconciliation → FAILED ; la réservation reste en attente de paiement (table rendue à la fin de l’attente)', async () => {
         const reservationId = await createTableReservation(10_000);
         const payment = await pay(client, 'TABLE_RESERVATION', reservationId);
         await failBySamirPay(payment);
-        const reservation = await row('table_reservations', reservationId, 'payment_status, status');
-        assert.equal(reservation.payment_status, 'FAILED');
-        assert.equal(reservation.status, 'ANNULEE');
+        const reservation = await row('table_reservations', reservationId, 'payment_status, status, booking_state, paid_amount');
+        assert.equal(reservation.payment_status, 'PENDING');
+        assert.equal(reservation.status, 'EN_ATTENTE');
+        assert.equal(reservation.booking_state, 'EN_ATTENTE_PAIEMENT');
+        assert.equal(Number(reservation.paid_amount), 0);
     });
 });
 

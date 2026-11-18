@@ -238,7 +238,8 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['has_admin_permission', { p_user_id: ZERO_UUID, p_permission: 'users.write' }],
     // Lot 10a (modification signalée au rapport) : create_hall_reservation_atomic supprimée (jamais appelée, calculait
     // l'argent avec 100 000 F par défaut) ; remplacée par hall_reserve, contrôlée plus bas.
-    ['create_table_reservation_atomic', { p_table_id: ZERO_UUID, p_client_id: ZERO_UUID, p_reservation_date: '2030-01-01', p_reservation_time: '20:00', p_guest_count: 2 }],
+    // Lot 11a (modification signalée au rapport) : create_table_reservation_atomic supprimée (aucun contrôle de
+    // l'établissement, de l'heure ni de l'argent) ; remplacée par table_reserve, contrôlée plus bas.
     // Lot 3 : request_withdrawal supprimée, remplacée par withdrawal_request (plus bas)
     // Lot 4 : atomic_ticket_checkin supprimée, remplacée par ticket_scan (plus bas)
     ['atomic_partner_remove_controller', { p_partner_id: ZERO_UUID, p_controller_id: ZERO_UUID }],
@@ -632,6 +633,48 @@ const LOT10A_RPCS: Array<[string, Record<string, unknown>]> = [
 describe('R3 — lot 10a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
     const MIGRATIONS = 'migrations 20261122… du lot 10a';
     for (const [fn, args] of LOT10A_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
+// Lot 11a : chaque fonction nouvelle du lot (réservation de tables), appelée directement, est refusée à anon et à un
+// compte (ajout seul, signalé au rapport).
+const LOT11A_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['venue_range', { p_day: '2030-01-01', p_opens: '12:00', p_closes: '15:00' }],
+    ['venue_open_covers', { p_venue_id: ZERO_UUID, p_slot: '["2030-01-01 12:00","2030-01-01 14:00")' }],
+    ['venue_hours_set', { p: {} }],
+    ['venue_validation_decide', { p: {} }],
+    ['table_notif_data', { p_reservation_id: ZERO_UUID }],
+    ['table_notify', { p_type: 'TABLE_REMINDER', p_reservation_id: ZERO_UUID, p_to: 'CLIENT', p_extra: {} }],
+    ['table_client_refund_percent', { p_start: '2030-01-01T20:00:00', p_at: '2030-01-01T10:00:00', p_free_hours: 2 }],
+    ['table_venue_lock', { p_venue_id: ZERO_UUID }],
+    ['table_expire_hold', { p_reservation_id: ZERO_UUID }],
+    ['table_reserve', { p: {} }],
+    ['table_payment_create', { p: {} }],
+    ['table_payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
+    ['table_refund_payment', { p_payment_id: ZERO_UUID, p_percent: 100, p_reason: 'TEST' }],
+    ['table_close_apply', { p_reservation_id: ZERO_UUID, p_state: 'ANNULEE_EV', p_origin: 'EVENT_VILLAGE', p_actor: ZERO_UUID, p_reason: 'TEST', p_percent: 0 }],
+    ['table_lock_reservation', { p_reservation_id: ZERO_UUID }],
+    ['table_reservation_cancel', { p: {} }],
+    ['table_reservation_respond', { p: {} }],
+    ['table_reservation_presence', { p: {} }],
+    ['table_onsite_payment_record', { p: {} }],
+    ['table_reservations_tick', {}],
+];
+
+describe('R3 — lot 11a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261123000101… du lot 11a';
+    for (const [fn, args] of LOT11A_RPCS) {
         test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
             const anon = await anonClient().rpc(fn, args);
             assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);

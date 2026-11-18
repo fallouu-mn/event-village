@@ -443,6 +443,16 @@ const INVENTORY: Insertion[] = [
     { k1: 'lot 10a annulation', fn: 'hall_cancel_apply', types: ['HALL_RESERVATION_CANCELLED', 'HALL_RESERVATION_CANCELLED_PRO', 'HALL_PAYMENT_DEADLINE_PASSED'] },
     { k1: 'lot 10a rappel', fn: 'hall_reservations_tick', types: ['HALL_BALANCE_REMINDER'] },
     { k1: 'lot 10a validation', fn: 'hall_validation_decide', types: ['HALL_VALIDATION_DECIDED'] },
+    // Lot 11a (ajout signalé au rapport) : avis du parcours de réservation d'une table, mis en file par les fonctions du
+    // parcours (table_notify) ; établissement soumis par trg_venues_submitted
+    { k1: 'lot 11a réserver', fn: 'table_reserve', types: ['TABLE_RESERVATION_CONFIRMED', 'TABLE_NEW_RESERVATION', 'TABLE_REQUEST_SENT', 'TABLE_REQUEST_TO_ANSWER'] },
+    { k1: 'lot 11a payer', fn: 'table_payment_confirm', types: ['TABLE_RESERVATION_CONFIRMED', 'TABLE_NEW_RESERVATION', 'TABLE_REQUEST_SENT', 'TABLE_REQUEST_TO_ANSWER', 'TABLE_PAYMENT_REFUNDED'] },
+    { k1: 'lot 11a attente', fn: 'table_expire_hold', types: ['TABLE_HOLD_EXPIRED'] },
+    { k1: 'lot 11a fin', fn: 'table_close_apply', types: ['TABLE_REQUEST_REFUSED', 'TABLE_REQUEST_EXPIRED', 'TABLE_RESERVATION_CANCELLED_PRO', 'TABLE_NO_SHOW', 'TABLE_RESERVATION_CANCELLED'] },
+    { k1: 'lot 11a acceptation', fn: 'table_reservation_respond', types: ['TABLE_RESERVATION_CONFIRMED'] },
+    { k1: 'lot 11a rappel', fn: 'table_reservations_tick', types: ['TABLE_REMINDER'] },
+    { k1: 'lot 11a validation', fn: 'venue_validation_decide', types: ['VENUE_VALIDATION_DECIDED'] },
+    { k1: 'lot 11a soumission', trigger: { name: 'trg_venues_submitted', table: 'public.venues' }, types: ['ADMIN_VENUE_SUBMITTED'] },
     { k1: 'sécurité', trigger: { name: 'on_auth_user_password_changed', table: 'auth.users' }, types: ['PASSWORD_CHANGED'] },
     { k1: 'essai push', fn: 'notification_test_push_enqueue', types: ['PUSH_TEST'] },
     // Point d'insertion réel : notif_failed_alert, appelée par notification_outbox_mark et par la reprise des SENDING

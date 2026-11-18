@@ -42,6 +42,7 @@ import {
 } from '@supabase/supabase-js';
 import type { Client } from 'pg';
 import { inRolledBackTransaction, inspect } from '../helpers/db';
+import { tableReservationFixture } from '../helpers/table-fixtures';
 import {
     RECEIVE_TIMEOUT_MS,
     SUBSCRIBE_TIMEOUT_MS,
@@ -127,18 +128,11 @@ async function createHallReservation(): Promise<string> {
     return String(data.id);
 }
 
+// Lot 11a (modification signalée au rapport) : une réservation de table ne s'écrit plus directement ; préparation par
+// l'aide commune (établissement, table, réservation avec acompte de 5 000 F × 2)
 async function createTableReservation(): Promise<string> {
-    const { data: table, error: tableErr } = await service.from('restaurant_tables').insert({
-        partner_id: partnerA.partnerId, table_number: `T-${randomUUID().slice(0, 8)}`, capacity: 4, is_active: true,
-    }).select('id').single();
-    assert.equal(tableErr, null, `table : ${tableErr?.message}`);
-    const { data, error } = await service.from('table_reservations').insert({
-        partner_id: partnerA.partnerId, table_id: table.id, client_id: clientA.userId,
-        reservation_date: futureDate(), reservation_time: '20:00:00', guest_count: 2,
-        deposit_amount: 10_000, is_platform_payment: true, status: 'EN_ATTENTE', payment_status: 'PENDING',
-    }).select('id').single();
-    assert.equal(error, null, `réservation de table : ${error?.message}`);
-    return String(data.id);
+    const f = await tableReservationFixture({ partnerId: partnerA.partnerId, clientId: clientA.userId, date: futureDate(), depositPerPerson: 5_000 });
+    return f.reservationId;
 }
 
 // ── Actions reproductibles ─────────────────────────────────────────────────

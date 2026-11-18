@@ -52,6 +52,7 @@ import { NextRequest } from 'next/server';
 import { loadFixtures } from '../helpers/fixtures';
 import { callMiddleware } from '../helpers/middleware';
 import { isModuleNotFound } from '../helpers/notification-invariants';
+import { tableReservationFixture } from '../helpers/table-fixtures';
 import { BASE_URL } from './helpers';
 import { createSaleEvent, importModule, newBuyer, service, type Buyer } from './paiement-helpers';
 import { newPartner, superadminId, type TestPartner } from './finance-helpers';
@@ -74,6 +75,7 @@ let client: Buyer;
 let suspended: Buyer;
 let hallId = '';
 let tableId = '';
+let venueId = '';
 let productId = '';
 let dayOffset = 70;
 
@@ -99,8 +101,17 @@ before(async () => {
     const { data: decided, error: decErr } = await service.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: hallId, decision: 'VALIDER' } });
     assert.equal(decErr, null, `validation de la salle : ${decErr?.message}`);
     assert.equal((decided as { ok?: boolean }).ok, true, `validation de la salle : ${JSON.stringify(decided)}`);
+    // Lot 11a (modification signalée au rapport) : une table appartient à un établissement validé par l'administration
+    const { data: venue, error: venueErr } = await service.from('venues').insert({
+        partner_id: partner.partnerId, name: `TEST Restaurant interrupteur ${randomUUID().slice(0, 8)}`, city: 'Dakar',
+    }).select('id').single();
+    assert.equal(venueErr, null, `établissement : ${venueErr?.message}`);
+    venueId = venue.id;
+    const { data: vDecided, error: vDecErr } = await service.rpc('venue_validation_decide', { p: { actor_id: await superadminId(), venue_id: venueId, decision: 'VALIDER' } });
+    assert.equal(vDecErr, null, `validation de l'établissement : ${vDecErr?.message}`);
+    assert.equal((vDecided as { ok?: boolean }).ok, true, `validation de l'établissement : ${JSON.stringify(vDecided)}`);
     const { data: table, error: tableErr } = await service.from('restaurant_tables').insert({
-        partner_id: partner.partnerId, table_number: `T-INT-${randomUUID().slice(0, 8)}`, capacity: 6, is_active: true,
+        partner_id: partner.partnerId, venue_id: venueId, table_number: `T-INT-${randomUUID().slice(0, 8)}`, capacity: 6, is_active: true,
     }).select('id').single();
     assert.equal(tableErr, null, `table : ${tableErr?.message}`);
     tableId = table.id;
@@ -184,7 +195,8 @@ const PROTECTED_POSTS: ProtectedPost[] = [
     },
     {
         label: 'POST /api/restaurants/reserve-table', mod: '../../app/api/restaurants/reserve-table/route', path: '/api/restaurants/reserve-table', table: 'table_reservations', flag: 'tables',
-        body: () => ({ partnerId: partner.partnerId, reservationDate: futureDate(), reservationTime: '20:00', guestCount: 2, isPlatformPayment: true }),
+        // Lot 11a : corps de la route réécrite (établissement, date, heure, personnes)
+        body: () => ({ venueId, date: futureDate(), time: '20:00', guests: 2 }),
     },
     {
         label: 'POST /api/orders/create', mod: '../../app/api/orders/create/route', path: '/api/orders/create', table: 'orders', flag: 'orders',
@@ -198,8 +210,9 @@ const PUBLIC_GETS: PublicGet[] = [
     { label: 'GET /api/halls', mod: '../../app/api/halls/route', path: () => '/api/halls', flag: 'halls', expectId: () => hallId },
     { label: 'GET /api/halls/[id]', mod: '../../app/api/halls/[id]/route', path: () => `/api/halls/${hallId}`, params: () => ({ id: hallId }), flag: 'halls', expectId: () => hallId },
     {
-        label: 'GET /api/restaurants/[id]/tables', mod: '../../app/api/restaurants/[id]/tables/route', path: () => `/api/restaurants/${partner.partnerId}/tables`,
-        params: () => ({ id: partner.partnerId }), flag: 'tables', expectId: () => tableId,
+        // Lot 11a : [id] est l'établissement (et non plus la partenaire)
+        label: 'GET /api/restaurants/[id]/tables', mod: '../../app/api/restaurants/[id]/tables/route', path: () => `/api/restaurants/${venueId}/tables`,
+        params: () => ({ id: venueId }), flag: 'tables', expectId: () => tableId,
     },
     {
         label: 'GET /api/restaurants/[id]/menu', mod: '../../app/api/restaurants/[id]/menu/route', path: () => `/api/restaurants/${partner.partnerId}/menu`,
@@ -222,7 +235,10 @@ const PARTNER_HANDLERS: PartnerHandler[] = [
     { file: 'app/api/partner/tables/[id]/route.ts', method: 'PATCH', flag: 'tables', path: '/api/partner/tables/:id', withId: true },
     { file: 'app/api/partner/tables/[id]/route.ts', method: 'DELETE', flag: 'tables', path: '/api/partner/tables/:id', withId: true },
     { file: 'app/api/partner/tables/reservations/route.ts', method: 'GET', flag: 'tables', path: '/api/partner/tables/reservations', withId: false },
-    { file: 'app/api/partner/tables/reservations/route.ts', method: 'POST', flag: 'tables', path: '/api/partner/tables/reservations', withId: false },
+    // Lot 11a : plus de création de réservation par la partenaire (POST retiré) ; établissements ajoutés
+    { file: 'app/api/partner/venues/route.ts', method: 'GET', flag: 'tables', path: '/api/partner/venues', withId: false },
+    { file: 'app/api/partner/venues/route.ts', method: 'POST', flag: 'tables', path: '/api/partner/venues', withId: false },
+    { file: 'app/api/partner/venues/[id]/route.ts', method: 'PATCH', flag: 'tables', path: '/api/partner/venues/:id', withId: true },
     { file: 'app/api/partner/tables/reservations/[id]/route.ts', method: 'PATCH', flag: 'tables', path: '/api/partner/tables/reservations/:id', withId: true },
     { file: 'app/api/partner/tables/reservations/[id]/route.ts', method: 'DELETE', flag: 'tables', path: '/api/partner/tables/reservations/:id', withId: true },
     { file: 'app/api/partner/orders/route.ts', method: 'GET', flag: 'orders', path: '/api/partner/orders', withId: false },
@@ -416,11 +432,8 @@ describe('Interrupteurs — 3. fermés : 404 propre, ordre session puis interrup
             total_amount: 50_000, deposit_amount: 15_000, balance_amount: 35_000, status: 'EN_ATTENTE', payment_status: 'PENDING',
         }).select('id').single();
         assert.equal(resaErr, null, `réservation de salle : ${resaErr?.message}`);
-        const { data: tresa, error: tresaErr } = await service.from('table_reservations').insert({
-            partner_id: partner.partnerId, table_id: tableId, client_id: payer.userId, reservation_date: futureDate(), reservation_time: '20:00:00',
-            guest_count: 2, deposit_amount: 10_000, is_platform_payment: true, status: 'EN_ATTENTE', payment_status: 'PENDING',
-        }).select('id').single();
-        assert.equal(tresaErr, null, `réservation de table : ${tresaErr?.message}`);
+        // Lot 11a : une réservation de table ne s'écrit plus directement (aide commune)
+        const tresa = { id: (await tableReservationFixture({ partnerId: partner.partnerId, clientId: payer.userId, date: futureDate(), depositPerPerson: 5_000 })).reservationId };
         const { data: order, error: orderErr } = await service.from('orders').insert({
             order_number: `CMD-INT-${randomUUID()}`, client_id: payer.userId, partner_id: partner.partnerId, subtotal: 4_000, total_amount: 4_000,
             paid_amount: 0, balance_amount: 4_000, payment_type: 'INTEGRAL', delivery_mode: 'RETRAIT', order_status: 'EN_ATTENTE', payment_status: 'PENDING',
@@ -484,7 +497,7 @@ describe('Interrupteurs — 4. ouverts : comportement actuel ; middleware', () =
     });
 
     test('middleware : GET publics des services et /api/features sans session (D11) ; /api/orders protégé', async () => {
-        const publicPaths = ['/api/features', '/api/halls', `/api/halls/${hallId}`, `/api/restaurants/${partner.partnerId}/tables`, `/api/restaurants/${partner.partnerId}/menu`];
+        const publicPaths = ['/api/features', '/api/halls', `/api/halls/${hallId}`, `/api/restaurants/${venueId}/tables`, `/api/restaurants/${partner.partnerId}/menu`];
         const blocked: string[] = [];
         for (const p of publicPaths) {
             const r = await callMiddleware(p, []);

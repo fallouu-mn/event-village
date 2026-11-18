@@ -34,6 +34,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { assertLot9terInvariants } from '../helpers/lot9ter-invariants';
+import { tableReservationFixture } from '../helpers/table-fixtures';
 import { MINIMAL_PDF, STRONG_PASSWORD } from './helpers';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { newPartner, superadminId, type TestPartner } from './finance-helpers';
@@ -188,17 +189,8 @@ before(async () => {
     assert.equal(hrErr, null, `réservation de salle : ${hrErr?.message}`);
     hallReservationId = String(hr.id);
 
-    const { data: table, error: tableErr } = await service.from('restaurant_tables').insert({
-        partner_id: p2.partnerId, table_number: `T-${randomUUID().slice(0, 8)}`, capacity: 4, is_active: true,
-    }).select('id').single();
-    assert.equal(tableErr, null, `table : ${tableErr?.message}`);
-    const { data: tr, error: trErr } = await service.from('table_reservations').insert({
-        partner_id: p2.partnerId, table_id: table.id, client_id: client.userId,
-        reservation_date: futureDate(), reservation_time: '20:00:00', guest_count: 2,
-        deposit_amount: 10_000, is_platform_payment: true, status: 'EN_ATTENTE', payment_status: 'PENDING',
-    }).select('id').single();
-    assert.equal(trErr, null, `réservation de table : ${trErr?.message}`);
-    tableReservationId = String(tr.id);
+    // Lot 11a (modification signalée au rapport) : une réservation de table ne s'écrit plus directement (aide commune)
+    tableReservationId = (await tableReservationFixture({ partnerId: p2.partnerId, clientId: client.userId, date: futureDate(), depositPerPerson: 5_000 })).reservationId;
 
     const { data: product, error: prodErr } = await service.from('products').insert({
         partner_id: pEA.partnerId, name: `TEST Plat 9 ter ${randomUUID().slice(0, 8)}`, price: 3000, status: 'DISPONIBLE',
