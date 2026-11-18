@@ -233,7 +233,7 @@ describe('1.5 bis Commission de 10 % et parrainage (transaction annulée)', () =
             const tag = `CV10A-${Date.now()}`;
             const created = (await one<{ r: Row }>(`SELECT public.hall_payment_create($1::jsonb) AS r`, [JSON.stringify({
                 client_id: client.userId, reservation_id: q.reservation_id, part: 'ACOMPTE', operator: 'WAVE', payer_phone: client.phone9,
-                transaction_id: `TX-${tag}`, external_order_id: `ORD-${tag}`, callback_token_hash: 'x' })])).r;
+                transaction_id: `TX-${tag}`, external_order_id: `ORD-${tag}`, callback_token_hash: 'a'.repeat(64) })])).r;
             const confirm = (await one<{ r: Row }>(`SELECT public.hall_payment_confirm($1::uuid, 'WEBHOOK') AS r`, [created.payment_id])).r;
             const pay = await one(`SELECT amount, facial_amount, service_fee, partner_payout_amount, aggregator_fee, net_event_village_revenue
                                      FROM public.payments WHERE id = $1`, [created.payment_id]);
