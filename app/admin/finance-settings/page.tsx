@@ -19,7 +19,7 @@
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
-import { Bell, History, Pencil, RefreshCw, Save, ScanLine, ToggleRight, Wallet, X } from 'lucide-react';
+import { Bell, Building2, History, Pencil, RefreshCw, Save, ScanLine, ToggleRight, Wallet, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -109,6 +109,18 @@ const META: Record<string, SettingMeta> = {
   'support.whatsapp': { label: 'Numéro WhatsApp du support', help: 'Format international, par exemple +221771234567. Laissez vide si aucun. Au moins un moyen de contact est exigé avant une séance réelle.', kind: 'text' },
   'support.phone': { label: 'Téléphone du support', help: 'Format international, par exemple +221338000000. Laissez vide si aucun.', kind: 'text' },
   'support.email': { label: 'Email du support', help: 'Adresse lue par l’équipe du support. Laissez vide si aucune.', kind: 'text' },
+  // Lot 10a : réservation de salles (libellés identiques à lib/settings/catalog.ts)
+  'halls.service_fee_rate': { label: 'Frais de service des salles', help: 'Payés par le client en plus du prix de la salle, arrondis au franc CFA supérieur. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'halls.commission_rate': { label: 'Commission sur le prix des salles', help: 'Part du prix de la salle gardée par Event Village. 0 % au lancement. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'halls.deposit_default_percent': { label: 'Acompte par défaut', help: 'Part du prix de la salle payée à la réservation quand la salle n’a pas choisi son acompte. Entier de 1 à 100.', kind: 'integer', unit: '%' },
+  'halls.balance_due_days': { label: 'Solde à payer au plus tard avant la date', help: 'Nombre de jours avant la date de la réservation. Plus proche de la date, la réservation se paie en une fois. Entier de 1 à 60.', kind: 'integer', unit: 'jours' },
+  'halls.hold_minutes': { label: 'Durée de garde d’une réservation non payée', help: 'Temps pendant lequel la date est tenue pour le client qui paie. Ensuite, elle est rendue. Entier de 5 à 60.', kind: 'integer', unit: 'min' },
+  'halls.validation_required': { label: 'Validation des salles', help: 'Activé : une nouvelle salle n’est visible qu’après validation par l’administration.', kind: 'boolean' },
+  'halls.cancel_partial_percent': { label: 'Part remboursée dans la tranche intermédiaire', help: 'Part de ce que le client a payé qui lui est rendue entre les deux seuils d’une règle d’annulation. Entier de 1 à 99.', kind: 'integer', unit: '%' },
+  'halls.cancel_souple_full_days': { label: 'Règle souple : remboursement total jusqu’à', help: 'Jours avant la date. Plus tard, le client récupère la part intermédiaire.', kind: 'integer', unit: 'jours' },
+  'halls.cancel_moderee_full_days': { label: 'Règle modérée : remboursement total jusqu’à', help: 'Jours avant la date.', kind: 'integer', unit: 'jours' },
+  'halls.cancel_moderee_partial_days': { label: 'Règle modérée : remboursement partiel jusqu’à', help: 'Jours avant la date. Plus tard, rien n’est remboursé.', kind: 'integer', unit: 'jours' },
+  'halls.cancel_stricte_partial_days': { label: 'Règle stricte : remboursement partiel jusqu’à', help: 'Jours avant la date. Plus tard, rien n’est remboursé.', kind: 'integer', unit: 'jours' },
   'features.orders_enabled': { label: 'Commandes de repas', help: 'Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés.', kind: 'boolean' },
 };
 
@@ -123,6 +135,8 @@ const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: Lucid
   { prefix: 'support.', title: 'Contact du support', help: 'Moyens de joindre le support, affichés sur la page publique Aide et dans les messages de sécurité. Au moins un est exigé avant une séance réelle.', icon: Bell },
   { prefix: 'notif.', title: 'Notifications', help: 'Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels, alerte sur les SMS indispensables et rappels des billets gratuits.', icon: Bell },
   // Lot 9 quater (B1 : E-08, AUD-22, G-01) : les trois services ne sont pas prêts pour le public (paiements non audités)
+  // Lot 10a : réglages de la réservation de salles (service fermé tant que son interrupteur l'est)
+  { prefix: 'halls.', title: 'Salles de fête', help: 'Frais, acompte, délais de paiement, règles d’annulation et validation des salles.', icon: Building2 },
   { prefix: 'features.', title: 'Services en préparation', help: 'Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER.', icon: ToggleRight },
 ];
 

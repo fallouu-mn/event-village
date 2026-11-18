@@ -15,6 +15,8 @@ export const SETTING_SECTIONS: ReadonlyArray<{ prefix: string; anchor: string; t
     { prefix: 'support.', anchor: 'support', title: 'Contact du support' },
     { prefix: 'notif.', anchor: 'notifications', title: 'Notifications et SMS' },
     { prefix: 'features.', anchor: 'services', title: 'Services en préparation' },
+    // Lot 10a : réservation de salles (prix, acompte, délais, annulation, validation)
+    { prefix: 'halls.', anchor: 'salles', title: 'Salles de fête' },
 ];
 
 export interface SettingBounds {
@@ -55,6 +57,17 @@ export const SETTING_BOUNDS: Readonly<Record<string, SettingBounds>> = {
     'notif.sms_quiet_end': int(0, 23, 'Fin de la plage sans SMS', 'h'),
     'notif.sms_optional_daily_cap': int(0, 1_000_000, 'Plafond quotidien des SMS optionnels', 'SMS'),
     'notif.sms_essential_daily_alert': int(1, 1_000_000, 'Seuil d’alerte des SMS indispensables du jour', 'SMS'),
+    // Lot 10a : réservation de salles (bornes identiques à fin_setting_valid, migration 20261122000001)
+    'halls.service_fee_rate': rate(0, 50, 'Frais de service des salles'),
+    'halls.commission_rate': rate(0, 50, 'Commission sur le prix des salles'),
+    'halls.deposit_default_percent': int(1, 100, 'Acompte par défaut', '%'),
+    'halls.balance_due_days': int(1, 60, 'Solde à payer au plus tard avant la date', 'jours'),
+    'halls.hold_minutes': int(5, 60, 'Durée de garde d’une réservation non payée', 'min'),
+    'halls.cancel_partial_percent': int(1, 99, 'Part remboursée dans la tranche intermédiaire', '%'),
+    'halls.cancel_souple_full_days': int(1, 365, 'Règle souple : remboursement total jusqu’à', 'jours'),
+    'halls.cancel_moderee_full_days': int(1, 365, 'Règle modérée : remboursement total jusqu’à', 'jours'),
+    'halls.cancel_moderee_partial_days': int(1, 365, 'Règle modérée : remboursement partiel jusqu’à', 'jours'),
+    'halls.cancel_stricte_partial_days': int(1, 365, 'Règle stricte : remboursement partiel jusqu’à', 'jours'),
 };
 
 /** Nombre écrit à la française, sans unité : « 1 000 000 », « 1,5 ». */
