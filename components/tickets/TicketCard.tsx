@@ -35,7 +35,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { QRCodeSVG } from 'qrcode.react';
+import { QRCodeSVG as QRCodeSVGBase } from 'qrcode.react';
 import {
   Share2,
   Download,
@@ -72,6 +72,10 @@ import { getOfflineLot, hasCachedOfflineShell, OFFLINE_SHELL_PATH, updateLotCloc
 import { ensureOfflineLot, OFFLINE_LOTS_CHANGED, requestOfflineShell } from '@/components/tickets/OfflineTicketsSync';
 import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBadge';
 import { categoryClasses, countdownLabel } from '@/components/tickets/wallet';
+
+// Design 1b (run 374, temps de blocage de « Mes billets ») : la carte se redessine chaque seconde (compte à rebours du code) ;
+// le QR n'est recalculé que si son contenu change.
+const QRCodeSVG = React.memo(QRCodeSVGBase);
 
 /** Design 1b (point 8) : QR en grand chargé seulement au toucher du QR (hors du premier chargement de Mes billets). */
 const QrFullscreen = dynamic(() => import('@/components/tickets/QrFullscreen').then((m) => m.QrFullscreen), { ssr: false });

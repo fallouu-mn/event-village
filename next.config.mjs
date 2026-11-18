@@ -69,6 +69,10 @@ const nextConfig = {
   // web-push (lot 6, chiffrement du push) est chargé par Node tel quel, sans passer par webpack (Next 15 :
   // experimental.serverComponentsExternalPackages devient serverExternalPackages).
   serverExternalPackages: ['web-push'],
+  // Design 1b (point 1, run 374) : CSS de l'application écrit dans la page (<style>) au lieu de deux feuilles qui bloquaient
+  // le premier affichage (≈ 300 ms chacune en 4G simulée, audit Lighthouse render-blocking). Permis par la politique de
+  // sécurité (style-src 'self' 'unsafe-inline') ; la police citée reste découverte par le service worker (public/sw.js).
+  experimental: { inlineCss: true },
   poweredByHeader: false,
   compress: true,
   images: {
