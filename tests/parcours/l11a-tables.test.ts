@@ -29,6 +29,8 @@ import { PATCH as partnerTablePatch, DELETE as partnerTableDelete } from '../../
 import { GET as partnerReservationsGet } from '../../app/api/partner/tables/reservations/route';
 import { GET as menuRoute } from '../../app/api/restaurants/[id]/menu/route';
 import { withFeatureFlags } from './terrain-helpers';
+import { inRolledBackTransaction } from '../helpers/db';
+import { FINANCE_INVARIANT_SQL } from '../helpers/finance-invariants';
 import {
     ALWAYS_OPEN, allChannels, dayFromNow, decideVenue, isoWeekday, ledgerOfPayment, newBuyer, newPartner, newTable, newVenue, newZone,
     openTablesService, outboxOf, payConfirmed, platformSetting, releasePending, reservation, reserveRoute, reserveRpc, setHours,
@@ -682,6 +684,73 @@ describe('Relance d’une attente échue : tous les contrôles refaits', () => {
         const row = await reservation(id);
         assert.notEqual(row.booking_state, 'CONFIRMEE');
         assert.equal(n(row.paid_amount), 0);
+    });
+});
+
+describe('Contre-vérification de la 10a (T5, T6), équivalent côté tables', () => {
+    test('T5 : deux demandes simultanées du même client dans deux établissements, 2 déjà en attente : une seule passe (verrou par client)', async () => {
+        const racer = await newBuyer('l11a-course-client');
+        const manual = await newVenue(partner, { confirmation_mode: 'MANUELLE' });
+        await newTable(partner, manual, 4);
+        await newTable(partner, manual, 4);
+        for (const time of ['12:00', '14:00']) assert.equal((await reserveRpc(racer, manual, { date: dayFromNow(50), time })).ok, true);
+        const v1 = await newVenue(partner, { confirmation_mode: 'MANUELLE' });
+        const v2 = await newVenue(partner, { confirmation_mode: 'MANUELLE' });
+        await newTable(partner, v1, 4);
+        await newTable(partner, v2, 4);
+        let passed = 0;
+        for (let round = 0; round < 4 && passed <= 1; round += 1) {
+            const [a, b] = await Promise.all([reserveRpc(racer, v1, { date: dayFromNow(51 + round) }), reserveRpc(racer, v2, { date: dayFromNow(51 + round) })]);
+            passed = [a, b].filter((r) => r.ok === true).length;
+            assert.ok(passed <= 1, `tour ${round} : ${JSON.stringify([a.code ?? 'OK', b.code ?? 'OK'])}`);
+            if (passed === 1) break;
+        }
+        const { count } = await service.from('table_reservations').select('id', { count: 'exact', head: true })
+            .eq('client_id', racer.userId).eq('booking_state', 'EN_ATTENTE_ACCEPTATION');
+        assert.equal(count, 3, 'jamais plus de 3 demandes en attente');
+    });
+
+    test('T2 : relancer une attente échue quand le client a déjà 3 demandes en attente → refusé', async () => {
+        const busy = await newBuyer('l11a-relance-plein');
+        const paid = await newVenue(partner, { deposit_per_person: 2_000 });
+        await newTable(partner, paid, 4);
+        const expired = String((await reserveRpc(busy, paid, { date: dayFromNow(55) })).reservation_id);
+        await shiftReservation(expired, { holdMinutes: -1 });
+        const manual = await newVenue(partner, { confirmation_mode: 'MANUELLE' });
+        for (let i = 0; i < 3; i += 1) await newTable(partner, manual, 4);
+        for (const time of ['12:00', '14:00', '16:00']) assert.equal((await reserveRpc(busy, manual, { date: dayFromNow(56), time })).ok, true);
+        const r = await startPayment(busy, expired);
+        assert.deepEqual([r.status, r.body.code], [429, 'TOO_MANY_PENDING'], JSON.stringify(r.body));
+        assert.equal(r.payment, null, 'aucun paiement créé');
+    });
+
+    test('T6 : commission de 10 % sur une table (transaction annulée) : invariant (d) respecté, relevé admin avec la commission', async () => {
+        const payer = await newBuyer('l11a-commission');
+        const venue = await newVenue(partner, { deposit_per_person: 5_000 });
+        await newTable(partner, venue, 4);
+        const out = await inRolledBackTransaction(async (c) => {
+            const one = async (q: string, params: unknown[] = []): Promise<Row> => (await c.query<Row>(q, params)).rows[0];
+            await c.query(`UPDATE public.platform_settings SET value = '{"value": 10}'::jsonb WHERE key = 'tables.commission_rate'`);
+            const q = (await one(`SELECT public.table_reserve($1::jsonb) AS r`,
+                [JSON.stringify({ client_id: payer.userId, venue_id: venue, date: dayFromNow(57), time: '20:00', guests: 4 })])).r as Row;
+            const tag = `L11A-${Date.now()}`;
+            const created = (await one(`SELECT public.table_payment_create($1::jsonb) AS r`, [JSON.stringify({
+                client_id: payer.userId, reservation_id: q.reservation_id, operator: 'WAVE', payer_phone: payer.phone9,
+                transaction_id: `TX-${tag}`, external_order_id: `ORD-${tag}`, callback_token_hash: 'b'.repeat(64) })])).r as Row;
+            await one(`SELECT public.table_payment_confirm($1::uuid, 'WEBHOOK') AS r`, [created.payment_id]);
+            const pay = await one(`SELECT amount, facial_amount, service_fee, partner_payout_amount, gross_event_village_revenue, aggregator_fee, net_event_village_revenue
+                                     FROM public.payments WHERE id = $1`, [created.payment_id]);
+            const violations = (await c.query<Row>(FINANCE_INVARIANT_SQL)).rows.filter((v) => v.objet === created.payment_id);
+            const list = (await one(`SELECT public.finance_admin_payments('{"limit": 100}'::jsonb) AS r`)).r as { items: Row[] };
+            const item = list.items.find((i) => i.id === created.payment_id);
+            return { pay, violations, item };
+        });
+        const pay = out.pay as Row;
+        assert.deepEqual([n(pay.amount), n(pay.facial_amount), n(pay.service_fee), n(pay.partner_payout_amount), n(pay.gross_event_village_revenue), n(pay.aggregator_fee), n(pay.net_event_village_revenue)],
+            [21_000, 20_000, 1_000, 18_000, 3_000, 315, 2_685]);
+        assert.deepEqual(out.violations, [], `invariant financier violé : ${JSON.stringify(out.violations)}`);
+        assert.ok(out.item, 'paiement absent du relevé');
+        assert.deepEqual([n((out.item as Row).commission), n((out.item as Row).discrepancy)], [2_000, 0]);
     });
 });
 
