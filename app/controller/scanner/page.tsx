@@ -97,7 +97,7 @@ import type { ShiftSummary } from '@/lib/shifts/shift.service';
 const ConfirmDialog = dynamic(() => import('@/components/ui/ConfirmDialog').then((m) => m.ConfirmDialog), { ssr: false });
 const Select = dynamic(() => import('@/components/ui/Field').then((m) => m.Select), {
     ssr: false,
-    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du réglage…</p>,
+    loading: () => <p role="status" className="text-sm text-muted-foreground">Chargement du réglage…</p>,
 });
 // Caisse et guichet chargés à la demande : ni la caisse ni le guichet ne pèsent sur l'ouverture du scanner
 const OpenShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.OpenShiftModal), { ssr: false });
@@ -107,16 +107,16 @@ const ZSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').th
 // session (A10) tient dans le budget de poids du scanner (7.5) sans retarder le passage en saisie manuelle
 const ManualEntryForm = dynamic(() => import('@/components/scan/ManualEntryForm').then((m) => m.ManualEntryForm), {
     ssr: false,
-    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement de la saisie manuelle…</p>,
+    loading: () => <p role="status" className="text-sm text-muted-foreground">Chargement de la saisie manuelle…</p>,
 });
 // Lot 9 ter (9t.17) : liste des invités chargée à la demande (hors du budget de poids du scanner)
 const GuestListPanel = dynamic(() => import('@/components/scan/GuestListPanel').then((m) => m.GuestListPanel), {
     ssr: false,
-    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement de la liste des invités…</p>,
+    loading: () => <p role="status" className="text-sm text-muted-foreground">Chargement de la liste des invités…</p>,
 });
 const CounterSalePanel = dynamic(() => import('@/components/scan/CounterSalePanel').then((m) => m.CounterSalePanel), {
     ssr: false,
-    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du guichet…</p>,
+    loading: () => <p role="status" className="text-sm text-muted-foreground">Chargement du guichet…</p>,
 });
 // Caméra (double décodeur), résultat plein écran et bandeau de caisse : absents de l'écran de départ, donc hors du
 // premier chargement (7.5), et préchargés au montage de la page, avant le départ du contrôle et avant le premier
@@ -911,8 +911,8 @@ export default function ControllerScannerPage() {
             // Design 1b : `data-ev-hold-warm` retient les préchargements accessoires (toasts, barre de navigation) jusqu'à
             // l'écran de départ (lib/ui/warm-when-idle.ts ; JavaScript avant l'affichage utile, e2e/perf.spec.ts)
             <div {...{ [HOLD_WARM_ATTR]: '' }} className="flex flex-col items-center justify-center gap-3 py-20" role="status" aria-busy="true">
-                <Loader2 size={32} aria-hidden="true" className="text-brand-fg motion-safe:animate-spin" />
-                <p className="text-sm text-fg-muted">Chargement de vos événements…</p>
+                <Loader2 size={32} aria-hidden="true" className="text-primary-text motion-safe:animate-spin" />
+                <p className="text-sm text-muted-foreground">Chargement de vos événements…</p>
             </div>
         );
     }
@@ -934,13 +934,13 @@ export default function ControllerScannerPage() {
     if (assignments.length === 0) {
         return (
             <>
-                <div className="flex flex-col items-center gap-4 rounded-3xl border border-dashed border-border bg-surface px-6 py-12 text-center">
-                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                <div className="flex flex-col items-center gap-4 rounded-3xl border border-dashed border-border bg-card px-6 py-12 text-center">
+                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
                         <Calendar size={28} />
                     </span>
                     <div className="flex flex-col gap-1">
-                        <h1 className="text-lg font-semibold text-fg">Aucun événement assigné</h1>
-                        <p className="mx-auto max-w-sm text-sm leading-relaxed text-fg-muted">
+                        <h1 className="text-lg font-semibold text-foreground-strong">Aucun événement assigné</h1>
+                        <p className="mx-auto max-w-sm text-sm leading-relaxed text-muted-foreground">
                             Vous serez informé lorsqu’un nouvel événement vous sera assigné.
                         </p>
                     </div>
@@ -1056,13 +1056,13 @@ export default function ControllerScannerPage() {
                     ) : (
                         // Repli (caméra préchargée pas encore arrivée) : même cadre que la caméra, aucun décalage
                         <div role="status" aria-busy="true"
-                            className="mx-auto flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-3 rounded-3xl border-2 border-border-strong bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
+                            className="mx-auto flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-3 rounded-3xl border-2 border-input bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
                             <Loader2 size={32} aria-hidden="true" className="motion-safe:animate-spin" />
                             <p className="text-base font-semibold">Préparation de la caméra…</p>
                         </div>
                     ))}
                     {!guestOpen && inputMode === 'manual' && (
-                        <div className="relative flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
+                        <div className="relative flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
                             {pendingLayer && <div className="relative min-h-40 overflow-hidden rounded-2xl">{pendingLayer}</div>}
                             <ManualEntryForm
                                 eventId={selected.events.id}
@@ -1083,7 +1083,7 @@ export default function ControllerScannerPage() {
                     )}
 
                     {ignoredNotice && (
-                        <p role="status" className="rounded-xl border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-fg">
+                        <p role="status" className="rounded-xl border border-input bg-card px-3 py-2 text-sm font-semibold text-foreground-strong">
                             {ignoredNotice}
                         </p>
                     )}
@@ -1117,7 +1117,7 @@ export default function ControllerScannerPage() {
                             <Button variant="secondary" size="lg" fullWidth leftIcon={<Users size={18} />} disabled={!online} onClick={() => setGuestOpen(true)}>
                                 Liste des invités
                             </Button>
-                            {!online && <p className="text-sm text-fg-muted">Hors ligne : la liste des invités reprendra au retour du réseau.</p>}
+                            {!online && <p className="text-sm text-muted-foreground">Hors ligne : la liste des invités reprendra au retour du réseau.</p>}
                         </div>
                     )}
                 </>
@@ -1132,9 +1132,9 @@ export default function ControllerScannerPage() {
                 error={statsError}
             />
 
-            <details className="rounded-2xl border border-border bg-surface" onToggle={(e) => setSettingsOpen(e.currentTarget.open)}>
-                <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-4 text-base font-semibold text-fg">
-                    <Settings2 size={18} aria-hidden="true" className="text-fg-muted" />
+            <details className="rounded-2xl border border-border bg-card" onToggle={(e) => setSettingsOpen(e.currentTarget.open)}>
+                <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-4 text-base font-semibold text-foreground-strong">
+                    <Settings2 size={18} aria-hidden="true" className="text-muted-foreground" />
                     Réglages de cet appareil
                 </summary>
                 <div className="px-4 pb-4">
@@ -1168,7 +1168,7 @@ export default function ControllerScannerPage() {
                     onCloseShiftClick={() => setShowCloseShift(true)}
                 />
             ) : (
-                <p role="status" className="text-sm text-fg-muted">Chargement de la caisse…</p>
+                <p role="status" className="text-sm text-muted-foreground">Chargement de la caisse…</p>
             )}
         </div>
     );
