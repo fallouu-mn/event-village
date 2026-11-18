@@ -219,10 +219,13 @@ BEGIN
        AND NOT EXISTS (SELECT 1 FROM public.venues v WHERE v.id = NEW.venue_id AND v.partner_id = NEW.partner_id) THEN
         RAISE EXCEPTION 'Cet établissement n''est pas le vôtre.';
     END IF;
-    IF TG_TABLE_NAME = 'restaurant_tables' AND NEW.zone_id IS NOT NULL THEN
-        SELECT z.venue_id, z.partner_id INTO v_zone FROM public.restaurant_zones z WHERE z.id = NEW.zone_id;
-        IF NOT FOUND OR v_zone.partner_id <> NEW.partner_id OR v_zone.venue_id IS DISTINCT FROM NEW.venue_id THEN
-            RAISE EXCEPTION 'Cette zone n''appartient pas à cet établissement.';
+    -- Deux IF imbriqués : une zone n'a pas de colonne zone_id (pas d'évaluation court-circuitée en PL/pgSQL)
+    IF TG_TABLE_NAME = 'restaurant_tables' THEN
+        IF NEW.zone_id IS NOT NULL THEN
+            SELECT z.venue_id, z.partner_id INTO v_zone FROM public.restaurant_zones z WHERE z.id = NEW.zone_id;
+            IF NOT FOUND OR v_zone.partner_id <> NEW.partner_id OR v_zone.venue_id IS DISTINCT FROM NEW.venue_id THEN
+                RAISE EXCEPTION 'Cette zone n''appartient pas à cet établissement.';
+            END IF;
         END IF;
     END IF;
     RETURN NEW;

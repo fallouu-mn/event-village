@@ -63,7 +63,7 @@ const EXPECTED_JOBS: ExpectedJob[] = [
     { jobname: 'ev_moratoriums', schedule: '27 * * * *', path: '/api/cron/moratoriums', timeoutMs: 60_000 },
     { jobname: 'ev_referral_commissions', schedule: '37 * * * *', path: '/api/cron/referral-commissions', timeoutMs: 60_000 },
     // Lot 11a (modification signalée au rapport) : réservations de table, toutes les 5 minutes
-    { jobname: 'ev_tables', schedule: '4-59/5 * * * *', path: '/api/cron/tables', timeoutMs: 60_000 },
+    { jobname: 'ev_tables', schedule: '3-59/5 * * * *', path: '/api/cron/tables', timeoutMs: 60_000 },
     { jobname: 'ev_cron_history_purge', schedule: '30 3 * * *', path: null, timeoutMs: null },
 ];
 

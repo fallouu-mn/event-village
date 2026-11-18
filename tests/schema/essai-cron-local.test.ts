@@ -59,7 +59,7 @@ const EXPECTED: CronTask[] = [
     { name: 'ev_moratoriums', expr: '27 * * * *', route: '/api/cron/moratoriums', timeoutMs: 60000 },
     { name: 'ev_referral_commissions', expr: '37 * * * *', route: '/api/cron/referral-commissions', timeoutMs: 60000 },
     // Lot 11a (modification signalée au rapport) : réservations de table, toutes les 5 minutes
-    { name: 'ev_tables', expr: '4-59/5 * * * *', route: '/api/cron/tables', timeoutMs: 60000 },
+    { name: 'ev_tables', expr: '3-59/5 * * * *', route: '/api/cron/tables', timeoutMs: 60000 },
 ];
 
 const TUNNEL = 'https://mot-mot-mot-mot.trycloudflare.com';
