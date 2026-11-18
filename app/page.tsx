@@ -190,7 +190,7 @@ export default async function HomePage() {
 
           {/* 4. Cette semaine */}
           {data.sections.week.total > 0 && (
-            <section aria-labelledby="semaine-titre" className="space-y-4">
+            <section aria-labelledby="semaine-titre" className="ev-offscreen space-y-4">
               <SectionHead
                 id="semaine-titre"
                 title="Cette semaine"
@@ -204,7 +204,7 @@ export default async function HomePage() {
 
           {/* 5. Gratuits */}
           {data.sections.free.total > 0 && (
-            <section aria-labelledby="gratuits-titre" className="space-y-4">
+            <section aria-labelledby="gratuits-titre" className="ev-offscreen space-y-4">
               <SectionHead
                 id="gratuits-titre"
                 title="Gratuits"
@@ -218,7 +218,7 @@ export default async function HomePage() {
 
           {/* 6. Par catégorie */}
           {data.sections.byCategory.length > 0 && (
-            <section aria-labelledby="categories-titre" className="space-y-6">
+            <section aria-labelledby="categories-titre" className="ev-offscreen space-y-6">
               <div className="space-y-3">
                 <h2 id="categories-titre" className="text-xl font-bold tracking-tight text-foreground-strong sm:text-2xl">Par catégorie</h2>
                 <ul className="flex flex-wrap gap-2">
@@ -257,7 +257,7 @@ export default async function HomePage() {
       <HomeNearby cities={data?.cities ?? []} />
 
       {/* 8. Comment ça marche */}
-      <section aria-labelledby="fonctionnement-titre" className="space-y-4">
+      <section aria-labelledby="fonctionnement-titre" className="ev-offscreen space-y-4">
         <h2 id="fonctionnement-titre" className="text-xl font-bold tracking-tight text-foreground-strong sm:text-2xl">Comment ça marche</h2>
         <ul className="grid gap-3 sm:grid-cols-3">
           {PROMISES.map((item) => (
@@ -276,7 +276,7 @@ export default async function HomePage() {
 
       {/* 9. Parrainage : taux réels de referral_config, bloc absent sans ligne active */}
       {data?.referral && (
-        <section aria-labelledby="parrainage-titre" className="flex flex-col gap-5 rounded-xl border border-border bg-card p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+        <section aria-labelledby="parrainage-titre" className="ev-offscreen flex flex-col gap-5 rounded-xl border border-border bg-card p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
           <div className="flex items-start gap-4">
             <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
               <Gift size={20} />
@@ -301,7 +301,7 @@ export default async function HomePage() {
       )}
 
       {/* 10. Organisateurs et salles : le seul grand bouton en dégradé de la page */}
-      <section aria-labelledby="organisateurs-titre" className={cn('grid gap-5', data?.hallsEnabled && 'lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]')}>
+      <section aria-labelledby="organisateurs-titre" className={cn('ev-offscreen grid gap-5', data?.hallsEnabled && 'lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]')}>
         <div className="rounded-xl bg-muted p-6 sm:p-10">
           <p className="text-sm font-semibold text-primary-text">Espace organisateur</p>
           <h2 id="organisateurs-titre" className="mt-2 max-w-2xl text-2xl font-bold leading-tight tracking-tight text-foreground-strong sm:text-3xl">
