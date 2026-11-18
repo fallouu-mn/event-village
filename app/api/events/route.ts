@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
-import { CATALOG_SELECT, catalogCities, formatCatalogEvent, type CatalogEventDto, type CatalogRow } from '@/lib/events/catalog.server';
-import { eventEndAt } from '@/lib/events/event-end';
-import { lowStockThreshold } from '@/lib/events/low-stock.server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
-import { foldText } from '@/lib/text/fold';
+import { catalogCities } from '@/lib/events/catalog.server';
+import { applyCatalogFilters, EXPLORE_MAX_PAGE, NO_FILTERS, parseCatalogParams, type CatalogFilterState } from '@/lib/events/catalog-filters';
+import { readCatalogEvents } from '@/lib/events/catalog-read.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +14,10 @@ function failure(err: unknown): NextResponse {
     response.headers.set('Cache-Control', 'no-store');
     return response;
 }
+
+/** Taille de page admise par `pageSize` (12 par défaut, comme l'Explorer). */
+const PAGE_SIZE_DEFAULT = 12;
+const PAGE_SIZE_MAX = 50;
 
 /**
  * GET /api/events — catalogue public (accueil, explorer). Lot 5 (contrat E) :
@@ -31,63 +33,42 @@ function failure(err: unknown): NextResponse {
  * ouverte) ; `saleLabel` et `endFormatted` servis par formatCatalogEvent.
  * Lot 9 bis (ex-10.0 e, B94) : `q` et `city` comparés par foldText (« thies » trouve « Thiès ») ; `cities` dédoublonnée
  * par forme pliée (catalogCities).
- * Lot 9 ter (9t.19, consigne 5, contrat D.2.3) : chaque carte porte `stock` (SOLD_OUT, LOW ou null, seuil
- * access.low_stock_threshold) ; ordre : date de début, puis à date égale les événements complets après ceux en vente,
- * puis l'heure de début, puis l'identifiant. Un événement complet reste listé jusqu'à sa fin.
+ * Lot 9 ter (9t.19, consigne 5, contrat D.2.3) : chaque carte porte `stock` (SOLD_OUT, LOW ou null) ; ordre : date de
+ * début, puis à date égale les événements complets après ceux en vente, puis l'heure de début, puis l'identifiant. Un
+ * événement complet reste listé jusqu'à sa fin. Lecture partagée : lib/events/catalog-read.server.ts.
+ * Design 1b (point 5) : filtres de l'Explorer, même règle que la page (lib/events/catalog-filters.ts) —
+ * `quand` (aujourdhui | weekend | semaine), `gratuit=1`, `tri=prix` ; `category` et `city` gardent leur nom (`categorie`
+ * et `ville` sont aussi lus). `total` = nombre de résultats après filtres. Avec `page` (1 à 30) : seuls les résultats de
+ * cette page (`pageSize`, 12 par défaut, 50 au plus), et `page`, `pageSize` dans la réponse ; sans `page` : tous les
+ * résultats (écrans existants). Réponse jamais mise en cache (temps réel des écrans).
  */
-type Ordered = { row: CatalogRow; dto: CatalogEventDto };
-
-function compareText(a: string, b: string): number {
-    return a < b ? -1 : a > b ? 1 : 0;
-}
-
-/** Lot 9 ter (9t.19) : date de début, complet après en vente, heure de début, identifiant. */
-function catalogOrder(a: Ordered, b: Ordered): number {
-    return compareText(a.row.start_date, b.row.start_date)
-        || Number(a.dto.stock === 'SOLD_OUT') - Number(b.dto.stock === 'SOLD_OUT')
-        || compareText(a.row.start_time ?? '', b.row.start_time ?? '')
-        || compareText(a.row.id, b.row.id);
-}
-
 export async function GET(req: NextRequest) {
     try {
-        const supabase = getServiceRoleClient();
         const { searchParams } = new URL(req.url);
-        // Lot 9 bis (ex-10.0 e, B94) : recherche et ville comparées sur leur forme pliée (accents, casse, espaces).
-        const search = foldText((searchParams.get('q') ?? '').trim().slice(0, 120));
+        const parsed = parseCatalogParams(searchParams);
         const category = searchParams.get('category');
-        const city = foldText(searchParams.get('city') ?? '');
+        const city = (searchParams.get('city') ?? '').trim();
+        const filters: CatalogFilterState = {
+            ...NO_FILTERS,
+            ...parsed,
+            categorie: category && category !== 'ALL' ? category : parsed.categorie,
+            ville: city && city.toLowerCase() !== 'all' ? city : parsed.ville,
+        };
 
-        const { data: events, error } = await supabase
-            .from('events')
-            .select(CATALOG_SELECT)
-            .eq('status', 'PUBLIE')
-            .order('start_date', { ascending: true });
-
-        if (error) return failure(error);
-
-        const threshold = await lowStockThreshold();
-        const now = Date.now();
-        const formatted = ((events ?? []) as unknown as CatalogRow[])
-            .filter((evt) => eventEndAt(evt).getTime() > now)
-            .map((row) => ({ row, dto: formatCatalogEvent(row, threshold) }))
-            .sort(catalogOrder)
-            .map(({ dto }) => dto);
+        const formatted = await readCatalogEvents();
         const cities = catalogCities(formatted);
+        const results = applyCatalogFilters(formatted, filters, new Date());
 
-        // Filtrage en mémoire pour recherche et ville si demandés
-        let results = formatted;
-        if (search) {
-            results = results.filter((e) => [e.title, e.venue, e.subtitle, e.city].some((field) => foldText(field).includes(search)));
+        const body: Record<string, unknown> = { events: results, cities, total: results.length };
+        if (searchParams.get('page') !== null) {
+            const sizeRaw = Number.parseInt(searchParams.get('pageSize') ?? '', 10);
+            const pageSize = Number.isFinite(sizeRaw) ? Math.min(PAGE_SIZE_MAX, Math.max(1, sizeRaw)) : PAGE_SIZE_DEFAULT;
+            const page = Math.min(EXPLORE_MAX_PAGE, filters.page);
+            body.events = results.slice((page - 1) * pageSize, page * pageSize);
+            body.page = page;
+            body.pageSize = pageSize;
         }
-        if (category && category !== 'ALL') {
-            results = results.filter(e => e.category === category);
-        }
-        if (city && city !== 'all') {
-            results = results.filter((e) => foldText(e.city) === city);
-        }
-
-        return NextResponse.json({ events: results, cities }, { headers: { 'Cache-Control': 'no-store' } });
+        return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err: unknown) {
         return failure(err);
     }
