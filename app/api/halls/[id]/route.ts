@@ -38,9 +38,13 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 images,
                 is_active,
                 partner_id,
-                partners(id, company_name, commercial_name)
+                partners!inner(id, company_name, commercial_name, status)
             `)
             .eq('id', hallId)
+            // Lot 10a : seules les salles actives, validées par l'administration, d'un partenaire validé, sont publiques
+            .eq('is_active', true)
+            .eq('validation_status', 'VALIDEE')
+            .eq('partners.status', 'VALIDE')
             .maybeSingle();
 
         if (error || !hall) {
