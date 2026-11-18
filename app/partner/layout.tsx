@@ -31,8 +31,8 @@ export default function PartnerLayout({ children }: { children: React.ReactNode 
     return (
       <div className="flex min-h-[60vh] items-center justify-center" role="status">
         <div className="flex flex-col items-center gap-3">
-          <span className="h-8 w-8 rounded-full border-[3px] border-brand border-t-transparent motion-safe:animate-spin" aria-hidden="true" />
-          <span className="text-sm font-medium text-fg-muted">
+          <span className="h-8 w-8 rounded-full border-[3px] border-primary border-t-transparent motion-safe:animate-spin" aria-hidden="true" />
+          <span className="text-sm font-medium text-muted-foreground">
             Chargement de l’espace partenaire…
           </span>
         </div>

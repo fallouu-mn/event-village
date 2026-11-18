@@ -41,6 +41,7 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/ui/ThemeToggle.tsx',
     'components/notifications/NotificationBell.tsx',
     'components/ui/Toast.tsx',
+    'components/ui/ToastCard.tsx',
     'components/ui/EventMap.tsx',
     'app/controller/layout.tsx',
     'app/partner/layout.tsx',
@@ -284,4 +285,20 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/events/EntryControlEditor.tsx',
     // Finition 2b (C, E-24) : écran « Vérifier avant d'envoyer » (récapitulatif, manques)
     'components/events/EventReview.tsx',
+    // Design 1a (point 6) : gabarit des pages spéciales et page hors ligne. app/global-error.tsx n'y est pas : il remplace le
+    // layout racine (ni feuille globale ni jetons), ses couleurs de la charte sont donc écrites dans son propre <style>.
+    'components/ui/SpecialPage.tsx',
+    'app/hors-ligne/page.tsx',
+    // Design 1a (point 7) : squelettes de l'accueil, de l'espace partenaire, du pilotage et de l'administration ; barre de progression
+    'app/partner/loading.tsx',
+    'app/partner/events/[id]/loading.tsx',
+    'app/admin/loading.tsx',
+    'components/ui/NavigationProgress.tsx',
+    'components/ui/NavigationProgressDifferee.tsx',
+    // Design 1a (point 5) : composants de base nouveaux et vitrine des captures
+    'components/ui/Card.tsx',
+    'components/ui/FilterChip.tsx',
+    'components/ui/BottomSheet.tsx',
+    'app/vitrine-design/Vitrine.tsx',
+    'app/vitrine-design/page.tsx',
 ];

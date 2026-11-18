@@ -28,7 +28,7 @@ export const SCAN_COLOR_SWATCH: Record<ScanCategoryColor, string> = {
 /** Pastille seule, décorative (la couleur est toujours écrite à côté). */
 export function ScanColorDot({ color, className }: { color: string | null | undefined; className?: string }) {
     if (!isScanCategoryColor(color)) return null;
-    return <span aria-hidden="true" className={cn('inline-block h-4 w-4 flex-shrink-0 rounded-full border border-border-strong', SCAN_COLOR_SWATCH[color], className)} />;
+    return <span aria-hidden="true" className={cn('inline-block h-4 w-4 flex-shrink-0 rounded-full border border-input', SCAN_COLOR_SWATCH[color], className)} />;
 }
 
 interface ScanColorPickerProps {
@@ -72,7 +72,7 @@ export function ScanColorPicker({ id, label, value, onChange, others = [], hint,
 
     return (
         <div className="flex min-w-0 flex-col gap-1.5">
-            <span id={labelId} className="text-sm font-semibold text-fg">{label}</span>
+            <span id={labelId} className="text-sm font-semibold text-foreground-strong">{label}</span>
             <div
                 id={id}
                 role="radiogroup"
@@ -98,7 +98,7 @@ export function ScanColorPicker({ id, label, value, onChange, others = [], hint,
                             className={cn(
                                 'flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors duration-200',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60',
-                                checked ? 'border-brand-fg bg-brand-bg text-brand-fg' : 'border-border-strong bg-surface text-fg hover:bg-surface-sunken',
+                                checked ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-input bg-card text-foreground-strong hover:bg-background',
                                 error && !checked && 'border-danger',
                             )}
                         >
@@ -110,19 +110,19 @@ export function ScanColorPicker({ id, label, value, onChange, others = [], hint,
                 })}
             </div>
             {retired && (
-                <p id={retired} className="flex items-start gap-1.5 text-sm font-medium text-warning-fg">
+                <p id={retired} className="flex items-start gap-1.5 text-sm font-medium text-warning-text">
                     <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                     <span>{`Couleur actuelle : ${SCAN_CATEGORY_COLOR_LABELS[value as ScanCategoryColor]}, qui n’est plus proposée. Choisissez-en une autre.`}</span>
                 </p>
             )}
             {sharedWith.length > 0 && (
-                <p id={warningId} className="flex items-start gap-1.5 text-sm font-medium text-warning-fg">
+                <p id={warningId} className="flex items-start gap-1.5 text-sm font-medium text-warning-text">
                     <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                     <span>{`Même couleur que ${sharedWith.map((n) => `« ${n} »`).join(', ')} : au contrôle, ces catégories auront la même bande.`}</span>
                 </p>
             )}
-            {hint && <p id={hintId} className="text-sm leading-snug text-fg-muted">{hint}</p>}
-            {error && <p id={errorId} className="text-sm font-medium text-danger-fg">{error}</p>}
+            {hint && <p id={hintId} className="text-sm leading-snug text-muted-foreground">{hint}</p>}
+            {error && <p id={errorId} className="text-sm font-medium text-danger-text">{error}</p>}
         </div>
     );
 }

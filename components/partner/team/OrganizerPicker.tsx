@@ -53,10 +53,10 @@ export function OrganizerPicker({ onPick }: { onPick: (o: PickedOrganizer) => vo
     }, [query, attempt]);
 
     return (
-        <section aria-labelledby={`${id}-titre`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+        <section aria-labelledby={`${id}-titre`} className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-6">
             <div className="space-y-1">
-                <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-fg">Choisissez l’organisatrice</h2>
-                <p className="text-sm text-fg-muted">Vous gérez l’équipe de contrôle d’une organisatrice à sa place : choisissez-la dans la liste.</p>
+                <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-foreground-strong">Choisissez l’organisatrice</h2>
+                <p className="text-sm text-muted-foreground">Vous gérez l’équipe de contrôle d’une organisatrice à sa place : choisissez-la dans la liste.</p>
             </div>
             <TextInput
                 label="Rechercher une organisatrice"
@@ -69,7 +69,7 @@ export function OrganizerPicker({ onPick }: { onPick: (o: PickedOrganizer) => vo
             />
             {phase === 'loading' && (
                 <div role="status" aria-busy="true" aria-label="Chargement des organisatrices" className="space-y-2">
-                    {[0, 1, 2].map((i) => <span key={i} className="block h-14 rounded-xl bg-surface-sunken motion-safe:animate-pulse" />)}
+                    {[0, 1, 2].map((i) => <span key={i} className="block h-14 rounded-xl bg-background motion-safe:animate-pulse" />)}
                 </div>
             )}
             {phase === 'error' && (
@@ -79,7 +79,7 @@ export function OrganizerPicker({ onPick }: { onPick: (o: PickedOrganizer) => vo
                 </StatusBanner>
             )}
             {phase === 'ready' && items.length === 0 && (
-                <p className="rounded-xl border border-border bg-surface-sunken p-4 text-sm text-fg">
+                <p className="rounded-xl border border-border bg-background p-4 text-sm text-foreground-strong">
                     {query.trim()
                         ? <>Aucune organisatrice ne correspond à « {query.trim()} ».</>
                         : <>Aucune organisatrice validée pour le moment.</>}
@@ -92,22 +92,22 @@ export function OrganizerPicker({ onPick }: { onPick: (o: PickedOrganizer) => vo
                             <button
                                 type="button"
                                 onClick={() => onPick({ partner_id: o.partner_id, name: o.name })}
-                                className="flex min-h-11 w-full items-center gap-3 bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                className="flex min-h-11 w-full items-center gap-3 bg-card px-4 py-3 text-left transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                             >
-                                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-brand-bg text-brand-fg" aria-hidden="true"><Building2 size={18} /></span>
+                                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-text" aria-hidden="true"><Building2 size={18} /></span>
                                 <span className="min-w-0 flex-1">
-                                    <span className="block break-words text-base font-semibold text-fg">{o.name}</span>
-                                    {o.city && <span className="block text-sm text-fg-muted">{o.city}</span>}
+                                    <span className="block break-words text-base font-semibold text-foreground-strong">{o.name}</span>
+                                    {o.city && <span className="block text-sm text-muted-foreground">{o.city}</span>}
                                 </span>
                                 {o.status === 'SUSPENDU' && <Badge variant="warning">Suspendue</Badge>}
-                                <ChevronRight size={18} className="flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                                <ChevronRight size={18} className="flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                             </button>
                         </li>
                     ))}
                 </ul>
             )}
             {phase === 'ready' && truncated && (
-                <p className="text-sm text-fg-muted">Seules les 20 premières sont affichées : précisez la recherche.</p>
+                <p className="text-sm text-muted-foreground">Seules les 20 premières sont affichées : précisez la recherche.</p>
             )}
         </section>
     );

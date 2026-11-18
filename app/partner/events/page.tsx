@@ -159,8 +159,26 @@ export default function PartnerEventsPage() {
                 setIncomplete({ event, items: missing });
                 return false;
             }
-            toast.error(message);
-            if (reason !== undefined) setReasonError(message);
+            // Design 1a : un motif refusé s'affiche sous le champ du motif ; une erreur générale passe par un toast qui reste
+            if (reason !== undefined && err instanceof ApiError && err.code === 'REASON_REQUIRED') {
+                setReasonError(message);
+                return false;
+            }
+            const general = !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
+            if (general) {
+                toast.error(message, {
+                    onRetry: () => {
+                        void runTransition(event, action, reason).then((ok) => {
+                            if (ok) {
+                                setConfirmTransition(null);
+                                setReasonTransition(null);
+                            }
+                        });
+                    },
+                });
+            } else {
+                toast.error(message);
+            }
             return false;
         } finally {
             setPending(null);
@@ -190,7 +208,10 @@ export default function PartnerEventsPage() {
             setDeleteTarget(null);
             await refresh();
         } catch (err) {
-            toast.error(errorMessage(err, 'Suppression impossible pour le moment.'));
+            const message = errorMessage(err, 'Suppression impossible pour le moment.');
+            const general = !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
+            if (general) toast.error(message, { onRetry: () => { void confirmDelete(); } });
+            else toast.error(message);
         } finally {
             setDeleting(false);
         }
@@ -333,7 +354,7 @@ export default function PartnerEventsPage() {
                     </>
                 }
             >
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     La page publique sera visible de tous et la billetterie ouverte selon les dates de vente de chaque catégorie.
                     Après la publication, les changements de date, de lieu ou de titre seront notifiés aux acheteurs.
                 </p>
@@ -372,8 +393,8 @@ export default function PartnerEventsPage() {
                 }
             >
                 <div role="alert">
-                    <p className="text-sm text-fg">Corrigez ces points, puis soumettez de nouveau l’événement :</p>
-                    <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-fg">
+                    <p className="text-sm text-foreground-strong">Corrigez ces points, puis soumettez de nouveau l’événement :</p>
+                    <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-foreground-strong">
                         {incomplete?.items.map((item) => <li key={item}>{item}</li>)}
                     </ul>
                 </div>

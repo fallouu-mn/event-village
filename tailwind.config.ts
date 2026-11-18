@@ -5,13 +5,16 @@ function tone(name: string): string {
   return `rgb(var(--${name}) / <alpha-value>)`;
 }
 
-/** Ton d'état : plein (DEFAULT, texte on-tone), fond doux (-bg), texte (-fg), bordure (-border). */
+/** Ton d'état : plein (DEFAULT, texte on-tone), fond doux (-soft), texte (-text), bordure (-border) ; -bg et -fg : anciens noms. */
 function statusTone(name: string): Record<string, string> {
   return {
     DEFAULT: tone(name),
-    bg: tone(`${name}-bg`),
-    fg: tone(`${name}-fg`),
+    soft: tone(`${name}-soft`),
+    text: tone(`${name}-text`),
     border: tone(`${name}-border`),
+    // anciens noms (alias) : -bg → -soft, -fg → -text
+    bg: tone(`${name}-soft`),
+    fg: tone(`${name}-text`),
   };
 }
 
@@ -33,48 +36,35 @@ const config: Config = {
         caption: ['0.75rem', { lineHeight: '1rem' }],
       },
       colors: {
-        // Lot 5 (contrat Q) — orange brûlé accessible. Rampe orange (teintes 15° à 34°, luminosité
-        // décroissante) ; brand-700 = #C2410C = brand. #FF5722 n'est plus qu'un décor (brand-decor).
-        brand: {
-          50: '#FFF7ED',
-          100: '#FFEDD5',
-          200: '#FED7AA',
-          300: '#FDBA74',
-          400: '#FB923C',
-          500: '#F97316',
-          600: '#EA580C',
-          700: '#C2410C',
-          800: '#9A3412',
-          900: '#7C2D12',
-          DEFAULT: tone('brand'),
-          hover: tone('brand-hover'),
-          fg: tone('brand-fg'),
-          bg: tone('brand-bg'),
-          decor: tone('brand-decor'),
-        },
-        // Tokens sémantiques : variables CSS de app/globals.css, basculées par .dark
-        surface: {
-          DEFAULT: tone('surface'),
-          raised: tone('surface-raised'),
-          sunken: tone('surface-sunken'),
-        },
-        fg: {
-          DEFAULT: tone('fg'),
-          muted: tone('fg-muted'),
-        },
-        border: {
-          DEFAULT: tone('border'),
-          strong: tone('border-strong'),
-        },
-        ring: tone('ring'),
+        // ── Design 1a : jetons de la charte (docs/design/direction.md, section 2 ; variables d'app/globals.css) ──
+        background: tone('background'),
+        foreground: { DEFAULT: tone('foreground'), strong: tone('foreground-strong') },
+        card: tone('card'),
+        popover: tone('popover'),
+        muted: { DEFAULT: tone('muted'), foreground: tone('muted-foreground') },
+        input: tone('input'),
+        ring: { DEFAULT: tone('ring'), halo: tone('ring-halo') },
         scrim: tone('scrim'),
-        'on-brand': tone('on-brand'),
-        'on-tone': tone('on-tone'),
+        primary: {
+          DEFAULT: tone('primary'),
+          hover: tone('primary-hover'),
+          foreground: tone('primary-foreground'),
+          text: tone('primary-text'),
+          soft: tone('primary-soft'),
+        },
+        // Orange vif de la marque (charte : `brand`). Tant que les alias vivent, `brand` reste l'ancien bouton
+        // principal : la couleur de la marque s'écrit `brand-vif` (accents, onglet actif, repères), texte `brand-vif-foreground`.
+        'brand-vif': { DEFAULT: tone('brand'), foreground: tone('brand-foreground') },
+        'accent-text': tone('accent-text'),
+        gradient: { from: tone('gradient-from'), to: tone('gradient-to'), foreground: tone('gradient-foreground') },
         success: statusTone('success'),
         warning: statusTone('warning'),
         danger: statusTone('danger'),
         info: statusTone('info'),
-        // Lot 7 (7.2, D51) : résultat plein écran du scanner (bg-scan-accept-bg, text-scan-accept-fg…)
+        'on-tone': tone('on-tone'),
+        'op-wave': tone('op-wave'),
+        'op-orange-money': tone('op-orange-money'),
+        'on-op': tone('on-op'),
         scan: {
           'accept-bg': tone('scan-accept-bg'),
           'accept-fg': tone('scan-accept-fg'),
@@ -107,12 +97,32 @@ const config: Config = {
           'cat-noir-bg': tone('scan-cat-noir-bg'),
           'cat-noir-fg': tone('scan-cat-noir-fg'),
         },
-        // Lot 7 (D59) : opérateurs de paiement (bg-op-wave text-on-op-wave, bg-op-orange-money text-on-op-orange-money)
-        'op-wave': tone('op-wave'),
-        'on-op-wave': tone('on-op-wave'),
-        'op-orange-money': tone('op-orange-money'),
-        'on-op-orange-money': tone('on-op-orange-money'),
-        // Surfaces Dark Mode & SaaS Enterprise (historique, écrans non migrés)
+        // ── ANCIENS NOMS : alias vers la charte (table de direction.md, section 2), pour les pages pas encore repeintes
+        // (lots 1b et 1c) et les branches en cours. Interdits dans un fichier nouveau ou modifié
+        // (tests/schema/design-anciens-noms.test.ts). ──
+        border: { DEFAULT: tone('border'), strong: tone('input') },
+        brand: {
+          50: '#FFF7ED',
+          100: '#FFEDD5',
+          200: '#FED7AA',
+          300: '#FDBA74',
+          400: '#FB923C',
+          500: '#F97316',
+          600: '#EA580C',
+          700: '#C2410C',
+          800: '#9A3412',
+          900: '#7C2D12',
+          DEFAULT: tone('primary'),
+          hover: tone('primary-hover'),
+          fg: tone('primary-text'),
+          bg: tone('primary-soft'),
+          decor: tone('brand'),
+        },
+        surface: { DEFAULT: tone('card'), raised: tone('popover'), sunken: tone('background') },
+        fg: { DEFAULT: tone('foreground-strong'), muted: tone('muted-foreground') },
+        'on-brand': tone('primary-foreground'),
+        'on-op-wave': tone('on-op'),
+        'on-op-orange-money': tone('on-op'),
         dark: {
           bg: '#0F0F11',
           surface: '#16161A',
@@ -123,6 +133,12 @@ const config: Config = {
           text: '#FFFFFF',
           muted: '#9E9EA7',
         },
+      },
+      transitionDuration: { fast: '150ms', base: '200ms', slow: '250ms' },
+      transitionTimingFunction: {
+        out: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        in: 'cubic-bezier(0.4, 0, 1, 1)',
+        standard: 'cubic-bezier(0.2, 0, 0, 1)',
       },
       borderRadius: {
         'xl': '0.875rem',
@@ -140,8 +156,10 @@ const config: Config = {
         subtle: '0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
         card: '0 4px 20px -2px rgba(0, 0, 0, 0.04)',
         cardHover: '0 12px 32px -4px rgba(0, 0, 0, 0.08)',
-        brandGlow: '0 8px 24px -4px rgba(255, 87, 34, 0.38)',
-        brandGlowLg: '0 12px 36px -4px rgba(255, 87, 34, 0.5)',
+        brandGlow: 'var(--gradient-shadow)',
+        gradient: 'var(--gradient-shadow)',
+        brandGlowLg: 'var(--gradient-shadow)',
+        popover: 'var(--shadow-lg)',
         glass: '0 8px 32px 0 rgba(0, 0, 0, 0.08)',
       },
     },

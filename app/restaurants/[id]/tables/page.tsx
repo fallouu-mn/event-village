@@ -97,7 +97,9 @@ export default function TableReservationPage(props: { params: Promise<{ id: stri
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Impossible d\'enregistrer la réservation.');
+        // Message de l'API (texte public) ; une exception JavaScript brute n'est jamais montrée.
+        toast.error(typeof data?.error === 'string' && data.error ? data.error : 'Impossible d’enregistrer la réservation.');
+        return;
       }
 
       setActiveReservationId(data.reservation.id);
@@ -109,7 +111,8 @@ export default function TableReservationPage(props: { params: Promise<{ id: stri
         router.push('/orders');
       }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Erreur lors de la réservation.');
+      console.error('[Réservation de table] échec :', err instanceof Error ? err.message : String(err));
+      toast.error('La réservation n’a pas abouti. Vérifiez votre connexion puis réessayez.');
     } finally {
       setIsSubmitting(false);
     }

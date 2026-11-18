@@ -205,28 +205,28 @@ export const Modal: React.FC<ModalProps> = ({
         aria-busy={busy || undefined}
         tabIndex={-1}
         className={cn(
-          'relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-surface-raised text-left text-fg shadow-2xl focus:outline-none sm:max-h-[85dvh] sm:rounded-3xl',
+          'relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-popover text-left text-foreground-strong shadow-2xl focus:outline-none sm:max-h-[85dvh] sm:rounded-3xl',
           'animate-in fade-in zoom-in-95',
-          variant === 'glass' && 'bg-surface-raised/95 backdrop-blur-xl',
+          variant === 'glass' && 'bg-popover/95 backdrop-blur-xl',
           MAX_WIDTH[maxWidth],
         )}
       >
         <div className="flex flex-shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-3">
             {icon && (
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                 {icon}
               </div>
             )}
             {(title || subtitle) && (
               <div className="min-w-0">
                 {title && (
-                  <h2 id={titleId} className="text-base font-bold leading-snug tracking-tight text-fg sm:text-lg">
+                  <h2 id={titleId} className="text-base font-bold leading-snug tracking-tight text-foreground-strong sm:text-lg">
                     {title}
                   </h2>
                 )}
                 {subtitle && (
-                  <p id={subtitleId} className="mt-0.5 text-sm leading-snug text-fg-muted">
+                  <p id={subtitleId} className="mt-0.5 text-sm leading-snug text-muted-foreground">
                     {subtitle}
                   </p>
                 )}
@@ -246,7 +246,7 @@ export const Modal: React.FC<ModalProps> = ({
         </div>
 
         {footer && (
-          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border bg-surface-sunken/60 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border bg-background/60 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
             {footer}
           </div>
         )}

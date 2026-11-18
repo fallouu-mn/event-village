@@ -120,7 +120,7 @@ export function PushDeviceCard() {
     setActionError(null);
     try {
       await disablePush();
-      toast.success('Notifications désactivées sur cet appareil.');
+      toast.undoable('Notifications désactivées sur cet appareil.', () => void handleEnable());
       await refreshState();
     } catch (err) {
       console.error('[PushDeviceCard] désactivation impossible :', err instanceof Error ? err.message : String(err));
@@ -153,12 +153,12 @@ export function PushDeviceCard() {
 
   if (state === 'checking') {
     return (
-      <section aria-labelledby={headingId} aria-busy="true" className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
-        <h2 id={headingId} className="flex items-center gap-2 text-base font-semibold text-fg">
+      <section aria-labelledby={headingId} aria-busy="true" className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+        <h2 id={headingId} className="flex items-center gap-2 text-base font-semibold text-foreground-strong">
           <Smartphone size={18} aria-hidden="true" />
           Sur cet appareil
         </h2>
-        <div className="mt-3 h-5 w-2/3 rounded-md bg-surface-sunken motion-safe:animate-pulse" aria-hidden="true" />
+        <div className="mt-3 h-5 w-2/3 rounded-md bg-background motion-safe:animate-pulse" aria-hidden="true" />
         <p className="sr-only">Lecture de l’état des notifications…</p>
       </section>
     );
@@ -168,8 +168,8 @@ export function PushDeviceCard() {
   const Icon = copy.icon;
 
   return (
-    <section aria-labelledby={headingId} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-5">
-      <h2 id={headingId} className="flex items-center gap-2 text-base font-semibold text-fg">
+    <section aria-labelledby={headingId} className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
+      <h2 id={headingId} className="flex items-center gap-2 text-base font-semibold text-foreground-strong">
         <Smartphone size={18} aria-hidden="true" />
         Sur cet appareil
       </h2>
@@ -179,8 +179,8 @@ export function PushDeviceCard() {
           <Icon size={20} />
         </span>
         <div className="min-w-0 space-y-1">
-          <p className="text-sm font-semibold text-fg">{copy.title}</p>
-          <p className="text-sm leading-relaxed text-fg-muted">{copy.description}</p>
+          <p className="text-sm font-semibold text-foreground-strong">{copy.title}</p>
+          <p className="text-sm leading-relaxed text-muted-foreground">{copy.description}</p>
         </div>
       </div>
 

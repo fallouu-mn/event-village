@@ -24,7 +24,7 @@ import { cn } from '@/components/ui/cn';
 import { formatTime } from '@/lib/format';
 import { errorMessage, sendJson } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
-import { ActionDialog, InviteDialog, SettingsDialog } from './TeamDialogs';
+import { ActionDialog, focusField, InviteDialog, reasonRefusal, retryable, SettingsDialog } from './TeamDialogs';
 import { GateAdmits } from './CategoryPills';
 import { LinkButton } from '@/components/ui/LinkButton';
 import {
@@ -71,11 +71,11 @@ function ContactButtons({ phone, message, name }: { phone: string | null; messag
     if (!tel || !wa) return null;
     return (
         <div className="flex flex-wrap gap-2">
-            <a href={tel} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-fg hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Appeler ${name}`}>
+            <a href={tel} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Appeler ${name}`}>
                 <Phone size={16} aria-hidden="true" />
                 <span>Appeler</span>
             </a>
-            <a href={wa} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-fg hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Écrire à ${name} sur WhatsApp`}>
+            <a href={wa} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Écrire à ${name} sur WhatsApp`}>
                 <MessageCircle size={16} aria-hidden="true" />
                 <span>WhatsApp</span>
             </a>
@@ -85,12 +85,12 @@ function ContactButtons({ phone, message, name }: { phone: string | null; messag
 
 function ShiftAndEntries({ a, scope, onOpenTab }: { a: TeamAssignment; scope: TeamScope; onOpenTab?: TeamPanelProps['onOpenTab'] }) {
     // Cible de 44 px (règle des captures, DoD 7) : lien en ligne mais haut de 44 px
-    const linkClass = 'inline-flex min-h-11 items-center font-semibold text-brand-fg underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    const linkClass = 'inline-flex min-h-11 items-center font-semibold text-primary-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
     const open = (tab: 'caisse' | 'entrees') => (scope === 'event' && onOpenTab
         ? <button type="button" className={linkClass} onClick={() => onOpenTab(tab)}>{tab === 'caisse' ? 'Caisse ouverte' : entriesText(a)}</button>
         : <a className={linkClass} href={`/partner/events/${a.event_id}?tab=${tab}`}>{tab === 'caisse' ? 'Caisse ouverte' : entriesText(a)}</a>);
     return (
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-muted">
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
             {a.open_shift && open('caisse')}
             {a.entries > 0 ? open('entrees') : <span>{entriesText(a)}</span>}
         </span>
@@ -113,6 +113,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
     const [settingsTarget, setSettingsTarget] = useState<{ member: TeamMember; slot: TeamAssignment } | null>(null);
     const [pending, setPending] = useState<Pending | null>(null);
     const [reason, setReason] = useState('');
+    const [reasonError, setReasonError] = useState<string | undefined>(undefined);
     const [busy, setBusy] = useState(false);
 
     // Relecture de secours toutes les 60 s quand l'écran est visible (acceptation, refus, expiration d'une invitation)
@@ -180,6 +181,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
     };
     const ask = (p: Pending): void => {
         setReason('');
+        setReasonError(undefined);
         setPending(p);
     };
     const withReason = (): Record<string, unknown> => (actsAsAdmin ? { reason: reason.trim() } : {});
@@ -212,7 +214,16 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
             setPending(null);
             await reload();
         } catch (err) {
-            toast.error(errorMessage(err, 'Action impossible pour le moment. Réessayez.'));
+            // Design 1a : un refus qui vise le motif s'affiche sous le champ de la fenêtre de confirmation
+            const onReason = reasonRefusal(err);
+            if (onReason) {
+                setReasonError(onReason);
+                focusField('action-motif');
+                return;
+            }
+            const message = errorMessage(err, 'Action impossible pour le moment. Réessayez.');
+            if (retryable(err)) toast.error(message, { onRetry: () => { void run(); } });
+            else toast.error(message);
         } finally {
             setBusy(false);
         }
@@ -225,14 +236,14 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
             {m.account_state === 'PENDING_ACTIVATION' && (
                 <Button variant="secondary" size="sm" onClick={() => ask({ kind: 'resend-activation', member: m })}>Renvoyer le SMS d’activation</Button>
             )}
-            <Button variant="ghost" size="sm" className="text-danger-fg" onClick={() => ask({ kind: 'remove-team', member: m })}>Retirer de l’équipe</Button>
+            <Button variant="ghost" size="sm" className="text-danger-text" onClick={() => ask({ kind: 'remove-team', member: m })}>Retirer de l’équipe</Button>
         </div>
     );
     const assignmentActions = (m: TeamMember, a: TeamAssignment) => canManage && !a.past && (
         <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => setSettingsTarget({ member: m, slot: a })}>Modifier</Button>
             {scope === 'event' && (
-                <Button variant="ghost" size="sm" className="text-danger-fg" onClick={() => ask({ kind: 'remove-event', member: m, slot: a })}>Retirer de cet événement</Button>
+                <Button variant="ghost" size="sm" className="text-danger-text" onClick={() => ask({ kind: 'remove-event', member: m, slot: a })}>Retirer de cet événement</Button>
             )}
         </div>
     );
@@ -241,8 +252,8 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
         const place = placeOf(a);
         return (
             <li key={a.assignment_id} className="flex flex-col gap-2">
-                {scope === 'all' && <p className="text-sm font-semibold text-fg">{`${a.title} · ${eventWhen(a.start_at)}`}</p>}
-                <p className={cn('text-sm', place.missing ? 'font-semibold text-warning-fg' : 'text-fg')}>{a.gate ? `Porte : ${place.text}` : place.text}</p>
+                {scope === 'all' && <p className="text-sm font-semibold text-foreground-strong">{`${a.title} · ${eventWhen(a.start_at)}`}</p>}
+                <p className={cn('text-sm', place.missing ? 'font-semibold text-warning-text' : 'text-foreground-strong')}>{a.gate ? `Porte : ${place.text}` : place.text}</p>
                 <GateAdmits categories={a.gate?.categories ?? (a.has_zones ? null : [])} hasZones={a.has_zones} />
                 <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={a.can_accept_cash ? 'success' : 'neutral'}>{a.can_accept_cash ? 'Espèces autorisées' : 'Sans espèces'}</Badge>
@@ -285,13 +296,13 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                 )}
                 {past.length > 0 && (
                     <details className="rounded-xl border border-border px-3 py-2">
-                        <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold text-fg-muted">
+                        <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold text-muted-foreground">
                             Événements passés
                         </summary>
                         <ul className="mt-2 flex flex-col gap-2" aria-label={`Événements passés de ${memberName(m)}`}>
                             {past.map((a) => (
-                                <li key={a.assignment_id} className="text-sm text-fg-muted">
-                                    <span className="block text-fg">{`${a.title} · ${eventWhen(a.start_at)}`}</span>
+                                <li key={a.assignment_id} className="text-sm text-muted-foreground">
+                                    <span className="block text-foreground-strong">{`${a.title} · ${eventWhen(a.start_at)}`}</span>
                                     {/* Complément 13 : mêmes chiffres que « Mes soirées » du contrôleur */}
                                     <span className="block tabular-nums">
                                         {a.evening ? `${eveningEntriesText(a.evening.entries)} · ${eveningCashText(a.evening.cash)}` : entriesText(a)}
@@ -309,8 +320,8 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
         <section className="flex flex-col gap-4" aria-labelledby="equipe-titre">
             <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                    <h2 id="equipe-titre" className="text-lg font-semibold text-fg">{scope === 'event' ? 'Équipe de cet événement' : 'Vos contrôleurs'}</h2>
-                    <p className="text-sm text-fg-muted">
+                    <h2 id="equipe-titre" className="text-lg font-semibold text-foreground-strong">{scope === 'event' ? 'Équipe de cet événement' : 'Vos contrôleurs'}</h2>
+                    <p className="text-sm text-muted-foreground">
                         {`${data.counts.members} contrôleur${data.counts.members > 1 ? 's' : ''} · ${data.counts.ready} prêt${data.counts.ready > 1 ? 's' : ''} · ${data.counts.pending} en attente`}
                     </p>
                     <LiveIndicator status={liveStatus} salesLive={false} updatedTime={updatedAt} className="mt-1" />
@@ -351,26 +362,26 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
             ))}
 
             {gateEvents.length > 0 && (
-                <details className="rounded-2xl border border-border bg-surface p-4" open={scope === 'event'}>
-                    <summary className="min-h-11 cursor-pointer content-center text-base font-semibold text-fg">Portes et couleurs</summary>
+                <details className="rounded-2xl border border-border bg-card p-4" open={scope === 'event'}>
+                    <summary className="min-h-11 cursor-pointer content-center text-base font-semibold text-foreground-strong">Portes et couleurs</summary>
                     <ul className="mt-3 flex flex-col gap-4" aria-label="Portes et couleurs des événements">
                         {gateEvents.map((e) => (
                             <li key={e.id} className="flex flex-col gap-2">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <p className="text-sm font-semibold text-fg">{`${e.title} · ${eventWhen(e.start_at)}`}</p>
+                                    <p className="text-sm font-semibold text-foreground-strong">{`${e.title} · ${eventWhen(e.start_at)}`}</p>
                                     {canManage && gatesLink(e.id, 'ghost')}
                                 </div>
                                 {e.has_zones ? (
                                     <ul className="flex flex-col gap-2">
                                         {e.gates.map((g) => (
                                             <li key={g.id} className="flex flex-col gap-1">
-                                                <p className="text-sm text-fg">{`${g.name} · ${g.zone_name}`}</p>
+                                                <p className="text-sm text-foreground-strong">{`${g.name} · ${g.zone_name}`}</p>
                                                 <GateAdmits categories={g.categories} hasZones />
                                             </li>
                                         ))}
                                     </ul>
                                 ) : (
-                                    <p className="text-sm text-fg-muted">Pas de zones : chaque contrôleur laisse entrer toutes les catégories.</p>
+                                    <p className="text-sm text-muted-foreground">Pas de zones : chaque contrôleur laisse entrer toutes les catégories.</p>
                                 )}
                             </li>
                         ))}
@@ -391,7 +402,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                         {FILTERS.map((f) => (
                             <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}
                                 className={cn('inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                    filter === f.id ? 'border-brand bg-brand text-on-brand' : 'border-border bg-surface text-fg hover:bg-surface-sunken')}>
+                                    filter === f.id ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground-strong hover:bg-background')}>
                                 {f.label}
                             </button>
                         ))}
@@ -401,10 +412,10 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
 
             {/* Complément 12 : la partenaire en tête de son équipe ; elle scanne ses événements sans s'inviter */}
             {!actsAsAdmin && (
-                <div className="flex flex-col gap-2 rounded-2xl border border-brand bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-2 rounded-2xl border border-primary bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                        <p className="font-semibold text-fg">Vous (organisatrice) — toutes les portes</p>
-                        <p className="text-sm text-fg-muted">Vous scannez vos événements dont le contrôle est ouvert, à toutes les portes ou à une porte choisie, et vous vendez au guichet.</p>
+                        <p className="font-semibold text-foreground-strong">Vous (organisatrice) — toutes les portes</p>
+                        <p className="text-sm text-muted-foreground">Vous scannez vos événements dont le contrôle est ouvert, à toutes les portes ou à une porte choisie, et vous vendez au guichet.</p>
                     </div>
                     <LinkButton href="/partner/scan" variant="secondary" size="sm">Scanner les billets</LinkButton>
                 </div>
@@ -433,13 +444,13 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                                         <div className="flex flex-col gap-3">
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <p className="break-words text-base font-semibold text-fg">{name}</p>
-                                                    <p className="text-sm text-fg-muted">{st.line}</p>
+                                                    <p className="break-words text-base font-semibold text-foreground-strong">{name}</p>
+                                                    <p className="text-sm text-muted-foreground">{st.line}</p>
                                                 </div>
                                                 <Badge variant={st.tone}>{st.badge}</Badge>
                                             </div>
                                             <div className="flex flex-col gap-2">
-                                                <p className="text-sm tabular-nums text-fg">{displayPhone(m.phone)}</p>
+                                                <p className="text-sm tabular-nums text-foreground-strong">{displayPhone(m.phone)}</p>
                                                 <ContactButtons phone={m.phone} name={name} message={whatsappMessage(m, organizer, m.assignments.find((a) => !a.past), origin)} />
                                             </div>
                                             <div className="border-t border-border pt-3">{eventLines(m)}</div>
@@ -453,8 +464,8 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                                         render: (m) => (
                                             <div className="flex flex-col gap-2">
                                                 <div>
-                                                    <p className="font-semibold text-fg">{memberName(m)}</p>
-                                                    <p className="tabular-nums text-fg-muted">{displayPhone(m.phone)}</p>
+                                                    <p className="font-semibold text-foreground-strong">{memberName(m)}</p>
+                                                    <p className="tabular-nums text-muted-foreground">{displayPhone(m.phone)}</p>
                                                 </div>
                                                 <ContactButtons phone={m.phone} name={memberName(m)} message={whatsappMessage(m, organizer, m.assignments.find((a) => !a.past), origin)} />
                                             </div>
@@ -467,7 +478,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                                             return (
                                                 <div className="flex max-w-60 flex-col items-start gap-1">
                                                     <Badge variant={st.tone}>{st.badge}</Badge>
-                                                    <p className="text-fg-muted">{st.line}</p>
+                                                    <p className="text-muted-foreground">{st.line}</p>
                                                     {memberActions(m)}
                                                 </div>
                                             );
@@ -476,25 +487,25 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                                     { key: 'evenements', header: scope === 'all' ? 'Événements, porte et espèces' : 'Porte et espèces', className: 'align-top', render: (m) => eventLines(m) },
                                 ]}
                             />
-                            {members.length === 0 && data.members.length > 0 && <p className="text-sm text-fg-muted">Aucun contrôleur ne correspond à ce filtre.</p>}
+                            {members.length === 0 && data.members.length > 0 && <p className="text-sm text-muted-foreground">Aucun contrôleur ne correspond à ce filtre.</p>}
                         </>
                     )}
 
                     {invitations.length > 0 && (
                         <section className="flex flex-col gap-3" aria-labelledby="equipe-invitations">
-                            <h3 id="equipe-invitations" className="text-base font-semibold text-fg">Invitations</h3>
+                            <h3 id="equipe-invitations" className="text-base font-semibold text-foreground-strong">Invitations</h3>
                             <ul className="flex flex-col gap-3" aria-label="Invitations">
                                 {invitations.map((inv) => {
                                     const st = invitationState(inv);
                                     return (
-                                        <li key={inv.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 md:flex-row md:items-start md:justify-between">
+                                        <li key={inv.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-start md:justify-between">
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    <p className="font-semibold text-fg">{inv.display_name}</p>
+                                                    <p className="font-semibold text-foreground-strong">{inv.display_name}</p>
                                                     <Badge variant={st.tone}>{st.badge}</Badge>
                                                 </div>
-                                                {inv.phone_entered && <p className="text-sm tabular-nums text-fg">{displayPhone(inv.phone_entered)}</p>}
-                                                <p className="text-sm text-fg-muted">{st.line}</p>
+                                                {inv.phone_entered && <p className="text-sm tabular-nums text-foreground-strong">{displayPhone(inv.phone_entered)}</p>}
+                                                <p className="text-sm text-muted-foreground">{st.line}</p>
                                             </div>
                                             <div className="flex flex-col gap-2 md:items-end">
                                                 {inv.state === 'PENDING' && <ContactButtons phone={inv.phone_entered} name={inv.display_name} message={invitationWhatsappMessage(inv, organizer, origin)} />}
@@ -503,7 +514,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                                                         {inv.state === 'PENDING' ? (
                                                             <>
                                                                 <Button variant="secondary" size="sm" onClick={() => ask({ kind: 'resend-invitation', invitation: inv })}>Renvoyer l’invitation</Button>
-                                                                <Button variant="ghost" size="sm" className="text-danger-fg" onClick={() => ask({ kind: 'cancel-invitation', invitation: inv })}>Annuler l’invitation</Button>
+                                                                <Button variant="ghost" size="sm" className="text-danger-text" onClick={() => ask({ kind: 'cancel-invitation', invitation: inv })}>Annuler l’invitation</Button>
                                                             </>
                                                         ) : (
                                                             <>
@@ -522,7 +533,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                             </ul>
                         </section>
                     )}
-                    {filter === 'followup' && invitations.length === 0 && <p className="text-sm text-fg-muted">Aucune invitation à relancer.</p>}
+                    {filter === 'followup' && invitations.length === 0 && <p className="text-sm text-muted-foreground">Aucune invitation à relancer.</p>}
                 </>
             )}
 
@@ -554,7 +565,8 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                     busy={busy}
                     actsAsAdmin={actsAsAdmin}
                     reason={reason}
-                    onReason={setReason}
+                    onReason={(v) => { setReason(v); setReasonError(undefined); }}
+                    reasonError={reasonError}
                 />
             )}
         </section>

@@ -333,7 +333,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         >
             {syncOfflineTickets && <LazyOfflineTicketsSync />}
             {signedOut && !AUTH_PAGES.includes(pathname) ? (
-                <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface-sunken p-6 text-center text-fg">
+                <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background p-6 text-center text-foreground-strong">
                     <p role="status" className="text-lg font-semibold">Vous êtes déconnecté de ce téléphone.</p>
                     <LinkButton href="/login?message=deconnecte">Se connecter</LinkButton>
                 </main>

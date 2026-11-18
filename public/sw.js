@@ -31,7 +31,7 @@ const CACHE_NAME = CACHE_PREFIX + SW_VERSION;
 const OFFLINE_PATH = '/billet/hors-ligne';
 const API_PREFIX = '/api/';
 const STATIC_PREFIX = '/_next/static/';
-const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
+const PUBLIC_ASSETS = ['/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/branding/bras-leves-symbole.svg', '/icon-192x192.png', '/icon-512x512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 const FALLBACK_NAV = new Set(['/', '/tickets']);
 /** Ressources de Next citées par la coquille (balises, charge RSC échappée) ou par ses CSS (url()). */
 const ASSET_RE = /(?:\/_next\/)?static\/(?:chunks|css|media)\/[^"'\s)\\]+/g;

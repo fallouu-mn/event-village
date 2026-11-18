@@ -338,14 +338,14 @@ function describeStatus(p: PaymentStatusView, ctx: { expired: boolean; stale: bo
 }
 
 const TONE_STYLES: Record<Tone, { bar: string; circle: string; badge: BadgeVariant }> = {
-  pending: { bar: 'bg-warning', circle: 'border-warning-border bg-warning-bg text-warning-fg', badge: 'warning' },
-  success: { bar: 'bg-success', circle: 'border-success-border bg-success-bg text-success-fg', badge: 'success' },
-  failed: { bar: 'bg-danger', circle: 'border-danger-border bg-danger-bg text-danger-fg', badge: 'danger' },
-  refund: { bar: 'bg-info', circle: 'border-info-border bg-info-bg text-info-fg', badge: 'danger' },
-  unknown: { bar: 'bg-border-strong', circle: 'border-border bg-surface-sunken text-fg-muted', badge: 'neutral' },
+  pending: { bar: 'bg-warning', circle: 'border-warning-border bg-warning-soft text-warning-text', badge: 'warning' },
+  success: { bar: 'bg-success', circle: 'border-success-border bg-success-soft text-success-text', badge: 'success' },
+  failed: { bar: 'bg-danger', circle: 'border-danger-border bg-danger-soft text-danger-text', badge: 'danger' },
+  refund: { bar: 'bg-info', circle: 'border-info-border bg-info-soft text-info-text', badge: 'danger' },
+  unknown: { bar: 'bg-input', circle: 'border-border bg-background text-muted-foreground', badge: 'neutral' },
 };
 
-const CARD = 'w-full max-w-md rounded-3xl border border-border bg-surface shadow-lg';
+const CARD = 'w-full max-w-md rounded-3xl border border-border bg-card shadow-lg';
 
 /** Libellé du bouton de succès selon la destination servie par la route. */
 function successLabel(p: PaymentStatusView): string {
@@ -497,18 +497,18 @@ function StateCard({
 }) {
   const circle =
     tone === 'failed'
-      ? 'bg-danger-bg text-danger-fg'
+      ? 'bg-danger-soft text-danger-text'
       : tone === 'pending'
-      ? 'bg-warning-bg text-warning-fg'
-      : 'bg-brand-bg text-brand-fg';
+      ? 'bg-warning-soft text-warning-text'
+      : 'bg-primary-soft text-primary-text';
   return (
     <section className={cn(CARD, 'space-y-6 p-6 text-center sm:p-8')}>
       <div className={cn('mx-auto flex h-16 w-16 items-center justify-center rounded-full', circle)} aria-hidden="true">
         <Icon size={30} />
       </div>
       <div className="space-y-2">
-        <h1 className="text-xl font-bold tracking-tight text-fg">{title}</h1>
-        <p className="text-sm leading-relaxed text-fg-muted">{description}</p>
+        <h1 className="text-xl font-bold tracking-tight text-foreground-strong">{title}</h1>
+        <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
       </div>
       {children && <div className="flex flex-col gap-2 pt-1">{children}</div>}
     </section>
@@ -543,7 +543,7 @@ function ProgressSteps({ done, label }: { done: boolean; label: string | null })
                 ? 'bg-success text-on-tone'
                 : step.state === 'active'
                 ? 'bg-warning text-on-tone ring-4 ring-warning/20'
-                : 'bg-surface-sunken text-fg-muted ring-1 ring-inset ring-border',
+                : 'bg-background text-muted-foreground ring-1 ring-inset ring-border',
             )}
           >
             {step.state === 'done' ? (
@@ -554,7 +554,7 @@ function ProgressSteps({ done, label }: { done: boolean; label: string | null })
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
             )}
           </span>
-          <span className={cn('text-sm font-semibold leading-tight', step.state === 'todo' ? 'text-fg-muted' : 'text-fg')}>
+          <span className={cn('text-sm font-semibold leading-tight', step.state === 'todo' ? 'text-muted-foreground' : 'text-foreground-strong')}>
             {step.title}
             <span className="sr-only">{step.state === 'done' ? ' : terminé' : step.state === 'active' ? ' : en cours' : ' : à venir'}</span>
           </span>
@@ -665,7 +665,7 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
         router.push(loginHref);
       } else {
         console.error(`[paiement ${id}] annulation refusée (HTTP ${res.status}) :`, body);
-        toast.error(serverErrorMessage(body) ?? `Annulation impossible (erreur ${res.status}). Réessayez.`);
+        toast.error(serverErrorMessage(body) ?? 'Annulation impossible pour le moment. Réessayez dans un instant.');
       }
     } catch (err) {
       console.error(`[paiement ${id}] annulation impossible :`, err);
@@ -804,16 +804,16 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
                   </Badge>
                 )}
               </div>
-              <h1 id="payment-status-title" className="text-2xl font-bold tracking-tight text-fg">
+              <h1 id="payment-status-title" className="text-2xl font-bold tracking-tight text-foreground-strong">
                 {meta.title}
               </h1>
-              <p className="text-sm leading-relaxed text-fg-muted">{meta.description}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{meta.description}</p>
             </div>
           </header>
 
           {/* Connexion instable : le sondage continue */}
           {connectionIssue && (
-            <p role="status" className="flex items-center gap-2 rounded-2xl border border-warning-border bg-warning-bg p-3 text-sm text-warning-fg">
+            <p role="status" className="flex items-center gap-2 rounded-2xl border border-warning-border bg-warning-soft p-3 text-sm text-warning-text">
               <WifiOff size={16} className="shrink-0" aria-hidden="true" />
               <span>Connexion instable : nouvelle vérification automatique dans quelques secondes.</span>
             </p>
@@ -821,7 +821,7 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
 
           {/* Lot 9 bis (B9) : un remboursement de ce paiement attend une reprise par l'équipe (état honnête). */}
           {payment.refundDelayed && (
-            <p role="status" className="flex items-start gap-2 rounded-2xl border border-warning-border bg-warning-bg p-3 text-sm text-warning-fg">
+            <p role="status" className="flex items-start gap-2 rounded-2xl border border-warning-border bg-warning-soft p-3 text-sm text-warning-text">
               <Hourglass size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>{REFUND_DELAYED_LABEL}</span>
             </p>
@@ -832,25 +832,25 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
           {/* Compte à rebours jusqu'à l'échéance de la réservation (expires_at), puis suivi jusqu'à la fin de
               validité du paiement chez l'opérateur (paymentDeadline, lot 9 bis H2) */}
           {isPending && !expired && expiresAt !== null && remainingMs !== null && (
-            <div className="rounded-2xl border border-border bg-surface-sunken p-3.5">
+            <div className="rounded-2xl border border-border bg-background p-3.5">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="flex items-center gap-2 text-fg">
-                  <Clock size={16} className="shrink-0 text-brand-fg" aria-hidden="true" />
+                <span className="flex items-center gap-2 text-foreground-strong">
+                  <Clock size={16} className="shrink-0 text-primary-text" aria-hidden="true" />
                   Places gardées encore
                 </span>
                 {/* Police du système (pas de font-mono, absente du système de design) et sur une ligne :
                     à 390 px, « 3 h 58 min » passait sur deux lignes (relecture du run 77) */}
-                <span className="whitespace-nowrap text-base font-bold tabular-nums text-brand-fg">
+                <span className="whitespace-nowrap text-base font-bold tabular-nums text-primary-text">
                   {formatRemaining(remainingMs)}
                 </span>
               </div>
-              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-brand-bg" aria-hidden="true">
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-primary-soft" aria-hidden="true">
                 <div
-                  className="h-full w-full origin-left rounded-full bg-brand transition-transform duration-1000 ease-linear motion-reduce:transition-none"
+                  className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-1000 ease-linear motion-reduce:transition-none"
                   style={{ transform: `scaleX(${progress})` }}
                 />
               </div>
-              <p className="mt-2 text-sm text-fg-muted">
+              <p className="mt-2 text-sm text-muted-foreground">
                 {payment.holdMinutes !== null && (
                   <>Vos places sont gardées <span className="tabular-nums">{payment.holdMinutes}</span> minutes. Validez le paiement sur votre téléphone avant l’échéance.{' '}</>
                 )}
@@ -860,10 +860,10 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
           )}
 
           {isPending && expired && !stale && payment.paymentDeadline !== null && now <= payment.paymentDeadline && (
-            <div className="flex items-start gap-2 rounded-2xl border border-border bg-surface-sunken p-3.5 text-sm text-fg-muted">
-              <Clock size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
+            <div className="flex items-start gap-2 rounded-2xl border border-border bg-background p-3.5 text-sm text-muted-foreground">
+              <Clock size={16} className="mt-0.5 shrink-0 text-primary-text" aria-hidden="true" />
               <p>
-                La demande de paiement reste valable jusqu’à <time dateTime={new Date(payment.paymentDeadline).toISOString()} className="font-semibold tabular-nums text-fg">{formatTime(payment.paymentDeadline)}</time> : cette page suit sa confirmation jusque-là.
+                La demande de paiement reste valable jusqu’à <time dateTime={new Date(payment.paymentDeadline).toISOString()} className="font-semibold tabular-nums text-foreground-strong">{formatTime(payment.paymentDeadline)}</time> : cette page suit sa confirmation jusque-là.
               </p>
             </div>
           )}
@@ -872,16 +872,16 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
           {isPending && !expired && (
             <div className="space-y-3">
               {qrCode && (
-                <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface-sunken p-4 sm:flex-row">
+                <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-background p-4 sm:flex-row">
                   {/* Fond blanc dans les deux thèmes : un QR code se lit en sombre sur clair. */}
                   <div className="shrink-0 rounded-xl border border-border bg-white p-2.5">
                     <PaymentQr value={qrCode} label={label ?? 'Mobile Money'} />
                   </div>
                   <div className="space-y-1 text-center sm:text-left">
-                    <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-fg sm:justify-start">
-                      <QrCode size={16} className="text-brand-fg" aria-hidden="true" /> Scannez avec {label ?? 'votre application'}
+                    <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-foreground-strong sm:justify-start">
+                      <QrCode size={16} className="text-primary-text" aria-hidden="true" /> Scannez avec {label ?? 'votre application'}
                     </p>
-                    <p className="text-sm leading-relaxed text-fg-muted">
+                    <p className="text-sm leading-relaxed text-muted-foreground">
                       Ouvrez {label ?? 'votre application Mobile Money'} sur votre téléphone, touchez « Scanner » puis visez ce code.
                     </p>
                   </div>
@@ -899,8 +899,8 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
                 </a>
               ) : (
                 !qrCode && (
-                  <p className="flex items-start gap-2 rounded-2xl border border-border bg-surface-sunken p-3.5 text-sm text-fg-muted">
-                    <Smartphone size={16} className="mt-0.5 shrink-0 text-brand-fg" aria-hidden="true" />
+                  <p className="flex items-start gap-2 rounded-2xl border border-border bg-background p-3.5 text-sm text-muted-foreground">
+                    <Smartphone size={16} className="mt-0.5 shrink-0 text-primary-text" aria-hidden="true" />
                     <span>Validez la demande dans {label ?? 'votre application Mobile Money'}, sur le téléphone du payeur.</span>
                   </p>
                 )
@@ -921,17 +921,17 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
           )}
 
           {/* Détails */}
-          <dl className="space-y-2.5 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+          <dl className="space-y-2.5 rounded-2xl border border-border bg-background p-4 text-sm">
             {payment.facialAmount !== null && (
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-fg-muted">Prix</dt>
-                <dd className="font-semibold tabular-nums text-fg">{formatFcfa(payment.facialAmount)}</dd>
+                <dt className="text-muted-foreground">Prix</dt>
+                <dd className="font-semibold tabular-nums text-foreground-strong">{formatFcfa(payment.facialAmount)}</dd>
               </div>
             )}
             {payment.serviceFee !== null && (
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-fg-muted">Frais de service</dt>
-                <dd className="font-semibold tabular-nums text-fg">{formatFcfa(payment.serviceFee)}</dd>
+                <dt className="text-muted-foreground">Frais de service</dt>
+                <dd className="font-semibold tabular-nums text-foreground-strong">{formatFcfa(payment.serviceFee)}</dd>
               </div>
             )}
             <div
@@ -940,24 +940,24 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
                 (payment.facialAmount !== null || payment.serviceFee !== null) && 'border-t border-border pt-2.5',
               )}
             >
-              <dt className="font-semibold text-fg">{payment.status === 'SUCCESS' ? 'Total payé' : 'Total'}</dt>
-              <dd className="text-base font-bold tabular-nums text-fg">{formatFcfa(payment.amount)}</dd>
+              <dt className="font-semibold text-foreground-strong">{payment.status === 'SUCCESS' ? 'Total payé' : 'Total'}</dt>
+              <dd className="text-base font-bold tabular-nums text-foreground-strong">{formatFcfa(payment.amount)}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-fg-muted">Opérateur</dt>
-              <dd className="font-semibold text-fg">{label ?? 'Non renseigné'}</dd>
+              <dt className="text-muted-foreground">Opérateur</dt>
+              <dd className="font-semibold text-foreground-strong">{label ?? 'Non renseigné'}</dd>
             </div>
             {payment.status === 'SUCCESS' && payment.ticketIds.length > 0 && (
               <div className="flex items-center justify-between gap-3">
-                <dt className="text-fg-muted">Billets émis</dt>
-                <dd className="flex items-center gap-1 font-semibold text-success-fg">
+                <dt className="text-muted-foreground">Billets émis</dt>
+                <dd className="flex items-center gap-1 font-semibold text-success-text">
                   <Ticket size={16} aria-hidden="true" /> {payment.ticketIds.length}
                 </dd>
               </div>
             )}
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-fg-muted">Référence</dt>
-              <dd className="font-semibold tabular-nums tracking-wide text-fg">{payment.paymentId.slice(0, 8).toUpperCase()}</dd>
+              <dt className="text-muted-foreground">Référence</dt>
+              <dd className="font-semibold tabular-nums tracking-wide text-foreground-strong">{payment.paymentId.slice(0, 8).toUpperCase()}</dd>
             </div>
           </dl>
 
@@ -989,7 +989,7 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
                 fullWidth
                 disabled={isCancelling}
                 onClick={() => setConfirmCancel(true)}
-                className="text-danger-fg hover:bg-danger-bg"
+                className="text-danger-text hover:bg-danger-soft"
               >
                 Annuler ce paiement
               </Button>
@@ -1001,12 +1001,12 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
                   {successLabel(payment)}
                 </LinkButton>
                 {hasTickets && redirectIn !== null && (
-                  <p className="text-center text-sm text-fg-muted">
+                  <p className="text-center text-sm text-muted-foreground">
                     Redirection automatique dans {redirectIn} s.{' '}
                     <button
                       type="button"
                       onClick={() => setRedirectIn(null)}
-                      className="inline-flex min-h-11 items-center rounded-lg px-1 font-semibold text-brand-fg underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="inline-flex min-h-11 items-center rounded-lg px-1 font-semibold text-primary-text underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       Rester sur cette page
                     </button>
@@ -1050,8 +1050,8 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
     <>
       <div className="flex min-h-[80vh] flex-col items-center justify-center gap-4 py-8 sm:py-12">
         {content}
-        <p className="flex max-w-md items-center justify-center gap-1.5 text-left text-sm text-fg-muted">
-          <ShieldCheck size={16} className="shrink-0 text-success-fg" aria-hidden="true" />
+        <p className="flex max-w-md items-center justify-center gap-1.5 text-left text-sm text-muted-foreground">
+          <ShieldCheck size={16} className="shrink-0 text-success-text" aria-hidden="true" />
           <span>Ne communiquez jamais votre code secret : Event Village ne vous le demandera pas.</span>
         </p>
       </div>

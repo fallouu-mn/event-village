@@ -35,7 +35,7 @@ interface Spec {
     href: (l: TodoLine) => string;
 }
 
-const amount = (x: number | null | undefined) => <span className="font-semibold text-fg tabular-nums">{formatFcfaPrecise(Number(x ?? 0))}</span>;
+const amount = (x: number | null | undefined) => <span className="font-semibold text-foreground-strong tabular-nums">{formatFcfaPrecise(Number(x ?? 0))}</span>;
 
 /** Lignes qui ont chacune leur carte ; versements à reprendre et créances n'en font plus qu'une (finition 3d, point 5). */
 type CardKey = Exclude<TodoLineKey, 'to_resume' | 'debts'>;
@@ -52,12 +52,12 @@ const MONEY_PARTS: Record<'to_resume' | 'debts', { explain: (a: number | null) =
 function MoneyCard({ money }: { money: MoneyLine }) {
     const unreadable = money.parts.some((p) => p.unavailable);
     return (
-        <li className="flex flex-col gap-3 rounded-2xl border border-warning-border bg-surface p-4 sm:p-5">
+        <li className="flex flex-col gap-3 rounded-2xl border border-warning-border bg-card p-4 sm:p-5">
             <div className="flex items-start gap-3">
-                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-warning-bg text-warning-fg" aria-hidden="true"><Banknote size={20} /></span>
-                <p className="min-w-0 break-words text-base font-semibold leading-snug text-fg tabular-nums">{money.title}</p>
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-warning-soft text-warning-text" aria-hidden="true"><Banknote size={20} /></span>
+                <p className="min-w-0 break-words text-base font-semibold leading-snug text-foreground-strong tabular-nums">{money.title}</p>
             </div>
-            <p className="text-sm leading-relaxed text-fg-muted">
+            <p className="text-sm leading-relaxed text-muted-foreground">
                 {money.parts.filter((p) => !p.unavailable && Number(p.count) > 0).map((p) => (
                     <React.Fragment key={p.key}>{MONEY_PARTS[p.key].explain(p.amount)} </React.Fragment>
                 ))}
@@ -194,28 +194,28 @@ export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRig
 
     return (
         <section aria-labelledby={`${id}-titre`} className="flex flex-col gap-3">
-            <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-fg">À faire aujourd’hui</h2>
+            <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-foreground-strong">À faire aujourd’hui</h2>
             {phase === 'loading' && (
                 <div role="status" aria-busy="true" aria-label="Chargement de ce qui est à faire aujourd’hui" className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {[0, 1, 2].map((i) => <span key={i} className="h-36 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />)}
+                    {[0, 1, 2].map((i) => <span key={i} className="h-36 rounded-2xl bg-background motion-safe:animate-pulse" />)}
                 </div>
             )}
             {phase === 'error' && (
-                <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-border bg-danger-bg p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-semibold text-danger-fg">Liste indisponible pour le moment. Les files restent ouvertes depuis le menu.</p>
+                <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-border bg-danger-soft p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-semibold text-danger-text">Liste indisponible pour le moment. Les files restent ouvertes depuis le menu.</p>
                     <Button variant="secondary" size="sm" isLoading={retrying} onClick={() => { setRetrying(true); void load(); }}>Réessayer</Button>
                 </div>
             )}
             {phase === 'ready' && allowed.length === 0 && (
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-fg">{hasAnyRight ? 'Aucune des files à traiter ne vous est ouverte.' : NO_RIGHTS_YET}</p>
+                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-foreground-strong">{hasAnyRight ? 'Aucune des files à traiter ne vous est ouverte.' : NO_RIGHTS_YET}</p>
                     <LinkButton href="/admin/mes-droits" variant="secondary" size="sm" rightIcon={<ArrowRight size={16} />}>Voir mes droits</LinkButton>
                 </div>
             )}
             {phase === 'ready' && allowed.length > 0 && (
                 <>
                     {lines.length === 0 && !moneyDue && (
-                        <p className="flex items-center gap-2 rounded-2xl border border-success-border bg-success-bg p-4 text-base font-semibold text-success-fg">
+                        <p className="flex items-center gap-2 rounded-2xl border border-success-border bg-success-soft p-4 text-base font-semibold text-success-text">
                             <CheckCircle2 size={20} className="flex-shrink-0" aria-hidden="true" />
                             {NOTHING_URGENT}
                         </p>
@@ -227,14 +227,14 @@ export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRig
                                 const s = TODO_SPECS[l.key as CardKey];
                                 const unavailable = l.unavailable === true;
                                 return (
-                                    <li key={l.key} className={cn('flex flex-col gap-3 rounded-2xl border bg-surface p-4 sm:p-5', unavailable ? 'border-border' : 'border-warning-border')}>
+                                    <li key={l.key} className={cn('flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:p-5', unavailable ? 'border-border' : 'border-warning-border')}>
                                         <div className="flex items-start gap-3">
-                                            <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', unavailable ? 'bg-surface-sunken text-fg-muted' : 'bg-warning-bg text-warning-fg')} aria-hidden="true">{s.icon}</span>
-                                            <p className="min-w-0 break-words text-base font-semibold leading-snug text-fg tabular-nums">
+                                            <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', unavailable ? 'bg-background text-muted-foreground' : 'bg-warning-soft text-warning-text')} aria-hidden="true">{s.icon}</span>
+                                            <p className="min-w-0 break-words text-base font-semibold leading-snug text-foreground-strong tabular-nums">
                                                 {unavailable ? s.upToDate.split(' :')[0] : s.title(l)}
                                             </p>
                                         </div>
-                                        <p className="text-sm leading-relaxed text-fg-muted">{unavailable ? 'Compteur indisponible pour le moment.' : s.explain(l)}</p>
+                                        <p className="text-sm leading-relaxed text-muted-foreground">{unavailable ? 'Compteur indisponible pour le moment.' : s.explain(l)}</p>
                                         <LinkButton href={s.href(l)} variant={unavailable ? 'secondary' : 'primary'} rightIcon={<ArrowRight size={16} />} className="mt-auto w-full sm:w-auto">
                                             {s.action}
                                         </LinkButton>
@@ -244,25 +244,25 @@ export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRig
                         </ul>
                     )}
                     {(upToDate.length > 0 || (money && !moneyDue)) && (
-                        <ul className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4" aria-label="À jour">
+                        <ul className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-4" aria-label="À jour">
                             {money && !moneyDue && (
-                                <li className="flex items-center gap-2 text-sm text-fg">
-                                    <CheckCircle2 size={18} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+                                <li className="flex items-center gap-2 text-sm text-foreground-strong">
+                                    <CheckCircle2 size={18} className="flex-shrink-0 text-success-text" aria-hidden="true" />
                                     {money.title}
                                 </li>
                             )}
                             {upToDate.map((k) => (
-                                <li key={k} className="flex items-center gap-2 text-sm text-fg">
-                                    <CheckCircle2 size={18} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+                                <li key={k} className="flex items-center gap-2 text-sm text-foreground-strong">
+                                    <CheckCircle2 size={18} className="flex-shrink-0 text-success-text" aria-hidden="true" />
                                     {TODO_SPECS[k as CardKey].upToDate}
                                 </li>
                             ))}
                         </ul>
                     )}
                     {reply?.partial && !isSuperadmin && (
-                        <p className="text-sm text-fg-muted">
+                        <p className="text-sm text-muted-foreground">
                             Vous ne voyez que ce que vos droits vous permettent de traiter.{' '}
-                            <Link href="/admin/mes-droits" className="inline-flex min-h-11 items-center font-semibold text-brand-fg underline-offset-2 hover:underline">Voir mes droits</Link>
+                            <Link href="/admin/mes-droits" className="inline-flex min-h-11 items-center font-semibold text-primary-text underline-offset-2 hover:underline">Voir mes droits</Link>
                         </p>
                     )}
                 </>

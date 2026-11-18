@@ -21,6 +21,8 @@
  *
  * Lot 9 bis (R70, B88) : l'adresse du support du pied vient de lib/support.ts (SUPPORT_EMAIL, côté serveur), lue au
  * rendu ; plus aucune adresse écrite ici.
+ * Design 1a (logo « Bras levés ») : en-tête = carré au dégradé de la marque (#EA580C → #DB2777, couleur pleine en repli)
+ * et nom « Event Village » en texte gras ; aucune image (règle G.51 : ni image ni QR dans un email).
  */
 import { supportEmail } from '@/lib/support';
 
@@ -173,7 +175,10 @@ export function emailLayout(input: EmailLayoutInput): EmailLayoutOutput {
     <tr><td align="center">
       <table class="ev-card" role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #E4E4E7;border-radius:16px;">
         <tr><td style="padding:24px 28px 8px;">
-          <p class="ev-link" style="margin:0 0 16px;font-size:14px;font-weight:700;letter-spacing:0.5px;color:#C2410C;">Event Village</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;"><tr>
+            <td aria-hidden="true" style="width:22px;height:22px;border-radius:7px;background-color:#EA580C;background-image:linear-gradient(135deg,#EA580C,#DB2777);font-size:0;line-height:0;">&nbsp;</td>
+            <td class="ev-text" style="padding-left:8px;font-size:18px;line-height:22px;font-weight:800;letter-spacing:-0.2px;color:#1A1A1A;">Event Village</td>
+          </tr></table>
           <h1 class="ev-text" style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0F172A;">${escapeHtml(input.heading)}</h1>
           ${blocks.join('\n          ')}
         </td></tr>

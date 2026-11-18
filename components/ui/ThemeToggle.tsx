@@ -28,14 +28,14 @@ export const ThemeToggle: React.FC<{ className?: string }> = ({ className }) => 
       title={isDark ? 'Passer au thème clair' : 'Passer au thème sombre'}
       suppressHydrationWarning
       className={cn(
-        'inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-sunken text-fg',
-        'transition-colors duration-200 hover:text-brand-fg motion-safe:active:scale-95',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+        'inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-background text-foreground-strong',
+        'transition-colors duration-200 hover:text-primary-text motion-safe:active:scale-95',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
         className,
       )}
     >
       <span aria-hidden="true" className="inline-flex" suppressHydrationWarning>
-        {isDark ? <Sun size={18} className="text-warning-fg" /> : <Moon size={18} />}
+        {isDark ? <Sun size={18} className="text-warning-text" /> : <Moon size={18} />}
       </span>
     </button>
   );

@@ -49,7 +49,7 @@ const OFFLINE_PATH = '/billet/hors-ligne';
 const OFFLINE_CACHE = 'ev-hors-ligne-lot7-1';
 /** Contrat 5.3 : ressources publiques que le service worker peut mettre en cache. */
 const PUBLIC_ASSETS = [
-    '/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/icon-192x192.png', '/icon-512x512.png',
+    '/manifest.json', '/favicon.ico', '/branding/event-village-mark.svg', '/branding/bras-leves-symbole.svg', '/icon-192x192.png', '/icon-512x512.png',
     '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png',
 ];
 /** D50 : motifs de vibration. */

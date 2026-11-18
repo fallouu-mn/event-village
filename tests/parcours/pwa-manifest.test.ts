@@ -361,7 +361,9 @@ describe('7.0 e — manifest (public/manifest.json)', () => {
         assert.deepEqual(faults, [], `${MANIFEST_REL} :\n  - ${faults.join('\n  - ')}`);
     });
 
-    test('valeurs du contrat (D24) : id, scope et start_url « / », lang fr, dir ltr, fond clair #F8F9FA, thème #FF5722 gardé, raccourci « Billets hors ligne »', () => {
+    // Design 1a (direction.md, sections 2 et 9) : fond et barre aux couleurs de la charte (#FFFFFF ; la balise theme-color de
+    // app/layout.tsx passe à #121212 en sombre). #FF5722 (ancien décor) n'est plus une couleur de la charte. Signalé au rapport.
+    test('valeurs du contrat (D24, design 1a) : id, scope et start_url « / », lang fr, dir ltr, fond et barre #FFFFFF, raccourci « Billets hors ligne »', () => {
         const m = readManifest();
         const expected: Record<string, string> = {
             id: '/',
@@ -372,8 +374,8 @@ describe('7.0 e — manifest (public/manifest.json)', () => {
             lang: 'fr',
             dir: 'ltr',
             display: 'standalone',
-            background_color: '#F8F9FA',
-            theme_color: '#FF5722',
+            background_color: '#FFFFFF',
+            theme_color: '#FFFFFF',
         };
         const faults: string[] = [];
         for (const [k, v] of Object.entries(expected)) {

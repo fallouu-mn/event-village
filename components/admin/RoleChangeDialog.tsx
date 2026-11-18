@@ -141,18 +141,18 @@ export function RoleChangeDialog({ user, self, onClose, onChanged }: {
                     ) : (
                         <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void submit(false); }}>
                             <fieldset className="space-y-2">
-                                <legend className="text-sm font-semibold text-fg">Nouveau rôle</legend>
+                                <legend className="text-sm font-semibold text-foreground-strong">Nouveau rôle</legend>
                                 {targets.map((t) => (
                                     <label
                                         key={t}
                                         className={cn('flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border p-3',
-                                            to === t ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken')}
+                                            to === t ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background')}
                                     >
                                         <input type="radio" name={`${id}-role`} value={t} checked={to === t} onChange={() => setTo(t)}
-                                            className="mt-1 h-5 w-5 flex-shrink-0 accent-brand" />
+                                            className="mt-1 h-5 w-5 flex-shrink-0 accent-primary" />
                                         <span className="min-w-0">
-                                            <span className="block text-sm font-semibold text-fg">{LABELS[t]}</span>
-                                            <span className="block text-sm text-fg-muted">{roleChangeEffect(from, t, self)}</span>
+                                            <span className="block text-sm font-semibold text-foreground-strong">{LABELS[t]}</span>
+                                            <span className="block text-sm text-muted-foreground">{roleChangeEffect(from, t, self)}</span>
                                         </span>
                                     </label>
                                 ))}
@@ -166,7 +166,7 @@ export function RoleChangeDialog({ user, self, onClose, onChanged }: {
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
                             />
-                            <p className="text-sm text-fg-muted">Votre mot de passe et le code administrateur reçu par SMS vous seront demandés.</p>
+                            <p className="text-sm text-muted-foreground">Votre mot de passe et le code administrateur reçu par SMS vous seront demandés.</p>
                             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                                 <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>Annuler</Button>
                                 <Button type="submit" variant="primary" isLoading={busy} disabled={!reasonOk}>Changer le rôle</Button>
