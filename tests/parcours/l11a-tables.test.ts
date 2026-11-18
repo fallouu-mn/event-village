@@ -451,7 +451,9 @@ describe('B. Payer l’acompte : montant relu en base, confirmation, paiement su
         assert.deepEqual((refunds ?? []).map((r) => [n(r.amount), r.aggregator_fee_bearer]), [[21_000, 'EVENT_VILLAGE']]);
         const row = await reservation(id);
         assert.deepEqual([row.booking_state, n(row.paid_amount)], ['EXPIREE', 0]);
-        assert.deepEqual(await outboxOf(client.userId, id), allChannels('TABLE_PAYMENT_REFUNDED'));
+        // Deux avis : la table rendue à la fin de l'attente, puis le paiement arrivé trop tard, remboursé
+        const notices = await outboxOf(client.userId, id);
+        assert.deepEqual(notices, [...allChannels('TABLE_HOLD_EXPIRED'), ...allChannels('TABLE_PAYMENT_REFUNDED')].sort());
     });
 
     test('échec du paiement : la demande reste en attente de paiement (la table est tenue jusqu’à la fin de l’attente)', async () => {

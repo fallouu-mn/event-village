@@ -164,6 +164,7 @@ describe('5. Aucun calcul d’argent ni écriture directe d’une réservation d
         assert.match(read('lib/tables/table-payment.service.ts'), /rpcWithRetry<Record<string, unknown>>\('table_payment_create'/);
         const confirm = read('lib/payments/confirmation.service.ts');
         assert.doesNotMatch(confirm, /from\('table_reservations'\)\.update/, 'la confirmation n’écrit plus la réservation');
-        assert.doesNotMatch(read('app/api/admin/services/route.ts'), /table_reservations:\s*\{/, 'la modération n’écrit plus une réservation de table');
+        const moderation = read('app/api/admin/services/route.ts');
+        assert.match(moderation, /if \(table === 'table_reservations'\) \{[\s\S]*?rpc\('table_reservation_cancel'[\s\S]*?return NextResponse\.json/, 'la modération d’une demande de table passe par la fonction en base');
     });
 });
