@@ -121,7 +121,11 @@ describe('T2 — une table par client et par créneau, au plus 3 réservations �
         for (let i = 0; i < 3; i += 1) assert.equal(code(await reserveRpc(cl2, await freeVenue(), { date, guests: 2 })), 'OK');
         const limited = await startPayment(cl2, expired2);
         assert.deepEqual([limited.status, limited.body.code, limited.payment], [429, 'TOO_MANY_PENDING', null]);
-        assert.notEqual((await reservation(expired2)).booking_state, 'EN_ATTENTE_PAIEMENT', 'attente reprise malgré le refus');
+        // Run 410 : l'attente échue n'est pas passée par la tâche (état encore « En attente de paiement ») ; ce qui prouve
+        // qu'elle n'est pas reprise, c'est son échéance restée dans le passé
+        const after2 = await reservation(expired2);
+        assert.ok(after2.hold_expires_at === null || Date.parse(String(after2.hold_expires_at)) <= Date.now(),
+            `attente reprise malgré le refus : ${String(after2.booking_state)} jusqu’à ${String(after2.hold_expires_at)}`);
     });
 
     test('demandes simultanées du même client : 6 au même créneau du même établissement → une seule ; 6 dans 6 établissements → 3', async () => {
