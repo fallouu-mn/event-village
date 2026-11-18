@@ -7,13 +7,15 @@
  *     l'acompte est payé ne compte plus ; même règle à la relance d'une attente échue ; demandes simultanées.
  *  T3 demande en attente de réponse annulée par le client : remboursée en entier, quelle que soit l'heure.
  *  T5 acceptation par un établissement suspendu ou une partenaire suspendue : refusée, remboursée en entier.
+ *  T6 menu public : identifiant exact seulement (nom complet, partiel ou « rest-<nom> » : 404).
  * Temps simulé comme dans les suites du lot (shiftReservation), jamais l'horloge. Faux SamirPay.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLot11aInvariants } from '../helpers/lot11a-invariants';
-import { clientCancel, partnerAction } from '../audit/cv11a-helpers';
+import { clientCancel, partnerAction, routeId, service } from '../audit/cv11a-helpers';
+import { withFeatureFlags } from './terrain-helpers';
 import { setFiche } from '../audit/cvf1-helpers';
 import {
     allChannels, dayFromNow, decideVenue, newBuyer, newPartner, newTable, newVenue, openTablesService, outboxOf, payConfirmed, refundsOf, reservation, reserveRpc,
@@ -198,5 +200,28 @@ describe('T5 — l’acceptation refait les contrôles de l’établissement et 
         const r = await partnerAction(id, partner.accessToken, { action: 'ACCEPTER' });
         assert.equal(r.status, 200, JSON.stringify(r.body));
         assert.equal((await reservation(id)).booking_state, 'CONFIRMEE');
+    });
+});
+
+describe('T6 — /api/restaurants/[id]/menu : identifiant exact seulement', () => {
+    test('identifiant d’une partenaire VALIDE : son menu ; son nom complet, un nom partiel ou « rest-<nom> » : 404, jamais un menu', async () => {
+        const named = await newPartner('l11a-cv-menu');
+        const unique = `Chez L11a Cv Menu ${Date.now()}`;
+        assert.equal((await service.from('partners').update({ commercial_name: unique }).eq('id', named.partnerId)).error, null);
+        const { error } = await service.from('products').insert({ partner_id: named.partnerId, name: 'TEST Yassa l11a cv', price: 3_000, status: 'DISPONIBLE' });
+        assert.equal(error, null, error?.message);
+        const out = await withFeatureFlags({ orders: true }, async () => {
+            const byId = await routeId('GET', 'restaurants/[id]/menu', named.partnerId, null);
+            const others: Row = {};
+            for (const id of [unique, `rest-${unique.toLowerCase().replace(/ /g, '-')}`, 'l11a', 'rest-e']) {
+                const r = await routeId('GET', 'restaurants/[id]/menu', id, null);
+                others[id] = `${r.status} ${JSON.stringify(r.body).includes('TEST Yassa l11a cv') ? 'menu' : ''}`.trim();
+            }
+            return { byId, others };
+        });
+        assert.equal(out.byId.status, 200, JSON.stringify(out.byId.body));
+        assert.equal((out.byId.body as Row).partnerName, unique);
+        assert.ok(JSON.stringify(out.byId.body).includes('TEST Yassa l11a cv'), 'menu de la partenaire');
+        for (const [id, s] of Object.entries(out.others)) assert.equal(s, '404', `« ${id} » : ${String(s)}`);
     });
 });

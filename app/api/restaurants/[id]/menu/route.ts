@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { guardFeature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +8,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/restaurants/[id]/menu
  * Récupère les plats et menus réels du partenaire.
  * Lot 11a (équivalent côté tables du trou T1 de la contre-vérification de la 10a) : seule une partenaire VALIDE est
- * servie ; un identifiant ou un nom inconnu répond 404. Avant, la route prenait la première partenaire venue (même en
- * attente ou suspendue) et servait ses produits.
+ * servie ; un identifiant inconnu répond 404. Avant, la route prenait la première partenaire venue (même en attente ou
+ * suspendue) et servait ses produits. Contre-vérification de la 11a (T6) : identifiant exact seulement, plus de nom.
  */
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const params = await props.params;
@@ -18,35 +17,30 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
         const closed = await guardFeature('orders', 'GET /api/restaurants/[id]/menu');
         if (closed) return closed;
-        const partnerIdOrSlug = params.id;
+        const requestedId = params.id;
         const supabase = getServiceRoleClient();
 
-        // 1. Détection format UUID pour éviter toute erreur de syntaxe SQL PostgreSQL
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(partnerIdOrSlug);
+        // Contre-vérification de la 11a (T6) : identifiant exact seulement. Plus aucune recherche par nom (« contient »
+        // limitée à une ligne : « rest-e » désignait la première partenaire venue dont le nom contient « e »).
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedId);
 
         let partner: { id: string; company_name: string; commercial_name?: string | null } | null = null;
 
         if (isUuid) {
-            const { data } = await supabase
+            const { data, error: partnerError } = await supabase
                 .from('partners')
                 .select('id, company_name, commercial_name')
-                .eq('id', partnerIdOrSlug)
+                .eq('id', requestedId)
                 .eq('status', 'VALIDE')
                 .maybeSingle();
-            partner = data;
-        } else {
-            const cleanSlug = partnerIdOrSlug.replace(/^(rest|restaurant)-/, '').replace(/-/g, ' ');
-            const { data } = await supabase
-                .from('partners')
-                .select('id, company_name, commercial_name')
-                .or(`commercial_name.ilike.${pgIlikeContains(cleanSlug)},company_name.ilike.${pgIlikeContains(cleanSlug)}`) // lot 1C.1
-                .eq('status', 'VALIDE')
-                .limit(1)
-                .maybeSingle();
+            if (partnerError) {
+                console.error('[API /api/restaurants/[id]/menu] partenaire illisible :', partnerError.message);
+                return NextResponse.json({ error: 'Impossible de charger le menu.' }, { status: 500 });
+            }
             partner = data;
         }
 
-        // Lot 11a : jamais de partenaire de repli
+        // Lot 11a : jamais de partenaire de repli ; identifiant illisible ou inconnu : 404
         if (!partner) {
             return NextResponse.json({ error: 'Ce restaurant n’existe pas ou n’est plus proposé.', code: 'RESTAURANT_NOT_FOUND' }, { status: 404 });
         }
