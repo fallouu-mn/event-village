@@ -1,10 +1,10 @@
 # Lot 11a — Tables : argent et sécurité
 
-Branche `lot11a/tables-argent`, partie de `lot10a/salles-argent` à `11cc55a10` (décision : la 10a sera fusionnée avant la 11a ; les recopies de fonctions communes gardent ainsi les ajouts des salles). Non fusionnée. Aucun écran : le service reste fermé par son interrupteur (`features.tables_enabled`). Migrations `20261123000101` à `…108` (les numéros `20261123000001…` sont pris par la design 1b), sans BEGIN ni COMMIT, rejouables, non appliquées sur event-village-dev.
+Branche `lot11a/tables-argent`, partie de `lot10a/salles-argent` à `11cc55a10` (décision : la 10a sera fusionnée avant la 11a ; les recopies de fonctions communes gardent ainsi les ajouts des salles). Avant le run complet final : `main` (`c011e2cb8`) et la 10a corrigée (`182a7d914`, contre-vérification T1 à T6) fusionnées dans la branche. Non fusionnée dans main. Aucun écran : le service reste fermé par son interrupteur (`features.tables_enabled`). Migrations `20261123000101` à `…109` (les numéros `20261123000001…` sont pris par la design 1b), sans BEGIN ni COMMIT, rejouables, non appliquées sur event-village-dev.
 
 ## À lire en premier : failles trouvées et corrigées
 
-Chacune a un test rouge d'abord (run 380, 0/5, typage compris ; F9 : run 388), puis vert.
+Chacune a un test rouge d'abord (run 380, 0/5, typage compris ; F9 : run 388 ; F10 à F13 : runs 395 et 397), puis vert.
 
 | # | Faille | Correctif | Test |
 |---|---|---|---|
@@ -16,7 +16,11 @@ Chacune a un test rouge d'abord (run 380, 0/5, typage compris ; F9 : run 388), p
 | F6 | La partenaire écrivait **n'importe quel statut** (confirmée sans paiement, terminée) ; la modération et la confirmation de paiement écrivaient l'état directement, sans verrou ni journal ; un échec de paiement annulait la réservation (C1, C2). | Garde en base : état, argent, table, date, personnes ne changent que par les fonctions du lot (verrou de l'établissement, journal `audit_logs`) ; toute autre écriture est refusée, même avec la clé de service. | `l11a-tables` A, B |
 | F7 | **Nouvelle.** La route publique d'un restaurant prenait la **première partenaire venue** quand le nom ne correspondait pas, et inventait des zones d'exemple ; toutes les tables actives étaient lisibles par tous, sans validation. | Lecture par établissement, actif et validé seulement (REST et route). | `r31-tables-lecture`, `interrupteurs` |
 | F8 | **Nouvelle.** `POST /api/partner/tables/reservations` créait une réservation par `create_table_reservation_atomic`, sans contrôle d'établissement, d'heure ni d'argent ; la suppression d'une réservation par la partenaire était aussi ouverte au client, sans aucun remboursement. | Route et fonction retirées ; annulation par `table_reservation_cancel` (client, établissement, Event Village), remboursement par le moteur financier. | `l11a-tables` A, `l11a-annulation` |
-| F9 | **Nouvelle.** Une partenaire en attente ou suspendue créait zones et tables. | Une zone ou une table appartient à un établissement, que seule une fiche VALIDE crée. | `l11a-tables` (création par la route) |
+| F9 | **Nouvelle.** Une partenaire **suspendue** créait zones et tables (une fiche en attente était déjà refusée par la garde des fiches, 403). | Une zone ou une table appartient à un établissement, que seule une fiche VALIDE crée. | `l11a-tables` (création par la route) |
+| F10 | **Équivalent du T1 de la contre-vérification de la 10a.** Routes partenaire des tables : vérifiées, déjà limitées à la fiche de la session (aucun trou, test de preuve). Mais `GET /api/restaurants/[id]/menu` prenait **la première partenaire venue** pour un identifiant inconnu, et servait les produits d'une fiche en attente. | Fiche VALIDE seulement, jamais de repli (404). | `l11a-tables` (routes) |
+| F11 | **Équivalent du T2.** Payer une demande dont l'attente était échue la **reprenait sans refaire les contrôles** (établissement suspendu, table retirée, horaires changés) ; un paiement confirmé après la suspension de l'établissement était accepté. | `table_hold_refusal` : tous les contrôles de la réservation refaits à la création du paiement et à sa confirmation ; sinon refus, ou remboursement en entier. | `l11a-tables` (relance) |
+| F12 | **Équivalent du T5.** Le nombre de demandes en attente se comptait sans verrou par client : deux demandes simultanées dans deux établissements passaient la limite ; une attente relancée ne la comptait pas. | Verrou par client avant de compter, à la réservation et à la relance. | `l11a-tables` (T5, T2) |
+| F13 | **Équivalent du T6.** Avec une commission sur l'acompte (réglage, 0 % au lancement), l'invariant (d) et les relevés de l'administration la comptaient pour les salles seulement. | Migration 109 : relevés et invariant étendus aux tables. | `l11a-tables` (T6) |
 
 Lecture des réservations (C3) : déjà limitée au client, à la partenaire propriétaire et à l'admin avec son code ; vérifiée par `r31`, et toute écriture REST est maintenant refusée (droits retirés).
 
@@ -90,17 +94,18 @@ Une zone ou une table portera `event_id`, exclusif de `venue_id`, et un prix par
 | `…106_l11a_annulation` | annuler, répondre, présence, paiement sur place, tâche ; recopie de `notif_cashouts_notify` |
 | `…107_l11a_validation` | `venue_validation_decide`, avis aux administrateurs ; recopie de `notif_admin_review_sms` |
 | `…108_l11a_messages` | 14 types d'avis ; avis générique sans les tables |
+| `…109_l11a_releves` | commission des tables dans les relevés ; recopies de `finance_admin_earned`, `finance_admin_payments` |
 
 Un test (`migration-lot11a-rejouable`) vérifie qu'aucune recopie ne perd une ligne de la définition précédente : il deviendra rouge si la 10a change ces fonctions sans que la 11a soit recopiée.
 
 ## Mise en service (event-village-dev)
 
-1. Appliquer d'abord les migrations de la 10a.
+1. Appliquer d'abord les migrations de la 10a (`20261122000001` à `…12`).
 2. Planifier la nouvelle tâche : rejouer `supabase/ops/schedule-crons.sql` (10 tâches, dont `ev_tables`).
 
 ```sql
 -- Avant
--- A. Dernière migration : 20261122000007 (lot 10a)
+-- A. Dernière migration : 20261122000012 (lot 10a corrigé)
 select max(version) from supabase_migrations.schema_migrations;
 -- B. Rien du lot : 0, 0
 select count(*) from pg_proc where pronamespace = 'public'::regnamespace and (proname like 'table\_%' or proname like 'venue\_%');
@@ -113,7 +118,7 @@ select (select count(*) from public.restaurant_tables), (select count(*) from pu
           && tsrange(b.reservation_date + b.reservation_time, b.reservation_date + b.reservation_time + interval '2 hours'));
 
 -- Après
--- A. Huit versions 20261123000101 à …108
+-- A. Neuf versions 20261123000101 à …109
 select version from supabase_migrations.schema_migrations where version like '20261123%' order by 1;
 -- B. Fonctions du lot réservées au rôle de service : anon false, authenticated false
 select p.proname, has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute')
@@ -145,7 +150,9 @@ Puis `03-verification.sql`.
 | `notif-modeles`, `notif-outbox`, `notif-migration` | 14 types (registre, textes exacts, émetteurs), SMS groupé avec les établissements | messages |
 | `planification-crons`, `essai-cron-local` | tâche `ev_tables` ajoutée (minute 3 : la minute 4 est vérifiée par `essai-cron-local`) | F5 |
 | `f2acv-ecritures-fiche` | inventaire des écritures partenaire : POST des réservations retiré, routes des établissements ajoutées | F8, F9 |
-| `tests/helpers/finance-invariants.ts` (règle e) | un paiement de table impossible à honorer (`refund_reason`) est remboursé sans vente, comme pour les salles | paiement arrivé trop tard |
+| `tests/helpers/finance-invariants.ts` (règles e et d) | un paiement de table impossible à honorer (`refund_reason`) est remboursé sans vente, comme pour les salles ; la commission d'une table est comptée comme celle d'une salle | paiement arrivé trop tard, F13 |
+| `scripts/run-tests.mjs` (lanceur, pas un test) | `--list` écrit la liste d'un bloc et sort après l'écriture | run 389 : liste tronquée à 400 lignes sur 507, lot 4 arrêté |
+| `app/admin/finance-settings/page.tsx`, `components/admin/finance/EarnedDetail.tsx` | anciens noms de couleur remplacés par leurs équivalents exacts de la charte | contrôle du design 1a sur les fichiers modifiés |
 | `docs/recette-billetterie.md` | quatre lignes citées recalées (acces-securite-urgente 211 → 216 et 228 → 233, interrupteurs 362 → 378, notif-modeles 518 → 535) | contrôle `recette-matrice` |
 
 ## Runs
@@ -157,6 +164,9 @@ Puis `03-verification.sql`.
 | 386 | `c7ad76401` | rapide, 36 suites | 32/36 : l'aide de préparation des réservations (paramètres SQL non typés) |
 | 387 | `709ad7d20` | rapide, 6 suites | **vert, 6/6** (avec 386 : les 36 suites du lot vertes) |
 | 388 | `517a04697` | rapide, 2 suites | rouge voulu : création d'un établissement par une fiche non validée (F9) |
+| 389 | `2a6bdee43` | complet | 365/366 exécutées ; rouge : mon test F9 attendait mon propre refus pour une fiche en attente (la garde existante répondait déjà 403) et lisait la boîte d'envoi sans filtre (limite de 1 000 lignes) ; lot 4 non exécuté (liste des suites tronquée par le lanceur) |
+| 395 | `81cb2e377` | rapide, 1 suite | rouge voulu : F10 (menu) et F11 (relance) ; routes partenaire vertes (aucun trou) |
+| 397 | `7be7be551` | rapide, 3 suites | rouge voulu : F12 et F13 ; F10, F11 verts ; lint rouge (anciens noms de couleur, contrôle venu de main) |
 
 ## Points ouverts (lot 11b et suivants)
 
@@ -165,3 +175,4 @@ Puis `03-verification.sql`.
 - Fermetures exceptionnelles (jours fériés, congés) : non prévues.
 - Les SMS optionnels (rappel) ne partent pas la nuit : la règle existante les **saute**, elle ne les reporte pas à 8 h (seul le SMS groupé des administrateurs est reporté).
 - Une absence marquée par erreur ne se corrige pas encore (à prévoir avec l'écran de l'établissement).
+- Supprimer une zone utilisée par des réservations est refusé par la garde (message générique) : à proposer comme « désactiver » à l'écran.
