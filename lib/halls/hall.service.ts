@@ -50,6 +50,13 @@ export interface CreateHallReservationInput {
 
 const POLICIES: readonly CancellationPolicy[] = ['SOUPLE', 'MODEREE', 'STRICTE'];
 
+/**
+ * Correctifs de la contre-vérification du lot 10a (T1) : colonnes de la fiche d'une salle lues par sa propriétaire
+ * (écran de modification). Jamais les réservations, ni le téléphone ou le compte de la partenaire.
+ */
+const OWN_HALL_COLUMNS = 'id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, deposit_percentage, '
+    + 'cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, created_at, updated_at';
+
 /** Montant en F CFA entier d'au moins 1, ou une erreur lisible. */
 function wholeFcfa(value: unknown, what: string): number {
     const n = Number(value);
@@ -192,24 +199,63 @@ export class HallService {
     }
 
     /**
-     * Récupère une salle par son ID
+     * Correctifs de la contre-vérification du lot 10a (T1) : identifiant de la fiche partenaire du compte, ou null si le
+     * compte n'en a pas (l'appelant répond alors « Salle introuvable », sans indice). Panne : erreur, journal et 500.
      */
-    public static async getHallById(hallId: string) {
-        // Lot 9 (A32) : absence ou uuid invalide : 404 ; panne : erreur, journal et 500.
+    private static async ownPartnerId(userId: string): Promise<string | null> {
+        const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', userId).maybeSingle();
+        if (error) throw new Error(`partenaire du compte ${userId} illisible : ${error.message}`);
+        return data ? String(data.id) : null;
+    }
+
+    /**
+     * Correctifs de la contre-vérification du lot 10a (T1) : la salle n'existe que pour sa propriétaire. Une salle
+     * d'une autre partenaire, un compte sans fiche partenaire, un identifiant invalide : même « Salle introuvable »
+     * (404). Rend l'identifiant de la fiche partenaire.
+     */
+    private static async assertOwnHall(hallId: string, userId: string): Promise<string> {
         const notFound = () => new PublicError('Salle introuvable.', 'HALL_NOT_FOUND', 404);
         if (!UUID_RE.test(hallId)) throw notFound();
+        const partnerId = await this.ownPartnerId(userId);
+        if (!partnerId) throw notFound();
+        const { data, error } = await getServiceRoleClient().from('halls').select('id').eq('id', hallId).eq('partner_id', partnerId).maybeSingle();
+        if (error) throw new Error(`salle ${hallId} illisible : ${error.message}`);
+        if (!data) throw notFound();
+        return partnerId;
+    }
+
+    /**
+     * Fiche d'une salle pour l'écran de modification de sa propriétaire (GET /api/partner/halls/[id]).
+     * Lot 9 (A32) : absence ou uuid invalide : 404 ; panne : erreur, journal et 500.
+     * Correctifs de la contre-vérification du lot 10a (T1) : seulement la partenaire propriétaire (fiche résolue depuis
+     * la session ; sinon 404 sans indice) ; colonnes de la fiche seulement : ni réservations (client, note, montants),
+     * ni téléphone ni compte de la partenaire. L'écran n'a besoin que de savoir s'il reste des réservations en cours.
+     */
+    public static async getOwnHall(hallId: string, partnerUserId: string) {
+        const notFound = () => new PublicError('Salle introuvable.', 'HALL_NOT_FOUND', 404);
+        if (!UUID_RE.test(hallId)) throw notFound();
+        const partnerId = await this.ownPartnerId(partnerUserId);
+        if (!partnerId) throw notFound();
 
         const supabase = getServiceRoleClient();
         const { data: hall, error } = await supabase
             .from('halls')
-            .select('*, partners(company_name, phone, user_id), hall_reservations(*)')
+            .select(OWN_HALL_COLUMNS)
             .eq('id', hallId)
+            .eq('partner_id', partnerId)
             .maybeSingle();
 
         if (error) throw new Error(`salle ${hallId} illisible : ${error.message}`);
         if (!hall) throw notFound();
 
-        return hall;
+        const { count, error: countErr } = await supabase
+            .from('hall_reservations')
+            .select('id', { count: 'exact', head: true })
+            .eq('hall_id', hallId)
+            .in('status', ['EN_ATTENTE', 'CONFIRMEE']);
+        if (countErr) throw new Error(`réservations de la salle ${hallId} illisibles : ${countErr.message}`);
+
+        return { ...(hall as unknown as Record<string, unknown>), has_active_reservations: (count ?? 0) > 0 };
     }
 
     /**
@@ -217,7 +263,8 @@ export class HallService {
      */
     public static async updateHall(hallId: string, partnerUserId: string, input: UpdateHallInput) {
         const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Correctifs de la contre-vérification du lot 10a (T1) : salle d'une autre partenaire « introuvable » (404)
+        const partnerId = await this.assertOwnHall(hallId, partnerUserId);
 
         const updateData: Record<string, any> = {
             updated_at: new Date().toISOString(),
@@ -259,14 +306,18 @@ export class HallService {
      */
     public static async deleteHall(hallId: string, partnerUserId: string) {
         const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Correctifs de la contre-vérification du lot 10a (T1) : propriétaire vérifiée AVANT de lire les réservations
+        // (une autre partenaire apprenait si la salle avait des réservations en cours, puis recevait « supprimée » sans
+        // que rien ne le soit) ; salle d'une autre partenaire « introuvable » (404). Panne de lecture : erreur et 500.
+        const partnerId = await this.assertOwnHall(hallId, partnerUserId);
 
         // Vérification des réservations actives
-        const { data: activeRes } = await supabase
+        const { data: activeRes, error: activeErr } = await supabase
             .from('hall_reservations')
             .select('id')
             .eq('hall_id', hallId)
             .in('status', ['EN_ATTENTE', 'CONFIRMEE']);
+        if (activeErr) throw new Error(`réservations de la salle ${hallId} illisibles : ${activeErr.message}`);
 
         if (activeRes && activeRes.length > 0) {
             throw new PublicError('Impossible de supprimer une salle ayant des réservations actives. Veuillez la désactiver.');

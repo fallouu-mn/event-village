@@ -8,6 +8,9 @@ import { guardFeature } from '@/lib/features/flags';
  * GET /api/partner/halls/[id]
  * Lot 7 (7.3, D56) : route de l'espace partenaire, session ACTIVE exigée comme les autres gestionnaires du
  * fichier, puis interrupteur (404 si le service des salles est fermé).
+ * Correctifs de la contre-vérification du lot 10a (T1) : seulement la partenaire propriétaire (fiche résolue depuis la
+ * session) ; tout autre compte : 404 « Salle introuvable », sans indice. Fiche de la salle seulement (aucune
+ * réservation, ni téléphone ni compte de la partenaire) et `has_active_reservations`.
  */
 export async function GET(
     request: NextRequest,
@@ -19,7 +22,7 @@ export async function GET(
         const closed = await guardFeature('halls', '/api/partner/halls/[id]');
         if (closed) return closed;
         const { id } = await params;
-        const hall = await HallService.getHallById(id);
+        const hall = await HallService.getOwnHall(id, activeSession.user.id);
         return NextResponse.json({ success: true, hall });
     } catch (error: unknown) {
         return apiFailure('GET /api/partner/halls/[id]', error, { message: 'Salle momentanément indisponible.', code: 'HALL_UNAVAILABLE', status: 500 });
