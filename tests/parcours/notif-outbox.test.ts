@@ -128,9 +128,16 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('TRIAL_STARTED', [I, M], 'PARTNER', 'B'), // lot 9 bis (R31, 11.2 M5) : SMS retiré, + EMAIL
     ess('SUBSCRIPTION_ACTIVATED', [I, M], 'PARTNER', 'A'), // G.49
     ess('PAYMENT_SUCCESS', [I, M], 'CLIENT', 'A'), // G.49
-    ess('HALL_RESERVATION_REQUESTED', [I, M], 'PARTNER', 'B'), // G.49
-    ess('HALL_RESERVATION_CONFIRMED', [I, M], 'CLIENT', 'B'), // G.49
-    ess('HALL_RESERVATION_CANCELLED', [I, M], 'ANY', 'B'), // G.49
+    // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle
+    ess('HALL_RESERVATION_REQUESTED', [I, P, M], 'PARTNER', 'B'),
+    ess('HALL_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('HALL_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('HALL_RESERVATION_CANCELLED_PRO', [I, P, M], 'PARTNER', 'A'),
+    ess('HALL_BALANCE_PAID', [I, P, M], 'ANY', 'B'),
+    ess('HALL_BALANCE_REMINDER', [I, P, M, S], 'CLIENT', 'B'),
+    ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('HALL_VALIDATION_DECIDED', [I, P, M], 'PARTNER', 'A'),
     ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B'), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49

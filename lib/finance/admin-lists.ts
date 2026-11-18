@@ -154,10 +154,13 @@ export interface PaymentLine {
     encashedAt: string;
     amount: number;
     serviceFee: number;
+    /** Correctifs de la contre-vérification du lot 10a (T6) : commission d'Event Village sur une salle (0 hors salle). */
+    commission: number;
     /** Ce qui revient à Event Village sur ce paiement, calculé par le serveur : net − part annulée + retenue − commissions. */
     evNet: number;
     status: string;
-    /** Écart de contrôle (total ≠ part du partenaire + frais, ou frais ≠ agrégateur + net) ; 0 si rien. */
+    /** Écart de contrôle (total ≠ part du partenaire + frais, ou frais ≠ agrégateur + net ; pour une salle, part ≠ facial − commission
+     *  ou frais ≠ service + commission) ; 0 si rien. */
     discrepancy: number;
 }
 
@@ -171,6 +174,7 @@ export function paymentLine(r: Row): PaymentLine {
         encashedAt: String(r.encashed_at),
         amount: amount(r.amount),
         serviceFee: amount(r.service_fee),
+        commission: r.commission === undefined || r.commission === null ? 0 : amount(r.commission),
         evNet: (cents(r.net_revenue) - cents(r.refunded_net) + cents(r.duplicate_withheld) - cents(r.commissions)) / 100,
         status: String(r.status),
         discrepancy: amount(r.discrepancy),

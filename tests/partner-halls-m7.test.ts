@@ -12,6 +12,31 @@ import './helpers/env';
 import { TEST_PASSWORD } from './helpers/fixture-data';
 import { randomSenegalPhone } from './parcours/helpers';
 
+// Lot 10a (modification signalée au rapport) : le service des salles est fermé par son interrupteur et une salle n'est réservable
+// qu'après validation par l'administration : la suite ouvre le service le temps de ses tests (valeur remise ensuite)
+// et valide ses salles ; les dates sont relatives (une réservation exige une date à venir).
+import { before, after } from 'node:test';
+import { superadminId } from './parcours/finance-helpers';
+import { platformSetting, setPlatformSetting } from './parcours/l10a-helpers';
+
+let hallsWereOpen: unknown;
+before(async () => {
+    hallsWereOpen = await platformSetting('features.halls_enabled');
+    await setPlatformSetting('features.halls_enabled', true);
+});
+after(async () => {
+    await setPlatformSetting('features.halls_enabled', hallsWereOpen);
+});
+
+async function validateHall(adminClient: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }, hallId: string): Promise<void> {
+    const { data, error } = await adminClient.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: hallId, decision: 'VALIDER' } });
+    if (error || (data as { ok?: boolean } | null)?.ok !== true) throw new Error(`Validation de la salle échouée : ${error?.message ?? JSON.stringify(data)}`);
+}
+
+function dayFromNow(days: number): string {
+    return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -122,6 +147,7 @@ test('2. DISPONIBILITÉ & CONCURRENCE RÉELLE (§43-§44) : Deux réservations s
         partner_id: partner.id, name: 'Salle Renaissance Concurrency', capacity: 200, price_per_day: 150000, deposit_percentage: 30.0
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
+    await validateHall(adminClient, hall.id);
 
     try {
         // EXÉCUTION CONCURRENTE RÉELLE VIA Promise.allSettled()
@@ -132,15 +158,15 @@ test('2. DISPONIBILITÉ & CONCURRENCE RÉELLE (§43-§44) : Deux réservations s
             HallService.createReservation({
                 hallId: hall.id,
                 clientId: client1Id,
-                startDate: '2026-11-10',
-                endDate: '2026-11-15',
+                startDate: dayFromNow(90),
+                endDate: dayFromNow(95),
                 notes: 'Mariage traditionnel Client 1',
             }),
             HallService.createReservation({
                 hallId: hall.id,
                 clientId: client2Id,
-                startDate: '2026-11-12',
-                endDate: '2026-11-18',
+                startDate: dayFromNow(92),
+                endDate: dayFromNow(98),
                 notes: 'Séminaire d\'entreprise Client 2',
             }),
         ]);
@@ -219,22 +245,23 @@ test('3. INVARIANT FINANCIER ACOMPTE + SOLDE = TOTAL (§45-§47) & MORATOIRE', a
 
     // Salle à 120 000 FCFA/jour avec acompte de 35.0%
     const { data: hall } = await adminClient.from('halls').insert({
-        partner_id: partner.id, name: 'Salle Les Palmiers', capacity: 150, price_per_day: 120000, deposit_percentage: 35.0
+        partner_id: partner.id, name: 'Salle Les Palmiers', capacity: 150, price_per_day: 120000, deposit_value: 35.0
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
+    await validateHall(adminClient, hall.id);
 
     let resId: string | null = null;
 
     try {
-        // Réservation de 3 jours : du 2026-12-01 au 2026-12-03 (3 jours * 120 000 = 360 000 FCFA)
-        // Acompte 35% de 360 000 = 126 000 FCFA
-        // Solde = 360 000 - 126 000 = 234 000 FCFA
+        // Lot 10a (modification signalée au rapport) : décisions du client : frais de service de 5 % payés par le client, solde dû
+        // 7 jours avant la date (l'échéance ne se choisit plus). 3 jours × 120 000 = 360 000 FCFA ; frais 18 000 ;
+        // total 378 000 ; acompte 35 % = 126 000 + 6 300 de frais = 132 300 ; solde = 378 000 − 132 300 = 245 700.
+        const start = dayFromNow(60);
         const reservation = await HallService.createReservation({
             hallId: hall.id,
             clientId,
-            startDate: '2026-12-01',
-            endDate: '2026-12-03',
-            moratoriumDate: '2026-11-20',
+            startDate: start,
+            endDate: dayFromNow(62),
         });
 
         resId = reservation.id;
@@ -242,11 +269,11 @@ test('3. INVARIANT FINANCIER ACOMPTE + SOLDE = TOTAL (§45-§47) & MORATOIRE', a
         const deposit = Number(reservation.deposit_amount);
         const balance = Number(reservation.balance_amount);
 
-        assert.strictEqual(total, 360000, 'Total pour 3 jours = 360 000 FCFA');
-        assert.strictEqual(deposit, 126000, 'Acompte (35%) = 126 000 FCFA');
-        assert.strictEqual(balance, 234000, 'Solde restant = 234 000 FCFA');
+        assert.strictEqual(total, 378000, 'Total pour 3 jours = 360 000 + 18 000 de frais');
+        assert.strictEqual(deposit, 132300, 'Acompte (35 %) = 126 000 + 6 300 de frais');
+        assert.strictEqual(balance, 245700, 'Solde restant = 245 700 FCFA');
         assert.strictEqual(deposit + balance, total, 'Invariant : Acompte + Solde = Total');
-        assert.strictEqual(reservation.moratorium_date, '2026-11-20', 'Date de moratoire enregistrée');
+        assert.strictEqual(reservation.moratorium_date, new Date(Date.parse(`${start}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10), 'Solde dû 7 jours avant la date');
 
         // Re-lecture directe en base de données
         const { data: dbRes, error: fetchErr } = await adminClient
@@ -256,9 +283,9 @@ test('3. INVARIANT FINANCIER ACOMPTE + SOLDE = TOTAL (§45-§47) & MORATOIRE', a
             .single();
 
         assert.ok(!fetchErr && dbRes, 'Relecture DB réservation');
-        assert.strictEqual(Number(dbRes.total_amount), 360000);
-        assert.strictEqual(Number(dbRes.deposit_amount), 126000);
-        assert.strictEqual(Number(dbRes.balance_amount), 234000);
+        assert.strictEqual(Number(dbRes.total_amount), 378000);
+        assert.strictEqual(Number(dbRes.deposit_amount), 132300);
+        assert.strictEqual(Number(dbRes.balance_amount), 245700);
         assert.strictEqual(Number(dbRes.deposit_amount) + Number(dbRes.balance_amount), Number(dbRes.total_amount));
     } finally {
         if (resId) await adminClient.from('hall_reservations').delete().eq('id', resId);
@@ -270,7 +297,7 @@ test('3. INVARIANT FINANCIER ACOMPTE + SOLDE = TOTAL (§45-§47) & MORATOIRE', a
     }
 });
 
-test('4. CYCLE DE STATUT RÉSERVATION (§47-§48) : EN_ATTENTE -> CONFIRMEE -> ANNULEE', async () => {
+test('4. CYCLE DE STATUT RÉSERVATION (§47-§48) : EN_ATTENTE -> confirmation sans paiement refusée -> ANNULEE', async () => {
     if (!supabaseUrl || !serviceRoleKey) return;
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
@@ -305,6 +332,7 @@ test('4. CYCLE DE STATUT RÉSERVATION (§47-§48) : EN_ATTENTE -> CONFIRMEE -> A
         partner_id: partner.id, name: 'Salle Océane', capacity: 100, price_per_day: 80000, deposit_percentage: 30.0
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
+    await validateHall(adminClient, hall.id);
 
     let resId: string | null = null;
 
@@ -313,24 +341,23 @@ test('4. CYCLE DE STATUT RÉSERVATION (§47-§48) : EN_ATTENTE -> CONFIRMEE -> A
         const reservation = await HallService.createReservation({
             hallId: hall.id,
             clientId,
-            startDate: '2026-12-20',
-            endDate: '2026-12-21',
+            startDate: dayFromNow(70),
+            endDate: dayFromNow(71),
         });
         resId = reservation.id;
         assert.strictEqual(reservation.status, 'EN_ATTENTE', 'Statut initial = EN_ATTENTE');
 
-        // 2. Confirmation par le Partenaire (EN_ATTENTE -> CONFIRMEE)
-        const confirmed = await HallService.confirmReservation(reservation.id, partnerUserId);
-        assert.strictEqual(confirmed.status, 'CONFIRMEE', 'Statut après confirmation = CONFIRMEE');
-
+        // 2. Lot 10a (modification signalée au rapport) : C1 : la salle ne confirme jamais une réservation non payée (confirmation par le
+        // paiement seulement). Assertion d'origine (EN_ATTENTE -> CONFIRMEE par la salle) remplacée par ce refus.
+        await assert.rejects(() => HallService.confirmReservation(reservation.id, partnerUserId), /n’est pas payée/);
         const { data: dbConfirmed } = await adminClient
             .from('hall_reservations')
             .select('status')
             .eq('id', reservation.id)
             .single();
-        assert.strictEqual(dbConfirmed?.status, 'CONFIRMEE', 'Relecture DB = CONFIRMEE');
+        assert.strictEqual(dbConfirmed?.status, 'EN_ATTENTE', 'Relecture DB = EN_ATTENTE (aucune confirmation sans paiement)');
 
-        // 3. Annulation (CONFIRMEE -> ANNULEE)
+        // 3. Annulation par la salle (EN_ATTENTE -> ANNULEE)
         const cancelled = await HallService.cancelReservation(reservation.id, partnerUserId, 'Demande d\'annulation client');
         assert.strictEqual(cancelled.status, 'ANNULEE', 'Statut après annulation = ANNULEE');
         assert.strictEqual(cancelled.payment_status, 'CANCELLED', 'Statut paiement = CANCELLED');

@@ -5,6 +5,7 @@ import { startTicketCheckout } from '@/lib/payments/checkout.service';
 import { PaymentInputError, paymentService } from '@/lib/payments/payment.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CreatePaymentSchema, type CreatePaymentInput } from '@/lib/validations/payment';
+import { startHallPayment } from '@/lib/halls/hall-payment.service';
 import { guardFeature, type Feature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
@@ -62,6 +63,13 @@ export async function POST(req: NextRequest) {
                 userId: session.user.id,
                 body: { eventId: cat.event_id, items: [{ categoryId: cat.id, quantity: input.quantity ?? 1 }], operator: input.operator, payerPhone: input.payerPhone },
                 idempotencyKey: req.headers.get('idempotency-key'),
+            });
+            return NextResponse.json(outcome.body, { status: outcome.status });
+        }
+        // Lot 10a (S4) : réservation de salle, paiement créé en base (hall_payment_create), montant relu sur la réservation
+        if (input.targetType === 'HALL_RESERVATION') {
+            const outcome = await startHallPayment({
+                userId: session.user.id, reservationId: input.targetId, part: input.part, operator: input.operator, payerPhone: input.payerPhone,
             });
             return NextResponse.json(outcome.body, { status: outcome.status });
         }

@@ -23,6 +23,8 @@ export const CreatePaymentSchema = z.object({
     payerPhone: z.string().min(9, { message: 'Le numéro du payeur est requis.' }),
     // Billet : quantité bornée par MAX_PER_ORDER_CAP, max_per_order contrôlé en base.
     quantity: z.number().int().min(1).max(50).optional(),
+    // Lot 10a : réservation de salle, part à payer (acompte, solde ou totalité) ; le montant est lu en base
+    part: z.enum(['ACOMPTE', 'SOLDE', 'INTEGRAL']).optional(),
 });
 
 export type CreatePaymentInput = z.infer<typeof CreatePaymentSchema>;

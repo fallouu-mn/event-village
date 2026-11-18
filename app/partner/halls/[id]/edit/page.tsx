@@ -76,11 +76,9 @@ export default function EditHallPage() {
                     setImageUrl(h.images?.[0] || '');
                     setAmenities(h.amenities || []);
 
-                    const reservations = h.hall_reservations || [];
-                    const active = reservations.filter(
-                        (r: { status: string }) => r.status === 'EN_ATTENTE' || r.status === 'CONFIRMEE'
-                    );
-                    setHasActiveReservations(active.length > 0);
+                    // Correctifs de la contre-vérification du lot 10a (T1) : la route ne renvoie plus les réservations,
+                    // seulement s'il en reste en cours
+                    setHasActiveReservations(h.has_active_reservations === true);
                 } else {
                     toast.error(data.error || toastMessages.halls.notFound);
                     router.push('/partner/halls');
