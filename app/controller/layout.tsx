@@ -77,8 +77,10 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                 <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
                     <NotificationBell />
                     {displayName && (
+                        // Design 1b (décision 3) : pas de préchargement de la page profil (12,3 Ko arrivés avant l'écran utile du scanner)
                         <Link
                             href="/controller/profile"
+                            prefetch={false}
                             className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-1.5 text-sm font-semibold text-foreground-strong transition-colors hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                             <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-primary-soft text-primary-text" aria-hidden="true">

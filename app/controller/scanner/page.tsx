@@ -85,6 +85,7 @@ import {
     type ScanReturnReason,
 } from '@/lib/scan/scan-session';
 import { deferredPart, useDeferredPart } from '@/lib/scan/deferred-part';
+import { HOLD_WARM_ATTR } from '@/lib/ui/warm-when-idle';
 import { EVENT_STATUS_META, isEventStatus } from '@/lib/events/event-status';
 import { formatDate, formatEventDateTime, formatTime, toDate } from '@/lib/format';
 import { triggerHapticFeedback } from '@/lib/hardware/feedback';
@@ -907,7 +908,9 @@ export default function ControllerScannerPage() {
 
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center gap-3 py-20" role="status" aria-busy="true">
+            // Design 1b : `data-ev-hold-warm` retient les préchargements accessoires (toasts, barre de navigation) jusqu'à
+            // l'écran de départ (lib/ui/warm-when-idle.ts ; JavaScript avant l'affichage utile, e2e/perf.spec.ts)
+            <div {...{ [HOLD_WARM_ATTR]: '' }} className="flex flex-col items-center justify-center gap-3 py-20" role="status" aria-busy="true">
                 <Loader2 size={32} aria-hidden="true" className="text-brand-fg motion-safe:animate-spin" />
                 <p className="text-sm text-fg-muted">Chargement de vos événements…</p>
             </div>
