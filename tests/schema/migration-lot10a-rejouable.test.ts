@@ -37,6 +37,8 @@ const LOT10A_MIGRATIONS = [
     '20261122000010_l10a_cv_paiement_en_une_fois.sql',
     // T5, verrou par client avant de compter ses attentes
     '20261122000011_l10a_cv_verrou_client.sql',
+    // T6, relevés de l'administration étendus à la commission des salles
+    '20261122000012_l10a_cv_releves.sql',
 ] as const;
 
 after(async () => {

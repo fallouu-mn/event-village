@@ -27,6 +27,8 @@ export interface EarnedBlock {
     payments: number;
     volume: number;
     service_fees: number;
+    /** Correctifs de la contre-vérification du lot 10a (T6) : commissions d'Event Village sur les salles, comprises dans net_revenue. */
+    hall_commissions: number;
     aggregator_fees: number;
     net_revenue: number;
     refunded_net: number;
@@ -82,7 +84,7 @@ function block(obj: unknown, where: string): Record<string, unknown> {
     return obj as Record<string, unknown>;
 }
 
-const EARNED_KEYS = ['total', 'payments', 'volume', 'service_fees', 'aggregator_fees', 'net_revenue', 'refunded_net', 'duplicate_withheld',
+const EARNED_KEYS = ['total', 'payments', 'volume', 'service_fees', 'hall_commissions', 'aggregator_fees', 'net_revenue', 'refunded_net', 'duplicate_withheld',
     'service_net', 'commissions', 'commissions_unrecovered', 'withdrawal_fees', 'withdrawals_paid', 'samirpay_fees', 'cashouts_with_fees', 'rebilled'] as const;
 const OWED_KEYS = ['total', 'ledger', 'available', 'pending', 'frozen', 'withdrawable_now', 'withdrawals_in_progress', 'withdrawals_in_progress_count', 'accounts'] as const;
 
