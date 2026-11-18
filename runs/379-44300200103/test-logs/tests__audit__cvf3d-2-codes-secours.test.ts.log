@@ -1,0 +1,160 @@
+TAP version 13
+[CVF3D-2a] premier usage : HTTP 200 {"ok":true,"remaining":9} ; rejeu : HTTP 403 {"error":"Mot de passe ou code de secours incorrect.","code":"BACKUP_CODE_INVALID"} ; même code en parallèle : HTTP 200 {"ok":true,"remaining":8} | HTTP 403 {"error":"Mot de passe ou code de secours incorrect.","code":"BACKUP_CODE_INVALID"} ; codes restants : 8
+# Subtest: 2. usage des codes
+    # Subtest: a. rejouer un code : refusé, un à un comme en parallèle
+    ok 1 - a. rejouer un code : refusé, un à un comme en parallèle
+      ---
+      duration_ms: 1033.390932
+      type: 'test'
+      ...
+[CVF3D-2b] un à un : 403 BACKUP_CODE_INVALID | 403 BACKUP_CODE_INVALID | 403 BACKUP_CODE_INVALID | 403 BACKUP_CODE_INVALID | 403 BACKUP_CODE_INVALID ; bon code ensuite : HTTP 429 {"error":"Trop d’essais. Réessayez dans 15 minutes.","code":"RECOVERY_RATE_LIMITED","retryAfterSeconds":900} ; codes restants : 10
+[CVF3D-2b] 10 en parallèle : 403 BACKUP_CODE_INVALID | 403 BACKUP_CODE_INVALID | 403 BACKUP_CODE_INVALID | 429 RECOVERY_RATE_LIMITED | 429 RECOVERY_RATE_LIMITED | 403 BACKUP_CODE_INVALID | 429 RECOVERY_RATE_LIMITED | 429 RECOVERY_RATE_LIMITED | 429 RECOVERY_RATE_LIMITED | 403 BACKUP_CODE_INVALID ; essais évalués : 5 ; bon code ensuite : HTTP 429 {"error":"Trop d’essais. Réessayez dans 15 minutes.","code":"RECOVERY_RATE_LIMITED","retryAfterSeconds":900} ; codes restants : 10
+    # Subtest: b. deviner : 5 codes faux puis le bon (429) ; 10 codes faux en parallèle puis le bon (429) ; rien de consommé
+    ok 2 - b. deviner : 5 codes faux puis le bon (429) ; 10 codes faux en parallèle puis le bon (429) ; rien de consommé
+      ---
+      duration_ms: 1393.233114
+      type: 'test'
+      ...
+[CVF3D-2c] ancien code : HTTP 403 {"error":"Mot de passe ou code de secours incorrect.","code":"BACKUP_CODE_INVALID"} ; nouveau code : HTTP 200 {"ok":true,"remaining":9} ; codes communs aux deux séries : 0
+    # Subtest: c. anciens codes après régénération : refusés ; nouveaux : acceptés
+    ok 3 - c. anciens codes après régénération : refusés ; nouveaux : acceptés
+      ---
+      duration_ms: 771.497074
+      type: 'test'
+      ...
+[CVF3D-2d] sans mot de passe : HTTP 403 {"error":"Par sécurité, saisissez votre mot de passe pour continuer.","code":"PASSWORD_CONFIRMATION_REQUIRED"} ; sans code récent : HTTP 403 {"error":"Par sécurité, saisissez le code administrateur reçu par SMS pour continuer.","code":"ADMIN_CODE_CONFIRMATION_REQUIRED"} ; codes valables : 10
+    # Subtest: d. régénérer sans mot de passe récent, puis sans code récent : refusé, anciens codes intacts
+    ok 4 - d. régénérer sans mot de passe récent, puis sans code récent : refusé, anciens codes intacts
+      ---
+      duration_ms: 569.960366
+      type: 'test'
+      ...
+    1..4
+ok 1 - 2. usage des codes
+  ---
+  duration_ms: 3768.96093
+  type: 'suite'
+  ...
+[CVF3D-2e] empreintes : 10 ligne(s), empreintes sans clé (SHA-256 du code) : 0 ; GET après usage : HTTP 200 {"remaining":9,"generated_at":"2026-11-18T12:09:17.330878+00:00"} ; REST : superadmin table : refus 42501 ; superadmin admin_backup_codes_status : refus ; superadmin admin_backup_code_use : refus ; superadmin admin_backup_codes_generate : refus ; anonyme table : refus 42501 ; anonyme admin_backup_codes_status : refus ; anonyme admin_backup_code_use : refus ; anonyme admin_backup_codes_generate : refus ; codes retrouvés : aucun
+# Subtest: 2. les codes ne se relisent jamais
+    # Subtest: e. base, REST, réponses et journal du serveur : aucun code en clair après l'affichage
+    ok 1 - e. base, REST, réponses et journal du serveur : aucun code en clair après l'affichage
+      ---
+      duration_ms: 619.561907
+      type: 'test'
+      ...
+    1..1
+ok 2 - 2. les codes ne se relisent jamais
+  ---
+  duration_ms: 619.75621
+  type: 'suite'
+  ...
+[CVF3D-2f] ADMIN : création HTTP 403 {"error":"Les codes de secours sont réservés aux Superadmins.","code":"SUPERADMIN_ONLY"} ; lecture HTTP 403 {"error":"Les codes de secours sont réservés aux Superadmins.","code":"SUPERADMIN_ONLY"} ; secours HTTP 403 {"error":"Seul un Superadmin a des codes de secours. Demandez au Superadmin de changer votre numéro de téléphone.","code":"NO_BACKUP_CODES"} ; lignes 0
+[CVF3D-2f] SUPERADMIN rétrogradé : HTTP 200 {"ok":true,"role_before":"SUPERADMIN","role_after":"ADMIN","roles":["ADMIN","CLIENT"],"sessions_revoked":1} ; secours en ADMIN : HTTP 403 {"error":"Seul un Superadmin a des codes de secours. Demandez au Superadmin de changer votre numéro de téléphone.","code":"NO_BACKUP_CODES"} ; rôle rendu : HTTP 200 {"ok":true,"role_before":"ADMIN","role_after":"SUPERADMIN","roles":["CLIENT","SUPERADMIN"],"sessions_revoked":0} ; ancien code ensuite : HTTP 403 {"error":"Mot de passe ou code de secours incorrect.","code":"BACKUP_CODE_INVALID"} ; codes valables : 0
+# Subtest: 2. qui a des codes
+    # Subtest: f. ADMIN non SUPERADMIN : 403 partout ; SUPERADMIN rétrogradé puis renommé : anciens codes refusés
+    ok 1 - f. ADMIN non SUPERADMIN : 403 partout ; SUPERADMIN rétrogradé puis renommé : anciens codes refusés
+      ---
+      duration_ms: 1381.369152
+      type: 'test'
+      ...
+    1..1
+ok 3 - 2. qui a des codes
+  ---
+  duration_ms: 1381.672348
+  type: 'suite'
+  ...
+[CVF3D-2g] avant : HTTP 403 {"error":"Par sécurité, saisissez de nouveau votre mot de passe pour continuer dans l’administration.","code":"ADMIN_PASSWORD_REQUIRED","reason":"SESSION_12H"} ; mot de passe faux : HTTP 403 {"error":"Mot de passe ou code de secours incorrect.","code":"BACKUP_CODE_INVALID"} ; code faux : HTTP 403 {"error":"Mot de passe ou code de secours incorrect.","code":"BACKUP_CODE_INVALID"} ; code d'un autre Superadmin : HTTP 403 {"error":"Mot de passe ou code de secours incorrect.","code":"BACKUP_CODE_INVALID"} ; administration ensuite : HTTP 403 {"error":"Par sécurité, saisissez de nouveau votre mot de passe pour continuer dans l’administration.","code":"ADMIN_PASSWORD_REQUIRED","reason":"SESSION_12H"}
+[CVF3D-2g] sans session : HTTP 401 {"error":"Authentification requise pour accéder aux ressources d'administration."} ; compte client : HTTP 403 {"error":"Accès restreint aux administrateurs autorisés."} ; codes valables : 10 et 10 ; témoin (les deux justes) : HTTP 200 {"ok":true,"remaining":9} ; administration : HTTP 200 {"remaining":9,"generated_at":"2026-11-18T12:09:19.338604+00:00"}
+# Subtest: 2. « J'ai perdu mon téléphone »
+    # Subtest: g. jamais d'ouverture sans mot de passe ET code de secours valide ; témoin : les deux justes ouvrent
+    ok 1 - g. jamais d'ouverture sans mot de passe ET code de secours valide ; témoin : les deux justes ouvrent
+      ---
+      duration_ms: 1194.131434
+      type: 'test'
+      ...
+[CVF3D-2h] « Sécurité du compte » : HTTP 403 {"error":"Par sécurité, saisissez le code administrateur reçu par SMS pour continuer.","code":"ADMIN_CODE_CONFIRMATION_REQUIRED"} ; écran client : début HTTP 403 {"error":"Changez votre numéro depuis « Sécurité du compte », dans l’administration.","code":"PHONE_CHANGE_SECURITY_PAGE"}, validation — ; numéro du compte : +221778959676 (avant : +221778959676)
+    # Subtest: h. le SUPERADMIN change son numéro par l'écran client avec un code vieux de 2 heures (« Sécurité du compte » exige 10 minutes)
+    ok 2 - h. le SUPERADMIN change son numéro par l'écran client avec un code vieux de 2 heures (« Sécurité du compte » exige 10 minutes)
+      ---
+      duration_ms: 295.506887
+      type: 'test'
+      ...
+[CVF3D-2i] changement : HTTP 200 {"ok":true,"sessions_revoked":2} ; session du téléphone perdu : route HTTP 401 {"error":"Authentification requise pour accéder aux ressources d'administration."}, rafraîchissement 400 Invalid Refresh Token: Refresh Token Not Found, comptes d'autrui par la REST avant 20 puis 0
+    # Subtest: i. après le code de secours et le changement de numéro, la session du téléphone perdu ne lit plus rien par la REST
+    ok 3 - i. après le code de secours et le changement de numéro, la session du téléphone perdu ne lit plus rien par la REST
+      ---
+      duration_ms: 667.928877
+      type: 'test'
+      ...
+    1..3
+ok 4 - 2. « J'ai perdu mon téléphone »
+  ---
+  duration_ms: 2157.938377
+  type: 'suite'
+  ...
+[INVARIANT] cvf3d-2-codes-secours — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf3d-2-codes-secours — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf3d-2-codes-secours — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf3d-2-codes-secours — (d)(e)(f) : 2 violation(s)
+[INVARIANT-FIN]   (d) fc9473db-473a-4f1e-a6e3-353eba088867 : reversement 108000.00 ≠ facial 120000.00
+[INVARIANT-FIN]   (d) fc9473db-473a-4f1e-a6e3-353eba088867 : net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00
+not ok 5 - /home/runner/work/event-village/event-village/tests/audit/cvf3d-2-codes-secours.test.ts
+  ---
+  duration_ms: 66.667714
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvf3d-2-codes-secours.test.ts:2:3012'
+  failureType: 'hookFailed'
+  error: |-
+    invariant financier violé :
+    (d) fc9473db-473a-4f1e-a6e3-353eba088867 : reversement 108000.00 ≠ facial 120000.00
+    (d) fc9473db-473a-4f1e-a6e3-353eba088867 : net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'reversement 108000.00 ≠ facial 120000.00',
+    +     objet: 'fc9473db-473a-4f1e-a6e3-353eba088867',
+    +     regle: 'd'
+    +   },
+    +   {
+    +     detail: 'net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00',
+    +     objet: 'fc9473db-473a-4f1e-a6e3-353eba088867',
+    +     regle: 'd'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'd'
+      objet: 'fc9473db-473a-4f1e-a6e3-353eba088867'
+      detail: 'reversement 108000.00 ≠ facial 120000.00'
+    1:
+      regle: 'd'
+      objet: 'fc9473db-473a-4f1e-a6e3-353eba088867'
+      detail: 'net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertFinanceInvariants (/home/runner/work/event-village/event-village/tests/helpers/finance-invariants.ts:113:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:67:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async assertNotificationInvariants (/home/runner/work/event-village/event-village/tests/helpers/notification-invariants.ts:214:5)
+    async assertTerrainInvariants (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:151:5)
+    async assertRecetteInvariants (/home/runner/work/event-village/event-village/tests/helpers/recette-invariants.ts:201:5)
+    async assertLot9Invariants (/home/runner/work/event-village/event-village/tests/helpers/lot9-invariants.ts:223:5)
+    async assertLot9bisInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:360:5)
+    async assertLot9terInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9ter-invariants.ts:503:5)
+  ...
+1..4
+# tests 9
+# suites 4
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8004.888218

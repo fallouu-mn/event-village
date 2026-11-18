@@ -1,0 +1,189 @@
+TAP version 13
+[CVF1-6] annulée : dans la liste du titulaire → false ; acceptation par la route → HTTP 410 {"error":"L’organisateur a annulé cette invitation.","code":"INVITATION_CANCELLED"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+[CVF1-6] annulée : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+[CVF1-6] annulée puis réinvitée : acceptation de l'ancien lien → HTTP 410 {"error":"L’organisateur a annulé cette invitation.","code":"INVITATION_CANCELLED"}
+# Subtest: a. annulée, effacée, échue, refusée : plus acceptable, plus renvoyable
+    # Subtest: annulée, puis « Inviter de nouveau » : l’ancien lien ne mène à rien
+    ok 1 - annulée, puis « Inviter de nouveau » : l’ancien lien ne mène à rien
+      ---
+      duration_ms: 363.58182
+      type: 'test'
+      ...
+[CVF1-6] effacée : dans la liste du titulaire → false ; acceptation par la route → HTTP 410 {"error":"L’organisateur a annulé cette invitation.","code":"INVITATION_CANCELLED"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+[CVF1-6] effacée : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+    # Subtest: effacée (annulée puis effacée) : ni acceptée, ni renvoyée
+    ok 2 - effacée (annulée puis effacée) : ni acceptée, ni renvoyée
+      ---
+      duration_ms: 261.250948
+      type: 'test'
+      ...
+[CVF1-6] échue : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+[CVF1-6] échue : « Annuler » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse.","code":"INVITATION_NOT_PENDING"}
+[CVF1-6] échue : dans la liste du titulaire → false ; acceptation par la route → HTTP 410 {"error":"Cette invitation a expiré.","code":"INVITATION_EXPIRED"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+    # Subtest: échue : ni acceptée, ni renvoyée, ni annulée
+    ok 3 - échue : ni acceptée, ni renvoyée, ni annulée
+      ---
+      duration_ms: 245.221009
+      type: 'test'
+      ...
+[CVF1-6] refusée : dans la liste du titulaire → false ; acceptation par la route → HTTP 409 {"error":"Cette invitation a déjà reçu une réponse.","code":"INVITATION_NOT_PENDING"} ; par la fonction → refus 42501 permission denied for function controller_invitation_respond
+[CVF1-6] refusée : « Renvoyer » → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"}
+    # Subtest: refusée par le titulaire : ni acceptée ensuite, ni renvoyée
+    ok 4 - refusée par le titulaire : ni acceptée ensuite, ni renvoyée
+      ---
+      duration_ms: 233.326639
+      type: 'test'
+      ...
+    1..4
+ok 1 - a. annulée, effacée, échue, refusée : plus acceptable, plus renvoyable
+  ---
+  duration_ms: 1539.533014
+  type: 'suite'
+  ...
+[CVF1-6] 6 renvois simultanés : 200, 200, 429, 429, 429, 429 ; SMS d'invitation : 3 ; send_count 3 (plafond 3 par numéro et par jour)
+# Subtest: b. « Renvoyer » ne permet pas d’envoyer des SMS en masse
+    # Subtest: même invitation, 6 renvois en parallèle : plafond du numéro tenu
+    ok 1 - même invitation, 6 renvois en parallèle : plafond du numéro tenu
+      ---
+      duration_ms: 482.725295
+      type: 'test'
+      ...
+[CVF1-6] 5 renvois de B sur l'invitation d'une autre organisatrice : 404, 404, 404, 404, 404
+[CVF1-6] renvoi de l'organisatrice ensuite → HTTP 200 {"ok":true,"expires_at":"2026-11-21T12:07:47.00452+00:00","message":"Invitation renvoyée par SMS : réponse attendue avant le sam. 21 nov. 2026 à 12:07."}
+    # Subtest: une autre partenaire tente de brûler le quota du numéro : sans effet
+    ok 2 - une autre partenaire tente de brûler le quota du numéro : sans effet
+      ---
+      duration_ms: 442.957368
+      type: 'test'
+      ...
+[CVF1-6] 5 invitations du même numéro : 201, 201, 201, 429, 429 ; renvoi → HTTP 409 {"error":"Cette invitation n’attend plus de réponse : invitez de nouveau.","code":"INVITATION_NOT_PENDING"} ; SMS : 3
+    # Subtest: invitations répétées vers un même numéro (annuler, inviter de nouveau) puis renvoi : plafond partagé
+    ok 3 - invitations répétées vers un même numéro (annuler, inviter de nouveau) puis renvoi : plafond partagé
+      ---
+      duration_ms: 513.745164
+      type: 'test'
+      ...
+[CVF1-6] 25 renvois simultanés vers 25 numéros : {"200":20,"429":5} ; SMS : 20 (plafond 20 par organisatrice et par heure)
+    # Subtest: 25 invitations vers 25 numéros, renvoyées en parallèle : plafond de l’organisatrice tenu
+    ok 4 - 25 invitations vers 25 numéros, renvoyées en parallèle : plafond de l’organisatrice tenu
+      ---
+      duration_ms: 4561.01472
+      type: 'test'
+      ...
+    1..4
+ok 2 - b. « Renvoyer » ne permet pas d’envoyer des SMS en masse
+  ---
+  duration_ms: 6001.113837
+  type: 'suite'
+  ...
+[CVF1-6] numéro d'un ADMIN : première étape → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"} ; confirmation → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+[CVF1-6] numéro d'un ADMIN : invitations créées 0 ; SMS 0 ; rôles ADMIN,CLIENT → ADMIN,CLIENT
+[CVF1-6] numéro d'un SUPERADMIN : première étape → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"} ; confirmation → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+[CVF1-6] numéro d'un SUPERADMIN : invitations créées 0 ; SMS 0 ; rôles CLIENT,SUPERADMIN → CLIENT,SUPERADMIN
+# Subtest: c. le numéro d’un admin ne s’invite pas
+    # Subtest: ADMIN et SUPERADMIN : aucune invitation, aucun SMS, aucun rôle
+    ok 1 - ADMIN et SUPERADMIN : aucune invitation, aucun SMS, aucun rôle
+      ---
+      duration_ms: 700.641987
+      type: 'test'
+      ...
+[CVF1-6] ADMIN (suite) : invitation → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+    # Subtest: suite de l’essai : l’ADMIN invité qui accepte devient contrôleur de l’organisatrice, qui lit son nom et son numéro
+    ok 2 - suite de l’essai : l’ADMIN invité qui accepte devient contrôleur de l’organisatrice, qui lit son nom et son numéro
+      ---
+      duration_ms: 430.362583
+      type: 'test'
+      ...
+    1..2
+ok 3 - c. le numéro d’un admin ne s’invite pas
+  ---
+  duration_ms: 1131.214716
+  type: 'suite'
+  ...
+[CVF1-6] un autre compte accepte → HTTP 404 {"error":"Invitation introuvable.","code":"INVITATION_NOT_FOUND"} ; fonction au nom du titulaire → refus 42501 permission denied for function controller_invitation_respond ; le titulaire annule à la place de l'organisatrice → HTTP 403 {"error":"Accès réservé aux organisateurs.","code":"FORBIDDEN"}
+# Subtest: d. se faire passer pour un autre
+    # Subtest: accepter l’invitation d’un autre, ou l’annuler à la place de l’organisatrice : refusé
+    ok 1 - accepter l’invitation d’un autre, ou l’annuler à la place de l’organisatrice : refusé
+      ---
+      duration_ms: 566.435765
+      type: 'test'
+      ...
+[CVF1-6] invitation avec nom, organisatrice et société d'une autre dans le corps → HTTP 201 {"success":true,"assignments":[],"assignment":null,"is_new_user":false,"invitation_id":"3c18e6d0-a1aa-4c9d-b8e6-30ead07300fe","invitation_expires_at":"2026-11-21T12:07:54.163273+00:00","notification":"QUEUED","message":"Invitation envoyée à Se*** G*** : réponse attendue avant le sam. 21 nov. 2026 à 12:07."}
+[CVF1-6] société dans le SMS : Finance cvf1-inv-nom (attendu Finance cvf1-inv-nom)
+    # Subtest: l’invitation ne renomme pas un compte existant et ne porte jamais le nom d’une autre organisatrice
+    ok 2 - l’invitation ne renomme pas un compte existant et ne porte jamais le nom d’une autre organisatrice
+      ---
+      duration_ms: 391.821378
+      type: 'test'
+      ...
+    1..2
+ok 4 - d. se faire passer pour un autre
+  ---
+  duration_ms: 958.45456
+  type: 'suite'
+  ...
+[INVARIANT] cvf1-6-invitations — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf1-6-invitations — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf1-6-invitations — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf1-6-invitations — (d)(e)(f) : 2 violation(s)
+[INVARIANT-FIN]   (d) fc9473db-473a-4f1e-a6e3-353eba088867 : reversement 108000.00 ≠ facial 120000.00
+[INVARIANT-FIN]   (d) fc9473db-473a-4f1e-a6e3-353eba088867 : net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00
+not ok 5 - /home/runner/work/event-village/event-village/tests/audit/cvf1-6-invitations.test.ts
+  ---
+  duration_ms: 55.00975
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvf1-6-invitations.test.ts:2:1537'
+  failureType: 'hookFailed'
+  error: |-
+    invariant financier violé :
+    (d) fc9473db-473a-4f1e-a6e3-353eba088867 : reversement 108000.00 ≠ facial 120000.00
+    (d) fc9473db-473a-4f1e-a6e3-353eba088867 : net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'reversement 108000.00 ≠ facial 120000.00',
+    +     objet: 'fc9473db-473a-4f1e-a6e3-353eba088867',
+    +     regle: 'd'
+    +   },
+    +   {
+    +     detail: 'net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00',
+    +     objet: 'fc9473db-473a-4f1e-a6e3-353eba088867',
+    +     regle: 'd'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'd'
+      objet: 'fc9473db-473a-4f1e-a6e3-353eba088867'
+      detail: 'reversement 108000.00 ≠ facial 120000.00'
+    1:
+      regle: 'd'
+      objet: 'fc9473db-473a-4f1e-a6e3-353eba088867'
+      detail: 'net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertFinanceInvariants (/home/runner/work/event-village/event-village/tests/helpers/finance-invariants.ts:113:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:67:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async assertNotificationInvariants (/home/runner/work/event-village/event-village/tests/helpers/notification-invariants.ts:214:5)
+    async assertTerrainInvariants (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:151:5)
+    async assertRecetteInvariants (/home/runner/work/event-village/event-village/tests/helpers/recette-invariants.ts:201:5)
+    async assertLot9Invariants (/home/runner/work/event-village/event-village/tests/helpers/lot9-invariants.ts:223:5)
+    async assertLot9bisInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:360:5)
+    async assertLot9terInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9ter-invariants.ts:503:5)
+  ...
+1..4
+# tests 12
+# suites 4
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9701.349298
