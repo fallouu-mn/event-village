@@ -110,8 +110,8 @@ Branche `correctifs/cvf2b`, partie de `main` à `08d854851`. La contre-vérifica
 |---|---|---|---|---|
 | 6.4 | Un téléchargement de billets parti avant « Se déconnecter » réécrivait, après la purge, le compte hors ligne et ses codes. | Génération du stockage hors ligne, changée par chaque purge dans la même transaction que l'effacement. Le téléchargement et la liste `/api/tickets` la lisent avant leur requête et la revérifient dans la transaction d'écriture : après une purge, rien n'est écrit. Fichiers : `lib/tickets/offline-store.ts`, `offline-lots.ts`, `components/tickets/OfflineTicketsSync.tsx`. | cvf2b-6, cas 4 | `6afff9fd7` |
 | 6.5 | Une session fermée ailleurs laissait au téléphone ses billets, la mémoire du contrôle et les brouillons. | Au chargement sans session, si aucun cookie de session ne reste, ou si le middleware a posé `ev-session-close=1` (5 min, posé quand il vide une session révoquée) : effacement des billets hors ligne, de la mémoire du contrôle, des brouillons, des liens de paiement et de l'abonnement push. | cvf2b-6, cas 5 | `97daaabab` |
-| 6.6 | Un jeton de session fermée lisait encore la REST jusqu'à 1 h. | Migration `20261121000001` : `securite.db_pre_request()`, pré-requête de PostgREST. Une lecture par clé primaire de `auth.sessions`. Si la session est absente, échue ou appartient à un autre compte : 401 `SESSION_FERMEE`. Sans jeton, avec anon ou avec le rôle de service : rien. Coût mesuré au run : COUT_PRE_REQUETE. | cvf2b-6, cas 6 et 7 ; `cvf2b-correctif-pre-requete` (nouvelle) | `695def1af` |
-| 6.7 | Jetons d'une heure. | `supabase/config.toml` : `jwt_expiry = 600`. Le temps réel coupe un canal à l'échéance de son jeton (testé avec un jeton de 25 s). | `cvf2b-correctif-pre-requete`, section 5 | `e77468e48` |
+| 6.6 | Un jeton de session fermée lisait encore la REST jusqu'à 1 h. | Migration `20261121000001` : `securite.db_pre_request()`, pré-requête de PostgREST. Une lecture par clé primaire de `auth.sessions`. Si la session est absente, échue ou appartient à un autre compte : 401 `SESSION_FERMEE`. Sans jeton, avec anon ou avec le rôle de service : rien. Coût mesuré sur 10 000 appels : 15,1 µs par appel au run 349, dont 9,5 µs pour la lecture de la session ; 19,1 µs au run 352, dont 11,8 µs. Plan : `Index Scan using sessions_pkey`, 0,05 ms. | cvf2b-6, cas 6 et 7 ; `cvf2b-correctif-pre-requete` (nouvelle) | `695def1af` |
+| 6.7 | Jetons d'une heure. | `supabase/config.toml` : `jwt_expiry = 600`. Le temps réel coupe un canal à l'échéance de son jeton. Test : un jeton de 25 s abonné aux notifications du compte reçoit avant l'échéance, ne reçoit plus rien après, et son canal passe à `CLOSED` (run 352). | `cvf2b-correctif-pre-requete`, section 5 | `e77468e48` |
 
 ### Moyens
 
@@ -139,7 +139,13 @@ Branche `correctifs/cvf2b`, partie de `main` à `08d854851`. La contre-vérifica
 5. **Tests existants adaptés.**
    - `changement-role-admin` et `lot9quater-droits` attendaient un jeton de session révoquée encore servi ; ils vérifient maintenant le 401.
    - `f2b-couleur-auto`, `zones-scan` et `e2e/recette.spec.ts` : OR n'est plus choisissable.
-6. **Signalé, non traité (hors consigne).**
+6. **CI.** `verify.yml` ne se déclenchait pas sur `correctifs/**` : le premier envoi (`c15bb85f4`) n'a lancé aucun run. Le motif `correctifs/**` est ajouté aux branches du déclencheur (commit `c1dedc49b`), rien d'autre ne change.
+7. **Test du temps réel réécrit** (`f28b284f4`, ma suite et non une suite cvf2b). Au run 349, la première version restait rouge : le canal recevait encore après l'échéance. Ce n'était pas un défaut du serveur, le test était mal construit, pour deux raisons :
+   - il visait `public_event_state`, que la clé anon peut lire ;
+   - realtime-js 2.114 s'abonne avant que le rappel `accessToken`, asynchrone, ait rendu le jeton. Le canal tournait donc avec la seule clé anon, qui n'expire pas.
+
+   Le test vise maintenant les notifications du compte, une table privée, et le jeton est remis au client avant l'abonnement. Une réception avant l'échéance prouve donc que le canal porte bien ce jeton ; un contrôle vérifie aussi que la clé anon ne reçoit rien. L'assertion « rien après l'échéance » est inchangée. Au run 352, aucun message n'arrive après l'échéance et le canal est fermé par le serveur. Le code de Realtime v2.147.1 programme d'ailleurs cette vérification à l'échéance exacte du jeton.
+8. **Signalé, non traité (hors consigne).**
    - `/api/auth/reset-password` révoque les sessions sans supprimer les abonnements push des autres appareils : c'est le même trou que la 6.8.
    - `docs/apres-lancement.md` : la ligne sur le brouillon gardé est devenue fausse avec 5c et 5d.
 
@@ -188,5 +194,7 @@ La nouvelle durée vaut pour les jetons émis ou rafraîchis après le changemen
 
 | Run | Commit | Mode | Résultat |
 |---|---|---|---|
-RUN_RAPIDE_LIGNE
+| — | `c15bb85f4` | rapide | aucun run : branche absente du déclencheur |
+| 349 | `c1dedc49b` | rapide, 81 suites : toutes les cvf2b, audit, audit-auth, nouvelles et adaptées | 80/81 ; seule rouge : `cvf2b-correctif-pre-requete`, cas 5 (test mal construit, écart 7) ; typecheck et lint OK |
+| 352 | `f28b284f4` | rapide, `cvf2b-correctif-pre-requete` | vert, 5/5 |
 RUN_COMPLET_LIGNE
