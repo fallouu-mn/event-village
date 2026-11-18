@@ -200,7 +200,10 @@ describe('A. Réserver une salle : argent calculé en base, contrôles', () => {
             const ok = results.filter((r) => r.status === 'fulfilled' && (r.value as Row).ok === true).length;
             const taken = results.filter((r) => r.status === 'fulfilled' && (r.value as Row).code === 'SLOT_TAKEN').length;
             const errors = results.filter((r) => r.status === 'rejected').map((r) => String((r as PromiseRejectedResult).reason));
-            assert.deepEqual([ok, taken, errors], [1, 5, []], `tour ${round}`);
+            const codes = results.map((r) => (r.status === 'fulfilled' ? String((r.value as Row).code ?? 'ok') : 'erreur'));
+            assert.deepEqual([ok, taken, errors], [1, 5, []], `tour ${round} : ${codes.join(', ')}`);
+            // Attente du gagnant rendue : un client ne garde jamais plus de 3 réservations non payées
+            await service.from('hall_reservations').update({ hold_expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('hall_id', hall);
         }
     });
 
