@@ -247,6 +247,20 @@ Correctif : ajouter `halls` et `tables` à l'expression de `PutSchema` (et au me
 |---|---|---|---|
 | 405 | `4028160d6` | rapide : cv11a-1..4 + tests/audit + tests/audit-auth (51 suites) | 48/51 : seules cv11a-2 (10/13), cv11a-3 (8/10), cv11a-4 (11/14) rouges, exactement les tests des trous T1 à T6 ; cv11a-1 (15/15) et les 47 autres suites d'audit vertes ; typecheck et lint verts ; invariants à 0 |
 | 407 | `d82f957eb` | rapide : cv11a-5 | 10/11 : seul le test de la route PUT (T7) rouge ; 9 recopies et 12 réglages verts |
+| **408** | `ac48ed3ae` | **complet** (4 lots) | **508/512** : 512 suites attendues, 512 exécutées ; seules cv11a-2, -3, -4, -5 rouges, exactement les tests des trous T1 à T7 ; cv11a-1 et les 50 autres suites d'audit vertes ; typecheck, lint, build, budgets JS verts ; e2e : connexion, captures (609, 0 en échec), courriels, fumée, terrain, PWA, déconnexion, recette verts, **perf rouge** (voir ci-dessous) ; 40 min 12 s |
+
+```
+TOTAL : 512 suite(s) — 508 réussie(s), 4 en échec, 0 expirée(s)
+[ci-lots] contrôle : 512 suite(s) attendue(s) (run-tests.mjs --list), 512 exécutée(s) dans 4 lot(s)
+[e2e] résumé :connexion OK · captures OK · emails OK · dev-page OK · fumee OK · terrain OK · pwa OK · deconnexion OK · fake-prod OK · perf ÉCHEC · recette OK
+  1) [perf] › e2e/perf.spec.ts:374:9 › Mes billets : premier affichage utile et JavaScript chargé, 4G simulée et processeur ×4 (5 passages)
+    Error: Target page, context or browser has been closed
+```
+
+Perf : le navigateur s'est fermé au 3e passage de « Mes billets » (mesures des 2 premiers passages dans leurs plages
+habituelles). Sans lien avec cette branche, qui n'ajoute que 6 fichiers de tests et ce rapport depuis `1348a0a31`
+(run complet 400 du lot, e2e vert) ; non relancé (consigne : s'arrêter après le run complet).
 
 Aucun défaut de montage : aucune assertion changée entre les runs. Journaux bruts : branche `ci-results`,
-`runs/405-44340472669/test-logs/tests__audit__cv11a-*.log`, `runs/407-44345344275/test-logs/tests__audit__cv11a-5-recopies.test.ts.log`.
+`runs/405-44340472669/test-logs/tests__audit__cv11a-*.log`, `runs/407-44345344275/test-logs/tests__audit__cv11a-5-recopies.test.ts.log`,
+`runs/408-44346856979/` (verify.log, e2e.log).
