@@ -6,16 +6,21 @@ import { EventCard, cityLabel } from '@/components/events/EventCard';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Select, type SelectOption } from '@/components/ui/Field';
-import { readCatalog, readPopular, type CatalogEvent } from '@/lib/events/catalog-client';
+import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
 import { readLocalCity, writeLocalCity } from '@/lib/events/city-preference';
+import { useCatalogSignal } from './catalogSignal';
 
 /**
- * Accueil, sections de découverte (lot 9, 9.1 ; contrat 4.2, 5.2).
- *  - Populaires : classement du serveur (7 jours, cache 60 s). Vide : section absente. Panne : erreur avec « Réessayer ».
- *  - Près de chez vous : événements de la ville choisie, jamais déduite de la position de l'appareil. Connecté : ville
- *    du profil, écrite par la route. Visiteur : ville gardée sur l'appareil. Le rendu initial ne dépend d'aucune des
- *    deux (squelette jusqu'à la fin de la lecture de session), pour un rendu serveur identique.
- * Sur mobile, chaque liste défile à l'intérieur de sa section (10 cartes empilées repousseraient tout le reste).
+ * Accueil, « Près de chez vous » (lot 9, 9.1 ; contrat 4.2, 5.2 ; design 1b, point 3).
+ *  - Événements de la ville choisie, jamais déduite de la position de l'appareil. Connecté : ville du profil, écrite par
+ *    la route. Visiteur : ville gardée sur l'appareil. Îlot client chargé après la page : l'accueil est préparé par le
+ *    serveur et mis en cache 60 s, la ville d'une personne n'entre jamais dans ce HTML partagé. Le rendu initial ne
+ *    dépend d'aucune des deux (squelette jusqu'à la fin de la lecture de session).
+ *  - Design 1b : « Populaires » n'est plus lu ici. Les plus vendus (classement du serveur, 7 jours, cache 60 s) sont
+ *    rendus par le serveur, en repli de la rangée « À la une » quand le Superadmin n'a rien choisi (app/page.tsx).
+ *  - `liveTick` : signaux temps réel de l'accueil (public_event_state), reçus de l'îlot HomeLive par useCatalogSignal ;
+ *    chaque signal relit la liste (badges de stock à jour), sans abonnement de plus.
+ * Sur téléphone, la liste défile au doigt à l'intérieur de sa section (scroll-snap, sans JavaScript).
  */
 
 const NEARBY_LIMIT = 8;
@@ -25,14 +30,15 @@ const SAVE_FAILED_MESSAGE = 'La ville n’a pas pu être enregistrée. Réessaye
 /**
  * Lot 9 bis (ex-10.0 e ; contrat 5.45, B94) : clé de ville sans accent ni casse, pour que la ville du profil
  * (« Thiès ») et celle du catalogue (« THIES ») ne fassent qu'une option. Pliage en ligne, sans importer
- * lib/text/fold (budget JS de /) : seules les villes passent ici, déjà dédoublonnées par la route.
+ * lib/text/fold : seules les villes passent ici, déjà dédoublonnées par le serveur.
  */
-const cityKey = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+const cityKey = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 
-const TITLE = 'text-2xl font-bold tracking-tight text-fg';
-// Sur mobile, la liste défile jusqu'aux bords de l'écran (-mx-4 annule la gouttière de la page).
-const RAIL = '-mx-4 flex snap-x scroll-px-4 gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:snap-none sm:scroll-px-0 sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-4';
-const RAIL_ITEM = 'w-[82%] flex-none snap-start sm:w-auto';
+const TITLE = 'text-xl font-bold tracking-tight text-foreground-strong sm:text-2xl';
+// Sur téléphone, la liste défile jusqu'aux bords de l'écran (-mx-4 annule la gouttière de la page).
+const RAIL = '-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto overscroll-x-contain px-4 pb-2 no-scrollbar sm:mx-0 sm:grid sm:snap-none sm:scroll-px-0 sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-4';
+const RAIL_ITEM = 'w-[78%] flex-none snap-start sm:w-auto';
+const RAIL_SIZES = '(max-width: 640px) 78vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 300px';
 
 function EventRail({ events, busy = false }: { events: CatalogEvent[]; busy?: boolean }) {
   return (
@@ -52,8 +58,12 @@ function EventRail({ events, busy = false }: { events: CatalogEvent[]; busy?: bo
             city={evt.city}
             categoryLabel={evt.categoryLabel}
             price={evt.price}
+            paidFrom={evt.paidFrom}
             saleLabel={evt.saleLabel}
             stock={evt.stock}
+            startsAt={evt.startsAt}
+            endsAt={evt.endsAt}
+            sizes={RAIL_SIZES}
             priority={false}
           />
         </li>
@@ -67,72 +77,17 @@ function RailSkeleton() {
     <div className={RAIL} aria-busy="true">
       {[1, 2, 3, 4].map((i) => (
         <div key={i} className={RAIL_ITEM} aria-hidden="true">
-          <div className="overflow-hidden rounded-3xl border border-border bg-surface">
-            <div className="aspect-[16/10] w-full bg-surface-sunken motion-safe:animate-pulse" />
-            <div className="space-y-3 p-4 sm:p-5">
-              <div className="h-4 w-1/3 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-              <div className="h-5 w-3/4 rounded-md bg-surface-sunken motion-safe:animate-pulse" />
-              <div className="h-11 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse" />
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="aspect-[16/10] w-full bg-muted motion-safe:animate-pulse" />
+            <div className="space-y-3 p-4">
+              <div className="h-4 w-1/3 rounded-md bg-muted motion-safe:animate-pulse" />
+              <div className="h-5 w-3/4 rounded-md bg-muted motion-safe:animate-pulse" />
+              <div className="h-11 w-full rounded-xl bg-muted motion-safe:animate-pulse" />
             </div>
           </div>
         </div>
       ))}
     </div>
-  );
-}
-
-function PopularSection({ liveTick }: { liveTick: number }) {
-  const [events, setEvents] = useState<CatalogEvent[]>([]);
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [message, setMessage] = useState('');
-  const [isRetrying, setIsRetrying] = useState(false);
-  const loadSeq = useRef(0);
-
-  const load = useCallback(async () => {
-    const seq = ++loadSeq.current;
-    const result = await readPopular('accueil');
-    if (seq !== loadSeq.current) return;
-    if (result.ok) {
-      setEvents(result.events);
-      setPhase('ready');
-      return;
-    }
-    setMessage(result.message);
-    setPhase('error');
-  }, []);
-
-  // Relue à chaque signal de l'accueil (liveTick), sans squelette : la liste reste affichée pendant la lecture.
-  useEffect(() => {
-    void load();
-  }, [load, liveTick]);
-
-  const retry = async () => {
-    setIsRetrying(true);
-    try {
-      await load();
-    } finally {
-      setIsRetrying(false);
-    }
-  };
-
-  if (phase === 'ready' && events.length === 0) return null;
-
-  return (
-    <section aria-labelledby="populaires-titre" className="space-y-5">
-      <div className="space-y-1">
-        <h2 id="populaires-titre" className={TITLE}>Populaires</h2>
-        <p className="text-sm text-fg-muted">Les événements les plus demandés des 7 derniers jours.</p>
-      </div>
-      {phase === 'error' ? (
-        <ErrorState
-          title="Impossible d’afficher les événements populaires"
-          description={message}
-          onRetry={() => void retry()}
-          isRetrying={isRetrying}
-          className="my-0 p-5"
-        />
-      ) : phase === 'loading' ? <RailSkeleton /> : <EventRail events={events} />}
-    </section>
   );
 }
 
@@ -158,7 +113,7 @@ async function saveProfileCity(city: string): Promise<string | null> {
   return typeof error === 'string' && error.trim() !== '' ? error : SAVE_FAILED_MESSAGE;
 }
 
-function NearbySection({ cities, liveTick }: { cities: string[] | null; liveTick: number }) {
+function NearbySection({ cities, liveTick }: { cities: string[]; liveTick: number }) {
   const { isLoading: authLoading, isAuthenticated, profile, refreshProfile } = useAuth();
   const [localCity, setLocalCity] = useState<string | null>(null);
   const [cityReady, setCityReady] = useState(false);
@@ -215,10 +170,10 @@ function NearbySection({ cities, liveTick }: { cities: string[] | null; liveTick
   };
 
   // Ville choisie sous la forme du catalogue quand il la connaît (même clé pliée), sinon telle quelle.
-  const selected = city ? (cities ?? []).find((v) => cityKey(v) === cityKey(city)) ?? city : null;
+  const selected = city ? cities.find((v) => cityKey(v) === cityKey(city)) ?? city : null;
 
   const options = useMemo<SelectOption[]>(() => {
-    const values = new Set(cities ?? []);
+    const values = new Set(cities);
     if (selected) values.add(selected);
     const list = Array.from(values)
       .map((value) => ({ value, label: cityLabel(value) ?? value }))
@@ -240,16 +195,16 @@ function NearbySection({ cities, liveTick }: { cities: string[] | null; liveTick
     setSavingCity(null);
   };
 
-  if (cityReady && !city && cities !== null && cities.length === 0) return null;
+  if (cityReady && !city && cities.length === 0) return null;
 
   const cityName = cityLabel(city) ?? '';
 
   return (
-    <section aria-labelledby="proches-titre" className="space-y-5">
+    <section aria-labelledby="proches-titre" className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <h2 id="proches-titre" className={TITLE}>Près de chez vous</h2>
-          <p className="text-sm text-fg-muted">Les prochains événements dans votre ville.</p>
+          <p className="text-sm text-muted-foreground">Les prochains événements dans votre ville.</p>
         </div>
         {cityReady ? (
           <Select
@@ -262,7 +217,7 @@ function NearbySection({ cities, liveTick }: { cities: string[] | null; liveTick
             error={saveError}
           />
         ) : (
-          <div className="h-11 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:w-64" aria-hidden="true" />
+          <div className="h-11 w-full rounded-xl bg-muted motion-safe:animate-pulse sm:w-64" aria-hidden="true" />
         )}
       </div>
 
@@ -302,16 +257,10 @@ function NearbySection({ cities, liveTick }: { cities: string[] | null; liveTick
 }
 
 /**
- * Populaires, puis Près de chez vous, sous « À l'affiche ».
- * `cities` : villes du catalogue, reçues de l'accueil pour éviter une requête de plus ; null tant qu'il charge.
- * `liveTick` (lot 9 ter, 9t.19) : compteur des signaux temps réel de l'accueil (public_event_state) ; chaque
- * changement relit les deux sections (badges de stock à jour), sans abonnement de plus.
+ * « Près de chez vous », sous les sections du catalogue de l'accueil.
+ * `cities` : villes du catalogue, données par la page serveur (publiques, les mêmes pour tous).
  */
-export function HomeDiscovery({ cities, liveTick }: { cities: string[] | null; liveTick: number }) {
-  return (
-    <>
-      <PopularSection liveTick={liveTick} />
-      <NearbySection cities={cities} liveTick={liveTick} />
-    </>
-  );
+export function HomeDiscovery({ cities }: { cities: string[] }) {
+  const liveTick = useCatalogSignal();
+  return <NearbySection cities={cities} liveTick={liveTick} />;
 }

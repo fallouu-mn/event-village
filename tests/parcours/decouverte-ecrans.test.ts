@@ -6,6 +6,9 @@
  *    (stockage indisponible, navigation privée, rendu serveur) ;
  *  - sources : plus aucun filtre côté navigateur (A28), pas d'AbortController (e2e/support/network.ts:152-161),
  *    HomeDiscovery sous « À l'affiche », pas de géolocalisation.
+ * Design 1b (lot CATALOGUE) : l'accueil et l'Explorer sont préparés par le serveur (filtres appliqués par la page serveur,
+ * lib/events/catalog-filters.ts) ; la partie écran de l'Explorer vit dans app/explore/ExploreView.tsx (lue avec la page) ;
+ * « Populaires » est rendu par le serveur en repli de « À la une » ; « Près de chez vous » est un îlot client (HomeNearby).
  *
  * Rouge avant correctif : readCatalog ignore ses filtres et ne rend pas `cities` ; readPopular et le module de
  * la ville n'existent pas (import dynamique, l'échec les nomme) ; les pages filtrent encore. Cas déjà vert, signalé
@@ -287,11 +290,16 @@ function source(rel: string): string {
     return fs.readFileSync(abs, 'utf8');
 }
 
+/** Design 1b : l'Explorer = page serveur + partie écran (îlot client), lues ensemble. */
+function exploreSource(): string {
+    return `${source('app/explore/page.tsx')}\n${source('app/explore/ExploreView.tsx')}`;
+}
+
 const READ_WITH_FILTERS = /readCatalog\(\s*[^)]*,[^)]*\)/;
 
 describe('A28 — plus aucun filtre côté navigateur', () => {
     test('catalogue : ni matches(), ni comparaison de catégorie ou de ville, filtres passés à readCatalog', () => {
-        const src = source('app/explore/page.tsx');
+        const src = exploreSource();
         assert.doesNotMatch(src, /\bmatches\(/, 'filtre texte du navigateur retiré');
         assert.doesNotMatch(src, /\.city\s*===\s*city\b/, 'filtre ville du navigateur retiré');
         assert.doesNotMatch(src, /\.category\s*===\s*category\b/, 'filtre catégorie du navigateur retiré');
@@ -299,30 +307,37 @@ describe('A28 — plus aucun filtre côté navigateur', () => {
     });
 
     test('catalogue : debounce 300 ms, pas d’AbortController, villes de la réponse, vide distingué d’une recherche sans résultat', () => {
-        const src = source('app/explore/page.tsx');
+        const src = exploreSource();
         assert.match(src, /\b300\b/, 'debounce de 300 ms sur le texte (contrat 5.2)');
         assert.doesNotMatch(src, /AbortController/, 'une requête annulée est une panne pour la garde e2e (network.ts:152-161)');
         assert.match(src, /\.cities\b/, 'liste des villes tirée de la réponse (C5)');
         assert.match(src, /events\.length === 0 && !serverFiltersActive|!serverFiltersActive && events\.length === 0/, 'le message « aucun événement à venir » ne dépend pas des filtres serveur (contrat 5.2, ligne 283)');
     });
 
-    test('accueil : catégorie envoyée au serveur, shown garde seulement le découpage', () => {
+    test('accueil : catégorie filtrée par le serveur, aucun filtre côté navigateur', () => {
         const src = source('app/page.tsx');
         assert.doesNotMatch(src, /\.category\s*===\s*category\b/, 'filtre catégorie du navigateur retiré de l’accueil');
-        assert.match(src, READ_WITH_FILTERS, 'readCatalog reçoit la catégorie');
+        // Design 1b : l'accueil est un composant serveur ; ses sections (dont « Par catégorie ») sont calculées par le serveur
+        // (homeSections) et ses liens mènent à l'Explorer filtré par le serveur (exploreHref).
+        assert.doesNotMatch(src, /^\s*['"]use client['"]/m, 'accueil préparé par le serveur');
+        assert.match(source('app/_accueil/data.server.ts'), /\bhomeSections\(/, 'sections calculées par le serveur');
+        assert.match(src, /exploreHref\(\{\s*categorie:/, 'catégorie envoyée à l’Explorer, filtré par le serveur');
     });
 });
 
 describe('Accueil — sections Populaires et Près de chez vous', () => {
-    test('HomeDiscovery : Populaires puis Près de chez vous, lecture par readPopular et readCatalog(« proches »)', () => {
+    test('Populaires (serveur, repli de « À la une ») puis Près de chez vous (readCatalog(« proches »))', () => {
+        // Design 1b : les plus vendus (classement du serveur, 7 jours) sont lus par la page serveur quand le Superadmin n'a
+        // rien mis à la une, et rendus avant « Près de chez vous » ; plus aucune lecture de Populaires par le navigateur.
+        const data = source('app/_accueil/data.server.ts');
+        assert.match(data, /getPopularEvents\(/, 'Populaires lus par le serveur (getPopularEvents)');
+        const page = source('app/page.tsx');
+        assert.match(page, /populaires:\s*\{\s*title:\s*'Populaires'/, 'titre « Populaires » quand ce sont les plus vendus');
+        assert.match(page, /aria-labelledby="une-titre"/, 'titre relié à la section');
         const src = source('components/events/HomeDiscovery.tsx');
-        assert.match(src, /readPopular\(/, 'Populaires lus par readPopular');
         assert.match(src, /readCatalog\(\s*['"]proches['"]/, 'Près de chez vous : readCatalog(« proches », { city })');
-        assert.match(src, /aria-labelledby="populaires-titre"/, 'titre relié à la section');
         assert.match(src, /priority=\{false\}/, 'ne déplace pas le LCP');
-        const populaires = src.indexOf('Populaires');
-        const proches = src.indexOf('Près de chez vous');
-        assert.ok(populaires >= 0 && proches >= 0 && populaires < proches, 'Populaires, puis Près de chez vous');
+        assert.ok(page.indexOf('une-titre') >= 0 && page.indexOf('<HomeNearby') > page.indexOf('une-titre'), 'Populaires, puis Près de chez vous');
     });
 
     test('HomeDiscovery : pas de géolocalisation, pas d’accès direct au stockage local', () => {
@@ -332,12 +347,12 @@ describe('Accueil — sections Populaires et Près de chez vous', () => {
         assert.match(src, /readLocalCity|writeLocalCity/, 'lib/events/city-preference utilisée');
     });
 
-    test('accueil : HomeDiscovery rendu sous « À l’affiche »', () => {
+    test('accueil : HomeDiscovery rendu sous « À la une » (îlot client HomeNearby)', () => {
         const src = source('app/page.tsx');
-        assert.match(src, /HomeDiscovery/, 'section branchée sur l’accueil');
-        const affiche = src.indexOf('affiche-titre');
-        const discovery = src.indexOf('<HomeDiscovery');
-        assert.ok(affiche >= 0 && discovery > affiche, '<HomeDiscovery /> après la section « À l’affiche »');
+        assert.match(source('app/_accueil/HomeNearby.tsx'), /import\(\s*['"]@\/components\/events\/HomeDiscovery['"]\s*\)/, 'section branchée sur l’accueil');
+        const affiche = src.indexOf('une-titre');
+        const discovery = src.indexOf('<HomeNearby');
+        assert.ok(affiche >= 0 && discovery > affiche, '<HomeNearby /> (HomeDiscovery) après la section « À la une »');
     });
 
     test('AuthProvider : la ville fait partie du profil', () => {
