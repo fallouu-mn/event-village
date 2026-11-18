@@ -34,6 +34,8 @@ const LOT11A_MIGRATIONS = [
     '20261123000108_l11a_messages.sql',
     // Commission des tables dans les relevés (équivalent du trou T6 de la contre-vérification de la 10a)
     '20261123000109_l11a_releves.sql',
+    // Correctifs de la contre-vérification (docs/audit-lot11a.md), T1 : plafond du numéro payeur avant de reprendre l'attente
+    '20261123000110_l11a_cv_paiement_plafond.sql',
 ] as const;
 
 /** Recopies de fonctions communes : fichier de la recopie, et lignes de la définition précédente qu'elle remplace. */
