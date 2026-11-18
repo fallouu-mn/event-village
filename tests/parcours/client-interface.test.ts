@@ -240,7 +240,12 @@ describe('7.3 — états d\'erreur et 404', () => {
         };
         visit(sf);
         assert.deepEqual(shown, [], `error.message affiché à l'écran : ${shown.join(' | ')}`);
-        assert.ok(normalized(code('app/error.tsx')).includes('Réessayer'), 'bouton « Réessayer » absent');
+        // Design 1a (point 6, signalé au rapport) : le bouton vient du gabarit commun des pages spéciales (ErrorContent de
+        // components/ui/SpecialPage.tsx), branché sur reset() ; même exigence, lue là où le libellé est écrit.
+        const page = normalized(code('app/error.tsx'));
+        const viaGabarit = /<ErrorContent\b[^>]*retry=\{[^}]*reset\(\)/.test(page)
+            && normalized(code('components/ui/SpecialPage.tsx')).includes('Réessayer');
+        assert.ok(page.includes('Réessayer') || viaGabarit, 'bouton « Réessayer » absent');
     });
 
     test('app/orders/page.tsx : état d\'erreur avec « Réessayer », plus de ?userId=, onglets selon useFeatureFlags()', () => {
