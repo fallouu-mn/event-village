@@ -80,7 +80,7 @@ export const SETTING_BOUNDS: Readonly<Record<string, SettingBounds>> = {
     'tables.response_minutes': int(15, 1440, 'Délai de réponse d’un établissement', 'min'),
     'tables.no_show_minutes': int(5, 180, 'Client absent : table libérée après', 'min'),
     'tables.cancel_free_hours': int(0, 72, 'Acompte rendu si le client annule au moins', 'h'),
-    'tables.max_pending_per_client': int(1, 10, 'Demandes en attente au plus par client', 'demandes'),
+    'tables.max_pending_per_client': int(1, 10, 'Réservations non payées au plus par client', 'réservations'),
     'tables.reminder_hours': int(1, 24, 'Rappel au client avant l’heure', 'h'),
 };
 

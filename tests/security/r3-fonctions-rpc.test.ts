@@ -664,6 +664,9 @@ const LOT11A_RPCS: Array<[string, Record<string, unknown>]> = [
     ['table_expire_hold', { p_reservation_id: ZERO_UUID }],
     ['table_reserve', { p: {} }],
     ['table_hold_refusal', { p_reservation_id: ZERO_UUID }],
+    // Contre-vérification de la 11a (T2, ajout signalé au rapport) : limite et créneau du client
+    ['table_client_unpaid_refusal', { p_client: ZERO_UUID, p_exclude: ZERO_UUID }],
+    ['table_client_slot_refusal', { p_client: ZERO_UUID, p_venue_id: ZERO_UUID, p_slot: '["2030-01-01 12:00","2030-01-01 14:00")', p_exclude: ZERO_UUID }],
     ['table_payment_create', { p: {} }],
     ['table_payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
     ['table_refund_payment', { p_payment_id: ZERO_UUID, p_percent: 100, p_reason: 'TEST' }],

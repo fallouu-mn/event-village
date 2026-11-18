@@ -185,13 +185,21 @@ export async function shiftReservation(id: string, opts: { startMinutes?: number
     }
 }
 
-/** Attentes (paiement ou réponse) d'un client rendues échues : la limite de demandes en attente ne gêne pas les tests suivants. */
+/**
+ * Attentes (paiement ou réponse) d'un client rendues échues : la limite de demandes en attente ne gêne pas les tests suivants.
+ * Contre-vérification de la 11a (T2, modification signalée au rapport) : la limite compte aussi les réservations
+ * gratuites confirmées à venir ; celles du client sont closes (« Annulée par le client », rien à rendre).
+ */
 export async function releasePending(clientId: string): Promise<void> {
     const c = await openConcurrentClient({ applicationName: 'ev-test-l11a' });
     try {
         await c.query(`SELECT set_config('event_village.table_booking', 'on', true)`);
         await c.query(`UPDATE public.table_reservations SET booking_state = 'EXPIREE', hold_expires_at = NULL
                         WHERE client_id = $1 AND booking_state IN ('EN_ATTENTE_PAIEMENT', 'EN_ATTENTE_ACCEPTATION') AND paid_amount = 0`, [clientId]);
+        await c.query(`UPDATE public.table_reservations
+                          SET booking_state = 'ANNULEE_CLIENT', cancel_origin = 'CLIENT', cancel_reason = 'Libérée entre deux tests',
+                              cancelled_at = now(), cancelled_by = client_id, payment_status = 'CANCELLED', updated_at = now()
+                        WHERE client_id = $1 AND booking_state = 'CONFIRMEE' AND paid_amount = 0`, [clientId]);
         await c.commit();
     } finally {
         await c.close();
