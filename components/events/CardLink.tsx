@@ -63,8 +63,26 @@ export function CardTransitions() {
         router.push(href);
       }
     };
+    // Design 1b (décision du 18/11) : cartes rendues avec prefetch={false} (aucun préchargement à l'affichage, run 406) ;
+    // la fiche est préchargée à l'intention : survol, début de toucher, focus clavier sur le lien de la carte.
+    const warmed = new Set<string>();
+    const onIntent = (e: Event): void => {
+      const link = (e.target as Element | null)?.closest?.<HTMLAnchorElement>(`a[${CARD_LINK_ATTR}]`);
+      const href = link?.getAttribute('href');
+      if (!href || !href.startsWith('/') || warmed.has(href)) return;
+      warmed.add(href);
+      router.prefetch(href);
+    };
     document.addEventListener('click', onClick);
-    return () => document.removeEventListener('click', onClick);
+    document.addEventListener('pointerover', onIntent, { passive: true });
+    document.addEventListener('touchstart', onIntent, { passive: true });
+    document.addEventListener('focusin', onIntent);
+    return () => {
+      document.removeEventListener('click', onClick);
+      document.removeEventListener('pointerover', onIntent);
+      document.removeEventListener('touchstart', onIntent);
+      document.removeEventListener('focusin', onIntent);
+    };
   }, [router]);
   return null;
 }

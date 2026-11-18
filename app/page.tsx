@@ -224,7 +224,7 @@ export default async function HomePage() {
                 <ul className="flex flex-wrap gap-2">
                   {data.sections.byCategory.map((c) => (
                     <li key={c.id}>
-                      <Link href={exploreHref({ categorie: c.id })} className={CHIP}>
+                      <Link href={exploreHref({ categorie: c.id })} prefetch={false} className={CHIP}>
                         {c.label}
                         <span className="ml-1.5 tabular-nums text-muted-foreground">{c.total}</span>
                       </Link>
@@ -238,6 +238,7 @@ export default async function HomePage() {
                     <h3 className="text-lg font-bold text-foreground-strong">{c.label}</h3>
                     <Link
                       href={exploreHref({ categorie: c.id })}
+                      prefetch={false}
                       className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-primary-text hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       aria-label={`Tout voir : ${c.label}`}
                     >

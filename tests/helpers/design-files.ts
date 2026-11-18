@@ -21,6 +21,7 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/ui/IconButton.tsx',
     'components/ui/KpiCard.tsx',
     'components/ui/LinkButton.tsx',
+    'components/ui/IntentLink.tsx',
     'components/ui/LiveIndicator.tsx',
     'components/ui/Modal.tsx',
     'components/ui/PageHeader.tsx',

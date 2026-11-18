@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { emitCatalogSignal } from '@/components/events/catalogSignal';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { usePageSettled } from '@/hooks/usePageSettled';
 
 /** Une page régénérée au plus toutes les 60 s : la relire plus souvent ne montrerait rien de neuf. */
 const REFRESH_MIN_INTERVAL_MS = 61_000;
@@ -45,10 +46,13 @@ export function HomeLive() {
     }, wait);
   }, [router]);
 
+  // Design 1b (décision du 18/11) : abonnement ouvert une fois la page chargée et le téléphone libre
+  const settled = usePageSettled();
   const { status } = useRealtimeRefresh({
     channelKey: 'accueil-public',
     subscriptions: [{ table: 'public_event_state' }],
     onSignal,
+    enabled: settled,
   });
 
   return <LiveIndicator status={status} />;

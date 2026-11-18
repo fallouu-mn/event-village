@@ -144,6 +144,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         <h3 className={cn('line-clamp-2 font-bold leading-snug tracking-tight text-foreground-strong', feature ? 'text-xl sm:text-2xl' : 'text-lg')}>
           <Link
             href={`/events/${id}`}
+            prefetch={false}
             {...{ [CARD_LINK_ATTR]: id }}
             className="rounded-sm after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
           >
