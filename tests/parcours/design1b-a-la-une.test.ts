@@ -1,5 +1,5 @@
 /**
- * Design 1b (À LA UNE) — « À la une » de l'accueil, choisi par le SUPERADMIN (migration 20261122000001_d1b_a_la_une.sql,
+ * Design 1b (À LA UNE) — « À la une » de l'accueil, choisi par le SUPERADMIN (migration 20261123000001_d1b_a_la_une.sql,
  * routes app/api/admin/a-la-une/**, lib/events/featured.server.ts).
  *
  *  1. Qui écrit : seul le SUPERADMIN ; anon 401, client 403, ADMIN muni de events.write 403 SUPERADMIN_ONLY ; un SUPERADMIN

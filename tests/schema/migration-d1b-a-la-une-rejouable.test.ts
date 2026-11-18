@@ -1,5 +1,5 @@
 /**
- * Design 1b (À LA UNE) — la migration 20261122000001_d1b_a_la_une.sql (seule migration du design 1b) est rejouable :
+ * Design 1b (À LA UNE) — la migration 20261123000001_d1b_a_la_une.sql (seule migration du design 1b) est rejouable :
  * déjà appliquée par la CI depuis une base vide, elle s'exécute encore deux fois de suite sans erreur, dans une
  * transaction annulée (base LOCALE seulement), et ne gère pas elle-même sa transaction (aucun BEGIN ni COMMIT).
  * Modèle : migration-finition2b-rejouable.test.ts. Après les deux passages, dans la même transaction : RLS activée sans
@@ -14,7 +14,7 @@ import path from 'node:path';
 import { inRolledBackTransaction } from '../helpers/db';
 
 const DIR = path.resolve(process.cwd(), 'supabase/migrations');
-const NAME = '20261122000001_d1b_a_la_une.sql';
+const NAME = '20261123000001_d1b_a_la_une.sql';
 
 describe('Design 1b — migration « À la une » rejouable (transaction annulée)', () => {
     test(`${NAME} : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur ; droits et RLS conformes ensuite`, async () => {

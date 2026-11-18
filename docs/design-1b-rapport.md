@@ -1,6 +1,6 @@
 # Design 1b — Pages publiques
 
-Branche `design-1b/public`, partie de `main` à `28ef60f07` (design 1a fusionné), avec `main` fusionné ensuite (`7b1284dfc`). Non fusionnée. Une seule migration, celle de « À la une » (`20261122000001_d1b_a_la_une.sql`), **non appliquée** sur event-village-dev. Ni la finance ni les salles ne sont touchées.
+Branche `design-1b/public`, partie de `main` à `28ef60f07` (design 1a fusionné), avec `main` fusionné ensuite (`7b1284dfc`). Non fusionnée. Une seule migration, celle de « À la une » (`20261123000001_d1b_a_la_une.sql`), **non appliquée** sur event-village-dev. Ni la finance ni les salles ne sont touchées.
 
 ## En bref
 
@@ -235,7 +235,7 @@ Run 376 : 664 captures dans `ci-results`, `runs/376-44282916087/captures/`, chaq
    - le mot de passe et le code administrateur de moins de 10 minutes sont exigés à chaque écriture ;
    - la lecture publique est réservée au serveur.
 
-   L'ancien système (`is_featured`, `sponsored_promotions`) n'est plus lu par aucune page : il est obsolète, à retirer dans un lot à part. Migration `20261122000001` **non appliquée** sur event-village-dev.
+   L'ancien système (`is_featured`, `sponsored_promotions`) n'est plus lu par aucune page : il est obsolète, à retirer dans un lot à part. Migration `20261123000001` **non appliquée** sur event-village-dev. Elle a été renumérotée : `20261122000001` est déjà pris par le lot 10a (`l10a_reglages`), et deux migrations ne peuvent pas porter la même version.
 4. **Cache de 60 s.**
    - Un changement de titre, d'heure ou d'état apparaît sur la fiche dans les 60 s.
    - Le stock, la vente et le statut d'achat sont relus en direct par la billetterie.

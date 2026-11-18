@@ -5,7 +5,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 /**
  * Design 1b (À LA UNE) — événements « À la une » de l'accueil, choisis par le Superadmin (page /admin/a-la-une).
  *
- * Lecture : RPC `home_featured_public` (20261122000001_d1b_a_la_une.sql), qui ne rend que les placements actifs
+ * Lecture : RPC `home_featured_public` (20261123000001_d1b_a_la_une.sql), qui ne rend que les placements actifs
  * valides (événement PUBLIE, non terminé selon event_end_at, dans la fenêtre d'affichage), dans l'ordre, avec
  * l'étiquette, et rien d'autre (ni auteur, ni motif). Les cartes sont relues avec le select et la mise en forme du
  * catalogue (CATALOG_SELECT, formatCatalogEvent), statut PUBLIE exigé une seconde fois.
