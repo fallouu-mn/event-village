@@ -231,7 +231,7 @@ jobs:
         name: Annotations d'erreur (extraits bruts des journaux)
         if: failure()
         run: |
-          for f in /tmp/db-reset.log /tmp/seed.log /tmp/verify.log /tmp/build.log /tmp/e2e-seed.log /tmp/e2e.log; do
+          for f in /tmp/db-reset.log /tmp/seed.log /tmp/verify.log /tmp/build.log /tmp/e2e-seed.log /tmp/e2e.log /tmp/perf-mobile.log; do
             [ -f "$f" ] || continue
             msg=$(tail -c 1800 "$f" | tr '\r\n' '  ' | sed 's/%/%25/g')
             echo "::error title=$(basename "$f")::${msg}"
@@ -243,7 +243,7 @@ jobs:
         if: always()
         run: |
           mkdir -p /tmp/sortie
-          for f in supabase-start db-reset seed verify build containers e2e-install e2e-seed fake-services next-start e2e; do
+          for f in supabase-start db-reset seed verify build containers e2e-install e2e-seed fake-services next-start e2e perf-mobile; do
             [ -f "/tmp/$f.log" ] && cp "/tmp/$f.log" "/tmp/sortie/$f.log"
           done
           [ -f /tmp/etapes.txt ] && cp /tmp/etapes.txt /tmp/sortie/etapes.txt
@@ -349,12 +349,15 @@ jobs:
     needs: mode
     if: ${{ needs.mode.outputs.rapide == '0' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Design 1b (lot PERF) : 70 min (au lieu de 60) pour l'étape bloquante « performance mobile mesurée » (10 min au
+    # plus) après l'e2e (47 min au plus) : installation, build et seed ≈ 8 min, 47 + 10 + rassemblement des résultats.
+    timeout-minutes: 70
     outputs:
       build: ${{ steps.build.outcome }}
       js_budget: ${{ steps.js-budget.outcome }}
       e2e_seed: ${{ steps.e2e-seed.outcome }}
       e2e: ${{ steps.e2e.outcome }}
+      perf_mobile: ${{ steps.perf-mobile.outcome }}
     steps:
       - *horodatage
       - *checkout
@@ -553,12 +556,27 @@ jobs:
         id: e2e
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
         # Lot 8 (contrat 15.9) : délai propre, pour qu'une recette bloquée laisse le temps de déposer les journaux ;
-        # lot CI rapide : 47 min, sous la limite de 60 min du job (installation, build et seed ≈ 8 min avant)
+        # lot CI rapide : 47 min, sous la limite du job (installation, build et seed ≈ 8 min avant ; design 1b : 70 min,
+        # performance mobile mesurée après)
         timeout-minutes: 47
         run: |
           . /tmp/etape.sh e2e
           set -o pipefail
           npm run e2e 2>&1 | tee /tmp/e2e.log
+
+      # Design 1b (lot PERF) : performance mobile MESURÉE, étape BLOQUANTE (aucun continue-on-error : en échec, le job
+      # e2e est rouge, donc le verdict du run, scripts/ci-verdict.mjs). Lancée même si l'e2e a échoué (mesure
+      # indépendante), tant que l'application tourne. Lighthouse mobile ≥ 90, LCP < 2,5 s, CLS < 0,1 (Lighthouse et
+      # mesure réelle) sur l'accueil, la fiche et Mes billets ; toucher < 200 ms. Résultats : .e2e-captures/perf/
+      # lighthouse.tsv|txt, toucher.tsv, lighthouse-resume.json, lighthouse-<page>.json.gz → ci-results runs/<n>/perf/.
+      - name: "E2E : performance mobile mesurée (Lighthouse ≥ 90, LCP < 2,5 s, CLS < 0,1, toucher < 200 ms)"
+        id: perf-mobile
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          . /tmp/etape.sh perf-mobile
+          set -o pipefail
+          node scripts/e2e/perf-mobile.mjs 2>&1 | tee /tmp/perf-mobile.log
 
       # Lot 7 (7.5, contrat 11.1) : sharp absent en production = échec (start-app.mjs arrête aussi le serveur)
       - name: "E2E : sharp présent en production (next-start.log sans sharp-missing-in-production)"
@@ -589,7 +607,7 @@ jobs:
           fi
           if [ -d "$W/.e2e-captures/perf" ]; then
             mkdir -p /tmp/sortie/perf
-            find "$W/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' \) -exec cp {} /tmp/sortie/perf/ \;
+            find "$W/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' -o -name 'lighthouse*.json' -o -name 'lighthouse*.json.gz' \) -exec cp {} /tmp/sortie/perf/ \;
           fi
           # Diagnostic des échecs Playwright : error-context.md (< 512 Kio) et captures test-failed-*.png
           # (< 1,5 Mio, 80 au plus), arborescence de test-results/ conservée
