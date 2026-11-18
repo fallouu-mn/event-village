@@ -306,8 +306,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         if (!pushAccount || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
         let current = true;
-        import('@/lib/push/client').then((m) => m.syncPushSubscription(() => current)).catch(() => undefined);
-        return () => { current = false; };
+        // Rien d'urgent : réabonnement 10 s après l'ouverture, page chargée et navigateur libre (le module n'alourdit jamais
+        // le premier affichage, scanner compris : e2e/perf.spec.ts, JavaScript avant le marqueur)
+        const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+        const run = (): void => {
+            if (!current) return;
+            import('@/lib/push/client').then((m) => m.syncPushSubscription(() => current)).catch(() => undefined);
+        };
+        const timer = setTimeout(() => { if (w.requestIdleCallback) w.requestIdleCallback(run, { timeout: 5_000 }); else run(); }, 10_000);
+        return () => { current = false; clearTimeout(timer); };
     }, [pushAccount]);
 
     const hasRole = useCallback((role: string): boolean => {

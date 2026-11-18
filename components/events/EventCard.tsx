@@ -100,7 +100,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   return (
     <article className="ev-press group relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-[box-shadow,border-color] duration-fast ease-standard focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background hover:border-primary-text/40 hover:shadow-md">
       <div data-ev-poster={id} className={cn('relative w-full overflow-hidden bg-muted', feature ? 'aspect-[4/3] sm:aspect-[16/10] lg:aspect-auto lg:min-h-64 lg:flex-1' : 'aspect-[16/10]')}>
-        <Image src={eventImageSrc(imageUrl)} alt="" fill priority={priority} sizes={sizes} className="object-cover" />
+        <Image src={eventImageSrc(imageUrl)} alt="" fill priority={priority} fetchPriority={priority ? 'high' : undefined} sizes={sizes} className="object-cover" />
         {highlight && (
           <small className="absolute left-3 top-3 rounded-lg bg-brand-vif px-2.5 py-1 text-caption font-bold text-brand-vif-foreground shadow-sm">
             {highlight}

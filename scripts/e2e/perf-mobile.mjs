@@ -428,6 +428,11 @@ async function realLoad(browser, base, def, session) {
 
 /** Stratégies de cible du toucher, de la plus précise au repli documenté. */
 const TOUCH_TARGETS = {
+    // Design 1b (run 373) : Explorer porte les puces de filtre de la page publique (« Catégorie », « Date et prix »)
+    explorer: [
+        { desc: 'puce de filtre « Catégorie » d’Explorer', locate: (page) => page.getByRole('group', { name: /cat[ée]gorie/i }).getByRole('button') },
+        { desc: 'puce de filtre « Date et prix » d’Explorer', locate: (page) => page.getByRole('group', { name: /date et prix/i }).getByRole('button') },
+    ],
     accueil: [
         { desc: 'puce de filtre « Catégorie »', locate: (page) => page.getByRole('group', { name: /cat[ée]gorie/i }).getByRole('button') },
         { desc: 'repli : bouton à bascule (button[aria-pressed])', locate: (page) => page.locator('button[aria-pressed]') },
@@ -686,7 +691,9 @@ async function main() {
         }
 
         // 4. Toucher
-        for (const def of [pages[0], pages[2]]) {
+        // Design 1b (run 373) : l'accueil n'a plus de puces (le repli touchait le bouton du thème) : puces d'Explorer
+        const explorerDef = { id: 'explorer', libelle: 'Explorer (puces de filtre)', path: '/explore', expectedPath: '/explore', client: false };
+        for (const def of [explorerDef, pages[2]]) {
             if (def.client && !session) { touchFatals.push(`${def.libelle} : session du client indisponible, aucun toucher`); continue; }
             if (remaining() < 20_000) { touchFatals.push(`${def.libelle} : temps imparti dépassé, aucun toucher`); continue; }
             const out = await touchPage(browser, base, def, TOUCH_TARGETS[def.id], session, TOUCHERS_PAR_PAGE);

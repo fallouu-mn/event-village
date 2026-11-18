@@ -188,6 +188,7 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
               alt={`Affiche de l’événement ${event.title}`}
               fill
               priority
+              fetchPriority="high"
               sizes={POSTER_SIZES}
               className="object-cover"
             />
