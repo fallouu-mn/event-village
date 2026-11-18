@@ -1,5 +1,4 @@
 import { CATALOG_SELECT, formatCatalogEvent, type CatalogEventDto, type CatalogRow } from '@/lib/events/catalog.server';
-import { lowStockThreshold } from '@/lib/events/low-stock.server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 
 /**
@@ -9,6 +8,9 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
  * Lot 9 ter (9t.19, consigne 5, D-S4, contrat D.2.3) : le cache ne porte plus que le classement ; les cartes sont
  * relues à chaque appel (une lecture indexée de 10 événements au plus), pour qu'une catégorie épuisée apparaisse
  * aussitôt (« Complet », « Dernières places »).
+ *
+ * Design 1b : « Dernières places » relatif à la jauge (formatCatalogEvent), plus de lecture du seuil absolu. Sert aussi
+ * de repli à la rangée « À la une » de l'accueil quand le Superadmin n'a rien choisi.
  *
  * Cache du classement : mémoire du module, 60 s strictes. Une panne n'est jamais gardée et aucun classement périmé
  * n'est servi à sa place ; les appels simultanés partagent la même lecture. Un événement suspendu n'est plus servi
@@ -51,12 +53,10 @@ export async function readPopularCards(ids: string[]): Promise<CatalogEventDto[]
         .in('id', ids)
         .eq('status', 'PUBLIE');
     if (readError) throw new Error(`lecture des événements populaires : ${readError.code ?? ''} ${readError.message}`);
-    const threshold = await lowStockThreshold();
-
     const byId = new Map(((rows ?? []) as unknown as CatalogRow[]).map((row) => [row.id, row]));
     return ids.flatMap((id) => {
         const row = byId.get(id);
-        return row ? [formatCatalogEvent(row, threshold)] : [];
+        return row ? [formatCatalogEvent(row)] : [];
     });
 }
 

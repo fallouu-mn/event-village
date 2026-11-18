@@ -25,15 +25,27 @@ export interface CatalogEvent {
     saleLabel: string | null;
     /** Lot 9 ter (9t.19) : badge de stock dit par le serveur (« Complet » ou « Dernières places »), null sinon. */
     stock: 'SOLD_OUT' | 'LOW' | null;
+    /** Design 1b : début et fin retenue (instants ISO), pour « En cours » et les filtres de date. */
+    startsAt: string;
+    endsAt: string;
+    /** Design 1b : plus petit prix payant achetable (« Gratuit ou dès … »), null sinon. */
+    paidFrom: number | null;
 }
 
-export type CatalogResult = { ok: true; events: CatalogEvent[]; cities: string[] } | { ok: false; message: string };
+/** `total` : nombre de résultats après filtres (design 1b), absent d'une ancienne réponse. */
+export type CatalogResult = { ok: true; events: CatalogEvent[]; cities: string[]; total: number } | { ok: false; message: string };
 
-/** Filtres du serveur (lot 9, A28). `tous`, la valeur « sans filtre » des écrans, n'est jamais envoyée. */
+/**
+ * Filtres du serveur (lot 9, A28). `tous`, la valeur « sans filtre » des écrans, n'est jamais envoyée.
+ * Design 1b (point 5) : `quand`, `gratuit` et `tri` de l'Explorer (lib/events/catalog-filters.ts).
+ */
 export interface CatalogFilters {
     q?: string;
     city?: string;
     category?: string;
+    quand?: 'aujourdhui' | 'weekend' | 'semaine' | null;
+    gratuit?: boolean;
+    tri?: 'date' | 'prix';
 }
 
 const NO_FILTER = 'tous';
@@ -67,6 +79,9 @@ function toCatalogEvent(raw: unknown): CatalogEvent | null {
         price,
         saleLabel: text(r.saleLabel),
         stock: r.stock === 'SOLD_OUT' || r.stock === 'LOW' ? r.stock : null,
+        startsAt: text(r.startsAt) ?? '',
+        endsAt: text(r.endsAt) ?? '',
+        paidFrom: typeof r.paidFrom === 'number' && Number.isFinite(r.paidFrom) ? r.paidFrom : null,
     };
 }
 
@@ -78,6 +93,9 @@ function catalogUrl(filters: CatalogFilters): string {
         const value = filters[key];
         if (value && value !== NO_FILTER) params.set(key, value);
     }
+    if (filters.quand) params.set('quand', filters.quand);
+    if (filters.gratuit) params.set('gratuit', '1');
+    if (filters.tri === 'prix') params.set('tri', 'prix');
     const query = params.toString();
     return query ? `/api/events?${query}` : '/api/events';
 }
@@ -107,7 +125,7 @@ async function readEvents(tag: string, url: string): Promise<CatalogResult> {
         console.error(`[${tag}] réponse illisible du catalogue (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
         return { ok: false, message: `Réponse inattendue du serveur (erreur ${res.status}).` };
     }
-    const payload = (typeof body === 'object' && body !== null ? body : {}) as { events?: unknown; cities?: unknown; error?: unknown };
+    const payload = (typeof body === 'object' && body !== null ? body : {}) as { events?: unknown; cities?: unknown; total?: unknown; error?: unknown };
     if (!res.ok) {
         return { ok: false, message: text(payload.error) ?? `Le catalogue n’a pas pu être chargé (erreur ${res.status}).` };
     }
@@ -117,5 +135,6 @@ async function readEvents(tag: string, url: string): Promise<CatalogResult> {
     }
     const events = payload.events.map(toCatalogEvent).filter((e): e is CatalogEvent => e !== null);
     const cities = Array.isArray(payload.cities) ? payload.cities.filter((c): c is string => text(c) !== null) : [];
-    return { ok: true, events, cities };
+    const total = typeof payload.total === 'number' && Number.isFinite(payload.total) ? payload.total : events.length;
+    return { ok: true, events, cities, total };
 }
