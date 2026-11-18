@@ -236,7 +236,8 @@ const BUSINESS_RPCS: Array<[string, Record<string, unknown>]> = [
     ['calculate_referral_commissions', { p_payment_id: ZERO_UUID }],
     ['activate_partner_trial', { p_partner_id: ZERO_UUID }],
     ['has_admin_permission', { p_user_id: ZERO_UUID, p_permission: 'users.write' }],
-    ['create_hall_reservation_atomic', { p_hall_id: ZERO_UUID, p_client_id: ZERO_UUID, p_start_date: '2030-01-01', p_end_date: '2030-01-02' }],
+    // Lot 10a (modification signalée au rapport) : create_hall_reservation_atomic supprimée (jamais appelée, calculait
+    // l'argent avec 100 000 F par défaut) ; remplacée par hall_reserve, contrôlée plus bas.
     ['create_table_reservation_atomic', { p_table_id: ZERO_UUID, p_client_id: ZERO_UUID, p_reservation_date: '2030-01-01', p_reservation_time: '20:00', p_guest_count: 2 }],
     // Lot 3 : request_withdrawal supprimée, remplacée par withdrawal_request (plus bas)
     // Lot 4 : atomic_ticket_checkin supprimée, remplacée par ticket_scan (plus bas)
@@ -595,6 +596,42 @@ const FINITION3D_RPCS: Array<[string, Record<string, unknown>]> = [
 describe('R3 — finition 3d : chaque fonction de la finition existe et reste réservée au rôle de service (42501)', () => {
     const MIGRATIONS = 'migrations 20261120… de la finition 3d';
     for (const [fn, args] of FINITION3D_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
+// Lot 10a : chaque fonction nouvelle du lot (réservation de salles), appelée directement, est refusée à anon et à un
+// compte (ajout seul, signalé au rapport).
+const LOT10A_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['hall_quote', { p: {} }],
+    ['hall_reserve', { p: {} }],
+    ['hall_cancel_terms', { p_policy: 'SOUPLE' }],
+    ['hall_cancel_percent', { p_terms: {}, p_start: '2030-01-01T00:00:00', p_at: '2030-01-01T00:00:00' }],
+    ['hall_dakar_now', {}],
+    ['hall_slot', { p_start_date: '2030-01-01', p_end_date: '2030-01-01', p_start_time: null, p_end_time: null }],
+    ['hall_notif_data', { p_reservation_id: ZERO_UUID }],
+    ['hall_payment_create', { p: {} }],
+    ['hall_payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
+    ['hall_refund_payment', { p_payment_id: ZERO_UUID, p_percent: 100, p_reason: 'TEST' }],
+    ['hall_cancel_apply', { p_reservation_id: ZERO_UUID, p_origin: 'CLIENT', p_actor: ZERO_UUID, p_reason: 'TEST', p_percent: 0 }],
+    ['hall_reservation_cancel', { p: {} }],
+    ['hall_reservations_tick', {}],
+    ['hall_validation_decide', { p: {} }],
+];
+
+describe('R3 — lot 10a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261122… du lot 10a';
+    for (const [fn, args] of LOT10A_RPCS) {
         test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
             const anon = await anonClient().rpc(fn, args);
             assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
