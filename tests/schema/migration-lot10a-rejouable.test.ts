@@ -28,6 +28,17 @@ const LOT10A_MIGRATIONS = [
     '20261122000006_l10a_validation.sql',
     // Messages du parcours
     '20261122000007_l10a_messages.sql',
+    // Correctifs de la contre-vérification (docs/audit-lot10a.md ; ajouts signalés au rapport) :
+    // T3, paiement confirmé après l'échéance du solde sans payer toute la réservation : rendu en entier
+    '20261122000008_l10a_cv_paiement_tardif.sql',
+    // T2, réservation échue relancée par un paiement : salle, partenaire et limite des attentes contrôlées
+    '20261122000009_l10a_cv_relance.sql',
+    // T4, paiement en une fois tant que le solde serait dû dans moins de 24 h (réglage halls.full_payment_margin_hours)
+    '20261122000010_l10a_cv_paiement_en_une_fois.sql',
+    // T5, verrou par client avant de compter ses attentes
+    '20261122000011_l10a_cv_verrou_client.sql',
+    // T6, relevés de l'administration étendus à la commission des salles
+    '20261122000012_l10a_cv_releves.sql',
 ] as const;
 
 after(async () => {

@@ -3,7 +3,10 @@
  * vérifié à la fin de chaque suite financière par une requête SQL sur la base LOCALE (lecture seule) :
  *  (d) pour chaque paiement plateforme confirmé (SUCCESS, PARTIAL, REFUNDED) : total = facial + service ;
  *      reversement organisateur = facial (hors abonnement) ; net EV = service − agrégateur (abonnement :
- *      facial − agrégateur) ; part remboursée du revenu net = Σ des remboursements demandés (un envoi refusé reste dû) ; montant
+ *      facial − agrégateur) ; correctifs de la contre-vérification du lot 10a (T6, modification signalée au rapport) :
+ *      paiement de salle, commission = metadata.commission_amount (= facial × taux figé, arrondi au centime),
+ *      reversement = facial − commission, brut EV = service + commission, net EV = service + commission − agrégateur
+ *      (sans commission : règles d'origine) ; part remboursée du revenu net = Σ des remboursements demandés (un envoi refusé reste dû) ; montant
  *      remboursé = Σ des remboursements versés ; statut PARTIAL / REFUNDED cohérent avec ce montant ;
  *  (e) pour chaque compte du grand livre : solde total ≥ 0, solde disponible ≥ 0, solde calculé par
  *      finance_account_balance = crédits − débits du grand livre ; chaque paiement plateforme confirmé
@@ -23,7 +26,10 @@ WITH refund_sums AS (
            sum(amount) FILTER (WHERE status = 'PROCESSED' AND settlement = 'PLATEFORME') AS refunded
       FROM public.refunds WHERE payment_id IS NOT NULL GROUP BY payment_id
 ), confirmed AS (
-    SELECT p.* FROM public.payments p
+    -- Lot 10a, correctifs de la contre-vérification (T6) : commission d'Event Village sur une salle (0 sinon)
+    SELECT p.*, CASE WHEN p.payment_target = 'HALL_RESERVATION'
+                     THEN coalesce(nullif(p.metadata->>'commission_amount', '')::numeric, 0) ELSE 0 END AS commission
+      FROM public.payments p
      WHERE p.is_platform_payment AND p.status IN ('SUCCESS', 'PARTIAL', 'REFUNDED')
 ), credited AS (
     -- paiements passés par SUCCESS (un panier non honorable va de PENDING à REFUND_PENDING puis REFUNDED, sans billet)
@@ -52,13 +58,24 @@ UNION ALL
 SELECT 'd', p.id::text, format('total %s ≠ facial %s + service %s', p.amount, p.facial_amount, p.service_fee)
   FROM confirmed p WHERE p.facial_amount IS NOT NULL AND p.amount <> p.facial_amount + p.service_fee
 UNION ALL
-SELECT 'd', p.id::text, format('reversement %s ≠ facial %s', p.partner_payout_amount, p.facial_amount)
-  FROM confirmed p WHERE p.facial_amount IS NOT NULL AND p.payment_target <> 'SUBSCRIPTION' AND p.partner_payout_amount <> p.facial_amount
+SELECT 'd', p.id::text, CASE WHEN p.commission <> 0
+                             THEN format('reversement %s ≠ facial %s − commission %s', p.partner_payout_amount, p.facial_amount, p.commission)
+                             ELSE format('reversement %s ≠ facial %s', p.partner_payout_amount, p.facial_amount) END
+  FROM confirmed p WHERE p.facial_amount IS NOT NULL AND p.payment_target <> 'SUBSCRIPTION' AND p.partner_payout_amount <> p.facial_amount - p.commission
 UNION ALL
-SELECT 'd', p.id::text, format('net EV %s ≠ %s − agrégateur %s', p.net_event_village_revenue,
-       CASE WHEN p.payment_target = 'SUBSCRIPTION' THEN p.facial_amount ELSE p.service_fee END, p.aggregator_fee)
+SELECT 'd', p.id::text, CASE WHEN p.commission <> 0
+                             THEN format('net EV %s ≠ service %s + commission %s − agrégateur %s', p.net_event_village_revenue, p.service_fee, p.commission, p.aggregator_fee)
+                             ELSE format('net EV %s ≠ %s − agrégateur %s', p.net_event_village_revenue,
+                                         CASE WHEN p.payment_target = 'SUBSCRIPTION' THEN p.facial_amount ELSE p.service_fee END, p.aggregator_fee) END
   FROM confirmed p WHERE p.facial_amount IS NOT NULL
-   AND p.net_event_village_revenue <> round((CASE WHEN p.payment_target = 'SUBSCRIPTION' THEN p.facial_amount ELSE p.service_fee END) - p.aggregator_fee, 2)
+   AND p.net_event_village_revenue <> round((CASE WHEN p.payment_target = 'SUBSCRIPTION' THEN p.facial_amount ELSE p.service_fee END) + p.commission - p.aggregator_fee, 2)
+UNION ALL
+-- Lot 10a, correctifs de la contre-vérification (T6) : commission d'une salle cohérente (brut EV, taux figé sur le paiement)
+SELECT 'd', p.id::text, format('salle : brut EV %s ≠ service %s + commission %s, ou commission %s ≠ facial %s × %s %%',
+       p.gross_event_village_revenue, p.service_fee, p.commission, p.commission, p.facial_amount, p.metadata->>'commission_rate')
+  FROM confirmed p WHERE p.facial_amount IS NOT NULL AND p.payment_target = 'HALL_RESERVATION'
+   AND (p.gross_event_village_revenue <> p.service_fee + p.commission
+        OR p.commission <> round(p.facial_amount * coalesce(nullif(p.metadata->>'commission_rate', '')::numeric, 0) / 100, 2))
 UNION ALL
 SELECT 'd', p.id::text, format('part remboursée du net %s ≠ Σ des remboursements %s', p.refunded_net_revenue, coalesce(r.reversal, 0))
   FROM confirmed p LEFT JOIN refund_sums r ON r.payment_id = p.id

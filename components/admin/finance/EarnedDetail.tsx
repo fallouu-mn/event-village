@@ -22,9 +22,10 @@ export function EarnedDetail({ earned, range }: { earned: EarnedBlock; range: st
     const id = useId();
     const lines: MoneyLine[] = [
         {
+            // Correctifs de la contre-vérification du lot 10a (T6) : la commission sur les salles est comprise dans ce montant
             label: 'Frais de service, moins les frais d’encaissement SamirPay',
             value: signed(earned.net_revenue, earned.net_revenue < 0 ? '−' : '+'),
-            hint: <>{plural(earned.payments, 'paiement encaissé', 'paiements encaissés')} {range} : <span className="tabular-nums">{formatFcfaPrecise(earned.service_fees)}</span> de frais de service, <span className="tabular-nums">{formatFcfaPrecise(earned.aggregator_fees)}</span> de frais d’encaissement estimés au taux des réglages (SamirPay ne les communique pas).</>,
+            hint: <>{plural(earned.payments, 'paiement encaissé', 'paiements encaissés')} {range} : <span className="tabular-nums">{formatFcfaPrecise(earned.service_fees)}</span> de frais de service, {Number(earned.hall_commissions) > 0 ? <><span className="tabular-nums">{formatFcfaPrecise(earned.hall_commissions)}</span> de commission sur les salles, </> : null}<span className="tabular-nums">{formatFcfaPrecise(earned.aggregator_fees)}</span> de frais d’encaissement estimés au taux des réglages (SamirPay ne les communique pas).</>,
         },
         {
             label: 'Part rendue avec les remboursements',

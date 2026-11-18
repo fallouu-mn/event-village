@@ -628,6 +628,9 @@ const LOT10A_RPCS: Array<[string, Record<string, unknown>]> = [
     ['hall_reservation_cancel', { p: {} }],
     ['hall_reservations_tick', {}],
     ['hall_validation_decide', { p: {} }],
+    // Correctifs de la contre-vérification du lot 10a (T2 ; ajout seul, signalé au rapport)
+    ['hall_booking_refusal', { p_hall_id: ZERO_UUID }],
+    ['hall_client_pending_refusal', { p_client: ZERO_UUID, p_exclude: ZERO_UUID }],
 ];
 
 describe('R3 — lot 10a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
