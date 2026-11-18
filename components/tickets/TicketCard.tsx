@@ -25,8 +25,15 @@
  *    (« Gratuit », « Invitation » ou le montant) et « Frais de service » (> 0) ; pastille de l'événement hors PUBLIE.
  *  - B9 : « Remboursement retardé, l’équipe Event Village s’en occupe. » quand `refundDelayed`.
  *  - R32 (B23) : `postponementRefund` ouvre « Me faire rembourser » (confirmation, POST /api/tickets/[id]/refund).
+ *
+ * Design 1b (point 8) : carte façon Wallet. Talon à la couleur de la catégorie au contrôle (`categoryColor`, jetons
+ * --scan-cat-*, texte d'au moins 7:1 ; nom de la catégorie toujours écrit : la couleur ne porte jamais seule
+ * l'information), vignette de l'affiche (56 px : plus de grande image avant le contenu), bord perforé, compte à rebours à
+ * la minute (wallet.ts, heure du téléphone), QR de 190 px sur fond blanc qui s'ouvre en grand au toucher (QrFullscreen,
+ * chargé à la demande), « Disponible sans réseau » seulement quand le lot du téléphone est réellement prêt.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -42,10 +49,10 @@ import {
   WifiOff,
   IdCard,
   QrCode,
+  Ticket as TicketIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button, buttonClasses } from '@/components/ui/Button';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
@@ -64,6 +71,12 @@ import {
 import { getOfflineLot, hasCachedOfflineShell, OFFLINE_SHELL_PATH, updateLotClock } from '@/lib/tickets/offline-lots';
 import { ensureOfflineLot, OFFLINE_LOTS_CHANGED, requestOfflineShell } from '@/components/tickets/OfflineTicketsSync';
 import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBadge';
+import { categoryClasses, countdownLabel } from '@/components/tickets/wallet';
+
+/** Design 1b (point 8) : QR en grand chargé seulement au toucher du QR (hors du premier chargement de Mes billets). */
+const QrFullscreen = dynamic(() => import('@/components/tickets/QrFullscreen').then((m) => m.QrFullscreen), { ssr: false });
+/** Design 1b (point 1, budget JS de /tickets) : fenêtres de confirmation (et Modal) chargées après le premier affichage. */
+const ConfirmDialog = dynamic(() => import('@/components/ui/ConfirmDialog').then((m) => m.ConfirmDialog), { ssr: false });
 
 export interface TicketCardProps {
   id: string;
@@ -72,7 +85,8 @@ export interface TicketCardProps {
   ticketNumber: string;
   eventTitle: string;
   eventSubtitle?: string;
-  eventImageUrl: string;
+  /** Affiche de l'événement (vignette du talon) ; absente : pictogramme. */
+  eventImageUrl: string | null;
   dateFormatted: string;
   timeFormatted: string;
   venue: string;
@@ -98,6 +112,12 @@ export interface TicketCardProps {
   eventNotice?: string | null;
   refundDelayed?: boolean;
   postponementRefund?: { amount: number; until: string; toOriginalBuyer: boolean } | null;
+  /** Design 1b (point 8) : couleur de la catégorie au contrôle (scan_color), début et fin retenue (ISO), heure du
+   *  téléphone à la minute (une seule minuterie pour toute la page). */
+  categoryColor?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  now?: number;
   /** Remboursement demandé (R32) : la liste est relue. */
   onRefunded?: () => void;
   onTransferClick?: () => void;
@@ -152,6 +172,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   eventNotice = null,
   refundDelayed = false,
   postponementRefund = null,
+  categoryColor = null,
+  startsAt = null,
+  endsAt = null,
+  now,
   onRefunded,
   onTransferClick,
   onCancelTransferSuccess,
@@ -177,6 +201,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
   const [isRefundOpen, setIsRefundOpen] = useState<boolean>(false);
   const [isRefunding, setIsRefunding] = useState<boolean>(false);
+  const [isQrBig, setIsQrBig] = useState<boolean>(false);
 
   // Lot 7 (7.1) : lot de codes hors ligne enregistré sur ce téléphone
   const offlineEligible = showCode && !isTransferLocked && Boolean(userId);
@@ -475,20 +500,36 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     }
   };
 
+  const countdown = isActive ? countdownLabel(startsAt, endsAt, now ?? clock) : null;
+  const band = categoryClasses(categoryColor);
+  const qrValue = liveCode && showQr ? liveCode.payload : localCode ? localCode.payload : null;
+  const qrSeconds = showQr ? secondsLeft : localSecondsLeft;
+
   return (
-    <article className="mx-auto flex w-full max-w-md flex-col" aria-label={`Billet pour ${eventTitle}`}>
-      {/* 1. Carte billet */}
-      <div className="relative w-full overflow-hidden rounded-3xl border border-border bg-card shadow-md">
-        {/* Visuel de l'événement, au ratio de la fiche : à hauteur fixe, le recadrage coupait le texte des affiches (run 98) */}
-        <div className="relative aspect-[16/9] w-full overflow-hidden bg-scrim">
-          <Image
-            src={eventImageUrl}
-            alt=""
-            fill
-            className="object-cover"
-            sizes="(max-width: 28rem) 100vw, 28rem"
-          />
-          <div className="absolute right-3 top-3 flex max-w-[70%] items-center gap-2">
+    <article className="flex w-full flex-col" aria-label={`Billet pour ${eventTitle}`} data-ev-ticket-color={categoryColor ?? 'aucune'}>
+      {/* 1. Carte billet façon Wallet : talon à la couleur de la catégorie, bord perforé, QR sur fond blanc */}
+      <div className="relative w-full overflow-hidden rounded-2xl border border-border bg-card shadow-md">
+        <div className={cn('px-4 pb-6 pt-4', band)}>
+          <div className="flex items-start gap-3">
+            <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl bg-card" aria-hidden="true">
+              {eventImageUrl ? (
+                <Image src={eventImageUrl} alt="" fill sizes="56px" className="object-cover" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-primary-text">
+                  <TicketIcon size={24} />
+                </span>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">
+                <span className="sr-only">Catégorie : </span>
+                {seat}
+              </p>
+              <h2 className="mt-0.5 line-clamp-2 break-words text-lg font-bold leading-snug">{eventTitle}</h2>
+              {eventSubtitle && <p className="mt-0.5 truncate text-sm font-medium">{eventSubtitle}</p>}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             {isTransferLocked ? (
               <Badge variant="warning" icon={<Lock size={12} aria-hidden="true" />}>
                 Transfert en attente
@@ -499,25 +540,23 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             {eventStatus && eventStatus !== 'PUBLIE' && (
               <StatusBadge domain="event" status={eventStatus} size="sm" />
             )}
+            {countdown && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-2.5 py-1 text-sm font-semibold tabular-nums text-foreground-strong">
+                <Clock size={14} aria-hidden="true" className="text-primary-text" />
+                {countdown}
+              </span>
+            )}
           </div>
-
         </div>
 
-        {/* Titre sous l'affiche, jamais posé dessus : une affiche porte souvent son propre texte (titre, lieu),
-            que la surimpression rendait illisible et doublait (relecture du run 77, mes-billets). */}
-        <div className="px-5 pt-4">
-          <h2 className="text-lg font-bold leading-tight tracking-tight text-foreground-strong">{eventTitle}</h2>
-          {eventSubtitle && <p className="mt-0.5 truncate text-sm font-medium text-muted-foreground">{eventSubtitle}</p>}
+        {/* Bord perforé : deux encoches (fond de la page) et une ligne de découpe entre le talon et le billet (décor) */}
+        <div aria-hidden="true" className="relative h-0">
+          <span className="absolute -left-3 -top-3 z-10 h-6 w-6 rounded-full border border-border bg-background" />
+          <span className="absolute -right-3 -top-3 z-10 h-6 w-6 rounded-full border border-border bg-background" />
+          <div className="absolute inset-x-5 -top-px border-t-2 border-dashed border-border" />
         </div>
 
-        {/* Ligne de découpe et ses encoches (décor) */}
-        <div aria-hidden="true" className="relative mt-4">
-          <span className="absolute -left-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-background" />
-          <span className="absolute -right-3 top-0 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-border bg-background" />
-          <div className="mx-5 border-t-2 border-dashed border-border" />
-        </div>
-
-        <div className="space-y-4 p-5">
+        <div className="space-y-4 p-4">
           {/* Informations d'accès */}
           <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
             <div className="min-w-0">
@@ -528,13 +567,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               <dt className="text-sm font-medium text-muted-foreground">Heure d’accès</dt>
               <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground-strong">{timeFormatted}</dd>
             </div>
-            <div className="min-w-0">
+            <div className="col-span-2 min-w-0">
               <dt className="text-sm font-medium text-muted-foreground">Lieu</dt>
               <dd className="mt-0.5 truncate text-base font-semibold text-foreground-strong">{venue}</dd>
-            </div>
-            <div className="min-w-0 text-right">
-              <dt className="text-sm font-medium text-muted-foreground">Catégorie</dt>
-              <dd className="mt-0.5 truncate text-base font-semibold text-foreground-strong">{seat}</dd>
             </div>
             {priceLabel && (
               <div className="min-w-0">
@@ -564,12 +599,10 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             </div>
           )}
 
-          <div aria-hidden="true" className="border-t-2 border-dashed border-border" />
-
           {isTransferLocked ? (
             /* Billet verrouillé pendant un transfert */
             <div className="space-y-3 rounded-2xl border border-warning-border bg-warning-soft p-4 text-center text-warning-text">
-              <Clock size={24} aria-hidden="true" className="mx-auto motion-safe:animate-spin" style={{ animationDuration: '4s' }} />
+              <Clock size={24} aria-hidden="true" className="mx-auto" />
               <div className="space-y-1">
                 <h3 className="text-base font-semibold">
                   Transfert en cours vers {activeTransfer?.recipient || 'un proche'}
@@ -597,72 +630,76 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               {eventNotice ?? 'Le code d’entrée n’est pas disponible pour le moment.'}
             </p>
           ) : isActive ? (
-            /* QR dynamique : payload du live-code, renouvelé à chaque pas */
-            <div className="flex flex-col items-center pt-1">
+            /* QR dynamique : payload du live-code, renouvelé à chaque pas ; touché, il s'ouvre en grand */
+            <div className="flex flex-col items-center">
               {/* Fond blanc fixe sous le QR, même en thème sombre : contraste exigé par les lecteurs de QR */}
-              <div
-                className={cn(
-                  'flex h-[178px] w-[178px] items-center justify-center rounded-2xl border border-border p-3',
-                  showQr || localCode ? 'bg-white' : 'bg-background',
-                )}
-              >
-                {liveCode && showQr ? (
-                  <QRCodeSVG value={liveCode.payload} size={152} level="M" includeMargin={false} title="QR d’entrée dynamique" />
-                ) : localCode ? (
-                  <span data-ev-qr-payload={localCode.payload} data-ev-qr-counter={localCode.counter} className="flex">
-                    <QRCodeSVG value={localCode.payload} size={152} level="M" includeMargin={false} title="QR d’entrée, billet enregistré sur ce téléphone" />
-                  </span>
-                ) : liveCodeUnavailable ? (
-                  <p role="status" className="px-2 text-center text-sm font-medium text-foreground-strong">{liveCodeUnavailable}</p>
-                ) : isOffline ? (
-                  <div role="status" className="flex flex-col items-center gap-2 px-2 text-center">
-                    <WifiOff size={28} aria-hidden="true" className="text-warning-text" />
-                    <p className="text-sm font-medium text-foreground-strong">Connexion requise pour afficher le code d’entrée.</p>
-                  </div>
-                ) : (
-                  <div role="status" className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <QrCode size={28} aria-hidden="true" className="text-primary-text motion-safe:animate-pulse" />
-                    <span className="text-sm font-medium">Code d’entrée…</span>
-                  </div>
-                )}
-              </div>
+              {qrValue ? (
+                <button
+                  type="button"
+                  onClick={() => setIsQrBig(true)}
+                  aria-label="Agrandir le QR code en plein écran"
+                  className="ev-press flex h-[216px] w-[216px] items-center justify-center rounded-2xl border border-border bg-white p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                >
+                  {liveCode && showQr ? (
+                    <QRCodeSVG value={liveCode.payload} size={190} level="M" includeMargin={false} title="QR d’entrée dynamique" />
+                  ) : localCode ? (
+                    <span data-ev-qr-payload={localCode.payload} data-ev-qr-counter={localCode.counter} className="flex">
+                      <QRCodeSVG value={localCode.payload} size={190} level="M" includeMargin={false} title="QR d’entrée, billet enregistré sur ce téléphone" />
+                    </span>
+                  ) : null}
+                </button>
+              ) : (
+                <div className="flex h-[216px] w-[216px] items-center justify-center rounded-2xl border border-border bg-background p-3">
+                  {liveCodeUnavailable ? (
+                    <p role="status" className="px-2 text-center text-sm font-medium text-foreground-strong">{liveCodeUnavailable}</p>
+                  ) : isOffline ? (
+                    <div role="status" className="flex flex-col items-center gap-2 px-2 text-center">
+                      <WifiOff size={28} aria-hidden="true" className="text-warning-text" />
+                      <p className="text-sm font-medium text-foreground-strong">Connexion requise pour afficher le code d’entrée.</p>
+                    </div>
+                  ) : (
+                    <div role="status" className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <QrCode size={28} aria-hidden="true" className="text-primary-text motion-safe:animate-pulse" />
+                      <span className="text-sm font-medium">Code d’entrée…</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="mt-2 text-sm text-muted-foreground">
                 <span className="sr-only">Numéro du billet : </span>
                 <span className="font-mono font-semibold tabular-nums">{ticketNumber}</span>
               </p>
+              {qrValue && <p className="mt-1 text-sm text-muted-foreground">Touchez le QR pour l’agrandir.</p>}
 
               <div className="mt-3 w-full space-y-2 rounded-xl border border-border bg-background p-3">
                 <div className="flex items-center justify-between gap-2 text-sm font-semibold text-foreground-strong">
                   <span className="flex items-center gap-2">
-                    <span
-                      aria-hidden="true"
-                      className={cn('h-2 w-2 flex-shrink-0 rounded-full', isOffline ? 'bg-warning' : 'bg-success motion-safe:animate-pulse')}
-                    />
-                    {localCode ? 'Hors connexion : billet enregistré' : isOffline ? 'Hors connexion' : 'Code renouvelé toutes les 20 s'}
+                    <span aria-hidden="true" className={cn('h-2 w-2 flex-shrink-0 rounded-full', isOffline ? 'bg-warning' : 'bg-success')} />
+                    {localCode ? 'Sans réseau : billet enregistré' : isOffline ? 'Sans réseau' : 'Code renouvelé toutes les 20 s'}
                   </span>
-                  {(showQr || localCode) && (
+                  {qrValue && (
                     <span className="text-sm font-bold tabular-nums text-primary-text">
-                      <span aria-hidden="true">{showQr ? secondsLeft : localSecondsLeft} s</span>
-                      <span className="sr-only">Nouveau code dans {showQr ? secondsLeft : localSecondsLeft} secondes</span>
+                      <span aria-hidden="true">{qrSeconds} s</span>
+                      <span className="sr-only">Nouveau code dans {qrSeconds} secondes</span>
                     </span>
                   )}
                 </div>
                 {liveCode && showQr && (
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-border" aria-hidden="true">
                     <div
-                      className="h-full rounded-full bg-brand-vif transition-[width] duration-1000 ease-linear"
-                      style={{ width: `${Math.max(5, Math.min(100, ((secondsLeft * 1000) / liveCode.stepMs) * 100))}%` }}
+                      className="h-full w-full origin-left rounded-full bg-brand-vif transition-transform duration-1000 ease-linear"
+                      style={{ transform: `scaleX(${Math.max(0.05, Math.min(1, (secondsLeft * 1000) / liveCode.stepMs))})` }}
                     />
                   </div>
                 )}
-                <p className="text-center text-sm leading-snug text-muted-foreground">
+                <p className="text-sm leading-snug text-muted-foreground">
                   {localCode
-                    ? 'Code calculé sur ce téléphone, renouvelé toutes les 20 s. Une capture d’écran n’est pas acceptée.'
+                    ? 'Code calculé sur ce téléphone. Une capture d’écran n’est pas acceptée.'
                     : isOffline
                       ? 'Le code s’affichera dès le retour du réseau. Une capture d’écran n’est pas acceptée.'
                       : 'Une capture d’écran n’est pas acceptée au contrôle.'}
                 </p>
-                <p className="flex items-start justify-center gap-1.5 text-left text-sm leading-snug text-muted-foreground">
+                <p className="flex items-start gap-1.5 text-sm leading-snug text-muted-foreground">
                   <IdCard size={16} aria-hidden="true" className="mt-0.5 flex-shrink-0" />
                   <span>Sans téléphone : numéro du billet et pièce d’identité au contrôle.</span>
                 </p>
@@ -681,7 +718,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                       className={buttonClasses({ variant: 'secondary', size: 'sm', fullWidth: true })}
                     >
                       <WifiOff size={16} aria-hidden="true" />
-                      Afficher ce billet hors ligne
+                      Ouvrir ce billet sans réseau
                     </a>
                   )}
                 </div>
@@ -690,9 +727,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               <p className="mt-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-success-text">
                 <CheckCircle2 size={16} aria-hidden="true" />
                 <span>Billet authentique, émis par Event Village</span>
-              </p>
-              <p className="mt-3 w-full rounded-xl border border-primary-text/20 bg-primary-soft p-3 text-center text-sm font-medium text-primary-text">
-                Présentez ce code au contrôle, billet ouvert dans l’application.
               </p>
             </div>
           ) : status === 'UTILISE' ? (
@@ -716,14 +750,14 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       </div>
 
       {/* 2. Actions : transférer, partager l'événement, billet PDF, aide */}
-      <div className="mt-4 grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+      <div className="mt-3 grid w-full grid-cols-3 gap-2">
         {isActive && !isTransferLocked && transferAllowed && onTransferClick && (
           <Button
             variant="primary"
             size="sm"
             onClick={onTransferClick}
             leftIcon={<Send size={16} aria-hidden="true" />}
-            className="col-span-2"
+            className="col-span-3"
           >
             Transférer
           </Button>
@@ -758,7 +792,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
           leftIcon={<Download size={16} aria-hidden="true" />}
           aria-label="Télécharger le billet en PDF"
         >
-          {isDownloadingPdf ? 'Génération…' : 'PDF'}
+          PDF
         </Button>
 
         {onOpenExplainer && (
@@ -767,11 +801,23 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             size="sm"
             onClick={onOpenExplainer}
             leftIcon={<HelpCircle size={16} aria-hidden="true" />}
+            className="col-span-3"
           >
             Aide au transfert
           </Button>
         )}
       </div>
+
+      {isQrBig && qrValue && (
+        <QrFullscreen
+          value={qrValue}
+          eventTitle={eventTitle}
+          categoryName={seat}
+          ticketNumber={ticketNumber}
+          secondsLeft={qrSeconds}
+          onClose={() => setIsQrBig(false)}
+        />
+      )}
 
       {postponementRefund && (
         <ConfirmDialog
