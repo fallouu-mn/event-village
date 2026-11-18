@@ -1918,7 +1918,9 @@ export const SCREENS: readonly Screen[] = [
             await page.getByRole('button', { name: /^acheter \d+ billets? \(/i }).click();
             await expect(page.getByRole('dialog').or(page.getByRole('alertdialog'))).toBeVisible();
             // Design 1b (point 7) : opérateur choisi (grand bouton Wave sélectionné)
-            await page.getByRole('radio', { name: /^wave/i }).first().check({ force: true });
+            // Bouton radio visuellement masqué : on touche son étiquette, comme une personne
+            await page.locator('label').filter({ has: page.locator('input[type="radio"][value="WAVE"]') }).first().click();
+            await expect(page.getByRole('radio', { name: /^wave/i }).first()).toBeChecked();
         },
     },
     {

@@ -84,7 +84,11 @@ describe('design 1b (8) — GET /api/tickets : couleur de la catégorie, début 
         const free = tickets.find((t) => t.id === freeId);
         assert.ok(vip && free, 'les deux billets dans Mes billets');
         assert.equal(vip!.categoryColor, 'VIOLET', 'couleur de la catégorie servie');
-        assert.equal(free!.categoryColor, null, 'catégorie sans couleur : carte neutre');
+        // La base redonne une couleur à une catégorie mise à null (finition 2b ; runs 373 et 374 : BLANC) : la couleur servie
+        // est celle de la base, ou null si la base n'en a vraiment aucune
+        const { data: freeCat, error: freeErr } = await service.from('ticket_categories').select('scan_color').eq('id', ev.categories.Gratuit.id).single();
+        assert.equal(freeErr, null, freeErr?.message);
+        assert.equal(free!.categoryColor, freeCat?.scan_color ?? null, 'couleur servie = couleur de la base (null sans couleur : carte neutre)');
         const startsAt = Date.parse(String(vip!.startsAt));
         const endsAt = Date.parse(String(vip!.endsAt));
         assert.ok(Number.isFinite(startsAt) && Number.isFinite(endsAt), `instants ISO : ${vip!.startsAt} → ${vip!.endsAt}`);

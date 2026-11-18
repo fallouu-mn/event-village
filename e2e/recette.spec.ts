@@ -584,7 +584,9 @@ test('acte 4 [client] : découverte, fiche, refus direct, inscription depuis l�
         await expect(client.getByText(PROGRAM.title, { exact: true }), 'A15 : ligne du programme').toBeVisible();
         await expect(client.getByText(PROGRAM.participant), 'A15 : artiste du programme').toBeVisible();
         await expect(client.getByRole('heading', { name: /^lieu et accès$/i }), 'A15 : section des infos pratiques').toBeVisible();
-        for (const text of [PRACTICAL.address, PRACTICAL.access, PRACTICAL.parking, PRACTICAL.rules]) {
+        // Design 1b : l'adresse est affichée avec la ville (« 12, route de la Corniche, Ngor · Dakar ») : texte contenu
+        await expect(client.getByText(PRACTICAL.address).first(), `A15 : info pratique « ${PRACTICAL.address} »`).toBeVisible();
+        for (const text of [PRACTICAL.access, PRACTICAL.parking, PRACTICAL.rules]) {
             await expect(client.getByText(text, { exact: true }), `A15 : info pratique « ${text} »`).toBeVisible();
         }
 
