@@ -32,6 +32,8 @@ const LOT11A_MIGRATIONS = [
     '20261123000107_l11a_validation.sql',
     // Messages du parcours
     '20261123000108_l11a_messages.sql',
+    // Commission des tables dans les relevés (équivalent du trou T6 de la contre-vérification de la 10a)
+    '20261123000109_l11a_releves.sql',
 ] as const;
 
 /** Recopies de fonctions communes : fichier de la recopie, et lignes de la définition précédente qu'elle remplace. */
@@ -51,6 +53,13 @@ const RECOPIES: Record<string, { file: string; replaced: string[] }> = {
     calculate_referral_commissions: { file: '20261123000105_l11a_paiement.sql', replaced: [] },
     notif_cashouts_notify: { file: '20261123000106_l11a_annulation.sql', replaced: [
         "AND NOT EXISTS (SELECT 1 FROM public.payments hp WHERE hp.id = NEW.payment_id AND hp.payment_target::text = 'HALL_RESERVATION') THEN",
+    ] },
+    finance_admin_earned: { file: '20261123000109_l11a_releves.sql', replaced: [
+        "COALESCE(sum(CASE WHEN p.payment_target::text = 'HALL_RESERVATION'",
+    ] },
+    finance_admin_payments: { file: '20261123000109_l11a_releves.sql', replaced: [
+        "'commission', CASE WHEN py.payment_target::text = 'HALL_RESERVATION'",
+        "+ CASE WHEN py.payment_target::text = 'HALL_RESERVATION' AND py.facial_amount IS NOT NULL THEN",
     ] },
     notif_admin_review_sms: { file: '20261123000107_l11a_validation.sql', replaced: [
         "IF v_kind NOT IN ('PARTNER_NEW', 'PARTNER_RESUBMITTED', 'EVENT_SUBMITTED') THEN",

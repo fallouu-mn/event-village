@@ -154,7 +154,7 @@ export interface PaymentLine {
     encashedAt: string;
     amount: number;
     serviceFee: number;
-    /** Correctifs de la contre-vérification du lot 10a (T6) : commission d'Event Village sur une salle (0 hors salle). */
+    /** Correctifs de la contre-vérification du lot 10a (T6) : commission d'Event Village sur une salle ; lot 11a : ou une table (0 sinon). */
     commission: number;
     /** Ce qui revient à Event Village sur ce paiement, calculé par le serveur : net − part annulée + retenue − commissions. */
     evNet: number;

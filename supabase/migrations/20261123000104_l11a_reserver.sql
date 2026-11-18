@@ -277,6 +277,10 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'OUTSIDE_HOURS', 'message', 'L’établissement n’est pas ouvert à cette heure-là. Choisissez une autre heure.');
     END IF;
 
+    -- Équivalent côté tables du trou T5 de la contre-vérification de la 10a : verrou par client (après celui de
+    -- l'établissement, toujours dans cet ordre) avant de compter ses demandes : deux demandes simultanées du même client
+    -- dans deux établissements ne passent pas toutes les deux
+    PERFORM pg_advisory_xact_lock(hashtextextended('table_client:' || v_client::text, 0));
     SELECT count(*) INTO v_pending FROM public.table_reservations
      WHERE client_id = v_client
        AND ((booking_state = 'EN_ATTENTE_PAIEMENT' AND hold_expires_at > now()) OR booking_state = 'EN_ATTENTE_ACCEPTATION');

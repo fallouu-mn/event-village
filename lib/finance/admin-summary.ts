@@ -27,7 +27,8 @@ export interface EarnedBlock {
     payments: number;
     volume: number;
     service_fees: number;
-    /** Correctifs de la contre-vérification du lot 10a (T6) : commissions d'Event Village sur les salles, comprises dans net_revenue. */
+    /** Correctifs de la contre-vérification du lot 10a (T6) : commissions d'Event Village sur les salles, comprises dans net_revenue ;
+     *  lot 11a : et sur l'acompte des tables (nom de la clé gardé). */
     hall_commissions: number;
     aggregator_fees: number;
     net_revenue: number;

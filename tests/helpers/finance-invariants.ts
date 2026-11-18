@@ -27,7 +27,8 @@ WITH refund_sums AS (
       FROM public.refunds WHERE payment_id IS NOT NULL GROUP BY payment_id
 ), confirmed AS (
     -- Lot 10a, correctifs de la contre-vérification (T6) : commission d'Event Village sur une salle (0 sinon)
-    SELECT p.*, CASE WHEN p.payment_target = 'HALL_RESERVATION'
+    -- Lot 11a (modification signalée au rapport) : de même pour la commission sur l'acompte d'une table
+    SELECT p.*, CASE WHEN p.payment_target IN ('HALL_RESERVATION', 'TABLE_RESERVATION')
                      THEN coalesce(nullif(p.metadata->>'commission_amount', '')::numeric, 0) ELSE 0 END AS commission
       FROM public.payments p
      WHERE p.is_platform_payment AND p.status IN ('SUCCESS', 'PARTIAL', 'REFUNDED')
@@ -71,9 +72,9 @@ SELECT 'd', p.id::text, CASE WHEN p.commission <> 0
    AND p.net_event_village_revenue <> round((CASE WHEN p.payment_target = 'SUBSCRIPTION' THEN p.facial_amount ELSE p.service_fee END) + p.commission - p.aggregator_fee, 2)
 UNION ALL
 -- Lot 10a, correctifs de la contre-vérification (T6) : commission d'une salle cohérente (brut EV, taux figé sur le paiement)
-SELECT 'd', p.id::text, format('salle : brut EV %s ≠ service %s + commission %s, ou commission %s ≠ facial %s × %s %%',
+SELECT 'd', p.id::text, format('salle ou table : brut EV %s ≠ service %s + commission %s, ou commission %s ≠ facial %s × %s %%',
        p.gross_event_village_revenue, p.service_fee, p.commission, p.commission, p.facial_amount, p.metadata->>'commission_rate')
-  FROM confirmed p WHERE p.facial_amount IS NOT NULL AND p.payment_target = 'HALL_RESERVATION'
+  FROM confirmed p WHERE p.facial_amount IS NOT NULL AND p.payment_target IN ('HALL_RESERVATION', 'TABLE_RESERVATION')
    AND (p.gross_event_village_revenue <> p.service_fee + p.commission
         OR p.commission <> round(p.facial_amount * coalesce(nullif(p.metadata->>'commission_rate', '')::numeric, 0) / 100, 2))
 UNION ALL

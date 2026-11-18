@@ -137,6 +137,18 @@ BEGIN
         END IF;
         RETURN jsonb_build_object('ok', false) || v_refusal;
     END IF;
+    -- Attente échue reprise : elle compte de nouveau parmi les demandes en attente du client (verrou par client, comme
+    -- table_reserve ; équivalent côté tables des trous T2 et T5 de la contre-vérification de la 10a)
+    IF r.booking_state = 'EXPIREE' OR r.hold_expires_at IS NULL OR r.hold_expires_at <= now() THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended('table_client:' || v_client::text, 0));
+        SELECT count(*) INTO v_payer_pending FROM public.table_reservations
+         WHERE client_id = v_client AND id <> r.id
+           AND ((booking_state = 'EN_ATTENTE_PAIEMENT' AND hold_expires_at > now()) OR booking_state = 'EN_ATTENTE_ACCEPTATION');
+        IF v_payer_pending >= public.fin_setting_num('tables.max_pending_per_client')::int THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_PENDING',
+                'message', format('Vous avez déjà %s demandes en attente. Attendez une réponse ou annulez-en une.', v_payer_pending));
+        END IF;
+    END IF;
     v_expires := now() + make_interval(mins => v_hold);
     BEGIN
         UPDATE public.table_reservations
