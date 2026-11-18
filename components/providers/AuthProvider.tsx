@@ -11,6 +11,7 @@ import { clearPaymentHandoffs } from '@/lib/payments/payment-handoff-purge';
 import { dropLocalSession, revokeSoon, unsubscribePush } from '@/lib/auth/sign-out-here';
 import { sessionEnded } from '@/lib/auth/session-signal';
 import { LinkButton } from '@/components/ui/LinkButton';
+import { warmWhenIdle } from '@/lib/ui/warm-when-idle';
 
 /**
  * Lot 7 (7.5) — synchronisation des billets hors ligne chargée à la demande.
@@ -55,10 +56,13 @@ function LazyOfflineTicketsSync() {
                     console.error('[AuthProvider] billets hors ligne non chargés :', err);
                 });
         };
-        load();
+        // Design 1b (décision du 18/11) : chargée une fois la page affichée et le téléphone libre (jamais pendant le
+        // chargement mesuré de Mes billets) ; sans réseau, au retour du réseau
+        const cancelWarm = warmWhenIdle(load);
         window.addEventListener('online', load);
         return () => {
             active = false;
+            cancelWarm();
             window.removeEventListener('online', load);
         };
     }, [Sync]);

@@ -21,6 +21,7 @@ import { TabPanel, useTabParam } from '@/components/ui/Tabs';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { usePageSettled } from '@/hooks/usePageSettled';
 import type { OfflineAvailability } from '@/lib/tickets/offline-clock';
 
 // Lot 7 (7.5) : les modales ne sont chargées qu'à leur ouverture (poids JS de /tickets).
@@ -278,7 +279,9 @@ export default function TicketsPage() {
     void loadIncoming('initial');
   }, [userId, load, loadIncoming]);
 
-  // Temps réel (contrat O5) : billets du porteur et notifications (transfert reçu, accepté, annulé).
+  // Temps réel (contrat O5) : billets du porteur et notifications (transfert reçu, accepté, annulé). Design 1b (décision
+  // du 18/11) : abonnement ouvert une fois la page chargée et le téléphone libre.
+  const pageSettled = usePageSettled();
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: `mes-billets-${userId ?? 'anonyme'}`,
     subscriptions: [
@@ -286,7 +289,7 @@ export default function TicketsPage() {
       { table: 'notifications', filter: `user_id=eq.${userId ?? ''}`, event: 'INSERT' },
     ],
     onSignal: refreshAll,
-    enabled: Boolean(userId),
+    enabled: Boolean(userId) && pageSettled,
   });
 
   const retry = async () => {
@@ -410,10 +413,12 @@ export default function TicketsPage() {
         ) : shown.length > 0 ? (
           <TicketWallet
             label={tab === 'a-venir' ? 'Billets à venir' : tab === 'historique' ? 'Historique de vos billets' : 'Tous vos billets'}
-            items={shown.map((ticket) => ({
+            items={shown.map((ticket, index) => ({
               key: ticket.id,
               node: (
                 <TicketCard
+                  // Design 1b (décision du 18/11) : seul le premier billet démarre tout de suite (code, lot hors ligne, QR)
+                  eager={index === 0}
                   id={ticket.id}
                   eventId={ticket.eventId}
                   ticketNumber={ticket.ticketNumber}

@@ -35,7 +35,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { QRCodeSVG as QRCodeSVGBase } from 'qrcode.react';
 import {
   Share2,
   Download,
@@ -73,9 +72,88 @@ import { ensureOfflineLot, OFFLINE_LOTS_CHANGED, requestOfflineShell } from '@/c
 import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBadge';
 import { categoryClasses, countdownLabel } from '@/components/tickets/wallet';
 
-// Design 1b (run 374, temps de blocage de « Mes billets ») : la carte se redessine chaque seconde (compte à rebours du code) ;
-// le QR n'est recalculé que si son contenu change.
-const QRCodeSVG = React.memo(QRCodeSVGBase);
+// Design 1b (décision du 18/11, temps de blocage de « Mes billets ») : bibliothèque des QR chargée à la demande (au premier
+// QR à dessiner), jamais avec la page ; le QR n'est recalculé que si son contenu change.
+const QRCodeSVG = React.memo(dynamic(() => import('qrcode.react').then((m) => m.QRCodeSVG), {
+  ssr: false,
+  loading: () => <span aria-hidden="true" className="block h-[190px] w-[190px]" />,
+}));
+
+/** Secondes avant `until` (au moins `min`), renouvelées chaque seconde : seul le petit composant qui l'affiche se redessine. */
+function useSecondsLeft(until: number | null, min: number): number {
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (until === null) return undefined;
+    setNow(Date.now());
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [until]);
+  return until === null ? 0 : Math.max(min, Math.ceil((until - now) / 1000));
+}
+
+/** Compte à rebours du code (« 12 s ») : redessiné chaque seconde à la place de toute la carte (design 1b, run 406). */
+function QrSeconds({ until, min }: { until: number; min: number }) {
+  const seconds = useSecondsLeft(until, min);
+  return (
+    <span className="text-sm font-bold tabular-nums text-primary-text">
+      <span aria-hidden="true">{seconds} s</span>
+      <span className="sr-only">Nouveau code dans {seconds} secondes</span>
+    </span>
+  );
+}
+
+/** Barre du pas du code en cours. */
+function QrProgress({ until, stepMs }: { until: number; stepMs: number }) {
+  const seconds = useSecondsLeft(until, 0);
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-border" aria-hidden="true">
+      <div
+        className="h-full w-full origin-left rounded-full bg-brand-vif transition-transform duration-1000 ease-linear"
+        style={{ transform: `scaleX(${Math.max(0.05, Math.min(1, (seconds * 1000) / stepMs))})` }}
+      />
+    </div>
+  );
+}
+
+/** QR en grand (chargé au toucher) avec son compte à rebours, renouvelé chaque seconde sans redessiner la carte. */
+function QrFullscreenLive({ until, min, ...rest }: { until: number | null; min: number; value: string; eventTitle: string; categoryName: string; ticketNumber: string; onClose: () => void }) {
+  const secondsLeft = useSecondsLeft(until, min);
+  return <QrFullscreen {...rest} secondsLeft={secondsLeft} />;
+}
+
+/**
+ * Démarrage du travail d'une carte (code dynamique, lot hors ligne, QR) : tout de suite pour le premier billet (`eager`) ;
+ * pour les autres, quand la carte devient visible (glissée à l'écran, grille de l'ordinateur) ou quand le téléphone est
+ * libre après l'affichage de la page — jamais pendant le chargement de Mes billets (design 1b, décision du 18/11).
+ * Sans réseau aussi (lot hors ligne) : rien ne dépend de la connexion ici.
+ */
+function useStartWhenReady(eager: boolean, ref: React.RefObject<HTMLElement | null>): boolean {
+  const [started, setStarted] = useState<boolean>(eager);
+  useEffect(() => {
+    if (started) return undefined;
+    let done = false;
+    const go = (): void => {
+      if (done) return;
+      done = true;
+      setStarted(true);
+    };
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    const idleId = w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 4_000 }) : null;
+    const timer = idleId === null ? setTimeout(go, 1_500) : null;
+    const el = ref.current;
+    const observer = el && typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) go(); }, { threshold: 0.3 })
+      : null;
+    if (observer && el) observer.observe(el);
+    return () => {
+      done = true;
+      observer?.disconnect();
+      if (idleId !== null && w.cancelIdleCallback) w.cancelIdleCallback(idleId);
+      if (timer) clearTimeout(timer);
+    };
+  }, [started, ref]);
+  return started;
+}
 
 /** Design 1b (point 8) : QR en grand chargé seulement au toucher du QR (hors du premier chargement de Mes billets). */
 const QrFullscreen = dynamic(() => import('@/components/tickets/QrFullscreen').then((m) => m.QrFullscreen), { ssr: false });
@@ -122,6 +200,8 @@ export interface TicketCardProps {
   startsAt?: string | null;
   endsAt?: string | null;
   now?: number;
+  /** Design 1b : premier billet visible, démarré tout de suite ; les autres attendent l'affichage de la page (défaut : oui). */
+  eager?: boolean;
   /** Remboursement demandé (R32) : la liste est relue. */
   onRefunded?: () => void;
   onTransferClick?: () => void;
@@ -180,6 +260,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   startsAt = null,
   endsAt = null,
   now,
+  eager = true,
   onRefunded,
   onTransferClick,
   onCancelTransferSuccess,
@@ -193,6 +274,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const meta = TICKET_STATUS_META[status];
   // R25, R66 : code d'entrée montré seulement si le serveur accepterait le scan (suspendu, annulé, fenêtre fermée : non)
   const showCode = isActive && codeVisible;
+  const cardRef = useRef<HTMLElement>(null);
+  const started = useStartWhenReady(eager, cardRef);
   const priceLabel = saleChannel === 'INVITATION' ? 'Invitation' : price === 0 ? 'Gratuit' : price !== undefined ? formatFcfa(price) : null;
 
   // QR dynamique : payload du live-code uniquement (aucune valeur statique de repli)
@@ -234,12 +317,14 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   }, [offlineEligible, userId, id]);
   refreshOfflineRef.current = refreshOffline;
 
-  // Lecture du lot local, puis téléchargement si le serveur dit le billet disponible et que le lot manque.
+  // Lecture du lot local, puis téléchargement si le serveur dit le billet disponible et que le lot manque (design 1b :
+  // après l'affichage de la page, sauf pour le premier billet).
   useEffect(() => {
     if (!offlineEligible || !userId) {
       setOfflineLot(null);
       return;
     }
+    if (!started) return;
     let cancelled = false;
     setIsOnline(navigator.onLine);
     const run = async () => {
@@ -268,13 +353,15 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
     };
-  }, [offlineEligible, userId, id, offline, refreshOffline]);
+  }, [offlineEligible, userId, id, offline, refreshOffline, started]);
 
   useEffect(() => {
     if (!showCode || isTransferLocked || !id) {
       setLiveCode(null);
       return;
     }
+    // Design 1b : code dynamique demandé après l'affichage de la page, sauf pour le premier billet
+    if (!started) return;
 
     let cancelled = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -352,26 +439,29 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [id, showCode, isTransferLocked, accessToken, userId]);
+  }, [id, showCode, isTransferLocked, accessToken, userId, started]);
 
-  // Horloge du compte à rebours (affichage seulement : le rafraîchissement suit expires_in) ; aussi pour le
-  // QR du lot local, renouvelé à chaque pas de l'heure du serveur.
+  // Horloge de la carte : renouvelée aux seuls instants qui changent son contenu (code périmé, pas suivant du lot local),
+  // plus chaque seconde (design 1b, run 406 : toute la carte se redessinait chaque seconde). Le compte à rebours affiché
+  // est un petit composant à part (QrSeconds, QrProgress).
   const usesLocalLot = isOffline && Boolean(offlineLot) && offlineEligible;
   useEffect(() => {
-    if (!liveCode && !usesLocalLot) return;
-    setClock(Date.now());
-    const tick = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(tick);
-  }, [liveCode, usesLocalLot]);
+    if (usesLocalLot) setClock(Date.now());
+  }, [usesLocalLot]);
 
-  const secondsLeft = liveCode ? Math.max(0, Math.ceil((liveCode.expiresAt - clock) / 1000)) : 0;
   // Le serveur accepte le pas voisin : au-delà, le code est périmé et n'est plus affiché
   const liveCodeStale = liveCode ? clock > liveCode.expiresAt + liveCode.stepMs : true;
   const showQr = Boolean(liveCode) && !liveCodeStale;
   // Sans code du serveur à jour (réseau coupé) : code du lot local pour l'heure du serveur, jamais figé
   const localPick = !showQr && usesLocalLot && offlineLot ? pickOfflineCode(offlineLot, clock) : null;
   const localCode = localPick && localPick.state === 'code' ? localPick : null;
-  const localSecondsLeft = localCode ? Math.max(1, Math.ceil(localCode.nextChangeInMs / 1000)) : 0;
+  const localChangeAt = localCode ? clock + localCode.nextChangeInMs : null;
+  const nextBoundary = liveCode && showQr ? liveCode.expiresAt + liveCode.stepMs + 1 : localChangeAt !== null ? localChangeAt + 1 : null;
+  useEffect(() => {
+    if (nextBoundary === null) return undefined;
+    const timer = setTimeout(() => setClock(Date.now()), Math.min(Math.max(0, nextBoundary - Date.now()), 2_000_000_000));
+    return () => clearTimeout(timer);
+  }, [nextBoundary]);
   const offlineState = offlineEligible
     ? offlineIndicator({ lot: offlineLot, offline, shellCached, online: isOnline && !isOffline })
     : null;
@@ -507,10 +597,12 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   const countdown = isActive ? countdownLabel(startsAt, endsAt, now ?? clock) : null;
   const band = categoryClasses(categoryColor);
   const qrValue = liveCode && showQr ? liveCode.payload : localCode ? localCode.payload : null;
-  const qrSeconds = showQr ? secondsLeft : localSecondsLeft;
+  // Fin du code affiché (compte à rebours) : pas du serveur, ou pas suivant du lot local (au moins 1 s)
+  const qrUntil = liveCode && showQr ? liveCode.expiresAt : localChangeAt;
+  const qrMin = liveCode && showQr ? 0 : 1;
 
   return (
-    <article className="flex w-full flex-col" aria-label={`Billet pour ${eventTitle}`} data-ev-ticket-color={categoryColor ?? 'aucune'}>
+    <article ref={cardRef} className="flex w-full flex-col" aria-label={`Billet pour ${eventTitle}`} data-ev-ticket-color={categoryColor ?? 'aucune'}>
       {/* 1. Carte billet façon Wallet : talon à la couleur de la catégorie, bord perforé, QR sur fond blanc */}
       <div className="relative w-full overflow-hidden rounded-2xl border border-border bg-card shadow-md">
         <div className={cn('px-4 pb-6 pt-4', band)}>
@@ -681,21 +773,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                     <span aria-hidden="true" className={cn('h-2 w-2 flex-shrink-0 rounded-full', isOffline ? 'bg-warning' : 'bg-success')} />
                     {localCode ? 'Sans réseau : billet enregistré' : isOffline ? 'Sans réseau' : 'Code renouvelé toutes les 20 s'}
                   </span>
-                  {qrValue && (
-                    <span className="text-sm font-bold tabular-nums text-primary-text">
-                      <span aria-hidden="true">{qrSeconds} s</span>
-                      <span className="sr-only">Nouveau code dans {qrSeconds} secondes</span>
-                    </span>
-                  )}
+                  {qrValue && qrUntil !== null && <QrSeconds until={qrUntil} min={qrMin} />}
                 </div>
-                {liveCode && showQr && (
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-border" aria-hidden="true">
-                    <div
-                      className="h-full w-full origin-left rounded-full bg-brand-vif transition-transform duration-1000 ease-linear"
-                      style={{ transform: `scaleX(${Math.max(0.05, Math.min(1, (secondsLeft * 1000) / liveCode.stepMs))})` }}
-                    />
-                  </div>
-                )}
+                {liveCode && showQr && <QrProgress until={liveCode.expiresAt} stepMs={liveCode.stepMs} />}
                 <p className="text-sm leading-snug text-muted-foreground">
                   {localCode
                     ? 'Code calculé sur ce téléphone. Une capture d’écran n’est pas acceptée.'
@@ -813,12 +893,13 @@ export const TicketCard: React.FC<TicketCardProps> = ({
       </div>
 
       {isQrBig && qrValue && (
-        <QrFullscreen
+        <QrFullscreenLive
+          until={qrUntil}
+          min={qrMin}
           value={qrValue}
           eventTitle={eventTitle}
           categoryName={seat}
           ticketNumber={ticketNumber}
-          secondsLeft={qrSeconds}
           onClose={() => setIsQrBig(false)}
         />
       )}
