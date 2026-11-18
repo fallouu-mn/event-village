@@ -111,11 +111,12 @@ export async function GET(
         const ownerName = holderName || holderContact;
 
         const price = Number(ticket.price ?? categoryData.price ?? 0);
-        const priceFormatted = price > 0 ? `${price.toLocaleString('fr-FR')} FCFA` : 'Gratuit';
+        // Design 1b (point 8, revue E-66) : « F CFA », comme partout dans l'application (lib/format.ts).
+        const priceFormatted = price > 0 ? `${price.toLocaleString('fr-FR')} F CFA` : 'Gratuit';
         // Lot 3.2 : frais de service du billet (payés par l'acheteur) et total payé
         const serviceFee = Number(ticket.service_fee ?? 0);
         const feesFormatted = price > 0
-            ? `Frais de service : ${serviceFee.toLocaleString('fr-FR')} FCFA - Total payé :${(price + serviceFee).toLocaleString('fr-FR')} FCFA`
+            ? `Frais de service ${serviceFee.toLocaleString('fr-FR')} F CFA - Total payé ${(price + serviceFee).toLocaleString('fr-FR')} F CFA`
             : undefined;
 
         // 7. Génération du PDF vectoriel

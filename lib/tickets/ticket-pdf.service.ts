@@ -146,7 +146,7 @@ export class TicketPdfService {
         stream += 'BT\n/F2 12 Tf\n1 0.34 0.13 rg\n'; // Orange
         stream += `${cardX + 260} ${line2Y - 16} Td\n(${pdfText(data.categoryName)}) Tj\nET\n`;
 
-        // Ligne 3 : Porteur / Titulaire & Prix
+        // Ligne 3 : titulaire du billet et prix
         const line3Y = line2Y - 48;
         stream += 'BT\n/F1 9 Tf\n0.45 0.52 0.60 rg\n';
         stream += `${cardX + 28} ${line3Y} Td\n(TITULAIRE DU BILLET) Tj\nET\n`;
