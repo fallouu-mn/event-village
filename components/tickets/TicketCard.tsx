@@ -95,23 +95,10 @@ function useSecondsLeft(until: number | null, min: number): number {
 function QrSeconds({ until, min }: { until: number; min: number }) {
   const seconds = useSecondsLeft(until, min);
   return (
-    <span className="text-sm font-bold tabular-nums text-primary-text">
+    <span data-ev-qr-timer="" className="text-sm font-bold tabular-nums text-primary-text">
       <span aria-hidden="true">{seconds} s</span>
       <span className="sr-only">Nouveau code dans {seconds} secondes</span>
     </span>
-  );
-}
-
-/** Barre du pas du code en cours. */
-function QrProgress({ until, stepMs }: { until: number; stepMs: number }) {
-  const seconds = useSecondsLeft(until, 0);
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-border" aria-hidden="true">
-      <div
-        className="h-full w-full origin-left rounded-full bg-brand-vif transition-transform duration-1000 ease-linear"
-        style={{ transform: `scaleX(${Math.max(0.05, Math.min(1, (seconds * 1000) / stepMs))})` }}
-      />
-    </div>
   );
 }
 
@@ -443,7 +430,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
   // Horloge de la carte : renouvelée aux seuls instants qui changent son contenu (code périmé, pas suivant du lot local),
   // plus chaque seconde (design 1b, run 406 : toute la carte se redessinait chaque seconde). Le compte à rebours affiché
-  // est un petit composant à part (QrSeconds, QrProgress).
+  // est un petit composant à part (QrSeconds).
   const usesLocalLot = isOffline && Boolean(offlineLot) && offlineEligible;
   useEffect(() => {
     if (usesLocalLot) setClock(Date.now());
@@ -754,8 +741,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                       <p className="text-sm font-medium text-foreground-strong">Connexion requise pour afficher le code d’entrée.</p>
                     </div>
                   ) : (
-                    <div role="status" className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <QrCode size={28} aria-hidden="true" className="text-primary-text motion-safe:animate-pulse" />
+                    // Décision du 18/11 : QR pas encore prêt = squelette FIXE (aucune animation continue sur Mes billets)
+                    <div role="status" data-ev-qr-wait="" className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <QrCode size={28} aria-hidden="true" className="text-primary-text" />
                       <span className="text-sm font-medium">Code d’entrée…</span>
                     </div>
                   )}
@@ -775,7 +763,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   </span>
                   {qrValue && qrUntil !== null && <QrSeconds until={qrUntil} min={qrMin} />}
                 </div>
-                {liveCode && showQr && <QrProgress until={liveCode.expiresAt} stepMs={liveCode.stepMs} />}
+                {/* Décision du 18/11 : plus de barre animée du pas du code (animation continue) ; le décompte en secondes suffit */}
                 <p className="text-sm leading-snug text-muted-foreground">
                   {localCode
                     ? 'Code calculé sur ce téléphone. Une capture d’écran n’est pas acceptée.'

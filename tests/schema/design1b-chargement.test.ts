@@ -46,12 +46,14 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         const card = read('components/tickets/TicketCard.tsx');
         assert.doesNotMatch(card, /^import [^\n]*from 'qrcode\.react';$/m, 'bibliothèque des QR jamais importée d’emblée');
         assert.match(card, /dynamic\(\(\) => import\('qrcode\.react'\)/);
-        // Une seule minuterie par seconde, dans useSecondsLeft (petits composants QrSeconds, QrProgress, QrFullscreenLive)
+        // Une seule minuterie par seconde, dans useSecondsLeft (petits composants QrSeconds, QrFullscreenLive)
         assert.equal(card.match(/setInterval\(/g)?.length, 1);
         const hookStart = card.indexOf('function useSecondsLeft');
         assert.ok(card.indexOf('setInterval(') > hookStart && card.indexOf('setInterval(') < card.indexOf('function QrSeconds'));
         assert.match(card, /<QrSeconds until=\{qrUntil\} min=\{qrMin\} \/>/);
-        assert.match(card, /<QrProgress until=\{liveCode\.expiresAt\} stepMs=\{liveCode\.stepMs\} \/>/);
+        // Décision du 18/11 : plus de barre animée du pas du code, QR en attente = squelette fixe
+        assert.doesNotMatch(card, /QrProgress|duration-1000/);
+        assert.doesNotMatch(card, /animate-pulse/);
         assert.match(card, /const started = useStartWhenReady\(eager, cardRef\);/);
         assert.equal(card.match(/if \(!started\) return;/g)?.length, 2, 'code dynamique et lot hors ligne attendent le démarrage');
         assert.match(read('app/tickets/page.tsx'), /eager=\{index === 0\}/);
