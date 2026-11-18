@@ -991,10 +991,15 @@ export const SCREENS: readonly Screen[] = [
     {
         id: 'fiche-en-cours', titre: 'Fiche — événement en cours (« En cours · se termine vers … »)', role: 'anonyme', needsIds: true,
         path: (i) => `/events/${ids(i).events.ceSoir.id}`, expectStatus: 200,
+        // Décision du 18/11 (erreur d'hydratation n° 418, run 401) : trois chargements de suite, heure du téléphone avancée de
+        // 2 h (événement en cours) ; toute exception de page est bloquante (contrôles de la capture). Badge calculé une fois la
+        // page chargée dans le navigateur (useLiveNow), jamais au rendu serveur.
         actions: async ({ page }) => {
             await page.clock.setFixedTime(new Date(Date.now() + 2 * 3600_000));
-            await page.reload();
-            await expect(page.getByText(/en cours · se termine vers \d{2}:\d{2}/i).first()).toBeVisible({ timeout: 30_000 });
+            for (let passage = 1; passage <= 3; passage++) {
+                await page.reload();
+                await expect(page.getByText(/en cours · se termine vers \d{2}:\d{2}/i).first(), `badge « En cours », chargement ${passage}/3`).toBeVisible({ timeout: 30_000 });
+            }
         },
     },
     // Design 1b (point 7) : bandeau de paiement en attente sur la fiche, tant que le serveur bloque un nouvel achat
