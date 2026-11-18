@@ -3,12 +3,15 @@
 import React from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { redirect, usePathname } from 'next/navigation';
+import { AdminAccountStepUp } from '@/components/admin/AdminAccountStepUp';
 
 /**
  * Espace partenaire : session exigée, rôle PARTENAIRE (ou ADMIN, SUPERADMIN ; contrôleur pour le scan).
  * Lot 9 bis (R7, B39, contrat 5.16) : une partenaire dont le dossier est EN_ATTENTE voit son tableau de bord (bandeau
  * « Compte en cours de vérification ») et son profil ; toute autre page de l'espace la ramène au tableau de bord. Le
  * serveur reste juge : création et publication refusées (PARTNER_NOT_VALIDATED).
+ * Finition 3d (point 1) : pour un compte admin, la fenêtre de sécurité de l'administration (AdminAccountStepUp) : le
+ * serveur applique ici la même règle des 30 minutes que dans l'administration.
  */
 const PENDING_PARTNER_PATHS = ['/partner', '/partner/dashboard', '/partner/profile'];
 
@@ -45,7 +48,7 @@ export default function PartnerLayout({ children }: { children: React.ReactNode 
     if (!hasAnyRole(['CONTROLEUR', 'PARTENAIRE', 'ADMIN', 'SUPERADMIN'])) {
       redirect('/');
     }
-    return <>{children}</>;
+    return <AdminAccountStepUp>{children}</AdminAccountStepUp>;
   }
 
   if (!hasAnyRole(['PARTENAIRE', 'ADMIN', 'SUPERADMIN'])) {
@@ -56,5 +59,5 @@ export default function PartnerLayout({ children }: { children: React.ReactNode 
     redirect('/partner/dashboard');
   }
 
-  return <>{children}</>;
+  return <AdminAccountStepUp>{children}</AdminAccountStepUp>;
 }

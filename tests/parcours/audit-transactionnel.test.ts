@@ -34,6 +34,7 @@ import { buyConfirmed, cashoutsByKey, confirmCashouts, createPartnerEvent, jsonR
 import { newController, type RouteResult } from './acces-helpers';
 import { invoke, routeHandler, show } from './pilotage-helpers';
 import { newAdminWith } from './terrain-helpers';
+import { confirmIdentity } from './f3d-helpers';
 
 after(async () => {
     setFakeMode('cashoutMode', 'success');
@@ -113,6 +114,8 @@ describe('ex-10.0 c — rôles, statuts et permissions', () => {
 
     test('témoin (vert dès l’écriture) : admin_permissions_set, journal refusé → échec, permissions inchangées', async () => {
         const superadmin = await newAdminWith([], { role: 'SUPERADMIN', label: 'audit-perms' });
+        // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : mot de passe et code récents exigés
+        await confirmIdentity(superadmin);
         const target = await newAdminWith(['events.read'], { label: 'audit-perms-cible' });
         const res = await withAuditRefused(noAuditAbout([target.userId]), async () => invoke(
             await routeHandler('../../app/api/admin/permissions/route', 'POST', 'POST /api/admin/permissions'),

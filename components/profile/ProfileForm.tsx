@@ -6,6 +6,7 @@ import { MailCheck, MailWarning, RotateCcw, Save } from 'lucide-react';
 import { useAuth, type UserProfile } from '@/components/providers/AuthProvider';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { TextInput } from '@/components/ui/Field';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
@@ -13,6 +14,7 @@ import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-jso
 import { PhoneChangeDialog } from '@/components/profile/PhoneChangeDialog';
 import { PasswordChangeDialog } from '@/components/profile/PasswordChangeDialog';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
+import { adminPhonePath, SECURITY_PAGE_HREF } from '@/lib/admin/phone-path';
 import { AccountProfileSchema } from '@/lib/validations/account';
 
 // Lot 9 bis (R57) : la saisie du mot de passe n'est chargée qu'au premier refus PASSWORD_CONFIRMATION_REQUIRED.
@@ -99,6 +101,8 @@ function feedbackAfterSave(reply: SaveReply): EmailFeedback | null {
 
 export function ProfileForm({ profile }: { profile: UserProfile }) {
   const { refreshProfile } = useAuth();
+  // Contre-vérification de la finition 3d (T1) : le numéro d'un compte d'administration ne se change pas ici
+  const adminPath = adminPhonePath(profile.roles ?? []);
   const toast = useToast();
   const emailState = emailStateOf(profile);
   const [values, setValues] = useState<Payload>({
@@ -307,11 +311,17 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="min-w-0 flex-1 basis-48">
           <p className="text-sm font-semibold text-fg">Numéro de téléphone</p>
-          <p className="text-sm text-fg-muted">Un code envoyé au nouveau numéro confirme le changement.</p>
+          <p className="text-sm text-fg-muted">
+            {adminPath ? adminPath.message : 'Un code envoyé au nouveau numéro confirme le changement.'}
+          </p>
         </div>
-        <Button type="button" variant="secondary" onClick={() => setIsPhoneDialogOpen(true)}>
-          Changer de numéro
-        </Button>
+        {!adminPath ? (
+          <Button type="button" variant="secondary" onClick={() => setIsPhoneDialogOpen(true)}>
+            Changer de numéro
+          </Button>
+        ) : adminPath.code === 'PHONE_CHANGE_SECURITY_PAGE' ? (
+          <LinkButton href={SECURITY_PAGE_HREF} variant="secondary">Sécurité du compte</LinkButton>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
@@ -324,7 +334,7 @@ export function ProfileForm({ profile }: { profile: UserProfile }) {
         </Button>
       </div>
 
-      <PhoneChangeDialog isOpen={isPhoneDialogOpen} onClose={() => setIsPhoneDialogOpen(false)} onChanged={onPhoneChanged} />
+      {!adminPath && <PhoneChangeDialog isOpen={isPhoneDialogOpen} onClose={() => setIsPhoneDialogOpen(false)} onChanged={onPhoneChanged} />}
       <PasswordChangeDialog isOpen={isPasswordDialogOpen} onClose={() => setIsPasswordDialogOpen(false)} />
       {isConfirmOpen && (
         <PasswordConfirmDialog

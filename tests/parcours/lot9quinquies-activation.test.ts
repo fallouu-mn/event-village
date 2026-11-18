@@ -22,7 +22,8 @@ import { getFakes } from '../fakes';
 import { bearer, signInAs } from '../helpers/fixtures';
 import { BASE_URL, randomSenegalPhone } from './helpers';
 import { service } from './paiement-helpers';
-import { outboxRows } from './notif-helpers';
+import { newAdmin, outboxRows } from './notif-helpers';
+import { confirmIdentity } from './f3d-helpers';
 import { gotrueEmail } from '../helpers/gotrue-email';
 
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/+$/, '');
@@ -69,7 +70,10 @@ describe('A2 — comptes créés par un admin : activation par lien', () => {
     });
 
     test('création d\'un ADMIN sans mot de passe, lien par SMS, attente, renvoi, activation, connexion', async () => {
-        const sa = await signInAs('SUPERADMIN');
+        // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : créer un ADMIN exige le mot de passe et le code
+        // administrateur de moins de 10 minutes : Superadmin neuf de la suite (codes à son numéro, pas à celui de la fixture).
+        const sa = await newAdmin('act-sa', [], { role: 'SUPERADMIN' });
+        await confirmIdentity(sa);
         const phone = randomSenegalPhone('76');
         const created = await route('/api/admin/users', 'POST', { firstName: 'Fatou', lastName: 'Activation', phone, role: 'ADMIN' }, bearer(sa.accessToken));
         console.log(`[A2] création : ${created.status} ${JSON.stringify(created.body)}`);

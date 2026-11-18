@@ -255,6 +255,20 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/activation/page.tsx',
     'app/admin/layout.tsx',
     'components/admin/AdminStepUpGate.tsx',
+    // Finition 3d (point 1) : fenêtre de sécurité posée sur les pages partenaire et contrôleur d'un compte admin (chargée à
+    // la demande), mises en page imbriquées du scanner et du profil de l'espace contrôleur (ajout signalé au rapport)
+    'components/admin/AdminAccountStepUp.tsx',
+    'app/controller/scanner/layout.tsx',
+    'app/controller/profile/layout.tsx',
+    // Finition 3d (point 4b) : choix de l'organisatrice dans la page Équipe d'un admin (liste avec recherche)
+    'components/partner/team/OrganizerPicker.tsx',
+    // Finition 3d (point 3) : fenêtre « mot de passe et code » des actions sensibles, « Changer le rôle »
+    'components/admin/IdentityConfirm.tsx',
+    'components/admin/RoleChangeDialog.tsx',
+    // Finition 3d (point 2) : page « Sécurité du compte », codes de secours, changement du numéro d'un administrateur
+    'app/admin/securite/page.tsx',
+    'components/admin/BackupCodesPanel.tsx',
+    'components/admin/PhoneChangeFlow.tsx',
     'app/aide/page.tsx',
     // Finition 1 (E-14) : composant commun de l'équipe, page /partner/team et onglet Équipe du pilotage
     'components/partner/team/TeamPanel.tsx',

@@ -832,6 +832,20 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             // Lot 9 quinquies (A1 : AUTH-01) : 160 septets avec l'URL de 27 caractères (texte de la consigne : 169, deux segments).
             ['ACCOUNT_LOGIN_FAILURES', {}, [],
                 `Event Village : plusieurs connexions ont échoué sur votre compte. Si ce n'est pas vous, changez votre mot de passe : ${U}/forgot-password`],
+            // Finition 3d (point 3) : alerte aux SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
+            ['SUPERADMIN_PROMOTED', { user_name: 'Awa Ndiaye', actor_name: 'Moussa Diop' }, [],
+                'Event Village : Awa Ndiaye est maintenant Superadmin, nommé par Moussa Diop. Si ce n\'est pas prévu, réagissez tout de suite.'],
+            // Finition 3d (point 2) : code de secours utilisé, numéro d'un administrateur remplacé (ancien et nouveau numéro). Ajout signalé.
+            ['ADMIN_BACKUP_CODE_USED', { remaining: 9 }, [],
+                'Event Village : un code de secours de votre compte Superadmin vient de servir. Si ce n\'est pas vous, alertez tout de suite un autre Superadmin.'],
+            ['ADMIN_PHONE_CHANGED', { by_self: false }, [],
+                'Event Village : le Superadmin a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.'],
+            ['ADMIN_PHONE_CHANGED', { by_self: true }, [],
+                'Event Village : le numéro de votre compte Superadmin a été remplacé. Si ce n\'est pas vous, alertez tout de suite un autre Superadmin.'],
+            ['ADMIN_PHONE_CONFIRMED', { by_self: false }, [],
+                'Event Village : ce numéro est maintenant celui de votre compte administrateur. Reconnectez-vous avec votre mot de passe.'],
+            ['ADMIN_PHONE_CONFIRMED', { by_self: true }, [],
+                'Event Village : ce numéro est maintenant celui de votre compte Superadmin. Vos autres appareils sont déconnectés.'],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).
@@ -1182,6 +1196,17 @@ function lot9quinquiesExpected(): ExpectedType[] {
         // Correctifs de la contre-vérification (migration 20261115000014) : contrôleur devenu compte d'administration,
         // retiré de l'équipe ; cloche, push et email, sans SMS. Ajout signalé.
         ess('CONTROLLER_BECAME_ADMIN', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Contrôleur retiré de votre équipe'),
+        // Finition 3d (point 4a, migration 20261120000002) : espèces marquées rendues par un admin, avis à l'organisatrice
+        // (cloche, push, email), reçu même fiche suspendue. Ajout signalé.
+        ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
+        // Finition 3d (point 3, migration 20261120000003) : alerte à chaque SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
+        ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau Superadmin'),
+        // Finition 3d (point 2, migrations 20261120000004 et …05) : code de secours utilisé, numéro d'un administrateur
+        // remplacé (ancien et nouveau numéro), code au nouveau numéro. Ajout signalé.
+        ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A', null, ['/admin/securite'], null),
+        ess('ADMIN_PHONE_CHANGED', [S, M], 'ANY', 'A', null, ['/profile'], null),
+        ess('ADMIN_PHONE_CONFIRMED', [I, S, M], 'ADMIN', 'A', 'SECURITY', ['/profile'], 'Numéro de téléphone changé'),
+        sync('OTP_ADMIN_PHONE'),
     ];
 }
 

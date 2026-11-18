@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
-import { getServiceRoleClient, getAuthenticatedUser } from '@/lib/supabase/server';
+import { getServiceRoleClient } from '@/lib/supabase/server';
+import { requireActiveSession } from '@/lib/auth/session';
 import { accountBalance } from '@/lib/finance/ledger';
 import { getServerEnv } from '@/lib/env';
 
@@ -10,16 +11,16 @@ export const dynamic = 'force-dynamic';
  * GET /api/referrals/my-stats
  * Fournit les métriques et commissions de parrainage réelles de l'utilisateur connecté (0 mock)
  * Toutes les colonnes sont alignées sur le schéma réel de la DB (0001_initial_schema.sql)
+ * Contre-vérification de la finition 3d (T5) : par requireActiveSession (compte actif, ou partenaire en attente ; code
+ * administrateur et mot de passe de moins de 12 h exigés d'un compte ADMIN ou SUPERADMIN).
  */
 export async function GET(req: NextRequest) {
     try {
-        const authUser = await getAuthenticatedUser(req);
-        if (!authUser) {
-            return NextResponse.json({ error: 'Authentification requise.' }, { status: 401 });
-        }
+        const session = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
+        if (session.response) return session.response;
 
         const supabase = getServiceRoleClient();
-        const userId = authUser.id;
+        const userId = session.user.id;
 
         // 2. Profil utilisateur réel
         const { data: profile, error: uErr } = await supabase
