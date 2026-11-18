@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { supabaseCookieOptions } from '@/lib/supabase/cookie-options';
+import { SESSION_CLOSED_COOKIE, SESSION_COOKIE } from '@/lib/auth/session-signal';
 
 const PUBLIC_PREFIXES = [
     '/_next',
@@ -152,6 +153,16 @@ export async function middleware(req: NextRequest) {
     const isPartnerArea = pathname.startsWith('/partner') && pathname !== '/partner/register';
 
     let supabaseResponse = NextResponse.next({ request: req });
+    /**
+     * Cvf2b 6.5 : session effacée ici (cookie de session présent dans la requête, vidé par @supabase/ssr : session
+     * révoquée, « Déconnecter tous mes appareils » depuis un autre appareil, expirée). Le navigateur ne recevra jamais
+     * SIGNED_OUT : le signal SESSION_CLOSED_COOKIE, lisible par la page, fait effacer aussitôt les billets hors ligne, la
+     * mémoire du contrôle et les brouillons (AuthProvider, lib/auth/session-signal.ts).
+     */
+    let sessionClosed = false;
+    const signalClosed = (res: NextResponse) => {
+        if (sessionClosed) res.cookies.set(SESSION_CLOSED_COOKIE, '1', { ...supabaseCookieOptions(), maxAge: 300 });
+    };
 
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -163,6 +174,7 @@ export async function middleware(req: NextRequest) {
                     return req.cookies.getAll();
                 },
                 setAll(cookiesToSet) {
+                    sessionClosed ||= cookiesToSet.some(({ name, value }) => !value && SESSION_COOKIE.test(name) && !!req.cookies.get(name)?.value);
                     cookiesToSet.forEach(({ name, value }) =>
                         req.cookies.set(name, value)
                     );
@@ -170,6 +182,7 @@ export async function middleware(req: NextRequest) {
                     cookiesToSet.forEach(({ name, value, options }) =>
                         supabaseResponse.cookies.set(name, value, options)
                     );
+                    signalClosed(supabaseResponse);
                 },
             },
         }
@@ -191,6 +204,7 @@ export async function middleware(req: NextRequest) {
         supabaseResponse.cookies.getAll().forEach((cookie) => {
             redirectResponse.cookies.set(cookie.name, cookie.value);
         });
+        signalClosed(redirectResponse); // cvf2b 6.5 : avec ses options (chemin, durée), pas seulement sa valeur
         return redirectResponse;
     }
 

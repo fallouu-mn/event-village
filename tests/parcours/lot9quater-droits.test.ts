@@ -77,7 +77,15 @@ describe('A6 — compte suspendu : aides de droits et blocage chez GoTrue', () =
         const pays = await asUser(partner.accessToken).from('payments').select('id').eq('id', purchase.payment.id);
         assert.equal((pays.data ?? []).length, 0, 'aucun paiement lu avec l’ancien jeton');
         const owner = await asUser(partner.accessToken).rpc('is_partner_owner', { p_partner_id: partner.partnerId });
-        assert.equal(owner.data, false, 'is_partner_owner faux pour un compte suspendu');
+        // Contre-vérification 2B (6.6 ; modification signalée) : la suspension ferme les sessions du compte, l'ancien jeton
+        // est maintenant refusé par la REST (pré-requête securite.db_pre_request, 401). L'aide est éprouvée en base, sous le
+        // rôle authenticated avec les claims du compte suspendu.
+        assert.equal(owner.status, 401, `ancien jeton refusé par la REST : HTTP ${owner.status} ${owner.error?.message}`);
+        const ownerSql = await inspect(async (c) => {
+            await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: partner.userId, role: 'authenticated' })]);
+            return (await c.query<{ o: boolean }>('SELECT public.is_partner_owner($1) AS o', [partner.partnerId])).rows[0].o;
+        }, 'authenticated');
+        assert.equal(ownerSql, false, 'is_partner_owner faux pour un compte suspendu');
 
         const back = await service.rpc('partner_status_set', { p: { partner_id: partner.partnerId, actor_id: actor, status: 'VALIDE', reason: 'Lot 9 quater A6 retour' } });
         assert.equal(back.error, null, back.error?.message);

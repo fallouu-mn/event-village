@@ -229,12 +229,24 @@ export function isScanCategoryColor(value: unknown): value is ScanCategoryColor 
 }
 
 /**
+ * Contre-vérification de la finition 2b (2b) — couleurs CHOISISSABLES (écran, schéma, et en base ticket_category_normalize
+ * et ticket_category_update, migration 20261121000007) : la palette sans OR, jadis confondable avec l'ambre « hors
+ * fenêtre » du scanner. OR reste lisible pour les catégories qui l'ont déjà, affiché en vieil or (#685400), à 25 au moins
+ * de chaque verdict. Mesure : tests/parcours/cvf2b-couleur-choisissable.test.ts.
+ */
+export const SCAN_CATEGORY_CHOOSABLE = ['BLANC', 'ARGENT', 'ROSE', 'TURQUOISE', 'BLEU', 'VIOLET', 'NOIR'] as const satisfies readonly ScanCategoryColor[];
+
+export function isChoosableScanColor(value: unknown): value is ScanCategoryColor {
+    return typeof value === 'string' && (SCAN_CATEGORY_CHOOSABLE as readonly string[]).includes(value);
+}
+
+/**
  * Finition 2b (A, E-22) — couleurs proposées automatiquement à une catégorie nouvelle, dans cet ordre : chaque couleur est
  * la plus éloignée des précédentes (écart CIEDE2000 entre les jetons --scan-cat-<clé>-bg ; 100 entre les deux premières,
  * 24 ou plus entre les quatre premières). Toutes sont à 29 ou plus du vert « valide », des rouges « déjà utilisé » et
- * « refusé » et de l'orange « mauvaise zone » ; OR en est exclu (24,0 de l'orange, 5,1 de l'ambre « hors fenêtre ») et
- * reste choisissable à la main. Même ordre en base : ticket_category_auto_color (migration 20261119000003), qui pose la
- * couleur d'une catégorie enregistrée sans couleur. Mesure : tests/parcours/f2b-couleur-auto.test.ts.
+ * « refusé » et de l'orange « mauvaise zone » ; OR en est exclu, et n'est plus choisissable (SCAN_CATEGORY_CHOOSABLE).
+ * Même ordre en base : ticket_category_auto_color (migration 20261119000003), qui pose la couleur d'une catégorie
+ * enregistrée sans couleur. Mesure : tests/parcours/f2b-couleur-auto.test.ts.
  */
 export const AUTO_SCAN_COLOR_ORDER = ['BLANC', 'NOIR', 'VIOLET', 'ROSE', 'TURQUOISE', 'BLEU', 'ARGENT'] as const satisfies readonly ScanCategoryColor[];
 
