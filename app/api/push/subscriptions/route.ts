@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServerSessionUser, requireActiveSession } from '@/lib/auth/session';
+import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
 import { getPushConfig } from '@/lib/push/config';
 import { isAllowedPushEndpoint, MAX_PUSH_ENDPOINT_LENGTH } from '@/lib/push/endpoints';
@@ -104,9 +104,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ subscribed: true });
 }
 
+/**
+ * DELETE /api/push/subscriptions — retrait d'un appareil. Contre-vérification de la finition 3d (T5) : par requireActiveSession,
+ * comme le POST du même fichier (code administrateur exigé d'un compte ADMIN ou SUPERADMIN). La déconnexion n'en dépend pas :
+ * elle désabonne le navigateur sur place (lib/auth/sign-out-here.ts) et le détachement tolère un refus (lib/push/client.ts).
+ */
 export async function DELETE(req: NextRequest) {
-    const user = await getServerSessionUser(req);
-    if (!user) return NextResponse.json({ error: 'Authentification requise.', code: 'AUTH_REQUIRED' }, { status: 401 });
+    const session = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
+    if (session.response) return session.response;
+    const { user } = session;
 
     const raw = await readJson(req);
     if (!raw.ok) return raw.response;

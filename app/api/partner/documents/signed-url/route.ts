@@ -52,17 +52,19 @@ export async function GET(req: NextRequest) {
             return signedUrlFor(row.object_path);
         }
 
+        // Le titulaire d'un dossier en attente de validation consulte ses pièces ; un compte
+        // suspendu ou supprimé, non (les admins sont contrôlés par verifyAdminAuth).
+        // Finition 3d (point 1) : la session est contrôlée AVANT les paramètres (avant : 400 « paramètres requis » rendu à
+        // une session admin inactive, sans contrôle) ; seul le dépôt par jeton, plus haut, reste sans session.
+        const session = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
+        if (session.response) return session.response;
+        const user = session.user;
+
         const partnerId = searchParams.get('partnerId');
         const docType = searchParams.get('docType');
         if (!partnerId || !isDocType(docType)) {
             return noStore({ error: 'Paramètres partnerId et docType (id_card ou business_doc) requis.' }, 400);
         }
-
-        // Le titulaire d'un dossier en attente de validation consulte ses pièces ; un compte
-        // suspendu ou supprimé, non (les admins sont contrôlés par verifyAdminAuth).
-        const session = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
-        if (session.response) return session.response;
-        const user = session.user;
 
         const supabase = getServiceRoleClient();
         const { data: partner, error: partnerErr } = await supabase.from('partners').select('id, user_id, id_card_url, business_doc_url').eq('id', partnerId).maybeSingle();

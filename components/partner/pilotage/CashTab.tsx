@@ -160,6 +160,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
     const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
     // Partenaire propriétaire (sinon la route de pilotage n'aurait rien servi), ou admin muni de events.write
     const canCloseShifts = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
+    // Finition 3d (point 4c) : la section « Écarts à valider » était cachée à tout admin, alors que la route et la base
+    // laissent valider un admin muni de events.write depuis la 2a ; même règle que « Fermer cette caisse ».
+    const canValidateDiscrepancies = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
     const columns = canCloseShifts ? [...SHIFT_COLUMNS, closeColumn(setClosing)] : SHIFT_COLUMNS;
     const [pinStep, setPinStep] = useState<{ step: 'confirm' } | { step: 'open_shifts'; count: number } | null>(null);
     const [generating, setGenerating] = useState(false);
@@ -289,8 +292,9 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 />
             </PilotageSection>
 
-            {/* Lot 9 quater (C7 : AUD-16) : l'organisatrice valide elle-même les écarts de clôture */}
-            {!hasAnyRole(['ADMIN', 'SUPERADMIN']) && <DiscrepancyValidation shifts={data.shifts} onValidated={reload} />}
+            {/* Lot 9 quater (C7 : AUD-16) : l'organisatrice valide elle-même les écarts de clôture ; finition 3d (point 4c) :
+                un admin events.write (ou le SUPERADMIN) aussi, à sa place */}
+            {canValidateDiscrepancies && <DiscrepancyValidation shifts={data.shifts} onValidated={reload} />}
 
             <ConfirmDialog
                 isOpen={pinStep !== null}

@@ -6,6 +6,7 @@ import { findExistingAccount } from '@/lib/auth/existing-account';
 import { storeOtp } from '@/lib/auth/otp-store';
 import { requireRecentPassword } from '@/lib/auth/password-confirm';
 import { requireActiveSession } from '@/lib/auth/session';
+import { adminPhonePath } from '@/lib/admin/phone-path';
 import { getServerEnv } from '@/lib/env';
 import { getClientIp } from '@/lib/security/client-ip';
 import { reserveQuota } from '@/lib/security/quota';
@@ -29,6 +30,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const session = await requireActiveSession(req);
     if (session.response) return session.response;
     const { user } = session;
+    // Contre-vérification de la finition 3d (T1) : un compte ADMIN ou SUPERADMIN ne change jamais son numéro ici (il reçoit
+    // les codes administrateur) ; le message renvoie vers le bon chemin. Avant le mot de passe et avant tout SMS facturé.
+    const adminPath = adminPhonePath(user.roles);
+    if (adminPath) return NextResponse.json({ error: adminPath.message, code: adminPath.code }, { status: 403 });
     // Lot 9 bis (R57, B35) : mot de passe saisi depuis moins de 10 minutes sur cette session, avant tout SMS facturé.
     const recent = await requireRecentPassword(req, user.id);
     if (recent) return recent;
@@ -89,7 +94,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 /**
  * POST /api/account/phone/start — code au NOUVEAU numéro, objet PHONE_CHANGE (lot 9, 9.2, contrat 4.3, L26).
  * Le compte vient de la session ; aucun SMS à l'ancien numéro à ce stade. Lot 9 bis (R57) : mot de passe récent exigé
- * (403 PASSWORD_CONFIRMATION_REQUIRED avant tout SMS).
+ * (403 PASSWORD_CONFIRMATION_REQUIRED avant tout SMS). Contre-vérification de la finition 3d (T1) : refusé à un compte ADMIN
+ * (403 PHONE_CHANGE_BY_SUPERADMIN) ou SUPERADMIN (403 PHONE_CHANGE_SECURITY_PAGE), voir lib/admin/phone-path.ts.
  */
 export async function POST(req: NextRequest) {
     return noStore(await handle(req));

@@ -41,6 +41,10 @@ import { ERASED_ACCOUNT_LABEL, accountStatusLabel, roleLabel } from '@/lib/label
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 import { noticesText } from '@/lib/admin/confirmations';
 import { TextInput } from '@/components/ui/Field';
+import { RoleChangeDialog, roleLevelOf, type RoleLevel } from '@/components/admin/RoleChangeDialog';
+import { AdminPhoneChangeDialog } from '@/components/admin/PhoneChangeFlow';
+import { useIdentityConfirm } from '@/components/admin/IdentityConfirm';
+import { apiErrorOf, errorMessage, sendJson } from '@/components/partner/fetch-json';
 
 interface UserItem {
   id: string;
@@ -76,9 +80,12 @@ function refusalOf(data: unknown, fallback: string): string {
  */
 export default function AdminUsersManagementPage() {
   const toast = useToast();
-  const { hasPermission, hasRole } = useAuth();
+  const { hasPermission, hasRole, user: me } = useAuth();
   const canWrite = hasPermission('users.write');
   const isSuperadmin = hasRole('SUPERADMIN');
+  // Contre-vérification de la finition 3d (T4) : créer un ADMIN et enregistrer ses droits exigent mot de passe et code
+  // récents ; la fenêtre les demande quand le serveur répond PASSWORD_CONFIRMATION_REQUIRED ou ADMIN_CODE_CONFIRMATION_REQUIRED.
+  const { run: runWithIdentity, dialog: identityDialog } = useIdentityConfirm();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
@@ -100,7 +107,12 @@ export default function AdminUsersManagementPage() {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [resendingId, setResendingId] = useState<string | null>(null);
-  const [newRole, setNewRole] = useState<'ADMIN' | 'SUPERADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+  // Finition 3d (point 3) : un SUPERADMIN ne se crée plus directement (créer l'administrateur, puis « Changer le rôle »)
+  const [newRole, setNewRole] = useState<'ADMIN' | 'CONTROLEUR' | 'CLIENT'>('CONTROLEUR');
+  // Finition 3d (point 3) : « Changer le rôle » d'un compte (SUPERADMIN seulement)
+  const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);
+  // Finition 3d (point 2a) : « Changer le numéro » d'un ADMIN qui a perdu son téléphone (SUPERADMIN seulement)
+  const [phoneTarget, setPhoneTarget] = useState<UserItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Dialog de confirmation suppression
@@ -176,23 +188,18 @@ export default function AdminUsersManagementPage() {
     setIsCreating(true);
 
     try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: newFirstName.trim(),
-          lastName: newLastName.trim(),
-          phone: newPhone.trim(),
-          email: newEmail.trim().toLowerCase() || undefined,
-          role: newRole,
-        }),
-      });
-
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la création.'));
+      const data = await runWithIdentity(() => sendJson<{ activation?: string; message?: string; userId?: string }>('/api/admin/users', 'POST', {
+        firstName: newFirstName.trim(),
+        lastName: newLastName.trim(),
+        phone: newPhone.trim(),
+        email: newEmail.trim().toLowerCase() || undefined,
+        role: newRole,
+      }));
+      // Fenêtre « mot de passe et code » fermée sans valider : rien n'est créé
+      if (data === null) return;
 
       // Lot 9 quinquies (A2) : le titulaire choisit son mot de passe par le lien reçu par SMS
-      const reply = (data ?? {}) as { activation?: string; message?: string; userId?: string };
+      const reply = data ?? {};
       const noRights = newRole === 'ADMIN' ? ' Il n’a encore aucun droit : choisissez-les maintenant.' : '';
       if (reply.activation === 'SENT') {
         toast.success(`Compte ${roleLabel(newRole)} de ${newFirstName} ${newLastName} créé. Le lien d’activation est parti par SMS (valable 24 heures).${noRights}`);
@@ -211,8 +218,7 @@ export default function AdminUsersManagementPage() {
         void handleOpenPermissions({ ...created, id: reply.userId } as UserItem);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de la création.';
-      toast.error(msg);
+      toast.error(errorMessage(err, 'Échec de la création.'));
     } finally {
       setIsCreating(false);
     }
@@ -310,23 +316,23 @@ export default function AdminUsersManagementPage() {
     setIsSavingPerms(true);
 
     try {
-      const res = await fetch('/api/admin/permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adminId: selectedAdmin.id,
-          permissions: adminPermissions,
-        }),
+      const saved = await runWithIdentity(async () => {
+        const res = await fetch('/api/admin/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adminId: selectedAdmin.id, permissions: adminPermissions }),
+        });
+        // Refus du serveur (dont mot de passe ou code à confirmer) : ApiError, lue par la fenêtre d'identité
+        if (!res.ok) throw await apiErrorOf(res);
+        return true;
       });
-
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de la mise à jour des permissions.'));
+      // Fenêtre « mot de passe et code » fermée sans valider : droits inchangés
+      if (saved === null) return;
 
       toast.success(`Droits de ${selectedAdmin.first_name} ${selectedAdmin.last_name} enregistrés. Effet immédiat : il voit ses nouveaux écrans en rechargeant la page.`);
       setIsPermModalOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Échec de l\'enregistrement des permissions.';
-      toast.error(msg);
+      toast.error(errorMessage(err, 'Échec de l’enregistrement des permissions.'));
     } finally {
       setIsSavingPerms(false);
     }
@@ -537,7 +543,8 @@ export default function AdminUsersManagementPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Finition 3d (point 2a) : boutons repliés sur plusieurs lignes (un de plus sur la ligne d'un ADMIN, 390 px) */}
+                  <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                     {/* Bouton Permissions Granulaires pour Admin */}
                     {isAdmin && !isDeleted && isSuperadmin && (
                       <Button
@@ -548,6 +555,21 @@ export default function AdminUsersManagementPage() {
                       >
                         <Key size={13} className="mr-1" />
                         Permissions
+                      </Button>
+                    )}
+
+                    {/* Finition 3d (point 3) : changer le rôle (SUPERADMIN seulement ; jamais une organisatrice ; son propre rôle
+                        seulement pour quitter le rôle de Superadmin). Le serveur décide (mot de passe, code, motif). */}
+                    {isSuperadmin && !isDeleted && !isPartner && (user.id !== me?.id || isSuper) && (
+                      <Button variant="secondary" size="sm" onClick={() => setRoleTarget(user)}>
+                        {user.id === me?.id ? 'Quitter le rôle de Superadmin' : 'Changer le rôle'}
+                      </Button>
+                    )}
+
+                    {/* Finition 3d (point 2a) : le SUPERADMIN change le numéro d'un ADMIN (jamais d'un SUPERADMIN, jamais le sien ici) */}
+                    {isSuperadmin && isAdmin && !isDeleted && user.id !== me?.id && (
+                      <Button variant="secondary" size="sm" onClick={() => setPhoneTarget(user)}>
+                        Changer le numéro
                       </Button>
                     )}
 
@@ -687,20 +709,6 @@ export default function AdminUsersManagementPage() {
                   <span className="block text-sm text-fg-muted">Agit selon les droits que vous lui donnez</span>
                 </span>
               </button>
-              <button
-                type="button"
-                aria-pressed={newRole === 'SUPERADMIN'}
-                onClick={() => setNewRole('SUPERADMIN')}
-                className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'SUPERADMIN' ? 'border-brand bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken'
-                }`}
-              >
-                <ShieldCheck size={18} className="mt-0.5 flex-shrink-0 text-brand-fg" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-fg">Superadmin</span>
-                  <span className="block text-sm text-fg-muted">Tous les droits, dont les réglages et la création d’administrateurs</span>
-                </span>
-              </button>
                 </>
               )}
               <button
@@ -719,13 +727,15 @@ export default function AdminUsersManagementPage() {
               </button>
             </div>
           </fieldset>
+          {isSuperadmin && (
+            <p className="text-sm text-fg-muted">Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
+          )}
 
           <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-bg p-3 text-sm text-info-fg">
             <Info size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
             <span>
               {newRole === 'CONTROLEUR' && 'À sa connexion, il arrive sur son scanner. Il ne contrôle qu’après avoir été affecté à un événement par un partenaire.'}
               {newRole === 'ADMIN' && 'Un administrateur n’a aucun droit tant que vous ne lui en donnez pas : vous les choisissez juste après la création.'}
-              {newRole === 'SUPERADMIN' && 'Tous les droits, dont les réglages de la plateforme et la création d’administrateurs.'}
               {newRole === 'CLIENT' && 'Achète des billets et parraine ses proches, sans accès professionnel.'}
             </span>
           </p>
@@ -858,6 +868,31 @@ export default function AdminUsersManagementPage() {
         error={statusError ?? undefined}
         maxLength={500}
       />
+
+      {/* Finition 3d (point 3) : changer le rôle ; un compte qui devient administrateur ouvre aussitôt sa grille de droits */}
+      {roleTarget && (
+        <RoleChangeDialog
+          user={roleTarget}
+          self={roleTarget.id === me?.id}
+          onClose={() => setRoleTarget(null)}
+          onChanged={(role: RoleLevel) => {
+            const changed = roleTarget;
+            setRoleTarget(null);
+            void fetchUsers();
+            if (role === 'ADMIN' && roleLevelOf(changed.role) === 'CLIENT') void handleOpenPermissions({ ...changed, role: 'ADMIN' });
+          }}
+        />
+      )}
+
+      {identityDialog}
+
+      {phoneTarget && (
+        <AdminPhoneChangeDialog
+          user={{ id: phoneTarget.id, first_name: phoneTarget.first_name, last_name: phoneTarget.last_name, phone: phoneTarget.phone || null }}
+          onClose={() => setPhoneTarget(null)}
+          onChanged={() => { void fetchUsers(); }}
+        />
+      )}
 
       {/* ConfirmDialog Anonymisation RGPD */}
       <ConfirmDialog

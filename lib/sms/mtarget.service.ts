@@ -40,7 +40,7 @@ export type MTargetSendResult = SmsSendResult & {
 };
 
 /** Objet d'un code à usage unique : fixe le texte (réinitialisation) et le type du journal. */
-export type OtpSmsPurpose = 'LOGIN' | 'REGISTER' | 'PASSWORD_RESET' | 'WITHDRAWAL' | 'PHONE_CHANGE' | 'AUTH_HOOK';
+export type OtpSmsPurpose = 'LOGIN' | 'REGISTER' | 'PASSWORD_RESET' | 'WITHDRAWAL' | 'PHONE_CHANGE' | 'AUTH_HOOK' | 'ADMIN_PHONE_CHANGE';
 
 const OTP_TYPE_BY_PURPOSE: Readonly<Record<OtpSmsPurpose, SyncSmsType>> = {
     LOGIN: 'OTP_LOGIN',
@@ -49,6 +49,8 @@ const OTP_TYPE_BY_PURPOSE: Readonly<Record<OtpSmsPurpose, SyncSmsType>> = {
     WITHDRAWAL: 'OTP_WITHDRAWAL',
     PHONE_CHANGE: 'OTP_PHONE_CHANGE',
     AUTH_HOOK: 'OTP_AUTH_HOOK',
+    // Finition 3d (point 2a) : code au nouveau numéro d'un administrateur, à dicter au Superadmin
+    ADMIN_PHONE_CHANGE: 'OTP_ADMIN_PHONE',
 };
 
 /** Contexte d'un envoi synchrone : garde (SmsContext), objet du code, journal sans code. */

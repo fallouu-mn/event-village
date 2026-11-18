@@ -70,6 +70,12 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
     UPDATE_SERVICE_STATUS: 'Service activé ou désactivé',
     UPDATE_PRICING: 'Tarif modifié (ancienne page Tarification)',
     ACCOUNT_AUTH_DESYNC: 'Incohérence du compte de connexion',
+    // Finition 3d (recours et suppléance)
+    ADMIN_ROLE_CHANGED: 'Rôle d’un compte changé',
+    ADMIN_PHONE_CHANGE_REQUESTED: 'Changement de numéro d’un administrateur demandé',
+    ADMIN_PHONE_CHANGED: 'Numéro d’un administrateur changé',
+    ADMIN_BACKUP_CODES_GENERATED: 'Codes de secours créés',
+    ADMIN_BACKUP_CODE_USED: 'Code de secours utilisé',
 };
 
 export const AUDIT_OBJECT_LABELS: Readonly<Record<string, string>> = {

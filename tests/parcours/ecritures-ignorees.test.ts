@@ -34,13 +34,15 @@ import { POST as postPermissions } from '../../app/api/admin/permissions/route';
 // Lot 9 bis (R53, T38) : l'inscription partenaire passe par registerPartnerTwoStep (deux appels de la route).
 import { hashUploadToken } from '../../lib/partners/documents';
 import { inspect, openConcurrentClient } from '../helpers/db';
-import { bearer, signInAs } from '../helpers/fixtures';
+import { bearer } from '../helpers/fixtures';
 import { assertLot9Invariants } from '../helpers/lot9-invariants';
 import { newPartner, type TestPartner } from './finance-helpers';
 import { jsonRequest, randomEmail, randomSenegalPhone, registerPartnerTwoStep, STRONG_PASSWORD, uploadRegistrationDocuments, type RegistrationDocuments } from './helpers';
 import { SENTINEL, reply, type Reply } from './panne-helpers';
 import { service } from './paiement-helpers';
 import { newAdminWith } from './terrain-helpers';
+import { newAdmin } from './notif-helpers';
+import { confirmIdentity } from './f3d-helpers';
 
 type Row = Record<string, unknown>;
 
@@ -92,7 +94,10 @@ let superadminId: string;
 let superadminToken: string;
 
 before(async () => {
-    const signed = await signInAs('SUPERADMIN');
+    // Contre-vérification de la finition 3d (T4 ; modification signalée au rapport) : la grille des droits exige le mot de passe et le code
+    // administrateur de moins de 10 minutes : Superadmin neuf de la suite (codes à son numéro, pas à celui de la fixture).
+    const signed = await newAdmin('ecritures-ignorees-sa', [], { role: 'SUPERADMIN' });
+    await confirmIdentity(signed);
     superadminId = signed.userId;
     superadminToken = signed.accessToken;
 });
