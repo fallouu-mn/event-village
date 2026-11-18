@@ -188,7 +188,8 @@ La mesure en CI du run complet de `main` après fusion est donnée dans « Runs 
 | | | | • capture de la page introuvable sur une adresse publique ; |
 | | | | • `client-interface`, `notif-interface`, `design-files` : voir « Tests existants modifiés ». |
 | — | `a2194e2c0` | fusion de `main` | Conflits `verify.yml` (les deux motifs gardés) et `globals.css` (bloc de la charte gardé, jetons OR de la cvf2b reportés) ; 17 fichiers renommés. |
-| RUN_RAPIDE_NUM | RUN_RAPIDE_COMMIT | rapide : suites du design, `cvf2b-*`, `cvf3d-*`, `tests/audit/`, `tests/audit-auth/` | RUN_RAPIDE_RESULTAT |
+| 365 | `65e56e655` | rapide, 71 suites : suites du design, `cvf2b-*`, `cvf3d-*`, `tests/audit/`, `tests/audit-auth/`, `f3d-*`, suites qui lisent les fichiers renommés | 70/71. Seule rouge : `client-interface` 7.3. Le test cherchait « Réessayer » dans `app/error.tsx`, alors que le bouton vient maintenant du gabarit commun. Test adapté (`fcc7bed35`), voir « Tests existants modifiés ». Typecheck et lint OK. |
+| 366 | `fcc7bed35` | rapide, `client-interface` | **vert** |
 
 Le run complet de fin est celui de `main` après la fusion de cette branche : son résultat, ses poids JS et ses captures figurent dans l'addendum de la branche `design-1b/public`, et dans la réponse à l'utilisateur.
 
@@ -228,7 +229,7 @@ Vues : 390 px et 1440 px, en clair et en sombre.
 | `tests/parcours/hors-ligne-service-worker.test.ts`, `e2e/terrain.spec.ts` | Symbole du logo ajouté à la liste des fichiers publics. | Logo affiché hors ligne. |
 | `tests/helpers/design-files.ts` | Nouveaux fichiers d'écran déclarés. | Garde-fou du système de design. |
 | `e2e/support/screens.ts` | 6 écrans ajoutés. | Captures du lot. |
-| `tests/parcours/client-interface.test.ts` | Texte des boutons d'opérateur en valeurs littérales, dans les deux thèmes. | Jetons `on-op-*` passés en alias (run 342). |
+| `tests/parcours/client-interface.test.ts` | Texte des boutons d'opérateur en valeurs littérales, dans les deux thèmes (run 342). « Réessayer » de la page d'erreur lu dans `SpecialPage.tsx` quand `app/error.tsx` rend `ErrorContent` branché sur `reset()` (run 365). | Jetons `on-op-*` passés en alias ; libellé écrit dans le gabarit commun des pages spéciales. Même exigence. |
 | `tests/parcours/notif-interface.test.ts` | Règle du squelette sur les noms de la charte. | Run 342. |
 | `tests/schema/design-toasts.test.ts` | Lit `Toast.tsx` et `ToastCard.tsx` ; cas de la coupure réseau ajouté. | Affichage chargé à la demande ; fusion de la 3d. |
 
