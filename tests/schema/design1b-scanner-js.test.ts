@@ -39,6 +39,14 @@ describe('design 1b — JavaScript avant l’écran de départ du scanner', () =
         assert.match(src, /cancelIdleCallback/);
     });
 
+    test('page introuvable racine en composant client (envoyée avec chaque page : jamais next/link cité par le serveur)', () => {
+        // Run 392 (perf/js-avant-marqueur.tsv) : rendue par le serveur, elle citait next/link, que le manifeste client
+        // rattache aux fichiers de l'accueil (1910, 9415, 6264, app/page, ≈ 14,6 Ko) : chargés par le scanner.
+        const src = read('app/not-found.tsx');
+        assert.match(src, /^'use client';\n/);
+        assert.match(src, /<LinkButton href="\/"/);
+    });
+
     test('scanner : l’écran « Chargement de vos événements… » retient les préchargements', () => {
         const src = read('app/controller/scanner/page.tsx');
         const i = src.indexOf('    if (loading) {');
