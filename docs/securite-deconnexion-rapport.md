@@ -167,6 +167,17 @@ Contrôles « avant » relevés sur event-village-dev le 18/11, conformes :
 - **1 catégorie en OR**, qui garde sa couleur ;
 - les 9 migrations 20261120 (3d) appliquées, aucune 20261121.
 
+**Application sur event-village-dev, le 18/11, après le run complet de `main` 363 vert** (`197480d71`, 490/490, e2e vert, budgets JS tenus) :
+- `db push --dry-run` : exactement `20261121000001`, `005`, `006`, `007` et `008` ;
+- `db push` : les cinq migrations sont appliquées ;
+- contrôles « après », conformes :
+  - réglage `pgrst.db_pre_request=securite.db_pre_request`, fonction présente ;
+  - 4d `t, t, t`, 4f `f, t`, 2b `f, f`, 2c `t, t` ;
+  - 1 catégorie en OR, inchangée ;
+- `03-verification.sql` : 20/20.
+
+**Contrôle 2c corrigé.** Le marqueur était écrit avec les caractères invisibles U+202A et U+202E au lieu du texte `\u202a-\u202e`, si bien que le contrôle valait `f` avant comme après. Je l'ai relevé « après », puis remplacé par le texte `u202a-`, qui ne figure dans aucune version antérieure des deux fonctions (les migrations 20261102 à 20261121000007 n'en ont aucune ; seule la 008 l'apporte). Il vaut `f, f` sur ces versions et `t, t` maintenant. La requête ci-dessous est la version corrigée.
+
 ### Migrations, dans l'ordre (les 7 et 8 redéfinissent les mêmes fonctions)
 `20261121000001_cvf2b_jeton_session_revoquee`, `20261121000005_cvf2b_avis_en_cours_envoi`, `20261121000006_cvf2b_plafond_heure_glissante`, `20261121000007_cvf2b_couleur_or`, `20261121000008_cvf2b_consigne_controle`.
 
@@ -193,8 +204,8 @@ SELECT position('p->>''last_hour_from''' IN pg_get_functiondef('public.event_cha
        position('v_cap_from := v_hdue - interval' IN pg_get_functiondef('public.event_change_notify(jsonb)'::regprocedure)) > 0;
 SELECT position('''OR''' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
        position('''OR''' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
-SELECT position('\u202a-\u202e' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
-       position('\u202a-\u202e' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
+SELECT position('u202a-' IN pg_get_functiondef('public.ticket_category_normalize(jsonb, timestamptz, text)'::regprocedure)) > 0,
+       position('u202a-' IN pg_get_functiondef('public.ticket_category_update(jsonb)'::regprocedure)) > 0;
 SELECT count(*) AS categories_or FROM public.ticket_categories WHERE scan_color = 'OR';
 ```
 
