@@ -168,8 +168,10 @@ async function main() {
     if (orderingNote) console.log(orderingNote);
 
     if (opts.list) {
-        for (const f of files) console.log(path.relative(ROOT, f).replace(/\\/g, '/'));
-        console.log(`\n${files.length} suite(s).`);
+        // Lot 11a (run 389 : 400 lignes lues sur 507 par scripts/ci-lots.mjs) : process.exit juste après console.log
+        // peut tronquer une sortie redirigée ; la liste est écrite d'un bloc, le processus sort une fois l'écriture finie.
+        const lines = files.map((f) => path.relative(ROOT, f).replace(/\\/g, '/'));
+        await new Promise((resolve) => process.stdout.write(`${lines.join('\n')}\n\n${files.length} suite(s).\n`, resolve));
         process.exit(0);
     }
 
