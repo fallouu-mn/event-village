@@ -35,6 +35,8 @@ const LOT10A_MIGRATIONS = [
     '20261122000009_l10a_cv_relance.sql',
     // T4, paiement en une fois tant que le solde serait dû dans moins de 24 h (réglage halls.full_payment_margin_hours)
     '20261122000010_l10a_cv_paiement_en_une_fois.sql',
+    // T5, verrou par client avant de compter ses attentes
+    '20261122000011_l10a_cv_verrou_client.sql',
 ] as const;
 
 after(async () => {
