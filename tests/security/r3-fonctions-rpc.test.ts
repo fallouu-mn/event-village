@@ -660,6 +660,7 @@ const LOT11A_RPCS: Array<[string, Record<string, unknown>]> = [
     ['table_venue_lock', { p_venue_id: ZERO_UUID }],
     ['table_expire_hold', { p_reservation_id: ZERO_UUID }],
     ['table_reserve', { p: {} }],
+    ['table_hold_refusal', { p_reservation_id: ZERO_UUID }],
     ['table_payment_create', { p: {} }],
     ['table_payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
     ['table_refund_payment', { p_payment_id: ZERO_UUID, p_percent: 100, p_reason: 'TEST' }],

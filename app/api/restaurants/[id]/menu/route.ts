@@ -7,7 +7,10 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/restaurants/[id]/menu
- * Récupère les plats et menus réels du partenaire
+ * Récupère les plats et menus réels du partenaire.
+ * Lot 11a (équivalent côté tables du trou T1 de la contre-vérification de la 10a) : seule une partenaire VALIDE est
+ * servie ; un identifiant ou un nom inconnu répond 404. Avant, la route prenait la première partenaire venue (même en
+ * attente ou suspendue) et servait ses produits.
  */
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
     const params = await props.params;
@@ -28,6 +31,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 .from('partners')
                 .select('id, company_name, commercial_name')
                 .eq('id', partnerIdOrSlug)
+                .eq('status', 'VALIDE')
                 .maybeSingle();
             partner = data;
         } else {
@@ -36,28 +40,15 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
                 .from('partners')
                 .select('id, company_name, commercial_name')
                 .or(`commercial_name.ilike.${pgIlikeContains(cleanSlug)},company_name.ilike.${pgIlikeContains(cleanSlug)}`) // lot 1C.1
+                .eq('status', 'VALIDE')
                 .limit(1)
                 .maybeSingle();
             partner = data;
         }
 
-        // Si aucun partenaire spécifique trouvé, chercher le premier partenaire disponible
+        // Lot 11a : jamais de partenaire de repli
         if (!partner) {
-            const { data: fallbackPartner } = await supabase
-                .from('partners')
-                .select('id, company_name, commercial_name')
-                .limit(1)
-                .maybeSingle();
-            partner = fallbackPartner;
-        }
-
-        // Si aucun partenaire n'existe en base
-        if (!partner) {
-            return NextResponse.json({
-                partnerId: null,
-                partnerName: 'Restaurant & Traiteur',
-                menuItems: [],
-            });
+            return NextResponse.json({ error: 'Ce restaurant n’existe pas ou n’est plus proposé.', code: 'RESTAURANT_NOT_FOUND' }, { status: 404 });
         }
 
         const partnerId = partner.id;

@@ -16,9 +16,61 @@
 --     + délai (comme les billets et les salles) ;
 --  4. calculate_referral_commissions : recopie de 20261122000004_l10a_paiement.sql:390-485 ; commission d'une table disponible après la fin du créneau
 --     + délai.
+--  5. table_hold_refusal(réservation) (contre-vérification de la 10a, T2) : à la création du paiement et à sa
+--     confirmation, la réservation repasse tous les contrôles de table_reserve (établissement, partenaire, table,
+--     capacité, heure, horaires, table libre) : une attente échue n'est jamais relancée sans eux, et un paiement
+--     confirmé pour un établissement suspendu entre-temps est remboursé en entier.
 -- Un échec du paiement ne touche pas la réservation : la table reste tenue jusqu'à la fin de l'attente (15 minutes).
 -- Rejouable : CREATE OR REPLACE, REVOKE et GRANT idempotents.
 -- ============================================================================
+
+-- Contre-vérification de la 10a (T2), équivalent côté tables : une réservation qui reprend ou garde sa table au
+-- moment du paiement repasse TOUS les contrôles de table_reserve (établissement actif et validé, partenaire VALIDE,
+-- table active de l'établissement et de la bonne capacité, heure à venir, horaires pour tout le créneau, table libre).
+-- Rend NULL si tout va bien, sinon le refus (code et message en français simple).
+CREATE OR REPLACE FUNCTION public.table_hold_refusal(p_reservation_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    r record;
+    v record;
+    t record;
+BEGIN
+    SELECT * INTO r FROM public.table_reservations WHERE id = p_reservation_id;
+    IF NOT FOUND OR r.venue_id IS NULL THEN
+        RETURN jsonb_build_object('code', 'RESERVATION_NOT_FOUND', 'message', 'Réservation introuvable.');
+    END IF;
+    SELECT ve.*, pa.status::text AS partner_status INTO v
+      FROM public.venues ve JOIN public.partners pa ON pa.id = ve.partner_id WHERE ve.id = r.venue_id;
+    IF NOT v.is_active OR v.partner_status <> 'VALIDE'
+       OR (v.validation_status <> 'VALIDEE'
+           AND (public.fin_setting_bool('tables.validation_required') OR v.validation_status IN ('REFUSEE', 'SUSPENDUE'))) THEN
+        RETURN jsonb_build_object('code', 'VENUE_NOT_AVAILABLE', 'message', 'Cet établissement n’accepte pas de réservation pour le moment.');
+    END IF;
+    SELECT * INTO t FROM public.restaurant_tables WHERE id = r.table_id AND venue_id = r.venue_id AND is_active;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('code', 'TABLE_NOT_FOUND', 'message', 'Cette table n’existe pas dans cet établissement.');
+    END IF;
+    IF r.guest_count > t.capacity OR r.guest_count < t.min_capacity THEN
+        RETURN jsonb_build_object('code', 'TABLE_TOO_SMALL', 'message', format('Cette table accueille de %s à %s personnes.', t.min_capacity, t.capacity));
+    END IF;
+    IF lower(r.slot) <= public.hall_dakar_now() THEN
+        RETURN jsonb_build_object('code', 'RESERVATION_NOT_ACTIVE', 'message', 'Cette réservation ne peut plus être payée.');
+    END IF;
+    IF NOT public.venue_open_covers(r.venue_id, r.slot) THEN
+        RETURN jsonb_build_object('code', 'OUTSIDE_HOURS', 'message', 'L’établissement n’est pas ouvert à cette heure-là. Choisissez une autre heure.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.table_reservations o
+                WHERE o.table_id = r.table_id AND o.id <> r.id AND o.status::text IN ('EN_ATTENTE', 'CONFIRMEE') AND o.slot && r.slot) THEN
+        RETURN jsonb_build_object('code', 'SLOT_TAKEN', 'message', 'Le délai pour payer est passé et la table a été réservée par quelqu’un d’autre.');
+    END IF;
+    RETURN NULL;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION public.table_payment_create(p jsonb)
 RETURNS jsonb
@@ -41,6 +93,7 @@ DECLARE
     v_comm     numeric;
     v_payment  uuid;
     v_expires  timestamptz;
+    v_refusal  jsonb;
 BEGIN
     IF NOT public.fin_setting_bool('features.tables_enabled') THEN
         RETURN jsonb_build_object('ok', false, 'code', 'SERVICE_CLOSED', 'message', 'La réservation de tables n’est pas encore ouverte.');
@@ -76,15 +129,13 @@ BEGIN
     END IF;
 
     PERFORM set_config('event_village.table_booking', 'on', true);
-    IF r.booking_state = 'EXPIREE' OR r.hold_expires_at IS NULL OR r.hold_expires_at <= now() THEN
-        -- Attente échue : la table est reprise seulement si personne d'autre ne la tient
-        IF EXISTS (SELECT 1 FROM public.table_reservations o
-                    WHERE o.table_id = r.table_id AND o.id <> r.id AND o.status::text IN ('EN_ATTENTE', 'CONFIRMEE') AND o.slot && r.slot) THEN
-            IF r.booking_state = 'EN_ATTENTE_PAIEMENT' THEN
-                PERFORM public.table_expire_hold(r.id);
-            END IF;
-            RETURN jsonb_build_object('ok', false, 'code', 'SLOT_TAKEN', 'message', 'Le délai pour payer est passé et la table a été réservée par quelqu’un d’autre.');
+    -- Tous les contrôles de la réservation refaits (attente échue ou non) ; une attente échue refusée rend la table
+    v_refusal := public.table_hold_refusal(r.id);
+    IF v_refusal IS NOT NULL THEN
+        IF r.booking_state = 'EN_ATTENTE_PAIEMENT' AND (r.hold_expires_at IS NULL OR r.hold_expires_at <= now()) THEN
+            PERFORM public.table_expire_hold(r.id);
         END IF;
+        RETURN jsonb_build_object('ok', false) || v_refusal;
     END IF;
     v_expires := now() + make_interval(mins => v_hold);
     BEGIN
@@ -184,12 +235,9 @@ BEGIN
         v_blocking := 'montant différent de celui de la réservation';
     ELSIF r.paid_amount > 0 OR r.booking_state NOT IN ('EN_ATTENTE_PAIEMENT', 'EXPIREE') THEN
         v_blocking := CASE WHEN r.paid_amount > 0 THEN 'réservation déjà payée' ELSE 'réservation annulée' END;
-    ELSIF lower(r.slot) <= public.hall_dakar_now() THEN
-        v_blocking := 'heure de la réservation passée';
-    ELSIF (r.booking_state = 'EXPIREE' OR r.hold_expires_at IS NULL OR r.hold_expires_at <= now())
-          AND EXISTS (SELECT 1 FROM public.table_reservations o
-                       WHERE o.table_id = r.table_id AND o.id <> r.id AND o.status::text IN ('EN_ATTENTE', 'CONFIRMEE') AND o.slot && r.slot) THEN
-        v_blocking := 'table réservée par quelqu’un d’autre après le délai';
+    ELSE
+        -- Tous les contrôles refaits (établissement, partenaire, table, capacité, heure, horaires, table libre)
+        v_blocking := public.table_hold_refusal(r.id)->>'message';
     END IF;
 
     IF v_blocking IS NOT NULL THEN
@@ -241,6 +289,8 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.table_hold_refusal(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.table_hold_refusal(uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.table_payment_create(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.table_payment_confirm(uuid, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.table_payment_create(jsonb) TO service_role;
