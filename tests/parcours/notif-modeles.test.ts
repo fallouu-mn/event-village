@@ -203,23 +203,23 @@ function sync(type: string): ExpectedType {
 
 const PE = '/partner/events/:event';
 const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ...lot9quinquiesExpected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types ; lot 9 quinquies (D1)
-    ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A', 'TICKET', ['/tickets'], 'Achat confirmé'),
-    ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B', 'TICKET', ['/tickets'], 'Billets confirmés'),
+    ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A', 'TICKET', ['/tickets?tab=a-venir'], 'Achat confirmé'), // design 1b (point 8) : onglet qui montre le billet
+    ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B', 'TICKET', ['/tickets?tab=a-venir'], 'Billets confirmés'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A', null, null, null),
     ess('INVITATION_RECEIVED', [S, I, P, M], 'ANY', 'A', 'TICKET', ['/tickets?tab=recus'], null), // lot 9 bis (R79, 11.2 M3) : + in-app, push, email au compte
     ess('TRANSFER_OFFERED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus'], 'Un billet vous est transféré'), // G.49
-    ess('TRANSFER_CANCELLED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Transfert annulé'), // G.49
-    ess('TRANSFER_EXPIRED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Transfert expiré'), // G.49
-    ess('TRANSFER_CLAIMED_SENDER', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=historique'], 'Billet accepté'), // G.49
+    ess('TRANSFER_CANCELLED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus'], 'Transfert annulé'), // G.49 ; design 1b : destinataire, onglet Reçus
+    ess('TRANSFER_EXPIRED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Transfert expiré'), // G.49 ; design 1b : billet revenu
+    ess('TRANSFER_CLAIMED_SENDER', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Billet accepté'), // G.49 ; design 1b : le billet a quitté le compte (absent de l'historique) : billets restants
     // Lot 7, tâche 7.9 (D91) : TRANSFER_RECEIVED reçoit l'email (billet reçu par transfert, nouveau numéro).
-    ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets'], 'Billet reçu'),
+    ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Billet reçu'),
     ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B', 'TICKET_SCANNED', ['/tickets?tab=historique'], 'Entrée validée'), // 11.2 M4
-    ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', ['/tickets'], 'Événement annulé'),
+    ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', ['/tickets?tab=historique'], 'Événement annulé'), // design 1b : billets annulés ou en remboursement
     opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement suspendu'), // G.50
     opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement de nouveau en ligne'), // G.50
     ess('EVENT_CHANGED', [I, P, S, M], 'CLIENT', 'B', 'EVENT_CHANGE', ['/events/:event'], 'Événement modifié'), // lot 9 bis (R14, 11.2 M1) : indispensable
-    opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets'], 'Rappel : c\'est demain'),
-    opt('REMINDER_H3', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets'], 'C\'est bientôt'), // G.50
+    opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets?tab=a-venir'], 'Rappel : c\'est demain'),
+    opt('REMINDER_H3', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets?tab=a-venir'], 'C\'est bientôt'), // G.50
     ess('REFUND_REQUESTED', [I, M], 'CLIENT', 'A', 'REFUND_REQUESTED', ['/tickets?tab=historique'], 'Remboursement demandé'), // G.49
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROCESSED', ['/tickets?tab=historique'], 'Remboursement versé'),
     ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B', 'SECURITY', ['/profile'], 'Mot de passe modifié'),
@@ -1171,7 +1171,7 @@ describe('Lot 9 bis (T51) : textes fixes des types nouveaux et modifiés (contra
  */
 function lot9terExpected(): ExpectedType[] {
     return [
-        ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A', 'TICKET', ['/tickets'], 'Billet annulé'),
+        ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A', 'TICKET', ['/tickets?tab=historique'], 'Billet annulé'), // design 1b : onglet du billet annulé
         ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement publié par l\'organisateur', 'events.read'),
         ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Soumission retirée par l\'organisateur', 'events.read'),
         ess('SCAN_REFUSALS_ALERT', [I, P, M], 'PARTNER', 'B', 'ALERT', ['/partner/events/:event?tab=entrees'], 'Refus en série à une porte'),
@@ -1231,7 +1231,7 @@ describe('Lot 9 ter : textes exacts des types nouveaux et des parties nouvelles 
         assert.match(norm(r.content), fixedText('Votre billet VIP pour « Gala Dakar » du {date} a été annulé. Le remboursement est versé à l\'acheteur d\'origine.'),
             `contenu in-app (N1) : « ${norm(r.content)} »`);
         assert.ok(norm(r.content).startsWith('Votre billet VIP pour « Gala Dakar » du '), `catégorie et titre en clair : « ${norm(r.content)} »`);
-        assert.equal(e.link(d), '/tickets', 'lien N1');
+        assert.equal(e.link(d), '/tickets?tab=historique', 'lien N1 (design 1b : onglet Historique, où est le billet annulé)');
         const worst = dataFrom(e.sample, { title: LONG_GSM_TEXT, category: 'Carré VVIP « Prestige » {[~]} € tribune d’honneur' });
         const text = e.sms!(worst, CTX);
         const m = measureSms(text);
