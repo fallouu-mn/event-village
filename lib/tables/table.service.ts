@@ -84,6 +84,9 @@ export class TableService {
         if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
         const { hours, ...fields } = parsed.data;
         const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Comme une salle (lot 10a) : seule une fiche partenaire VALIDE crée un établissement
+        const { data: fiche } = await getServiceRoleClient().from('partners').select('status').eq('id', partnerId).maybeSingle();
+        if (fiche?.status !== 'VALIDE') throw new PublicError('Votre compte partenaire doit être validé avant de créer un établissement.');
         const { data, error } = await getServiceRoleClient().from('venues').insert({ ...fields, partner_id: partnerId }).select('*').single();
         if (error || !data) throw dbRefusal(error, 'création de l’établissement');
         if (hours) await this.setHours(partnerUserId, data.id, hours);
