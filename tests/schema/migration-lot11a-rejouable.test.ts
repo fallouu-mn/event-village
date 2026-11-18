@@ -37,7 +37,7 @@ const LOT11A_MIGRATIONS = [
 /** Recopies de fonctions communes : fichier de la recopie, et lignes de la définition précédente qu'elle remplace. */
 const RECOPIES: Record<string, { file: string; replaced: string[] }> = {
     finance_setting_set: { file: '20261123000101_l11a_reglages.sql', replaced: [
-        "'halls.cancel_moderee_full_days', 'halls.cancel_moderee_partial_days', 'halls.cancel_stricte_partial_days') THEN",
+        "'halls.full_payment_margin_hours') THEN",
     ] },
     fin_setting_valid: { file: '20261123000101_l11a_reglages.sql', replaced: [
         "'halls.validation_required') THEN",

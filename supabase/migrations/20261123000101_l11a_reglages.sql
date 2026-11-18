@@ -7,8 +7,8 @@
 -- client absent 30 minutes après l'heure, acompte rendu au client jusqu'à 2 h avant, 3 demandes en attente au plus
 -- par client, rappel 3 h avant.
 --  1. valeurs par défaut (platform_settings, ON CONFLICT DO NOTHING : une valeur déjà réglée est gardée) ;
---  2. finance_setting_set : recopie de 20261122000001_l10a_reglages.sql:30-76, clés tables.* ajoutées à la liste ;
---  3. fin_setting_valid : recopie de 20261122000001_l10a_reglages.sql:79-159, bornes des clés tables.* (identiques à lib/settings/catalog.ts) ;
+--  2. finance_setting_set : recopie de 20261122000010_l10a_cv_paiement_en_une_fois.sql:27-75, clés tables.* ajoutées à la liste ;
+--  3. fin_setting_valid : recopie de 20261122000010_l10a_cv_paiement_en_une_fois.sql:79-161, bornes des clés tables.* (identiques à lib/settings/catalog.ts) ;
 --  4. platform_settings_defaults : recopie de 20261122000001_l10a_reglages.sql:162-178, clés tables.* comprises.
 -- Rejouable : ON CONFLICT DO NOTHING, CREATE OR REPLACE (droits d'exécution conservés).
 -- ============================================================================
@@ -26,7 +26,7 @@ INSERT INTO public.platform_settings (key, value, description) VALUES
     ('tables.reminder_hours', '{"value": 3}', 'Tables : rappel au client ce nombre d''heures avant l''heure')
 ON CONFLICT (key) DO NOTHING;
 
--- Recopie de 20261122000001_l10a_reglages.sql:30-76 ; changement : clés tables.* admises.
+-- Recopie de 20261122000010_l10a_cv_paiement_en_une_fois.sql:27-75 ; changement : clés tables.* admises.
 CREATE OR REPLACE FUNCTION public.finance_setting_set(p_key text, p_value jsonb, p_actor uuid, p_reason text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -56,6 +56,8 @@ BEGIN
         'halls.service_fee_rate', 'halls.commission_rate', 'halls.deposit_default_percent', 'halls.balance_due_days',
         'halls.hold_minutes', 'halls.validation_required', 'halls.cancel_partial_percent', 'halls.cancel_souple_full_days',
         'halls.cancel_moderee_full_days', 'halls.cancel_moderee_partial_days', 'halls.cancel_stricte_partial_days',
+        -- Correctifs de la contre-vérification du lot 10a (T4)
+        'halls.full_payment_margin_hours',
         -- Lot 11a : réservation de tables
         'tables.service_fee_rate', 'tables.commission_rate', 'tables.validation_required', 'tables.slot_minutes',
         'tables.hold_minutes', 'tables.response_minutes', 'tables.no_show_minutes', 'tables.cancel_free_hours',
@@ -79,7 +81,7 @@ BEGIN
 END;
 $$;
 
--- Recopie de 20261122000001_l10a_reglages.sql:79-159 ; changement : tables.validation_required (booléen) et bornes des clés tables.*.
+-- Recopie de 20261122000010_l10a_cv_paiement_en_une_fois.sql:79-161 ; changement : tables.validation_required (booléen) et bornes des clés tables.*.
 CREATE OR REPLACE FUNCTION public.fin_setting_valid(p_key text, v jsonb)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -158,6 +160,8 @@ BEGIN
         WHEN 'halls.cancel_moderee_full_days' THEN n = trunc(n) AND n >= 1 AND n <= 365
         WHEN 'halls.cancel_moderee_partial_days' THEN n = trunc(n) AND n >= 1 AND n <= 365
         WHEN 'halls.cancel_stricte_partial_days' THEN n = trunc(n) AND n >= 1 AND n <= 365
+        -- Correctifs de la contre-vérification du lot 10a (T4)
+        WHEN 'halls.full_payment_margin_hours' THEN n = trunc(n) AND n >= 1 AND n <= 168
         -- Lot 11a : réservation de tables
         WHEN 'tables.service_fee_rate' THEN n >= 0 AND n <= 50
         WHEN 'tables.commission_rate' THEN n >= 0 AND n <= 50
