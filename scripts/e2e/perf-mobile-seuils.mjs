@@ -38,6 +38,24 @@ export const PASSAGES = 3;
  */
 export const REFERENCE_CPU = Object.freeze({ benchmarkIndex: 2000, multiplier: 4 });
 
+/** Décision du 18/11 : tâches du fil principal de la page comptées comme style et mise en page, ou comme peinture et composition. */
+const STYLE_EVENTS = new Set(['UpdateLayoutTree', 'RecalculateStyles', 'Layout']);
+const PAINT_EVENTS = new Set(['Paint', 'PrePaint', 'Layerize', 'UpdateLayer', 'UpdateLayerTree', 'CompositeLayers', 'PaintImage', 'Commit']);
+
+/** Somme (ms) des tâches de style et de peinture du fil principal des pages, dans une trace du navigateur. */
+export function renderWorkFromTrace(trace) {
+    const events = Array.isArray(trace) ? trace : (trace?.traceEvents ?? []);
+    const main = new Set(events.filter((e) => e.ph === 'M' && e.name === 'thread_name' && e.args?.name === 'CrRendererMain').map((e) => `${e.pid}:${e.tid}`));
+    let style = 0;
+    let paint = 0;
+    for (const e of events) {
+        if (e.ph !== 'X' || !Number.isFinite(e.dur) || !main.has(`${e.pid}:${e.tid}`)) continue;
+        if (STYLE_EVENTS.has(e.name)) style += e.dur / 1000;
+        else if (PAINT_EVENTS.has(e.name)) paint += e.dur / 1000;
+    }
+    return { styleMs: Math.round(style), paintMs: Math.round(paint) };
+}
+
 /** Ralentissement du processeur pour un indice de puissance mesuré (indice illisible : ×4, le préréglage). */
 export function calibratedCpuMultiplier(benchmarkIndex) {
     if (!Number.isFinite(benchmarkIndex) || benchmarkIndex <= 0) return REFERENCE_CPU.multiplier;
