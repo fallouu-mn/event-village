@@ -796,7 +796,16 @@ test('9. résultat du scanner : plein écran égal à la fenêtre, page défilé
             document.body.style.minHeight = '3000px';
             window.scrollTo({ top: 1000, behavior: 'instant' });
             const r = overlay.getBoundingClientRect();
-            return { scrollY: window.scrollY, top: r.top, bottom: r.bottom, left: r.left, right: r.right, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+            // Diagnostic (runs 342, 367, 371 : scrollY 0) : élément qui défile, débordements et hauteurs de <html> et <body>
+            const cs = (el: Element) => { const c = getComputedStyle(el); return `${c.overflowX}/${c.overflowY} h=${c.height} pos=${c.position}`; };
+            const diag = {
+                scrolling: document.scrollingElement?.tagName ?? null,
+                scrollTop: document.scrollingElement?.scrollTop ?? null,
+                htmlScrollHeight: document.documentElement.scrollHeight,
+                html: cs(document.documentElement), body: cs(document.body),
+                bodyInline: document.body.getAttribute('style'), htmlInline: document.documentElement.getAttribute('style'),
+            };
+            return { scrollY: window.scrollY, top: r.top, bottom: r.bottom, left: r.left, right: r.right, innerWidth: window.innerWidth, innerHeight: window.innerHeight, diag };
         });
         if (!box) throw new Error('plein écran du scanner fermé avant la mesure');
         const seen = JSON.stringify(box);
