@@ -10,9 +10,10 @@
  *  3. REST : sans jeton (clé anon seule), jeton anon et rôle de service servis ; jeton authenticated sans session_id
  *     refusé (fabriqué avec le secret JWT de l'instance locale).
  *  4. Coût : plan de la lecture (EXPLAIN ANALYZE) et mesure en boucle (10 000 appels) ; chiffre imprimé `[CVF2B-PRE]`.
- *  5. Temps réel : un jeton court (échéance à +25 s, même secret) abonné à postgres_changes ne reçoit plus rien après
- *     son échéance (témoin anon qui reçoit le même changement), le serveur coupe le canal.
- * Écrit en base : comptes, un partenaire et un événement publié (vivacité du temps réel). after() → invariants.
+ *  5. Temps réel : un jeton court (échéance à +25 s, même secret) abonné à postgres_changes sur une table privée
+ *     (notifications du compte), qui reçoit avant l’échéance, ne reçoit plus rien après
+ *     (témoin du même compte qui reçoit le même changement ; la clé anon ne reçoit rien) : le serveur coupe le canal.
+ * Écrit en base : comptes et notifications de test (vivacité du temps réel). after() → invariants.
  */
 import '../helpers/env';
 import { after, describe, test } from 'node:test';
@@ -26,8 +27,6 @@ import { assertFinition1Invariants } from '../helpers/finition1-invariants';
 import { assertLifecycleInvariants } from '../helpers/lifecycle-invariants';
 import { anonClient, disposeClients, produceUntilReceived, subscribeCollect, waitForEvent, RECEIVE_TIMEOUT_MS } from '../helpers/realtime';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
-import { newPartner } from './finance-helpers';
-import { createEventInStatus } from './cycle-helpers';
 import { STRONG_PASSWORD } from './helpers';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -246,47 +245,66 @@ describe('4. coût de la pré-requête', () => {
 // ── 5. Temps réel ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('5. temps réel : jeton échu', () => {
-    test('un abonnement postgres_changes ne reçoit plus rien après l’échéance de son jeton (témoin anon qui reçoit)', async () => {
+    // Table PRIVÉE (notifications, RLS : le destinataire seul) : un canal qui recevrait avec la clé anon n'y reçoit rien,
+    // donc la réception avant l'échéance prouve que le canal porte bien le jeton court. Run 349 : la première version
+    // visait public_event_state (lisible par anon) et abonnait le canal avant que le rappel accessToken (asynchrone) ait
+    // rendu le jeton : realtime-js 2.114 envoie alors le join avec la seule clé anon, qui n'expire pas, et le canal
+    // recevait encore après l'échéance. Le jeton est maintenant poussé au client (realtime.setAuth) AVANT l'abonnement.
+    test('un abonnement postgres_changes à une table privée ne reçoit plus rien après l’échéance de son jeton (témoin du même compte qui reçoit)', async () => {
         const secret = localJwtSecret();
-        const partner = await newPartner('cvf2b-pre-rt');
-        const live = await createEventInStatus(partner, 'cvf2b-pre-rt', [{ name: 'Standard', price: 3000, total: 10 }], 'PUBLIE', { startsInHours: 96 });
+        const buyer = await newBuyer('cvf2b-pre-rt-acheteur');
         let pulse = 0;
-        const retitle = async (): Promise<string> => {
+        const notify = async (): Promise<string> => {
             pulse += 1;
-            const title = `${live.title} · cvf2b ${pulse}`;
-            const { error } = await service.from('events').update({ title }).eq('id', live.eventId);
-            assert.equal(error, null, `titre : ${error?.message}`);
+            const title = `TEST cvf2b-pre-rt ${Date.now()} · ${pulse}`;
+            const at = new Date().toISOString();
+            const { error } = await service.from('notifications').insert({
+                user_id: buyer.userId, type: 'SYSTEM', title, content: `Contenu de test (cvf2b, temps réel) : ${title}`,
+                channel: 'IN_APP', status: 'READ', sent_at: at, read_at: at, metadata: { source: 'tests-cvf2b-pre-rt' },
+            });
+            assert.equal(error, null, `notification de test : ${error?.message}`);
             return title;
         };
-        const target = { table: 'public_event_state', filter: `event_id=eq.${live.eventId}` };
+        const target = { table: 'notifications', filter: `user_id=eq.${buyer.userId}` };
+        const mine = (e: { new: Record<string, unknown> }) => e.new.user_id === buyer.userId;
+        const clientWith = async (token: string): Promise<SupabaseClient> => {
+            const client = createClient(SUPABASE_URL, ANON, { accessToken: async () => token });
+            await client.realtime.setAuth();
+            return client;
+        };
 
-        const witness = anonClient();
-        let short: SupabaseClient | null = null;
+        const clients: SupabaseClient[] = [];
         try {
-            const w = subscribeCollect(witness, target, { label: 'témoin anon' });
-            await produceUntilReceived(w, retitle, (e) => e.new.event_id === live.eventId, { what: 'vivacité du témoin' });
+            const real = (await session(buyer)).access;
+            const witness = await clientWith(real);
+            const anon = anonClient();
+            clients.push(witness, anon);
+            const w = subscribeCollect(witness, target, { label: 'témoin (même compte, jeton de 10 min)' });
+            const spy = subscribeCollect(anon, target, { label: 'clé anon (filtre du compte)' });
+            await Promise.all([w.ready, spy.ready]);
+            await produceUntilReceived(w, notify, mine, { what: 'vivacité du témoin' });
 
-            const buyer = await newBuyer('cvf2b-pre-rt-acheteur');
-            const real = claimsOf((await session(buyer)).access);
             const now = Math.floor(Date.now() / 1000);
             const exp = now + 25;
-            const token = mint(secret, { ...real, iat: now, exp });
-            short = createClient(SUPABASE_URL, ANON, { accessToken: async () => token });
+            const short = await clientWith(mint(secret, { ...claimsOf(real), iat: now, exp }));
+            clients.push(short);
             const c = subscribeCollect(short, target, { label: `jeton court (échéance ${new Date(exp * 1000).toISOString()})` });
-            const first = await produceUntilReceived(c, retitle, (e) => e.new.event_id === live.eventId, { what: 'vivacité du jeton court', timeoutMs: 20_000 });
-            assert.ok(first.receivedAt < exp * 1000, 'précondition : le jeton court reçoit avant son échéance');
+            await c.ready;
+            const first = await produceUntilReceived(c, notify, mine, { what: 'vivacité du jeton court', timeoutMs: 20_000 });
+            assert.ok(first.receivedAt < exp * 1000, 'précondition : le jeton court reçoit avant son échéance (table privée : le canal porte bien ce jeton)');
+            assert.equal(spy.events.filter(mine).length, 0, 'contrôle : la clé anon ne reçoit rien de cette table privée');
 
             // Échéance passée (+8 s de marge : minuterie du serveur, horloges)
             await sleep(Math.max(0, exp * 1000 - Date.now()) + 8_000);
             c.clear();
-            const title = await retitle();
-            await waitForEvent(w, (e) => e.new.title === title, RECEIVE_TIMEOUT_MS, 'le témoin reçoit le changement fait après l’échéance');
+            const title = await notify();
+            await waitForEvent(w, (e) => e.new.title === title, RECEIVE_TIMEOUT_MS, 'le témoin reçoit la notification écrite après l’échéance');
             await sleep(3_000);
             const leaked = c.events.filter((e) => e.new.title === title);
             console.log(`[CVF2B-PRE] 5. après l'échéance : témoin reçu ; jeton court : ${leaked.length} message(s) ; états du canal : ${c.states.join(' → ')}`);
             assert.equal(leaked.length, 0, `le jeton échu reçoit encore les changements : ${JSON.stringify(leaked.map((e) => e.new))}`);
         } finally {
-            await disposeClients(witness, ...(short ? [short] : []));
+            await disposeClients(...clients);
         }
     });
 });
