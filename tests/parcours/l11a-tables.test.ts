@@ -22,6 +22,7 @@ import { service, deliverWebhook, providerSays, paymentById } from './paiement-h
 import { BASE_URL } from './helpers';
 import * as partnerReservationsRoute from '../../app/api/partner/tables/reservations/route';
 import { PATCH as partnerActionRoute } from '../../app/api/partner/tables/reservations/[id]/route';
+import { POST as createVenueRoute } from '../../app/api/partner/venues/route';
 import {
     ALWAYS_OPEN, allChannels, dayFromNow, decideVenue, isoWeekday, ledgerOfPayment, newBuyer, newPartner, newTable, newVenue, newZone,
     openTablesService, outboxOf, payConfirmed, platformSetting, releasePending, reservation, reserveRoute, reserveRpc, setHours,
@@ -540,6 +541,43 @@ describe('B. Payer l’acompte : montant relu en base, confirmation, paiement su
             const res = await partnerAction(id, partner.accessToken, { action });
             assert.deepEqual([res.status, res.body.code, res.body.error], [409, 'TOO_EARLY', 'Il est trop tôt : attendez l’heure de la réservation.'], action);
         }
+    });
+});
+
+describe('Établissements : création par la route', () => {
+    async function createVenue(token: string, body: Row): Promise<{ status: number; body: Row }> {
+        const res = await createVenueRoute(new NextRequest(`${BASE_URL}/api/partner/venues`, {
+            method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(body),
+        }));
+        return { status: res.status, body: (await res.json()) as Row };
+    }
+    const body = {
+        kind: 'BAR', name: 'Bar de la Pointe', address: 'Pointe des Almadies', city: 'Dakar', latitude: 14.74, longitude: -17.52,
+        deposit_per_person: 2_000, confirmation_mode: 'MANUELLE', hours: [{ weekday: 5, opens_at: '19:00', closes_at: '03:00' }],
+        validation_status: 'VALIDEE',
+    };
+
+    test('attaque : une fiche partenaire en attente ou suspendue ne crée pas d’établissement', async () => {
+        for (const status of ['EN_ATTENTE', 'SUSPENDU']) {
+            const p = await newPartner(`l11a-fiche-${status.toLowerCase()}`);
+            await service.from('partners').update({ status }).eq('id', p.partnerId);
+            const res = await createVenue(p.accessToken, body);
+            assert.deepEqual([res.status, res.body.error], [400, 'Votre compte partenaire doit être validé avant de créer un établissement.'], status);
+            const { count } = await service.from('venues').select('id', { count: 'exact', head: true }).eq('partner_id', p.partnerId);
+            assert.equal(count, 0, `${status} : aucun établissement`);
+        }
+    });
+
+    test('fiche VALIDE : établissement créé « En attente de validation » (statut envoyé ignoré), horaires posés, administrateurs prévenus', async () => {
+        const res = await createVenue(partner.accessToken, body);
+        assert.equal(res.status, 201, JSON.stringify(res.body));
+        const v = res.body.venue as Row;
+        assert.deepEqual([v.validation_status, v.status, v.kindLabel], ['EN_ATTENTE_VALIDATION', 'En attente de validation', 'Bar']);
+        const { data: hours } = await service.from('venue_opening_hours').select('weekday, opens_at, closes_at').eq('venue_id', String(v.id));
+        assert.deepEqual(hours, [{ weekday: 5, opens_at: '19:00:00', closes_at: '03:00:00' }]);
+        const { data: notices } = await service.from('notification_outbox').select('channel, template_data').eq('type', 'ADMIN_VENUE_SUBMITTED');
+        const mine = (notices ?? []).filter((n) => (n.template_data as Row | null)?.venue_id === v.id);
+        assert.ok(mine.some((n) => n.channel === 'IN_APP'), 'administrateurs prévenus (cloche)');
     });
 });
 

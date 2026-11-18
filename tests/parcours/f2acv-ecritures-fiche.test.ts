@@ -74,7 +74,10 @@ const PARTNER_KEPT: Readonly<Record<string, string>> = {
     'POST /api/partner/tables': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
     'PATCH /api/partner/tables/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
     'DELETE /api/partner/tables/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
-    'POST /api/partner/tables/reservations': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
+    // Lot 11a (modification signalée au rapport) : POST /api/partner/tables/reservations supprimée (création d'une
+    // réservation par la partenaire, sans contrôle) ; établissements ajoutés (création réservée à une fiche VALIDE)
+    'POST /api/partner/venues': 'service des tables fermé (interrupteur, 404) ; création d’un établissement réservée à une fiche VALIDE (TableService.createVenue)',
+    'PATCH /api/partner/venues/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
     'PATCH /api/partner/tables/reservations/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
     'DELETE /api/partner/tables/reservations/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
 };
