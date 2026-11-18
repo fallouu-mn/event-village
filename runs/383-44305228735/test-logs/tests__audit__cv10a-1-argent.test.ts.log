@@ -1,0 +1,375 @@
+TAP version 13
+[CV10A] 1.1a : {"total":420000,"deposit":126000,"client":true}
+# Subtest: 1.1 Montants : le corps de la requête ne fixe rien
+    # Subtest: réservation avec des montants et un autre client dans le corps : montants de la base, client de la session
+    ok 1 - réservation avec des montants et un autre client dans le corps : montants de la base, client de la session
+      ---
+      duration_ms: 338.905469
+      type: 'test'
+      ...
+[CV10A] 1.1b : {"amount":126000}
+    # Subtest: paiement avec un montant dans le corps : 126 000 (acompte relu sur la réservation)
+    ok 2 - paiement avec un montant dans le corps : 126 000 (acompte relu sur la réservation)
+      ---
+      duration_ms: 184.903596
+      type: 'test'
+      ...
+    1..2
+ok 1 - 1.1 Montants : le corps de la requête ne fixe rien
+  ---
+  duration_ms: 755.229632
+  type: 'suite'
+  ...
+[CV10A] 1.2a : HTTP 409 {"error":"Cette salle n’a pas encore de prix : elle ne peut pas être réservée pour le moment.","code":"PRICE_MISSING"}
+# Subtest: 1.2 Salle sans prix
+    # Subtest: validation refusée sans prix par jour ; salle validée dont le prix est retiré : réservation refusée
+    ok 1 - validation refusée sans prix par jour ; salle validée dont le prix est retiré : réservation refusée
+      ---
+      duration_ms: 175.530261
+      type: 'test'
+      ...
+[CV10A] 1.2b : {"price_per_day":0} → HTTP 400 {"error":"Le prix par jour doit être un nombre entier de francs CFA, au moins 1.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.2b : {"price_per_day":null} → HTTP 400 {"error":"Le prix par jour doit être un nombre entier de francs CFA, au moins 1.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.2b : {"price_per_day":-5} → HTTP 400 {"error":"Le prix par jour doit être un nombre entier de francs CFA, au moins 1.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.2b : {"price_per_day":0.5} → HTTP 400 {"error":"Le prix par jour doit être un nombre entier de francs CFA, au moins 1.","code":"HALL_SAVE_FAILED"}
+    # Subtest: prix à 0 ou retiré par la route de la salle : refusé, salle inchangée
+    ok 2 - prix à 0 ou retiré par la route de la salle : refusé, salle inchangée
+      ---
+      duration_ms: 88.70011
+      type: 'test'
+      ...
+    # Subtest: à l’heure sur une salle sans prix horaire : refusé
+    ok 3 - à l’heure sur une salle sans prix horaire : refusé
+      ---
+      duration_ms: 159.877762
+      type: 'test'
+      ...
+    1..3
+ok 2 - 1.2 Salle sans prix
+  ---
+  duration_ms: 424.436298
+  type: 'suite'
+  ...
+[CV10A] 1.3a : {"deposit_mode":"POURCENTAGE","deposit_value":0} → HTTP 400 {"error":"L’acompte en pourcentage va de 1 à 100 %.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.3a : {"deposit_mode":"MONTANT_FIXE","deposit_value":0} → HTTP 400 {"error":"L’acompte fixe doit être un nombre entier de francs CFA, au moins 1.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.3a : {"deposit_mode":"POURCENTAGE","deposit_value":0.5} → HTTP 400 {"error":"L’acompte en pourcentage va de 1 à 100 %.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.3a : {"deposit_mode":"POURCENTAGE","deposit_value":-10} → HTTP 400 {"error":"L’acompte en pourcentage va de 1 à 100 %.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.3a : {"deposit_mode":"POURCENTAGE","deposit_value":101} → HTTP 400 {"error":"L’acompte en pourcentage va de 1 à 100 %.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.3a : {"deposit_mode":"MONTANT_FIXE","deposit_value":-1} → HTTP 400 {"error":"L’acompte fixe doit être un nombre entier de francs CFA, au moins 1.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.3a : {"deposit_mode":"MONTANT_FIXE","deposit_value":10.5} → HTTP 400 {"error":"L’acompte fixe doit être un nombre entier de francs CFA, au moins 1.","code":"HALL_SAVE_FAILED"}
+[CV10A] 1.3a : {"deposit_percentage":0} → HTTP 400 {"error":"L’acompte en pourcentage va de 1 à 100 %.","code":"HALL_SAVE_FAILED"}
+# Subtest: 1.3 Acompte à 0, à 100 % ou plus que le prix
+    # Subtest: acompte à 0 (pourcentage ou fixe), sous 1 % ou au-delà de 100 % : refusé par la route et par la base
+    ok 1 - acompte à 0 (pourcentage ou fixe), sous 1 % ou au-delà de 100 % : refusé par la route et par la base
+      ---
+      duration_ms: 99.767
+      type: 'test'
+      ...
+[CV10A] 1.3b : {"acompte":"FULL_PAYMENT_REQUIRED","solde":"DEPOSIT_FIRST"}
+    # Subtest: acompte à 100 % : paiement en une fois ; « acompte » et « solde » refusés
+    ok 2 - acompte à 100 % : paiement en une fois ; « acompte » et « solde » refusés
+      ---
+      duration_ms: 219.866574
+      type: 'test'
+      ...
+[CV10A] 1.3c : {"deposit":105000,"total":105000}
+    # Subtest: acompte fixe plus grand que le prix (5 000 000 F pour 100 000 F) : plafonné au prix, paiement en une fois
+    ok 3 - acompte fixe plus grand que le prix (5 000 000 F pour 100 000 F) : plafonné au prix, paiement en une fois
+      ---
+      duration_ms: 181.128368
+      type: 'test'
+      ...
+    1..3
+ok 3 - 1.3 Acompte à 0, à 100 % ou plus que le prix
+  ---
+  duration_ms: 501.355609
+  type: 'suite'
+  ...
+[CV10A] 1.4a : {"units":-1} → HTTP 400 {"error":"Une réservation à la journée dure de 1 à 30 jours.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"units":0} → HTTP 400 {"error":"Une réservation à la journée dure de 1 à 30 jours.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"units":31} → HTTP 400 {"error":"Une réservation à la journée dure de 1 à 30 jours.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"units":2147483648} → HTTP 400 {"error":"La date ou l’heure choisie n’est pas valable.","code":"INVALID_DATES"}
+[CV10A] 1.4a : {"units":1e+21} → HTTP 400 {"error":"La date ou l’heure choisie n’est pas valable.","code":"INVALID_DATES"}
+[CV10A] 1.4a : {"units":1.5} → HTTP 400 {"error":"Choisissez la salle, la date et la durée de la réservation."}
+[CV10A] 1.4a : {"units":"abc"} → HTTP 400 {"error":"Choisissez la salle, la date et la durée de la réservation."}
+[CV10A] 1.4a : {"units":null} → HTTP 400 {"error":"Choisissez la salle, la date et la durée de la réservation."}
+[CV10A] 1.4a : {"durationDays":-3} → HTTP 400 {"error":"Une réservation à la journée dure de 1 à 30 jours.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"units":-2147483648} → HTTP 400 {"error":"Une réservation à la journée dure de 1 à 30 jours.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"10:00","units":25} → HTTP 400 {"error":"Une réservation à l’heure dure de 1 à 24 heures et se termine le même jour.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"10:00","units":0} → HTTP 400 {"error":"Une réservation à l’heure dure de 1 à 24 heures et se termine le même jour.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"10:00","units":-2} → HTTP 400 {"error":"Une réservation à l’heure dure de 1 à 24 heures et se termine le même jour.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"23:30","units":1} → HTTP 400 {"error":"Une réservation à l’heure dure de 1 à 24 heures et se termine le même jour.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"24:00","units":1} → HTTP 400 {"error":"Une réservation à l’heure dure de 1 à 24 heures et se termine le même jour.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"10:15","units":1} → HTTP 400 {"error":"Choisissez une heure de début à l’heure pile ou à la demie.","code":"INVALID_DATES"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"99:99","units":1} → HTTP 400 {"error":"La date ou l’heure choisie n’est pas valable.","code":"INVALID_DATES"}
+[CV10A] 1.4a : {"mode":"HEURE","startTime":"22:00","units":3} → HTTP 400 {"error":"Une réservation à l’heure dure de 1 à 24 heures et se termine le même jour.","code":"INVALID_DURATION"}
+[CV10A] 1.4a : {"startDate":"2027-13-45","units":1} → HTTP 400 {"error":"La date ou l’heure choisie n’est pas valable.","code":"INVALID_DATES"}
+[CV10A] 1.4a : {"startDate":"2027-02-30","units":1} → HTTP 400 {"error":"La date ou l’heure choisie n’est pas valable.","code":"INVALID_DATES"}
+[CV10A] 1.4a : {"startDate":"2028-07-10","units":1} → HTTP 400 {"error":"La date doit être dans les 18 mois à venir.","code":"DATE_TOO_FAR"}
+[CV10A] 1.4a : {"startDate":"1900-01-01","units":1} → HTTP 400 {"error":"Choisissez une date à venir.","code":"DATE_PASSED"}
+# Subtest: 1.4 Jours et heures négatifs, nuls ou énormes
+    # Subtest: chaque durée ou date invalide est refusée par la route, aucune réservation créée
+    ok 1 - chaque durée ou date invalide est refusée par la route, aucune réservation créée
+      ---
+      duration_ms: 379.629761
+      type: 'test'
+      ...
+[CV10A] 1.4b : 99999999999 → {"ok":false,"code":"INVALID_DATES","message":"La date ou l’heure choisie n’est pas valable."}
+[CV10A] 1.4b : -5 → {"ok":false,"code":"INVALID_DURATION","message":"Une réservation à la journée dure de 1 à 30 jours."}
+[CV10A] 1.4b : 1e3 → {"ok":false,"code":"INVALID_DATES","message":"La date ou l’heure choisie n’est pas valable."}
+[CV10A] 1.4b : 2.5 → {"ok":false,"code":"INVALID_DATES","message":"La date ou l’heure choisie n’est pas valable."}
+[CV10A] 1.4b :  → {"ok":false,"code":"INVALID_DATES","message":"La date ou l’heure choisie n’est pas valable."}
+[CV10A] 1.4b :  3 → {"ok":true,"mode":"JOUR","units":3,"hall_id":"cd362b4d-d0e1-49d2-9f0b-0340cf0b5aaa","end_date":"2027-01-06","end_time":null,"start_at":"2027-01-04T00:00:00","hall_name":"TEST Salle 10a 6f1225ac","partner_id":"81b388bd-5a0d-4a91-9bbd-9ee4b199a957","start_date":"2027-01-04","start_time":null,"unit_price":100000,"price_amount":300000,"total_amount":315000,"booking_state":"EN_ATTENTE_PAIEMENT","deposit_price":90000,"balance_amount":220500,"balance_due_at":"2026-12-28T00:00:00+00:00","deposit_amount":94500,"reservation_id":"da8da523-a58f-423a-9f0e-ae45fb980037","commission_rate":0,"hold_expires_at":"2026-11-18T12:52:25.085549+00:00","service_fee_rate":5,"cancellation_terms":{"policy":"MODEREE","full_days":30,"partial_days":7,"partial_percent":50},"service_fee_amount":15000,"cancellation_policy":"MODEREE","deposit_service_fee":4500,"full_payment_required":false}
+    # Subtest: par la fonction en base : unités en texte, énormes ou négatives refusées
+    ok 2 - par la fonction en base : unités en texte, énormes ou négatives refusées
+      ---
+      duration_ms: 171.249577
+      type: 'test'
+      ...
+    1..2
+ok 4 - 1.4 Jours et heures négatifs, nuls ou énormes
+  ---
+  duration_ms: 551.07275
+  type: 'suite'
+  ...
+[CV10A] 1.5a quote : {"ok":true,"mode":"JOUR","units":1,"hall_id":"9a5ef918-100a-4f1b-8e22-8890f1081180","end_date":"2026-12-08","end_time":null,"start_at":"2026-12-08T00:00:00","hall_name":"TEST Salle 10a 505e4bb2","partner_id":"81b388bd-5a0d-4a91-9bbd-9ee4b199a957","start_date":"2026-12-08","start_time":null,"unit_price":3,"price_amount":3,"total_amount":4,"booking_state":"EN_ATTENTE_PAIEMENT","deposit_price":1,"balance_amount":2,"balance_due_at":"2026-12-01T00:00:00+00:00","deposit_amount":2,"reservation_id":"f3c8630a-aeed-4ae6-a749-edb71ffd7956","commission_rate":0,"hold_expires_at":"2026-11-18T12:52:25.268005+00:00","service_fee_rate":5,"cancellation_terms":{"policy":"MODEREE","full_days":30,"partial_days":7,"partial_percent":50},"service_fee_amount":1,"cancellation_policy":"MODEREE","deposit_service_fee":1,"full_payment_required":false}
+[CV10A] 1.5a remboursements : [{"id":"d9536d89-3f73-48c7-85eb-6595a6a1a615","amount":1,"facial_part":1,"service_part":0,"aggregator_fee_share":0.02,"net_revenue_reversal":0,"kind":"REFUND","payment_id":"8dad5a49-a16e-4f30-9442-53289cb684d9","payments":{"hall_reservation_id":"f3c8630a-aeed-4ae6-a749-edb71ffd7956"}},{"id":"86823a33-b028-444b-8ed6-9fbeef714ada","amount":1,"facial_part":1,"service_part":0,"aggregator_fee_share":0.02,"net_revenue_reversal":0,"kind":"REFUND","payment_id":"d8ea5b45-d670-4af9-baa7-2f4c53441c86","payments":{"hall_reservation_id":"f3c8630a-aeed-4ae6-a749-edb71ffd7956"}}]
+# Subtest: 1.5 Arrondis, grand livre et parrainage au franc près
+    # Subtest: salle à 3 F : 4 F encaissés en deux fois, 3 F pour la salle ; annulation à 50 % : 2 F rendus, part de la salle au demi-franc près
+    ok 1 - salle à 3 F : 4 F encaissés en deux fois, 3 F pour la salle ; annulation à 50 % : 2 F rendus, part de la salle au demi-franc près
+      ---
+      duration_ms: 322.354079
+      type: 'test'
+      ...
+    1..1
+ok 5 - 1.5 Arrondis, grand livre et parrainage au franc près
+  ---
+  duration_ms: 322.47366
+  type: 'suite'
+  ...
+[CV10A] 1.5b : {"rate":5,"quote":420000,"confirm":{"result":"CONFIRMED","paid_amount":126000,"booking_state":"ACOMPTE_PAYE","reservation_id":"7eadd4b0-acdb-4bf4-b928-d378d7a93dad"},"pay":{"amount":"126000.00","facial_amount":"120000.00","service_fee":"6000.00","partner_payout_amount":"108000.00","aggregator_fee":"1890.00","net_event_village_revenue":"16110.00"},"vente":"108000.00","comm":"805.50","violations":[{"regle":"d","objet":"a4f8f764-87ec-42ca-a357-534b44ea451c","detail":"reversement 108000.00 ≠ facial 120000.00"},{"regle":"d","objet":"a4f8f764-87ec-42ca-a357-534b44ea451c","detail":"net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00"}],"cancel":true,"refund":{"amount":"63000.00","facial_part":"54000.00","service_part":"9000.00","net_revenue_reversal":"9000.00"},"rembt":"-54000.00","commAfter":"402.75","sponsorLedger":"402.75"}
+# Subtest: 1.5 bis Commission de 10 % et parrainage (transaction annulée)
+    # Subtest: acompte 126 000 : salle 108 000 au grand livre, Event Village 16 110 net, commission du parrain sur 16 110 ; 50 % rendu : salle −54 000, Event Village −9 000, commission à 50 %
+    ok 1 - acompte 126 000 : salle 108 000 au grand livre, Event Village 16 110 net, commission du parrain sur 16 110 ; 50 % rendu : salle −54 000, Event Village −9 000, commission à 50 %
+      ---
+      duration_ms: 0.347184
+      type: 'test'
+      ...
+    # Subtest: un paiement de salle avec commission respecte l’invariant financier (d) de la plateforme
+    not ok 2 - un paiement de salle avec commission respecte l’invariant financier (d) de la plateforme
+      ---
+      duration_ms: 3.725949
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:7:2062'
+      failureType: 'testCodeFailure'
+      error: |-
+        invariant (d) violé par un paiement avec commission : [{"regle":"d","objet":"a4f8f764-87ec-42ca-a357-534b44ea451c","detail":"reversement 108000.00 ≠ facial 120000.00"},{"regle":"d","objet":"a4f8f764-87ec-42ca-a357-534b44ea451c","detail":"net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00"}]
+        + actual - expected
+        
+        + [
+        +   {
+        +     detail: 'reversement 108000.00 ≠ facial 120000.00',
+        +     objet: 'a4f8f764-87ec-42ca-a357-534b44ea451c',
+        +     regle: 'd'
+        +   },
+        +   {
+        +     detail: 'net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00',
+        +     objet: 'a4f8f764-87ec-42ca-a357-534b44ea451c',
+        +     regle: 'd'
+        +   }
+        + ]
+        - []
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+        0:
+          regle: 'd'
+          objet: 'a4f8f764-87ec-42ca-a357-534b44ea451c'
+          detail: 'reversement 108000.00 ≠ facial 120000.00'
+        1:
+          regle: 'd'
+          objet: 'a4f8f764-87ec-42ca-a357-534b44ea451c'
+          detail: 'net EV 16110.00 ≠ 6000.00 − agrégateur 1890.00'
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:271:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..2
+not ok 6 - 1.5 bis Commission de 10 % et parrainage (transaction annulée)
+  ---
+  duration_ms: 348.28417
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:2:15071'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: 1.6 Ordre des paiements, paiement en double
+    # Subtest: solde avant l’acompte : refusé, aucun paiement
+    ok 1 - solde avant l’acompte : refusé, aucun paiement
+      ---
+      duration_ms: 184.308042
+      type: 'test'
+      ...
+[CV10A] 1.6b : ["201 ","409 PAYMENT_PENDING","409 PAYMENT_PENDING"]
+    # Subtest: deux acomptes lancés en même temps : un seul paiement
+    ok 2 - deux acomptes lancés en même temps : un seul paiement
+      ---
+      duration_ms: 177.957129
+      type: 'test'
+      ...
+[confirmation] paiement ec0878a2-5e57-454b-935a-dca99412d383 encaissé mais non honorable (réservation déjà payée) : remboursement
+[webhook SamirPay] événement a2851ef2-af92-46bf-bf6b-36de41eabc84 : REFUND_REQUIRED
+[CV10A] 1.6c : {"state":"PAYEE","paid":420000,"pays":[["ACOMPTE",126000,"REFUNDED"],["INTEGRAL",420000,"SUCCESS"]]}
+    # Subtest: acompte abandonné puis payé tard, après un paiement intégral : remboursé en entier, rien de plus pour la salle
+    ok 3 - acompte abandonné puis payé tard, après un paiement intégral : remboursé en entier, rien de plus pour la salle
+      ---
+      duration_ms: 256.902081
+      type: 'test'
+      ...
+[confirmation] paiement 368cdf3d-a12b-4a34-b101-06a2e0f3e8d4 encaissé mais non honorable (réservation déjà payée) : remboursement
+[webhook SamirPay] événement 33a85ca0-2bef-499f-9052-0f9b44790f37 : REFUND_REQUIRED
+    # Subtest: solde payé deux fois : le second est rendu en entier
+    ok 4 - solde payé deux fois : le second est rendu en entier
+      ---
+      duration_ms: 299.201062
+      type: 'test'
+      ...
+    # Subtest: webhook rejoué : une seule vente, rien de plus payé
+    ok 5 - webhook rejoué : une seule vente, rien de plus payé
+      ---
+      duration_ms: 211.742724
+      type: 'test'
+      ...
+    1..5
+ok 7 - 1.6 Ordre des paiements, paiement en double
+  ---
+  duration_ms: 1130.455639
+  type: 'suite'
+  ...
+[confirmation] paiement 1c24c48e-274d-448a-a2b2-9b0395b8e23c encaissé mais non honorable (date réservée par quelqu’un d’autre après le délai) : remboursement
+[webhook SamirPay] événement 6e243f59-951b-413e-b0cc-0c44d36d4a03 : REFUND_REQUIRED
+[CV10A] 1.7a : {"a":"EXPIREE","paid":0,"b":"EN_ATTENTE_PAIEMENT"}
+# Subtest: 1.7 Paiement qui arrive après l’expiration, l’annulation ou l’échéance
+    # Subtest: après l’expiration, date reprise par un autre : le paiement est rendu, l’autre garde la date
+    ok 1 - après l’expiration, date reprise par un autre : le paiement est rendu, l’autre garde la date
+      ---
+      duration_ms: 355.635618
+      type: 'test'
+      ...
+[confirmation] paiement f55d8b2c-5622-4605-819d-6155e18d9a99 encaissé mais non honorable (réservation annulée) : remboursement
+[webhook SamirPay] événement ceafce3a-055a-48a1-8a94-13aa80a0e5b9 : REFUND_REQUIRED
+    # Subtest: après l’annulation par le client : le paiement est rendu en entier
+    ok 2 - après l’annulation par le client : le paiement est rendu en entier
+      ---
+      duration_ms: 198.756546
+      type: 'test'
+      ...
+[CV10A] 1.7c : {"full":false,"balance_due_at":"2026-11-18T13:00:00+00:00","dueInMin":23,"deposit":6300}
+    # Subtest: acompte proposé quand le solde est dû quelques minutes plus tard (réservation à J-7 + quelques minutes)
+    not ok 3 - acompte proposé quand le solde est dû quelques minutes plus tard (réservation à J-7 + quelques minutes)
+      ---
+      duration_ms: 148.882541
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:7:9503'
+      failureType: 'testCodeFailure'
+      error: 'acompte de 6300 F proposé, solde dû dans 23 min'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:378:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+[CV10A] 1.7d : {"confirm":"ACOMPTE_PAYE","solde":"409 BALANCE_DEADLINE_PASSED","state":"DELAI_DEPASSE","paid":126000,"refunded":0}
+    # Subtest: acompte lancé avant l’échéance du solde, confirmé après : le client ne perd pas son acompte
+    not ok 4 - acompte lancé avant l’échéance du solde, confirmé après : le client ne perd pas son acompte
+      ---
+      duration_ms: 217.583879
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:7:10544'
+      failureType: 'testCodeFailure'
+      error: 'acompte encaissé après l’échéance puis réservation annulée d’office : 126000 F perdus (DELAI_DEPASSE, solde 409 BALANCE_DEADLINE_PASSED)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:397:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..4
+not ok 8 - 1.7 Paiement qui arrive après l’expiration, l’annulation ou l’échéance
+  ---
+  duration_ms: 921.208593
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv10a-1-argent.test.ts:7:7110'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CV10A] 1.8a : ["200 ","409 NOT_CANCELLABLE","409 NOT_CANCELLABLE","409 NOT_CANCELLABLE","409 NOT_CANCELLABLE","0 "]
+[CV10A] 1.8a remboursements : [["a33db913-9a33-41c9-a2ab-1dc6a5a834dc",63000],["26e6cf05-f118-4623-b6f0-a31ae0653673",147000]]
+# Subtest: 1.8 Double remboursement, remboursement plus grand que le payé
+    # Subtest: annulations simultanées (client ×3, salle, Event Village, tâche) : un seul remboursement par paiement
+    ok 1 - annulations simultanées (client ×3, salle, Event Village, tâche) : un seul remboursement par paiement
+      ---
+      duration_ms: 487.577016
+      type: 'test'
+      ...
+    # Subtest: annulation par la salle d’une réservation payée en deux fois : rendu = payé, part de la salle reprise, frais Wave gardés par Event Village
+    ok 2 - annulation par la salle d’une réservation payée en deux fois : rendu = payé, part de la salle reprise, frais Wave gardés par Event Village
+      ---
+      duration_ms: 485.673053
+      type: 'test'
+      ...
+    1..2
+ok 9 - 1.8 Double remboursement, remboursement plus grand que le payé
+  ---
+  duration_ms: 973.452155
+  type: 'suite'
+  ...
+[INVARIANT] cv10a-1-argent — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cv10a-1-argent — purge des réservations échues : {"expired":0}
+[INVARIANT] cv10a-1-argent — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cv10a-1-argent — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cv10a-1-argent — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cv10a-1-argent — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cv10a-1-argent — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cv10a-1-argent — envoyeur : 168 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cv10a-1-argent — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cv10a-1-argent — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cv10a-1-argent — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cv10a-1-argent — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cv10a-1-argent — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cv10a-1-argent — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cv10a-1-argent — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cv10a-1-argent — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cv10a-1-argent — (f) : 0 violation(s)
+[INVARIANT-FINITION3A] cv10a-1-argent : 0 violation(s)
+[INVARIANT-FINITION3B] cv10a-1-argent — (h1) : 0 violation(s)
+[INVARIANT-FINITION3D] cv10a-1-argent — (i1) : 0 violation(s)
+[INVARIANT-LOT10A] cv10a-1-argent — (h1)(h2)(h3)(h4) : 0 violation(s)
+1..9
+# tests 24
+# suites 9
+# pass 21
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6746.425315
