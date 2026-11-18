@@ -8,13 +8,15 @@
  *  T3 demande en attente de réponse annulée par le client : remboursée en entier, quelle que soit l'heure.
  *  T5 acceptation par un établissement suspendu ou une partenaire suspendue : refusée, remboursée en entier.
  *  T6 menu public : identifiant exact seulement (nom complet, partiel ou « rest-<nom> » : 404).
+ *  T7 réglages halls.* et tables.* par la route du SUPERADMIN : les 22, bornes de la base.
  * Temps simulé comme dans les suites du lot (shiftReservation), jamais l'horloge. Faux SamirPay.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLot11aInvariants } from '../helpers/lot11a-invariants';
-import { clientCancel, partnerAction, routeId, service } from '../audit/cv11a-helpers';
+import { signInAs } from '../helpers/fixtures';
+import { api, clientCancel, partnerAction, routeId, service, sql } from '../audit/cv11a-helpers';
 import { withFeatureFlags } from './terrain-helpers';
 import { setFiche } from '../audit/cvf1-helpers';
 import {
@@ -223,5 +225,38 @@ describe('T6 — /api/restaurants/[id]/menu : identifiant exact seulement', () =
         assert.equal((out.byId.body as Row).partnerName, unique);
         assert.ok(JSON.stringify(out.byId.body).includes('TEST Yassa l11a cv'), 'menu de la partenaire');
         for (const [id, s] of Object.entries(out.others)) assert.equal(s, '404', `« ${id} » : ${String(s)}`);
+    });
+});
+
+describe('T7 — PUT /api/admin/finance-settings : les 22 réglages des salles et des tables', () => {
+    test('SUPERADMIN : chacun des 22 réglages halls.* et tables.* enregistré à la même valeur (200) ; hors bornes refusé par la base (400, motif en français) ; valeur inchangée', async () => {
+        const superadmin = await signInAs('SUPERADMIN');
+        const rows = await sql<{ key: string; value: Row }>(`SELECT key, value FROM public.platform_settings WHERE key ~ '^(halls|tables)\.' ORDER BY key`);
+        assert.equal(rows.length, 22, `réglages des salles et des tables : ${rows.map((r) => r.key).join(', ')}`);
+        assert.deepEqual([rows.filter((r) => r.key.startsWith('halls.')).length, rows.filter((r) => r.key.startsWith('tables.')).length], [12, 10]);
+        const problems: string[] = [];
+        for (const r of rows) {
+            const value = r.value.value;
+            const same = await api('PUT', 'admin/finance-settings', { token: superadmin.accessToken, body: { key: r.key, value, reason: 'correctif T7 : même valeur' } });
+            if (same.status !== 200 || JSON.stringify((same.body as Row).value) !== JSON.stringify(value)) problems.push(`${r.key} même valeur : ${same.status} ${JSON.stringify(same.body)}`);
+            const bad = typeof value === 'boolean' ? 5 : -1;
+            const refused = await api('PUT', 'admin/finance-settings', { token: superadmin.accessToken, body: { key: r.key, value: bad, reason: 'correctif T7 : valeur interdite' } });
+            const error = String((refused.body as Row).error ?? '');
+            if (refused.status !== 400 || (refused.body as Row).code !== 'INVALID_VALUE' || /[a-z]+\.[a-z_]+/.test(error)) problems.push(`${r.key} = ${bad} : ${refused.status} ${JSON.stringify(refused.body)}`);
+            const now = (await sql<{ value: Row }>(`SELECT value FROM public.platform_settings WHERE key = $1`, [r.key]))[0];
+            if (JSON.stringify(now.value) !== JSON.stringify(r.value)) problems.push(`${r.key} : valeur changée (${JSON.stringify(r.value)} → ${JSON.stringify(now.value)})`);
+        }
+        assert.deepEqual(problems, []);
+    });
+
+    test('clé inconnue des salles ou des tables : « Ce réglage n’existe pas » ; famille inconnue toujours refusée par la route ; sans session SUPERADMIN : refus', async () => {
+        const superadmin = await signInAs('SUPERADMIN');
+        const unknown = await api('PUT', 'admin/finance-settings', { token: superadmin.accessToken, body: { key: 'tables.inconnu', value: 1, reason: 'correctif T7 : clé inconnue' } });
+        assert.deepEqual([unknown.status, (unknown.body as Row).code, (unknown.body as Row).error], [400, 'UNKNOWN_KEY', 'Ce réglage n’existe pas.']);
+        const family = await api('PUT', 'admin/finance-settings', { token: superadmin.accessToken, body: { key: 'salles.hold_minutes', value: 15, reason: 'correctif T7 : famille inconnue' } });
+        assert.equal(family.status, 400, JSON.stringify(family.body));
+        const client = await newBuyer('l11a-cv-reglages');
+        const forbidden = await api('PUT', 'admin/finance-settings', { token: client.accessToken, body: { key: 'tables.hold_minutes', value: 15, reason: 'correctif T7 : client' } });
+        assert.ok(forbidden.status === 401 || forbidden.status === 403, `client : ${forbidden.status}`);
     });
 });

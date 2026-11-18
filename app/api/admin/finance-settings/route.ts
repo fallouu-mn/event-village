@@ -68,8 +68,10 @@ export async function GET(req: NextRequest) {
     });
 }
 
+// Contre-vérification de la 11a (T7) : réglages des salles (halls.*) et des tables (tables.*) acceptés, comme par la
+// lecture et la page ; la validation reste celle de la base (finance_setting_set → fin_setting_valid)
 const PutSchema = z.object({
-    key: z.string().regex(/^(finance|access|notif|features|support)\.[A-Za-z0-9_.]+$/),
+    key: z.string().regex(/^(finance|access|notif|features|support|halls|tables)\.[A-Za-z0-9_.]+$/),
     value: z.union([z.number(), z.boolean(), z.string().max(254)]),
     reason: z.string().trim().min(3).max(300),
 });
@@ -85,7 +87,7 @@ export async function PUT(req: NextRequest) {
     }
     const parsed = PutSchema.safeParse(body);
     if (!parsed.success) {
-        return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.*, notif.*, features.* ou support.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
+        return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.*, notif.*, features.*, support.*, halls.* ou tables.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
     }
     const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>('finance_setting_set', {
         p_key: parsed.data.key,
