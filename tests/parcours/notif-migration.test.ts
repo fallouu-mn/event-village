@@ -437,10 +437,12 @@ const INVENTORY: Insertion[] = [
     },
     { k1: 'P8', fn: 'activate_partner_trial', types: ['TRIAL_STARTED'] },
     { k1: 'P9', trigger: { name: 'trg_sponsored_promotions_notify', table: 'public.sponsored_promotions' }, types: ['PROMOTION_DECIDED'] },
-    {
-        k1: 'P10-P12', trigger: { name: 'trg_hall_reservations_notify', table: 'public.hall_reservations' },
-        types: ['HALL_RESERVATION_REQUESTED', 'HALL_RESERVATION_CONFIRMED', 'HALL_RESERVATION_CANCELLED'],
-    },
+    // Lot 10a (modification signalée au rapport) : trg_hall_reservations_notify retiré (il annonçait une demande dès
+    // l'attente de 15 minutes) ; les avis d'une salle partent des fonctions du parcours.
+    { k1: 'P10-P12 (lot 10a)', fn: 'hall_payment_confirm', types: ['HALL_RESERVATION_REQUESTED', 'HALL_RESERVATION_CONFIRMED', 'HALL_BALANCE_PAID', 'HALL_PAYMENT_REFUNDED'] },
+    { k1: 'lot 10a annulation', fn: 'hall_cancel_apply', types: ['HALL_RESERVATION_CANCELLED', 'HALL_RESERVATION_CANCELLED_PRO', 'HALL_PAYMENT_DEADLINE_PASSED'] },
+    { k1: 'lot 10a rappel', fn: 'hall_reservations_tick', types: ['HALL_BALANCE_REMINDER'] },
+    { k1: 'lot 10a validation', fn: 'hall_validation_decide', types: ['HALL_VALIDATION_DECIDED'] },
     { k1: 'sécurité', trigger: { name: 'on_auth_user_password_changed', table: 'auth.users' }, types: ['PASSWORD_CHANGED'] },
     { k1: 'essai push', fn: 'notification_test_push_enqueue', types: ['PUSH_TEST'] },
     // Point d'insertion réel : notif_failed_alert, appelée par notification_outbox_mark et par la reprise des SENDING

@@ -251,9 +251,17 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('SUBSCRIPTION_ACTIVATED', [I, M], 'PARTNER', 'A', 'SUBSCRIPTION_ACTIVATED', ['/partner/subscription'], 'Abonnement activé'), // G.49
     // Lot 8, tâche 8.2 m (contrat 10.1) : le lien suit la cible du paiement, voir « PAYMENT_SUCCESS : lien selon la cible ».
     ess('PAYMENT_SUCCESS', [I, M], 'CLIENT', 'A', 'PAYMENT_SUCCESS', ['/orders', '/partner/subscription'], 'Paiement confirmé'), // G.49
-    ess('HALL_RESERVATION_REQUESTED', [I, M], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls'], 'Nouvelle demande de réservation'), // G.49
-    ess('HALL_RESERVATION_CONFIRMED', [I, M], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Réservation confirmée'), // G.49
-    ess('HALL_RESERVATION_CANCELLED', [I, M], 'ANY', 'B', 'HALL_RESERVATION', ['/orders', '/partner/halls'], 'Réservation annulée'), // G.49
+    // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle ; SMS
+    // pour la confirmation, le rappel du solde, le délai dépassé, l'annulation et le remboursement seulement.
+    ess('HALL_RESERVATION_REQUESTED', [I, P, M], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls'], 'Nouvelle réservation'),
+    ess('HALL_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Réservation confirmée'),
+    ess('HALL_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Réservation annulée'),
+    ess('HALL_RESERVATION_CANCELLED_PRO', [I, P, M], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls'], 'Réservation annulée'),
+    ess('HALL_BALANCE_PAID', [I, P, M], 'ANY', 'B', 'HALL_RESERVATION', ['/orders', '/partner/halls'], 'Réservation payée'),
+    ess('HALL_BALANCE_REMINDER', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Solde à payer'),
+    ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Délai de paiement dépassé'),
+    ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Paiement remboursé'),
+    ess('HALL_VALIDATION_DECIDED', [I, P, M], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls'], 'Salle refusée'),
     ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)

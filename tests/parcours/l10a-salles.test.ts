@@ -129,9 +129,9 @@ describe('A. Réserver une salle : argent calculé en base, contrôles', () => {
         assert.equal(resa.state, 'En attente de paiement');
     });
 
-    test('attaque 0 F : prix nul, acompte nul ou négatif refusés par la base ; durée nulle refusée', async () => {
+    test('attaque 0 F : prix nul, acompte nul ou négatif refusés par la base ; salle sans prix jamais validée ; durée nulle refusée', async () => {
         const bad: Row[] = [
-            { price_per_day: 0 }, { price_per_day: null }, { price_per_day: 1000, price_per_hour: 0 },
+            { price_per_day: 0 }, { price_per_day: -1000 }, { price_per_day: 1000.5 }, { price_per_day: 1000, price_per_hour: 0 },
             { price_per_day: 1000, deposit_mode: 'POURCENTAGE', deposit_value: 0 },
             { price_per_day: 1000, deposit_mode: 'MONTANT_FIXE', deposit_value: 0 },
             { price_per_day: 1000, deposit_mode: 'MONTANT_FIXE', deposit_value: null },
@@ -141,6 +141,10 @@ describe('A. Réserver une salle : argent calculé en base, contrôles', () => {
             const { error } = await service.from('halls').insert({ partner_id: partner.partnerId, name: 'TEST Salle invalide', capacity: 10, ...fields });
             assert.ok(error, `salle acceptée : ${JSON.stringify(fields)}`);
         }
+        const noPrice = await newHall(partner, { price_per_day: null, validate: false });
+        const decided = await decideHall(noPrice, 'VALIDER');
+        assert.deepEqual([decided.ok, decided.code], [false, 'PRICE_MISSING'], 'une salle sans prix par jour n’est jamais validée');
+        assert.equal((await reserveRpc(client, noPrice, { startInDays: 70 })).code, 'HALL_NOT_AVAILABLE');
         const hall = await newHall(partner);
         for (const days of [0, -1, 31]) {
             const r = await reserveRpc(client, hall, { days, startInDays: 70 });
