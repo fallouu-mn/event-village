@@ -40,10 +40,11 @@ before(async () => {
     ev = await createDraftEvent(partner, 'design1b-billets', CATEGORIES, { startsInHours: 48, durationHours: 5 });
     const { error } = await service.from('ticket_categories').update({ scan_color: 'VIOLET' }).eq('id', ev.categories['Carré VIP'].id);
     assert.equal(error, null, `couleur de la catégorie : ${error?.message}`);
-    // Catégorie sans couleur (ancienne catégorie : colonne nullable) ; la finition 2b en attribue une à la création (run 372 : NOIR)
+    await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: partner.userId });
+    // Catégorie sans couleur (ancienne catégorie : colonne nullable). La finition 2b en attribue une à la création et à la
+    // publication (runs 372 : NOIR, 373 : BLANC) : posée à null après la publication.
     const { error: noColorErr } = await service.from('ticket_categories').update({ scan_color: null }).eq('id', ev.categories.Gratuit.id);
     assert.equal(noColorErr, null, `catégorie sans couleur : ${noColorErr?.message}`);
-    await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: partner.userId });
 });
 
 after(async () => {
