@@ -129,3 +129,14 @@ export async function removePushSubscription(userId: string, endpoint: string): 
     if (error) throw storeError('suppression', error);
     return (data ?? []).length > 0;
 }
+
+/**
+ * Correctifs de la contre-vérification 2b (6.8) — retire TOUS les appareils du compte : « Déconnecter tous mes appareils »
+ * et « Mot de passe oublié » ferment toutes les sessions, un appareil déconnecté ne reçoit plus les notifications du compte.
+ * Erreur journalisée, jamais levée : rend false (la route répond une erreur), jamais un succès supposé.
+ */
+export async function removeAllPushSubscriptions(userId: string, context: string): Promise<boolean> {
+    const { error } = await getServiceRoleClient().from('push_subscriptions').delete().eq('user_id', userId);
+    if (error) console.error(`[${context}] abonnements push non supprimés pour ${userId} :`, error.code, error.message);
+    return !error;
+}

@@ -5,6 +5,7 @@ import { noStore } from '@/lib/auth/account-sync';
 import { grantAuthWritePermit } from '@/lib/auth/auth-permits';
 import { requireActiveSession } from '@/lib/auth/session';
 import { revokeUserSessions } from '@/lib/auth/sessions';
+import { removeAllPushSubscriptions } from '@/lib/push/subscriptions';
 import { getAuthenticatedSession, getServiceRoleClient } from '@/lib/supabase/server';
 import { ServerPasswordSchema } from '@/lib/auth/password-policy.server';
 import { resetTokenHash } from '@/lib/email/password-reset'; // lot 9 quinquies (A7)
@@ -70,6 +71,7 @@ async function resetWithLink(token: string, password: string): Promise<NextRespo
     if (!(await revokeUserSessions(userId, { reason: 'PASSWORD_RESET_EMAIL', actorId: userId }))) {
         return NextResponse.json({ error: `Mot de passe modifié, mais les autres appareils n’ont pas pu être déconnectés. ${contactSupport()}`, code: 'PASSWORD_SESSIONS_NOT_REVOKED' }, { status: 500 });
     }
+    if (!(await removeAllPushSubscriptions(userId, CONTEXT))) return pushNotRemoved();
     return NextResponse.json({ ok: true, message: 'Mot de passe modifié. Connectez-vous avec le nouveau.' });
 }
 
@@ -81,6 +83,17 @@ function notRecovery(): NextResponse {
             code: 'RECOVERY_SESSION_REQUIRED',
         },
         { status: 403 },
+    );
+}
+
+/**
+ * Correctifs de la contre-vérification 2b (suite de la 6.8) : toutes les sessions étant fermées, les abonnements push du
+ * compte sont supprimés (après la révocation : aucun appareil ne peut se réabonner entre les deux). Échec : dit tel quel.
+ */
+function pushNotRemoved(): NextResponse {
+    return NextResponse.json(
+        { error: `Mot de passe modifié, mais les notifications n’ont pas pu être coupées sur les autres appareils. ${contactSupport()}`, code: 'PASSWORD_PUSH_NOT_REMOVED' },
+        { status: 500 },
     );
 }
 
@@ -191,6 +204,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
             { status: 500 },
         );
     }
+    if (!(await removeAllPushSubscriptions(user.id, CONTEXT))) return pushNotRemoved();
     return NextResponse.json({ ok: true, message: 'Mot de passe modifié. Connectez-vous avec le nouveau.' });
 }
 
