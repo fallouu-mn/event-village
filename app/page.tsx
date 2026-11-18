@@ -8,6 +8,8 @@ import { LiveNowItem, LiveNowSection } from '@/app/_accueil/LiveNow';
 import { CardRow, FeaturedRow, ROW, ROW_ITEM, ROW_SIZES, SectionHead, cardProps } from '@/app/_accueil/sections';
 import { loadHomeData, type HomeData } from '@/app/_accueil/data.server';
 import { EventCard } from '@/components/events/EventCard';
+import { CardTransitions } from '@/components/events/CardLink';
+import { CardLiveBadges } from '@/components/events/CardLiveBadge';
 import { AccessNotice } from '@/components/layout/AccessNotice';
 import { buttonClasses } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -92,6 +94,9 @@ export default async function HomePage() {
       {/* Accès refusé par le middleware (8.2 j) : rien sans clé connue */}
       <Suspense fallback={null}>
         <AccessNotice />
+        {/* Design 1b (run 376) : un seul îlot pour les transitions des cartes, un seul pour leurs badges « En cours » */}
+        <CardTransitions />
+        <CardLiveBadges />
       </Suspense>
 
       {/* 1. Accroche et recherche */}

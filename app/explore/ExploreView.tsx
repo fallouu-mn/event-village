@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition
 import { useRouter } from 'next/navigation';
 import { RefreshCw, RotateCcw, Search } from 'lucide-react';
 import { EventCard, cityLabel } from '@/components/events/EventCard';
+import { CardTransitions } from '@/components/events/CardLink';
+import { CardLiveBadges } from '@/components/events/CardLiveBadge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { FilterChip } from '@/components/ui/FilterChip';
@@ -195,6 +197,8 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
 
   return (
     <div className="space-y-6 pb-24 lg:pb-12">
+      <CardTransitions />
+      <CardLiveBadges />
       <PageHeader
         title="Explorer les événements"
         description="Concerts, festivals, soirées et rencontres à venir au Sénégal. La liste se met à jour d’elle-même."
