@@ -45,7 +45,9 @@ describe('Finition 2b — migrations 20261119… rejouables (transaction annulé
     // 2b, non appliquées, passent après toutes les autres du dépôt (sinon : renuméroter)
     test('les migrations 20261119… passent après toutes les autres du dépôt (finition 3a, 20261117…, comprise)', () => {
         const all = fs.readdirSync(DIR).filter((f) => /^\d{14}_.+\.sql$/.test(f)).sort();
-        const others = all.filter((f) => !f.startsWith('20261119'));
+        // Contre-vérification 2b : ses correctifs (20261121…) corrigent la finition 2b et passent donc après elle ; ils ne
+        // comptent pas parmi les migrations que la 2b doit suivre.
+        const others = all.filter((f) => !f.startsWith('20261119') && !f.startsWith('20261121'));
         const last = others[others.length - 1];
         console.log(`[F2B-MIG] dernière migration hors finition 2b : ${last} ; première de la finition 2b : ${FINITION2B_MIGRATIONS[0]}`);
         assert.ok(others.some((f) => f.startsWith('20261117')), 'précondition : migrations 20261117… de la finition 3a présentes (main fusionnée)');
