@@ -49,7 +49,7 @@ import zlib from 'node:zlib';
 import { createRequire } from 'node:module';
 import { startH2Proxy } from './h2-proxy.mjs';
 import {
-    PASSAGES, SEUILS, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, fmtBytes, fmtCls, fmtMs, median,
+    PASSAGES, REFERENCE_CPU, SEUILS, calibratedCpuMultiplier, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, fmtBytes, fmtCls, fmtMs, median,
     texteRapport, toucherRows, tsvRows, verdictPage, verdictToucher,
 } from './perf-mobile-seuils.mjs';
 
@@ -249,7 +249,7 @@ function removeDir(dir) {
  * Un passage Lighthouse. `cookies` : cookies Playwright posés avant (vide = visiteur anonyme).
  * Renvoie le rapport (lhr) et les cookies relus après le passage (renouvellement éventuel de la session).
  */
-async function lighthouseRun({ lighthouse, exe, url, cookies }) {
+async function lighthouseRun({ lighthouse, exe, url, cookies, cpuSlowdownMultiplier = null }) {
     const port = await freePort();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-lighthouse-'));
     const args = [
@@ -275,6 +275,8 @@ async function lighthouseRun({ lighthouse, exe, url, cookies }) {
             onlyCategories: ['performance'],
             disableFullPageScreenshot: true,
             blockedUrlPatterns: BLOCKED_URLS,
+            // Décision du 18/11 : ralentissement calibré (seul ce réglage change ; le reste du préréglage mobile est fusionné)
+            ...(cpuSlowdownMultiplier ? { throttling: { cpuSlowdownMultiplier } } : {}),
         });
         run.catch(() => { /* rejet tardif après le délai : ignoré, le passage est déjà en erreur */ });
         const result = await withTimeout(run, LIGHTHOUSE_TIMEOUT_MS, 'Lighthouse');
@@ -330,6 +332,8 @@ function summarize(lhr) {
         plusGrosses: requests,
         avertissements: (lhr.runWarnings ?? []).map((w) => String(w).slice(0, 300)),
         lighthouseVersion: lhr.lighthouseVersion ?? null,
+        benchmarkIndex: Number.isFinite(lhr.environment?.benchmarkIndex) ? lhr.environment.benchmarkIndex : null,
+        cpu: Number.isFinite(lhr.configSettings?.throttling?.cpuSlowdownMultiplier) ? lhr.configSettings.throttling.cpuSlowdownMultiplier : null,
         reglages: { formFactor: lhr.configSettings?.formFactor, throttlingMethod: lhr.configSettings?.throttlingMethod, throttling: lhr.configSettings?.throttling },
     };
 }
@@ -552,18 +556,21 @@ async function prepareSession(browser, base, def) {
 
 // ── Écriture des résultats ────────────────────────────────────────────────────
 
-function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz }) {
+function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz, calibrations = [] }) {
     fs.mkdirSync(PERF_DIR, { recursive: true });
     const verdicts = pageResults.map((p) => ({ ...verdictPage(p), details: p.details }));
     const toucher = verdictToucher(touches, touchFatals);
     const rapport = texteRapport({ pages: verdicts, toucher, entete, notes });
     const tsv = [TSV_HEADER, ...pageResults.flatMap((p) => tsvRows(p.id, p.lighthouse, p.reel))];
     fs.writeFileSync(path.join(PERF_DIR, 'lighthouse.tsv'), `${tsv.join('\n')}\n`, 'utf8');
+    // Valeurs brutes de la calibration : un passage de l'accueil au préréglage (×4) par tour, indice mesuré, ralentissement retenu
+    fs.writeFileSync(path.join(PERF_DIR, 'calibration.tsv'), `${['tour', 'indice_puissance', 'ralentissement_retenu', 'score_brut_x4', 'tbt_brut_x4_ms', 'lcp_brut_x4_ms', 'erreur'].join('\t')}\n${calibrations.map((c) => [c.tour, c.benchmarkIndex ?? '', c.multiplier, c.score ?? '', c.tbt === null || c.tbt === undefined ? '' : Math.round(c.tbt), c.lcp === null || c.lcp === undefined ? '' : Math.round(c.lcp), String(c.error ?? '').replace(/[\t\r\n]+/g, ' ')].join('\t')).join('\n')}\n`, 'utf8');
     fs.writeFileSync(path.join(PERF_DIR, 'toucher.tsv'), `${[TOUCHER_TSV_HEADER, ...toucherRows(touches)].join('\n')}\n`, 'utf8');
     fs.writeFileSync(path.join(PERF_DIR, 'lighthouse.txt'), rapport.texte, 'utf8');
     const resume = {
         genere: new Date().toISOString(),
         seuils: SEUILS,
+        calibration: { reference: REFERENCE_CPU, tours: calibrations },
         pages: pageResults.map((p) => ({ id: p.id, libelle: p.libelle, url: p.url, fatal: p.fatal ?? null, lighthouse: p.lighthouse, reel: p.reel })),
         touchers: touches,
         verdict: rapport.ok ? 'OK' : 'HORS SEUIL',
@@ -637,11 +644,12 @@ async function main() {
     const touchFatals = [];
     const gz = [];
     const notes = [];
+    const calibrations = [];
 
     const finish = () => writeOutputs({
-        pageResults, touches, touchFatals, gz, notes,
+        pageResults, touches, touchFatals, gz, notes, calibrations,
         entete: [
-            `Lighthouse ${version} (préréglage mobile par défaut : throttling simulé « Slow 4G », processeur ×4, écran mobile), Chromium complet de Playwright.`,
+            `Lighthouse ${version} (préréglage mobile : throttling simulé « Slow 4G », écran mobile), Chromium complet de Playwright. Processeur : ralentissement calibré à chaque tour sur l'indice de puissance mesuré, pour le même téléphone de référence (×${REFERENCE_CPU.multiplier} pour un indice de ${REFERENCE_CPU.benchmarkIndex}) : ${calibrations.map((c) => `tour ${c.tour} indice ${c.benchmarkIndex ?? '?'} → ×${c.multiplier}`).join(' ; ') || 'aucun tour'} (valeurs brutes : perf/calibration.tsv).`,
             `Chargements réels et touchers : Playwright, vue mobile 390 × 844, 4G simulée par CDP (562,5 ms, 1,44 Mbit/s), processeur ×4. Application ${base}${proxy ? ' (HTTP/2, relais local devant next start, comme la production)' : ' (HTTP/1.1, next start direct)'}.`,
             `Durée de la mesure : ${Math.round((Date.now() - T0) / 1000)} s.`,
         ],
@@ -668,13 +676,27 @@ async function main() {
 
         // 2. Lighthouse : passages entrelacés (page 1, 2, 3, puis passage suivant)
         for (let pass = 1; pass <= PASSAGES; pass++) {
+            // Calibration du tour : un passage de l'accueil au préréglage (×4), non compté ; son indice de puissance fixe le
+            // ralentissement des trois pages de ce tour (valeurs brutes gardées : perf/calibration.tsv)
+            let cpuSlowdownMultiplier = REFERENCE_CPU.multiplier;
+            if (remaining() >= 60_000) {
+                try {
+                    const cal = summarize((await lighthouseRun({ lighthouse, exe, url: `${base}${pages[0].path}`, cookies: [] })).lhr);
+                    cpuSlowdownMultiplier = calibratedCpuMultiplier(cal.benchmarkIndex);
+                    calibrations.push({ tour: pass, benchmarkIndex: cal.benchmarkIndex, multiplier: cpuSlowdownMultiplier, score: cal.score, tbt: cal.tbt, lcp: cal.lcp, error: cal.error });
+                    log(`calibration du tour ${pass} : indice ${cal.benchmarkIndex ?? '?'} → ×${cpuSlowdownMultiplier} (brut ×4 : score ${cal.score}, TBT ${fmtMs(cal.tbt)})`);
+                } catch (err) {
+                    calibrations.push({ tour: pass, benchmarkIndex: null, multiplier: cpuSlowdownMultiplier, score: null, tbt: null, lcp: null, error: errText(err) });
+                    log(`calibration du tour ${pass} impossible (${errText(err)}) : ×${cpuSlowdownMultiplier}`);
+                }
+            }
             for (const def of pages) {
                 const r = res(def.id);
                 if (r.fatal) continue;
                 if (remaining() < 30_000) { r.lighthouse.push({ error: 'temps imparti dépassé, passage non lancé' }); lhrs.get(def.id).push(null); continue; }
                 const started = Date.now();
                 try {
-                    const out = await lighthouseRun({ lighthouse, exe, url: `${base}${def.path}`, cookies: def.client ? session.state.cookies : [] });
+                    const out = await lighthouseRun({ lighthouse, exe, url: `${base}${def.path}`, cookies: def.client ? session.state.cookies : [], cpuSlowdownMultiplier });
                     if (def.client && out.cookies) session.state = { ...session.state, cookies: out.cookies };
                     const s = summarize(out.lhr);
                     if (!s.error && def.expectedPath && !finalPathMatches(s.finalUrl, def.expectedPath)) {
@@ -683,7 +705,7 @@ async function main() {
                     }
                     r.lighthouse.push(s);
                     lhrs.get(def.id).push(out.lhr);
-                    log(`${def.id} Lighthouse ${pass}/${PASSAGES} : ${s.error ? `ERREUR ${s.error}` : `score ${s.score}, LCP ${fmtMs(s.lcp)}, CLS ${fmtCls(s.cls)}, TBT ${fmtMs(s.tbt)}, FCP ${fmtMs(s.fcp)}, SI ${fmtMs(s.si)}, ${fmtBytes(s.bytes)}`} (${Math.round((Date.now() - started) / 1000)} s)`);
+                    log(`${def.id} Lighthouse ${pass}/${PASSAGES} : ${s.error ? `ERREUR ${s.error}` : `score ${s.score}, LCP ${fmtMs(s.lcp)}, CLS ${fmtCls(s.cls)}, TBT ${fmtMs(s.tbt)}, FCP ${fmtMs(s.fcp)}, SI ${fmtMs(s.si)}, ${fmtBytes(s.bytes)}, indice ${s.benchmarkIndex ?? '?'}, processeur ×${s.cpu ?? '?'}`} (${Math.round((Date.now() - started) / 1000)} s)`);
                 } catch (err) {
                     r.lighthouse.push({ error: errText(err) });
                     lhrs.get(def.id).push(null);

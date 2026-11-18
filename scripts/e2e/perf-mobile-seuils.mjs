@@ -28,6 +28,22 @@ export const SEUILS = Object.freeze({
 });
 
 export const PASSAGES = 3;
+
+/**
+ * Décision du 18/11 — téléphone de référence de Lighthouse : le préréglage mobile ralentit le processeur ×4 pour un poste
+ * d'indice de puissance ≈ 2 000 (Lighthouse, docs/throttling.md « calibrating multipliers » ; il avertit sous 1 000,
+ * « environ deux fois plus faible que la cible »). Le runner de la CI varie (indices 1 996 à 3 571 aux runs 385 à 401,
+ * même code : scores 94 → 87) ; le ralentissement est donc recalculé à chaque tour sur l'indice mesuré, pour viser le
+ * même téléphone : ×4 × indice / 2 000, borné entre ×1 et ×16. Seuils inchangés.
+ */
+export const REFERENCE_CPU = Object.freeze({ benchmarkIndex: 2000, multiplier: 4 });
+
+/** Ralentissement du processeur pour un indice de puissance mesuré (indice illisible : ×4, le préréglage). */
+export function calibratedCpuMultiplier(benchmarkIndex) {
+    if (!Number.isFinite(benchmarkIndex) || benchmarkIndex <= 0) return REFERENCE_CPU.multiplier;
+    const m = (REFERENCE_CPU.multiplier * benchmarkIndex) / REFERENCE_CPU.benchmarkIndex;
+    return Math.round(Math.min(16, Math.max(1, m)) * 100) / 100;
+}
 export const MIN_PASSAGES_VALIDES = 2;
 
 /** Médiane (moyenne des deux valeurs centrales si le nombre est pair) ; null si aucune valeur finie. */
@@ -164,7 +180,7 @@ export function verdictToucher(touches, fatals = []) {
 
 export const TSV_HEADER = [
     'page', 'passage', 'score', 'lcp_ms', 'cls', 'tbt_ms', 'fcp_ms', 'speed_index_ms', 'poids_o', 'url_finale',
-    'cls_reel', 'lcp_reel_ms', 'erreur',
+    'cls_reel', 'lcp_reel_ms', 'erreur', 'indice_puissance', 'ralentissement_cpu',
 ].join('\t');
 
 const cell = (v, digits = 0) => (v === null || v === undefined || !Number.isFinite(v) ? '' : digits ? v.toFixed(digits) : String(Math.round(v)));
@@ -184,13 +200,13 @@ export function tsvRows(id, lighthouse, reel) {
         const r = reel[i] ?? {};
         const err = [l.error ? `lighthouse : ${l.error}` : '', r.error ? `réel : ${r.error}` : ''].filter(Boolean).join(' | ');
         rows.push([id, String(i + 1), cell(l.score), cell(l.lcp), cell(l.cls, 4), cell(l.tbt), cell(l.fcp), cell(l.si), cell(l.bytes), clean(l.finalUrl),
-            cell(r.cls, 4), cell(r.lcp), clean(err)].join('\t'));
+            cell(r.cls, 4), cell(r.lcp), clean(err), cell(l.benchmarkIndex), cell(l.cpu, 2)].join('\t'));
     }
     const okL = lighthouse.filter((p) => !p.error);
     const okR = reel.filter((p) => !p.error);
     const med = (arr, k) => median(arr.map((p) => p[k]));
     rows.push([id, 'mediane', cell(med(okL, 'score')), cell(med(okL, 'lcp')), cell(med(okL, 'cls'), 4), cell(med(okL, 'tbt')), cell(med(okL, 'fcp')),
-        cell(med(okL, 'si')), cell(med(okL, 'bytes')), '', cell(med(okR, 'cls'), 4), cell(med(okR, 'lcp')), ''].join('\t'));
+        cell(med(okL, 'si')), cell(med(okL, 'bytes')), '', cell(med(okR, 'cls'), 4), cell(med(okR, 'lcp')), '', cell(med(okL, 'benchmarkIndex')), cell(med(okL, 'cpu'), 2)].join('\t'));
     return rows;
 }
 

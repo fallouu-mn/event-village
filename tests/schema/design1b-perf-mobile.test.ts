@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-    MIN_PASSAGES_VALIDES, PASSAGES, SEUILS, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, median,
+    MIN_PASSAGES_VALIDES, PASSAGES, REFERENCE_CPU, SEUILS, calibratedCpuMultiplier, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, median,
     texteRapport, toucherRows, tsvRows, verdictPage, verdictToucher,
 } from '../../scripts/e2e/perf-mobile-seuils.mjs';
 
@@ -257,5 +257,25 @@ describe('design 1b — performance mobile : branchement en CI', () => {
             await proxy.close();
             await new Promise<void>((r) => up.close(() => r()));
         }
+    });
+
+    test('décision du 18/11 : ralentissement calibré sur l’indice de puissance (même téléphone), seuils et médiane de 3 inchangés', () => {
+        assert.deepEqual({ ...REFERENCE_CPU }, { benchmarkIndex: 2000, multiplier: 4 });
+        assert.equal(calibratedCpuMultiplier(2000), 4);
+        assert.equal(calibratedCpuMultiplier(3571), 7.14, 'runner du run 385');
+        assert.equal(calibratedCpuMultiplier(1996), 3.99, 'runner du run 401');
+        assert.equal(calibratedCpuMultiplier(100), 1, 'borne basse');
+        assert.equal(calibratedCpuMultiplier(50_000), 16, 'borne haute');
+        for (const v of [null, undefined, Number.NaN, 0, -5]) assert.equal(calibratedCpuMultiplier(v as unknown as number), 4, String(v));
+        assert.equal(SEUILS.score, 90);
+        assert.equal(PASSAGES, 3);
+        // Valeurs brutes : indice et ralentissement de chaque passage dans lighthouse.tsv, tours de calibration dans calibration.tsv
+        assert.deepEqual(TSV_HEADER.split('\t').slice(-2), ['indice_puissance', 'ralentissement_cpu']);
+        const rows = tsvRows('accueil', [{ score: 92, lcp: 1_800, cls: 0, tbt: 200, fcp: 1_000, si: 1_100, bytes: 500_000, finalUrl: '/', benchmarkIndex: 3571, cpu: 7.14 } as never], []);
+        assert.deepEqual(rows[0].split('\t').slice(-2), ['3571', '7.14']);
+        const script = read('scripts/e2e/perf-mobile.mjs');
+        assert.match(script, /throttling: \{ cpuSlowdownMultiplier \}/);
+        assert.match(script, /cpuSlowdownMultiplier = calibratedCpuMultiplier\(cal\.benchmarkIndex\)/);
+        assert.match(script, /'calibration\.tsv'/);
     });
 });
