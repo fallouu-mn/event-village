@@ -1,6 +1,102 @@
 # Finition 3d — Recours et suppléance
 
-Branche `finition-3d/recours`, partie de `main` à `46d4d6933`. Non fusionnée. Migrations `20261120000001` à `…05`, sans BEGIN ni COMMIT, rejouables, non appliquées sur event-village-dev.
+Branche `finition-3d/recours`, partie de `main` à `46d4d6933`, puis main (`dcc1e3ab2`) et la contre-vérification (`origin/audit/finition-3d`) fusionnées. Non fusionnée dans main. Migrations `20261120000001` à `…09`, sans BEGIN ni COMMIT, rejouables, non appliquées sur event-village-dev.
+
+## Correctifs de la contre-vérification (à lire d'abord)
+
+La contre-vérification (`origin/audit/finition-3d`, rapport `docs/audit-finition-3d.md`) a trouvé 5 trous, aucun critique ; T1 et T2 se cumulent.
+- Ses suites `cvf3d-1` à `cvf3d-6` sont fusionnées telles quelles dans la branche : ce sont mes tests rouges, et je n'ai modifié aucune de leurs assertions.
+- main a aussi été fusionnée (`dcc1e3ab2` : finition 2b, déconnexion sans réseau, CI en jobs parallèles), sans conflit. Mon commit de limite à 120 min est annulé (`b096bcec5`).
+- Un commit par point, migrations `20261120000006` à `…09`.
+
+| # | Trou | Correctif | Commit | Preuve |
+|---|---|---|---|---|
+| T1 | Un ADMIN changeait lui-même son numéro par l'écran du profil, sans le Superadmin ; le Superadmin changeait le sien de même, sans code récent. | `POST /api/account/phone/start` et `/confirm` refusent tout compte ADMIN ou SUPERADMIN (403, avant le mot de passe et tout SMS), avec un message qui renvoie vers le bon chemin. `account_phone_finalize` refuse aussi en base (`ADMIN_PHONE_PATH`, migration 06). L'écran du profil n'affiche plus « Changer de numéro » pour eux. | `9ca9cf62b` | `cvf3d-1` k, `cvf3d-2` h |
+| T2 | Après une révocation, le jeton d'accès déjà ouvert gardait le pouvoir d'administration par la REST et le temps réel, jusqu'à son échéance (1 h au plus). | `admin_session_code_valid()` exige que la session du jeton existe encore dans `auth.sessions` : toute révocation coupe aussitôt la REST, quel que soit son chemin. `revoke_user_sessions` et la révocation de « son propre numéro » effacent les lignes `admin_session_codes` (migration 07). | `7fa1f71b9` | `cvf3d-1` j2, j3 ; `cvf3d-2` i |
+| T3 | Un admin inactif depuis 31 minutes, arrêté par les routes, lisait encore par la REST et recevait le temps réel. | `admin_session_code_valid()` exige une activité plus récente que la durée d'inactivité des routes. Cette durée est gardée avec l'activité de la session (`admin_session_activity.idle_secs`, migration 08) : 30 min par défaut, 240 en e2e, comme `ADMIN_IDLE_TIMEOUT_MINUTES`. Les routes, la REST et le temps réel suivent ainsi une seule règle. | `fe49833ff` | `cvf3d-6` b |
+| T4 | Un Superadmin créait un compte ADMIN sans redonner ni mot de passe ni code ; la grille des droits non plus. | `POST /api/admin/users` (rôle ADMIN) et `POST /api/admin/permissions` exigent mot de passe et code de moins de 10 minutes (`requireAdminIdentity`). Le rôle ADMIN d'un compte neuf est donné par `admin_account_admin_role`, qui revérifie l'identité en base. `user_roles_set` garde ADMIN comme SUPERADMIN : `ROLE_SCREEN_REQUIRED` hors de « Changer le rôle » et de la création (migration 09). À l'écran, création et grille passent par la fenêtre « mot de passe et code ». | `cd21b1f60` | `cvf3d-3` g |
+| T5 | `GET /api/referrals/my-stats` et `DELETE /api/push/subscriptions` servaient un admin qui n'avait pas passé le code. | Les deux passent par `requireActiveSession`, comme le POST du même fichier. La déconnexion n'en dépend pas : elle désabonne le navigateur sur place. | `914e899dc` | `cvf3d-6` a, d |
+
+**Messages nouveaux (T1).**
+- ADMIN : « Demandez au super-administrateur de changer votre numéro. »
+- SUPERADMIN : « Changez votre numéro depuis « Sécurité du compte », dans l’administration. », avec le lien « Sécurité du compte » sur l'écran du profil.
+- Base : « Le rôle d’administrateur se donne à la création du compte ou depuis « Changer le rôle », avec votre mot de passe et le code administrateur. » (T4, refus de `user_roles_set`, non affiché à l'écran : les routes refusent avant).
+
+**Mesure demandée (T2 et T3).** `tests/parcours/f3d-cv-rest-mesure` compte 15 lectures REST de 1 000 lignes du journal (Superadmin), après 3 lectures d'échauffement, et compare les médianes :
+- avant : la fonction du lot 9 quinquies, remise le temps de la mesure ;
+- après : la version corrigée, remise ensuite et vérifiée à l'identique ;
+- résultat : run 343, médiane **430 ms avant, 736 ms après (+306 ms, +71 %)** ; run 347, **520 ms avant, 831 ms après (+310 ms, +60 %)**. Environ 0,3 ms de plus par ligne lue.
+- Pourquoi par ligne : la règle de lecture d'`audit_logs` appelle `is_superadmin()` sur chaque ligne, et la fonction relit la session à chaque appel.
+- Piste non faite (à décider) : écrire les règles avec `(select is_superadmin())`, évaluée une seule fois par requête. Cela touche toutes les règles de lecture de l'administration.
+- La fonction reste STABLE et en SQL : une seule requête, trois lectures sur clé primaire de la session du jeton. Le coût vient du nombre d'appels, pas de la requête.
+
+**Contrôles avant et après des migrations 06 à 09 (event-village-dev).**
+
+```sql
+-- Après
+-- A. Neuf versions 20261120000001 à …09
+select version from supabase_migrations.schema_migrations where version like '20261120%' order by 1;
+-- B. Garde du profil client : true
+select prosrc like '%ADMIN_PHONE_PATH%' from pg_proc where proname = 'account_phone_finalize' and pronamespace = 'public'::regnamespace;
+-- C. Révocation et activité exigées : true, true, true
+select prosrc like '%auth.sessions%', prosrc like '%admin_session_activity%', provolatile = 's'
+  from pg_proc where proname = 'admin_session_code_valid' and pronamespace = 'public'::regnamespace;
+select prosrc like '%admin_session_codes%' from pg_proc where proname = 'revoke_user_sessions' and pronamespace = 'public'::regnamespace;
+-- D. Colonne idle_secs présente, bornée
+select column_name from information_schema.columns where table_schema = 'public' and table_name = 'admin_session_activity' and column_name = 'idle_secs';
+-- E. Rôle ADMIN gardé ; fonction de création réservée au rôle de service : true ; false, false, true
+select prosrc like '%Le rôle d’administrateur se donne%' from pg_proc where proname = 'user_roles_set' and pronamespace = 'public'::regnamespace;
+select has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute'), has_function_privilege('service_role', p.oid, 'execute')
+  from pg_proc p where p.proname = 'admin_account_admin_role' and p.pronamespace = 'public'::regnamespace;
+```
+
+**Effet à la mise en ligne (T2 et T3).**
+- Après l'application de ces migrations, un admin qui lit l'administration en direct (REST, temps réel) doit avoir une session encore ouverte et active depuis moins de 30 minutes.
+- Le premier appel d'une page d'administration renouvelle l'activité : un admin qui travaille ne voit rien changer.
+
+**Tests existants modifiés pour ces correctifs (signalés).**
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `tests/parcours/f3b-droits.test.ts`, `f3a-securite.test.ts`, `audit-transactionnel.test.ts` | Le Superadmin de la suite confirme son identité (`confirmIdentity` : mot de passe, puis code reçu par SMS, par les vraies routes). | T4 : créer un ADMIN et régler ses droits l'exigent. Mêmes assertions. |
+| `tests/parcours/lot9quinquies-activation.test.ts`, `ecritures-ignorees.test.ts` | Superadmin neuf de la suite, qui confirme son identité, au lieu de la fixture SUPERADMIN. | Même raison. Les codes partent à son numéro, pas à celui de la fixture, qui sert à toutes les suites. |
+| `tests/parcours/droits-admin-9bis.test.ts` | Le témoin « un SUPERADMIN ajoute et retire ADMIN en direct par `user_roles_set` » devient le refus `ROLE_SCREEN_REQUIRED`, rôles inchangés. | T4 : ce chemin est fermé. Le refus pour un acteur ADMIN est inchangé. |
+| `tests/parcours/cvf1c-t1-promotion.test.ts` | `user_roles_set` en direct : refus `ROLE_SCREEN_REQUIRED` vérifié ; puis appel avec le drapeau de l'écran, dans une transaction, pour garder les assertions d'origine (caisse ouverte, promotion concurrente). | T4. |
+| `tests/parcours/notif-envoyeur.test.ts` | Version de main (correctif de la 2b) ; mon correctif du même test est retiré. | Doublon (voir plus bas). |
+| `tests/parcours/droits-admin-9bis.test.ts` (témoin de création) | Le Superadmin confirme son identité avant de créer un ADMIN. | T4. Mêmes assertions. Rouge au run 343. |
+| `tests/parcours/dette-roles-otp.test.ts` (C4, caisse ouverte) | Refus `ROLE_SCREEN_REQUIRED` vérifié sans le drapeau de l'écran ; puis appel avec le drapeau, dans une transaction, comme `admin_role_change`. | T4. Assertion d'origine (`CONTROLLER_HAS_OPEN_SHIFT`, aucun rôle modifié) inchangée. Rouge au run 343. |
+| `tests/schema/f3b-ecrans.test.ts` (E-37, « Superadmin » à l'écran) | La phrase dictée « Demandez au super-administrateur de changer votre numéro. » est admise, comme celle du point 2. | T1 : phrase de la consigne. Rouge au run 343. |
+| `tests/schema/migration-finition2b-rejouable.test.ts` | « Les migrations de la 2b passent après toutes les autres » ne regarde plus les migrations `20261120…` de la 3d. | La 2b est fusionnée et appliquée avant la 3d. Rouge au run 343. |
+| `docs/recette-billetterie.md` (A33) | Lignes de `ecritures-ignorees` décalées de 5. | Contrôle `recette-matrice`. Rouge au run 343. |
+| `tests/security/helpers.ts` (`signUpAttacker`) | Un autre numéro est tiré si le premier est déjà pris (409 `PHONE_ALREADY_REGISTERED`), trois essais au plus. | `r27-avatars` rouge au run 346, fragilité notée depuis le run 285 ; ligne de `docs/apres-lancement.md` marquée corrigée. Aucune assertion changée. |
+
+Écran des comptes : l'enregistrement des droits appelle `fetch` dans son gestionnaire, comme avant T4. Le contrôle A1 du lot 8 (« aucune réussite annoncée sans appel réseau ») ne reconnaît que `fetch` ; il avait attrapé `sendJson` au run 343.
+
+Garde-fous ajoutés :
+- `f3d-ecrans` : chemin du numéro selon le rôle, écran du profil, routes du profil, écran des comptes, routes de T4 et de T5 ;
+- `migration-finition3d-rejouable` : migrations 06 à 09 ;
+- R3 : `admin_account_admin_role` ;
+- `f3d-cv-rest-mesure`.
+
+**`notif-envoyeur`** (consigne : corriger la fragilité sans affaiblir l'assertion, 5 runs rapides verts).
+- **Correctif.** La finition 2b l'avait déjà corrigé dans main (`882977c18`). Son vidage compte en base les lignes encore dues et repasse jusqu'à zéro, autrement dit jusqu'à ce qu'un passage n'examine plus rien. Il pose aussi, à chaque essai, 2 500 lignes que la réservation examine sans les réserver, ce qui rejoue le cas d'échec. Mon correctif (`6e66795e7`) faisait la même chose sans la charge ; combiné par la fusion, il déclarait deux fois une variable. Je l'ai retiré (`54b51cdba`) : le fichier est celui de main.
+- **Pourquoi la 3d l'avait fait tomber** (runs 306 et 319). Mes suites laissent une quinzaine de Superadmins actifs. Chaque alerte destinée aux Superadmins part ensuite à chacun d'eux, et la file grossit pour les suites suivantes. La suite durait 134 et 172 s sur les runs de la 3d, contre 22 à 65 s ailleurs.
+- **Essais.** Sur ta décision, les 5 runs rapides de ce test seul sont remplacés par le run complet final : `notif-envoyeur` y est vert (runs 343, 346 et 347).
+
+**Runs des correctifs.**
+
+| Run | Commit | Mode | Résultat | Ce qu'il montre |
+|---|---|---|---|---|
+| 343 | `898957a38` | complet (jobs parallèles) | 473/479 ; 56 min 24 s | suites `cvf3d` et d'audit vertes, e2e vert. 6 rouges dus à T1 et T4 : `admin-parrainage` (contrôle A1 : `sendJson` non reconnu comme appel réseau), `droits-admin-9bis` et `dette-roles-otp` (chemins fermés par T4), `f3b-ecrans` (phrase dictée de T1), `migration-finition2b-rejouable` (migrations 20261120…), `recette-matrice` (lignes décalées) |
+| 346 | `f6d63a23f` | complet | 478/479 ; 45 min 6 s | les 6 corrigés ; seul rouge `r27-avatars` : numéro du compte d'essai déjà pris (409), fragilité notée depuis le run 285 |
+| 347 | `a22f48007` | complet | **479/479, vert** ; 38 min 9 s | voir ci-dessous |
+
+Les runs 344 et 345 appartiennent à d'autres sessions. Sur ta consigne, aucun run rapide pour ces correctifs : tout a été poussé en une fois, puis vérifié par runs complets.
+
+**Run complet final (CI en jobs parallèles).** **Run 347** (`a22f48007`) : **vert**, 479 suites sur 479, en **38 min 9 s** (4 lots de tests, qualité et e2e en parallèle, tous verts).
+- 37 suites d'audit vertes : 28 de `tests/audit` (dont `cvf3d-1` à `cvf3d-6`) et 9 de `tests/audit-auth`.
+- e2e : recette 10/10, 581 tests d'écran, 616 captures, fumée et mesures vertes ; budgets JS tenus, aucun relevé.
+- Invariants à 0 (les seules violations du journal sont celles du jeu d'essai de `pilotage-invariant`, qui contrôle le contrôle).
 
 ## À lire en premier
 
@@ -99,7 +195,7 @@ Aucune faille trouvée dans les points 2, 4 et 5. Les 31 suites de `tests/audit/
 - **Conditions.** Mot de passe et code administrateur. Motif obligatoire.
 - **Contrôleur promu.** La confirmation de la finition 1 (« il quitte les équipes de contrôle ») s'affiche d'abord ; rien ne change avant « Confirmer ».
 - **Réponse.** L'écran ne dit « fait » que si le serveur rend le rôle demandé.
-- **Dernier Superadmin.** Jamais retiré : vérifié sous verrou, deux retraits simultanés compris.
+- **Dernier Superadmin.** Jamais retiré : vérifié sous verrou. Deux retraits simultanés : mon test le vérifie en base, dans une transaction annulée ; `cvf3d-3` c les joue pour de vrai (verte).
 - **Son propre rôle.** Seulement pour quitter le rôle de Superadmin.
 - **Retrait d'un rôle.** Droits, sessions, appareils et codes de secours sont retirés.
 - **Nomination d'un Superadmin.** SMS et cloche à chaque Superadmin actif, auteur compris. Journal `ADMIN_ROLE_CHANGED` avec le motif.
@@ -297,13 +393,13 @@ Résultats sur la branche `origin/ci-results`, dossier `runs/<numéro>-<identifi
 
 Les runs 295, 298, 300, 303, 307 et 312 appartiennent à d'autres sessions.
 
-**Limite du job : 90 → 120 minutes** (commit à part, `.github/workflows/verify.yml`), décidée après le run 306. Les runs complets 300 (autre session) et 306 ont été coupés à 90 minutes en fin de recette. L'étape verify a pris 3 034 s, contre 2 612 au run 281. Le CI est plus lent : les suites de migrations rejouables passent de 7 à 20 s chacune. Les 6 suites de la 3d ajoutent environ 45 s. Le découpage en jobs parallèles est noté dans `docs/apres-lancement.md`.
+**Limite du job : 90 → 120 minutes — abandonnée** : main a fusionné `ci/parallele` (jobs parallèles) ; le commit est annulé (`b096bcec5`). Texte d'origine : commit à part ( `.github/workflows/verify.yml`), décidée après le run 306. Les runs complets 300 (autre session) et 306 ont été coupés à 90 minutes en fin de recette. L'étape verify a pris 3 034 s, contre 2 612 au run 281. Le CI est plus lent : les suites de migrations rejouables passent de 7 à 20 s chacune. Les 6 suites de la 3d ajoutent environ 45 s. Le découpage en jobs parallèles est noté dans `docs/apres-lancement.md`.
 
 Une autre session le prépare déjà sur `ci/parallele` (`acde155e8`) : `verify.yml` y est récrit en jobs de 60 minutes au plus. **Si `ci/parallele` est fusionnée avant la 3d, abandonner mon commit de limite à 120 min** : il entrerait en conflit et n'aurait plus d'objet.
 
-**`notif-envoyeur`, runs 306 et 319.** « la ligne due est envoyée une fois par la route » : même échec qu'aux runs 252 et 274, déjà noté dans `docs/apres-lancement.md` (file des avis laissée par les suites précédentes). La 3d n'y touche pas : ni l'envoyeur, ni la route du cron, ni l'avis du test (changement de mot de passe). La suite est verte aux runs complets 315 et 323 des autres branches, sur un code sans la 3d comme sur main après la 2b.
+**`notif-envoyeur`, runs 306 et 319.** « la ligne due est envoyée une fois par la route » : même échec qu'aux runs 252 et 274, déjà noté dans `docs/apres-lancement.md` (file des avis laissée par les suites précédentes). **Corrigé depuis** : la 3d n'y touche pas dans le code, mais ses suites laissent une quinzaine de Superadmins actifs, qui grossissent la file. La cause et le correctif de main (2b) sont dans « Correctifs de la contre-vérification » ; la suite est verte aux runs 343, 346 et 347.
 
-**Conséquence.** Le run complet de la 3d n'est pas entièrement vert : 454 suites sur 455. Je ne relance pas un troisième run complet pour une fragilité sans lien ; à toi de décider.
+**Conséquence (run 319).** 454 suites sur 455. Remplacé par le run complet final, en tête du rapport.
 
 **Run 292, échec sans lien.** `evenements-fin-valide` (diffusion Supabase Realtime, 20 s dépassées) : même fragilité qu'aux runs 43 à 130 et 279, déjà notée dans `docs/apres-lancement.md`. Ce chemin n'est pas touché par la 3d.
 
@@ -409,7 +505,7 @@ Nouveau garde-fou, vert dès l'écriture (`be41abb82`) : texte, alphabet et segm
 
 ## À faire de ton côté
 
-1. Relire ce rapport, puis décider de la fusion. La 2b et la déconnexion sont déjà dans main : il faut d'abord fusionner main dans la branche (conflit dans `verify.yml` seulement), puis lancer un run sur les suites de la 3d et d'audit.
-2. Décider pour `notif-envoyeur` : relancer ou non un run complet (454/455 au run 319, échec connu sans lien).
-3. Après la fusion : `migration list`, puis `db push --dry-run`. On doit voir exactement les 5 migrations `20261120…` ; ensuite les contrôles ci-dessus.
+1. Relire ce rapport et la section « Correctifs de la contre-vérification », puis décider de la fusion (main déjà fusionnée dans la branche).
+2. Décider pour la lecture REST de l'administration (+60 à +71 % sur 1 000 lignes, environ +0,3 s) : la garder, ou écrire les règles avec `(select is_superadmin())`.
+3. Après la fusion : `migration list`, puis `db push --dry-run`. On doit voir exactement les 9 migrations `20261120…` ; ensuite les contrôles ci-dessus (ceux des points et ceux de la contre-vérification).
 4. Chaque Superadmin réel crée ses codes de secours dès la mise en ligne (page « Sécurité du compte »).
