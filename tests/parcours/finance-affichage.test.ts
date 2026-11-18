@@ -168,7 +168,9 @@ const FEE_MATH = /(service_?fee_?rate|serviceFeeRate|feeRate)\s*[*/]|[*/]\s*(ser
 
 describe('Code : affichage du devis serveur', () => {
     test('page événement : demande le devis au serveur et ne transmet plus le total calculé dans le navigateur', () => {
-        const page = fs.readFileSync('app/events/[id]/page.tsx', 'utf8');
+        // Design 1b (point 1, modification signalée) : la billetterie de la fiche (panier, devis, fenêtre de paiement) est
+        // l'îlot components/event-page/EventTicketing.tsx de la page serveur ; mêmes exigences, lues dans les deux fichiers.
+        const page = ['app/events/[id]/page.tsx', 'components/event-page/EventTicketing.tsx'].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
         assert.match(page, /\/api\/checkout\/quote/, 'aucun appel au devis serveur');
         const start = page.indexOf('<PaymentModal');
         assert.ok(start >= 0, 'PaymentModal absent de la page');

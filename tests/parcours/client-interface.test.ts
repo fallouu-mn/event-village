@@ -48,6 +48,18 @@ const WAITING_INFO = 'components/payment/PaymentWaitingInfo.tsx';
 const MODAL = 'components/payment/PaymentModal.tsx';
 const BANNER = 'components/payment/PendingPaymentBanner.tsx';
 const EVENT_PAGE = 'app/events/[id]/page.tsx';
+/**
+ * Design 1b (point 1, modification signalée) : la fiche est un composant serveur mis en cache ; le bandeau, la fenêtre de
+ * paiement et la carte vivent dans ses îlots du navigateur (components/event-page). Mêmes exigences, lues dans la page ET
+ * ses îlots : chacun est contrôlé (aucun import statique d'une valeur de PaymentModal ou d'EventMap, dans aucun d'eux).
+ */
+const EVENT_PAGE_FILES = [
+    EVENT_PAGE,
+    'components/event-page/PendingPaymentSlot.tsx',
+    'components/event-page/EventTicketing.tsx',
+    'components/event-page/VenueMap.tsx',
+];
+const eventPageCode = (): string => EVENT_PAGE_FILES.map(code).join('\n');
 const LAYOUT = 'components/layout/AppLayout.tsx';
 
 // ── Lecture des sources ────────────────────────────────────────────────────
@@ -354,22 +366,25 @@ describe('7.3 — AppLayout : entrées des services selon les interrupteurs (D55
 
 describe('7.3 — page événement : paiement en attente, chargements différés', () => {
     test('bandeau PendingPaymentBanner rendu, lu sur /api/checkout/pending', () => {
-        assert.match(code(EVENT_PAGE), /<PendingPaymentBanner\b/, 'PendingPaymentBanner non rendu par la page événement');
+        assert.match(eventPageCode(), /<PendingPaymentBanner\b/, 'PendingPaymentBanner non rendu par la page événement (ni par ses îlots)');
         assert.match(code(BANNER), /["'`]\/api\/checkout\/pending/, `${BANNER} : lecture de /api/checkout/pending absente`);
     });
 
     test('PaymentModal en next/dynamic, sans import statique d\'une valeur de son module', () => {
-        const sf = sourceFile(EVENT_PAGE);
-        const page = code(EVENT_PAGE);
+        const page = eventPageCode();
         assert.match(page, /\bdynamic\s*\(\s*\(\s*\)\s*=>\s*import\(\s*["']@\/components\/payment\/PaymentModal["']\s*\)/, 'PaymentModal non chargée par next/dynamic');
-        assert.deepEqual(staticValueImports(sf, /components\/payment\/PaymentModal$/), [],
-            'import statique d\'une valeur de PaymentModal : le module entier reste dans le bundle de la page (déplacer les aides ou importer leurs types seulement)');
+        for (const file of EVENT_PAGE_FILES) {
+            assert.deepEqual(staticValueImports(sourceFile(file), /components\/payment\/PaymentModal$/), [],
+                `${file} : import statique d'une valeur de PaymentModal : le module entier reste dans le bundle de la page (déplacer les aides ou importer leurs types seulement)`);
+        }
     });
 
     test('EventMap en next/dynamic (garde-fou) et carte chargée à la visibilité', () => {
-        const page = code(EVENT_PAGE);
+        const page = eventPageCode();
         assert.match(page, /\bdynamic\s*\(\s*\(\s*\)\s*=>\s*import\(\s*["']@\/components\/ui\/EventMap["']\s*\)/, 'EventMap non chargée par next/dynamic');
-        assert.deepEqual(staticValueImports(sourceFile(EVENT_PAGE), /components\/ui\/EventMap$/), [], 'import statique d\'EventMap');
+        for (const file of EVENT_PAGE_FILES) {
+            assert.deepEqual(staticValueImports(sourceFile(file), /components\/ui\/EventMap$/), [], `${file} : import statique d'EventMap`);
+        }
         assert.match(page, /\bIntersectionObserver\b/, 'carte non différée jusqu\'à sa visibilité (IntersectionObserver)');
     });
 });
