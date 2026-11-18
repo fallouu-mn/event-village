@@ -40,7 +40,7 @@ export class PaymentService {
         let partnerId: string | null = null;
         let orderRefId: string | null = null;
         const hallResRefId: string | null = null;
-        let tableResRefId: string | null = null;
+        const tableResRefId: string | null = null;
         let subscriptionRefId: string | null = null;
         let description = '';
 
@@ -89,27 +89,9 @@ export class PaymentService {
                 throw new PaymentInputError('Choisissez de payer l’acompte, le solde ou la totalité de la réservation.', 'INVALID_PART');
             }
             case 'TABLE_RESERVATION': {
-                const { data: tableRes, error } = await supabase
-                    .from('table_reservations')
-                    .select('*')
-                    .eq('id', input.targetId)
-                    .single();
-
-                if (error || !tableRes) {
-                    throw new PublicError('Réservation de table introuvable.');
-                }
-                if (tableRes.client_id !== userId) {
-                    throw new PublicError('Non autorisé : Réservation appartenant à un autre utilisateur.');
-                }
-                if (tableRes.payment_status === 'SUCCESS') {
-                    throw new PublicError('Cette réservation de table est déjà payée.');
-                }
-
-                payableAmount = Number(tableRes.deposit_amount > 0 ? tableRes.deposit_amount : 0);
-                partnerId = tableRes.partner_id;
-                tableResRefId = tableRes.id;
-                description = `Réservation Table - ${tableRes.reservation_date}`;
-                break;
+                // Lot 11a (T3) : un paiement de table passe par startTablePayment (table_payment_create, montant relu sur
+                // la réservation) ; ce chemin générique lisait un acompte écrit par la route (5 000 F par personne en dur).
+                throw new PaymentInputError('Le paiement de cette réservation se fait depuis la réservation.', 'INVALID_TARGET');
             }
 
             case 'SUBSCRIPTION': {

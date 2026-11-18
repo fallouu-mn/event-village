@@ -6,6 +6,7 @@ import { PaymentInputError, paymentService } from '@/lib/payments/payment.servic
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CreatePaymentSchema, type CreatePaymentInput } from '@/lib/validations/payment';
 import { startHallPayment } from '@/lib/halls/hall-payment.service';
+import { startTablePayment } from '@/lib/tables/table-payment.service';
 import { guardFeature, type Feature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
@@ -70,6 +71,14 @@ export async function POST(req: NextRequest) {
         if (input.targetType === 'HALL_RESERVATION') {
             const outcome = await startHallPayment({
                 userId: session.user.id, reservationId: input.targetId, part: input.part, operator: input.operator, payerPhone: input.payerPhone,
+            });
+            return NextResponse.json(outcome.body, { status: outcome.status });
+        }
+        // Lot 11a (T3) : acompte d'une réservation de table, paiement créé en base (table_payment_create), montant relu
+        // sur la réservation
+        if (input.targetType === 'TABLE_RESERVATION') {
+            const outcome = await startTablePayment({
+                userId: session.user.id, reservationId: input.targetId, operator: input.operator, payerPhone: input.payerPhone,
             });
             return NextResponse.json(outcome.body, { status: outcome.status });
         }
