@@ -203,4 +203,6 @@ La nouvelle durée vaut pour les jetons émis ou rafraîchis après le changemen
 | 352 | `f28b284f4` | rapide, `cvf2b-correctif-pre-requete` | vert, 5/5 |
 | 353 | `6adcd63ac` | complet, 4 lots | 471/475 ; rouges : `securite-admin-lot7`, `migration-finition2b-rejouable`, `recette-matrice` (suites anciennes, écart 5), `f2b-recherche-cadence` (fragile) ; e2e, build et budget JS verts |
 | 354 | `cb0a1ad67` | rapide, ces 4 suites | 3/4 ; `recette-matrice` encore rouge : deux citations décalées par le commentaire ajouté à `securite-admin-lot7` |
-RUN_COMPLET_LIGNE
+| 355 | `f2753e3ea` | complet, 4 lots, 44 min | 474/475 ; seule rouge : `invitations-annulation`, GoTrue répond 504 (« Processing this request timed out ») à la création d'un compte de test. La suite était verte au run 353 avec le même code ; GoTrue ne passe pas par la pré-requête. e2e, build et budget JS verts |
+
+Poids JS au run 355, en octets compressés : `/` 225 259 (main au run 336 : 224 866, soit +393 ; budget 226 342), `/events/[id]` 231 901 (233 316), `/tickets` 249 591 (250 417), `/controller/scanner` 231 668 (234 911), `/billet/hors-ligne` 221 089 (224 268). Budgets non relevés.
