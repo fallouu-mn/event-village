@@ -12,7 +12,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { TABLE_STATE_LABELS, VENUE_VALIDATION_LABELS, tableCancellationText, tableStateLabel } from '../../lib/tables/booking';
+import { TABLE_STATE_LABELS, VENUE_VALIDATION_LABELS, tableCancellationText, tableStartsAt, tableStateLabel } from '../../lib/tables/booking';
 import { NOTIFICATION_CATALOG } from '../../lib/notifications/catalog';
 import { smsSegments } from '../../lib/notifications/sms-format';
 
@@ -51,6 +51,24 @@ describe('2. Conditions d’annulation affichées avant le paiement', () => {
         assert.equal(tableCancellationText(20_000, 2), 'Acompte remboursé si vous annulez au moins 2 h avant l’heure, rien ensuite.');
         assert.equal(tableCancellationText(20_000, 3), 'Acompte remboursé si vous annulez au moins 3 h avant l’heure, rien ensuite.');
         assert.equal(tableCancellationText(0, 2), 'Réservation sans acompte : vous pouvez l’annuler jusqu’à l’heure prévue.');
+    });
+
+    // Contre-vérification de la 11a (T4, ajout signalé au rapport) : le texte tient compte de l'heure de la réservation
+    test('avec l’heure de la réservation : à moins de 2 h, l’acompte ne sera pas remboursé ; à 2 h ou plus, la règle', () => {
+        const now = new Date('2026-12-31T18:00:00Z');
+        const late = 'Réservation à moins de 2 h de l’heure : si vous annulez, l’acompte payé ne sera pas remboursé.';
+        const rule = 'Acompte remboursé si vous annulez au moins 2 h avant l’heure, rien ensuite.';
+        assert.equal(tableCancellationText(20_000, 2, tableStartsAt('2026-12-31', '19:00'), now), late);
+        assert.equal(tableCancellationText(20_000, 2, tableStartsAt('2026-12-31', '19:59'), now), late);
+        assert.equal(tableCancellationText(20_000, 2, tableStartsAt('2026-12-31', '20:00'), now), rule);
+        assert.equal(tableCancellationText(20_000, 3, tableStartsAt('2026-12-31', '20:30'), now),
+            'Réservation à moins de 3 h de l’heure : si vous annulez, l’acompte payé ne sera pas remboursé.');
+        assert.equal(tableCancellationText(0, 2, tableStartsAt('2026-12-31', '19:00'), now), 'Réservation sans acompte : vous pouvez l’annuler jusqu’à l’heure prévue.');
+        // Heure de Dakar = UTC ; date illisible : texte de la règle, sans plantage
+        assert.equal(tableStartsAt('2026-12-31', '19:00:00')?.toISOString(), '2026-12-31T19:00:00.000Z');
+        assert.equal(tableStartsAt('31/12/2026', '19:00'), null);
+        assert.equal(tableCancellationText(20_000, 2, tableStartsAt(null, '19:00'), now), rule);
+        for (const text of [late, rule]) assert.doesNotMatch(text, TECHNICAL);
     });
 });
 

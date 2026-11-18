@@ -3,7 +3,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { guardFeature } from '@/lib/features/flags';
-import { refusalStatus, tableCancellationText, tableStateLabel } from '@/lib/tables/booking';
+import { refusalStatus, tableCancellationText, tableStartsAt, tableStateLabel } from '@/lib/tables/booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
                 totalToPay: Number(r.total_amount),
                 holdExpiresAt: r.hold_expires_at ?? null,
                 responseDueAt: r.response_due_at ?? null,
-                cancellation: tableCancellationText(r.deposit_amount, r.cancel_free_hours),
+                cancellation: tableCancellationText(r.deposit_amount, r.cancel_free_hours, tableStartsAt(r.date, r.time)),
             },
         });
     } catch (err: unknown) {

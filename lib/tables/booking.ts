@@ -41,10 +41,25 @@ export const VENUE_KIND_LABELS: Readonly<Record<string, string>> = {
     ESPACE: 'Espace',
 };
 
-/** Conditions d'annulation affichées avant le paiement (réglage tables.cancel_free_hours). */
-export function tableCancellationText(depositAmount: unknown, freeHours: unknown): string {
+/** Heure d'une réservation (date et heure de Dakar, UTC toute l'année) ; null si illisible. */
+export function tableStartsAt(date: unknown, time: unknown): Date | null {
+    if (typeof date !== 'string' || typeof time !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}(:\d{2})?$/.test(time)) return null;
+    const at = new Date(`${date}T${time.slice(0, 5)}:00Z`);
+    return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * Conditions d'annulation affichées avant le paiement (réglage tables.cancel_free_hours).
+ * Contre-vérification de la 11a (T4) : avec l'heure de la réservation, à moins de N h de cette heure, le texte dit que
+ * l'acompte payé ne sera pas remboursé (le remboursement n'est déjà plus possible) au lieu de le promettre.
+ */
+export function tableCancellationText(depositAmount: unknown, freeHours: unknown, startsAt: Date | null = null, now: Date = new Date()): string {
     if (!(Number(depositAmount) > 0)) return 'Réservation sans acompte : vous pouvez l’annuler jusqu’à l’heure prévue.';
-    return `Acompte remboursé si vous annulez au moins ${Number(freeHours)} h avant l’heure, rien ensuite.`;
+    const hours = Number(freeHours);
+    if (startsAt && startsAt.getTime() - now.getTime() < hours * 3_600_000) {
+        return `Réservation à moins de ${hours} h de l’heure : si vous annulez, l’acompte payé ne sera pas remboursé.`;
+    }
+    return `Acompte remboursé si vous annulez au moins ${hours} h avant l’heure, rien ensuite.`;
 }
 
 /** Message rendu au client qui annule (montant remboursé ou non). */
