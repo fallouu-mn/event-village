@@ -40,6 +40,8 @@ const LOT11A_MIGRATIONS = [
     '20261123000111_l11a_cv_limite_client.sql',
     // T3 : demande en attente de réponse annulée par le client, remboursée en entier
     '20261123000112_l11a_cv_annulation_demande.sql',
+    // T5 : l'acceptation refait les contrôles de l'établissement et de la partenaire
+    '20261123000113_l11a_cv_acceptation.sql',
 ] as const;
 
 /** Recopies de fonctions communes : fichier de la recopie, et lignes de la définition précédente qu'elle remplace. */

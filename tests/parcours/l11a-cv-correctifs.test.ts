@@ -6,15 +6,17 @@
  *     réservations à venir non payées (gratuites confirmées comprises) ; une réservation annulée, passée ou dont
  *     l'acompte est payé ne compte plus ; même règle à la relance d'une attente échue ; demandes simultanées.
  *  T3 demande en attente de réponse annulée par le client : remboursée en entier, quelle que soit l'heure.
+ *  T5 acceptation par un établissement suspendu ou une partenaire suspendue : refusée, remboursée en entier.
  * Temps simulé comme dans les suites du lot (shiftReservation), jamais l'horloge. Faux SamirPay.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLot11aInvariants } from '../helpers/lot11a-invariants';
-import { clientCancel } from '../audit/cv11a-helpers';
+import { clientCancel, partnerAction } from '../audit/cv11a-helpers';
+import { setFiche } from '../audit/cvf1-helpers';
 import {
-    dayFromNow, newBuyer, newPartner, newTable, newVenue, openTablesService, payConfirmed, refundsOf, reservation, reserveRpc,
+    allChannels, dayFromNow, decideVenue, newBuyer, newPartner, newTable, newVenue, openTablesService, outboxOf, payConfirmed, refundsOf, reservation, reserveRpc,
     shiftReservation, startIn, startPayment, tick, type Row, type TestPartner,
 } from './l11a-helpers';
 
@@ -160,5 +162,41 @@ describe('T3 — demande en attente de réponse annulée par le client : rembour
         const late = await clientCancel(confirmed, cl2.accessToken);
         assert.equal(late.status, 200, JSON.stringify(late.body));
         assert.deepEqual([(await reservation(confirmed)).booking_state, (await refundsOf(confirmed)).length], ['ANNULEE_CLIENT', 0]);
+    });
+});
+
+describe('T5 — l’acceptation refait les contrôles de l’établissement et de la partenaire', () => {
+    for (const scenario of ['établissement suspendu', 'fiche de la partenaire suspendue'] as const) {
+        test(`${scenario} : la demande payée n’est pas confirmée, elle est refusée et remboursée en entier (21 000), avis du refus`, async () => {
+            const owner = await newPartner(scenario === 'établissement suspendu' ? 'l11a-cv-accepte-etab' : 'l11a-cv-accepte-fiche');
+            const venue = await newVenue(owner, { deposit_per_person: 5_000, confirmation_mode: 'MANUELLE' });
+            await newTable(owner, venue, 4);
+            const cl = await newBuyer(scenario === 'établissement suspendu' ? 'l11a-cv-accepte-etab-cl' : 'l11a-cv-accepte-fiche-cl');
+            const id = String((await reserveRpc(cl, venue, { date: dayFromNow(65), guests: 4 })).reservation_id);
+            await payConfirmed(cl, id);
+            if (scenario === 'établissement suspendu') assert.equal((await decideVenue(venue, 'SUSPENDRE', 'Contrôle d’hygiène en cours.')).ok, true);
+            else await setFiche(owner.partnerId, 'SUSPENDU');
+            const r = await partnerAction(id, owner.accessToken, { action: 'ACCEPTER' });
+            if (scenario !== 'établissement suspendu') await setFiche(owner.partnerId, 'VALIDE');
+            assert.deepEqual([r.status, (r.body as Row).code, (r.body as Row).error], [409, 'VENUE_NOT_AVAILABLE',
+                'Cet établissement n’accepte plus de réservation pour le moment : la demande est refusée et le client remboursé en entier.']);
+            const row = await reservation(id);
+            assert.deepEqual([row.booking_state, Number(row.paid_amount), Number(row.refunded_amount), Number(row.refund_percent)], ['REFUSEE', 21_000, 21_000, 100]);
+            assert.deepEqual((await refundsOf(id)).map((f) => Number(f.amount)), [21_000]);
+            const notices = await outboxOf(cl.userId, id);
+            assert.deepEqual(notices.filter((t) => t.startsWith('TABLE_REQUEST_REFUSED:')), allChannels('TABLE_REQUEST_REFUSED'));
+            assert.deepEqual(notices.filter((t) => t.startsWith('TABLE_RESERVATION_CONFIRMED:')), [], 'aucun avis de confirmation');
+        });
+    }
+
+    test('garde-fou : établissement validé et partenaire VALIDE, la demande payée est acceptée (confirmée)', async () => {
+        const venue = await newVenue(partner, { deposit_per_person: 5_000, confirmation_mode: 'MANUELLE' });
+        await newTable(partner, venue, 4);
+        const cl = await newBuyer('l11a-cv-accepte-ok');
+        const id = String((await reserveRpc(cl, venue, { date: dayFromNow(66), guests: 4 })).reservation_id);
+        await payConfirmed(cl, id);
+        const r = await partnerAction(id, partner.accessToken, { action: 'ACCEPTER' });
+        assert.equal(r.status, 200, JSON.stringify(r.body));
+        assert.equal((await reservation(id)).booking_state, 'CONFIRMEE');
     });
 });
