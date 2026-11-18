@@ -136,7 +136,7 @@ export interface TabPanelProps {
 /** Panneau d'un onglet, relié à son onglet (aria-labelledby). */
 export function TabPanel({ idPrefix, tabIdValue, children, className }: TabPanelProps) {
   return (
-    <div role="tabpanel" id={tabPanelId(idPrefix, tabIdValue)} aria-labelledby={tabId(idPrefix, tabIdValue)} tabIndex={0} className={cn('focus-visible:outline-none', className)}>
+    <div role="tabpanel" id={tabPanelId(idPrefix, tabIdValue)} aria-labelledby={tabId(idPrefix, tabIdValue)} tabIndex={0} className={cn('min-h-11 focus-visible:outline-none', className)}>
       {children}
     </div>
   );

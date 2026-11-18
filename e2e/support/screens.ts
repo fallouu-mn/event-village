@@ -942,14 +942,18 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'design-page-introuvable', titre: 'Design 1a — page introuvable', role: 'anonyme', needsIds: false, path: () => '/events/00000000-0000-4000-8000-00000000d1a0',
-        allowFailures: [/404/],
+        // Vrai 404 attendu : la page et sa lecture d'API (comparés par URL, e2e/support/network.ts)
+        expectStatus: 404,
+        allowFailures: [/\/events\/00000000-0000-4000-8000-00000000d1a0$/, /\/api\/events\/00000000-0000-4000-8000-00000000d1a0(\?.*)?$/],
         ready: async ({ page }) => { await expectHeading(page, /^page introuvable$/i); },
     },
     {
         id: 'design-erreur', titre: 'Design 1a — page d’erreur (« Quelque chose s’est mal passé de notre côté. »)', role: 'anonyme', needsIds: false,
         path: () => '/vitrine-design?erreur=1',
         // Erreur volontaire de la vitrine : message générique de Next et empreinte journalisée par app/error.tsx
-        allowFailures: [/500|vitrine/i, /Server Components render/, /\[AppError\]/],
+        // Comparés par URL : la page en erreur (500) et les deux journaux attendus, émis par les morceaux de Next
+        // (erreur du rendu serveur) et de app/error.tsx (empreinte)
+        allowFailures: [/\/vitrine-design\?erreur=1$/, /\/_next\/static\/chunks\/(?:app\/error-|\d+-)[0-9a-f]+\.js$/],
         ready: async ({ page }) => { await expectHeading(page, /^quelque chose s.est mal passé de notre côté\.$/i); },
     },
     {
