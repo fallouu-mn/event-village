@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { openConcurrentClient } from './db';
+import { loadFixtures } from './fixtures';
 
 function service() {
     return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -41,6 +42,14 @@ export async function tableReservationFixture(opts: {
         deposit_per_person: opts.depositPerPerson ?? null,
     }).select('id').single();
     assert.equal(venueErr, null, `établissement : ${venueErr?.message}`);
+    // Établissement ouvert 24 h sur 24 et validé : un paiement repasse tous les contrôles (table_hold_refusal)
+    const { error: hoursErr } = await db.from('venue_opening_hours').insert(
+        [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ venue_id: venue!.id, weekday, opens_at: '00:00', closes_at: '24:00' })));
+    assert.equal(hoursErr, null, `horaires : ${hoursErr?.message}`);
+    const actor = (await loadFixtures()).users.SUPERADMIN.id;
+    const { data: decided, error: decErr } = await db.rpc('venue_validation_decide', { p: { actor_id: actor, venue_id: venue!.id, decision: 'VALIDER' } });
+    assert.equal(decErr, null, `validation de l'établissement : ${decErr?.message}`);
+    assert.equal((decided as { ok?: boolean } | null)?.ok, true, `validation de l'établissement : ${JSON.stringify(decided)}`);
     const { data: table, error: tableErr } = await db.from('restaurant_tables').insert({
         partner_id: opts.partnerId, venue_id: venue!.id, table_number: `T-${randomUUID().slice(0, 8)}`, capacity: 6, is_active: true,
     }).select('id').single();
