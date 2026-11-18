@@ -31,6 +31,8 @@ const LOT10A_MIGRATIONS = [
     // Correctifs de la contre-vérification (docs/audit-lot10a.md ; ajouts signalés au rapport) :
     // T3, paiement confirmé après l'échéance du solde sans payer toute la réservation : rendu en entier
     '20261122000008_l10a_cv_paiement_tardif.sql',
+    // T2, réservation échue relancée par un paiement : salle, partenaire et limite des attentes contrôlées
+    '20261122000009_l10a_cv_relance.sql',
 ] as const;
 
 after(async () => {
