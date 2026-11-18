@@ -1,15 +1,12 @@
 # Design 1b — Pages publiques
 
-Branche `design-1b/public`, partie de `main` à `28ef60f07` (design 1a fusionné), avec `main` fusionné ensuite (`7b1284dfc`). Non fusionnée. Une seule migration, celle de « À la une » (`20261123000001_d1b_a_la_une.sql`), **non appliquée** sur event-village-dev. Ni la finance ni les salles ne sont touchées.
+Branche `design-1b/public`, partie de `main` à `28ef60f07` (design 1a fusionné), avec `main` fusionné ensuite (`7b1284dfc`, puis `main` du lot 10a avant la fusion). Une seule migration, celle de « À la une » (`20261123000001_d1b_a_la_une.sql`). Ni la finance ni les salles ne sont touchées.
 
 ## En bref
 
-**État au run 376 : rouge, je m'arrête ici.**
-- Ce qui passe : tous les tests (504 suites), les budgets JS, les captures et le toucher.
-- Ce qui reste rouge, et demande une décision :
-  1. Lighthouse mobile ≥ 90 et LCP < 2,5 s ne sont pas tenus sur l'accueil et la fiche ; sur « Mes billets », seul le score manque (voir « Mesures de performance ») ;
-  2. après l'annulation d'un événement, sa fiche en cache montre l'avis jusqu'à 60 s plus tard (recette, acte 7) ;
-  3. l'ancienne mesure du scanner : 261 Ko de JavaScript avant l'affichage utile, pour un plafond de 255 Ko.
+**État au run 411 (`bfac711fb`) : tout vert**, seuils inchangés.
+- Tests 508/508, e2e (captures et recette comprises), budgets JS, performance mobile au téléphone de référence (accueil 93, fiche 92, Mes billets 92), toucher 96 ms, scanner 250,2 Ko pour 254,9 Ko permis, aucune erreur d'hydratation.
+- Les rouges du run 376 sont levés par les décisions du 18 novembre (section suivante).
 
 - **Performance mesurée en CI.** Une nouvelle étape bloquante du job e2e mesure Lighthouse mobile, LCP, CLS et le toucher. Mesures avant / après plus bas.
 - **Pages publiques préparées par le serveur.**
@@ -20,6 +17,46 @@ Branche `design-1b/public`, partie de `main` à `28ef60f07` (design 1a fusionné
 - **JavaScript en baisse**, budgets non relevés : voir le tableau des poids.
 - **Garde-fou des mots** : un test sur le code et les modèles de messages, et un contrôle de chaque écran capturé.
 - **Décisions à relire** : section « Décisions ».
+
+## Décisions du 18 novembre
+
+### Performance (seuils inchangés : score ≥ 90, LCP < 2,5 s, CLS < 0,1, toucher < 200 ms)
+- **Accueil, recul 96 → 86 (run 376).** L'image principale était devenue l'affiche de la première carte « À la une », et chacune des ~52 cartes hydratait trois îlots (image, lien, badge). Les cartes n'ont plus d'îlot : lien rendu par le serveur, un seul îlot de transitions et un seul îlot de badges « En cours » par page, `<img>` simple sauf l'image principale (préchargée, `fetchpriority=high`).
+- **Mesure en HTTP/2** comme la production : relais local devant `next start` (`scripts/e2e/h2-proxy.mjs`, certificat de test généré à chaque lancement). Regrouper les fichiers JavaScript n'est pas simple avec Next 15 : non fait.
+- **Ralentissement calibré.** Le runner de la CI change de puissance d'un run à l'autre (indice 1 996 à 3 571). Le processeur est ralenti à ×4 × indice / 2 000, le téléphone de référence de Lighthouse (×4 pour un poste d'indice 2 000). Un passage de l'accueil au préréglage, non compté, mesure l'indice à chaque tour. Médiane de 3 passages.
+- **Erreur d'hydratation React n° 418.** Les textes qui dépendent de l'heure étaient déjà sains : « En cours », « se termine vers », remboursement, fin. Ils sont faux au rendu serveur et calculés après le chargement. La cause était le CSS écrit dans la page (`experimental.inlineCss`, essayé au run 374) : erreur intermittente sur plusieurs pages, jamais sur main. Il est retiré. Preuve : la capture « fiche en cours » est rechargée 3 fois dans chacune de ses 4 vues ; aucune erreur dans tout l'e2e des runs 406 et 411.
+- **Travail au chargement.** Les 5 tâches longues les plus lourdes au run 406 (téléphone de référence) :
+  - accueil : 243 ms (document : analyse, style), 183 et 118 ms (React : hydratation), 94 ms (client Supabase), 92 ms (zod, arrivé par le préchargement de l'inscription partenaire) ;
+  - Mes billets : 194, 112 et 105 ms (React : rendu des cartes), 127 ms (zod), 91 ms (document). La peinture prenait 2,4 s : chaque carte se redessinait chaque seconde.
+- **Correctifs** :
+  - aucun lien ne précharge sa page à l'affichage (mise en page, logo, cartes, « Tout voir ») ; préchargement à l'intention : survol, toucher, focus (`components/ui/IntentLink.tsx`) ;
+  - sections hors écran de l'accueil sans travail de rendu (`content-visibility`) ; « Près de chez vous » et temps réel après l'affichage ;
+  - Mes billets : décompte dans un petit composant, la carte ne se redessine plus chaque seconde. Seul le premier billet démarre tout de suite (code, lot hors ligne, QR) ; les autres à l'écran ou quand le téléphone est libre. La bibliothèque des QR est chargée à la demande (budget `/tickets` 247,7 → 242,1 Ko). La synchronisation hors ligne et le temps réel viennent après l'affichage.
+
+| Page | Avant (run 370, main) | Run 376 (HTTP/1.1, ×4) | Run 406 (calibré) | Après (run 411, calibré) |
+|---|---|---|---|---|
+| Accueil | 96 · LCP 0,91 s | 86 · 2,61 s | 89 · 1,82 s | **93 · 1,82 s** |
+| Fiche | 85 · 4,33 s | 85 · 3,06 s | 93 · 1,82 s | **92 · 2,11 s** |
+| Mes billets | 73 · 5,49 s | 85 · 0,99 s | 86 · 0,93 s | **92 · 0,92 s** |
+
+Valeurs brutes du run 411 (`runs/411-44360097646/perf/`) :
+- passages (score, temps de blocage, indice, ralentissement) : accueil 92 / 323 ms / 2 410 / ×4,98, 93 / 283 / 2 077 / ×4,73, 93 / 297 / 2 329 / ×4,78 ; fiche 91, 93, 92 ; Mes billets 92, 92, 87 ;
+- tours de calibration (`calibration.tsv`) : indice 2 489, 2 364, 2 389 → ×4,98, ×4,73, ×4,78 ; score brut de l'accueil à ×4 : 96, 92, 90.
+
+### Cache
+Publication, suspension, réactivation, clôture, retrait, annulation, report et modification (date, heure, lieu), ainsi que les écritures « À la une » : la fiche, l'accueil et l'Explorer sont invalidés aussitôt après l'écriture réussie (`lib/events/public-cache.server.ts`). Le test est `design1b-cache-invalidation` ; l'acte 7 de la recette passe sans attente.
+
+### Scanner (budget non relevé)
+La liste exacte des fichiers arrivés avant l'écran utile (`perf/js-avant-marqueur.tsv`) a été comparée à main d'avant le design 1a (run 391 : 246,7 Ko). Ce n'est pas la mise en page commune.
+- **Cause** : la page « introuvable » racine est envoyée avec chaque page. Elle citait `next/link` côté serveur, et Next rattache ce lien aux fichiers de l'accueil (≈ 14,6 Ko), que le scanner chargeait donc.
+- **Correctifs** : page « introuvable » passée en composant client (3,4 Ko). Le lien vers le profil et les préchargements accessoires (toasts, barre de navigation) attendent l'écran de départ.
+- **Résultat** : 261,5 → 250,2 Ko.
+
+### Recette, acte 9 (attente modifiée)
+L'expéditeur d'une invitation s'écrit « Invitation de l'organisateur » partout côté client : une seule fonction le fabrique, `senderLine` dans `components/tickets/wallet.ts`. L'acte 9 attend ce texte au lieu de « l'organisateur de l'événement ».
+
+### Disque et dépôt
+Place libérée sans risque : cache npm et ancien pilote Playwright-Go 1.50.1. Les navigateurs Playwright servent tous en version 1248 et sont gardés. Il reste 9,16 Go libres. `gc.auto` et `maintenance.auto` sont réactivés, `git gc` est passé. La branche jetable de mesure `fix/mesure-scanner-avant-1a` est supprimée.
 
 ## Ce qui est fait
 
@@ -212,6 +249,12 @@ Run 376 : 664 captures dans `ci-results`, `runs/376-44282916087/captures/`, chaq
 | 373 | `407d217a0` | complet | 5 suites, 41 échecs e2e, mesure rouge ; corrigé |
 | 374 | `1607c1616` | complet | 2 suites, 5 échecs e2e, mesure rouge ; corrigé |
 | 376 | `bef65f021` | complet | **tests 504/504**, budgets JS tenus, captures vertes, toucher OK ; restent les seuils Lighthouse et LCP, l'acte 7 de la recette et l'ancienne mesure du scanner |
+| 385 | `b3d42c253` | complet | mesure HTTP/2 verte (94, 98, 95) ; rouges : anciens noms de couleur du scanner, recette acte 9, scanner 261,5 Ko |
+| 391 | `eba7767ac` | complet, branche jetable : main d'avant le design 1a + liste des fichiers | mesure seule (scanner 246,7 Ko, 21 fichiers) |
+| 392 | `0c1950b93` | complet | liste du scanner : fichiers de l'accueil en trop ; accueil 87 (machine plus lente) |
+| 401 | `69e875956` | complet | scanner 250,4 Ko ; rouges : Lighthouse (indice 1 996) et erreur 418 sur une capture |
+| 406 | `5f59304c6` | complet | erreur 418 disparue ; calibré : accueil 89, Mes billets 86 |
+| 411 | `bfac711fb` | complet | **tout vert** : tests 508/508, e2e, accueil 93, fiche 92, Mes billets 92, scanner 250,2 Ko |
 
 **Sur `main`, en chemin.**
 - Les runs 367 et 371, après la fusion du design 1a, étaient rouges sur l'e2e.
@@ -239,7 +282,7 @@ Run 376 : 664 captures dans `ci-results`, `runs/376-44282916087/captures/`, chaq
 4. **Cache de 60 s.**
    - Un changement de titre, d'heure ou d'état apparaît sur la fiche dans les 60 s.
    - Le stock, la vente et le statut d'achat sont relus en direct par la billetterie.
-   - **Annulation** : l'avis public apparaît dans les 60 s. Pour l'afficher tout de suite, il faudrait invalider le cache de la fiche à chaque changement d'état (décision attendue).
+   - **Annulation, suspension, report, publication** : fiche, accueil et Explorer invalidés aussitôt (décision du 18 novembre).
 5. **Guichet** : « Billets au guichet sur place » s'affiche quand la vente en ligne est fermée et qu'une catégorie vendue au guichet a des places. `sale_counter` vaut vrai par défaut.
 6. **Notifications** : le réabonnement automatique vaut pour tout compte qui se reconnecte sur un téléphone où la permission est déjà accordée, sauf si cet appareil a été désactivé. Le réglage d'appareil `ev-push-appareil` ne contient aucune donnée du compte : il est classé dans l'inventaire de `cvf2b-6`, sans qu'aucune assertion ne change.
 7. **QR en grand** : une page web ne peut pas régler la luminosité du téléphone. Le fond est blanc, l'écran reste allumé quand le navigateur le permet, et un texte invite à monter la luminosité.
@@ -249,12 +292,13 @@ Run 376 : 664 captures dans `ci-results`, `runs/376-44282916087/captures/`, chaq
    - le lock a été régénéré avec npm 10.9.9, celui de la CI.
 9. **Poste de travail** : le disque était plein.
    - J'ai supprimé les dossiers de build et de dépendances que j'avais créés, ainsi que les restes de remballages git ratés.
-   - J'ai coupé le remballage automatique de git dans ce dépôt (`gc.auto 0`, `maintenance.auto false`).
+   - J'avais coupé le remballage automatique de git dans ce dépôt ; il est réactivé (`gc.auto 6700`, `maintenance.auto true`) et `git gc` est passé (décision du 18 novembre).
 
 ## Tests
 
 - **Nouveaux** :
   - `tests/schema/design1b-en-cours`, `design1b-mots`, `design1b-perf-mobile`, `design1b-catalogue`, `design1b-fiche`, `design1b-billets`, `migration-d1b-a-la-une-rejouable` ;
+  - décisions du 18 novembre : `design1b-cache-invalidation`, `design1b-scanner-js`, `design1b-hydratation`, `design1b-chargement` ; `design1b-perf-mobile` complété (relais HTTP/2 réel, calibration) ;
   - `tests/parcours/design1b-catalogue-api`, `design1b-fiche`, `design1b-billets`, `design1b-a-la-une`.
 - **Adaptés, à exigence égale** :
   - `stock-public-9ter` : seuil relatif ;
@@ -270,6 +314,8 @@ Run 376 : 664 captures dans `ci-results`, `runs/376-44282916087/captures/`, chaq
   - `admin-parrainage` : aides réseau communes ;
   - `paiement-operateur` : « carte » en mot isolé.
 - **Recette** : lignes citées recalées.
+- **Recette, acte 9** : expéditeur attendu « Invitation de l’organisateur » (texte du point 8, seule source côté client), au lieu de « l’organisateur de l’événement ».
+- **e2e** : `perf.spec` écrit la liste des fichiers JavaScript avant le marqueur (aucune assertion changée) ; capture « fiche en cours » rechargée 3 fois.
 - **Captures et e2e** :
   - captures du design 1b ajoutées et graine « Dernières places » ajustée ;
   - `perf.spec` : nouveau marqueur de l'accueil, pages préparées par le serveur ;
