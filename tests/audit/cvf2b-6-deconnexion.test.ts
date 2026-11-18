@@ -623,6 +623,9 @@ describe('13. inventaire des stockages du navigateur', () => {
             'components/providers/ThemeProvider.tsx': { what: 'thème (localStorage)', compte: false, purge: null },
             'lib/events/city-preference.ts': { what: 'ville préférée de l’appareil, visiteurs compris (localStorage)', compte: false, purge: null },
             'app/controller/scanner/page.tsx': { what: 'délai de retour automatique du scanner (localStorage)', compte: false, purge: null },
+            // Design 1b (point 9) : réglage de l'appareil « notifications désactivées ici » (valeur fixe « desactive »), sans
+            // identifiant ni donnée du compte, lu par le réabonnement automatique après une reconnexion
+            'lib/push/client.ts': { what: 'notifications désactivées sur cet appareil, valeur fixe sans donnée du compte (localStorage)', compte: false, purge: null },
         };
         const writers = [...src].filter(([, s]) => /\b(?:localStorage|sessionStorage)\b/.test(s) && /\.setItem\(/.test(s)).map(([f]) => f);
         const unknown = writers.filter((f) => !(f in known));

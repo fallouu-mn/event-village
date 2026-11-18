@@ -299,6 +299,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     };
 
+    // Design 1b (point 9) : à la connexion (profil lu, compte non suspendu), cet appareil se réabonne seul aux notifications
+    // si la permission est déjà accordée et que la personne ne les a pas désactivées ici (lib/push/client.ts) ; jamais de
+    // fenêtre d'autorisation ; enregistré pour le compte connecté seulement (abandon si le compte change avant).
+    const pushAccount = profile && profile.id === user?.id && profile.status !== 'SUSPENDU' ? profile.id : null;
+    useEffect(() => {
+        if (!pushAccount || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+        let current = true;
+        import('@/lib/push/client').then((m) => m.syncPushSubscription(() => current)).catch(() => undefined);
+        return () => { current = false; };
+    }, [pushAccount]);
+
     const hasRole = useCallback((role: string): boolean => {
         return profile?.roles?.includes(role) ?? false;
     }, [profile]);
