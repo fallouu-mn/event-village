@@ -47,6 +47,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { createRequire } from 'node:module';
+import { startH2Proxy } from './h2-proxy.mjs';
 import {
     PASSAGES, SEUILS, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, fmtBytes, fmtCls, fmtMs, median,
     texteRapport, toucherRows, tsvRows, verdictPage, verdictToucher,
@@ -254,7 +255,7 @@ async function lighthouseRun({ lighthouse, exe, url, cookies }) {
     const args = [
         `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, '--headless=new', '--no-first-run', '--no-default-browser-check',
         '--disable-extensions', '--disable-sync', '--disable-component-update', '--disable-default-apps', '--disable-background-networking',
-        '--mute-audio', '--metrics-recording-only', '--password-store=basic', '--use-mock-keychain', HOST_RESOLVER,
+        '--mute-audio', '--metrics-recording-only', '--password-store=basic', '--use-mock-keychain', HOST_RESOLVER, '--ignore-certificate-errors',
         ...(process.platform === 'linux' ? ['--no-sandbox'] : []), 'about:blank',
     ];
     const proc = spawn(exe, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -382,6 +383,7 @@ async function mobileContext(browser, storageState) {
         locale: 'fr-FR',
         timezoneId: 'Africa/Dakar',
         serviceWorkers: 'block',
+        ignoreHTTPSErrors: true,
         reducedMotion: 'no-preference',
         colorScheme: 'light',
         storageState: storageState ?? { cookies: [], origins: [] },
@@ -584,7 +586,8 @@ function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz }) 
 // ── Mesure complète (CI) ──────────────────────────────────────────────────────
 
 async function main() {
-    const base = appUrl();
+    let base = appUrl();
+    let proxy = null;
     const { chromium } = require('@playwright/test');
     const exe = chromiumPath();
     const { lighthouse, version } = await loadLighthouse();
@@ -598,6 +601,19 @@ async function main() {
         fs.mkdirSync(PERF_DIR, { recursive: true });
         fs.writeFileSync(path.join(PERF_DIR, 'lighthouse.txt'), `Performance mobile mesurée (design 1b, lot PERF)\nHORS SEUIL — aucune mesure : ${message}\nVERDICT : HORS SEUIL\n`, 'utf8');
         process.exit(1);
+    }
+
+    // Décision 1b de l'utilisateur : mesure en HTTP/2, comme la production (CDN), par un relais local devant next start
+    // (scripts/e2e/h2-proxy.mjs) ; PERF_HTTP2=0 : mesure directe en HTTP/1.1 (comparaison). Seuils inchangés.
+    if (process.env.PERF_HTTP2 !== '0') {
+        try {
+            proxy = await startH2Proxy(base.replace('localhost', '127.0.0.1'), path.join(os.tmpdir(), 'ev-h2-proxy'));
+            log(`relais HTTP/2 ${proxy.origin} → ${base}`);
+            base = proxy.origin;
+        } catch (err) {
+            console.error(`[${TAG}] ÉCHEC : relais HTTP/2 impossible (${errText(err)})`);
+            process.exit(1);
+        }
     }
 
     const pages = [
@@ -626,7 +642,7 @@ async function main() {
         pageResults, touches, touchFatals, gz, notes,
         entete: [
             `Lighthouse ${version} (préréglage mobile par défaut : throttling simulé « Slow 4G », processeur ×4, écran mobile), Chromium complet de Playwright.`,
-            `Chargements réels et touchers : Playwright, vue mobile 390 × 844, 4G simulée par CDP (562,5 ms, 1,44 Mbit/s), processeur ×4. Application ${base}.`,
+            `Chargements réels et touchers : Playwright, vue mobile 390 × 844, 4G simulée par CDP (562,5 ms, 1,44 Mbit/s), processeur ×4. Application ${base}${proxy ? ' (HTTP/2, relais local devant next start, comme la production)' : ' (HTTP/1.1, next start direct)'}.`,
             `Durée de la mesure : ${Math.round((Date.now() - T0) / 1000)} s.`,
         ],
     });
@@ -638,7 +654,7 @@ async function main() {
     }, WATCHDOG_MS);
     watchdog.unref();
 
-    const browser = await chromium.launch({ channel: 'chromium', headless: true, args: [HOST_RESOLVER] });
+    const browser = await chromium.launch({ channel: 'chromium', headless: true, args: [HOST_RESOLVER, '--ignore-certificate-errors'] });
     let session = null;
     try {
         // 1. Session du client
@@ -702,6 +718,7 @@ async function main() {
         }
     } finally {
         await browser.close().catch(() => {});
+        if (proxy) await proxy.close().catch(() => {});
     }
 
     // Détails lisibles et rapports complets du passage médian

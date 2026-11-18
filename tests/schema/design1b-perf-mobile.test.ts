@@ -216,4 +216,46 @@ describe('design 1b — performance mobile : branchement en CI', () => {
         assert.match(script, /'\/tickets\?tab=a-venir'/);
         assert.match(script, /process\.argv\.includes\('--dry'\)/);
     });
+
+    test('décision 1b : mesure en HTTP/2 par un relais local (seuils inchangés), relais réellement en h2', async () => {
+        const script = read('scripts/e2e/perf-mobile.mjs');
+        assert.match(script, /import \{ startH2Proxy \} from '\.\/h2-proxy\.mjs';/);
+        assert.match(script, /if \(process\.env\.PERF_HTTP2 !== '0'\)/);
+        assert.match(script, /'--ignore-certificate-errors'/);
+        assert.match(script, /ignoreHTTPSErrors: true/);
+        const relais = read('scripts/e2e/h2-proxy.mjs');
+        assert.match(relais, /http2\.createSecureServer\(/);
+        assert.doesNotMatch(relais, /BEGIN (RSA )?PRIVATE KEY/, 'aucun certificat dans le dépôt');
+        // Relais réel devant un petit serveur HTTP/1.1 : réponse transmise en h2, en-têtes de connexion retirés
+        const http = await import('node:http');
+        const http2 = await import('node:http2');
+        const os = await import('node:os');
+        const { startH2Proxy } = await import('../../scripts/e2e/h2-proxy.mjs');
+        const up = http.createServer((req, res) => { res.setHeader('connection', 'keep-alive'); res.end(`ok ${String(req.headers['x-forwarded-proto'])}`); });
+        await new Promise<void>((r) => up.listen(0, '127.0.0.1', () => r()));
+        const port = (up.address() as { port: number }).port;
+        const proxy = await startH2Proxy(`http://127.0.0.1:${port}`, path.join(os.tmpdir(), 'ev-h2-proxy-test'));
+        try {
+            const client = http2.connect(proxy.origin, { rejectUnauthorized: false });
+            const { status, body, conn } = await new Promise<{ status: number; body: string; conn: unknown }>((resolve, reject) => {
+                const req = client.request({ ':path': '/' });
+                let body = '';
+                let status = 0;
+                let conn: unknown;
+                req.on('response', (h) => { status = Number(h[':status']); conn = h.connection; });
+                req.setEncoding('utf8');
+                req.on('data', (c: string) => { body += c; });
+                req.on('end', () => resolve({ status, body, conn }));
+                req.on('error', reject);
+                req.end();
+            });
+            client.close();
+            assert.equal(status, 200);
+            assert.equal(body, 'ok https');
+            assert.equal(conn, undefined);
+        } finally {
+            await proxy.close();
+            await new Promise<void>((r) => up.close(() => r()));
+        }
+    });
 });
