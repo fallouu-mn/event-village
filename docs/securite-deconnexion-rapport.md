@@ -139,6 +139,10 @@ Branche `correctifs/cvf2b`, partie de `main` à `08d854851`. La contre-vérifica
 5. **Tests existants adaptés.**
    - `changement-role-admin` et `lot9quater-droits` attendaient un jeton de session révoquée encore servi ; ils vérifient maintenant le 401.
    - `f2b-couleur-auto`, `zones-scan` et `e2e/recette.spec.ts` : OR n'est plus choisissable.
+   - `securite-admin-lot7` (run 353) : l'ancien jeton d'un admin anonymisé est maintenant refusé par la pré-requête (401 `SESSION_FERMEE`). Ce refus est admis comme les autres ; l'assertion « refusé » est inchangée.
+   - `migration-finition2b-rejouable` (run 353) : les migrations 20261121 passent après la 2b. Elles sont exclues de « toutes les autres » que la 2b doit suivre.
+   - `docs/recette-billetterie.md` (runs 353 et 354) : des lignes citées ont été décalées par ces adaptations. Elles sont mises à jour : `changement-role-admin` 43 → 47, `zones-scan` 454 → 455, `securite-admin-lot7` 312 → 314 et 342 → 344.
+   - `f2b-recherche-cadence` : rouge une fois au run 353 (« 1 appel » au lieu de 2 au moins), verte au run 354 sans changement. Elle avait passé aux 11 runs précédents, et aucun fichier de la recherche de lieux n'est touché ; la recherche passe par le rôle de service, que la pré-requête laisse passer aussitôt. C'est donc un minutage fragile du créneau commun.
 6. **CI.** `verify.yml` ne se déclenchait pas sur `correctifs/**` : le premier envoi (`c15bb85f4`) n'a lancé aucun run. Le motif `correctifs/**` est ajouté aux branches du déclencheur (commit `c1dedc49b`), rien d'autre ne change.
 7. **Test du temps réel réécrit** (`f28b284f4`, ma suite et non une suite cvf2b). Au run 349, la première version restait rouge : le canal recevait encore après l'échéance. Ce n'était pas un défaut du serveur, le test était mal construit, pour deux raisons :
    - il visait `public_event_state`, que la clé anon peut lire ;
@@ -197,4 +201,6 @@ La nouvelle durée vaut pour les jetons émis ou rafraîchis après le changemen
 | — | `c15bb85f4` | rapide | aucun run : branche absente du déclencheur |
 | 349 | `c1dedc49b` | rapide, 81 suites : toutes les cvf2b, audit, audit-auth, nouvelles et adaptées | 80/81 ; seule rouge : `cvf2b-correctif-pre-requete`, cas 5 (test mal construit, écart 7) ; typecheck et lint OK |
 | 352 | `f28b284f4` | rapide, `cvf2b-correctif-pre-requete` | vert, 5/5 |
+| 353 | `6adcd63ac` | complet, 4 lots | 471/475 ; rouges : `securite-admin-lot7`, `migration-finition2b-rejouable`, `recette-matrice` (suites anciennes, écart 5), `f2b-recherche-cadence` (fragile) ; e2e, build et budget JS verts |
+| 354 | `cb0a1ad67` | rapide, ces 4 suites | 3/4 ; `recette-matrice` encore rouge : deux citations décalées par le commentaire ajouté à `securite-admin-lot7` |
 RUN_COMPLET_LIGNE
