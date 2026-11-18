@@ -59,7 +59,7 @@ function wholeFcfa(value: unknown, what: string): number {
 
 /**
  * Lot 10a — champs d'argent, d'annulation et de position d'une salle, contrôlés avant l'écriture (la base garde les
- * mêmes règles : halls_price_day_required_chk, halls_deposit_chk, halls_cancellation_policy_chk, halls_position_chk).
+ * mêmes règles : halls_price_chk, halls_deposit_chk, halls_cancellation_policy_chk, halls_position_chk).
  */
 function hallRules(input: Partial<CreateHallInput>, creating: boolean): Record<string, unknown> {
     const out: Record<string, unknown> = {};

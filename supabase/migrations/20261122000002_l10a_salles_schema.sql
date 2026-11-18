@@ -4,8 +4,8 @@
 -- État des lieux du 18/11 (S1 à S6, C1 à C3) et décisions du client du lot 10a.
 --  1. halls : statut de validation (EN_ATTENTE_VALIDATION, VALIDEE, REFUSEE, SUSPENDUE), acompte en pourcentage OU
 --     montant fixe (jamais 0), règle d'annulation (SOUPLE, MODEREE, STRICTE), position (bornes du Sénégal, comme les
---     événements), prix par jour obligatoire (contrainte NOT VALID : une salle ancienne sans prix ne peut plus être
---     modifiée sans en recevoir un, ni réservée) ;
+--     événements), prix en francs entiers jamais nuls (contrainte NOT VALID) ; prix par jour exigé pour être validée et
+--     réservée ;
 --     déclencheur trg_halls_validation_guard : le statut de validation n'est écrit que par hall_validation_decide
 --     (drapeau de transaction event_village.hall_validation) ; une salle créée attend la validation si le réglage
 --     halls.validation_required l'exige ; une salle refusée puis modifiée repart en attente ;
@@ -58,9 +58,12 @@ ALTER TABLE public.halls DROP CONSTRAINT IF EXISTS halls_position_chk;
 ALTER TABLE public.halls ADD CONSTRAINT halls_position_chk CHECK (
     (latitude IS NULL) = (longitude IS NULL)
     AND (latitude IS NULL OR (latitude BETWEEN 12.2 AND 16.8 AND longitude BETWEEN -17.6 AND -11.3)));
+-- Prix en F CFA entiers, jamais 0. Le prix par jour est obligatoire pour être validée et réservée (hall_validation_decide,
+-- hall_quote) : une salle sans prix n'est ni visible ni réservable.
 ALTER TABLE public.halls DROP CONSTRAINT IF EXISTS halls_price_day_required_chk;
-ALTER TABLE public.halls ADD CONSTRAINT halls_price_day_required_chk CHECK (
-    price_per_day IS NOT NULL AND price_per_day >= 1 AND price_per_day = trunc(price_per_day)
+ALTER TABLE public.halls DROP CONSTRAINT IF EXISTS halls_price_chk;
+ALTER TABLE public.halls ADD CONSTRAINT halls_price_chk CHECK (
+    (price_per_day IS NULL OR (price_per_day >= 1 AND price_per_day = trunc(price_per_day)))
     AND (price_per_hour IS NULL OR (price_per_hour >= 1 AND price_per_hour = trunc(price_per_hour)))) NOT VALID;
 
 CREATE OR REPLACE FUNCTION public.halls_validation_guard()
