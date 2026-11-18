@@ -3,8 +3,21 @@
 import React, { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 // Cartes, icônes et minuterie : chargées au premier toast (et préchargées quand le navigateur est libre), jamais avec la page
-const loadToastList = () => import('./ToastCard');
+// Hors ligne, le morceau peut manquer (absent du cache du service worker) : repli minimal en texte, jamais d'erreur.
+const loadToastList = () => import('./ToastCard').catch(() => ({ default: ToastListFallback }));
 const ToastList = lazy(loadToastList);
+
+function ToastListFallback({ toasts }: { toasts: ToastItem[]; onDismiss: (id: string) => void }) {
+  return (
+    <>
+      {toasts.map((t) => (
+        <p key={t.id} role={t.type === 'error' || t.type === 'warning' ? 'alert' : 'status'} className="pointer-events-auto rounded-xl border border-border bg-popover p-3 text-sm text-foreground shadow-popover">
+          {t.message}
+        </p>
+      ))}
+    </>
+  );
+}
 
 /**
  * Design 1a (direction.md, section 6) — LE système de retours de toute l'application.
@@ -96,7 +109,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
-    const warm = () => { void loadToastList(); };
+    // Sans réseau : pas de préchargement (le morceau viendra au premier toast, ou le repli en texte)
+    const warm = () => { if (navigator.onLine !== false) void loadToastList(); };
     if (w.requestIdleCallback) w.requestIdleCallback(warm);
     else setTimeout(warm, 3000);
   }, []);
