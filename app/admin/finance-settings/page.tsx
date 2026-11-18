@@ -238,7 +238,7 @@ function parseSettings(body: unknown): SettingsData | null {
 function WithdrawalFeeCheck({ setting, observed }: { setting: Setting; observed: ObservedFees }) {
   const configured = Number(unwrap(setting.value));
   if (observed.rate === null) {
-    return <p className="text-sm text-fg-muted">Frais SamirPay réels pas encore constatés.</p>;
+    return <p className="text-sm text-muted-foreground">Frais SamirPay réels pas encore constatés.</p>;
   }
   const max = observed.max !== null ? ` (maximum ${formatRate(observed.max)} %)` : '';
   if (Number.isFinite(configured) && configured < observed.rate) {
@@ -248,7 +248,7 @@ function WithdrawalFeeCheck({ setting, observed }: { setting: Setting; observed:
       </StatusBanner>
     );
   }
-  return <p className="text-sm text-fg-muted">Frais SamirPay constatés sur 90 jours : {formatRate(observed.rate)} %{max}.</p>;
+  return <p className="text-sm text-muted-foreground">Frais SamirPay constatés sur 90 jours : {formatRate(observed.rate)} %{max}.</p>;
 }
 
 export default function AdminFinanceSettingsPage() {
@@ -409,12 +409,12 @@ export default function AdminFinanceSettingsPage() {
               {loadError} Les valeurs affichées sont celles du dernier chargement.
             </StatusBanner>
           )}
-          <nav aria-label="Sommaire des réglages" className="rounded-2xl border border-border bg-surface p-4">
-            <p className="text-sm font-semibold text-fg">Thèmes</p>
+          <nav aria-label="Sommaire des réglages" className="rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-semibold text-foreground-strong">Thèmes</p>
             <ul className="mt-2 flex flex-wrap gap-2">
               {SETTING_SECTIONS.filter((t) => data.settings.some((x) => x.key.startsWith(t.prefix))).map((t) => (
                 <li key={t.anchor}>
-                  <a href={`#${t.anchor}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-3 text-sm font-medium text-brand-fg hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <a href={`#${t.anchor}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-3 text-sm font-medium text-primary-text hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {t.title}
                   </a>
                 </li>
@@ -431,13 +431,13 @@ export default function AdminFinanceSettingsPage() {
             return (
               <section key={section.prefix} id={anchor} aria-labelledby={headingId} className="scroll-mt-20 space-y-3">
                 <div className="space-y-1">
-                  <h2 id={headingId} className="flex items-center gap-2 text-lg font-semibold text-fg">
-                    <SectionIcon size={20} className="text-brand-fg" aria-hidden="true" />
+                  <h2 id={headingId} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+                    <SectionIcon size={20} className="text-primary-text" aria-hidden="true" />
                     {section.title}
                   </h2>
-                  <p className="text-sm text-fg-muted">{section.help}</p>
+                  <p className="text-sm text-muted-foreground">{section.help}</p>
                 </div>
-                <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
                   {items.map((s) => {
                     const meta = META[s.key];
                     const label = meta?.label ?? 'Réglage sans libellé';
@@ -447,18 +447,18 @@ export default function AdminFinanceSettingsPage() {
                       <li key={s.key} className="space-y-3 p-4">
                         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
                           <div className="min-w-0 space-y-0.5">
-                            <p className="text-sm font-semibold text-fg">{label}</p>
+                            <p className="text-sm font-semibold text-foreground-strong">{label}</p>
                             {s.key.startsWith('features.') && (
-                              <p className="text-sm font-medium text-warning-fg">Pas prêt pour le public</p>
+                              <p className="text-sm font-medium text-warning-text">Pas prêt pour le public</p>
                             )}
-                            {meta?.help && <p className="text-sm text-fg-muted">{meta.help}</p>}
-                            <p className="text-sm text-fg-muted">
+                            {meta?.help && <p className="text-sm text-muted-foreground">{meta.help}</p>}
+                            <p className="text-sm text-muted-foreground">
                               Par défaut : <span className="tabular-nums">{s.key in data.defaults ? displayValue(s.key, data.defaults[s.key]) : '—'}</span>
                               {' · '}Modifié le <time dateTime={s.updatedAt ?? undefined}>{formatDateTime(s.updatedAt)}</time>
                             </p>
                           </div>
                           <div className="flex flex-shrink-0 items-center gap-3">
-                            <span className="text-base font-semibold tabular-nums text-brand-fg">{displayValue(s.key, s.value)}</span>
+                            <span className="text-base font-semibold tabular-nums text-primary-text">{displayValue(s.key, s.value)}</span>
                             {isSuperadmin && !isEditing && (
                               <Button variant="ghost" size="sm" leftIcon={<Pencil size={16} aria-hidden="true" />} onClick={() => startEdit(s)} aria-label={`Modifier ${label}`}>
                                 Modifier
@@ -480,7 +480,7 @@ export default function AdminFinanceSettingsPage() {
                               e.preventDefault();
                               prepare(s.key);
                             }}
-                            className="grid grid-cols-1 items-start gap-3 rounded-2xl border border-border bg-surface-sunken p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
+                            className="grid grid-cols-1 items-start gap-3 rounded-2xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
                           >
                             {meta?.kind === 'boolean' ? (
                               <Select
@@ -565,21 +565,21 @@ export default function AdminFinanceSettingsPage() {
           })}
 
           <section aria-labelledby={`${fieldId}-historique`} className="space-y-3">
-            <h2 id={`${fieldId}-historique`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-              <History size={20} className="text-brand-fg" aria-hidden="true" />
+            <h2 id={`${fieldId}-historique`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+              <History size={20} className="text-primary-text" aria-hidden="true" />
               Historique des modifications
             </h2>
             {data.history.length === 0 ? (
-              <p className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg-muted">Aucune modification enregistrée.</p>
+              <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">Aucune modification enregistrée.</p>
             ) : (
-              <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+              <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
                 {data.history.map((h, i) => (
                   <li key={`${h.key}-${h.changedAt}-${i}`} className="space-y-0.5 px-4 py-3 text-sm">
-                    <p className="font-semibold text-fg">{META[h.key]?.label ?? 'Réglage retiré ou sans libellé'}</p>
-                    <p className="tabular-nums text-fg">
+                    <p className="font-semibold text-foreground-strong">{META[h.key]?.label ?? 'Réglage retiré ou sans libellé'}</p>
+                    <p className="tabular-nums text-foreground-strong">
                       {displayValue(h.key, h.oldValue)} <span aria-hidden="true">→</span><span className="sr-only">devient</span> {displayValue(h.key, h.newValue)}
                     </p>
-                    <p className="text-fg-muted">
+                    <p className="text-muted-foreground">
                       <time dateTime={h.changedAt}>{formatDateTime(h.changedAt)}</time>
                       {' · '}Par {h.author}
                       {h.reason && ` · Motif : ${h.reason}`}
@@ -602,16 +602,16 @@ export default function AdminFinanceSettingsPage() {
         isLoading={isSaving}
       >
         {pending && (
-          <div className="space-y-3 text-sm text-fg">
+          <div className="space-y-3 text-sm text-foreground-strong">
             <p className="text-base font-semibold">{pendingMeta?.label ?? 'Réglage'}</p>
             <p className="tabular-nums">
               Avant : {displayValue(pending.key, pendingBefore)} <span aria-hidden="true">→</span><span className="sr-only">devient</span> Après : {displayValue(pending.key, pending.value)}
             </p>
-            <p className="text-fg-muted">S’applique aux opérations faites à partir de maintenant ; le passé ne change pas. Personne n’est prévenu.</p>
+            <p className="text-muted-foreground">S’applique aux opérations faites à partir de maintenant ; le passé ne change pas. Personne n’est prévenu.</p>
             {settingRisk(pending.key, pending.value, currentValues) && (
               <StatusBanner tone="warning" title="Valeur risquée">{settingRisk(pending.key, pending.value, currentValues)}</StatusBanner>
             )}
-            <p className="text-fg-muted">Motif : {reason.trim()}</p>
+            <p className="text-muted-foreground">Motif : {reason.trim()}</p>
             {saveError && <StatusBanner tone="danger" announce="alert" title="Réglage non enregistré">{saveError}</StatusBanner>}
           </div>
         )}
