@@ -56,16 +56,23 @@ interface Screen {
     selectors: string[];
     buttonTexts?: string[];
     camera?: boolean;
+    /**
+     * Design 1b : page préparée par le serveur (HTML en cache 60 s) : le contenu utile arrive AVANT tout JavaScript, c'est le
+     * but. Le contrôle « du JavaScript avant le marqueur » (preuve d'un bridage appliqué sur une page rendue dans le
+     * navigateur) ne s'y applique pas ; le bridage reste prouvé par la durée du plus gros fichier.
+     */
+    serverRendered?: boolean;
 }
 
 const SCREENS: Screen[] = [
     {
         id: 'accueil', libelle: 'Accueil', role: 'anonyme', path: () => '/', budgetRoute: '/',
-        selectors: ['section[aria-labelledby="affiche-titre"] h3', 'section[aria-labelledby="affiche-titre"] .border-dashed'],
+        // Design 1b : rangée « À la une » (ou « À l'affiche ») rendue par le serveur
+        selectors: ['section[aria-labelledby="une-titre"] article', 'section[aria-labelledby="une-titre"]'], serverRendered: true,
     },
     {
         id: 'evenement', libelle: 'Page événement', role: 'anonyme', path: () => `/events/${readDemoIds().events.ceSoir.id}`, budgetRoute: '/events/[id]',
-        selectors: ['main h1', 'h1'],
+        selectors: ['main h1', 'h1'], serverRendered: true,
     },
     {
         id: 'mes-billets', libelle: 'Mes billets', role: 'client', path: () => '/tickets?tab=a-venir', budgetRoute: '/tickets', // A10 (R45) : sans onglet, « Reçus » d'office (transfert entrant du seed), sans carte de billet
@@ -412,7 +419,7 @@ for (const screen of SCREENS) {
         for (const r of results) {
             expect.soft(r.error, `${screen.id} passage ${r.pass} : mesure complète`).toBeNull();
             if (r.error) continue;
-            expect.soft(r.jsBeforeUseful ?? 0, `${screen.id} passage ${r.pass} : du JavaScript /_next/static/ arrivé avant le marqueur`).toBeGreaterThan(0);
+            if (!screen.serverRendered) expect.soft(r.jsBeforeUseful ?? 0, `${screen.id} passage ${r.pass} : du JavaScript /_next/static/ arrivé avant le marqueur`).toBeGreaterThan(0);
             expect.soft(r.biggest, `${screen.id} passage ${r.pass} : au moins un fichier /_next/static/ mesuré`).not.toBeNull();
             if (r.biggest) {
                 expect.soft(r.biggest.ms >= r.biggest.minMs,

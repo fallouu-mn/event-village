@@ -148,6 +148,13 @@ export interface Screen {
 }
 
 const UUID = '[0-9a-f-]{36}';
+/**
+ * Design 1b (garde-fou des mots) : nœud de texte fait d'un identifiant brut seul, admis seulement sur les écrans de la
+ * finance de l'administration (hors du design 1b, lot exclu par la consigne : à reprendre au lot de la finance).
+ */
+const RAW_ID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Design 1b : préchargement (next/link) d'une fiche fictive de la vitrine ou d'une fiche imposée : 404 attendu. */
+const fakeEventPrefetch = (id: string): RegExp => new RegExp(`/events/${id}(\\?_rsc=[^/]*)?$`);
 /** Lot 8 (8.2 h) : UUID bien formé qu'aucun événement ne porte. */
 const UNKNOWN_EVENT_ID = '00000000-0000-4000-8000-000000000404';
 const NOT_AN_EVENT_ID = 'pas-un-identifiant';
@@ -929,11 +936,13 @@ export const SCREENS: readonly Screen[] = [
     // scripts/e2e/start-app.mjs, EV_VITRINE_DESIGN=1 ; données fictives)
     {
         id: 'design-composants', titre: 'Design 1a — en-tête, composants de base, repères, squelettes et état vide', role: 'anonyme', needsIds: false,
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000001')],
         path: () => '/vitrine-design',
         ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
     },
     {
         id: 'design-toasts', titre: 'Design 1a — toasts : réussite, action annulable, erreur qui reste avec « Réessayer »', role: 'anonyme', needsIds: false,
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000001')],
         path: () => '/vitrine-design',
         ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
         actions: async ({ page }) => {
@@ -944,6 +953,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'design-confirmation', titre: 'Design 1a — confirmation : le bouton dit l’action et le montant', role: 'anonyme', needsIds: false,
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000001')],
         path: () => '/vitrine-design',
         ready: async ({ page }) => { await expectHeading(page, /^composants$/i); },
         actions: async ({ page }) => {
@@ -1403,6 +1413,7 @@ export const SCREENS: readonly Screen[] = [
     {
         // Lot 9 bis (7.3, B114) : sous fumee-superadmin, réponse au format du contrat 4.1 ; voir l'en-tête du fichier
         id: 'admin-remboursements-a-reprendre', titre: 'Administration — finances : versements à reprendre (Renvoyer, Marquer versé ; réponses imposées)',
+        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => {
@@ -1907,7 +1918,7 @@ export const SCREENS: readonly Screen[] = [
             await page.getByRole('button', { name: /^acheter \d+ billets? \(/i }).click();
             await expect(page.getByRole('dialog').or(page.getByRole('alertdialog'))).toBeVisible();
             // Design 1b (point 7) : opérateur choisi (grand bouton Wave sélectionné)
-            await page.getByRole('radio', { name: /^wave/i }).first().click();
+            await page.getByRole('radio', { name: /^wave/i }).first().check({ force: true });
         },
     },
     {
@@ -2068,6 +2079,7 @@ export const SCREENS: readonly Screen[] = [
     // Rouges jusqu'à leurs écrans (vague E) et aux données du seed (fix(9b.seed)) ; aucune boîte n'est confirmée.
     {
         id: 'admin-versements-marquer-verse', titre: 'Administration — versements à reprendre : boîte « Marquer versé » (justification, référence ; réponses imposées)',
+        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => { await cashoutsReady(page); },
@@ -2333,6 +2345,7 @@ export const SCREENS: readonly Screen[] = [
     // ── Lot 9 ter : versements, retraits retardés, clôture, édition (A.2.6, B.6) ──
     {
         id: 'admin-versements-constater-non-verse', titre: 'Administration — versements à reprendre : boîte « Constater non versé » (référence, motif ; réponses imposées)',
+        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => { await cashoutsReady(page); },
@@ -2362,6 +2375,7 @@ export const SCREENS: readonly Screen[] = [
     },
     {
         id: 'admin-cloture-motif', titre: 'Administration — clôture d’un événement suspendu : champ « Motif de la clôture » (fiche imposée, rien n’est envoyé)',
+        allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000931')],
         role: 'fumee-superadmin', needsIds: true, path: (i) => `/admin/events/${ids(i).events.termine.id}`,
         stubResponses: [{ url: new RegExp(`/api/admin/events/${UUID}$`), method: 'GET', status: 200, body: CLOSING_SHEET }],
         ready: async ({ page }) => { await expectHeading(page, /^festival des lumières de saint-louis$/i); },

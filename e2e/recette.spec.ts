@@ -569,7 +569,14 @@ test('acte 4 [client] : découverte, fiche, refus direct, inscription depuis l�
         await client.getByLabel(/^rechercher un événement/i).fill(r.e1.title);
         await client.getByLabel(/^ville/i).selectOption({ label: 'Dakar' });
         await expect(client.getByRole('link', { name: /Nuit du Sabar/ }), 'recherche : un autre événement de Dakar disparaît').toHaveCount(0);
-        await client.getByRole('link', { name: new RegExp(escapeRe(r.e1.title)) }).first().click();
+        // Design 1b : catalogue d'Explorer en cache 60 s (servi périmé une fois puis renouvelé) : l'événement publié à l'acte
+        // précédent peut manquer au plus une minute ; la page est rechargée (filtres gardés dans l'adresse) jusqu'à 90 s.
+        const e1Link = client.getByRole('link', { name: new RegExp(escapeRe(r.e1.title)) }).first();
+        await expect(async () => {
+            if (await e1Link.count() === 0) await client.reload();
+            await expect(e1Link).toBeVisible({ timeout: 5_000 });
+        }, 'recherche : l’événement publié apparaît (cache de 60 s)').toPass({ timeout: 90_000, intervals: [5_000, 10_000, 15_000] });
+        await e1Link.click();
         await client.waitForURL(new RegExp(`/events/${r.e1.id}`));
         await expect(client.getByRole('heading', { level: 1, name: r.e1.title })).toBeVisible();
 

@@ -797,7 +797,7 @@ test('9. résultat du scanner : plein écran égal à la fenêtre, page défilé
             window.scrollTo({ top: 1000, behavior: 'instant' });
             const r = overlay.getBoundingClientRect();
             // Diagnostic (runs 342, 367, 371 : scrollY 0) : élément qui défile, débordements et hauteurs de <html> et <body>
-            const cs = (el: Element) => { const c = getComputedStyle(el); return `${c.overflowX}/${c.overflowY} h=${c.height} pos=${c.position}`; };
+            const cs = (el: Element) => { const c = getComputedStyle(el); return `${c.overflowX}/${c.overflowY} h=${c.height} min=${c.minHeight} max=${c.maxHeight} d=${c.display} pos=${c.position} contain=${c.contain} cls=${el.getAttribute("class")}`; };
             const diag = {
                 scrolling: document.scrollingElement?.tagName ?? null,
                 scrollTop: document.scrollingElement?.scrollTop ?? null,
