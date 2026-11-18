@@ -317,4 +317,7 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/event-page/PendingPaymentSlot.tsx',
     'components/event-page/ShareButton.tsx',
     'components/event-page/VenueMap.tsx',
+    'components/tickets/TicketWallet.tsx',
+    'components/tickets/QrFullscreen.tsx',
+    'components/tickets/PurchaseCelebration.tsx',
 ];

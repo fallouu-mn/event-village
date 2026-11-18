@@ -1065,6 +1065,24 @@ export const SCREENS: readonly Screen[] = [
     {
         id: 'mes-billets', titre: 'Mes billets (QR masqué)', role: 'client', needsIds: true, path: () => '/tickets?tab=a-venir', // A10 : sans onglet, « Reçus » d'office (transfert entrant du seed)
         masks: (page) => [page.getByRole('img', { name: /QR/i })],
+        // Design 1b (point 8) : portefeuille, cartes de billet à la couleur de la catégorie
+        ready: async ({ page }) => { await expect(page.locator('article[aria-label^="Billet pour"]').first()).toBeVisible({ timeout: 30_000 }); },
+    },
+    // Design 1b (point 8) : QR en grand, fond blanc (la luminosité du téléphone ne se règle pas depuis le web)
+    {
+        id: 'mes-billets-qr-grand', titre: 'Mes billets — QR en grand sur fond blanc', role: 'client', needsIds: true, path: () => '/tickets?tab=a-venir',
+        masks: (page) => [page.getByRole('img', { name: /QR/i })],
+        ready: async ({ page }) => { await expect(page.locator('article[aria-label^="Billet pour"]').first()).toBeVisible({ timeout: 30_000 }); },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: 'Agrandir le QR code en plein écran' }).first().click();
+            await expect(page.getByRole('dialog').first()).toBeVisible({ timeout: 15_000 });
+        },
+    },
+    // Design 1b (point 8) : petite fête après l'achat (retour du paiement réussi : ?fete=1), annoncée par un toast
+    {
+        id: 'mes-billets-fete', titre: 'Mes billets — après l’achat (« Vos billets sont là. »)', role: 'client', needsIds: true, path: () => '/tickets?tab=a-venir&fete=1',
+        masks: (page) => [page.getByRole('img', { name: /QR/i })],
+        ready: async ({ page }) => { await expect(page.getByText('Vos billets sont là.').first()).toBeVisible({ timeout: 30_000 }); },
     },
     {
         id: 'mes-billets-recus', titre: 'Mes billets — onglet « Reçus » (transfert entrant à accepter)', role: 'client', needsIds: true,
