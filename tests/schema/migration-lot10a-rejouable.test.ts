@@ -46,11 +46,13 @@ after(async () => {
 });
 
 describe('Lot 10a — migrations 20261122… rejouables (transaction annulée)', () => {
-    test('les migrations 20261122… du dépôt sont exactement celles du lot, dans cet ordre, après toutes les autres', () => {
+    // Lot 11a (modification signalée au rapport) : « après toutes les autres » devient « après toutes celles d'avant le
+    // lot » ; les migrations des lots suivants (20261123…) passent après.
+    test('les migrations 20261122… du dépôt sont exactement celles du lot, dans cet ordre, après toutes celles d’avant', () => {
         const all = fs.readdirSync(DIR).filter((f) => /^\d{14}_.+\.sql$/.test(f)).sort();
         const present = all.filter((f) => f.startsWith('20261122'));
         assert.deepEqual(present, [...LOT10A_MIGRATIONS], `migrations 20261122… présentes : ${present.join(', ') || 'aucune'}`);
-        const others = all.filter((f) => !f.startsWith('20261122'));
+        const others = all.filter((f) => f < '20261122');
         assert.ok(others[others.length - 1] < LOT10A_MIGRATIONS[0], `${others[others.length - 1]} passe après ${LOT10A_MIGRATIONS[0]}`);
     });
 
