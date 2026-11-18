@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { assertFinanceInvariants } from '../helpers/finance-invariants';
-import { getSetting, jsonRequest, newPartner, round2, type TestPartner } from './finance-helpers';
+import { getSetting, jsonRequest, newPartner, round2, superadminId, type TestPartner } from './finance-helpers';
 import { withFeatureFlags, type FeatureFlag } from './terrain-helpers';
 import {
     cronRequest, deliverWebhook, importModule, initCalls, newBuyer, paymentById, providerSays, service,
@@ -85,21 +85,25 @@ async function createOrder(facial: number): Promise<string> {
     return order.id;
 }
 
+// Lot 10a (modification signalée au rapport) : une réservation de salle se crée par hall_reserve (montants calculés en base,
+// salle validée par l'administration, service ouvert) et se paie par une part (« INTEGRAL » ici) ; l'insertion directe
+// d'une réservation sans montants figés ne se paie plus.
 async function createHallReservation(facial: number): Promise<string> {
     const { data: hall, error: hallErr } = await service.from('halls').insert({
         partner_id: partner.partnerId, name: `TEST Salle ${randomUUID().slice(0, 8)}`, capacity: 100,
-        price_per_day: facial, deposit_percentage: 100, city: 'Dakar', is_active: true,
+        price_per_day: facial, deposit_value: 100, city: 'Dakar', is_active: true,
     }).select('id').single();
     assert.equal(hallErr, null, `salle : ${hallErr?.message}`);
-    const day = futureDate();
-    const { data: reservation, error } = await service.from('hall_reservations').insert({
-        hall_id: hall.id, client_id: client.userId, partner_id: partner.partnerId,
-        start_date: day, end_date: day,
-        total_amount: facial, deposit_amount: facial, balance_amount: 0,
-        status: 'EN_ATTENTE', payment_status: 'PENDING',
-    }).select('id').single();
-    assert.equal(error, null, `réservation de salle : ${error?.message}`);
-    return reservation.id;
+    const { data: decided, error: decErr } = await service.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: hall.id, decision: 'VALIDER' } });
+    assert.equal(decErr, null, `validation de la salle : ${decErr?.message}`);
+    assert.equal((decided as { ok?: boolean }).ok, true, JSON.stringify(decided));
+    const reserved = await withFeatureFlags({ halls: true }, async () => service.rpc('hall_reserve', {
+        p: { client_id: client.userId, hall_id: hall.id, mode: 'JOUR', start_date: futureDate(), units: 1 },
+    }));
+    assert.equal(reserved.error, null, `réservation de salle : ${reserved.error?.message}`);
+    const r = reserved.data as { ok?: boolean; reservation_id?: string };
+    assert.equal(r.ok, true, JSON.stringify(r));
+    return String(r.reservation_id);
 }
 
 async function createTableReservation(facial: number): Promise<string> {
@@ -134,6 +138,8 @@ const TARGET_FLAG: Record<Target, FeatureFlag | null> = { ORDER: 'orders', HALL_
 async function pay(payer: Buyer, targetType: Target, targetId: string): Promise<PaymentRow> {
     const create = () => createPaymentRoute(jsonRequest('/api/payments/create', 'POST', payer.accessToken, {
         targetType, targetId, operator: 'WAVE', payerPhone: payer.phone9,
+        // Lot 10a (modification signalée au rapport) : une salle se paie par une part (acompte, solde ou totalité)
+        ...(targetType === 'HALL_RESERVATION' ? { part: 'INTEGRAL' } : {}),
     }));
     const flag = TARGET_FLAG[targetType];
     const res = flag ? await withFeatureFlags({ [flag]: true }, create) : await create();
@@ -244,13 +250,19 @@ describe('Réservation de salle (HALL_RESERVATION)', () => {
         assert.equal(reservation.status, 'CONFIRMEE');
     });
 
-    test('échec chez SamirPay, réconciliation → FAILED, réservation annulée (créneau libéré)', async () => {
+    // Lot 10a (modification signalée au rapport) : un paiement de salle en échec ne touche plus la réservation : elle garde la
+    // date jusqu'à la fin de son attente de 15 minutes (le client peut réessayer), puis la rend ; avant, l'échec du
+    // paiement du solde annulait une réservation dont l'acompte était payé. Assertion d'origine (réservation annulée)
+    // remplacée par : réservation toujours en attente de paiement, rien de payé.
+    test('échec chez SamirPay, réconciliation → FAILED ; la réservation reste en attente de paiement (date rendue à la fin de l’attente)', async () => {
         const reservationId = await createHallReservation(50_000);
         const payment = await pay(client, 'HALL_RESERVATION', reservationId);
         await failBySamirPay(payment);
-        const reservation = await row('hall_reservations', reservationId, 'payment_status, status');
-        assert.equal(reservation.payment_status, 'FAILED');
-        assert.equal(reservation.status, 'ANNULEE');
+        const reservation = await row('hall_reservations', reservationId, 'payment_status, status, booking_state, paid_amount');
+        assert.equal(reservation.payment_status, 'PENDING');
+        assert.equal(reservation.status, 'EN_ATTENTE');
+        assert.equal(reservation.booking_state, 'EN_ATTENTE_PAIEMENT');
+        assert.equal(Number(reservation.paid_amount), 0);
     });
 });
 
