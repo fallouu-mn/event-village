@@ -167,6 +167,8 @@ Puis `03-verification.sql`.
 | 389 | `2a6bdee43` | complet | 365/366 exécutées ; rouge : mon test F9 attendait mon propre refus pour une fiche en attente (la garde existante répondait déjà 403) et lisait la boîte d'envoi sans filtre (limite de 1 000 lignes) ; lot 4 non exécuté (liste des suites tronquée par le lanceur) |
 | 395 | `81cb2e377` | rapide, 1 suite | rouge voulu : F10 (menu) et F11 (relance) ; routes partenaire vertes (aucun trou) |
 | 397 | `7be7be551` | rapide, 3 suites | rouge voulu : F12 et F13 ; F10, F11 verts ; lint rouge (anciens noms de couleur, contrôle venu de main) |
+| 398, 399 | `37716a37c`, `a1613410f` | rapide, 18 et 5 suites | 17/18 (l'aide de préparation n'avait ni horaires ni validation, désormais exigés au paiement), puis **vert 5/5** |
+| 400 | `ac9d87038` | **complet** | **vert : 507/507 en 39 min 9 s**, 4 lots contrôlés (507 attendues, 507 exécutées), suites d'audit dont cv10a, e2e, captures, budgets JS ; invariants à 0 |
 
 ## Points ouverts (lot 11b et suivants)
 
