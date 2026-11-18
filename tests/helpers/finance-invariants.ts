@@ -31,8 +31,9 @@ WITH refund_sums AS (
     -- réservation annulée ou déjà payée : metadata.refund_reason) va de PENDING à REFUND_PENDING puis REFUNDED, sans vente
     SELECT p.* FROM confirmed p
      WHERE p.status IN ('SUCCESS', 'PARTIAL')
-        OR (p.status = 'REFUNDED' AND (p.payment_target NOT IN ('TICKET', 'HALL_RESERVATION')
-                                       OR (p.payment_target = 'HALL_RESERVATION' AND NOT (p.metadata ? 'refund_reason'))
+        -- Lot 11a (modification signalée au rapport) : de même pour un paiement de table impossible à honorer
+        OR (p.status = 'REFUNDED' AND (p.payment_target NOT IN ('TICKET', 'HALL_RESERVATION', 'TABLE_RESERVATION')
+                                       OR (p.payment_target IN ('HALL_RESERVATION', 'TABLE_RESERVATION') AND NOT (p.metadata ? 'refund_reason'))
                                        OR EXISTS (SELECT 1 FROM public.tickets t WHERE t.payment_id = p.id)))
 ), accounts AS (
     SELECT owner_id, account_kind, sum(amount) AS total,

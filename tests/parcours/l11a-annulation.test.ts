@@ -235,7 +235,8 @@ describe('C5. Client absent', () => {
 
 describe('C6. Rappel et tâche planifiée', () => {
     test('rappel 3 h avant l’heure, sur les canaux du rappel, une seule fois', async () => {
-        const { client, id } = await paidReservation('l11a-rappel', 170);
+        // Début dans 150 à 165 minutes (arrondi au quart d'heure) : dans la fenêtre du rappel (3 h), quelle que soit l'heure
+        const { client, id } = await paidReservation('l11a-rappel', 150);
         await tick();
         await tick();
         const reminders = (await outboxOf(client.userId, id)).filter((x) => x.startsWith('TABLE_REMINDER:'));
