@@ -49,6 +49,12 @@ export function smsShortDateTime(value: string | Date): string {
     return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} à ${smsTime(d)}`;
 }
 
+/** Lot 10a : date courte à Dakar, sans heure : « 5 déc. » (« AAAA-MM-JJ » ou horodatage). */
+export function smsDay(value: string | Date): string {
+    const d = toDate(typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value);
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
 /** Date avec le jour à Dakar : « sam. 15 nov. à 20:00 » (21 caractères au plus). */
 export function smsDateTime(value: string | Date): string {
     const d = toDate(value);

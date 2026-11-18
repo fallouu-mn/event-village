@@ -153,11 +153,16 @@ export interface TemplateData {
     TRIAL_STARTED: { partner_id: string; days: number };
     SUBSCRIPTION_ACTIVATED: { partner_id: string; plan_id?: string; plan: string; days: number };
     PAYMENT_SUCCESS: { payment_id: string; amount: number; payment_target?: string };
-    HALL_RESERVATION_REQUESTED: { reservation_id: string; hall_name?: string | null; start_date: string; end_date: string };
-    HALL_RESERVATION_CONFIRMED: { reservation_id: string; hall_name?: string | null; start_date: string; end_date: string };
-    HALL_RESERVATION_CANCELLED: {
-        reservation_id: string; hall_name?: string | null; start_date: string; end_date: string; recipient_role: 'CLIENT' | 'PARTNER'; reason?: string | null;
-    };
+    // Lot 10a : données de hall_notif_data (réservation de salle), plus les champs propres à chaque avis
+    HALL_RESERVATION_REQUESTED: HallReservationData;
+    HALL_RESERVATION_CONFIRMED: HallReservationData;
+    HALL_BALANCE_PAID: HallReservationData & { recipient_role: 'CLIENT' | 'PARTNER' };
+    HALL_BALANCE_REMINDER: HallReservationData;
+    HALL_PAYMENT_DEADLINE_PASSED: HallReservationData & HallCancelData;
+    HALL_RESERVATION_CANCELLED: HallReservationData & HallCancelData;
+    HALL_RESERVATION_CANCELLED_PRO: HallReservationData & HallCancelData;
+    HALL_PAYMENT_REFUNDED: HallReservationData & { payment_id: string; amount: number; operator?: string | null };
+    HALL_VALIDATION_DECIDED: { hall_id: string; hall_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
     PROMOTION_DECIDED: EventData & { promotion_id: string; status: 'APPROUVEE' | 'REFUSEE' | string; reason?: string | null };
     CONTROLLER_ASSIGNED: Partial<EventData> & { assignment_id?: string; entry_point: string | null; can_accept_cash: boolean; events?: ControllerEventRef[] };
     CONTROLLER_UNASSIGNED: Partial<EventData> & { assignment_id?: string; events?: ControllerEventRef[] };
@@ -266,3 +271,28 @@ export interface TemplateData {
 }
 
 export type NotificationType = keyof TemplateData;
+
+/** Lot 10a : données communes d'un avis de réservation de salle (hall_notif_data). */
+export interface HallReservationData {
+    reservation_id: string;
+    hall_id?: string;
+    hall_name?: string | null;
+    start_date: string;
+    end_date: string;
+    start_time?: string | null;
+    end_time?: string | null;
+    mode?: 'JOUR' | 'HEURE' | string;
+    total_amount: number;
+    paid_amount: number;
+    balance_amount?: number | null;
+    balance_due_at?: string | null;
+    cancellation_policy?: string | null;
+}
+
+/** Lot 10a : annulation ou délai dépassé (hall_cancel_apply). */
+export interface HallCancelData {
+    origin: 'CLIENT' | 'SALLE' | 'EVENT_VILLAGE' | 'DELAI' | string;
+    refund_amount: number;
+    refund_percent?: number | null;
+    reason?: string | null;
+}

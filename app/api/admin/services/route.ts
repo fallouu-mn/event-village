@@ -130,6 +130,25 @@ export async function PATCH(req: NextRequest) {
 
     try {
         const supabase = getServiceRoleClient();
+        // Lot 10a (point 5) : l'état d'une réservation de salle ne change que par une fonction en base, sous verrou et
+        // avec journal ; la modération annule une attente jamais payée au nom d'Event Village
+        if (table === 'hall_reservations') {
+            const { data: hold, error: holdErr } = await supabase.from('hall_reservations').select('booking_state, paid_amount').eq('id', id).maybeSingle();
+            if (holdErr) throw new Error(`lecture de hall_reservations ${id} : ${holdErr.message}`);
+            if (!hold) return NextResponse.json({ error: 'Élément introuvable.', code: 'NOT_FOUND' }, { status: 404 });
+            if (hold.booking_state !== 'EN_ATTENTE_PAIEMENT' || Number(hold.paid_amount) > 0) {
+                return NextResponse.json({ error: 'Seule une demande en attente et non payée peut être annulée ou refusée ici.', code: 'INVALID_SERVICE_TRANSITION' }, { status: 409 });
+            }
+            const { data: cancelled, error: cancelErr } = await supabase.rpc('hall_reservation_cancel', {
+                p: { reservation_id: id, actor_id: auth.user!.id, origin: 'EVENT_VILLAGE', reason: reason && reason.length >= 5 ? reason : 'Annulation par la modération' },
+            });
+            if (cancelErr) throw new Error(`hall_reservation_cancel ${id} : ${cancelErr.message}`);
+            const c = cancelled as { ok?: boolean; code?: string; message?: string; booking_state?: string };
+            if (c?.ok !== true) {
+                return NextResponse.json({ error: c?.message ?? 'Annulation impossible.', code: 'INVALID_SERVICE_TRANSITION' }, { status: c?.code === 'RESERVATION_NOT_FOUND' ? 404 : 409 });
+            }
+            return NextResponse.json({ success: true, updated: { id, status: 'ANNULEE' }, message: 'Réservation annulée.' });
+        }
         const { data: current, error: readErr } = await supabase.from(table as string).select(`id, ${rule.column}, payment_status`).eq('id', id).maybeSingle();
         if (readErr) throw new Error(`lecture de ${table} ${id} : ${readErr.message}`);
         if (!current) return NextResponse.json({ error: 'Élément introuvable.', code: 'NOT_FOUND' }, { status: 404 });

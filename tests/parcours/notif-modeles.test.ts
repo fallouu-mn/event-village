@@ -251,9 +251,17 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('SUBSCRIPTION_ACTIVATED', [I, M], 'PARTNER', 'A', 'SUBSCRIPTION_ACTIVATED', ['/partner/subscription'], 'Abonnement activé'), // G.49
     // Lot 8, tâche 8.2 m (contrat 10.1) : le lien suit la cible du paiement, voir « PAYMENT_SUCCESS : lien selon la cible ».
     ess('PAYMENT_SUCCESS', [I, M], 'CLIENT', 'A', 'PAYMENT_SUCCESS', ['/orders', '/partner/subscription'], 'Paiement confirmé'), // G.49
-    ess('HALL_RESERVATION_REQUESTED', [I, M], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls'], 'Nouvelle demande de réservation'), // G.49
-    ess('HALL_RESERVATION_CONFIRMED', [I, M], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Réservation confirmée'), // G.49
-    ess('HALL_RESERVATION_CANCELLED', [I, M], 'ANY', 'B', 'HALL_RESERVATION', ['/orders', '/partner/halls'], 'Réservation annulée'), // G.49
+    // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle ; SMS
+    // pour la confirmation, le rappel du solde, le délai dépassé, l'annulation et le remboursement seulement.
+    ess('HALL_RESERVATION_REQUESTED', [I, P, M], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls'], 'Nouvelle réservation'),
+    ess('HALL_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Réservation confirmée'),
+    ess('HALL_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Réservation annulée'),
+    ess('HALL_RESERVATION_CANCELLED_PRO', [I, P, M], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls'], 'Réservation annulée'),
+    ess('HALL_BALANCE_PAID', [I, P, M], 'ANY', 'B', 'HALL_RESERVATION', ['/orders', '/partner/halls'], 'Réservation payée'),
+    ess('HALL_BALANCE_REMINDER', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Solde à payer'),
+    ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Délai de paiement dépassé'),
+    ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Paiement remboursé'),
+    ess('HALL_VALIDATION_DECIDED', [I, P, M], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls'], 'Salle refusée'),
     ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)
@@ -846,6 +854,23 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 'Event Village : ce numéro est maintenant celui de votre compte administrateur. Reconnectez-vous avec votre mot de passe.'],
             ['ADMIN_PHONE_CONFIRMED', { by_self: true }, [],
                 'Event Village : ce numéro est maintenant celui de votre compte Superadmin. Vos autres appareils sont déconnectés.'],
+            // Lot 10a (migration 20261122000007) : SMS du parcours de réservation d'une salle, texte exact (exemples du catalogue). Ajout signalé.
+            ['HALL_RESERVATION_CONFIRMED', {}, [],
+                'Event Village : réservation confirmée : Salle des fetes de Ngor, du 5 déc. au 6 déc. Reste 294 000 F CFA à payer avant le 28 nov.'],
+            ['HALL_RESERVATION_CONFIRMED', {}, ['balance_amount', 'balance_due_at'],
+                'Event Village : réservation confirmée et payée : Salle des fetes de Ngor, du 5 déc. au 6 déc. Merci !'],
+            ['HALL_BALANCE_REMINDER', {}, [],
+                'Event Village : il reste 294 000 F CFA à payer pour Salle des fetes de Ngor avant le 28 nov. Sans paiement, la réservation sera annulée.'],
+            ['HALL_PAYMENT_DEADLINE_PASSED', {}, [],
+                'Event Village : délai de paiement dépassé, réservation annulée : Salle des fetes de Ngor. Remboursement de 63 000 F CFA en cours.'],
+            ['HALL_PAYMENT_DEADLINE_PASSED', { refund_amount: 0 }, [],
+                'Event Village : délai de paiement dépassé, réservation annulée : Salle des fetes de Ngor. Aucun remboursement selon les conditions de la salle.'],
+            ['HALL_RESERVATION_CANCELLED', {}, [],
+                'Event Village : la salle a annulé votre réservation : Salle des fetes de Ngor. Remboursement total de 126 000 F CFA en cours.'],
+            ['HALL_RESERVATION_CANCELLED', { origin: 'CLIENT', refund_amount: 63000 }, [],
+                'Event Village : réservation annulée : Salle des fetes de Ngor. Remboursement de 63 000 F CFA en cours.'],
+            ['HALL_PAYMENT_REFUNDED', {}, [],
+                'Event Village : votre paiement de 126 000 F CFA pour Salle des fetes de Ngor n\'a pas pu servir. Il vous est remboursé sur Orange Money.'],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).

@@ -1,16 +1,31 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
 import { assertNoPosterFolder } from '@/lib/images/image-address';
+import { sendHallRefunds } from './refunds';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type DepositMode = 'POURCENTAGE' | 'MONTANT_FIXE';
+export type CancellationPolicy = 'SOUPLE' | 'MODEREE' | 'STRICTE';
 
 export interface CreateHallInput {
     name: string;
     description?: string;
     capacity: number;
-    price_per_day?: number | null;
+    /** Lot 10a : prix par jour obligatoire, en F CFA entiers. */
+    price_per_day: number;
+    /** Lot 10a : prix par heure facultatif, en F CFA entiers. */
     price_per_hour?: number | null;
-    deposit_percentage?: number; // Configurable par le Partenaire (§45)
+    /** Lot 10a : acompte en pourcentage du prix (1 à 100 ; vide = réglage) ou montant fixe (F CFA). */
+    deposit_mode?: DepositMode;
+    deposit_value?: number | null;
+    /** Ancien nom de l'acompte en pourcentage (lot 0) : repris comme deposit_value si celui-ci est absent. */
+    deposit_percentage?: number;
+    /** Lot 10a : règle d'annulation choisie parmi les trois d'Event Village. */
+    cancellation_policy?: CancellationPolicy;
+    /** Lot 10a : position (bornes du Sénégal, comme les événements). */
+    latitude?: number | null;
+    longitude?: number | null;
     address?: string;
     city?: string;
     amenities?: string[];
@@ -24,19 +39,85 @@ export interface UpdateHallInput extends Partial<CreateHallInput> {
 export interface CreateHallReservationInput {
     hallId: string;
     clientId: string;
-    startDate: string; // YYYY-MM-DD
-    endDate: string;   // YYYY-MM-DD
+    startDate: string; // AAAA-MM-JJ
+    endDate: string;   // AAAA-MM-JJ
     startTime?: string;
     endTime?: string;
     notes?: string;
+    /** Ancien champ (lot 0), ignoré : l'échéance du solde est calculée en base (halls.balance_due_days). */
     moratoriumDate?: string;
+}
+
+const POLICIES: readonly CancellationPolicy[] = ['SOUPLE', 'MODEREE', 'STRICTE'];
+
+/**
+ * Correctifs de la contre-vérification du lot 10a (T1) : colonnes de la fiche d'une salle lues par sa propriétaire
+ * (écran de modification). Jamais les réservations, ni le téléphone ou le compte de la partenaire.
+ */
+const OWN_HALL_COLUMNS = 'id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, deposit_percentage, '
+    + 'cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, created_at, updated_at';
+
+/** Montant en F CFA entier d'au moins 1, ou une erreur lisible. */
+function wholeFcfa(value: unknown, what: string): number {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1) throw new PublicError(`${what} doit être un nombre entier de francs CFA, au moins 1.`);
+    return n;
+}
+
+/**
+ * Lot 10a — champs d'argent, d'annulation et de position d'une salle, contrôlés avant l'écriture (la base garde les
+ * mêmes règles : halls_price_chk, halls_deposit_chk, halls_cancellation_policy_chk, halls_position_chk).
+ */
+function hallRules(input: Partial<CreateHallInput>, creating: boolean): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    if (creating || input.price_per_day !== undefined) out.price_per_day = wholeFcfa(input.price_per_day, 'Le prix par jour');
+    if (input.price_per_hour !== undefined) {
+        out.price_per_hour = input.price_per_hour === null || input.price_per_hour === 0 ? null : wholeFcfa(input.price_per_hour, 'Le prix par heure');
+    }
+    if (creating || input.deposit_mode !== undefined || input.deposit_value !== undefined || input.deposit_percentage !== undefined) {
+        const mode = input.deposit_mode ?? 'POURCENTAGE';
+        if (mode !== 'POURCENTAGE' && mode !== 'MONTANT_FIXE') throw new PublicError('Choisissez un acompte en pourcentage ou en montant fixe.');
+        const raw = input.deposit_value ?? (mode === 'POURCENTAGE' ? input.deposit_percentage : undefined);
+        if (mode === 'POURCENTAGE') {
+            if (raw === undefined || raw === null) {
+                out.deposit_value = null;
+            } else {
+                const pct = Number(raw);
+                if (!Number.isFinite(pct) || pct < 1 || pct > 100) throw new PublicError('L’acompte en pourcentage va de 1 à 100 %.');
+                out.deposit_value = pct;
+                // Ancienne colonne gardée en cohérence (lectures du lot 0)
+                out.deposit_percentage = pct;
+            }
+        } else {
+            out.deposit_value = wholeFcfa(raw, 'L’acompte fixe');
+        }
+        out.deposit_mode = mode;
+    }
+    if (creating || input.cancellation_policy !== undefined) {
+        const policy = input.cancellation_policy ?? 'MODEREE';
+        if (!POLICIES.includes(policy)) throw new PublicError('Choisissez une règle d’annulation : souple, modérée ou stricte.');
+        out.cancellation_policy = policy;
+    }
+    if (input.latitude !== undefined || input.longitude !== undefined) {
+        const lat = input.latitude ?? null;
+        const lng = input.longitude ?? null;
+        if ((lat === null) !== (lng === null)) throw new PublicError('La position du lieu est incomplète : touchez la carte pour placer le repère.');
+        if (lat !== null && lng !== null) {
+            if (!(Number(lat) >= 12.2 && Number(lat) <= 16.8 && Number(lng) >= -17.6 && Number(lng) <= -11.3)) {
+                throw new PublicError('Le repère doit être placé au Sénégal : touchez la carte à l’emplacement de la salle.');
+            }
+        }
+        out.latitude = lat === null ? null : Number(lat);
+        out.longitude = lng === null ? null : Number(lng);
+    }
+    return out;
 }
 
 export class HallService {
     /**
      * Résout l'ID partenaire à partir de l'ID utilisateur authentifié
      */
-    public static async resolvePartnerId(userId: string): Promise<string> {
+    public static async resolvePartnerId(userId: string, opts: { requireValidated?: boolean } = {}): Promise<string> {
         const supabase = getServiceRoleClient();
         const { data: partner, error } = await supabase
             .from('partners')
@@ -47,6 +128,10 @@ export class HallService {
         if (error || !partner) {
             throw new PublicError('Profil partenaire introuvable.');
         }
+        // Lot 10a : une fiche non validée ou suspendue ne crée rien de nouveau
+        if (opts.requireValidated && partner.status !== 'VALIDE') {
+            throw new PublicError('Votre compte partenaire doit être validé pour ajouter une salle.', 'PARTNER_NOT_VALIDATED', 403);
+        }
 
         return partner.id;
     }
@@ -56,7 +141,7 @@ export class HallService {
      */
     public static async createHall(partnerUserId: string, input: CreateHallInput) {
         const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
+        const partnerId = await this.resolvePartnerId(partnerUserId, { requireValidated: true });
 
         if (!input.name || !input.name.trim()) {
             throw new PublicError('Le nom de la salle est obligatoire.');
@@ -64,18 +149,11 @@ export class HallService {
         if (!input.capacity || input.capacity <= 0) {
             throw new PublicError('La capacité de la salle doit être supérieure à 0.');
         }
-        if ((!input.price_per_day || input.price_per_day < 0) && (!input.price_per_hour || input.price_per_hour < 0)) {
-            throw new PublicError('Vous devez renseigner au moins un tarif valide (par jour ou par heure).');
-        }
-
-        // Taux d'acompte configurable (par défaut 30%, modifiable par le partenaire)
-        const depositRate = input.deposit_percentage !== undefined ? Number(input.deposit_percentage) : 30.0;
-        if (depositRate < 0 || depositRate > 100) {
-            throw new PublicError('Le taux d\'acompte doit être compris entre 0% et 100%.');
-        }
+        const rules = hallRules(input, true);
         // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/)
         assertNoPosterFolder(input.images);
 
+        // Lot 10a : statut de validation posé par la base (trg_halls_validation_guard, réglage halls.validation_required)
         const { data: hall, error } = await supabase
             .from('halls')
             .insert({
@@ -83,9 +161,7 @@ export class HallService {
                 name: input.name.trim(),
                 description: input.description || null,
                 capacity: Number(input.capacity),
-                price_per_day: input.price_per_day ? Number(input.price_per_day) : null,
-                price_per_hour: input.price_per_hour ? Number(input.price_per_hour) : null,
-                deposit_percentage: depositRate,
+                ...rules,
                 address: input.address || null,
                 city: input.city || 'Dakar',
                 amenities: input.amenities || [],
@@ -123,24 +199,63 @@ export class HallService {
     }
 
     /**
-     * Récupère une salle par son ID
+     * Correctifs de la contre-vérification du lot 10a (T1) : identifiant de la fiche partenaire du compte, ou null si le
+     * compte n'en a pas (l'appelant répond alors « Salle introuvable », sans indice). Panne : erreur, journal et 500.
      */
-    public static async getHallById(hallId: string) {
-        // Lot 9 (A32) : absence ou uuid invalide : 404 ; panne : erreur, journal et 500.
+    private static async ownPartnerId(userId: string): Promise<string | null> {
+        const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', userId).maybeSingle();
+        if (error) throw new Error(`partenaire du compte ${userId} illisible : ${error.message}`);
+        return data ? String(data.id) : null;
+    }
+
+    /**
+     * Correctifs de la contre-vérification du lot 10a (T1) : la salle n'existe que pour sa propriétaire. Une salle
+     * d'une autre partenaire, un compte sans fiche partenaire, un identifiant invalide : même « Salle introuvable »
+     * (404). Rend l'identifiant de la fiche partenaire.
+     */
+    private static async assertOwnHall(hallId: string, userId: string): Promise<string> {
         const notFound = () => new PublicError('Salle introuvable.', 'HALL_NOT_FOUND', 404);
         if (!UUID_RE.test(hallId)) throw notFound();
+        const partnerId = await this.ownPartnerId(userId);
+        if (!partnerId) throw notFound();
+        const { data, error } = await getServiceRoleClient().from('halls').select('id').eq('id', hallId).eq('partner_id', partnerId).maybeSingle();
+        if (error) throw new Error(`salle ${hallId} illisible : ${error.message}`);
+        if (!data) throw notFound();
+        return partnerId;
+    }
+
+    /**
+     * Fiche d'une salle pour l'écran de modification de sa propriétaire (GET /api/partner/halls/[id]).
+     * Lot 9 (A32) : absence ou uuid invalide : 404 ; panne : erreur, journal et 500.
+     * Correctifs de la contre-vérification du lot 10a (T1) : seulement la partenaire propriétaire (fiche résolue depuis
+     * la session ; sinon 404 sans indice) ; colonnes de la fiche seulement : ni réservations (client, note, montants),
+     * ni téléphone ni compte de la partenaire. L'écran n'a besoin que de savoir s'il reste des réservations en cours.
+     */
+    public static async getOwnHall(hallId: string, partnerUserId: string) {
+        const notFound = () => new PublicError('Salle introuvable.', 'HALL_NOT_FOUND', 404);
+        if (!UUID_RE.test(hallId)) throw notFound();
+        const partnerId = await this.ownPartnerId(partnerUserId);
+        if (!partnerId) throw notFound();
 
         const supabase = getServiceRoleClient();
         const { data: hall, error } = await supabase
             .from('halls')
-            .select('*, partners(company_name, phone, user_id), hall_reservations(*)')
+            .select(OWN_HALL_COLUMNS)
             .eq('id', hallId)
+            .eq('partner_id', partnerId)
             .maybeSingle();
 
         if (error) throw new Error(`salle ${hallId} illisible : ${error.message}`);
         if (!hall) throw notFound();
 
-        return hall;
+        const { count, error: countErr } = await supabase
+            .from('hall_reservations')
+            .select('id', { count: 'exact', head: true })
+            .eq('hall_id', hallId)
+            .in('status', ['EN_ATTENTE', 'CONFIRMEE']);
+        if (countErr) throw new Error(`réservations de la salle ${hallId} illisibles : ${countErr.message}`);
+
+        return { ...(hall as unknown as Record<string, unknown>), has_active_reservations: (count ?? 0) > 0 };
     }
 
     /**
@@ -148,7 +263,8 @@ export class HallService {
      */
     public static async updateHall(hallId: string, partnerUserId: string, input: UpdateHallInput) {
         const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Correctifs de la contre-vérification du lot 10a (T1) : salle d'une autre partenaire « introuvable » (404)
+        const partnerId = await this.assertOwnHall(hallId, partnerUserId);
 
         const updateData: Record<string, any> = {
             updated_at: new Date().toISOString(),
@@ -157,9 +273,9 @@ export class HallService {
         if (input.name) updateData.name = input.name.trim();
         if (input.description !== undefined) updateData.description = input.description;
         if (input.capacity) updateData.capacity = Number(input.capacity);
-        if (input.price_per_day !== undefined) updateData.price_per_day = input.price_per_day ? Number(input.price_per_day) : null;
-        if (input.price_per_hour !== undefined) updateData.price_per_hour = input.price_per_hour ? Number(input.price_per_hour) : null;
-        if (input.deposit_percentage !== undefined) updateData.deposit_percentage = Number(input.deposit_percentage);
+        // Lot 10a : prix, acompte, règle d'annulation et position contrôlés ; une réservation déjà faite garde ses
+        // montants et sa règle (figés à sa création)
+        Object.assign(updateData, hallRules(input, false));
         if (input.address !== undefined) updateData.address = input.address;
         if (input.city !== undefined) updateData.city = input.city;
         if (input.amenities !== undefined) updateData.amenities = input.amenities;
@@ -190,14 +306,18 @@ export class HallService {
      */
     public static async deleteHall(hallId: string, partnerUserId: string) {
         const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Correctifs de la contre-vérification du lot 10a (T1) : propriétaire vérifiée AVANT de lire les réservations
+        // (une autre partenaire apprenait si la salle avait des réservations en cours, puis recevait « supprimée » sans
+        // que rien ne le soit) ; salle d'une autre partenaire « introuvable » (404). Panne de lecture : erreur et 500.
+        const partnerId = await this.assertOwnHall(hallId, partnerUserId);
 
         // Vérification des réservations actives
-        const { data: activeRes } = await supabase
+        const { data: activeRes, error: activeErr } = await supabase
             .from('hall_reservations')
             .select('id')
             .eq('hall_id', hallId)
             .in('status', ['EN_ATTENTE', 'CONFIRMEE']);
+        if (activeErr) throw new Error(`réservations de la salle ${hallId} illisibles : ${activeErr.message}`);
 
         if (activeRes && activeRes.length > 0) {
             throw new PublicError('Impossible de supprimer une salle ayant des réservations actives. Veuillez la désactiver.');
@@ -217,194 +337,71 @@ export class HallService {
     }
 
     /**
-     * Création d'une réservation avec gestion Acompte, Solde et Moratoire (§45-§48 CDC V3.0)
+     * Lot 10a : réservation par la seule fonction en base (hall_reserve) ; aucun montant calculé ici. Gardé pour les
+     * appels serveur et les tests : à la journée (dates de début et de fin) ou à l'heure (même date, heures pleines).
      */
     public static async createReservation(input: CreateHallReservationInput) {
         const supabase = getServiceRoleClient();
-
-        // 1. Validation de la chronologie des dates
-        if (input.endDate < input.startDate) {
-            throw new PublicError('La date de fin ne peut pas être antérieure à la date de début.');
-        }
-
-        // 2. Récupération de la salle et vérification de la disponibilité
-        const { data: hall, error: hallErr } = await supabase
-            .from('halls')
-            .select('*, partners(user_id, company_name)')
-            .eq('id', input.hallId)
-            .eq('is_active', true)
-            .single();
-
-        if (hallErr || !hall) {
-            throw new PublicError('Salle introuvable ou indisponible.');
-        }
-
-        // 3. Détection de conflit de dates (Protection anti-double réservation)
-        const { data: conflicting } = await supabase
-            .from('hall_reservations')
-            .select('id, start_date, end_date, status')
-            .eq('hall_id', input.hallId)
-            .in('status', ['EN_ATTENTE', 'CONFIRMEE'])
-            .lte('start_date', input.endDate)
-            .gte('end_date', input.startDate);
-
-        if (conflicting && conflicting.length > 0) {
-            throw new PublicError('La salle est déjà réservée pour cette période (dates conflictuelles).');
-        }
-
-        // 4. Calcul de la durée en jours et du montant total
-        const start = new Date(input.startDate);
-        const end = new Date(input.endDate);
-        const diffDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-
-        const dayRate = Number(hall.price_per_day || (hall.price_per_hour ? hall.price_per_hour * 8 : 100000));
-        const totalAmount = dayRate * diffDays;
-
-        // 5. Calcul précis de l'Acompte et du Solde selon le taux configurable
-        const depositRate = Number(hall.deposit_percentage || 30.0);
-        const depositAmount = Math.round((totalAmount * depositRate) / 100);
-        const balanceAmount = totalAmount - depositAmount;
-
-        // Invariant : total = deposit + balance
-        if (depositAmount + balanceAmount !== totalAmount) {
-            throw new Error('Erreur d\'équilibre financier sur le calcul du solde.');
-        }
-
-        // 6. Calcul de la date de moratoire par défaut (7 jours avant l'événement ou veille si court délai)
-        let moratorium = input.moratoriumDate;
-        if (!moratorium) {
-            const moraDate = new Date(start);
-            moraDate.setDate(moraDate.getDate() - 7);
-            const today = new Date();
-            if (moraDate < today) {
-                moraDate.setTime(today.getTime() + 2 * 24 * 60 * 60 * 1000); // 48h
-            }
-            moratorium = moraDate.toISOString().split('T')[0];
-        }
-
-        // 7. Insertion de la réservation
-        const { data: reservation, error: resErr } = await supabase
-            .from('hall_reservations')
-            .insert({
-                hall_id: input.hallId,
-                partner_id: hall.partner_id,
+        const hourly = Boolean(input.startTime && input.endTime && input.startDate === input.endDate);
+        const units = hourly
+            ? Math.round((Date.parse(`1970-01-01T${input.endTime}:00Z`) - Date.parse(`1970-01-01T${input.startTime}:00Z`)) / 3_600_000)
+            : Math.round((Date.parse(`${input.endDate}T00:00:00Z`) - Date.parse(`${input.startDate}T00:00:00Z`)) / 86_400_000) + 1;
+        const { data, error } = await supabase.rpc('hall_reserve', {
+            p: {
                 client_id: input.clientId,
+                hall_id: input.hallId,
+                mode: hourly ? 'HEURE' : 'JOUR',
                 start_date: input.startDate,
-                end_date: input.endDate,
-                start_time: input.startTime || null,
-                end_time: input.endTime || null,
-                total_amount: totalAmount,
-                deposit_amount: depositAmount,
-                balance_amount: balanceAmount,
-                moratorium_date: moratorium,
-                status: 'EN_ATTENTE',
-                payment_status: 'PENDING',
-                notes: input.notes || null,
-            })
-            .select('*')
-            .single();
-
-        if (resErr || !reservation) {
-            const errorMsg = resErr?.message || '';
-            if (
-                errorMsg.includes('déjà réservée') ||
-                errorMsg.includes('conflictuelles') ||
-                errorMsg.includes('exclusion') ||
-                errorMsg.includes('no_overlapping_hall_reservations') ||
-                (resErr as any)?.code === '23P01'
-            ) {
-                throw new PublicError('La salle est déjà réservée pour cette période (dates conflictuelles).');
-            }
-            throw new Error(`Échec création réservation: ${errorMsg}`);
-        }
-
-        // 8. Lot 6 (J2.11) : l'avis au partenaire gérant la salle (HALL_RESERVATION_REQUESTED) est mis en
-        //    file par le trigger trg_hall_reservations_notify dans la transaction de l'insertion.
-
+                units,
+                start_time: hourly ? input.startTime : null,
+                notes: input.notes ?? null,
+            },
+        });
+        if (error) throw new Error(`hall_reserve : ${error.message}`);
+        const r = data as { ok?: boolean; code?: string; message?: string; reservation_id?: string };
+        if (r?.ok !== true) throw new PublicError(r?.message ?? 'Réservation impossible.', r?.code, 409);
+        const { data: reservation, error: readErr } = await supabase.from('hall_reservations').select('*').eq('id', r.reservation_id).single();
+        if (readErr || !reservation) throw new Error(`Lecture de la réservation ${r.reservation_id} impossible : ${readErr?.message}`);
         return reservation;
     }
 
     /**
-     * Confirmation d'une réservation de salle (§47-§48 CDC V3.0)
-     *
-     * Deux vecteurs de confirmation sont supportés et coexistent de manière complémentaire :
-     * 1. Déclenchement automatique par paiement de l'acompte (En ligne) :
-     *    Géré directement par le webhook SamirPay (`lib/payments/confirmation.service.ts` (lot 2)).
-     *    Dès que la transaction de paiement de l'acompte passe à `SUCCESS`, la réservation
-     *    est automatiquement passée à `payment_status = 'SUCCESS'` et `status = 'CONFIRMEE'`.
-     *
-     * 2. Déclenchement discrétionnaire par le Partenaire (Manuel / Hors plateforme) :
-     *    Exécuté via cette méthode `confirmReservation`. Permet au Partenaire gestionnaire
-     *    de valider manuellement une réservation (ex: acompte réglé en espèces / virement direct
-     *    hors plateforme selon §12 de l'architecture, ou accord commercial préalable).
+     * Lot 10a (C1) : une réservation est confirmée par son paiement, jamais par la salle. Rend la réservation si elle
+     * est payée (acompte ou totalité) ; sinon refus.
      */
     public static async confirmReservation(reservationId: string, partnerUserId: string) {
         const supabase = getServiceRoleClient();
         const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data: updated, error } = await supabase
-            .from('hall_reservations')
-            .update({
-                status: 'CONFIRMEE',
-                updated_at: new Date().toISOString(),
-            })
-            .eq('id', reservationId)
-            .eq('partner_id', partnerId)
-            .select('*')
-            .single();
-
-        if (error || !updated) {
-            throw new Error(`Échec confirmation réservation: ${error?.message}`);
+        const { data: reservation, error } = await supabase
+            .from('hall_reservations').select('*').eq('id', reservationId).eq('partner_id', partnerId).maybeSingle();
+        if (error) throw new Error(`Lecture de la réservation ${reservationId} impossible : ${error.message}`);
+        if (!reservation) throw new PublicError('Réservation introuvable.', 'RESERVATION_NOT_FOUND', 404);
+        if (reservation.booking_state !== 'ACOMPTE_PAYE' && reservation.booking_state !== 'PAYEE') {
+            throw new PublicError('Cette réservation n’est pas payée : elle sera confirmée automatiquement dès que le client aura payé l’acompte.', 'NOT_PAID', 409);
         }
-
-        // Lot 6 (J2.11) : avis au client (HALL_RESERVATION_CONFIRMED) mis en file par le trigger
-        // trg_hall_reservations_notify.
-
-        return updated;
+        return reservation;
     }
 
     /**
-     * Annulation d'une réservation
+     * Lot 10a : annulation par la fonction en base (hall_reservation_cancel) : par la salle (remboursement total, motif
+     * obligatoire) ou par le client (règle d'annulation figée sur la réservation). Les remboursements sont envoyés.
      */
     public static async cancelReservation(reservationId: string, userId: string, reason?: string) {
         const supabase = getServiceRoleClient();
-
-        const { data: existing, error: findErr } = await supabase
-            .from('hall_reservations')
-            .select('*, partners(user_id)')
-            .eq('id', reservationId)
-            .single();
-
-        if (findErr || !existing) {
-            throw new PublicError('Réservation introuvable.');
-        }
-
-        const isOwner = existing.partners?.user_id === userId;
-        const isClient = existing.client_id === userId;
-
-        if (!isOwner && !isClient) {
-            throw new PublicError('Action non autorisée.');
-        }
-
-        const { data: updated, error } = await supabase
-            .from('hall_reservations')
-            .update({
-                status: 'ANNULEE',
-                payment_status: 'CANCELLED',
-                updated_at: new Date().toISOString(),
-            })
-            .eq('id', reservationId)
-            .select('*')
-            .single();
-
-        if (error || !updated) {
-            throw new Error(`Échec annulation: ${error?.message}`);
-        }
-
-        // Lot 6 (J2.11) : avis au client et au partenaire (HALL_RESERVATION_CANCELLED) mis en file par le
-        // trigger trg_hall_reservations_notify. Le motif saisi n'a pas de colonne : il est journalisé.
-        if (reason) console.info(`[HallService] réservation ${reservationId} annulée par ${isOwner ? 'le partenaire' : 'le client'} : ${reason}`);
-
-        return updated;
+        const { data: current, error: readErr } = await supabase
+            .from('hall_reservations').select('client_id').eq('id', reservationId).maybeSingle();
+        if (readErr) throw new Error(`Lecture de la réservation ${reservationId} impossible : ${readErr.message}`);
+        if (!current) throw new PublicError('Réservation introuvable.', 'RESERVATION_NOT_FOUND', 404);
+        const origin = current.client_id === userId ? 'CLIENT' : 'SALLE';
+        const { data, error } = await supabase.rpc('hall_reservation_cancel', {
+            p: { reservation_id: reservationId, actor_id: userId, origin, reason: reason ?? '' },
+        });
+        if (error) throw new Error(`hall_reservation_cancel : ${error.message}`);
+        const r = data as { ok?: boolean; code?: string; message?: string; cashout_ids?: unknown };
+        if (r?.ok !== true) throw new PublicError(r?.message ?? 'Annulation impossible.', r?.code, 409);
+        await sendHallRefunds(r.cashout_ids);
+        const { data: reservation, error: afterErr } = await supabase.from('hall_reservations').select('*').eq('id', reservationId).single();
+        if (afterErr || !reservation) throw new Error(`Lecture de la réservation ${reservationId} impossible : ${afterErr?.message}`);
+        return reservation;
     }
 }

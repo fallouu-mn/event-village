@@ -30,9 +30,12 @@ export async function GET(req: NextRequest) {
                 images,
                 is_active,
                 partner_id,
-                partners(id, company_name, commercial_name)
+                partners!inner(id, company_name, commercial_name, status)
             `)
             .eq('is_active', true)
+            // Lot 10a : seules les salles validées par l'administration, d'un partenaire validé, sont publiques
+            .eq('validation_status', 'VALIDEE')
+            .eq('partners.status', 'VALIDE')
             .order('name', { ascending: true });
 
         if (error) {

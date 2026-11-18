@@ -39,7 +39,7 @@ export class PaymentService {
         let payableAmount = 0;
         let partnerId: string | null = null;
         let orderRefId: string | null = null;
-        let hallResRefId: string | null = null;
+        const hallResRefId: string | null = null;
         let tableResRefId: string | null = null;
         let subscriptionRefId: string | null = null;
         let description = '';
@@ -84,33 +84,10 @@ export class PaymentService {
             }
 
             case 'HALL_RESERVATION': {
-                const { data: reservation, error } = await supabase
-                    .from('hall_reservations')
-                    .select('*')
-                    .eq('id', input.targetId)
-                    .single();
-
-                if (error || !reservation) {
-                    throw new PublicError('Réservation de salle introuvable.');
-                }
-                if (reservation.client_id !== userId) {
-                    throw new PublicError('Non autorisé : Réservation appartenant à un autre utilisateur.');
-                }
-                if (reservation.payment_status === 'SUCCESS') {
-                    throw new PublicError('Cette réservation de salle est déjà payée.');
-                }
-
-                payableAmount = Number(
-                    reservation.balance_amount > 0
-                        ? reservation.balance_amount
-                        : (reservation.deposit_amount > 0 ? reservation.deposit_amount : reservation.total_amount)
-                );
-                partnerId = reservation.partner_id;
-                hallResRefId = reservation.id;
-                description = `Réservation Salle - ${reservation.start_date}`;
-                break;
+                // Lot 10a (S4) : un paiement de salle passe par startHallPayment (hall_payment_create, montant relu sur
+                // la réservation : acompte, solde ou totalité) ; ce chemin générique payait le solde avant l'acompte.
+                throw new PaymentInputError('Choisissez de payer l’acompte, le solde ou la totalité de la réservation.', 'INVALID_PART');
             }
-
             case 'TABLE_RESERVATION': {
                 const { data: tableRes, error } = await supabase
                     .from('table_reservations')
@@ -253,38 +230,6 @@ export class PaymentService {
         }
         // Transaction existante adoptée : aucun lien pour le client, le paiement rendu reste surveillé.
         throw new PaymentInputError('Le service de paiement ne répond pas : réessayez.', 'PAYMENT_PROVIDER_UNCERTAIN', 502);
-    }
-
-    /**
-     * Expire automatiquement les réservations en moratoire dont la date limite est dépassée
-     */
-    public async expireOverdueMoratoriums(): Promise<{ expiredCount: number; reservationIds: string[] }> {
-        const supabase = getServiceRoleClient();
-        const today = new Date().toISOString().split('T')[0];
-
-        const { data: expiredReservations, error } = await supabase
-            .from('hall_reservations')
-            .select('id, hall_id, partner_id, client_id, moratorium_date')
-            .lt('moratorium_date', today)
-            .neq('payment_status', 'SUCCESS')
-            .eq('status', 'EN_ATTENTE');
-
-        if (error || !expiredReservations || expiredReservations.length === 0) {
-            return { expiredCount: 0, reservationIds: [] };
-        }
-
-        const ids = expiredReservations.map(r => r.id);
-
-        await supabase
-            .from('hall_reservations')
-            .update({
-                status: 'ANNULEE',
-                payment_status: 'CANCELLED',
-                updated_at: new Date().toISOString(),
-            })
-            .in('id', ids);
-
-        return { expiredCount: ids.length, reservationIds: ids };
     }
 }
 

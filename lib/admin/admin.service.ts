@@ -22,6 +22,8 @@ export interface FinancialReconciliationItem {
     platformNetRevenue: number;
     refundedAmount: number;
     partnerPayout: number;
+    /** Correctifs de la contre-vérification du lot 10a (T6) : commission d'Event Village sur une salle (0 hors salle), comprise dans le revenu brut. */
+    hallCommission: number;
     referralCommissionN1: number;
     referralCommissionN2: number;
     totalReferralCommissions: number;
@@ -38,6 +40,8 @@ export interface FinancialReconciliationSummary {
     totalAggregatorFees: number;
     totalPlatformNetRevenue: number;
     totalPartnerPayouts: number;
+    /** Correctifs de la contre-vérification du lot 10a (T6) : commissions d'Event Village sur les salles. */
+    totalHallCommissions: number;
     totalReferralCommissions: number;
     totalWithdrawalsPaid: number;
     totalRefunds: number;
@@ -68,6 +72,7 @@ interface ReconciliationPaymentRow {
     subscription_plan_id: string | null;
     event_id: string | null;
     created_at: string;
+    metadata: Record<string, unknown> | null;
 }
 
 /** Statuts d'un paiement dont l'argent a été encaissé (avant ou après remboursement). */
@@ -117,6 +122,8 @@ export class AdminService {
      * Statut « ALL » : paiements encaissés (SUCCESS, PARTIAL, REFUNDED, REFUND_PENDING).
      * Contrôle d'écart par paiement : total = reversement partenaire + revenu brut EV, et
      * revenu brut EV = revenu net EV + frais d'agrégateur.
+     * Correctifs de la contre-vérification du lot 10a (T6) : pour une salle, de plus, reversement = facial − commission
+     * et revenu brut EV = frais de service + commission (net EV = service + commission − agrégateur).
      */
     static async getFinancialReconciliation(options?: {
         startDate?: string;
@@ -132,7 +139,7 @@ export class AdminService {
         const payments = await fetchAllRows<ReconciliationPaymentRow>('rapprochement : paiements', (from, to) => {
             let q = supabase
                 .from('payments')
-                .select('id, transaction_id, external_transaction_id, payment_target, operator, status, amount, facial_amount, service_fee, service_fee_rate, aggregator_fee, gross_event_village_revenue, net_event_village_revenue, refunded_net_revenue, refunded_amount, partner_payout_amount, order_id, hall_reservation_id, table_reservation_id, subscription_plan_id, event_id, created_at')
+                .select('id, transaction_id, external_transaction_id, payment_target, operator, status, amount, facial_amount, service_fee, service_fee_rate, aggregator_fee, gross_event_village_revenue, net_event_village_revenue, refunded_net_revenue, refunded_amount, partner_payout_amount, order_id, hall_reservation_id, table_reservation_id, subscription_plan_id, event_id, created_at, metadata')
                 .eq('is_platform_payment', true);
             q = status ? q.eq('status', status) : q.in('status', ENCASHED_STATUSES);
             if (options?.startDate) q = q.gte('created_at', options.startDate);
@@ -179,6 +186,7 @@ export class AdminService {
         let totalAggregatorFees = 0;
         let totalPlatformNetRevenue = 0;
         let totalPartnerPayouts = 0;
+        let totalHallCommissions = 0;
         let totalReferralCommissions = 0;
         let discrepanciesCount = 0;
 
@@ -193,7 +201,11 @@ export class AdminService {
             const n1 = commMap[p.id]?.n1 ?? 0;
             const n2 = commMap[p.id]?.n2 ?? 0;
 
-            const gapCents = Math.abs(cents(grossAmount) - cents(partnerPayout + evGross)) + Math.abs(cents(evGross) - cents(evNet + aggregatorFee));
+            const hallCommission = p.payment_target === 'HALL_RESERVATION' ? Number(p.metadata?.commission_amount ?? 0) : 0;
+            const hallGapCents = p.payment_target === 'HALL_RESERVATION' && p.facial_amount !== null
+                ? Math.abs(cents(partnerPayout) - (cents(Number(p.facial_amount)) - cents(hallCommission))) + Math.abs(cents(evGross) - (cents(serviceFee) + cents(hallCommission)))
+                : 0;
+            const gapCents = Math.abs(cents(grossAmount) - cents(partnerPayout + evGross)) + Math.abs(cents(evGross) - cents(evNet + aggregatorFee)) + hallGapCents;
             if (gapCents > 0) discrepanciesCount += 1;
 
             totalGrossVolume += grossAmount;
@@ -201,6 +213,7 @@ export class AdminService {
             totalAggregatorFees += aggregatorFee;
             totalPlatformNetRevenue += platformNetRevenue;
             totalPartnerPayouts += partnerPayout;
+            totalHallCommissions += hallCommission;
             totalReferralCommissions += n1 + n2;
 
             return {
@@ -218,6 +231,7 @@ export class AdminService {
                 platformNetRevenue,
                 refundedAmount: Number(p.refunded_amount ?? 0),
                 partnerPayout,
+                hallCommission,
                 referralCommissionN1: n1,
                 referralCommissionN2: n2,
                 totalReferralCommissions: n1 + n2,
@@ -239,6 +253,7 @@ export class AdminService {
                 totalAggregatorFees,
                 totalPlatformNetRevenue,
                 totalPartnerPayouts,
+                totalHallCommissions,
                 totalReferralCommissions,
                 totalWithdrawalsPaid,
                 totalRefunds,
