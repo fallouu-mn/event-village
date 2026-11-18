@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { PendingPaymentBanner, type PendingTicketPaymentView } from '@/components/payment/PendingPaymentBanner';
+import dynamic from 'next/dynamic';
+import type { PendingTicketPaymentView } from '@/components/payment/PendingPaymentBanner';
+
+// Chargé à la demande, pour une personne connectée seulement : le bandeau et sa fenêtre de confirmation ne pèsent rien dans
+// le JavaScript de la fiche (budget de /events/[id]).
+const PendingPaymentBanner = dynamic(() => import('@/components/payment/PendingPaymentBanner').then((m) => m.PendingPaymentBanner), { ssr: false });
 import { emitPending, onPendingRefresh, TICKETS_AFTER_PURCHASE } from './signals';
 
 /**
