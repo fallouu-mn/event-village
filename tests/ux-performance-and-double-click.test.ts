@@ -12,6 +12,31 @@ import * as path from 'path';
 import './helpers/env';
 import { TEST_PASSWORD } from './helpers/fixture-data';
 import { randomSenegalPhone } from './parcours/helpers';
+// Lot 10a (modification signalée au rapport) : le service des salles est fermé par son interrupteur et une salle n'est réservable
+// qu'après validation par l'administration : la suite ouvre le service le temps de ses tests (valeur remise ensuite)
+// et valide ses salles ; les dates sont relatives (une réservation exige une date à venir).
+import { before, after } from 'node:test';
+import { superadminId } from './parcours/finance-helpers';
+import { platformSetting, setPlatformSetting } from './parcours/l10a-helpers';
+
+let hallsWereOpen: unknown;
+before(async () => {
+    hallsWereOpen = await platformSetting('features.halls_enabled');
+    await setPlatformSetting('features.halls_enabled', true);
+});
+after(async () => {
+    await setPlatformSetting('features.halls_enabled', hallsWereOpen);
+});
+
+async function validateHall(adminClient: { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }, hallId: string): Promise<void> {
+    const { data, error } = await adminClient.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: hallId, decision: 'VALIDER' } });
+    if (error || (data as { ok?: boolean } | null)?.ok !== true) throw new Error(`Validation de la salle échouée : ${error?.message ?? JSON.stringify(data)}`);
+}
+
+function dayFromNow(days: number): string {
+    return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -101,6 +126,7 @@ test('2. PROTECTION ANTI-DOUBLE CLIC CONCURRENT : 2 clics simultanés sur une r�
         partner_id: partner.id, name: 'Salle Anti-Double Clic', capacity: 150, price_per_day: 100000, deposit_percentage: 30.0
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
+    await validateHall(adminClient, hall.id);
 
     try {
         // Simulation de 2 clics ultra-rapides simultanés sur le bouton "Réserver"
@@ -108,14 +134,14 @@ test('2. PROTECTION ANTI-DOUBLE CLIC CONCURRENT : 2 clics simultanés sur une r�
             HallService.createReservation({
                 hallId: hall.id,
                 clientId,
-                startDate: '2026-12-05',
-                endDate: '2026-12-07',
+                startDate: dayFromNow(80),
+                endDate: dayFromNow(82),
             }),
             HallService.createReservation({
                 hallId: hall.id,
                 clientId,
-                startDate: '2026-12-05',
-                endDate: '2026-12-07',
+                startDate: dayFromNow(80),
+                endDate: dayFromNow(82),
             }),
         ]);
 

@@ -54,7 +54,7 @@ import { callMiddleware } from '../helpers/middleware';
 import { isModuleNotFound } from '../helpers/notification-invariants';
 import { BASE_URL } from './helpers';
 import { createSaleEvent, importModule, newBuyer, service, type Buyer } from './paiement-helpers';
-import { newPartner, type TestPartner } from './finance-helpers';
+import { newPartner, superadminId, type TestPartner } from './finance-helpers';
 import {
     assertTerrainInvariants, FEATURE_FLAG_KEYS, getPlatformSetting, readFeatureFlagSettings, withFeatureFlags,
     type FeatureFlag,
@@ -95,6 +95,10 @@ before(async () => {
     }).select('id').single();
     assert.equal(hallErr, null, `salle : ${hallErr?.message}`);
     hallId = hall.id;
+    // Lot 10a (modification signalée au rapport) : une salle n'est visible et réservable qu'après validation par l'administration
+    const { data: decided, error: decErr } = await service.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: hallId, decision: 'VALIDER' } });
+    assert.equal(decErr, null, `validation de la salle : ${decErr?.message}`);
+    assert.equal((decided as { ok?: boolean }).ok, true, `validation de la salle : ${JSON.stringify(decided)}`);
     const { data: table, error: tableErr } = await service.from('restaurant_tables').insert({
         partner_id: partner.partnerId, table_number: `T-INT-${randomUUID().slice(0, 8)}`, capacity: 6, is_active: true,
     }).select('id').single();

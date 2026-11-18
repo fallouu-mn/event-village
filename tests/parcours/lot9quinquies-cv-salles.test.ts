@@ -17,7 +17,8 @@ import assert from 'node:assert/strict';
 import { HallService } from '../../lib/halls/hall.service';
 import { assertLot9quinquiesInvariants } from '../helpers/lot9quinquies-invariants';
 import { newBuyer, service, type Buyer } from './paiement-helpers';
-import { newPartner, type TestPartner } from './finance-helpers';
+import { newPartner, superadminId, type TestPartner } from './finance-helpers';
+import { platformSetting, setPlatformSetting } from './l10a-helpers';
 
 const ROUNDS = 15;
 const CONCURRENT = 4;
@@ -25,12 +26,23 @@ const CONCURRENT = 4;
 let partner: TestPartner;
 const clients: Buyer[] = [];
 
+// Lot 10a (modification signalée au rapport) : la réservation passe par hall_reserve : service ouvert le temps de la suite (valeur
+// remise ensuite), salle validée par l'administration ; dates relatives (une date à venir est exigée). Assertions
+// inchangées (une seule réussite par tour, refus « déjà réservée pour cette période », jamais de blocage mutuel).
+let hallsWereOpen: unknown;
+function dayFromNow(days: number): string {
+    return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 before(async () => {
+    hallsWereOpen = await platformSetting('features.halls_enabled');
+    await setPlatformSetting('features.halls_enabled', true);
     partner = await newPartner('cv-salles');
     for (let i = 0; i < CONCURRENT; i += 1) clients.push(await newBuyer(`cv-salles-${i}`));
 });
 
 after(async () => {
+    await setPlatformSetting('features.halls_enabled', hallsWereOpen);
     await assertLot9quinquiesInvariants('lot9quinquies-cv-salles');
 });
 
@@ -39,6 +51,9 @@ async function newHall(round: number): Promise<string> {
         partner_id: partner.partnerId, name: `Salle contre-vérification ${round} ${Date.now()}`, capacity: 100, price_per_day: 100_000, deposit_percentage: 30,
     }).select('id').single();
     assert.equal(error, null, error?.message);
+    const { data: decided, error: decErr } = await service.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: data!.id, decision: 'VALIDER' } });
+    assert.equal(decErr, null, decErr?.message);
+    assert.equal((decided as { ok?: boolean }).ok, true, JSON.stringify(decided));
     return String(data!.id);
 }
 
@@ -51,8 +66,8 @@ describe('Point 5 — réservations de salle simultanées', () => {
             const results = await Promise.allSettled(clients.map((c, i) => HallService.createReservation({
                 hallId,
                 clientId: c.userId,
-                startDate: `2027-03-${String(10 + i).padStart(2, '0')}`,
-                endDate: `2027-03-${String(15 + i).padStart(2, '0')}`,
+                startDate: dayFromNow(120 + i),
+                endDate: dayFromNow(125 + i),
                 notes: `Contre-vérification, tour ${round}, client ${i}`,
             })));
             const ok = results.filter((r) => r.status === 'fulfilled').length;
