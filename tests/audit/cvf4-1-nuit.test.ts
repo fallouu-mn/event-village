@@ -75,9 +75,11 @@ describe('cvf4 point 2 — la nuit', () => {
         assert.equal(deferred.status, 'PENDING', `précondition : reporté (${deferred.status} ${deferred.reason ?? ''})`);
         assert.equal(decision(deferred).outcome, 'DEFER', 'précondition : décision DEFER');
 
-        // 04:00 : l'administration annule l'événement (suspendu puis annulé : chemin réel des RPC de transition)
+        // 04:00 : l'administration annule l'événement (suspendu puis annulé : chemin réel des RPC de transition ; une
+        // partenaire ne peut pas annuler un événement suspendu, run 467 : TRANSITION_NOT_ALLOWED, l'admin le peut,
+        // event_status_transitions SUSPENDU → ANNULE ADMIN, 20261102000003_lot5_cycle.sql:63)
         await advanceEventTo(ev.eventId, 'SUSPENDU');
-        await advanceEventTo(ev.eventId, 'ANNULE', { cancelFrom: 'SUSPENDU' });
+        await advanceEventTo(ev.eventId, 'ANNULE', { cancelFrom: 'SUSPENDU', cancelledBy: 'ADMIN' });
 
         // 07:00 : fin de la plage — l'avis « suspendu, vos billets restent valables » ne doit plus partir
         const before = smsCount();
