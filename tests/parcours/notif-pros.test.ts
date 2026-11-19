@@ -340,7 +340,9 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         let sent = await deliver(sus, new Date());
         assertSms(sent, p.phoneE164, mark, `Event Village : événement ${ev.title} suspendu. Motif : ${reason}. ${APP_URL}/partner/events`);
         await assertInApp(sent, { userId: p.userId, title: 'Événement suspendu', contains: [ev.title, reason], actionUrl: `/partner/events/${ev.eventId}` });
-        const hs = await deliver(holderRows);
+        // Finition 4 (contre-vérification, T2 ; modification signalée au rapport) : envoyés maintenant, pendant la suspension ;
+        // par défaut l'outil envoie demain à midi, après la fin de cet événement (début dans 3 h, 4 h) : l'avis serait annulé
+        const hs = await deliver(holderRows, new Date());
         await assertInApp(hs.filter((r) => r.recipient_user_id === holder.userId), { userId: holder.userId, title: 'Événement suspendu', contains: [ev.title], actionUrl: `/events/${ev.eventId}` });
 
         await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: p.userId });

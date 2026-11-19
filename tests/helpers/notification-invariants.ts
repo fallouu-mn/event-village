@@ -7,7 +7,8 @@
  *  (n) aucun rappel SENT pour un événement non PUBLIE à l'envoi (instantané, et historique des statuts
  *      pour les envois faits avant l'heure réelle), ni à un compte sans billet VALIDE à ce moment-là
  *      (instantané, et transferts réclamés / entrées avant l'envoi) ; aucun SMS optionnel SENT dans la
- *      plage de silence ;
+ *      plage de silence, sauf (finition 4, règle du client du 20/11, modification signalée au rapport) un avis lié à un
+ *      événement qui commence dans moins de 12 h ou qui est en cours, marqué dans l'instantané (quiet.event_soon) ;
  *  (o) aucune ligne SENDING depuis plus de 10 minutes après le passage de l'envoyeur ; tentatives au
  *      plus égales au maximum (lui-même au plus 5) ; toute ligne FAILED, UNCERTAIN, SKIPPED ou CANCELLED
  *      a un motif.
@@ -58,6 +59,7 @@ n4 AS (SELECT 'n', o.id::text, 'rappel SENT alors qu''aucun des billets de l''in
                  AND NOT (t.checked_in_at IS NOT NULL AND t.checked_in_at <= o.sent_at))),
 n5 AS (SELECT 'n', id::text, 'SMS optionnel SENT dans la plage de silence (' || COALESCE(decision->'quiet'->>'start', '?') || ' h - ' || COALESCE(decision->'quiet'->>'end', '?') || ' h)'
          FROM o WHERE status = 'SENT' AND channel = 'SMS' AND family = 'OPTIONAL'
+          AND (decision->'quiet'->>'event_soon') IS DISTINCT FROM 'true'
           AND (decision->'quiet' IS NULL
                OR public.notif_in_quiet_hours(sent_at, (decision->'quiet'->>'start')::int, (decision->'quiet'->>'end')::int))),
 o1 AS (SELECT 'o', id::text, 'SENDING depuis ' || claimed_at || ' après le passage de l''envoyeur'
