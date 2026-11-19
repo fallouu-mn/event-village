@@ -399,9 +399,11 @@ export const NOTIF_SETTING_DEFAULTS: Readonly<Record<NotifSettingKey, unknown>> 
     'notif.reminder_h3_hours': 3,
     'notif.j1_sms': 'ALWAYS',
     'notif.h3_sms': 'IF_NO_PUSH',
-    'notif.sms_quiet_start': 22,
-    'notif.sms_quiet_end': 8,
-    'notif.sms_optional_daily_cap': 700,
+    // Finition 4 (décision du client du 19/11, migration 20261125000001 ; modification signalée au rapport) : nuit
+    // 01:00 → 07:00, plafond des SMS facultatifs fortement relevé
+    'notif.sms_quiet_start': 1,
+    'notif.sms_quiet_end': 7,
+    'notif.sms_optional_daily_cap': 20000,
     'notif.free_ticket_reminder_sms': 'NEVER',
     'notif.sms_essential_daily_alert': 2000,
 };
