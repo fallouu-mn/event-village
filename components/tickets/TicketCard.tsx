@@ -207,7 +207,7 @@ async function readErrorMessage(res: Response, context: string): Promise<string 
   }
 }
 
-export const TicketCard: React.FC<TicketCardProps> = ({
+const TicketCardView: React.FC<TicketCardProps> = ({
   id,
   eventId,
   ticketNumber,
@@ -911,3 +911,22 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     </article>
   );
 };
+
+/**
+ * Tentative 3 du 19/11 (run 427 : tâches React de 73 à 135 ms après le premier rendu) : chaque changement d'état de Mes
+ * billets (session, billets reçus, temps réel) redessinait la carte complète. La carte ne se redessine plus que si ses
+ * données changent ; les fonctions passées (rafraîchir, transférer, aide) ne s'appuient que sur ces données et sur des
+ * fonctions stables de la page : leur identité est ignorée. Son propre état et la session (contexte) la redessinent toujours.
+ */
+function sameCardData(a: TicketCardProps, b: TicketCardProps): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof TicketCardProps>;
+  for (const k of keys) {
+    const x = a[k];
+    const y = b[k];
+    if (typeof x === 'function' && typeof y === 'function') continue;
+    if (!Object.is(x, y)) return false;
+  }
+  return true;
+}
+
+export const TicketCard = React.memo(TicketCardView, sameCardData);

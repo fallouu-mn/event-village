@@ -65,6 +65,8 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         assert.match(page, /if \(json !== ticketsJsonRef\.current\) \{\n\s*ticketsJsonRef\.current = json;\n\s*setTickets\(list\);/);
         assert.match(page, /if \(json !== incomingJsonRef\.current\) \{\n\s*incomingJsonRef\.current = json;\n\s*setIncoming\(next\);/);
         assert.equal(page.match(/setTickets\(/g)?.length, 1, 'une seule écriture de la liste');
+        // Tentative 3 du 19/11 : la carte ne se redessine que si ses données changent
+        assert.match(read('components/tickets/TicketCard.tsx'), /export const TicketCard = React\.memo\(TicketCardView, sameCardData\);/);
         const card = read('components/tickets/TicketCard.tsx');
         assert.match(card, /const settled = usePageSettled\(\);[\s\S]*?return eager \|\| settled \|\| visible;/);
     });
