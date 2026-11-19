@@ -146,7 +146,7 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
             assert.equal(before0.length, 4, `garde-fou : l’alerte de la Porte A du cas précédent, 4 canaux (${before0.length} ligne(s))`);
             for (let i = 1; i <= 3; i++) await refuseAt(b, ev, 'Porte B', `refus ${i} à la Porte B`);
             const rows = await alertRows(ev.eventId);
-            assert.equal(rows.length, 6, 'trois lignes de plus');
+            assert.equal(rows.length, 8, 'quatre lignes de plus (4 canaux depuis la finition 4)');
             const added = rows.filter((r) => dataOf(r).gate_name === 'Porte B');
             assert.deepEqual(channels(added), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'une ligne par canal pour la Porte B (son premier SMS)');
             const keysA = new Set(before0.map((r) => String(r.idempotency_key)));
