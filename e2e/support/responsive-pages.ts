@@ -85,8 +85,16 @@ async function scannerStart(page: Page): Promise<void> {
 }
 
 async function scannerStarted(page: Page): Promise<void> {
-    await scannerStart(page);
-    await page.getByRole('button', { name: /^commencer le contr[ôo]le$/i }).click();
+    // Rechargé à chaque largeur : le scanner reprend le contrôle déjà démarré (reprise du lot 7, A10) ; l'écran de départ
+    // n'apparaît qu'au premier chargement (run 439 : attente de l'écran de départ à 360 px, jamais affiché).
+    const start = page.getByRole('heading', { level: 1, name: /^commencer le contr[ôo]le$/i });
+    const camera = page.getByRole('button', { name: /^caméra$/i });
+    await expect(start.or(camera).first()).toBeVisible({ timeout: 30_000 });
+    if (await start.isVisible()) await page.getByRole('button', { name: /^commencer le contr[ôo]le$/i }).click();
+    // Reprise : la caméra attend le geste « Reprendre le contrôle » (A10)
+    const resume = page.getByRole('button', { name: /^reprendre le contr[ôo]le$/i });
+    const needsResume = await resume.waitFor({ state: 'visible', timeout: 3_000 }).then(() => true, () => false); // absent : caméra déjà relancée
+    if (needsResume) await resume.click();
     await expect(page.getByRole('button', { name: /^caméra$/i })).toHaveAttribute('aria-pressed', 'true');
     await page.waitForFunction(() => Array.from(document.querySelectorAll('video')).some((v) => v.readyState >= 2), null, { timeout: 30_000 });
 }
