@@ -198,11 +198,13 @@ describe('7.0 a Alerte de la veille : porteurs sans SMS exclus de la prévision 
         });
     });
 
-    test('plage de silence couvrant l’heure du J-1 (9 h - 11 h, J-1 à 10 h) : J-1 non comptés ; témoin J-1 à 12 h : comptés et alerte', async () => {
+    // Finition 4 (décision du client du 19/11, modification signalée au rapport) : un rappel dû pendant la plage de nuit est
+    // reporté à sa fin (le même jour), plus jamais perdu : il est compté dans la prévision comme le témoin hors plage.
+    test('plage de nuit couvrant l’heure du J-1 (9 h - 11 h, J-1 à 10 h) : J-1 reportés à 11 h, comptés et alerte ; témoin J-1 à 12 h : comptés et alerte', async () => {
         const quiet = { 'notif.sms_quiet_start': 9, 'notif.sms_quiet_end': 11 };
         await withNotifSettings({ ...BASE_SETTINGS, ...quiet, 'notif.reminder_j1_hour': 10, 'notif.sms_optional_daily_cap': 5, 'notif.free_ticket_reminder_sms': 'SAME_AS_PAID' }, async () => {
             const v = await veilleEvent('silence', 6);
-            await assertNoAlert(v, await planEve(v), 0, 5, 'J-1 dans la plage de silence');
+            await assertAlert(v, await planEve(v), { planned: 6, cap: 5, remaining: 5 }, 'J-1 dans la plage de nuit : reportés, comptés');
         });
         await withNotifSettings({ ...BASE_SETTINGS, ...quiet, 'notif.reminder_j1_hour': 12, 'notif.sms_optional_daily_cap': 5, 'notif.free_ticket_reminder_sms': 'SAME_AS_PAID' }, async () => {
             const v = await veilleEvent('silence-temoin', 6);
