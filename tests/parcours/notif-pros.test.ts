@@ -783,7 +783,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const again = await service.rpc('activate_partner_trial', { p_partner_id: p.partnerId });
         assert.equal(again.error, null, `seconde activation : ${again.error?.message}`);
         assert.equal((again.data as Row).is_new_activation, false, 'seconde activation : idempotente');
-        assert.equal((await outboxRows({ type: 'TRIAL_STARTED', userId: p.userId })).length, 2, 'seconde activation : aucune nouvelle ligne');
+        assert.equal((await outboxRows({ type: 'TRIAL_STARTED', userId: p.userId })).length, 3, 'seconde activation : aucune nouvelle ligne (in-app, email et push depuis la finition 4)');
         const mark = smsMark(p.phoneE164);
         const sent = await deliver(rows, new Date());
         assert.equal(smsTo(p.phoneE164, mark).length, 0, 'aucun SMS à l’activation de l’essai : le seul SMS est celui de la validation');
@@ -803,7 +803,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const rows = await groupRows('SUBSCRIPTION_ACTIVATED', group, ['IN_APP', 'EMAIL', 'PUSH'], p.userId);
         const { error: sameErr } = await service.from('partners').update({ subscription_plan_id: plan.id }).eq('id', p.partnerId);
         assert.equal(sameErr, null, `rejeu : ${sameErr?.message}`);
-        assert.equal((await outboxRows({ type: 'SUBSCRIPTION_ACTIVATED', userId: p.userId })).length, 2, 'même formule : aucune nouvelle ligne (IN_APP et EMAIL, G.49)');
+        assert.equal((await outboxRows({ type: 'SUBSCRIPTION_ACTIVATED', userId: p.userId })).length, 3, 'même formule : aucune nouvelle ligne (IN_APP, EMAIL et, depuis la finition 4, PUSH)');
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: p.userId, title: 'Abonnement activé', contains: [String(plan.name)], actionUrl: '/partner/subscription' });
     });

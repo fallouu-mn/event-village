@@ -313,7 +313,10 @@ const DICTATED_ADMIN_PHONE = norm('Demandez au super-administrateur de changer v
 describe('6 bis. E-37 — table des libellés de la revue (5.2) : rôles, codes HTTP, alertes SMS, origine d’un envoi, parrainage', () => {
     test('rôle SUPERADMIN : « Superadmin » à l’écran (G-45 : menu, profil, connexion, réglages), sauf la phrase dictée par la consigne', () => {
         const faults: string[] = [];
-        for (const f of appFiles()) {
+        // Design 1c (via la finition 4, modification signalée au rapport) : les messages envoyés (catalogue des notifications et
+        // libellés de supervision) disent « super-administrateur » ; les écrans gardent « Superadmin » (G-45)
+        const MESSAGES = new Set(['lib/notifications/catalog.ts', 'lib/notifications/outbox-labels.ts']);
+        for (const f of appFiles().filter((x) => !MESSAGES.has(x))) {
             for (const line of code(f).split('\n')) {
                 const rest = norm(line).replace(DICTATED_NO_RIGHTS, '').replace(DICTATED_ADMIN_PHONE, '');
                 const hit = /super[- ]?administrat\w*/i.exec(rest);
