@@ -1060,9 +1060,10 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT },
     }),
     NEW_ORDER: define('NEW_ORDER', {
-        label: 'Nouvelle commande', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
+        label: 'Nouvelle commande', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channels: ['IN_APP'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
         inAppType: 'SALES', link: (d) => partnerEventPath(d, 'ventes'),
-        // Finition 4 (point 2) : cloche et push groupés toutes les 15 minutes (order_count commandes depuis since)
+        // Finition 4 (point 2) : cloche groupée toutes les 15 minutes (order_count commandes depuis since) ; pas de push : un type
+        // facultatif qui a le push doit avoir l'email (G.50), un email toutes les 15 minutes serait de trop
         inApp: (d) => {
             const orders = optNum(d, 'order_count') === null ? 1 : count(d, 'order_count');
             const tickets = plural(count(d, 'ticket_count'), 'billet vendu', 'billets vendus');
@@ -1919,7 +1920,7 @@ const CATALOG = {
         link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Billet refusé', content: `Le destinataire a refusé votre billet pour ${q(text(d, 'title'))} : il reste dans vos billets.` }),
         // Finition 4 (point 4, E-46) : billet revenu à l'expéditeur
-        sms: (d, ctx) => `${SMS_PREFIX}le destinataire a refusé votre billet ${smsVar(text(d, 'title'), 30)}. Il vous revient : ${appLink(ctx, '/tickets')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}le destinataire a refusé votre billet ${endWithPeriod(smsVar(text(d, 'title'), 30))} Il vous revient : ${appLink(ctx, '/tickets')}`,
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     // N11 (R63) : le destinataire change de numéro ; le transfert est annulé.
@@ -2218,7 +2219,7 @@ const CATALOG = {
         label: 'Refus en série à une porte', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ALERT',
         link: (d) => partnerEventPath(d, 'entrees'),
         // Finition 4 (point 4, E-47) : au plus un SMS par porte et par 15 minutes (scan_refusal_alert)
-        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'gate_name'), 12)} : ${count(d, 'refused_count')} refus en ${count(d, 'window_minutes')} min pour ${smsVar(text(d, 'title'), 20)}. Vérifiez cette porte avec votre équipe. ${appLink(ctx, '/partner/events')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'gate_name'), 12)} : ${count(d, 'refused_count')} refus en ${count(d, 'window_minutes')} min pour ${endWithPeriod(smsVar(text(d, 'title'), 20))} Vérifiez cette porte avec votre équipe. ${appLink(ctx, '/partner/events')}`,
         inApp: (d) => ({
             title: 'Refus en série à une porte',
             content: `${text(d, 'gate_name')} : ${count(d, 'refused_count')} refus en ${plural(count(d, 'window_minutes'), 'minute', 'minutes')} pour ${q(text(d, 'title'))}. Vérifiez la porte avec vos contrôleurs.`,
@@ -2267,7 +2268,7 @@ const CATALOG = {
         label: 'Espèces marquées rendues par l’administration', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
         night: 'DEFER',
         link: (d) => partnerEventPath(d, 'cloture'),
-        sms: (d) => `${SMS_PREFIX}l'administration a marqué rendues les espèces de la vente ${smsVar(text(d, 'reference'), 10)} (${smsAmount(num(d, 'amount'))}) pour ${smsVar(text(d, 'title'), 20)}.`,
+        sms: (d) => `${SMS_PREFIX}l'administration a marqué rendues les espèces de la vente ${smsVar(text(d, 'reference'), 10)} (${smsAmount(num(d, 'amount'))}) pour ${endWithPeriod(smsVar(text(d, 'title'), 20))}`,
         inApp: (d) => ({
             title: 'Espèces marquées rendues par l’administration',
             content: `L'administration a marqué rendues les espèces de la vente ${text(d, 'reference')} (${money(d, 'amount')}) pour ${q(text(d, 'title'))}. Motif : ${sentence(text(d, 'reason'))}`,

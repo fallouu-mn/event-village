@@ -81,7 +81,6 @@ UPDATE public.notification_types AS t SET channels = v.channels
     ('EVENT_FINISHED',                ARRAY['IN_APP','EMAIL','PUSH']),
     ('CLOSING_REPORT_READY',          ARRAY['IN_APP','EMAIL','PUSH']),
     ('FUNDS_AVAILABLE',               ARRAY['IN_APP','EMAIL','PUSH','SMS']),
-    ('NEW_ORDER',                     ARRAY['IN_APP','PUSH']),
     ('CANCEL_REFUNDS_DONE',           ARRAY['IN_APP','EMAIL','PUSH','SMS']),
     ('CANCEL_REFUNDS_BLOCKED',        ARRAY['IN_APP','EMAIL','PUSH','SMS']),
     ('PARTNER_REGISTERED_ACK',        ARRAY['IN_APP','SMS','EMAIL','PUSH']),
