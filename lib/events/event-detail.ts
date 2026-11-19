@@ -91,6 +91,15 @@ export interface PublicEventDetail {
      */
     counterSale: boolean;
     refund: RefundRule | null;
+    /**
+     * Design 1c bis (point 3, erreur 418) : faux dans la fiche en cache (aucun état qui dépend de l'heure n'y est figé :
+     * achat, disponibilité, vente ouverte ou close, guichet, remboursement d'un report) ; vrai une fois l'heure appliquée
+     * (withClock : route de l'API à l'heure du serveur, billetterie dans le navigateur après le chargement).
+     */
+    clockKnown: boolean;
+    /** Faits sans heure, d'où withClock déduit le guichet et le remboursement d'un report. */
+    counterCapable: boolean;
+    postponedOver24h: boolean;
     program: ProgramItem[];
     practicalInfo: {
         address: string | null;
@@ -165,6 +174,51 @@ export function refundRuleApplies(rule: RefundRule | null, startsAt: string, now
     return Number.isFinite(start) && now.getTime() < start;
 }
 
+/**
+ * Design 1c bis (point 3) — état de la billetterie à une heure donnée, calculé depuis les seuls faits sans heure de la
+ * fiche (dates de vente, début, fin, statut, stock). `now` nul : horloge inconnue (fiche en cache, premier rendu du
+ * navigateur) : rien d'ouvert ni de fermé, aucun guichet, aucun remboursement de report ; seule l'annulation, qui ne
+ * dépend pas de l'heure, garde sa règle. Le même calcul sert la route de l'API (heure du serveur) et la billetterie
+ * (heure du téléphone, après le chargement) : la page en cache ne dépend jamais de l'heure.
+ */
+export function withClock(detail: PublicEventDetail, now: Date | null): PublicEventDetail {
+    const cancelRefund = detail.status === 'ANNULE' && detail.refund?.kind === 'ANNULATION' ? detail.refund : null;
+    if (now === null) {
+        return {
+            ...detail,
+            clockKnown: false,
+            purchasable: false,
+            hasAvailableTickets: false,
+            salesEnded: false,
+            counterSale: false,
+            refund: cancelRefund,
+            categories: detail.categories.map((c) => ({ ...c, saleStarted: false, saleEnded: false, saleOpen: false, isAvailable: false })),
+        };
+    }
+    const t = now.getTime();
+    const ended = Date.parse(detail.endsAt) <= t;
+    const categories = detail.categories.map((c) => {
+        const saleStarted = !c.saleStart || Date.parse(c.saleStart) <= t;
+        const saleEnded = c.saleEnd ? Date.parse(c.saleEnd) <= t : false;
+        const saleOpen = saleStarted && !saleEnded;
+        const isAvailable = detail.status === 'PUBLIE' && !ended && saleOpen && !c.isSoldOut;
+        return { ...c, saleStarted, saleEnded, saleOpen, isAvailable };
+    });
+    const hasAvailableTickets = categories.some((c) => c.isAvailable);
+    const postponeRefund = detail.postponedOver24h && (detail.status === 'PUBLIE' || detail.status === 'SUSPENDU') && t < Date.parse(detail.startsAt)
+        ? { kind: 'REPORT' as const, text: POSTPONEMENT_REFUND_INFO } : null;
+    return {
+        ...detail,
+        clockKnown: true,
+        purchasable: detail.status === 'PUBLIE' && !ended && hasAvailableTickets,
+        hasAvailableTickets,
+        salesEnded: categories.length > 0 && categories.every((c) => c.saleEnded),
+        counterSale: detail.status === 'PUBLIE' && !ended && detail.counterCapable,
+        refund: cancelRefund ?? postponeRefund,
+        categories,
+    };
+}
+
 /** Lecture prudente de la réponse de GET /api/events/[id] (îlot de la billetterie). */
 export function readPublicEventDetail(body: unknown): PublicEventDetail | null {
     if (typeof body !== 'object' || body === null) return null;
@@ -179,5 +233,8 @@ export function readPublicEventDetail(body: unknown): PublicEventDetail | null {
         banner: e.banner ?? null,
         counterSale: e.counterSale === true,
         refund: e.refund ?? null,
+        clockKnown: e.clockKnown === true,
+        counterCapable: e.counterCapable === true,
+        postponedOver24h: e.postponedOver24h === true,
     };
 }
