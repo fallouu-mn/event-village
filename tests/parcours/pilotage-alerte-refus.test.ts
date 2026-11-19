@@ -1,7 +1,8 @@
 /**
  * Lot 9 ter, tâche 9t.18 (consigne 4 : « alerte quand une porte enregistre beaucoup de refus ») — trigger
  * trg_ticket_scans_refusal_alert (F44) : au plus une alerte SCAN_REFUSALS_ALERT par porte et par tranche de durée, à la
- * propriétaire seule (cloche, push, email ; aucun SMS), réglages access.refusal_alert_threshold (défaut 10) et
+ * propriétaire seule (cloche, push, email ; finition 4 : SMS aussi, au plus un par porte et par 15 minutes — décision du client
+ * du 19/11, modification signalée au rapport), réglages access.refusal_alert_threshold (défaut 10) et
  * access.refusal_alert_minutes (défaut 5), SUPERADMIN seul (contrat 5.D, D.0, D.1.2 (2), (3), (7), (9), D.1.5, D.1.6 T2 ;
  * arbitrage 21 ; X8 ; rectifications 1, 2 et 5 de D).
  *
@@ -22,7 +23,7 @@
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { inRolledBackTransaction } from '../helpers/db';
 import { signInAs } from '../helpers/fixtures';
 import { assertLot9terInvariants } from '../helpers/lot9ter-invariants';
@@ -32,6 +33,7 @@ import {
     authed, createTimedEvent, newController, scan, ticketPayload, withAccessSettings, type AccessSettingKey, type RouteResult,
 } from './acces-helpers';
 import { newAdminWith } from './terrain-helpers';
+import { insertOutboxRow } from './notif-helpers';
 import { invoke, listAt, pilotageOk, routeHandler, show, type Row } from './pilotage-helpers';
 import { assignGate, createZonedEvent, gateOf, scanAtGate, type ZonedEvent, type ZoneSpec } from './zones-helpers';
 
@@ -122,7 +124,7 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
             assert.deepEqual(await alertRows(ev.eventId), [], 'deux refus : aucune alerte');
             await refuseAt(a[2], ev, 'Porte A', 'refus 3 à la Porte A');
             const rows = await alertRows(ev.eventId);
-            assert.deepEqual(channels(rows), ['EMAIL', 'IN_APP', 'PUSH'], `une ligne par canal, aucun SMS : ${JSON.stringify(rows)}`);
+            assert.deepEqual(channels(rows), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `une ligne par canal, SMS compris (finition 4) : ${JSON.stringify(rows)}`);
             for (const r of rows) {
                 assert.equal(r.recipient_user_id, partner.userId, `destinataire : la propriétaire seule (${r.channel})`);
                 assert.equal(r.recipient_phone, null, `aucun numéro (${r.channel})`);
@@ -146,7 +148,7 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
             const rows = await alertRows(ev.eventId);
             assert.equal(rows.length, 6, 'trois lignes de plus');
             const added = rows.filter((r) => dataOf(r).gate_name === 'Porte B');
-            assert.deepEqual(channels(added), ['EMAIL', 'IN_APP', 'PUSH'], 'une ligne par canal pour la Porte B');
+            assert.deepEqual(channels(added), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'une ligne par canal pour la Porte B (son premier SMS)');
             const keysA = new Set(before0.map((r) => String(r.idempotency_key)));
             for (const r of added) assert.ok(!keysA.has(String(r.idempotency_key)), `clé distincte de celle de la Porte A : ${String(r.idempotency_key)}`);
         });
@@ -202,7 +204,7 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
                 assert.equal(r.status, 200, show(r));
                 assert.ok(REFUSALS.includes(String(r.body.result)), `refus attendu : ${show(r)}`);
             }
-            assert.deepEqual(channels(await alertRows(ev.eventId)), ['EMAIL', 'IN_APP', 'PUSH'], 'exactement une alerte (une ligne par canal)');
+            assert.deepEqual(channels(await alertRows(ev.eventId)), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'exactement une alerte (une ligne par canal)');
         });
     });
 
@@ -219,10 +221,36 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
                 assert.ok(REFUSALS.includes(String(res.body.result)), `refus ${i} : ${show(res)}`);
             }
             const rows = await alertRows(ev.eventId);
-            assert.deepEqual(channels(rows), ['EMAIL', 'IN_APP', 'PUSH'], 'une alerte');
+            assert.deepEqual(channels(rows), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'une alerte');
             for (const r of rows) {
                 assert.deepEqual({ gate_name: dataOf(r).gate_name, zone_name: dataOf(r).zone_name }, { gate_name: 'Entrée Est', zone_name: null }, `porte = point d’entrée (${r.channel})`);
             }
+        });
+    });
+
+    // Finition 4 (point 4) : au plus un SMS par porte et par 15 minutes, même quand la cadence de l'alerte (5 minutes ici)
+    // en produit une nouvelle ; la cloche, le push et l'email gardent la cadence réglée. La tranche de 5 minutes ne peut pas
+    // être sautée sans attendre : un SMS de la même porte, mis en file il y a moins de 15 minutes, est posé avant l'alerte.
+    test('finition 4 : un SMS au plus par porte et par 15 minutes (la cloche garde sa cadence)', async () => {
+        await withAccessSettings(ALERT, async () => {
+            const ev = await createTimedEvent(partner.partnerId, 'f4-alerte-sms', CATEGORIES);
+            const ctrl = await newController(partner, ev.eventId, { label: 'f4-sms-ouest' });
+            const handler = await routeHandler('../../app/api/partner/team/entry-point/route', 'PATCH', 'PATCH /api/partner/team/entry-point');
+            const set = await invoke(handler, authed('/api/partner/team/entry-point', 'PATCH', partner, { eventId: ev.eventId, controllerId: ctrl.userId, entryPoint: 'Entrée Ouest' }));
+            assert.equal(set.status, 200, show(set));
+            const prefix = `${TYPE}:${ev.eventId}:${createHash('md5').update('ep:Entrée Ouest').digest('hex')}:`;
+            const earlier = await insertOutboxRow({
+                type: TYPE, family: 'ESSENTIAL', channel: 'SMS', status: 'SENT', recipient_user_id: partner.userId, event_id: ev.eventId,
+                group_key: `${prefix}precedente`, template_data: {},
+                // il y a 10 minutes : au-delà de la cadence de l'alerte (5 min), en deçà de la fenêtre des SMS (15 min)
+                created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+            });
+            for (let i = 1; i <= 3; i++) {
+                const res = await scan(ctrl, { eventId: ev.eventId, payload: nextCharge() });
+                assert.ok(REFUSALS.includes(String(res.body.result)), `refus ${i} : ${show(res)}`);
+            }
+            const fresh = (await alertRows(ev.eventId)).filter((r) => String(r.idempotency_key) !== earlier.idempotency_key);
+            assert.deepEqual(channels(fresh), ['EMAIL', 'IN_APP', 'PUSH'], `nouvelle alerte sans SMS (SMS de la porte il y a moins de 15 min) : ${JSON.stringify(fresh)}`);
         });
     });
 
@@ -276,6 +304,7 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
                 { channel: 'EMAIL', status: 'SKIPPED', reason: 'ACCOUNT_SUSPENDED' },
                 { channel: 'IN_APP', status: 'SKIPPED', reason: 'ACCOUNT_SUSPENDED' },
                 { channel: 'PUSH', status: 'SKIPPED', reason: 'ACCOUNT_SUSPENDED' },
+                { channel: 'SMS', status: 'SKIPPED', reason: 'ACCOUNT_SUSPENDED' },
             ], 'trois lignes gardées, aucune envoyée (notif_account_blocked lit users.status)');
             assert.deepEqual(await alertRows(ev.eventId), [], 'ROLLBACK : aucune ligne ne reste');
         });
