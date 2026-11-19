@@ -108,6 +108,36 @@ describe('D1 — plage de nuit des SMS aux admins revérifiée à l’envoi (heu
         assert.equal(smsCount(), sms0 + 1);
     });
 
+    test('décision du 19/11 : la plage suit le réglage (aucune heure en dur) ; 22-8 aujourd’hui, 01:00-07:00 à la finition 4', async () => {
+        const day = dakarDay(10);
+        const ends = await writeLocal(async (c) => {
+            const q = async (at: string, s: number | null, e: number | null): Promise<string> =>
+                new Date((await c.query<{ t: Date }>('SELECT public.notif_quiet_end_at($1::timestamptz, $2::int, $3::int) AS t', [at, s, e])).rows[0].t).toISOString();
+            const settings = (await c.query<{ s: number; e: number }>(
+                "SELECT public.notif_setting_int('notif.sms_quiet_start') AS s, public.notif_setting_int('notif.sms_quiet_end') AS e")).rows[0];
+            const due = async (at: string): Promise<string> =>
+                new Date((await c.query<{ t: Date }>('SELECT public.notif_admin_review_due($1::timestamptz) AS t', [at])).rows[0].t).toISOString();
+            return {
+                settings,
+                n2200: await q(`${day}T22:30:00Z`, 22, 8), n0300: await q(`${day}T03:00:00Z`, 22, 8), n1200: await q(`${day}T12:00:00Z`, 22, 8),
+                f0030: await q(`${day}T00:30:00Z`, 1, 7), f0300: await q(`${day}T03:00:00Z`, 1, 7), f2330: await q(`${day}T23:30:00Z`, 1, 7),
+                none: await q(`${day}T03:00:00Z`, null, 8),
+                dueNow: await due(`${day}T23:00:00Z`),
+                dueExpected: await q(`${day}T23:00:00Z`, Number(settings.s), Number(settings.e)),
+            };
+        });
+        const next = dakarDay(11);
+        assert.equal(ends.n2200, `${next}T08:00:00.000Z`, '22-8 : 22:30 → lendemain 08:00');
+        assert.equal(ends.n0300, `${day}T08:00:00.000Z`, '22-8 : 03:00 → 08:00');
+        assert.equal(ends.n1200, `${day}T12:00:00.000Z`, '22-8 : midi hors plage');
+        assert.equal(ends.f0030, `${day}T00:30:00.000Z`, '01-07 : 00:30 hors plage');
+        assert.equal(ends.f0300, `${day}T07:00:00.000Z`, '01-07 : 03:00 → 07:00');
+        assert.equal(ends.f2330, `${day}T23:30:00.000Z`, '01-07 : 23:30 hors plage');
+        assert.equal(ends.none, `${day}T03:00:00.000Z`, 'réglage absent : aucune plage');
+        // L'échéance des SMS aux admins est celle du réglage courant, quel qu'il soit
+        assert.equal(ends.dueNow, ends.dueExpected, `notif_admin_review_due suit le réglage (${ends.settings.s}-${ends.settings.e})`);
+    });
+
     test('témoin : à midi, mis en file et envoyé dans la minute (inchangé)', async () => {
         const day = dakarDay(8);
         const sms0 = smsCount();

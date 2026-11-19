@@ -5,15 +5,58 @@
 -- suite », la nuit n'étant appliquée qu'à la mise en file par notif_admin_review_due) ont été réservés et envoyés à 22 h 00
 -- par l'envoyeur, qui passe chaque minute : SMS aux admins envoyé la nuit, contraire à D1 (lot 9 quinquies, invariant p3).
 -- Correctif minimal : notification_outbox_claim revérifie la plage de nuit des ADMIN_REVIEW_SMS au moment de les réserver
--- (heure de l'envoyeur, simulée ou réelle) ; un SMS qui tombe dans la plage est reporté à 8 h (due_at et next_attempt_at),
--- reste en attente, ne consomme aucune tentative, puis part au premier passage après 8 h. Plage inchangée (22 h à 8 h,
--- Dakar) : la finition 4 la rendra réglable (01:00-07:00) en partant de cette fonction.
+-- (heure de l'envoyeur, simulée ou réelle) ; un SMS qui tombe dans la plage est reporté à sa fin (due_at et next_attempt_at),
+-- reste en attente, ne consomme aucune tentative, puis part au premier passage après la fin de la plage.
+-- Décision du 19/11 : la plage est celle du RÉGLAGE notif.sms_quiet_start / notif.sms_quiet_end (22 h et 8 h aujourd'hui,
+-- 01:00-07:00 à la finition 4), lue par notif_admin_review_due (plus d'heure écrite en dur), à la mise en file et à l'envoi.
 --
 -- Recopie : notification_outbox_claim (20261111000004_lot9quater_email.sql:296-659). Seuls changements : le cas DEFER
 -- (motif ADMIN_NIGHT, décision « quiet » : night, until, hour) et sa mise à jour ; droits inchangés (CREATE OR REPLACE).
 -- Aucun BEGIN ni COMMIT ; rejouable.
 -- ============================================================================
 
+-- ----------------------------------------------------------------------------
+-- Décision du 19/11 : la plage de nuit des SMS aux admins suit le RÉGLAGE de la plage de silence des SMS
+-- (notif.sms_quiet_start, notif.sms_quiet_end : 22 et 8 aujourd'hui), aucune heure écrite en dur. La finition 4 passera la
+-- valeur par défaut à 01:00-07:00 en changeant seulement le réglage.
+--
+-- notif_quiet_end_at(p_at, start, end) : fin de la plage [start, end) (heures de Dakar, plage qui peut passer minuit ;
+-- start = end : aucune plage) qui contient p_at, sinon p_at lui-même. Réglage absent (NULL) : aucune plage.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notif_quiet_end_at(p_at timestamptz, p_start integer, p_end integer)
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT CASE
+        WHEN p_start IS NULL OR p_end IS NULL OR NOT public.notif_in_quiet_hours(p_at, p_start, p_end) THEN p_at
+        WHEN extract(hour FROM (p_at AT TIME ZONE 'Africa/Dakar')) < p_end
+            THEN ((date_trunc('day', p_at AT TIME ZONE 'Africa/Dakar') + make_interval(hours => p_end)) AT TIME ZONE 'Africa/Dakar')
+        ELSE ((date_trunc('day', p_at AT TIME ZONE 'Africa/Dakar') + interval '1 day' + make_interval(hours => p_end)) AT TIME ZONE 'Africa/Dakar')
+    END
+$$;
+REVOKE ALL ON FUNCTION public.notif_quiet_end_at(timestamptz, integer, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.notif_quiet_end_at(timestamptz, integer, integer) TO service_role;
+
+-- Échéance d'un SMS aux admins : hors de la plage réglée (fin de plage si p_at y tombe). Remplace la version du lot 9
+-- quinquies (20261112000001), qui écrivait 22 h et 8 h en dur ; même signature, désormais STABLE (lit les réglages).
+CREATE OR REPLACE FUNCTION public.notif_admin_review_due(p_at timestamptz)
+RETURNS timestamptz
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT public.notif_quiet_end_at(p_at, public.notif_setting_int('notif.sms_quiet_start'), public.notif_setting_int('notif.sms_quiet_end'))
+$$;
+REVOKE ALL ON FUNCTION public.notif_admin_review_due(timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.notif_admin_review_due(timestamptz) TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- Réservation : plage revérifiée à l'envoi.
+-- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.notification_outbox_claim(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -277,10 +320,9 @@ BEGIN
             END IF;
         END IF;
 
-        -- Correctif main-414 : plage de nuit des SMS aux admins (D1, 22 h à 8 h, Dakar) revérifiée AU MOMENT D'ENVOYER, pas
-        -- seulement à la mise en file : un SMS dû juste avant 22 h et réservé à 22 h ou après est reporté à 8 h
-        -- (notif_admin_review_due), jamais perdu ni envoyé la nuit. Même plage qu'à la mise en file (la finition 4 la
-        -- passera en réglage).
+        -- Correctif main-414 : plage de nuit des SMS aux admins (D1 ; plage du réglage notif.sms_quiet_start / _end, lue par
+        -- notif_admin_review_due) revérifiée AU MOMENT D'ENVOYER, pas seulement à la mise en file : un SMS dû juste avant la
+        -- plage et réservé dedans est reporté à sa fin, jamais perdu ni envoyé pendant la plage.
         IF v_outcome = 'SEND' AND r.type = 'ADMIN_REVIEW_SMS' AND public.notif_admin_review_due(v_now) > v_now THEN
             v_outcome := 'DEFER'; v_reason := 'ADMIN_NIGHT';
             v_quiet := jsonb_build_object('night', true, 'until', public.notif_admin_review_due(v_now),
