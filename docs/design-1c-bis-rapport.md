@@ -8,7 +8,7 @@ Branche `design-1c/bis`, partie de `main` à `362855155` (fusion du design 1c). 
 - `design-1c/pro` est fusionnée dans `main` en `--no-ff` (`362855155`), sans conflit : `main` n'avait pas bougé depuis
   `fce22b609`. L'arbre fusionné est identique à celui du run 444, qui était vert.
 - Décisions 1 à 6 du rapport du design 1c : validées par l'utilisateur le 19/11.
-- Run complet de `main` : __RUN_MAIN__.
+- Run complet de `main` : **run 449 rouge sur une seule mesure.** Mes billets fait 89 au téléphone de référence, pour un seuil de 90 (machine lente : ralentissement ×3,7). L'arbre est identique à celui du run 444, où la même page faisait 90 et le run était vert. Le reste du run 449 est vert : 536/536 suites, e2e, budgets JS, responsive à 0 défaut. **À relancer** (job e2e du run 449) : je ne peux pas relancer un job de la CI moi-même..
 
 ## 1. « Mes événements » : brut → remboursements → recettes nettes
 
@@ -61,11 +61,42 @@ rouges avant. Aucune assertion n'a changé.
 
 ## Application sur event-village-dev
 
-__APPLICATION__
+event-village-dev (`rswkzklxrqswimcxghch`), le 19/11. Contrôles en lecture seule par `supabase db query --linked`.
+
+| Contrôle | Avant | Après |
+|---|---|---|
+| A. Dernière migration | `20261123000113` | `20261124000001` |
+| A2. Versions `20261124*` | aucune | `20261124000001` |
+| B. « Mes événements » sert le brut et les remboursements | non | oui |
+| C. Ancien message des réglages | présent | absent |
+| C2. Nouveau message | absent | présent |
+| D. Droits de `partner_events_overview` (anon / authenticated / service_role) | f/f/t | f/f/t |
+| D2. Droits de `finance_setting_set` | f/f/t | f/f/t |
+| E. SECURITY DEFINER et `search_path=public` des deux fonctions | oui | oui |
+| F. Partenaires actifs où recettes nettes = brut − remboursements | — | 1 sur 1 |
+
+- **Dry-run** : exactement `20261124000001_d1cbis_restes.sql`.
+- **`db push`** : appliquée sans erreur.
+- **`03-verification.sql`** : 20/20 OK.
 
 ## Runs
 
-__RUNS__
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 449 | `362855155` (main) | complet | rouge sur une mesure : Mes billets 89 (seuil 90) ; 536/536, e2e et responsive verts |
+| 450 | `5a4cf2b6b` | rapide | rouge attendu (tests seuls de l'erreur 418) |
+| 453 | `46f10588f` | rapide | 10/10 suites vertes ; typecheck rouge (fiche de test), corrigé |
+| 454 | `a8d12f2c1` | rapide | vert (migration, 6/6) |
+| 455 | `06f8dd64d` | complet | rouge : `cv11a-5-recopies` (message déclaré remplacé depuis) ; accueil 89 (page non touchée par le lot) |
+| 461 | `cb63333ba` | complet | 538/539 ; e2e (635 captures), mesures (accueil 94, fiche 94, Mes billets 91, toucher 96 ms), budgets JS et responsive (0 défaut) verts ; 1 suite rouge, `f2b-recherche-cadence` (ci-dessous) |
+
+**`f2b-recherche-cadence` au run 461.** Les six recherches en parallèle ont été déclarées « indisponible » sans aucun
+appel au service (sortie brute : `six en parallèle : 0 servie(s), 6 indisponible(s) ; 0 appel(s)`) : le limiteur
+partagé de la recherche de lieu était déjà occupé. Cette suite n'avait échoué sur aucun des 60 runs précédents, et
+aucun fichier du lot ne touche la recherche de lieu. Ce rapport la relance seule (run rapide du commit du rapport).
+
+Poids JavaScript au run 461 (budgets non relevés) : `/` 220 320, `/events/[id]` 230 254 (233 316 permis : +457 octets
+pour `withClock`), `/tickets` 242 883, `/controller/scanner` 231 751, `/billet/hors-ligne` 222 006.
 
 ## Tests
 
@@ -74,9 +105,17 @@ __RUNS__
   - `design1b-fiche` et `design1b-hydratation` : l'état de la billetterie passe par `withClock` (règle plus stricte) ;
   - `finance-remboursement-billet` : brut, remboursements et net servis par « Mes événements » ;
   - `notif-reglages` : nouveau message du refus ;
+  - `cv11a-5-recopies` (audit du lot 11a) : la ligne du message est déclarée remplacée, et sa remplaçante doit être en
+    base ;
   - `f3b-ecrans` : `pathToFileURL` ;
   - recette : ligne citée de `finance-remboursement-billet` recalée.
 
 ## Points ouverts
 
-__OUVERTS__
+- **Run 449 de `main`** : à relancer (une seule mesure sous le seuil, d'un point).
+- **Mesure mobile au bord du seuil** : Mes billets (89 à 91) et l'accueil (89 à 94) varient d'un run à l'autre selon la
+  machine. Un point sous 90 suffit à rendre un run rouge. À décider : reprendre le rendu de Mes billets, ou revoir la
+  mesure.
+- **`f2b-recherche-cadence`** : un échec isolé ; à surveiller.
+- **Lot 10b** : s'il redéfinit `finance_setting_set` après `20261124000001`, il doit garder le nouveau message
+  (`cv11a-5-recopies` et `migration-d1cbis-restes` le diront).
