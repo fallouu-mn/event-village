@@ -66,6 +66,8 @@ const PARTNER_KEPT: Readonly<Record<string, string>> = {
     'PUT /api/partner/halls/*': 'service des salles fermé (interrupteur, 404) : à trancher à son ouverture',
     'DELETE /api/partner/halls/*': 'service des salles fermé (interrupteur, 404) : à trancher à son ouverture',
     'POST /api/partner/halls/reservations/*/status': 'service des salles fermé (interrupteur, 404) : à trancher à son ouverture',
+    // Lot 10b (ajout signalé au rapport) : renvoi en validation d'une salle refusée
+    'POST /api/partner/halls/*/submit': 'service des salles fermé (interrupteur, 404) ; ouvert : hall_submit refuse une partenaire non VALIDE (403)',
     'PATCH /api/partner/orders/*': 'service des commandes fermé (interrupteur, 404) : à trancher à son ouverture',
     'POST /api/partner/products': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
     'PATCH /api/partner/products/*': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',

@@ -237,8 +237,9 @@ describe('T7 — PUT /api/admin/finance-settings : les 22 réglages des salles e
     test('SUPERADMIN : chacun des 22 réglages halls.* et tables.* enregistré à la même valeur (200) ; hors bornes refusé par la base (400, motif en français) ; valeur inchangée', async () => {
         const superadmin = await signInAs('SUPERADMIN');
         const rows = await sql<{ key: string; value: Row }>(`SELECT key, value FROM public.platform_settings WHERE key ~ '^(halls|tables)\.' ORDER BY key`);
-        assert.equal(rows.length, 22, `réglages des salles et des tables : ${rows.map((r) => r.key).join(', ')}`);
-        assert.deepEqual([rows.filter((r) => r.key.startsWith('halls.')).length, rows.filter((r) => r.key.startsWith('tables.')).length], [12, 10]);
+        // Lot 10b (modification signalée au rapport) : réglage halls.max_pending_per_client ajouté (23 réglages, 13 des salles)
+        assert.equal(rows.length, 23, `réglages des salles et des tables : ${rows.map((r) => r.key).join(', ')}`);
+        assert.deepEqual([rows.filter((r) => r.key.startsWith('halls.')).length, rows.filter((r) => r.key.startsWith('tables.')).length], [13, 10]);
         const problems: string[] = [];
         for (const r of rows) {
             const value = r.value.value;
