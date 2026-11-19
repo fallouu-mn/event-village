@@ -326,7 +326,7 @@ export async function clientReservations(clientId: string): Promise<ReservationV
         .order('start_date', { ascending: false })
         .limit(200);
     if (error) throw new Error(`lecture des réservations : ${error.message}`);
-    const rows = (data ?? []) as Row[];
+    const rows = (data ?? []) as unknown as Row[];
     const halls = await hallsById(rows.map((r) => String(r.hall_id)));
     const now = Date.now();
     return rows.map((r) => reservationView(r, halls.get(String(r.hall_id)), 'client', now));
@@ -345,7 +345,7 @@ export async function clientReservation(clientId: string, id: string): Promise<C
     const { data, error } = await supabase.from('hall_reservations').select(RESERVATION_COLUMNS).eq('id', id).eq('client_id', clientId).maybeSingle();
     if (error) throw new Error(`lecture de la réservation : ${error.message}`);
     if (!data) return null;
-    const r = data as Row;
+    const r = data as unknown as Row;
     const halls = await hallsById([String(r.hall_id)]);
     const view = reservationView(r, halls.get(String(r.hall_id)), 'client', Date.now());
     const { data: pays, error: payErr } = await supabase.from('payments').select('id').eq('hall_reservation_id', id);
@@ -434,7 +434,7 @@ export async function partnerReservations(userId: string, opts: { from: string; 
     if (opts.hallId) query = query.eq('hall_id', opts.hallId);
     const { data, error } = await query;
     if (error) throw new Error(`lecture des réservations : ${error.message}`);
-    const rows = (data ?? []) as Row[];
+    const rows = (data ?? []) as unknown as Row[];
     const [halls, clients] = await Promise.all([hallsById(rows.map((r) => String(r.hall_id))), clientsById(rows.map((r) => String(r.client_id)))]);
     const now = Date.now();
     return rows.map((r) => partnerReservationView(r, halls.get(String(r.hall_id)), clients.get(String(r.client_id)), now));
@@ -449,7 +449,7 @@ export async function partnerReservation(userId: string, id: string): Promise<(P
         .eq('id', id).eq('partner_id', partner.id).maybeSingle();
     if (error) throw new Error(`lecture de la réservation : ${error.message}`);
     if (!data) return null;
-    const r = data as Row;
+    const r = data as unknown as Row;
     const [halls, clients] = await Promise.all([hallsById([String(r.hall_id)]), clientsById([String(r.client_id)])]);
     const view = partnerReservationView(r, halls.get(String(r.hall_id)), clients.get(String(r.client_id)), Date.now());
     return { ...view, canCancel: view.live && view.upcoming };

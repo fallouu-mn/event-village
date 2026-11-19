@@ -240,33 +240,9 @@ export class HallService {
             throw new Error(`Échec création de salle: ${error?.message}`);
         }
 
-        return hall;
+        return hall as unknown as Record<string, any>;
     }
 
-    /**
-     * Récupère les salles du partenaire avec les réservations actives
-     */
-    public static async getPartnerHalls(partnerUserId: string) {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data: halls, error } = await supabase
-            .from('halls')
-            .select('*, hall_reservations(*)')
-            .eq('partner_id', partnerId)
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            throw new Error(`Erreur récupération salles: ${error.message}`);
-        }
-
-        return halls || [];
-    }
-
-    /**
-     * Correctifs de la contre-vérification du lot 10a (T1) : identifiant de la fiche partenaire du compte, ou null si le
-     * compte n'en a pas (l'appelant répond alors « Salle introuvable », sans indice). Panne : erreur, journal et 500.
-     */
     private static async ownPartnerId(userId: string): Promise<string | null> {
         const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', userId).maybeSingle();
         if (error) throw new Error(`partenaire du compte ${userId} illisible : ${error.message}`);
@@ -372,7 +348,7 @@ export class HallService {
             throw new Error(`Échec modification salle: ${error?.message}`);
         }
 
-        return updated;
+        return updated as unknown as Record<string, any>;
     }
 
     /**
