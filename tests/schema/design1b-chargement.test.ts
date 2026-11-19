@@ -60,6 +60,15 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         assert.match(read('app/tickets/page.tsx'), /enabled: Boolean\(userId\) && pageSettled,/);
     });
 
+    test('Mes billets (run 420) : relecture identique sans nouveau rendu ; billets suivants après le chargement', () => {
+        const page = read('app/tickets/page.tsx');
+        assert.match(page, /if \(json !== ticketsJsonRef\.current\) \{\n\s*ticketsJsonRef\.current = json;\n\s*setTickets\(result\.tickets\);/);
+        assert.match(page, /if \(json !== incomingJsonRef\.current\) \{\n\s*incomingJsonRef\.current = json;\n\s*setIncoming\(next\);/);
+        assert.equal(page.match(/setTickets\(/g)?.length, 1, 'une seule écriture de la liste');
+        const card = read('components/tickets/TicketCard.tsx');
+        assert.match(card, /const settled = usePageSettled\(\);[\s\S]*?return eager \|\| settled \|\| visible;/);
+    });
+
     test('Mes billets : synchronisation hors ligne après l’affichage', () => {
         const auth = read('components/providers/AuthProvider.tsx');
         assert.match(auth, /const cancelWarm = warmWhenIdle\(load\);/);

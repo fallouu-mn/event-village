@@ -217,13 +217,23 @@ export default function TicketsPage() {
     earlyRef.current = readTickets();
   }, []);
 
+  // Design 1b (run 420, temps de blocage de Mes billets) : une relecture identique (rattrapage du temps réel à la
+  // connexion, synchronisation) ne remplace plus la liste : sans cela, chaque réponse redessinait tout le portefeuille
+  // (tâches de 69 à 97 ms au téléphone de référence). Le contenu change : la liste est remplacée, comme avant.
+  const ticketsJsonRef = useRef<string | null>(null);
+  const incomingJsonRef = useRef<string | null>(null);
+
   /** « initial » : écran d'erreur si l'échec survient ; « silent » : la liste reste, un bandeau le signale. */
   const load = useCallback(async (mode: 'initial' | 'silent', early?: Promise<LoadResult> | null) => {
     // Réponse anticipée gardée seulement si elle a réussi (session encore à renouveler : nouvelle demande, même règle).
     const anticipated = early ? await early : null;
     const result = anticipated?.ok ? anticipated : await readTickets();
     if (result.ok) {
-      setTickets(result.tickets);
+      const json = JSON.stringify(result.tickets);
+      if (json !== ticketsJsonRef.current) {
+        ticketsJsonRef.current = json;
+        setTickets(result.tickets);
+      }
       setLoadError(null);
       setRefreshError(null);
       setPhase('ready');
@@ -252,7 +262,12 @@ export default function TicketsPage() {
   const loadIncoming = useCallback(async (mode: 'initial' | 'silent') => {
     const result = await readIncomingTransfers();
     if (result.ok) {
-      setIncoming({ items: result.items, phoneVerificationRequired: result.phoneVerificationRequired });
+      const next = { items: result.items, phoneVerificationRequired: result.phoneVerificationRequired };
+      const json = JSON.stringify(next);
+      if (json !== incomingJsonRef.current) {
+        incomingJsonRef.current = json;
+        setIncoming(next);
+      }
       setIncomingError(null);
       setIncomingPhase('ready');
       // R45 (A10) : un billet attend et aucun onglet n'est demandé (lien du SMS ou ouverture directe) → « Reçus »

@@ -58,6 +58,50 @@ L'expéditeur d'une invitation s'écrit « Invitation de l'organisateur » parto
 ### Disque et dépôt
 Place libérée sans risque : cache npm et ancien pilote Playwright-Go 1.50.1. Les navigateurs Playwright servent tous en version 1248 et sont gardés. Il reste 9,16 Go libres. `gc.auto` et `maintenance.auto` sont réactivés, `git gc` est passé. La branche jetable de mesure `fix/mesure-scanner-avant-1a` est supprimée.
 
+## Correctif du run 414 de main (branche `correctif/main-414`)
+
+Le design 1b a été fusionné dans main avec le lot 10a (`ce737247f`). Le run complet 414 a été rouge sur trois points, absents des runs de chaque branche prise seule. Une branche `correctif/main-414` est partie de main, et `verify.yml` lance désormais aussi les branches `correctif/**`.
+
+1. **`migration-lot10a-rejouable`**. Ce test exigeait que les migrations 20261122… soient les dernières du dépôt. La règle « après toutes celles d'avant le lot » est reprise **exactement** de `lot11a/tables-argent`, pour éviter un conflit à sa fusion.
+2. **Boutons à 42 px** (capture « confirmation », ordinateur, sombre). La fenêtre s'ouvrait par `scale(0.95)`, et ses boutons mesuraient vraiment 42 px pendant l'ouverture. Fenêtres et toasts s'ouvrent désormais par fondu et translation : 44 px à chaque image (test `main414-cibles`).
+3. **Fumée, étape 5 : « mauvais événement »**. C'est le test qui se trompait de billet.
+   - Seul le premier billet de Mes billets dessine son QR tout de suite.
+   - Le repère du test (« bloc qui contient le titre et un QR », le dernier) remontait alors à la liste, dont le seul QR était celui d'un autre billet.
+   - Le test cible maintenant la carte exacte (« Billet pour <titre> ») et vérifie que le QR est bien dedans. **Attente modifiée, signalée.**
+4. **Aucune animation en boucle infinie** (décision du 18 novembre).
+   - **Inventaire** :
+     - le halo du point « En cours » (`evLivePulse infinite`) ;
+     - `animate-pulse`, 60 usages : squelettes, « En direct », QR en attente ;
+     - `animate-spin`, 26 usages : indicateurs de chargement ;
+     - `animate-ping`, 2 usages : paiement ;
+     - la barre du pas du code de Mes billets.
+
+     Aucune boucle JavaScript, aucun SVG animé.
+   - **Désormais** :
+     - pulse et ping font 3 cycles puis restent fixes ; spin fait 10 tours puis s'arrête ;
+     - le point « En cours » pulse 3 fois, seulement à l'écran (`lib/ui/live-dots.ts`) ;
+     - Mes billets n'a plus de barre, et un QR en attente est un squelette fixe (test `animations-finies`).
+   - **Effet sur Mes billets, mesuré dans le même run (417)**. Médiane de 3 passages de 10 s, avec les animations remises par une feuille injectée, puis sans :
+     - style et mise en page : 221 → 212 ms ;
+     - peinture : 295 → 261 ms (−12 %).
+
+     Détail dans `perf/rendu-mes-billets.tsv`.
+5. **Médiane de 5 passages pour Lighthouse**. Au run 417, la fiche oscillait de ± 5 (87 ; 92 ; 92). Seuils et calibration inchangés.
+   - Temps imparti à la mesure : 8 → 13 min ; étape CI : 10 → 15 min ; job e2e : 70 → 75 min.
+   - Le test du lot `design1b-perf-mobile` vérifie désormais 5 passages et une étape de 15 min au plus (**modification signalée**).
+6. **SMS aux admins envoyé la nuit**. Le run 417 a démarré à 21 h 53 UTC ; 24 suites sont tombées sur l'invariant p3 du lot 9 quinquies.
+   - **Cause** : des `ADMIN_REVIEW_SMS` mis en file juste avant 22 h sont partis à 22 h 00. La nuit n'était appliquée qu'à la mise en file.
+   - **Correctif minimal** (migration `20261123000002_main414_nuit_sms_admins.sql`) : `notification_outbox_claim` revérifie la plage au moment d'envoyer. Un SMS qui tombe dans la plage est reporté à 8 h : il reste en attente, ne consomme aucune tentative et n'est jamais perdu. La plage reste 22 h - 8 h.
+   - **Pour la finition 4**, qui la rendra réglable (01:00-07:00) : partir de cette fonction et de `notif_admin_review_due`.
+   - **Preuve à heure simulée**, sans dépendre de l'heure réelle du run : test `main414-nuit-sms-admins`, avec un run qui démarre à 21:55 et un autre à 07:55. Il est rouge au run 418 (SMS envoyé à 22:00 simulé) et vert au run 419.
+
+| Tentative (mode autonome) | Run | Résultat | Cause, correctif |
+|---|---|---|---|
+| — | 416 | Mes billets 88 | Animations continues ; décision de l'utilisateur |
+| — | 417 | Mesure verte ; 24 suites rouges | SMS aux admins à 22:00 ; décision de l'utilisateur |
+| 1 | 418 rouge, 419 vert (rapides), puis 420 complet | tests 520/520, e2e vert, aucune erreur 418 ; Mes billets 89 (86 ; 91 ; 90 ; 89 ; 88), accueil 91, fiche 93 ; rendu avant → après : style 236 → 195 ms, peinture 306 → 275 ms | Correctif des SMS de nuit et médiane de 5 |
+| 2 | complet (voir « Runs ») | — | Cause trouvée dans la trace du run 420 : la liste des billets était lue 3 fois au chargement (puis billets reçus, notifications), et chaque réponse, même identique, redessinait tout le portefeuille (tâches React de 69 à 97 ms) ; les billets 2 et 3 démarraient au premier moment libre, avant la fin du chargement. Correctif : relecture identique sans nouveau rendu ; billets suivants après le chargement et le premier moment libre, ou à l'écran |
+
 ## Ce qui est fait
 
 ### 1. Performance

@@ -57,6 +57,7 @@ import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { TONE_SOFT } from '@/components/ui/tones';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { usePageSettled } from '@/hooks/usePageSettled';
 import { formatDateTime, formatFcfa } from '@/lib/format';
 import { REFUND_DELAYED_LABEL } from '@/lib/payments/payment-labels';
 import { TICKET_STATUS_META, type TicketStatus } from '@/lib/tickets/ticket-status';
@@ -111,35 +112,23 @@ function QrFullscreenLive({ until, min, ...rest }: { until: number | null; min: 
 /**
  * Démarrage du travail d'une carte (code dynamique, lot hors ligne, QR) : tout de suite pour le premier billet (`eager`) ;
  * pour les autres, quand la carte devient visible (glissée à l'écran, grille de l'ordinateur) ou quand le téléphone est
- * libre après l'affichage de la page — jamais pendant le chargement de Mes billets (design 1b, décision du 18/11).
+ * libre une fois la page chargée — jamais pendant le chargement de Mes billets (design 1b, décision du 18/11 ; run 420).
  * Sans réseau aussi (lot hors ligne) : rien ne dépend de la connexion ici.
  */
 function useStartWhenReady(eager: boolean, ref: React.RefObject<HTMLElement | null>): boolean {
-  const [started, setStarted] = useState<boolean>(eager);
+  // Run 420 : démarrage au premier moment libre, souvent avant la fin du chargement (codes et QR des billets 2 et 3 dans
+  // la fenêtre mesurée) ; désormais après l'événement load puis le premier moment libre (usePageSettled), ou à l'écran.
+  const settled = usePageSettled();
+  const [visible, setVisible] = useState<boolean>(false);
   useEffect(() => {
-    if (started) return undefined;
-    let done = false;
-    const go = (): void => {
-      if (done) return;
-      done = true;
-      setStarted(true);
-    };
-    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-    const idleId = w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 4_000 }) : null;
-    const timer = idleId === null ? setTimeout(go, 1_500) : null;
+    if (eager || visible) return undefined;
     const el = ref.current;
-    const observer = el && typeof IntersectionObserver === 'function'
-      ? new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) go(); }, { threshold: 0.3 })
-      : null;
-    if (observer && el) observer.observe(el);
-    return () => {
-      done = true;
-      observer?.disconnect();
-      if (idleId !== null && w.cancelIdleCallback) w.cancelIdleCallback(idleId);
-      if (timer) clearTimeout(timer);
-    };
-  }, [started, ref]);
-  return started;
+    if (!el || typeof IntersectionObserver !== 'function') return undefined;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) setVisible(true); }, { threshold: 0.3 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [eager, visible, ref]);
+  return eager || settled || visible;
 }
 
 /** Design 1b (point 8) : QR en grand chargé seulement au toucher du QR (hors du premier chargement de Mes billets). */
