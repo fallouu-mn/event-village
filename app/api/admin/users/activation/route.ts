@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         if (!profile) return NextResponse.json({ error: 'Compte introuvable.', code: 'USER_NOT_FOUND' }, { status: 404 });
         const targetRoles = (roles ?? []).map((r) => String(r.role));
         if ((targetRoles.includes('ADMIN') || targetRoles.includes('SUPERADMIN')) && !auth.user!.roles.includes('SUPERADMIN')) {
-            return NextResponse.json({ error: 'Seul un superadmin peut créer un administrateur ou changer ce rôle.', code: 'ADMIN_ROLE_SUPERADMIN_ONLY' }, { status: 403 });
+            return NextResponse.json({ error: 'Seul un super-administrateur peut créer un administrateur ou changer ce rôle.', code: 'ADMIN_ROLE_SUPERADMIN_ONLY' }, { status: 403 });
         }
         const { data: authRow, error: authErr } = await supabase.auth.admin.getUserById(userId);
         if (authErr || !authRow?.user) throw new Error(`compte d’authentification illisible : ${authErr?.message ?? 'absent'}`);

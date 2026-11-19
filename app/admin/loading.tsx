@@ -10,7 +10,7 @@ export default function Loading() {
           <StatCardSkeleton key={i} />
         ))}
       </div>
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         <Skeleton className="h-11 w-full rounded-none" />
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex items-center gap-4 border-t border-border px-4 py-3">

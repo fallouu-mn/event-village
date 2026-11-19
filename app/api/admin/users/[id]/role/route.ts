@@ -14,7 +14,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const BodySchema = z.object({
-    role: z.enum(['CLIENT', 'ADMIN', 'SUPERADMIN'], { message: 'Rôle inconnu : client, administrateur ou Superadmin.' }),
+    role: z.enum(['CLIENT', 'ADMIN', 'SUPERADMIN'], { message: 'Rôle inconnu : client, administrateur ou super-administrateur.' }),
     reason: z.string().trim().min(3, 'Indiquez le motif (3 caractères au moins).').max(500, 'Le motif est limité à 500 caractères.'),
     confirm_staff_promotion: z.boolean().optional(),
 }).strict();
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const auth = await verifyAdminAuth(req);
     if (!auth.authorized) return auth.errorResponse!;
     if (!auth.user!.roles.includes('SUPERADMIN')) {
-        return NextResponse.json({ error: 'Seul un Superadmin change le rôle d’un compte.', code: 'SUPERADMIN_ONLY' }, { status: 403, headers: NO_STORE });
+        return NextResponse.json({ error: 'Seul un super-administrateur change le rôle d’un compte.', code: 'SUPERADMIN_ONLY' }, { status: 403, headers: NO_STORE });
     }
     const identity = await requireAdminIdentity(req, auth.user!.id);
     if (!identity.ok) return identity.response;

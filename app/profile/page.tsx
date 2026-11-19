@@ -56,7 +56,7 @@ const ROLE_LABELS: Record<string, string> = {
   PARTENAIRE: 'Partenaire',
   CONTROLEUR: 'Contrôleur',
   ADMIN: 'Administrateur',
-  SUPERADMIN: 'Superadmin',
+  SUPERADMIN: 'Super-administrateur',
 };
 
 const ACCOUNT_STATUS_LABELS: Record<string, string> = {

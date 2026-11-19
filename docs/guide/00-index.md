@@ -80,8 +80,8 @@ Trois précisions :
   n'apparaît que dans les textes lus par le public ou les clients, recopiés du code.
 - **indispensable / optionnel** : la consigne du guide impose ces deux mots dans les tableaux de messages ; « optionnel »
   correspond au « SMS facultatif » du glossaire (un message dont la personne peut couper le sujet dans ses préférences).
-- **SUPERADMIN** et **ADMIN** désignent les rôles ; l'écran les affiche « Superadmin », « Super administrateur » ou
-  « Super-administrateur » selon la page (constat G-45) et « Administrateur ».
+- **SUPERADMIN** et **ADMIN** désignent les rôles ; l'écran les affiche « Super-administrateur » (partout depuis le
+  design 1c ; constat G-45 refermé) et « Administrateur ».
 
 ## Tableau des rôles
 

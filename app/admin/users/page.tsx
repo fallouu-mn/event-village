@@ -2,36 +2,33 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import Link from 'next/link';
 import {
-  ChevronLeft,
   Users,
   UserPlus,
-  Shield,
-  ShieldAlert,
   ShieldCheck,
   Search,
   RefreshCw,
-  AlertCircle,
-  CheckCircle2,
   Phone,
   Mail,
-  Sliders,
-  XCircle,
-  CheckCircle,
   Key,
   User,
+  UserCog,
   QrCode,
-  Sparkles,
   Info,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ReasonDialog } from '@/components/ui/ReasonDialog';
 import { LinkButton } from '@/components/ui/LinkButton';
-import { Badge } from '@/components/ui/Badge';
+import { Badge, type BadgeVariant } from '@/components/ui/Badge';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { FilterChip } from '@/components/ui/FilterChip';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { cn } from '@/components/ui/cn';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ADMIN_PERMISSIONS } from '@/lib/admin/permissions';
@@ -59,6 +56,18 @@ interface UserItem {
   /** Lot 9 quinquies (A2) : compte créé par un admin pas encore activé (lien valable ou expiré). */
   activation?: 'PENDING' | 'EXPIRED' | null;
 }
+
+/** Filtres de rôle proposés au-dessus de la liste (libellés par roleLabel, jamais la valeur brute). */
+const ROLE_FILTERS = ['ALL', 'SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR', 'CLIENT'] as const;
+
+/** Ton de la pastille du rôle (design 1c : jetons de la charte ; le libellé porte l'information, la couleur la double). */
+const ROLE_BADGE: Readonly<Record<string, BadgeVariant>> = {
+  SUPERADMIN: 'brand',
+  ADMIN: 'info',
+  PARTENAIRE: 'default',
+  CONTROLEUR: 'default',
+  CLIENT: 'neutral',
+};
 
 /** Message français d'une réponse en échec (`{ error }` de la route), sinon le repli donné. */
 function refusalOf(data: unknown, fallback: string): string {
@@ -363,7 +372,7 @@ export default function AdminUsersManagementPage() {
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(refusalOf(data, 'Erreur lors de l\'anonymisation.'));
 
-      toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} a été définitivement anonymisé (RGPD).`);
+      toast.success(`Le compte de ${userToDelete.first_name} ${userToDelete.last_name} est supprimé : ses données personnelles sont effacées.`);
       setUserToDelete(null);
       await fetchUsers();
     } catch (err: unknown) {
@@ -375,280 +384,205 @@ export default function AdminUsersManagementPage() {
   };
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/dashboard"
-            aria-label="Retour à l’accueil de l’administration"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ChevronLeft size={20} aria-hidden="true" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-black tracking-tight text-foreground-strong sm:text-3xl">
-              Comptes et administrateurs
-            </h1>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchUsers}
-            disabled={isLoading}
-            className="flex items-center gap-1.5"
-          >
-            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-            <span>Actualiser</span>
-          </Button>
-
-          {canWrite && (
+    <div className="flex flex-col gap-6 pb-16">
+      <PageHeader
+        title="Comptes et administrateurs"
+        description="Créez un compte, donnez ses droits à un administrateur, suspendez ou supprimez un compte."
+        back={{ href: '/admin/dashboard', label: 'Accueil de l’administration' }}
+        actions={(
+          <>
             <Button
-              variant="primary"
+              variant="secondary"
               size="sm"
-              onClick={() => setIsCreateModalOpen(true)}
-              leftIcon={<UserPlus size={16} aria-hidden="true" />}
+              onClick={() => void fetchUsers()}
+              isLoading={isLoading}
+              leftIcon={<RefreshCw size={16} aria-hidden="true" />}
             >
-              Créer un compte
+              Actualiser
             </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Filtres & Recherche */}
-      <div className="space-y-6 rounded-3xl border border-border bg-card p-4 sm:p-6">
-        <div className="flex flex-col justify-between gap-4 border-b border-border pb-4 sm:flex-row sm:items-center">
-          <div className="relative max-w-md flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <input
-              type="search"
-              aria-label="Rechercher un compte"
-              placeholder="Rechercher par nom, email ou téléphone"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="min-h-11 w-full rounded-xl border border-input bg-card pl-9 pr-4 text-base text-foreground-strong outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrer par rôle">
-            {['ALL', 'SUPERADMIN', 'ADMIN', 'PARTENAIRE', 'CONTROLEUR', 'CLIENT'].map((role) => (
-              <button
-                key={role}
-                type="button"
-                aria-pressed={roleFilter === role}
-                onClick={() => setRoleFilter(role)}
-                className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  roleFilter === role ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-background hover:text-foreground-strong'
-                }`}
+            {canWrite && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsCreateModalOpen(true)}
+                leftIcon={<UserPlus size={16} aria-hidden="true" />}
               >
-                {role === 'ALL' ? 'Tous' : roleLabel(role)}
-              </button>
-            ))}
-          </div>
+                Créer un compte
+              </Button>
+            )}
+          </>
+        )}
+      />
+
+      {/* Filtres et recherche */}
+      <Card className="flex flex-col gap-4 p-4 sm:p-5">
+        <div className="relative w-full md:max-w-md">
+          <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <input
+            type="search"
+            aria-label="Rechercher un compte"
+            placeholder="Rechercher par nom, email ou téléphone"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="min-h-12 w-full rounded-xl border border-input bg-card pl-10 pr-4 text-base text-foreground-strong placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
         </div>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrer par rôle">
+          {ROLE_FILTERS.map((role) => (
+            <FilterChip key={role} pressed={roleFilter === role} onClick={() => setRoleFilter(role)}>
+              {role === 'ALL' ? 'Tous' : roleLabel(role)}
+            </FilterChip>
+          ))}
+        </div>
+      </Card>
 
-        {/* Liste Réelle des Utilisateurs */}
-        {isLoading ? (
-          <div role="status" className="py-12 text-center text-muted-foreground">
-            <RefreshCw size={24} className="mx-auto mb-2 text-primary-text motion-safe:animate-spin" aria-hidden="true" />
-            <p className="text-sm">Chargement des comptes…</p>
-          </div>
-        ) : listError ? (
-          <div role="alert" className="flex items-start gap-2 rounded-2xl border border-danger-border bg-danger-soft p-4 text-sm text-danger-text">
-            <AlertCircle size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-            <p>{listError}</p>
-          </div>
-        ) : users.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">
-            <Users size={32} className="mx-auto mb-2" aria-hidden="true" />
-            <p className="text-sm font-semibold">Aucun compte ne correspond à cette recherche.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {users.map((user) => {
-              const isSuper = user.role === 'SUPERADMIN';
-              const isAdmin = user.role === 'ADMIN';
-              const isSuspended = user.status === 'SUSPENDU';
-              const isDeleted = user.status === 'SUPPRIME';
-              const partnerId = partnerIdByUser[user.id];
-              const isPartner = user.role === 'PARTENAIRE' || partnerId !== undefined;
+      {/* Liste des comptes */}
+      {isLoading && users.length === 0 ? (
+        <div role="status" aria-label="Chargement des comptes" className="flex flex-col gap-3">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : listError ? (
+        <ErrorState title="Comptes indisponibles" description={listError} onRetry={() => void fetchUsers()} isRetrying={isLoading} />
+      ) : users.length === 0 ? (
+        <EmptyState
+          icon={<Users size={28} />}
+          title="Aucun compte"
+          description="Aucun compte ne correspond à cette recherche. Changez le texte ou le rôle choisi."
+        />
+      ) : (
+        <ul className="flex flex-col gap-3" aria-label="Comptes" aria-busy={isLoading || undefined}>
+          {users.map((user) => {
+            const isSuper = user.role === 'SUPERADMIN';
+            const isAdmin = user.role === 'ADMIN';
+            const isSuspended = user.status === 'SUSPENDU';
+            const isDeleted = user.status === 'SUPPRIME';
+            const partnerId = partnerIdByUser[user.id];
+            const isPartner = user.role === 'PARTENAIRE' || partnerId !== undefined;
+            const fullName = `${user.first_name} ${user.last_name}`.trim();
 
-              return (
-                <div
-                  key={user.id}
-                  className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                    isDeleted
-                      ? 'bg-slate-100/60 dark:bg-zinc-950/40 border-slate-200 dark:border-zinc-800 opacity-75'
-                      : 'bg-slate-50 dark:bg-zinc-900/70 border-slate-200/80 dark:border-zinc-800/80'
-                  }`}
-                >
-                  <div className="space-y-1 flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="text-xs font-black text-slate-900 dark:text-white">
-                        {user.first_name} {user.last_name}
-                      </h4>
-
-                      <span
-                        className={`text-[10px] font-black px-2 py-0.5 rounded ${
-                          isSuper
-                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300'
-                            : isAdmin
-                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
-                            : user.role === 'PARTENAIRE'
-                            ? 'bg-orange-100 text-[#FF5722] dark:bg-orange-950/40'
-                            : 'bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
-                        }`}
-                      >
-                        {roleLabel(user.role)}
-                      </span>
-
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                          isDeleted
-                            ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 font-black'
-                            : isSuspended
-                            ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400'
-                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400'
-                        }`}
-                      >
-                        {isDeleted ? ERASED_ACCOUNT_LABEL : accountStatusLabel(user.status)}
-                      </span>
-
-                      {user.activation && !isDeleted && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                          {user.activation === 'PENDING' ? 'Activation en attente' : 'Activation en attente (lien expiré)'}
-                        </span>
-                      )}
-
-                      {user.referral_status === 'AMBASSADEUR' && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                          Ambassadeur
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-x-4 text-xs text-slate-500 dark:text-zinc-400">
-                      <span className="flex items-center gap-1">
-                        <Phone size={12} />
-                        <span>{user.phone || 'Non renseigné'}</span>
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Mail size={12} />
-                        {/* Lot 9 quater (A4) : une adresse technique n'est jamais affichée */}
-                        <span>{isDeliverableEmail(user.email) ? user.email : 'Non renseigné'}</span>
-                      </span>
-                    </div>
+            return (
+              <li
+                key={user.id}
+                className={cn(
+                  'flex flex-col gap-4 rounded-xl border border-border p-4 lg:flex-row lg:items-center lg:justify-between',
+                  isDeleted ? 'bg-muted' : 'bg-card shadow-sm',
+                )}
+              >
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="break-words text-base font-semibold text-foreground-strong">{fullName || 'Nom non renseigné'}</p>
+                    <Badge variant={ROLE_BADGE[user.role] ?? 'neutral'} size="sm">{roleLabel(user.role)}</Badge>
+                    <Badge variant={isDeleted ? 'neutral' : isSuspended ? 'danger' : user.status === 'ACTIF' ? 'success' : 'warning'} size="sm">
+                      {isDeleted ? ERASED_ACCOUNT_LABEL : accountStatusLabel(user.status)}
+                    </Badge>
+                    {user.activation && !isDeleted && (
+                      <Badge variant="warning" size="sm">
+                        {user.activation === 'PENDING' ? 'Activation en attente' : 'Activation en attente (lien expiré)'}
+                      </Badge>
+                    )}
+                    {user.referral_status === 'AMBASSADEUR' && <Badge variant="brand" size="sm">Ambassadeur</Badge>}
                   </div>
 
-                  {/* Finition 3d (point 2a) : boutons repliés sur plusieurs lignes (un de plus sur la ligne d'un ADMIN, 390 px) */}
-                  <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                    {/* Bouton Permissions Granulaires pour Admin */}
-                    {isAdmin && !isDeleted && isSuperadmin && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleOpenPermissions(user)}
-                        className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-600 hover:text-white"
-                      >
-                        <Key size={13} className="mr-1" />
-                        Permissions
-                      </Button>
-                    )}
-
-                    {/* Finition 3d (point 3) : changer le rôle (SUPERADMIN seulement ; jamais une organisatrice ; son propre rôle
-                        seulement pour quitter le rôle de Superadmin). Le serveur décide (mot de passe, code, motif). */}
-                    {isSuperadmin && !isDeleted && !isPartner && (user.id !== me?.id || isSuper) && (
-                      <Button variant="secondary" size="sm" onClick={() => setRoleTarget(user)}>
-                        {user.id === me?.id ? 'Quitter le rôle de Superadmin' : 'Changer le rôle'}
-                      </Button>
-                    )}
-
-                    {/* Finition 3d (point 2a) : le SUPERADMIN change le numéro d'un ADMIN (jamais d'un SUPERADMIN, jamais le sien ici) */}
-                    {isSuperadmin && isAdmin && !isDeleted && user.id !== me?.id && (
-                      <Button variant="secondary" size="sm" onClick={() => setPhoneTarget(user)}>
-                        Changer le numéro
-                      </Button>
-                    )}
-
-                    {/* Lot 9 quinquies (A2) : renvoi du lien d'activation d'un compte créé par un admin */}
-                    {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        isLoading={resendingId === user.id}
-                        onClick={() => void handleResendActivation(user)}
-                      >
-                        Renvoyer le lien
-                      </Button>
-                    )}
-
-                    {/* Suspension / Réactivation / Suppression */}
-                    {/* Lot 9 bis (R6) : une partenaire se suspend ou se réactive depuis sa fiche, avec un motif */}
-                    {isPartner && !isDeleted && (
-                      partnerId !== undefined ? (
-                        <LinkButton
-                          href={`/admin/dashboard?partenaires=ALL&dossier=${encodeURIComponent(partnerId)}`}
-                          variant="secondary"
-                          size="sm"
-                        >
-                          Voir la fiche partenaire
-                        </LinkButton>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">Statut géré depuis la fiche partenaire</span>
-                      )
-                    )}
-
-                    {!isSuper && !isDeleted && canWrite && (!isAdmin || isSuperadmin) && (
-                      <>
-                        {!isPartner && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => {
-                            setStatusError(null);
-                            setStatusTarget(user);
-                          }}
-                          className={`text-xs ${
-                            isSuspended
-                              ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
-                              : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30'
-                          }`}
-                        >
-                          {isSuspended ? 'Réactiver' : 'Suspendre'}
-                        </Button>
-                        )}
-                        {/* Lot 9 quater (B2 : E-39, AUD-23) : aucune suppression depuis une ligne de partenaire */}
-                        {!isPartner && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteUser(user)}
-                          title="Supprimer définitivement ce compte"
-                          className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border-red-200 dark:border-red-900/30 flex items-center gap-1"
-                        >
-                          <Trash2 size={13} />
-                          <span>Supprimer</span>
-                        </Button>
-                        )}
-                      </>
-                    )}
-
-                    {isDeleted && (
-                      <span className="text-[11px] font-bold text-slate-400 dark:text-zinc-500 italic px-2">
-                        Compte supprimé
-                      </span>
-                    )}
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted-foreground">
+                    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                      <Phone size={16} className="flex-shrink-0" aria-hidden="true" />
+                      <span className="sr-only">Téléphone : </span>
+                      <span className="tabular-nums">{user.phone || 'Non renseigné'}</span>
+                    </span>
+                    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                      <Mail size={16} className="flex-shrink-0" aria-hidden="true" />
+                      <span className="sr-only">Email : </span>
+                      {/* Lot 9 quater (A4) : une adresse technique n'est jamais affichée */}
+                      <span className="min-w-0 break-all">{isDeliverableEmail(user.email) ? user.email : 'Non renseigné'}</span>
+                    </span>
                   </div>
                 </div>
-              );
-            })}
 
-          </div>
-        )}
-      </div>
+                {/* Finition 3d (point 2a) : boutons repliés sur plusieurs lignes (un de plus sur la ligne d'un ADMIN, 390 px) */}
+                <div className="flex flex-wrap items-center gap-2 lg:flex-shrink-0 lg:justify-end">
+                  {/* Droits d'un administrateur */}
+                  {isAdmin && !isDeleted && isSuperadmin && (
+                    <Button variant="secondary" size="sm" onClick={() => handleOpenPermissions(user)} leftIcon={<Key size={16} aria-hidden="true" />}>
+                      Permissions
+                    </Button>
+                  )}
+
+                  {/* Finition 3d (point 3) : changer le rôle (SUPERADMIN seulement ; jamais une organisatrice ; son propre rôle
+                      seulement pour quitter le rôle de super-administrateur). Le serveur décide (mot de passe, code, motif). */}
+                  {isSuperadmin && !isDeleted && !isPartner && (user.id !== me?.id || isSuper) && (
+                    <Button variant="secondary" size="sm" onClick={() => setRoleTarget(user)} leftIcon={<UserCog size={16} aria-hidden="true" />}>
+                      {user.id === me?.id ? 'Quitter le rôle de super-administrateur' : 'Changer le rôle'}
+                    </Button>
+                  )}
+
+                  {/* Finition 3d (point 2a) : le SUPERADMIN change le numéro d'un ADMIN (jamais d'un SUPERADMIN, jamais le sien ici) */}
+                  {isSuperadmin && isAdmin && !isDeleted && user.id !== me?.id && (
+                    <Button variant="secondary" size="sm" onClick={() => setPhoneTarget(user)}>
+                      Changer le numéro
+                    </Button>
+                  )}
+
+                  {/* Lot 9 quinquies (A2) : renvoi du lien d'activation d'un compte créé par un admin */}
+                  {user.activation && !isDeleted && canWrite && (!(isAdmin || isSuper) || isSuperadmin) && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      isLoading={resendingId === user.id}
+                      onClick={() => void handleResendActivation(user)}
+                    >
+                      Renvoyer le lien
+                    </Button>
+                  )}
+
+                  {/* Lot 9 bis (R6) : une partenaire se suspend ou se réactive depuis sa fiche, avec un motif */}
+                  {isPartner && !isDeleted && (
+                    partnerId !== undefined ? (
+                      <LinkButton
+                        href={`/admin/dashboard?partenaires=ALL&dossier=${encodeURIComponent(partnerId)}`}
+                        variant="secondary"
+                        size="sm"
+                      >
+                        Voir la fiche partenaire
+                      </LinkButton>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Statut géré depuis la fiche partenaire</span>
+                    )
+                  )}
+
+                  {!isSuper && !isDeleted && canWrite && (!isAdmin || isSuperadmin) && !isPartner && (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setStatusError(null);
+                          setStatusTarget(user);
+                        }}
+                      >
+                        {isSuspended ? 'Réactiver' : 'Suspendre'}
+                      </Button>
+                      {/* Lot 9 quater (B2 : E-39, AUD-23) : aucune suppression depuis une ligne de partenaire */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteUser(user)}
+                        leftIcon={<Trash2 size={16} aria-hidden="true" />}
+                        className="text-danger-text hover:bg-danger-soft"
+                      >
+                        Supprimer
+                      </Button>
+                    </>
+                  )}
+
+                  {isDeleted && <span className="text-sm text-muted-foreground">Compte supprimé</span>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {/* ====================================================================
           MODAL CRÉATION UTILISATEUR / ADMIN (SUPERADMIN ONLY)
@@ -669,7 +603,7 @@ export default function AdminUsersManagementPage() {
           <TextInput label="Numéro de téléphone (Sénégal)" type="tel" required inputMode="tel" placeholder="77 123 45 67" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="tabular-nums" />
           <TextInput label="Email (facultatif)" type="email" placeholder="contact@domaine.sn" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
 
-          <div className="rounded-xl border border-border bg-background p-3 text-sm text-muted-foreground">
+          <div className="rounded-xl border border-border bg-muted p-3 text-sm text-muted-foreground">
             {/* Lot 9 quinquies (A2 : AUTH-02) : plus aucun mot de passe saisi par l'administrateur */}
             <p className="font-semibold text-foreground-strong">Mot de passe choisi par le titulaire</p>
             <p className="mt-1">Le titulaire reçoit par SMS un lien d’activation valable 24 heures pour choisir son mot de passe.</p>
@@ -683,16 +617,16 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={newRole === 'CONTROLEUR'}
                 onClick={() => setNewRole('CONTROLEUR')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'CONTROLEUR' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
+                  newRole === 'CONTROLEUR' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-muted'
                 }`}
               >
                 <QrCode size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-foreground-strong">Contrôleur</span>
-                  <span className="block text-sm text-muted-foreground">Scanne les billets des événements où un partenaire l’affecte</span>
+                  <span className="block text-sm text-muted-foreground">Scanne les billets des événements où un partenaire l’affecte.</span>
                 </span>
               </button>
-              {/* Lot 9 bis (R71, B33) : créer un administrateur ou un superadmin est réservé au SUPERADMIN */}
+              {/* Lot 9 bis (R71, B33) : créer un administrateur est réservé au SUPERADMIN */}
               {isSuperadmin && (
                 <>
               <button
@@ -700,13 +634,13 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={newRole === 'ADMIN'}
                 onClick={() => setNewRole('ADMIN')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'ADMIN' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
+                  newRole === 'ADMIN' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-muted'
                 }`}
               >
                 <Key size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-foreground-strong">Administrateur</span>
-                  <span className="block text-sm text-muted-foreground">Agit selon les droits que vous lui donnez</span>
+                  <span className="block text-sm text-muted-foreground">Agit selon les droits que vous lui donnez.</span>
                 </span>
               </button>
                 </>
@@ -716,19 +650,19 @@ export default function AdminUsersManagementPage() {
                 aria-pressed={newRole === 'CLIENT'}
                 onClick={() => setNewRole('CLIENT')}
                 className={`flex min-h-11 items-start gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  newRole === 'CLIENT' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-background'
+                  newRole === 'CLIENT' ? 'border-primary bg-primary-soft' : 'border-border bg-card hover:bg-muted'
                 }`}
               >
                 <User size={18} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-foreground-strong">Client</span>
-                  <span className="block text-sm text-muted-foreground">Achète des billets, sans accès professionnel</span>
+                  <span className="block text-sm text-muted-foreground">Achète des billets, sans accès professionnel.</span>
                 </span>
               </button>
             </div>
           </fieldset>
           {isSuperadmin && (
-            <p className="text-sm text-muted-foreground">Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
+            <p className="text-sm text-muted-foreground">Pour nommer un super-administrateur : créez un administrateur, puis « Changer le rôle » sur sa ligne.</p>
           )}
 
           <p className="flex items-start gap-2 rounded-xl border border-info-border bg-info-soft p-3 text-sm text-info-text">
@@ -797,13 +731,13 @@ export default function AdminUsersManagementPage() {
               </div>
               <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
                 {PERMISSION_GROUPS.map((group) => (
-                  <fieldset key={group.title} className="space-y-2 rounded-2xl border border-border p-3">
+                  <fieldset key={group.title} className="space-y-2 rounded-xl border border-border p-3">
                     <legend className="px-1 text-sm font-semibold text-foreground-strong">{group.title}</legend>
                     {group.permissions.filter((perm) => (ADMIN_PERMISSIONS as readonly string[]).includes(perm)).map((perm) => {
                       const isChecked = adminPermissions.includes(perm);
                       const inputId = `droit-${perm.replace('.', '-')}`;
                       return (
-                        <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-background">
+                        <label key={perm} htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl p-2 hover:bg-muted">
                           <input
                             id={inputId}
                             type="checkbox"

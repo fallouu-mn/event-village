@@ -32,7 +32,7 @@ function unavailable(): NextResponse {
 /**
  * POST /api/admin/step-up/recovery — finition 3d (point 2c), « J'ai perdu mon téléphone » dans la fenêtre du code
  * administrateur : `{ password, code }` (un code de secours) remplacent le code reçu par SMS. SUPERADMIN seulement (un ADMIN
- * n'a pas de codes de secours : le Superadmin change son numéro). 5 échecs par 15 minutes (puis 429, même avec le bon code) ;
+ * n'a pas de codes de secours : le super-administrateur change son numéro). 5 échecs par 15 minutes (puis 429, même avec le bon code) ;
  * un seul message pour un mot de passe ou un code faux. En cas de succès, dans la base (admin_backup_code_use) : code
  * consommé, appareil reconnu, SMS d'alerte à l'ancien numéro, email, journal ; ici : mot de passe enregistré pour la
  * session, cookie d'appareil posé s'il manque. L'écran mène ensuite au changement de son propre numéro.
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     const userId = auth.user!.id;
     if (!auth.user!.roles.includes('SUPERADMIN')) {
         return noStore(NextResponse.json({
-            error: 'Seul un Superadmin a des codes de secours. Demandez au Superadmin de changer votre numéro de téléphone.',
+            error: 'Seul un super-administrateur a des codes de secours. Demandez au super-administrateur de changer votre numéro de téléphone.',
             code: 'NO_BACKUP_CODES',
         }, { status: 403 }));
     }

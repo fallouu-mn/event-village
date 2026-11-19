@@ -149,7 +149,8 @@ describe('2. téléphone perdu : écrans', () => {
         assert.match(gate, /autoComplete="current-password"/);
         assert.match(gate, /['"]\/admin\/securite\?numero=1['"]/, 'après le code de secours, la page Sécurité doit mener au changement de numéro');
         assert.match(gate, /reply\.ok === true/, 'la suite ne doit venir que sur la réponse du serveur');
-        assert.match(gate, /Demandez au Superadmin de changer votre numéro/, 'un ADMIN doit être invité à s’adresser au Superadmin');
+        // Design 1c (point 3) : « super-administrateur » partout (décision de l'utilisateur) ; même exigence, nouveau mot.
+        assert.match(gate, /Demandez au super-administrateur de changer votre numéro/, 'un ADMIN doit être invité à s’adresser au super-administrateur');
     });
 
     test('après la double vérification, un SUPERADMIN sans codes de secours se les voit proposer', () => {
@@ -196,7 +197,7 @@ describe('2. téléphone perdu : écrans', () => {
         const page = read('app/admin/securite/page.tsx');
         assert.match(page, /<BackupCodesPanel\b/);
         assert.match(page, /<PhoneChangeFlow target=\{\{ kind: 'SELF' \}\}/);
-        assert.match(page, /Réservé au Superadmin/);
+        assert.match(page, /Réservé au super-administrateur/);
     });
 
     // Garde-fou (vert dès l'écriture, signalé au rapport) : le code envoyé au nouveau numéro est un envoi synchrone, hors de
@@ -215,11 +216,11 @@ describe('2. téléphone perdu : écrans', () => {
 // ── 3. Changer le rôle : écrans ───────────────────────────────────────────────────────────────────────────────────
 
 describe('3. changer le rôle : écrans', () => {
-    test('« Changer le rôle » sur la ligne d’un compte, pour le SUPERADMIN ; « Quitter le rôle de Superadmin » sur la sienne', () => {
+    test('« Changer le rôle » sur la ligne d’un compte, pour le SUPERADMIN ; « Quitter le rôle de super-administrateur » sur la sienne', () => {
         const page = read('app/admin/users/page.tsx');
         assert.match(page, /isSuperadmin && !isDeleted && !isPartner/);
-        assert.match(page, /Quitter le rôle de Superadmin/);
-        assert.match(page, /Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne\./);
+        assert.match(page, /Quitter le rôle de super-administrateur/);
+        assert.match(page, /Pour nommer un super-administrateur : créez un administrateur, puis « Changer le rôle » sur sa ligne\./);
     });
 
     test('« fait » seulement si le serveur rend le rôle demandé ; motif ; confirmation de la finition 1', () => {

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /admin/a-la-une — design 1b (À LA UNE) : les événements que le Superadmin met en tête de l'accueil, dans l'ordre.
+ * /admin/a-la-une — design 1b (À LA UNE) : les événements que le super-administrateur met en tête de l'accueil, dans l'ordre.
  *  - Liste ordonnée : « Monter » et « Descendre » (boutons accessibles, sans glisser-déposer), état d'affichage, dates,
  *    motif, auteur ; « Dates » et « Retirer » (confirmation, « qui est prévenu », motif obligatoire).
  *  - « Ajouter un événement » : recherche parmi les événements publiés pas encore terminés, dates facultatives (heure de
@@ -9,7 +9,7 @@
  *  - Historique des retraits (à la main ou automatiques : annulation, suspension, fin) et journal (qui, quand, quoi, motif).
  *  - Sans choix : l'accueil montre les plus vendus de la semaine (texte exact de l'état vide).
  * Chaque écriture demande le mot de passe et le code administrateur (useIdentityConfirm) ; le serveur décide toujours
- * (Superadmin seulement, routes /api/admin/a-la-une/**). Page de l'administration : jamais mise en cache.
+ * (super-administrateur seulement, routes /api/admin/a-la-une/**). Page de l'administration : jamais mise en cache.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -141,9 +141,9 @@ export default function AlaUnePage() {
             <div className="mx-auto flex max-w-4xl flex-col gap-6 pb-16">
                 {header}
                 <div role="status" aria-busy="true" aria-label="Chargement de la une" className="flex flex-col gap-3">
-                    <Skeleton className="h-28 rounded-2xl" />
-                    <Skeleton className="h-28 rounded-2xl" />
-                    <Skeleton className="h-48 rounded-2xl" />
+                    <Skeleton className="h-28 rounded-xl" />
+                    <Skeleton className="h-28 rounded-xl" />
+                    <Skeleton className="h-48 rounded-xl" />
                 </div>
             </div>
         );
@@ -153,8 +153,8 @@ export default function AlaUnePage() {
         return (
             <div className="mx-auto flex max-w-4xl flex-col gap-6 pb-16">
                 {header}
-                <StatusBanner tone="info" icon={<ShieldAlert size={20} aria-hidden="true" />} title="Réservé au Superadmin">
-                    Seul le Superadmin choisit les événements à la une de l’accueil.
+                <StatusBanner tone="info" icon={<ShieldAlert size={20} aria-hidden="true" />} title="Réservé au super-administrateur">
+                    Seul le super-administrateur choisit les événements à la une de l’accueil.
                 </StatusBanner>
             </div>
         );
@@ -178,7 +178,7 @@ export default function AlaUnePage() {
         <div className="mx-auto flex max-w-4xl flex-col gap-6 pb-16">
             {header}
 
-            <section aria-labelledby="etiquette-titre" className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <section aria-labelledby="etiquette-titre" className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                 <div className="min-w-0 space-y-1">
                     <h2 id="etiquette-titre" className="text-base font-bold text-foreground-strong">Étiquette vue par les visiteurs</h2>
                     <p className="text-sm text-muted-foreground">Elle s’affiche sur la carte de chaque événement à la une. Le motif et votre nom ne sont jamais montrés.</p>
@@ -206,7 +206,7 @@ export default function AlaUnePage() {
                         {order.map((item, index) => {
                             const state = displayStateMeta(item.display_state);
                             return (
-                                <li key={item.id} className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+                                <li key={item.id} className="rounded-xl border border-border bg-card p-4 sm:p-5">
                                     <div className="flex gap-3 sm:gap-4">
                                         <span aria-hidden="true"
                                             className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-base font-bold text-primary-text tabular-nums">
@@ -227,7 +227,7 @@ export default function AlaUnePage() {
                                                 <span className="font-semibold text-foreground">Motif : </span>{item.reason}
                                             </p>
                                             <p className="text-sm text-muted-foreground">
-                                                Ajouté par {item.created_by_name ?? 'un Superadmin'}, le <Time iso={item.created_at} />
+                                                Ajouté par {item.created_by_name ?? 'un super-administrateur'}, le <Time iso={item.created_at} />
                                             </p>
                                         </div>
                                     </div>
@@ -286,9 +286,9 @@ export default function AlaUnePage() {
                 {tab === 'historique' ? (
                     <TabPanel idPrefix={TABS_PREFIX} tabIdValue="historique">
                         {data.history.length === 0 ? (
-                            <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">Aucun événement retiré pour l’instant.</p>
+                            <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">Aucun événement retiré pour l’instant.</p>
                         ) : (
-                            <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+                            <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                                 {data.history.map((h) => (
                                     <li key={h.id} className="space-y-1 p-4">
                                         <div className="flex flex-wrap items-center gap-2">
@@ -307,9 +307,9 @@ export default function AlaUnePage() {
                 ) : (
                     <TabPanel idPrefix={TABS_PREFIX} tabIdValue="journal">
                         {data.journal.length === 0 ? (
-                            <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">Aucune action pour l’instant.</p>
+                            <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">Aucune action pour l’instant.</p>
                         ) : (
-                            <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+                            <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                                 {data.journal.map((j) => (
                                     <li key={j.id} className="space-y-1 p-4">
                                         <p className="text-sm text-foreground-strong">

@@ -73,7 +73,7 @@ const BARE_ROUTES = new Set(['/billet/hors-ligne']);
 
 /** Libellé humain du rôle principal (jamais le code brut). */
 const ROLE_LABELS: Record<string, string> = {
-  SUPERADMIN: 'Superadmin',
+  SUPERADMIN: 'Super-administrateur',
   ADMIN: 'Administrateur',
   PARTENAIRE: 'Partenaire',
   CONTROLEUR: 'Contrôleur',

@@ -67,7 +67,7 @@ const RESEND_REASON = 'Renvoi après constat du support SamirPay (test du lot 9 
 const ITEM_KEYS = ['advice', 'amount', 'beneficiary', 'block_label', 'can_mark_not_sent', 'can_mark_paid', 'can_resend', 'event_title', 'id', 'kind', 'kind_label', 'since', 'state', 'state_label'];
 const NOT_SENT_KEYS = ['amount', 'attempt_count', 'kind', 'last_error', 'previous_status', 'reason', 'reference'];
 const TEXTS = {
-    SUPERADMIN_ONLY: 'Seul un superadmin peut constater qu’un versement n’est pas parti.',
+    SUPERADMIN_ONLY: 'Seul un super-administrateur peut constater qu’un versement n’est pas parti.', // design 1c (point 3) : nouveau mot, même exigence
     SUPPORT_REFERENCE_REQUIRED: 'Indiquez la référence du support SamirPay (100 caractères au plus).',
     REASON_REQUIRED: 'Indiquez la raison (10 caractères au moins).',
     NOT_UNCERTAIN: 'Ce versement n’est plus à l’issue incertaine : relisez la liste.',

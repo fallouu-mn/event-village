@@ -24,8 +24,8 @@ export function DebtsList({ refreshToken = 0 }: { refreshToken?: number }) {
             key: 'who', header: 'Qui',
             render: (d) => (
                 <span className="flex flex-col">
-                    <span className="font-semibold text-fg">{d.who}</span>
-                    <span className="text-sm text-fg-muted">{d.whoKind}</span>
+                    <span className="font-semibold text-foreground-strong">{d.who}</span>
+                    <span className="text-sm text-muted-foreground">{d.whoKind}</span>
                 </span>
             ),
         },
@@ -33,8 +33,8 @@ export function DebtsList({ refreshToken = 0 }: { refreshToken?: number }) {
             key: 'why', header: 'Pourquoi',
             render: (d) => (
                 <span className="flex flex-col">
-                    <span className="text-fg">{d.reason}</span>
-                    {d.eventTitle && <span className="text-sm text-fg-muted">{d.eventTitle}</span>}
+                    <span className="text-foreground-strong">{d.reason}</span>
+                    {d.eventTitle && <span className="text-sm text-muted-foreground">{d.eventTitle}</span>}
                 </span>
             ),
         },
@@ -44,22 +44,22 @@ export function DebtsList({ refreshToken = 0 }: { refreshToken?: number }) {
             render: (d) => (
                 <span className="flex flex-col items-end">
                     <span className="font-semibold tabular-nums">{formatFcfaPrecise(d.remaining)}</span>
-                    {d.amount !== d.remaining && <span className="text-sm text-fg-muted tabular-nums">sur {formatFcfaPrecise(d.amount)}</span>}
+                    {d.amount !== d.remaining && <span className="text-sm text-muted-foreground tabular-nums">sur {formatFcfaPrecise(d.amount)}</span>}
                 </span>
             ),
         },
     ];
 
     return (
-        <section id="creances" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <section id="creances" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6">
             <div className="flex flex-col gap-1">
-                <h2 id={`${id}-titre`} className="text-lg font-semibold text-fg">Créances</h2>
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <h2 id={`${id}-titre`} className="text-lg font-semibold text-foreground-strong">Créances</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     Ce que des partenaires ou des parrains doivent encore à Event Village. C’est repris automatiquement sur leurs prochains gains ;
                     ce n’est pas sur le compte SamirPay et ce n’est déduit d’aucun autre chiffre.
                 </p>
                 {list.phase === 'ready' && list.total > 0 && list.amount !== null && (
-                    <p className="text-sm text-fg">
+                    <p className="text-sm text-foreground-strong">
                         À récupérer : <span className="font-semibold tabular-nums">{formatFcfaPrecise(list.amount)}</span> sur{' '}
                         <span className="tabular-nums">{list.total}</span> {list.total > 1 ? 'créances' : 'créance'}.
                     </p>
@@ -67,8 +67,8 @@ export function DebtsList({ refreshToken = 0 }: { refreshToken?: number }) {
             </div>
             {list.phase === 'loading' && (
                 <div role="status" aria-busy="true" aria-label="Chargement des créances" className="flex flex-col gap-2">
-                    <Skeleton className="h-16 rounded-2xl" />
-                    <Skeleton className="h-16 rounded-2xl" />
+                    <Skeleton className="h-16 rounded-xl" />
+                    <Skeleton className="h-16 rounded-xl" />
                 </div>
             )}
             {list.phase === 'error' && <ErrorState title="Créances indisponibles" description={list.message ?? undefined} onRetry={list.reload} isRetrying={list.isReloading} />}

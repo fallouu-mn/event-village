@@ -198,11 +198,12 @@ describe('A24, A38 — écrans (statique)', () => {
     const page = parsed(PAGE);
     const pageText = page.getFullText();
 
-    test('A24 : la page distingue le refus 403 et affiche « Réservé au superadmin » sans bouton Réessayer', () => {
+    test('A24 : la page distingue le refus 403 et affiche « Réservé au super-administrateur » sans bouton Réessayer', () => {
         assert.match(pageText, /\.status\s*===\s*403/, `${PAGE} : le refus 403 n'est pas distingué d'une panne`);
         const states = nodesOf(page, (n) => (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) && n.tagName.getText(page) === 'EmptyState');
-        const reserved = states.filter((n) => /Réservé au superadmin/.test(n.getText(page)) || /Réservé au superadmin/.test(n.parent.getText(page)));
-        assert.equal(reserved.length, 1, `${PAGE} : un EmptyState « Réservé au superadmin » attendu`);
+        // Design 1c (point 3) : « super-administrateur » partout (décision de l'utilisateur) ; même exigence.
+        const reserved = states.filter((n) => /Réservé au super-administrateur/.test(n.getText(page)) || /Réservé au super-administrateur/.test(n.parent.getText(page)));
+        assert.equal(reserved.length, 1, `${PAGE} : un EmptyState « Réservé au super-administrateur » attendu`);
         assert.doesNotMatch(reserved[0].getText(page), /onRetry=/, 'pas de relance pour un refus de droits');
     });
 
@@ -213,8 +214,11 @@ describe('A24, A38 — écrans (statique)', () => {
         assert.equal(shown.length, 0, `${PAGE} : l'identifiant ne doit plus être affiché en clair dans le tableau`);
     });
 
-    test('A38 : témoin, l’identifiant reste dans la modale (vert dès l’écriture)', () => {
-        assert.match(pageText, /selectedLog\.user_id/, `${PAGE} : identifiant retiré de la modale`);
+    // Design 1c (points 1 et 5 : aucun identifiant brut à l'écran) : le témoin « l'identifiant reste dans la modale » s'inverse.
+    test('A38 : ni l’identifiant de l’auteur ni celui de l’objet dans la modale (design 1c)', () => {
+        for (const raw of [/selectedLog\.user_id/, /selectedLog\.object_id/, /\blog\.object_id\b/]) {
+            assert.doesNotMatch(pageText, raw, `${PAGE} : identifiant brut affiché (${raw})`);
+        }
     });
 
     test('A24, AR10 : la barre latérale et le groupe Système masquent le lien pour un ADMIN', () => {

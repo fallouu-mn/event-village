@@ -86,7 +86,7 @@ export async function PATCH(
         // même pour un ADMIN qui a partners.suspend
         if ((newStatus as TargetStatus) === 'SUSPENDU' && !(auth.user?.roles ?? []).includes('SUPERADMIN')) {
             return NextResponse.json(
-                { error: 'Seul un Superadmin peut suspendre une partenaire.', code: 'SUPERADMIN_REQUIRED' },
+                { error: 'Seul un super-administrateur peut suspendre une partenaire.', code: 'SUPERADMIN_REQUIRED' },
                 { status: 403 }
             );
         }

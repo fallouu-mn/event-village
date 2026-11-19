@@ -137,7 +137,7 @@ lecture des tarifs (`app/api/admin/pricing/route.ts:16`), liste des permissions 
      `:678-778`) ;
    - une note selon le rôle, par exemple pour un contrôleur « Routage : Redirigé automatiquement vers le scanner de
      billets (/scan) dès sa connexion. » (`:792-806`) ;
-   - bouton « Créer le compte {rôle} », par exemple « Créer le compte Contrôleur » (`:828`).
+   - bouton « Créer le compte {rôle} », par exemple « Créer le compte Contrôleur ».
 
    Erreurs exactes de la route (`app/api/admin/users/route.ts:113-245`) :
    « Nom, prénom, téléphone et mot de passe requis. » ; « Rôle inconnu : {rôle}. » ; « Seul un superadmin peut créer
@@ -191,7 +191,7 @@ lecture des tarifs (`app/api/admin/pricing/route.ts:16`), liste des permissions 
 5. **Ce que voient les autres rôles** : l’ADMIN concerné voit ses écrans changer au rechargement ; les avis aux admins
    suivent la nouvelle liste dès l’envoi suivant (`M/20261103000002_lot6_outbox.sql:402-421`).
 6. **Refus exacts** : « Opération réservée exclusivement au SUPERADMIN. » (autre compte) ; « Administrateur cible
-   introuvable. » ; « Le Superadmin dispose de toutes les permissions par défaut. » (cible SUPERADMIN) ;
+   introuvable. » ; « Le super-administrateur dispose de toutes les permissions par défaut. » (cible SUPERADMIN) ;
    « Permissions non enregistrées. Réessayez. » ; « adminId et tableau de permissions requis. »
    (`app/api/admin/permissions/route.ts:48`, `:59-85`).
 7. **Preuves** : ci-dessus. Essai 53 (admin sans droit).
@@ -261,7 +261,7 @@ lecture des tarifs (`app/api/admin/pricing/route.ts:16`), liste des permissions 
    Banni » (`:463`, `:547-551`).
 5. **Ce que voient les autres rôles** : le titulaire ne peut plus se connecter (compte banni). Une caisse ouverte bloque
    le retrait du rôle CONTRÔLEUR.
-6. **Refus exacts** : « Impossible de supprimer votre propre compte administrateur. » ; « Seul un Superadmin peut
+6. **Refus exacts** : « Impossible de supprimer votre propre compte administrateur. » ; « Seul un super-administrateur peut
    supprimer un compte SUPERADMIN. » ; « Révocation des sessions du compte anonymisé impossible. » ; « Anonymisation
    incomplète : retrait impossible ({liste}). Relancez l'anonymisation ; une caisse ouverte doit d'abord être
    clôturée. » ; « Anonymisation momentanément impossible. Réessayez. » (`lib/admin/admin.service.ts:313-330`, `:361`,
@@ -545,8 +545,8 @@ part (11.14).
 
 ## 11.14 Parrainage et ambassadeurs
 
-1. **Qui, où** : `/admin/referral` (menu « Engagement » > « Parrainage ») ; en-tête « Console Superadmin HQ »,
-   « Gestion des Ambassadeurs & Parrainage » (`app/admin/referral/page.tsx:157-172`).
+1. **Qui, où** : `/admin/referral` (menu « Engagement » > « Parrainage ») ; titre « Parrainage et ambassadeurs »
+   (`app/admin/referral/page.tsx`, design 1c).
 2. **Ce qu’il voit et saisit** : cartes « Utilisateurs » (« {n} compte(s) standard »), « Ambassadeurs actifs » (« Taux
    ambassadeur : N1 {taux}, N2 {taux} »), « Durée du parrainage » ; bandeau « La personnalisation des taux n’est pas
    disponible pour le moment. » ; « Répertoire des Utilisateurs » / « Attribuez le statut Ambassadeur pour débloquer
@@ -616,9 +616,9 @@ part (11.14).
 ## 11.17 Journal d’audit
 
 1. **Qui, où** : SUPERADMIN seul ; `/admin/audit` (menu « Système » > « Journal d’audit », barre du bas « Audit ») ; un
-   ADMIN qui saisit l’adresse voit « Réservé au superadmin » / « Seul un compte superadmin peut consulter le journal
-   d’audit. Si vous en avez besoin, adressez-vous à votre superadmin. » (`app/admin/audit/page.tsx:138-142`,
-   `app/api/admin/audit/route.ts:18`).
+   ADMIN qui saisit l’adresse voit « Réservé au super-administrateur » / « Seul un super-administrateur peut consulter
+   le journal. Si vous en avez besoin, adressez-vous à lui. » (`app/admin/audit/page.tsx`, `app/api/admin/audit/route.ts:18` ;
+   textes du design 1c, titre de la page « Journal »).
 2. **Ce qu’il saisit** : filtre « Action » (« Toutes les actions », « INSERT (Création) », « UPDATE (Modification) »,
    « STATUS_CHANGE (Changement Statut) », « UPDATE_PERMISSIONS (Droits RBAC) », « UPDATE_PRICING (Tarifs) »,
    « SEND_COMMUNICATION (Campagne) ») ; filtre « Entité / Objet » (« Tous les objets », partenaires, utilisateurs,
@@ -627,11 +627,12 @@ part (11.14).
    `SAVE_COMMUNICATION_DRAFT`, `SUPERADMIN_BOOTSTRAP`… ; « STATUS_CHANGE » et « SEND_COMMUNICATION » ne sont écrites
    nulle part (recherche dans `app`, `lib` et les migrations) : écart noté.
 3. **Ce que fait le système** : lit les 100 dernières lignes (`page.tsx:61`, `route.ts:27-36`) ; colonnes
-   « Horodatage », « Utilisateur », « Rôle à l’action », « Action », « Objet », « ID Objet », « Détails JSON » ; détail
-   avec « Ancienne Valeur (Old Value) », « Nouvelle Valeur (New Value) », « Métadonnées » (`page.tsx:214-305`).
+   « Date », « Auteur », « Rôle à l’action », « Action », « Objet », « Détail » (« Examiner ») ; cartes sur téléphone et
+   tablette ; détail en mots (auteur, rôle, objet), données enregistrées repliées sous « Détail technique (données
+   enregistrées) » : « Avant », « Après », « Contexte ». Aucun identifiant brut à l’écran (design 1c).
 4. **Messages envoyés** : aucun.
 5. **Ce que voient les autres rôles** : rien.
-6. **Impossible** : modifier ou supprimer une ligne (aucun bouton) ; panne : « Journal d’audit indisponible » / « La
+6. **Impossible** : modifier ou supprimer une ligne (aucun bouton) ; panne : « Journal indisponible » / « La
    lecture du journal a échoué. Rien ne permet de dire qu’il est vide : réessayez. » (`page.tsx:198-203`).
 7. **Preuves** : ci-dessus. Essai 57.
 

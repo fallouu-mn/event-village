@@ -278,7 +278,7 @@ export default function AdminFinanceSettingsPage() {
       const res = await fetch('/api/admin/finance-settings', { cache: 'no-store' });
       const body = await readJsonBody(res, 'réglages de la plateforme');
       if (!res.ok) {
-        setLoadError(serverErrorMessage(body) ?? (res.status === 403 ? 'Votre compte n’a pas la permission « Lire les réglages ». Demandez-la au Superadmin.' : 'Réglages indisponibles pour le moment.'));
+        setLoadError(serverErrorMessage(body) ?? (res.status === 403 ? 'Votre compte n’a pas la permission « Lire les réglages ». Demandez-la au super-administrateur.' : 'Réglages indisponibles pour le moment.'));
         return;
       }
       const parsed = parseSettings(body);
@@ -359,7 +359,7 @@ export default function AdminFinanceSettingsPage() {
       if (!res.ok) {
         setSaveError(
           serverErrorMessage(body) ??
-            (res.status === 403 ? 'Seul un Superadmin peut modifier ce réglage.' : 'Le serveur n’a pas répondu comme prévu. Réessayez ; si cela continue, prévenez l’équipe technique.')
+            (res.status === 403 ? 'Seul un super-administrateur peut modifier ce réglage.' : 'Le serveur n’a pas répondu comme prévu. Réessayez ; si cela continue, prévenez l’équipe technique.')
         );
         return;
       }
@@ -386,7 +386,7 @@ export default function AdminFinanceSettingsPage() {
         title="Réglages de la plateforme"
         description={isSuperadmin
           ? 'Chaque modification est historisée et ne s’applique qu’aux opérations futures.'
-          : 'Lecture seule : seul un Superadmin peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
+          : 'Lecture seule : seul un super-administrateur peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
         back={{ href: '/admin/dashboard', label: 'Accueil' }}
         actions={(
           <Button variant="secondary" leftIcon={<RefreshCw size={18} aria-hidden="true" />} onClick={() => void load()} isLoading={isLoading && Boolean(data)} disabled={isLoading}>
@@ -400,7 +400,7 @@ export default function AdminFinanceSettingsPage() {
       ) : !data ? (
         <div className="space-y-3" aria-busy="true">
           <span className="sr-only">Chargement des réglages…</span>
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : (
         <>
@@ -409,7 +409,7 @@ export default function AdminFinanceSettingsPage() {
               {loadError} Les valeurs affichées sont celles du dernier chargement.
             </StatusBanner>
           )}
-          <nav aria-label="Sommaire des réglages" className="rounded-2xl border border-border bg-card p-4">
+          <nav aria-label="Sommaire des réglages" className="rounded-xl border border-border bg-card p-4">
             <p className="text-sm font-semibold text-foreground-strong">Thèmes</p>
             <ul className="mt-2 flex flex-wrap gap-2">
               {SETTING_SECTIONS.filter((t) => data.settings.some((x) => x.key.startsWith(t.prefix))).map((t) => (
@@ -437,7 +437,7 @@ export default function AdminFinanceSettingsPage() {
                   </h2>
                   <p className="text-sm text-muted-foreground">{section.help}</p>
                 </div>
-                <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+                <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                   {items.map((s) => {
                     const meta = META[s.key];
                     const label = meta?.label ?? 'Réglage sans libellé';
@@ -480,7 +480,7 @@ export default function AdminFinanceSettingsPage() {
                               e.preventDefault();
                               prepare(s.key);
                             }}
-                            className="grid grid-cols-1 items-start gap-3 rounded-2xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
+                            className="grid grid-cols-1 items-start gap-3 rounded-xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
                           >
                             {meta?.kind === 'boolean' ? (
                               <Select
@@ -570,9 +570,9 @@ export default function AdminFinanceSettingsPage() {
               Historique des modifications
             </h2>
             {data.history.length === 0 ? (
-              <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">Aucune modification enregistrée.</p>
+              <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">Aucune modification enregistrée.</p>
             ) : (
-              <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+              <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                 {data.history.map((h, i) => (
                   <li key={`${h.key}-${h.changedAt}-${i}`} className="space-y-0.5 px-4 py-3 text-sm">
                     <p className="font-semibold text-foreground-strong">{META[h.key]?.label ?? 'Réglage retiré ou sans libellé'}</p>

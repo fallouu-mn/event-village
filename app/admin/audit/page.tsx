@@ -1,29 +1,24 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
-import {
-  ChevronLeft,
-  Activity,
-  Shield,
-  Search,
-  Filter,
-  RefreshCw,
-  Clock,
-  Eye,
-  FileCode,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, useId, useRef } from 'react';
+import { Activity, FileSearch, RefreshCw, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
+import { Select } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { AUDIT_ACTION_FILTER, AUDIT_OBJECT_LABELS, auditActionLabel, auditActorRoleLabel, auditObjectLabel } from '@/lib/labels/audit';
+import { formatDateTime, formatInteger } from '@/lib/format';
 
 const ACTOR_ROLE_LABELS: Record<string, string> = {
   CLIENT: 'Client',
   PARTENAIRE: 'Partenaire',
   CONTROLEUR: 'Contrôleur',
   ADMIN: 'Administrateur',
-  SUPERADMIN: 'Superadmin',
+  SUPERADMIN: 'Super-administrateur',
 };
 
 interface AuditItem {
@@ -35,13 +30,27 @@ interface AuditItem {
   action: string;
   object_type: string;
   object_id: string | null;
-  old_value: any;
-  new_value: any;
-  metadata: any;
+  old_value: unknown;
+  new_value: unknown;
+  metadata: unknown;
   created_at: string;
 }
 
+/** Valeur enregistrée non vide (objet avec au moins une clé, ou valeur simple). */
+function hasData(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'object') return Object.keys(value as object).length > 0;
+  return true;
+}
+
+/**
+ * Journal des actions de l'administration (lot 9, A24 et A38 ; finition 3b, E-37), réservé au super-administrateur.
+ * Design 1c : jetons de la charte, filtres en champs de la charte, liste en DataList (cartes jusqu'à xl : la page a un menu
+ * latéral) ; aucun identifiant brut à l'écran (ni l'auteur, ni l'objet) ; les données enregistrées (avant, après) restent
+ * repliées sous « Détail technique », que le super-administrateur ouvre s'il en a besoin.
+ */
 export default function AdminAuditLogPage() {
+  const fieldId = useId();
   const [logs, setLogs] = useState<AuditItem[]>([]);
   const [actionFilter, setActionFilter] = useState('ALL');
   const [objectFilter, setObjectFilter] = useState('ALL');
@@ -84,214 +93,187 @@ export default function AdminAuditLogPage() {
     fetchLogs();
   }, [fetchLogs]);
 
-  const formatDate = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      return d.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-    } catch {
-      return iso;
-    }
-  };
+  const author = (log: AuditItem) => (
+    <span className="flex min-w-0 flex-col">
+      <span className="break-words font-semibold text-foreground-strong">{log.actor_name ?? 'Système'}</span>
+      {log.actor_role && (
+        <span className="text-sm text-muted-foreground">
+          Aujourd’hui : {ACTOR_ROLE_LABELS[log.actor_role] ?? 'Autre rôle'}
+        </span>
+      )}
+    </span>
+  );
+
+  const when = (log: AuditItem) => (
+    <time dateTime={log.created_at} className="whitespace-nowrap tabular-nums text-muted-foreground">{formatDateTime(log.created_at)}</time>
+  );
+
+  const detailButton = (log: AuditItem) => (
+    <Button variant="secondary" size="sm" onClick={() => setSelectedLog(log)} leftIcon={<FileSearch size={16} aria-hidden="true" />}>
+      Examiner
+    </Button>
+  );
+
+  const columns: DataColumn<AuditItem>[] = [
+    { key: 'date', header: 'Date', render: when },
+    { key: 'author', header: 'Auteur', render: author, className: 'min-w-[11rem]' },
+    { key: 'role', header: 'Rôle à l’action', render: (log) => auditActorRoleLabel(log.user_role) },
+    { key: 'action', header: 'Action', render: (log) => <span className="font-semibold">{auditActionLabel(log.action)}</span> },
+    { key: 'object', header: 'Objet', render: (log) => auditObjectLabel(log.object_type) },
+    { key: 'detail', header: 'Détail', align: 'right', render: detailButton },
+  ];
+
+  const renderCard = (log: AuditItem) => (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <p className="break-words text-base font-semibold text-foreground-strong">{auditActionLabel(log.action)}</p>
+        <p className="text-sm text-muted-foreground">{auditObjectLabel(log.object_type)} · {when(log)}</p>
+      </div>
+      <dl className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-3 gap-y-2 text-sm">
+        <dt className="text-muted-foreground">Auteur</dt>
+        <dd className="min-w-0">{author(log)}</dd>
+        <dt className="text-muted-foreground">Rôle à l’action</dt>
+        <dd className="min-w-0 break-words text-foreground-strong">{auditActorRoleLabel(log.user_role)}</dd>
+      </dl>
+      <div>{detailButton(log)}</div>
+    </div>
+  );
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/dashboard"
-            className="w-10 h-10 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#1E1E1E] text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-          >
-            <ChevronLeft size={20} />
-          </Link>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Journal d’audit
-            </h1>
-          </div>
-        </div>
-
-        {!forbidden && (
+    <div className="flex flex-col gap-6 pb-16">
+      <PageHeader
+        title="Journal"
+        description="Les actions sensibles de l’administration : qui, quand, sur quoi. Les 100 plus récentes."
+        back={{ href: '/admin/dashboard', label: 'Accueil de l’administration' }}
+        actions={!forbidden ? (
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => fetchLogs()}
-            disabled={isLoading}
-            className="flex items-center gap-1.5"
+            onClick={() => void fetchLogs()}
+            isLoading={isLoading}
+            leftIcon={<RefreshCw size={16} aria-hidden="true" />}
           >
-            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-            <span>Actualiser</span>
+            Actualiser
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {forbidden ? (
         <EmptyState
           icon={<Shield size={28} />}
-          title="Réservé au superadmin"
-          description="Seul un compte superadmin peut consulter le journal d’audit. Si vous en avez besoin, adressez-vous à votre superadmin."
+          title="Réservé au super-administrateur"
+          description="Seul un super-administrateur peut consulter le journal. Si vous en avez besoin, adressez-vous à lui."
           actionLabel="Retour au tableau de bord"
           actionHref="/admin/dashboard"
         />
       ) : (
-      /* Filtres */
-      <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1E1E] border border-slate-200/80 dark:border-zinc-800 shadow-xs space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div>
-              <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Action</label>
-              <select
-                value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value)}
-                className="p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
-              >
-                <option value="ALL">Toutes les actions</option>
-                {AUDIT_ACTION_FILTER.map((a) => <option key={a} value={a}>{auditActionLabel(a)}</option>)}
-              </select>
-            </div>
+        <>
+          <Card className="flex flex-col gap-4 p-4 sm:p-5 md:flex-row md:flex-wrap md:items-end">
+            <Select
+              id={`${fieldId}-action`}
+              label="Action"
+              value={actionFilter}
+              onChange={(e) => setActionFilter(e.target.value)}
+              options={[{ value: 'ALL', label: 'Toutes les actions' }, ...AUDIT_ACTION_FILTER.map((a) => ({ value: a, label: auditActionLabel(a) }))]}
+              fieldClassName="md:w-72"
+            />
+            <Select
+              id={`${fieldId}-objet`}
+              label="Objet"
+              value={objectFilter}
+              onChange={(e) => setObjectFilter(e.target.value)}
+              options={[{ value: 'ALL', label: 'Tous les objets' }, ...Object.keys(AUDIT_OBJECT_LABELS).map((o) => ({ value: o, label: auditObjectLabel(o) }))]}
+              fieldClassName="md:w-64"
+            />
+            {!loadError && !isLoading && (
+              <p className="text-sm text-muted-foreground md:ml-auto md:pb-3" aria-live="polite">
+                <span className="font-semibold tabular-nums text-foreground-strong">{formatInteger(logs.length)}</span>{' '}
+                {logs.length > 1 ? 'entrées' : 'entrée'}
+              </p>
+            )}
+          </Card>
 
-            <div>
-              <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Entité / Objet</label>
-              <select
-                value={objectFilter}
-                onChange={(e) => setObjectFilter(e.target.value)}
-                className="p-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-xs font-bold"
-              >
-                <option value="ALL">Tous les objets</option>
-                {Object.keys(AUDIT_OBJECT_LABELS).map((o) => <option key={o} value={o}>{auditObjectLabel(o)}</option>)}
-              </select>
+          {isLoading && logs.length === 0 ? (
+            <div role="status" aria-label="Chargement du journal" className="flex flex-col gap-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
             </div>
-          </div>
-
-          {!loadError && (
-            <span className="text-xs font-bold tabular-nums text-[#FF5722]">
-              {logs.length} entrée(s) trouvée(s)
-            </span>
+          ) : loadError ? (
+            <ErrorState
+              title="Journal indisponible"
+              description="La lecture du journal a échoué. Rien ne permet de dire qu’il est vide : réessayez."
+              onRetry={() => void fetchLogs()}
+              isRetrying={isLoading}
+            />
+          ) : (
+            <DataList
+              items={logs}
+              columns={columns}
+              getKey={(log) => log.id}
+              caption="Journal des actions"
+              renderCard={renderCard}
+              breakpoint="xl"
+              empty={<EmptyState icon={<Activity size={28} />} title="Aucune entrée" description="Aucune action ne correspond à ces filtres." />}
+            />
           )}
-        </div>
-
-        {/* Tableau des Logs */}
-        {isLoading ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <RefreshCw size={24} className="animate-spin mx-auto text-[#FF5722] mb-2" />
-            <p className="text-xs">Chargement du journal d&apos;audit...</p>
-          </div>
-        ) : loadError ? (
-          <ErrorState
-            title="Journal d’audit indisponible"
-            description="La lecture du journal a échoué. Rien ne permet de dire qu’il est vide : réessayez."
-            onRetry={() => void fetchLogs()}
-          />
-        ) : logs.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500">
-            <Activity size={32} className="mx-auto text-slate-300 dark:text-zinc-700 mb-2" />
-            <p className="text-xs font-bold">Aucun enregistrement d&apos;audit trouvé.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-zinc-800 text-slate-400 font-bold uppercase text-[10px]">
-                  <th className="pb-3">Horodatage</th>
-                  <th className="pb-3">Utilisateur</th>
-                  <th className="pb-3">Rôle à l’action</th>
-                  <th className="pb-3">Action</th>
-                  <th className="pb-3">Objet</th>
-                  <th className="pb-3">ID Objet</th>
-                  <th className="pb-3 text-right">Détails JSON</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60">
-                {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50/60 dark:hover:bg-zinc-900/40 text-[11px]">
-                    <td className="py-3 tabular-nums text-slate-500">{formatDate(log.created_at)}</td>
-                    <td className="py-3 pr-3 min-w-[140px] max-w-[200px] break-words text-sm">
-                      <span className="block font-semibold text-fg">{log.actor_name ?? 'Système'}</span>
-                      {log.actor_role && (
-                        <span className="block text-fg-muted">
-                          Aujourd’hui : {ACTOR_ROLE_LABELS[log.actor_role] ?? 'Autre rôle'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 font-bold text-purple-600 dark:text-purple-400">{auditActorRoleLabel(log.user_role)}</td>
-                    <td className="py-3 font-black text-slate-900 dark:text-white">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">
-                        {auditActionLabel(log.action)}
-                      </span>
-                    </td>
-                    <td className="py-3 font-bold text-[#FF5722]">{auditObjectLabel(log.object_type)}</td>
-                    <td className="py-3 font-mono text-slate-400 truncate max-w-[120px]">{log.object_id || '—'}</td>
-                    <td className="py-3 text-right">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setSelectedLog(log)}
-                        className="text-[10px] py-1 px-2"
-                      >
-                        <FileCode size={12} className="mr-1" />
-                        Examiner
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </>
       )}
 
-      {/* Modal Détails JSON Diff */}
+      {/* Détail d'une entrée : en mots ; les données enregistrées restent repliées (« Détail technique ») */}
       {selectedLog && (
         <Modal
           isOpen={!!selectedLog}
           onClose={() => setSelectedLog(null)}
-          title={`Détail : ${auditActionLabel(selectedLog.action)}`}
+          title={auditActionLabel(selectedLog.action)}
+          subtitle={formatDateTime(selectedLog.created_at)}
+          icon={<FileSearch size={20} />}
+          maxWidth="xl"
         >
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-2 text-slate-600 dark:text-zinc-400">
-              <div><strong className="text-slate-900 dark:text-white">Date:</strong> {formatDate(selectedLog.created_at)}</div>
-              <div className="break-words"><strong className="text-slate-900 dark:text-white">Utilisateur:</strong> {selectedLog.actor_name ?? 'Système'}</div>
-              {selectedLog.user_id && (
-                <div className="break-all"><strong className="text-slate-900 dark:text-white">Identifiant:</strong> {selectedLog.user_id}</div>
-              )}
-              <div><strong className="text-slate-900 dark:text-white">Rôle à l’action:</strong> {auditActorRoleLabel(selectedLog.user_role)}</div>
-              <div><strong className="text-slate-900 dark:text-white">Objet :</strong> {auditObjectLabel(selectedLog.object_type)}</div>
-              <div><strong className="text-slate-900 dark:text-white">Identifiant de l’objet :</strong> {selectedLog.object_id}</div>
-            </div>
+          <div className="flex flex-col gap-4">
+            <dl className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-3 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">Auteur</dt>
+              <dd className="min-w-0 break-words font-semibold text-foreground-strong">{selectedLog.actor_name ?? 'Système'}</dd>
+              <dt className="text-muted-foreground">Rôle à l’action</dt>
+              <dd className="min-w-0 text-foreground-strong">{auditActorRoleLabel(selectedLog.user_role)}</dd>
+              <dt className="text-muted-foreground">Objet</dt>
+              <dd className="min-w-0 text-foreground-strong">{auditObjectLabel(selectedLog.object_type)}</dd>
+            </dl>
 
-            {selectedLog.old_value && (
-              <div>
-                <span className="block font-bold text-red-500 mb-1">Avant</span>
-                <pre className="p-3 rounded-xl bg-red-50/60 dark:bg-red-950/20 text-red-700 dark:text-red-300 font-mono text-[10px] overflow-x-auto border border-red-200 dark:border-red-900">
-                  {JSON.stringify(selectedLog.old_value, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {selectedLog.new_value && (
-              <div>
-                <span className="block font-bold text-emerald-500 mb-1">Après</span>
-                <pre className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] overflow-x-auto border border-emerald-200 dark:border-emerald-900">
-                  {JSON.stringify(selectedLog.new_value, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
-              <div>
-                <span className="block font-bold text-slate-500 mb-1">Métadonnées</span>
-                <pre className="p-3 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-mono text-[10px] overflow-x-auto">
-                  {JSON.stringify(selectedLog.metadata, null, 2)}
-                </pre>
-              </div>
+            {(hasData(selectedLog.old_value) || hasData(selectedLog.new_value) || hasData(selectedLog.metadata)) ? (
+              <details className="rounded-xl border border-border bg-muted p-3">
+                <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-foreground-strong">
+                  Détail technique (données enregistrées)
+                </summary>
+                <div className="mt-3 flex flex-col gap-3">
+                  {hasData(selectedLog.old_value) && (
+                    <div>
+                      <p className="mb-1 text-sm font-semibold text-danger-text">Avant</p>
+                      <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card p-3 font-mono text-sm text-foreground">
+                        {JSON.stringify(selectedLog.old_value, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                  {hasData(selectedLog.new_value) && (
+                    <div>
+                      <p className="mb-1 text-sm font-semibold text-success-text">Après</p>
+                      <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card p-3 font-mono text-sm text-foreground">
+                        {JSON.stringify(selectedLog.new_value, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                  {hasData(selectedLog.metadata) && (
+                    <div>
+                      <p className="mb-1 text-sm font-semibold text-muted-foreground">Contexte</p>
+                      <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card p-3 font-mono text-sm text-foreground">
+                        {JSON.stringify(selectedLog.metadata, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </details>
+            ) : (
+              <p className="text-sm text-muted-foreground">Aucune donnée enregistrée en plus pour cette action.</p>
             )}
           </div>
         </Modal>

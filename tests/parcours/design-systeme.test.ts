@@ -718,8 +718,9 @@ const TABULAR_FORMATTERS = new Set(['formatFcfa', 'formatPrice', 'formatInteger'
 
 /** Usages admis, nombre exact par fichier (L61). Tout fichier absent d'ici en a zéro. */
 const MONO_ALLOWED: Record<string, number> = {
-    // Trois <pre> de JSON (exception nommée) et la cellule `object_id`, qui reçoit le font-mono du <tbody>.
-    'app/admin/audit/page.tsx': 4,
+    // Trois <pre> de JSON (exception nommée). Design 1c : la cellule `object_id` est retirée (aucun identifiant brut à
+    // l'écran), d'où 3 au lieu de 4 (modification signalée au compte rendu).
+    'app/admin/audit/page.tsx': 3,
     'app/admin/finance/page.tsx': 2,
     'app/billet/hors-ligne/page.tsx': 1,
     'app/orders/page.tsx': 1,
