@@ -415,7 +415,8 @@ const BELL = 'components/notifications/NotificationBell.tsx';
 const NOTIFS_PAGE = 'app/notifications/page.tsx';
 const ADMIN_NOTIFS = 'app/admin/notifications/page.tsx';
 const ADMIN_NOTIF_DETAIL = 'app/admin/notifications/[id]/page.tsx';
-const TICKETS_PAGE = 'app/tickets/page.tsx';
+// Décision du 19/11 : la page est préparée par le serveur, le code client est dans TicketsView.tsx
+const TICKETS_PAGE = 'app/tickets/TicketsView.tsx';
 const INCOMING = 'components/tickets/IncomingTransfers.tsx';
 const PHONE_VERIFY = 'components/tickets/PhoneVerifyDialog.tsx';
 const TRANSFER_MODAL = 'components/tickets/TransferModal.tsx';

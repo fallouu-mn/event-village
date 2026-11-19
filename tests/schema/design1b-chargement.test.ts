@@ -56,12 +56,12 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         assert.doesNotMatch(card, /animate-pulse/);
         assert.match(card, /const started = useStartWhenReady\(eager, cardRef\);/);
         assert.equal(card.match(/if \(!started\) return;/g)?.length, 2, 'code dynamique et lot hors ligne attendent le démarrage');
-        assert.match(read('app/tickets/page.tsx'), /eager=\{index === 0\}/);
-        assert.match(read('app/tickets/page.tsx'), /enabled: Boolean\(userId\) && pageSettled,/);
+        assert.match(read('app/tickets/TicketsView.tsx'), /eager=\{index === 0\}/);
+        assert.match(read('app/tickets/TicketsView.tsx'), /enabled: Boolean\(userId\) && pageSettled,/);
     });
 
     test('Mes billets (run 420) : relecture identique sans nouveau rendu ; billets suivants après le chargement', () => {
-        const page = read('app/tickets/page.tsx');
+        const page = read('app/tickets/TicketsView.tsx');
         assert.match(page, /if \(json !== ticketsJsonRef\.current\) \{\n\s*ticketsJsonRef\.current = json;\n\s*setTickets\(result\.tickets\);/);
         assert.match(page, /if \(json !== incomingJsonRef\.current\) \{\n\s*incomingJsonRef\.current = json;\n\s*setIncoming\(next\);/);
         assert.equal(page.match(/setTickets\(/g)?.length, 1, 'une seule écriture de la liste');
@@ -73,5 +73,33 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         const auth = read('components/providers/AuthProvider.tsx');
         assert.match(auth, /const cancelWarm = warmWhenIdle\(load\);/);
         assert.match(auth, /window\.addEventListener\('online', load\);/);
+    });
+
+    test('décision du 19/11 : billet visible complet, les autres en vignettes dépliées à l’écran ou au toucher', () => {
+        const wallet = read('components/tickets/TicketWallet.tsx');
+        assert.match(wallet, /const full = !item\.thumb \|\| i === 0 \|\| i === index \|\| opened\.has\(item\.key\);/);
+        assert.match(wallet, /\{ threshold: 0\.6, rootMargin: '200% 0px 200% 0px' \}/);
+        assert.match(wallet, /item\.thumb\?\.\(\(\) => \{ open\(item\.key, true\); go\(i\); \}\)/);
+        assert.match(wallet, /'ev-wallet-unfold'/);
+        assert.match(read('app/globals.css'), /\.ev-wallet-unfold \{\n\s*animation: evRise 250ms var\(--ease-out\) both;/);
+        const thumb = read('components/tickets/TicketThumb.tsx');
+        assert.match(thumb, /aria-label=\{`Billet pour \$\{title\}`\} data-ev-ticket-thumb=""/);
+        assert.match(thumb, /categoryClasses\(categoryColor\)/);
+        assert.doesNotMatch(thumb, /QRCode|qrcode|live-code|offline/i, 'vignette légère : ni QR ni code ni lot');
+        assert.match(read('app/tickets/TicketsView.tsx'), /thumb: \(open: \(\) => void\) => \(\n\s*<TicketThumb/);
+    });
+
+    test('décision du 19/11 : liste préparée par le serveur (même route, mêmes règles de session), jamais en cache', () => {
+        const page = read('app/tickets/page.tsx');
+        assert.doesNotMatch(page, /^'use client'/);
+        assert.match(page, /import \{ GET as listMyTickets \} from '@\/app\/api\/tickets\/route';/);
+        assert.match(page, /export const dynamic = 'force-dynamic';/);
+        assert.match(page, /new NextRequest\(`\$\{proto\}:\/\/\$\{host\}\/api\/tickets`, \{ headers: new Headers\(h\) \}\)/);
+        assert.match(page, /<TicketsView initialTickets=\{initialTickets\} initialTab=\{tab\} serverNow=\{Date\.now\(\)\} \/>/);
+        const view = read('app/tickets/TicketsView.tsx');
+        assert.match(view, /useState<'loading' \| 'ready' \| 'error'>\(initialTickets \? 'ready' : 'loading'\)/);
+        assert.match(view, /const now = useMinuteNow\(serverNow\);/);
+        // Le service worker ne garde jamais /tickets (réseau seulement)
+        assert.match(read('public/sw.js'), /const FALLBACK_NAV = new Set\(\['\/', '\/tickets'\]\);/);
     });
 });

@@ -203,9 +203,9 @@ describe('e. liens des avis vers le bon onglet de Mes billets', () => {
     };
 
     test('chaque lien vers /tickets porte un onglet qui existe dans la page', () => {
-        const page = read('app/tickets/page.tsx');
+        const page = read('app/tickets/tabs.ts'); // décision du 19/11 : onglets partagés par la page serveur et la vue
         const tabs = /const TABS = \[([^\]]+)\] as const/.exec(page);
-        assert.ok(tabs, 'liste TABS de app/tickets/page.tsx');
+        assert.ok(tabs, 'liste TABS de app/tickets/tabs.ts');
         const known = new Set(Array.from(tabs![1].matchAll(/'([a-z-]+)'/g), (m) => m[1]));
         const catalog = NOTIFICATION_CATALOG as unknown as Record<string, { link?: (d: unknown) => string; sample?: unknown }>;
         const seen: string[] = [];
@@ -234,7 +234,7 @@ describe('e. liens des avis vers le bon onglet de Mes billets', () => {
     });
 
     test('règles des onglets de la page : « À venir » = billet valable d’un événement pas fini, « Historique » = le reste', () => {
-        const page = read('app/tickets/page.tsx');
+        const page = read('app/tickets/TicketsView.tsx');
         assert.match(page, /return t\.status === 'VALIDE' && t\.isUpcoming;/);
         assert.match(page, /tab === 'historique'\) return tickets\.filter\(\(t\) => !isActiveUpcoming\(t\)\)/);
     });
@@ -384,7 +384,7 @@ describe('g. petite fête après l’achat (?fete=1)', () => {
         assert.match(fete, /CELEBRATION_MESSAGE = 'Vos billets sont là\.'/);
         assert.match(fete, /toastRef\.current\.success\(CELEBRATION_MESSAGE\)/, 'annonce par la zone status des toasts');
         assert.match(fete, /pointer-events-none fixed/, 'calque sans pointeur, aucun saut de mise en page');
-        const page = read('app/tickets/page.tsx');
+        const page = read('app/tickets/TicketsView.tsx');
         assert.match(page, /get\('fete'\) === '1'/);
         assert.match(page, /url\.searchParams\.delete\('fete'\)/);
         assert.match(page, /window\.history\.replaceState/);

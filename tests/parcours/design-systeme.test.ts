@@ -877,6 +877,7 @@ const EXPECTED_SCREENS = [
     'app/explore/page.tsx',
     'app/page.tsx',
     'app/tickets/page.tsx',
+    'app/tickets/TicketsView.tsx',
 ];
 
 /** Anciennes pages devenues onglets du pilotage (contrat I : elles redirigent) : listées tant qu'elles existent. */
@@ -960,6 +961,7 @@ const PRE_LOT5_UI_FILES = new Set<string>([
     'app/tickets/claim/[token]/page.tsx',
     'app/tickets/loading.tsx',
     'app/tickets/page.tsx',
+    'app/tickets/TicketsView.tsx',
     'app/wallet/loading.tsx',
     'app/wallet/page.tsx',
     'components/auth/OtpInput.tsx',

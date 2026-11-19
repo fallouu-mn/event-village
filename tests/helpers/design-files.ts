@@ -58,6 +58,8 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/explore/page.tsx',
     'app/page.tsx',
     'app/tickets/page.tsx',
+    'app/tickets/TicketsView.tsx',
+    'components/tickets/TicketThumb.tsx',
     'components/events/EventCard.tsx',
     'components/events/FeaturedEventCard.tsx',
     // Client : carte billet et notifications (libellés humains, contrat Q ; run 49)
