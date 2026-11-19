@@ -275,3 +275,28 @@ A2 versions 20261123*                        : 20261123000001, 20261123000002
 B  fonctions table_/venue_, table venues      : 0, 0
 C  tables, réservations, recouvrements       : 0, 0, 0
 ```
+
+Application (19/11, depuis main `a8b719ddf`) : `db push --linked --dry-run` montre exactement `20261123000101` à `…113`, rien d'autre ; `db push --linked` les applique toutes les treize.
+
+Contrôles « après » (19/11, `db query --linked`, lecture seule) :
+
+```
+A  versions 20261123*                        : 20261123000001, 20261123000002, 20261123000101 à 20261123000113 (15)
+B  fonctions table_/venue_ ; ouvertes à anon ; à authenticated : 25 ; 0 ; 0 (aucune ouverte)
+C  réglages tables.*                         : 10 (cancel_free_hours 2, commission_rate 0, hold_minutes 15,
+                                               max_pending_per_client 3, no_show_minutes 30, reminder_hours 3,
+                                               response_minutes 120, service_fee_rate 5, slot_minutes 120,
+                                               validation_required true)
+D  réservations reprises                     : aucune ; garde, exclusion des créneaux, ancienne exclusion : t, t, f
+E  RLS venues, venue_opening_hours           : true, true
+F  types d'avis                              : 14 (ADMIN_VENUE_SUBMITTED, TABLE_HOLD_EXPIRED, TABLE_NEW_RESERVATION,
+                                               TABLE_NO_SHOW, TABLE_PAYMENT_REFUNDED, TABLE_REMINDER, TABLE_REQUEST_EXPIRED,
+                                               TABLE_REQUEST_REFUSED, TABLE_REQUEST_SENT, TABLE_REQUEST_TO_ANSWER,
+                                               TABLE_RESERVATION_CANCELLED, TABLE_RESERVATION_CANCELLED_PRO,
+                                               TABLE_RESERVATION_CONFIRMED, VENUE_VALIDATION_DECIDED)
+03-verification.sql                          : 20/20 OK
+```
+
+`supabase/ops/schedule-crons.sql` : **non rejoué**. Le script s'arrête au contrôle préalable (« Secret Vault ev_app_url absent ») : sur event-village-dev, pg_cron et pg_net ne sont pas installés (disponibles seulement) et Vault ne contient aucun secret `ev_` ; aucune tâche n'y a jamais été planifiée. Les secrets `ev_app_url` et `ev_cron_secret` sont créés par l'opérateur (`docs/deploiement-projet-neuf.md`, section 7), jamais par le script ; rejeu en attente du feu vert.
+
+Run 432 (main `a8b719ddf`, complet) : tests 531/531 et seuils de perf tenus dès le 1er essai ; e2e rouge au 1er essai sur deux aléas (capture `admin-notifications`, gabarit de date lu `mm/dd/yyyy` ; perf accueil « Target page, context or browser has been closed ») ; **vert au 2e essai** (relance du seul job en échec). Code identique au run 431 vert.
