@@ -175,13 +175,13 @@ function money(d: object, key: string): string {
     return formatFcfa(num(d, key));
 }
 
-function signedFcfa(n: number): string {
-    return `${n > 0 ? '+' : n < 0 ? '-' : ''}${formatFcfa(Math.abs(n))}`;
+/** Design 1c : écart de caisse en mots : « Il manque 2 500 F CFA. », « 2 500 F CFA de trop. », « Aucun écart. ». */
+function cashGapText(n: number, fmt: (amount: number) => string): string {
+    if (n < 0) return `Il manque ${fmt(Math.abs(n))}.`;
+    if (n > 0) return `${fmt(n)} de trop.`;
+    return 'Aucun écart.';
 }
 
-function signedSmsAmount(n: number): string {
-    return `${n > 0 ? '+' : n < 0 ? '-' : ''}${smsAmount(Math.abs(n))}`;
-}
 
 const START_FIELDS = new Set(['start_date', 'start_time', 'start_at']);
 const END_FIELDS = new Set(['end_date', 'end_time', 'end_at']);
@@ -1105,10 +1105,11 @@ const CATALOG = {
             const justification = optText(d, 'justification');
             return {
                 title: 'Écart de caisse',
-                content: `La caisse de ${text(d, 'controller_name')} pour ${q(text(d, 'title'))} est fermée avec un écart de ${signedFcfa(num(d, 'difference'))}.${justification ? ` Justification : ${sentence(justification)}` : ''}`,
+                // Design 1c : l'écart en mots, « Il manque … » ou « … de trop »
+                content: `La caisse de ${text(d, 'controller_name')} pour ${q(text(d, 'title'))} est fermée. ${cashGapText(num(d, 'difference'), formatFcfa)}${justification ? ` Justification : ${sentence(justification)}` : ''}`,
             };
         },
-        sms: (d, ctx) => `${SMS_PREFIX}caisse de ${smsVar(text(d, 'controller_name'), 20)} fermée (${smsVar(text(d, 'title'), 25)}) avec un écart de ${signedSmsAmount(num(d, 'difference'))}. ${appLink(ctx, '/partner/events')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}caisse de ${smsVar(text(d, 'controller_name'), 20)} fermée (${smsVar(text(d, 'title'), 25)}). ${cashGapText(num(d, 'difference'), smsAmount)} ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT, shift_id: SAMPLE_ID.shift, controller_name: 'Fatou Sow', difference: -2_500, declared: 47_500, justification: 'Erreur de monnaie rendue.' },
     }),
     WITHDRAWAL_PAID: define('WITHDRAWAL_PAID', {
@@ -2278,14 +2279,14 @@ const CATALOG = {
     // Finition 3d (point 3) : un compte devient SUPERADMIN ; alerte (SMS et cloche) à chaque SUPERADMIN actif, l'auteur
     // compris. Pire cas : deux noms tronqués à 25 caractères, 152 septets, un segment GSM-7.
     SUPERADMIN_PROMOTED: define('SUPERADMIN_PROMOTED', {
-        label: 'Nouveau Superadmin (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        label: 'Nouveau super-administrateur (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/admin/users',
         inApp: (d) => ({
-            title: 'Nouveau Superadmin',
-            content: `${text(d, 'user_name')} est maintenant Superadmin, nommé par ${text(d, 'actor_name')}. Si ce n’est pas prévu, réagissez tout de suite : changez son rôle depuis Comptes.`,
+            title: 'Nouveau super-administrateur',
+            content: `${text(d, 'user_name')} est maintenant super-administrateur, nommé par ${text(d, 'actor_name')}. Si ce n’est pas prévu, réagissez tout de suite : changez son rôle depuis Comptes.`,
         }),
         // Run 299 (R74) : nom tronqué (« ... ») sans point ajouté derrière (endWithPeriod)
-        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 25)} est maintenant Superadmin, nommé par ${endWithPeriod(smsVar(text(d, 'actor_name'), 25))} Si ce n'est pas prévu, réagissez tout de suite.`,
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 20)} est maintenant super-administrateur, nommé par ${endWithPeriod(smsVar(text(d, 'actor_name'), 20))} Si ce n'est pas prévu, réagissez tout de suite.`,
         sample: { user_name: 'Mame Diarra Bousso Ndiaye Diop', actor_name: 'Aminata Sophie Gueye Sarr Fall' },
     }),
     // Finition 3d (point 2c) : un code de secours a servi (SMS à l'ancien numéro, écrit dans la ligne d'envoi ; email).
@@ -2294,9 +2295,10 @@ const CATALOG = {
         link: () => '/admin/securite',
         inApp: (d) => ({
             title: 'Code de secours utilisé',
-            content: `Un code de secours de votre compte Superadmin vient de servir pour ouvrir l’administration. Il vous en reste ${formatInteger(count(d, 'remaining'))}. Si ce n’est pas vous, alertez tout de suite un autre Superadmin et créez de nouveaux codes.`,
+            content: `Un code de secours de votre compte de super-administrateur vient de servir pour ouvrir l’administration. Il vous en reste ${formatInteger(count(d, 'remaining'))}. Si ce n’est pas vous, alertez tout de suite un autre super-administrateur et créez de nouveaux codes.`,
         }),
-        sms: () => `${SMS_PREFIX}un code de secours de votre compte Superadmin vient de servir. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`,
+        // Design 1c : « super-administrateur », plus long : « alertez vite » pour tenir en un SMS (157 caractères)
+        sms: () => `${SMS_PREFIX}un code de secours de votre compte de super-administrateur vient de servir. Si ce n'est pas vous, alertez vite un autre super-administrateur.`,
         sample: { remaining: 9 },
     }),
     // Finition 3d (points 2a et 2c) : SMS à l'ANCIEN numéro (sans compte : l'envoyeur viserait le nouveau). EMAIL déclaré
@@ -2308,12 +2310,12 @@ const CATALOG = {
         inApp: (d) => ({
             title: 'Numéro de téléphone remplacé',
             content: bool(d, 'by_self')
-                ? 'Le numéro de votre compte Superadmin a été remplacé. Si ce n’est pas vous, alertez tout de suite un autre Superadmin.'
-                : 'Le Superadmin a remplacé le numéro de votre compte administrateur. L’ancien téléphone ne sert plus pour vos codes.',
+                ? 'Le numéro de votre compte de super-administrateur a été remplacé. Si ce n’est pas vous, alertez tout de suite un autre super-administrateur.'
+                : 'Le super-administrateur a remplacé le numéro de votre compte administrateur. L’ancien téléphone ne sert plus pour vos codes.',
         }),
         sms: (d) => (bool(d, 'by_self')
-            ? `${SMS_PREFIX}le numéro de votre compte Superadmin a été remplacé. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`
-            : `${SMS_PREFIX}le Superadmin a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.`),
+            ? `${SMS_PREFIX}le numéro de votre compte de super-administrateur a été remplacé. Si ce n'est pas vous, alertez tout de suite un autre super-administrateur.`
+            : `${SMS_PREFIX}le super-administrateur a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.`),
         sample: { by_self: false },
     }),
     // Finition 3d (points 2a et 2c) : SMS au NOUVEAU numéro et cloche au compte
@@ -2323,11 +2325,11 @@ const CATALOG = {
         inApp: (d) => ({
             title: 'Numéro de téléphone changé',
             content: bool(d, 'by_self')
-                ? 'Le numéro de votre compte Superadmin a été remplacé. Vos autres appareils sont déconnectés.'
-                : 'Le Superadmin a remplacé le numéro de votre compte administrateur. Les codes administrateur arrivent désormais sur ce numéro.',
+                ? 'Le numéro de votre compte de super-administrateur a été remplacé. Vos autres appareils sont déconnectés.'
+                : 'Le super-administrateur a remplacé le numéro de votre compte administrateur. Les codes administrateur arrivent désormais sur ce numéro.',
         }),
         sms: (d) => (bool(d, 'by_self')
-            ? `${SMS_PREFIX}ce numéro est maintenant celui de votre compte Superadmin. Vos autres appareils sont déconnectés.`
+            ? `${SMS_PREFIX}ce numéro est maintenant celui de votre compte de super-administrateur. Vos autres appareils sont déconnectés.`
             : `${SMS_PREFIX}ce numéro est maintenant celui de votre compte administrateur. Reconnectez-vous avec votre mot de passe.`),
         sample: { by_self: false },
     }),
@@ -2651,7 +2653,7 @@ export function renderSyncSms(type: SyncType, data: { code?: string; firstName?:
             return `${SMS_PREFIX}code administrateur ${code}. Ne le donnez à personne. Valable 10 minutes.`;
         // Finition 3d (point 2a) : la personne dicte ce code au Superadmin qui change son numéro
         case 'OTP_ADMIN_PHONE':
-            return `${SMS_PREFIX}code ${code} pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au Superadmin. Valable 10 minutes.`;
+            return `${SMS_PREFIX}code ${code} pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au super-administrateur. Valable 10 minutes.`;
         case 'CONTROLLER_INVITE': {
             const link = typeof data.setupLink === 'string' ? data.setupLink.trim() : '';
             if (!/^https?:\/\//.test(link)) throw new TemplateDataError('setupLink', 'absent ou illisible');
