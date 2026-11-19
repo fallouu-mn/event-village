@@ -13,7 +13,7 @@
  *     la bienvenue, 20261125000004_f4_spectateur.sql:41-57 ; aucune instruction ne repasse un billet UTILISE à VALIDE).
  */
 import '../helpers/env';
-import { before, describe, test } from 'node:test';
+import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openConcurrentClient, waitForLockWaiters } from '../helpers/db';
 import { buyConfirmed, createPartnerEvent, newPartner, type TestPartner } from '../parcours/finance-helpers';
@@ -35,6 +35,28 @@ before(async () => {
     absent = await newBuyer('cvf4-absent');
     tickets = (await buyConfirmed(holder, ev, [['Standard', 2]])).tickets.map((t) => String(t.id));
     await buyConfirmed(absent, ev, [['Standard', 1]]);
+});
+
+// Isolation (finition 4, correctifs de la contre-vérification ; modification signalée au rapport, aucune assertion changée) :
+// G6 passe deux billets à UTILISE par SQL direct, sans la ligne ticket_scans qu'un vrai scan écrit. L'invariant (g) du
+// contrôle d'accès (tests/helpers/access-invariants.ts), vérifié à la fin des suites suivantes du même lot, tombait alors
+// (run 474 : 82 suites rouges après cette suite). La ligne de scan accepté que le scan aurait laissée est écrite à la fin,
+// faite par le partenaire de l'événement.
+after(async () => {
+    if (!ev) return;
+    const db = await openConcurrentClient({ applicationName: 'cvf4-bienvenue-traces' });
+    try {
+        await db.query(
+            `INSERT INTO public.ticket_scans (ticket_id, event_id, scanner_id, result, accepted, method, identity_verified, payload_hash, scanner_role)
+             SELECT t.id, t.event_id, $2, 'valid', TRUE, 'QR', FALSE, encode(extensions.gen_random_bytes(32), 'hex'), 'PARTENAIRE'
+               FROM public.tickets t
+              WHERE t.event_id = $1 AND t.status = 'UTILISE'
+                AND NOT EXISTS (SELECT 1 FROM public.ticket_scans s WHERE s.ticket_id = t.id AND s.accepted)`,
+            [ev.eventId, partner.userId]);
+        await db.commit();
+    } finally {
+        await db.close();
+    }
 });
 
 const byChannel = (rows: Array<{ channel: string }>): Record<string, number> =>
