@@ -18,6 +18,11 @@
  *   recette   (projet recette), en dernier : lancée dès que e2e/recette.spec.ts existe (vague F). Tant qu'il manque, elle
  *   est écrite « non lancée » au résumé et dans phases.tsv, sans compter comme un échec : Playwright sortirait en
  *   erreur sur « No tests found », un faux rouge sans rapport avec un défaut.
+ * Design 1c (point 1) : phase « responsive » (projet responsive, 3 workers), suivie de son résumé
+ *   (scripts/e2e/responsive-resume.mjs → .e2e-captures/responsive.tsv et responsive.txt). Elle ne tourne que si la variable
+ *   EV_E2E_PHASES la cite : le job « responsive » de la CI lance EV_E2E_PHASES=connexion,responsive ; le job e2e, sans la
+ *   variable, garde exactement ses phases.
+ * EV_E2E_PHASES (liste séparée par des virgules) : seules ces phases tournent, dans l'ordre ci-dessous.
  * La durée de chaque phase est imprimée et écrite dans .e2e-captures/perf/phases.tsv (budget du job, 11.7).
  * Prérequis vérifiés avant tout : .env.e2e local, application et faux services joignables.
  * Code de sortie : 0 si toutes les phases réussissent, 1 sinon (résumé imprimé à la fin).
@@ -76,7 +81,7 @@ if (extra.length > 0) process.exit(playwright('manuel', extra));
 
 // Captures et mesures d'une exécution précédente : retirées pour que l'index et les tableaux de mesure
 // (lot 7 : perf.tsv et perf.txt reçoivent des lignes ajoutées) ne mélangent pas deux runs
-for (const dir of ['captures', 'results', 'perf', 'emails', 'dev-page']) {
+for (const dir of ['captures', 'results', 'perf', 'emails', 'dev-page', 'responsive', 'captures-responsive']) {
     fs.rmSync(path.join(ROOT, '.e2e-captures', dir), { recursive: true, force: true });
 }
 
@@ -92,12 +97,22 @@ const phases = [
     ['fake-prod', null],
     ['perf', ['--project=perf', '--workers=1']],
     ['recette', ['--project=recette', '--workers=1']],
+    ['responsive', ['--project=responsive', '--workers=3']],
 ];
+/** Phases du job e2e (sans EV_E2E_PHASES) : toutes sauf « responsive », qui a son propre job. */
+const PAR_DEFAUT = phases.map(([p]) => p).filter((p) => p !== 'responsive');
+const voulues = (process.env.EV_E2E_PHASES ?? '').split(',').map((p) => p.trim()).filter(Boolean);
+const inconnues = voulues.filter((p) => !phases.some(([q]) => q === p));
+if (inconnues.length > 0) fail(TAG, `EV_E2E_PHASES : phase(s) inconnue(s) ${inconnues.join(', ')} (connues : ${phases.map(([p]) => p).join(', ')}).`);
+const retenues = new Set(voulues.length > 0 ? voulues : PAR_DEFAUT);
+if (voulues.length > 0) console.log(`[${TAG}] EV_E2E_PHASES : seules les phases ${[...retenues].join(', ')}`);
+const RESUME_RESPONSIVE = path.join('scripts', 'e2e', 'responsive-resume.mjs');
 const RECETTE_SPEC = path.join('e2e', 'recette.spec.ts');
 const FAKE_PROD_SCRIPT = path.join('scripts', 'e2e', 'fake-prod.mjs');
 const results = [];
 const skipped = [];
 for (const [phase, args] of phases) {
+    if (!retenues.has(phase)) continue;
     if (phase === 'recette' && !fs.existsSync(path.join(ROOT, RECETTE_SPEC))) {
         console.log(`\n[${TAG}] phase recette NON LANCÉE : ${RECETTE_SPEC} absent (écrit à la vague F).`);
         skipped.push(phase);
@@ -105,6 +120,7 @@ for (const [phase, args] of phases) {
         continue;
     }
     results.push([phase, args ? playwright(phase, args) : timed(phase, `node ${FAKE_PROD_SCRIPT}`, [FAKE_PROD_SCRIPT])]);
+    if (phase === 'responsive') results.push(['responsive-resume', timed('responsive-resume', `node ${RESUME_RESPONSIVE}`, [RESUME_RESPONSIVE])]);
 }
 const perfDir = path.join(ROOT, '.e2e-captures', 'perf');
 fs.mkdirSync(perfDir, { recursive: true });
