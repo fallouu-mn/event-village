@@ -93,6 +93,8 @@ export interface AdminHallSheet {
     id: string | null;
     name: string | null;
     validated: boolean;
+    /** Contre-vérification du lot 10b (T2) : faux sans le droit « Consulter les partenaires » (contacts absents). */
+    contactsAllowed?: boolean;
     phone: string | null;
     email: string | null;
     city: string | null;

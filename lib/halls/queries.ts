@@ -118,6 +118,8 @@ export interface PublicHall extends HallCard {
     policy: string;
     serviceFeeRate: number;
     balanceDueDays: number;
+    /** Contre-vérification du lot 10b (point ouvert) : durée de garde d'une réservation non payée, en minutes (réglage). */
+    holdMinutes: number;
 }
 
 /** Fiche publique d'une salle (null si absente, inactive, non validée ou d'une partenaire non VALIDE). */
@@ -139,7 +141,7 @@ export async function publicHall(id: string): Promise<PublicHall | null> {
     if (h.price_per_day === null || num(h.price_per_day) < 1) return null;
     const [terms, settings] = await Promise.all([
         rpc('hall_cancel_terms', { p_policy: h.cancellation_policy }),
-        supabase.from('platform_settings').select('key, value').in('key', ['halls.service_fee_rate', 'halls.deposit_default_percent', 'halls.balance_due_days']),
+        supabase.from('platform_settings').select('key, value').in('key', ['halls.service_fee_rate', 'halls.deposit_default_percent', 'halls.balance_due_days', 'halls.hold_minutes']),
     ]);
     if (settings.error) throw new Error(`réglages des salles : ${settings.error.message}`);
     const setting = (key: string): number => num(((settings.data ?? []).find((s) => s.key === key)?.value as { value?: unknown } | undefined)?.value);
@@ -172,6 +174,7 @@ export async function publicHall(id: string): Promise<PublicHall | null> {
         policy: String(h.cancellation_policy ?? ''),
         serviceFeeRate: setting('halls.service_fee_rate'),
         balanceDueDays: setting('halls.balance_due_days'),
+        holdMinutes: setting('halls.hold_minutes'),
     };
 }
 
@@ -535,9 +538,10 @@ export async function adminHalls(opts: { status: string; q?: string | null; page
     const page = Math.max(1, Math.min(opts.page, 500));
     const supabase = getServiceRoleClient();
     let query = supabase.from('halls')
-        .select('id, name, city, address, capacity, price_per_day, price_per_hour, images, validation_status, validation_reason, created_at, updated_at, partners!inner(id, company_name, commercial_name, status)', { count: 'exact' })
+        .select('id, name, city, address, capacity, price_per_day, price_per_hour, images, validation_status, validation_reason, submitted_at, created_at, updated_at, partners!inner(id, company_name, commercial_name, status)', { count: 'exact' })
         .eq('validation_status', opts.status)
-        .order(opts.status === 'EN_ATTENTE_VALIDATION' ? 'updated_at' : 'updated_at', { ascending: opts.status === 'EN_ATTENTE_VALIDATION' })
+        // Contre-vérification du lot 10b (point ouvert) : file des salles en attente par date d'envoi, la plus ancienne d'abord
+        .order(opts.status === 'EN_ATTENTE_VALIDATION' ? 'submitted_at' : 'updated_at', { ascending: opts.status === 'EN_ATTENTE_VALIDATION', nullsFirst: false })
         .range((page - 1) * pageSize, page * pageSize - 1);
     const q = (opts.q ?? '').trim().slice(0, 80);
     if (q) query = query.or(`name.ilike.${pgIlikeContains(q)},city.ilike.${pgIlikeContains(q)}`);
@@ -559,7 +563,7 @@ export async function adminHalls(opts: { status: string; q?: string | null; page
             pricePerHour: h.price_per_hour === null ? null : num(h.price_per_hour),
             photo: photos[0] ?? null, photoCount: photos.length,
             status: h.validation_status, statusLabel: v.label, statusTone: v.tone, reason: h.validation_reason,
-            createdAt: h.created_at, updatedAt: h.updated_at,
+            createdAt: h.created_at, updatedAt: h.updated_at, submittedAt: h.submitted_at ?? null,
             partnerName: str(p?.commercial_name) ?? str(p?.company_name),
             partnerValidated: p?.status === 'VALIDE',
         };
@@ -567,11 +571,15 @@ export async function adminHalls(opts: { status: string; q?: string | null; page
     return { total: count ?? 0, page, pageSize, counts, halls };
 }
 
-export async function adminHall(id: string): Promise<Row | null> {
+/**
+ * Contre-vérification du lot 10b (T2) : téléphone et email de la partenaire seulement avec le droit partners.read
+ * (« Consulter les partenaires et leurs contacts ») ; sinon null, et contactsAllowed faux.
+ */
+export async function adminHall(id: string, opts: { contacts: boolean }): Promise<Row | null> {
     if (!UUID_RE.test(id)) return null;
     const supabase = getServiceRoleClient();
     const { data, error } = await supabase.from('halls')
-        .select('id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, validated_at, created_at, updated_at, partners!inner(id, company_name, commercial_name, status, phone, email, city)')
+        .select('id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, validated_at, submitted_at, created_at, updated_at, partners!inner(id, company_name, commercial_name, status, phone, email, city)')
         .eq('id', id).maybeSingle();
     if (error) throw new Error(`lecture de la salle : ${error.message}`);
     if (!data) return null;
@@ -597,9 +605,14 @@ export async function adminHall(id: string): Promise<Row | null> {
         amenities: Array.isArray(h.amenities) ? h.amenities : [], photos: strings(h.images),
         isActive: h.is_active === true,
         status: h.validation_status, statusLabel: v.label, statusTone: v.tone, reason: h.validation_reason,
-        validatedAt: h.validated_at, createdAt: h.created_at, updatedAt: h.updated_at,
+        validatedAt: h.validated_at, submittedAt: h.submitted_at ?? null, createdAt: h.created_at, updatedAt: h.updated_at,
         upcomingReservations: upcoming,
-        partner: { id: p?.id, name: str(p?.commercial_name) ?? str(p?.company_name), validated: p?.status === 'VALIDE', phone: str(p?.phone), email: str(p?.email), city: str(p?.city) },
+        partner: {
+            id: p?.id, name: str(p?.commercial_name) ?? str(p?.company_name), validated: p?.status === 'VALIDE', city: str(p?.city),
+            contactsAllowed: opts.contacts,
+            phone: opts.contacts ? str(p?.phone) : null,
+            email: opts.contacts ? str(p?.email) : null,
+        },
         history: (history ?? []).map((x) => ({
             at: x.created_at,
             what: x.action === 'HALL_VALIDATION_DECIDED'

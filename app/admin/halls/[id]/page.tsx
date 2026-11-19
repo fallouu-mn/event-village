@@ -338,6 +338,11 @@ export default function AdminHallSheetPage() {
                     : <Badge variant="warning" size="sm">Compte non validé</Badge>}
                 </span>
               </InfoRow>
+              {hall.partner.contactsAllowed === false && (
+                <InfoRow icon={<Phone size={18} />} label="Téléphone et email">
+                  Réservé au droit Consulter les partenaires
+                </InfoRow>
+              )}
               {hall.partner.phone && (
                 <InfoRow icon={<Phone size={18} />} label="Téléphone">
                   <a href={`tel:${hall.partner.phone}`} className="inline-flex min-h-11 items-center text-primary-text underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

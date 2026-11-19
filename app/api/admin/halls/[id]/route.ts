@@ -17,7 +17,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!auth.authorized) return auth.errorResponse!;
     try {
         const { id } = await params;
-        const hall = await adminHall(id);
+        // Contre-vérification du lot 10b (T2) : contacts de la partenaire avec partners.read seulement
+        const hall = await adminHall(id, { contacts: (auth.permissions ?? []).includes('partners.read') });
         if (!hall) return notFound('Salle introuvable.', 'HALL_NOT_FOUND');
         return NextResponse.json({ success: true, hall });
     } catch (err: unknown) {

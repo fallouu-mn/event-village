@@ -62,12 +62,8 @@ const PARTNER_KEPT: Readonly<Record<string, string>> = {
     'POST /api/partner/events/*/participants-export': 'lecture envoyée en POST (export de la liste des participants)',
     'PATCH /api/partner/profile': 'profil de la fiche (présentation, coordonnées) : pas un événement ; images contrôlées (T6)',
     'POST /api/partner/register': 'inscription d’une organisatrice (aucune fiche encore)',
-    'POST /api/partner/halls': 'service des salles fermé (interrupteur, 404) : à trancher à son ouverture',
-    'PUT /api/partner/halls/*': 'service des salles fermé (interrupteur, 404) : à trancher à son ouverture',
-    'DELETE /api/partner/halls/*': 'service des salles fermé (interrupteur, 404) : à trancher à son ouverture',
-    'POST /api/partner/halls/reservations/*/status': 'service des salles fermé (interrupteur, 404) : à trancher à son ouverture',
-    // Lot 10b (ajout signalé au rapport) : renvoi en validation d'une salle refusée
-    'POST /api/partner/halls/*/submit': 'service des salles fermé (interrupteur, 404) ; ouvert : hall_submit refuse une partenaire non VALIDE (403)',
+    // Contre-vérification du lot 10b (T1, modification signalée au rapport) : les écritures des salles ne sont plus
+    // gardées ; refusées à une fiche SUSPENDU (partnerEventWrite)
     'PATCH /api/partner/orders/*': 'service des commandes fermé (interrupteur, 404) : à trancher à son ouverture',
     'POST /api/partner/products': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
     'PATCH /api/partner/products/*': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',

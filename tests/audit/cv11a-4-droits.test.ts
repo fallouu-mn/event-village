@@ -83,10 +83,12 @@ describe('4.1 REST : réservations, paiements, comptes, établissements en atten
             seen[label] = counts;
             for (const [k, v] of Object.entries(counts)) assert.ok(v === 0 || typeof v === 'string', `${label} lit ${k} (${String(v)} ligne(s))`);
         }
-        const mine = await restAs(owner.accessToken).from('table_reservations').select('id').eq('id', resId);
+        // Contre-vérification du lot 10b (T5 bis, modification signalée au rapport) : l’établissement ne lit plus ses
+        // réservations par la REST ; la précondition (session de la propriétaire valide) lit son propre établissement
+        const mine = await restAs(owner.accessToken).from('venues').select('id').eq('id', venue);
         const ownerUser = await restAs(owner.accessToken).from('users').select('id, phone').eq('id', alice.userId);
         trace('4.1', { ...seen, proprietaire: mine.data?.length, proprietaireLitLeCompte: ownerUser.data?.length });
-        assert.equal(mine.data?.length, 1, 'précondition : la propriétaire lit sa réservation');
+        assert.equal(mine.data?.length, 1, 'précondition : la propriétaire lit son établissement');
         assert.equal(ownerUser.data?.length ?? 0, 0, 'la propriétaire lit le compte (numéro) du client');
     });
 });
