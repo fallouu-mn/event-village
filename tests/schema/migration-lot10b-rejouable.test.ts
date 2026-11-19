@@ -22,7 +22,45 @@ const LOT10B_MIGRATIONS = [
     '20261126000002_l10b_salles.sql',
     // Avis sur les quatre canaux, administrateurs prévenus, rappels, veille, recettes, remboursement versé
     '20261126000003_l10b_avis.sql',
+    // Correctifs de la contre-vérification (docs/audit-lot10b.md) : T1, T3 à T7 (et bis pour les tables)
+    '20261126000004_l10b_cv_correctifs.sql',
+    // Avis du changement de droits d'un administrateur (demande du 19/11)
+    '20261126000005_l10b_cv_droits_avis.sql',
+    // Date exacte de l'envoi en validation (point ouvert du rapport)
+    '20261126000006_l10b_cv_envoi.sql',
 ] as const;
+
+/** Recopies faites par les correctifs : comparées à la définition d'avant LEUR migration (lot 10b compris). */
+const CV_RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
+    { fn: 'hall_reservation_cancel', file: LOT10B_MIGRATIONS[3], replaced: [] },
+    { fn: 'hall_quote', file: LOT10B_MIGRATIONS[3], replaced: [
+        "IF NOT h.is_active OR h.partner_status <> 'VALIDE'",
+        "OR (h.validation_status <> 'VALIDEE'",
+        "AND (public.fin_setting_bool('halls.validation_required') OR h.validation_status IN ('REFUSEE', 'SUSPENDUE'))) THEN",
+    ] },
+    { fn: 'hall_booking_refusal', file: LOT10B_MIGRATIONS[3], replaced: [
+        "IF NOT h.is_active OR h.partner_status <> 'VALIDE'",
+        "OR (h.validation_status <> 'VALIDEE'",
+        "AND (public.fin_setting_bool('halls.validation_required') OR h.validation_status IN ('REFUSEE', 'SUSPENDUE'))) THEN",
+    ] },
+    { fn: 'notif_admin_review_sms', file: LOT10B_MIGRATIONS[3], replaced: [
+        "v_is_hall boolean := btrim(COALESCE(p->>'kind', '')) = 'HALL_SUBMITTED';",
+        "'hall_count', COALESCE((v_row.template_data->>'hall_count')::integer, 0) + CASE WHEN v_is_hall THEN 1 ELSE 0 END,",
+        "'hall_count', CASE WHEN v_is_hall THEN 1 ELSE 0 END,",
+    ] },
+    { fn: 'halls_notify_admins', file: LOT10B_MIGRATIONS[3], replaced: [] },
+    { fn: 'hall_reservations_tick', file: LOT10B_MIGRATIONS[3], replaced: [
+        "-- Lot 10b : rappel du solde 10 jours puis 8 jours avant la date (l'échéance est à J-7), un de chaque, de jour",
+        'SELECT hr.id, hr.client_id, lower(hr.slot) AS start_at FROM public.hall_reservations hr',
+        "AND now() < hr.balance_due_at AND v_now_local >= lower(hr.slot) - interval '10 days'",
+        "v_step := CASE WHEN v_now_local >= r.start_at - interval '8 days' THEN 'J8' ELSE 'J10' END;",
+    ] },
+    { fn: 'admin_permissions_set', file: LOT10B_MIGRATIONS[4], replaced: [] },
+    { fn: 'halls_validation_guard', file: LOT10B_MIGRATIONS[5], replaced: [] },
+    { fn: 'hall_submit', file: LOT10B_MIGRATIONS[5], replaced: [
+        "validated_at = CASE WHEN v_new = 'VALIDEE' THEN now() END, updated_at = now()",
+    ] },
+];
 
 /** Recopies de fonctions communes : fichier de la recopie, et lignes de la définition précédente qu'elle remplace. */
 const RECOPIES: Record<string, { file: string; replaced: string[] }> = {
@@ -105,6 +143,18 @@ describe('Lot 10b — migrations 20261126… rejouables (transaction annulée)',
                 await c.query(sql);
                 await c.query(sql);
             });
+        });
+    }
+
+    for (const spec of CV_RECOPIES) {
+        test(`recopie de ${spec.fn} (${spec.file.slice(0, 14)}) : aucune ligne de la définition précédente perdue`, () => {
+            const all = fs.readdirSync(DIR).filter((f) => /^\d{14}_.+\.sql$/.test(f) || /^\d{4}_.+\.sql$/.test(f)).sort();
+            const previous = lastDefinition(spec.fn, all.filter((f) => f < spec.file));
+            const mine = lastDefinition(spec.fn, [spec.file]);
+            assert.ok(previous && mine, `${spec.fn} : définition précédente ou recopie introuvable`);
+            const kept = new Set(mine!.split('\n').map((l) => l.trim()));
+            const lost = previous!.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !kept.has(l) && !spec.replaced.includes(l));
+            assert.deepEqual(lost, [], `${spec.fn} : lignes perdues`);
         });
     }
 
