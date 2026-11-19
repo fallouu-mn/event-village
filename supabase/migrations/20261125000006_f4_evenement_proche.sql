@@ -267,16 +267,6 @@ BEGIN
         -- Finition 4 (point 3) : merci du lendemain sans objet si l'événement est annulé ou supprimé
         ELSIF v_outcome = 'SEND' AND r.type = 'ENTRY_THANKS' AND (NOT v_found_event OR v_estatus = 'ANNULE') THEN
             v_outcome := 'CANCEL'; v_reason := 'NO_LONGER_RELEVANT';
-        -- Contre-vérification de la finition 4 (T2) : avis d'état au porteur d'un événement terminé (statut ou fin passée)
-        ELSIF v_outcome = 'SEND' AND r.type IN ('EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER')
-              AND v_found_event AND (v_estatus = 'TERMINE' OR v_now >= public.event_end_at(r.event_id)) THEN
-            v_outcome := 'CANCEL'; v_reason := 'EVENT_TERMINE';
-        -- Contre-vérification de la finition 4 (T1) : l'état n'est plus celui annoncé (suspendu puis annulé ou repris, repris
-        -- puis de nouveau suspendu) : l'avis n'est plus vrai
-        ELSIF v_outcome = 'SEND'
-              AND ((r.type = 'EVENT_SUSPENDED_HOLDER' AND (NOT v_found_event OR v_estatus IS DISTINCT FROM 'SUSPENDU'))
-                   OR (r.type = 'EVENT_REACTIVATED_HOLDER' AND (NOT v_found_event OR v_estatus IS DISTINCT FROM 'PUBLIE'))) THEN
-            v_outcome := 'CANCEL'; v_reason := 'NO_LONGER_RELEVANT';
         END IF;
 
         -- Finition 4 (point 1) : nuit. Un SMS ou un push d'un type non urgent (night_policy DEFER : toute la famille OPTIONAL,
@@ -299,6 +289,19 @@ BEGIN
                     v_outcome := 'DEFER'; v_reason := 'NIGHT';
                     v_quiet := v_quiet || jsonb_build_object('until', public.notif_quiet_end_at(v_now, v_qs, v_qe));
                 END IF;
+            END IF;
+        END IF;
+
+        -- Contre-vérification de la finition 4 (T1, T2) : avis d'état au porteur revérifié AU MOMENT D'ENVOYER (après la décision
+        -- de nuit : un avis reporté la nuit l'est à 07:00). Événement terminé (statut ou fin passée) : annulé (EVENT_TERMINE) ;
+        -- état qui n'est plus celui annoncé (suspendu puis annulé ou repris, repris puis suspendu) : annulé (NO_LONGER_RELEVANT).
+        IF v_outcome = 'SEND' AND r.type IN ('EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER') THEN
+            IF v_found_event AND (v_estatus = 'TERMINE' OR v_now >= public.event_end_at(r.event_id)) THEN
+                v_outcome := 'CANCEL'; v_reason := 'EVENT_TERMINE';
+            ELSIF v_found_event
+                  AND ((r.type = 'EVENT_SUSPENDED_HOLDER' AND v_estatus IS DISTINCT FROM 'SUSPENDU')
+                       OR (r.type = 'EVENT_REACTIVATED_HOLDER' AND v_estatus IS DISTINCT FROM 'PUBLIE')) THEN
+                v_outcome := 'CANCEL'; v_reason := 'NO_LONGER_RELEVANT';
             END IF;
         END IF;
 
