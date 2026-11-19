@@ -1281,7 +1281,7 @@ const CATALOG = {
         }),
         sms: (d) => (text(d, 'recipient_role') === 'PARTNER'
             ? `${SMS_PREFIX}rappel, ${smsVar(text(d, 'hall_name'), 25)} est réservée demain${hallStartTime(d)}. Le client a tout payé.`
-            : `${SMS_PREFIX}rappel, votre réservation de ${smsVar(text(d, 'hall_name'), 25)} commence demain${hallStartTime(d)}. Bonne fête !`),
+            : `${SMS_PREFIX}rappel, votre réservation de ${smsVar(text(d, 'hall_name'), 25)} commence demain${hallStartTime(d)}. Profitez-en bien !`),
         sample: { ...HALL_SAMPLE_DATA, paid_amount: 420000, recipient_role: 'CLIENT' },
     }),
     HALL_EARNINGS_AVAILABLE: define('HALL_EARNINGS_AVAILABLE', {
@@ -1310,7 +1310,7 @@ const CATALOG = {
             const decision = text(d, 'decision');
             const name = smsVar(text(d, 'hall_name'), 30);
             const reason = optText(d, 'reason');
-            if (decision === 'VALIDER') return `${SMS_PREFIX}votre salle ${name} est validée : elle pourra être réservée.`;
+            if (decision === 'VALIDER') return `${SMS_PREFIX}votre salle ${name} est validée : elle sera visible et réservable.`;
             if (decision === 'REACTIVER') return `${SMS_PREFIX}votre salle ${name} est de nouveau visible et réservable.`;
             const what = decision === 'SUSPENDRE' ? 'est suspendue' : "n'est pas acceptée";
             return `${SMS_PREFIX}votre salle ${name} ${what}.${reason ? ` Motif : ${smsVar(reason, 60)}` : ''}`;
@@ -2310,7 +2310,10 @@ export function adminReviewSms(d: object, ctx: RenderContext): string {
     if (venues > 0) parts.push(`${venues} établissement(s)`);
     if (halls > 0) parts.push(`${halls} salle(s)`);
     if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count, venue_count et hall_count à zéro : rien à valider');
-    return `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
+    const detailed = `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
+    // Lot 10b : quatre rubriques peuvent dépasser un segment ; alors le total seul
+    if (smsSegments(detailed).segments <= 1) return detailed;
+    return `${SMS_PREFIX}${partners + events + venues + halls} demandes attendent votre validation : ${link}`;
 }
 
 /** Lot 11a : nom de l'établissement entre guillemets, sinon « votre établissement ». */
