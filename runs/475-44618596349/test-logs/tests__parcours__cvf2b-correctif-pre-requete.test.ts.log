@@ -1,0 +1,152 @@
+TAP version 13
+[CVF2B-PRE] 1. [{"setting":"pgrst.db_pre_request=securite.db_pre_request","secdef":true,"config":"search_path=\"\"","anon":true,"auth":true,"svc":true,"pkey":true}]
+# Subtest: 1. branchement de la pré-requête
+    # Subtest: réglage pgrst.db_pre_request sur authenticator ; fonction SECURITY DEFINER, search_path vide, hors du schéma exposé
+    ok 1 - réglage pgrst.db_pre_request sur authenticator ; fonction SECURITY DEFINER, search_path vide, hors du schéma exposé
+      ---
+      duration_ms: 36.371691
+      type: 'test'
+      ...
+    1..1
+ok 1 - 1. branchement de la pré-requête
+  ---
+  duration_ms: 37.082495
+  type: 'suite'
+  ...
+[CVF2B-PRE] 2. B fermée — table : 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."} ; RPC : 401 ; A : 200
+# Subtest: 2-3. API REST
+    # Subtest: 2. jeton valide servi ; session fermée refusée (table et RPC) ; l’autre session servie ; révocation totale ; rafraîchi servi
+    ok 1 - 2. jeton valide servi ; session fermée refusée (table et RPC) ; l’autre session servie ; révocation totale ; rafraîchi servi
+      ---
+      duration_ms: 387.440694
+      type: 'test'
+      ...
+[CVF2B-PRE] 3. sans jeton : 200 ; anon : 200 ; service : 200
+[CVF2B-PRE] 3. jeton authenticated sans session_id : 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."}
+    # Subtest: 3. sans jeton, anon et rôle de service servis ; jeton authenticated sans session_id refusé
+    ok 2 - 3. sans jeton, anon et rôle de service servis ; jeton authenticated sans session_id refusé
+      ---
+      duration_ms: 1078.568803
+      type: 'test'
+      ...
+    1..2
+ok 2 - 2-3. API REST
+  ---
+  duration_ms: 1466.252043
+  type: 'suite'
+  ...
+[CVF2B-PRE] 4. plan (auth.sessions : 299 ligne(s)) :
+  Index Scan using sessions_pkey on sessions s  (cost=0.27..8.30 rows=1 width=4) (actual time=0.033..0.033 rows=1 loops=1)
+    Index Cond: (id = '1a2a5f18-d360-407b-9359-73cc5ab8db47'::uuid)
+    Filter: (((not_after IS NULL) OR (not_after > now())) AND ((user_id)::text = '3d9c4f63-ed0a-4cc3-a27d-3a459bf8aaa2'::text))
+    Buffers: shared hit=3
+  Planning:
+    Buffers: shared hit=155
+  Planning Time: 0.352 ms
+  Execution Time: 0.048 ms
+[CVF2B-PRE] 4. coût : 12.7 µs par appel de securite.db_pre_request (10000 appels, 127.2 ms) ; témoin auth.jwt() seul : 4.7 µs ; part de la lecture de la session : 8.0 µs
+# Subtest: 4. coût de la pré-requête
+    # Subtest: plan de la lecture et mesure en boucle (10 000 appels)
+    ok 1 - plan de la lecture et mesure en boucle (10 000 appels)
+      ---
+      duration_ms: 395.140031
+      type: 'test'
+      ...
+    1..1
+ok 3 - 4. coût de la pré-requête
+  ---
+  duration_ms: 395.338341
+  type: 'suite'
+  ...
+[CVF2B-PRE] 5. après l'échéance : témoin reçu ; jeton court : 0 message(s) ; états du canal : SUBSCRIBED → system postgres_changes ok : Subscribed to PostgreSQL → CLOSED
+# Subtest: 5. temps réel : jeton échu
+    # Subtest: un abonnement postgres_changes à une table privée ne reçoit plus rien après l’échéance de son jeton (témoin du même compte qui reçoit)
+    ok 1 - un abonnement postgres_changes à une table privée ne reçoit plus rien après l’échéance de son jeton (témoin du même compte qui reçoit)
+      ---
+      duration_ms: 37859.337643
+      type: 'test'
+      ...
+    1..1
+ok 4 - 5. temps réel : jeton échu
+  ---
+  duration_ms: 37859.771309
+  type: 'suite'
+  ...
+[INVARIANT] cvf2b-correctif-pre-requete — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf2b-correctif-pre-requete — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf2b-correctif-pre-requete — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf2b-correctif-pre-requete — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf2b-correctif-pre-requete — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — (j)(k)(l) : 0 violation(s)
+[INVARIANT] cvf2b-correctif-pre-requete — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf2b-correctif-pre-requete — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf2b-correctif-pre-requete — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf2b-correctif-pre-requete — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf2b-correctif-pre-requete — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] cvf2b-correctif-pre-requete — envoyeur : 0 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cvf2b-correctif-pre-requete — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cvf2b-correctif-pre-requete — (p)(q) : 2 violation(s)
+[INVARIANT-TERRAIN]   (p) 659e7256-c3f1-4015-8a65-b076b405c61d : scan QR accepté sans version de secret
+[INVARIANT-TERRAIN]   (p) afa4bc5d-7b6c-405a-8903-1ea8ac438101 : scan QR accepté sans version de secret
+not ok 5 - /home/runner/work/event-village/event-village/tests/parcours/cvf2b-correctif-pre-requete.test.ts
+  ---
+  duration_ms: 475.700922
+  location: '/home/runner/work/event-village/event-village/tests/parcours/cvf2b-correctif-pre-requete.test.ts:2:1795'
+  failureType: 'hookFailed'
+  error: |-
+    invariants (p)(q) violés (cvf2b-correctif-pre-requete) :
+    (p) 659e7256-c3f1-4015-8a65-b076b405c61d : scan QR accepté sans version de secret
+    (p) afa4bc5d-7b6c-405a-8903-1ea8ac438101 : scan QR accepté sans version de secret
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'scan QR accepté sans version de secret',
+    +     objet: '659e7256-c3f1-4015-8a65-b076b405c61d',
+    +     regle: 'p'
+    +   },
+    +   {
+    +     detail: 'scan QR accepté sans version de secret',
+    +     objet: 'afa4bc5d-7b6c-405a-8903-1ea8ac438101',
+    +     regle: 'p'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'p'
+      objet: '659e7256-c3f1-4015-8a65-b076b405c61d'
+      detail: 'scan QR accepté sans version de secret'
+    1:
+      regle: 'p'
+      objet: 'afa4bc5d-7b6c-405a-8903-1ea8ac438101'
+      detail: 'scan QR accepté sans version de secret'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertTerrainInvariants (/home/runner/work/event-village/event-village/tests/helpers/terrain-invariants.ts:156:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertRecetteInvariants (/home/runner/work/event-village/event-village/tests/helpers/recette-invariants.ts:201:5)
+    async assertLot9Invariants (/home/runner/work/event-village/event-village/tests/helpers/lot9-invariants.ts:223:5)
+    async assertLot9bisInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9bis-invariants.ts:360:5)
+    async assertLot9terInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9ter-invariants.ts:503:5)
+    async assertLot9quaterInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9quater-invariants.ts:107:5)
+    async assertLot9quinquiesInvariants (/home/runner/work/event-village/event-village/tests/helpers/lot9quinquies-invariants.ts:78:5)
+    async assertFinition1Invariants (/home/runner/work/event-village/event-village/tests/helpers/finition1-invariants.ts:85:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cvf2b-correctif-pre-requete.test.ts:39:5)
+  ...
+1..4
+# tests 5
+# suites 4
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 49761.580711
