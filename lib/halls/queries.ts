@@ -9,6 +9,7 @@
  */
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PublicError } from '@/lib/api/public-error';
+import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { cancellationText, type CancellationTerms } from './booking';
 import { bookingIsLive, bookingView, hallStatusView } from './views';
 
@@ -33,8 +34,12 @@ async function rpc(fn: string, args: Row): Promise<Row> {
 
 /** Refus lisible d'une fonction de la base (message déjà en français simple). */
 export class HallRefusal extends Error {
-    constructor(public readonly code: string, message: string) {
-        super(message);
+    /** Phrase de la base, déjà en français simple : seule elle part vers l'écran. */
+    public readonly publicText: string;
+
+    constructor(public readonly code: string, text: string) {
+        super(`refus ${code}`);
+        this.publicText = text;
     }
 }
 
@@ -534,8 +539,8 @@ export async function adminHalls(opts: { status: string; q?: string | null; page
         .eq('validation_status', opts.status)
         .order(opts.status === 'EN_ATTENTE_VALIDATION' ? 'updated_at' : 'updated_at', { ascending: opts.status === 'EN_ATTENTE_VALIDATION' })
         .range((page - 1) * pageSize, page * pageSize - 1);
-    const q = (opts.q ?? '').trim().slice(0, 80).replace(/[%_,()\\]/g, ' ').trim();
-    if (q) query = query.or(`name.ilike.%${q}%,city.ilike.%${q}%`);
+    const q = (opts.q ?? '').trim().slice(0, 80);
+    if (q) query = query.or(`name.ilike.${pgIlikeContains(q)},city.ilike.${pgIlikeContains(q)}`);
     const { data, error, count } = await query;
     if (error) throw new Error(`lecture des salles : ${error.message}`);
     const counts: Record<string, number> = {};

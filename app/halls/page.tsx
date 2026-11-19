@@ -68,7 +68,7 @@ async function runSearch(f: HallFilters): Promise<SearchOutcome> {
         });
         return { kind: 'ok', total: r.total, halls: r.halls, cities: r.cities };
     } catch (err) {
-        if (err instanceof HallRefusal) return { kind: 'refused', message: err.message };
+        if (err instanceof HallRefusal) return { kind: 'refused', message: err.publicText };
         console.error('[Salles] recherche impossible :', err instanceof Error ? err.message : String(err));
         return { kind: 'error' };
     }

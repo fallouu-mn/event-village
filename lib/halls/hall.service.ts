@@ -118,6 +118,7 @@ function cleanAmenities(value: unknown): string[] {
 /** Capacité : nombre entier de personnes, de 1 à 100 000. */
 function cleanCapacity(value: unknown): number {
     const n = Number(value);
+    if (value === undefined || value === null || value === '' || !(n > 0)) throw new PublicError('La capacité de la salle doit être supérieure à 0.');
     if (!Number.isInteger(n) || n < 1 || n > 100_000) throw new PublicError('La capacité est un nombre entier de personnes, de 1 à 100 000.', 'INVALID_FIELD', 400);
     return n;
 }

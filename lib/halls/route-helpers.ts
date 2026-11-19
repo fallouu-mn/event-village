@@ -8,7 +8,7 @@ import { HallRefusal } from './queries';
 /** Refus lisible d'une fonction de la base → réponse JSON (message déjà en français simple). */
 export function refusalResponse(err: HallRefusal): NextResponse {
     const status = err.code === 'INVALID_FILTER' || err.code === 'HALL_INCOMPLETE' ? 400 : refusalStatus(err.code);
-    return NextResponse.json({ success: false, error: err.message, code: err.code }, { status });
+    return NextResponse.json({ success: false, error: err.publicText, code: err.code }, { status });
 }
 
 export const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
