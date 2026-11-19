@@ -110,6 +110,18 @@ ce type. Pour le porteur, qui a reçu « suspendu » plus tôt, c'est le seul me
 **Correctif proposé :** pour un avis lié à un événement, ne pas reporter si le début tombe avant la fin de la plage (envoi
 immédiat), et annuler à la réservation un avis d'état dont l'événement a commencé, comme pour les rappels.
 
+**T2 adapté le 20/11 (décision du chef de projet).** La règle des 12 h du correctif est voulue : un avis lié à un événement
+qui commence dans moins de 12 h, ou qui est en cours, part tout de suite, même la nuit. La précondition de l'ancien T2
+(« reporté à 07:00 » pour une soirée à 02:00) contredisait cette règle. T2 devient deux cas, avec le même but : **l'avis
+n'arrive jamais après le début.**
+- **T2a** : un avis préparé à 01:30 pour une soirée à 02:00 doit partir tout de suite, avant le début (statut `SENT`, un
+  SMS reçu, heure d'envoi avant le début).
+- **T2b** : un avis reporté la nuit pour un événement lointain (à plus de 12 h, précondition « reporté ») doit être annulé à
+  l'envoi (`CANCELLED`, aucun SMS) si la soirée a été avancée au même jour, 02:00 → 05:00, et qu'elle est donc finie à
+  07:00. L'avance est faite sur les seules colonnes de date, comme `shiftEventDates`, mais en heures fixes.
+
+Sur `finition-4/rouges` (code du lot avant correctif), T2a est rouge (reporté à 07:00) et T2b est rouge (envoyé à 07:00).
+
 ## 3. SMS — un trou
 
 Ce qui tient :
@@ -242,8 +254,14 @@ advanceEventTo(…, ANNULE) : étape SUSPENDU → ANNULE (event_cancel, acteur P
 ```
 
 Mon test a été corrigé : l'annulation passe par l'administration (`cancelledBy: 'ADMIN'`, transition SUSPENDU → ANNULE ADMIN,
-`20261102000003_lot5_cycle.sql:63`), commit `8753a685f`. C'est la seule modification d'un test. Aucune assertion n'a été
-changée. T2, T3 et G1 à G7 étaient déjà au même résultat au run 467.
+`20261102000003_lot5_cycle.sql:63`), commit `8753a685f`. Aucune assertion n'a été changée. T2, T3 et G1 à G7 étaient déjà
+au même résultat au run 467.
+
+**Modification du 20/11, T2 (décision du chef de projet sur la règle des 12 h).** La précondition « reporté à 07:00 » de
+l'ancien T2 est retirée : elle contredisait une règle voulue. T2 est remplacé par T2a et T2b (§ 2), avec le même but, dit
+par des assertions plus strictes : T2a exige un envoi avant le début, T2b exige `CANCELLED` sans aucun SMS (l'ancien T2
+exigeait seulement « pas SENT »). Le commentaire est dans le test (`tests/audit/cvf4-1-nuit.test.ts`). Ce sont les deux
+seules modifications de mes tests.
 
 Hors CI : les douze G3 sont aussi passés sur le poste (`npx tsx --test --test-name-pattern G3`). Contrôle de types et lint
 des quatre suites : sans erreur.

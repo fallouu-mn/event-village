@@ -11,7 +11,9 @@
  *     941-963) n'annule pas ces avis à l'annulation.
  *  T2 (trou) : avis « événement de nouveau en ligne » (EVENT_REACTIVATED_HOLDER) d'une soirée qui commence à 02:00, préparé à
  *     01:30 : reporté à 07:00, puis envoyé à 07:00, cinq heures après le début (et après la fin). Aucune revérification
- *     « événement commencé » pour ce type.
+ *     « événement commencé » pour ce type. Adapté le 20/11 à la règle des 12 h (décision du chef de projet) : T2a (préparé à
+ *     01:30 pour 02:00 → envoyé tout de suite, avant le début) et T2b (reporté pour un événement lointain, soirée avancée et
+ *     finie avant 07:00 → annulé à l'envoi). Le but reste : l'avis n'arrive jamais après le début.
  *  G1 (garde-fou) : merci du lendemain (ENTRY_THANKS) d'un événement annulé : annulé à l'envoi.
  *  G2 (garde-fou) : avis urgent à 02:00 (SCAN_REFUSALS_ALERT, SEND) : part tout de suite, rien n'est reporté.
  *
@@ -24,7 +26,7 @@ import assert from 'node:assert/strict';
 import { writeLocal } from '../helpers/db';
 import { getFakes } from '../fakes';
 import { createPartnerEvent, newPartner, type TestPartner } from '../parcours/finance-helpers';
-import { newBuyer, type Buyer } from '../parcours/paiement-helpers';
+import { newBuyer, service, type Buyer } from '../parcours/paiement-helpers';
 import { advanceEventTo } from '../parcours/cycle-helpers';
 import { createReminderEvent, dakarAt, dakarDay, dispatchAt, insertOutboxRow, outboxRows, type OutboxRow } from '../parcours/notif-helpers';
 import { NOTIFICATION_CATALOG } from '../../lib/notifications/catalog';
@@ -92,26 +94,55 @@ describe('cvf4 point 2 — la nuit', () => {
         }
     });
 
-    test('T2 : avis « de nouveau en ligne » d’une soirée qui commence à 02:00, préparé à 01:30 → ne doit pas partir à 07:00', async () => {
+    // T2 adapté le 20/11 (décision du chef de projet, modification signalée au rapport, § 7) : la règle des 12 h est voulue
+    // (avis lié à un événement qui commence dans moins de 12 h ou en cours = envoyé tout de suite, même la nuit). Le but de
+    // T2 ne change pas : l'avis d'état n'arrive jamais après le début. Avant : une seule précondition « reporté à 07:00 »
+    // pour une soirée à 02:00, contraire à la règle. Désormais deux cas :
+    //  a) préparé à 01:30 pour une soirée à 02:00 : part tout de suite, avant le début ;
+    //  b) reporté la nuit pour un événement lointain (plus de 12 h), avancé ensuite à une soirée 02:00 → 05:00 du même jour :
+    //     à 07:00 la soirée est finie, l'avis est annulé à l'envoi, jamais envoyé.
+    test('T2a : avis « de nouveau en ligne » préparé à 01:30 pour une soirée à 02:00 → part tout de suite, avant le début', async () => {
         const day = dakarDay(4);
-        const ev = await createReminderEvent(partner, 'cvf4-t2', { startDate: day, startTime: '02:00', durationHours: 4 });
-        const data = await eventData(ev.eventId);
+        const ev = await createReminderEvent(partner, 'cvf4-t2a', { startDate: day, startTime: '02:00', durationHours: 4 });
         const sms = await insertOutboxRow({
             type: 'EVENT_REACTIVATED_HOLDER', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channel: 'SMS',
-            recipient_user_id: holder.userId, event_id: ev.eventId, template_data: data,
+            recipient_user_id: holder.userId, event_id: ev.eventId, template_data: await eventData(ev.eventId),
+            due_at: dakarAt(day, '01:30').toISOString(), next_attempt_at: dakarAt(day, '01:30').toISOString(),
+        });
+        const before = smsCount();
+        await dispatchAt(dakarAt(day, '01:30'), { ids: [sms.id] });
+        const r = await row(sms.id);
+        assert.equal(r.status, 'SENT',
+            `EVENT_REACTIVATED_HOLDER non envoyé à 01:30 pour une soirée à 02:00 : ${r.status} ${r.reason ?? ''}, décision ${JSON.stringify(r.decision)}, prochain essai ${r.next_attempt_at}`);
+        assert.equal(smsCount(), before + 1, 'un SMS reçu avant le début');
+        assert.ok(Date.parse(String(r.sent_at)) < ev.startAt.getTime(), `envoyé ${r.sent_at}, début ${ev.startAt.toISOString()}`);
+    });
+
+    test('T2b : avis reporté pour un événement lointain, soirée avancée et finie avant 07:00 → annulé à l’envoi, jamais envoyé', async () => {
+        const day = dakarDay(5);
+        const ev = await createReminderEvent(partner, 'cvf4-t2b', { startDate: dakarDay(9), startTime: '20:00', durationHours: 4 });
+        const sms = await insertOutboxRow({
+            type: 'EVENT_REACTIVATED_HOLDER', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channel: 'SMS',
+            recipient_user_id: holder.userId, event_id: ev.eventId, template_data: await eventData(ev.eventId),
             due_at: dakarAt(day, '01:30').toISOString(), next_attempt_at: dakarAt(day, '01:30').toISOString(),
         });
         await dispatchAt(dakarAt(day, '01:30'), { ids: [sms.id] });
         const deferred = await row(sms.id);
-        assert.equal(decision(deferred).outcome, 'DEFER', `précondition : reporté (${JSON.stringify(deferred.decision)})`);
-        assert.equal(Date.parse(deferred.next_attempt_at), dakarAt(day, '07:00').getTime(), 'précondition : reporté à 07:00');
+        assert.equal(decision(deferred).outcome, 'DEFER', `précondition : reporté, l'événement commence dans plus de 12 h (${JSON.stringify(deferred.decision)})`);
+
+        // la soirée est avancée au même jour, 02:00 → 05:00 (seules les colonnes de date, comme shiftEventDates, en heures fixes)
+        const { data: moved, error } = await service.from('events')
+            .update({ start_date: day, start_time: '02:00:00', end_date: day, end_time: '05:00:00' }).eq('id', ev.eventId).select('id');
+        assert.equal(error, null, `dates de l'événement : ${error?.message}`);
+        assert.equal((moved ?? []).length, 1, 'précondition : événement avancé');
 
         const before = smsCount();
         await dispatchAt(dakarAt(day, '07:00'), { ids: [sms.id] });
         const r = await row(sms.id);
         const sent = smsCount() > before ? lastSms() : '(aucun SMS)';
-        assert.notEqual(r.status, 'SENT',
-            `EVENT_REACTIVATED_HOLDER envoyé à 07:00 pour une soirée commencée à 02:00 (début ${ev.startAt.toISOString()}) : « ${sent} »`);
+        assert.equal(r.status, 'CANCELLED',
+            `EVENT_REACTIVATED_HOLDER à 07:00 pour une soirée finie à 05:00 : ${r.status} ${r.reason ?? ''} ; SMS reçu : « ${sent} »`);
+        assert.equal(smsCount(), before, 'aucun SMS après la fin');
     });
 
     test('G1 : merci du lendemain d’un événement annulé → annulé à l’envoi', async () => {
