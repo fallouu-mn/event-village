@@ -6,10 +6,14 @@
  * partie (réservation à l'heure) : souligné en pointillés, heures prises dites sous le calendrier ; la couleur ne porte
  * jamais seule l'information (légende, nom complet de chaque jour pour les lecteurs d'écran). Toucher un jour libre le
  * choisit pour la réservation (date gardée dans l'adresse, lue par le panneau de réservation).
+ * Correctifs du lot 10b : chaque sorte de jour a sa couleur de la charte (libre en vert, pris en partie en orangé, pris
+ * en rouge, passé en gris, votre date en couleur principale ; fonds « -soft », textes « -text », contrastes AA en clair
+ * et en sombre) ET un second signal : coche, horloge et bordure en pointillés, croix et chiffre barré, hachures et
+ * tiret, coche de calendrier et liseré. Aujourd'hui : chiffre souligné. Légende complète sous le calendrier.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarCheck, Check, ChevronLeft, ChevronRight, Clock, Minus, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -24,6 +28,39 @@ import { capitalize } from './format';
 
 const MONTHS_AHEAD = 24;
 const WEEKDAYS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+
+/** Sorte de jour : chacune a sa couleur de la charte ET un second signal (icône, barré, pointillés ou hachures). */
+type DayKind = 'libre' | 'partiel' | 'pris' | 'passe' | 'choisi';
+
+/*
+ * Couleurs : texte « -text » sur fond « -soft » de la charte (AA en clair et en sombre, voir app/globals.css) ;
+ * bordure pleine du ton pour les jours qu'on peut choisir, en pointillés pour le jour pris en partie. Jour passé : fond
+ * hachuré (motif) et texte secondaire ; jour pris : barré et croix ; votre date : bouton principal, coche et liseré.
+ */
+const DAY_STYLE: Record<DayKind, string> = {
+    libre: 'border-success-text/50 bg-success-soft font-semibold text-success-text hover:border-success-text',
+    partiel: 'border-dashed border-warning-text bg-warning-soft font-semibold text-warning-text hover:border-solid',
+    pris: 'border-danger-border bg-danger-soft text-danger-text line-through decoration-2',
+    passe: 'border-transparent bg-muted bg-[repeating-linear-gradient(135deg,transparent_0_5px,rgb(var(--border))_5px_6px)] text-muted-foreground',
+    choisi: 'border-primary bg-primary font-bold text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card',
+};
+
+function DayMark({ kind }: { kind: DayKind }) {
+    const props = { size: 14, 'aria-hidden': true, strokeWidth: 2.5 } as const;
+    if (kind === 'libre') return <Check {...props} />;
+    if (kind === 'partiel') return <Clock {...props} />;
+    if (kind === 'pris') return <X {...props} />;
+    if (kind === 'choisi') return <CalendarCheck {...props} />;
+    return <Minus {...props} />;
+}
+
+const LEGEND: { kind: DayKind; label: string }[] = [
+    { kind: 'libre', label: 'Libre' },
+    { kind: 'partiel', label: 'Pris en partie (à l’heure)' },
+    { kind: 'pris', label: 'Déjà réservé' },
+    { kind: 'passe', label: 'Passé' },
+    { kind: 'choisi', label: 'Votre date' },
+];
 
 interface DayState {
     full: boolean;
@@ -169,7 +206,7 @@ export function HallCalendar({ hallId, today, hourly }: { hallId: string; today:
                     {busy === undefined ? (
                         <div className="grid grid-cols-7 gap-1">
                             {Array.from({ length: 35 }).map((_, i) => (
-                                <Skeleton key={i} className="h-11 rounded-lg" />
+                                <Skeleton key={i} className="h-12 rounded-lg" />
                             ))}
                             <span className="sr-only" role="status">Chargement du calendrier…</span>
                         </div>
@@ -186,11 +223,13 @@ export function HallCalendar({ hallId, today, hourly }: { hallId: string; today:
                                 const partial = !full && Boolean(st?.hours.length);
                                 const isSelected = day === selected;
                                 const isToday = day === today;
+                                // Un jour passé ou pris garde son aspect même s'il est choisi (saisi à la main) : liseré en plus
+                                const kind: DayKind = past ? 'passe' : full ? 'pris' : isSelected ? 'choisi' : partial ? 'partiel' : 'libre';
                                 const words = [
                                     capitalize(longDate(day)),
                                     isToday ? 'aujourd’hui' : null,
                                     past ? 'passé' : full ? 'déjà réservé' : partial ? `pris en partie, de ${st?.hours.join(', de ')}` : 'libre',
-                                    isSelected ? 'choisi' : null,
+                                    isSelected ? 'votre date' : null,
                                 ].filter(Boolean).join(', ');
                                 return (
                                     <li key={day}>
@@ -201,19 +240,14 @@ export function HallCalendar({ hallId, today, hourly }: { hallId: string; today:
                                             aria-label={words}
                                             onClick={() => writeChoice({ date: day })}
                                             className={cn(
-                                                'flex h-11 w-full items-center justify-center rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                                isSelected
-                                                    ? 'border-primary bg-primary font-bold text-primary-foreground'
-                                                    : past
-                                                        ? 'cursor-not-allowed border-transparent text-muted-foreground opacity-60'
-                                                        : full
-                                                            ? 'cursor-not-allowed border-transparent bg-muted text-muted-foreground line-through decoration-2'
-                                                            : 'border-border bg-card font-semibold text-foreground-strong hover:border-foreground-strong',
-                                                partial && !isSelected && 'underline decoration-dotted decoration-2 underline-offset-4',
-                                                isToday && !isSelected && 'border-foreground-strong',
+                                                'flex h-12 w-full flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                                                DAY_STYLE[kind],
+                                                (past || full) && 'cursor-not-allowed',
+                                                isSelected && kind !== 'choisi' && 'ring-2 ring-foreground-strong ring-offset-2 ring-offset-card',
                                             )}
                                         >
-                                            {i + 1}
+                                            <span className={cn(isToday && 'underline decoration-2 underline-offset-2')}>{i + 1}</span>
+                                            <DayMark kind={kind} />
                                         </button>
                                     </li>
                                 );
@@ -223,24 +257,19 @@ export function HallCalendar({ hallId, today, hourly }: { hallId: string; today:
                 </div>
             )}
 
-            <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground" aria-label="Légende du calendrier">
-                <li className="flex items-center gap-2">
-                    <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-sm font-semibold text-foreground-strong">5</span>
-                    Libre
-                </li>
-                <li className="flex items-center gap-2">
-                    <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-muted text-sm text-muted-foreground line-through decoration-2">5</span>
-                    Déjà réservé
-                </li>
-                {hasPartial && (
-                    <li className="flex items-center gap-2">
-                        <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-sm font-semibold text-foreground-strong underline decoration-dotted decoration-2 underline-offset-4">5</span>
-                        Pris en partie (à l’heure)
+            <ul className="grid grid-cols-1 gap-x-5 gap-y-2 text-sm text-foreground min-[360px]:grid-cols-2 sm:flex sm:flex-wrap" aria-label="Légende du calendrier">
+                {LEGEND.filter((l) => l.kind !== 'partiel' || hourly || hasPartial).map((l) => (
+                    <li key={l.kind} className="flex items-center gap-2">
+                        <span aria-hidden="true" className={cn('inline-flex h-11 w-10 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-md border text-sm tabular-nums', DAY_STYLE[l.kind])}>
+                            <span>5</span>
+                            <DayMark kind={l.kind} />
+                        </span>
+                        {l.label}
                     </li>
-                )}
+                ))}
                 <li className="flex items-center gap-2">
-                    <span aria-hidden="true" className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">5</span>
-                    Votre date
+                    <span aria-hidden="true" className="inline-flex h-11 w-10 flex-shrink-0 items-center justify-center rounded-md border border-border text-sm font-semibold tabular-nums text-foreground-strong underline decoration-2 underline-offset-2">5</span>
+                    Aujourd’hui
                 </li>
             </ul>
 

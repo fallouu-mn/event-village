@@ -19,6 +19,8 @@ import { fcfaText } from '@/lib/halls/views';
  * acompte, échéance du solde, règle d'annulation, calendrier des disponibilités ; panneau de réservation (devis du
  * serveur avant de payer, réservation, paiement). Salle absente, inactive ou non validée : 404 « Salle introuvable ».
  * Lecture impossible : « Réessayer ». Service fermé : 404 par app/halls/layout.tsx.
+ * Correctifs du lot 10b : durée réelle pendant laquelle la date est gardée pour payer (hall.holdMinutes, réglage du
+ * serveur), dite dans « Paiement et annulation » et passée au panneau de réservation.
  */
 export const dynamic = 'force-dynamic';
 
@@ -174,6 +176,12 @@ export default async function HallPage({ params }: { params: Promise<{ id: strin
                                 </p>
                             </div>
                             <div>
+                                <h3 className="text-base font-semibold text-foreground-strong">Délai pour payer</h3>
+                                <p className="mt-1 text-base leading-relaxed text-foreground">
+                                    {`La date est gardée ${hall.holdMinutes > 1 ? `${hall.holdMinutes} minutes` : `${hall.holdMinutes} minute`} pour payer, par Wave ou Orange Money. Sans paiement, elle est libérée.`}
+                                </p>
+                            </div>
+                            <div>
                                 <h3 className="text-base font-semibold text-foreground-strong">Frais de service</h3>
                                 <p className="mt-1 text-base leading-relaxed text-foreground">Ils s’ajoutent au prix ; leur montant exact s’affiche avant de payer.</p>
                             </div>
@@ -197,7 +205,7 @@ export default async function HallPage({ params }: { params: Promise<{ id: strin
                     className="min-w-0 scroll-mt-20 rounded-xl border border-border bg-card p-5 shadow-sm sm:p-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
                 >
                     <HallBookingPanel
-                        hall={{ id: hall.id, name: hall.name, pricePerDay: hall.pricePerDay, pricePerHour: hall.pricePerHour }}
+                        hall={{ id: hall.id, name: hall.name, pricePerDay: hall.pricePerDay, pricePerHour: hall.pricePerHour, holdMinutes: hall.holdMinutes }}
                         today={today}
                     />
                 </aside>

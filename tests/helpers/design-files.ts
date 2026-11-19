@@ -358,6 +358,7 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/halls/client/HallCalendar.tsx',
     'components/halls/client/HallCard.tsx',
     'components/halls/client/HallGallery.tsx',
+    'components/halls/client/HallLightbox.tsx',
     'components/halls/client/HallResults.tsx',
     'components/halls/client/HallSearch.tsx',
     'components/halls/client/ReservationDetailView.tsx',

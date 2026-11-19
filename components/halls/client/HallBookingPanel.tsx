@@ -12,16 +12,22 @@
  *     fenêtre de paiement (PaymentModal chargée à la demande, part ACOMPTE ou INTEGRAL ; le serveur relit le montant).
  *     Sans session : /login?redirect=<fiche avec le choix>. La réservation créée reste visible avec le lien vers son
  *     détail (« Mes réservations »).
+ * Correctifs du lot 10b :
+ *  - Prix recalculé en direct pendant le choix (date, durée, mode, heure) : devis demandé au serveur 300 ms après la
+ *    dernière modification, demande précédente annulée (AbortController). Pendant le calcul, le dernier devis reste à
+ *    l'écran avec la mention discrète « Calcul du prix… » (aucune animation) et le bouton de réservation attend le
+ *    nouveau devis. Total, acompte, solde et échéance viennent SEULEMENT du devis du serveur. Refus (date prise, date
+ *    passée…) dit en mots sous le choix.
+ *  - Durée de garde réelle de la salle (hall.holdMinutes, réglage du serveur) au lieu de « quelques minutes ».
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CalendarClock, CalendarDays, Clock, ShieldCheck } from 'lucide-react';
+import { CalendarClock, CalendarDays, Calculator, Clock, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { FilterChip } from '@/components/ui/FilterChip';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { Select, TextInput } from '@/components/ui/Field';
-import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { Switch } from '@/components/ui/Switch';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -45,11 +51,21 @@ interface Created {
     period: string;
 }
 
-type QuoteState =
-    | { phase: 'idle' }
-    | { phase: 'loading' }
-    | { phase: 'ok'; quote: HallQuoteView }
-    | { phase: 'refused'; message: string; retry: boolean };
+/** Dernier devis reçu (ou dernier refus) pour le choix `key` ; `pending` : un nouveau devis est demandé. */
+interface QuoteState {
+    key: string;
+    quote: HallQuoteView | null;
+    refusal: { message: string; retry: boolean } | null;
+    pending: boolean;
+}
+
+const NO_QUOTE: QuoteState = { key: '', quote: null, refusal: null, pending: false };
+/** Attente après la dernière modification du choix avant de demander le devis. */
+const QUOTE_DELAY_MS = 300;
+
+function minutesText(n: number): string {
+    return n > 1 ? `${n} minutes` : `${n} minute`;
+}
 
 const DAY_OPTIONS = Array.from({ length: 30 }, (_, i) => ({ value: String(i + 1), label: unitsText('JOUR', i + 1) }));
 const TIME_OPTIONS = START_TIMES.map((t) => ({ value: t, label: t }));
@@ -70,7 +86,7 @@ function AmountRow({ label, value, strong = false, hint }: { label: string; valu
     );
 }
 
-export function HallBookingPanel({ hall, today }: { hall: { id: string; name: string; pricePerDay: number; pricePerHour: number | null }; today: string }) {
+export function HallBookingPanel({ hall, today }: { hall: { id: string; name: string; pricePerDay: number; pricePerHour: number | null; holdMinutes: number }; today: string }) {
     const router = useRouter();
     const sp = useSearchParams();
     const { user, isLoading: authLoading } = useAuth();
@@ -78,7 +94,7 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
     const choice = readChoice(sp, hourly);
     const { date, mode, units, time } = choice;
 
-    const [quote, setQuote] = useState<QuoteState>({ phase: 'idle' });
+    const [quote, setQuote] = useState<QuoteState>(NO_QUOTE);
     const [accepted, setAccepted] = useState(false);
     const [payAll, setPayAll] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -91,17 +107,18 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
     const ready = DAY_RE.test(date) && (mode === 'JOUR' || Boolean(time));
     const quoteKey = ready ? `${date}|${mode}|${units}|${mode === 'HEURE' ? time : ''}` : '';
 
-    // Devis du serveur à chaque changement du choix (attente courte : un seul appel pendant une saisie rapide)
+    // Devis du serveur à chaque changement du choix (attente courte : un seul appel pendant une saisie rapide ; la
+    // demande précédente est annulée). Le dernier devis reste affiché pendant le calcul.
     useEffect(() => {
         ctrl.current?.abort();
         setReserveError(null);
         if (!quoteKey) {
-            setQuote({ phase: 'idle' });
+            setQuote(NO_QUOTE);
             return undefined;
         }
         const c = new AbortController();
         ctrl.current = c;
-        setQuote({ phase: 'loading' });
+        setQuote((prev) => ({ ...prev, pending: true }));
         const timer = window.setTimeout(async () => {
             const params = new URLSearchParams({ date, mode, units: String(units) });
             if (mode === 'HEURE') params.set('time', time);
@@ -109,14 +126,14 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
                 const body = await fetchJson<{ quote?: HallQuoteView }>(`/api/halls/${hall.id}/quote?${params.toString()}`, { signal: c.signal });
                 if (c.signal.aborted) return;
                 if (!body.quote) throw new ApiError('Prix momentanément indisponible. Réessayez.', 200, null, null);
-                setQuote({ phase: 'ok', quote: body.quote });
+                setQuote({ key: quoteKey, quote: body.quote, refusal: null, pending: false });
             } catch (err) {
                 if (c.signal.aborted) return;
                 // Refus de la salle (date prise, date passée…) : message de la route ; panne : « Réessayer »
                 const retry = !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
-                setQuote({ phase: 'refused', message: errorMessage(err, 'Prix momentanément indisponible. Réessayez.'), retry });
+                setQuote({ key: quoteKey, quote: null, refusal: { message: errorMessage(err, 'Prix momentanément indisponible. Réessayez.'), retry }, pending: false });
             }
-        }, 250);
+        }, QUOTE_DELAY_MS);
         return () => {
             window.clearTimeout(timer);
             c.abort();
@@ -124,7 +141,11 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [quoteKey, hall.id, attempt]);
 
-    const q = quote.phase === 'ok' ? quote.quote : null;
+    // Devis affiché (peut être celui du choix précédent pendant le calcul) ; réservation seulement sur le devis à jour
+    const q = quoteKey ? quote.quote : null;
+    const refusal = quoteKey ? quote.refusal : null;
+    const calculating = Boolean(quoteKey) && (quote.pending || quote.key !== quoteKey);
+    const upToDate = Boolean(q) && !calculating;
 
     // Conditions d'annulation différentes : la case est à recocher après lecture
     const readTerms = useRef<string | null>(null);
@@ -135,7 +156,7 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
     }, [q]);
     const oneShot = q ? singlePayment(q) : false;
     const part: 'ACOMPTE' | 'INTEGRAL' = q && (oneShot || payAll) ? 'INTEGRAL' : 'ACOMPTE';
-    const canReserve = Boolean(q) && accepted && !submitting && !created;
+    const canReserve = upToDate && accepted && !submitting && !created;
 
     const hourOptions = useMemo(() => {
         const max = time ? maxHoursFrom(time) : 24;
@@ -143,7 +164,7 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
     }, [time]);
 
     const reserve = async () => {
-        if (!q || !accepted) return;
+        if (!q || !upToDate || !accepted) return;
         if (!authLoading && !user) {
             router.push(loginHref());
             return;
@@ -271,37 +292,46 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
                 )}
             </div>
 
-            <div aria-live="polite" aria-busy={quote.phase === 'loading'}>
-                {quote.phase === 'idle' && (
+            <p className="sr-only" role="status">
+                {calculating ? 'Calcul du prix…' : q ? `Total : ${fcfaText(q.totalAmount)}.` : ''}
+            </p>
+            <div aria-busy={calculating}>
+                {!quoteKey && (
                     <p className="rounded-xl border border-dashed border-border bg-muted p-4 text-sm text-muted-foreground">
                         {mode === 'HEURE' && date && !time ? 'Choisissez l’heure de début pour voir le prix exact.' : 'Choisissez une date pour voir le prix exact, l’acompte et les conditions.'}
                     </p>
                 )}
-                {quote.phase === 'loading' && (
-                    <div className="space-y-3 rounded-xl border border-border p-4">
-                        <span className="sr-only">Calcul du prix…</span>
-                        <Skeleton className="h-5 w-2/3 rounded-md" />
-                        <Skeleton className="h-5 w-1/2 rounded-md" />
-                        <Skeleton className="h-6 w-3/4 rounded-md" />
-                        <Skeleton className="h-5 w-1/2 rounded-md" />
-                    </div>
+                {quoteKey && !q && !refusal && (
+                    <p className="flex items-center gap-2 rounded-xl border border-border p-4 text-sm text-muted-foreground">
+                        <Calculator size={18} className="flex-shrink-0" aria-hidden="true" />
+                        Calcul du prix…
+                    </p>
                 )}
-                {quote.phase === 'refused' && (
+                {refusal && (
                     <StatusBanner
-                        tone={quote.retry ? 'danger' : 'warning'}
-                        title={quote.retry ? 'Prix momentanément indisponible' : 'Ce choix n’est pas possible'}
-                        action={quote.retry ? <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>Réessayer</Button> : undefined}
+                        tone={refusal.retry ? 'danger' : 'warning'}
+                        title={refusal.retry ? 'Prix momentanément indisponible' : 'Ce choix n’est pas possible'}
+                        action={refusal.retry ? <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)} isLoading={calculating}>Réessayer</Button> : undefined}
                     >
-                        {quote.message}
+                        {refusal.message}
+                        {calculating && <span className="mt-1 block">Calcul du prix…</span>}
                     </StatusBanner>
                 )}
                 {q && (
                     <div className="space-y-4">
                         <div className="rounded-xl border border-border p-4">
-                            <p className="flex items-start gap-2 text-sm font-semibold text-foreground-strong">
-                                <CalendarClock size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-                                <span>{capitalize(periodText({ start_date: q.startDate, end_date: q.endDate, start_time: q.startTime, end_time: q.endTime }))}</span>
-                            </p>
+                            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                                <p className="flex min-w-0 items-start gap-2 text-sm font-semibold text-foreground-strong">
+                                    <CalendarClock size={18} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                                    <span>{capitalize(periodText({ start_date: q.startDate, end_date: q.endDate, start_time: q.startTime, end_time: q.endTime }))}</span>
+                                </p>
+                                {calculating && (
+                                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                        <Calculator size={16} className="flex-shrink-0" aria-hidden="true" />
+                                        Calcul du prix…
+                                    </p>
+                                )}
+                            </div>
                             <dl className="mt-2 divide-y divide-border">
                                 <AmountRow label={`Prix (${unitsText(q.mode, q.units)})`} value={fcfaText(q.priceAmount)} />
                                 <AmountRow label="Frais de service" value={fcfaText(q.serviceFeeAmount)} />
@@ -368,7 +398,7 @@ export function HallBookingPanel({ hall, today }: { hall: { id: string; name: st
                 </Button>
                 {q && !accepted && <p className="text-sm text-muted-foreground">Cochez « J’ai lu les conditions d’annulation » pour continuer.</p>}
                 {q && accepted && !authLoading && !user && <p className="text-sm text-muted-foreground">Vous allez vous connecter ; votre choix sera gardé.</p>}
-                <p className="text-sm text-muted-foreground">Après la réservation, la date vous est gardée quelques minutes, le temps de payer par Wave ou Orange Money.</p>
+                <p className="text-sm text-muted-foreground">{`Après la réservation, la date vous est gardée ${minutesText(hall.holdMinutes)}, le temps de payer par Wave ou Orange Money.`}</p>
             </div>
         </div>
     );
