@@ -12,7 +12,7 @@
 import '../helpers/env';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NOTIFICATION_CATALOG, renderNotification } from '../../lib/notifications/catalog';
+import { NOTIFICATION_CATALOG, renderNotification, renderSyncSms } from '../../lib/notifications/catalog';
 
 type Any = Record<string, unknown>;
 const CTX = { appUrl: 'https://app.eventvillage.sn' };
@@ -147,6 +147,41 @@ describe('3. textes justes', () => {
     test('réactivation : aucun motif transmis, texte inchangé', () => {
         assert.equal(I('ACCOUNT_REACTIVATED', {}).content, 'Votre compte est réactivé : vous pouvez de nouveau vous connecter.');
         assert.doesNotMatch(S('PARTNER_REACTIVATED'), /Motif/);
+    });
+});
+
+describe('5. design 1c : « super-administrateur », écart de caisse en mots', () => {
+    test('aucun modèle ne dit « Superadmin » (cloche, SMS, libellé), code du numéro administrateur compris', () => {
+        const found: string[] = [];
+        for (const [type, tpl] of Object.entries(CATALOG)) {
+            if (tpl.syncOnly) continue;
+            const t = tpl as unknown as { label: string };
+            if (/Superadmin/.test(t.label)) found.push(`${type} : libellé`);
+            if (tpl.channels.includes('IN_APP')) { const r = I(type); if (/Superadmin/.test(r.title + r.content)) found.push(`${type} : cloche`); }
+            if (tpl.channels.includes('SMS') && /Superadmin/.test(S(type))) found.push(`${type} : SMS`);
+        }
+        for (const type of ['ADMIN_PHONE_CHANGED', 'ADMIN_PHONE_CONFIRMED']) {
+            for (const by_self of [true, false]) {
+                const text = S(type, { by_self });
+                assertOneSegment(`${type} ${by_self}`, text);
+                if (/Superadmin/.test(text)) found.push(`${type} by_self=${by_self}`);
+            }
+        }
+        const code = renderSyncSms('OTP_ADMIN_PHONE', { code: '483920' });
+        if (/Superadmin/.test(code)) found.push('OTP_ADMIN_PHONE');
+        assert.deepEqual(found, []);
+        assertOneSegment('OTP_ADMIN_PHONE', code);
+        assert.match(code, /Donnez-le seulement au super-administrateur\./);
+    });
+    test('écart de caisse : « Il manque … », « … de trop », un seul SMS au pire cas', () => {
+        assert.equal(S('SHIFT_DISCREPANCY', { difference: -2_500 }), 'Event Village : caisse de Fatou Sow fermée (Gala de la Teranga). Il manque 2 500 F CFA. https://app.eventvillage.sn/partner/events');
+        assert.equal(S('SHIFT_DISCREPANCY', { difference: 2_500 }), 'Event Village : caisse de Fatou Sow fermée (Gala de la Teranga). 2 500 F CFA de trop. https://app.eventvillage.sn/partner/events');
+        assert.equal(I('SHIFT_DISCREPANCY', { difference: -2_500, justification: null }).content, 'La caisse de Fatou Sow pour « Gala de la Teranga » est fermée. Il manque 2 500 F CFA.');
+        for (const difference of [-9_999_999, 9_999_999, -1, 1]) {
+            const text = sms('SHIFT_DISCREPANCY', { ...long(CATALOG.SHIFT_DISCREPANCY.sample), controller_name: 'Mame Diarra Ndiaye Diop Sarr', difference });
+            assertOneSegment(`écart ${difference}`, text);
+            assert.doesNotMatch(text, /écart de [-+]/);
+        }
     });
 });
 

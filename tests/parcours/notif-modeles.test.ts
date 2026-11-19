@@ -818,9 +818,9 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['CATEGORY_SOLD_OUT', { ...ev, category: 'VIP' }, [], `Event Village : la catégorie VIP de Gala Dakar est complète. ${U}/partner/events`],
             ['EVENT_SOLD_OUT', ev, [], `Event Village : Gala Dakar est complet, toutes les catégories sont vendues. ${U}/partner/events`],
             ['SHIFT_DISCREPANCY', { ...ev, controller_name: 'Fatou Sow', difference: -2500 }, [],
-                `Event Village : caisse de Fatou Sow fermée (Gala Dakar) avec un écart de -2 500 F CFA. ${U}/partner/events`],
+                `Event Village : caisse de Fatou Sow fermée (Gala Dakar). Il manque 2 500 F CFA. ${U}/partner/events`], // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
             ['SHIFT_DISCREPANCY', { ...ev, controller_name: 'Fatou Sow', difference: 1000 }, [],
-                `Event Village : caisse de Fatou Sow fermée (Gala Dakar) avec un écart de +1 000 F CFA. ${U}/partner/events`],
+                `Event Village : caisse de Fatou Sow fermée (Gala Dakar). 1 000 F CFA de trop. ${U}/partner/events`],
             ['WITHDRAWAL_PAID', { amount: 25000, operator: 'WAVE' }, [], 'Event Village : votre retrait de 25 000 F CFA a été versé sur votre compte Wave.'],
             ['WITHDRAWAL_REJECTED', { amount: 25000, operator: 'WAVE' }, [],
                 'Event Village : votre retrait de 25 000 F CFA a été refusé par l\'opérateur. Le montant est revenu sur votre solde.'],
@@ -860,18 +860,18 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : plusieurs connexions ont échoué sur votre compte. Si ce n'est pas vous, changez votre mot de passe : ${U}/forgot-password`],
             // Finition 3d (point 3) : alerte aux SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
             ['SUPERADMIN_PROMOTED', { user_name: 'Awa Ndiaye', actor_name: 'Moussa Diop' }, [],
-                'Event Village : Awa Ndiaye est maintenant Superadmin, nommé par Moussa Diop. Si ce n\'est pas prévu, réagissez tout de suite.'],
+                'Event Village : Awa Ndiaye est maintenant super-administrateur, nommé par Moussa Diop. Si ce n\'est pas prévu, réagissez tout de suite.'], // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
             // Finition 3d (point 2) : code de secours utilisé, numéro d'un administrateur remplacé (ancien et nouveau numéro). Ajout signalé.
             ['ADMIN_BACKUP_CODE_USED', { remaining: 9 }, [],
-                'Event Village : un code de secours de votre compte Superadmin vient de servir. Si ce n\'est pas vous, alertez tout de suite un autre Superadmin.'],
+                'Event Village : un code de secours de votre compte de super-administrateur vient de servir. Si ce n\'est pas vous, alertez vite un autre super-administrateur.'],
             ['ADMIN_PHONE_CHANGED', { by_self: false }, [],
-                'Event Village : le Superadmin a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.'],
+                'Event Village : le super-administrateur a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.'],
             ['ADMIN_PHONE_CHANGED', { by_self: true }, [],
-                'Event Village : le numéro de votre compte Superadmin a été remplacé. Si ce n\'est pas vous, alertez tout de suite un autre Superadmin.'],
+                'Event Village : le numéro de votre compte de super-administrateur a été remplacé. Si ce n\'est pas vous, alertez tout de suite un autre super-administrateur.'],
             ['ADMIN_PHONE_CONFIRMED', { by_self: false }, [],
                 'Event Village : ce numéro est maintenant celui de votre compte administrateur. Reconnectez-vous avec votre mot de passe.'],
             ['ADMIN_PHONE_CONFIRMED', { by_self: true }, [],
-                'Event Village : ce numéro est maintenant celui de votre compte Superadmin. Vos autres appareils sont déconnectés.'],
+                'Event Village : ce numéro est maintenant celui de votre compte de super-administrateur. Vos autres appareils sont déconnectés.'],
             // Lot 10a (migration 20261122000007) : SMS du parcours de réservation d'une salle, texte exact (exemples du catalogue). Ajout signalé.
             ['HALL_RESERVATION_CONFIRMED', {}, [],
                 'Event Village : réservation confirmée : Salle des fetes de Ngor, du 5 déc. au 6 déc. Reste 294 000 F CFA à payer avant le 28 nov.'],
@@ -1365,7 +1365,7 @@ function lot9quinquiesExpected(): ExpectedType[] {
         // (cloche, push, email), reçu même fiche suspendue. Ajout signalé.
         ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
         // Finition 3d (point 3, migration 20261120000003) : alerte à chaque SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
-        ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau Superadmin'),
+        ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau super-administrateur'),
         // Finition 3d (point 2, migrations 20261120000004 et …05) : code de secours utilisé, numéro d'un administrateur
         // remplacé (ancien et nouveau numéro), code au nouveau numéro. Ajout signalé.
         ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A', null, ['/admin/securite'], null),
