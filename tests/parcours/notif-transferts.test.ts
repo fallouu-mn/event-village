@@ -321,7 +321,8 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
         assert.equal(tr.to_user_id, to.userId, 'to_user_id');
 
         const sender = await outboxRows({ type: 'TRANSFER_CLAIMED_SENDER', keyPrefix: `TRANSFER_CLAIMED_SENDER:${id}:` });
-        assert.deepEqual(channelsOf(sender), ['EMAIL', 'IN_APP', 'PUSH'], `expéditeur prévenu (in-app, push, email par G.49 ; aucun SMS, décision 15) : ${JSON.stringify(sender.map((r) => r.channel))}`);
+        // Finition 4 (décision du client du 19/11 : chaque étape importante sur les 4 canaux ; modification signalée au rapport) : l'expéditeur est prévenu aussi par SMS (décision 15 remplacée)
+        assert.deepEqual(channelsOf(sender), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `expéditeur prévenu (in-app, push, email, SMS) : ${JSON.stringify(sender.map((r) => r.channel))}`);
         assert.ok(sender.every((r) => r.recipient_user_id === owner.userId), 'à l’expéditeur');
         const received = await outboxRows({ type: 'TRANSFER_RECEIVED', keyPrefix: `TRANSFER_RECEIVED:${id}:` });
         // Lot 7, tâche 7.9 (D91) : le destinataire reçoit aussi l'email de confirmation (nouveau numéro du billet).
@@ -330,7 +331,9 @@ describe('6.7 Transfert — acceptation par identifiant (B3 ticket_transfer_acce
         const mark = smsMark(owner.phoneE164);
         const markTo = smsMark(to.phoneE164);
         await dispatchAt(new Date(), { ids: [...sender, ...received].map((r) => r.id) });
-        assert.equal(smsTo(owner.phoneE164, mark).length + smsTo(to.phoneE164, markTo).length, 0, 'aucun SMS après l’acceptation');
+        // Finition 4 : un SMS à l'expéditeur (reporté à 07:00 s'il est préparé la nuit), aucun au destinataire (il vient d'accepter)
+        assert.ok(smsTo(owner.phoneE164, mark).length <= 1, 'au plus un SMS à l’expéditeur');
+        assert.equal(smsTo(to.phoneE164, markTo).length, 0, 'aucun SMS au destinataire après l’acceptation');
 
         const again = await claim(to, id);
         assert.equal(again.status, 409, `second appel : ${show(again)}`);

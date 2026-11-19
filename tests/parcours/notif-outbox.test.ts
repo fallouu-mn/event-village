@@ -111,7 +111,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('EVENT_REACTIVATED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_PUBLISHED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'B'), // G.49
     opt('FIRST_TICKET_SOLD', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
-    opt('NEW_ORDER', 'PRO_ACTIVITY', [I, P], 'PARTNER'),
+    opt('NEW_ORDER', 'PRO_ACTIVITY', [I], 'PARTNER'),
     opt('CATEGORY_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
     opt('EVENT_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
     ess('SHIFT_DISCREPANCY', [I, S, P, M], 'PARTNER', 'A'), // G.49
@@ -953,8 +953,9 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             const rowsAfter = await groupRows(db, key);
             return { created, rows, replay, rowsAfter };
         });
-        assert.equal(r.created, 3, `lignes créées : ${show(r.rows)}`);
-        assert.deepEqual(channelsOf(r.rows), ['EMAIL', 'IN_APP', 'SMS'], 'canaux du registre (I S M)');
+        // Finition 4 (décision du client du 19/11, modification signalée au rapport) : PURCHASE_CONFIRMED a aussi le push
+        assert.equal(r.created, 4, `lignes créées : ${show(r.rows)}`);
+        assert.deepEqual(channelsOf(r.rows), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'canaux du registre (I S M P)');
         for (const row of r.rows) {
             const what = `ligne ${row.channel}`;
             assert.equal(row.idempotency_key, `${key}:${row.channel}`, `${what} : clé`);
@@ -1008,7 +1009,7 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             const nPhone = await enqueue(db, { type: 'TRANSFER_OFFERED', key: k.phoneOnly, phone, data: { transfer_id: randomUUID() }, channels: ['SMS', 'IN_APP', 'PUSH'], now: now.toISOString() });
             return { nDue, due: await groupRows(db, k.due), nSms, sms: await groupRows(db, k.sms), nPhone, phone: await groupRows(db, k.phoneOnly) };
         });
-        assert.equal(r.nDue, 3);
+        assert.equal(r.nDue, 4); // finition 4 : + push (signalé)
         for (const row of r.due) {
             assert.equal(new Date(row.due_at).getTime(), due.getTime(), `${row.channel} : due_at fourni`);
             assert.equal(new Date(row.next_attempt_at).getTime(), due.getTime(), `${row.channel} : next_attempt_at = due_at`);
@@ -1081,7 +1082,8 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
                 partnerBlock: await groupRows(db, k.partnerBlock), partnerAllow: await groupRows(db, k.partnerAllow),
             };
         });
-        assert.deepEqual(r.n, { block: 4, allow: 3, partnerBlock: 4, partnerAllow: 4 }, 'une ligne par canal du registre, SKIPPED compris (SHIFT_DISCREPANCY + EMAIL, G.49)');
+        // Finition 4 : PURCHASE_CONFIRMED a aussi le push (modification signalée au rapport)
+        assert.deepEqual(r.n, { block: 4, allow: 4, partnerBlock: 4, partnerAllow: 4 }, 'une ligne par canal du registre, SKIPPED compris (SHIFT_DISCREPANCY + EMAIL, G.49)');
         for (const row of [...r.block, ...r.partnerBlock]) {
             assert.equal(row.status, 'SKIPPED', `${row.type}/${row.channel} : ${show([row])}`);
             assert.equal(row.reason, 'ACCOUNT_SUSPENDED', `${row.type}/${row.channel} : le compte bloqué passe avant la préférence`);

@@ -181,7 +181,8 @@ describe('9b.33 R33 : contrôleurs affectés prévenus (annulation et changement
 
         const rows = await rowsOf('CONTROLLER_EVENT_STATUS', ev.eventId, controller.userId);
         assert.equal(rows.filter((r) => r.channel === 'IN_APP').length, 2, `deux avis in-app (suspension, reprise) : ${describeRows(rows)}`);
-        assert.deepEqual(rows.filter((r) => r.channel === 'SMS'), [], 'aucun SMS à la suspension ni à la reprise');
+        // Finition 4 (décision du client du 19/11 : chaque étape importante sur les 4 canaux ; modification signalée au rapport) : les contrôleurs affectés sont prévenus aussi par SMS
+        assert.equal(rows.filter((r) => r.channel === 'SMS').length, 2, `un SMS à la suspension et un à la reprise : ${describeRows(rows)}`);
     });
 
     test('changement de lieu : CONTROLLER_EVENT_CHANGED en in-app tout de suite et par SMS dû dans 10 minutes', async () => {
@@ -218,7 +219,8 @@ describe('9b.35 R24 : suspension et reprise en in-app et push pour les porteurs,
         const statusRows = await outboxRows({ type: ['EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER'], eventId: ev.eventId, userId: holder.userId });
         assert.deepEqual(Array.from(new Set(statusRows.map((r) => r.type))).sort(), ['EVENT_REACTIVATED_HOLDER', 'EVENT_SUSPENDED_HOLDER'],
             `le porteur est prévenu de la suspension et de la reprise : ${describeRows(statusRows)}`);
-        assert.deepEqual(statusRows.filter((r) => r.channel === 'SMS'), [], 'aucun SMS à la suspension ni à la reprise (décision R24)');
+        // Finition 4 (décision du client du 19/11 : chaque étape importante sur les 4 canaux ; modification signalée au rapport) : la décision R24 (sans SMS) est remplacée ; SMS facultatif du sujet « Suspension et reprise »
+        assert.equal(statusRows.filter((r) => r.channel === 'SMS').length, 2, `un SMS à la suspension et un à la reprise : ${describeRows(statusRows)}`);
 
         assertRpcOk(await rpcCancel(ev.eventId, admin, cancelInput(ev)), 'annulation');
         const cancelled = await outboxRows({ type: 'EVENT_CANCELLED', eventId: ev.eventId, userId: holder.userId, channel: 'SMS' });

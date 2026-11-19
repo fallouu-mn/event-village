@@ -222,7 +222,8 @@ describe('4a. espèces marquées rendues par un admin (refunds.manage), à la pl
         assert.equal(outbox![0].recipient_user_id, c.owner.userId);
         assert.equal((outbox![0].template_data as Row).reason, 'Espèces rendues par la billetterie du lieu');
         const { data: channels } = await service.from('notification_outbox').select('channel').eq('group_key', `CASH_REFUND_MARKED_BY_ADMIN:${paymentId}`);
-        assert.deepEqual((channels ?? []).map((x) => x.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH']);
+        // Finition 4 (décision du client du 19/11, modification signalée au rapport) : SMS à l'organisatrice en plus
+        assert.deepEqual((channels ?? []).map((x) => x.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH', 'SMS']);
     });
 
     test('second appel : 200 ALREADY_MARKED, la marque existante, aucun second avis', async () => {
@@ -230,7 +231,7 @@ describe('4a. espèces marquées rendues par un admin (refunds.manage), à la pl
         const r = await adminMark(refunder, c, paymentId, { reason: 'Encore une fois' });
         assert.deepEqual([r.status, r.body.code], [200, 'ALREADY_MARKED'], show(r));
         const { data: rows } = await service.from('notification_outbox').select('id').eq('group_key', `CASH_REFUND_MARKED_BY_ADMIN:${paymentId}`);
-        assert.equal((rows ?? []).length, 3);
+        assert.equal((rows ?? []).length, 4, 'une ligne par canal, aucun second avis (finition 4 : 4 canaux)');
     });
 
     test('le client reçoit le même avis que si l’organisatrice avait marqué : aucun, dans un cas comme dans l’autre', async () => {

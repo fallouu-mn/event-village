@@ -56,8 +56,6 @@ describe('point 2 — ventes de l’organisatrice', () => {
         const bells = await rows('NEW_ORDER', 'IN_APP');
         assert.equal(bells.length, 1, 'toujours une seule cloche');
         assert.deepEqual([td(bells[0], 'ticket_count'), td(bells[0], 'order_count'), td(bells[0], 'total')], [3, 2, 15_000]);
-        const push = await rows('NEW_ORDER', 'PUSH');
-        assert.ok(push.length === 1 && td(push[0], 'ticket_count') === 3, 'le push suit la cloche');
         const sms = await rows('SALES_UPDATE_SMS', 'SMS');
         const firstSms = (await rows('FIRST_TICKET_SOLD', 'SMS'))[0];
         assert.equal(sms.length, 1, 'un SMS groupé en attente');

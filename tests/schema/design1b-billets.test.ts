@@ -196,7 +196,7 @@ describe('e. liens des avis vers le bon onglet de Mes billets', () => {
         PURCHASE_CONFIRMED: 'a-venir', FREE_TICKETS_CONFIRMED: 'a-venir', TRANSFER_RECEIVED: 'a-venir', TRANSFER_EXPIRED: 'a-venir',
         TRANSFER_DECLINED_SENDER: 'a-venir', TRANSFER_RECIPIENT_CHANGED: 'a-venir', TRANSFER_CLAIMED_SENDER: 'a-venir',
         REMINDER_J1: 'a-venir', REMINDER_H3: 'a-venir',
-        INVITATION_RECEIVED: 'recus', TRANSFER_OFFERED: 'recus', TRANSFER_CANCELLED: 'recus', TRANSFER_REVOKED: 'recus',
+        INVITATION_RECEIVED: 'a-venir' /* finition 4 (E-42, signalé) */, TRANSFER_OFFERED: 'recus', TRANSFER_CANCELLED: 'recus', TRANSFER_REVOKED: 'recus',
         TICKET_SCANNED: 'historique', EVENT_CANCELLED: 'historique', REFUND_REQUESTED: 'historique', REFUND_PAID: 'historique',
         REFUND_DELAYED: 'historique', PAYMENT_REFUND_STARTED: 'historique', TICKET_CANCELLED: 'historique', TICKET_REFUNDED_HOLDER: 'historique',
         EVENT_CLOSED_HOLDER: 'tous',
