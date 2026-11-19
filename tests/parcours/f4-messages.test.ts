@@ -22,6 +22,7 @@ import { buyConfirmed, createPartnerEvent, newPartner, type Purchase, type TestP
 import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { dakarAt, dakarDay, dispatchAt, insertOutboxRow, outboxRows, type OutboxRow } from './notif-helpers';
 import { smsActorLimited } from '../../lib/notifications/dispatcher';
+import { createTimedEvent } from './acces-helpers';
 
 type SaleEvent = Awaited<ReturnType<typeof createPartnerEvent>>;
 const MIN = 60_000;
@@ -210,6 +211,47 @@ describe('point 1 — la nuit (01:00 → 07:00, heure de Dakar)', () => {
         const far = await reminder(180);
         await dispatchAt(new Date(start - 180 * MIN), { ids: [far.id] });
         assert.notEqual((await outboxRows({ ids: [far.id] }))[0].reason, 'TOO_CLOSE_TO_START');
+    });
+});
+
+describe('règle du 20/11 — un avis lié à un événement proche (moins de 12 h) ou en cours n’attend pas la fin de la nuit', () => {
+    test('à 03:00 (heure simulée) : événement à 05:00 et événement en cours → envoyé ; événement lointain → reporté ; invitation de contrôleur par sa liste d’événements', async () => {
+        const day = dakarDay(9);
+        const at = dakarAt(day, '03:00');
+        const hoursUntil = (d: Date): number => (d.getTime() - Date.now()) / 3_600_000;
+        const soon = await createTimedEvent(partner.partnerId, 'f4-proche', [{ name: 'Standard', price: 5_000, total: 10 }], { startsInHours: hoursUntil(dakarAt(day, '05:00')), durationHours: 3 });
+        const running = await createTimedEvent(partner.partnerId, 'f4-en-cours', [{ name: 'Standard', price: 5_000, total: 10 }], { startsInHours: hoursUntil(dakarAt(day, '00:30')), durationHours: 6 });
+        const row = (eventId: string | null, type = 'TRANSFER_EXPIRED', data: Record<string, unknown> = {}) => insertOutboxRow({
+            type, family: 'ESSENTIAL', channel: 'SMS', recipient_user_id: partner.userId, event_id: eventId, template_data: data,
+            due_at: at.toISOString(), next_attempt_at: at.toISOString(),
+        });
+        const invitation = (eventId: string) => ({
+            invitation_id: '0b6f0a52-3f1e-4d2a-9c11-5e8f2a4b6c99', controller_name: 'Awa Diop',
+            events: [{ event_id: eventId, title: 'TEST invitation', start_at: dakarAt(day, '05:00').toISOString() }],
+        });
+        const rSoon = await row(soon.eventId);
+        const rRunning = await row(running.eventId);
+        const rFar = await row(ev.eventId);
+        const iSoon = await row(null, 'CONTROLLER_INVITATION_DECLINED', invitation(soon.eventId));
+        const iFar = await row(null, 'CONTROLLER_INVITATION_DECLINED', invitation(ev.eventId));
+        await dispatchAt(at, { ids: [rSoon.id, rRunning.id, rFar.id, iSoon.id, iFar.id] });
+        const get = async (r: OutboxRow): Promise<OutboxRow> => (await outboxRows({ ids: [r.id] }))[0];
+        for (const [what, r] of [['événement à 05:00', rSoon], ['événement en cours', rRunning], ['invitation (événement à 05:00)', iSoon]] as const) {
+            const x = await get(r);
+            assert.equal(x.status, 'SENT', `${what} : envoyé tout de suite (${x.status} ${x.reason ?? ''} ${JSON.stringify(x.decision)})`);
+            assert.equal((x.decision?.quiet as Record<string, unknown> | undefined)?.event_soon, true, `${what} : instantané quiet.event_soon`);
+        }
+        for (const [what, r] of [['événement lointain', rFar], ['invitation (événement lointain)', iFar]] as const) {
+            const x = await get(r);
+            assert.equal(x.status, 'PENDING', `${what} : reporté (${x.status})`);
+            assert.equal((x.decision as Record<string, unknown> | null)?.outcome, 'DEFER', `${what} : décision DEFER`);
+            assert.equal(Date.parse(String(x.next_attempt_at)), dakarAt(day, '07:00').getTime(), `${what} : à 07:00`);
+        }
+        const fn = await writeLocal(async (c) => (await c.query<{ a: boolean; b: boolean; c: boolean; d: boolean }>(
+            `SELECT public.notif_event_soon($1, '{}'::jsonb, $3) AS a, public.notif_event_soon($2, '{}'::jsonb, $3) AS b,
+                    public.notif_event_soon($1, '{}'::jsonb, $4) AS c, public.notif_event_soon(NULL, '{}'::jsonb, $3) AS d`,
+            [soon.eventId, ev.eventId, at.toISOString(), dakarAt(day, '09:00').toISOString()])).rows[0]);
+        assert.deepEqual(fn, { a: true, b: false, c: false, d: false }, 'proche à 03:00 ; lointain ; fini à 09:00 ; sans événement');
     });
 });
 

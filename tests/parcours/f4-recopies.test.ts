@@ -27,6 +27,8 @@ const REPLACED: Record<string, Record<string, string[]>> = {
         // nuit : le SMS facultatif n'est plus « non envoyé » (QUIET_HOURS) ; il est reporté (bloc NIGHT, avant le SMS)
         "ELSIF r.family = 'OPTIONAL' THEN": ["ELSIF r.family = 'OPTIONAL'"],
         'IF v_qs IS NULL OR v_qe IS NULL THEN': ['IF v_qs IS NOT NULL AND v_qe IS NOT NULL THEN'],
+        // règle du 20/11 (migration …06) : événement proche d'abord, report de nuit ensuite
+        'IF v_in_quiet THEN': ['IF v_in_quiet AND public.notif_event_soon(r.event_id, r.template_data, v_now) THEN', 'ELSIF v_in_quiet THEN'],
         "v_outcome := 'SKIP'; v_reason := 'QUIET_HOURS';": ["v_outcome := 'DEFER'; v_reason := 'NIGHT';"],
         // cas ADMIN_NIGHT du correctif main-414 : remplacé par le report général (ADMIN_REVIEW_SMS est DEFER au registre)
         "IF v_outcome = 'SEND' AND r.type = 'ADMIN_REVIEW_SMS' AND public.notif_admin_review_due(v_now) > v_now THEN":
@@ -137,6 +139,29 @@ describe('1. recopies de la finition 4 : tout le code de la dernière version de
             assert.deepEqual(lost, [], `${name} : lignes de ${main.file} perdues dans ${f4.file}`);
             assert.deepEqual(missing, [], `${name} : remplaçantes absentes de ${f4.file}`);
             assert.deepEqual(stale, [], `${name} : lignes listées comme remplacées qui ne sont pas (ou plus) dans main, ou encore présentes`);
+        });
+    }
+});
+
+/** Lignes d'une recopie de la branche remplacées par la recopie suivante de la branche (→ lignes exigées). */
+const REPLACED_IN_F4: Record<string, Record<string, string[]>> = {
+    notification_outbox_claim: {
+        'IF v_in_quiet THEN': ['IF v_in_quiet AND public.notif_event_soon(r.event_id, r.template_data, v_now) THEN', 'ELSIF v_in_quiet THEN'],
+    },
+};
+
+describe('1 bis. recopies successives de la branche : la dernière garde tout de la précédente', () => {
+    for (const name of Object.keys(REPLACED)) {
+        const f4defs = definitions(name).filter((d) => d.file >= FIRST_F4);
+        if (f4defs.length < 2) continue;
+        test(`${name} : ${f4defs.at(-2)!.file} → ${f4defs.at(-1)!.file}`, () => {
+            const prev = f4defs.at(-2)!;
+            const last = new Set(lines(f4defs.at(-1)!.body));
+            const replaced = REPLACED_IN_F4[name] ?? {};
+            const lost = lines(prev.body).filter((l) => !last.has(l) && !(l in replaced));
+            const missing = Object.entries(replaced).flatMap(([l, rs]) => rs.filter((r) => !last.has(r)).map((r) => `${l} → ${r}`));
+            assert.deepEqual(lost, [], `${name} : lignes de ${prev.file} perdues`);
+            assert.deepEqual(missing, [], `${name} : remplaçantes absentes`);
         });
     }
 });
