@@ -11,6 +11,12 @@
 -- notification_outbox_claim (recopie de 20261125000002_f4_nuit.sql, dernière définition de la branche) : dans la plage de nuit,
 -- une ligne SMS ou push d'un type non urgent liée à un événement proche part tout de suite (décision SEND, instantané
 -- quiet.event_soon = true) ; les autres sont reportées comme avant. Seul changement de la fonction.
+-- Correctifs de la contre-vérification (docs/audit-finition-4.md, 20/11), dans cette même migration (aucune n'est appliquée) :
+--  T1 : à la réservation, un avis d'état au porteur dont l'état n'est plus celui annoncé est annulé (SUSPENDU pour
+--      EVENT_SUSPENDED_HOLDER, PUBLIE pour EVENT_REACTIVATED_HOLDER) ; notif_cancel_on_status (recopie de
+--      20261109000009_lot9bis_messages.sql:941) annule aussi ces lignes en attente au changement d'état ;
+--  T2 : la règle des 12 heures envoie tout de suite ; en plus, à la réservation, un avis d'état dont l'événement est terminé
+--      (statut TERMINE ou fin passée) est annulé (motif EVENT_TERMINE).
 -- Droits inchangés (CREATE OR REPLACE). Aucun BEGIN ni COMMIT ; rejouable.
 -- ============================================================================
 
@@ -261,6 +267,16 @@ BEGIN
         -- Finition 4 (point 3) : merci du lendemain sans objet si l'événement est annulé ou supprimé
         ELSIF v_outcome = 'SEND' AND r.type = 'ENTRY_THANKS' AND (NOT v_found_event OR v_estatus = 'ANNULE') THEN
             v_outcome := 'CANCEL'; v_reason := 'NO_LONGER_RELEVANT';
+        -- Contre-vérification de la finition 4 (T2) : avis d'état au porteur d'un événement terminé (statut ou fin passée)
+        ELSIF v_outcome = 'SEND' AND r.type IN ('EVENT_SUSPENDED_HOLDER', 'EVENT_REACTIVATED_HOLDER')
+              AND v_found_event AND (v_estatus = 'TERMINE' OR v_now >= public.event_end_at(r.event_id)) THEN
+            v_outcome := 'CANCEL'; v_reason := 'EVENT_TERMINE';
+        -- Contre-vérification de la finition 4 (T1) : l'état n'est plus celui annoncé (suspendu puis annulé ou repris, repris
+        -- puis de nouveau suspendu) : l'avis n'est plus vrai
+        ELSIF v_outcome = 'SEND'
+              AND ((r.type = 'EVENT_SUSPENDED_HOLDER' AND (NOT v_found_event OR v_estatus IS DISTINCT FROM 'SUSPENDU'))
+                   OR (r.type = 'EVENT_REACTIVATED_HOLDER' AND (NOT v_found_event OR v_estatus IS DISTINCT FROM 'PUBLIE'))) THEN
+            v_outcome := 'CANCEL'; v_reason := 'NO_LONGER_RELEVANT';
         END IF;
 
         -- Finition 4 (point 1) : nuit. Un SMS ou un push d'un type non urgent (night_policy DEFER : toute la famille OPTIONAL,
@@ -436,3 +452,49 @@ BEGIN
     );
 END;
 $$;
+
+-- Recopie : 20261109000009_lot9bis_messages.sql:941 (contre-vérification, T1)
+CREATE OR REPLACE FUNCTION public.notif_cancel_on_status()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    -- Contre-vérification de la finition 4 (T1) : le déclencheur réagit aussi à PUBLIE (reprise) ; les rappels ne sont
+    -- annulés que pour les statuts d'origine (SUSPENDU, ANNULE, TERMINE), jamais à une publication
+    IF NEW.new_status::text IN ('SUSPENDU', 'ANNULE', 'TERMINE') THEN
+    UPDATE public.notification_outbox
+       SET status = 'CANCELLED', reason = 'EVENT_' || NEW.new_status::text, finished_at = now()
+     WHERE event_id = NEW.event_id
+       AND status = 'PENDING'
+       AND type IN ('REMINDER_J1', 'REMINDER_H3', 'CONTROLLER_REMINDER');
+    END IF;
+    -- Contre-vérification de la finition 4 (T1) : un avis d'état au porteur en attente qui n'est plus vrai est annulé (suspendu
+    -- puis repris, annulé ou terminé ; repris puis suspendu de nouveau, annulé ou terminé)
+    UPDATE public.notification_outbox
+       SET status = 'CANCELLED', reason = 'NO_LONGER_RELEVANT', finished_at = now()
+     WHERE event_id = NEW.event_id
+       AND status = 'PENDING'
+       AND ((type = 'EVENT_SUSPENDED_HOLDER' AND NEW.new_status::text <> 'SUSPENDU')
+            OR (type = 'EVENT_REACTIVATED_HOLDER' AND NEW.new_status::text <> 'PUBLIE'));
+    IF NEW.new_status::text IN ('ANNULE', 'TERMINE') THEN
+        UPDATE public.notification_outbox
+           SET status = 'CANCELLED', reason = 'NO_LONGER_RELEVANT', finished_at = now()
+         WHERE event_id = NEW.event_id
+           AND status = 'PENDING'
+           AND type IN ('EVENT_CHANGED', 'CONTROLLER_EVENT_CHANGED');
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- Contre-vérification de la finition 4 (T1) : le déclencheur réagit aussi à la reprise (PUBLIE) pour annuler un avis
+-- « suspendu » encore en attente ; même table, même fonction (20261103000004_lot6_rappels.sql:239)
+DROP TRIGGER IF EXISTS trg_notif_cancel_on_status ON public.event_status_history;
+CREATE TRIGGER trg_notif_cancel_on_status
+    AFTER INSERT ON public.event_status_history
+    FOR EACH ROW
+    WHEN (NEW.new_status::text IN ('SUSPENDU', 'ANNULE', 'TERMINE', 'PUBLIE'))
+    EXECUTE FUNCTION public.notif_cancel_on_status();
