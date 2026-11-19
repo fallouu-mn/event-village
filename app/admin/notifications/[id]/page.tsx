@@ -238,7 +238,7 @@ function DecisionList({ decision }: { decision: Row }) {
           {quiet.start === undefined && quiet.night === true
             // Correctif main-414 (19/11) : décision ancienne d'un SMS aux admins, sans les heures de la plage
             ? `SMS aux administrateurs reporté à la fin de la nuit${str(quiet.until) ? ` : ${formatDateTime(str(quiet.until)!)}` : ''}`
-            : `De ${String(quiet.start ?? '?')} h à ${String(quiet.end ?? '?')} h (heure de Dakar) ; heure de la décision : ${String(quiet.hour ?? '?')} h, ${quiet.in_quiet === true ? 'dans la plage' : 'hors de la plage'}${str(quiet.until) ? ` ; reporté au ${formatDateTime(str(quiet.until)!)}` : ''}`}
+            : `De ${String(quiet.start ?? '?')} h à ${String(quiet.end ?? '?')} h (heure de Dakar) ; heure de la décision : ${String(quiet.hour ?? '?')} h, ${quiet.in_quiet === true ? 'dans la plage' : 'hors de la plage'}${str(quiet.until) ? ` ; reporté au ${formatDateTime(str(quiet.until)!)}` : ''}${quiet.event_soon === true ? ' ; événement dans moins de 12 h ou en cours : envoyé sans attendre' : ''}`}
         </Info>
       )}
       {smsPolicy && <Info label="Règle du SMS">{SMS_POLICY_LABELS[smsPolicy] ?? 'Règle non répertoriée'}</Info>}
