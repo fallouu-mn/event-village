@@ -191,6 +191,10 @@ export interface ResponsiveCheckResult {
 /** Contrôles d'une largeur (page déjà chargée et stable). */
 export async function runResponsiveChecks(page: Page, opts: { width: number; phone: boolean }): Promise<ResponsiveCheckResult> {
     await page.evaluate('window.__name = window.__name || function (f) { return f; };');
+    // Sections hors écran en content-visibility: auto (accueil, design 1b) : sans mise en page réelle, leurs textes
+    // donnaient de faux chevauchements (run 434). Rendu forcé le temps du contrôle, puis deux images d'affichage.
+    await page.addStyleTag({ content: '*{content-visibility:visible!important}' });
+    await page.evaluate(() => new Promise<void>((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve())); }));
     const layout = await page.evaluate(inspectLayout, { phone: opts.phone });
     const blocking: string[] = [];
     const at = `${opts.width} px`;

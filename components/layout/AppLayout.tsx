@@ -241,7 +241,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
         className={navLinkClass(active)}
       >
         <Icon size={18} className={active ? 'text-primary-text' : 'text-muted-foreground'} />
-        <span className="min-w-0 truncate">{item.name}</span>
+        <span className="min-w-0 break-words">{item.name}</span>
       </Link>
     );
   };
@@ -343,8 +343,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               <Link href="/profile" className="group flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {avatar}
                 <span className="min-w-0 leading-tight">
-                  <span className="block truncate text-sm font-semibold text-foreground-strong group-hover:text-primary-text">{displayName}</span>
-                  <span className="block truncate text-sm text-muted-foreground">{accountSubtitle}</span>
+                  <span className="block break-words text-sm font-semibold text-foreground-strong group-hover:text-primary-text">{displayName}</span>
+                  <span className="block break-words text-sm text-muted-foreground">{accountSubtitle}</span>
                 </span>
               </Link>
               <div className="flex flex-shrink-0 items-center gap-1">
@@ -411,8 +411,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 <Link href="/profile" onClick={closeMobileMenu} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {avatar}
                   <span className="min-w-0 leading-tight">
-                    <span className="block truncate text-sm font-semibold text-foreground-strong">{displayName}</span>
-                    <span className="block truncate text-sm text-muted-foreground">{accountSubtitle}</span>
+                    <span className="block break-words text-sm font-semibold text-foreground-strong">{displayName}</span>
+                    <span className="block break-words text-sm text-muted-foreground">{accountSubtitle}</span>
                   </span>
                 </Link>
                 <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => { closeMobileMenu(); signOut(); }}>
@@ -431,7 +431,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       {/* 2. Zone principale : en-tête et contenu */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-2 shadow-subtle lg:px-8">
-          <div className="flex min-w-0 items-center gap-1.5">
+          {/* Design 1c (point 1) : le logo ne rétrécit plus (à 768 px, « Event Village » passait sous la recherche) */}
+          <div className="flex flex-shrink-0 items-center gap-1.5">
             <IconButton
               ref={menuButtonRef}
               aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
@@ -452,7 +453,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Search size={16} aria-hidden="true" />
-              <span className="truncate">Rechercher un événement, un concert, un restaurant…</span>
+              <span className="min-w-0 break-words">Rechercher un événement…</span>
             </Link>
           </div>
 
@@ -519,7 +520,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 )}
               >
                 <Icon size={20} aria-hidden="true" />
-                <small className="text-caption max-w-full truncate font-semibold">{item.short ?? item.name}</small>
+                {/* Design 1c (point 1) : libellé entier, au besoin sur deux lignes (aucun texte tronqué à 320 px) */}
+                <small className="text-caption max-w-full text-center font-semibold leading-tight [overflow-wrap:anywhere]">{item.short ?? item.name}</small>
               </Link>
             );
           })}

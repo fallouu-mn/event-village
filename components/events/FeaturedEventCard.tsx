@@ -74,12 +74,12 @@ export const FeaturedEventCard: React.FC<FeaturedEventCardProps> = ({
             )}
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-base font-bold leading-tight text-foreground-strong">
+            <h3 className="break-words text-base font-bold leading-tight text-foreground-strong">
               <Link href={`/events/${id}`} className="after:absolute after:inset-0 focus-visible:outline-none">
                 {title}
               </Link>
             </h3>
-            <p className="truncate text-sm text-muted-foreground">
+            <p className="break-words text-sm text-muted-foreground">
               {artistName} · {location}
             </p>
           </div>

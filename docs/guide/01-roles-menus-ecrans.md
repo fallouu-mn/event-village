@@ -34,7 +34,7 @@ affichées dans la même coquille (`components/layout/AppLayout.tsx:325-329`, `a
 |---|---|---|
 | Barre latérale | écran de 1024 px et plus | logo, menu du rôle, puis en bas : nom et sous-titre du compte (lien vers `/profile`), bouton « Se déconnecter », bascule de thème ; sans session : bouton « Se connecter » (`AppLayout.tsx:375-410`) |
 | Tiroir | écran de moins de 1024 px, bouton « Ouvrir le menu » | même menu ; sous 640 px, un champ « Rechercher un événement » qui ouvre `/explore` (`AppLayout.tsx:413-473`, `:437-446`) |
-| En-tête | toujours | champ « Rechercher un événement, un concert, un restaurant… » vers `/explore` (640 px et plus), cloche des notifications, bouton « Scanner » vers `/controller/scanner` si le compte a le rôle CONTRÔLEUR (640 px et plus), bascule de thème (moins de 1024 px), avatar vers `/profile` ou icône « Se connecter » (`AppLayout.tsx:477-540`) |
+| En-tête | toujours | champ « Rechercher un événement… » vers `/explore` (design 1c : constat G-48 levé) (640 px et plus), cloche des notifications, bouton « Scanner » vers `/controller/scanner` si le compte a le rôle CONTRÔLEUR (640 px et plus), bascule de thème (moins de 1024 px), avatar vers `/profile` ou icône « Se connecter » (`AppLayout.tsx:477-540`) |
 | Barre du bas | écran de moins de 1024 px | 5 entrées au plus, choisies selon l’espace (voir chaque rôle) (`AppLayout.tsx:331-337`, `:549-571`) |
 
 Le sous-titre sous le nom du compte est « Ambassadeur » pour un ambassadeur, sinon le libellé du rôle principal :

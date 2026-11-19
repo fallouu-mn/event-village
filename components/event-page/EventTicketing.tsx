@@ -776,7 +776,7 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
         )}
 
         {/* Place réservée sous la barre d'achat du téléphone : elle ne masque jamais le contenu. */}
-        {barKind && <div aria-hidden="true" className="h-20 lg:hidden" />}
+        {barKind && <div aria-hidden="true" className="h-36 min-[390px]:h-20 lg:hidden" />}
       </div>
 
       {/* Barre d'achat du téléphone, collée à la barre de navigation du bas : 53 px (bordure 1, marge haute 4, liens 48) plus
@@ -787,12 +787,13 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
           aria-label="Achat des billets"
           className="fixed inset-x-0 bottom-[calc(3.3125rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-card px-4 py-2.5 shadow-lg lg:hidden"
         >
-          <div className="mx-auto flex max-w-xl items-center gap-3">
+          {/* Design 1c (point 1) : sous 390 px, le grand bouton (19 px, gras : jamais plus petit) passe sous le montant */}
+          <div className="mx-auto flex max-w-xl flex-col items-stretch gap-2 min-[390px]:flex-row min-[390px]:items-center min-[390px]:gap-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm text-muted-foreground">
+              <p className="break-words text-sm text-muted-foreground">
                 {barKind === 'buy' ? cartSummary : barKind === 'pending' ? 'Paiement en attente' : 'Billetterie'}
               </p>
-              <p className="truncate text-base font-bold tabular-nums text-foreground-strong" aria-live="polite">
+              <p className="break-words text-base font-bold tabular-nums text-foreground-strong" aria-live="polite">
                 {barKind === 'buy'
                   ? barAmount
                   : barKind === 'pending'
@@ -803,14 +804,14 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
               </p>
             </div>
             {barKind === 'choose' && (
-              <Button variant="gradient" className="ev-press flex-shrink-0 px-5" onClick={goToCategories}>
+              <Button variant="gradient" className="ev-press w-full flex-shrink-0 px-5 min-[390px]:w-auto" onClick={goToCategories}>
                 Choisir mes billets
               </Button>
             )}
             {barKind === 'buy' && (
               <Button
                 variant="gradient"
-                className="ev-press flex-shrink-0 px-5"
+                className="ev-press w-full flex-shrink-0 px-5 min-[390px]:w-auto"
                 disabled={isClaimingFree || buyBlocked}
                 isLoading={isClaimingFree}
                 onClick={() => void handleBuyClick()}
@@ -819,7 +820,7 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
               </Button>
             )}
             {barKind === 'pending' && pendingPath && (
-              <LinkButton href={pendingPath} variant="gradient" className="ev-press flex-shrink-0 px-5">
+              <LinkButton href={pendingPath} variant="gradient" className="ev-press w-full flex-shrink-0 px-5 min-[390px]:w-auto">
                 Suivre le paiement
               </LinkButton>
             )}
