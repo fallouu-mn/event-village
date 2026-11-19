@@ -11,6 +11,7 @@ import { clearPaymentHandoffs } from '@/lib/payments/payment-handoff-purge';
 import { dropLocalSession, revokeSoon, unsubscribePush } from '@/lib/auth/sign-out-here';
 import { sessionEnded } from '@/lib/auth/session-signal';
 import { LinkButton } from '@/components/ui/LinkButton';
+import { warmWhenIdle } from '@/lib/ui/warm-when-idle';
 
 /**
  * Lot 7 (7.5) — synchronisation des billets hors ligne chargée à la demande.
@@ -55,10 +56,13 @@ function LazyOfflineTicketsSync() {
                     console.error('[AuthProvider] billets hors ligne non chargés :', err);
                 });
         };
-        load();
+        // Design 1b (décision du 18/11) : chargée une fois la page affichée et le téléphone libre (jamais pendant le
+        // chargement mesuré de Mes billets) ; sans réseau, au retour du réseau
+        const cancelWarm = warmWhenIdle(load);
         window.addEventListener('online', load);
         return () => {
             active = false;
+            cancelWarm();
             window.removeEventListener('online', load);
         };
     }, [Sync]);
@@ -298,6 +302,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             void dropLocalSession(auth); // sans l'attendre : il prévient tous les abonnés (temps réel), l'écran n'en dépend pas
         });
     };
+
+    // Design 1b (point 9) : à la connexion (profil lu, compte non suspendu), cet appareil se réabonne seul aux notifications
+    // si la permission est déjà accordée et que la personne ne les a pas désactivées ici (lib/push/client.ts) ; jamais de
+    // fenêtre d'autorisation ; enregistré pour le compte connecté seulement (abandon si le compte change avant).
+    const pushAccount = profile && profile.id === user?.id && profile.status !== 'SUSPENDU' ? profile.id : null;
+    useEffect(() => {
+        if (!pushAccount || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+        let current = true;
+        // Rien d'urgent : réabonnement 10 s après l'ouverture, page chargée et navigateur libre (le module n'alourdit jamais
+        // le premier affichage, scanner compris : e2e/perf.spec.ts, JavaScript avant le marqueur)
+        const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+        const run = (): void => {
+            if (!current) return;
+            import('@/lib/push/client').then((m) => m.syncPushSubscription(() => current)).catch(() => undefined);
+        };
+        const timer = setTimeout(() => { if (w.requestIdleCallback) w.requestIdleCallback(run, { timeout: 5_000 }); else run(); }, 10_000);
+        return () => { current = false; clearTimeout(timer); };
+    }, [pushAccount]);
 
     const hasRole = useCallback((role: string): boolean => {
         return profile?.roles?.includes(role) ?? false;

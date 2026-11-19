@@ -1,4 +1,6 @@
 import { getCategoryLabel } from '@/lib/constants/event-categories';
+import { eventEndAt } from '@/lib/events/event-end';
+import { eventStartAt } from '@/lib/events/live-status';
 import { foldText } from '@/lib/text/fold';
 
 /**
@@ -13,6 +15,9 @@ import { foldText } from '@/lib/text/fold';
  * Lot 9 ter (9t.19, consigne 5, contrat D.2.3) : `stock` (« Complet », « Dernières places ») calculé sur les catégories
  * actives vendues en ligne, jamais un nombre de places ; « Complet » passe avant « Vente sur place uniquement » quand
  * plus aucune catégorie au guichet n'a de place (le guichet partage le quota de la catégorie).
+ * Design 1b (point 4) : « Dernières places » relatif à la jauge (lowStockLimit) ; la carte reçoit aussi `startsAt` et
+ * `endsAt` (instants ISO du début et de la fin retenue, pour « En cours » calculé sur le téléphone) et `paidFrom` (plus
+ * petit prix payant achetable, pour « Gratuit ou dès … »). Aucun nombre de places n'est exposé.
  */
 export const CATALOG_SELECT = `
     id,
@@ -87,10 +92,32 @@ export interface CatalogEventDto {
     status: string;
     /** Lot 9 ter (9t.19) : tranche de stock en ligne (badge « Complet » ou « Dernières places »), null sinon. */
     stock: CatalogStock;
+    /** Design 1b : début (date et heure saisies, Dakar = UTC), instant ISO. */
+    startsAt: string;
+    /** Design 1b : fin retenue (même règle que public.event_end_at), instant ISO. */
+    endsAt: string;
+    /** Design 1b : plus petit prix payant (> 0) des catégories achetables, null s'il n'y en a pas (« Gratuit ou dès … »). */
+    paidFrom: number | null;
 }
 
-/** Lot 9 ter (9t.19) : SOLD_OUT = plus aucune place en ligne ; LOW = toutes les catégories achetables au seuil ou dessous. */
+/**
+ * Lot 9 ter (9t.19) : SOLD_OUT = plus aucune place en ligne. Design 1b (point 4) : LOW = places restantes en ligne au plus
+ * à 10 % de la jauge en ligne (lowStockLimit).
+ */
 export type CatalogStock = 'SOLD_OUT' | 'LOW' | null;
+
+/**
+ * Design 1b (point 4) — part de la jauge sous laquelle la carte dit « Dernières places » : 10 %. Jauge en ligne = places
+ * mises en vente en ligne par les catégories actives dont la vente n'est pas close (vendues comprises) ; restantes = places
+ * encore achetables en ligne (catégories achetables). Au moins 1 : sur une petite jauge, la dernière place compte.
+ */
+export const LOW_STOCK_SHARE = 0.1;
+
+/** Plus grand nombre de places restantes qui vaut « Dernières places » pour une jauge en ligne donnée. */
+export function lowStockLimit(capacity: number): number {
+    if (!Number.isFinite(capacity) || capacity <= 0) return 0;
+    return Math.max(1, Math.floor(capacity * LOW_STOCK_SHARE));
+}
 
 function remainingOf(c: CatalogCategoryRow): number {
     return Number(c.total_quantity ?? 0) - Number(c.sold_quantity ?? 0) - Number(c.held_quantity ?? 0);
@@ -119,12 +146,20 @@ function onlineSoldOut(online: CatalogCategoryRow[], now: number): boolean {
         && online.every((c) => remainingOf(c) <= 0 || saleEnded(c, now));
 }
 
-/** Lot 9 ter (9t.19, contrat D.2.3) : tranche de stock de la carte, sans nombre de places. */
-function stockOf(categories: CatalogCategoryRow[], threshold: number, now: number): CatalogStock {
+/**
+ * Lot 9 ter (9t.19, contrat D.2.3) : tranche de stock de la carte, sans nombre de places. Design 1b (point 4) : « LOW »
+ * quand les places restantes en ligne ne dépassent pas 10 % de la jauge en ligne (lowStockLimit) ; jamais quand rien
+ * n'est achetable (« Complet » ou rien).
+ */
+export function stockOf(categories: CatalogCategoryRow[], now: number): CatalogStock {
     const online = categories.filter((c) => c.is_active === true && c.sale_online === true);
     const buyable = online.filter((c) => isBuyableOnline(c, now));
     if (buyable.length === 0) return onlineSoldOut(online, now) ? 'SOLD_OUT' : null;
-    return buyable.every((c) => remainingOf(c) <= threshold) ? 'LOW' : null;
+    const capacity = online
+        .filter((c) => !saleEnded(c, now))
+        .reduce((sum, c) => sum + Math.max(0, Number(c.total_quantity ?? 0)), 0);
+    const remaining = buyable.reduce((sum, c) => sum + Math.max(0, remainingOf(c)), 0);
+    return remaining <= lowStockLimit(capacity) ? 'LOW' : null;
 }
 
 function saleLabelOf(categories: CatalogCategoryRow[], minPrice: number | null, now: number): string {
@@ -175,10 +210,18 @@ export function catalogCities(events: ReadonlyArray<Pick<CatalogEventDto, 'city'
     return shown.sort((a, b) => a.localeCompare(b, 'fr'));
 }
 
+/** Instant ISO, ou `fallback` si la date est illisible (jamais d'exception pour une carte). */
+function isoOr(d: Date, fallback: string): string {
+    return Number.isNaN(d.getTime()) ? fallback : d.toISOString();
+}
+
 const MONTHS = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];
 
-/** `threshold` : seuil « bientôt complet » courant (lowStockThreshold, lib/events/low-stock.server.ts). */
-export function formatCatalogEvent(evt: CatalogRow, threshold: number): CatalogEventDto {
+/**
+ * Carte du catalogue. Le second paramètre (ancien seuil absolu access.low_stock_threshold) n'est plus lu depuis le design
+ * 1b : « Dernières places » est relatif à la jauge (stockOf). Il reste accepté pour les appelants d'autres lots.
+ */
+export function formatCatalogEvent(evt: CatalogRow, _ancienSeuil?: number): CatalogEventDto {
     const startDate = new Date(evt.start_date);
     const monthShort = MONTHS[startDate.getMonth()] || 'SEP';
     const dayNumber = String(startDate.getDate()).padStart(2, '0');
@@ -192,6 +235,9 @@ export function formatCatalogEvent(evt: CatalogRow, threshold: number): CatalogE
     const minPrice: number | null = buyable.length > 0
         ? Math.min(...buyable.map((c) => Number(c.price)))
         : null;
+    const paid = buyable.map((c) => Number(c.price)).filter((p) => Number.isFinite(p) && p > 0);
+    const paidFrom: number | null = paid.length > 0 ? Math.min(...paid) : null;
+    const times = { start_date: evt.start_date, start_time: evt.start_time, end_date: evt.end_date, end_time: evt.end_time };
 
     return {
         id: evt.id,
@@ -215,6 +261,9 @@ export function formatCatalogEvent(evt: CatalogRow, threshold: number): CatalogE
         saleLabel: saleLabelOf(categories, minPrice, now),
         ...(endFormatted ? { endFormatted } : {}),
         status: evt.status,
-        stock: stockOf(categories, threshold, now),
+        stock: stockOf(categories, now),
+        startsAt: isoOr(eventStartAt(times), `${evt.start_date}T00:00:00.000Z`),
+        endsAt: isoOr(eventEndAt(times), `${evt.start_date}T23:59:00.000Z`),
+        paidFrom,
     };
 }

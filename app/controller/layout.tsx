@@ -57,13 +57,15 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
         : '';
 
     return (
-        <div className="dark min-h-screen bg-surface-sunken text-fg" style={{ colorScheme: 'dark' }}>
-            <header className="flex min-h-14 items-center justify-between gap-2 border-b border-border bg-surface px-4 py-1.5">
+        <div className="dark min-h-screen bg-background text-foreground-strong" style={{ colorScheme: 'dark' }}>
+            <header className="flex min-h-14 items-center justify-between gap-2 border-b border-border bg-card px-4 py-1.5">
                 <div className="flex min-w-0 items-center gap-2">
+                    {/* Design 1b : pas de préchargement de l'accueil depuis le scanner (JavaScript avant l'affichage utile du scanner) */}
                     <Link
                         href="/"
+                        prefetch={false}
                         title="Basculer vers l’espace client (billetterie, réservations, commandes)"
-                        className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-border px-3 text-sm font-semibold text-fg transition-colors hover:bg-surface-sunken hover:text-brand-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong transition-colors hover:bg-background hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                         <ArrowLeft size={16} aria-hidden="true" />
                         <span className="sr-only sm:not-sr-only">Mon espace client</span>
@@ -75,11 +77,13 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                 <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
                     <NotificationBell />
                     {displayName && (
+                        // Design 1b (décision 3) : pas de préchargement de la page profil (12,3 Ko arrivés avant l'écran utile du scanner)
                         <Link
                             href="/controller/profile"
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-1.5 text-sm font-semibold text-fg transition-colors hover:text-brand-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            prefetch={false}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-1.5 text-sm font-semibold text-foreground-strong transition-colors hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-brand-bg text-brand-fg" aria-hidden="true">
+                            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-primary-soft text-primary-text" aria-hidden="true">
                                 <User size={16} />
                             </span>
                             <span className="sr-only sm:not-sr-only sm:max-w-[120px] sm:truncate">{displayName}</span>

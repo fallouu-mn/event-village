@@ -56,16 +56,23 @@ interface Screen {
     selectors: string[];
     buttonTexts?: string[];
     camera?: boolean;
+    /**
+     * Design 1b : page préparée par le serveur (HTML en cache 60 s) : le contenu utile arrive AVANT tout JavaScript, c'est le
+     * but. Le contrôle « du JavaScript avant le marqueur » (preuve d'un bridage appliqué sur une page rendue dans le
+     * navigateur) ne s'y applique pas ; le bridage reste prouvé par la durée du plus gros fichier.
+     */
+    serverRendered?: boolean;
 }
 
 const SCREENS: Screen[] = [
     {
         id: 'accueil', libelle: 'Accueil', role: 'anonyme', path: () => '/', budgetRoute: '/',
-        selectors: ['section[aria-labelledby="affiche-titre"] h3', 'section[aria-labelledby="affiche-titre"] .border-dashed'],
+        // Design 1b : rangée « À la une » (ou « À l'affiche ») rendue par le serveur
+        selectors: ['section[aria-labelledby="une-titre"] article', 'section[aria-labelledby="une-titre"]'], serverRendered: true,
     },
     {
         id: 'evenement', libelle: 'Page événement', role: 'anonyme', path: () => `/events/${readDemoIds().events.ceSoir.id}`, budgetRoute: '/events/[id]',
-        selectors: ['main h1', 'h1'],
+        selectors: ['main h1', 'h1'], serverRendered: true,
     },
     {
         id: 'mes-billets', libelle: 'Mes billets', role: 'client', path: () => '/tickets?tab=a-venir', budgetRoute: '/tickets', // A10 (R45) : sans onglet, « Reçus » d'office (transfert entrant du seed), sans carte de billet
@@ -171,6 +178,8 @@ interface ResourceSnapshot {
     css: number;
     total: number;
     biggest: { name: string; bytes: number; ms: number } | null;
+    /** Fichiers JavaScript /_next/static/ arrivés avant le marqueur (analyse du poids, design 1b). */
+    filesBefore: Array<{ path: string; bytes: number; start: number; end: number }>;
 }
 
 interface PaintReading {
@@ -242,6 +251,7 @@ async function snapshot(page: Page, usefulAt: number | null): Promise<ResourceSn
         let css = 0;
         let total = 0;
         let biggest: { name: string; bytes: number; ms: number } | null = null;
+        const filesBefore: Array<{ path: string; bytes: number; start: number; end: number }> = [];
         const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
         if (nav) total += nav.encodedBodySize;
         for (const e of entries) {
@@ -256,13 +266,16 @@ async function snapshot(page: Page, usefulAt: number | null): Promise<ResourceSn
             if (!p.startsWith('/_next/static/')) continue;
             if (p.endsWith('.js')) {
                 js += e.encodedBodySize;
-                if (useful !== null && e.responseEnd <= useful) jsBeforeUseful += e.encodedBodySize;
+                if (useful !== null && e.responseEnd <= useful) {
+                    jsBeforeUseful += e.encodedBodySize;
+                    filesBefore.push({ path: p, bytes: e.encodedBodySize, start: e.startTime, end: e.responseEnd });
+                }
             } else if (p.endsWith('.css')) {
                 css += e.encodedBodySize;
             }
             if (!biggest || e.encodedBodySize > biggest.bytes) biggest = { name: p, bytes: e.encodedBodySize, ms: e.responseEnd - e.requestStart };
         }
-        return { jsBeforeUseful, js, css, total, biggest };
+        return { jsBeforeUseful, js, css, total, biggest, filesBefore };
     }, usefulAt);
 }
 
@@ -314,6 +327,10 @@ async function onePass(browser: Browser, testInfo: TestInfo, screen: Screen, pas
         Object.assign(out, { fcp: state.fcp, lcp: state.lcp, useful: state.useful, usefulBy: state.usefulBy });
         const first = await snapshot(page, state.useful);
         out.jsBeforeUseful = first.jsBeforeUseful;
+        // Design 1b (décision 3) : liste exacte des fichiers JavaScript arrivés avant le marqueur, pour l'analyse du poids
+        appendPerfFile('js-avant-marqueur.tsv', ['ecran', 'passage', 'fichier', 'octets', 'debut_ms', 'fin_ms'].join('\t'), first.filesBefore
+            .sort((a, b) => a.end - b.end)
+            .map((x) => [screen.id, String(pass), x.path, String(x.bytes), String(Math.round(x.start)), String(Math.round(x.end))].join('\t')));
         await page.waitForTimeout(3_000); // (b) : JavaScript chargé à + 3 s (contrat 11.6)
         // FCP et LCP relus ici, toujours avant toute interaction (run 72 : scanner sans FCP ni LCP sur les 5
         // passages quand ils n'étaient lus qu'à l'apparition du marqueur) ; repli FCP sur la chronologie
@@ -412,7 +429,7 @@ for (const screen of SCREENS) {
         for (const r of results) {
             expect.soft(r.error, `${screen.id} passage ${r.pass} : mesure complète`).toBeNull();
             if (r.error) continue;
-            expect.soft(r.jsBeforeUseful ?? 0, `${screen.id} passage ${r.pass} : du JavaScript /_next/static/ arrivé avant le marqueur`).toBeGreaterThan(0);
+            if (!screen.serverRendered) expect.soft(r.jsBeforeUseful ?? 0, `${screen.id} passage ${r.pass} : du JavaScript /_next/static/ arrivé avant le marqueur`).toBeGreaterThan(0);
             expect.soft(r.biggest, `${screen.id} passage ${r.pass} : au moins un fichier /_next/static/ mesuré`).not.toBeNull();
             if (r.biggest) {
                 expect.soft(r.biggest.ms >= r.biggest.minMs,

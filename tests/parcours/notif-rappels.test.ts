@@ -406,13 +406,13 @@ describe('6.5 Rappel J-1 : la veille à l’heure réglée (contrat I2)', () => 
         assert.equal(norm(n.title), J1_TITLE, 'titre in-app du J-1');
         assert.equal(n.type, 'REMINDER', 'notifications.type du J-1 (inAppType REMINDER)');
         assert.match(norm(n.content), j1InAppRe(ev), 'contenu in-app du J-1 (G4)');
-        assert.equal((n.metadata as Row).actionUrl, '/tickets', 'lien vers Mes billets');
+        assert.equal((n.metadata as Row).actionUrl, '/tickets?tab=a-venir', 'lien vers Mes billets, onglet À venir (design 1b)');
 
         const pushes = pushTo(device.endpoint);
         assert.equal(pushes.length, 1, 'un push accepté pour l’appareil du porteur');
         assert.equal(norm(pushes[0].message.title), J1_TITLE, 'titre du push');
         assert.equal(norm(pushes[0].message.body), norm(n.content), 'corps du push = contenu in-app (≤ 160)');
-        assert.equal(pushes[0].message.url, '/tickets', 'lien du push');
+        assert.equal(pushes[0].message.url, '/tickets?tab=a-venir', 'lien du push (design 1b : onglet À venir)');
         assert.equal(pushes[0].message.tag, rows.PUSH.group_key, 'tag = group_key');
         assert.equal(pushes[0].options.urgency, 'normal', 'J-1 : urgence normale');
         assert.equal(pushes[0].options.ttlSeconds, 86_400, 'J-1 : TTL 86 400 s');
@@ -529,7 +529,7 @@ describe('6.5 Rappel H-3 : au début moins le nombre d’heures réglé (contrat
         const pushes = pushTo(device.endpoint);
         assert.equal(pushes.length, 1, 'un push accepté');
         assert.equal(norm(pushes[0].message.title), H3_TITLE, 'titre du push H-3');
-        assert.equal(pushes[0].message.url, '/tickets', 'lien du push H-3');
+        assert.equal(pushes[0].message.url, '/tickets?tab=a-venir', 'lien du push H-3 (design 1b : onglet À venir)');
         assert.ok(pushes[0].message.body.length <= 160, 'corps du push ≤ 160 caractères');
         assert.equal(pushes[0].options.urgency, 'high', 'H-3 : urgence haute');
         const ttl = pushes[0].options.ttlSeconds;

@@ -76,6 +76,12 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
     ADMIN_PHONE_CHANGED: 'Numéro d’un administrateur changé',
     ADMIN_BACKUP_CODES_GENERATED: 'Codes de secours créés',
     ADMIN_BACKUP_CODE_USED: 'Code de secours utilisé',
+    // Design 1b (point 3) : « À la une » choisi par le Superadmin
+    HOME_FEATURED_ADDED: 'Mis à la une',
+    HOME_FEATURED_REORDERED: 'Ordre de la une changé',
+    HOME_FEATURED_WINDOW_SET: 'Dates d’affichage changées',
+    HOME_FEATURED_REMOVED: 'Retiré de la une',
+    HOME_FEATURED_AUTO_REMOVED: 'Retiré de la une automatiquement',
 };
 
 export const AUDIT_OBJECT_LABELS: Readonly<Record<string, string>> = {
@@ -87,6 +93,7 @@ export const AUDIT_OBJECT_LABELS: Readonly<Record<string, string>> = {
     platform_settings: 'Réglage',
     admin_permissions: 'Droits',
     campaigns: 'Campagne',
+    home_featured: 'À la une',
 };
 
 /** Actions proposées au filtre du journal (les plus utiles au Superadmin), dans l'ordre de la liste. */

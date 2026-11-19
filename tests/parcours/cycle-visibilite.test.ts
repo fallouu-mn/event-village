@@ -273,7 +273,10 @@ describe('5.3 Catalogue GET /api/events', () => {
 describe('5.3 Page publique app/events/[id] (contrôle statique)', () => {
     test('bandeau StatusBanner selon le statut et module d’achat masqué hors purchasable', () => {
         assert.ok(fs.existsSync(path.join('components', 'ui', 'StatusBanner.tsx')), 'components/ui/StatusBanner.tsx (contrat Q)');
-        const src = stripComments(fs.readFileSync(path.join('app', 'events', '[id]', 'page.tsx'), 'utf8'));
+        // Design 1b (point 1, modification signalée) : page serveur en cache ; le module d'achat est son îlot
+        // components/event-page/EventTicketing.tsx : mêmes exigences, lues dans les deux fichiers.
+        const src = stripComments([path.join('app', 'events', '[id]', 'page.tsx'), path.join('components', 'event-page', 'EventTicketing.tsx')]
+            .map((file) => fs.readFileSync(file, 'utf8')).join('\n'));
         assert.match(src, /import\s+(?:\{[^}]*\bStatusBanner\b[^}]*\}|StatusBanner)\s+from\s+['"]@\/components\/ui(?:\/StatusBanner)?['"]/,
             'StatusBanner importé de components/ui');
         assert.match(src, /<StatusBanner\b/, 'StatusBanner rendu par la page');

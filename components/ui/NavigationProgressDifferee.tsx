@@ -1,6 +1,7 @@
 'use client';
 
 import React, { lazy, Suspense, useEffect, useState } from 'react';
+import { warmWhenIdle } from '@/lib/ui/warm-when-idle';
 
 /**
  * Design 1a — la barre de progression (NavigationProgress) est chargée quand le navigateur est libre, jamais avec la page :
@@ -13,12 +14,8 @@ const Bar = lazy(() => import('./NavigationProgress')
 
 export function NavigationProgressDifferee() {
   const [ready, setReady] = useState(false);
-  useEffect(() => {
-    // Sans réseau (page hors ligne servie par le service worker) : rien à charger, la barre attendra le réseau
-    if (navigator.onLine === false) return undefined;
-    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
-    if (w.requestIdleCallback) w.requestIdleCallback(() => setReady(true));
-    else setTimeout(() => setReady(true), 2000);
-  }, []);
+  // Sans réseau (page hors ligne servie par le service worker) : rien à charger, la barre attendra le réseau. Design 1b :
+  // jamais pendant le chargement du premier écran d'une page (scanner : lib/ui/warm-when-idle.ts).
+  useEffect(() => warmWhenIdle(() => setReady(true), 2000), []);
   return ready ? <Suspense fallback={null}><Bar /></Suspense> : null;
 }

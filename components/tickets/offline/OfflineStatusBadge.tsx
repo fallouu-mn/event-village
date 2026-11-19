@@ -38,17 +38,17 @@ const ICONS: Record<OfflineIndicatorState, typeof Clock> = {
   expired: TimerReset,
 };
 
-/** Textes du contrat 5.2, mot pour mot. */
+/** Textes du contrat 5.2 ; design 1b (point 8) : « hors ligne » devient « sans réseau », le mot des clients. */
 export function offlineStateText(state: OfflineIndicatorState, availableFrom?: string | null, busy?: boolean): string {
   switch (state) {
     case 'available':
-      return 'Disponible hors ligne';
+      return 'Disponible sans réseau';
     case 'missing':
       return busy ? 'Enregistrement du billet sur ce téléphone…' : 'Ouvrez ce billet avec du réseau avant d’arriver';
     case 'not_yet':
       return availableFrom
-        ? `Disponible hors ligne à partir du ${formatDateTime(availableFrom).replace(' à ', ' à ')}`
-        : 'Disponible hors ligne la veille de l’événement';
+        ? `Disponible sans réseau à partir du ${formatDateTime(availableFrom).replace(' à ', ' à ')}`
+        : 'Disponible sans réseau la veille de l’événement';
     case 'offline_missing':
       return 'Ce billet n’est pas enregistré sur ce téléphone. Reconnectez-vous au réseau, ou présentez votre numéro de billet et votre pièce d’identité au contrôle.';
     case 'expired':

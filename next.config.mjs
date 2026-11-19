@@ -69,6 +69,10 @@ const nextConfig = {
   // web-push (lot 6, chiffrement du push) est chargé par Node tel quel, sans passer par webpack (Next 15 :
   // experimental.serverComponentsExternalPackages devient serverExternalPackages).
   serverExternalPackages: ['web-push'],
+  // Design 1b (décision 2 du 18/11) : PAS de CSS écrit dans la page (experimental.inlineCss, essayé au run 374). Avec lui,
+  // erreur d'hydratation React n° 418 (« HTML ») par intermittence sur plusieurs pages (fiche, fumée client et
+  // organisateur, recette : runs 376 à 401 ; aucune sur main ni avant) : les <style> insérés par Next dans le flux des
+  // pages en streaming (loading.tsx) ne sont pas attendus par React à l'hydratation. Les deux feuilles de style restent.
   poweredByHeader: false,
   compress: true,
   images: {

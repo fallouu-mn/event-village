@@ -43,7 +43,8 @@ describe('Opérateur de paiement', () => {
 
     test('interface : choix Wave / Orange Money obligatoire, aucune option carte, libellés selon l’opérateur', () => {
         const modal = fs.readFileSync('components/payment/PaymentModal.tsx', 'utf8');
-        assert.doesNotMatch(modal, /['"]card['"]|Carte\s+Bancaire|CARD/i, 'aucune option carte bancaire');
+        // Design 1b : la classe de jeton « bg-card » (charte) n'est pas une option de paiement : mot isolé seulement
+        assert.doesNotMatch(modal, /['"]card['"]|Carte\s+Bancaire|(?<![\w-])CARD(?![\w-])/i, 'aucune option carte bancaire');
         assert.match(modal, /ORANGE_MONEY/);
         assert.match(modal, /WAVE/);
         const labels = modal.match(/Orange Money/g) ?? [];

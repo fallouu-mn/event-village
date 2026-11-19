@@ -767,7 +767,11 @@ describe('6.2 — autorisation des notifications après un geste seulement, dét
         const REQUIRED = [RESET_PAGE];
         const provider = codeOf(AUTH_PROVIDER);
         assert.match(provider, /\bunsubscribePush\(\)/, `${AUTH_PROVIDER} : abonnement de ce navigateur retiré à la déconnexion (contrat F4)`);
-        assert.doesNotMatch(provider, /['"]@\/lib\/push\/client['"]/, `${AUTH_PROVIDER} : module des notifications hors du JavaScript de chaque page`);
+        // Design 1b (point 9, modification signalée) : le réabonnement automatique charge le module À LA DEMANDE (import()
+        // dynamique, connecté seulement, permission non refusée) ; il reste hors du JavaScript de chaque page : seul un import
+        // statique est refusé.
+        assert.doesNotMatch(provider, /\bimport\s[^;()]*from\s*['"]@\/lib\/push\/client['"]/, `${AUTH_PROVIDER} : module des notifications hors du JavaScript de chaque page (import statique)`);
+        assert.doesNotMatch(provider, /\brequire\(\s*['"]@\/lib\/push\/client['"]/, `${AUTH_PROVIDER} : module des notifications hors du JavaScript de chaque page (require)`);
         assert.match(codeOf('lib/auth/sign-out-here.ts'), /pushManager\.getSubscription\(\)\)\?\.unsubscribe\(\)/, 'désabonnement du navigateur');
         for (const f of [CONTROLLER_LAYOUT, SCANNER]) {
             assert.match(codeOf(f), /\bsignOut\b[^;]*=\s*useAuth\(\)/, `${f} : déconnexion par useAuth().signOut (abonnement retiré par AuthProvider)`);

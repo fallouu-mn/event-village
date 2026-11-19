@@ -122,10 +122,11 @@ describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »',
     });
 
     // Finition 3d (point 2) : « Sécurité du compte » (/admin/securite) ajoutée au menu du SUPERADMIN (test existant modifié, signalé)
+    // Design 1b (À LA UNE) : « À la une » (/admin/a-la-une) ajoutée au menu du SUPERADMIN, après « Campagnes » (test modifié, signalé)
     test('SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »', async () => {
         const nav = await navFor([], true);
         assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/users', '/admin/services', '/admin/finance', '/admin/referral',
-            '/admin/communications', '/admin/finance-settings', '/admin/audit', '/admin/notifications', '/scan', '/admin/securite']);
+            '/admin/communications', '/admin/a-la-une', '/admin/finance-settings', '/admin/audit', '/admin/notifications', '/scan', '/admin/securite']);
         assert.deepEqual(nav.mobile.map((i) => i.href), ['/admin/dashboard', '/admin/events', '/admin/users', '/admin/finance', '/admin/audit']);
         assert.ok(!JSON.stringify(nav).includes('/admin/pricing'), '« Tarification » encore au menu');
     });

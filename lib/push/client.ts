@@ -8,6 +8,18 @@
  *
  * Les appels aux routes /api/push/* portent la session par les cookies (même origine).
  * Ce module ne contient aucun secret : seule la clé PUBLIQUE VAPID est lue (GET /api/push/config).
+ *
+ * Design 1b (point 9) — réabonnement automatique de CET appareil. Depuis la contre-vérification 2b (6.8, 6.9), toute fin de
+ * session retire l'abonnement du navigateur (et « Déconnecter tous mes appareils » tous ceux du compte côté serveur) ; la
+ * permission du navigateur, elle, reste « accordée ». À la reconnexion, syncPushSubscription (appelée par AuthProvider)
+ * réabonne l'appareil SANS fenêtre d'autorisation, seulement si :
+ *  - la permission est déjà accordée (jamais de demande : requestPermission reste dans enablePush seule) ;
+ *  - la personne n'a pas désactivé les notifications de cet appareil : réglage de l'APPAREIL `ev-push-appareil` =
+ *    « desactive », écrit par disablePush (« Désactiver »), retiré par enablePush (« Activer ») ; aucune donnée du compte
+ *    (ni identifiant, ni empreinte), comme le thème : rien à effacer à la déconnexion (inventaire des stockages,
+ *    tests/audit/cvf2b-6-deconnexion.test.ts, cas 13) ;
+ *  - l'abonnement est enregistré pour le compte CONNECTÉ seulement (session de la requête, côté serveur) ; si le compte a
+ *    changé avant l'enregistrement, rien n'est envoyé et l'abonnement neuf est retiré.
  */
 
 export type PushState = 'enabled' | 'denied' | 'disabled' | 'unsupported' | 'unavailable';
@@ -15,6 +27,9 @@ export type PushState = 'enabled' | 'denied' | 'disabled' | 'unsupported' | 'una
 interface PushConfigResponse { enabled: boolean; publicKey: string | null }
 
 const CONFIG_URL = '/api/push/config';
+/** Réglage de l'appareil « notifications désactivées ici » (valeur DEVICE_OFF), sans aucune donnée du compte. */
+export const PUSH_DEVICE_KEY = 'ev-push-appareil';
+const DEVICE_OFF = 'desactive';
 const SUBSCRIPTIONS_URL = '/api/push/subscriptions';
 const SW_URL = '/sw.js';
 
@@ -58,6 +73,24 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
         return typeof body.error === 'string' && body.error ? body.error : fallback;
     } catch {
         return fallback; // réponse sans corps JSON : message générique
+    }
+}
+
+/** Notifications désactivées sur cet appareil par la personne (« Désactiver ») ? Stockage refusé : non. */
+function deviceTurnedOff(): boolean {
+    try {
+        return window.localStorage.getItem(PUSH_DEVICE_KEY) === DEVICE_OFF;
+    } catch {
+        return false;
+    }
+}
+
+function setDeviceTurnedOff(off: boolean): void {
+    try {
+        if (off) window.localStorage.setItem(PUSH_DEVICE_KEY, DEVICE_OFF);
+        else window.localStorage.removeItem(PUSH_DEVICE_KEY);
+    } catch {
+        // stockage refusé (navigation privée) : réglage non gardé, l'abonnement suit la permission du navigateur
     }
 }
 
@@ -153,12 +186,14 @@ export async function enablePush(): Promise<PushState> {
     }
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(config.publicKey) });
     await registerOnServer(sub);
+    setDeviceTurnedOff(false); // design 1b (point 9) : activé à nouveau, réabonnement automatique permis
     return 'enabled';
 }
 
 /** Désactive le push sur cet appareil (retrait côté serveur, puis désabonnement du navigateur). Lève en cas d'échec. */
 export async function disablePush(): Promise<void> {
     if (!pushSupport()) return;
+    setDeviceTurnedOff(true); // design 1b (point 9) : désactivé par la personne, plus de réabonnement automatique
     const sub = await existingSubscription();
     if (!sub) return;
     await removeOnServer(sub.endpoint);
@@ -190,26 +225,46 @@ export async function detachPushSubscription(): Promise<void> {
     }
 }
 
+export type PushSyncOutcome = 'registered' | 'resubscribed' | 'skipped';
+
 /**
- * Resynchronisation à l'ouverture, SANS demande d'autorisation : si l'autorisation est déjà accordée et
- * qu'un abonnement existe, il est rattaché au compte connecté ; s'il a été créé avec une ancienne clé
- * VAPID, il est remplacé (aucune fenêtre d'autorisation : elle est déjà accordée). Ne lève jamais.
+ * Resynchronisation à la connexion et à l'ouverture, SANS demande d'autorisation (appelée par AuthProvider quand un compte
+ * actif est connecté). Permission non accordée, ou notifications désactivées sur cet appareil : rien. Abonnement présent :
+ * enregistré pour le compte connecté (remplacé s'il a été créé avec une ancienne clé VAPID). Aucun abonnement (retiré à la
+ * fin de la session précédente, « Déconnecter tous mes appareils ») : nouvel abonnement, sans fenêtre, enregistré pour le
+ * compte connecté. `isCurrent` : faux si le compte a changé entre-temps (rien n'est enregistré, l'abonnement neuf est
+ * retiré). Ne lève jamais.
  */
-export async function syncPushSubscription(): Promise<void> {
+export async function syncPushSubscription(isCurrent: () => boolean = () => true): Promise<PushSyncOutcome> {
     try {
-        if (!pushSupport() || Notification.permission !== 'granted') return;
+        if (!pushSupport() || Notification.permission !== 'granted' || deviceTurnedOff()) return 'skipped';
         const reg = await navigator.serviceWorker.getRegistration();
-        if (!reg) return;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) return;
+        let sub = reg ? await reg.pushManager.getSubscription() : null;
         const config = await fetchPushConfig();
-        if (!config.enabled || !config.publicKey) return;
-        if (!sameServerKey(sub, config.publicKey)) {
+        if (!config.enabled || !config.publicKey || !isCurrent()) return 'skipped';
+        let fresh = false;
+        if (sub && !sameServerKey(sub, config.publicKey)) {
             await sub.unsubscribe();
-            sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(config.publicKey) });
+            sub = null;
         }
-        await registerOnServer(sub);
+        if (!sub) {
+            const registration = reg ?? await readyRegistration();
+            sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(config.publicKey) });
+            fresh = true;
+        }
+        if (!isCurrent()) {
+            if (fresh) await sub.unsubscribe();
+            return 'skipped';
+        }
+        try {
+            await registerOnServer(sub);
+        } catch (err) {
+            if (fresh) await sub.unsubscribe().catch(() => false); // refusé (compte suspendu, canal fermé) : rien ne reste
+            throw err;
+        }
+        return fresh ? 'resubscribed' : 'registered';
     } catch (err) {
         console.warn('[push] resynchronisation de l’appareil impossible :', err instanceof Error ? err.message : String(err));
+        return 'skipped';
     }
 }

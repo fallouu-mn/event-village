@@ -12,6 +12,7 @@
  * n'envoie plus rien.
  */
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
 
 export const EVENT_STATUS_VALUES = ['BROUILLON', 'EN_ATTENTE', 'VALIDE', 'PUBLIE', 'SUSPENDU', 'TERMINE', 'ANNULE'] as const;
 export type LifecycleEventStatus = (typeof EVENT_STATUS_VALUES)[number];
@@ -127,6 +128,8 @@ export class EventLifecycleService {
             throw new Error('Changement de statut impossible pour le moment.');
         }
         if (body.ok !== true) throw refusalToError(body as LifecycleRefusal);
+        // Design 1b : fiche, accueil et Explorer à jour tout de suite (pas d'attente du cache de 60 s)
+        invalidatePublicEvent(input.eventId, `statut ${input.to}`);
         return body;
     }
 }

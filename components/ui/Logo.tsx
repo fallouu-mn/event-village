@@ -51,6 +51,7 @@ export const Logo: React.FC<LogoProps> = ({
     return (
       <Link
         href="/"
+        prefetch={false}
         aria-label="Event Village, accueil"
         className="inline-flex min-h-11 min-w-11 items-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >

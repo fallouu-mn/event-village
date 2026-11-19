@@ -401,6 +401,87 @@ body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
 
 
 /* ==========================================================================
+   DESIGN 1b (point 10) — ANIMATIONS COMMUNES DES PAGES PUBLIQUES
+   150 à 300 ms ; déplacement (transform) et transparence (opacity) seulement : 60 images par seconde, jamais bloquant
+   (aucun élément n'attend la fin d'une animation pour être utilisable). Toutes coupées par le bloc « mouvement réduit »
+   ci-dessous (durées ramenées à 0,01 ms) ; le point « En cours » reste alors fixe.
+   ========================================================================== */
+
+/* Point « En cours » : un halo qui s'agrandit et s'efface (le point lui-même ne bouge pas) */
+@keyframes evLivePulse {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.ev-live-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: inherit;
+  animation: evLivePulse 1.6s var(--ease-out) infinite;
+}
+
+/* Design 1b (run 392, accueil) : section sous le premier écran, ni stylée, ni mise en page, ni peinte tant qu'elle reste
+   loin de l'écran (travail du document au chargement : 1,5 s de style, mise en page et peinture sur 1 885 éléments).
+   Contenu inchangé, lisible par les lecteurs d'écran et la recherche de la page ; taille retenue une fois affichée. */
+.ev-offscreen {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 520px;
+}
+
+/* Listes en cascade : enfant n°i retardé de i × 40 ms (8 au plus), arrivée de 250 ms */
+@keyframes evRise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.ev-stagger > * {
+  animation: evRise 250ms var(--ease-out) backwards;
+}
+.ev-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.ev-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.ev-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.ev-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.ev-stagger > *:nth-child(6) { animation-delay: 200ms; }
+.ev-stagger > *:nth-child(7) { animation-delay: 240ms; }
+.ev-stagger > *:nth-child(n + 8) { animation-delay: 280ms; }
+
+/* Pression au toucher : léger enfoncement (98 %), 150 ms */
+.ev-press {
+  transition: transform 150ms var(--ease-standard);
+}
+.ev-press:active {
+  transform: scale(0.98);
+}
+
+/* Fenêtres et feuilles qui montent (250 ms) ; ce qui part : 150 ms, accéléré */
+@keyframes evSheetUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+.ev-sheet-up {
+  animation: evSheetUp 250ms var(--ease-out) backwards;
+}
+
+/* Carte → fiche : transition de vue du navigateur (API View Transitions), sans bibliothèque. L'affiche de la carte et
+   celle de la fiche portent le même view-transition-name (ev-poster-<id>) ; le reste de la page se fond en 200 ms. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-group(*) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* ==========================================================================
    LOT 5 — MOUVEMENT RÉDUIT (contrat Q, DoD 7)
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
@@ -409,8 +490,8 @@ body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    /* 0 s, pas 0,01 ms : avec 0,01 ms, TOUT élément devenait transitionné (propriété par défaut : all), si bien qu'un
-       style posé à la main ne s'appliquait pas tout de suite (e2e terrain 9, rouge depuis le design 1a qui a retiré la
+    /* Design 1b : 0 s, pas 0,01 ms. Avec 0,01 ms, TOUT élément devenait transitionné (propriété par défaut : all), si bien
+       qu'un style posé à la main ne s'appliquait pas tout de suite (e2e terrain 9, rouge depuis le design 1a qui a retiré la
        transition propre de <body>). Les états changent d'un coup ; aucun code n'attend transitionend. */
     transition-duration: 0s !important;
     transition-delay: 0s !important;

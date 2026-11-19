@@ -15,6 +15,8 @@ import { EventCardSkeleton, ListRowSkeleton, StatCardSkeleton } from '@/componen
 import { TabPanel, Tabs } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
 import { EventCard } from '@/components/events/EventCard';
+import { CardTransitions } from '@/components/events/CardLink';
+import { CardLiveBadges } from '@/components/events/CardLiveBadge';
 
 /** Design 1a : vitrine des composants (données fictives), pour les captures en clair et en sombre. */
 export function Vitrine() {
@@ -31,6 +33,8 @@ export function Vitrine() {
 
   return (
     <div className="space-y-10 pb-40">
+      <CardTransitions />
+      <CardLiveBadges />
       <h1 className="text-3xl font-extrabold tracking-tight text-foreground-strong lg:text-4xl">Composants</h1>
 
       <section aria-labelledby="v-boutons" className="space-y-4">

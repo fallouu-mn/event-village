@@ -28,6 +28,24 @@ const REFUND_KINDS = ['REFUND', 'EVENT_CANCELLATION_REFUND', 'TICKET_REFUND'];
 const UNPAID_REFUND_STATES = ['A_ENVOYER', 'ENVOYE', 'INCERTAIN', 'ECHOUE'];
 
 /**
+ * Design 1b (point 8) — « Remboursement en cours » dès qu'un billet du paiement l'est : un paiement confirmé (SUCCESS) ou
+ * déjà remboursé en partie (PARTIAL) dont au moins un billet est au statut REMBOURSEMENT_EN_COURS (demande faite, argent
+ * pas encore versé : remboursement d'un billet après un report, R32) se lit comme un paiement en remboursement. Avant : le
+ * paiement restait « Confirmé » jusqu'au versement. Lecture seule (billets du paiement, quel que soit leur détenteur
+ * actuel : le remboursement va à l'acheteur d'origine) ; une erreur de lecture est levée (500, jamais un état deviné).
+ */
+async function paymentsWithTicketInRefund(rows: PaymentRow[]): Promise<Set<string>> {
+    const ids = rows.filter((r) => r.status === 'SUCCESS' || r.status === 'PARTIAL').map((r) => r.id);
+    if (ids.length === 0) return new Set();
+    const { data, error } = await getServiceRoleClient().from('tickets')
+        .select('payment_id')
+        .in('payment_id', ids)
+        .eq('status', 'REMBOURSEMENT_EN_COURS');
+    if (error) throw new Error(`lecture des billets en remboursement : ${error.message}`);
+    return new Set((data ?? []).map((t) => String(t.payment_id)));
+}
+
+/**
  * Lot 9 bis (B9 ; décision de l'orchestrateur sur S11 : la promesse B9 l'emporte sur « route intacte » du 5.1) :
  * paiements de la page dont un remboursement non versé est bloqué (hors simulation), refusé, incertain ou signalé en
  * retard. Même règle que la page d'attente et que l'avis REFUND_DELAYED ; seuls les REFUND_PENDING sont lus, le libellé
@@ -71,9 +89,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         });
         if (error) throw error;
         const reply = data as PaymentsReply;
-        const delayed = await delayedRefundPayments(reply.items);
+        // Design 1b (point 8) : statut retenu pour le libellé (un billet en remboursement → REFUND_PENDING).
+        const inRefund = await paymentsWithTicketInRefund(reply.items);
+        const items = reply.items.map((row) => (inRefund.has(row.id) ? { ...row, status: 'REFUND_PENDING' } : row));
+        const delayed = await delayedRefundPayments(items);
         return NextResponse.json({
-            items: reply.items.map((row) => ({
+            items: items.map((row) => ({
                 id: row.id,
                 created_at: row.created_at,
                 amount: row.amount,

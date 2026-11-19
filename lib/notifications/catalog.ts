@@ -674,10 +674,16 @@ function confirmationBlocks(facts: EmailFact[], list?: EmailList): EmailBlocks {
 
 // ── Le catalogue ───────────────────────────────────────────────────────────
 
+// Design 1b (point 8) : chaque lien vers Mes billets (in-app, push, bouton de l'email) ouvre l'onglet qui montre le billet
+// concerné : « À venir » (billet valable d'un événement pas fini : achat, billet reçu ou revenu, rappels), « Historique »
+// (utilisé, annulé, remboursé ou en remboursement), « Reçus » (transfert ou invitation qui attend, ou qui attendait :
+// transfert annulé ou révoqué), « Tous » (événement clos après suspension : le billet reste valable, l'onglet dépend de
+// l'heure de fin). Billet accepté par son destinataire (TRANSFER_CLAIMED_SENDER) : il a quitté le compte, aucun onglet ne le
+// montre plus ; « À venir » montre les billets qui restent. Les SMS gardent l'adresse courte /tickets (longueur comptée).
 const CATALOG = {
     PURCHASE_CONFIRMED: define('PURCHASE_CONFIRMED', {
         label: 'Confirmation d’achat', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'Achat confirmé',
             content: `${plural(count(d, 'ticket_count'), 'billet', 'billets')} pour ${q(text(d, 'title'))} le ${formatDateTime(iso(d, 'start_at'))}. Total payé : ${money(d, 'total')}. Vos billets sont dans Mes billets.`,
@@ -699,7 +705,7 @@ const CATALOG = {
     }),
     FREE_TICKETS_CONFIRMED: define('FREE_TICKETS_CONFIRMED', {
         label: 'Billets gratuits confirmés', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'Billets confirmés',
             // Lot 7 (7.9, D94) : lien vers Mes billets ajouté au texte.
@@ -747,20 +753,20 @@ const CATALOG = {
     }),
     TRANSFER_CANCELLED: define('TRANSFER_CANCELLED', {
         label: 'Transfert annulé', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=recus',
         inApp: (d) => ({ title: 'Transfert annulé', content: `Le transfert du billet pour ${q(text(d, 'title'))} a été annulé par son propriétaire.` }),
         sms: (d) => `${SMS_PREFIX}le transfert du billet ${smsVar(text(d, 'title'), 30)} a été annulé par son propriétaire.`,
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     TRANSFER_EXPIRED: define('TRANSFER_EXPIRED', {
         label: 'Transfert expiré', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Transfert expiré', content: `Votre billet pour ${q(text(d, 'title'))} n'a pas été accepté à temps : il reste dans vos billets.` }),
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     TRANSFER_CLAIMED_SENDER: define('TRANSFER_CLAIMED_SENDER', {
         label: 'Transfert accepté (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets?tab=historique',
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Billet accepté', content: `Votre billet pour ${q(text(d, 'title'))} a été accepté par son destinataire.` }),
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
@@ -769,7 +775,7 @@ const CATALOG = {
     // lot 6. Aucun montant ni prix.
     TRANSFER_RECEIVED: define('TRANSFER_RECEIVED', {
         label: 'Billet reçu', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => {
             const number = optText(d, 'ticket_number');
             return {
@@ -806,7 +812,7 @@ const CATALOG = {
     }),
     EVENT_CANCELLED: define('EVENT_CANCELLED', {
         label: 'Annulation d’un événement', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=historique',
         inApp: (d) => {
             const mode = text(d, 'refund_mode');
             const notice = optText(d, 'public_notice');
@@ -860,7 +866,7 @@ const CATALOG = {
     }),
     REMINDER_J1: define('REMINDER_J1', {
         label: 'Rappel la veille', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'REMINDER', link: () => '/tickets',
+        inAppType: 'REMINDER', link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'Rappel : c\'est demain',
             content: `${q(text(d, 'title'))} demain à ${formatTime(iso(d, 'start_at'))}, ${text(d, 'location')}, ${text(d, 'city')}. Vos billets sont dans Mes billets.`,
@@ -870,7 +876,7 @@ const CATALOG = {
     }),
     REMINDER_H3: define('REMINDER_H3', {
         label: 'Rappel avant le début', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'REMINDER', link: () => '/tickets',
+        inAppType: 'REMINDER', link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'C\'est bientôt',
             // Lot 7 (D33) : le billet reste présentable sans réseau (7.1) ; lien et SMS inchangés.
@@ -1752,7 +1758,7 @@ const CATALOG = {
     // N6 (R3, X10) : porteurs d'un événement suspendu puis clos par l'administration, sans motif.
     EVENT_CLOSED_HOLDER: define('EVENT_CLOSED_HOLDER', {
         label: 'Clôture d’un événement suspendu (porteurs)', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=tous',
         inApp: (d) => ({
             title: 'Événement clos',
             content: `${q(text(d, 'title'))} est clos par l'équipe Event Village après sa suspension. Il n'est pas annulé : aucun remboursement automatique.`,
@@ -1794,7 +1800,7 @@ const CATALOG = {
     // N9 (R61, X22) : billet remboursé pendant son transfert ; SMS au numéro, in-app, push et email au compte.
     TRANSFER_REVOKED: define('TRANSFER_REVOKED', {
         label: 'Transfert annulé par un remboursement', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=recus',
         inApp: (d) => ({ title: 'Transfert annulé', content: `Le billet pour ${q(text(d, 'title'))} a été remboursé à son acheteur : le transfert est annulé.` }),
         sms: (d) => `${SMS_PREFIX}le billet ${smsVar(text(d, 'title'), 30)} qui vous était transféré a été remboursé à son acheteur. Le transfert est annulé.`,
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
@@ -1802,14 +1808,14 @@ const CATALOG = {
     // N10 (R46) : le destinataire refuse le billet ; l'expéditeur le garde.
     TRANSFER_DECLINED_SENDER: define('TRANSFER_DECLINED_SENDER', {
         label: 'Transfert refusé (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Billet refusé', content: `Le destinataire a refusé votre billet pour ${q(text(d, 'title'))} : il reste dans vos billets.` }),
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     // N11 (R63) : le destinataire change de numéro ; le transfert est annulé.
     TRANSFER_RECIPIENT_CHANGED: define('TRANSFER_RECIPIENT_CHANGED', {
         label: 'Transfert annulé (numéro du destinataire changé)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'Transfert annulé',
             content: `Le destinataire de votre billet pour ${q(text(d, 'title'))} a changé de numéro : le transfert est annulé et le billet reste dans vos billets.`,
@@ -1949,7 +1955,7 @@ const CATALOG = {
     // N18 (R22) : invitation, billet gratuit ou billet payé en espèces annulé hors annulation de l'événement.
     TICKET_CANCELLED: define('TICKET_CANCELLED', {
         label: 'Billet annulé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=historique',
         inApp: (d) => {
             const kind = text(d, 'kind');
             const what = `${q(text(d, 'title'))} du ${formatDateTime(iso(d, 'start_at'))}`;
@@ -2038,7 +2044,7 @@ const CATALOG = {
     // N1 (9t.2, consigne 0.2) : détenteur actuel d'un billet transféré, remboursé hors annulation à l'acheteur d'origine.
     TICKET_REFUNDED_HOLDER: define('TICKET_REFUNDED_HOLDER', {
         label: 'Billet transféré annulé (détenteur)', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
-        link: () => '/tickets',
+        link: () => '/tickets?tab=historique',
         inApp: (d) => ({
             title: 'Billet annulé',
             content: `Votre billet ${text(d, 'category')} pour ${q(text(d, 'title'))} du ${formatDateTime(iso(d, 'start_at'))} a été annulé. Le remboursement est versé à l'acheteur d'origine.`,

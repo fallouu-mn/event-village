@@ -77,7 +77,7 @@ for (const { key: vue, device } of DEVICES) {
                 await expect(page.getByRole('button', { name: /^valider le paiement$/i })).toBeVisible();
                 await expect(page.getByRole('button', { name: /^refuser le paiement$/i })).toBeVisible();
 
-                const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true });
+                const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true, references: [/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/] });
                 record.blocking.push(...checks.blocking);
                 record.warnings.push(...checks.warnings);
                 record.axeDetails = checks.axeDetails;

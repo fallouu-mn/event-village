@@ -10,13 +10,16 @@ import {
   LogIn,
   LogOut,
   Mail,
+  MonitorSmartphone,
   Moon,
   Phone,
   QrCode,
   ReceiptText,
   Shield,
+  ShieldCheck,
   Sparkles,
   Sun,
+  Ticket,
   User,
   Wallet,
   CalendarCheck,
@@ -43,6 +46,9 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
  *  - Raccourcis : liens pleine largeur de 44 px au moins (préférences de notification, portefeuille,
  *    espaces professionnels selon les rôles).
  *  - Déconnexion par useAuth().signOut, qui détache d'abord l'appareil des notifications push.
+ *  - Design 1b (point 9) : sections en cartes (identité, informations, activité, préférences, sécurité) ; raccourcis en
+ *    liste dans une seule carte ; préférences de notification et thème regroupés ; « Se déconnecter » et « Déconnecter
+ *    tous mes appareils » (confirmé) dans la carte « Sécurité ». Flux de sécurité inchangés (useAuth().signOut).
  */
 
 const ROLE_LABELS: Record<string, string> = {
@@ -80,7 +86,7 @@ interface Shortcut {
 }
 
 const SHORTCUT_CLASS =
-  'group flex min-h-11 items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-4 transition-colors duration-200 hover:border-brand-fg/40 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'ev-press group flex min-h-11 items-center justify-between gap-3 rounded-xl px-3 py-3 transition-colors duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 function ShortcutBody({ title, description, icon: Icon, tone }: Omit<Shortcut, 'href'>) {
   return (
@@ -90,11 +96,11 @@ function ShortcutBody({ title, description, icon: Icon, tone }: Omit<Shortcut, '
           <Icon size={20} />
         </span>
         <span className="min-w-0">
-          <span className="block text-sm font-semibold text-fg group-hover:text-brand-fg">{title}</span>
-          <span className="block text-sm text-fg-muted">{description}</span>
+          <span className="block text-sm font-semibold text-foreground-strong group-hover:text-primary-text">{title}</span>
+          <span className="block text-sm text-muted-foreground">{description}</span>
         </span>
       </span>
-      <ChevronRight size={18} className="flex-shrink-0 text-fg-muted group-hover:text-brand-fg" aria-hidden="true" />
+      <ChevronRight size={18} className="flex-shrink-0 text-muted-foreground group-hover:text-primary-text" aria-hidden="true" />
     </>
   );
 }
@@ -170,11 +176,18 @@ export default function ProfilePage() {
 
   const shortcuts: Shortcut[] = [
     {
+      href: '/tickets',
+      title: 'Mes billets',
+      description: 'Vos billets, leur QR code et vos transferts',
+      icon: Ticket,
+      tone: 'brand',
+    },
+    {
       href: '/profile/payments',
       title: 'Mes paiements',
       description: 'L’historique de vos paiements et de vos remboursements',
       icon: ReceiptText,
-      tone: 'brand',
+      tone: 'info',
     },
     {
       href: '/wallet',
@@ -226,13 +239,13 @@ export default function ProfilePage() {
     <div className="mx-auto max-w-2xl space-y-6 pb-24 lg:pb-12">
       <PageHeader
         title="Mon profil"
-        description="Vos coordonnées, l’affichage de l’application, vos notifications et vos accès."
+        description="Vos coordonnées, vos préférences et la sécurité de votre compte."
       />
 
-      <section aria-labelledby="profil-identite" className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-5 text-center sm:flex-row sm:items-start sm:text-left">
+      <section aria-labelledby="profil-identite" className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-5 text-center shadow-sm sm:flex-row sm:items-start sm:text-left">
         <AvatarEditor avatarUrl={profile.avatar_url} initials={initials} />
         <div className="min-w-0 flex-1 space-y-2">
-          <h2 id="profil-identite" className="break-words text-lg font-semibold text-fg">{fullName}</h2>
+          <h2 id="profil-identite" className="break-words text-lg font-bold text-foreground-strong">{fullName}</h2>
           <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
             {isAmbassador && <Badge variant="brand">Ambassadeur Event Village</Badge>}
             {isPartner && (
@@ -241,13 +254,13 @@ export default function ProfilePage() {
               </Badge>
             )}
           </div>
-          <dl className="space-y-1 text-sm text-fg-muted">
+          <dl className="space-y-1 text-sm text-muted-foreground">
             <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
               <dt className="flex items-center gap-1.5">
                 <Phone size={16} aria-hidden="true" />
                 <span className="sr-only">Téléphone</span>
               </dt>
-              <dd className="text-fg tabular-nums">{profile.phone ? displayPhone(profile.phone) : 'Non renseigné'}</dd>
+              <dd className="text-foreground-strong tabular-nums">{profile.phone ? displayPhone(profile.phone) : 'Non renseigné'}</dd>
             </div>
             {isDeliverableEmail(profile.email) && (
               <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
@@ -255,7 +268,7 @@ export default function ProfilePage() {
                   <Mail size={16} aria-hidden="true" />
                   <span className="sr-only">Email</span>
                 </dt>
-                <dd className="break-all text-fg">{profile.email}</dd>
+                <dd className="break-all text-foreground-strong">{profile.email}</dd>
               </div>
             )}
             <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
@@ -263,14 +276,14 @@ export default function ProfilePage() {
                 <User size={16} aria-hidden="true" />
                 <span>{roleText.length > 1 ? 'Rôles :' : 'Rôle :'}</span>
               </dt>
-              <dd className="text-fg">{roleText.join(', ')}</dd>
+              <dd className="text-foreground-strong">{roleText.join(', ')}</dd>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
               <dt className="flex items-center gap-1.5">
                 <BadgeCheck size={16} aria-hidden="true" />
                 <span className="sr-only">Statut du compte</span>
               </dt>
-              <dd className="text-fg">{statusText}</dd>
+              <dd className="text-foreground-strong">{statusText}</dd>
             </div>
           </dl>
         </div>
@@ -278,19 +291,9 @@ export default function ProfilePage() {
 
       <ProfileForm profile={profile} />
 
-      <section aria-labelledby="profil-raccourcis" className="space-y-3">
-        <h2 id="profil-raccourcis" className="text-base font-semibold text-fg">Réglages et espaces</h2>
-        <ul className="space-y-3">
-          <li>
-            <Link href="/profile/notifications" className={SHORTCUT_CLASS}>
-              <ShortcutBody
-                title="Préférences de notification"
-                description="Rappels, changements d’événement, SMS et notifications push sur cet appareil"
-                icon={Bell}
-                tone="brand"
-              />
-            </Link>
-          </li>
+      <section aria-labelledby="profil-raccourcis" className="rounded-2xl border border-border bg-card p-2 shadow-sm">
+        <h2 id="profil-raccourcis" className="px-3 pb-1 pt-3 text-base font-semibold text-foreground-strong">Mon activité</h2>
+        <ul className="divide-y divide-border">
           {shortcuts.map(({ href, ...body }) => (
             <li key={href}>
               <Link href={href} className={SHORTCUT_CLASS}>
@@ -301,44 +304,65 @@ export default function ProfilePage() {
         </ul>
       </section>
 
-      <section aria-labelledby="profil-theme" className="space-y-3 rounded-2xl border border-border bg-surface p-5">
-        <h2 id="profil-theme" className="text-base font-semibold text-fg">Affichage</h2>
-        <div className="grid grid-cols-3 gap-2" role="group" aria-label="Thème de l’application">
-          {THEMES.map(({ id, label, icon: Icon }) => {
-            const active = theme === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setTheme(id)}
-                className={cn(
-                  'flex min-h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors duration-200',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  active ? 'border-brand bg-brand text-on-brand' : 'border-border bg-surface-sunken text-fg hover:border-border-strong',
-                )}
-              >
-                <Icon size={18} aria-hidden="true" />
-                <span>{label}</span>
-              </button>
-            );
-          })}
+      <section aria-labelledby="profil-preferences" className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
+        <h2 id="profil-preferences" className="text-base font-semibold text-foreground-strong">Préférences</h2>
+        <Link href="/profile/notifications" className={cn(SHORTCUT_CLASS, '-mx-3')}>
+          <ShortcutBody
+            title="Préférences de notification"
+            description="Rappels, changements d’événement, SMS et notifications sur cet appareil"
+            icon={Bell}
+            tone="brand"
+          />
+        </Link>
+        <div className="space-y-2">
+          <h3 id="profil-theme" className="text-sm font-semibold text-foreground-strong">Affichage</h3>
+          <div className="grid grid-cols-3 gap-2" role="group" aria-labelledby="profil-theme">
+            {THEMES.map(({ id, label, icon: Icon }) => {
+              const active = theme === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTheme(id)}
+                  className={cn(
+                    'ev-press flex min-h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors duration-200',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-muted text-foreground-strong hover:border-input',
+                  )}
+                >
+                  <Icon size={18} aria-hidden="true" />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
-      <Button
-        variant="secondary"
-        fullWidth
-        onClick={() => void signOut()}
-        leftIcon={<LogOut size={18} aria-hidden="true" />}
-        className="border-danger-border text-danger-fg hover:bg-danger-bg"
-      >
-        Se déconnecter
-      </Button>
-      <p className="text-center text-sm text-fg-muted">« Se déconnecter » ferme seulement cet appareil.</p>
-      <Button variant="ghost" fullWidth onClick={() => setConfirmEverywhere(true)}>
-        Déconnecter tous mes appareils
-      </Button>
+      <section aria-labelledby="profil-securite" className="space-y-3 rounded-2xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className={cn('flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl', TONE_ICON.neutral)} aria-hidden="true">
+            <ShieldCheck size={20} />
+          </span>
+          <div className="min-w-0">
+            <h2 id="profil-securite" className="text-base font-semibold text-foreground-strong">Sécurité</h2>
+            <p className="text-sm text-muted-foreground">« Se déconnecter » ferme seulement cet appareil.</p>
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          fullWidth
+          onClick={() => void signOut()}
+          leftIcon={<LogOut size={18} aria-hidden="true" />}
+          className="border-danger-border text-danger-text hover:bg-danger-soft"
+        >
+          Se déconnecter
+        </Button>
+        <Button variant="ghost" fullWidth onClick={() => setConfirmEverywhere(true)} leftIcon={<MonitorSmartphone size={18} aria-hidden="true" />}>
+          Déconnecter tous mes appareils
+        </Button>
+      </section>
       <ConfirmDialog
         isOpen={confirmEverywhere}
         onClose={() => setConfirmEverywhere(false)}
