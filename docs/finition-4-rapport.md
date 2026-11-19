@@ -1,6 +1,6 @@
 # Finition 4 — Messages : chaque étape annoncée
 
-Branche `finition-4/messages`, partie de `main` à `fce22b609` (lot 11a fusionné), dans son propre dossier (`event-village-finition4`, `node_modules` propre). **Rien n'est fusionné dans `main`** (fusion prévue après le design 1c). Migrations `20261125000001` à `…06`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur event-village-dev.
+Branche `finition-4/messages`, partie de `main` à `fce22b609` (lot 11a fusionné), dans son propre dossier (`event-village-finition4`, `node_modules` propre). Correctifs de la contre-vérification (`docs/audit-finition-4.md`, branche `finition-4/rouges`) appliqués (§ 7 bis) ; `main` à `6afe843df` (design 1c et 1c bis) fusionné dans la branche. Migrations `20261125000001` à `…06`, sans BEGIN ni COMMIT, rejouables. Fusion dans `main` et application : § 8 bis.
 
 ## À lire en premier
 
@@ -10,7 +10,8 @@ Branche `finition-4/messages`, partie de `main` à `fce22b609` (lot 11a fusionn�
 - **Bienvenue à l'entrée** : au premier passage d'un spectateur, elle **remplace** l'avis « Entrée validée » de ce billet (un seul message). Les billets suivants du même porteur gardent « Entrée validée » groupé.
 - **SMS du merci** : « être » n'existe pas dans l'alphabet SMS standard (un seul SMS exigé) ; le SMS dit « merci de votre présence à … », la cloche et l'email gardent « Merci d'être venu ».
 - **En cours de lot**, à la demande de l'utilisateur : `npm run taches`, déclencheur local des tâches planifiées (§ 6) ; et, venant du design 1c, « super-administrateur » dans tous les modèles et l'écart de caisse en mots (§ 6 bis).
-- **Tests modifiés** : 31 suites et 2 aides de test existantes figeaient l'ancien comportement que le client a changé ; chacune est listée en § 7 avec la raison.
+- **Tests modifiés** : 31 suites et 3 aides de test existantes figeaient l'ancien comportement que le client a changé ; chacune est listée en § 7 avec la raison. Les suites de la contre-vérification (`cvf4-1` à `cvf4-4`) passent sans changement d'assertion ; une seule a été touchée, pour son isolation (§ 7 bis).
+- **Contre-vérification** : T1 (avis de suspension ou de reprise qui n'est plus vrai), T2 (avis d'état d'un événement terminé) et T3 (SMS facultatifs qui consommaient la part des indispensables) corrigés (§ 7 bis).
 
 ## 1. État de chaque point
 
@@ -174,7 +175,19 @@ Chaque modification porte en commentaire « Finition 4 … modification signalé
 | `notif-preferences` | sujets « Après l'événement » et « Résumé du matin » | points 2, 3 |
 | `notif-migration` | `NEW_ORDER` mis en file par `notif_sale_recorded` | point 2 |
 | `cv11a-5-recopies` | si une migration postérieure recopie la fonction, la 11a est contrôlée sur son fichier (la base l'est par `f4-recopies`) | recopie de `notif_cashouts_notify` |
-| `f3b-ecrans`, `f3d-ecrans` | les messages envoyés disent « super-administrateur » ; les écrans gardent « Superadmin » (G-45) | demande du design 1c |
+| `f3d-ecrans` | le SMS du code du numéro administrateur dit « super-administrateur » | demande du design 1c (la règle de `f3b-ecrans` est celle de `main` depuis la fusion : « super-administrateur » partout) |
+| invariant (n) de `tests/helpers/notification-invariants.ts` | un SMS facultatif parti la nuit est admis s'il est marqué « événement dans moins de 12 h ou en cours » (`quiet.event_soon`) | règle du client du 20/11 |
+| `notif-pros` (avis aux porteurs d'un événement suspendu) | envoyés « maintenant » au lieu de « demain à midi » (heure par défaut de l'outil) : l'événement du test commence dans 3 h et finit avant midi le lendemain, l'avis serait annulé comme « événement terminé » | correctif T2 |
+| `acces-limiteurs`, `tests/seed/seed-demo.ts` | le compteur nouveau des SMS facultatifs par numéro est levé comme l'autre (1 000) | correctif T3 |
+
+## 7 bis. Correctifs de la contre-vérification
+
+Tous dans la migration `…06` (aucune n'était appliquée) et dans `lib/sms/sms-guard.ts`. Les suites `cvf4-1` à `cvf4-4` passent au vert sans changement d'assertion ; le T2 de `cvf4-1` a été adapté par la contre-vérification elle-même à la règle des 12 h (décision du chef de projet, `dbc4da362`).
+
+- **T1** : à la réservation (`notification_outbox_claim`), un avis `EVENT_SUSPENDED_HOLDER` dont l'événement n'est plus `SUSPENDU`, ou `EVENT_REACTIVATED_HOLDER` dont l'événement n'est plus `PUBLIE`, est annulé (motif « n'est plus d'actualité »). La vérification se fait au moment d'envoyer, après la décision de nuit : un avis reporté à 07:00 est revérifié à 07:00. `notif_cancel_on_status` (recopie de `20261109000009_lot9bis_messages.sql`) annule aussi ces lignes en attente au changement d'état ; son déclencheur se déclenche désormais aussi sur `PUBLIE`, et l'annulation des rappels reste limitée à `SUSPENDU`, `ANNULE`, `TERMINE`.
+- **T2** : la règle des 12 h envoie tout de suite (inchangé) ; en plus, à la réservation, un avis d'état au porteur dont l'événement est terminé (statut `TERMINE` ou fin passée) est annulé (motif `EVENT_TERMINE`).
+- **T3** : deux compteurs par numéro et par jour : `sms_phone` (indispensables et autres SMS non OTP, `SMS_PER_PHONE_DAY`) et `sms_phone_optional` (famille facultative, `SMS_PER_PHONE_DAY_OPTIONAL`, même valeur par défaut 30, réglable). Un facultatif ne consomme jamais la part d'un indispensable. Test de la contre-vérification (`cvf4-2`) : 30 SMS de ventes, puis l'alerte de porte part.
+- **Isolation de `cvf4-4`** (run 474) : la suite passe deux billets à UTILISE par SQL direct, sans la ligne de scan qu'un vrai scan écrit ; l'invariant (g) du contrôle d'accès tombait alors à la fin des 82 suites suivantes du même lot. Un `after()` écrit à la fin la ligne de scan accepté (par le partenaire de l'événement, à la version courante du secret du billet : invariant (p), run 475). Aucune assertion changée.
 
 ## 8. Runs
 
@@ -185,7 +198,11 @@ Chaque modification porte en commentaire « Finition 4 … modification signalé
 | 445 | `555246a33` | 533/535 | vert | 85-88 (machine lente : indice 3 300, calibrage ×6,7 ; scores bruts 94-98) | deux comptes de lignes |
 | 448 | `4aadf5ed0` | 534/535 | vert | vert | un compte de lignes |
 | 458 | `75b3ae35f` | 532/535 | vert | Mes billets 88 | demande du design 1c : deux tests figeaient « Superadmin » ; deux comptes de lignes |
-| **463** | **`fe63b952e`** | **535/535** | **vert** | **vert (90, 93, 93)** | **run complet vert, 50 min 49 s** |
+| **463** | **`fe63b952e`** | **535/535** | **vert** | **vert (90, 93, 93)** | **run complet vert, 50 min 49 s** (avant la contre-vérification) |
+| 470 | `8c0373b2c` | rouge (invariant n) | vert | — | correctifs T1-T3 : l'invariant (n) refusait les SMS facultatifs partis la nuit pour un événement proche (règle du 20/11) ; la vérification d'état était faite avant la décision de nuit |
+| 474 | `25f70efac` | 2 lots rouges | connexion du super-administrateur (code SMS non lu, 1re fois sur 40 runs ; aucun changement de l'OTP) | rouge (pages non touchées) | renvois vers `notif-pros` décalés de 2 lignes ; isolation de `cvf4-4` (82 suites rouges par l'invariant g) |
+| 475 | `9297f6a90` | 1 lot rouge | fumée (scan du partenaire) et terrain 1 (vignette de « Mes billets » sans cesse redessinée) | vert | `main` fusionné ; la ligne de scan ajoutée à `cvf4-4` n'avait pas de version de secret (invariant p, 66 suites) ; e2e : voir § 8 ter |
+| RUN_APRES | | | | | |
 
 La mesure mobile a varié d'un run à l'autre sur des pages que ce lot ne touche pas (accueil, fiche, Mes billets), avec le poids JavaScript toujours vert : variation de la machine de mesure, déjà vue au run 432 de main. Rien n'a été changé pour elle.
 
