@@ -323,4 +323,6 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/tickets/TicketWallet.tsx',
     'components/tickets/QrFullscreen.tsx',
     'components/tickets/PurchaseCelebration.tsx',
+    // Design 1c : espace organisatrice, administration, scanner, paiement
+    'components/payment/OperatorLogo.tsx',
 ];
