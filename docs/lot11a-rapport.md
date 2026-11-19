@@ -219,6 +219,10 @@ Aucune assertion de `tests/audit/cv11a-*` n'a changé.
 | 410 | `2595ceee6` | rapide, 62 suites (52 d'audit dont cv11a-1 à 5, et les suites du lot touchées) | 61/62 : **les 5 suites cv11a vertes** ; seul rouge, mon test T2 relance (voir ci-dessus) ; typecheck et lint verts |
 | 412 | `7403c5079` | rapide, `l11a-cv-correctifs` | **vert, 13/13** |
 | 413 | `a2c926b35` | **complet** | **vert : 513/513** (4 lots, 513 attendues, 513 exécutées), build, budgets JS, e2e (connexion, captures, courriels, fumée, terrain, PWA, déconnexion, recette, perf) ; 39 min 36 s |
+| 423 | `111b2cf01` (fusion de main `ce737247f`, design 1b) | complet | tests verts (4 lots), e2e vert ; **seul rouge : perf mobile, Mes billets 89 (seuil 90)**, le rouge de main au run 414, corrigé par la 1re session sur `correctif/main-414` ; rien à corriger dans le lot |
+| 431 | `3d7c07918` (fusion de main `030103bff`, correctif main-414, run 429 vert) | **complet** | **vert : 531/531** (4 lots de 133, 133, 133, 132), build, budgets JS, e2e (connexion, captures, courriels, fumée, terrain, PWA, déconnexion, recette, perf : « tous les seuils sont tenus ») ; 52 min |
+
+Fusions de main (19/11) : `111b2cf01`, un seul conflit, `docs/recette-billetterie.md` (lignes citées : §131, §132-133, A28, A29 recalées sur le code fusionné ; matrice de la recette verte) ; `3d7c07918`, sans conflit. `migration-lot10a-rejouable` : une seule version, identique des deux côtés (règle « après toutes celles d'avant le lot »). `20261123000001` (design 1b) et `20261123000002` (main-414) passent avant `20261123000101…113` et ne redéfinissent aucune fonction du lot.
 
 Run 413, sorties brutes des anciens trous :
 
@@ -238,7 +242,17 @@ TOTAL : 513 suite(s) — 513 réussie(s), 0 en échec, 0 expirée(s)
 [e2e] résumé :connexion OK · captures OK · emails OK · dev-page OK · fumee OK · terrain OK · pwa OK · deconnexion OK · fake-prod OK · perf OK · recette OK
 ```
 
-Journaux bruts : branche `ci-results`, `runs/410-44359885385/`, `runs/412-44362137408/`, `runs/413-44363052881/`.
+Run 431, sorties brutes :
+
+```
+TOTAL : 133 suite(s) — 133 réussie(s), 0 en échec, 0 expirée(s)   (lots 1, 2, 3)
+TOTAL : 132 suite(s) — 132 réussie(s), 0 en échec, 0 expirée(s)   (lot 4)
+[ci-lots] 531 suite(s) en 4 lot(s) (équilibrés par durée)
+VERDICT : OK — tous les seuils sont tenus
+[e2e] résumé :connexion OK · captures OK · emails OK · dev-page OK · fumee OK · terrain OK · pwa OK · deconnexion OK · fake-prod OK · perf OK · recette OK
+```
+
+Journaux bruts : branche `ci-results`, `runs/410-44359885385/`, `runs/412-44362137408/`, `runs/413-44363052881/`, `runs/423-44438606200/`, `runs/431-44470996475/`.
 
 ### Mise en service (event-village-dev)
 
@@ -249,6 +263,15 @@ Contrôles « avant » (18/11, `db query --linked`, lecture seule) :
 ```
 A  dernière migration                        : 20261122000012
 A2 versions 20261123*                        : aucune (ni 20261123000001 du design 1b, ni celles du lot)
+B  fonctions table_/venue_, table venues      : 0, 0
+C  tables, réservations, recouvrements       : 0, 0, 0
+```
+
+Contrôles « avant » (19/11, après application de `20261123000001` et `000002` par la 1re session, `db query --linked`, lecture seule) :
+
+```
+A  dernière migration                        : 20261123000002
+A2 versions 20261123*                        : 20261123000001, 20261123000002
 B  fonctions table_/venue_, table venues      : 0, 0
 C  tables, réservations, recouvrements       : 0, 0, 0
 ```
