@@ -44,7 +44,11 @@ export const OUTBOX_REASON_LABELS: Readonly<Record<string, string>> = {
     // Non envoyée
     PREFERENCE_DISABLED: 'Désactivée dans les préférences du destinataire',
     ACCOUNT_SUSPENDED: 'Compte suspendu',
-    QUIET_HOURS: 'Plage sans SMS (nuit)',
+    // Avant la finition 4 : SMS facultatif de nuit non envoyé (lignes anciennes) ; depuis, reporté à la fin de la plage.
+    QUIET_HOURS: 'Plage sans SMS (nuit), ancienne règle',
+    // Finition 4 : décision « reporter » (la ligne reste en attente) ; rappel annulé à moins de 30 minutes du début.
+    NIGHT: 'Plage de nuit : reporté à sa fin',
+    TOO_CLOSE_TO_START: 'Moins de 30 minutes avant le début',
     NO_PHONE: 'Aucun numéro de téléphone',
     NO_REAL_EMAIL: 'Aucune adresse email réelle',
     EMAIL_NOT_CONFIGURED: 'Envoi des emails non configuré',
@@ -146,6 +150,12 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     TRIAL_STARTED: "Période d'essai activée",
     SUBSCRIPTION_ACTIVATED: 'Abonnement activé',
     PAYMENT_SUCCESS: 'Paiement confirmé',
+    // Finition 4
+    SALES_UPDATE_SMS: 'Ventes groupées par SMS',
+    PARTNER_DAILY_SUMMARY: 'Résumé du matin',
+    ENTRY_WELCOME: 'Bienvenue à l’entrée',
+    ENTRY_THANKS: 'Merci du lendemain',
+    PARTNER_REFUND_REQUESTS: 'Remboursements demandés par des clients',
     HALL_RESERVATION_REQUESTED: 'Nouvelle réservation de salle',
     HALL_RESERVATION_CONFIRMED: 'Réservation de salle confirmée',
     HALL_RESERVATION_CANCELLED: 'Réservation de salle annulée',
@@ -180,7 +190,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_REFUND_TO_RETRY: 'Remboursement à reprendre',
     ADMIN_DUPLICATE_PAYMENT: 'Paiement en double remboursé',
     ADMIN_CASHOUT_UNCERTAIN: 'Versement incertain',
-    ADMIN_WITHDRAWAL_REJECTED: "Retrait refusé par l'opérateur",
+    ADMIN_WITHDRAWAL_REJECTED: "Retrait refusé par l'opérateur ou constaté non versé",
     ADMIN_FINANCE_DEBT: 'Créance sur un compte',
     ADMIN_NOTIFICATION_FAILED: 'Notification en échec',
     ADMIN_SMS_DAILY_THRESHOLD: 'Volume de SMS indispensables élevé',

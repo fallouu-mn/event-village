@@ -26,7 +26,7 @@
  */
 import { supportEmail } from '@/lib/support';
 
-export type EmailTopic = 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY';
+export type EmailTopic = 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | 'SALES_SUMMARY' | 'AFTER_EVENT';
 
 const ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' };
 

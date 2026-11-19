@@ -76,6 +76,8 @@ export const NOTIFICATION_TYPE_META: Readonly<Record<string, NotificationTypeMet
     NOTIFICATION_ALERT: { label: 'Envoi en échec', category: 'alert' },
     SMS_DAILY_THRESHOLD: { label: 'Volume de SMS', category: 'alert' },
     PROMOTION: { label: 'Mise en avant', category: 'event' },
+    // Finition 4 : merci du lendemain (ENTRY_THANKS)
+    THANKS: { label: 'Remerciement', category: 'event' },
 };
 
 /** Catégorie connue (filtre `?category=` de GET /api/notifications, onglets de la page). */
