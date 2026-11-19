@@ -4,7 +4,7 @@ Ce guide vous permet de tester toute la billetterie à la main, sur votre PC Win
 
 Aucune valeur réelle n'est écrite ici. Partout où vous voyez `<quelque chose>`, remplacez tout le bloc, chevrons compris, par votre valeur. Ne collez jamais une clé, un secret ou un mot de passe dans un message, une capture d'écran ou un fichier du dépôt.
 
-**Le risque à connaître avant tout :** sans la ligne `EV_INTEGRATIONS=fake` dans `.env.local`, `npm run dev` et `npm run cron:local` envoient de **vrais SMS**, payés par vous, et parlent au **vrai SamirPay**. Avant chaque séance, vérifiez la bannière décrite en section 6. Pour une séance en réel voulue, suivez la section 13, et elle seule.
+**Le risque à connaître avant tout :** sans la ligne `EV_INTEGRATIONS=fake` dans `.env.local`, `npm run dev` et `npm run taches` envoient de **vrais SMS**, payés par vous, et parlent au **vrai SamirPay**. Avant chaque séance, vérifiez la bannière décrite en section 6. Pour une séance en réel voulue, suivez la section 13, et elle seule.
 
 ---
 
@@ -289,10 +289,22 @@ Une ligne qui commence par `[réel]` à la place de la bannière veut dire que l
 **Fenêtre 3, les tâches planifiées :**
 
 ```powershell
-npm run cron:local
+npm run taches
 ```
 
-Attendu : `8 tâches, appels vers http://localhost:3000 ; Ctrl+C pour arrêter`, puis, chaque minute, une ligne comme `ev_notifications_dispatch HTTP 200 …`. Le premier passage de chaque tâche peut être lent : l'application la prépare à sa première utilisation. Le même journal est écrit dans `.logs/cron-local.log`.
+`npm run taches` est le déclencheur local des tâches planifiées, pour la recette sur poste (`npm run cron:local` lance le même script). Sur le poste, aucune tâche ne tourne toute seule : sans cette fenêtre, aucune notification ne part, aucun rappel n'est préparé, aucun paiement en attente n'est relu.
+
+Ce qu'il fait :
+
+- il appelle chaque minute les **mêmes routes** que la planification de la préproduction et de la production (`supabase/ops/schedule-crons.sql`, lue telle quelle : rien n'est recopié), aux **mêmes fréquences** ;
+- il lit `CRON_SECRET` dans l'environnement (`.env.local`) et l'envoie dans l'en-tête, comme pg_cron ; le secret n'est jamais écrit à l'écran ni dans le journal ;
+- il n'appelle **que l'application locale** (`http://localhost:<port>`) : toute autre adresse est refusée avant le premier appel, et il refuse de démarrer si `NEXT_PUBLIC_APP_URL` n'est pas locale (sauf tunnel déclaré par `EV_DEV_TUNNEL_URL`, section 9 : même alors, les appels restent sur `localhost`) ;
+- il affiche en clair ce qu'il lance : au démarrage, la liste des tâches (nom, fréquence, route), puis une ligne `lancé : <tâche> → POST <adresse>` avant chaque appel et une ligne avec le résultat (`HTTP 200`, durée, réponse) après ;
+- **Ctrl+C l'arrête proprement** : plus aucun nouvel appel, il attend la fin des appels en cours, puis affiche `arrêté proprement : N appels lancés, X réussis, Y en échec`. Un second Ctrl+C force l'arrêt.
+
+Attendu au démarrage : `9 tâches, appels vers http://localhost:3000 ; Ctrl+C pour arrêter`, la liste des 9 tâches, puis, chaque minute, des lignes comme `lancé : ev_notifications_dispatch → POST http://localhost:3000/api/cron/notifications-dispatch` et `ev_notifications_dispatch HTTP 200 …`. Le premier passage de chaque tâche peut être lent : l'application la prépare à sa première utilisation. Le même journal est écrit dans `.logs/cron-local.log`.
+
+En préproduction et en production, ce déclencheur ne sert pas : les tâches sont posées dans la base par `supabase/ops/schedule-crons.sql` (pg_cron, adresse et secret lus dans Vault).
 
 Ouvrez ensuite `http://localhost:3000` : l'accueil doit s'afficher.
 
