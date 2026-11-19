@@ -1,11 +1,11 @@
 # Finition 4 — Messages : chaque étape annoncée
 
-Branche `finition-4/messages`, partie de `main` à `fce22b609` (lot 11a fusionné), dans son propre dossier (`event-village-finition4`, `node_modules` propre). **Rien n'est fusionné dans `main`** (fusion prévue après le design 1c). Migrations `20261125000001` à `…05`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur event-village-dev.
+Branche `finition-4/messages`, partie de `main` à `fce22b609` (lot 11a fusionné), dans son propre dossier (`event-village-finition4`, `node_modules` propre). **Rien n'est fusionné dans `main`** (fusion prévue après le design 1c). Migrations `20261125000001` à `…06`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur event-village-dev.
 
 ## À lire en premier
 
 - **La nuit ne fait plus perdre de message.** Plage par défaut 01:00 → 07:00, heure de Dakar (réglage, valeur posée par la migration si la valeur d'origine 22 h - 8 h n'a pas été changée). Un SMS ou un push non urgent préparé la nuit reste « En attente » et part à 07:00, sans tentative ni budget consommés ; l'urgent part tout de suite ; le SMS des admins suit le même réglage. Un rappel n'est jamais envoyé à moins de 30 minutes du début.
-- **Qui est « non urgent »** est désormais écrit dans le registre (`notification_types.night_policy`) : toute la famille facultative, plus 22 avis sans urgence (liste en § 2). Tout le reste (achat, billet, annulation, remboursement, sécurité, porte, bienvenue…) est urgent. **Liste à valider par le client.**
+- **Qui est « non urgent »** est désormais écrit dans le registre (`notification_types.night_policy`) : toute la famille facultative, plus 22 avis sans urgence (liste en § 2). Tout le reste (achat, billet, annulation, remboursement, sécurité, porte, bienvenue…) est urgent. **Liste validée par le client le 20/11, avec une règle en plus : un avis lié à un événement qui commence dans moins de 12 h ou en cours est urgent (§ 2).**
 - **42 types existants gagnent des canaux**, 5 types sont nouveaux (§ 3). Règle appliquée : SMS pour les étapes qui touchent l'argent, l'accès à l'événement ou demandent une action ; push, cloche et email partout. Pas de SMS quand la personne vient d'agir elle-même à l'écran (essai, abonnement, billet reçu par transfert accepté).
 - **Bienvenue à l'entrée** : au premier passage d'un spectateur, elle **remplace** l'avis « Entrée validée » de ce billet (un seul message). Les billets suivants du même porteur gardent « Entrée validée » groupé.
 - **SMS du merci** : « être » n'existe pas dans l'alphabet SMS standard (un seul SMS exigé) ; le SMS dit « merci de votre présence à … », la cloche et l'email gardent « Merci d'être venu ».
@@ -28,6 +28,7 @@ Branche `finition-4/messages`, partie de `main` à `fce22b609` (lot 11a fusionn�
 
 - **Décision** : `notification_outbox_claim` reporte (décision `DEFER`, motif `NIGHT`) toute ligne SMS ou push d'un type `night_policy = DEFER` réservée pendant la plage : `due_at` et `next_attempt_at` = fin de plage. À la fin de la plage, toutes les revérifications s'appliquent (événement commencé, plus de billet, préférence coupée…).
 - **Non urgents (DEFER)** : toute la famille facultative (rappels, ventes, résumé, merci, suspension et reprise pour les porteurs…) et : SMS des admins à valider ; événement validé, refusé, publié par l'administration ; compte partenaire validé, refusé, réactivé ; mise en avant décidée ; espèces marquées rendues par l'administration ; recettes disponibles ; événement terminé ; rapport de clôture prêt ; remboursements d'une annulation terminés ; billet revenu à l'expéditeur (expiré, refusé, numéro changé) ; transfert accepté ; invitation de contrôleur acceptée, refusée, sans réponse ; contrôleur devenu administrateur ; demandes de remboursement des clients.
+- **Règle du 20/11 (liste validée par le client)** : tout avis lié à un événement qui commence dans moins de 12 heures, ou qui est en cours, est urgent, même la nuit (billet revenu à l'expéditeur, transfert, invitation de contrôleur, rappel, ventes d'un événement en cours…). L'événement est celui de la ligne ou l'un de ceux de la liste d'une invitation de contrôleur ; un événement annulé ne compte pas. Migration `…06` (`notif_event_soon`, recopie de la réservation depuis `…02`) ; la supervision affiche « événement dans moins de 12 h ou en cours : envoyé sans attendre ». Test à heure simulée (03:00) dans `f4-messages` : événement à 05:00 et événement en cours envoyés, événement lointain reporté à 07:00, invitation liée par sa liste.
 - **Rappels** : annulés à moins de 30 minutes du début (motif « Moins de 30 minutes avant le début »).
 - **Prévision du budget** : les rappels de la veille et des contrôleurs dus la nuit sont comptés (reportés le même jour) ; le rappel du jour même compte s'il part plus de 30 minutes avant le début.
 - **Correction annexe** : la supervision affichait « De ? h à ? h » pour un SMS d'admin reporté par le correctif main-414 ; elle affiche désormais l'heure du report.
@@ -194,6 +195,6 @@ Remarque : les suites qui envoient « maintenant » un avis non urgent (SMS ou p
 
 ## 9. Reste à faire
 
-- Appliquer les migrations `20261125000001…05` sur event-village-dev après fusion (dry-run : exactement ces 5).
-- Valider avec le client la liste des avis « non urgents » (§ 2) et la règle des SMS (§ 3).
+- Appliquer les migrations `20261125000001…06` sur event-village-dev après fusion, sur feu vert (dry-run : exactement ces 6).
+- Liste des avis « non urgents » validée par le client le 20/11 (règle de l'événement proche ajoutée) ; règle des SMS (§ 3) à confirmer.
 - Sur event-village-dev, la plage et le plafond ne changent que s'ils avaient leur valeur d'origine ; sinon, les régler à la main.
