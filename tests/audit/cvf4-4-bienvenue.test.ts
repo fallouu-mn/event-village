@@ -41,14 +41,14 @@ before(async () => {
 // G6 passe deux billets à UTILISE par SQL direct, sans la ligne ticket_scans qu'un vrai scan écrit. L'invariant (g) du
 // contrôle d'accès (tests/helpers/access-invariants.ts), vérifié à la fin des suites suivantes du même lot, tombait alors
 // (run 474 : 82 suites rouges après cette suite). La ligne de scan accepté que le scan aurait laissée est écrite à la fin,
-// faite par le partenaire de l'événement.
+// faite par le partenaire de l'événement, à la version courante du secret du billet (invariant (p), run 475).
 after(async () => {
     if (!ev) return;
     const db = await openConcurrentClient({ applicationName: 'cvf4-bienvenue-traces' });
     try {
         await db.query(
-            `INSERT INTO public.ticket_scans (ticket_id, event_id, scanner_id, result, accepted, method, identity_verified, payload_hash, scanner_role)
-             SELECT t.id, t.event_id, $2, 'valid', TRUE, 'QR', FALSE, encode(extensions.gen_random_bytes(32), 'hex'), 'PARTENAIRE'
+            `INSERT INTO public.ticket_scans (ticket_id, event_id, scanner_id, result, accepted, method, identity_verified, payload_hash, scanner_role, secret_version)
+             SELECT t.id, t.event_id, $2, 'valid', TRUE, 'QR', FALSE, encode(extensions.gen_random_bytes(32), 'hex'), 'PARTENAIRE', t.security_version
                FROM public.tickets t
               WHERE t.event_id = $1 AND t.status = 'UTILISE'
                 AND NOT EXISTS (SELECT 1 FROM public.ticket_scans s WHERE s.ticket_id = t.id AND s.accepted)`,
