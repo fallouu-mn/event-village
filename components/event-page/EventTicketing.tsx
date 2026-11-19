@@ -35,6 +35,7 @@ import {
   type PublicCategory,
   type PublicEventDetail,
 } from '@/lib/events/event-detail';
+import { OperatorLogo } from '@/components/payment/OperatorLogo';
 import { CATEGORY_STRIPE, CATEGORY_STRIPE_NONE } from './category-colors';
 import { onPending, requestPendingRefresh, TICKETS_AFTER_PURCHASE } from './signals';
 
@@ -166,13 +167,20 @@ function CategoryStripe({ cat }: { cat: PublicCategory }) {
   );
 }
 
+/** Design 1c (point 5) : « Payer avec » et les logos officiels des opérateurs, nom toujours écrit à côté. */
 function PayMethods() {
   return (
-    <p className="flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
-      <span>Paiement</span>
-      <span className="rounded-md bg-op-wave px-2 py-0.5 text-sm font-bold text-on-op">Wave</span>
+    <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+      <span>Payer avec</span>
+      <span className="inline-flex items-center gap-1.5 font-semibold text-foreground-strong">
+        <OperatorLogo operator="WAVE" size="sm" />
+        Wave
+      </span>
       <span>ou</span>
-      <span className="rounded-md bg-op-orange-money px-2 py-0.5 text-sm font-bold text-on-op">Orange Money</span>
+      <span className="inline-flex items-center gap-1.5 font-semibold text-foreground-strong">
+        <OperatorLogo operator="ORANGE_MONEY" size="sm" />
+        Orange Money
+      </span>
     </p>
   );
 }

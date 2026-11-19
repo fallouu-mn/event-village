@@ -73,6 +73,8 @@ const config: Config = {
         'op-wave': tone('op-wave'),
         'op-orange-money': tone('op-orange-money'),
         'on-op': tone('on-op'),
+        // Design 1c (point 5) : pastille blanche des logos des opérateurs, dans les deux thèmes
+        'op-logo': tone('op-logo'),
         scan: {
           'accept-bg': tone('scan-accept-bg'),
           'accept-fg': tone('scan-accept-fg'),

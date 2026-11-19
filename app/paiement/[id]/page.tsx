@@ -52,6 +52,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { PaymentWaitingInfo, type PaymentWaitingItem } from '@/components/payment/PaymentWaitingInfo';
+import { OperatorLogo } from '@/components/payment/OperatorLogo';
 import { formatFcfa, formatTime } from '@/lib/format';
 import {
   clearPaymentHandoff,
@@ -952,7 +953,11 @@ export default function PaymentStatusPage(props: { params: Promise<{ id: string 
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">Opérateur</dt>
-              <dd className="font-semibold text-foreground-strong">{label ?? 'Non renseigné'}</dd>
+              <dd className="flex items-center gap-2 font-semibold text-foreground-strong">
+                {/* Design 1c (point 5) : logo officiel de l'opérateur, nom toujours écrit à côté */}
+                {payment.operator && isSamirPayOperator(payment.operator) && <OperatorLogo operator={payment.operator} size="sm" />}
+                {label ?? 'Non renseigné'}
+              </dd>
             </div>
             {payment.status === 'SUCCESS' && payment.ticketIds.length > 0 && (
               <div className="flex items-center justify-between gap-3">
