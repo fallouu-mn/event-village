@@ -35,6 +35,7 @@
  */
 import { formatDate, formatDateTime, formatFcfa, formatInteger, formatTime } from '@/lib/format';
 import { internalActionUrl } from './action-url';
+import { PERMISSION_LABELS } from '@/lib/admin/permission-labels';
 import type {
     AdminPermission, Audience, Channel, EmailSyncType, Family, NotificationType, SuspendedPolicy, SyncType, TemplateData, Topic,
 } from './catalog-types';
@@ -1620,6 +1621,33 @@ const CATALOG = {
         }),
         sample: { hall_id: SAMPLE_ID.reservation, hall_name: 'Salle des fêtes de Ngor', city: 'Dakar', changes: ['PRIX', 'PHOTOS'] },
     }),
+    // Contre-vérification du lot 10b (demande du 19/11) : droits d'un administrateur donnés ou retirés par un Superadmin
+    // (admin_permissions_set) : l'administrateur est prévenu, les autres Superadmins reçoivent une alerte (4 canaux).
+    ADMIN_PERMISSIONS_CHANGED: define('ADMIN_PERMISSIONS_CHANGED', {
+        label: 'Droits d’administration modifiés', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', inAppType: 'ADMIN_REVIEW',
+        link: () => '/admin/mes-droits',
+        inApp: (d) => ({ title: 'Vos droits ont changé', content: rightsSentences(d) }),
+        sms: (d, ctx) => {
+            const added = codes(d, 'added');
+            const removed = codes(d, 'removed');
+            if (added.length + removed.length === 1) {
+                const one = added[0] ?? removed[0];
+                return `${SMS_PREFIX}vous ${added.length ? 'pouvez maintenant' : 'ne pouvez plus'} ${smsVar(rightPhrase(one), 95)}.`;
+            }
+            return `${SMS_PREFIX}vos droits d'administration ont changé : ${added.length} ajouté(s), ${removed.length} retiré(s). Détail : ${appLink(ctx, '/admin/mes-droits')}`;
+        },
+        sample: { admin_id: SAMPLE_ID.partner, added: ['halls.validate'], removed: [], target_name: 'Ndeye Administratrice', actor_name: 'Moussa Superadmin' },
+    }),
+    ADMIN_PERMISSIONS_ALERT: define('ADMIN_PERMISSIONS_ALERT', {
+        label: 'Droits d’un administrateur modifiés (Superadmins)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', inAppType: 'ADMIN_REVIEW',
+        link: () => '/admin/users',
+        inApp: (d) => ({
+            title: 'Droits d’un administrateur modifiés',
+            content: `${optText(d, 'actor_name') ?? 'Un Superadmin'} a modifié les droits de ${optText(d, 'target_name') ?? 'un administrateur'}. ${rightsSentences(d, true)}`,
+        }),
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(optText(d, 'actor_name') ?? 'Un Superadmin', 20)} a modifié les droits de ${smsVar(optText(d, 'target_name') ?? 'un admin', 20)} (${codes(d, 'added').length} ajouté(s), ${codes(d, 'removed').length} retiré(s)). Vérifiez : ${appLink(ctx, '/admin/users')}`,
+        sample: { admin_id: SAMPLE_ID.partner, added: ['halls.validate'], removed: ['events.write'], target_name: 'Ndeye Administratrice', actor_name: 'Moussa Superadmin' },
+    }),
     ADMIN_PARTNER_REGISTERED: define('ADMIN_PARTNER_REGISTERED', {
         label: 'Nouvelle candidature partenaire', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.read', inAppType: 'KYC',
         link: () => '/admin/dashboard',
@@ -2297,11 +2325,13 @@ export function adminReviewSms(d: object, ctx: RenderContext): string {
     const events = count(d, 'event_count');
     // Lot 11a : établissements soumis à la validation (absent des SMS mis en file avant le lot : 0)
     const venues = optNum(d, 'venue_count') ?? 0;
-    // Lot 10b : salles envoyées en validation (absent des SMS mis en file avant le lot : 0)
+    // Lot 10b : salles envoyées en validation (absent des SMS mis en file avant le lot : 0) ; contre-vérification (T6) :
+    // salles validées modifiées, à revoir
     const halls = optNum(d, 'hall_count') ?? 0;
+    const changed = optNum(d, 'hall_changed_count') ?? 0;
     const company = optText(d, 'company');
     const link = appLink(ctx, '/admin/dashboard');
-    if (partners === 1 && events === 0 && venues === 0 && halls === 0 && company) {
+    if (partners === 1 && events === 0 && venues === 0 && halls === 0 && changed === 0 && company) {
         return `${SMS_PREFIX}nouvelle demande de partenaire "${smsVar(company, 40)}". Vérifiez son dossier : ${link}`;
     }
     const parts: string[] = [];
@@ -2309,11 +2339,13 @@ export function adminReviewSms(d: object, ctx: RenderContext): string {
     if (events > 0) parts.push(`${events} événement(s)`);
     if (venues > 0) parts.push(`${venues} établissement(s)`);
     if (halls > 0) parts.push(`${halls} salle(s)`);
-    if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count, venue_count et hall_count à zéro : rien à valider');
+    if (parts.length === 0 && changed > 0) return `${SMS_PREFIX}${changed} salle(s) validée(s) modifiée(s) à vérifier : ${link}`;
+    if (changed > 0) parts.push(`${changed} salle(s) modifiée(s)`);
+    if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count, venue_count, hall_count et hall_changed_count à zéro : rien à valider');
     const detailed = `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
     // Lot 10b : quatre rubriques peuvent dépasser un segment ; alors le total seul
     if (smsSegments(detailed).segments <= 1) return detailed;
-    return `${SMS_PREFIX}${partners + events + venues + halls} demandes attendent votre validation : ${link}`;
+    return `${SMS_PREFIX}${partners + events + venues + halls + changed} demandes attendent votre validation : ${link}`;
 }
 
 /** Lot 11a : nom de l'établissement entre guillemets, sinon « votre établissement ». */
@@ -2408,6 +2440,26 @@ function hallChangesText(d: object): string {
     const list = (Array.isArray(raw) ? raw : []).map((c) => HALL_CHANGE_LABELS[String(c)]).filter((c): c is string => Boolean(c));
     if (list.length === 0) return 'sa fiche';
     return list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} et ${list[list.length - 1]}`;
+}
+
+/** Contre-vérification du lot 10b : codes de droits d'une liste de l'avis (inconnus gardés : phrase générique). */
+function codes(d: object, key: string): string[] {
+    const raw = field(d, key);
+    return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === 'string' && c.length > 0) : [];
+}
+
+/** « valider les salles et les établissements » : libellé du droit, première lettre en minuscule ; jamais le code. */
+function rightPhrase(code: string): string {
+    const label = PERMISSION_LABELS[code] ?? 'Réaliser une action d’administration';
+    return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/** « Vous pouvez maintenant … . Vous ne pouvez plus … . » (ou « Il ou elle peut … » pour l'alerte aux Superadmins). */
+function rightsSentences(d: object, third = false): string {
+    const can = third ? 'Peut maintenant' : 'Vous pouvez maintenant';
+    const cannot = third ? 'Ne peut plus' : 'Vous ne pouvez plus';
+    const lines = [...codes(d, 'added').map((c) => `${can} ${rightPhrase(c)}.`), ...codes(d, 'removed').map((c) => `${cannot} ${rightPhrase(c)}.`)];
+    return lines.length > 0 ? lines.join(' ') : 'Vos droits ont été revus.';
 }
 
 function smsHallRefund(d: object): string {

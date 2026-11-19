@@ -161,6 +161,8 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     HALL_REFUND_PAID: 'Remboursement d’une réservation de salle versé',
     ADMIN_HALL_SUBMITTED: 'Salle à valider',
     ADMIN_HALL_CHANGED: 'Salle validée modifiée',
+    ADMIN_PERMISSIONS_CHANGED: 'Droits d’administration modifiés',
+    ADMIN_PERMISSIONS_ALERT: 'Droits d’un administrateur modifiés (Superadmins)',
     TABLE_RESERVATION_CONFIRMED: 'Réservation de table confirmée',
     TABLE_REQUEST_SENT: 'Demande de table envoyée',
     TABLE_REQUEST_TO_ANSWER: 'Demande de table à accepter',

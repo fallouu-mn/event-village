@@ -270,6 +270,9 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('HALL_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle refusée'),
     ess('ADMIN_HALL_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle à valider', 'halls.validate'),
     ess('ADMIN_HALL_CHANGED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle modifiée', 'halls.validate'),
+    // Contre-vérification du lot 10b (ajout signalé) : droits d'un administrateur donnés ou retirés
+    ess('ADMIN_PERMISSIONS_CHANGED', [I, P, M, S], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/mes-droits'], 'Vos droits ont changé'),
+    ess('ADMIN_PERMISSIONS_ALERT', [I, P, M, S], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/users'], 'Droits d’un administrateur modifiés'),
     // Lot 11a (migration 20261123000108, ajout signalé au rapport) : parcours de réservation d'une table, 4 canaux à chaque étape
     ess('TABLE_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'TABLE_RESERVATION', ['/orders'], 'Table réservée'),
     ess('TABLE_REQUEST_SENT', [I, P, M, S], 'CLIENT', 'B', 'TABLE_RESERVATION', ['/orders'], 'Demande envoyée'),
@@ -428,7 +431,10 @@ function variants(type: string, base: Data): Data[] {
         // Lot 11a (ajout signalé) : établissements à valider, pire cas des trois parties
         dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99 }, ['company']),
         // Lot 10b (ajout signalé) : salles à valider, pire cas des quatre parties
-        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99 }, ['company'])];
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99 }, ['company']),
+        // Contre-vérification du lot 10b (ajout signalé) : salles validées modifiées, seules puis avec tout le reste
+        dataFrom(base, { partner_count: 0, event_count: 0, venue_count: 0, hall_count: 0, hall_changed_count: 99 }, ['company']),
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99, hall_changed_count: 99 }, ['company'])];
     return type === 'ADMIN_EVENT_CHANGED' ? adminChangeVariants(base) : [base]; // lot 9 ter (B.7 T-B3) : parties PRICE et CHANNELS
 }
 
@@ -963,6 +969,17 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : 1 salle(s) attendent votre validation : ${U}/admin/dashboard`],
             ['ADMIN_REVIEW_SMS', { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99 }, ['company'],
                 `Event Village : 396 demandes attendent votre validation : ${U}/admin/dashboard`],
+            // Contre-vérification du lot 10b (ajouts signalés) : salles validées modifiées ; droits d'un administrateur
+            ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 0, venue_count: 0, hall_count: 0, hall_changed_count: 2 }, ['company'],
+                `Event Village : 2 salle(s) validée(s) modifiée(s) à vérifier : ${U}/admin/dashboard`],
+            ['ADMIN_PERMISSIONS_CHANGED', {}, [],
+                'Event Village : vous pouvez maintenant valider les salles et les établissements.'],
+            ['ADMIN_PERMISSIONS_CHANGED', { added: [], removed: ['halls.validate'] }, [],
+                'Event Village : vous ne pouvez plus valider les salles et les établissements.'],
+            ['ADMIN_PERMISSIONS_CHANGED', { added: ['halls.validate', 'events.write'], removed: ['users.write'] }, [],
+                `Event Village : vos droits d'administration ont changé : 2 ajouté(s), 1 retiré(s). Détail : ${U}/admin/mes-droits`],
+            ['ADMIN_PERMISSIONS_ALERT', {}, [],
+                `Event Village : Moussa Superadmin a modifié les droits de Ndeye Administrat... (1 ajouté(s), 1 retiré(s)). Vérifiez : ${U}/admin/users`],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).

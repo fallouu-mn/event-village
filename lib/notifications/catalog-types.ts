@@ -172,6 +172,9 @@ export interface TemplateData {
     HALL_REFUND_PAID: HallReservationData & { cashout_id: string; amount: number; operator?: string | null };
     ADMIN_HALL_SUBMITTED: { hall_id: string; hall_name: string; city?: string | null; resubmitted?: boolean };
     ADMIN_HALL_CHANGED: { hall_id: string; hall_name: string; previous_name?: string | null; city?: string | null; changes: string[] };
+    // Contre-vérification du lot 10b : droits d'un administrateur donnés ou retirés (admin_permissions_set)
+    ADMIN_PERMISSIONS_CHANGED: { admin_id: string; added: string[]; removed: string[]; target_name?: string | null; actor_name?: string | null };
+    ADMIN_PERMISSIONS_ALERT: { admin_id: string; added: string[]; removed: string[]; target_name?: string | null; actor_name?: string | null };
     // Lot 11a : données de table_notif_data (réservation de table), plus les champs propres à chaque avis
     TABLE_RESERVATION_CONFIRMED: TableReservationData;
     TABLE_REQUEST_SENT: TableReservationData;

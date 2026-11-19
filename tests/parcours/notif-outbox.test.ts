@@ -167,6 +167,9 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 11a (ajout signalé) ; lot 10b : droit halls.validate (modification signalée)
     ess('ADMIN_HALL_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 10b (ajout signalé)
     ess('ADMIN_HALL_CHANGED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 10b (ajout signalé)
+    // Contre-vérification du lot 10b (ajout signalé) : droits d'un administrateur donnés ou retirés
+    ess('ADMIN_PERMISSIONS_CHANGED', [I, P, M, S], 'ADMIN', 'B'),
+    ess('ADMIN_PERMISSIONS_ALERT', [I, P, M, S], 'ADMIN', 'B'),
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'partners.read'),
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'refunds.manage'), // lot 8, tâche 8.2 a (L32, migration 20261106000003)

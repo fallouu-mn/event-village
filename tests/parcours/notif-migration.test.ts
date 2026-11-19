@@ -447,6 +447,8 @@ const INVENTORY: Insertion[] = [
     { k1: 'lot 10b demande', fn: 'hall_reserve', types: ['HALL_RESERVATION_PENDING'] },
     { k1: 'lot 10b remboursement versé', fn: 'notif_cashouts_notify', types: ['HALL_REFUND_PAID'] },
     { k1: 'lot 10b salles à valider', trigger: { name: 'trg_halls_notify_admins', table: 'public.halls' }, types: ['ADMIN_HALL_SUBMITTED', 'ADMIN_HALL_CHANGED'] },
+    // Contre-vérification du lot 10b (ajout signalé) : droits d'un administrateur donnés ou retirés
+    { k1: 'lot 10b droits', fn: 'admin_permissions_set', types: ['ADMIN_PERMISSIONS_CHANGED', 'ADMIN_PERMISSIONS_ALERT'] },
     { k1: 'lot 10a validation', fn: 'hall_validation_decide', types: ['HALL_VALIDATION_DECIDED'] },
     // Lot 11a (ajout signalé au rapport) : avis du parcours de réservation d'une table, mis en file par les fonctions du
     // parcours (table_notify) ; établissement soumis par trg_venues_submitted
