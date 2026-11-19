@@ -295,9 +295,8 @@ export default function TicketsPage() {
   }, [userId, load, loadIncoming]);
 
   // Temps réel (contrat O5) : billets du porteur et notifications (transfert reçu, accepté, annulé). Design 1b (décision
-  // du 18/11) : abonnement ouvert une fois la page chargée et le téléphone libre ; run 421 : 5 s plus tard (connexion
-  // Supabase de 172 ms et relecture de rattrapage hors du chargement).
-  const pageSettled = usePageSettled(5_000);
+  // du 18/11) : abonnement ouvert une fois la page chargée et le téléphone libre.
+  const pageSettled = usePageSettled();
   const { status: liveStatus } = useRealtimeRefresh({
     channelKey: `mes-billets-${userId ?? 'anonyme'}`,
     subscriptions: [

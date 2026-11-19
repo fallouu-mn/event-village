@@ -58,13 +58,10 @@ function LazyOfflineTicketsSync() {
         };
         // Design 1b (décision du 18/11) : chargée une fois la page affichée et le téléphone libre (jamais pendant le
         // chargement mesuré de Mes billets) ; sans réseau, au retour du réseau
-        // Run 421 : 5 s après le montage, puis le premier moment libre (relecture de la liste hors du chargement)
-        let cancelWarm: () => void = () => undefined;
-        const later = setTimeout(() => { cancelWarm = warmWhenIdle(load); }, 5_000);
+        const cancelWarm = warmWhenIdle(load);
         window.addEventListener('online', load);
         return () => {
             active = false;
-            clearTimeout(later);
             cancelWarm();
             window.removeEventListener('online', load);
         };
