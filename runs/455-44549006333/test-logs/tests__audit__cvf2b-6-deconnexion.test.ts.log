@@ -1,0 +1,251 @@
+TAP version 13
+GoTrueClient@sb-127-auth-token:1 (2.114.0) 2026-11-19T14:58:41.287Z Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key.
+[CVF2B-6] 1. onglet 2 : INITIAL_SESSION, SIGNED_IN, SIGNED_OUT ; branche SIGNED_OUT : { void clearOfflineStore(); clearAllScanMemory(); clearAllDrafts(); clearPaymentHandoffs(); setSignedOut(true); void unsubscribePush(); }
+[CVF2B-6] 1. après : lots {"userId":null,"lots":[]} ; clés []
+[CVF2B-6] 2. Mes billets (app/tickets/page.tsx) : AUCUNE garde
+[CVF2B-6] 2. Profil (app/profile/page.tsx) : garde sur la perte du compte
+[CVF2B-6] 2. Notifications (app/notifications/page.tsx) : garde sur la perte du compte
+[CVF2B-6] 2. Commandes (app/orders/page.tsx) : garde sur la perte du compte
+[CVF2B-6] 2. Espace partenaire (app/partner/layout.tsx) : garde sur la perte du compte
+[CVF2B-6] 2. Administration (app/admin/layout.tsx, components/admin/AdminStepUpGate.tsx) : AUCUNE garde
+[CVF2B-6] 2. Contrôleur (scanner, profil) (app/controller/layout.tsx) : AUCUNE garde
+[CVF2B-6] 2. Portefeuille (app/wallet/page.tsx) : AUCUNE garde
+[CVF2B-6] 2. AuthProvider masque la page sur SIGNED_OUT dans tous les onglets : true ; écran « déconnecté » posé seulement par signOut : true
+# Subtest: 1-2. tous les onglets
+    # Subtest: 1. l’onglet 2 reçoit SIGNED_OUT et efface billets hors ligne et mémoire du contrôle
+    ok 1 - 1. l’onglet 2 reçoit SIGNED_OUT et efface billets hors ligne et mémoire du contrôle
+      ---
+      duration_ms: 39.516304
+      type: 'test'
+      ...
+    # Subtest: 2. autres onglets : un écran personnel déjà affiché ne reste pas à l’écran après SIGNED_OUT
+    ok 2 - 2. autres onglets : un écran personnel déjà affiché ne reste pas à l’écran après SIGNED_OUT
+      ---
+      duration_ms: 1.513989
+      type: 'test'
+      ...
+    1..2
+ok 1 - 1-2. tous les onglets
+  ---
+  duration_ms: 41.748069
+  type: 'suite'
+  ...
+[CVF2B-6] 3. avant 1 lot(s) de A ; après purge {"userId":null,"lots":[]} ; lots de A après désignation de B : 0
+# Subtest: 3-5. billets hors ligne (IndexedDB)
+    # Subtest: 3. purge réelle à la déconnexion et à la désignation d’un autre compte
+    ok 1 - 3. purge réelle à la déconnexion et à la désignation d’un autre compte
+      ---
+      duration_ms: 35.139769
+      type: 'test'
+      ...
+[hors-ligne] billet 6cbf1974-43ce-44fe-85ca-32cff085e8cf : session fermée pendant le téléchargement, lot abandonné
+[CVF2B-6] 4. à la déconnexion : {"userId":null,"lots":[]} ; issue du téléchargement : signed_out ; page hors ligne ensuite : compte null, 0 billet(s) ; IndexedDB : []
+    # Subtest: 4. téléchargement en vol pendant « Se déconnecter » : rien de A n’est réécrit ni montré après la purge
+    ok 2 - 4. téléchargement en vol pendant « Se déconnecter » : rien de A n’est réécrit ni montré après la purge
+      ---
+      duration_ms: 101.083182
+      type: 'test'
+      ...
+[CVF2B-6] 5. middleware « / » : HTTP 200, cookies posés ["sb-127-auth-token.0=(vide)","sb-127-auth-token.1=(vide)","ev-session-close=valeur"] ; cookies de session restants [] ; événements de la page : INITIAL_SESSION
+[CVF2B-6] 5. purge d'AuthProvider sans SIGNED_OUT : true ; /billet/hors-ligne lit listCurrentOfflineLots sans session : true ; billets montrés : compte A, [{"ticket":"EV-CVF2B-0001","codes":"123456654321111111222222"}]
+    # Subtest: 5. « Déconnecter tous mes appareils » depuis un autre appareil : le téléphone efface les billets hors ligne de A
+    ok 3 - 5. « Déconnecter tous mes appareils » depuis un autre appareil : le téléphone efface les billets hors ligne de A
+      ---
+      duration_ms: 481.237092
+      type: 'test'
+      ...
+    1..3
+ok 2 - 3-5. billets hors ligne (IndexedDB)
+  ---
+  duration_ms: 617.784819
+  type: 'suite'
+  ...
+[CVF2B-6] 6. avant : 200 [{"id":"e2b39074-68a3-4c5d-bf67-daa8a4944130","phone":"+221766521384"}] ; révocation : fait ; GoTrue /user avec l'ancien jeton : refusé ; REST avec l'ancien jeton : HTTP 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."}
+# Subtest: 6-9. révocation côté serveur
+    # Subtest: 6. « Se déconnecter » (révocation faite) : l’ancien jeton d’accès est refusé par l’API REST
+    ok 1 - 6. « Se déconnecter » (révocation faite) : l’ancien jeton d’accès est refusé par l’API REST
+      ---
+      duration_ms: 159.205555
+      type: 'test'
+      ...
+[CVF2B-6] 7. révocation partout : fait ; autre appareil — GoTrue : refusé, rafraîchissement : refusé, REST : HTTP 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."}
+    # Subtest: 7. « Déconnecter tous mes appareils » : le jeton d’accès de l’autre appareil est refusé par l’API REST
+    ok 2 - 7. « Déconnecter tous mes appareils » : le jeton d’accès de l’autre appareil est refusé par l’API REST
+      ---
+      duration_ms: 226.905038
+      type: 'test'
+      ...
+[CVF2B-6] 8. révocation partout : fait ; abonnements push du compte restants : []
+[CVF2B-6] 9. signOut retire l'abonnement : true ; branche SIGNED_OUT : { void clearOfflineStore(); clearAllScanMemory(); clearAllDrafts(); clearPaymentHandoffs(); setSignedOut(true); void unsubscribePush(); }
+    # Subtest: 8. « Déconnecter tous mes appareils » : les abonnements push des autres appareils sont retirés côté serveur
+    ok 3 - 8. « Déconnecter tous mes appareils » : les abonnements push des autres appareils sont retirés côté serveur
+      ---
+      duration_ms: 153.830764
+      type: 'test'
+      ...
+    # Subtest: 9. fin de session signalée sans le bouton (SIGNED_OUT) : l’abonnement push de ce navigateur est retiré
+    ok 4 - 9. fin de session signalée sans le bouton (SIGNED_OUT) : l’abonnement push de ce navigateur est retiré
+      ---
+      duration_ms: 0.755961
+      type: 'test'
+      ...
+    1..4
+ok 3 - 6-9. révocation côté serveur
+  ---
+  duration_ms: 541.104033
+  type: 'suite'
+  ...
+AuthRefreshDiscardedError: Refresh result discarded: session state changed mid-flight (e.g., concurrent signOut)
+    at SupabaseAuthClient._callRefreshToken (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:5049:18)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async SupabaseAuthClient.__loadSession (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:3100:40)
+    at async SupabaseAuthClient._useSession (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:2991:22)
+    at async SupabaseAuthClient._emitInitialSession (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:4347:12)
+    at async <anonymous> (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:4339:9) {
+  __isAuthError: true,
+  status: 409,
+  code: undefined
+}
+AuthRefreshDiscardedError: Refresh result discarded: session state changed mid-flight (e.g., concurrent signOut)
+    at SupabaseAuthClient._callRefreshToken (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:5049:18)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async SupabaseAuthClient.__loadSession (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:3100:40)
+    at async SupabaseAuthClient._useSession (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:2991:22)
+    at async SupabaseAuthClient._emitInitialSession (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:4347:12)
+    at async <anonymous> (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:4339:9) {
+  __isAuthError: true,
+  status: 409,
+  code: undefined
+}
+[CVF2B-6] 10. réponse de l’onglet 2 avant la révocation : onglet 2 → erreur AuthRefreshDiscardedError, jetons émis par le serveur à sa requête retardée : oui ; cookies juste après : [] ; à la fin : [] ; onglet 1 INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, SIGNED_OUT ; onglet 2 INITIAL_SESSION
+[CVF2B-6] 10. requêtes après le retour du réseau : /auth/v1/logout?scope=local | /auth/v1/token?grant_type=refresh_token | /auth/v1/logout?scope=local | /auth/v1/user | /auth/v1/token?grant_type=refresh_token | /auth/v1/token?grant_type=refresh_token
+# Subtest: 10. retour du réseau, deux onglets, rafraîchissement en vol
+    # Subtest: 10. réponse de l’onglet 2 avant la révocation : aucune session rouverte, jetons révoqués
+    ok 1 - 10. réponse de l’onglet 2 avant la révocation : aucune session rouverte, jetons révoqués
+      ---
+      duration_ms: 538.104418
+      type: 'test'
+      ...
+AuthApiError: Invalid Refresh Token: Refresh Token Not Found
+    at handleError (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:145:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async _handleRequest (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:239:5)
+    at async _request (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:200:16)
+    at async <anonymous> (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:4769:18)
+    at async <anonymous> (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/helpers.ts:242:26) {
+  __isAuthError: true,
+  status: 400,
+  code: 'refresh_token_not_found'
+}
+AuthApiError: Invalid Refresh Token: Refresh Token Not Found
+    at handleError (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:145:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async _handleRequest (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:239:5)
+    at async _request (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/fetch.ts:200:16)
+    at async <anonymous> (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/GoTrueClient.ts:4769:18)
+    at async <anonymous> (/home/runner/work/event-village/event-village/node_modules/@supabase/auth-js/src/lib/helpers.ts:242:26) {
+  __isAuthError: true,
+  status: 400,
+  code: 'refresh_token_not_found'
+}
+[CVF2B-6] 10. réponse de l’onglet 2 après la révocation : onglet 2 → erreur AuthApiError, jetons émis par le serveur à sa requête retardée : non ; cookies juste après : [] ; à la fin : [] ; onglet 1 INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, SIGNED_OUT ; onglet 2 SIGNED_OUT, INITIAL_SESSION
+[CVF2B-6] 10. requêtes après le retour du réseau : /auth/v1/logout?scope=local | /auth/v1/token?grant_type=refresh_token | /auth/v1/logout?scope=local | /auth/v1/token?grant_type=refresh_token
+[CVF2B-6] 11. avant ["ev-scan-pending:v1:controleur:3afda3be","ev-scan-pending:v1:partenaire:3afda3be","ev-scan-session:v1:controleur:3afda3be"] ; après [] ; scan en attente relu {"pending":null,"expired":null} ; session relue null
+[CVF2B-6] 11. 25 fichiers du scanner ; interdits : [] ; écritures directes localStorage : ["app/controller/scanner/page.tsx : AUTO_RETURN_KEY"] ; préfixes des clés de scan-session : ["SCAN_SESSION_PREFIX","SCAN_PENDING_PREFIX"]
+    # Subtest: 10. réponse de l’onglet 2 après la révocation : aucune session rouverte, jetons révoqués
+    ok 2 - 10. réponse de l’onglet 2 après la révocation : aucune session rouverte, jetons révoqués
+      ---
+      duration_ms: 519.11487
+      type: 'test'
+      ...
+    1..2
+ok 4 - 10. retour du réseau, deux onglets, rafraîchissement en vol
+  ---
+  duration_ms: 1057.427584
+  type: 'suite'
+  ...
+# Subtest: 11. scanner
+    # Subtest: mémoire du contrôle effacée ; aucun code ni liste de billets sur l’appareil ; aucun jeton explicite
+    ok 1 - mémoire du contrôle effacée ; aucun code ni liste de billets sur l’appareil ; aucun jeton explicite
+      ---
+      duration_ms: 3.06068
+      type: 'test'
+      ...
+    1..1
+ok 5 - 11. scanner
+  ---
+  duration_ms: 3.147191
+  type: 'suite'
+  ...
+[CVF2B-6] 12. caches : ["ev-hors-ligne-lot7-1"] ; 11 entrée(s) : ["/billet/hors-ligne","/_next/static/css/app.css","/_next/static/chunks/app-1.js","/manifest.json","/favicon.ico","/branding/event-village-mark.svg","/branding/bras-leves-symbole.svg","/icon-192x192.png","/icon-512x512.png","/icons/icon-maskable-512.png","/icons/apple-touch-icon.png"]
+[CVF2B-6] 12. téléchargements de la coquille : [{"url":"/billet/hors-ligne","credentials":"omit"},{"url":"/billet/hors-ligne","credentials":"omit"},{"url":"/billet/hors-ligne","credentials":"omit"}]
+[CVF2B-6] 13a. ouvertures IndexedDB : ["lib/tickets/offline-store.ts : 'event-village-offline'"] ; magasins créés ["lots","meta"], vidés par clearOfflineStore ["lots","meta"] ; écrivains de caches : ["public/sw.js"]
+[CVF2B-6] 13b. app/controller/scanner/page.tsx : délai de retour automatique du scanner (localStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. app/forgot-password/page.tsx : compteur d’échecs ; drapeau « code vérifié » horodaté, sans valeur sans la session (sessionStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. app/register/page.tsx : numéro saisi à l’inscription, avant toute session, effacé à sa lecture par la connexion (sessionStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. app/reset-password/page.tsx : compteur d’échecs (localStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. components/auth/LoginForm.tsx : compteur d’échecs de connexion (localStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. components/event-page/EventTicketing.tsx : panier (catégories et quantités) gardé pendant la connexion, 30 min (sessionStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. lib/events/city-preference.ts : ville préférée de l’appareil, visiteurs compris (localStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. lib/events/local-draft.ts : brouillons du formulaire d’événement (localStorage) — liée au compte, effacée
+[CVF2B-6] 13b. lib/payments/payment-client.ts : liens et QR de paiement de l’opérateur pour un paiement du compte (sessionStorage « event-village:paiement: ») — liée au compte, effacée
+[CVF2B-6] 13b. lib/push/client.ts : notifications désactivées sur cet appareil, valeur fixe sans donnée du compte (localStorage) — sans lien avec le compte connecté
+[CVF2B-6] 13b. lib/scan/scan-session.ts : mémoire du contrôle, scan en attente avec le QR lu (localStorage) — liée au compte, effacée
+# Subtest: 12. caches du service worker
+    # Subtest: après une session complète, rien de personnel en cache (donc rien à purger à la déconnexion)
+    ok 1 - après une session complète, rien de personnel en cache (donc rien à purger à la déconnexion)
+      ---
+      duration_ms: 107.877728
+      type: 'test'
+      ...
+    1..1
+ok 6 - 12. caches du service worker
+  ---
+  duration_ms: 108.008741
+  type: 'suite'
+  ...
+# Subtest: 13. inventaire des stockages du navigateur
+    # Subtest: bases IndexedDB et caches : une seule base (purgée en entier), caches écrits par le seul service worker
+    ok 1 - bases IndexedDB et caches : une seule base (purgée en entier), caches écrits par le seul service worker
+      ---
+      duration_ms: 8.358634
+      type: 'test'
+      ...
+    # Subtest: clés de stockage web liées au compte : toutes effacées à la déconnexion (bouton et SIGNED_OUT)
+    ok 2 - clés de stockage web liées au compte : toutes effacées à la déconnexion (bouton et SIGNED_OUT)
+      ---
+      duration_ms: 4.742962
+      type: 'test'
+      ...
+    1..2
+ok 7 - 13. inventaire des stockages du navigateur
+  ---
+  duration_ms: 13.22342
+  type: 'suite'
+  ...
+[INVARIANT] cvf2b-6-deconnexion — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf2b-6-deconnexion — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf2b-6-deconnexion — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf2b-6-deconnexion — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf2b-6-deconnexion — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf2b-6-deconnexion — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf2b-6-deconnexion — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] cvf2b-6-deconnexion — envoyeur : 0 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cvf2b-6-deconnexion — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cvf2b-6-deconnexion — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cvf2b-6-deconnexion — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cvf2b-6-deconnexion — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cvf2b-6-deconnexion — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cvf2b-6-deconnexion — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cvf2b-6-deconnexion — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cvf2b-6-deconnexion — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cvf2b-6-deconnexion — (f) : 0 violation(s)
+1..7
+# tests 15
+# suites 7
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 21975.458001
