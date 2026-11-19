@@ -69,14 +69,14 @@ export function EntryControlEditor({ eventId, onColorsSaved }: EntryControlEdito
 
     return (
         <div className="flex flex-col gap-6">
-            <p className="text-sm leading-relaxed text-fg-muted">
+            <p className="text-sm leading-relaxed text-muted-foreground">
                 Facultatif. Les portes, les zones et les couleurs s’enregistrent ici, chacune avec son bouton.
             </p>
 
             {config && config.categories.length > 0 && (
                 <section aria-labelledby="ev-controle-couleurs" className="flex flex-col gap-3 rounded-2xl border border-border p-4">
-                    <h3 id="ev-controle-couleurs" className="text-base font-semibold text-fg">Couleurs au contrôle</h3>
-                    <p className="text-sm leading-relaxed text-fg-muted">Bande de couleur montrée au contrôleur avec le nom de la catégorie.</p>
+                    <h3 id="ev-controle-couleurs" className="text-base font-semibold text-foreground-strong">Couleurs au contrôle</h3>
+                    <p className="text-sm leading-relaxed text-muted-foreground">Bande de couleur montrée au contrôleur avec le nom de la catégorie.</p>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         {config.categories.map((c, i) => (
                             <ScanColorSelect

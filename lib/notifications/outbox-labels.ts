@@ -240,7 +240,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     EMAIL_ADDED: 'Adresse email ajoutée au compte',
     // Finition 3d (recours et suppléance)
     CASH_REFUND_MARKED_BY_ADMIN: 'Espèces marquées rendues par l’administration',
-    SUPERADMIN_PROMOTED: 'Nouveau Superadmin (alerte)',
+    SUPERADMIN_PROMOTED: 'Nouveau super-administrateur (alerte)',
     ADMIN_BACKUP_CODE_USED: 'Code de secours utilisé (alerte)',
     ADMIN_PHONE_CHANGED: 'Numéro d’un administrateur remplacé (ancien numéro)',
     ADMIN_PHONE_CONFIRMED: 'Numéro d’un administrateur confirmé (nouveau numéro)',

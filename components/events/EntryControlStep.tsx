@@ -48,37 +48,37 @@ export function EntryControlStep({ prefix, categories, zones, onZonesChange, onC
     };
     const choiceClass = (active: boolean) => cn(
         'flex min-h-11 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-colors duration-200',
-        active ? 'border-brand-fg bg-brand-bg' : 'border-border bg-surface hover:bg-surface-sunken',
+        active ? 'border-primary-text bg-primary-soft' : 'border-border bg-card hover:bg-muted',
     );
 
     return (
         <div className="flex flex-col gap-6">
-            <p className="text-sm leading-relaxed text-fg-muted">
+            <p className="text-sm leading-relaxed text-muted-foreground">
                 Facultatif. Vous pourrez modifier les portes, les zones et les couleurs plus tard, depuis l’événement.
             </p>
 
             <fieldset id={`${prefix}-choix`} tabIndex={-1} className="flex flex-col gap-3 focus-visible:outline-none">
-                <legend className="mb-1 text-base font-semibold text-fg">Portes et zones</legend>
+                <legend className="mb-1 text-base font-semibold text-foreground-strong">Portes et zones</legend>
                 <label className={choiceClass(!multiple)}>
                     <input type="radio" name={`${prefix}-choix`} checked={!multiple} onChange={() => choose('single')}
-                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-brand" />
+                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-primary" />
                     <span className="flex min-w-0 items-start gap-3">
-                        <DoorOpen size={20} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
-                        <span className="text-sm font-semibold text-fg">{SINGLE_ENTRANCE_TEXT}</span>
+                        <DoorOpen size={20} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <span className="text-sm font-semibold text-foreground-strong">{SINGLE_ENTRANCE_TEXT}</span>
                     </span>
                 </label>
                 <label className={choiceClass(multiple)}>
                     <input type="radio" name={`${prefix}-choix`} checked={multiple} onChange={() => choose('multiple')}
-                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-brand" />
+                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-primary" />
                     <span className="flex min-w-0 items-start gap-3">
-                        <LayoutGrid size={20} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
+                        <LayoutGrid size={20} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span className="flex min-w-0 flex-col">
-                            <span className="text-sm font-semibold text-fg">Plusieurs portes ou zones</span>
-                            <span className="text-sm leading-snug text-fg-muted">Par exemple une entrée générale et un carré VIP vérifié à sa porte.</span>
+                            <span className="text-sm font-semibold text-foreground-strong">Plusieurs portes ou zones</span>
+                            <span className="text-sm leading-snug text-muted-foreground">Par exemple une entrée générale et un carré VIP vérifié à sa porte.</span>
                         </span>
                     </span>
                 </label>
-                {errors.zones && <p role="alert" className="text-sm font-medium text-danger-fg">{errors.zones}</p>}
+                {errors.zones && <p role="alert" className="text-sm font-medium text-danger-text">{errors.zones}</p>}
             </fieldset>
 
             {multiple && zones && (
@@ -105,10 +105,10 @@ export function EntryControlStep({ prefix, categories, zones, onZonesChange, onC
             )}
 
             <section aria-labelledby={`${prefix}-couleurs`} className="flex flex-col gap-3 rounded-2xl border border-border p-4">
-                <h3 id={`${prefix}-couleurs`} className="text-base font-semibold text-fg">Couleurs au contrôle</h3>
-                <p className="text-sm leading-relaxed text-fg-muted">Bande de couleur montrée au contrôleur avec le nom de la catégorie.</p>
+                <h3 id={`${prefix}-couleurs`} className="text-base font-semibold text-foreground-strong">Couleurs au contrôle</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">Bande de couleur montrée au contrôleur avec le nom de la catégorie.</p>
                 {categories.length === 0 ? (
-                    <p className="text-sm text-fg-muted">Ajoutez d’abord une catégorie de billets, à l’étape Billets.</p>
+                    <p className="text-sm text-muted-foreground">Ajoutez d’abord une catégorie de billets, à l’étape Billets.</p>
                 ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         {categories.map((c, i) => (

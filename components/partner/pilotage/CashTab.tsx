@@ -16,22 +16,25 @@ import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-jso
 import { useServerData } from '@/components/partner/useServerData';
 import { DefinitionRow, KpiAmount, PilotageSection } from './PilotageBlocks';
 import type { ShiftSummary } from '@/lib/shifts/shift.service';
+import { ecartCaisseText, ecartCaisseTone } from '@/lib/partner/ecart-caisse';
 import { shiftStatusLabel, type CashShift, type PilotageCash } from './types';
 
-// Fenêtres de clôture et de Z (lot 9 bis, R17) chargées à l'ouverture seulement : même route que le scanner
+// Fenêtres de clôture et de récapitulatif de caisse (lot 9 bis, R17) chargées à l'ouverture seulement : même route que le scanner
 const CloseShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CloseShiftModal), { ssr: false });
-const ZSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.ZSummaryModal), { ssr: false });
+const CashSummaryModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.CashSummaryModal), { ssr: false });
 const PasswordConfirmDialog = dynamic(() => import('@/components/auth/PasswordConfirmDialog').then((m) => m.PasswordConfirmDialog), { ssr: false });
 
+/** Écart d'une caisse, en mots (design 1c, E-63) : « Il manque … », « … de trop », « Aucun écart » ; caisse encore ouverte. */
 function differenceText(value: number | null): string {
     if (value === null) return 'Caisse ouverte';
-    if (value === 0) return 'Aucun écart';
-    return value > 0 ? `+${formatFcfa(value)}` : formatFcfa(value);
+    return ecartCaisseText(value);
 }
 
+const TONE_TEXT = { success: 'text-foreground-strong', warning: 'text-warning-text', danger: 'text-danger-text' } as const;
+
 function differenceTone(value: number | null): string {
-    if (value === null || value === 0) return 'text-foreground-strong';
-    return 'text-danger-text';
+    if (value === null) return 'text-foreground-strong';
+    return TONE_TEXT[ecartCaisseTone(value)];
 }
 
 const SHIFT_COLUMNS: DataColumn<CashShift>[] = [
@@ -122,7 +125,7 @@ function DiscrepancyValidation({ shifts, onValidated }: { shifts: CashShift[]; o
                         <li key={s.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                             <div className="min-w-0 space-y-1 text-sm">
                                 <p className="font-semibold text-foreground-strong">
-                                    {name} · écart de <span className="tabular-nums">{differenceText(s.difference)}</span>
+                                    {name} · <span className="tabular-nums">{differenceText(s.difference)}</span>
                                 </p>
                                 {s.justification && <p className="text-muted-foreground">« {s.justification} »</p>}
                                 {s.closed_at && (
@@ -157,7 +160,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
     const { hasAnyRole, hasRole, hasPermission } = useAuth();
     const { data, error, loading, refreshing, reload } = useServerData<PilotageCash>(`/api/partner/events/${eventId}/pilotage/cash`, signal);
     const [closing, setClosing] = useState<CashShift | null>(null);
-    const [zSummary, setZSummary] = useState<ShiftSummary | null>(null);
+    const [cashSummary, setCashSummary] = useState<ShiftSummary | null>(null);
     // Partenaire propriétaire (sinon la route de pilotage n'aurait rien servi), ou admin muni de events.write
     const canCloseShifts = !hasAnyRole(['ADMIN', 'SUPERADMIN']) || hasRole('SUPERADMIN') || hasPermission('events.write');
     // Finition 3d (point 4c) : la section « Écarts à valider » était cachée à tout admin, alors que la route et la base
@@ -208,7 +211,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
 
     if (loading) {
         return (
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la caisse">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4" role="status" aria-busy="true" aria-label="Chargement de la caisse">
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
@@ -224,22 +227,22 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
 
     return (
         <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
                 <KpiCard label="Espèces encaissées" value={<KpiAmount value={formatFcfa(totals.cash_collected)} />} hint="Ventes au guichet, toutes caisses" tone="warning" icon={<Banknote size={18} />} />
                 <KpiCard label="Caisses ouvertes" value={formatInteger(totals.open)} hint="Contrôleurs en service" tone="info" icon={<Unlock size={18} />} />
                 <KpiCard label="Caisses clôturées" value={formatInteger(totals.closed)} hint="Caisses fermées" tone="neutral" icon={<Store size={18} />} />
                 <KpiCard
                     label="Écart cumulé"
                     value={<KpiAmount value={differenceText(totals.closed > 0 ? totals.difference : 0)} />}
-                    hint="Déclaré moins attendu, caisses clôturées"
-                    tone={totals.difference === 0 ? 'success' : 'danger'}
+                    hint="Espèces comptées comparées aux espèces attendues, caisses clôturées"
+                    tone={totals.closed > 0 ? ecartCaisseTone(totals.difference) : 'success'}
                     icon={<Scale size={18} />}
                 />
             </div>
 
             <PilotageSection
                 title="Code PIN régisseur"
-                description="Le PIN est exigé à l’ouverture de chaque caisse. Un écart de clôture se valide ici, depuis votre compte, et non plus par le PIN. Il n’est affiché qu’une fois, à sa génération."
+                description="Code de 6 chiffres, exigé à l’ouverture de chaque caisse. Il n’est affiché qu’une fois, à sa génération. Un écart de clôture se valide ici, depuis votre compte, et non plus par le code PIN."
             >
                 <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                     <p className="flex items-start gap-3 text-sm text-foreground-strong">
@@ -281,11 +284,12 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 )}
             </PilotageSection>
 
-            <PilotageSection title="Sessions de caisse" description="Le Z détaillé de chaque caisse figure dans l’onglet Clôture.">
+            <PilotageSection title="Sessions de caisse" description="Le récapitulatif détaillé de chaque caisse figure dans l’onglet Clôture.">
                 <DataList
                     items={data.shifts}
                     columns={columns}
                     getKey={(s) => s.id}
+                    breakpoint="xl"
                     caption="Sessions de caisse de l’événement"
                     cardTitle={(s) => SHIFT_COLUMNS[0].render(s)}
                     empty={<EmptyState title="Aucune caisse" description="Les caisses ouvertes par vos contrôleurs s’affichent ici en direct." className="my-0" />}
@@ -319,7 +323,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 isOpen={pin !== null}
                 onClose={() => setPin(null)}
                 title="Nouveau code PIN régisseur"
-                subtitle="Notez-le maintenant : il ne sera plus affiché."
+                subtitle="Code de 6 chiffres. Notez-le maintenant : il ne sera plus affiché."
                 maxWidth="sm"
                 footer={
                     <Button variant="primary" onClick={() => setPin(null)} className="flex-1 sm:flex-none">
@@ -328,7 +332,7 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                 }
             >
                 <div className="flex flex-col items-center gap-4 py-2">
-                    <p className="rounded-2xl border border-border bg-background px-6 py-4 font-mono text-3xl font-bold tracking-widest text-foreground-strong tabular-nums" aria-label={pin ? `Code PIN : ${pin.split('').join(' ')}` : undefined}>
+                    <p className="rounded-2xl border border-border bg-muted px-6 py-4 font-mono text-3xl font-bold tracking-widest text-foreground-strong tabular-nums" aria-label={pin ? `Code PIN : ${pin.split('').join(' ')}` : undefined}>
                         {pin}
                     </p>
                     <Button variant="secondary" leftIcon={copied ? <Check size={18} /> : <Copy size={18} />} onClick={() => void copyPin()}>
@@ -345,13 +349,13 @@ export function CashTab({ eventId, signal }: { eventId: string; signal: number }
                     byOrganizer={{ controllerName: closing.controller_name || 'compte sans nom' }}
                     onShiftClosed={(summary) => {
                         setClosing(null);
-                        setZSummary(summary);
+                        setCashSummary(summary);
                         toast.success('Caisse fermée.');
                         void reload();
                     }}
                 />
             )}
-            {zSummary && <ZSummaryModal isOpen={zSummary !== null} onClose={() => setZSummary(null)} summary={zSummary} />}
+            {cashSummary && <CashSummaryModal isOpen={cashSummary !== null} onClose={() => setCashSummary(null)} summary={cashSummary} />}
         </div>
     );
 }

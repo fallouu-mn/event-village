@@ -485,7 +485,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
 
   return (
     <div className={cn('flex flex-col gap-3', className)} data-scan-decoder={decoderKind ?? undefined} data-scan-camera={phase}>
-      <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl border-2 border-border-strong bg-scan-tech-bg">
+      <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-3xl border-2 border-input bg-scan-tech-bg paysage:max-w-[min(24rem,calc(100svh-9rem))]">
         <video ref={videoRef} autoPlay playsInline muted aria-label="Image de la caméra" className="h-full w-full object-cover" />
 
         {phase === 'starting' && (
@@ -531,7 +531,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
         {live && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-8" aria-hidden="true">
             <div className="relative h-60 max-h-full w-60 max-w-full rounded-2xl border-2 border-scan-tech-fg">
-              <div className="absolute inset-x-4 top-1/2 h-0.5 bg-brand-decor" />
+              <div className="absolute inset-x-4 top-1/2 h-0.5 bg-brand-vif" />
             </div>
           </div>
         )}
@@ -546,7 +546,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
                 data-testid="torch-toggle-btn"
                 onClick={() => void toggleTorch()}
                 aria-pressed={torchOn}
-                className="absolute right-3 top-3 z-30 flex min-h-11 items-center gap-2 rounded-2xl border border-border-strong bg-scan-tech-bg px-3.5 text-sm font-semibold text-scan-tech-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="absolute right-3 top-3 z-30 flex min-h-11 items-center gap-2 rounded-2xl border border-input bg-scan-tech-bg px-3.5 text-sm font-semibold text-scan-tech-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {torchOn ? <Flashlight size={18} aria-hidden="true" /> : <FlashlightOff size={18} aria-hidden="true" />}
                 <span>{torchOn ? 'Torche allumée' : 'Torche éteinte'}</span>
@@ -562,7 +562,7 @@ export const CameraQrScanner: React.FC<CameraQrScannerProps> = ({
                   type="button"
                   onClick={switchCamera}
                   aria-label="Changer de caméra"
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-scan-tech-bg text-scan-tech-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-input bg-scan-tech-bg text-scan-tech-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <SwitchCamera size={18} aria-hidden="true" />
                 </button>

@@ -39,6 +39,9 @@ interface PhoneChangeDialogProps {
 
 type Step = 'phone' | 'code';
 
+/** Annonce du verrou des retraits (fin_withdrawal_check, code WITHDRAWAL_LOCKED_PHONE_CHANGE). */
+export const WITHDRAWAL_LOCK_NOTICE = 'Les retraits sont bloqués 24 h après un changement de numéro.';
+
 /** Codes qui concernent le numéro saisi : le message s'affiche sous le champ. */
 const PHONE_FIELD_CODES = new Set(['INVALID_FIELD', 'PHONE_TAKEN', 'PHONE_UNCHANGED']);
 
@@ -215,6 +218,9 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
       maxWidth="md"
     >
       <div className="space-y-4">
+        {/* Design 1c (organisatrice, E-03) : verrou réel de fin_withdrawal_check (24 h fixes après le dernier changement de
+            numéro, retraits de l'organisatrice et commissions de parrainage), annoncé avant toute validation */}
+        <StatusBanner tone="warning" title={WITHDRAWAL_LOCK_NOTICE} />
         {step === 'phone' ? (
           <form id="changement-numero" noValidate onSubmit={submitPhone}>
             <TextInput
@@ -237,7 +243,7 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
         ) : (
           <form id="changement-numero-code" noValidate onSubmit={(e) => void submitCode(e)} className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-fg">
+              <p className="text-sm text-foreground">
                 Code envoyé au <strong className="font-semibold tabular-nums">{sentTo}</strong>
               </p>
               <Button type="button" variant="ghost" size="sm" onClick={backToPhone} disabled={busy}>
@@ -253,7 +259,7 @@ export function PhoneChangeDialog({ isOpen, onClose, onChanged }: PhoneChangeDia
               disabled={isConfirming}
               hasError={error !== null}
             />
-            <p className="text-sm text-fg-muted">Une fois le numéro changé, vos autres appareils seront déconnectés et votre ancien numéro recevra un SMS d’information.</p>
+            <p className="text-sm text-muted-foreground">Une fois le numéro changé, vos autres appareils seront déconnectés et votre ancien numéro recevra un SMS d’information.</p>
           </form>
         )}
         {info && !error && <StatusBanner tone="info" title={info} />}

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
 function superadminOnly(): NextResponse {
-    return NextResponse.json({ error: 'Les codes de secours sont réservés aux Superadmins.', code: 'SUPERADMIN_ONLY' }, { status: 403, headers: NO_STORE });
+    return NextResponse.json({ error: 'Les codes de secours sont réservés aux super-administrateurs.', code: 'SUPERADMIN_ONLY' }, { status: 403, headers: NO_STORE });
 }
 
 const REFUSALS: Readonly<Record<string, number>> = {

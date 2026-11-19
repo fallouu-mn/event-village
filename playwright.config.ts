@@ -24,6 +24,9 @@
  *    plus, le drapeau seul laissant les `datetime-local` en mm/dd/yyyy dans le Chromium Linux de la CI (écart du lot 8) ;
  *  - dev-page (e2e/dev-page.spec.ts, phase courte) : rendu statique de la page de développement, sans serveur (L75) ;
  *  - recette (e2e/recette.spec.ts, vague F) : parcours enchaînés, un seul worker. Sans ce fichier, le projet est vide.
+ *
+ * Design 1c (point 1) : responsive (e2e/responsive.spec.ts), toutes les pages à 320, 360, 390, 768, 1024 et 1440 px ;
+ * phase lancée seule par le job « responsive » de la CI (EV_E2E_PHASES=connexion,responsive), jamais par le job e2e.
  */
 import { defineConfig } from '@playwright/test';
 import { APP_URL, e2eConfig } from './e2e/support/env';
@@ -77,5 +80,7 @@ export default defineConfig({
         { name: 'emails', testMatch: /emails\.spec\.ts$/, fullyParallel: false },
         { name: 'dev-page', testMatch: /dev-page\.spec\.ts$/, fullyParallel: false },
         { name: 'recette', testMatch: /recette\.spec\.ts$/, use: DESKTOP, fullyParallel: false },
+        // Design 1c (point 1) : contrôle responsive, fenêtre redimensionnée par le test (320 à 1 440 px, paysage du scanner)
+        { name: 'responsive', testMatch: /responsive\.spec\.ts$/, use: { ...DESKTOP, launchOptions: CAPTURE_LAUNCH } },
     ],
 });

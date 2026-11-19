@@ -980,7 +980,7 @@ test('12. clôture de caisse avec écart, sans réponse imposée : refus 400, é
         await expect(dialog).toBeVisible();
         const closeResponse = () => page.waitForResponse((r) => new URL(r.url()).pathname === '/api/controller/shifts/close' && r.request().method() === 'POST');
 
-        // Rien d'encaissé : 1 000 F comptés font un écart de +1 000 F
+        // Rien d'encaissé : 1 000 F comptés font 1 000 F de trop
         const counted = dialog.getByLabel(/^espèces encaissées comptées/i);
         await counted.fill('1000');
         const refusal = closeResponse();
@@ -992,7 +992,8 @@ test('12. clôture de caisse avec écart, sans réponse imposée : refus 400, é
         await expect(dialog.getByText(/^écart constaté$/i)).toBeVisible();
         // Soft : la caisse est fermée ensuite, même quand l'écart n'est pas affiché
         expect.soft(refusedBody.discrepancy, 'écart renvoyé par le serveur (contrat 3.6)').toBe(1000);
-        await expect.soft(dialog.getByText(/écart de\s1\s000\sF\sCFA/i), 'texte « Écart de 1 000 F CFA » à l’écran').toBeVisible();
+        // Design 1c (E-63) : écart dit en mots, sans signe : « 1 000 F CFA de trop par rapport aux encaissements enregistrés. »
+        await expect.soft(dialog.getByText(/1\s000\sF\sCFA de trop/i), 'texte « 1 000 F CFA de trop » à l’écran').toBeVisible();
 
         await counted.fill('0');
         const closed = closeResponse();

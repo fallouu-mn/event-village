@@ -12,7 +12,8 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
-import { PARTNER_ACTIVITY_LABELS } from '@/lib/partner/activity-labels';
+import { PARTNER_ACTIVITY_LABELS, orderedPartnerActivities } from '@/lib/partner/activity-labels';
+import { useFeatureFlags } from '@/lib/features/client';
 
 /**
  * Page professionnelle du partenaire (GET / PATCH /api/partner/profile). Lot 7 (7.0 f) : migrée sur le système de
@@ -28,8 +29,11 @@ const EMPTY_FORM: FormState = {
   company_name: '', commercial_name: '', description: '', address: '', city: '', phone: '', email: '', logo_url: '', cover_url: '',
 };
 
-// Mêmes libellés qu'à l'inscription (lib/partner/activity-labels.ts) : les deux listes divergeaient (run 77).
-const ACTIVITY_TYPES = Object.entries(PARTNER_ACTIVITY_LABELS).map(([value, label]) => ({ value, label }));
+// Mêmes libellés et même ordre qu'à l'inscription (lib/partner/activity-labels.ts) : les deux listes divergeaient (run 77).
+const ACTIVITY_VALUES = Object.keys(PARTNER_ACTIVITY_LABELS);
+
+/** Design 1c : l'email de la partenaire est obligatoire (confirmations et rapports). */
+const EMAIL_REQUIRED_MESSAGE = 'Indiquez l’email où arrivent vos confirmations et rapports.';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -62,6 +66,8 @@ async function readJson(res: Response, what: string): Promise<unknown> {
 export default function PartnerProfilePage() {
   const toast = useToast();
   const uid = useId();
+  const activityTypes = orderedPartnerActivities(ACTIVITY_VALUES, useFeatureFlags())
+    .map((value) => ({ value, label: PARTNER_ACTIVITY_LABELS[value] }));
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [activities, setActivities] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -123,6 +129,10 @@ export default function PartnerProfilePage() {
       setFieldError({ field: 'company_name', message: 'Indiquez le nom de l’entreprise (2 caractères au moins).' });
       return;
     }
+    if (form.email.trim() === '') {
+      setFieldError({ field: 'email', message: EMAIL_REQUIRED_MESSAGE });
+      return;
+    }
     if (activities.length === 0) {
       setFieldError({ field: 'activities', message: 'Choisissez au moins une activité.' });
       return;
@@ -176,7 +186,7 @@ export default function PartnerProfilePage() {
         ) : (
           <div className="space-y-4" aria-busy="true">
             <span className="sr-only">Chargement du profil…</span>
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
           </div>
         )}
       </div>
@@ -190,9 +200,9 @@ export default function PartnerProfilePage() {
       {header}
 
       <form onSubmit={handleSave} noValidate className="space-y-6">
-        <section aria-labelledby={`${uid}-infos`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-          <h2 id={`${uid}-infos`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-            <Building2 size={20} className="text-brand-fg" aria-hidden="true" />
+        <section aria-labelledby={`${uid}-infos`} className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+          <h2 id={`${uid}-infos`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+            <Building2 size={20} className="text-primary-text" aria-hidden="true" />
             Informations générales
           </h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -227,19 +237,19 @@ export default function PartnerProfilePage() {
           />
         </section>
 
-        <section aria-labelledby={`${uid}-activites`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-          <h2 id={`${uid}-activites`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-            <Briefcase size={20} className="text-brand-fg" aria-hidden="true" />
+        <section aria-labelledby={`${uid}-activites`} className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+          <h2 id={`${uid}-activites`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+            <Briefcase size={20} className="text-primary-text" aria-hidden="true" />
             Activités
           </h2>
-          <p id={`${uid}-activites-aide`} className="text-sm text-fg-muted">Touchez une activité pour l’ajouter ou la retirer. Une activité au moins.</p>
+          <p id={`${uid}-activites-aide`} className="text-sm text-muted-foreground">Touchez une activité pour l’ajouter ou la retirer. Une activité au moins.</p>
           <div
             role="group"
             aria-labelledby={`${uid}-activites`}
             aria-describedby={`${uid}-activites-aide${activitiesError ? ` ${uid}-activites-erreur` : ''}`}
             className="flex flex-wrap gap-2"
           >
-            {ACTIVITY_TYPES.map((act) => {
+            {activityTypes.map((act) => {
               const selected = activities.includes(act.value);
               return (
                 <button
@@ -249,7 +259,7 @@ export default function PartnerProfilePage() {
                   onClick={() => toggleActivity(act.value)}
                   className={cn(
                     'inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    selected ? 'border-brand bg-brand text-on-brand' : 'border-border bg-surface-sunken text-fg hover:border-brand-fg',
+                    selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-muted text-foreground-strong hover:border-primary-text',
                   )}
                 >
                   {selected && <Check size={16} aria-hidden="true" />}
@@ -259,13 +269,13 @@ export default function PartnerProfilePage() {
             })}
           </div>
           {activitiesError && (
-            <p id={`${uid}-activites-erreur`} role="alert" className="text-sm font-medium text-danger-fg">{activitiesError}</p>
+            <p id={`${uid}-activites-erreur`} role="alert" className="text-sm font-medium text-danger-text">{activitiesError}</p>
           )}
         </section>
 
-        <section aria-labelledby={`${uid}-contact`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-          <h2 id={`${uid}-contact`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-            <MapPin size={20} className="text-brand-fg" aria-hidden="true" />
+        <section aria-labelledby={`${uid}-contact`} className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+          <h2 id={`${uid}-contact`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+            <MapPin size={20} className="text-primary-text" aria-hidden="true" />
             Contact et adresse
           </h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -282,10 +292,14 @@ export default function PartnerProfilePage() {
               className="tabular-nums"
             />
             <TextInput
-              label="Email professionnel"
+              label="Email"
+              aside="obligatoire"
+              required
+              aria-required="true"
               type="email"
               autoComplete="email"
               placeholder="contact@maboutique.sn"
+              hint="Vos confirmations et rapports y arrivent."
               value={form.email}
               onChange={(e) => setField('email', e.target.value)}
               error={errorFor('email')}
@@ -311,9 +325,9 @@ export default function PartnerProfilePage() {
           </div>
         </section>
 
-        <section aria-labelledby={`${uid}-visuels`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-          <h2 id={`${uid}-visuels`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-            <ImageIcon size={20} className="text-brand-fg" aria-hidden="true" />
+        <section aria-labelledby={`${uid}-visuels`} className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+          <h2 id={`${uid}-visuels`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+            <ImageIcon size={20} className="text-primary-text" aria-hidden="true" />
             Visuels
           </h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

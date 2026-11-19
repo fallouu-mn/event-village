@@ -9,6 +9,7 @@ import { KpiCardSkeleton } from '@/components/ui/KpiCard';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
+import { ecartCaisseText } from '@/lib/partner/ecart-caisse';
 import { apiErrorOf, errorMessage } from '@/components/partner/fetch-json';
 import { useServerData } from '@/components/partner/useServerData';
 import { ClosingReportSummary } from './ClosingReportSummary';
@@ -31,30 +32,33 @@ const ABSENT_COLUMNS: DataColumn<Absent>[] = [
     { key: 'category', header: 'Catégorie', render: (a) => a.category },
 ];
 
-function signedFcfa(value: number | null): string {
+/**
+ * Design 1c (E-63) : écart de caisse dit en mots, jamais un signe à interpréter. difference = déclaré − attendu
+ * (négatif : il manque de l'argent ; positif : il y en a trop).
+ */
+function differenceInWords(value: number | null): string {
     if (value === null) return 'Caisse ouverte';
-    if (value === 0) return 'Aucun écart';
-    return value > 0 ? `+${formatFcfa(value)}` : formatFcfa(value);
+    return ecartCaisseText(value);
 }
 
 function ZCard({ z }: { z: ZReport }) {
     return (
-        <li className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5">
+        <li className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-base font-semibold text-fg">{z.controller_name || 'Compte sans nom'}</p>
-                <p className="text-sm font-semibold text-fg-muted">{shiftStatusLabel(z.status)}</p>
+                <p className="text-base font-semibold text-foreground-strong">{z.controller_name || 'Compte sans nom'}</p>
+                <p className="text-sm font-semibold text-muted-foreground">{shiftStatusLabel(z.status)}</p>
             </div>
-            <dl className="rounded-xl bg-surface-sunken px-3 py-1">
+            <dl className="rounded-xl bg-muted px-3 py-1">
                 <DefinitionRow label="Fonds de caisse (hors recettes)" value={formatFcfa(z.opening_float)} />
                 <DefinitionRow label="Attendu" value={z.expected === null ? 'Non calculé' : formatFcfa(z.expected)} />
                 <DefinitionRow label="Déclaré hors fonds" value={z.declared === null ? 'Pas encore' : formatFcfa(z.declared)} />
-                <DefinitionRow label="Écart" value={signedFcfa(z.difference)} />
+                <DefinitionRow label="Écart" value={differenceInWords(z.difference)} />
                 <DefinitionRow label="Co-signature par PIN" value={z.pin_cosigned ? 'Oui' : 'Non'} />
             </dl>
-            {z.justification && <p className="text-sm text-fg-muted">Justification : {z.justification}</p>}
+            {z.justification && <p className="text-sm text-muted-foreground">Justification : {z.justification}</p>}
             {z.by_source.length > 0 && (
                 <div>
-                    <p className="mb-1 text-sm font-semibold text-fg">Par source</p>
+                    <p className="mb-1 text-sm font-semibold text-foreground-strong">Par source</p>
                     <dl className="px-1">
                         {z.by_source.map((s) => (
                             <DefinitionRow key={s.source} label={`${SOURCE_LABELS[s.source] ?? 'Autre source'} · ${formatInteger(s.count)} billet${s.count > 1 ? 's' : ''}`} value={formatFcfa(s.amount)} />
@@ -64,7 +68,7 @@ function ZCard({ z }: { z: ZReport }) {
             )}
             {z.by_category.length > 0 && (
                 <div>
-                    <p className="mb-1 text-sm font-semibold text-fg">Par catégorie</p>
+                    <p className="mb-1 text-sm font-semibold text-foreground-strong">Par catégorie</p>
                     <dl className="px-1">
                         {z.by_category.map((c) => (
                             <DefinitionRow key={c.category_id} label={`${c.name} · ${formatInteger(c.count)} billet${c.count > 1 ? 's' : ''}`} value={formatFcfa(c.amount)} />
@@ -73,7 +77,7 @@ function ZCard({ z }: { z: ZReport }) {
                 </div>
             )}
             {z.closed_at && (
-                <p className="text-sm text-fg-muted">
+                <p className="text-sm text-muted-foreground">
                     Clôturée le <time dateTime={z.closed_at}>{formatDateTime(z.closed_at)}</time>
                 </p>
             )}
@@ -89,7 +93,7 @@ function fileNameOf(res: Response): string {
 
 /**
  * Onglet Clôture (contrat I) : rapport de clôture (ClosingReportSummary, le même que la fenêtre du tableau de bord :
- * montant net, disponibilité des fonds, absents, bilan, entrées), Z de caisse par caisse, absents (nombre en direct,
+ * recettes nettes, disponibilité des fonds, absents, bilan, entrées), récapitulatif de caisse par caisse, absents (nombre en direct,
  * liste après la fin), tous lus dans pilotage_closing ; export CSV des participants, journalisé par la base, sans
  * donnée de paiement, contacts seulement pour une finalité de la liste fermée.
  */
@@ -160,11 +164,11 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
         <div className="flex flex-col gap-6">
             <ClosingReportSummary closing={data} />
 
-            <PilotageSection title="Z de caisse" description="Une fiche par caisse : fonds, attendu, déclaré hors fonds et écart, détail par source et par catégorie.">
+            <PilotageSection title="Récapitulatifs de caisse" description="Un récapitulatif par caisse : fonds, attendu, déclaré hors fonds et écart, détail par source et par catégorie.">
                 {data.z.length === 0 ? (
-                    <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune caisse pour cet événement.</p>
+                    <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">Aucune caisse pour cet événement.</p>
                 ) : (
-                    <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2" aria-label="Z de caisse">
+                    <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2" aria-label="Récapitulatifs de caisse">
                         {data.z.map((z) => (
                             <ZCard key={z.shift_id} z={z} />
                         ))}
@@ -185,15 +189,15 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                         cardTitle={(a) => a.name}
                     />
                 ) : (
-                    <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm tabular-nums text-fg-muted">
+                    <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm tabular-nums text-muted-foreground">
                         {absents.list_available ? 'Aucun absent : tous les billets valides ont été scannés à l’entrée.' : (absents.count > 1 ? `${formatInteger(absents.count)} billets valides pas encore compostés.` : `${formatInteger(absents.count)} billet valide pas encore composté.`)}
                     </p>
                 )}
             </PilotageSection>
 
             <PilotageSection title="Export des participants" description="Fichier CSV : nom, catégorie, origine, statut du billet, heure d’entrée, zone et porte. Aucune donnée de paiement ni numéro de billet.">
-                <form onSubmit={(e) => void exportCsv(e)} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 sm:p-5" noValidate>
-                    <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm font-medium text-fg">
+                <form onSubmit={(e) => void exportCsv(e)} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:p-5" noValidate>
+                    <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm font-medium text-foreground-strong">
                         <input
                             type="checkbox"
                             checked={includeContacts}
@@ -204,19 +208,19 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                                     setPurposeError(false);
                                 }
                             }}
-                            className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer rounded border-border-strong accent-brand"
+                            className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer rounded border-input accent-primary"
                         />
                         <span>
                             Inclure le téléphone et l’email des participants
-                            <span className="block font-normal text-fg-muted">Seulement pour l’une des finalités ci-dessous. L’export et sa finalité sont journalisés.</span>
+                            <span className="block font-normal text-muted-foreground">Seulement pour l’une des finalités ci-dessous. L’export et sa finalité sont journalisés.</span>
                         </span>
                     </label>
 
                     {includeContacts && (
                         <fieldset className="flex flex-col gap-2" aria-describedby={purposeError ? 'export-finalite-erreur' : undefined}>
-                            <legend className="mb-1 text-sm font-semibold text-fg">Finalité de l’export</legend>
+                            <legend className="mb-1 text-sm font-semibold text-foreground-strong">Finalité de l’export</legend>
                             {EXPORT_PURPOSES.map((p) => (
-                                <label key={p.value} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-border px-3 py-2.5 text-sm text-fg">
+                                <label key={p.value} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-border px-3 py-2.5 text-sm text-foreground-strong">
                                     <input
                                         type="radio"
                                         name="export-finalite"
@@ -226,13 +230,13 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                                             setPurpose(p.value);
                                             setPurposeError(false);
                                         }}
-                                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-brand"
+                                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-primary"
                                     />
                                     <span>{p.label}</span>
                                 </label>
                             ))}
                             {purposeError && (
-                                <p id="export-finalite-erreur" className="text-sm font-medium text-danger-fg" role="alert">
+                                <p id="export-finalite-erreur" className="text-sm font-medium text-danger-text" role="alert">
                                     Choisissez la finalité de l’export des contacts.
                                 </p>
                             )}
@@ -249,7 +253,7 @@ export function ClosingTab({ eventId, signal }: { eventId: string; signal: numbe
                         <Button type="submit" variant="primary" leftIcon={<Download size={18} />} isLoading={exporting}>
                             Exporter les participants
                         </Button>
-                        <span className="flex items-center gap-2 text-sm text-fg-muted">
+                        <span className="flex items-center gap-2 text-sm text-muted-foreground">
                             <FileSpreadsheet size={16} aria-hidden="true" />
                             CSV compatible tableur (UTF-8)
                         </span>

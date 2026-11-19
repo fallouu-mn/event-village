@@ -15,7 +15,7 @@ const AddSchema = z.object({
 }).strict();
 
 /**
- * GET /api/admin/a-la-une — design 1b : la une de l'accueil pour le Superadmin : placements actifs dans l'ordre (avec
+ * GET /api/admin/a-la-une — design 1b : la une de l'accueil pour le super-administrateur : placements actifs dans l'ordre (avec
  * l'état d'affichage), historique des retraits, journal des actions (qui, quand, quoi, motif).
  */
 export async function GET(req: NextRequest) {

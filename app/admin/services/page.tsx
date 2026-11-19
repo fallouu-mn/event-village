@@ -165,9 +165,9 @@ function toRow(tab: CatalogTab, item: Raw): CatalogRow {
 }
 
 const COLUMNS: DataColumn<CatalogRow>[] = [
-  { key: 'name', header: 'Élément', render: (r) => <span className="font-semibold text-fg">{r.name}</span>, hideOnCard: true },
+  { key: 'name', header: 'Élément', render: (r) => <span className="font-semibold text-foreground-strong">{r.name}</span>, hideOnCard: true },
   { key: 'owner', header: 'Partenaire', render: (r) => r.owner },
-  { key: 'detail', header: 'Détail', render: (r) => <span className="text-fg-muted">{r.detail}</span> },
+  { key: 'detail', header: 'Détail', render: (r) => <span className="text-muted-foreground">{r.detail}</span> },
   { key: 'amount', header: 'Montant', align: 'right', render: (r) => <span className="whitespace-nowrap tabular-nums">{r.amount}</span> },
   { key: 'state', header: 'État', render: (r) => <Badge variant={r.state.variant} size="sm">{r.state.label}</Badge> },
   {
@@ -261,7 +261,7 @@ function CatalogPanel({ tab }: { tab: CatalogTab }) {
       {closedNotice}
       <DataList
         items={rows}
-        columns={COLUMNS}
+        columns={COLUMNS} breakpoint="xl"
         getKey={(r) => r.id}
         caption={TABS.find((t) => t.id === tab)?.label ?? 'Catalogue'}
         cardTitle={(r) => r.name}

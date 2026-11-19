@@ -26,7 +26,7 @@ const ROWS: RowSpec[] = [
         key: 'toResume',
         icon: <RotateCcw size={20} />,
         title: (n) => `${formatInteger(n)} ${n > 1 ? 'versements à reprendre' : 'versement à reprendre'}`,
-        explain: (a) => <><span className="font-semibold text-fg tabular-nums">{a}</span> que des clients ou des partenaires attendent depuis plus de 30 minutes.</>,
+        explain: (a) => <><span className="font-semibold text-foreground-strong tabular-nums">{a}</span> que des clients ou des partenaires attendent depuis plus de 30 minutes.</>,
         upToDate: 'Versements à reprendre : aucun',
         action: 'Traiter les versements',
         href: '/admin/finance#versements-a-reprendre',
@@ -35,7 +35,7 @@ const ROWS: RowSpec[] = [
         key: 'refundsToPay',
         icon: <HandCoins size={20} />,
         title: (n) => `${formatInteger(n)} ${n > 1 ? 'remboursements à verser' : 'remboursement à verser'}`,
-        explain: (a) => <><span className="font-semibold text-fg tabular-nums">{a}</span> demandés et pas encore reçus par les clients.</>,
+        explain: (a) => <><span className="font-semibold text-foreground-strong tabular-nums">{a}</span> demandés et pas encore reçus par les clients.</>,
         upToDate: 'Remboursements à verser : aucun',
         action: 'Voir les remboursements',
         href: '/admin/finance#remboursements-a-verser',
@@ -44,7 +44,7 @@ const ROWS: RowSpec[] = [
         key: 'debts',
         icon: <Scale size={20} />,
         title: (n) => `${formatInteger(n)} ${n > 1 ? 'créances' : 'créance'}`,
-        explain: (a) => <><span className="font-semibold text-fg tabular-nums">{a}</span> que des partenaires ou des parrains doivent encore à Event Village, repris sur leurs prochains gains.</>,
+        explain: (a) => <><span className="font-semibold text-foreground-strong tabular-nums">{a}</span> que des partenaires ou des parrains doivent encore à Event Village, repris sur leurs prochains gains.</>,
         upToDate: 'Créances : aucune',
         action: 'Voir les créances',
         href: '/admin/finance#creances',
@@ -85,15 +85,15 @@ export function MoneyWaiting() {
 
     return (
         <section aria-labelledby={`${id}-titre`} className="flex flex-col gap-3">
-            <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-fg">Argent qui attend</h2>
+            <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-foreground-strong">Argent qui attend</h2>
             {phase === 'loading' && (
                 <div role="status" aria-busy="true" aria-label="Chargement de l’argent qui attend" className="grid gap-3 md:grid-cols-3">
-                    {[0, 1, 2].map((i) => <span key={i} className="h-36 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" />)}
+                    {[0, 1, 2].map((i) => <span key={i} className="h-36 rounded-xl bg-background motion-safe:animate-pulse" />)}
                 </div>
             )}
             {phase === 'error' && (
-                <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-border bg-danger-bg p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-semibold text-danger-fg">Compteurs indisponibles pour le moment : ouvrez la page Finance pour voir les listes.</p>
+                <div role="alert" className="flex flex-col gap-3 rounded-xl border border-danger-border bg-danger-soft p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-semibold text-danger-text">Compteurs indisponibles pour le moment : ouvrez la page Finance pour voir les listes.</p>
                     <Button variant="secondary" size="sm" isLoading={retrying} onClick={() => { setRetrying(true); void load(); }}>Réessayer</Button>
                 </div>
             )}
@@ -105,14 +105,14 @@ export function MoneyWaiting() {
                                 const l = lines[r.key];
                                 const unavailable = l.visible && l.unavailable;
                                 return (
-                                    <li key={r.key} className={cn('flex flex-col gap-3 rounded-2xl border bg-surface p-4 sm:p-5', unavailable ? 'border-border' : 'border-warning-border')}>
+                                    <li key={r.key} className={cn('flex flex-col gap-3 rounded-xl border bg-card p-4 sm:p-5', unavailable ? 'border-border' : 'border-warning-border')}>
                                         <div className="flex items-start gap-3">
-                                            <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', unavailable ? 'bg-surface-sunken text-fg-muted' : 'bg-warning-bg text-warning-fg')} aria-hidden="true">{r.icon}</span>
-                                            <p className="min-w-0 break-words text-base font-semibold leading-snug text-fg tabular-nums">
+                                            <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', unavailable ? 'bg-background text-muted-foreground' : 'bg-warning-soft text-warning-text')} aria-hidden="true">{r.icon}</span>
+                                            <p className="min-w-0 break-words text-base font-semibold leading-snug text-foreground-strong tabular-nums">
                                                 {l.visible && !l.unavailable ? r.title(l.count) : r.upToDate.split(' :')[0]}
                                             </p>
                                         </div>
-                                        <p className="text-sm leading-relaxed text-fg-muted">
+                                        <p className="text-sm leading-relaxed text-muted-foreground">
                                             {l.visible && !l.unavailable ? r.explain(formatFcfaPrecise(l.amount)) : 'Compteur indisponible pour le moment.'}
                                         </p>
                                         <LinkButton href={r.href} variant={unavailable ? 'secondary' : 'primary'} rightIcon={<ArrowRight size={16} />} className="mt-auto w-full sm:w-auto">
@@ -124,10 +124,10 @@ export function MoneyWaiting() {
                         </ul>
                     )}
                     {upToDate.length > 0 && (
-                        <ul className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4" aria-label="À jour">
+                        <ul className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4" aria-label="À jour">
                             {upToDate.map((r) => (
-                                <li key={r.key} className="flex items-center gap-2 text-sm text-fg">
-                                    <CheckCircle2 size={18} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+                                <li key={r.key} className="flex items-center gap-2 text-sm text-foreground-strong">
+                                    <CheckCircle2 size={18} className="flex-shrink-0 text-success-text" aria-hidden="true" />
                                     {r.upToDate}
                                 </li>
                             ))}

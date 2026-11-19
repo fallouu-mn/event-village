@@ -32,7 +32,7 @@ export async function POST(
         return auth.errorResponse ?? NextResponse.json({ error: 'Accès réservé aux administrateurs.', code: 'FORBIDDEN' }, { status: 403 });
     }
     if (!auth.user.roles.includes('SUPERADMIN')) {
-        return NextResponse.json({ error: 'Seul un superadmin peut constater qu’un versement n’est pas parti.', code: 'SUPERADMIN_ONLY' }, { status: 403 });
+        return NextResponse.json({ error: 'Seul un super-administrateur peut constater qu’un versement n’est pas parti.', code: 'SUPERADMIN_ONLY' }, { status: 403 });
     }
     const passwordRefusal = await requireRecentPassword(request, auth.user.id);
     if (passwordRefusal) return passwordRefusal;

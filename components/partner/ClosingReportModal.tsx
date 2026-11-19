@@ -67,14 +67,14 @@ function ReportBody({ report }: { report: ClosingReportData }) {
   const { event } = report;
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4">
+      <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="break-all rounded-md bg-brand-bg px-2 py-0.5 font-mono text-sm font-semibold text-brand-fg">{report.reportId}</span>
-          <p className="text-sm text-fg-muted">
+          <span className="break-all rounded-md bg-primary-soft px-2 py-0.5 font-mono text-sm font-semibold text-primary-text">{report.reportId}</span>
+          <p className="text-sm text-muted-foreground">
             Généré le <time dateTime={report.generatedAt} className="tabular-nums">{formatDateTime(report.generatedAt)}</time>
           </p>
         </div>
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-fg-muted">
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <li className="flex items-center gap-1.5 tabular-nums">
             <Calendar size={16} aria-hidden="true" className="flex-shrink-0" />
             {formatEventDateTime(event.startDate, event.startTime)}
@@ -96,7 +96,7 @@ function ReportBody({ report }: { report: ClosingReportData }) {
           caption="Ventes par catégorie"
           cardTitle={(cat) => cat.name}
           className="tabular-nums"
-          empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune catégorie.</p>}
+          empty={<p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">Aucune catégorie.</p>}
         />
       </PilotageSection>
     </div>
@@ -158,7 +158,7 @@ export const ClosingReportModal: React.FC<ClosingReportModalProps> = ({ isOpen, 
             </StatusBanner>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-fg-muted">Document généré par Event Village</p>
+            <p className="text-sm text-muted-foreground">Document généré par Event Village</p>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
                 variant="outline"

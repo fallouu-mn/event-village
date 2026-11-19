@@ -3,7 +3,7 @@
  * client (/api/account/phone/start et /confirm, account_phone_finalize en base). Le numéro d'un administrateur reçoit ses
  * codes administrateur : il ne se change que par les chemins de la finition 3d, où le nouveau numéro est prouvé et où le
  * mot de passe et un code récent sont exigés.
- *  - ADMIN : par le Superadmin (Comptes, « Changer le numéro ») ;
+ *  - ADMIN : par le super-administrateur (Comptes, « Changer le numéro ») ;
  *  - SUPERADMIN : par « Sécurité du compte » (/admin/securite).
  * Module sans dépendance serveur : lu par les routes et par l'écran du profil (le serveur décide toujours).
  */

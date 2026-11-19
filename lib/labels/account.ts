@@ -5,7 +5,7 @@
  */
 
 export const ROLE_LABELS: Readonly<Record<string, string>> = {
-    SUPERADMIN: 'Superadmin',
+    SUPERADMIN: 'Super-administrateur',
     ADMIN: 'Administrateur',
     PARTENAIRE: 'Partenaire',
     CONTROLEUR: 'Contrôleur',

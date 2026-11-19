@@ -165,12 +165,12 @@ export async function verifyAdminAuth(
             };
         }
 
-        // 3. Exigence stricte de Superadmin si demandée
+        // 3. Exigence stricte du rôle SUPERADMIN si demandée
         if (options?.requireSuperadmin && !roles.includes('SUPERADMIN')) {
             return {
                 authorized: false,
                 errorResponse: NextResponse.json(
-                    { error: 'Opération réservée exclusivement au SUPERADMIN.' },
+                    { error: 'Opération réservée au super-administrateur.' },
                     { status: 403 }
                 ),
             };
@@ -180,7 +180,7 @@ export async function verifyAdminAuth(
         let permissions: string[] = [];
 
         if (roles.includes('SUPERADMIN')) {
-            permissions = [...ADMIN_PERMISSIONS]; // Le Superadmin a toutes les permissions
+            permissions = [...ADMIN_PERMISSIONS]; // Le super-administrateur a toutes les permissions
         } else {
             const { data: permsData, error: permsErr } = await supabase
                 .from('admin_permissions')

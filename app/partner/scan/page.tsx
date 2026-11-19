@@ -56,7 +56,7 @@ interface PartnerEvent { id: string; title: string; start_date?: string; status?
 // le contrôleur : vente au guichet, ouverture de caisse avec le code PIN régisseur ; clôture dans l'onglet Caisse)
 const CounterSalePanel = dynamic(() => import('@/components/scan/CounterSalePanel').then((m) => m.CounterSalePanel), {
     ssr: false,
-    loading: () => <p role="status" className="text-sm text-fg-muted">Chargement du guichet…</p>,
+    loading: () => <p role="status" className="text-sm text-muted-foreground">Chargement du guichet…</p>,
 });
 const OpenShiftModal = dynamic(() => import('@/components/shifts/ShiftModals').then((m) => m.OpenShiftModal), { ssr: false });
 
@@ -436,13 +436,13 @@ export default function PartnerScanPage() {
 
     return (
         <div className="mx-auto flex max-w-2xl flex-col gap-6 pb-16">
-            <div className="flex items-center justify-between gap-3 border-b border-border pb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
                 <div className="min-w-0">
-                    <h1 className="flex items-center gap-2 text-xl font-black tracking-tight text-fg sm:text-2xl">
-                        <QrCode aria-hidden="true" className="text-brand-fg" size={24} />
+                    <h1 className="flex items-center gap-2 text-xl font-black tracking-tight text-foreground-strong sm:text-2xl">
+                        <QrCode aria-hidden="true" className="text-primary-text" size={24} />
                         <span>Contrôle des entrées</span>
                     </h1>
-                    <p className="mt-0.5 text-sm text-fg-muted">
+                    <p className="mt-0.5 text-sm text-muted-foreground">
                         QR dynamique de l’application, ou numéro du billet avec pièce d’identité.
                     </p>
                 </div>
@@ -459,15 +459,15 @@ export default function PartnerScanPage() {
 
             {/* Événement contrôlé */}
             {loadingEvents ? (
-                <div role="status" className="flex items-center gap-2 text-sm text-fg-muted">
-                    <Loader2 size={18} aria-hidden="true" className="text-brand-fg motion-safe:animate-spin" /> Chargement de vos événements…
+                <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 size={18} aria-hidden="true" className="text-primary-text motion-safe:animate-spin" /> Chargement de vos événements…
                 </div>
             ) : eventsError ? (
-                <div role="alert" className="flex flex-col gap-2 rounded-2xl border-2 border-border-strong bg-surface-sunken p-4">
-                    <p className="flex items-center gap-2 text-sm font-bold text-fg">
+                <div role="alert" className="flex flex-col gap-2 rounded-2xl border-2 border-input bg-muted p-4">
+                    <p className="flex items-center gap-2 text-sm font-bold text-foreground-strong">
                         <ShieldAlert size={18} aria-hidden="true" /> {eventsError}
                     </p>
-                    <p className="text-sm text-fg">
+                    <p className="text-sm text-foreground-strong">
                         Contrôleur d’un événement ? Utilisez le scanner contrôleur, depuis votre espace contrôleur.
                     </p>
                     <div>
@@ -475,7 +475,7 @@ export default function PartnerScanPage() {
                     </div>
                 </div>
             ) : events.length === 0 ? (
-                <div role="status" className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg">
+                <div role="status" className="rounded-2xl border border-border bg-card p-4 text-sm text-foreground-strong">
                     Aucun événement ouvert au contrôle en ce moment : le contrôle ouvre quelques heures avant le début et ferme quelques heures après la fin.
                 </div>
             ) : (
@@ -516,8 +516,8 @@ export default function PartnerScanPage() {
 
             {selectedEvent && (
                 <>
-                    <p role="status" aria-atomic="true" className="flex items-center gap-2 text-sm font-semibold tabular-nums text-fg">
-                        <Ticket size={16} aria-hidden="true" className="text-brand-fg" />
+                    <p role="status" aria-atomic="true" className="flex items-center gap-2 text-sm font-semibold tabular-nums text-foreground-strong">
+                        <Ticket size={16} aria-hidden="true" className="text-primary-text" />
                         {counter}{statsError && stats ? ' (non actualisé)' : ''}
                     </p>
 
@@ -525,7 +525,7 @@ export default function PartnerScanPage() {
                         <Button
                             variant={scanMode === 'camera' ? 'primary' : 'secondary'}
                             size="lg"
-                            className="gap-2 whitespace-nowrap px-4 text-sm"
+                            className="flex-col gap-1 px-2 py-2 text-center text-sm leading-tight"
                             aria-pressed={scanMode === 'camera'}
                             onClick={() => chooseMode('camera')}
                             leftIcon={<Camera size={18} />}
@@ -535,7 +535,7 @@ export default function PartnerScanPage() {
                         <Button
                             variant={scanMode === 'manual' ? 'primary' : 'secondary'}
                             size="lg"
-                            className="gap-2 whitespace-nowrap px-4 text-sm"
+                            className="flex-col gap-1 px-2 py-2 text-center text-sm leading-tight"
                             aria-pressed={scanMode === 'manual'}
                             onClick={() => chooseMode('manual')}
                             leftIcon={<Keyboard size={18} />}
@@ -545,7 +545,7 @@ export default function PartnerScanPage() {
                         <Button
                             variant={counterOpen ? 'primary' : 'secondary'}
                             size="lg"
-                            className="gap-2 whitespace-nowrap px-4 text-sm"
+                            className="flex-col gap-1 px-2 py-2 text-center text-sm leading-tight"
                             aria-pressed={counterOpen}
                             onClick={() => setCounterOpen((v) => !v)}
                             leftIcon={<Banknote size={18} />}
@@ -555,7 +555,7 @@ export default function PartnerScanPage() {
                     </div>
 
                     {counterOpen && (
-                        <div className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-5">
+                        <div className="flex flex-col gap-3 rounded-3xl border border-border bg-card p-5">
                             <CounterSalePanel
                                 key={counterSignal}
                                 eventId={eventId}
@@ -563,7 +563,7 @@ export default function PartnerScanPage() {
                                 onSold={() => setCounterSignal((n) => n + 1)}
                                 onSessionExpired={goToLogin}
                             />
-                            <p className="text-sm text-fg-muted">Fermez votre caisse à la fin de la soirée dans l’onglet Caisse de l’événement.</p>
+                            <p className="text-sm text-muted-foreground">Fermez votre caisse à la fin de la soirée dans l’onglet Caisse de l’événement.</p>
                             <OpenShiftModal
                                 isOpen={showOpenShift}
                                 onClose={() => setShowOpenShift(false)}
@@ -584,7 +584,7 @@ export default function PartnerScanPage() {
                         <ScanResultPanel outcome={outcome} recoveredAt={shown?.recoveredAt ?? null} />
                     )}
 
-                    <div className="rounded-3xl border border-border bg-surface p-5">
+                    <div className="rounded-3xl border border-border bg-card p-5">
                         {scanMode === 'camera' ? (
                             <CameraQrScanner
                                 onScan={handleCameraScan}

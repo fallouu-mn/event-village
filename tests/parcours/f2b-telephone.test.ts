@@ -23,10 +23,18 @@ const read = (file: string) => fs.readFileSync(path.join(ROOT, file), 'utf8');
 const form = read('components/events/EventForm.tsx');
 
 describe('a. nom de l’étape visible sur téléphone', () => {
-    test('libellé de chaque étape sans « hidden … sm:inline » ; six cases (5 étapes et « Vérifier »)', () => {
-        assert.doesNotMatch(form, /className="hidden truncate sm:inline">\{s\.label\}/, 'libellé caché sous 640 px');
+    // Design 1c (stepper numéroté, consigne du lot) : sous 640 px, six pastilles de 48 px (le nom de chaque étape n'y tient
+    // pas en 14 px) ; le nom de l'étape COURANTE est écrit en toutes lettres au-dessus (« Étape n sur 5 — {titre} »), le nom
+    // de chaque étape est lu par les lecteurs d'écran (bouton) et s'affiche sous sa pastille à partir de 640 px, entier
+    // (jamais tronqué). Remplace l'exigence de la finition 2b (C) « nom de chaque étape visible sur téléphone » (trois
+    // colonnes de cases), décision signalée au compte rendu du design 1c.
+    test('nom de l’étape courante écrit sur téléphone, nom de chaque étape lu et affiché dès 640 px ; six cases (5 étapes et « Vérifier »)', () => {
+        assert.doesNotMatch(form, /className="hidden truncate sm:inline">\{s\.label\}/, 'libellé tronqué');
+        assert.match(form, /`Étape \$\{stepIndex \+ 1\} sur \$\{STEPS\.length\} — \$\{currentStep\.heading\}`/, 'étape courante en toutes lettres');
         assert.match(form, /\{s\.label\}/);
-        assert.match(form, /grid-cols-3 gap-2 sm:grid-cols-6/);
+        assert.match(form, /'hidden max-w-full break-words text-center text-sm leading-tight sm:block'/, 'nom sous la pastille dès 640 px, entier');
+        assert.match(form, /<span className="sr-only">\s*\{`\$\{s\.id === 'verifier' \? s\.heading : `Étape \$\{i \+ 1\} : \$\{s\.heading\}`\}/, 'nom lu par les lecteurs d’écran');
+        assert.match(form, /<ol className="mt-3 flex items-start">\s*\{SCREENS\.map/, 'une case par écran (SCREENS : 5 étapes et « Vérifier »)');
         assert.match(form, /label: 'Vérifier', heading: 'Vérifier avant d’envoyer'/);
     });
 });
@@ -36,7 +44,8 @@ describe('b. barre du bas fixe « Précédent / Suivant »', () => {
         assert.match(form, /form-action-bar fixed inset-x-0 bottom-0 z-40 [^"]*lg:static/);
         const css = read('app/globals.css');
         assert.match(css, /\.form-action-bar \{\s*padding-bottom: max\(0\.75rem, env\(safe-area-inset-bottom, 0px\)\);/);
-        assert.match(form, /pb-40 pt-6 lg:pb-10/, 'bas de page dégagé pour la barre');
+        // Design 1c : sur l'écran « Vérifier », la barre porte en plus le grand bouton (56 px) : bas de page plus grand
+        assert.match(form, /'mx-auto w-full max-w-4xl pt-6 lg:pb-10', onReview && canSend \? 'pb-64' : 'pb-40'/, 'bas de page dégagé pour la barre');
     });
     test('« Navigation rapide » masquée tant que la barre du formulaire est affichée (attribut sur body, règle CSS)', () => {
         const css = read('app/globals.css');

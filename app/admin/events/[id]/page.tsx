@@ -315,7 +315,7 @@ function amount(v: number | string): number {
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id: string }) {
   return (
-    <section aria-labelledby={id} className="rounded-2xl border border-border bg-card p-4 sm:p-6">
+    <section aria-labelledby={id} className="rounded-xl border border-border bg-card p-4 sm:p-6">
       <h2 id={id} className="mb-4 text-lg font-bold tracking-tight text-foreground-strong">{title}</h2>
       {children}
     </section>
@@ -731,7 +731,7 @@ export default function AdminEventSheetPage() {
           <Section id="fiche-categories" title="Catégories et prix">
             <DataList
               items={categories}
-              columns={categoryColumns}
+              columns={categoryColumns} breakpoint="xl"
               getKey={(c) => c.id}
               caption="Catégories de billets, tous canaux et inactives comprises"
               cardTitle={(c) => c.name}

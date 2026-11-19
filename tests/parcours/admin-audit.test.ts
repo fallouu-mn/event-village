@@ -269,15 +269,18 @@ describe('A13 — /admin/audit : une erreur n’est pas une liste vide (statique
     test('« Aucun enregistrement » n’est jamais affiché quand la lecture a échoué', () => {
         const [state] = errorStates();
         assert.ok(state, `${PAGE} ne rend pas <ErrorState />`);
-        const empty = nodesOf(source, (n) => ts.isJsxText(n) && /Aucun enregistrement/.test(n.text));
+        // Design 1c (modification signalée) : liste vide de DataList, titre « Aucune entrée » (texte d'un attribut)
+        const empty = nodesOf(source, (n) => (ts.isJsxText(n) || ts.isStringLiteral(n)) && /Aucun enregistrement|Aucune entrée/.test(n.text));
         assert.equal(empty.length, 1, 'message de liste vide introuvable');
         assert.ok(state.getStart(source) < empty[0].getStart(source), 'la branche d’erreur doit passer avant celle de la liste vide');
     });
 
     test('la colonne Utilisateur de §134 est affichée', () => {
-        const headers = nodesOf(source, (n) => ts.isJsxElement(n) && n.openingElement.tagName.getText() === 'th').map((n) => code(n));
+        // Design 1c (modification signalée) : colonnes de DataList (`header: '…'`) au lieu de <th> ; la colonne de
+        // l'utilisateur s'appelle « Auteur » (nom de la personne, jamais son identifiant)
+        const headers = nodesOf(source, (n) => ts.isPropertyAssignment(n) && n.name.getText(source) === 'header').map((n) => code(n));
         assert.ok(headers.length >= 5, `en-têtes du tableau : ${headers.length}`);
-        assert.ok(headers.some((h) => /Utilisateur/.test(h)), `${PAGE} : aucune colonne Utilisateur (§134), user_id n'est affiché nulle part`);
+        assert.ok(headers.some((h) => /Utilisateur|Auteur/.test(h)), `${PAGE} : aucune colonne de l'utilisateur (§134)`);
         const cells = nodesOf(source, ts.isJsxExpression);
         assert.ok(cells.some((c) => /\blog\.(?:user_(?!role\b)\w+|users?\b|actor\w*)/.test(code(c))), 'l’utilisateur de la ligne n’est pas affiché');
     });
@@ -287,6 +290,7 @@ describe('A13 — /admin/audit : une erreur n’est pas une liste vide (statique
         for (const needle of ['log.created_at', 'log.user_role', 'log.action', 'log.object_type', 'selectedLog.old_value', 'selectedLog.new_value']) {
             assert.ok(text.includes(needle), `${PAGE} : ${needle} n'est plus affiché`);
         }
-        assert.match(text, /hour:\s*['"]2-digit['"]/, 'l’heure reste affichée');
+        // Design 1c (modification signalée) : date et heure par formatDateTime (lib/format.ts : « … à HH:MM »)
+        assert.match(text, /hour:\s*['"]2-digit['"]|formatDateTime\(log\.created_at\)/, 'l’heure reste affichée');
     });
 });

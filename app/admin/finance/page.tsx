@@ -42,7 +42,7 @@ import { useHashScroll } from '@/hooks/useHashScroll';
 import { getJson } from '@/lib/finance/admin-client';
 import type { PaymentLine } from '@/lib/finance/admin-lists';
 import type { FinanceSummary } from '@/lib/finance/admin-summary';
-import { PAYMENT_STATUS_FILTER, paymentStatusLabel } from '@/lib/finance/payment-labels';
+import { PAYMENT_STATUS_FILTER, paymentStatusLabel, readablePaymentReference } from '@/lib/finance/payment-labels';
 import { DEFAULT_PERIOD, PERIOD_KEYS, type FinancePeriod, type PeriodKey } from '@/lib/finance/period';
 import { formatDateTime, formatFcfaPrecise, formatTime, toDakarDateTimeLocal } from '@/lib/format';
 
@@ -170,14 +170,14 @@ export default function AdminFinancePage() {
     },
     {
       key: 'ref', header: 'Référence',
-      render: (p) => <span className="break-all font-mono text-sm text-fg">{p.transactionReference}</span>,
+      render: (p) => <span className="break-all font-mono text-sm text-foreground-strong">{readablePaymentReference(p.transactionReference)}</span>,
     },
     {
       key: 'what', header: 'Objet',
       render: (p) => (
         <span className="flex flex-col">
-          <span className="text-fg">{p.target}</span>
-          {p.eventTitle && <span className="text-sm text-fg-muted">{p.eventTitle}</span>}
+          <span className="text-foreground-strong">{p.target}</span>
+          {p.eventTitle && <span className="text-sm text-muted-foreground">{p.eventTitle}</span>}
         </span>
       ),
     },
@@ -191,7 +191,7 @@ export default function AdminFinancePage() {
         return (
           <span className="flex flex-col items-start gap-1">
             <Badge variant={label.variant} size="sm">{label.label}</Badge>
-            {p.discrepancy > 0 && <span className="text-sm font-semibold text-danger-fg tabular-nums">Écart de {formatFcfaPrecise(p.discrepancy)}</span>}
+            {p.discrepancy > 0 && <span className="text-sm font-semibold text-danger-text tabular-nums">Écart de {formatFcfaPrecise(p.discrepancy)}</span>}
           </span>
         );
       },
@@ -203,17 +203,17 @@ export default function AdminFinancePage() {
     return (
       <div className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
-          <span className="text-lg font-bold text-fg tabular-nums">{formatFcfaPrecise(p.amount)}</span>
+          <span className="text-lg font-bold text-foreground-strong tabular-nums">{formatFcfaPrecise(p.amount)}</span>
           <Badge variant={label.variant} size="sm" className="flex-shrink-0">{label.label}</Badge>
         </div>
-        <span className="text-sm text-fg">{p.target}{p.eventTitle ? ` · ${p.eventTitle}` : ''}</span>
-        <time dateTime={toDakarDateTimeLocal(p.encashedAt)} className="text-sm text-fg-muted tabular-nums">Encaissé le {formatDateTime(p.encashedAt)}</time>
-        <span className="break-all font-mono text-sm text-fg-muted">{p.transactionReference}</span>
-        <span className="text-sm text-fg-muted">
-          Frais de service <span className="tabular-nums text-fg">{formatFcfaPrecise(p.serviceFee)}</span> · pour Event Village{' '}
-          <span className="tabular-nums text-fg">{formatFcfaPrecise(p.evNet)}</span>
+        <span className="text-sm text-foreground-strong">{p.target}{p.eventTitle ? ` · ${p.eventTitle}` : ''}</span>
+        <time dateTime={toDakarDateTimeLocal(p.encashedAt)} className="text-sm text-muted-foreground tabular-nums">Encaissé le {formatDateTime(p.encashedAt)}</time>
+        <span className="break-all font-mono text-sm text-muted-foreground">{readablePaymentReference(p.transactionReference)}</span>
+        <span className="text-sm text-muted-foreground">
+          Frais de service <span className="tabular-nums text-foreground-strong">{formatFcfaPrecise(p.serviceFee)}</span> · pour Event Village{' '}
+          <span className="tabular-nums text-foreground-strong">{formatFcfaPrecise(p.evNet)}</span>
         </span>
-        {p.discrepancy > 0 && <span className="text-sm font-semibold text-danger-fg tabular-nums">Écart de {formatFcfaPrecise(p.discrepancy)}</span>}
+        {p.discrepancy > 0 && <span className="text-sm font-semibold text-danger-text tabular-nums">Écart de {formatFcfaPrecise(p.discrepancy)}</span>}
       </div>
     );
   };
@@ -232,7 +232,7 @@ export default function AdminFinancePage() {
 
       {!authLoading && !canRead && (
         <StatusBanner tone="info" title="Chiffres de la finance non affichés">
-          Votre compte n’a pas la permission « Consulter les paiements ». Demandez-la au Superadmin pour voir ce que gagne Event Village et ce qui est dû.
+          Votre compte n’a pas la permission « Consulter les paiements ». Demandez-la au super-administrateur pour voir ce que gagne Event Village et ce qui est dû.
         </StatusBanner>
       )}
 
@@ -273,8 +273,8 @@ export default function AdminFinancePage() {
             explanation="L’argent des ventes qui appartient aux partenaires : il est sur le compte SamirPay, mais il n’est pas à Event Village."
             basis={s ? (
               <>
-                Dont <span className="font-semibold text-fg tabular-nums">{formatFcfaPrecise(s.owed_partners.withdrawable_now)}</span> retirables aujourd’hui.
-                Dû aux parrains : <span className="font-semibold text-fg tabular-nums">{formatFcfaPrecise(s.owed_referrers.total)}</span>. À l’instant.
+                Dont <span className="font-semibold text-foreground-strong tabular-nums">{formatFcfaPrecise(s.owed_partners.withdrawable_now)}</span> retirables aujourd’hui.
+                Dû aux parrains : <span className="font-semibold text-foreground-strong tabular-nums">{formatFcfaPrecise(s.owed_referrers.total)}</span>. À l’instant.
               </>
             ) : null}
             detailHref="#du-aux-partenaires"
@@ -289,9 +289,9 @@ export default function AdminFinancePage() {
               loading={loading}
               value={w && w.amount !== null ? formatFcfaPrecise(w.amount) : null}
               explanation={!w || w.balance === null
-                ? <><span className="font-semibold text-warning-fg">{BALANCE_UNREADABLE}</span>. Ne retirez rien avant qu’il s’affiche.</>
+                ? <><span className="font-semibold text-warning-text">{BALANCE_UNREADABLE}</span>. Ne retirez rien avant qu’il s’affiche.</>
                 : w.amount === 0
-                  ? <span className="font-semibold text-fg">{NOTHING_WITHDRAWABLE}</span>
+                  ? <span className="font-semibold text-foreground-strong">{NOTHING_WITHDRAWABLE}</span>
                   : 'Ce que vous pouvez sortir du compte SamirPay sans empêcher un partenaire, un parrain ou un client d’être payé.'}
               basis={w && w.balance ? (
                 <>
@@ -335,13 +335,13 @@ export default function AdminFinancePage() {
       {canRead && w && s && <WithdrawableDetail view={w} summary={s} />}
 
       {canRead && (
-        <section id="paiements" aria-labelledby={`${fieldId}-paiements`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <section id="paiements" aria-labelledby={`${fieldId}-paiements`} className="flex scroll-mt-20 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6">
           <div className="flex flex-col gap-1">
-            <h2 id={`${fieldId}-paiements`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-              <Receipt size={20} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
+            <h2 id={`${fieldId}-paiements`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+              <Receipt size={20} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
               Paiements encaissés
             </h2>
-            <p className="text-sm leading-relaxed text-fg-muted">
+            <p className="text-sm leading-relaxed text-muted-foreground">
               Paiements en ligne encaissés {range ?? 'sur la période'}. Le statut choisi ne change que cette liste, jamais les chiffres du haut.
             </p>
           </div>
@@ -355,9 +355,9 @@ export default function AdminFinancePage() {
           />
           {paymentsPhase === 'loading' && (
             <div role="status" aria-busy="true" aria-label="Chargement des paiements" className="flex flex-col gap-2">
-              <Skeleton className="h-16 rounded-2xl" />
-              <Skeleton className="h-16 rounded-2xl" />
-              <Skeleton className="h-16 rounded-2xl" />
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
             </div>
           )}
           {paymentsPhase === 'error' && (
@@ -367,7 +367,7 @@ export default function AdminFinancePage() {
             <>
               <DataList
                 items={payments.items}
-                columns={paymentColumns}
+                columns={paymentColumns} breakpoint="xl"
                 getKey={(p) => p.id}
                 caption="Paiements encaissés"
                 renderCard={renderPaymentCard}

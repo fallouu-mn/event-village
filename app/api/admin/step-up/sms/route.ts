@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     }
     const phone = auth.user!.phone;
     if (!/^\+221\d{9}$/.test(phone)) {
-        return noStore(NextResponse.json({ error: 'Aucun numéro valable sur ce compte : contactez le SUPERADMIN.', code: 'NO_PHONE' }, { status: 409 }));
+        return noStore(NextResponse.json({ error: 'Aucun numéro valable sur ce compte : contactez le super-administrateur.', code: 'NO_PHONE' }, { status: 409 }));
     }
 
     const isVerify = !!raw && typeof raw === 'object' && 'code' in (raw as Record<string, unknown>);

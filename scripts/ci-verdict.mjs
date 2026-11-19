@@ -15,6 +15,7 @@
  *                      sortie de scripts/ci-rapide.mjs
  *   test-logs/         journal brut de chaque suite (tous lots réunis, mêmes noms qu'en série)
  *   captures/, emails/, perf/, playwright/, js-budget.tsv, e2e*.log, fake-services.log, next-start.log : job e2e
+ *   responsive.log, responsive.tsv|txt, captures-responsive/, playwright-responsive/ : job responsive (design 1c)
  *                      (design 1b, lot PERF : perf/lighthouse.tsv|txt, toucher.tsv, lighthouse-resume.json,
  *                      lighthouse-<page>.json.gz et perf-mobile.log, étape bloquante « performance mobile mesurée »)
  *   supabase-start.log, db-reset.log, seed.log, containers.log : ceux de chaque job, l'un après l'autre (en-tête)
@@ -48,7 +49,7 @@ const kv = (texte) => Object.fromEntries((texte || '').split(/\r?\n/).filter((l)
 const jobs = fs.existsSync(artefacts)
     ? fs.readdirSync(artefacts, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith('journaux-')).map((d) => ({ nom: d.name.slice('journaux-'.length), dir: path.join(artefacts, d.name) }))
     : [];
-const rangJob = (n) => (n === 'qualite' ? 0 : n.startsWith('tests-') ? 1 + Number(n.slice(6)) / 100 : n === 'e2e' ? 2 : 3);
+const rangJob = (n) => (n === 'qualite' ? 0 : n.startsWith('tests-') ? 1 + Number(n.slice(6)) / 100 : n === 'e2e' ? 2 : n === 'responsive' ? 2.5 : 3);
 jobs.sort((a, b) => rangJob(a.nom) - rangJob(b.nom) || a.nom.localeCompare(b.nom));
 const job = (nom) => jobs.find((j) => j.nom === nom);
 const lots = jobs.filter((j) => j.nom.startsWith('tests-'));
@@ -73,6 +74,14 @@ if (e2e) {
     for (const nom of ['e2e-install', 'e2e-seed', 'fake-services', 'next-start', 'e2e', 'build', 'perf-mobile']) copier(path.join(e2e.dir, `${nom}.log`), path.join(runDir, `${nom}.log`));
     for (const d of ['captures', 'emails', 'perf', 'playwright']) copier(path.join(e2e.dir, d), path.join(runDir, d));
     copier(path.join(e2e.dir, 'js-budget.tsv'), path.join(runDir, 'js-budget.tsv'));
+}
+// Design 1c (point 1) : contrôle responsive (job « responsive ») : journal, résumé et captures, à part de l'e2e
+const responsive = job('responsive');
+if (responsive) {
+    copier(path.join(responsive.dir, 'e2e.log'), path.join(runDir, 'responsive.log'));
+    for (const f of ['responsive.tsv', 'responsive.txt']) copier(path.join(responsive.dir, f), path.join(runDir, f));
+    copier(path.join(responsive.dir, 'captures-responsive'), path.join(runDir, 'captures-responsive'));
+    copier(path.join(responsive.dir, 'playwright'), path.join(runDir, 'playwright-responsive'));
 }
 // Journaux des suites : tous lots réunis (noms uniques par suite)
 for (const j of [...lots, job('rapide')].filter(Boolean)) copier(path.join(j.dir, 'test-logs'), path.join(runDir, 'test-logs'));
@@ -108,7 +117,9 @@ if (rapide) {
 fs.writeFileSync(path.join(runDir, 'verify.log'), sections.join('\n'));
 
 // ── Verdict ───────────────────────────────────────────────────────────────────
-const requis = rapide ? ['mode', 'rapide'] : ['mode', 'qualite', 'tests', 'e2e'];
+// Design 1c (point 1) : le job « responsive » est requis au run complet, et en mode rapide quand le commit le demande
+const avecResponsive = !rapide || needs.mode?.outputs?.responsive === '1';
+const requis = [...(rapide ? ['mode', 'rapide'] : ['mode', 'qualite', 'tests', 'e2e']), ...(avecResponsive ? ['responsive'] : [])];
 const resultats = requis.map((n) => [n, needs[n]?.result ?? 'absent']);
 let verdict = 'success';
 if (resultats.some(([, r]) => r === 'failure') || (!rapide && controle !== 'ok')) verdict = 'failure';
@@ -133,6 +144,7 @@ if (!rapide) {
     lignes.push(`controle_lots=${controle}`, `lots=${lots.length}`);
     if (graine) lignes.push(`graine=${graine}`);
 }
+if (avecResponsive) lignes.push(`responsive=${needs.responsive?.outputs?.responsive || 'skipped'}`);
 if (rapide) lignes.push('mode=rapide', `suites=${needs.mode?.outputs?.suites ?? ''}`);
 else lignes.push('mode=complet');
 lignes.push(`url=${env.GITHUB_SERVER_URL ?? ''}/${env.GITHUB_REPOSITORY ?? ''}/actions/runs/${env.GITHUB_RUN_ID ?? ''}`);

@@ -158,8 +158,8 @@ function when(iso: string | null): React.ReactNode {
 
 function Section({ title, id, children }: { title: string; id: string; children: React.ReactNode }) {
   return (
-    <section aria-labelledby={id} className="rounded-2xl border border-border bg-surface p-4 sm:p-6">
-      <h2 id={id} className="mb-4 text-lg font-semibold text-fg">{title}</h2>
+    <section aria-labelledby={id} className="rounded-xl border border-border bg-card p-4 sm:p-6">
+      <h2 id={id} className="mb-4 text-lg font-semibold text-foreground-strong">{title}</h2>
       {children}
     </section>
   );
@@ -168,8 +168,8 @@ function Section({ title, id, children }: { title: string; id: string; children:
 function Info({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-1 gap-1 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-sm text-fg-muted">{label}</dt>
-      <dd className="min-w-0 break-words text-sm font-medium text-fg">{children}</dd>
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-sm font-medium text-foreground-strong">{children}</dd>
     </div>
   );
 }
@@ -426,7 +426,7 @@ export default function AdminNotificationDetailPage() {
         <PageHeader title="Notification" back={back} />
         <span className="sr-only">Chargement de la notification…</span>
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-32 rounded-2xl border border-border bg-surface motion-safe:animate-pulse" aria-hidden="true" />
+          <div key={i} className="h-32 rounded-xl border border-border bg-card motion-safe:animate-pulse" aria-hidden="true" />
         ))}
       </div>
     );
@@ -502,21 +502,21 @@ export default function AdminNotificationDetailPage() {
         {item.decision ? (
           <DecisionList decision={item.decision} />
         ) : (
-          <p className="text-sm text-fg-muted">Aucune décision enregistrée : la notification n’est pas encore passée par l’envoyeur.</p>
+          <p className="text-sm text-muted-foreground">Aucune décision enregistrée : la notification n’est pas encore passée par l’envoyeur.</p>
         )}
       </Section>
 
       <Section title="Contenu" id="notif-contenu">
         {isSyncLog ? (
-          <p className="text-sm text-fg-muted">{OTP_CONTENT}</p>
+          <p className="text-sm text-muted-foreground">{OTP_CONTENT}</p>
         ) : preview.available ? (
-          <div className="space-y-2 rounded-xl border border-border bg-surface-sunken p-4">
-            {preview.title && <p className="text-sm font-semibold text-fg">{preview.title}</p>}
-            <p className="whitespace-pre-line break-words text-sm leading-relaxed text-fg">{preview.text}</p>
-            <p className="text-sm text-fg-muted">Aperçu rendu par le serveur à partir des données de la notification.</p>
+          <div className="space-y-2 rounded-xl border border-border bg-background p-4">
+            {preview.title && <p className="text-sm font-semibold text-foreground-strong">{preview.title}</p>}
+            <p className="whitespace-pre-line break-words text-sm leading-relaxed text-foreground-strong">{preview.text}</p>
+            <p className="text-sm text-muted-foreground">Aperçu rendu par le serveur à partir des données de la notification.</p>
           </div>
         ) : (
-          <p className="text-sm text-fg-muted">{preview.reason}</p>
+          <p className="text-sm text-muted-foreground">{preview.reason}</p>
         )}
       </Section>
 

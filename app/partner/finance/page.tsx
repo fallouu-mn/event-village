@@ -46,7 +46,6 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import {
-    OPERATOR_VISUALS,
     formatLocalPhone,
     isUncertainOutcome,
     operatorLabel,
@@ -56,8 +55,10 @@ import {
     useIdempotencyKey,
 } from '@/components/payment/PaymentModal';
 import { formatDateTime, formatFcfa, formatPercent } from '@/lib/format';
+import { isWithdrawalPaid, withdrawalAmountLine } from '@/lib/finance/withdrawal-text';
 import { maskPhone, normalizePayerPhone } from '@/lib/payments/payer-phone';
 import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+import { OperatorLogo } from '@/components/payment/OperatorLogo';
 
 const ACCOUNT = 'ORGANISATEUR';
 
@@ -373,6 +374,15 @@ export default function PartnerFinancePage() {
     const stepIndex = STEPS.findIndex((s) => s.key === step);
     const belowMinimum = balance !== null && amountValue !== null && amountValue > 0 && amountValue < balance.minimum;
     const estimate = balance && amountValue !== null && !belowMinimum ? estimateQuote(amountValue, balance.feeRate) : null;
+    /**
+     * Design 1c (E-65) : le lien « Statistiques de ventes » n'est proposé que s'il y a des ventes à montrer. Trace d'une
+     * vente en ligne dans ce que sert GET /api/finance/balance : solde disponible, en attente ou en cours de retrait, un
+     * retrait déjà demandé, ou une écriture de vente dans l'historique. Rien n'est affiché tant que le solde n'est pas lu.
+     */
+    const hasSales = account !== null && (
+        account.balance.available > 0 || account.balance.pending > 0 || account.balance.inProgress > 0
+        || account.withdrawals.length > 0 || account.history.some((e) => e.entryType === 'VENTE')
+    );
 
     const loadAccount = useCallback(async () => {
         setIsLoading(true);
@@ -534,9 +544,11 @@ export default function PartnerFinancePage() {
                 description="Ventes en ligne de vos événements. Les ventes en espèces et les invitations n’alimentent pas ce solde."
                 actions={
                     <>
-                        <LinkButton href="/partner/stats" variant="ghost" size="sm" leftIcon={<BarChart3 size={16} />}>
-                            Statistiques de ventes
-                        </LinkButton>
+                        {hasSales && (
+                            <LinkButton href="/partner/stats" variant="ghost" size="sm" leftIcon={<BarChart3 size={16} />}>
+                                Statistiques de ventes
+                            </LinkButton>
+                        )}
                         <Button
                             variant="secondary"
                             size="sm"
@@ -572,10 +584,10 @@ export default function PartnerFinancePage() {
                         </div>
                     ) : (
                         <>
-                            <div className="rounded-2xl border border-brand-fg bg-brand-bg p-5 sm:p-6">
-                                <p className="text-sm font-semibold text-fg-muted">Disponible au retrait</p>
-                                <p className="mt-1 text-3xl font-bold tabular-nums text-brand-fg sm:text-4xl">{formatFcfa(balance.withdrawable)}</p>
-                                <p className="mt-1 text-sm text-fg-muted">Montant que vous pouvez retirer dès maintenant.</p>
+                            <div className="rounded-2xl border border-primary-text bg-primary-soft p-5 sm:p-6">
+                                <p className="text-sm font-semibold text-muted-foreground">Disponible au retrait</p>
+                                <p className="mt-1 text-3xl font-bold tabular-nums text-primary-text sm:text-4xl">{formatFcfa(balance.withdrawable)}</p>
+                                <p className="mt-1 text-sm text-muted-foreground">Montant que vous pouvez retirer dès maintenant.</p>
                             </div>
                             {balance.frozen > 0 && (
                                 <StatusBanner tone="suspended" title={<span className="tabular-nums">{`Fonds gelés : ${formatFcfa(balance.frozen)}.`}</span>}>
@@ -613,13 +625,13 @@ export default function PartnerFinancePage() {
             )}
 
             {/* Retrait */}
-            <section aria-labelledby={`${fieldId}-retrait`} className="space-y-5 rounded-2xl border border-border bg-surface p-5 sm:p-6">
+            <section aria-labelledby={`${fieldId}-retrait`} className="space-y-5 rounded-2xl border border-border bg-card p-5 sm:p-6">
                 <div>
-                    <h2 id={`${fieldId}-retrait`} className="flex items-center gap-2 text-lg font-bold text-fg">
-                        <Send size={18} className="text-brand-fg" aria-hidden="true" />
+                    <h2 id={`${fieldId}-retrait`} className="flex items-center gap-2 text-lg font-bold text-foreground-strong">
+                        <Send size={18} className="text-primary-text" aria-hidden="true" />
                         Demander un retrait
                     </h2>
-                    <p className="mt-1 text-sm text-fg-muted">
+                    <p className="mt-1 text-sm text-muted-foreground">
                         Wave ou Orange Money. Le minimum, les frais et le montant que vous recevrez sont affichés avant l’envoi du code.
                     </p>
                 </div>
@@ -630,12 +642,12 @@ export default function PartnerFinancePage() {
                         return (
                             <li key={s.key} className="flex items-center gap-2" aria-current={step === s.key ? 'step' : undefined}>
                                 <span
-                                    className={cn('flex h-7 w-7 items-center justify-center rounded-full tabular-nums', reached ? 'bg-brand text-on-brand' : 'bg-surface-sunken text-fg-muted')}
+                                    className={cn('flex h-7 w-7 items-center justify-center rounded-full tabular-nums', reached ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}
                                     aria-hidden="true"
                                 >
                                     {i + 1}
                                 </span>
-                                <span className={reached ? 'text-fg' : 'text-fg-muted'}>{s.label}</span>
+                                <span className={reached ? 'text-foreground-strong' : 'text-muted-foreground'}>{s.label}</span>
                                 {s.key !== 'done' && <span className="h-px w-6 bg-border" aria-hidden="true" />}
                             </li>
                         );
@@ -658,13 +670,12 @@ export default function PartnerFinancePage() {
                         className="space-y-4"
                     >
                         <fieldset aria-describedby={errors.operator ? ids.operatorError : undefined}>
-                            <legend className="mb-2 text-sm font-semibold text-fg">
-                                Recevoir sur <span className="text-danger-fg" aria-hidden="true">*</span>
+                            <legend className="mb-2 text-sm font-semibold text-foreground-strong">
+                                Recevoir sur <span className="text-danger-text" aria-hidden="true">*</span>
                             </legend>
                             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                                 {SAMIRPAY_OPERATORS.map((op) => {
                                     const selected = operator === op;
-                                    const visual = OPERATOR_VISUALS[op];
                                     return (
                                         <label key={op} className="relative block cursor-pointer">
                                             <input
@@ -680,22 +691,20 @@ export default function PartnerFinancePage() {
                                             />
                                             <span
                                                 className={cn(
-                                                    'flex min-h-[56px] items-center gap-3 rounded-2xl border-2 p-3 transition-colors duration-200 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface',
-                                                    selected ? 'border-brand-fg bg-brand-bg' : errors.operator ? 'border-danger' : 'border-border hover:border-border-strong',
+                                                    'flex min-h-[56px] items-center gap-3 rounded-xl border-2 p-3 transition-colors duration-200 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-card',
+                                                    selected ? 'border-primary-text bg-primary-soft' : errors.operator ? 'border-danger' : 'border-border hover:border-input',
                                                 )}
                                             >
-                                                <span aria-hidden="true" className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold', visual.tile)}>
-                                                    {visual.mark}
-                                                </span>
-                                                <span className="text-base font-semibold text-fg">{operatorLabel(op)}</span>
-                                                {selected && <CheckCircle2 size={18} className="ml-auto text-brand-fg" aria-hidden="true" />}
+                                                <OperatorLogo operator={op} size="md" />
+                                                <span className="text-base font-semibold text-foreground-strong">{operatorLabel(op)}</span>
+                                                {selected && <CheckCircle2 size={18} className="ml-auto text-primary-text" aria-hidden="true" />}
                                             </span>
                                         </label>
                                     );
                                 })}
                             </div>
                             {errors.operator && (
-                                <p id={ids.operatorError} className="mt-1.5 text-sm font-medium text-danger-fg">{errors.operator}</p>
+                                <p id={ids.operatorError} className="mt-1.5 text-sm font-medium text-danger-text">{errors.operator}</p>
                             )}
                         </fieldset>
 
@@ -745,7 +754,7 @@ export default function PartnerFinancePage() {
                                 aria-live="polite"
                                 className={cn(
                                     'rounded-2xl border p-4 text-sm leading-relaxed tabular-nums',
-                                    belowMinimum ? 'border-warning-border bg-warning-bg font-semibold text-warning-fg' : 'border-border bg-surface-sunken text-fg',
+                                    belowMinimum ? 'border-warning-border bg-warning-soft font-semibold text-warning-text' : 'border-border bg-muted text-foreground-strong',
                                 )}
                             >
                                 {belowMinimum
@@ -780,32 +789,32 @@ export default function PartnerFinancePage() {
                         }}
                         className="space-y-4"
                     >
-                        <dl className="space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+                        <dl className="space-y-2 rounded-2xl border border-border bg-muted p-4 text-sm">
                             <div className="flex justify-between gap-3">
-                                <dt className="text-fg-muted">Montant demandé</dt>
-                                <dd className="font-bold tabular-nums text-fg">{formatFcfa(amountValue)}</dd>
+                                <dt className="text-muted-foreground">Montant demandé</dt>
+                                <dd className="font-bold tabular-nums text-foreground-strong">{formatFcfa(amountValue)}</dd>
                             </div>
                             <div className="flex justify-between gap-3">
-                                <dt className="text-fg-muted">Vers</dt>
-                                <dd className="text-right font-semibold text-fg">
+                                <dt className="text-muted-foreground">Vers</dt>
+                                <dd className="text-right font-semibold text-foreground-strong">
                                     {operatorLabel(operator)} · <span className="tabular-nums">+221 {formatLocalPhone(payoutPhone)}</span>
                                 </dd>
                             </div>
                             <div className="flex justify-between gap-3">
-                                <dt className="text-fg-muted">Frais de retrait{balance ? ` (${feeRateLabel(balance.feeRate)})` : ''}</dt>
-                                <dd className="font-semibold tabular-nums text-fg">{serverQuote ? formatFcfa(serverQuote.fee) : 'Calculés à la confirmation'}</dd>
+                                <dt className="text-muted-foreground">Frais de retrait{balance ? ` (${feeRateLabel(balance.feeRate)})` : ''}</dt>
+                                <dd className="font-semibold tabular-nums text-foreground-strong">{serverQuote ? formatFcfa(serverQuote.fee) : 'Calculés à la confirmation'}</dd>
                             </div>
                             {serverQuote && (
                                 <div className="flex justify-between gap-3 border-t border-border pt-2">
-                                    <dt className="font-semibold text-fg">Vous recevrez</dt>
-                                    <dd className="font-bold tabular-nums text-brand-fg">{formatFcfa(serverQuote.net)}</dd>
+                                    <dt className="font-semibold text-foreground-strong">Vous recevrez</dt>
+                                    <dd className="font-bold tabular-nums text-primary-text">{formatFcfa(serverQuote.net)}</dd>
                                 </div>
                             )}
                         </dl>
 
                         <div className="space-y-2">
-                            <p id={ids.otpLabel} className="text-sm font-semibold text-fg">
-                                Code de confirmation <span className="text-danger-fg" aria-hidden="true">*</span>
+                            <p id={ids.otpLabel} className="text-sm font-semibold text-foreground-strong">
+                                Code de confirmation <span className="text-danger-text" aria-hidden="true">*</span>
                             </p>
                             <OtpInput
                                 value={otpCode}
@@ -817,7 +826,7 @@ export default function PartnerFinancePage() {
                                 hasError={Boolean(errors.otp)}
                                 describedBy={`${ids.otpLabel} ${ids.otpHelp}`}
                             />
-                            <p id={ids.otpHelp} className={cn('text-sm leading-relaxed', errors.otp ? 'font-medium text-danger-fg' : 'text-fg-muted')}>
+                            <p id={ids.otpHelp} className={cn('text-sm leading-relaxed', errors.otp ? 'font-medium text-danger-text' : 'text-muted-foreground')}>
                                 {errors.otp ?? `Code à 6 chiffres envoyé par SMS au ${accountPhone ? `+221 ${maskPhone(accountPhone)}` : 'numéro de votre compte'}.`}
                             </p>
                         </div>
@@ -863,23 +872,23 @@ export default function PartnerFinancePage() {
                                     ? 'Le montant a été rendu à votre solde disponible. Vérifiez le numéro puis refaites une demande.'
                                     : 'Le montant reste réservé jusqu’à la confirmation de l’opérateur. Il ne sera jamais versé deux fois ; suivez son état dans « Mes retraits ».'}
                         </StatusBanner>
-                        <dl className="space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+                        <dl className="space-y-2 rounded-2xl border border-border bg-muted p-4 text-sm">
                             {result.gross !== null && (
                                 <div className="flex justify-between gap-3">
-                                    <dt className="text-fg-muted">Montant demandé</dt>
-                                    <dd className="font-semibold tabular-nums text-fg">{formatFcfa(result.gross)}</dd>
+                                    <dt className="text-muted-foreground">Montant demandé</dt>
+                                    <dd className="font-semibold tabular-nums text-foreground-strong">{formatFcfa(result.gross)}</dd>
                                 </div>
                             )}
                             {result.fee !== null && (
                                 <div className="flex justify-between gap-3">
-                                    <dt className="text-fg-muted">Frais de retrait</dt>
-                                    <dd className="font-semibold tabular-nums text-fg">{formatFcfa(result.fee)}</dd>
+                                    <dt className="text-muted-foreground">Frais de retrait</dt>
+                                    <dd className="font-semibold tabular-nums text-foreground-strong">{formatFcfa(result.fee)}</dd>
                                 </div>
                             )}
                             {result.net !== null && (
                                 <div className="flex justify-between gap-3 border-t border-border pt-2">
-                                    <dt className="font-semibold text-fg">Montant versé</dt>
-                                    <dd className="font-bold tabular-nums text-brand-fg">{formatFcfa(result.net)}</dd>
+                                    <dt className="font-semibold text-foreground-strong">{result.status === 'PAID' ? 'Montant versé' : 'Montant envoyé'}</dt>
+                                    <dd className="font-bold tabular-nums text-primary-text">{formatFcfa(result.net)}</dd>
                                 </div>
                             )}
                         </dl>
@@ -893,15 +902,15 @@ export default function PartnerFinancePage() {
             {/* Retraits */}
             <section aria-labelledby={`${fieldId}-retraits`} className="space-y-3">
                 <div>
-                    <h2 id={`${fieldId}-retraits`} className="text-lg font-bold text-fg">Mes retraits</h2>
-                    <p className="text-sm text-fg-muted">Vos 20 dernières demandes.</p>
+                    <h2 id={`${fieldId}-retraits`} className="text-lg font-bold text-foreground-strong">Mes retraits</h2>
+                    <p className="text-sm text-muted-foreground">Vos 20 dernières demandes.</p>
                 </div>
                 {!account ? (
                     loadError ? null : <Skeleton className="h-20 rounded-2xl" />
                 ) : account.withdrawals.length === 0 ? (
                     <EmptyState title="Aucun retrait" description="Vous n’avez pas encore demandé de retrait." icon={<Wallet size={28} />} />
                 ) : (
-                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                    <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
                         {account.withdrawals.map((w) => {
                             const st = w.delayed ? WITHDRAWAL_DELAYED : withdrawalStatus(w.effectiveStatus);
                             return (
@@ -909,26 +918,27 @@ export default function PartnerFinancePage() {
                                     <div className="min-w-0 space-y-1">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <Badge variant={st.variant} size="sm">{st.label}</Badge>
-                                            <span className="text-sm text-fg-muted">
+                                            <span className="text-sm text-muted-foreground">
                                                 {w.operator === 'WAVE' || w.operator === 'ORANGE_MONEY' ? operatorLabel(w.operator) : 'Mobile Money'}
                                                 {w.phone && <span className="tabular-nums"> · {maskPhone(w.phone)}</span>}
                                             </span>
                                         </div>
-                                        <p className="text-sm text-fg-muted">
+                                        <p className="text-sm text-muted-foreground">
                                             Demandé le <time dateTime={w.createdAt} className="text-sm">{formatDateTime(w.createdAt)}</time>
-                                            {w.processedAt && (
+                                            {w.processedAt && !isWithdrawalPaid({ status: w.effectiveStatus, delayed: w.delayed }) && (
                                                 <> · traité le <time dateTime={w.processedAt} className="text-sm">{formatDateTime(w.processedAt)}</time></>
                                             )}
                                         </p>
-                                        {w.delayed && <p className="text-sm text-warning-fg">{WITHDRAWAL_DELAYED_TEXT}</p>}
+                                        {w.delayed && <p className="text-sm text-warning-text">{WITHDRAWAL_DELAYED_TEXT}</p>}
                                         {w.effectiveStatus === 'REJECTED' && w.rejectionReason && (
-                                            <p className="text-sm text-danger-fg">Motif : {w.rejectionReason}</p>
+                                            <p className="text-sm text-danger-text">Motif : {w.rejectionReason}</p>
                                         )}
                                     </div>
-                                    <div className="flex-shrink-0 sm:text-right">
-                                        <p className="text-base font-bold tabular-nums text-fg">{formatFcfa(w.gross)}</p>
-                                        <p className="text-sm tabular-nums text-fg-muted">
-                                            Versé : {formatFcfa(w.net)} · frais : {formatFcfa(w.fee)}
+                                    <div className="min-w-0 sm:max-w-xs sm:flex-shrink-0 sm:text-right">
+                                        <p className="text-base font-bold tabular-nums text-foreground-strong">{formatFcfa(w.gross)}</p>
+                                        {/* E-03 (N-02) : « Versé le … » seulement pour un retrait versé ; sinon « Montant envoyé : … » */}
+                                        <p className="text-sm tabular-nums text-muted-foreground">
+                                            {withdrawalAmountLine({ status: w.effectiveStatus, delayed: w.delayed, net: w.net, fee: w.fee, processedAt: w.processedAt })}
                                         </p>
                                     </div>
                                 </li>
@@ -941,8 +951,8 @@ export default function PartnerFinancePage() {
             {/* Historique */}
             <section aria-labelledby={`${fieldId}-historique`} className="space-y-3">
                 <div>
-                    <h2 id={`${fieldId}-historique`} className="text-lg font-bold text-fg">Historique du compte</h2>
-                    <p className="text-sm text-fg-muted">Les 50 dernières écritures, de la plus récente à la plus ancienne.</p>
+                    <h2 id={`${fieldId}-historique`} className="text-lg font-bold text-foreground-strong">Historique du compte</h2>
+                    <p className="text-sm text-muted-foreground">Les 50 dernières écritures, de la plus récente à la plus ancienne.</p>
                 </div>
                 {!account ? (
                     loadError ? null : <Skeleton className="h-28 rounded-2xl" />
@@ -953,7 +963,7 @@ export default function PartnerFinancePage() {
                         icon={<CalendarClock size={28} />}
                     />
                 ) : (
-                    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+                    <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
                         {account.history.map((e) => {
                             const credit = e.amount > 0;
                             const pendingCredit = credit && e.isPending;
@@ -963,27 +973,27 @@ export default function PartnerFinancePage() {
                                     <div className="flex min-w-0 items-start gap-3">
                                         <span
                                             aria-hidden="true"
-                                            className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', credit ? 'bg-success-bg text-success-fg' : 'bg-surface-sunken text-fg')}
+                                            className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', credit ? 'bg-success-soft text-success-text' : 'bg-muted text-foreground-strong')}
                                         >
                                             {credit ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
                                         </span>
                                         <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-fg">
+                                            <p className="text-sm font-semibold text-foreground-strong">
                                                 {ENTRY_LABELS[e.entryType] ?? 'Opération du compte'}
                                                 <span className="sr-only">{credit ? ' (crédit)' : ' (débit)'}</span>
                                             </p>
-                                            {detail && <p className="truncate text-sm text-fg-muted">{detail}</p>}
-                                            <p className="text-sm text-fg-muted">
+                                            {detail && <p className="break-words text-sm text-muted-foreground">{detail}</p>}
+                                            <p className="text-sm text-muted-foreground">
                                                 <time dateTime={e.createdAt} className="text-sm">{formatDateTime(e.createdAt)}</time>
                                                 {pendingCredit && e.availableAt && (
-                                                    <span className="ml-1 font-semibold text-warning-fg">
+                                                    <span className="ml-1 font-semibold text-warning-text">
                                                         · en attente, disponible le <time dateTime={e.availableAt} className="text-sm">{formatDateTime(e.availableAt)}</time>
                                                     </span>
                                                 )}
                                             </p>
                                         </div>
                                     </div>
-                                    <span className={cn('whitespace-nowrap text-sm font-bold tabular-nums', credit ? 'text-success-fg' : 'text-fg')}>
+                                    <span className={cn('flex-shrink-0 whitespace-nowrap text-sm font-bold tabular-nums', credit ? 'text-success-text' : 'text-foreground-strong')}>
                                         {formatSigned(e.amount)}
                                     </span>
                                 </li>

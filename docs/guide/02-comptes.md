@@ -489,7 +489,8 @@ Règles communes à tout le fichier :
    confirme le changement. »), bouton « Changer de numéro » (`components/profile/ProfileForm.tsx:299-307`). Boîte
    « Changer de numéro », « Étape 1 sur 2 : votre nouveau numéro » puis « Étape 2 sur 2 : le code reçu par SMS » ;
    boutons « Annuler », « Recevoir le code », puis « Renvoyer le code », « Confirmer », « Modifier le numéro »
-   (`components/profile/PhoneChangeDialog.tsx:163-244`).
+   (`components/profile/PhoneChangeDialog.tsx:163-244`). En tête de la boîte, aux deux étapes (design 1c) : bandeau
+   « Les retraits sont bloqués 24 h après un changement de numéro. ».
 2. **Ce qu'il saisit.** « Nouveau numéro de téléphone » (exemple `77 123 45 67`, aide « Votre numéro actuel reste celui
    du compte tant que le code n’est pas confirmé. ») (`:218-233`) ; puis le code à 6 chiffres (« Code envoyé au
    {numéro} ») avec la mention « Une fois le numéro changé, vos autres appareils seront déconnectés et votre ancien numéro

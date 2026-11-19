@@ -21,17 +21,17 @@ const SHOWN: readonly string[] = ADMIN_PERMISSIONS;
 function RightsList({ title, items, granted }: { title: string; items: readonly string[]; granted: boolean }) {
   if (items.length === 0) return null;
   return (
-    <section aria-labelledby={`droits-${granted ? 'oui' : 'non'}`} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-      <h2 id={`droits-${granted ? 'oui' : 'non'}`} className="text-lg font-bold tracking-tight text-fg">{title}</h2>
+    <section aria-labelledby={`droits-${granted ? 'oui' : 'non'}`} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-6">
+      <h2 id={`droits-${granted ? 'oui' : 'non'}`} className="text-lg font-bold tracking-tight text-foreground-strong">{title}</h2>
       <ul className="flex flex-col divide-y divide-border">
         {items.map((p) => (
           <li key={p} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
             {granted
-              ? <CheckCircle2 size={20} className="mt-0.5 flex-shrink-0 text-success-fg" aria-hidden="true" />
-              : <MinusCircle size={20} className="mt-0.5 flex-shrink-0 text-fg-muted" aria-hidden="true" />}
+              ? <CheckCircle2 size={20} className="mt-0.5 flex-shrink-0 text-success-text" aria-hidden="true" />
+              : <MinusCircle size={20} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />}
             <div className="min-w-0">
-              <p className={granted ? 'text-base font-semibold text-fg' : 'text-base font-semibold text-fg-muted'}>{permissionLabel(p)}</p>
-              <p className="text-sm leading-relaxed text-fg-muted">{permissionDescription(p)}</p>
+              <p className={granted ? 'text-base font-semibold text-foreground-strong' : 'text-base font-semibold text-muted-foreground'}>{permissionLabel(p)}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{permissionDescription(p)}</p>
             </div>
           </li>
         ))}
@@ -50,17 +50,17 @@ export default function MyRightsPage() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6 pb-16">
       <PageHeader
         title="Mes droits"
-        description="Voici ce que votre compte peut faire. Pour un droit de plus, demandez-le au Superadmin."
+        description="Voici ce que votre compte peut faire. Pour un droit de plus, demandez-le au super-administrateur."
         back={{ href: '/admin/dashboard', label: 'Accueil' }}
       />
 
       {isLoading ? (
         <div role="status" aria-busy="true" aria-label="Chargement de vos droits" className="flex flex-col gap-3">
-          <Skeleton className="h-24 rounded-2xl" />
-          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-48 rounded-xl" />
         </div>
       ) : isSuperadmin ? (
-        <StatusBanner tone="info" icon={<KeyRound size={20} aria-hidden="true" />} title="Superadmin">
+        <StatusBanner tone="info" icon={<KeyRound size={20} aria-hidden="true" />} title="Super-administrateur">
           Vous avez tous les droits, dont les réglages de la plateforme, le journal d’audit et la création des administrateurs.
         </StatusBanner>
       ) : (
