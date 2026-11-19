@@ -1491,7 +1491,8 @@ export function EventForm(props: EventFormProps) {
                 erreur ; lue « terminée »), point d'exclamation pour une étape à corriger (lue « à corriger »). À 320 px, six
                 pastilles de 48 px tiennent sans défilement ; le nom de chaque étape s'affiche dessous à partir de sm (court sous
                 lg), toujours entier (aucune coupure) ; le nom complet est lu par les lecteurs d'écran. */}
-            <nav aria-label="Étapes du formulaire" className="mb-5" data-testid="ev-stepper">
+            {/* Design 1c : isolate, pour que le trait de liaison (-z-10) passe derrière les pastilles sans sortir de l’indicateur */}
+            <nav aria-label="Étapes du formulaire" className="isolate mb-5" data-testid="ev-stepper">
                 <p className="text-base font-semibold text-foreground-strong" aria-live="polite" data-testid="ev-stepper-courante">
                     {onReview ? 'Dernière étape : vérifier avant d’envoyer' : `Étape ${stepIndex + 1} sur ${STEPS.length} — ${currentStep.heading}`}
                 </p>
@@ -1506,7 +1507,7 @@ export function EventForm(props: EventFormProps) {
                                 {i > 0 && (
                                     <span
                                         aria-hidden="true"
-                                        className={cn('absolute right-1/2 top-[21px] h-0.5 w-full', i <= stepIndex ? 'bg-primary' : 'bg-border')}
+                                        className={cn('pointer-events-none absolute right-1/2 top-[21px] -z-10 h-0.5 w-full', i <= stepIndex ? 'bg-primary' : 'bg-border')}
                                     />
                                 )}
                                 <button

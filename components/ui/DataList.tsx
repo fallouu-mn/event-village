@@ -50,7 +50,13 @@ export function DataList<T>({ items, columns, getKey, caption, captionHidden = t
   if (items.length === 0 && empty) return <>{empty}</>;
   return (
     <div className={className}>
-      <div className={cn(SHOW_TABLE[breakpoint], 'overflow-x-auto rounded-xl border border-border bg-card')}>
+      {/* Boîte qui peut défiler en largeur : zone nommée, atteignable au clavier (axe scrollable-region-focusable, run 441) */}
+      <div
+        role="region"
+        aria-label={caption}
+        tabIndex={0}
+        className={cn(SHOW_TABLE[breakpoint], 'overflow-x-auto rounded-xl border border-border bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')}
+      >
         <table className="w-full border-collapse text-sm">
           <caption className={cn('px-4 py-3 text-left text-sm font-semibold text-foreground-strong', captionHidden && 'sr-only')}>{caption}</caption>
           <thead className="bg-background">
