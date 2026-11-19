@@ -266,7 +266,8 @@ describe('B. Payer : acompte puis solde, montant relu en base, confirmation par 
         const clientNotes = await outboxOf(client.userId, id);
         assert.ok(clientNotes.includes('HALL_RESERVATION_CONFIRMED:SMS'), clientNotes.join(', '));
         assert.ok(clientNotes.includes('HALL_BALANCE_PAID:PUSH'), clientNotes.join(', '));
-        assert.ok(!clientNotes.some((t) => t.startsWith('HALL_BALANCE_PAID:SMS')), 'aucun SMS pour le solde payé');
+        // Lot 10b (décision du client, modification signalée au rapport) : le solde payé part aussi par SMS
+        assert.ok(clientNotes.includes('HALL_BALANCE_PAID:SMS'), `SMS du solde payé : ${clientNotes.join(', ')}`);
         const partnerNotes = await outboxOf(partner.userId, id);
         assert.ok(partnerNotes.includes('HALL_RESERVATION_REQUESTED:IN_APP') && !partnerNotes.some((t) => t.endsWith(':SMS')), partnerNotes.join(', '));
         const { count: generic } = await service.from('notification_outbox').select('id', { count: 'exact', head: true })
