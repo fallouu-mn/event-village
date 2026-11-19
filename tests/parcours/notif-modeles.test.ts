@@ -92,7 +92,7 @@ interface Ctx { appUrl: string }
 interface CatalogEntry {
     type: string;
     family: 'ESSENTIAL' | 'OPTIONAL';
-    topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | null;
+    topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | 'SALES_SUMMARY' | 'AFTER_EVENT' | null;
     channels: readonly Ch[];
     audience: string;
     suspendedPolicy: 'BLOCK' | 'ALLOW';
@@ -176,7 +176,7 @@ const P: Ch = 'PUSH';
 interface ExpectedType {
     type: string;
     family: 'ESSENTIAL' | 'OPTIONAL';
-    topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | null;
+    topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | 'SALES_SUMMARY' | 'AFTER_EVENT' | null;
     channels: Ch[];
     audience: 'CLIENT' | 'PARTNER' | 'CONTROLLER' | 'ADMIN' | 'ANY';
     suspendedPolicy: 'BLOCK' | 'ALLOW';
@@ -194,7 +194,7 @@ type Aud = ExpectedType['audience'];
 function ess(type: string, channels: Ch[], audience: Aud, sus: 'A' | 'B', inAppType: string | null, links: string[] | null, title: string | RegExp | null, perm: string | null = null): ExpectedType {
     return { type, family: 'ESSENTIAL', topic: null, channels, audience, suspendedPolicy: sus === 'A' ? 'ALLOW' : 'BLOCK', syncOnly: false, adminPermission: perm, inAppType, links, title };
 }
-function opt(type: string, topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY', channels: Ch[], audience: Aud, inAppType: string, links: string[], title: string): ExpectedType {
+function opt(type: string, topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | 'SALES_SUMMARY' | 'AFTER_EVENT', channels: Ch[], audience: Aud, inAppType: string, links: string[], title: string): ExpectedType {
     return { type, family: 'OPTIONAL', topic, channels, audience, suspendedPolicy: 'BLOCK', syncOnly: false, adminPermission: null, inAppType, links, title };
 }
 function sync(type: string): ExpectedType {
@@ -202,55 +202,55 @@ function sync(type: string): ExpectedType {
 }
 
 const PE = '/partner/events/:event';
-const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ...lot9quinquiesExpected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types ; lot 9 quinquies (D1)
-    ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A', 'TICKET', ['/tickets?tab=a-venir'], 'Achat confirmé'), // design 1b (point 8) : onglet qui montre le billet
-    ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B', 'TICKET', ['/tickets?tab=a-venir'], 'Billets confirmés'),
+const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ...lot9quinquiesExpected(), ...finition4Expected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types ; lot 9 quinquies (D1)
+    ess('PURCHASE_CONFIRMED', [I, S, M, P], 'CLIENT', 'A', 'TICKET', ['/tickets?tab=a-venir'], 'Achat confirmé'), // design 1b (point 8) : onglet qui montre le billet
+    ess('FREE_TICKETS_CONFIRMED', [I, S, M, P], 'CLIENT', 'B', 'TICKET', ['/tickets?tab=a-venir'], 'Billets confirmés'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A', null, null, null),
-    ess('INVITATION_RECEIVED', [S, I, P, M], 'ANY', 'A', 'TICKET', ['/tickets?tab=recus'], null), // lot 9 bis (R79, 11.2 M3) : + in-app, push, email au compte
+    ess('INVITATION_RECEIVED', [S, I, P, M], 'ANY', 'A', 'TICKET', ['/tickets?tab=a-venir'], null), // lot 9 bis (R79, 11.2 M3) : + in-app, push, email au compte ; finition 4 (E-42) : onglet « À venir » (modification signalée)
     ess('TRANSFER_OFFERED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus'], 'Un billet vous est transféré'), // G.49
     ess('TRANSFER_CANCELLED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus'], 'Transfert annulé'), // G.49 ; design 1b : destinataire, onglet Reçus
-    ess('TRANSFER_EXPIRED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Transfert expiré'), // G.49 ; design 1b : billet revenu
-    ess('TRANSFER_CLAIMED_SENDER', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Billet accepté'), // G.49 ; design 1b : le billet a quitté le compte (absent de l'historique) : billets restants
+    ess('TRANSFER_EXPIRED', [I, P, M, S], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Transfert expiré'), // G.49 ; design 1b : billet revenu
+    ess('TRANSFER_CLAIMED_SENDER', [I, P, M, S], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Billet accepté'), // G.49 ; design 1b : le billet a quitté le compte (absent de l'historique) : billets restants
     // Lot 7, tâche 7.9 (D91) : TRANSFER_RECEIVED reçoit l'email (billet reçu par transfert, nouveau numéro).
     ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Billet reçu'),
     ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B', 'TICKET_SCANNED', ['/tickets?tab=historique'], 'Entrée validée'), // 11.2 M4
     ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', ['/tickets?tab=historique'], 'Événement annulé'), // design 1b : billets annulés ou en remboursement
-    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement suspendu'), // G.50
-    opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement de nouveau en ligne'), // G.50
+    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement suspendu'), // G.50
+    opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement de nouveau en ligne'), // G.50
     ess('EVENT_CHANGED', [I, P, S, M], 'CLIENT', 'B', 'EVENT_CHANGE', ['/events/:event'], 'Événement modifié'), // lot 9 bis (R14, 11.2 M1) : indispensable
     opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets?tab=a-venir'], 'Rappel : c\'est demain'),
     opt('REMINDER_H3', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets?tab=a-venir'], 'C\'est bientôt'), // G.50
-    ess('REFUND_REQUESTED', [I, M], 'CLIENT', 'A', 'REFUND_REQUESTED', ['/tickets?tab=historique'], 'Remboursement demandé'), // G.49
+    ess('REFUND_REQUESTED', [I, S, M, P], 'CLIENT', 'A', 'REFUND_REQUESTED', ['/tickets?tab=historique'], /^(Remboursement en cours|Billet annulé par l'organisateur|Billet annulé par Event Village)$/), // G.49 ; finition 4 (E-45) : titre selon l'auteur (modification signalée)
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROCESSED', ['/tickets?tab=historique'], 'Remboursement versé'),
-    ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B', 'SECURITY', ['/profile'], 'Mot de passe modifié'),
+    ess('PASSWORD_CHANGED', [I, S, M, P], 'ANY', 'B', 'SECURITY', ['/profile'], 'Mot de passe modifié'),
     ess('PHONE_CHANGED', [S, M], 'ANY', 'A', null, ['/profile'], null), // lot 9 : SMS à l'ancien numéro ; lot 9 bis (11.2 M22) : + EMAIL au compte
     // Lot 9 quater (A9 : AUD-34) : type ajouté (modification signalée au rapport)
-    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M], 'ANY', 'B', 'SECURITY', ['/profile'], 'Adresse email validée par un autre compte'),
+    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M, P], 'ANY', 'B', 'SECURITY', ['/profile'], 'Adresse email validée par un autre compte'),
     ess('PUSH_TEST', [P], 'ANY', 'B', 'SYSTEM', ['/profile/notifications'], null),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement validé'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement non validé'),
     ess('EVENT_SUSPENDED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement suspendu'),
     ess('EVENT_REACTIVATED', [I, S, M, P], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement réactivé'),
-    ess('EVENT_PUBLISHED_BY_ADMIN', [I, P, M], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement publié'), // G.49
+    ess('EVENT_PUBLISHED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'B', 'EVENT_STATUS', [PE], 'Événement publié'), // G.49
     opt('FIRST_TICKET_SOLD', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER', 'SALES', [`${PE}?tab=ventes`], 'Premier billet vendu'),
-    opt('NEW_ORDER', 'PRO_ACTIVITY', [I], 'PARTNER', 'SALES', [`${PE}?tab=ventes`], 'Nouvelle commande'),
+    opt('NEW_ORDER', 'PRO_ACTIVITY', [I, P], 'PARTNER', 'SALES', [`${PE}?tab=ventes`], 'Nouvelle commande'),
     opt('CATEGORY_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER', 'CATEGORY_SOLD_OUT', [`${PE}?tab=ventes`], 'Catégorie complète'),
     opt('EVENT_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER', 'EVENT_FULLY_SOLD_OUT', [`${PE}?tab=ventes`], 'Événement complet'),
     ess('SHIFT_DISCREPANCY', [I, S, P, M], 'PARTNER', 'A', 'ALERT', [`${PE}?tab=caisse`], 'Écart de caisse'), // G.49
     ess('WITHDRAWAL_PAID', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_PAID', ['/partner/finance', '/wallet'], 'Retrait versé'),
     ess('WITHDRAWAL_REJECTED', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_REJECTED', ['/partner/finance', '/wallet'], 'Retrait refusé'),
     ess('WITHDRAWAL_UNCERTAIN', [I, S, P, M], 'ANY', 'A', 'WITHDRAWAL_PENDING_CHECK', ['/partner/finance', '/wallet'], 'Retrait en vérification'), // G.49
-    ess('CANCEL_REFUNDS_DONE', [I, M, P], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements terminés'),
-    ess('CANCEL_REFUNDS_BLOCKED', [I, M, P], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements en attente'),
-    ess('PARTNER_REGISTERED_ACK', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Inscription reçue'), // lot 9 quinquies (C3) : + SMS
-    ess('PARTNER_VALIDATED', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Compte partenaire validé'),
-    ess('PARTNER_REJECTED', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Demande refusée'),
-    ess('PARTNER_SUSPENDED', [I, S, M], 'PARTNER', 'A', 'KYC', ['/partner/dashboard'], 'Compte suspendu'),
-    ess('PARTNER_REACTIVATED', [I, S, M], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Compte réactivé'),
-    ess('TRIAL_STARTED', [I, M], 'PARTNER', 'B', 'TRIAL', ['/partner/dashboard'], 'Période d\'essai activée'), // lot 9 bis (R31, 11.2 M5) : SMS retiré, + EMAIL
-    ess('SUBSCRIPTION_ACTIVATED', [I, M], 'PARTNER', 'A', 'SUBSCRIPTION_ACTIVATED', ['/partner/subscription'], 'Abonnement activé'), // G.49
+    ess('CANCEL_REFUNDS_DONE', [I, M, P, S], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements terminés'),
+    ess('CANCEL_REFUNDS_BLOCKED', [I, M, P, S], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements en attente'),
+    ess('PARTNER_REGISTERED_ACK', [I, S, M, P], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Inscription reçue'), // lot 9 quinquies (C3) : + SMS
+    ess('PARTNER_VALIDATED', [I, S, M, P], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Compte partenaire validé'),
+    ess('PARTNER_REJECTED', [I, S, M, P], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Demande refusée'),
+    ess('PARTNER_SUSPENDED', [I, S, M, P], 'PARTNER', 'A', 'KYC', ['/partner/dashboard'], 'Compte suspendu'),
+    ess('PARTNER_REACTIVATED', [I, S, M, P], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Compte réactivé'),
+    ess('TRIAL_STARTED', [I, M, P], 'PARTNER', 'B', 'TRIAL', ['/partner/dashboard'], 'Période d\'essai activée'), // lot 9 bis (R31, 11.2 M5) : SMS retiré, + EMAIL
+    ess('SUBSCRIPTION_ACTIVATED', [I, M, P], 'PARTNER', 'A', 'SUBSCRIPTION_ACTIVATED', ['/partner/subscription'], 'Abonnement activé'), // G.49
     // Lot 8, tâche 8.2 m (contrat 10.1) : le lien suit la cible du paiement, voir « PAYMENT_SUCCESS : lien selon la cible ».
-    ess('PAYMENT_SUCCESS', [I, M], 'CLIENT', 'A', 'PAYMENT_SUCCESS', ['/orders', '/partner/subscription'], 'Paiement confirmé'), // G.49
+    ess('PAYMENT_SUCCESS', [I, M, P], 'CLIENT', 'A', 'PAYMENT_SUCCESS', ['/orders', '/partner/subscription'], 'Paiement confirmé'), // G.49
     // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle ; SMS
     // pour la confirmation, le rappel du solde, le délai dépassé, l'annulation et le remboursement seulement.
     ess('HALL_RESERVATION_REQUESTED', [I, P, M], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls'], 'Nouvelle réservation'),
@@ -277,24 +277,24 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     opt('TABLE_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT', 'REMINDER', ['/orders'], 'Rappel de votre réservation'),
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'TABLE_RESERVATION', ['/partner/tables'], 'Établissement refusé'),
     ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/services'], 'Établissement à valider', 'partners.validate'),
-    ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
+    ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)
     opt('CONTROLLER_REMINDER', 'REMINDERS', [I, P, S, M], 'CONTROLLER', 'CONTROLLER', ['/controller/scanner'], 'Contrôle demain'), // G.50
-    ess('SHIFT_CLOSED_BY_OTHER', [I, P, M], 'CONTROLLER', 'A', 'ALERT', ['/controller/scanner'], 'Caisse fermée'), // G.49
-    ess('CONTROLLER_ACTIVATED', [I, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Compte activé'), // G.49
+    ess('SHIFT_CLOSED_BY_OTHER', [I, P, M, S], 'CONTROLLER', 'A', 'ALERT', ['/controller/scanner'], 'Caisse fermée'), // G.49
+    ess('CONTROLLER_ACTIVATED', [I, S, M, P], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Compte activé'), // G.49
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement à valider', 'events.read'),
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'KYC', ['/admin/dashboard'], 'Nouvelle candidature', 'partners.read'),
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#versements-a-reprendre'], 'Remboursement à reprendre', 'refunds.manage'),
     // Lot 8, tâche 8.2 a (contrat 6.1, L32) : alerte du second paiement réussi d'un même panier.
     ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#remboursements-a-verser'], 'Paiement en double remboursé', 'refunds.manage'),
     ess('ADMIN_CASHOUT_UNCERTAIN', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#versements-a-reprendre'], 'Versement incertain', 'refunds.manage'),
-    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#du-aux-partenaires'], 'Retrait refusé par l\'opérateur', 'refunds.manage'),
+    ess('ADMIN_WITHDRAWAL_REJECTED', [I, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#du-aux-partenaires'], /^Retrait (refusé par l'opérateur|constaté non versé)$/, 'refunds.manage'), // finition 4 (E-33) : variante non versé (signalé)
     ess('ADMIN_FINANCE_DEBT', [I, M], 'ADMIN', 'B', 'FINANCE_ALERT', ['/admin/finance#creances'], 'Créance sur un compte', 'payments.read'),
     ess('ADMIN_NOTIFICATION_FAILED', [I, M], 'ADMIN', 'B', 'NOTIFICATION_ALERT', ['/admin/notifications/:outbox'], 'Envoi en échec', 'notifications.read'), // G.49
     ess('ADMIN_SMS_DAILY_THRESHOLD', [I, M], 'ADMIN', 'B', 'SMS_DAILY_THRESHOLD', ['/admin/notifications'], 'Volume de SMS indispensables élevé', 'notifications.read'), // 11.2 M6
-    ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Plafond de SMS atteint', 'notifications.read'), // G.49
-    ess('ADMIN_SMS_CAP_NON_OTP', [I, M], 'ADMIN', 'B', 'SMS_NON_OTP_SHARE_REACHED', ['/admin/notifications'], 'Quota de SMS hors code atteint', 'notifications.read'), // G.49
+    ess('ADMIN_SMS_CAP_GLOBAL', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Plafond de SMS atteint : codes bloqués', 'notifications.read'), // G.49 ; finition 4 (E-05) : titre qui dit ce qui s'arrête (signalé)
+    ess('ADMIN_SMS_CAP_NON_OTP', [I, M], 'ADMIN', 'B', 'SMS_NON_OTP_SHARE_REACHED', ['/admin/notifications'], 'Quota de SMS hors codes atteint', 'notifications.read'), // G.49 ; finition 4 (E-05) (signalé)
     // Lot 9 quater (A8 : AUD-05) : type ajouté (modification signalée au rapport)
     ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'SMS_DAILY_CAP_REACHED', ['/admin/notifications'], 'Codes d’inscription : part du jour atteinte', 'notifications.read'),
     // Lot 7, tâche 7.0 a (contrat 4.1, M2.1, D15) : alerte à 80 % du plafond optionnel et prévision de la veille.
@@ -827,7 +827,8 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['WITHDRAWAL_UNCERTAIN', { amount: 25000, operator: 'ORANGE_MONEY' }, [],
                 'Event Village : votre retrait de 25 000 F CFA est en vérification auprès de l\'opérateur. Aucune action de votre part.'],
             ['PARTNER_VALIDATED', { company: 'Sabar Events' }, [], `Event Village : votre compte partenaire Sabar Events est validé. Connectez-vous : ${U}/login`],
-            ['PARTNER_REJECTED', { reason: 'Pieces illisibles' }, [], 'Event Village : votre demande de compte partenaire n\'est pas acceptée. Motif : Pieces illisibles.'],
+            // Finition 4 (E-43) : le SMS dit la suite (modification signalée au rapport)
+            ['PARTNER_REJECTED', { reason: 'Pieces illisibles' }, [], `Event Village : demande partenaire refusée. Motif : Pieces illisibles. Complétez votre dossier : ${U}/partner/dashboard`],
             ['PARTNER_SUSPENDED', { reason: 'Fraude signalee' }, [], `Event Village : votre compte partenaire est suspendu. Motif : Fraude signalee. Aide : ${U}/aide`],
             ['PARTNER_REACTIVATED', {}, [], `Event Village : votre compte partenaire est réactivé. Connectez-vous : ${U}/login`],
             // Lot 9 bis (R31, T51) : TRIAL_STARTED n'a plus de SMS, son texte exact est retiré (couverture par type SMS ci-dessous).
@@ -1073,19 +1074,19 @@ function lot9bisExpected(): ExpectedType[] {
         ess('TRANSFER_DECLINED_SENDER', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', null, 'Billet refusé'),
         ess('TRANSFER_RECIPIENT_CHANGED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', null, 'Transfert annulé'),
         ess('CONTROLLER_INVITATION', [S, I, P, M], 'CLIENT', 'B', 'CONTROLLER', ['/invitations'], /^Invitation de .+$/),
-        ess('EVENT_CANCELLED_BY_ADMIN', [I, S, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Événement annulé par l\'administration'),
+        ess('EVENT_CANCELLED_BY_ADMIN', [I, S, M, P], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Événement annulé par l\'administration'),
         ess('ADMIN_EVENT_CANCELLED', [I, M], 'ADMIN', 'B', 'EVENT_STATUS', null, 'Événement annulé par l\'organisateur', 'events.read'),
-        ess('CONTROLLER_EVENT_CANCELLED', [I, S, M], 'CONTROLLER', 'B', 'CONTROLLER', null, 'Contrôle annulé'),
-        ess('CONTROLLER_EVENT_CHANGED', [I, S, M], 'CONTROLLER', 'B', 'CONTROLLER', null, 'Contrôle modifié'),
-        ess('CONTROLLER_EVENT_STATUS', [I, M], 'CONTROLLER', 'B', 'CONTROLLER', null, /^Événement (suspendu|de nouveau en ligne)$/),
-        ess('TICKET_CANCELLED', [I, S, M], 'ANY', 'A', 'TICKET', null, /^(Invitation annulée|Billet annulé)$/),
-        ess('ACCOUNT_SUSPENDED', [I, S, M], 'ANY', 'A', 'SECURITY', null, 'Compte suspendu'),
-        ess('ACCOUNT_REACTIVATED', [I, S, M], 'ANY', 'A', 'SECURITY', null, 'Compte réactivé'),
+        ess('CONTROLLER_EVENT_CANCELLED', [I, S, M, P], 'CONTROLLER', 'B', 'CONTROLLER', null, 'Contrôle annulé'),
+        ess('CONTROLLER_EVENT_CHANGED', [I, S, M, P], 'CONTROLLER', 'B', 'CONTROLLER', null, 'Contrôle modifié'),
+        ess('CONTROLLER_EVENT_STATUS', [I, M, S, P], 'CONTROLLER', 'B', 'CONTROLLER', null, /^Événement (suspendu|de nouveau en ligne)$/),
+        ess('TICKET_CANCELLED', [I, S, M, P], 'ANY', 'A', 'TICKET', null, /^(Invitation annulée|Billet annulé)$/),
+        ess('ACCOUNT_SUSPENDED', [I, S, M, P], 'ANY', 'A', 'SECURITY', null, 'Compte suspendu'),
+        ess('ACCOUNT_REACTIVATED', [I, S, M, P], 'ANY', 'A', 'SECURITY', null, 'Compte réactivé'),
         ess('ADMIN_EVENT_CHANGED', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', null, 'Événement modifié après validation', 'events.read'),
-        ess('EVENT_SUBMITTED_ACK', [I, M], 'PARTNER', 'B', 'EVENT_STATUS', null, 'Événement envoyé en validation'),
-        ess('EVENT_FINISHED', [I, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Événement terminé'),
-        ess('CLOSING_REPORT_READY', [I, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Rapport de clôture prêt'),
-        ess('FUNDS_AVAILABLE', [I, M], 'PARTNER', 'B', 'SALES', null, 'Recettes disponibles'),
+        ess('EVENT_SUBMITTED_ACK', [I, M, P], 'PARTNER', 'B', 'EVENT_STATUS', null, 'Événement envoyé en validation'),
+        ess('EVENT_FINISHED', [I, M, P], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Événement terminé'),
+        ess('CLOSING_REPORT_READY', [I, M, P], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Rapport de clôture prêt'),
+        ess('FUNDS_AVAILABLE', [I, M, P, S], 'PARTNER', 'B', 'SALES', null, 'Recettes disponibles'),
         { type: 'EMAIL_VERIFICATION', family: 'ESSENTIAL', topic: null, channels: [M], audience: 'ANY', suspendedPolicy: 'ALLOW', syncOnly: true, adminPermission: null, inAppType: null, links: null, title: null },
     ];
 }
@@ -1137,7 +1138,8 @@ const LOT9BIS_SMS_PATTERNS: Record<string, RegExp[]> = {
         fixedText('Event Village : votre billet pour {titre} du {date} est annulé. Remboursement par l\'organisateur.'),
     ],
     // Lot 9 quinquies (B1 : AUTH-06, modification signalée) : lien de la page d'aide
-    ACCOUNT_SUSPENDED: [fixedText('Event Village : votre compte est suspendu. Motif : {motif}. Billets payés valables à l\'entrée. Aide : {url}/aide')],
+    // Finition 4 (E-04) : seulement ce qui est vrai (modification signalée au rapport)
+    ACCOUNT_SUSPENDED: [fixedText('Event Village : votre compte est suspendu. Motif : {motif}. Vos billets payés restent valables. Aide : {url}/aide')],
     ACCOUNT_REACTIVATED: [fixedText('Event Village : votre compte est réactivé. Vous pouvez de nouveau vous connecter : {url}/login')],
 };
 
@@ -1174,7 +1176,8 @@ const LOT9BIS_IN_APP_PATTERNS: Record<string, RegExp[]> = {
         fixedText('Votre billet gratuit pour « {titre} » du {date} est annulé par l\'organisateur.'),
         fixedText('Votre billet pour « {titre} » du {date} est annulé. Le remboursement se fait auprès de l\'organisateur.'),
     ],
-    ACCOUNT_SUSPENDED: [fixedText('Votre compte est suspendu. Motif : {motif} Vos billets payés restent valables à l\'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d\'identité. Ouvrez la page Aide pour joindre le support.')],
+    // Finition 4 (E-04) : aucune promesse du billet hors ligne (modification signalée au rapport)
+    ACCOUNT_SUSPENDED: [fixedText('Votre compte est suspendu. Motif : {motif} Vos billets payés restent valables. Pour toute question, et avant de vous rendre à un événement, ouvrez la page Aide pour joindre le support.')],
     ACCOUNT_REACTIVATED: [fixedText('Votre compte est réactivé : vous pouvez de nouveau vous connecter.')],
     ADMIN_EVENT_CHANGED: [fixedText('« {titre} » de {société} : {changements} après validation. Vérifiez la fiche.')],
     EVENT_SUBMITTED_ACK: [fixedText('« {titre} » est envoyé à l\'équipe Event Village pour validation. Vous serez prévenu de la décision.')],
@@ -1183,8 +1186,10 @@ const LOT9BIS_IN_APP_PATTERNS: Record<string, RegExp[]> = {
     FUNDS_AVAILABLE: [fixedText('Les recettes de « {titre} » sont disponibles sur votre solde : vous pouvez demander un retrait.')],
     // 11.2 : types modifiés.
     INVITATION_RECEIVED: [/^\d+ invitations? pour « .+ » le .+ : vos billets sont dans Mes billets\.$/],
-    ADMIN_SMS_DAILY_THRESHOLD: [fixedText('{count} SMS indispensables envoyés aujourd\'hui (seuil d\'alerte : {threshold}). Ils n\'ont pas de plafond : vérifiez leur origine dans la supervision.')],
-    PARTNER_REJECTED: [/^.+ Vous pouvez compléter votre dossier une fois depuis votre tableau de bord\.$/],
+    // Finition 4 (E-40) : vraies règles (modification signalée au rapport)
+    ADMIN_SMS_DAILY_THRESHOLD: [fixedText('{count} SMS indispensables envoyés aujourd\'hui (seuil d\'alerte : {threshold}). Ils n\'ont pas de plafond global ; chaque numéro en reçoit un nombre limité par jour, et les numéros saisis à la main (invitations, transferts) sont aussi limités par compte qui les déclenche. Vérifiez leur origine dans la supervision.')],
+    // Finition 4 (E-43) : second refus, la suite est le support (modification signalée au rapport)
+    PARTNER_REJECTED: [/^.+ (Vous pouvez compléter votre dossier une fois depuis votre tableau de bord|Votre dossier a déjà été complété une fois : ouvrez la page Aide pour joindre le support)\.$/],
     PHONE_CHANGED: [fixedText('Le numéro de téléphone de votre compte a été modifié. Si ce n\'est pas vous, ouvrez la page Aide pour joindre le support.')],
 };
 
@@ -1251,7 +1256,7 @@ function lot9terExpected(): ExpectedType[] {
         ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A', 'TICKET', ['/tickets?tab=historique'], 'Billet annulé'), // design 1b : onglet du billet annulé
         ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement publié par l\'organisateur', 'events.read'),
         ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Soumission retirée par l\'organisateur', 'events.read'),
-        ess('SCAN_REFUSALS_ALERT', [I, P, M], 'PARTNER', 'B', 'ALERT', ['/partner/events/:event?tab=entrees'], 'Refus en série à une porte'),
+        ess('SCAN_REFUSALS_ALERT', [I, P, M, S], 'PARTNER', 'B', 'ALERT', ['/partner/events/:event?tab=entrees'], 'Refus en série à une porte'),
     ];
 }
 
@@ -1259,6 +1264,20 @@ function lot9terExpected(): ExpectedType[] {
  * Lot 9 quinquies (D1) : SMS aux administrateurs pour ce qui attend leur action (migration 20261112000001) ; SMS seul,
  * indispensable, destinataires choisis par notif_admin_review_sms (aucune permission au registre). Ajout signalé au rapport.
  */
+/**
+ * Finition 4 (décisions du client du 19/11, migration 20261125000001) : cinq types nouveaux. Ajout signalé au rapport ; les
+ * canaux élargis des types existants sont repris dans la table ci-dessus (modification signalée au rapport).
+ */
+function finition4Expected(): ExpectedType[] {
+    return [
+        opt('SALES_UPDATE_SMS', 'PRO_ACTIVITY', [S], 'PARTNER', null as unknown as string, null as unknown as string[], null as unknown as string),
+        opt('PARTNER_DAILY_SUMMARY', 'SALES_SUMMARY', [I, S, M, P], 'PARTNER', 'SALES', [`${PE}?tab=ventes`, '/partner/events'], 'Résumé de la veille'),
+        ess('ENTRY_WELCOME', [I, S, M, P], 'CLIENT', 'B', 'TICKET_SCANNED', ['/events/:event'], 'Bienvenue'),
+        opt('ENTRY_THANKS', 'AFTER_EVENT', [I, S, M, P], 'CLIENT', 'THANKS', ['/events/:event'], 'Merci d’être venu'),
+        ess('PARTNER_REFUND_REQUESTS', [I, S, M, P], 'PARTNER', 'B', 'REFUND_REQUESTED', [`${PE}?tab=ventes`], /^Remboursements? demandés?$/),
+    ];
+}
+
 function lot9quinquiesExpected(): ExpectedType[] {
     return [
         ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B', null, ['/admin/dashboard'], null),
@@ -1267,15 +1286,15 @@ function lot9quinquiesExpected(): ExpectedType[] {
         sync('OTP_ADMIN'), // A3 (AUTH-05) : code administrateur, journal seulement
         ess('EMAIL_ADDED', [S, M], 'ANY', 'B', null, ['/aide'], null), // C2 (AUTH-09)
         // Finition 1 (E-20) : avis à la partenaire, cloche, push et email, sans SMS (migration 20261115000002). Ajout signalé.
-        ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation acceptée'),
-        ess('CONTROLLER_INVITATION_DECLINED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation refusée'),
-        ess('CONTROLLER_INVITATION_EXPIRED', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation sans réponse'),
+        ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M, S], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation acceptée'),
+        ess('CONTROLLER_INVITATION_DECLINED', [I, P, M, S], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation refusée'),
+        ess('CONTROLLER_INVITATION_EXPIRED', [I, P, M, S], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Invitation sans réponse'),
         // Correctifs de la contre-vérification (migration 20261115000014) : contrôleur devenu compte d'administration,
         // retiré de l'équipe ; cloche, push et email, sans SMS. Ajout signalé.
-        ess('CONTROLLER_BECAME_ADMIN', [I, P, M], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Contrôleur retiré de votre équipe'),
+        ess('CONTROLLER_BECAME_ADMIN', [I, P, M, S], 'PARTNER', 'B', 'CONTROLLER', ['/partner/team'], 'Contrôleur retiré de votre équipe'),
         // Finition 3d (point 4a, migration 20261120000002) : espèces marquées rendues par un admin, avis à l'organisatrice
         // (cloche, push, email), reçu même fiche suspendue. Ajout signalé.
-        ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
+        ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Espèces marquées rendues par l’administration'),
         // Finition 3d (point 3, migration 20261120000003) : alerte à chaque SUPERADMIN quand un compte devient SUPERADMIN. Ajout signalé.
         ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A', 'SECURITY', ['/admin/users'], 'Nouveau Superadmin'),
         // Finition 3d (point 2, migrations 20261120000004 et …05) : code de secours utilisé, numéro d'un administrateur
