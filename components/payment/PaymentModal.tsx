@@ -106,6 +106,8 @@ interface TargetPaymentProps extends PaymentModalBaseProps {
   targetType: PaymentTargetType;
   targetId: string;
   quantity?: number;
+  /** Lot 10b : part d'une réservation de salle (acompte, solde ou totalité) ; le montant est relu en base. */
+  part?: 'ACOMPTE' | 'SOLDE' | 'INTEGRAL';
   checkoutItems?: undefined;
   eventId?: undefined;
   quote?: undefined;
@@ -379,6 +381,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
               operator,
               payerPhone,
               ...(props.quantity !== undefined ? { quantity: props.quantity } : {}),
+              ...(props.part !== undefined ? { part: props.part } : {}),
             },
           };
     const idempotencyKey = attempt.keyFor(JSON.stringify(request));

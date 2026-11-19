@@ -4,8 +4,39 @@ import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { bookingStateLabel, fcfa, refusalStatus } from '@/lib/halls/booking';
 import { sendHallRefunds } from '@/lib/halls/refunds';
+import { cancelPreview, HallRefusal } from '@/lib/halls/queries';
+import { refusalResponse } from '@/lib/halls/route-helpers';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * GET /api/halls/reservations/[id]/cancel — montant rendu si le client annule maintenant (affiché avant de confirmer).
+ * Lot 10b (point 2) : calculé en base (hall_cancel_preview : règle figée sur la réservation, même calcul que le
+ * remboursement) ; rien n'est écrit. Réservation d'un autre compte : 404 « Réservation introuvable ». Sans
+ * interrupteur, comme l'annulation.
+ */
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    try {
+        const session = await requireActiveSession(req, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
+        if (session.response) return session.response;
+        const { id } = await params;
+        const preview = await cancelPreview(session.user.id, id);
+        return NextResponse.json({
+            success: true,
+            preview: {
+                ...preview,
+                message: preview.refundAmount > 0
+                    ? `Si vous annulez maintenant, vous serez remboursé de ${fcfa(preview.refundAmount)} sur votre compte de paiement.`
+                    : preview.paidAmount > 0
+                        ? 'Si vous annulez maintenant, rien ne vous sera remboursé selon les conditions de la salle.'
+                        : 'Vous n’avez encore rien payé : la date sera simplement libérée.',
+            },
+        });
+    } catch (err: unknown) {
+        if (err instanceof HallRefusal) return refusalResponse(err);
+        return apiFailure('GET /api/halls/reservations/[id]/cancel', err, { message: 'Montant du remboursement momentanément indisponible.', code: 'HALL_CANCEL_PREVIEW_FAILED', status: 500 });
+    }
+}
 
 /**
  * POST /api/halls/reservations/[id]/cancel — le client annule sa réservation de salle.
