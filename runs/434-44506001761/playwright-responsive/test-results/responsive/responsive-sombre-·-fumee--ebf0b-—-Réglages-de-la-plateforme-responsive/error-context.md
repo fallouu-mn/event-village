@@ -1,0 +1,1567 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: responsive.spec.ts >> sombre · fumee-superadmin >> adm-reglages — Réglages de la plateforme
+- Location: e2e/responsive.spec.ts:69:21
+
+# Error details
+
+```
+Error: contrôles responsive de adm-reglages (sombre)
+
+expect(received).toEqual(expected) // deep equality
+
+- Expected  - 1
++ Received  + 4
+
+- Array []
++ Array [
++   "768 px : textes qui se chevauchent : span.hidden.whitespace-nowrap « Event Village » sur span.truncate « Rechercher un événement, un concert, un restaurant » (46×18 px)",
++   "1440 px : texte tronqué sans le texte entier : span.block.truncate « Elhadji SuperAdmin » (points de suspension, texte entier absent)",
++ ]
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - complementary [ref=f2e3]:
+      - link "Event Village, accueil" [ref=f2e5] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f2e6]: Event Village
+      - navigation "Navigation principale" [ref=f2e9]:
+        - generic [ref=f2e10]: Administration
+        - link "Tableau de bord" [ref=f2e15] [cursor=pointer]:
+          - /url: /admin/dashboard
+        - generic [ref=f2e22]:
+          - paragraph [ref=f2e23]: Gestion
+          - generic [ref=f2e24]:
+            - link "Événements" [ref=f2e25] [cursor=pointer]:
+              - /url: /admin/events
+            - link "Comptes" [ref=f2e29] [cursor=pointer]:
+              - /url: /admin/users
+            - link "Catalogues et services" [ref=f2e36] [cursor=pointer]:
+              - /url: /admin/services
+        - generic [ref=f2e42]:
+          - paragraph [ref=f2e43]: Finances
+          - link "Finance" [ref=f2e45] [cursor=pointer]:
+            - /url: /admin/finance
+        - generic [ref=f2e49]:
+          - paragraph [ref=f2e50]: Engagement
+          - generic [ref=f2e51]:
+            - link "Parrainage" [ref=f2e52] [cursor=pointer]:
+              - /url: /admin/referral
+            - link "Campagnes" [ref=f2e57] [cursor=pointer]:
+              - /url: /admin/communications
+            - link "À la une" [ref=f2e62] [cursor=pointer]:
+              - /url: /admin/a-la-une
+        - generic [ref=f2e66]:
+          - paragraph [ref=f2e67]: Système
+          - generic [ref=f2e68]:
+            - link "Réglages" [ref=f2e69] [cursor=pointer]:
+              - /url: /admin/finance-settings
+            - link "Journal d’audit" [ref=f2e74] [cursor=pointer]:
+              - /url: /admin/audit
+            - link "Notifications" [ref=f2e79] [cursor=pointer]:
+              - /url: /admin/notifications
+            - link "Scanner" [ref=f2e86] [cursor=pointer]:
+              - /url: /scan
+            - link "Sécurité du compte" [ref=f2e94] [cursor=pointer]:
+              - /url: /admin/securite
+        - link "Retour au site" [ref=f2e100] [cursor=pointer]:
+          - /url: /
+      - generic [ref=f2e105]:
+        - link "Elhadji SuperAdmin Superadmin" [ref=f2e106] [cursor=pointer]:
+          - /url: /profile
+          - generic [aria-hidden] [ref=f2e107]: ES
+          - generic [ref=f2e108]:
+            - generic [ref=f2e109]: Elhadji SuperAdmin
+            - generic [ref=f2e110]: Superadmin
+        - generic [ref=f2e111]:
+          - button "Se déconnecter" [ref=f2e112] [cursor=pointer]
+          - button "Basculer le thème" [ref=f2e117] [cursor=pointer]
+    - generic [ref=f2e121]:
+      - banner [ref=f2e122]:
+        - link "Rechercher un événement, un concert, un restaurant…" [ref=f2e124] [cursor=pointer]:
+          - /url: /explore
+        - button "Notifications, 58 non lues" [ref=f2e131] [cursor=pointer]:
+          - generic [ref=f2e135]: "58"
+      - main [ref=f2e136]:
+        - generic [ref=f2e138]:
+          - generic [ref=f2e139]:
+            - link "Accueil" [ref=f2e141] [cursor=pointer]:
+              - /url: /admin/dashboard
+            - generic [ref=f2e146]:
+              - generic [ref=f2e147]:
+                - heading "Réglages de la plateforme" [level=1] [ref=f2e148]
+                - paragraph [ref=f2e149]: Chaque modification est historisée et ne s’applique qu’aux opérations futures.
+              - button "Actualiser" [ref=f2e151] [cursor=pointer]
+          - navigation "Sommaire des réglages" [ref=f2e159]:
+            - paragraph [ref=f2e160]: Thèmes
+            - list [ref=f2e161]:
+              - listitem [ref=f2e162]:
+                - link "Finance" [ref=f2e163] [cursor=pointer]:
+                  - /url: "#finance"
+              - listitem [ref=f2e164]:
+                - link "Contrôle d’accès" [ref=f2e165] [cursor=pointer]:
+                  - /url: "#controle"
+              - listitem [ref=f2e166]:
+                - link "Contact du support" [ref=f2e167] [cursor=pointer]:
+                  - /url: "#support"
+              - listitem [ref=f2e168]:
+                - link "Notifications et SMS" [ref=f2e169] [cursor=pointer]:
+                  - /url: "#notifications"
+              - listitem [ref=f2e170]:
+                - link "Services en préparation" [ref=f2e171] [cursor=pointer]:
+                  - /url: "#services"
+              - listitem [ref=f2e172]:
+                - link "Salles de fête" [ref=f2e173] [cursor=pointer]:
+                  - /url: "#salles"
+              - listitem [ref=f2e174]:
+                - link "Restaurants et tables" [ref=f2e175] [cursor=pointer]:
+                  - /url: "#tables"
+          - region [ref=f2e176]:
+            - generic [ref=f2e177]:
+              - heading "Finance" [level=2] [ref=f2e178]
+              - paragraph [ref=f2e182]: Frais, délais de disponibilité des ventes, retraits et commissions.
+            - list [ref=f2e183]:
+              - listitem [ref=f2e184]:
+                - generic [ref=f2e185]:
+                  - generic [ref=f2e186]:
+                    - paragraph [ref=f2e187]: Frais de service
+                    - paragraph [ref=f2e188]: Payés par l’acheteur, arrondis au franc CFA supérieur par billet. De 0 à 50 %.
+                    - paragraph [ref=f2e189]:
+                      - text: "Par défaut : 5 % · Modifié le"
+                      - time [ref=f2e190]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e191]:
+                    - generic [ref=f2e192]: 5 %
+                    - button "Modifier Frais de service" [ref=f2e193] [cursor=pointer]:
+                      - generic [ref=f2e198]: Modifier
+              - listitem [ref=f2e199]:
+                - generic [ref=f2e200]:
+                  - generic [ref=f2e201]:
+                    - paragraph [ref=f2e202]: Durée de garde des places pendant un paiement (minutes)
+                    - paragraph [ref=f2e203]: "Temps pendant lequel les places d’un paiement en attente restent réservées. Le paiement reste valable 1 heure chez SamirPay : validé après l’échéance, il donne les billets s’il reste des places, sinon il est remboursé automatiquement. Entier de 5 à 60."
+                    - paragraph [ref=f2e204]:
+                      - text: "Par défaut : 10 min · Modifié le"
+                      - time [ref=f2e205]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e206]:
+                    - generic [ref=f2e207]: 10 min
+                    - button "Modifier Durée de garde des places pendant un paiement (minutes)" [ref=f2e208] [cursor=pointer]:
+                      - generic [ref=f2e213]: Modifier
+              - listitem [ref=f2e214]:
+                - generic [ref=f2e215]:
+                  - generic [ref=f2e216]:
+                    - paragraph [ref=f2e217]: Prix minimum d’un billet payant (F CFA)
+                    - paragraph [ref=f2e218]: Appliqué à toute catégorie payante créée ou dont le prix change ; un billet gratuit reste à 0. À ajuster quand SamirPay donnera son minimum d’encaissement. Entier de 1 à 100 000.
+                    - paragraph [ref=f2e219]:
+                      - text: "Par défaut : 100 F CFA · Modifié le"
+                      - time [ref=f2e220]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e221]:
+                    - generic [ref=f2e222]: 100 F CFA
+                    - button "Modifier Prix minimum d’un billet payant (F CFA)" [ref=f2e223] [cursor=pointer]:
+                      - generic [ref=f2e228]: Modifier
+              - listitem [ref=f2e229]:
+                - generic [ref=f2e230]:
+                  - generic [ref=f2e231]:
+                    - paragraph [ref=f2e232]: Frais agrégateur Wave
+                    - paragraph [ref=f2e233]: Coût SamirPay d’un paiement Wave. De 0 à 10 %.
+                    - paragraph [ref=f2e234]:
+                      - text: "Par défaut : 1,5 % · Modifié le"
+                      - time [ref=f2e235]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e236]:
+                    - generic [ref=f2e237]: 1,5 %
+                    - button "Modifier Frais agrégateur Wave" [ref=f2e238] [cursor=pointer]:
+                      - generic [ref=f2e243]: Modifier
+              - listitem [ref=f2e244]:
+                - generic [ref=f2e245]:
+                  - generic [ref=f2e246]:
+                    - paragraph [ref=f2e247]: Frais agrégateur Orange Money
+                    - paragraph [ref=f2e248]: Coût SamirPay d’un paiement Orange Money. De 0 à 10 %.
+                    - paragraph [ref=f2e249]:
+                      - text: "Par défaut : 1,5 % · Modifié le"
+                      - time [ref=f2e250]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e251]:
+                    - generic [ref=f2e252]: 1,5 %
+                    - button "Modifier Frais agrégateur Orange Money" [ref=f2e253] [cursor=pointer]:
+                      - generic [ref=f2e258]: Modifier
+              - listitem [ref=f2e259]:
+                - generic [ref=f2e260]:
+                  - generic [ref=f2e261]:
+                    - paragraph [ref=f2e262]: Frais agrégateur d’une annulation
+                    - paragraph [ref=f2e263]: Qui supporte les frais agrégateur quand un billet est remboursé.
+                    - paragraph [ref=f2e264]:
+                      - text: "Par défaut : Event Village · Modifié le"
+                      - time [ref=f2e265]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e266]:
+                    - generic [ref=f2e267]: Event Village
+                    - button "Modifier Frais agrégateur d’une annulation" [ref=f2e268] [cursor=pointer]:
+                      - generic [ref=f2e273]: Modifier
+              - listitem [ref=f2e274]:
+                - generic [ref=f2e275]:
+                  - generic [ref=f2e276]:
+                    - paragraph [ref=f2e277]: Délai de garde des ventes
+                    - paragraph [ref=f2e278]: "Désactivé : les ventes sont disponibles dès la confirmation du paiement."
+                    - paragraph [ref=f2e279]:
+                      - text: "Par défaut : Activé · Modifié le"
+                      - time [ref=f2e280]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e281]:
+                    - generic [ref=f2e282]: Activé
+                    - button "Modifier Délai de garde des ventes" [ref=f2e283] [cursor=pointer]:
+                      - generic [ref=f2e288]: Modifier
+              - listitem [ref=f2e289]:
+                - generic [ref=f2e290]:
+                  - generic [ref=f2e291]:
+                    - paragraph [ref=f2e292]: Délai après la fin de l’événement
+                    - paragraph [ref=f2e293]: Nombre d’heures avant que les ventes deviennent disponibles. De 0 à 720.
+                    - paragraph [ref=f2e294]:
+                      - text: "Par défaut : 48 h · Modifié le"
+                      - time [ref=f2e295]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e296]:
+                    - generic [ref=f2e297]: 48 h
+                    - button "Modifier Délai après la fin de l’événement" [ref=f2e298] [cursor=pointer]:
+                      - generic [ref=f2e303]: Modifier
+              - listitem [ref=f2e304]:
+                - generic [ref=f2e305]:
+                  - generic [ref=f2e306]:
+                    - paragraph [ref=f2e307]: Frais de retrait
+                    - paragraph [ref=f2e308]: Arrondis au franc CFA supérieur, déduits du montant versé. De 0 à 10 %.
+                    - paragraph [ref=f2e309]:
+                      - text: "Par défaut : 1 % · Modifié le"
+                      - time [ref=f2e310]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e311]:
+                    - generic [ref=f2e312]: 1 %
+                    - button "Modifier Frais de retrait" [ref=f2e313] [cursor=pointer]:
+                      - generic [ref=f2e318]: Modifier
+                - paragraph [ref=f2e319]: Frais SamirPay réels pas encore constatés.
+              - listitem [ref=f2e320]:
+                - generic [ref=f2e321]:
+                  - generic [ref=f2e322]:
+                    - paragraph [ref=f2e323]: Montant minimum de retrait
+                    - paragraph [ref=f2e324]: Montant entier en francs CFA.
+                    - paragraph [ref=f2e325]:
+                      - text: "Par défaut : 5 000 F CFA · Modifié le"
+                      - time [ref=f2e326]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e327]:
+                    - generic [ref=f2e328]: 5 000 F CFA
+                    - button "Modifier Montant minimum de retrait" [ref=f2e329] [cursor=pointer]:
+                      - generic [ref=f2e334]: Modifier
+              - listitem [ref=f2e335]:
+                - generic [ref=f2e336]:
+                  - generic [ref=f2e337]:
+                    - paragraph [ref=f2e338]: Retraits par virement bancaire
+                    - paragraph [ref=f2e339]: Tant qu’il est désactivé, seuls Wave et Orange Money sont proposés.
+                    - paragraph [ref=f2e340]:
+                      - text: "Par défaut : Désactivé · Modifié le"
+                      - time [ref=f2e341]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e342]:
+                    - generic [ref=f2e343]: Désactivé
+                    - button "Modifier Retraits par virement bancaire" [ref=f2e344] [cursor=pointer]:
+                      - generic [ref=f2e349]: Modifier
+              - listitem [ref=f2e350]:
+                - generic [ref=f2e351]:
+                  - generic [ref=f2e352]:
+                    - paragraph [ref=f2e353]: Délai de validation des commissions
+                    - paragraph [ref=f2e354]: Jours avant qu’une commission de parrainage devienne disponible. De 7 à 14.
+                    - paragraph [ref=f2e355]:
+                      - text: "Par défaut : 7 jours · Modifié le"
+                      - time [ref=f2e356]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e357]:
+                    - generic [ref=f2e358]: 7 jours
+                    - button "Modifier Délai de validation des commissions" [ref=f2e359] [cursor=pointer]:
+                      - generic [ref=f2e364]: Modifier
+              - listitem [ref=f2e365]:
+                - generic [ref=f2e366]:
+                  - generic [ref=f2e367]:
+                    - paragraph [ref=f2e368]: Réserve de prudence
+                    - paragraph [ref=f2e369]: "En attendant la confirmation du délai de SamirPay, une réserve est gardée sur le compte. Elle est déduite de « Retirable par Event Village ». Automatique : les encaissements des 3 derniers jours. Montant fixe : le montant du réglage suivant."
+                    - paragraph [ref=f2e370]:
+                      - text: "Par défaut : Automatique : encaissements des 3 derniers jours · Modifié le"
+                      - time [ref=f2e371]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e372]:
+                    - generic [ref=f2e373]: "Automatique : encaissements des 3 derniers jours"
+                    - button "Modifier Réserve de prudence" [ref=f2e374] [cursor=pointer]:
+                      - generic [ref=f2e379]: Modifier
+              - listitem [ref=f2e380]:
+                - generic [ref=f2e381]:
+                  - generic [ref=f2e382]:
+                    - paragraph [ref=f2e383]: Montant fixe de la réserve de prudence
+                    - paragraph [ref=f2e384]: Lu seulement quand la réserve est « Montant fixe ». Entier de 0 à 1 000 000 000 F CFA.
+                    - paragraph [ref=f2e385]:
+                      - text: "Par défaut : 0 F CFA · Modifié le"
+                      - time [ref=f2e386]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e387]:
+                    - generic [ref=f2e388]: 0 F CFA
+                    - button "Modifier Montant fixe de la réserve de prudence" [ref=f2e389] [cursor=pointer]:
+                      - generic [ref=f2e394]: Modifier
+          - region [ref=f2e395]:
+            - generic [ref=f2e396]:
+              - heading "Contrôle d’accès" [level=2] [ref=f2e397]
+              - paragraph [ref=f2e403]: Fenêtre de scan, saisie manuelle des numéros de billet, vente au guichet, seuil de stock affiché au public et alerte de refus à une porte.
+            - list [ref=f2e404]:
+              - listitem [ref=f2e405]:
+                - generic [ref=f2e406]:
+                  - generic [ref=f2e407]:
+                    - paragraph [ref=f2e408]: Ouverture du contrôle avant le début
+                    - paragraph [ref=f2e409]: Heures avant le début de l’événement à partir desquelles les billets peuvent être scannés. De 0 à 48.
+                    - paragraph [ref=f2e410]:
+                      - text: "Par défaut : 6 h · Modifié le"
+                      - time [ref=f2e411]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e412]:
+                    - generic [ref=f2e413]: 6 h
+                    - button "Modifier Ouverture du contrôle avant le début" [ref=f2e414] [cursor=pointer]:
+                      - generic [ref=f2e419]: Modifier
+              - listitem [ref=f2e420]:
+                - generic [ref=f2e421]:
+                  - generic [ref=f2e422]:
+                    - paragraph [ref=f2e423]: Fermeture du contrôle après la fin
+                    - paragraph [ref=f2e424]: Heures après la fin de l’événement pendant lesquelles les billets peuvent encore être scannés. De 0 à 48.
+                    - paragraph [ref=f2e425]:
+                      - text: "Par défaut : 6 h · Modifié le"
+                      - time [ref=f2e426]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e427]:
+                    - generic [ref=f2e428]: 6 h
+                    - button "Modifier Fermeture du contrôle après la fin" [ref=f2e429] [cursor=pointer]:
+                      - generic [ref=f2e434]: Modifier
+              - listitem [ref=f2e435]:
+                - generic [ref=f2e436]:
+                  - generic [ref=f2e437]:
+                    - paragraph [ref=f2e438]: Saisie manuelle d’un numéro de billet
+                    - paragraph [ref=f2e439]: Qui peut valider un billet par son numéro, toujours après vérification de la pièce d’identité.
+                    - paragraph [ref=f2e440]:
+                      - text: "Par défaut : Contrôleur affecté seul · Modifié le"
+                      - time [ref=f2e441]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e442]:
+                    - generic [ref=f2e443]: Contrôleur affecté seul
+                    - button "Modifier Saisie manuelle d’un numéro de billet" [ref=f2e444] [cursor=pointer]:
+                      - generic [ref=f2e449]: Modifier
+              - listitem [ref=f2e450]:
+                - generic [ref=f2e451]:
+                  - generic [ref=f2e452]:
+                    - paragraph [ref=f2e453]: Vente au guichet en espèces
+                    - paragraph [ref=f2e454]: Un contrôleur autorisé à encaisser, avec une caisse ouverte, vend des billets au prix facial, sans frais.
+                    - paragraph [ref=f2e455]:
+                      - text: "Par défaut : Activé · Modifié le"
+                      - time [ref=f2e456]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e457]:
+                    - generic [ref=f2e458]: Activé
+                    - button "Modifier Vente au guichet en espèces" [ref=f2e459] [cursor=pointer]:
+                      - generic [ref=f2e464]: Modifier
+              - listitem [ref=f2e465]:
+                - generic [ref=f2e466]:
+                  - generic [ref=f2e467]:
+                    - paragraph [ref=f2e468]: Seuil « bientôt complet »
+                    - paragraph [ref=f2e469]: Quand il reste ce nombre de places ou moins dans une catégorie, la page publique affiche le restant ; au-delà, seulement « disponible ». Entier de 1 à 1000.
+                    - paragraph [ref=f2e470]:
+                      - text: "Par défaut : 10 places · Modifié le"
+                      - time [ref=f2e471]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e472]:
+                    - generic [ref=f2e473]: 10 places
+                    - button "Modifier Seuil « bientôt complet »" [ref=f2e474] [cursor=pointer]:
+                      - generic [ref=f2e479]: Modifier
+              - listitem [ref=f2e480]:
+                - generic [ref=f2e481]:
+                  - generic [ref=f2e482]:
+                    - paragraph [ref=f2e483]: "Alerte de refus à une porte : nombre de refus"
+                    - paragraph [ref=f2e484]: Quand une porte enregistre ce nombre de refus ou plus pendant la durée observée, l’organisateur reçoit une alerte, au plus une fois par porte et par durée. Comptent les billets invalides, déjà utilisés, annulés, remboursés, d’un autre événement, en attente de transfert, présentés dans la mauvaise zone ou pas encore entrés ; pas les refus liés au téléphone ou aux droits du contrôleur, à l’encaissement ni aux horaires de l’événement. Entier de 3 à 500.
+                    - paragraph [ref=f2e485]:
+                      - text: "Par défaut : 10 refus · Modifié le"
+                      - time [ref=f2e486]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e487]:
+                    - generic [ref=f2e488]: 10 refus
+                    - 'button "Modifier Alerte de refus à une porte : nombre de refus" [ref=f2e489] [cursor=pointer]':
+                      - generic [ref=f2e494]: Modifier
+              - listitem [ref=f2e495]:
+                - generic [ref=f2e496]:
+                  - generic [ref=f2e497]:
+                    - paragraph [ref=f2e498]: "Alerte de refus à une porte : durée observée"
+                    - paragraph [ref=f2e499]: Durée pendant laquelle les refus d’une même porte sont comptés pour l’alerte. Entier de 1 à 60.
+                    - paragraph [ref=f2e500]:
+                      - text: "Par défaut : 5 min · Modifié le"
+                      - time [ref=f2e501]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e502]:
+                    - generic [ref=f2e503]: 5 min
+                    - 'button "Modifier Alerte de refus à une porte : durée observée" [ref=f2e504] [cursor=pointer]':
+                      - generic [ref=f2e509]: Modifier
+          - region [ref=f2e510]:
+            - generic [ref=f2e511]:
+              - heading "Contact du support" [level=2] [ref=f2e512]
+              - paragraph [ref=f2e516]: Moyens de joindre le support, affichés sur la page publique Aide et dans les messages de sécurité. Au moins un est exigé avant une séance réelle.
+            - list [ref=f2e517]:
+              - listitem [ref=f2e518]:
+                - generic [ref=f2e519]:
+                  - generic [ref=f2e520]:
+                    - paragraph [ref=f2e521]: Numéro WhatsApp du support
+                    - paragraph [ref=f2e522]: Format international, par exemple +221771234567. Laissez vide si aucun. Au moins un moyen de contact est exigé avant une séance réelle.
+                    - paragraph [ref=f2e523]:
+                      - text: "Par défaut : Non renseigné · Modifié le"
+                      - time [ref=f2e524]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e525]:
+                    - generic [ref=f2e526]: Non renseigné
+                    - button "Modifier Numéro WhatsApp du support" [ref=f2e527] [cursor=pointer]:
+                      - generic [ref=f2e532]: Modifier
+              - listitem [ref=f2e533]:
+                - generic [ref=f2e534]:
+                  - generic [ref=f2e535]:
+                    - paragraph [ref=f2e536]: Téléphone du support
+                    - paragraph [ref=f2e537]: Format international, par exemple +221338000000. Laissez vide si aucun.
+                    - paragraph [ref=f2e538]:
+                      - text: "Par défaut : Non renseigné · Modifié le"
+                      - time [ref=f2e539]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e540]:
+                    - generic [ref=f2e541]: Non renseigné
+                    - button "Modifier Téléphone du support" [ref=f2e542] [cursor=pointer]:
+                      - generic [ref=f2e547]: Modifier
+              - listitem [ref=f2e548]:
+                - generic [ref=f2e549]:
+                  - generic [ref=f2e550]:
+                    - paragraph [ref=f2e551]: Email du support
+                    - paragraph [ref=f2e552]: Adresse lue par l’équipe du support. Laissez vide si aucune.
+                    - paragraph [ref=f2e553]:
+                      - text: "Par défaut : Non renseigné · Modifié le"
+                      - time [ref=f2e554]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e555]:
+                    - generic [ref=f2e556]: Non renseigné
+                    - button "Modifier Email du support" [ref=f2e557] [cursor=pointer]:
+                      - generic [ref=f2e562]: Modifier
+          - region [ref=f2e563]:
+            - generic [ref=f2e564]:
+              - heading "Notifications" [level=2] [ref=f2e565]
+              - paragraph [ref=f2e569]: Rappels la veille et avant le début, SMS des rappels, plage de nuit sans SMS, plafond quotidien des SMS optionnels, alerte sur les SMS indispensables et rappels des billets gratuits.
+            - list [ref=f2e570]:
+              - listitem [ref=f2e571]:
+                - generic [ref=f2e572]:
+                  - generic [ref=f2e573]:
+                    - paragraph [ref=f2e574]: Rappel la veille
+                    - paragraph [ref=f2e575]: Rappel envoyé la veille du début aux porteurs d’un billet valable de l’événement en ligne.
+                    - paragraph [ref=f2e576]:
+                      - text: "Par défaut : Activé · Modifié le"
+                      - time [ref=f2e577]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e578]:
+                    - generic [ref=f2e579]: Activé
+                    - button "Modifier Rappel la veille" [ref=f2e580] [cursor=pointer]:
+                      - generic [ref=f2e585]: Modifier
+              - listitem [ref=f2e586]:
+                - generic [ref=f2e587]:
+                  - generic [ref=f2e588]:
+                    - paragraph [ref=f2e589]: Heure du rappel de la veille
+                    - paragraph [ref=f2e590]: Heure de Dakar à laquelle part le rappel de la veille. De 6 à 20.
+                    - paragraph [ref=f2e591]:
+                      - text: "Par défaut : 10 h · Modifié le"
+                      - time [ref=f2e592]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e593]:
+                    - generic [ref=f2e594]: 10 h
+                    - button "Modifier Heure du rappel de la veille" [ref=f2e595] [cursor=pointer]:
+                      - generic [ref=f2e600]: Modifier
+              - listitem [ref=f2e601]:
+                - generic [ref=f2e602]:
+                  - generic [ref=f2e603]:
+                    - paragraph [ref=f2e604]: Rappel avant le début
+                    - paragraph [ref=f2e605]: Rappel envoyé quelques heures avant le début, avec le conseil d’ouvrir son billet avant d’arriver.
+                    - paragraph [ref=f2e606]:
+                      - text: "Par défaut : Activé · Modifié le"
+                      - time [ref=f2e607]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e608]:
+                    - generic [ref=f2e609]: Activé
+                    - button "Modifier Rappel avant le début" [ref=f2e610] [cursor=pointer]:
+                      - generic [ref=f2e615]: Modifier
+              - listitem [ref=f2e616]:
+                - generic [ref=f2e617]:
+                  - generic [ref=f2e618]:
+                    - paragraph [ref=f2e619]: Heures avant le début
+                    - paragraph [ref=f2e620]: Nombre d’heures entre le rappel et le début de l’événement. De 1 à 12.
+                    - paragraph [ref=f2e621]:
+                      - text: "Par défaut : 3 h · Modifié le"
+                      - time [ref=f2e622]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e623]:
+                    - generic [ref=f2e624]: 3 h
+                    - button "Modifier Heures avant le début" [ref=f2e625] [cursor=pointer]:
+                      - generic [ref=f2e630]: Modifier
+              - listitem [ref=f2e631]:
+                - generic [ref=f2e632]:
+                  - generic [ref=f2e633]:
+                    - paragraph [ref=f2e634]: SMS du rappel de la veille
+                    - paragraph [ref=f2e635]: Envoi du SMS en plus de l’application et des notifications push.
+                    - paragraph [ref=f2e636]:
+                      - text: "Par défaut : Toujours · Modifié le"
+                      - time [ref=f2e637]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e638]:
+                    - generic [ref=f2e639]: Toujours
+                    - button "Modifier SMS du rappel de la veille" [ref=f2e640] [cursor=pointer]:
+                      - generic [ref=f2e645]: Modifier
+                - status [ref=f2e646]:
+                  - generic [ref=f2e651]:
+                    - paragraph [ref=f2e652]: Valeur risquée
+                    - generic [ref=f2e653]: Un SMS facturé par détenteur et par événement.
+              - listitem [ref=f2e654]:
+                - generic [ref=f2e655]:
+                  - generic [ref=f2e656]:
+                    - paragraph [ref=f2e657]: SMS du rappel avant le début
+                    - paragraph [ref=f2e658]: Envoi du SMS en plus de l’application et des notifications push.
+                    - paragraph [ref=f2e659]:
+                      - text: "Par défaut : Seulement sans notification push · Modifié le"
+                      - time [ref=f2e660]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e661]:
+                    - generic [ref=f2e662]: Seulement sans notification push
+                    - button "Modifier SMS du rappel avant le début" [ref=f2e663] [cursor=pointer]:
+                      - generic [ref=f2e668]: Modifier
+              - listitem [ref=f2e669]:
+                - generic [ref=f2e670]:
+                  - generic [ref=f2e671]:
+                    - paragraph [ref=f2e672]: Début de la plage sans SMS
+                    - paragraph [ref=f2e673]: Heure de Dakar à partir de laquelle aucun SMS optionnel ne part ; le rappel passe alors par les autres canaux. De 0 à 23.
+                    - paragraph [ref=f2e674]:
+                      - text: "Par défaut : 22 h · Modifié le"
+                      - time [ref=f2e675]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e676]:
+                    - generic [ref=f2e677]: 22 h
+                    - button "Modifier Début de la plage sans SMS" [ref=f2e678] [cursor=pointer]:
+                      - generic [ref=f2e683]: Modifier
+              - listitem [ref=f2e684]:
+                - generic [ref=f2e685]:
+                  - generic [ref=f2e686]:
+                    - paragraph [ref=f2e687]: Fin de la plage sans SMS
+                    - paragraph [ref=f2e688]: Heure de Dakar de fin de la plage. Un début égal à la fin supprime la plage. De 0 à 23.
+                    - paragraph [ref=f2e689]:
+                      - text: "Par défaut : 8 h · Modifié le"
+                      - time [ref=f2e690]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e691]:
+                    - generic [ref=f2e692]: 8 h
+                    - button "Modifier Fin de la plage sans SMS" [ref=f2e693] [cursor=pointer]:
+                      - generic [ref=f2e698]: Modifier
+              - listitem [ref=f2e699]:
+                - generic [ref=f2e700]:
+                  - generic [ref=f2e701]:
+                    - paragraph [ref=f2e702]: Plafond quotidien des SMS optionnels
+                    - paragraph [ref=f2e703]: "Nombre maximal de SMS optionnels (rappels, annonces, signaux aux professionnels) envoyés par jour de Dakar ; au-delà, ils partent sans SMS, par l’application et les notifications push. Les SMS indispensables (achat, transfert, annulation, remboursement, sécurité du compte) ne sont jamais plafonnés. Les administrateurs sont alertés à 80 %. De 0 à 1 000 000 ; 0 : aucun SMS optionnel."
+                    - paragraph [ref=f2e704]:
+                      - text: "Par défaut : 700 SMS · Modifié le"
+                      - time [ref=f2e705]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e706]:
+                    - generic [ref=f2e707]: 700 SMS
+                    - button "Modifier Plafond quotidien des SMS optionnels" [ref=f2e708] [cursor=pointer]:
+                      - generic [ref=f2e713]: Modifier
+              - listitem [ref=f2e714]:
+                - generic [ref=f2e715]:
+                  - generic [ref=f2e716]:
+                    - paragraph [ref=f2e717]: Seuil d’alerte des SMS indispensables du jour
+                    - paragraph [ref=f2e718]: "Nombre de SMS indispensables envoyés dans la journée de Dakar à partir duquel les administrateurs sont alertés, une fois par jour. Ces SMS ne sont jamais plafonnés : le seuil sert à repérer un volume anormal. De 1 à 1 000 000."
+                    - paragraph [ref=f2e719]:
+                      - text: "Par défaut : 2 000 SMS · Modifié le"
+                      - time [ref=f2e720]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e721]:
+                    - generic [ref=f2e722]: 2 000 SMS
+                    - button "Modifier Seuil d’alerte des SMS indispensables du jour" [ref=f2e723] [cursor=pointer]:
+                      - generic [ref=f2e728]: Modifier
+              - listitem [ref=f2e729]:
+                - generic [ref=f2e730]:
+                  - generic [ref=f2e731]:
+                    - paragraph [ref=f2e732]: SMS des rappels pour les billets gratuits
+                    - paragraph [ref=f2e733]: Pour un porteur qui ne détient que des billets gratuits ou des invitations de l’événement. Les rappels arrivent toujours dans l’application et en notification push.
+                    - paragraph [ref=f2e734]:
+                      - text: "Par défaut : Jamais · Modifié le"
+                      - time [ref=f2e735]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e736]:
+                    - generic [ref=f2e737]: Jamais
+                    - button "Modifier SMS des rappels pour les billets gratuits" [ref=f2e738] [cursor=pointer]:
+                      - generic [ref=f2e743]: Modifier
+          - region [ref=f2e744]:
+            - generic [ref=f2e745]:
+              - heading "Salles de fête" [level=2] [ref=f2e746]
+              - paragraph [ref=f2e751]: Frais, acompte, délais de paiement, règles d’annulation et validation des salles.
+            - list [ref=f2e752]:
+              - listitem [ref=f2e753]:
+                - generic [ref=f2e754]:
+                  - generic [ref=f2e755]:
+                    - paragraph [ref=f2e756]: Frais de service des salles
+                    - paragraph [ref=f2e757]: Payés par le client en plus du prix de la salle, arrondis au franc CFA supérieur. De 0 à 50 %.
+                    - paragraph [ref=f2e758]:
+                      - text: "Par défaut : 5 % · Modifié le"
+                      - time [ref=f2e759]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e760]:
+                    - generic [ref=f2e761]: 5 %
+                    - button "Modifier Frais de service des salles" [ref=f2e762] [cursor=pointer]:
+                      - generic [ref=f2e767]: Modifier
+              - listitem [ref=f2e768]:
+                - generic [ref=f2e769]:
+                  - generic [ref=f2e770]:
+                    - paragraph [ref=f2e771]: Commission sur le prix des salles
+                    - paragraph [ref=f2e772]: Part du prix de la salle gardée par Event Village. 0 % au lancement. De 0 à 50 %.
+                    - paragraph [ref=f2e773]:
+                      - text: "Par défaut : 0 % · Modifié le"
+                      - time [ref=f2e774]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e775]:
+                    - generic [ref=f2e776]: 0 %
+                    - button "Modifier Commission sur le prix des salles" [ref=f2e777] [cursor=pointer]:
+                      - generic [ref=f2e782]: Modifier
+              - listitem [ref=f2e783]:
+                - generic [ref=f2e784]:
+                  - generic [ref=f2e785]:
+                    - paragraph [ref=f2e786]: Acompte par défaut
+                    - paragraph [ref=f2e787]: Part du prix de la salle payée à la réservation quand la salle n’a pas choisi son acompte. Entier de 1 à 100.
+                    - paragraph [ref=f2e788]:
+                      - text: "Par défaut : 30 % · Modifié le"
+                      - time [ref=f2e789]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e790]:
+                    - generic [ref=f2e791]: 30 %
+                    - button "Modifier Acompte par défaut" [ref=f2e792] [cursor=pointer]:
+                      - generic [ref=f2e797]: Modifier
+              - listitem [ref=f2e798]:
+                - generic [ref=f2e799]:
+                  - generic [ref=f2e800]:
+                    - paragraph [ref=f2e801]: Solde à payer au plus tard avant la date
+                    - paragraph [ref=f2e802]: Nombre de jours avant la date de la réservation. Plus proche de la date, la réservation se paie en une fois. Entier de 1 à 60.
+                    - paragraph [ref=f2e803]:
+                      - text: "Par défaut : 7 jours · Modifié le"
+                      - time [ref=f2e804]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e805]:
+                    - generic [ref=f2e806]: 7 jours
+                    - button "Modifier Solde à payer au plus tard avant la date" [ref=f2e807] [cursor=pointer]:
+                      - generic [ref=f2e812]: Modifier
+              - listitem [ref=f2e813]:
+                - generic [ref=f2e814]:
+                  - generic [ref=f2e815]:
+                    - paragraph [ref=f2e816]: Paiement en une fois si le solde serait dû dans moins de
+                    - paragraph [ref=f2e817]: "Quand l’échéance du solde tombe dans moins de ce nombre d’heures, le client paie tout en une fois : il a toujours au moins ce temps pour payer le solde après l’acompte. Entier de 1 à 168."
+                    - paragraph [ref=f2e818]:
+                      - text: "Par défaut : 24 h · Modifié le"
+                      - time [ref=f2e819]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e820]:
+                    - generic [ref=f2e821]: 24 h
+                    - button "Modifier Paiement en une fois si le solde serait dû dans moins de" [ref=f2e822] [cursor=pointer]:
+                      - generic [ref=f2e827]: Modifier
+              - listitem [ref=f2e828]:
+                - generic [ref=f2e829]:
+                  - generic [ref=f2e830]:
+                    - paragraph [ref=f2e831]: Durée de garde d’une réservation non payée
+                    - paragraph [ref=f2e832]: Temps pendant lequel la date est tenue pour le client qui paie. Ensuite, elle est rendue. Entier de 5 à 60.
+                    - paragraph [ref=f2e833]:
+                      - text: "Par défaut : 15 min · Modifié le"
+                      - time [ref=f2e834]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e835]:
+                    - generic [ref=f2e836]: 15 min
+                    - button "Modifier Durée de garde d’une réservation non payée" [ref=f2e837] [cursor=pointer]:
+                      - generic [ref=f2e842]: Modifier
+              - listitem [ref=f2e843]:
+                - generic [ref=f2e844]:
+                  - generic [ref=f2e845]:
+                    - paragraph [ref=f2e846]: Validation des salles
+                    - paragraph [ref=f2e847]: "Activé : une nouvelle salle n’est visible qu’après validation par l’administration."
+                    - paragraph [ref=f2e848]:
+                      - text: "Par défaut : Activé · Modifié le"
+                      - time [ref=f2e849]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e850]:
+                    - generic [ref=f2e851]: Activé
+                    - button "Modifier Validation des salles" [ref=f2e852] [cursor=pointer]:
+                      - generic [ref=f2e857]: Modifier
+              - listitem [ref=f2e858]:
+                - generic [ref=f2e859]:
+                  - generic [ref=f2e860]:
+                    - paragraph [ref=f2e861]: Part remboursée dans la tranche intermédiaire
+                    - paragraph [ref=f2e862]: Part de ce que le client a payé qui lui est rendue entre les deux seuils d’une règle d’annulation. Entier de 1 à 99.
+                    - paragraph [ref=f2e863]:
+                      - text: "Par défaut : 50 % · Modifié le"
+                      - time [ref=f2e864]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e865]:
+                    - generic [ref=f2e866]: 50 %
+                    - button "Modifier Part remboursée dans la tranche intermédiaire" [ref=f2e867] [cursor=pointer]:
+                      - generic [ref=f2e872]: Modifier
+              - listitem [ref=f2e873]:
+                - generic [ref=f2e874]:
+                  - generic [ref=f2e875]:
+                    - paragraph [ref=f2e876]: "Règle souple : remboursement total jusqu’à"
+                    - paragraph [ref=f2e877]: Jours avant la date. Plus tard, le client récupère la part intermédiaire.
+                    - paragraph [ref=f2e878]:
+                      - text: "Par défaut : 7 jours · Modifié le"
+                      - time [ref=f2e879]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e880]:
+                    - generic [ref=f2e881]: 7 jours
+                    - 'button "Modifier Règle souple : remboursement total jusqu’à" [ref=f2e882] [cursor=pointer]':
+                      - generic [ref=f2e887]: Modifier
+              - listitem [ref=f2e888]:
+                - generic [ref=f2e889]:
+                  - generic [ref=f2e890]:
+                    - paragraph [ref=f2e891]: "Règle modérée : remboursement total jusqu’à"
+                    - paragraph [ref=f2e892]: Jours avant la date.
+                    - paragraph [ref=f2e893]:
+                      - text: "Par défaut : 30 jours · Modifié le"
+                      - time [ref=f2e894]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e895]:
+                    - generic [ref=f2e896]: 30 jours
+                    - 'button "Modifier Règle modérée : remboursement total jusqu’à" [ref=f2e897] [cursor=pointer]':
+                      - generic [ref=f2e902]: Modifier
+              - listitem [ref=f2e903]:
+                - generic [ref=f2e904]:
+                  - generic [ref=f2e905]:
+                    - paragraph [ref=f2e906]: "Règle modérée : remboursement partiel jusqu’à"
+                    - paragraph [ref=f2e907]: Jours avant la date. Plus tard, rien n’est remboursé.
+                    - paragraph [ref=f2e908]:
+                      - text: "Par défaut : 7 jours · Modifié le"
+                      - time [ref=f2e909]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e910]:
+                    - generic [ref=f2e911]: 7 jours
+                    - 'button "Modifier Règle modérée : remboursement partiel jusqu’à" [ref=f2e912] [cursor=pointer]':
+                      - generic [ref=f2e917]: Modifier
+              - listitem [ref=f2e918]:
+                - generic [ref=f2e919]:
+                  - generic [ref=f2e920]:
+                    - paragraph [ref=f2e921]: "Règle stricte : remboursement partiel jusqu’à"
+                    - paragraph [ref=f2e922]: Jours avant la date. Plus tard, rien n’est remboursé.
+                    - paragraph [ref=f2e923]:
+                      - text: "Par défaut : 30 jours · Modifié le"
+                      - time [ref=f2e924]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e925]:
+                    - generic [ref=f2e926]: 30 jours
+                    - 'button "Modifier Règle stricte : remboursement partiel jusqu’à" [ref=f2e927] [cursor=pointer]':
+                      - generic [ref=f2e932]: Modifier
+          - region [ref=f2e933]:
+            - generic [ref=f2e934]:
+              - heading "Restaurants et tables" [level=2] [ref=f2e935]
+              - paragraph [ref=f2e941]: Frais, durée d’une réservation, délais d’attente et de réponse, absence, annulation et validation des établissements.
+            - list [ref=f2e942]:
+              - listitem [ref=f2e943]:
+                - generic [ref=f2e944]:
+                  - generic [ref=f2e945]:
+                    - paragraph [ref=f2e946]: Frais de service des tables
+                    - paragraph [ref=f2e947]: Payés par le client en plus de l’acompte, arrondis au franc CFA supérieur. De 0 à 50 %.
+                    - paragraph [ref=f2e948]:
+                      - text: "Par défaut : 5 % · Modifié le"
+                      - time [ref=f2e949]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e950]:
+                    - generic [ref=f2e951]: 5 %
+                    - button "Modifier Frais de service des tables" [ref=f2e952] [cursor=pointer]:
+                      - generic [ref=f2e957]: Modifier
+              - listitem [ref=f2e958]:
+                - generic [ref=f2e959]:
+                  - generic [ref=f2e960]:
+                    - paragraph [ref=f2e961]: Commission sur l’acompte des tables
+                    - paragraph [ref=f2e962]: Part de l’acompte gardée par Event Village. 0 % au lancement. De 0 à 50 %.
+                    - paragraph [ref=f2e963]:
+                      - text: "Par défaut : 0 % · Modifié le"
+                      - time [ref=f2e964]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e965]:
+                    - generic [ref=f2e966]: 0 %
+                    - button "Modifier Commission sur l’acompte des tables" [ref=f2e967] [cursor=pointer]:
+                      - generic [ref=f2e972]: Modifier
+              - listitem [ref=f2e973]:
+                - generic [ref=f2e974]:
+                  - generic [ref=f2e975]:
+                    - paragraph [ref=f2e976]: Validation des établissements
+                    - paragraph [ref=f2e977]: "Activé : un nouveau restaurant, bar ou espace n’est visible qu’après validation par l’administration."
+                    - paragraph [ref=f2e978]:
+                      - text: "Par défaut : Activé · Modifié le"
+                      - time [ref=f2e979]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e980]:
+                    - generic [ref=f2e981]: Activé
+                    - button "Modifier Validation des établissements" [ref=f2e982] [cursor=pointer]:
+                      - generic [ref=f2e987]: Modifier
+              - listitem [ref=f2e988]:
+                - generic [ref=f2e989]:
+                  - generic [ref=f2e990]:
+                    - paragraph [ref=f2e991]: Durée d’une réservation de table par défaut
+                    - paragraph [ref=f2e992]: Temps pendant lequel la table est réservée au client. Chaque établissement peut choisir la sienne. De 30 à 360, par quart d’heure.
+                    - paragraph [ref=f2e993]:
+                      - text: "Par défaut : 120 min · Modifié le"
+                      - time [ref=f2e994]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e995]:
+                    - generic [ref=f2e996]: 120 min
+                    - button "Modifier Durée d’une réservation de table par défaut" [ref=f2e997] [cursor=pointer]:
+                      - generic [ref=f2e1002]: Modifier
+              - listitem [ref=f2e1003]:
+                - generic [ref=f2e1004]:
+                  - generic [ref=f2e1005]:
+                    - paragraph [ref=f2e1006]: Durée de garde d’une table non payée
+                    - paragraph [ref=f2e1007]: Temps pendant lequel la table est tenue pour le client qui paie l’acompte. Ensuite, elle est rendue. Entier de 5 à 60.
+                    - paragraph [ref=f2e1008]:
+                      - text: "Par défaut : 15 min · Modifié le"
+                      - time [ref=f2e1009]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1010]:
+                    - generic [ref=f2e1011]: 15 min
+                    - button "Modifier Durée de garde d’une table non payée" [ref=f2e1012] [cursor=pointer]:
+                      - generic [ref=f2e1017]: Modifier
+              - listitem [ref=f2e1018]:
+                - generic [ref=f2e1019]:
+                  - generic [ref=f2e1020]:
+                    - paragraph [ref=f2e1021]: Délai de réponse d’un établissement
+                    - paragraph [ref=f2e1022]: "Pour un établissement qui accepte les demandes lui-même : sans réponse dans ce délai, la demande est annulée et l’acompte rendu. Entier de 15 à 1440."
+                    - paragraph [ref=f2e1023]:
+                      - text: "Par défaut : 120 min · Modifié le"
+                      - time [ref=f2e1024]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1025]:
+                    - generic [ref=f2e1026]: 120 min
+                    - button "Modifier Délai de réponse d’un établissement" [ref=f2e1027] [cursor=pointer]:
+                      - generic [ref=f2e1032]: Modifier
+              - listitem [ref=f2e1033]:
+                - generic [ref=f2e1034]:
+                  - generic [ref=f2e1035]:
+                    - paragraph [ref=f2e1036]: "Client absent : table libérée après"
+                    - paragraph [ref=f2e1037]: Minutes après l’heure de la réservation. Le client est alors marqué absent et l’acompte n’est pas rendu. Entier de 5 à 180.
+                    - paragraph [ref=f2e1038]:
+                      - text: "Par défaut : 30 min · Modifié le"
+                      - time [ref=f2e1039]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1040]:
+                    - generic [ref=f2e1041]: 30 min
+                    - 'button "Modifier Client absent : table libérée après" [ref=f2e1042] [cursor=pointer]':
+                      - generic [ref=f2e1047]: Modifier
+              - listitem [ref=f2e1048]:
+                - generic [ref=f2e1049]:
+                  - generic [ref=f2e1050]:
+                    - paragraph [ref=f2e1051]: Acompte rendu si le client annule au moins
+                    - paragraph [ref=f2e1052]: Heures avant l’heure de la réservation. Plus tard, l’acompte n’est pas rendu. Entier de 0 à 72.
+                    - paragraph [ref=f2e1053]:
+                      - text: "Par défaut : 2 h · Modifié le"
+                      - time [ref=f2e1054]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1055]:
+                    - generic [ref=f2e1056]: 2 h
+                    - button "Modifier Acompte rendu si le client annule au moins" [ref=f2e1057] [cursor=pointer]:
+                      - generic [ref=f2e1062]: Modifier
+              - listitem [ref=f2e1063]:
+                - generic [ref=f2e1064]:
+                  - generic [ref=f2e1065]:
+                    - paragraph [ref=f2e1066]: Réservations non payées au plus par client
+                    - paragraph [ref=f2e1067]: "Réservations à venir sans acompte payé qu’un client peut tenir en même temps : attentes de paiement, demandes en attente de réponse et réservations gratuites confirmées. Une seule table par client et par créneau dans un établissement. Entier de 1 à 10."
+                    - paragraph [ref=f2e1068]:
+                      - text: "Par défaut : 3 réservations · Modifié le"
+                      - time [ref=f2e1069]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1070]:
+                    - generic [ref=f2e1071]: 3 réservations
+                    - button "Modifier Réservations non payées au plus par client" [ref=f2e1072] [cursor=pointer]:
+                      - generic [ref=f2e1077]: Modifier
+              - listitem [ref=f2e1078]:
+                - generic [ref=f2e1079]:
+                  - generic [ref=f2e1080]:
+                    - paragraph [ref=f2e1081]: Rappel au client avant l’heure
+                    - paragraph [ref=f2e1082]: Heures avant l’heure de la réservation. Entier de 1 à 24.
+                    - paragraph [ref=f2e1083]:
+                      - text: "Par défaut : 3 h · Modifié le"
+                      - time [ref=f2e1084]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1085]:
+                    - generic [ref=f2e1086]: 3 h
+                    - button "Modifier Rappel au client avant l’heure" [ref=f2e1087] [cursor=pointer]:
+                      - generic [ref=f2e1092]: Modifier
+          - region [ref=f2e1093]:
+            - generic [ref=f2e1094]:
+              - heading "Services en préparation" [level=2] [ref=f2e1095]
+              - paragraph [ref=f2e1099]: "Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER."
+            - list [ref=f2e1100]:
+              - listitem [ref=f2e1101]:
+                - generic [ref=f2e1102]:
+                  - generic [ref=f2e1103]:
+                    - paragraph [ref=f2e1104]: Salles de fête
+                    - paragraph [ref=f2e1105]: Pas prêt pour le public
+                    - paragraph [ref=f2e1106]: "Réservation de salles par les clients et gestion des salles par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent."
+                    - paragraph [ref=f2e1107]:
+                      - text: "Par défaut : Désactivé · Modifié le"
+                      - time [ref=f2e1108]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1109]:
+                    - generic [ref=f2e1110]: Désactivé
+                    - button "Modifier Salles de fête" [ref=f2e1111] [cursor=pointer]:
+                      - generic [ref=f2e1116]: Modifier
+              - listitem [ref=f2e1117]:
+                - generic [ref=f2e1118]:
+                  - generic [ref=f2e1119]:
+                    - paragraph [ref=f2e1120]: Réservation de tables
+                    - paragraph [ref=f2e1121]: Pas prêt pour le public
+                    - paragraph [ref=f2e1122]: "Réservation de tables dans les restaurants et gestion des tables par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent."
+                    - paragraph [ref=f2e1123]:
+                      - text: "Par défaut : Désactivé · Modifié le"
+                      - time [ref=f2e1124]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1125]:
+                    - generic [ref=f2e1126]: Désactivé
+                    - button "Modifier Réservation de tables" [ref=f2e1127] [cursor=pointer]:
+                      - generic [ref=f2e1132]: Modifier
+              - listitem [ref=f2e1133]:
+                - generic [ref=f2e1134]:
+                  - generic [ref=f2e1135]:
+                    - paragraph [ref=f2e1136]: Commandes de repas
+                    - paragraph [ref=f2e1137]: Pas prêt pour le public
+                    - paragraph [ref=f2e1138]: "Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés."
+                    - paragraph [ref=f2e1139]:
+                      - text: "Par défaut : Désactivé · Modifié le"
+                      - time [ref=f2e1140]: jeu. 19 nov. 2026 à 10:33
+                  - generic [ref=f2e1141]:
+                    - generic [ref=f2e1142]: Désactivé
+                    - button "Modifier Commandes de repas" [ref=f2e1143] [cursor=pointer]:
+                      - generic [ref=f2e1148]: Modifier
+          - region [ref=f2e1149]:
+            - heading "Historique des modifications" [level=2] [ref=f2e1150]
+            - list [ref=f2e1155]:
+              - listitem [ref=f2e1156]:
+                - paragraph [ref=f2e1157]: Frais de service des tables
+                - paragraph [ref=f2e1158]:
+                  - text: — →
+                  - generic [ref=f2e1159]: devient
+                  - text: 5 %
+                - paragraph [ref=f2e1160]:
+                  - time [ref=f2e1161]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1162]:
+                - paragraph [ref=f2e1163]: Rappel au client avant l’heure
+                - paragraph [ref=f2e1164]:
+                  - text: — →
+                  - generic [ref=f2e1165]: devient
+                  - text: 3 h
+                - paragraph [ref=f2e1166]:
+                  - time [ref=f2e1167]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1168]:
+                - paragraph [ref=f2e1169]: Réservations non payées au plus par client
+                - paragraph [ref=f2e1170]:
+                  - text: — →
+                  - generic [ref=f2e1171]: devient
+                  - text: 3 réservations
+                - paragraph [ref=f2e1172]:
+                  - time [ref=f2e1173]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1174]:
+                - paragraph [ref=f2e1175]: Acompte rendu si le client annule au moins
+                - paragraph [ref=f2e1176]:
+                  - text: — →
+                  - generic [ref=f2e1177]: devient
+                  - text: 2 h
+                - paragraph [ref=f2e1178]:
+                  - time [ref=f2e1179]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1180]:
+                - paragraph [ref=f2e1181]: "Client absent : table libérée après"
+                - paragraph [ref=f2e1182]:
+                  - text: — →
+                  - generic [ref=f2e1183]: devient
+                  - text: 30 min
+                - paragraph [ref=f2e1184]:
+                  - time [ref=f2e1185]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1186]:
+                - paragraph [ref=f2e1187]: Délai de réponse d’un établissement
+                - paragraph [ref=f2e1188]:
+                  - text: — →
+                  - generic [ref=f2e1189]: devient
+                  - text: 120 min
+                - paragraph [ref=f2e1190]:
+                  - time [ref=f2e1191]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1192]:
+                - paragraph [ref=f2e1193]: Durée de garde d’une table non payée
+                - paragraph [ref=f2e1194]:
+                  - text: — →
+                  - generic [ref=f2e1195]: devient
+                  - text: 15 min
+                - paragraph [ref=f2e1196]:
+                  - time [ref=f2e1197]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1198]:
+                - paragraph [ref=f2e1199]: Durée d’une réservation de table par défaut
+                - paragraph [ref=f2e1200]:
+                  - text: — →
+                  - generic [ref=f2e1201]: devient
+                  - text: 120 min
+                - paragraph [ref=f2e1202]:
+                  - time [ref=f2e1203]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1204]:
+                - paragraph [ref=f2e1205]: Validation des établissements
+                - paragraph [ref=f2e1206]:
+                  - text: — →
+                  - generic [ref=f2e1207]: devient
+                  - text: Activé
+                - paragraph [ref=f2e1208]:
+                  - time [ref=f2e1209]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1210]:
+                - paragraph [ref=f2e1211]: Commission sur l’acompte des tables
+                - paragraph [ref=f2e1212]:
+                  - text: — →
+                  - generic [ref=f2e1213]: devient
+                  - text: 0 %
+                - paragraph [ref=f2e1214]:
+                  - time [ref=f2e1215]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1216]:
+                - paragraph [ref=f2e1217]: Paiement en une fois si le solde serait dû dans moins de
+                - paragraph [ref=f2e1218]:
+                  - text: — →
+                  - generic [ref=f2e1219]: devient
+                  - text: 24 h
+                - paragraph [ref=f2e1220]:
+                  - time [ref=f2e1221]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1222]:
+                - paragraph [ref=f2e1223]: Commission sur le prix des salles
+                - paragraph [ref=f2e1224]:
+                  - text: — →
+                  - generic [ref=f2e1225]: devient
+                  - text: 0 %
+                - paragraph [ref=f2e1226]:
+                  - time [ref=f2e1227]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1228]:
+                - paragraph [ref=f2e1229]: "Règle stricte : remboursement partiel jusqu’à"
+                - paragraph [ref=f2e1230]:
+                  - text: — →
+                  - generic [ref=f2e1231]: devient
+                  - text: 30 jours
+                - paragraph [ref=f2e1232]:
+                  - time [ref=f2e1233]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1234]:
+                - paragraph [ref=f2e1235]: "Règle modérée : remboursement partiel jusqu’à"
+                - paragraph [ref=f2e1236]:
+                  - text: — →
+                  - generic [ref=f2e1237]: devient
+                  - text: 7 jours
+                - paragraph [ref=f2e1238]:
+                  - time [ref=f2e1239]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1240]:
+                - paragraph [ref=f2e1241]: "Règle modérée : remboursement total jusqu’à"
+                - paragraph [ref=f2e1242]:
+                  - text: — →
+                  - generic [ref=f2e1243]: devient
+                  - text: 30 jours
+                - paragraph [ref=f2e1244]:
+                  - time [ref=f2e1245]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1246]:
+                - paragraph [ref=f2e1247]: "Règle souple : remboursement total jusqu’à"
+                - paragraph [ref=f2e1248]:
+                  - text: — →
+                  - generic [ref=f2e1249]: devient
+                  - text: 7 jours
+                - paragraph [ref=f2e1250]:
+                  - time [ref=f2e1251]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1252]:
+                - paragraph [ref=f2e1253]: Part remboursée dans la tranche intermédiaire
+                - paragraph [ref=f2e1254]:
+                  - text: — →
+                  - generic [ref=f2e1255]: devient
+                  - text: 50 %
+                - paragraph [ref=f2e1256]:
+                  - time [ref=f2e1257]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1258]:
+                - paragraph [ref=f2e1259]: Validation des salles
+                - paragraph [ref=f2e1260]:
+                  - text: — →
+                  - generic [ref=f2e1261]: devient
+                  - text: Activé
+                - paragraph [ref=f2e1262]:
+                  - time [ref=f2e1263]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1264]:
+                - paragraph [ref=f2e1265]: Durée de garde d’une réservation non payée
+                - paragraph [ref=f2e1266]:
+                  - text: — →
+                  - generic [ref=f2e1267]: devient
+                  - text: 15 min
+                - paragraph [ref=f2e1268]:
+                  - time [ref=f2e1269]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1270]:
+                - paragraph [ref=f2e1271]: Solde à payer au plus tard avant la date
+                - paragraph [ref=f2e1272]:
+                  - text: — →
+                  - generic [ref=f2e1273]: devient
+                  - text: 7 jours
+                - paragraph [ref=f2e1274]:
+                  - time [ref=f2e1275]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1276]:
+                - paragraph [ref=f2e1277]: Acompte par défaut
+                - paragraph [ref=f2e1278]:
+                  - text: — →
+                  - generic [ref=f2e1279]: devient
+                  - text: 30 %
+                - paragraph [ref=f2e1280]:
+                  - time [ref=f2e1281]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1282]:
+                - paragraph [ref=f2e1283]: Frais de service des salles
+                - paragraph [ref=f2e1284]:
+                  - text: — →
+                  - generic [ref=f2e1285]: devient
+                  - text: 5 %
+                - paragraph [ref=f2e1286]:
+                  - time [ref=f2e1287]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1288]:
+                - paragraph [ref=f2e1289]: Montant fixe de la réserve de prudence
+                - paragraph [ref=f2e1290]:
+                  - text: — →
+                  - generic [ref=f2e1291]: devient
+                  - text: 0 F CFA
+                - paragraph [ref=f2e1292]:
+                  - time [ref=f2e1293]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1294]:
+                - paragraph [ref=f2e1295]: Réserve de prudence
+                - paragraph [ref=f2e1296]:
+                  - text: — →
+                  - generic [ref=f2e1297]: devient
+                  - text: "Automatique : encaissements des 3 derniers jours"
+                - paragraph [ref=f2e1298]:
+                  - time [ref=f2e1299]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1300]:
+                - paragraph [ref=f2e1301]: Téléphone du support
+                - paragraph [ref=f2e1302]:
+                  - text: — →
+                  - generic [ref=f2e1303]: devient
+                  - text: Non renseigné
+                - paragraph [ref=f2e1304]:
+                  - time [ref=f2e1305]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1306]:
+                - paragraph [ref=f2e1307]: Email du support
+                - paragraph [ref=f2e1308]:
+                  - text: — →
+                  - generic [ref=f2e1309]: devient
+                  - text: Non renseigné
+                - paragraph [ref=f2e1310]:
+                  - time [ref=f2e1311]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1312]:
+                - paragraph [ref=f2e1313]: Numéro WhatsApp du support
+                - paragraph [ref=f2e1314]:
+                  - text: — →
+                  - generic [ref=f2e1315]: devient
+                  - text: Non renseigné
+                - paragraph [ref=f2e1316]:
+                  - time [ref=f2e1317]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1318]:
+                - paragraph [ref=f2e1319]: "Alerte de refus à une porte : durée observée"
+                - paragraph [ref=f2e1320]:
+                  - text: — →
+                  - generic [ref=f2e1321]: devient
+                  - text: 5 min
+                - paragraph [ref=f2e1322]:
+                  - time [ref=f2e1323]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1324]:
+                - paragraph [ref=f2e1325]: "Alerte de refus à une porte : nombre de refus"
+                - paragraph [ref=f2e1326]:
+                  - text: — →
+                  - generic [ref=f2e1327]: devient
+                  - text: 10 refus
+                - paragraph [ref=f2e1328]:
+                  - time [ref=f2e1329]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1330]:
+                - paragraph [ref=f2e1331]: Prix minimum d’un billet payant (F CFA)
+                - paragraph [ref=f2e1332]:
+                  - text: — →
+                  - generic [ref=f2e1333]: devient
+                  - text: 100 F CFA
+                - paragraph [ref=f2e1334]:
+                  - time [ref=f2e1335]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1336]:
+                - paragraph [ref=f2e1337]: Durée de garde des places pendant un paiement (minutes)
+                - paragraph [ref=f2e1338]:
+                  - text: — →
+                  - generic [ref=f2e1339]: devient
+                  - text: 10 min
+                - paragraph [ref=f2e1340]:
+                  - time [ref=f2e1341]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1342]:
+                - paragraph [ref=f2e1343]: Seuil d’alerte des SMS indispensables du jour
+                - paragraph [ref=f2e1344]:
+                  - text: — →
+                  - generic [ref=f2e1345]: devient
+                  - text: 2 000 SMS
+                - paragraph [ref=f2e1346]:
+                  - time [ref=f2e1347]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1348]:
+                - paragraph [ref=f2e1349]: Réservation de tables
+                - paragraph [ref=f2e1350]:
+                  - text: — →
+                  - generic [ref=f2e1351]: devient
+                  - text: Désactivé
+                - paragraph [ref=f2e1352]:
+                  - time [ref=f2e1353]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1354]:
+                - paragraph [ref=f2e1355]: Salles de fête
+                - paragraph [ref=f2e1356]:
+                  - text: — →
+                  - generic [ref=f2e1357]: devient
+                  - text: Désactivé
+                - paragraph [ref=f2e1358]:
+                  - time [ref=f2e1359]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1360]:
+                - paragraph [ref=f2e1361]: SMS des rappels pour les billets gratuits
+                - paragraph [ref=f2e1362]:
+                  - text: — →
+                  - generic [ref=f2e1363]: devient
+                  - text: Jamais
+                - paragraph [ref=f2e1364]:
+                  - time [ref=f2e1365]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1366]:
+                - paragraph [ref=f2e1367]: Plafond quotidien des SMS optionnels
+                - paragraph [ref=f2e1368]:
+                  - text: — →
+                  - generic [ref=f2e1369]: devient
+                  - text: 700 SMS
+                - paragraph [ref=f2e1370]:
+                  - time [ref=f2e1371]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1372]:
+                - paragraph [ref=f2e1373]: Réglage retiré ou sans libellé
+                - paragraph [ref=f2e1374]:
+                  - text: 2 000 →
+                  - generic [ref=f2e1375]: devient
+                  - text: —
+                - paragraph [ref=f2e1376]:
+                  - time [ref=f2e1377]: jeu. 19 nov. 2026 à 10:33
+                  - text: "· Par Automatique · Motif : suppression"
+              - listitem [ref=f2e1378]:
+                - paragraph [ref=f2e1379]: Commandes de repas
+                - paragraph [ref=f2e1380]:
+                  - text: — →
+                  - generic [ref=f2e1381]: devient
+                  - text: Désactivé
+                - paragraph [ref=f2e1382]:
+                  - time [ref=f2e1383]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1384]:
+                - paragraph [ref=f2e1385]: Heures avant le début
+                - paragraph [ref=f2e1386]:
+                  - text: — →
+                  - generic [ref=f2e1387]: devient
+                  - text: 3 h
+                - paragraph [ref=f2e1388]:
+                  - time [ref=f2e1389]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1390]:
+                - paragraph [ref=f2e1391]: Rappel avant le début
+                - paragraph [ref=f2e1392]:
+                  - text: — →
+                  - generic [ref=f2e1393]: devient
+                  - text: Activé
+                - paragraph [ref=f2e1394]:
+                  - time [ref=f2e1395]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1396]:
+                - paragraph [ref=f2e1397]: Heure du rappel de la veille
+                - paragraph [ref=f2e1398]:
+                  - text: — →
+                  - generic [ref=f2e1399]: devient
+                  - text: 10 h
+                - paragraph [ref=f2e1400]:
+                  - time [ref=f2e1401]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1402]:
+                - paragraph [ref=f2e1403]: Rappel la veille
+                - paragraph [ref=f2e1404]:
+                  - text: — →
+                  - generic [ref=f2e1405]: devient
+                  - text: Activé
+                - paragraph [ref=f2e1406]:
+                  - time [ref=f2e1407]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1408]:
+                - paragraph [ref=f2e1409]: Réglage retiré ou sans libellé
+                - paragraph [ref=f2e1410]:
+                  - text: — →
+                  - generic [ref=f2e1411]: devient
+                  - text: 2 000
+                - paragraph [ref=f2e1412]:
+                  - time [ref=f2e1413]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1414]:
+                - paragraph [ref=f2e1415]: Fin de la plage sans SMS
+                - paragraph [ref=f2e1416]:
+                  - text: — →
+                  - generic [ref=f2e1417]: devient
+                  - text: 8 h
+                - paragraph [ref=f2e1418]:
+                  - time [ref=f2e1419]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1420]:
+                - paragraph [ref=f2e1421]: Début de la plage sans SMS
+                - paragraph [ref=f2e1422]:
+                  - text: — →
+                  - generic [ref=f2e1423]: devient
+                  - text: 22 h
+                - paragraph [ref=f2e1424]:
+                  - time [ref=f2e1425]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1426]:
+                - paragraph [ref=f2e1427]: SMS du rappel avant le début
+                - paragraph [ref=f2e1428]:
+                  - text: — →
+                  - generic [ref=f2e1429]: devient
+                  - text: Seulement sans notification push
+                - paragraph [ref=f2e1430]:
+                  - time [ref=f2e1431]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1432]:
+                - paragraph [ref=f2e1433]: SMS du rappel de la veille
+                - paragraph [ref=f2e1434]:
+                  - text: — →
+                  - generic [ref=f2e1435]: devient
+                  - text: Toujours
+                - paragraph [ref=f2e1436]:
+                  - time [ref=f2e1437]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1438]:
+                - paragraph [ref=f2e1439]: Seuil « bientôt complet »
+                - paragraph [ref=f2e1440]:
+                  - text: — →
+                  - generic [ref=f2e1441]: devient
+                  - text: 10 places
+                - paragraph [ref=f2e1442]:
+                  - time [ref=f2e1443]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1444]:
+                - paragraph [ref=f2e1445]: Ouverture du contrôle avant le début
+                - paragraph [ref=f2e1446]:
+                  - text: — →
+                  - generic [ref=f2e1447]: devient
+                  - text: 6 h
+                - paragraph [ref=f2e1448]:
+                  - time [ref=f2e1449]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1450]:
+                - paragraph [ref=f2e1451]: Vente au guichet en espèces
+                - paragraph [ref=f2e1452]:
+                  - text: — →
+                  - generic [ref=f2e1453]: devient
+                  - text: Activé
+                - paragraph [ref=f2e1454]:
+                  - time [ref=f2e1455]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1456]:
+                - paragraph [ref=f2e1457]: Fermeture du contrôle après la fin
+                - paragraph [ref=f2e1458]:
+                  - text: — →
+                  - generic [ref=f2e1459]: devient
+                  - text: 6 h
+                - paragraph [ref=f2e1460]:
+                  - time [ref=f2e1461]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1462]:
+                - paragraph [ref=f2e1463]: Saisie manuelle d’un numéro de billet
+                - paragraph [ref=f2e1464]:
+                  - text: — →
+                  - generic [ref=f2e1465]: devient
+                  - text: Contrôleur affecté seul
+                - paragraph [ref=f2e1466]:
+                  - time [ref=f2e1467]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1468]:
+                - paragraph [ref=f2e1469]: Frais de service
+                - paragraph [ref=f2e1470]:
+                  - text: — →
+                  - generic [ref=f2e1471]: devient
+                  - text: 5 %
+                - paragraph [ref=f2e1472]:
+                  - time [ref=f2e1473]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1474]:
+                - paragraph [ref=f2e1475]: Délai de validation des commissions
+                - paragraph [ref=f2e1476]:
+                  - text: — →
+                  - generic [ref=f2e1477]: devient
+                  - text: 7 jours
+                - paragraph [ref=f2e1478]:
+                  - time [ref=f2e1479]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1480]:
+                - paragraph [ref=f2e1481]: Retraits par virement bancaire
+                - paragraph [ref=f2e1482]:
+                  - text: — →
+                  - generic [ref=f2e1483]: devient
+                  - text: Désactivé
+                - paragraph [ref=f2e1484]:
+                  - time [ref=f2e1485]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1486]:
+                - paragraph [ref=f2e1487]: Montant minimum de retrait
+                - paragraph [ref=f2e1488]:
+                  - text: — →
+                  - generic [ref=f2e1489]: devient
+                  - text: 5 000 F CFA
+                - paragraph [ref=f2e1490]:
+                  - time [ref=f2e1491]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1492]:
+                - paragraph [ref=f2e1493]: Frais de retrait
+                - paragraph [ref=f2e1494]:
+                  - text: — →
+                  - generic [ref=f2e1495]: devient
+                  - text: 1 %
+                - paragraph [ref=f2e1496]:
+                  - time [ref=f2e1497]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1498]:
+                - paragraph [ref=f2e1499]: Délai après la fin de l’événement
+                - paragraph [ref=f2e1500]:
+                  - text: — →
+                  - generic [ref=f2e1501]: devient
+                  - text: 48 h
+                - paragraph [ref=f2e1502]:
+                  - time [ref=f2e1503]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1504]:
+                - paragraph [ref=f2e1505]: Délai de garde des ventes
+                - paragraph [ref=f2e1506]:
+                  - text: — →
+                  - generic [ref=f2e1507]: devient
+                  - text: Activé
+                - paragraph [ref=f2e1508]:
+                  - time [ref=f2e1509]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1510]:
+                - paragraph [ref=f2e1511]: Frais agrégateur d’une annulation
+                - paragraph [ref=f2e1512]:
+                  - text: — →
+                  - generic [ref=f2e1513]: devient
+                  - text: Event Village
+                - paragraph [ref=f2e1514]:
+                  - time [ref=f2e1515]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1516]:
+                - paragraph [ref=f2e1517]: Frais agrégateur Orange Money
+                - paragraph [ref=f2e1518]:
+                  - text: — →
+                  - generic [ref=f2e1519]: devient
+                  - text: 1,5 %
+                - paragraph [ref=f2e1520]:
+                  - time [ref=f2e1521]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+              - listitem [ref=f2e1522]:
+                - paragraph [ref=f2e1523]: Frais agrégateur Wave
+                - paragraph [ref=f2e1524]:
+                  - text: — →
+                  - generic [ref=f2e1525]: devient
+                  - text: 1,5 %
+                - paragraph [ref=f2e1526]:
+                  - time [ref=f2e1527]: jeu. 19 nov. 2026 à 10:33
+                  - text: · Par Automatique
+  - alert [ref=f2e1528]
+```
+
+# Test source
+
+```ts
+  6   |  * aussi en paysage), pour que tout ce qui se décide au chargement suive la largeur. En clair : toutes les largeurs ; en
+  7   |  * sombre : les largeurs capturées (360, 768, 1440) et le paysage. Les contrôles sont bloquants à chaque largeur contrôlée.
+  8   |  *
+  9   |  * Captures (JPEG, échelle 1, fenêtre visible) : .e2e-captures/captures-responsive/<page>__<largeur>__<thème>.jpg ;
+  10  |  * résultats : .e2e-captures/responsive/<page>__<thème>.json, résumés par scripts/e2e/responsive-resume.mjs
+  11  |  * (responsive.tsv et responsive.txt, publiés sur ci-results).
+  12  |  */
+  13  | import fs from 'node:fs';
+  14  | import path from 'node:path';
+  15  | import type { Page } from '@playwright/test';
+  16  | import { test, expect, type CaptureRole, type ThemeKey } from './support/fixtures';
+  17  | import { readDemoIds, E2E_OUTPUT_DIR, type DemoIds } from './support/demo-ids';
+  18  | import { fakeScanMode, installFakeCamera } from './support/fake-camera';
+  19  | import {
+  20  |     PHONE_MAX_WIDTH, RESPONSIVE_CAPTURE_WIDTHS, RESPONSIVE_LANDSCAPE, RESPONSIVE_PAGES, RESPONSIVE_WIDTHS, type ResponsivePage,
+  21  | } from './support/responsive-pages';
+  22  | import { runResponsiveChecks } from './support/responsive-checks';
+  23  | 
+  24  | const RESULTS = path.join(E2E_OUTPUT_DIR, 'responsive');
+  25  | const SHOTS = path.join(E2E_OUTPUT_DIR, 'captures-responsive');
+  26  | 
+  27  | const THEMES: ReadonlyArray<{ key: ThemeKey; colorScheme: 'light' | 'dark' }> = [
+  28  |     { key: 'clair', colorScheme: 'light' },
+  29  |     { key: 'sombre', colorScheme: 'dark' },
+  30  | ];
+  31  | 
+  32  | interface Size { width: number; height: number; paysage?: boolean }
+  33  | 
+  34  | function sizesFor(p: ResponsivePage, theme: ThemeKey): Size[] {
+  35  |     const base: Size[] = RESPONSIVE_WIDTHS
+  36  |         .filter((w) => theme === 'clair' || RESPONSIVE_CAPTURE_WIDTHS.includes(w.width))
+  37  |         .map((w) => ({ width: w.width, height: w.height }));
+  38  |     const land: Size[] = p.paysage ? RESPONSIVE_LANDSCAPE.map((w) => ({ width: w.width, height: w.height, paysage: true })) : [];
+  39  |     return [...base, ...land];
+  40  | }
+  41  | 
+  42  | /** Page stable : polices chargées, réseau au repos (plafond 3 s, noté sinon), deux images d'affichage. */
+  43  | async function settle(page: Page, notes: string[], at: string): Promise<void> {
+  44  |     await page.evaluate(() => document.fonts.ready.then(() => true));
+  45  |     await page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => { notes.push(`${at} : réseau jamais au repos en 3 s (attente plafonnée)`); });
+  46  |     await page.waitForFunction(() => Array.from(document.images).every((img) => img.complete), undefined, { timeout: 5_000 })
+  47  |         .catch(() => { notes.push(`${at} : images encore en chargement après 5 s`); });
+  48  |     await page.evaluate(() => new Promise<void>((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve())); }));
+  49  | }
+  50  | 
+  51  | interface ResponsiveRecord {
+  52  |     page: string;
+  53  |     titre: string;
+  54  |     groupe: string;
+  55  |     role: CaptureRole;
+  56  |     theme: ThemeKey;
+  57  |     url: string | null;
+  58  |     sizes: Array<{ size: string; blocking: string[]; warnings: string[]; capture: string | null }>;
+  59  |     notes: string[];
+  60  |     error: string | null;
+  61  | }
+  62  | 
+  63  | for (const theme of THEMES) {
+  64  |     const roles = Array.from(new Set(RESPONSIVE_PAGES.map((p) => p.role)));
+  65  |     for (const role of roles) {
+  66  |         test.describe(`${theme.key} · ${role}`, () => {
+  67  |             test.use({ colorScheme: theme.colorScheme, evTheme: theme.key, evRole: role });
+  68  |             for (const p of RESPONSIVE_PAGES.filter((x) => x.role === role)) {
+  69  |                 test(`${p.id} — ${p.titre}`, async ({ page, context, guard }) => {
+  70  |                     test.setTimeout(240_000);
+  71  |                     const record: ResponsiveRecord = { page: p.id, titre: p.titre, groupe: p.groupe, role, theme: theme.key, url: null, sizes: [], notes: [], error: null };
+  72  |                     try {
+  73  |                         const demo: DemoIds | null = p.needsIds ? readDemoIds() : null;
+  74  |                         record.url = p.path(demo);
+  75  |                         guard.configure({ allowFailures: p.allowFailures ?? [], ignoreConsoleErrors: false });
+  76  |                         if (p.fakeCamera) await context.addInitScript(installFakeCamera, { mode: fakeScanMode() });
+  77  |                         for (const size of sizesFor(p, theme.key)) {
+  78  |                             const at = size.paysage ? `${size.width}×${size.height} px (paysage)` : `${size.width} px`;
+  79  |                             await page.setViewportSize({ width: size.width, height: size.height });
+  80  |                             const response = await page.goto(record.url, { waitUntil: 'load' });
+  81  |                             if (p.expectStatus !== undefined) expect(response?.status(), `statut HTTP de ${record.url}`).toBe(p.expectStatus);
+  82  |                             if (p.ready) await p.ready(page);
+  83  |                             else await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({ timeout: 30_000 });
+  84  |                             if (p.actions) await p.actions(page);
+  85  |                             await settle(page, record.notes, at);
+  86  |                             const checks = await runResponsiveChecks(page, { width: size.width, phone: !size.paysage && size.width <= PHONE_MAX_WIDTH });
+  87  |                             const blocking = checks.blocking.map((b) => (size.paysage ? b.replace(`${size.width} px`, at) : b));
+  88  |                             let capture: string | null = null;
+  89  |                             if (size.paysage || RESPONSIVE_CAPTURE_WIDTHS.includes(size.width)) {
+  90  |                                 fs.mkdirSync(SHOTS, { recursive: true });
+  91  |                                 capture = `${p.id}__${size.paysage ? `${size.width}x${size.height}` : size.width}__${theme.key}.jpg`;
+  92  |                                 await page.screenshot({ path: path.join(SHOTS, capture), type: 'jpeg', quality: 80, animations: 'disabled', caret: 'hide', scale: 'css' });
+  93  |                             }
+  94  |                             record.sizes.push({ size: at, blocking, warnings: checks.warnings, capture });
+  95  |                         }
+  96  |                     } catch (err) {
+  97  |                         record.error = err instanceof Error ? err.message.split('\n')[0] : String(err);
+  98  |                         throw err;
+  99  |                     } finally {
+  100 |                         // Erreurs de la page (console, requêtes) : notées, déjà bloquantes dans les captures
+  101 |                         record.notes.push(...guard.blockingIssues().map((i) => `erreur de la page : ${i}`));
+  102 |                         fs.mkdirSync(RESULTS, { recursive: true });
+  103 |                         fs.writeFileSync(path.join(RESULTS, `${p.id}__${theme.key}.json`), `${JSON.stringify(record, null, 1)}\n`, 'utf8');
+  104 |                     }
+  105 |                     const blocking = record.sizes.flatMap((s) => s.blocking);
+> 106 |                     expect(blocking, `contrôles responsive de ${p.id} (${theme.key})`).toEqual([]);
+      |                                                                                        ^ Error: contrôles responsive de adm-reglages (sombre)
+  107 |                 });
+  108 |             }
+  109 |         });
+  110 |     }
+  111 | }
+  112 | 
+```
