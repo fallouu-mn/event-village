@@ -335,7 +335,7 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
             await groupRows('EVENT_SUSPENDED_HOLDER', `EVENT_SUSPENDED_HOLDER:${hSus}:${who.userId}`, ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], who.userId);
         }
         const holderRows = await outboxRows({ type: 'EVENT_SUSPENDED_HOLDER', eventId: ev.eventId });
-        assert.equal(holderRows.length, 6, `deux porteurs distincts × (IN_APP, PUSH, EMAIL : G.49) : ${holderRows.length} ligne(s)`);
+        assert.equal(holderRows.length, 8, `deux porteurs distincts × (IN_APP, PUSH, EMAIL, et SMS depuis la finition 4) : ${holderRows.length} ligne(s)`);
         let mark = smsMark(p.phoneE164);
         let sent = await deliver(sus, new Date());
         assertSms(sent, p.phoneE164, mark, `Event Village : événement ${ev.title} suspendu. Motif : ${reason}. ${APP_URL}/partner/events`);
@@ -605,7 +605,7 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
         const cashouts = await cancellationCashouts([String(p1.payment.id), String(p2.payment.id)]);
         assert.equal(cashouts.length, 2, 'un cashout par paiement en ligne');
         assert.ok(cashouts.every((c) => c.status === 'CONFIRME'), `cashouts confirmés : ${JSON.stringify(cashouts.map((c) => c.status))}`);
-        const rows = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH'], owner.userId);
+        const rows = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], /* finition 4 : + SMS */ owner.userId);
         for (const c of cashouts) await groupRows('REFUND_PAID', `REFUND_PAID:${c.id}`, ALL4, String(c.beneficiary_user_id));
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: owner.userId, title: 'Remboursements terminés', contains: [await titleOf(ev.eventId)], actionUrl: `/partner/events/${ev.eventId}?tab=cloture` });
@@ -837,7 +837,7 @@ describe('6.6 — aucun nouvel envoi à un compte suspendu, sauf messages indisp
         assert.equal(ids.length, 1, `un cashout de remboursement : ${JSON.stringify(advanced.steps[advanced.steps.length - 1].result)}`);
         const { CashoutService } = await importModule('../../lib/payments/cashout.service');
         await CashoutService.sendBatch(ids);
-        const done = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH'], p.userId);
+        const done = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], /* finition 4 : + SMS */ p.userId);
         assert.ok(done.every((r) => r.status === 'PENDING'), `remboursements terminés (ALLOW) : non bloqués (${JSON.stringify(done.map((r) => [r.channel, r.status, r.reason]))})`);
         const sent = await deliver(done, new Date());
         assert.equal(byChannel(sent, 'IN_APP').status, 'SENT', 'compte suspendu : avis lié à son argent livré');

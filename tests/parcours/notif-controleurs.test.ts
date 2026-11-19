@@ -356,7 +356,7 @@ describe('6.6 Contrôleur — activation et invitation d’un nouveau compte (J2
         const rows = await groupRows('CONTROLLER_ACTIVATED', `CONTROLLER_ACTIVATED:${ctrl.userId}`, ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], ctrl.userId); // finition 4 : + push (signalé)
         const again = await call();
         assert.equal(again.error, null, `second appel : ${again.error?.message}`);
-        assert.equal((await outboxRows({ type: 'CONTROLLER_ACTIVATED', userId: ctrl.userId })).length, 3, 'second appel : aucune ligne de plus (IN_APP, SMS, EMAIL : G.49)');
+        assert.equal((await outboxRows({ type: 'CONTROLLER_ACTIVATED', userId: ctrl.userId })).length, 4, 'second appel : aucune ligne de plus (IN_APP, SMS, EMAIL, PUSH)');
         const mark = smsMark(ctrl.phoneE164);
         const sent = await deliver(rows);
         assert.deepEqual(smsMessages(ctrl.phoneE164, mark), ['Event Village : votre compte est activé. Vous pouvez vous connecter et scanner les billets.'], 'SMS exact (G3)');

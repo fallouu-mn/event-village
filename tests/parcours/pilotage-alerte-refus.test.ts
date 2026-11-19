@@ -135,7 +135,7 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
             }
             await refuseAt(a[0], ev, 'Porte A', 'refus 4 à la Porte A');
             await refuseAt(a[1], ev, 'Porte A', 'refus 5 à la Porte A');
-            assert.equal((await alertRows(ev.eventId)).length, 3, 'au plus une alerte par porte et par durée');
+            assert.equal((await alertRows(ev.eventId)).length, 4, 'au plus une alerte par porte et par durée (4 canaux depuis la finition 4)');
         });
     });
 
@@ -143,7 +143,7 @@ describe('9t.18 T2 — alerte de refus en série à une porte', () => {
         await withAccessSettings(ALERT, async () => {
             const { ev, b } = await montageA();
             const before0 = await alertRows(ev.eventId);
-            assert.equal(before0.length, 3, `garde-fou : l’alerte de la Porte A du cas précédent (${before0.length} ligne(s))`);
+            assert.equal(before0.length, 4, `garde-fou : l’alerte de la Porte A du cas précédent, 4 canaux (${before0.length} ligne(s))`);
             for (let i = 1; i <= 3; i++) await refuseAt(b, ev, 'Porte B', `refus ${i} à la Porte B`);
             const rows = await alertRows(ev.eventId);
             assert.equal(rows.length, 6, 'trois lignes de plus');
