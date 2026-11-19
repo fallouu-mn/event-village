@@ -107,11 +107,19 @@ describe('point 2 — ventes de l’organisatrice', () => {
 
     test('résumé du matin : le lendemain à 9 h, ventes de la veille, une seule fois', async () => {
         const tomorrow = dakarDay(1);
-        for (const at of ['09:05', '09:06']) {
-            const { data, error } = await service.rpc('notification_daily_checks', { p: { now: dakarAt(tomorrow, at).toISOString() } });
+        // Au plus 200 comptes par passage (la base de la CI en a davantage) : passages minute après minute jusqu'au résumé de la
+        // partenaire de la suite, puis un passage de plus (aucun doublon).
+        const pass = async (minute: number): Promise<void> => {
+            const { data, error } = await service.rpc('notification_daily_checks', { p: { now: dakarAt(tomorrow, `09:${String(minute).padStart(2, '0')}`).toISOString() } });
             assert.equal(error, null, error?.message);
             assert.equal((data as { ok?: boolean }).ok, true);
+        };
+        let minute = 5;
+        for (; minute < 59; minute++) {
+            await pass(minute);
+            if ((await outboxRows({ type: 'PARTNER_DAILY_SUMMARY', userId: partner.userId, channel: 'IN_APP' })).length > 0) break;
         }
+        await pass(minute + 1);
         const summary = (await outboxRows({ type: 'PARTNER_DAILY_SUMMARY', userId: partner.userId, channel: 'IN_APP' }));
         assert.equal(summary.length, 1, `un seul résumé : ${summary.length}`);
         const d = summary[0].template_data;
