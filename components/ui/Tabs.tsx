@@ -171,10 +171,11 @@ export function TabPanel({ idPrefix, tabIdValue, children, className }: TabPanel
  * défilement. Une valeur hors de `allowed` revient à `fallback`. Ne dépend pas de useSearchParams
  * (pas de frontière Suspense imposée à la page).
  */
-export function useTabParam<T extends string>(allowed: readonly T[], fallback: T, param = 'tab'): [T, (next: T) => void] {
+export function useTabParam<T extends string>(allowed: readonly T[], fallback: T, param = 'tab', initial?: T): [T, (next: T) => void] {
   const router = useRouter();
   const pathname = usePathname();
-  const [current, setCurrent] = useState<T>(fallback);
+  // Décision du 19/11 : onglet lu par le serveur (page préparée par le serveur) : même onglet au premier rendu
+  const [current, setCurrent] = useState<T>(initial && (allowed as readonly string[]).includes(initial) ? initial : fallback);
 
   useEffect(() => {
     const fromUrl = new URLSearchParams(window.location.search).get(param);

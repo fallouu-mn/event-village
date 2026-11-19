@@ -37,7 +37,7 @@ import { test, expect, openRoleContext } from './support/fixtures';
 import type { RoleKey } from './support/accounts';
 import { CDP_NO_THROTTLING, cdpNetworkConditions, NET_3G } from './support/devices';
 import { PageGuard } from './support/network';
-import { expectResumed } from './support/parcours';
+import { expectResumed, openTicketThumb } from './support/parcours';
 import { serviceClient } from './support/service';
 import {
     codeOf, computedPayload, describeProbe, expectBuyBarAnchored, fmtMs, forgedPayload, installScanProbe, livePayload, median, openScanner, percentile,
@@ -99,6 +99,9 @@ function ticketCard(page: Page, ticketNumber: string): Locator {
 }
 
 async function expectOfflineAvailable(page: Page, ticketNumber: string): Promise<void> {
+    // Décision du 19/11 : billet en vignette (pas le premier) ouvert d'abord ; attente de l'état inchangée
+    await expect(page.locator('article[aria-label^="Billet pour"]').first()).toBeVisible({ timeout: 45_000 });
+    await openTicketThumb(page, ticketNumber);
     const card = ticketCard(page, ticketNumber);
     await expect(card, `carte du billet ${ticketNumber} dans Mes billets`).toBeVisible({ timeout: 45_000 });
     await expect(card.locator('[data-ev-offline-state]'),

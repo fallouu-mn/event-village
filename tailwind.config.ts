@@ -27,6 +27,14 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Règle (décision du 18/11) : aucune animation en boucle infinie dans l'application. Pulsation et halo : 3 cycles puis
+      // fixe (le halo finit effacé) ; rotation des indicateurs de chargement : 10 tours (≈ 10 s) puis fixe, le texte
+      // « Chargement… » qui l'accompagne reste. Mêmes noms de classes (animate-pulse, animate-ping, animate-spin).
+      animation: {
+        pulse: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) 3',
+        ping: 'ping 1s cubic-bezier(0, 0, 0.2, 1) 3 forwards',
+        spin: 'spin 1s linear 10',
+      },
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         heading: ['var(--font-sans)', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],

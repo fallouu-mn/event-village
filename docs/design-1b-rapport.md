@@ -58,6 +58,78 @@ L'expéditeur d'une invitation s'écrit « Invitation de l'organisateur » parto
 ### Disque et dépôt
 Place libérée sans risque : cache npm et ancien pilote Playwright-Go 1.50.1. Les navigateurs Playwright servent tous en version 1248 et sont gardés. Il reste 9,16 Go libres. `gc.auto` et `maintenance.auto` sont réactivés, `git gc` est passé. La branche jetable de mesure `fix/mesure-scanner-avant-1a` est supprimée.
 
+## Correctif du run 414 de main (branche `correctif/main-414`)
+
+Le design 1b a été fusionné dans main avec le lot 10a (`ce737247f`). Le run complet 414 a été rouge sur trois points, absents des runs de chaque branche prise seule. Une branche `correctif/main-414` est partie de main, et `verify.yml` lance désormais aussi les branches `correctif/**`.
+
+1. **`migration-lot10a-rejouable`**. Ce test exigeait que les migrations 20261122… soient les dernières du dépôt. La règle « après toutes celles d'avant le lot » est reprise **exactement** de `lot11a/tables-argent`, pour éviter un conflit à sa fusion.
+2. **Boutons à 42 px** (capture « confirmation », ordinateur, sombre). La fenêtre s'ouvrait par `scale(0.95)`, et ses boutons mesuraient vraiment 42 px pendant l'ouverture. Fenêtres et toasts s'ouvrent désormais par fondu et translation : 44 px à chaque image (test `main414-cibles`).
+3. **Fumée, étape 5 : « mauvais événement »**. C'est le test qui se trompait de billet.
+   - Seul le premier billet de Mes billets dessine son QR tout de suite.
+   - Le repère du test (« bloc qui contient le titre et un QR », le dernier) remontait alors à la liste, dont le seul QR était celui d'un autre billet.
+   - Le test cible maintenant la carte exacte (« Billet pour <titre> ») et vérifie que le QR est bien dedans. **Attente modifiée, signalée.**
+4. **Aucune animation en boucle infinie** (décision du 18 novembre).
+   - **Inventaire** :
+     - le halo du point « En cours » (`evLivePulse infinite`) ;
+     - `animate-pulse`, 60 usages : squelettes, « En direct », QR en attente ;
+     - `animate-spin`, 26 usages : indicateurs de chargement ;
+     - `animate-ping`, 2 usages : paiement ;
+     - la barre du pas du code de Mes billets.
+
+     Aucune boucle JavaScript, aucun SVG animé.
+   - **Désormais** :
+     - pulse et ping font 3 cycles puis restent fixes ; spin fait 10 tours puis s'arrête ;
+     - le point « En cours » pulse 3 fois, seulement à l'écran (`lib/ui/live-dots.ts`) ;
+     - Mes billets n'a plus de barre, et un QR en attente est un squelette fixe (test `animations-finies`).
+   - **Effet sur Mes billets, mesuré dans le même run (417)**. Médiane de 3 passages de 10 s, avec les animations remises par une feuille injectée, puis sans :
+     - style et mise en page : 221 → 212 ms ;
+     - peinture : 295 → 261 ms (−12 %).
+
+     Détail dans `perf/rendu-mes-billets.tsv`.
+5. **Médiane de 5 passages pour Lighthouse**. Au run 417, la fiche oscillait de ± 5 (87 ; 92 ; 92). Seuils et calibration inchangés.
+   - Temps imparti à la mesure : 8 → 13 min ; étape CI : 10 → 15 min ; job e2e : 70 → 75 min.
+   - Le test du lot `design1b-perf-mobile` vérifie désormais 5 passages et une étape de 15 min au plus (**modification signalée**).
+6. **SMS aux admins envoyé la nuit**. Le run 417 a démarré à 21 h 53 UTC ; 24 suites sont tombées sur l'invariant p3 du lot 9 quinquies.
+   - **Cause** : des `ADMIN_REVIEW_SMS` mis en file juste avant 22 h sont partis à 22 h 00. La nuit n'était appliquée qu'à la mise en file.
+   - **Correctif minimal** (migration `20261123000002_main414_nuit_sms_admins.sql`) : `notification_outbox_claim` revérifie la plage au moment d'envoyer. Un SMS qui tombe dans la plage est reporté à 8 h : il reste en attente, ne consomme aucune tentative et n'est jamais perdu. La plage reste 22 h - 8 h.
+   - **Pour la finition 4**, qui la rendra réglable (01:00-07:00) : partir de cette fonction et de `notif_admin_review_due`.
+   - **Preuve à heure simulée**, sans dépendre de l'heure réelle du run : test `main414-nuit-sms-admins`, avec un run qui démarre à 21:55 et un autre à 07:55. Il est rouge au run 418 (SMS envoyé à 22:00 simulé) et vert au run 419.
+
+| Tentative (mode autonome) | Run | Résultat | Cause, correctif |
+|---|---|---|---|
+| — | 416 | Mes billets 88 | Animations continues ; décision de l'utilisateur |
+| — | 417 | Mesure verte ; 24 suites rouges | SMS aux admins à 22:00 ; décision de l'utilisateur |
+| 1 | 418 rouge, 419 vert (rapides), puis 420 complet | tests 520/520, e2e vert, aucune erreur 418 ; Mes billets 89 (86 ; 91 ; 90 ; 89 ; 88), accueil 91, fiche 93 ; rendu avant → après : style 236 → 195 ms, peinture 306 → 275 ms | Correctif des SMS de nuit et médiane de 5 |
+| 2 | 421 complet | tests 520/520, e2e vert ; Mes billets 87 (86 ; 87 ; 87 ; 89 ; 87, processeur ×5,39), accueil 93, fiche 94 ; rendu avant → après : style 220 → 195 ms, peinture 297 → 259 ms | Cause trouvée dans la trace du run 420 : la liste des billets était lue 3 fois au chargement (puis billets reçus, notifications), et chaque réponse, même identique, redessinait tout le portefeuille (tâches React de 69 à 97 ms) ; les billets 2 et 3 démarraient au premier moment libre, avant la fin du chargement. Correctif : relecture identique sans nouveau rendu ; billets suivants après le chargement et le premier moment libre, ou à l'écran |
+| 3 | 422 complet | **ROUGE** : tests 520/520, aucune erreur 418 ; Mes billets 89 (95 ; 89 ; 88 ; 90 ; 86, ×4,88), accueil 90, fiche 90 ; 4 captures « billet hors ligne » (ordinateur, clair et sombre) sans l'état « disponible hors ligne » en 45 s | Cause trouvée dans la trace du run 421 : la simulation de Lighthouse ne tient pas compte des délais (minuteries, moments libres) ; tant qu'il se produit pendant l'enregistrement, le travail reporté reste compté. Dans la fenêtre : billets 2 et 3 (codes, QR, lots hors ligne), deuxième et troisième lecture de la liste (rattrapage du temps réel, synchronisation hors ligne), connexion temps réel (Supabase, 172 ms). Correctif : ce travail part 5 s après le chargement et le premier moment libre ; le premier billet démarre au montage, un billet glissé à l'écran démarre aussitôt |
+
+**Arrêt après la 3e tentative (mode autonome), non fusionné, migrations non appliquées.**
+- **Mes billets** reste sous 90 au téléphone de référence (87 à 89 sur trois runs) : le reste du temps de blocage est le rendu React du portefeuille et le client Supabase. Les reports dans le temps n'y changent presque rien : la simulation de Lighthouse ne tient pas compte des délais.
+- **Captures hors ligne (tentative 3)**, cause probable : la synchronisation hors ligne attend désormais 5 s, et ce délai repart de zéro à chaque remontage du composant (pendant le chargement du profil). L'état « disponible hors ligne » n'apparaît alors pas en 45 s. À retirer ou à corriger avant toute fusion.
+- **Décision attendue** : réduire structurellement le rendu de Mes billets (n'afficher en entier que le billet visible, les autres en vignettes jusqu'à leur affichage), ou une autre décision sur la mesure de cette page.
+
+## Décisions du 19 novembre (Mes billets, option 1)
+
+Seuils, calibration et budgets JS sont inchangés.
+
+1. **Délai de 5 s de la tentative 3 retiré** (`110622cb3`). Preuve attendue : les 4 captures « billet hors ligne » vertes au run complet suivant.
+2. **Seul le billet visible est dessiné en entier**, QR compris. Les autres sont des vignettes légères (`components/tickets/TicketThumb.tsx`) : couleur de la catégorie, titre, date, heure, lieu et numéro du billet.
+   - Une vignette se déplie quand elle arrive à l'écran. Sur téléphone, c'est le billet glissé au centre (60 % visible au moins) ; sur ordinateur, ce sont les billets de la grille jusqu'à deux écrans plus bas.
+   - Elle se déplie aussi au toucher, avec une animation de 250 ms (`ev-wallet-unfold` : transparence et déplacement seulement), coupée si « réduire les animations » est actif.
+   - Le premier billet est toujours complet, et un billet déplié le reste.
+3. **Hors ligne : tous les billets restent enregistrés**, vignettes comprises : la synchronisation enregistre le lot de chaque billet. La nouvelle capture `billet-vignette-hors-ligne` (téléphone, clair et sombre) vérifie que le lot du billet en vignette est enregistré, coupe le réseau, touche la vignette et attend un état hors ligne lu sur le téléphone. Pour `clientVeille`, le QR n'est montré qu'à l'ouverture du contrôle ; avant, la carte l'annonce.
+4. **Liste lue par le serveur** (tentative 2 : envoyée dans la même réponse, l'en-tête n'attend pas). `app/tickets/page.tsx` appelle la route `GET /api/tickets` avec les cookies de la requête reçue : mêmes règles de session (compte actif, code de l'administration) et aucune logique recopiée. La page est rendue à chaque requête (`force-dynamic`), et le service worker ne garde jamais `/tickets`. Le code client est dans `app/tickets/TicketsView.tsx`. L'onglet et l'heure du serveur sont transmis, pour un premier rendu identique côté serveur et navigateur (aucune erreur d'hydratation).
+   - **Client Supabase : non modifié, signalé.** La session (`AuthProvider`) et la déconnexion, y compris sans réseau, s'en servent dès l'ouverture de chaque page. Le charger à la demande toucherait à la sécurité de la déconnexion ; je ne l'ai pas fait sans décision. Le temps réel seul ne retirerait rien au chargement, puisque le client reste chargé pour la session.
+5. **Report des SMS de nuit selon le réglage**. `notif_admin_review_due` lit `notif.sms_quiet_start` et `notif.sms_quiet_end` (22 et 8 aujourd'hui) par `notif_quiet_end_at` : aucune heure écrite en dur, à la mise en file comme à l'envoi. Il suffira de changer le réglage pour passer à 01:00-07:00 (finition 4). Test `main414-nuit-sms-admins`, vert au run rapide 425.
+- **Tests adaptés (signalés)**. Les lectures de code ont suivi le fichier déplacé (`app/tickets/page.tsx` → `TicketsView.tsx`, onglets dans `tabs.ts`) dans `design1b-billets`, `design1b-chargement`, `notif-interface`, `temps-reel-hook` et `design-systeme` : chemins seulement, aucune assertion changée. Le test d'audit `cvf2b-6` n'est pas touché ; il passe par la règle globale de déconnexion.
+- **Parcours e2e `terrain`** : un billet en vignette est ouvert avant d'y lire l'état hors ligne (`openTicketThumb`). L'attente elle-même est inchangée.
+
+| Tentative (mode autonome, 19/11) | Run | Résultat | Cause, correctif |
+|---|---|---|---|
+| 1 | 426 complet | **rouge** : 4 captures « billet hors ligne » et la capture de la vignette sans réseau **vertes**, aucune erreur 418 ; perf au processeur ×7,6 (machine très rapide) : accueil 85 (code inchangé, 90 au run 422 à ×4,88), fiche 88, Mes billets 77 (affichage principal 2,52 s) ; 3 suites (police à chasse fixe de la vignette, chemin du fichier déplacé dans cycle9bis-transfert, lignes citées de terrain) ; connexion du superadmin (fenêtre du code remplacée pendant une navigation, hasard) | Vignettes, liste préparée par le serveur, report réglable, délai de 5 s retiré |
+| 2 | 427 complet | tests 520/520, e2e vert, aucune erreur 418 ; accueil 94, fiche 93, **Mes billets 89** (89 ; 89 ; 89 ; 91 ; 90, ×3,58), affichage principal 0,91 s | Cause trouvée dans la trace du run 426 : la page attendait la liste avant d'envoyer l'en-tête (élément principal : texte de l'en-tête, 2,52 s), et l'hydratation du portefeuille rendu par le serveur ajoutait 296 + 258 ms. Correctif : la liste lue par le serveur part dans la même réponse (promesse), l'en-tête et le squelette tout de suite ; une seule écriture de la liste. Tests : vignette ajoutée à la liste font-mono (numéro de billet), chemin de TicketsView dans cycle9bis-transfert, lignes 119 → 122 et 468 → 471 de terrain dans la recette |
+| 3 | complet (voir « Runs ») | — | Cause trouvée dans la trace du run 427 : après le premier rendu (221 ms), chaque changement d'état de la page (session, billets reçus, temps réel) redessinait la carte complète (tâches React de 73 à 135 ms). Correctif : carte mémorisée (React.memo) ; elle ne se redessine que si ses données changent (son propre état et la session la redessinent toujours) |
+
 ## Ce qui est fait
 
 ### 1. Performance

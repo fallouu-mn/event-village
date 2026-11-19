@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { isLiveAt, nextLiveChange, liveWindowFromIso } from '@/lib/events/live-status';
+import { watchLiveDots } from '@/lib/ui/live-dots';
 
 /** Attribut posé par EventCard sur le badge « En cours » (rendu masqué par le serveur). */
 export const LIVE_BADGE_ATTR = 'data-ev-live';
@@ -37,7 +38,10 @@ export function CardLiveBadges() {
     observer.observe(document.body, { childList: true, subtree: true });
     const onVisible = (): void => { if (document.visibilityState === 'visible') schedule(); };
     document.addEventListener('visibilitychange', onVisible);
+    // Décision du 18/11 : halo des points (3 pulsations) seulement à l'écran (lib/ui/live-dots.ts)
+    const stopDots = watchLiveDots();
     return () => {
+      stopDots();
       if (timer) clearTimeout(timer);
       if (frame) cancelAnimationFrame(frame);
       observer.disconnect();

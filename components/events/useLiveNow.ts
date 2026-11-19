@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { isLiveAt, nextLiveChange, type LiveWindow } from '@/lib/events/live-status';
+import { watchLiveDots } from '@/lib/ui/live-dots';
 
 /**
  * Design 1b (point 11) — « en cours » calculé sur le téléphone : vrai entre le début et la fin retenue. Une seule minuterie
@@ -27,5 +28,7 @@ export function useLiveNow(window: LiveWindow | null): boolean {
         document.addEventListener('visibilitychange', onVisible);
         return () => { if (timer) clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
     }, [window?.startsAt.getTime(), window?.endsAt.getTime()]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Décision du 18/11 : le halo du point ne pulse (3 fois) qu'à l'écran (lib/ui/live-dots.ts)
+    useEffect(() => (live ? watchLiveDots() : undefined), [live]);
     return live;
 }

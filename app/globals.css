@@ -296,14 +296,15 @@ body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
 /* ==========================================================================
    ANIMATIONS FLUIDES SYSTÈME TOASTS & NOTIFICATIONS
    ========================================================================== */
+/* Entrée sans réduction d'échelle (run 414 : cibles d'un bouton sous 44 px pendant l'animation) */
 @keyframes toastSlideInRight {
   from {
     opacity: 0;
-    transform: translate3d(100%, 0, 0) scale(0.96);
+    transform: translate3d(100%, 0, 0);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -383,9 +384,12 @@ body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Ouverture des fenêtres (classe zoom-in-95, gardée pour ses usages) : fondu et montée de 8 px, SANS réduction d'échelle.
+   Run 414 de main : avec scale(0.95), les boutons d'une fenêtre mesuraient réellement 42 px pendant l'ouverture
+   (« Fermer » 42 × 42, « Garder le billet », « Rembourser… ») : cibles sous 44 px. Une translation garde leur taille. */
 @keyframes evZoomIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to   { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
 }
 
 
@@ -418,7 +422,13 @@ body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
   inset: 0;
   border-radius: 9999px;
   background: inherit;
-  animation: evLivePulse 1.6s var(--ease-out) infinite;
+  /* Décision du 18/11 : 3 pulsations puis fixe (halo effacé), et jamais hors de l'écran : en pause tant que le point n'a
+     pas été vu (data-ev-onscreen posé par useOnScreenLiveDot / CardLiveBadges, IntersectionObserver). */
+  animation: evLivePulse 1.6s var(--ease-out) 3 both;
+  animation-play-state: paused;
+}
+.ev-live-dot[data-ev-onscreen]::after {
+  animation-play-state: running;
 }
 
 /* Design 1b (run 392, accueil) : section sous le premier écran, ni stylée, ni mise en page, ni peinte tant qu'elle reste
@@ -427,6 +437,12 @@ body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
 .ev-offscreen {
   content-visibility: auto;
   contain-intrinsic-size: auto 520px;
+}
+
+/* Décision du 19/11 (Mes billets) : vignette dépliée en billet complet, 250 ms, transparence et déplacement seulement
+   (coupée par le bloc « mouvement réduit ») */
+.ev-wallet-unfold {
+  animation: evRise 250ms var(--ease-out) both;
 }
 
 /* Listes en cascade : enfant n°i retardé de i × 40 ms (8 au plus), arrivée de 250 ms */

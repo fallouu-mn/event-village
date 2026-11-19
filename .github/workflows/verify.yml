@@ -18,6 +18,8 @@ on:
       - 'design-*/**'
       # Correctifs des contre-vérifications (correctifs/cvf2b…) : run rapide puis run complet exigés par la consigne
       - 'correctifs/**'
+      # Correctif d'un run rouge de main (correctif/main-414…) : run complet exigé avant l'avance rapide de main
+      - 'correctif/**'
   pull_request:
   workflow_dispatch:
 
@@ -349,9 +351,9 @@ jobs:
     needs: mode
     if: ${{ needs.mode.outputs.rapide == '0' }}
     runs-on: ubuntu-latest
-    # Design 1b (lot PERF) : 70 min (au lieu de 60) pour l'étape bloquante « performance mobile mesurée » (10 min au
-    # plus) après l'e2e (47 min au plus) : installation, build et seed ≈ 8 min, 47 + 10 + rassemblement des résultats.
-    timeout-minutes: 70
+    # Design 1b (lot PERF) : 75 min (60, puis 70 ; 75 depuis la médiane de 5 passages du 18/11) pour l'étape bloquante
+    # « performance mobile mesurée » (15 min au plus) après l'e2e (47 min au plus) : installation, build et seed ≈ 8 min.
+    timeout-minutes: 75
     outputs:
       build: ${{ steps.build.outcome }}
       js_budget: ${{ steps.js-budget.outcome }}
@@ -572,7 +574,7 @@ jobs:
       - name: "E2E : performance mobile mesurée (Lighthouse ≥ 90, LCP < 2,5 s, CLS < 0,1, toucher < 200 ms)"
         id: perf-mobile
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           . /tmp/etape.sh perf-mobile
           set -o pipefail

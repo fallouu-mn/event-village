@@ -50,7 +50,8 @@ const DECLINE_ROUTE = '../../app/api/tickets/transfers/[id]/decline/route';
 const LOOKUP_ROUTE = '../../app/api/controller/scan/lookup/route';
 const PHONE_START_ROUTE = '../../app/api/account/phone/start/route';
 const PHONE_CONFIRM_ROUTE = '../../app/api/account/phone/confirm/route';
-const TICKETS_PAGE = path.join('app', 'tickets', 'page.tsx');
+// Décision du 19/11 : page préparée par le serveur, code client déplacé dans TicketsView.tsx
+const TICKETS_PAGE = path.join('app', 'tickets', 'TicketsView.tsx');
 const EXPIRED_TEXT = 'Ce billet ne peut plus être accepté : le délai est dépassé.';
 
 let partner: TestPartner;

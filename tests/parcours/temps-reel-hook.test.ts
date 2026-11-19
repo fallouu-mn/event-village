@@ -67,7 +67,7 @@ const SCREENS: Screen[] = [
     { label: 'catalogue', file: 'app/explore/page.tsx', tables: ['public_event_state'], isPublic: true, indicator: true },
     { label: 'accueil', file: 'app/page.tsx', tables: ['public_event_state'], isPublic: true, indicator: true },
     { label: 'page événement', file: 'app/events/[id]/page.tsx', tables: ['public_event_state', 'public_category_stock'], filter: 'event_id=eq.', isPublic: true, indicator: true },
-    { label: 'Mes billets', file: 'app/tickets/page.tsx', tables: ['tickets', 'notifications'], filter: 'user_id=eq.', indicator: true },
+    { label: 'Mes billets', file: 'app/tickets/TicketsView.tsx', tables: ['tickets', 'notifications'], filter: 'user_id=eq.', indicator: true },
     { label: 'cloche des notifications', file: BELL, tables: ['notifications'], indicator: false },
     { label: 'liste des événements du partenaire', file: 'app/partner/events/page.tsx', tables: ['event_status_history'], indicator: true },
     { label: 'page de pilotage', file: 'app/partner/events/[id]/page.tsx', tables: ['ticket_scans', 'scan_incidents', 'controller_shifts', 'ticket_categories'], filter: 'event_id=eq.', indicator: true },

@@ -49,7 +49,7 @@ import zlib from 'node:zlib';
 import { createRequire } from 'node:module';
 import { startH2Proxy } from './h2-proxy.mjs';
 import {
-    PASSAGES, REFERENCE_CPU, SEUILS, calibratedCpuMultiplier, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, fmtBytes, fmtCls, fmtMs, median,
+    PASSAGES, REFERENCE_CPU, SEUILS, calibratedCpuMultiplier, renderWorkFromTrace, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, fmtBytes, fmtCls, fmtMs, median,
     texteRapport, toucherRows, tsvRows, verdictPage, verdictToucher,
 } from './perf-mobile-seuils.mjs';
 
@@ -63,10 +63,10 @@ const DEMO_IDS_FILE = path.join(ROOT, '.e2e-captures', 'demo-ids.json');
 const CLIENT_STATE_FILE = path.join(ROOT, '.auth', 'client.json');
 const ENV_FILE = path.join(ROOT, process.env.EV_E2E_ENV_FILE || '.env.e2e');
 
-/** Temps imparti (l'étape CI a timeout-minutes: 10) : au-delà, les passages restants sont notés en erreur. */
-const BUDGET_MS = 8 * 60_000;
+/** Temps imparti (l'étape CI a timeout-minutes: 15 ; 5 passages depuis le 18/11) : au-delà, les passages restants sont notés en erreur. */
+const BUDGET_MS = 13 * 60_000;
 /** Chien de garde : rapport partiel écrit et sortie 1, avant que la CI ne coupe l'étape. */
-const WATCHDOG_MS = 9 * 60_000;
+const WATCHDOG_MS = 14 * 60_000;
 const LIGHTHOUSE_TIMEOUT_MS = 150_000;
 const TOUCHERS_PAR_PAGE = 5;
 const HOST_RESOLVER = '--host-resolver-rules=MAP localhost 127.0.0.1';
@@ -407,6 +407,50 @@ async function throttle(context, page, { network }) {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
 }
 
+/**
+ * Décision du 18/11 (aucune animation en boucle infinie) — travail de rendu de Mes billets, AVANT / APRÈS dans le même run :
+ * « après » = la page telle quelle ; « avant » = la même page où une feuille injectée remet les animations en boucle retirées
+ * (pulsation et rotation infinies, halo infini du point « En cours », pulsation du QR en attente, barre du pas du code de
+ * 20 s). Trace du navigateur sur 10 s après le chargement (fil principal de la page), processeur ralenti comme Lighthouse
+ * (calibré), 4G simulée : somme des tâches de style et mise en page, et de peinture et composition. Information (non
+ * bloquante) : perf/rendu-mes-billets.tsv et lighthouse.txt.
+ */
+const ANIMATIONS_AVANT_CSS = [
+    '.animate-pulse{animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite!important}',
+    '.animate-ping{animation:ping 1s cubic-bezier(0,0,.2,1) infinite!important}',
+    '.animate-spin{animation:spin 1s linear infinite!important}',
+    '.ev-live-dot::after{animation:evLivePulse 1.6s ease-out infinite!important;animation-play-state:running!important}',
+    '[data-ev-qr-wait] svg{animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite!important}',
+    'div:has(> div > [data-ev-qr-timer])::after{content:"";display:block;height:6px;border-radius:9999px;background:#ff8a3d;transform-origin:left;animation:evBarAvant 20s linear infinite}',
+    '@keyframes evBarAvant{from{transform:scaleX(1)}to{transform:scaleX(.05)}}',
+].join('');
+const RENDU_MS = 10_000;
+async function renderWork(browser, base, def, session, variant, cpuRate) {
+    const context = await mobileContext(browser, session.state);
+    try {
+        if (variant === 'avant') {
+            await context.addInitScript({ content: `document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.setAttribute('data-ev-avant', ''); st.textContent = ${JSON.stringify(ANIMATIONS_AVANT_CSS)}; document.head.appendChild(st); });` });
+        }
+        const page = await context.newPage();
+        const cdp = await context.newCDPSession(page);
+        await cdp.send('Network.enable');
+        await cdp.send('Network.setBlockedURLs', { urls: BLOCKED_URLS });
+        await cdp.send('Network.emulateNetworkConditions', NET_4G);
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuRate });
+        await browser.startTracing(page, { categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline'] });
+        await page.goto(`${base}${def.path}`, { waitUntil: 'load', timeout: 90_000 });
+        await page.waitForTimeout(RENDU_MS);
+        const buf = await browser.stopTracing();
+        session.state = await context.storageState();
+        if (!finalPathMatches(page.url(), def.expectedPath)) return { error: `page finale ${new URL(page.url()).pathname}` };
+        return { ...renderWorkFromTrace(JSON.parse(buf.toString('utf8'))), error: null };
+    } catch (err) {
+        return { error: errText(err) };
+    } finally {
+        await context.close().catch(() => {});
+    }
+}
+
 /** Un chargement réel : CLS (fenêtres de session) et LCP observés pendant le chargement + 3 s. */
 async function realLoad(browser, base, def, session) {
     const context = await mobileContext(browser, def.client ? session.state : null);
@@ -556,8 +600,14 @@ async function prepareSession(browser, base, def) {
 
 // ── Écriture des résultats ────────────────────────────────────────────────────
 
-function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz, calibrations = [] }) {
+function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz, calibrations = [], rendus = [] }) {
     fs.mkdirSync(PERF_DIR, { recursive: true });
+    // Décision du 18/11 : rendu de Mes billets avant / après (information, non bloquant)
+    fs.writeFileSync(path.join(PERF_DIR, 'rendu-mes-billets.tsv'), `${['variante', 'passage', 'ralentissement_cpu', 'style_mise_en_page_ms', 'peinture_ms', 'erreur'].join('\t')}\n${rendus.map((r) => [r.variant, r.pass, r.cpu ?? '', r.styleMs ?? '', r.paintMs ?? '', String(r.error ?? '').replace(/[\t\r\n]+/g, ' ')].join('\t')).join('\n')}\n`, 'utf8');
+    for (const v of ['avant', 'apres']) {
+        const ok = rendus.filter((r) => r.variant === v && !r.error);
+        if (ok.length) notes.push(`Mes billets, rendu ${v === 'avant' ? 'AVANT (animations en boucle remises)' : 'APRÈS'} : style et mise en page médiane ${fmtMs(median(ok.map((r) => r.styleMs)))}, peinture médiane ${fmtMs(median(ok.map((r) => r.paintMs)))} sur 10 s (${ok.length} passage(s) ; perf/rendu-mes-billets.tsv).`);
+    }
     const verdicts = pageResults.map((p) => ({ ...verdictPage(p), details: p.details }));
     const toucher = verdictToucher(touches, touchFatals);
     const rapport = texteRapport({ pages: verdicts, toucher, entete, notes });
@@ -645,9 +695,10 @@ async function main() {
     const gz = [];
     const notes = [];
     const calibrations = [];
+    const rendus = [];
 
     const finish = () => writeOutputs({
-        pageResults, touches, touchFatals, gz, notes, calibrations,
+        pageResults, touches, touchFatals, gz, notes, calibrations, rendus,
         entete: [
             `Lighthouse ${version} (préréglage mobile : throttling simulé « Slow 4G », écran mobile), Chromium complet de Playwright. Processeur : ralentissement calibré à chaque tour sur l'indice de puissance mesuré, pour le même téléphone de référence (×${REFERENCE_CPU.multiplier} pour un indice de ${REFERENCE_CPU.benchmarkIndex}) : ${calibrations.map((c) => `tour ${c.tour} indice ${c.benchmarkIndex ?? '?'} → ×${c.multiplier}`).join(' ; ') || 'aucun tour'} (valeurs brutes : perf/calibration.tsv).`,
             `Chargements réels et touchers : Playwright, vue mobile 390 × 844, 4G simulée par CDP (562,5 ms, 1,44 Mbit/s), processeur ×4. Application ${base}${proxy ? ' (HTTP/2, relais local devant next start, comme la production)' : ' (HTTP/1.1, next start direct)'}.`,
@@ -725,6 +776,19 @@ async function main() {
                 delete out.fatal;
                 r.reel.push(out);
                 log(`${def.id} chargement réel ${pass}/${PASSAGES} : ${out.error ? `ERREUR ${out.error}` : `CLS ${fmtCls(out.cls)} (${out.decalages} décalage(s)), LCP ${fmtMs(out.lcp)}`}`);
+            }
+        }
+
+        // 3 bis. Décision du 18/11 : travail de rendu de Mes billets, avant / après (animations en boucle), même run
+        if (session && !res('mes-billets').fatal) {
+            const cpuRate = calibrations.length ? calibrations[calibrations.length - 1].multiplier : REFERENCE_CPU.multiplier;
+            for (let pass = 1; pass <= 3; pass++) {
+                for (const variant of ['avant', 'apres']) {
+                    if (remaining() < 60_000) { rendus.push({ variant, pass, error: 'temps imparti dépassé' }); continue; }
+                    const out = await renderWork(browser, base, pages[2], session, variant, cpuRate);
+                    rendus.push({ variant, pass, cpu: cpuRate, ...out });
+                    log(`Mes billets, rendu ${variant} ${pass}/3 : ${out.error ? `ERREUR ${out.error}` : `style et mise en page ${out.styleMs} ms, peinture ${out.paintMs} ms (10 s, processeur ×${cpuRate})`}`);
+                }
             }
         }
 

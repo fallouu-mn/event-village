@@ -22,6 +22,15 @@ export function dakarParts(d: Date): { date: string; time: string } {
     return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
 }
 
+/**
+ * Décision du 19/11 (Mes billets, option 1) : sur téléphone, seul le billet affiché est complet ; les autres sont des
+ * vignettes (data-ev-ticket-thumb, titre, date, numéro). Ouvre la vignette qui contient ce texte, s'il y en a une.
+ */
+export async function openTicketThumb(page: Page, text: string): Promise<void> {
+    const thumb = page.locator('[data-ev-ticket-thumb]').filter({ hasText: text });
+    if (await thumb.count() > 0) await thumb.first().getByRole('button').click();
+}
+
 /** Plus petit bloc qui contient le titre de l'événement et le bouton demandé (carte de la liste). */
 export function cardOf(page: Page, title: string, action: RegExp): Locator {
     return page.locator('li, article, tr, section, div')

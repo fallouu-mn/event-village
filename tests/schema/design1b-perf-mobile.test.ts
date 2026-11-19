@@ -4,7 +4,7 @@
  *    LCP < 2 500 ms, CLS < 0,1, toucher < 200 ms : bornes exactes), passages en erreur écartés, erreur fatale de
  *    « Mes billets » (page de connexion), lignes TSV et rapport lisible ;
  *  - branchement : .github/workflows/verify.yml a l'étape BLOQUANTE (après `npm run e2e`, sans continue-on-error,
- *    délai ≤ 10 min, sortie perf_mobile du job) et publie les résultats même en échec (rassemblement `if: always()`) ;
+ *    délai ≤ 15 min depuis la médiane de 5 passages du 18/11, sortie perf_mobile du job) et publie les résultats même en échec (rassemblement `if: always()`) ;
  *    scripts/ci-verdict.mjs écrit perf_mobile dans run.txt ; lighthouse en devDependency à version exacte.
  */
 import { describe, test } from 'node:test';
@@ -31,9 +31,10 @@ const bonnePage = (over: Partial<Parameters<typeof verdictPage>[0]> = {}) => ({
 });
 
 describe('design 1b — performance mobile : seuils et médiane (module pur)', () => {
-    test('seuils de l’utilisateur et 3 passages par page', () => {
+    // Décision du 18/11 : médiane de 5 passages (au lieu de 3), seuils inchangés
+    test('seuils de l’utilisateur et 5 passages par page', () => {
         assert.deepEqual({ ...SEUILS }, { score: 90, lcpMs: 2_500, cls: 0.1, toucherMs: 200 });
-        assert.equal(PASSAGES, 3);
+        assert.equal(PASSAGES, 5);
         assert.equal(MIN_PASSAGES_VALIDES, 2);
     });
 
@@ -133,7 +134,7 @@ describe('design 1b — performance mobile : seuils et médiane (module pur)', (
         const page = bonnePage();
         const rows = tsvRows(page.id, page.lighthouse.map((p, i) => ({ ...p, tbt: 100 + i, fcp: 900, si: 1_500, bytes: 400_000, finalUrl: 'http://localhost:3000/' })), page.reel.map((r) => ({ ...r, lcp: 2_000 })));
         const cols = TSV_HEADER.split('\t').length;
-        assert.equal(rows.length, PASSAGES + 1);
+        assert.equal(rows.length, page.lighthouse.length + 1);
         assert.ok(rows.every((r) => r.split('\t').length === cols), 'même nombre de colonnes que l’en-tête');
         const med = rows[rows.length - 1].split('\t');
         assert.deepEqual([med[0], med[1], med[2], med[3]], ['accueil', 'mediane', '95', '1800']);
@@ -164,7 +165,7 @@ describe('design 1b — performance mobile : branchement en CI', () => {
         return yml.slice(i, next === -1 ? undefined : next);
     }
 
-    test('étape bloquante après npm run e2e : script, délai ≤ 10 min, aucun continue-on-error, lancée même si l’e2e échoue', () => {
+    test('étape bloquante après npm run e2e : script, délai ≤ 15 min (5 passages depuis le 18/11), aucun continue-on-error, lancée même si l’e2e échoue', () => {
         const step = stepBlock('"E2E : performance mobile mesurée');
         assert.match(step, /\n {8}id: perf-mobile\n/);
         assert.match(step, /node scripts\/e2e\/perf-mobile\.mjs 2>&1 \| tee \/tmp\/perf-mobile\.log/);
@@ -172,7 +173,7 @@ describe('design 1b — performance mobile : branchement en CI', () => {
         assert.doesNotMatch(step, /continue-on-error/);
         assert.doesNotMatch(step, /--dry/);
         const timeout = /timeout-minutes: (\d+)/.exec(step);
-        assert.ok(timeout && Number(timeout[1]) > 0 && Number(timeout[1]) <= 10, 'timeout-minutes entre 1 et 10');
+        assert.ok(timeout && Number(timeout[1]) > 0 && Number(timeout[1]) <= 15, 'timeout-minutes entre 1 et 15');
         assert.match(step, /if: \$\{\{ !cancelled\(\) && steps\.build\.outcome == 'success' && steps\.e2e-start\.outcome == 'success' \}\}/);
         assert.doesNotMatch(step, /steps\.e2e\.outcome/, 'mesure indépendante du résultat de l’e2e');
         assert.ok(yml.indexOf('id: perf-mobile') > yml.indexOf('npm run e2e 2>&1 | tee /tmp/e2e.log'), 'après npm run e2e');
@@ -268,7 +269,7 @@ describe('design 1b — performance mobile : branchement en CI', () => {
         assert.equal(calibratedCpuMultiplier(50_000), 16, 'borne haute');
         for (const v of [null, undefined, Number.NaN, 0, -5]) assert.equal(calibratedCpuMultiplier(v as unknown as number), 4, String(v));
         assert.equal(SEUILS.score, 90);
-        assert.equal(PASSAGES, 3);
+        assert.equal(PASSAGES, 5);
         // Valeurs brutes : indice et ralentissement de chaque passage dans lighthouse.tsv, tours de calibration dans calibration.tsv
         assert.deepEqual(TSV_HEADER.split('\t').slice(-2), ['indice_puissance', 'ralentissement_cpu']);
         const rows = tsvRows('accueil', [{ score: 92, lcp: 1_800, cls: 0, tbt: 200, fcp: 1_000, si: 1_100, bytes: 500_000, finalUrl: '/', benchmarkIndex: 3571, cpu: 7.14 } as never], []);

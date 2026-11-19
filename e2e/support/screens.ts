@@ -87,6 +87,7 @@ import type { FakePushCounters, FakePushMode } from './fake-push';
 import type { CaptureRole } from './fixtures';
 import type { PageGuard } from './network';
 import { expectBuyBarAnchored } from './terrain';
+import { readStoredLots } from './parcours';
 
 export interface ScreenContext {
     page: Page;
@@ -1765,6 +1766,34 @@ export const SCREENS: readonly Screen[] = [
             await expect(c.page.locator('[data-ev-qr-payload]')).toBeVisible({ timeout: 20_000 });
         },
         masks: (page) => [page.locator('[data-ev-qr-payload]')],
+    },
+    // Décision du 19/11 (Mes billets, option 1) : l'enregistrement hors ligne garde TOUS les billets, même ceux en vignette.
+    // Sur téléphone, le second billet à venir (« la veille ») est une vignette ; son lot (codes) est enregistré par la
+    // synchronisation de tous les billets ; réseau coupé, la vignette touchée s'ouvre sur ce lot (état hors ligne du billet
+    // lu sur le téléphone, jamais « à télécharger »).
+    {
+        id: 'billet-vignette-hors-ligne', titre: 'Mes billets — billet en vignette ouvert sans réseau (lot enregistré sur le téléphone)', role: 'client', needsIds: true,
+        path: () => '/tickets?tab=a-venir', serviceWorkers: 'allow', views: MOBILE_VIEWS,
+        ready: async (c) => {
+            const id = ids(c.ids).tickets.clientVeille;
+            await expect(c.page.locator('[data-ev-ticket-thumb]').first(), 'au moins un billet en vignette').toBeVisible({ timeout: 45_000 });
+            await expect.poll(async () => (await readStoredLots(c.page, id)).reduce((n, l) => n + Number(l.count), 0), {
+                message: `lot hors ligne du billet en vignette ${id} enregistré (codes)`, timeout: 60_000,
+            }).toBeGreaterThan(0);
+        },
+        actions: async (c) => {
+            const id = ids(c.ids).tickets.clientVeille;
+            c.guard.freeze(); // passage hors ligne volontaire : la collecte d'erreurs s'arrête
+            await c.context.setOffline(true);
+            const thumb = c.page.locator('[data-ev-ticket-thumb]').first();
+            const title = String(await thumb.getAttribute('aria-label'));
+            await thumb.getByRole('button').click();
+            const card = c.page.locator(`article[aria-label="${title.replace(/"/g, '\\"')}"]:not([data-ev-ticket-thumb])`).last();
+            await expect(card.locator('[data-ev-offline-state]'), 'billet ouvert sans réseau : état lu dans le lot du téléphone')
+                .toHaveAttribute('data-ev-offline-state', /^(available|not_yet)$/, { timeout: 20_000 });
+            expect((await readStoredLots(c.page, id)).length, 'lot toujours sur le téléphone').toBeGreaterThan(0);
+        },
+        masks: (page) => [page.getByRole('img', { name: /QR/i })],
     },
     {
         id: 'billet-hors-ligne-sans-codes', titre: 'Billet hors ligne — aucun code enregistré sur ce téléphone, réseau coupé', role: 'client', needsIds: true,

@@ -57,6 +57,7 @@ import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
 import { TONE_SOFT } from '@/components/ui/tones';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { usePageSettled } from '@/hooks/usePageSettled';
 import { formatDateTime, formatFcfa } from '@/lib/format';
 import { REFUND_DELAYED_LABEL } from '@/lib/payments/payment-labels';
 import { TICKET_STATUS_META, type TicketStatus } from '@/lib/tickets/ticket-status';
@@ -95,23 +96,10 @@ function useSecondsLeft(until: number | null, min: number): number {
 function QrSeconds({ until, min }: { until: number; min: number }) {
   const seconds = useSecondsLeft(until, min);
   return (
-    <span className="text-sm font-bold tabular-nums text-primary-text">
+    <span data-ev-qr-timer="" className="text-sm font-bold tabular-nums text-primary-text">
       <span aria-hidden="true">{seconds} s</span>
       <span className="sr-only">Nouveau code dans {seconds} secondes</span>
     </span>
-  );
-}
-
-/** Barre du pas du code en cours. */
-function QrProgress({ until, stepMs }: { until: number; stepMs: number }) {
-  const seconds = useSecondsLeft(until, 0);
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-border" aria-hidden="true">
-      <div
-        className="h-full w-full origin-left rounded-full bg-brand-vif transition-transform duration-1000 ease-linear"
-        style={{ transform: `scaleX(${Math.max(0.05, Math.min(1, (seconds * 1000) / stepMs))})` }}
-      />
-    </div>
   );
 }
 
@@ -124,35 +112,23 @@ function QrFullscreenLive({ until, min, ...rest }: { until: number | null; min: 
 /**
  * Démarrage du travail d'une carte (code dynamique, lot hors ligne, QR) : tout de suite pour le premier billet (`eager`) ;
  * pour les autres, quand la carte devient visible (glissée à l'écran, grille de l'ordinateur) ou quand le téléphone est
- * libre après l'affichage de la page — jamais pendant le chargement de Mes billets (design 1b, décision du 18/11).
+ * libre une fois la page chargée — jamais pendant le chargement de Mes billets (design 1b, décision du 18/11 ; run 420).
  * Sans réseau aussi (lot hors ligne) : rien ne dépend de la connexion ici.
  */
 function useStartWhenReady(eager: boolean, ref: React.RefObject<HTMLElement | null>): boolean {
-  const [started, setStarted] = useState<boolean>(eager);
+  // Run 420 : démarrage au premier moment libre, souvent avant la fin du chargement (codes et QR des billets 2 et 3 dans
+  // la fenêtre mesurée) ; désormais après l'événement load puis le premier moment libre (usePageSettled), ou à l'écran.
+  const settled = usePageSettled();
+  const [visible, setVisible] = useState<boolean>(false);
   useEffect(() => {
-    if (started) return undefined;
-    let done = false;
-    const go = (): void => {
-      if (done) return;
-      done = true;
-      setStarted(true);
-    };
-    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
-    const idleId = w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 4_000 }) : null;
-    const timer = idleId === null ? setTimeout(go, 1_500) : null;
+    if (eager || visible) return undefined;
     const el = ref.current;
-    const observer = el && typeof IntersectionObserver === 'function'
-      ? new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) go(); }, { threshold: 0.3 })
-      : null;
-    if (observer && el) observer.observe(el);
-    return () => {
-      done = true;
-      observer?.disconnect();
-      if (idleId !== null && w.cancelIdleCallback) w.cancelIdleCallback(idleId);
-      if (timer) clearTimeout(timer);
-    };
-  }, [started, ref]);
-  return started;
+    if (!el || typeof IntersectionObserver !== 'function') return undefined;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) setVisible(true); }, { threshold: 0.3 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [eager, visible, ref]);
+  return eager || settled || visible;
 }
 
 /** Design 1b (point 8) : QR en grand chargé seulement au toucher du QR (hors du premier chargement de Mes billets). */
@@ -231,7 +207,7 @@ async function readErrorMessage(res: Response, context: string): Promise<string 
   }
 }
 
-export const TicketCard: React.FC<TicketCardProps> = ({
+const TicketCardView: React.FC<TicketCardProps> = ({
   id,
   eventId,
   ticketNumber,
@@ -443,7 +419,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
   // Horloge de la carte : renouvelée aux seuls instants qui changent son contenu (code périmé, pas suivant du lot local),
   // plus chaque seconde (design 1b, run 406 : toute la carte se redessinait chaque seconde). Le compte à rebours affiché
-  // est un petit composant à part (QrSeconds, QrProgress).
+  // est un petit composant à part (QrSeconds).
   const usesLocalLot = isOffline && Boolean(offlineLot) && offlineEligible;
   useEffect(() => {
     if (usesLocalLot) setClock(Date.now());
@@ -754,8 +730,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                       <p className="text-sm font-medium text-foreground-strong">Connexion requise pour afficher le code d’entrée.</p>
                     </div>
                   ) : (
-                    <div role="status" className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <QrCode size={28} aria-hidden="true" className="text-primary-text motion-safe:animate-pulse" />
+                    // Décision du 18/11 : QR pas encore prêt = squelette FIXE (aucune animation continue sur Mes billets)
+                    <div role="status" data-ev-qr-wait="" className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <QrCode size={28} aria-hidden="true" className="text-primary-text" />
                       <span className="text-sm font-medium">Code d’entrée…</span>
                     </div>
                   )}
@@ -775,7 +752,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
                   </span>
                   {qrValue && qrUntil !== null && <QrSeconds until={qrUntil} min={qrMin} />}
                 </div>
-                {liveCode && showQr && <QrProgress until={liveCode.expiresAt} stepMs={liveCode.stepMs} />}
+                {/* Décision du 18/11 : plus de barre animée du pas du code (animation continue) ; le décompte en secondes suffit */}
                 <p className="text-sm leading-snug text-muted-foreground">
                   {localCode
                     ? 'Code calculé sur ce téléphone. Une capture d’écran n’est pas acceptée.'
@@ -934,3 +911,22 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     </article>
   );
 };
+
+/**
+ * Tentative 3 du 19/11 (run 427 : tâches React de 73 à 135 ms après le premier rendu) : chaque changement d'état de Mes
+ * billets (session, billets reçus, temps réel) redessinait la carte complète. La carte ne se redessine plus que si ses
+ * données changent ; les fonctions passées (rafraîchir, transférer, aide) ne s'appuient que sur ces données et sur des
+ * fonctions stables de la page : leur identité est ignorée. Son propre état et la session (contexte) la redessinent toujours.
+ */
+function sameCardData(a: TicketCardProps, b: TicketCardProps): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof TicketCardProps>;
+  for (const k of keys) {
+    const x = a[k];
+    const y = b[k];
+    if (typeof x === 'function' && typeof y === 'function') continue;
+    if (!Object.is(x, y)) return false;
+  }
+  return true;
+}
+
+export const TicketCard = React.memo(TicketCardView, sameCardData);
