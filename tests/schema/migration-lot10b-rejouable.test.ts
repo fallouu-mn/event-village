@@ -32,10 +32,10 @@ const RECOPIES: Record<string, { file: string; replaced: string[] }> = {
     venue_validation_decide: { file: LOT10B_MIGRATIONS[0], replaced: [
         "OR public.has_admin_permission(v_actor, 'partners.validate')) THEN",
     ] },
+    // Lignes d'origine gardées mot pour mot (audit cv11a-5-recopies) ; seul le compte des établissements exclut les salles
     notif_admin_review_sms: { file: LOT10B_MIGRATIONS[0], replaced: [
-        '-- Lot 11a : établissement soumis à la validation (VENUE_SUBMITTED, droit partners.validate)',
-        "IF v_kind NOT IN ('PARTNER_NEW', 'PARTNER_RESUBMITTED', 'EVENT_SUBMITTED', 'VENUE_SUBMITTED') THEN",
-        "v_perm := CASE WHEN v_kind = 'EVENT_SUBMITTED' THEN 'events.write' ELSE 'partners.validate' END;",
+        "'venue_count', COALESCE((v_row.template_data->>'venue_count')::integer, 0) + CASE WHEN v_kind = 'VENUE_SUBMITTED' THEN 1 ELSE 0 END,",
+        "'venue_count', CASE WHEN v_kind = 'VENUE_SUBMITTED' THEN 1 ELSE 0 END,",
     ] },
     finance_setting_set: { file: LOT10B_MIGRATIONS[1], replaced: [
         "'tables.max_pending_per_client', 'tables.reminder_hours') THEN",
@@ -59,10 +59,7 @@ const RECOPIES: Record<string, { file: string; replaced: string[] }> = {
         "'type', 'HALL_BALANCE_REMINDER', 'key', 'HALL_BALANCE_REMINDER:' || r.id::text,",
         "'user_id', r.client_id, 'data', COALESCE(public.hall_notif_data(r.id), '{}'::jsonb))), 0);",
     ] },
-    notif_cashouts_notify: { file: LOT10B_MIGRATIONS[2], replaced: [
-        "'type', 'REFUND_PAID',",
-        "'key', 'REFUND_PAID:' || NEW.id::text,",
-    ] },
+    notif_cashouts_notify: { file: LOT10B_MIGRATIONS[2], replaced: [] },
 };
 
 /** Texte de la dernière définition de public.<nom> dans les fichiers donnés (du CREATE au second $$). */

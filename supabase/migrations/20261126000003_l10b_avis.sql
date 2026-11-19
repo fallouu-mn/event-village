@@ -479,15 +479,25 @@ BEGIN
         IF NEW.status = 'CONFIRME' THEN
             IF v_refund THEN
                 IF v_user IS NOT NULL OR v_phone IS NOT NULL THEN
+                    -- Lot 10b : remboursement d'une réservation de salle, avis de la salle ; sinon, avis inchangé
+                    IF v_hall_res IS NOT NULL THEN
+                        PERFORM public.notif_enqueue(jsonb_strip_nulls(jsonb_build_object(
+                            'type', 'HALL_REFUND_PAID',
+                            'key', 'HALL_REFUND_PAID:' || NEW.id::text,
+                            'user_id', v_user,
+                            'phone', v_phone,
+                            'data', COALESCE(public.hall_notif_data(v_hall_res), '{}'::jsonb) || v_money
+                        )));
+                    ELSE
                     PERFORM public.notif_enqueue(jsonb_strip_nulls(jsonb_build_object(
-                        'type', CASE WHEN v_hall_res IS NOT NULL THEN 'HALL_REFUND_PAID' ELSE 'REFUND_PAID' END,
-                        'key', CASE WHEN v_hall_res IS NOT NULL THEN 'HALL_REFUND_PAID:' ELSE 'REFUND_PAID:' END || NEW.id::text,
+                        'type', 'REFUND_PAID',
+                        'key', 'REFUND_PAID:' || NEW.id::text,
                         'user_id', v_user,
                         'phone', v_phone,
                         'event_id', v_event,
-                        'data', CASE WHEN v_hall_res IS NOT NULL THEN COALESCE(public.hall_notif_data(v_hall_res), '{}'::jsonb) || v_money
-                                     ELSE v_event_data || v_money END
+                        'data', v_event_data || v_money
                     )));
+                    END IF;
                 END IF;
                 IF NEW.kind = 'EVENT_CANCELLATION_REFUND' AND v_event IS NOT NULL AND v_partner_user IS NOT NULL THEN
                     -- Verrou par événement : deux confirmations concurrentes se voient (lecture après le verrou).

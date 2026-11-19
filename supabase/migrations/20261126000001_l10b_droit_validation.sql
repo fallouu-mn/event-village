@@ -180,6 +180,8 @@ SET search_path = public
 AS $$
 DECLARE
     v_kind    text := btrim(COALESCE(p->>'kind', ''));
+    -- Lot 10b : salle envoyée en validation (HALL_SUBMITTED), comptée à part (hall_count), même droit que les établissements
+    v_is_hall boolean := btrim(COALESCE(p->>'kind', '')) = 'HALL_SUBMITTED';
     v_ref     text := NULLIF(btrim(COALESCE(p->>'ref', '')), '');
     v_company text := NULLIF(btrim(COALESCE(p->>'company', '')), '');
     v_now     timestamptz := COALESCE(NULLIF(p->>'now', '')::timestamptz, now());
@@ -193,9 +195,12 @@ DECLARE
     v_refs    jsonb;
     v_touched integer := 0;
 BEGIN
-    -- Lot 11a : établissement soumis à la validation (VENUE_SUBMITTED) ; lot 10b : salle envoyée en validation
-    -- (HALL_SUBMITTED) ; droit halls.validate pour les deux
-    IF v_kind NOT IN ('PARTNER_NEW', 'PARTNER_RESUBMITTED', 'EVENT_SUBMITTED', 'VENUE_SUBMITTED', 'HALL_SUBMITTED') THEN
+    -- Lot 10b : une salle suit le chemin d'un établissement (même droit), comptée à part
+    IF v_is_hall THEN
+        v_kind := 'VENUE_SUBMITTED';
+    END IF;
+    -- Lot 11a : établissement soumis à la validation (VENUE_SUBMITTED, droit partners.validate)
+    IF v_kind NOT IN ('PARTNER_NEW', 'PARTNER_RESUBMITTED', 'EVENT_SUBMITTED', 'VENUE_SUBMITTED') THEN
         RAISE EXCEPTION USING ERRCODE = 'NT004', MESSAGE = format('Élément à valider inconnu : %s.', COALESCE(NULLIF(v_kind, ''), '(vide)'));
     END IF;
     IF v_ref IS NULL THEN
@@ -204,9 +209,11 @@ BEGIN
     IF v_now < now() - interval '1 minute' THEN
         RAISE EXCEPTION USING ERRCODE = 'NT003', MESSAGE = 'Horloge refusée : une heure dans le passé n''est jamais acceptée.';
     END IF;
-    v_perm := CASE WHEN v_kind = 'EVENT_SUBMITTED' THEN 'events.write'
-                   WHEN v_kind IN ('VENUE_SUBMITTED', 'HALL_SUBMITTED') THEN 'halls.validate'
-                   ELSE 'partners.validate' END;
+    v_perm := CASE WHEN v_kind = 'EVENT_SUBMITTED' THEN 'events.write' ELSE 'partners.validate' END;
+    -- Lot 10b : établissements et salles prévenus aux administrateurs qui ont halls.validate
+    IF v_kind = 'VENUE_SUBMITTED' THEN
+        v_perm := 'halls.validate';
+    END IF;
     IF jsonb_typeof(p->'only_admin_ids') = 'array' THEN
         v_only := ARRAY(SELECT x::uuid FROM jsonb_array_elements_text(p->'only_admin_ids') AS x);
     END IF;
@@ -230,8 +237,8 @@ BEGIN
             IF NOT (v_refs ? v_ref) THEN
                 v_data := jsonb_build_object(
                     'partner_count', COALESCE((v_row.template_data->>'partner_count')::integer, 0) + CASE WHEN v_kind IN ('PARTNER_NEW', 'PARTNER_RESUBMITTED') THEN 1 ELSE 0 END,
-                    'venue_count', COALESCE((v_row.template_data->>'venue_count')::integer, 0) + CASE WHEN v_kind = 'VENUE_SUBMITTED' THEN 1 ELSE 0 END,
-                    'hall_count', COALESCE((v_row.template_data->>'hall_count')::integer, 0) + CASE WHEN v_kind = 'HALL_SUBMITTED' THEN 1 ELSE 0 END,
+                    'venue_count', COALESCE((v_row.template_data->>'venue_count')::integer, 0) + CASE WHEN v_kind = 'VENUE_SUBMITTED' AND NOT v_is_hall THEN 1 ELSE 0 END,
+                    'hall_count', COALESCE((v_row.template_data->>'hall_count')::integer, 0) + CASE WHEN v_is_hall THEN 1 ELSE 0 END,
                     'event_count', COALESCE((v_row.template_data->>'event_count')::integer, 0) + CASE WHEN v_kind = 'EVENT_SUBMITTED' THEN 1 ELSE 0 END,
                     'refs', v_refs || to_jsonb(v_ref)
                 );
@@ -245,8 +252,8 @@ BEGIN
             v_due := public.notif_admin_review_due(GREATEST(v_now, COALESCE(v_last + interval '30 minutes', v_now)));
             v_data := jsonb_strip_nulls(jsonb_build_object(
                 'partner_count', CASE WHEN v_kind IN ('PARTNER_NEW', 'PARTNER_RESUBMITTED') THEN 1 ELSE 0 END,
-                'venue_count', CASE WHEN v_kind = 'VENUE_SUBMITTED' THEN 1 ELSE 0 END,
-                'hall_count', CASE WHEN v_kind = 'HALL_SUBMITTED' THEN 1 ELSE 0 END,
+                'venue_count', CASE WHEN v_kind = 'VENUE_SUBMITTED' AND NOT v_is_hall THEN 1 ELSE 0 END,
+                'hall_count', CASE WHEN v_is_hall THEN 1 ELSE 0 END,
                 'event_count', CASE WHEN v_kind = 'EVENT_SUBMITTED' THEN 1 ELSE 0 END,
                 'company', CASE WHEN v_kind = 'PARTNER_NEW' THEN COALESCE(v_company, 'Une structure') END,
                 'refs', jsonb_build_array(v_ref)
