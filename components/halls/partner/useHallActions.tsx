@@ -8,6 +8,8 @@
  *  - supprimer : DELETE /api/partner/halls/[id], après confirmation ; une salle déjà réservée est refusée par la route
  *    (« Retirez-la de la vente à la place »), message affiché.
  * Une seule action à la fois (aucun double envoi). Le résultat est rendu par `banner` (bandeau annoncé) et un toast.
+ * Lot 10b (correctifs, point 2) : le renvoi direct s’affiche « Renvoyer sans modifier » ; « Corriger et renvoyer »
+ * passe par le formulaire (enregistrement puis renvoi). Le message d'échec garde la phrase de la route.
  */
 import React, { useRef, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -79,7 +81,11 @@ export function useHallActions({ onChanged, onDeleted }: { onChanged: () => void
             toast.success('Salle renvoyée en validation.');
             onChanged();
         } catch (err) {
-            setNotice({ tone: 'danger', title: `« ${hall.name} » n’a pas été renvoyée en validation.`, text: errorMessage(err, 'Envoi impossible pour le moment. Réessayez.') });
+            setNotice({
+                tone: 'danger',
+                title: `« ${hall.name} » n’a pas été renvoyée en validation.`,
+                text: `${errorMessage(err, 'Envoi impossible pour le moment. Réessayez.')} Pour compléter la salle, touchez « Corriger et renvoyer ».`,
+            });
         } finally {
             end();
         }

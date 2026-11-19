@@ -12,11 +12,20 @@
  *    quitter avec des saisies non enregistrées.
  * Envoi : POST /api/partner/halls (création) ou PUT /api/partner/halls/[id] (modification). Les règles sont revérifiées
  * par la route ; son refus (`error`) est affiché tel quel dans le récapitulatif.
+ * Lot 10b (correctifs) :
+ *  - point 1 : la saisie est gardée sur l'appareil (useHallDraft, localStorage, clé par compte et par fiche) ; à
+ *    l'ouverture, bandeau « Reprendre ma salle en cours » (création) ou reprise des changements non enregistrés
+ *    (modification) ; brouillon effacé après un enregistrement réussi ; photos = adresses déjà déposées ;
+ *  - point 2 : salle refusée : motif affiché en tête, bouton « Enregistrer et renvoyer en validation » (PUT puis
+ *    POST /api/partner/halls/[id]/submit) ; un renvoi refusé laisse les changements enregistrés et montre le message
+ *    de la route ;
+ *  - point 3 : vraies valeurs (hallDefaults, lues par la page serveur) : pourcentage de l'acompte par défaut, durée de
+ *    garde d'une date et échéance du solde rappelées dans l'aide de l'acompte.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Plus, Save, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, History, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FilterChip } from '@/components/ui/FilterChip';
@@ -27,14 +36,17 @@ import { Select, TextInput, Textarea } from '@/components/ui/Field';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
-import { errorMessage, fetchJson } from '@/components/partner/fetch-json';
+import { errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { formatDateTime } from '@/lib/format';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { AMENITY_SUGGESTIONS, POLICY_LABELS } from '@/lib/halls/views';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, canonicalCity, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
 import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
 // Types seulement : la carte reste chargée à la demande
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
-import { POLICY_KEYS, putJson, type OwnHall, type PolicyKey } from './hall-api';
+import { POLICY_KEYS, daysText, minutesText, percentText, putJson, type HallDefaults, type OwnHall, type PolicyKey } from './hall-api';
+import { useHallDraft } from './useHallDraft';
 
 const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => m.MapPicker), {
     ssr: false,
@@ -82,11 +94,31 @@ const FIELD_LABELS: ReadonlyArray<[FieldKey, string]> = [
     ['images', 'Photos'],
 ];
 
-const DEPOSIT_OPTIONS: ReadonlyArray<{ value: DepositChoice; title: string; text: string }> = [
-    { value: 'DEFAUT', title: 'Acompte d’Event Village', text: 'La valeur par défaut fixée par Event Village.' },
-    { value: 'POURCENTAGE', title: 'Pourcentage du prix', text: 'Vous choisissez la part du prix payée à la réservation.' },
-    { value: 'MONTANT_FIXE', title: 'Montant fixe', text: 'Le même acompte en francs CFA, quelle que soit la durée.' },
-];
+/** Les trois façons de fixer l'acompte ; le pourcentage par défaut est la valeur réelle du réglage (hallDefaults). */
+function depositOptions(defaultPercent: number | null): ReadonlyArray<{ value: DepositChoice; title: string; text: string }> {
+    return [
+        {
+            value: 'DEFAUT',
+            title: defaultPercent !== null ? `Acompte d’Event Village : ${percentText(defaultPercent)}` : 'Acompte d’Event Village',
+            text: defaultPercent !== null
+                ? `${percentText(defaultPercent)} du prix, la valeur par défaut fixée par Event Village.`
+                : 'La valeur par défaut fixée par Event Village.',
+        },
+        { value: 'POURCENTAGE', title: 'Pourcentage du prix', text: 'Vous choisissez la part du prix payée à la réservation.' },
+        { value: 'MONTANT_FIXE', title: 'Montant fixe', text: 'Le même acompte en francs CFA, quelle que soit la durée.' },
+    ];
+}
+
+/** Aide de l'acompte : durée de garde d'une date et échéance du solde, avec les valeurs réelles quand elles sont lues. */
+function depositHelp(d: HallDefaults | null | undefined): string {
+    const hold = d?.holdMinutes
+        ? `La date est tenue ${minutesText(d.holdMinutes)} le temps de payer l’acompte.`
+        : 'La date est tenue le temps de payer l’acompte.';
+    const due = d?.balanceDueDays
+        ? `Le solde est à payer au plus tard ${daysText(d.balanceDueDays)} avant la date ; pour une date plus proche, tout se paie en une fois.`
+        : 'Le solde est à payer avant l’échéance ; pour une date proche, tout se paie en une fois.';
+    return `Le client paie l’acompte en réservant pour garder la date. ${hold} ${due}`;
+}
 
 const CITY_OPTIONS = [
     ...SENEGAL_CITIES.map((c) => ({ value: c, label: c })),
@@ -226,6 +258,58 @@ async function searchPlaces(query: string): Promise<PlaceSearchOutcome> {
     }
 }
 
+/** Contenu d'un brouillon gardé sur l'appareil. */
+interface HallDraftData {
+    values: HallValues;
+    cityOther: boolean;
+}
+
+const DRAFT_PREFIX = 'ev_salle_brouillon';
+const PHOTO_URL = /^(https?:\/\/|\/)\S*$/;
+
+function str(v: unknown, max: number): string | null {
+    return typeof v === 'string' && v.length <= max ? v : null;
+}
+
+/** Coordonnée lue : nombre fini dans ses bornes, null (pas encore placée), ou undefined (illisible). */
+function coord(c: unknown, limit: number): number | null | undefined {
+    if (c === null) return null;
+    return typeof c === 'number' && Number.isFinite(c) && Math.abs(c) <= limit ? c : undefined;
+}
+
+/** Lecture prudente d'un brouillon (il vient du stockage de l'appareil : rien n'est cru sur parole). */
+function parseDraft(raw: unknown): HallDraftData | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as { values?: unknown; cityOther?: unknown };
+    const v = r.values && typeof r.values === 'object' ? (r.values as Record<string, unknown>) : null;
+    if (!v) return null;
+    const name = str(v.name, LIMITS.name * 2);
+    const description = str(v.description, LIMITS.description * 2);
+    const capacity = str(v.capacity, 40);
+    const pricePerDay = str(v.pricePerDay, 40);
+    const pricePerHour = str(v.pricePerHour, 40);
+    const depositValue = str(v.depositValue, 40);
+    const address = str(v.address, LIMITS.address * 2);
+    const city = str(v.city, LIMITS.city * 2);
+    const depositChoice = v.depositChoice === 'DEFAUT' || v.depositChoice === 'POURCENTAGE' || v.depositChoice === 'MONTANT_FIXE' ? v.depositChoice : null;
+    const policy = POLICY_KEYS.find((k) => k === v.policy) ?? null;
+    const latitude = coord(v.latitude, 90);
+    const longitude = coord(v.longitude, 180);
+    const amenities = Array.isArray(v.amenities)
+        ? v.amenities.filter((a): a is string => typeof a === 'string' && a.length > 0 && a.length <= LIMITS.amenity).slice(0, LIMITS.amenities)
+        : null;
+    const images = Array.isArray(v.images)
+        ? v.images.filter((u): u is string => typeof u === 'string' && u.length <= 2048 && PHOTO_URL.test(u)).slice(0, LIMITS.photos)
+        : null;
+    if (name === null || description === null || capacity === null || pricePerDay === null || pricePerHour === null || depositValue === null
+        || address === null || city === null || depositChoice === null || policy === null || latitude === undefined || longitude === undefined
+        || amenities === null || images === null) return null;
+    return {
+        values: { name, description, capacity, pricePerDay, pricePerHour, depositChoice, depositValue, policy, address, city, latitude, longitude, amenities, images },
+        cityOther: r.cityOther === true,
+    };
+}
+
 /** En-tête numéroté d'une section du formulaire. */
 function SectionTitle({ n, id, title, text }: { n: number; id: string; title: string; text?: string }) {
     return (
@@ -269,15 +353,21 @@ export interface HallFormProps {
     hall?: OwnHall | null;
     /** Textes des trois règles d'annulation, lus par la page serveur ; null si la lecture a échoué. */
     policyTexts: Record<PolicyKey, string> | null;
+    /** Réglages réels des salles (acompte par défaut, durée de garde, échéance du solde), lus par la page serveur. */
+    defaults?: HallDefaults | null;
 }
 
-export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
+export function HallForm({ mode, hall, policyTexts, defaults }: HallFormProps) {
     const router = useRouter();
     const toast = useToast();
+    const { user } = useAuth();
     const isEdit = mode === 'edit' && !!hall;
-    const start = useMemo(() => initialValues(hall), [hall]);
+    const resubmit = isEdit && hall?.validation_status === 'REFUSEE';
+    // Valeurs enregistrées : celles de la salle, puis celles du dernier enregistrement réussi (renvoi refusé)
+    const [start, setStart] = useState<HallValues>(() => initialValues(hall));
     const [values, setValues] = useState<HallValues>(start);
     const [cityOther, setCityOther] = useState<boolean>(() => !!start.city && !senegalCity(start.city));
+    const [resubmitError, setResubmitError] = useState<string | null>(null);
     const [errors, setErrors] = useState<ErrorMap>({});
     const [formError, setFormError] = useState<string | null>(null);
     const [submitted, setSubmitted] = useState(false);
@@ -288,10 +378,33 @@ export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
     const [photoNotice, setPhotoNotice] = useState('');
     const savingRef = useRef(false);
     const summaryRef = useRef<HTMLDivElement>(null);
+    const resubmitRef = useRef<HTMLDivElement>(null);
 
     const dirty = !leaving && JSON.stringify(values) !== JSON.stringify(start);
     const describeUnsaved = useCallback(() => ['Les informations de la salle'], []);
     const unsaved = useUnsavedGuard(dirty, describeUnsaved);
+
+    // ── Brouillon gardé sur l'appareil ──
+    const draftKey = user?.id ? `${DRAFT_PREFIX}:${user.id}:${isEdit && hall ? hall.id : 'nouvelle'}` : null;
+    const draftValue = useMemo<HallDraftData>(() => ({ values, cityOther }), [values, cityOther]);
+    const draftBaseline = useMemo<HallDraftData>(() => ({ values: start, cityOther: !!start.city && !senegalCity(start.city) }), [start]);
+    const draft = useHallDraft<HallDraftData>({
+        storageKey: draftKey,
+        value: draftValue,
+        baseline: draftBaseline,
+        base: isEdit && hall ? hall.updated_at : null,
+        enabled: !leaving && !saving,
+        parse: parseDraft,
+    });
+    const draftOffer = draft.offer;
+    const draftStale = !!draftOffer && isEdit && !!hall && draftOffer.base !== null && draftOffer.base !== hall.updated_at;
+    const resumeDraft = () => {
+        const offer = draft.resume();
+        if (!offer) return;
+        setValues(offer.data.values);
+        setCityOther(offer.data.cityOther);
+        toast.success(isEdit ? 'Changements repris.' : 'Salle en cours reprise.');
+    };
 
     // Après un premier envoi refusé, les erreurs suivent la saisie
     useEffect(() => {
@@ -327,9 +440,33 @@ export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
         }
         savingRef.current = true;
         setSaving(true);
+        setResubmitError(null);
         try {
             if (isEdit && hall) {
-                await putJson<{ success: boolean }>(`/api/partner/halls/${encodeURIComponent(hall.id)}`, payloadOf(values));
+                const hallUrl = `/api/partner/halls/${encodeURIComponent(hall.id)}`;
+                await putJson<{ success: boolean }>(hallUrl, payloadOf(values));
+                draft.clear();
+                if (resubmit) {
+                    try {
+                        await sendJson(`${hallUrl}/submit`, 'POST');
+                    } catch (err) {
+                        // Les changements sont enregistrés (nouvelle base du formulaire) ; seul le renvoi a échoué
+                        setStart(values);
+                        setResubmitError(errorMessage(err, 'Envoi impossible pour le moment. Réessayez.'));
+                        toast.success('Modifications enregistrées.');
+                        window.setTimeout(() => {
+                            resubmitRef.current?.focus();
+                            resubmitRef.current?.scrollIntoView({ block: 'start' });
+                        }, 30);
+                        savingRef.current = false;
+                        setSaving(false);
+                        return;
+                    }
+                    setLeaving(true);
+                    toast.success('Salle renvoyée en validation.');
+                    router.push(`/partner/halls/${encodeURIComponent(hall.id)}?enregistree=renvoyee`);
+                    return;
+                }
                 setLeaving(true);
                 toast.success('Modifications enregistrées.');
                 router.push(`/partner/halls/${encodeURIComponent(hall.id)}?enregistree=modifiee`);
@@ -339,6 +476,7 @@ export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payloadOf(values)),
                 });
+                draft.clear();
                 setLeaving(true);
                 toast.success('Salle enregistrée : elle sera vérifiée avant d’être visible.');
                 const id = typeof body.hall?.id === 'string' ? body.hall.id : null;
@@ -414,10 +552,63 @@ export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
     const citySelectValue = cityOther ? OTHER_CITY_VALUE : senegalCity(values.city) ?? (values.city ? OTHER_CITY_VALUE : '');
     const validated = isEdit && hall?.validation_status === 'VALIDEE';
     const cardClass = 'flex flex-col gap-5 p-4 sm:p-6';
+    const draftWhen = draftOffer?.savedAt ? formatDateTime(draftOffer.savedAt) : null;
+    const draftName = draftOffer?.data.values.name.trim() ?? '';
 
     return (
         <>
             <form noValidate onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-6" aria-busy={saving}>
+                {draftOffer && (
+                    <StatusBanner
+                        tone="info"
+                        icon={<History size={20} />}
+                        title={isEdit ? 'Reprendre vos changements non enregistrés' : 'Reprendre ma salle en cours'}
+                        action={(
+                            <>
+                                <Button type="button" size="sm" onClick={resumeDraft}>
+                                    {isEdit ? 'Reprendre les changements' : 'Reprendre'}
+                                </Button>
+                                <Button type="button" variant="secondary" size="sm" onClick={draft.discard}>
+                                    {isEdit ? 'Ignorer' : 'Recommencer'}
+                                </Button>
+                            </>
+                        )}
+                    >
+                        <span className="block">
+                            {isEdit
+                                ? `Des changements de cette salle, faits sur cet appareil${draftWhen ? ` le ${draftWhen}` : ''}, n’ont pas été enregistrés.`
+                                : `Vous aviez commencé ${draftName ? `« ${draftName} »` : 'une salle'} sur cet appareil${draftWhen ? ` le ${draftWhen}` : ''}. Les photos déjà déposées sont gardées.`}
+                        </span>
+                        {draftStale && (
+                            <span className="mt-1 block font-semibold">La salle a été modifiée depuis : vérifiez chaque champ avant d’enregistrer.</span>
+                        )}
+                        <span className="mt-1 block">
+                            {isEdit
+                                ? '« Ignorer » efface ces changements et garde la salle telle qu’elle est enregistrée.'
+                                : '« Recommencer » efface ce brouillon et ouvre un formulaire vide.'}
+                        </span>
+                    </StatusBanner>
+                )}
+
+                {resubmit && hall && (
+                    <StatusBanner tone="danger" title="Salle refusée : corrigez-la puis renvoyez-la en validation">
+                        <span className="block font-semibold">Motif de l’équipe d’Event Village :</span>
+                        <span className="mt-1 block whitespace-pre-line break-words rounded-xl border border-danger-border bg-card px-3 py-2 text-base font-medium text-foreground-strong">
+                            {hall.validation_reason?.trim() || 'Aucun motif n’a été transmis.'}
+                        </span>
+                        <span className="mt-2 block">« Enregistrer et renvoyer en validation » enregistre vos corrections et renvoie la salle à l’équipe.</span>
+                    </StatusBanner>
+                )}
+
+                {resubmitError && (
+                    <div ref={resubmitRef} tabIndex={-1} className="rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <StatusBanner tone="warning" announce="alert" title="Modifications enregistrées, mais la salle n’a pas été renvoyée en validation">
+                            <span className="block break-words">{resubmitError}</span>
+                            <span className="mt-1 block">Complétez ce qui est demandé, puis touchez de nouveau « Enregistrer et renvoyer en validation ».</span>
+                        </StatusBanner>
+                    </div>
+                )}
+
                 {validated ? (
                     <StatusBanner tone="warning" title="Cette salle est validée : elle reste visible pendant vos modifications.">
                         Un changement de prix, d’adresse, de nom ou de photos est signalé à l’équipe d’Event Village. Les réservations déjà faites gardent leurs montants et leur règle d’annulation.
@@ -526,11 +717,9 @@ export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
                     </div>
                     <fieldset className="flex flex-col gap-3">
                         <legend className="mb-1 text-sm font-semibold text-foreground-strong">Acompte</legend>
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                            Le client paie l’acompte en réservant pour garder la date, puis le solde avant l’échéance.
-                        </p>
+                        <p className="text-sm leading-relaxed text-muted-foreground">{depositHelp(defaults)}</p>
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                            {DEPOSIT_OPTIONS.map((o) => (
+                            {depositOptions(defaults?.depositDefaultPercent ?? null).map((o) => (
                                 <RadioCard
                                     key={o.value}
                                     name="hall-deposit"
@@ -778,7 +967,11 @@ export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
                     <LinkButton href={isEdit && hall ? `/partner/halls/${encodeURIComponent(hall.id)}` : '/partner/halls'} variant="secondary" size="lg">
                         Annuler
                     </LinkButton>
-                    {isEdit ? (
+                    {resubmit ? (
+                        <Button type="submit" size="lg" isLoading={saving} disabled={saving} leftIcon={<Send size={18} />}>
+                            Enregistrer et renvoyer en validation
+                        </Button>
+                    ) : isEdit ? (
                         <Button type="submit" size="lg" isLoading={saving} disabled={saving} leftIcon={<Save size={18} />}>
                             Enregistrer les modifications
                         </Button>
@@ -795,10 +988,12 @@ export function HallForm({ mode, hall, policyTexts }: HallFormProps) {
                 onClose={unsaved.stay}
                 onConfirm={unsaved.leave}
                 title="Quitter sans enregistrer ?"
-                message="Vos saisies sur la salle ne sont pas enregistrées et seront perdues."
+                message={draft.available
+                    ? 'Vos saisies ne sont pas envoyées à Event Village. Elles restent gardées sur cet appareil : vous pourrez les reprendre en revenant sur ce formulaire.'
+                    : 'Vos saisies sur la salle ne sont pas enregistrées et seront perdues.'}
                 confirmLabel="Quitter sans enregistrer"
                 cancelLabel="Rester sur la page"
-                variant="danger"
+                variant={draft.available ? 'warning' : 'danger'}
             />
         </>
     );

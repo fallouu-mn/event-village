@@ -7,6 +7,8 @@
  *  - Recherche dans le nom ou la ville (anti-rebond de 300 ms), pagination serveur (20 par page).
  *  - Chaque ligne ouvre la fiche de décision (/admin/halls/[id]).
  *  - Aucun chiffre calculé ici : salles, prix, nombres et total viennent de GET /api/admin/halls.
+ *  - Lot 10b (correctifs, point 4) : onglet « En attente » : date exacte d'envoi (`submittedAt`, « Envoyée le … »,
+ *    « Date d'envoi inconnue » si elle manque) ; la file est triée par elle (route).
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,6 +30,7 @@ import {
   DEFAULT_HALL_STATUS,
   HALL_ADMIN_STATUSES,
   HALL_STATUS_ADMIN_HINT,
+  SUBMITTED_UNKNOWN,
   hallStatusLabel,
   isHallsResponse,
   readError,
@@ -175,7 +178,10 @@ export default function AdminHallsPage() {
   })), [data]);
 
   const showReason = tab === 'REFUSEE' || tab === 'SUSPENDUE';
-  const dateHeader = tab === DEFAULT_HALL_STATUS ? 'Envoyée le' : 'Mise à jour le';
+  const pendingTab = tab === DEFAULT_HALL_STATUS;
+  const dateHeader = pendingTab ? 'Envoyée le' : 'Mise à jour le';
+  /** Date montrée : envoi en validation (onglet « En attente »), sinon dernière mise à jour. */
+  const dateOf = (h: AdminHallRow): string | null => (pendingTab ? h.submittedAt ?? null : h.updatedAt);
   const reasonHeader = tab === 'SUSPENDUE' ? 'Motif de la suspension' : 'Motif du refus';
   const hrefOf = (h: AdminHallRow): string => `/admin/halls/${h.id}`;
 
@@ -225,9 +231,11 @@ export default function AdminHallsPage() {
     {
       key: 'date',
       header: dateHeader,
-      render: (h) => (h.updatedAt
-        ? <time dateTime={toDakarDateTimeLocal(h.updatedAt)} className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{formatDateTime(h.updatedAt)}</time>
-        : <span className="text-sm text-muted-foreground">—</span>),
+      render: (h) => {
+        const at = dateOf(h);
+        if (at) return <time dateTime={toDakarDateTimeLocal(at)} className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{formatDateTime(at)}</time>;
+        return <span className="text-sm text-muted-foreground">{pendingTab ? SUBMITTED_UNKNOWN : '—'}</span>;
+      },
     },
     ...(showReason ? [{
       key: 'motif',
@@ -282,15 +290,23 @@ export default function AdminHallsPage() {
             <PartnerBadge validated={h.partnerValidated} />
           </dd>
         </div>
-        {h.updatedAt && (
-          <div className="flex items-start gap-2">
-            <dt className="mt-0.5 flex-shrink-0"><CalendarClock size={16} aria-hidden="true" /><span className="sr-only">{dateHeader}</span></dt>
-            <dd>
-              {`${dateHeader} `}
-              <time dateTime={toDakarDateTimeLocal(h.updatedAt)} className="tabular-nums">{formatDateTime(h.updatedAt)}</time>
-            </dd>
-          </div>
-        )}
+        {(() => {
+          const at = dateOf(h);
+          if (!at && !pendingTab) return null;
+          return (
+            <div className="flex items-start gap-2">
+              <dt className="mt-0.5 flex-shrink-0"><CalendarClock size={16} aria-hidden="true" /><span className="sr-only">{dateHeader}</span></dt>
+              <dd>
+                {at ? (
+                  <>
+                    {`${dateHeader} `}
+                    <time dateTime={toDakarDateTimeLocal(at)} className="tabular-nums">{formatDateTime(at)}</time>
+                  </>
+                ) : SUBMITTED_UNKNOWN}
+              </dd>
+            </div>
+          );
+        })()}
         {showReason && (
           <div className="mt-1 flex flex-col gap-0.5 rounded-xl bg-muted px-3 py-2">
             <dt className="font-medium text-foreground-strong">{reasonHeader}</dt>

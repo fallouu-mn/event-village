@@ -6,14 +6,18 @@
  * si elle est refusée ou suspendue, réservations à venir ; actions Voir, Modifier, Calendrier, « Renvoyer en
  * validation » (refusée), retirer de la vente ou remettre, supprimer (useHallActions). Liens vers les recettes et
  * l'ajout d'une salle. États : chargement, erreur avec « Réessayer », aucune salle.
+ * Lot 10b (correctifs, point 2) : salle refusée : bandeau d'erreur avec le motif tel quel et bouton principal
+ * « Corriger et renvoyer » (ouvre la modification, qui enregistre puis renvoie en validation) ; « Renvoyer sans
+ * modifier » reste possible. Salle suspendue : motif dans un bandeau.
  */
 import React from 'react';
-import { Building2, CalendarDays, Eye, MapPin, Pencil, Plus, Send, Trash2, Users, Wallet } from 'lucide-react';
+import { Building2, CalendarDays, Eye, MapPin, Pencil, PencilLine, Plus, Send, Trash2, Users, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useServerData } from '@/components/partner/useServerData';
 import { fcfaText } from '@/lib/halls/views';
 import { formatInteger } from '@/lib/format';
@@ -69,24 +73,34 @@ function HallCard({ hall, first, actions }: { hall: PartnerHallRow; first: boole
                     )}
                 </div>
                 {hall.statusHint && <p className="text-sm leading-relaxed text-foreground">{hall.statusHint}</p>}
-                {showsReason(hall.validation_status) && hall.validation_reason && (
-                    <div className="rounded-xl border border-danger-border bg-danger-soft px-3 py-2">
-                        <p className="text-sm font-semibold text-danger-text">Motif de l’équipe d’Event Village</p>
-                        <p className="mt-0.5 break-words text-sm leading-relaxed text-foreground-strong">{hall.validation_reason}</p>
-                    </div>
-                )}
+                {refused ? (
+                    <StatusBanner tone="danger" title="Salle refusée : motif de l’équipe d’Event Village">
+                        <span className="block whitespace-pre-line break-words text-base font-medium text-foreground-strong">
+                            {hall.validation_reason?.trim() || 'Aucun motif n’a été transmis.'}
+                        </span>
+                    </StatusBanner>
+                ) : showsReason(hall.validation_status) && hall.validation_reason ? (
+                    <StatusBanner tone="suspended" title="Motif de l’équipe d’Event Village">
+                        <span className="block whitespace-pre-line break-words text-base font-medium text-foreground-strong">{hall.validation_reason}</span>
+                    </StatusBanner>
+                ) : null}
                 <p className="flex items-center gap-1.5 text-sm font-medium text-foreground-strong">
                     <CalendarDays size={16} className="flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                     {upcomingText(hall.upcomingCount)}
                 </p>
 
                 <div className="mt-auto flex flex-wrap gap-2 pt-1">
+                    {refused && (
+                        <LinkButton href={`${href}/edit`} size="sm" leftIcon={<PencilLine size={16} />} aria-describedby={titleId}>Corriger et renvoyer</LinkButton>
+                    )}
                     <LinkButton href={href} variant="secondary" size="sm" leftIcon={<Eye size={16} />} aria-describedby={titleId}>Voir</LinkButton>
-                    <LinkButton href={`${href}/edit`} variant="secondary" size="sm" leftIcon={<Pencil size={16} />} aria-describedby={titleId}>Modifier</LinkButton>
+                    {!refused && (
+                        <LinkButton href={`${href}/edit`} variant="secondary" size="sm" leftIcon={<Pencil size={16} />} aria-describedby={titleId}>Modifier</LinkButton>
+                    )}
                     <LinkButton href={`${href}#calendrier`} variant="ghost" size="sm" leftIcon={<CalendarDays size={16} />} aria-describedby={titleId}>Calendrier</LinkButton>
                     {refused && (
-                        <Button size="sm" leftIcon={<Send size={16} />} aria-describedby={titleId} isLoading={busy} disabled={actions.busyId !== null} onClick={() => void actions.submit(ref)}>
-                            Renvoyer en validation
+                        <Button variant="secondary" size="sm" leftIcon={<Send size={16} />} aria-describedby={titleId} isLoading={busy} disabled={actions.busyId !== null} onClick={() => void actions.submit(ref)}>
+                            Renvoyer sans modifier
                         </Button>
                     )}
                     <Button

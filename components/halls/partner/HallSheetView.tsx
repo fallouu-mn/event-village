@@ -6,9 +6,12 @@
  * clés (capacité, prix, acompte, règle d'annulation, adresse, équipements, description), actions Modifier et
  * « Renvoyer en validation » (refusée), puis le calendrier des réservations (HallCalendar). Après la création ou une
  * modification, un message (paramètre `enregistree` de l'adresse).
+ * Lot 10b (correctifs) : salle refusée : bandeau d'erreur avec le motif tel quel et bouton principal « Corriger et
+ * renvoyer » (ouvre la modification) ; message après un renvoi en validation ; acompte par défaut avec son
+ * pourcentage réel (hallDefaults, lu par la page serveur).
  */
 import React, { useEffect, useState } from 'react';
-import { Building2, MapPin, Pencil, Send, Wallet } from 'lucide-react';
+import { Building2, MapPin, Pencil, PencilLine, Send, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/EmptyState';
@@ -21,13 +24,15 @@ import { fcfaText, hallStatusView, POLICY_LABELS } from '@/lib/halls/views';
 import { formatInteger } from '@/lib/format';
 import { HallCalendar } from './HallCalendar';
 import { HallSheetSkeleton } from './HallSkeletons';
-import { showsReason, toneBanner, toneVariant, type OwnHall, type PolicyKey } from './hall-api';
+import { percentText, showsReason, toneBanner, toneVariant, type OwnHall, type PolicyKey } from './hall-api';
 import { useHallActions } from './useHallActions';
 
-export type SavedNotice = 'creee' | 'modifiee' | null;
+export type SavedNotice = 'creee' | 'modifiee' | 'renvoyee' | null;
 
-function depositText(h: OwnHall): string {
-    if (h.deposit_value === null || h.deposit_value === undefined) return 'Valeur par défaut d’Event Village';
+function depositText(h: OwnHall, defaultPercent: number | null): string {
+    if (h.deposit_value === null || h.deposit_value === undefined) {
+        return defaultPercent !== null ? `${percentText(defaultPercent)} du prix (valeur par défaut d’Event Village)` : 'Valeur par défaut d’Event Village';
+    }
     if (h.deposit_mode === 'MONTANT_FIXE') return `${fcfaText(h.deposit_value)} (montant fixe)`;
     return `${String(h.deposit_value).replace('.', ',')} % du prix`;
 }
@@ -93,7 +98,13 @@ function Gallery({ photos, name }: { photos: string[]; name: string }) {
     );
 }
 
-export function HallSheetView({ hallId, policyTexts, saved }: { hallId: string; policyTexts: Record<PolicyKey, string> | null; saved: SavedNotice }) {
+export function HallSheetView({ hallId, policyTexts, saved, defaultPercent = null }: {
+    hallId: string;
+    policyTexts: Record<PolicyKey, string> | null;
+    saved: SavedNotice;
+    /** Pourcentage réel de l'acompte par défaut (hallDefaults) ; null s'il n'a pas pu être lu. */
+    defaultPercent?: number | null;
+}) {
     const base = `/partner/halls/${encodeURIComponent(hallId)}`;
     const { data, error, loading, refreshing, reload } = useServerData<{ hall: OwnHall }>(`/api/partner/halls/${encodeURIComponent(hallId)}`);
     const actions = useHallActions({ onChanged: () => void reload() });
@@ -148,31 +159,32 @@ export function HallSheetView({ hallId, policyTexts, saved }: { hallId: string; 
                 )}
                 title={hall.name}
                 description={[hall.city, hall.capacity ? `${formatInteger(hall.capacity)} personnes` : null].filter(Boolean).join(' · ') || undefined}
-                actions={(
+                actions={refused ? (
                     <>
-                        <LinkButton href={`${base}/edit`} variant="secondary" leftIcon={<Pencil size={18} />}>Modifier</LinkButton>
-                        {refused && (
-                            <Button
-                                leftIcon={<Send size={18} />}
-                                isLoading={actions.busyId === hall.id}
-                                disabled={actions.busyId !== null}
-                                onClick={() => void actions.submit({ id: hall.id, name: hall.name })}
-                            >
-                                Renvoyer en validation
-                            </Button>
-                        )}
+                        <LinkButton href={`${base}/edit`} leftIcon={<PencilLine size={18} />}>Corriger et renvoyer</LinkButton>
+                        <Button
+                            variant="secondary"
+                            leftIcon={<Send size={18} />}
+                            isLoading={actions.busyId === hall.id}
+                            disabled={actions.busyId !== null}
+                            onClick={() => void actions.submit({ id: hall.id, name: hall.name })}
+                        >
+                            Renvoyer sans modifier
+                        </Button>
                     </>
+                ) : (
+                    <LinkButton href={`${base}/edit`} variant="secondary" leftIcon={<Pencil size={18} />}>Modifier</LinkButton>
                 )}
             />
 
             {savedShown && (
                 <StatusBanner
                     tone="success"
-                    title={savedShown === 'creee' ? 'Salle enregistrée.' : 'Modifications enregistrées.'}
+                    title={savedShown === 'creee' ? 'Salle enregistrée.' : savedShown === 'renvoyee' ? 'Salle renvoyée en validation.' : 'Modifications enregistrées.'}
                     action={<Button type="button" variant="ghost" size="sm" onClick={() => setSavedShown(null)}>Fermer</Button>}
                     className="mb-4"
                 >
-                    {savedShown === 'creee'
+                    {savedShown === 'creee' || savedShown === 'renvoyee'
                         ? 'Elle sera vérifiée par l’équipe d’Event Village avant d’être visible. Vous recevrez un message dès qu’elle aura été examinée.'
                         : refused ? 'Renvoyez la salle en validation quand vos corrections sont terminées.' : undefined}
                 </StatusBanner>
@@ -180,18 +192,33 @@ export function HallSheetView({ hallId, policyTexts, saved }: { hallId: string; 
 
             {actions.banner}
 
-            <StatusBanner tone={toneBanner(view.tone)} title={view.label} className="mb-6">
-                <span className="block">{view.hint}</span>
-                {showsReason(hall.validation_status) && hall.validation_reason && (
-                    <span className="mt-2 block">
-                        <span className="font-semibold">Motif de l’équipe d’Event Village : </span>
-                        <span className="break-words">{hall.validation_reason}</span>
+            {refused ? (
+                <StatusBanner tone="danger" title="Salle refusée par l’équipe d’Event Village" className="mb-6">
+                    <span className="block font-semibold">Motif du refus :</span>
+                    <span className="mt-1 block whitespace-pre-line break-words rounded-xl border border-danger-border bg-card px-3 py-2 text-base font-medium text-foreground-strong">
+                        {hall.validation_reason?.trim() || 'Aucun motif n’a été transmis.'}
                     </span>
-                )}
-                {!hall.is_active && (
-                    <span className="mt-2 block">La salle est retirée de la vente : les clients ne peuvent pas la réserver. Remettez-la en vente depuis « Mes salles ».</span>
-                )}
-            </StatusBanner>
+                    <span className="mt-2 block">
+                        Touchez « Corriger et renvoyer » : vos corrections sont enregistrées et la salle repart en validation en une seule fois.
+                    </span>
+                    {!hall.is_active && (
+                        <span className="mt-2 block">La salle est aussi retirée de la vente : remettez-la en vente depuis « Mes salles » une fois validée.</span>
+                    )}
+                </StatusBanner>
+            ) : (
+                <StatusBanner tone={toneBanner(view.tone)} title={view.label} className="mb-6">
+                    <span className="block">{view.hint}</span>
+                    {showsReason(hall.validation_status) && hall.validation_reason && (
+                        <span className="mt-2 block">
+                            <span className="block font-semibold">Motif de l’équipe d’Event Village :</span>
+                            <span className="mt-1 block whitespace-pre-line break-words rounded-xl border border-border bg-card px-3 py-2 text-base font-medium text-foreground-strong">{hall.validation_reason}</span>
+                        </span>
+                    )}
+                    {!hall.is_active && (
+                        <span className="mt-2 block">La salle est retirée de la vente : les clients ne peuvent pas la réserver. Remettez-la en vente depuis « Mes salles ».</span>
+                    )}
+                </StatusBanner>
+            )}
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
                 <div className="flex flex-col gap-6 lg:col-span-3">
@@ -219,7 +246,7 @@ export function HallSheetView({ hallId, policyTexts, saved }: { hallId: string; 
                     <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
                         <Fact label="Prix par jour">{hall.price_per_day ? fcfaText(hall.price_per_day) : 'Non renseigné'}</Fact>
                         <Fact label="Prix par heure">{hall.price_per_hour ? fcfaText(hall.price_per_hour) : 'Location à l’heure non proposée'}</Fact>
-                        <Fact label="Acompte">{depositText(hall)}</Fact>
+                        <Fact label="Acompte">{depositText(hall, defaultPercent)}</Fact>
                         <Fact label="Capacité">{hall.capacity ? <span className="tabular-nums">{`${formatInteger(hall.capacity)} personnes`}</span> : 'Non renseignée'}</Fact>
                         <Fact label="Règle d’annulation" wide>
                             <span className="block">{policy ? POLICY_LABELS[policy] : 'Non renseignée'}</span>

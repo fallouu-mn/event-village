@@ -8,6 +8,7 @@ import type { EarningRow, PartnerReservationView } from '@/lib/halls/queries';
 import type { BadgeVariant } from '@/components/ui/Badge';
 import { fetchJson } from '@/components/partner/fetch-json';
 import { periodText } from '@/lib/halls/views';
+import { formatInteger, formatPercent } from '@/lib/format';
 
 export type { EarningRow };
 
@@ -98,4 +99,33 @@ export function putJson<T>(url: string, payload: unknown): Promise<T> {
 /** Salle refusée ou suspendue : son motif est affiché. */
 export function showsReason(status: string): boolean {
     return status === 'REFUSEE' || status === 'SUSPENDUE';
+}
+
+/**
+ * Lot 10b (correctifs, vraies valeurs) : réglages réels des salles lus par la page serveur (hallDefaults) ; null si la
+ * valeur n'a pas pu être lue (l'écran dit alors la règle sans chiffre).
+ */
+export interface HallDefaults {
+    depositDefaultPercent: number | null;
+    holdMinutes: number | null;
+    balanceDueDays: number | null;
+}
+
+/** Pourcentage réglé (30 → « 30 % ») ; mise en forme seulement. */
+export function percentText(value: number): string {
+    return formatPercent(value / 100, 2);
+}
+
+/** Durée de garde en mots (15 → « 15 minutes », 60 → « 1 heure »). */
+export function minutesText(minutes: number): string {
+    if (minutes % 60 === 0) {
+        const h = minutes / 60;
+        return h === 1 ? '1 heure' : `${formatInteger(h)} heures`;
+    }
+    return minutes === 1 ? '1 minute' : `${formatInteger(minutes)} minutes`;
+}
+
+/** Nombre de jours en mots (1 → « 1 jour »). */
+export function daysText(days: number): string {
+    return days === 1 ? '1 jour' : `${formatInteger(days)} jours`;
 }

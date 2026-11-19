@@ -9,6 +9,8 @@
  *    avec le droit halls.validate ; la route décide toujours. Après une décision, la fiche est relue.
  *  - Carte chargée à la demande (Leaflet lit window), seulement si la salle a une position.
  *  - Aucun montant calculé ici : tout vient de la route.
+ *  - Lot 10b (correctifs, point 4) : date exacte de l'envoi en validation (`submittedAt`) au-dessus de la décision
+ *    d'une salle en attente et dans l'historique ; « Date d'envoi inconnue » si elle manque.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -37,6 +39,7 @@ import { HallDecision } from '@/components/halls/admin/HallDecision';
 import { HallSheetSkeleton } from '@/components/halls/admin/HallSheetSkeleton';
 import {
   DEFAULT_HALL_STATUS,
+  SUBMITTED_UNKNOWN,
   finiteOrNull,
   isHallSheet,
   readError,
@@ -209,6 +212,7 @@ export default function AdminHallSheetPage() {
   const address = [hall.address, hall.city].filter(Boolean).join(', ');
   const isPending = hall.status === DEFAULT_HALL_STATUS;
   const partnerName = hall.partner.name ?? 'Partenaire inconnue';
+  const submittedAt = hall.submittedAt ?? null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -253,6 +257,17 @@ export default function AdminHallSheetPage() {
 
       {canDecide && (
         <Section id="salle-decision" title="Décision">
+          {isPending && (
+            <p className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+              <CalendarClock size={16} className="flex-shrink-0" aria-hidden="true" />
+              {submittedAt ? (
+                <span>
+                  {'Envoyée en validation le '}
+                  <time dateTime={toDakarDateTimeLocal(submittedAt)} className="tabular-nums font-medium text-foreground-strong">{formatDateTime(submittedAt)}</time>
+                </span>
+              ) : <span>{SUBMITTED_UNKNOWN}</span>}
+            </p>
+          )}
           <HallDecision
             hallId={hall.id}
             hallName={name}
@@ -380,6 +395,17 @@ export default function AdminHallSheetPage() {
                   <dd><time dateTime={toDakarDateTimeLocal(hall.createdAt)} className="tabular-nums">{formatDateTime(hall.createdAt)}</time></dd>
                 </div>
               )}
+              {submittedAt ? (
+                <div className="flex flex-wrap gap-x-1">
+                  <dt>Envoyée en validation le</dt>
+                  <dd><time dateTime={toDakarDateTimeLocal(submittedAt)} className="tabular-nums">{formatDateTime(submittedAt)}</time></dd>
+                </div>
+              ) : isPending ? (
+                <div className="flex flex-wrap gap-x-1">
+                  <dt className="sr-only">Envoyée en validation le</dt>
+                  <dd>{SUBMITTED_UNKNOWN}</dd>
+                </div>
+              ) : null}
               {hall.validatedAt && (
                 <div className="flex flex-wrap gap-x-1">
                   <dt>Validée le</dt>

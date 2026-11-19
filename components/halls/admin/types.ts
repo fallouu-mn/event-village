@@ -2,6 +2,7 @@
  * Lot 10b (point 4) : salles de fête, administration — formes des réponses de GET /api/admin/halls et
  * GET /api/admin/halls/[id], lecture prudente des réponses et libellés des statuts (lib/halls/views.ts).
  * Aucun montant calculé ici : prix, acompte et nombres viennent des routes.
+ * Lot 10b (correctifs, point 4) : date exacte de l'envoi en validation (`submittedAt`, null si inconnue).
  */
 
 import { HALL_STATUS_VIEW, type Tone } from '@/lib/halls/views';
@@ -45,6 +46,8 @@ export interface AdminHallRow {
   reason: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  /** Date exacte de l'envoi en validation (null : inconnue, salle ancienne). */
+  submittedAt?: string | null;
   partnerName: string | null;
   partnerValidated: boolean;
 }
@@ -86,6 +89,8 @@ export interface AdminHallSheet {
   statusTone: Tone;
   reason: string | null;
   validatedAt: string | null;
+  /** Date exacte de l'envoi en validation (null : inconnue). */
+  submittedAt?: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   upcomingReservations: number;
@@ -101,6 +106,9 @@ export interface AdminHallSheet {
   };
   history: AdminHallHistoryRow[];
 }
+
+/** Phrase affichée quand la date d'envoi en validation manque (jamais un code). */
+export const SUBMITTED_UNKNOWN = 'Date d’envoi inconnue';
 
 /** Message d'un refus de la route (`error`, déjà en mots), sinon null. */
 export function readError(body: unknown): string | null {

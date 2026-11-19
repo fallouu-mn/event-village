@@ -3,6 +3,8 @@
 /**
  * Lot 10b (point 3) : écran de modification d'une salle. Lit la salle (GET /api/partner/halls/[id] : seulement une salle
  * de la partenaire de la session, sinon « Salle introuvable ») puis affiche le formulaire commun en mode modification.
+ * Lot 10b (correctifs) : réglages réels des salles transmis au formulaire ; une salle refusée s'ouvre en « Corriger et
+ * renvoyer » (titre de la page).
  */
 import React from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -10,9 +12,9 @@ import { ErrorState } from '@/components/ui/EmptyState';
 import { useServerData } from '@/components/partner/useServerData';
 import { HallForm } from './HallForm';
 import { HallFormSkeleton } from './HallSkeletons';
-import type { OwnHall, PolicyKey } from './hall-api';
+import type { HallDefaults, OwnHall, PolicyKey } from './hall-api';
 
-export function HallEditView({ hallId, policyTexts }: { hallId: string; policyTexts: Record<PolicyKey, string> | null }) {
+export function HallEditView({ hallId, policyTexts, defaults }: { hallId: string; policyTexts: Record<PolicyKey, string> | null; defaults?: HallDefaults | null }) {
     const sheetHref = `/partner/halls/${encodeURIComponent(hallId)}`;
     const { data, error, loading, refreshing, reload } = useServerData<{ hall: OwnHall }>(`/api/partner/halls/${encodeURIComponent(hallId)}`);
 
@@ -43,10 +45,10 @@ export function HallEditView({ hallId, policyTexts }: { hallId: string; policyTe
         <div className="mx-auto w-full max-w-4xl pb-10">
             <PageHeader
                 back={{ href: sheetHref, label: 'Retour à la salle' }}
-                title="Modifier la salle"
+                title={data.hall.validation_status === 'REFUSEE' ? 'Corriger et renvoyer la salle' : 'Modifier la salle'}
                 description={data.hall.name}
             />
-            <HallForm mode="edit" hall={data.hall} policyTexts={policyTexts} />
+            <HallForm mode="edit" hall={data.hall} policyTexts={policyTexts} defaults={defaults} />
         </div>
     );
 }
