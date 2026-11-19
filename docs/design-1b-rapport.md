@@ -110,6 +110,8 @@ Le design 1b a été fusionné dans main avec le lot 10a (`ce737247f`). Le run c
 
 ## Décisions du 19 novembre (Mes billets, option 1)
 
+**État final (19/11)** : run 428 de la branche vert, puis main avancé en avance rapide à `030103bff` (sans ci-rapide). Run complet 429 de main vert : tests 520/520, e2e, accueil 93, fiche 91, Mes billets 90 (×3,81). Migrations `20261123000001` et `20261123000002` appliquées sur event-village-dev : le dry-run listait exactement ces deux migrations, les contrôles « avant » et « après » sont conformes (table « À la une » vide, sécurité par ligne activée, aucune politique, aucun droit pour anon et authenticated, 14 fonctions réservées au service_role, déclencheur, réclamation avec report de nuit, échéance selon le réglage, aucun SMS aux admins envoyé la nuit) et `03-verification.sql` passe à 20/20. Worktree retiré.
+
 Seuils, calibration et budgets JS sont inchangés.
 
 1. **Délai de 5 s de la tentative 3 retiré** (`110622cb3`). Preuve attendue : les 4 captures « billet hors ligne » vertes au run complet suivant.
@@ -128,7 +130,7 @@ Seuils, calibration et budgets JS sont inchangés.
 |---|---|---|---|
 | 1 | 426 complet | **rouge** : 4 captures « billet hors ligne » et la capture de la vignette sans réseau **vertes**, aucune erreur 418 ; perf au processeur ×7,6 (machine très rapide) : accueil 85 (code inchangé, 90 au run 422 à ×4,88), fiche 88, Mes billets 77 (affichage principal 2,52 s) ; 3 suites (police à chasse fixe de la vignette, chemin du fichier déplacé dans cycle9bis-transfert, lignes citées de terrain) ; connexion du superadmin (fenêtre du code remplacée pendant une navigation, hasard) | Vignettes, liste préparée par le serveur, report réglable, délai de 5 s retiré |
 | 2 | 427 complet | tests 520/520, e2e vert, aucune erreur 418 ; accueil 94, fiche 93, **Mes billets 89** (89 ; 89 ; 89 ; 91 ; 90, ×3,58), affichage principal 0,91 s | Cause trouvée dans la trace du run 426 : la page attendait la liste avant d'envoyer l'en-tête (élément principal : texte de l'en-tête, 2,52 s), et l'hydratation du portefeuille rendu par le serveur ajoutait 296 + 258 ms. Correctif : la liste lue par le serveur part dans la même réponse (promesse), l'en-tête et le squelette tout de suite ; une seule écriture de la liste. Tests : vignette ajoutée à la liste font-mono (numéro de billet), chemin de TicketsView dans cycle9bis-transfert, lignes 119 → 122 et 468 → 471 de terrain dans la recette |
-| 3 | complet (voir « Runs ») | — | Cause trouvée dans la trace du run 427 : après le premier rendu (221 ms), chaque changement d'état de la page (session, billets reçus, temps réel) redessinait la carte complète (tâches React de 73 à 135 ms). Correctif : carte mémorisée (React.memo) ; elle ne se redessine que si ses données changent (son propre état et la session la redessinent toujours) |
+| 3 | 428 complet | **VERT** : tests 520/520, e2e (hors ligne et vignette sans réseau compris), accueil 91, fiche 90, Mes billets 90 (×5,31), aucune erreur 418 | Cause trouvée dans la trace du run 427 : après le premier rendu (221 ms), chaque changement d'état de la page (session, billets reçus, temps réel) redessinait la carte complète (tâches React de 73 à 135 ms). Correctif : carte mémorisée (React.memo) ; elle ne se redessine que si ses données changent (son propre état et la session la redessinent toujours) |
 
 ## Ce qui est fait
 
