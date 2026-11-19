@@ -66,12 +66,15 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         assert.match(page, /if \(json !== incomingJsonRef\.current\) \{\n\s*incomingJsonRef\.current = json;\n\s*setIncoming\(next\);/);
         assert.equal(page.match(/setTickets\(/g)?.length, 1, 'une seule écriture de la liste');
         const card = read('components/tickets/TicketCard.tsx');
-        assert.match(card, /const settled = usePageSettled\(\);[\s\S]*?return eager \|\| settled \|\| visible;/);
+        // Run 421 : billets suivants et temps réel 5 s après le chargement (hors de la fenêtre du chargement)
+        assert.match(card, /const settled = usePageSettled\(LATER_CARDS_MS\);[\s\S]*?return eager \|\| settled \|\| visible;/);
+        assert.match(card, /const LATER_CARDS_MS = 5_000;/);
+        assert.match(page, /const pageSettled = usePageSettled\(5_000\);/);
     });
 
     test('Mes billets : synchronisation hors ligne après l’affichage', () => {
         const auth = read('components/providers/AuthProvider.tsx');
-        assert.match(auth, /const cancelWarm = warmWhenIdle\(load\);/);
+        assert.match(auth, /const later = setTimeout\(\(\) => \{ cancelWarm = warmWhenIdle\(load\); \}, 5_000\);/);
         assert.match(auth, /window\.addEventListener\('online', load\);/);
     });
 });

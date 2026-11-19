@@ -115,10 +115,14 @@ function QrFullscreenLive({ until, min, ...rest }: { until: number | null; min: 
  * libre une fois la page chargée — jamais pendant le chargement de Mes billets (design 1b, décision du 18/11 ; run 420).
  * Sans réseau aussi (lot hors ligne) : rien ne dépend de la connexion ici.
  */
+/** Délai des billets suivants après le chargement (run 421). */
+const LATER_CARDS_MS = 5_000;
+
 function useStartWhenReady(eager: boolean, ref: React.RefObject<HTMLElement | null>): boolean {
   // Run 420 : démarrage au premier moment libre, souvent avant la fin du chargement (codes et QR des billets 2 et 3 dans
-  // la fenêtre mesurée) ; désormais après l'événement load puis le premier moment libre (usePageSettled), ou à l'écran.
-  const settled = usePageSettled();
+  // la fenêtre mesurée) ; run 421 : encore dans la fenêtre. Désormais 5 s après le chargement et le premier moment libre
+  // (usePageSettled), ou tout de suite dès que la carte est à l'écran ; le premier billet, lui, démarre au montage.
+  const settled = usePageSettled(LATER_CARDS_MS);
   const [visible, setVisible] = useState<boolean>(false);
   useEffect(() => {
     if (eager || visible) return undefined;
