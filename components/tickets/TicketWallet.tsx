@@ -6,6 +6,11 @@
  * flèches gauche et droite du clavier quand la rangée a le focus (WCAG 2.5.7 : aucun geste obligatoire) ; position
  * annoncée poliment (« Billet 2 sur 3 »). Sur ordinateur, grille de deux colonnes sans défilement.
  * Arrivée en cascade (ev-stagger : 250 ms, déplacement et transparence), coupée si « réduire les animations ».
+ *
+ * Décision du 19/11 (option 1, temps de blocage de Mes billets) : seul le billet visible est dessiné en entier (QR compris) ;
+ * les autres sont des vignettes légères (`thumb`), dépliées quand elles arrivent à l'écran (glissées au centre sur
+ * téléphone ; sur ordinateur, à l'approche de l'écran) ou au toucher, avec une animation de 250 ms (transparence et
+ * déplacement, ev-wallet-unfold), coupée si « réduire les animations ». Un billet déplié le reste.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -16,11 +21,15 @@ import { msToNextMinute } from './wallet';
 export interface WalletItem {
   key: string;
   node: React.ReactNode;
+  /** Vignette légère tant que le billet n'est pas déplié ; `open` le déplie. Absente : billet toujours complet. */
+  thumb?: (open: () => void) => React.ReactNode;
 }
 
 /** Heure du téléphone, renouvelée à chaque changement de minute (une seule minuterie pour tous les comptes à rebours). */
-export function useMinuteNow(): number {
-  const [now, setNow] = useState(() => Date.now());
+export function useMinuteNow(initial?: number): number {
+  // Décision du 19/11 : liste préparée par le serveur ; l'heure du serveur sert au premier rendu (rendu identique côté
+  // serveur et navigateur, aucune erreur d'hydratation), puis l'heure du téléphone prend le relais.
+  const [now, setNow] = useState(() => initial ?? Date.now());
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
@@ -48,6 +57,29 @@ export function TicketWallet({ items, label }: { items: WalletItem[]; label: str
   const [index, setIndex] = useState(0);
   const count = items.length;
   const several = count > 1;
+  // Billets dépliés (au toucher, ou arrivés à l'écran) ; le premier et le billet affiché le sont toujours
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const [animated, setAnimated] = useState<ReadonlySet<string>>(() => new Set());
+  const open = useCallback((key: string, withAnimation: boolean) => {
+    setOpened((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    if (withAnimation) setAnimated((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, []);
+  const hasThumbs = items.some((it) => it.thumb);
+
+  // Arrivée à l'écran : sur téléphone, le billet glissé au centre (60 % visible au moins) ; sur ordinateur, les billets de
+  // la grille jusqu'à deux écrans plus bas. Les voisins qui dépassent à peine du bord restent en vignette.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || !hasThumbs || typeof IntersectionObserver !== 'function') return undefined;
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const key = (e.target as HTMLElement).dataset.walletKey;
+        if (e.isIntersecting && key) open(key, true);
+      }
+    }, { threshold: 0.6, rootMargin: '200% 0px 200% 0px' });
+    Array.from(list.children).forEach((child) => io.observe(child));
+    return () => io.disconnect();
+  }, [hasThumbs, count, open]);
 
   // Billet affiché : celui dont le centre est le plus proche du centre de la rangée (lu à chaque image de défilement).
   useEffect(() => {
@@ -131,11 +163,18 @@ export function TicketWallet({ items, label }: { items: WalletItem[]; label: str
           'md:grid md:grid-cols-2 md:gap-6 md:overflow-visible md:pb-0',
         )}
       >
-        {items.map((item) => (
-          <li key={item.key} className={cn('min-w-0 shrink-0 snap-center md:w-auto', several ? 'w-[calc(100%-2rem)]' : 'w-full')}>
-            {item.node}
-          </li>
-        ))}
+        {items.map((item, i) => {
+          const full = !item.thumb || i === 0 || i === index || opened.has(item.key);
+          return (
+            <li key={item.key} data-wallet-key={item.key} className={cn('min-w-0 shrink-0 snap-center md:w-auto', several ? 'w-[calc(100%-2rem)]' : 'w-full')}>
+              {full ? (
+                <div className={animated.has(item.key) ? 'ev-wallet-unfold' : undefined}>{item.node}</div>
+              ) : (
+                item.thumb?.(() => { open(item.key, true); go(i); })
+              )}
+            </li>
+          );
+        })}
       </ul>
       {several && (
         <div aria-hidden="true" className="flex justify-center gap-1.5 md:hidden">
