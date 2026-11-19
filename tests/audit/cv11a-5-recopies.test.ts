@@ -30,7 +30,12 @@ const RECOPIED = [
 
 /** Lignes de main remplacées par la 11a : ligne d'origine → lignes qui doivent la remplacer (même sens, tables en plus). */
 const REPLACED: Record<string, Record<string, string[]>> = {
-    finance_setting_set: { "'halls.full_payment_margin_hours') THEN": ["'halls.full_payment_margin_hours',"] },
+    finance_setting_set: {
+        "'halls.full_payment_margin_hours') THEN": ["'halls.full_payment_margin_hours',"],
+        // Design 1c bis (migration 20261124000001, modification signalée) : seul le message du refus change
+        "RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Seul un SUPERADMIN actif modifie les réglages de la plateforme.');":
+            ["RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Seul un super-administrateur actif peut modifier les réglages.');"],
+    },
     fin_setting_valid: { "'halls.validation_required') THEN": ["'halls.validation_required', 'tables.validation_required') THEN"] },
     platform_settings_defaults: {
         "WHERE s.key ~ '^(finance|access|notif|features|support|halls)\\.'": ["WHERE s.key ~ '^(finance|access|notif|features|support|halls|tables)\\.'"],

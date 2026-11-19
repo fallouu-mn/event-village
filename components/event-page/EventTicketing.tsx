@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Compass, Minus, Plus, RefreshCw, ShieldCheck, Store, Ticket, Undo2 } from 'lucide-react';
@@ -31,7 +31,7 @@ import {
   nextSaleBoundary,
   priceLabel,
   readPublicEventDetail,
-  refundRuleApplies,
+  withClock,
   type PublicCategory,
   type PublicEventDetail,
 } from '@/lib/events/event-detail';
@@ -125,8 +125,14 @@ function takeSavedCart(eventId: string): Record<string, number> | null {
 }
 
 /** Tranche de stock et état de la vente d'une catégorie, en mots (la couleur ne porte jamais seule le sens). */
-function availabilityOf(cat: PublicCategory): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } {
+function availabilityOf(cat: PublicCategory, clockKnown: boolean): { label: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } {
   if (cat.availability === 'SOLD_OUT') return { label: 'Complet', tone: 'danger' };
+  // Design 1c bis : sans l'heure (premier rendu, page en cache), seul le stock est dit ; la vente l'est après le chargement
+  if (!clockKnown) {
+    return cat.availability === 'LOW' && cat.remainingHint !== null
+      ? { label: cat.remainingHint > 1 ? `Plus que ${cat.remainingHint} places` : 'Plus qu’une place', tone: 'warning' }
+      : { label: ' ', tone: 'neutral' }; // ligne gardée : rien ne saute quand la vente s'affiche
+  }
   if (!cat.saleStarted) {
     return { label: cat.saleStart ? `Vente à partir du ${formatDateTime(cat.saleStart)}` : 'Bientôt en vente', tone: 'neutral' };
   }
@@ -191,7 +197,10 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
   const { isAuthenticated, isLoading: isAuthLoading, session } = useAuth();
   const eventId = initial.id;
 
-  const [event, setEvent] = useState<PublicEventDetail>(initial);
+  // Design 1c bis (point 3, erreur 418) : `sheet` est la fiche sans heure (celle de la page en cache, puis celles de la
+  // route) ; `event` est son état à l'heure du téléphone, appliquée seulement après le chargement (`now` nul au premier
+  // rendu : même rendu que le HTML en cache, rien d'ouvert ni de fermé).
+  const [sheet, setEvent] = useState<PublicEventDetail>(initial);
   const [gone, setGone] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
@@ -200,6 +209,7 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const [now, setNow] = useState<number | null>(null);
+  const event = useMemo(() => withClock(sheet, now === null ? null : new Date(now)), [sheet, now]);
   const repriseDoneRef = useRef(false);
   const savedCartDoneRef = useRef(false);
   const initialStatusRef = useRef(initial.status);
@@ -248,7 +258,8 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
     const next = nextSaleBoundary(event, new Date());
     if (!next) return undefined;
     const wait = Math.min(Math.max(1_000, next.getTime() - Date.now() + 1_000), 2_000_000_000);
-    const timer = setTimeout(() => void refreshEvent(), wait);
+    // Design 1c bis : l'heure du téléphone avance avec la fiche (vente ouverte ou close tout de suite, puis relecture)
+    const timer = setTimeout(() => { setNow(Date.now()); void refreshEvent(); }, wait);
     return () => clearTimeout(timer);
   }, [event, refreshEvent]);
 
@@ -290,7 +301,8 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
 
   // « Réessayer le paiement » (/paiement/<id> → /events/<id>?reprise=<paiement>) : panier prérempli, une seule fois.
   useEffect(() => {
-    if (repriseDoneRef.current || isAuthLoading) return;
+    // Design 1c bis : attend l'heure du téléphone (premier rendu sans heure : rien d'achetable)
+    if (repriseDoneRef.current || isAuthLoading || !event.clockKnown) return;
     repriseDoneRef.current = true;
     const reprise = new URLSearchParams(window.location.search).get('reprise');
     if (!reprise || !PAYMENT_ID_RE.test(reprise) || !isAuthenticated || !event.purchasable) return;
@@ -329,7 +341,7 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
 
   // R104 (B91) : retour de la connexion avec une sélection gardée (moins de 30 minutes), une seule fois.
   useEffect(() => {
-    if (savedCartDoneRef.current) return;
+    if (savedCartDoneRef.current || !event.clockKnown) return;
     savedCartDoneRef.current = true;
     const saved = takeSavedCart(eventId);
     if (!saved || !event.purchasable) return;
@@ -538,8 +550,8 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
   };
 
   const fromPrice = fromPriceLabel(categories);
-  // Annulation : toujours vraie. Report : vrai au rendu (fiche lue avant le début), puis retiré au début sur le téléphone.
-  const refund = event.refund && (now === null || refundRuleApplies(event.refund, event.startsAt, new Date(now))) ? event.refund : null;
+  // Annulation : toujours vraie. Report : vraie jusqu'au début, à l'heure du téléphone (withClock), jamais au premier rendu.
+  const refund = event.refund;
   const ended = now !== null && Date.parse(event.endsAt) <= now;
   const purchasable = event.purchasable && !gone;
   const counterOnly = !purchasable && event.counterSale && !event.banner && !gone;
@@ -576,7 +588,7 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
               Billetterie
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {purchasable ? 'Choisissez vos billets : places mises à jour en direct.' : closedMessage(event, ended)}
+              {!event.clockKnown ? 'Mise à jour des places…' : purchasable ? 'Choisissez vos billets : places mises à jour en direct.' : closedMessage(event, ended)}
             </p>
           </div>
           {/* Événement suspendu, annulé ou terminé : « En direct » se lisait comme « l'événement a lieu en ce moment »
@@ -622,14 +634,14 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
             {categories.map((cat) => {
               const qty = cart[cat.id] || 0;
               const canBuy = purchasable && cat.isAvailable;
-              const avail = availabilityOf(cat);
+              const avail = availabilityOf(cat, event.clockKnown);
               const line = quoteLineFor(cat.id);
               return (
                 <li
                   key={cat.id}
                   className={cn(
                     'relative overflow-hidden rounded-xl border py-4 pl-5 pr-4 transition-colors duration-200',
-                    !canBuy ? 'border-border bg-muted' : qty > 0 ? 'border-primary-text bg-primary-soft' : 'border-border bg-card',
+                    !event.clockKnown ? 'border-border bg-card' : !canBuy ? 'border-border bg-muted' : qty > 0 ? 'border-primary-text bg-primary-soft' : 'border-border bg-card',
                   )}
                 >
                   <CategoryStripe cat={cat} />

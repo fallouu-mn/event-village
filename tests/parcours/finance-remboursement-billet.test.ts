@@ -220,6 +220,19 @@ describe('Billet payé en ligne', () => {
 
                 const debits = (await ledgerOf(partner.userId, 'ORGANISATEUR')).filter((e) => e.entry_type === 'REMBOURSEMENT' && tickets.some((t) => t.id === e.ticket_id));
                 assert.equal(debits.reduce((s, e) => s + Number(e.amount), 0), -3 * PRICE, 'trois débits du prix facial');
+
+                // Design 1c bis (point 1, migration 20261124000001) : « Mes événements » sert le brut et les remboursements,
+                // brut → remboursements → recettes nettes, une seule déduction, d'après le grand livre de la partenaire
+                const ledger = (await ledgerOf(partner.userId, 'ORGANISATEUR')).filter((e) => e.entry_type === 'VENTE' || e.entry_type === 'REMBOURSEMENT');
+                const gross = ledger.filter((e) => e.entry_type === 'VENTE').reduce((sum, e) => sum + Number(e.amount), 0);
+                const refundedTotal = -ledger.filter((e) => e.entry_type === 'REMBOURSEMENT').reduce((sum, e) => sum + Number(e.amount), 0);
+                assert.ok(refundedTotal >= 3 * PRICE, `remboursements au grand livre : ${refundedTotal}`);
+                const { data: overview, error: ovErr } = await service.rpc('partner_events_overview', { p: { actor_id: partner.userId } });
+                assert.equal(ovErr, null, `partner_events_overview : ${ovErr?.message}`);
+                const totals = (overview as { totals: Record<string, unknown> }).totals;
+                assert.equal(Number(totals.revenue_online_gross), gross, `brut servi : ${JSON.stringify(totals)}`);
+                assert.equal(Number(totals.revenue_online_refunded), refundedTotal, `remboursements servis : ${JSON.stringify(totals)}`);
+                assert.equal(Number(totals.revenue_online), gross - refundedTotal, `recettes nettes = brut − remboursements : ${JSON.stringify(totals)}`);
             } finally {
                 setFakeMode('cashoutMode', 'success');
             }
