@@ -14,6 +14,7 @@ import { service } from './paiement-helpers';
 import { renderNotification } from '../../lib/notifications/catalog';
 import { smsSegments } from '../../lib/notifications/sms-format';
 import { PERMISSION_PROFILES } from '../../lib/admin/permission-profiles';
+import { confirmIdentity } from './f3d-helpers';
 
 type Row = Record<string, unknown>;
 const CTX = { appUrl: 'https://eventvillage.sn' };
@@ -26,6 +27,8 @@ before(async () => {
     actor = await newAdmin('l10b-droits-auteur', [], { role: 'SUPERADMIN' });
     otherSuper = await newAdmin('l10b-droits-autre-super', [], { role: 'SUPERADMIN' });
     target = await newAdmin('l10b-droits-cible', ['events.read']);
+    // La route exige l'identité confirmée du Superadmin (mot de passe et code par SMS)
+    await confirmIdentity(actor);
 });
 
 async function rowsOf(userId: string, type: string): Promise<Row[]> {

@@ -1,6 +1,6 @@
 /**
  * Lot 10b (point 5) — avis du parcours des salles mis en file par la tâche planifiée et par les versements : rappel du
- * solde à J-10 puis J-8 (un de chaque), rappel la veille (client et salle), recettes disponibles (salle), remboursement
+ * solde 3 jours puis 1 jour avant son échéance (un de chaque ; contre-vérification T7), rappel la veille (client et salle), recettes disponibles (salle), remboursement
  * versé (HALL_REFUND_PAID au lieu de l'avis des billets). Base LOCALE, faux SamirPay.
  * Le temps qui passe est simulé comme dans les suites du lot 10a : on déplace les dates de la réservation (et la date de
  * disponibilité de sa vente au grand livre, gardée après la fin), jamais l'horloge. La nuit (réglages
@@ -63,8 +63,8 @@ after(async () => {
     await assertFinanceInvariants('l10b-avis');
 });
 
-describe('Rappels du solde à J-10 puis J-8', () => {
-    test('un rappel à J-10, un à J-8, jamais deux fois le même ; quatre canaux', async () => {
+describe('Rappels du solde 3 jours puis 1 jour avant son échéance (J-10 puis J-8 de la date avec l’échéance par défaut)', () => {
+    test('un rappel à 3 jours de l’échéance, un à 1 jour, jamais deux fois le même ; quatre canaux', async () => {
         const hall = await newHall(owner, { price_per_day: 200_000 });
         const r = await reserveRpc(client, hall, { startDate: dayFromNow(25) });
         assert.equal(r.ok, true, JSON.stringify(r));
@@ -73,19 +73,19 @@ describe('Rappels du solde à J-10 puis J-8', () => {
         assert.equal((await reservation(id)).booking_state, 'ACOMPTE_PAYE');
 
         await tick();
-        assert.deepEqual(await keysOf(client.userId, 'HALL_BALANCE_REMINDER', id), [], 'rappel avant J-10');
+        assert.deepEqual(await keysOf(client.userId, 'HALL_BALANCE_REMINDER', id), [], 'rappel plus de 3 jours avant l’échéance');
 
         await moveTo(id, dayFromNow(10), { due: true });
         await tick();
         await tick();
         const j10 = await keysOf(client.userId, 'HALL_BALANCE_REMINDER', id);
-        assert.deepEqual(j10, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'].map((c) => `HALL_BALANCE_REMINDER:J10:${id}:${c}`).sort(), JSON.stringify(j10));
+        assert.deepEqual(j10, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'].map((c) => `HALL_BALANCE_REMINDER:J3:${id}:${c}`).sort(), JSON.stringify(j10));
 
         await moveTo(id, dayFromNow(8), { due: true });
         await tick();
         await tick();
         const all = await keysOf(client.userId, 'HALL_BALANCE_REMINDER', id);
-        assert.equal(all.filter((k) => k.includes(':J8:')).length, 4, JSON.stringify(all));
+        assert.equal(all.filter((k) => k.includes(':J1:')).length, 4, JSON.stringify(all));
         assert.equal(all.length, 8, `un rappel de chaque, jamais en double : ${JSON.stringify(all)}`);
     });
 });
