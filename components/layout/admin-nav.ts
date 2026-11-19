@@ -30,6 +30,8 @@ export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin
         ...(can('events.read') ? [{ name: 'Événements', href: '/admin/events', icon: Calendar }] : []),
         ...(can('users.read') ? [{ name: 'Comptes', href: '/admin/users', icon: Users }] : []),
         ...(can('events.read') ? [{ name: 'Catalogues et services', href: '/admin/services', icon: Building2 }] : []),
+        // Lot 10b (point 4) : file de validation des salles
+        ...(can('halls.validate') ? [{ name: 'Salles à valider', href: '/admin/halls', icon: Building2 }] : []),
       ],
     },
     {
@@ -61,6 +63,7 @@ export function buildAdminNav(can: (permission: string) => boolean, isSuperAdmin
   if (can('events.read')) proItems.push({ name: 'Événements à valider', href: '/admin/events', icon: Calendar });
   if (can('users.read')) proItems.push({ name: 'Comptes et administrateurs', href: '/admin/users', icon: Users });
   if (can('events.read')) proItems.push({ name: 'Catalogues et services', href: '/admin/services', icon: Building2 });
+  if (can('halls.validate')) proItems.push({ name: 'Salles à valider', href: '/admin/halls', icon: Building2 });
   if (finance) proItems.push({ name: 'Finance', href: '/admin/finance', icon: DollarSign });
   if (referral) proItems.push({ name: 'Parrainage et ambassadeurs', href: '/admin/referral', icon: Award });
   if (can('communications.manage')) proItems.push({ name: 'Campagnes', href: '/admin/communications', icon: Megaphone });
