@@ -1,0 +1,340 @@
+===== supabase_auth_event-village =====
+{"level":"info","msg":"Go runtime metrics collection started","time":"2026-11-19T12:20:22Z"}
+{"component":"pop","level":"info","msg":"Migrations already up to date, nothing to apply","time":"2026-11-19T12:20:22Z"}
+{"args":[0.028398846],"component":"pop","level":"info","msg":"%.4f seconds","time":"2026-11-19T12:20:22Z"}
+{"count":0,"level":"info","msg":"GoTrue migrations applied successfully","time":"2026-11-19T12:20:22Z"}
+{"component":"api","level":"warning","msg":"DEPRECATION NOTICE: GOTRUE_JWT_ADMIN_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon","time":"2026-11-19T12:20:22Z"}
+{"component":"api","level":"warning","msg":"DEPRECATION NOTICE: GOTRUE_JWT_DEFAULT_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon","time":"2026-11-19T12:20:22Z"}
+{"level":"info","msg":"GoTrue API started on: 0.0.0.0:9999","time":"2026-11-19T12:20:22Z","version":"v2.197.0"}
+{"component":"apiworker","level":"info","msg":"apiworker: index worker started","time":"2026-11-19T12:20:22Z","worker_type":"apiworker_index_worker"}
+{"component":"apiworker","level":"info","msg":"apiworker: template cache worker started","time":"2026-11-19T12:20:22Z","worker_type":"apiworker_template_cache"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"mfa_factor_unenrolled_notification","msg":"mailer: reloaded template type: mfa_factor_unenrolled_notification","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"invite","msg":"mailer: reloaded template type: invite","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"confirmation","msg":"mailer: reloaded template type: confirmation","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"recovery","msg":"mailer: reloaded template type: recovery","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"magic_link","msg":"mailer: reloaded template type: magic_link","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"reauthentication","msg":"mailer: reloaded template type: reauthentication","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"phone_changed_notification","msg":"mailer: reloaded template type: phone_changed_notification","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"identity_linked_notification","msg":"mailer: reloaded template type: identity_linked_notification","time":"2026-11-19T12:20:22Z"}
+{"component":"apiworker","level":"info","msg":"apiworker: config notifier started","time":"2026-11-19T12:20:22Z","worker_type":"apiworker_config_notifier"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"mfa_factor_enrolled_notification","msg":"mailer: reloaded template type: mfa_factor_enrolled_notification","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"password_changed_notification","msg":"mailer: reloaded template type: password_changed_notification","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"email_change","msg":"mailer: reloaded template type: email_change","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"identity_unlinked_notification","msg":"mailer: reloaded template type: identity_unlinked_notification","time":"2026-11-19T12:20:22Z"}
+{"event":"templatemailer_reloader_template_update","level":"info","mail_type":"email_changed_notification","msg":"mailer: reloaded template type: email_changed_notification","time":"2026-11-19T12:20:22Z"}
+{"component":"apiworker","level":"info","msg":"apiworker: db worker started","time":"2026-11-19T12:20:22Z","worker_type":"apiworker_db_worker"}
+{"component":"apiworker","config_conn_max_idle_time":"0s","config_conn_max_lifetime":"0s","config_conn_percentage":0,"config_max_idle_pool_size":10,"config_max_pool_size":10,"level":"info","limit_conn_max_idle_time":"0s","limit_conn_max_lifetime":"0s","limit_max_idle_conns":10,"limit_max_open_conns":10,"limit_strategy":"fixed","msg":"applying connection limits to db using the \"fixed\" strategy","server_max_conns":100,"time":"2026-11-19T12:20:22Z","worker_type":"apiworker_db_worker"}
+===== supabase_db_event-village =====
+	    v_client   uuid := public.try_uuid(p->>'client_id');
+	    v_res_id   uuid := public.try_uuid(p->>'reservation_id');
+	    v_operator text := NULLIF(p->>'operator', '');
+	    r          record;
+	    v_hold     integer := public.fin_setting_num('tables.hold_minutes')::int;
+	    v_pending  uuid;
+	    v_payer_pending integer;
+	    v_amount   numeric;
+	    v_agg_rate numeric;
+	    v_agg      numeric;
+	    v_comm     numeric;
+	    v_payment  uuid;
+	    v_expires  timestamptz;
+	    v_refusal  jsonb;
+	BEGIN
+	    IF NOT public.fin_setting_bool('features.tables_enabled') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'SERVICE_CLOSED', 'message', 'La réservation de tables n’est pas encore ouverte.');
+	    END IF;
+	    IF v_operator IS NULL OR v_operator NOT IN ('WAVE', 'ORANGE_MONEY') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'OPERATOR_REQUIRED', 'message', 'Choisissez Wave ou Orange Money.');
+	    END IF;
+	    IF v_client IS NULL OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_client AND u.status::text = 'ACTIF') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Votre compte ne permet pas de payer pour le moment.');
+	    END IF;
+	    SELECT venue_id INTO r FROM public.table_reservations WHERE id = v_res_id AND client_id = v_client;
+	    IF v_res_id IS NULL OR NOT FOUND OR r.venue_id IS NULL THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESERVATION_NOT_FOUND', 'message', 'Réservation introuvable.');
+	    END IF;
+	    -- Même verrou que la réservation d'une table de l'établissement, puis la réservation elle-même
+	    PERFORM public.table_venue_lock(r.venue_id);
+	    SELECT * INTO r FROM public.table_reservations WHERE id = v_res_id FOR UPDATE;
+	    IF r.total_amount <= 0 THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'NOTHING_TO_PAY', 'message', 'Cette réservation est sans acompte : il n’y a rien à payer.');
+	    END IF;
+	    IF r.paid_amount > 0 THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_PAID', 'message', 'L’acompte de cette réservation est déjà payé.');
+	    END IF;
+	    SELECT id INTO v_pending FROM public.payments
+	     WHERE table_reservation_id = v_res_id AND status::text = 'PENDING' AND created_at > now() - interval '60 minutes'
+	     ORDER BY created_at DESC LIMIT 1;
+	    IF FOUND THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'PAYMENT_PENDING', 'payment_id', v_pending,
+	            'message', 'Un paiement est déjà en cours pour cette réservation. Terminez-le ou attendez quelques minutes.');
+	    END IF;
+	    IF r.booking_state NOT IN ('EN_ATTENTE_PAIEMENT', 'EXPIREE') OR lower(r.slot) <= public.hall_dakar_now() THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESERVATION_NOT_ACTIVE', 'message', 'Cette réservation ne peut plus être payée.');
+	    END IF;
+	
+	    PERFORM set_config('event_village.table_booking', 'on', true);
+	    -- Tous les contrôles de la réservation refaits (attente échue ou non) ; une attente échue refusée rend la table
+	    v_refusal := public.table_hold_refusal(r.id);
+	    IF v_refusal IS NOT NULL THEN
+	        IF r.booking_state = 'EN_ATTENTE_PAIEMENT' AND (r.hold_expires_at IS NULL OR r.hold_expires_at <= now()) THEN
+	            PERFORM public.table_expire_hold(r.id);
+	        END IF;
+	        RETURN jsonb_build_object('ok', false) || v_refusal;
+	    END IF;
+	    -- Attente échue reprise : elle compte de nouveau parmi les demandes en attente du client (verrou par client, comme
+	    -- table_reserve ; équivalent côté tables des trous T2 et T5 de la contre-vérification de la 10a). Contre-vérification
+	    -- de la 11a (T2) : une seule table par client et par créneau dans l'établissement, et la même limite que
+	    -- table_reserve (réservations à venir non payées, gratuites confirmées comprises), la réservation reprise exclue
+	    IF r.booking_state = 'EXPIREE' OR r.hold_expires_at IS NULL OR r.hold_expires_at <= now() THEN
+	        PERFORM pg_advisory_xact_lock(hashtextextended('table_client:' || v_client::text, 0));
+	        v_refusal := COALESCE(public.table_client_slot_refusal(v_client, r.venue_id, r.slot, r.id),
+	                              public.table_client_unpaid_refusal(v_client, r.id));
+	        IF v_refusal IS NOT NULL THEN
+	            RETURN v_refusal;
+	        END IF;
+	    END IF;
+	    -- Règle des billets : 3 paiements en attente au plus par numéro payeur et par heure. Contrôle de la
+	    -- contre-vérification (T1) : AVANT de reprendre ou de prolonger l'attente, comme tous les autres refus
+	    IF NULLIF(p->>'payer_phone', '') IS NOT NULL THEN
+	        PERFORM pg_advisory_xact_lock(hashtext('checkout-payer:' || (p->>'payer_phone')));
+	        SELECT count(*) INTO v_payer_pending FROM public.payments
+	         WHERE payer_phone = p->>'payer_phone' AND status::text = 'PENDING' AND created_at > now() - interval '1 hour';
+	        IF v_payer_pending >= 3 THEN
+	            RETURN jsonb_build_object('ok', false, 'code', 'PAYER_PENDING_LIMIT',
+	                'message', 'Un paiement est déjà en attente pour ce numéro. Terminez-le ou attendez quelques minutes.');
+	        END IF;
+	    END IF;
+	
+	    -- Plus aucun refus après ce point : l'attente n'est reprise ou prolongée que si le paiement est créé
+	    v_expires := now() + make_interval(mins => v_hold);
+	    BEGIN
+	        UPDATE public.table_reservations
+	           SET booking_state = 'EN_ATTENTE_PAIEMENT', payment_status = 'PENDING', hold_expires_at = v_expires, updated_at = now()
+	         WHERE id = r.id;
+	    EXCEPTION WHEN exclusion_violation THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'SLOT_TAKEN', 'message', 'Le délai pour payer est passé et la table a été réservée par quelqu’un d’autre.');
+	    END;
+	
+	    v_amount := r.total_amount;
+	
+	    v_agg_rate := public.fin_setting_num('finance.aggregator_fee_rate.' || v_operator);
+	    v_agg := public.fin_round_2(v_amount * v_agg_rate / 100);
+	    v_comm := public.fin_round_2(r.deposit_amount * COALESCE(r.commission_rate, 0) / 100);
+	
+	    INSERT INTO public.payments (
+	        transaction_id, external_order_id, client_id, partner_id, table_reservation_id, payment_target, amount, currency,
+	        is_platform_payment, aggregator, facial_amount, aggregator_fee, service_fee, gross_event_village_revenue,
+	        net_event_village_revenue, partner_payout_amount, service_fee_rate, aggregator_fee_rate,
+	        payout_delay_hours, payout_hold_enabled, status, idempotency_key, held_expires_at,
+	        operator, payer_phone, callback_token_hash, metadata
+	    ) VALUES (
+	        p->>'transaction_id', p->>'external_order_id', v_client, r.partner_id, r.id, 'TABLE_RESERVATION', v_amount, 'XOF',
+	        TRUE, 'SAMIRPAY', r.deposit_amount, v_agg, r.service_fee_amount, r.service_fee_amount + v_comm,
+	        public.fin_round_2(r.service_fee_amount + v_comm - v_agg), r.deposit_amount - v_comm, r.service_fee_rate, v_agg_rate,
+	        public.fin_setting_num('finance.payout_delay_hours')::int, public.fin_setting_bool('finance.payout_hold_enabled'),
+	        'PENDING', 'IDEMP-' || (p->>'external_order_id'), v_expires,
+	        v_operator, NULLIF(p->>'payer_phone', ''), p->>'callback_token_hash',
+	        jsonb_build_object('target_type', 'TABLE_RESERVATION', 'target_id', r.id, 'reservation_id', r.id, 'part', 'ACOMPTE',
+	                           'commission_rate', COALESCE(r.commission_rate, 0), 'commission_amount', v_comm)
+	    )
+	    RETURNING id INTO v_payment;
+	
+	    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+	    VALUES (v_client, 'CLIENT', 'TABLE_PAYMENT_STARTED', 'table_reservations', r.id,
+	            jsonb_build_object('payment_id', v_payment, 'amount', v_amount));
+	
+	    RETURN jsonb_build_object('ok', true, 'payment_id', v_payment, 'amount', v_amount,
+	                              'deposit_amount', r.deposit_amount, 'service_fee', r.service_fee_amount, 'venue_id', r.venue_id);
+	END;
+	$$
+172.18.0.1 2026-11-19 12:20:21.416 UTC [220] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.table_client_unpaid_refusal(uuid, uuid) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-19 12:20:21.416 UTC [220] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.table_client_slot_refusal(uuid, uuid, tsrange, uuid) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-19 12:20:21.416 UTC [220] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.table_reserve(jsonb) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-19 12:20:21.416 UTC [220] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.table_payment_create(jsonb) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-19 12:20:21.416 UTC [220] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.table_client_unpaid_refusal(uuid, uuid) TO service_role
+172.18.0.1 2026-11-19 12:20:21.416 UTC [220] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.table_client_slot_refusal(uuid, uuid, tsrange, uuid) TO service_role
+172.18.0.1 2026-11-19 12:20:21.417 UTC [220] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.table_reserve(jsonb) TO service_role
+172.18.0.1 2026-11-19 12:20:21.417 UTC [220] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.table_payment_create(jsonb) TO service_role
+172.18.0.1 2026-11-19 12:20:21.420 UTC [220] postgres@postgres LOG:  execute <unnamed>: -- ============================================================================
+	-- EVENT VILLAGE — LOT 11a, correctifs de la contre-vérification (docs/audit-lot11a.md), migration 112 : T3
+	-- ============================================================================
+	-- T3 (moyenne) : table_reservation_cancel appliquait la règle du client (acompte rendu jusqu'à
+	-- tables.cancel_free_hours avant l'heure, rien ensuite) aussi à une demande « En attente de réponse » : une demande
+	-- payée que l'établissement n'avait jamais acceptée, annulée par le client à 1 h 30 de l'heure, ne rendait rien et
+	-- l'établissement gardait l'acompte (audit 3.3b : 0 F rendu sur 21 000 F).
+	--  1. table_reservation_cancel : recopie de 20261123000106_l11a_annulation.sql:194-257 ; changement : une demande
+	--     « En attente de réponse » annulée par le client est remboursée en entier (100 %), quelle que soit l'heure ; la
+	--     règle des 2 h ne vaut que pour une réservation confirmée.
+	-- Rejouable : CREATE OR REPLACE, REVOKE et GRANT idempotents.
+	-- ============================================================================
+	
+	CREATE OR REPLACE FUNCTION public.table_reservation_cancel(p jsonb)
+	RETURNS jsonb
+	LANGUAGE plpgsql
+	VOLATILE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	DECLARE
+	    v_res_id uuid := public.try_uuid(p->>'reservation_id');
+	    v_actor  uuid := public.try_uuid(p->>'actor_id');
+	    v_origin text := upper(COALESCE(p->>'origin', ''));
+	    v_reason text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'reason', ''), '[[:cntrl:]]', ' ', 'g')), 300), '');
+	    r        record;
+	    v_pct    numeric;
+	    v_state  text;
+	BEGIN
+	    IF v_origin NOT IN ('CLIENT', 'ETABLISSEMENT', 'EVENT_VILLAGE') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ORIGIN', 'message', 'Annulation refusée.');
+	    END IF;
+	    IF v_res_id IS NULL OR public.table_lock_reservation(v_res_id) IS NULL THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESERVATION_NOT_FOUND', 'message', 'Réservation introuvable.');
+	    END IF;
+	    SELECT tr.*, pa.user_id AS owner_id INTO r
+	      FROM public.table_reservations tr JOIN public.partners pa ON pa.id = tr.partner_id
+	     WHERE tr.id = v_res_id FOR UPDATE OF tr;
+	
+	    -- Droits : le client sur la sienne, l'établissement sur celles de ses établissements, Event Village avec le droit
+	    -- des remboursements (ou la modération des services pour une demande jamais payée)
+	    IF v_origin = 'CLIENT' AND (v_actor IS NULL OR v_actor <> r.client_id) THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESERVATION_NOT_FOUND', 'message', 'Réservation introuvable.');
+	    END IF;
+	    IF v_origin = 'ETABLISSEMENT' AND (v_actor IS NULL OR v_actor <> r.owner_id
+	        OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF')) THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESERVATION_NOT_FOUND', 'message', 'Réservation introuvable.');
+	    END IF;
+	    IF v_origin = 'EVENT_VILLAGE' AND (v_actor IS NULL
+	        OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF')
+	        OR NOT (EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = v_actor AND ur.role::text = 'SUPERADMIN')
+	                OR public.has_admin_permission(v_actor, 'refunds.manage')
+	                OR (r.paid_amount = 0 AND r.booking_state IN ('EN_ATTENTE_PAIEMENT', 'EN_ATTENTE_ACCEPTATION')
+	                    AND public.has_admin_permission(v_actor, 'events.write')))) THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Vous n’avez pas le droit d’annuler cette réservation.');
+	    END IF;
+	    IF v_origin IN ('ETABLISSEMENT', 'EVENT_VILLAGE') AND (v_reason IS NULL OR length(v_reason) < 5) THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif : il est envoyé au client.');
+	    END IF;
+	    IF r.booking_state NOT IN ('EN_ATTENTE_PAIEMENT', 'EN_ATTENTE_ACCEPTATION', 'CONFIRMEE') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'NOT_CANCELLABLE', 'message', 'Cette réservation est déjà annulée ou terminée.');
+	    END IF;
+	    IF v_origin IN ('CLIENT', 'ETABLISSEMENT') AND lower(r.slot) <= public.hall_dakar_now() THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_STARTED', 'message', 'L’heure de la réservation est passée : elle ne peut plus être annulée.');
+	    END IF;
+	    IF v_origin = 'EVENT_VILLAGE' AND upper(r.slot) <= public.hall_dakar_now() THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_ENDED', 'message', 'La réservation est terminée : elle ne peut plus être annulée.');
+	    END IF;
+	
+	    -- Contre-vérification de la 11a (T3) : une demande que l'établissement n'a pas encore acceptée est rendue en entier,
+	    -- quelle que soit l'heure ; la règle des tables.cancel_free_hours ne vaut que pour une réservation confirmée
+	    v_pct := CASE WHEN v_origin = 'CLIENT' AND r.booking_state <> 'EN_ATTENTE_ACCEPTATION'
+	                  THEN public.table_client_refund_percent(lower(r.slot), public.hall_dakar_now(), public.fin_setting_num('tables.cancel_free_hours'))
+	                  ELSE 100 END;
+	    v_state := CASE v_origin WHEN 'CLIENT' THEN 'ANNULEE_CLIENT' WHEN 'ETABLISSEMENT' THEN 'ANNULEE_ETABLISSEMENT' ELSE 'ANNULEE_EV' END;
+	    RETURN public.table_close_apply(r.id, v_state, v_origin, v_actor, COALESCE(v_reason, 'Annulation par le client'), v_pct)
+	           || jsonb_build_object('cancel_free_hours', public.fin_setting_num('tables.cancel_free_hours'));
+	END;
+	$$
+172.18.0.1 2026-11-19 12:20:21.420 UTC [220] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.table_reservation_cancel(jsonb) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-19 12:20:21.421 UTC [220] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.table_reservation_cancel(jsonb) TO service_role
+172.18.0.1 2026-11-19 12:20:21.423 UTC [220] postgres@postgres LOG:  execute <unnamed>: -- ============================================================================
+	-- EVENT VILLAGE — LOT 11a, correctifs de la contre-vérification (docs/audit-lot11a.md), migration 113 : T5
+	-- ============================================================================
+	-- T5 (faible) : table_reservation_respond ne vérifiait que le compte de la partenaire (actif) : un établissement
+	-- suspendu par l'administration (« ne reçoit plus de nouvelles réservations »), ou une partenaire dont la fiche est
+	-- suspendue, acceptait encore une demande payée, confirmée aussitôt (audit 4.6a et 4.6b).
+	--  1. table_reservation_respond : recopie de 20261123000106_l11a_annulation.sql:259-314 ; changement : l'acceptation
+	--     refait les contrôles de table_reserve sur l'établissement et la partenaire (établissement actif et validé, ou
+	--     validation non exigée et ni refusé ni suspendu ; partenaire VALIDE) ; sinon la demande est refusée
+	--     (« Refusée par l'établissement », par le système) et le client remboursé en entier (table_close_apply, 100 %),
+	--     avec l'avis du refus. Le refus d'une demande par la partenaire reste possible dans tous les cas.
+	-- Rejouable : CREATE OR REPLACE, REVOKE et GRANT idempotents.
+	-- ============================================================================
+	
+	CREATE OR REPLACE FUNCTION public.table_reservation_respond(p jsonb)
+	RETURNS jsonb
+	LANGUAGE plpgsql
+	VOLATILE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	DECLARE
+	    v_res_id uuid := public.try_uuid(p->>'reservation_id');
+	    v_actor  uuid := public.try_uuid(p->>'actor_id');
+	    v_action text := upper(COALESCE(p->>'action', ''));
+	    v_reason text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'reason', ''), '[[:cntrl:]]', ' ', 'g')), 300), '');
+	    r        record;
+	BEGIN
+	    IF v_action NOT IN ('ACCEPTER', 'REFUSER') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ACTION', 'message', 'Choisissez d’accepter ou de refuser la demande.');
+	    END IF;
+	    IF v_res_id IS NULL OR public.table_lock_reservation(v_res_id) IS NULL THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESERVATION_NOT_FOUND', 'message', 'Réservation introuvable.');
+	    END IF;
+	    SELECT tr.*, pa.user_id AS owner_id INTO r
+	      FROM public.table_reservations tr JOIN public.partners pa ON pa.id = tr.partner_id
+	     WHERE tr.id = v_res_id FOR UPDATE OF tr;
+	    IF v_actor IS NULL OR v_actor <> r.owner_id
+	       OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESERVATION_NOT_FOUND', 'message', 'Réservation introuvable.');
+	    END IF;
+	    IF r.booking_state = 'EN_ATTENTE_PAIEMENT' THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'NOT_PAID', 'message', 'L’acompte n’est pas encore payé : la demande ne peut pas être acceptée.');
+	    END IF;
+	    IF r.booking_state <> 'EN_ATTENTE_ACCEPTATION' THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'NOT_PENDING', 'message', 'Cette demande a déjà reçu une réponse.');
+	    END IF;
+	    IF r.response_due_at IS NOT NULL AND r.response_due_at <= now() THEN
+	        -- Délai dépassé : la demande est close tout de suite (comme le ferait la tâche planifiée)
+	        PERFORM public.table_close_apply(r.id, 'SANS_REPONSE', 'SANS_REPONSE', NULL, 'Pas de réponse de l’établissement à temps', 100);
+	        RETURN jsonb_build_object('ok', false, 'code', 'RESPONSE_TOO_LATE', 'message', 'Le délai de réponse est passé : la demande est annulée et le client remboursé.');
+	    END IF;
+	    IF v_action = 'REFUSER' THEN
+	        IF v_reason IS NULL OR length(v_reason) < 5 THEN
+	            RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif : il est envoyé au client.');
+	        END IF;
+	        RETURN public.table_close_apply(r.id, 'REFUSEE', NULL, v_actor, v_reason, 100);
+	    END IF;
+	
+	    -- Contre-vérification de la 11a (T5) : l'acceptation refait les contrôles de l'établissement et de la partenaire
+	    -- (mêmes règles que table_reserve) ; sinon la demande est refusée et le client remboursé en entier
+	    IF NOT EXISTS (
+	        SELECT 1 FROM public.venues ve JOIN public.partners pa ON pa.id = ve.partner_id
+	         WHERE ve.id = r.venue_id AND ve.is_active AND pa.status::text = 'VALIDE'
+	           AND (ve.validation_status = 'VALIDEE'
+	                OR (NOT public.fin_setting_bool('tables.validation_required') AND ve.validation_status NOT IN ('REFUSEE', 'SUSPENDUE')))) THEN
+	        PERFORM public.table_close_apply(r.id, 'REFUSEE', NULL, NULL, 'L’établissement n’accepte plus de réservation pour le moment', 100);
+	        RETURN jsonb_build_object('ok', false, 'code', 'VENUE_NOT_AVAILABLE',
+	            'message', 'Cet établissement n’accepte plus de réservation pour le moment : la demande est refusée et le client remboursé en entier.');
+	    END IF;
+	
+	    PERFORM set_config('event_village.table_booking', 'on', true);
+	    UPDATE public.table_reservations
+	       SET booking_state = 'CONFIRMEE', confirmed_at = now(), response_due_at = NULL, updated_at = now()
+	     WHERE id = r.id;
+	    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value)
+	    VALUES (v_actor, 'PARTENAIRE', 'TABLE_REQUEST_ACCEPTED', 'table_reservations', r.id,
+	            jsonb_build_object('booking_state', r.booking_state), jsonb_build_object('booking_state', 'CONFIRMEE'));
+	    PERFORM public.table_notify('TABLE_RESERVATION_CONFIRMED', r.id, 'CLIENT');
+	    RETURN jsonb_build_object('ok', true, 'reservation_id', r.id, 'booking_state', 'CONFIRMEE');
+	END;
+	$$
+172.18.0.1 2026-11-19 12:20:21.424 UTC [220] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.table_reservation_respond(jsonb) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-19 12:20:21.424 UTC [220] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.table_reservation_respond(jsonb) TO service_role
+172.18.0.1 2026-11-19 12:20:21.430 UTC [220] postgres@postgres ERROR:  relation "supabase_migrations.seed_files" does not exist at character 24
+172.18.0.1 2026-11-19 12:20:21.430 UTC [220] postgres@postgres STATEMENT:  SELECT path, hash FROM supabase_migrations.seed_files
+172.18.0.1 2026-11-19 12:20:21.433 UTC [220] postgres@postgres LOG:  statement: CREATE SCHEMA IF NOT EXISTS supabase_migrations
+172.18.0.1 2026-11-19 12:20:21.434 UTC [220] postgres@postgres LOG:  statement: CREATE TABLE IF NOT EXISTS supabase_migrations.seed_files (path text NOT NULL PRIMARY KEY, hash text NOT NULL)
+===== supabase_realtime_event-village (filtré) =====
+----- supabase_realtime_event-village (autres lignes filtrées) -----
+2026-11-19T12:20:24.614206660Z 12:20:24.602 [warning] Failed to load OTP-trusted CAs: :error::function_clause, falling back to hardcoded authorities
+2026-11-19T12:20:25.652915819Z 12:20:25.652 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-19T12:20:25.653173320Z 12:20:25.652 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-19T12:20:26.188845060Z 12:20:26.188 [warning] Zero region nodes for us-east-1 using :nonode@nohost
+2026-11-19T12:20:26.197199488Z 12:20:26.196 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-19T12:20:26.285901835Z 12:20:26.282 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-19T12:20:28.873869620Z =WARNING REPORT==== 19-Nov-2026::12:20:28.870833 ===
+2026-11-19T12:20:28.873898324Z Failed to load OTP-trusted CAs: error:function_clause, falling back to hardcoded authorities
+2026-11-19T12:20:29.014939999Z 12:20:29.014 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-19T12:20:29.050828770Z 12:20:29.050 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+===== supabase_db_event-village (lecteur Realtime, filtré) =====
