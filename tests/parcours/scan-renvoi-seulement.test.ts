@@ -42,6 +42,9 @@ import { outboxRows } from './notif-helpers';
 
 type Row = Record<string, unknown>;
 
+// Finition 4 (décision du client du 19/11, modification signalée au rapport) : au premier passage, l'avis au porteur est la
+// bienvenue (ENTRY_WELCOME), qui remplace « Entrée validée » (TICKET_SCANNED) pour ce billet : les deux types sont lus.
+const ENTRY_NOTICES = ['TICKET_SCANNED', 'ENTRY_WELCOME'];
 const FREE = 'Entrée';
 const NOT_PROCESSED_MESSAGE = 'Scan non traité : aucune entrée enregistrée. Scannez le billet de nouveau.';
 const NOT_PROCESSED_LABEL = 'Scan non traité : scannez le billet de nouveau';
@@ -148,7 +151,7 @@ describe('8.2 e — clé inconnue : rien n’est créé (L42, contrat 3.5)', () 
         await assertNoEntry(ticketId, ctrl.userId, 'renvoi avec un code valide');
         assertNotProcessed(await scanWithKey(ctrl, replayBody(), newScanKey()), 'renvoi sans code');
         await assertNoEntry(ticketId, ctrl.userId, 'renvoi sans code');
-        assert.deepEqual(await outboxRows({ userId: owner.userId, type: 'TICKET_SCANNED' }), [], 'aucun avis « entrée validée » au porteur (témoin au cas 10)');
+        assert.deepEqual(await outboxRows({ userId: owner.userId, type: ENTRY_NOTICES }), [], 'aucun avis « entrée validée » au porteur (témoin au cas 10)');
     });
 
     test('libellé et classement : not_processed est un incident technique, jamais un verdict sur le billet', () => {
@@ -357,13 +360,13 @@ describe('8.2 e — après not_processed, le contrôleur peut rescanner', () => 
         const ctrl = await newController(partner, ev.eventId, { label: 'renvoi-relecture' });
         const ticketId = await freeTicket(owner);
         assertNotProcessed(await scanWithKey(ctrl, replayBody(), newScanKey()), 'renvoi');
-        assert.deepEqual(await outboxRows({ userId: owner.userId, type: 'TICKET_SCANNED' }), [], 'renvoi : aucun avis');
+        assert.deepEqual(await outboxRows({ userId: owner.userId, type: ENTRY_NOTICES }), [], 'renvoi : aucun avis');
         const { scanId } = await firstValidScan(ctrl, ticketId, newScanKey());
         assert.deepEqual((await scansBy(ctrl.userId)).map((r) => r.id), [scanId], 'une seule ligne, celle de la relecture');
         const t = await ticketRow(ticketId);
         assert.equal(t.status, 'UTILISE', 'relecture : billet composté');
         assert.equal(t.checked_in_by, ctrl.userId, 'relecture : composté par le scanneur');
-        assert.ok((await outboxRows({ userId: owner.userId, type: 'TICKET_SCANNED' })).length > 0, 'témoin : l’avis « entrée validée » est bien lu par ce filtre');
+        assert.ok((await outboxRows({ userId: owner.userId, type: ENTRY_NOTICES })).length > 0, 'témoin : l’avis « entrée validée » est bien lu par ce filtre');
     });
 
     test('10. lecture d’origine arrivée après le renvoi, puis nouveau scan : already_used, checked_in_by_me: true ; le renvoi rend alors le verdict d’origine', async () => {
