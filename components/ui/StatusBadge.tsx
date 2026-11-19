@@ -79,11 +79,11 @@ export const StatusBadge: React.FC<StatusBadgeProps> = (props) => {
     <span
       // Lot 6 (contrat A6) : texte de 12 px admis par le contrôle des captures (pastille, MASTER.md).
       data-ev-caption=""
-      className={cn('inline-flex max-w-full items-center whitespace-nowrap border font-semibold leading-tight', TONE_SOFT[meta.tone], SIZES[size], className)}
+      className={cn('inline-flex max-w-full items-center border font-semibold leading-tight', TONE_SOFT[meta.tone], SIZES[size], className)}
       title={meta.description}
     >
       <span className={cn('h-1.5 w-1.5 flex-shrink-0 rounded-full', TONE_DOT[meta.tone])} aria-hidden="true" />
-      <span className="truncate">{meta.label}</span>
+      <span className="min-w-0 break-words">{meta.label}</span>
     </span>
   );
 };
