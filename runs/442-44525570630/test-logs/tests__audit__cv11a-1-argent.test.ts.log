@@ -1,0 +1,188 @@
+TAP version 13
+[CV11A] 1.1a : {"http":200,"total":3888,"deposit":3702,"fee":186,"client":true,"state":"EN_ATTENTE_PAIEMENT"}
+[CV11A] 1.1b : {"http":201,"amount":3888}
+# Subtest: 1.1 Payer moins que dû
+    # Subtest: montants, taux et autre client envoyés dans le corps : ignorés (1 234 × 3 → 3 888 calculés en base)
+    ok 1 - montants, taux et autre client envoyés dans le corps : ignorés (1 234 × 3 → 3 888 calculés en base)
+      ---
+      duration_ms: 450.846857
+      type: 'test'
+      ...
+[CV11A] 1.1c : {"0":"400 INVALID_GUESTS","51":"400 INVALID_GUESTS","-1":"400 INVALID_GUESTS","2^31":"400 INVALID_GUESTS","1e21":"400 INVALID_GUESTS","4.5":"400 INVALID_GUESTS","\"4.5\"":"400 INVALID_GUESTS","\"4abc\"":"400 INVALID_GUESTS","true":"400 INVALID_GUESTS","[4]":"400 INVALID_GUESTS","vide":"400 INVALID_GUESTS","null":"400 INVALID_GUESTS","\"1e1\"":"400 INVALID_GUESTS","24:00":"400 INVALID_DATE","20:07":"400 INVALID_TIME","20:00:30":"400 INVALID_TIME","25:00":"400 INVALID_DATE","date 30 février":"400 INVALID_DATE","date epoch":"400 DATE_PASSED","date infinity":"400 DATE_TOO_FAR","date -infinity":"400 DATE_PASSED","date 1900":"400 DATE_PASSED"}
+    # Subtest: personnes 0, négatives, énormes, décimales, texte, booléen, tableau ; heure et date illisibles : refusées (400), rien de créé
+    ok 2 - personnes 0, négatives, énormes, décimales, texte, booléen, tableau ; heure et date illisibles : refusées (400), rien de créé
+      ---
+      duration_ms: 489.207124
+      type: 'test'
+      ...
+[CV11A] 1.1d : {"replies":{"0":400,"99":400,"1000001":400,"50.5":400,"-100":400},"direct":"23514"}
+    # Subtest: acompte 0, 99, 50,5, négatif ou 1 000 001 F par personne : refusé à la création (route) et en base
+    ok 3 - acompte 0, 99, 50,5, négatif ou 1 000 001 F par personne : refusé à la création (route) et en base
+      ---
+      duration_ms: 103.23848
+      type: 'test'
+      ...
+[CV11A] 1.1e : {"deposit":50000000,"fee":2500000,"total":52500000}
+[CV11A] 1.1e paiement : 201 {"success":true,"payment_id":"cd283e7d-080a-427e-8446-43171f8aa5e9","status":"PENDING","amount":52500000,"facial_amount":50000000,"service_fee":2500000,"currency":"XOF","operator":"WAVE","expires_at":"2026-11-19T12:55:52.342049+00:00","payment_url":"http://127.0.0.1:9/fake-samirpay/pay/5b75b0fd-70f1
+    # Subtest: acompte maximal : 1 000 000 F × 50 personnes → 52 500 000 F à payer, calculés en base sans dépassement
+    ok 4 - acompte maximal : 1 000 000 F × 50 personnes → 52 500 000 F à payer, calculés en base sans dépassement
+      ---
+      duration_ms: 242.878106
+      type: 'test'
+      ...
+    1..4
+ok 1 - 1.1 Payer moins que dû
+  ---
+  duration_ms: 1569.221711
+  type: 'suite'
+  ...
+[confirmation] paiement 50cbb6b1-b0b8-4665-9fc5-90db82921634 encaissé mais non honorable (réservation déjà payée) : remboursement
+[webhook SamirPay] événement 0dbfb163-2730-4a38-8216-0cc6ec16d0f5 : REFUND_REQUIRED
+[CV11A] 1.2a : {"state":"CONFIRMEE","paid":21000,"cashed":42000,"refunded":21000,"payments":[["REFUNDED",21000],["SUCCESS",21000]],"net":20000}
+# Subtest: 1.2 Payer deux fois, payer trop tard
+    # Subtest: deux paiements du même acompte (le premier abandonné 61 min puis payé) : le second rendu en entier, une seule vente
+    ok 1 - deux paiements du même acompte (le premier abandonné 61 min puis payé) : le second rendu en entier, une seule vente
+      ---
+      duration_ms: 367.70099
+      type: 'test'
+      ...
+[confirmation] paiement 79d2f9ea-ffe7-4b5b-8a86-02b1aa431267 encaissé mais non honorable (réservation déjà payée) : remboursement
+[webhook SamirPay] événement ac37cd22-449a-4e2a-a074-291482653051 : REFUND_REQUIRED
+[CV11A] 1.2 sans réponse : {"closing":{"no_shows":0,"reminders":0,"unanswered":1,"cashout_ids":["36cc5f26-4611-4e83-9041-66b2e51f90ca"],"expired_holds":0},"state":"SANS_REPONSE","paid":21000,"refundedRow":21000,"cashed":42000,"refunded":42000,"payments":[["REFUNDED",21000],["SUCCESS",21000]],"net":0}
+    # Subtest: demande payée puis close (sans réponse), puis un paiement plus ancien confirmé : tout rendu, l’établissement à 0
+    ok 2 - demande payée puis close (sans réponse), puis un paiement plus ancien confirmé : tout rendu, l’établissement à 0
+      ---
+      duration_ms: 378.747997
+      type: 'test'
+      ...
+[confirmation] paiement 8d5c6a1c-758f-4f64-8678-6e6d4f41e7d3 encaissé mais non honorable (réservation déjà payée) : remboursement
+[webhook SamirPay] événement fb95689e-c3c2-48a2-a6d0-537e385eedb7 : REFUND_REQUIRED
+[CV11A] 1.2 refus : {"closing":"HTTP 200 {\"success\":true,\"state\":\"Refusée par l’établissement\",\"refundAmount\":21000}","state":"REFUSEE","paid":21000,"refundedRow":21000,"cashed":42000,"refunded":42000,"payments":[["REFUNDED",21000],["REFUNDED",21000]],"net":0}
+    # Subtest: demande payée puis close (refus), puis un paiement plus ancien confirmé : tout rendu, l’établissement à 0
+    ok 3 - demande payée puis close (refus), puis un paiement plus ancien confirmé : tout rendu, l’établissement à 0
+      ---
+      duration_ms: 398.80549
+      type: 'test'
+      ...
+[confirmation] paiement 30281f16-e5f1-4811-b0a4-5bafdf1d3b6f encaissé mais non honorable (réservation déjà payée) : remboursement
+[webhook SamirPay] événement a0e66b41-f579-42a6-b372-e274d2c82ff6 : REFUND_REQUIRED
+[CV11A] 1.2 annulation par Event Village : {"closing":"HTTP 200 {\"success\":true,\"message\":\"Réservation annulée. Le client est remboursé de 21 000 F CFA.\",\"reservation\":{\"id\":\"8167b670-72c9-4546-b4de-2478af3347db\",\"state\":\"Annulée par Event Village\"}}","state":"ANNULEE_EV","paid":21000,"refundedRow":21000,"cashed":42000,"refunded":42000,"payments":[["REFUNDED",21000],["REFUNDED",21000]],"net":0}
+    # Subtest: demande payée puis close (annulation par Event Village), puis un paiement plus ancien confirmé : tout rendu, l’établissement à 0
+    ok 4 - demande payée puis close (annulation par Event Village), puis un paiement plus ancien confirmé : tout rendu, l’établissement à 0
+      ---
+      duration_ms: 578.9254
+      type: 'test'
+      ...
+[confirmation] paiement a24bf3db-8a0e-4159-a13d-77bc427b10c1 encaissé mais non honorable (réservation annulée) : remboursement
+[webhook SamirPay] événement 34ac25d7-eb0d-425f-ad51-ffc3cf9352fe : REFUND_REQUIRED
+[CV11A] 1.2e : {"cancel":"HTTP 200 {\"success\":true,\"message\":\"Réservation annulée.\",\"reservation\":{\"id\":\"04fd1163-8cb3-4539-99c9-a65cb3f12545\",\"state\":\"Annulée par le client\",\"refundAmount\":0}}","state":"ANNULEE_CLIENT","cashed":21000,"refunded":21000,"payments":[["REFUNDED",21000]]}
+    # Subtest: acompte en cours, client qui annule avant la confirmation : paiement arrivé ensuite rendu en entier (21 000)
+    ok 5 - acompte en cours, client qui annule avant la confirmation : paiement arrivé ensuite rendu en entier (21 000)
+      ---
+      duration_ms: 315.383658
+      type: 'test'
+      ...
+[confirmation] paiement 47a6622e-be5c-4e84-b513-08331597e45d encaissé mais non honorable (Cette réservation ne peut plus être payée.) : remboursement
+[webhook SamirPay] événement 06cace0a-e716-4171-b7e6-355c12395584 : REFUND_REQUIRED
+[CV11A] 1.2f : {"state":"EN_ATTENTE_PAIEMENT","paid":0,"cashed":21000,"refunded":21000,"payments":[["REFUNDED",21000]]}
+    # Subtest: paiement lancé avant l’heure, confirmé après le début du créneau : rendu en entier, jamais confirmé
+    ok 6 - paiement lancé avant l’heure, confirmé après le début du créneau : rendu en entier, jamais confirmé
+      ---
+      duration_ms: 291.586332
+      type: 'test'
+      ...
+    1..6
+ok 2 - 1.2 Payer deux fois, payer trop tard
+  ---
+  duration_ms: 2331.837012
+  type: 'suite'
+  ...
+[CV11A] 1.3 : {"replies":[409,409,200,409,409],"refunds":[21000],"cashouts":1,"again":"ok"}
+# Subtest: 1.3 Double remboursement
+    # Subtest: annulations simultanées (client ×3, établissement, Event Village, tâche) puis remboursement direct rejoué : une seule fois 21 000
+    ok 1 - annulations simultanées (client ×3, établissement, Event Village, tâche) puis remboursement direct rejoué : une seule fois 21 000
+      ---
+      duration_ms: 522.951465
+      type: 'test'
+      ...
+    1..1
+ok 3 - 1.3 Double remboursement
+  ---
+  duration_ms: 523.08801
+  type: 'suite'
+  ...
+[CV11A] 1.4a : {"rec":"HTTP 200 {\"success\":true,\"state\":\"Confirmée\",\"refundAmount\":0}","big":400,"weird":400,"before":{"pays":1,"ledger":[{"c":10}]},"afterRec":{"pays":1,"ledger":[{"c":10}]},"cancel":200,"onsite":150000,"payStatus":"REFUND_PENDING","refunds":[21000]}
+# Subtest: 1.4 Paiement sur place : jamais compté
+    # Subtest: déclaré sur une réservation payée puis annulée par l’établissement : aucun paiement, aucune écriture, seul l’acompte rendu
+    ok 1 - déclaré sur une réservation payée puis annulée par l’établissement : aucun paiement, aucune écriture, seul l’acompte rendu
+      ---
+      duration_ms: 377.380603
+      type: 'test'
+      ...
+[CV11A] 1.4b : {"rec":200,"pays":0,"fin1":"{\"success\":true,\"finance\":{\"grossRevenue\":120000,\"netRevenue\":20000,\"refunded\":100000,\"availableRevenue\":0,\"pendingRevenue\":20000,\"nextAvailableAt\":\"2026-12-24T22:00:00+00:00\",\"debt\":0,\"soldeDisponible\":0,\"totalWithdrawn\":0,\"pendingAmount\":0,\"buyerServiceFees\":0,\"cashSales\":0,\"cashTickets\":0,\"breakd","fin2":"{\"success\":true,\"finance\":{\"grossRevenue\":120000,\"netRevenue\":20000,\"refunded\":100000,\"availableRevenue\":0,\"pendingRevenue\":20000,\"nextAvailableAt\":\"2026-12-24T22:00:00+00:00\",\"debt\":0,\"soldeDisponible\":0,\"totalWithdrawn\":0,\"pendingAmount\":0,\"buyerServiceFees\":0,\"cashSales\":0,\"cashTickets\":0,\"breakd"}
+    # Subtest: sur une réservation gratuite : aucune ligne de paiement, rien au grand livre ; relevés de l’établissement sans ce montant
+    ok 2 - sur une réservation gratuite : aucune ligne de paiement, rien au grand livre ; relevés de l’établissement sans ce montant
+      ---
+      duration_ms: 360.30918
+      type: 'test'
+      ...
+    1..2
+ok 4 - 1.4 Paiement sur place : jamais compté
+  ---
+  duration_ms: 737.895799
+  type: 'suite'
+  ...
+[CV11A] 1.5a : {"amount":3888,"facial":3702,"fee":186,"agg":58.32,"net":127.68,"payout":3702,"sale":[{"amount":"3702.00","available_at":"2026-12-30T22:00:00.000Z"}],"comm":[{"amount":"6.38","status":"PENDING","available_at":"2027-01-04T22:00:00.000Z"}]}
+[CV11A] 1.5b : {"refunds":[{"amount":3888,"facial_part":3702,"service_part":186,"aggregator_fee_share":58.32,"aggregator_fee_bearer":"EVENT_VILLAGE","net_revenue_reversal":186,"kind":"REFUND","payment_id":"76681531-79dc-48e3-8313-7d990619120c","payments":{"table_reservation_id":"122d7602-ff68-49a1-9e4e-6447ebc5375f"}}],"commAfter":[{"amount":"6.38","status":"CANCELLED"}],"sponsorNet":"0.00","partnerNet":0,"violations":[]}
+# Subtest: 1.5 Grand livre et parrainage au franc près
+    # Subtest: 1 234 × 3 (3 888) avec parrain : vente 3 702 après la fin + 48 h, net Event Village 127,68, commission ; annulé à J-39 : tout repris
+    ok 1 - 1 234 × 3 (3 888) avec parrain : vente 3 702 après la fin + 48 h, net Event Village 127,68, commission ; annulé à J-39 : tout repris
+      ---
+      duration_ms: 574.756407
+      type: 'test'
+      ...
+[CV11A] 1.5c : {"pay":{"amount":"3888.00","facial_amount":"3702.00","service_fee":"186.00","partner_payout_amount":"3590.94","net_event_village_revenue":"238.74"},"cancel":true,"refund":{"amount":"3888.00","facial_part":"3591.00","service_part":"297.00","net_revenue_reversal":"297.00"},"net":"-0.06","violations":[]}
+    # Subtest: commission de 3 % (transaction annulée) : 3 702 × 3 % = 111,06 ; remboursement total : écart de l’établissement < 1 F
+    ok 2 - commission de 3 % (transaction annulée) : 3 702 × 3 % = 111,06 ; remboursement total : écart de l’établissement < 1 F
+      ---
+      duration_ms: 261.441128
+      type: 'test'
+      ...
+    1..2
+ok 5 - 1.5 Grand livre et parrainage au franc près
+  ---
+  duration_ms: 836.411636
+  type: 'suite'
+  ...
+[INVARIANT] cv11a-1-argent — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cv11a-1-argent — purge des réservations échues : {"expired":0}
+[INVARIANT] cv11a-1-argent — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cv11a-1-argent — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cv11a-1-argent — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cv11a-1-argent — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cv11a-1-argent — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cv11a-1-argent — envoyeur : 210 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cv11a-1-argent — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cv11a-1-argent — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cv11a-1-argent — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cv11a-1-argent — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cv11a-1-argent — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cv11a-1-argent — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cv11a-1-argent — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cv11a-1-argent — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cv11a-1-argent — (f) : 0 violation(s)
+[INVARIANT-FINITION3A] cv11a-1-argent : 0 violation(s)
+[INVARIANT-FINITION3B] cv11a-1-argent — (h1) : 0 violation(s)
+[INVARIANT-FINITION3D] cv11a-1-argent — (i1) : 0 violation(s)
+[INVARIANT-LOT10A] cv11a-1-argent — (h1)(h2)(h3)(h4) : 0 violation(s)
+[INVARIANT-LOT11A] cv11a-1-argent — (t1)(t2)(t3)(t4)(t5)(t6) : 0 violation(s)
+1..5
+# tests 15
+# suites 5
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7067.5392
