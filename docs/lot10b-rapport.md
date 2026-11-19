@@ -95,7 +95,8 @@ Aucune assertion des suites d'audit (`tests/audit/*`) n'a changé : les recopies
 | 440 | `002d3d16b` | complet | 529/536 : filtres PostgREST (recherche admin), messages bruts (2), `l11a-cv-correctifs` (22 → 23 réglages), audit `cv11a-5-recopies` (lignes d'origine de deux recopies), inventaire des écritures partenaire, `recette-matrice` ; Lighthouse fiche 89 et Mes billets 87 (pages non touchées, JS +1 Ko, budgets tenus) |
 | 443 | `89e6f9b68` | **complet** | **tests 536/536**, contrôle des lots OK, build, budgets JS, Lighthouse (92, 92, 90) ; e2e 630/631 : seule la capture `admin-notifications` (gabarit du champ de date « mm/dd/yyyy », instabilité déjà vue sur main au run 432, hors du lot) |
 
-Journaux bruts : branche `ci-results`, `runs/436-44515221134/`, `runs/438-44517219772/`, `runs/440-44518060248/`, `runs/443-44527109456/`.
+| 446 | `27f311fbb` | **complet** | **vert : tests 536/536**, contrôle des lots OK, build, budgets JS, e2e 631/631, Lighthouse (92, 92, 90) ; 55 min |
+Journaux bruts : branche `ci-results`, `runs/436-44515221134/`, `runs/438-44517219772/`, `runs/440-44518060248/`, `runs/443-44527109456/`, `runs/446-44535947085/`.
 
 ## Mise en service (event-village-dev)
 
