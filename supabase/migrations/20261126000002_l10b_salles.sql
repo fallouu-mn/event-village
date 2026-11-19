@@ -518,15 +518,16 @@ BEGIN
     ), latest AS (
         SELECT * FROM per ORDER BY start_date DESC, id LIMIT 200
     )
-    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+    SELECT COALESCE((SELECT jsonb_agg(jsonb_build_object(
                'reservation_id', id, 'hall_id', hall_id, 'hall_name', hall_name, 'start_date', start_date, 'end_date', end_date,
                'start_time', to_char(start_time, 'HH24:MI'),
                'end_time', CASE WHEN end_time IS NULL THEN NULL WHEN end_time = time '24:00' THEN '24:00' ELSE to_char(end_time, 'HH24:MI') END,
                'booking_state', booking_state, 'paid_amount', paid_amount, 'refunded_amount', refunded_amount,
                'earned', earned, 'available_at', available_at, 'available', available_at IS NOT NULL AND available_at <= now())
-             ORDER BY start_date DESC, id), '[]'::jsonb)
-      INTO v_rows FROM latest;
-    SELECT COALESCE(sum(available), 0), COALESCE(sum(earned - available), 0) INTO v_avail, v_coming FROM per;
+             ORDER BY start_date DESC, id) FROM latest), '[]'::jsonb),
+           (SELECT COALESCE(sum(available), 0) FROM per),
+           (SELECT COALESCE(sum(earned - available), 0) FROM per)
+      INTO v_rows, v_avail, v_coming;
     RETURN jsonb_build_object('ok', true, 'available_total', v_avail, 'upcoming_total', v_coming, 'rows', v_rows);
 END;
 $$;

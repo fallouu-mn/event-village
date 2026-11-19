@@ -370,7 +370,7 @@ export class HallService {
         if (activeErr) throw new Error(`réservations de la salle ${hallId} illisibles : ${activeErr.message}`);
 
         if (activeRes && activeRes.length > 0) {
-            throw new PublicError('Impossible de supprimer une salle ayant des réservations actives. Veuillez la désactiver.');
+            throw new PublicError('Cette salle a des réservations en cours : elle ne peut pas être supprimée. Retirez-la de la vente à la place.', 'HALL_HAS_RESERVATIONS', 409);
         }
         // Lot 10b : une salle déjà réservée garde son historique (paiements, remboursements) : on la retire de la vente
         const { count: pastCount, error: pastErr } = await supabase
