@@ -15,6 +15,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { MIGRATED_DESIGN_FILES } from '../helpers/design-files';
 
 const ROOT = process.cwd();
@@ -76,7 +77,8 @@ type AdminNav = { groups: Array<{ label: string; items: NavItem[] }>; proItems: 
 const NAV_MODULE = 'components/layout/admin-nav.ts';
 
 async function navFor(perms: string[], superadmin = false): Promise<AdminNav> {
-    const mod = (await import(path.join(ROOT, NAV_MODULE))) as { buildAdminNav: (can: (p: string) => boolean, isSuperAdmin: boolean) => AdminNav };
+    // Design 1c bis (point 4) : un chemin absolu Windows (C:\…) n'est pas une URL d'import ; pathToFileURL le convertit
+    const mod = (await import(pathToFileURL(path.join(ROOT, NAV_MODULE)).href)) as { buildAdminNav: (can: (p: string) => boolean, isSuperAdmin: boolean) => AdminNav };
     return mod.buildAdminNav((p) => superadmin || perms.includes(p), superadmin);
 }
 const hrefs = (nav: AdminNav): string[] => nav.groups.flatMap((g) => g.items.map((i) => i.href));
@@ -180,7 +182,7 @@ describe('3. E-35 — réglages groupés, expliqués, bornés à l’écran, con
 describe('3 bis. garde-fou : un seul libellé par réglage (page et catalogue des bornes)', () => {
     test('chaque réglage borné a le même libellé et la même unité sur la page et dans lib/settings/catalog.ts', async () => {
         const page = read(SETTINGS_PAGE);
-        const { SETTING_BOUNDS } = (await import(path.join(ROOT, 'lib/settings/catalog.ts'))) as { SETTING_BOUNDS: Record<string, { label: string; unit?: string }> };
+        const { SETTING_BOUNDS } = (await import(pathToFileURL(path.join(ROOT, 'lib/settings/catalog.ts')).href)) as { SETTING_BOUNDS: Record<string, { label: string; unit?: string }> };
         const faults: string[] = [];
         for (const [key, b] of Object.entries(SETTING_BOUNDS)) {
             const line = page.split(String.fromCharCode(10)).find((l) => l.includes(`'${key}': { label:`));
@@ -267,7 +269,7 @@ describe('6. E-37, E-39 — français simple, statuts sans capitales, aucun code
     });
 
     test('libellés d’audit : une action inconnue dit « Autre action », jamais son code', async () => {
-        const mod = (await import(path.join(ROOT, 'lib/labels/audit.ts'))) as {
+        const mod = (await import(pathToFileURL(path.join(ROOT, 'lib/labels/audit.ts')).href)) as {
             auditActionLabel: (a: string | null) => string; auditObjectLabel: (o: string | null) => string; auditActorRoleLabel: (r: string | null) => string;
         };
         assert.equal(mod.auditActionLabel('UPDATE_PERMISSIONS'), 'Droits d’un administrateur changés');
