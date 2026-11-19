@@ -565,7 +565,7 @@ export default function AdminDashboardPage() {
 
       {/* Finition 3b (E-34) : candidatures seulement avec partners.read (la route décide toujours) */}
       {canReadPartners && (
-        <section id="partenaires" aria-labelledby="partenaires-titre" className="flex scroll-mt-20 flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:p-6">
+        <section id="partenaires" aria-labelledby="partenaires-titre" className="flex scroll-mt-20 flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-6">
           <div>
             <h2 id="partenaires-titre" className="text-lg font-bold tracking-tight text-foreground-strong">Candidatures des partenaires</h2>
             <p className="mt-1 text-sm text-muted-foreground">Validez ou refusez les organisateurs, restaurants et gestionnaires de salles après examen de leur dossier.</p>
@@ -594,7 +594,7 @@ export default function AdminDashboardPage() {
             {partnersPhase === 'ready' && (
               <DataList
                 items={partners}
-                columns={partnerColumns}
+                columns={partnerColumns} breakpoint="xl"
                 getKey={(p) => p.id}
                 caption="Candidatures des partenaires"
                 renderCard={renderPartnerCard}
@@ -683,7 +683,7 @@ export default function AdminDashboardPage() {
 
             <section aria-labelledby="dossier-structure">
               <h3 id="dossier-structure" className="mb-2 text-base font-semibold text-foreground-strong">Structure</h3>
-              <dl className="grid gap-3 rounded-2xl border border-border bg-background p-4 sm:grid-cols-2">
+              <dl className="grid gap-3 rounded-xl border border-border bg-background p-4 sm:grid-cols-2">
                 <div className="min-w-0">
                   <dt className="text-sm text-muted-foreground">Raison sociale</dt>
                   <dd className="break-words text-base font-medium text-foreground-strong">{selectedPartner.company_name}</dd>
@@ -723,7 +723,7 @@ export default function AdminDashboardPage() {
 
             <section aria-labelledby="dossier-contact">
               <h3 id="dossier-contact" className="mb-2 text-base font-semibold text-foreground-strong">Responsable du compte</h3>
-              <dl className="grid gap-3 rounded-2xl border border-border bg-background p-4 sm:grid-cols-3">
+              <dl className="grid gap-3 rounded-xl border border-border bg-background p-4 sm:grid-cols-3">
                 <div className="min-w-0">
                   <dt className="text-sm text-muted-foreground">Nom</dt>
                   <dd className="break-words text-base font-medium text-foreground-strong">{managerName(selectedPartner)}</dd>
@@ -763,7 +763,7 @@ export default function AdminDashboardPage() {
             {selectedPartner.description && (
               <section aria-labelledby="dossier-activite">
                 <h3 id="dossier-activite" className="mb-2 text-base font-semibold text-foreground-strong">Présentation de l’activité</h3>
-                <p className="whitespace-pre-line break-words rounded-2xl border border-border bg-background p-4 text-base leading-relaxed text-foreground-strong">
+                <p className="whitespace-pre-line break-words rounded-xl border border-border bg-background p-4 text-base leading-relaxed text-foreground-strong">
                   {selectedPartner.description}
                 </p>
               </section>
@@ -772,7 +772,7 @@ export default function AdminDashboardPage() {
             <section aria-labelledby="dossier-pieces">
               <h3 id="dossier-pieces" className="mb-2 text-base font-semibold text-foreground-strong">Pièces justificatives</h3>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background p-4">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                       <FileText size={18} />
@@ -798,7 +798,7 @@ export default function AdminDashboardPage() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background p-4">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-info-soft text-info-text" aria-hidden="true">
                       <FileText size={18} />

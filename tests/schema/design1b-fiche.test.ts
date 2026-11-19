@@ -143,7 +143,8 @@ describe('c. billetterie et barre d’achat du téléphone', () => {
         assert.match(src, /`Acheter \(\$\{cartTotalQty\}\)`/);
         assert.match(src, /fromPriceLabel\(categories\)/);
         assert.match(src, /className="fixed inset-x-0 bottom-\[calc\(3\.3125rem\+env\(safe-area-inset-bottom\)\)\][^"]*lg:hidden"/);
-        assert.match(src, /\{barKind && <div aria-hidden="true" className="h-20 lg:hidden" \/>\}/, 'place réservée sous la barre');
+        // Design 1c (point 1, modification signalée) : sous 390 px, le grand bouton passe sous le montant : place plus haute
+        assert.match(src, /\{barKind && <div aria-hidden="true" className="h-36 min-\[390px\]:h-20 lg:hidden" \/>\}/, 'place réservée sous la barre');
         assert.match(src, /getElementById\('billetterie-titre'\)/, '« Choisir mes billets » amène aux catégories');
     });
 
@@ -167,7 +168,10 @@ describe('c. billetterie et barre d’achat du téléphone', () => {
     test('guichet et remboursement : seulement d’après la fiche servie (counterSale, refund)', () => {
         assert.match(src, /event\.counterSale/);
         assert.match(src, /Billets au guichet sur place/);
-        assert.match(src, /refundRuleApplies\(event\.refund/);
+        // Design 1c bis (modification signalée) : la règle du remboursement est appliquée par withClock, à l'heure du
+        // téléphone après le chargement (lib/events/event-detail.ts), plus par refundRuleApplies dans l'îlot
+        assert.match(src, /const event = useMemo\(\(\) => withClock\(sheet, now === null \? null : new Date\(now\)\), \[sheet, now\]\);/);
+        assert.match(src, /const refund = event\.refund;/);
         assert.match(src, /\{refund\.text\}/);
         assert.doesNotMatch(src, /remboursés automatiquement/, 'aucun texte de remboursement écrit à la main dans l’îlot');
         assert.match(src, /purchasable = event\.purchasable && !gone/, 'achat seulement si la vente en ligne est ouverte (route)');

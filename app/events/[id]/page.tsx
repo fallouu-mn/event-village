@@ -144,9 +144,10 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
   const hasCoordinates = typeof event.latitude === 'number' && typeof event.longitude === 'number';
   const liveEnabled = event.status === 'PUBLIE' || event.status === 'SUSPENDU';
   const placeLine = [info.address, event.city].filter(Boolean).join(' · ');
-  // Moyens de paiement en ligne seulement quand la vente en ligne est ouverte ; le guichet est dit par la billetterie,
-  // seulement quand la vente en ligne est fermée (sale_counter vaut vrai par défaut : pas de promesse générale).
-  const showPayment = event.purchasable;
+  // Moyens de paiement en ligne : événement publié avec au moins une catégorie vendue en ligne et des places. Design 1c bis
+  // (erreur 418) : sans l'heure (la page est en cache) ; l'ouverture de la vente est dite par la billetterie, à l'heure du
+  // téléphone. Le guichet est dit par la billetterie, seulement quand la vente en ligne est fermée.
+  const showPayment = event.status === 'PUBLIE' && event.categories.some((c) => !c.isSoldOut);
   const hasPractical = Boolean(info.accessNotes || info.parking || info.contactPhone || info.rules) || showPayment;
 
   return (

@@ -91,7 +91,7 @@ const ACTIVITY_ICONS: Record<PartnerActivityItem['type'], { icon: React.ElementT
     SALE: { icon: Ticket, className: 'bg-info-soft text-info-text' },
     CHECKIN: { icon: QrCode, className: 'bg-success-soft text-success-text' },
     ORDER: { icon: ShoppingBag, className: 'bg-primary-soft text-primary-text' },
-    WITHDRAWAL: { icon: Wallet, className: 'bg-background text-foreground-strong' },
+    WITHDRAWAL: { icon: Wallet, className: 'bg-muted text-foreground-strong' },
 };
 
 type DossierDoc = 'id_card' | 'business_doc';
@@ -182,7 +182,7 @@ function DossierCompleteModal({ isOpen, onClose, onDone }: { isOpen: boolean; on
     };
 
     const fileField = (key: 'idCard' | 'businessDoc', id: string, label: string, hint: string, file: File | null, setFile: (f: File | null) => void) => (
-        <div className={cn('space-y-2 rounded-2xl border border-dashed p-4', file ? 'border-success-border bg-success-soft' : 'border-input bg-background', errors[key] && 'border-danger')}>
+        <div className={cn('space-y-2 rounded-xl border border-dashed p-4', file ? 'border-success-border bg-success-soft' : 'border-input bg-background', errors[key] && 'border-danger')}>
             <label htmlFor={id} className="block text-sm font-semibold text-foreground-strong">
                 {label}
                 <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
@@ -361,14 +361,20 @@ export default function PartnerDashboardPage() {
             ),
         },
         {
+            // Design 1c : brut → remboursé → net (grand livre ; netRevenue = grossRevenue − refundedAmount, une seule déduction)
             key: 'gross',
-            header: 'Ventes en ligne',
+            header: 'Ventes en ligne (brut)',
             align: 'right',
-            render: (ev) => <span className="font-semibold tabular-nums text-foreground-strong">{formatFcfa(ev.grossRevenue)}</span>,
+            render: (ev) => (
+                <div className="flex flex-col tabular-nums">
+                    <span className="font-semibold text-foreground-strong">{formatFcfa(ev.grossRevenue)}</span>
+                    <span className="text-sm text-muted-foreground">Remboursements : {ev.refundedAmount > 0 ? `− ${formatFcfa(ev.refundedAmount)}` : formatFcfa(0)}</span>
+                </div>
+            ),
         },
         {
             key: 'net',
-            header: 'Net partenaire',
+            header: 'Recettes nettes',
             align: 'right',
             render: (ev) => <span className="font-bold tabular-nums text-primary-text">{formatFcfa(ev.netRevenue)}</span>,
         },
@@ -503,17 +509,19 @@ export default function PartnerDashboardPage() {
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
                             <KpiCard
                                 loading={loading || !kpis}
-                                label="Ventes en ligne"
+                                label="Ventes en ligne (brut)"
                                 value={kpis ? formatFcfa(kpis.grossRevenue) : ''}
-                                hint="Prix des billets vendus en ligne, tous événements."
+                                countUp={kpis ? { to: kpis.grossRevenue, format: 'fcfa' } : undefined}
+                                hint="Prix des billets vendus en ligne, tous événements, avant remboursements."
                                 tone="brand"
                                 icon={<TrendingUp size={18} />}
                             />
                             <KpiCard
                                 loading={loading || !kpis}
-                                label="Net partenaire"
+                                label="Recettes nettes"
                                 value={kpis ? formatFcfa(kpis.netRevenue) : ''}
-                                hint={kpis ? `Après ${formatFcfa(kpis.refundedAmount)} de remboursements.` : undefined}
+                                countUp={kpis ? { to: kpis.netRevenue, format: 'fcfa' } : undefined}
+                                hint={kpis ? `Ventes en ligne moins ${formatFcfa(kpis.refundedAmount)} de remboursements.` : undefined}
                                 tone="success"
                                 icon={<Wallet size={18} />}
                             />
@@ -521,6 +529,7 @@ export default function PartnerDashboardPage() {
                                 loading={loading || !kpis}
                                 label="Billets vendus"
                                 value={kpis ? formatInteger(kpis.ticketsSold) : ''}
+                                countUp={kpis ? { to: kpis.ticketsSold, format: 'integer' } : undefined}
                                 hint={kpis ? `${formatInteger(kpis.ticketsCheckedIn)} entrées validées aux portes.` : undefined}
                                 tone="info"
                                 icon={<Ticket size={18} />}
@@ -529,6 +538,7 @@ export default function PartnerDashboardPage() {
                                 loading={loading || !kpis}
                                 label="Disponible au retrait"
                                 value={kpis ? formatFcfa(kpis.soldeDisponible) : ''}
+                                countUp={kpis ? { to: kpis.soldeDisponible, format: 'fcfa' } : undefined}
                                 hint={kpis ? `Déjà versé : ${formatFcfa(kpis.totalWithdrawn)}.` : undefined}
                                 tone="neutral"
                                 icon={<CheckCircle2 size={18} />}
@@ -561,14 +571,15 @@ export default function PartnerDashboardPage() {
                         {loading || !dashboard ? (
                             <div className="space-y-2" role="status" aria-busy="true">
                                 <span className="sr-only">Chargement des événements…</span>
-                                <div className="h-20 rounded-2xl bg-background motion-safe:animate-pulse" />
-                                <div className="h-20 rounded-2xl bg-background motion-safe:animate-pulse" />
+                                <div className="h-20 rounded-xl bg-muted motion-safe:animate-pulse" />
+                                <div className="h-20 rounded-xl bg-muted motion-safe:animate-pulse" />
                             </div>
                         ) : (
                             <DataList
                                 items={dashboard.events}
                                 columns={eventColumns}
                                 getKey={(ev) => ev.id}
+                                breakpoint="xl"
                                 caption="Ventes, entrées et rapports par événement"
                                 cardTitle={(ev) => ev.title}
                                 empty={
@@ -592,7 +603,7 @@ export default function PartnerDashboardPage() {
                                 Activité récente
                             </h2>
                             {loading || !dashboard ? (
-                                <div className="h-40 rounded-2xl bg-background motion-safe:animate-pulse" role="status" aria-busy="true">
+                                <div className="h-40 rounded-xl bg-muted motion-safe:animate-pulse" role="status" aria-busy="true">
                                     <span className="sr-only">Chargement de l’activité…</span>
                                 </div>
                             ) : dashboard.recentActivity.length === 0 ? (
@@ -602,22 +613,22 @@ export default function PartnerDashboardPage() {
                                     icon={<Activity size={28} />}
                                 />
                             ) : (
-                                <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+                                <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                                     {dashboard.recentActivity.map((item) => {
                                         const visual = ACTIVITY_ICONS[item.type];
                                         const Icon = visual.icon;
                                         return (
-                                            <li key={item.id} className="flex items-center justify-between gap-3 p-4">
+                                            <li key={item.id} className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                                                 <div className="flex min-w-0 items-center gap-3">
                                                     <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${visual.className}`} aria-hidden="true">
                                                         <Icon size={16} />
                                                     </span>
                                                     <div className="min-w-0">
-                                                        <p className="truncate text-sm font-semibold text-foreground-strong">{item.title}</p>
-                                                        <p className="truncate text-sm text-muted-foreground">{item.description}</p>
+                                                        <p className="break-words text-sm font-semibold text-foreground-strong">{item.title}</p>
+                                                        <p className="break-words text-sm text-muted-foreground">{item.description}</p>
                                                     </div>
                                                 </div>
-                                                <time dateTime={item.createdAt} className="flex-shrink-0 text-caption text-muted-foreground">
+                                                <time dateTime={item.createdAt} className="pl-12 text-caption text-muted-foreground sm:flex-shrink-0 sm:pl-0">
                                                     {formatDateTime(item.createdAt)}
                                                 </time>
                                             </li>
@@ -643,7 +654,7 @@ export default function PartnerDashboardPage() {
                                         icon={<ShoppingBag size={28} />}
                                     />
                                 ) : (
-                                    <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+                                    <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                                         {liveOrders.slice(0, 6).map((order) => {
                                             const st = ORDER_STATUS_LABELS[order.order_status] ?? { label: 'Statut inconnu', variant: 'neutral' as BadgeVariant };
                                             return (

@@ -8,7 +8,7 @@
  *    email » ; l'accordéon devient « Plus d’options : code de parrainage » ; textes du lien envoyé ou non parti ;
  *  - components/profile/ProfileForm.tsx (et app/profile/page.tsx) : même aide, badges « Email vérifié » et « Email non
  *    vérifié », bouton « Renvoyer le lien » qui appelle /api/account/email/resend, texte « Lien envoyé à … » ;
- *  - app/partner/register/page.tsx : même aide (E-B).
+ *  - app/partner/register/page.tsx : email obligatoire, aide « Vos confirmations et rapports y arrivent. » (E-B ; design 1c).
  * Rouge aujourd'hui : le champ est dans la branche `moreOptions` (app/register/page.tsx:441), l'aide du profil est
  * « Facultative… » (ProfileForm.tsx:150), aucun badge ni bouton de renvoi, aucune route de renvoi.
  *
@@ -200,10 +200,16 @@ describe('9b.47 G.47 — inscription client : l’email n’est plus caché (app
     });
 });
 
-describe('9b.47 G.47 — inscription partenaire : même aide (app/partner/register/page.tsx, E-B)', () => {
-    test('aide exacte sous l’email professionnel', () => {
+// Design 1c (G-51, W3-08 ; modification signalée) : pour la partenaire, l'email est OBLIGATOIRE (RegisterPartnerFieldsSchema) ;
+// l'aide « Recommandé : … » de l'inscription client n'y est plus juste. Exigence égale : une aide exacte, et l'absence de
+// « Recommandé » sur cet écran en plus.
+const PARTNER_EMAIL_HINT = 'Vos confirmations et rapports y arrivent.';
+
+describe('9b.47 G.47 — inscription partenaire : aide de l’email obligatoire (app/partner/register/page.tsx, E-B, design 1c)', () => {
+    test('aide exacte sous l’email, jamais « Recommandé »', () => {
         const src = sourceWithImports('app/partner/register/page.tsx', 'inscription partenaire, contrat 5.47');
-        assertText(src, EMAIL_HINT, 'inscription partenaire');
+        assertText(src, PARTNER_EMAIL_HINT, 'inscription partenaire');
+        assert.ok(!norm(readSource('app/partner/register/page.tsx', 'inscription partenaire')).includes('Recommandé'), 'l’email obligatoire est encore dit « Recommandé »');
     });
 });
 

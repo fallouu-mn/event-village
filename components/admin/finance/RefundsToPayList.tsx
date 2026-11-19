@@ -21,9 +21,9 @@ export function RefundsToPayList({ canResume, refreshToken = 0 }: { canResume: b
 
     const state = (r: RefundToPayLine) => (
         <span className="flex flex-col gap-1">
-            <span className={r.needsAction ? 'font-semibold text-warning-fg' : 'text-fg'}>{r.state}</span>
+            <span className={r.needsAction ? 'font-semibold text-warning-text' : 'text-foreground-strong'}>{r.state}</span>
             {r.needsAction && canResume && (
-                <a href="#versements-a-reprendre" className="inline-flex min-h-11 items-center text-sm font-semibold text-brand-fg underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <a href="#versements-a-reprendre" className="inline-flex min-h-11 items-center text-sm font-semibold text-primary-text underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     Traiter dans « Versements à reprendre »
                 </a>
             )}
@@ -39,8 +39,8 @@ export function RefundsToPayList({ canResume, refreshToken = 0 }: { canResume: b
             key: 'kind', header: 'Remboursement',
             render: (r) => (
                 <span className="flex flex-col">
-                    <span className="text-fg">{r.kind}</span>
-                    {r.eventTitle && <span className="text-sm text-fg-muted">{r.eventTitle}</span>}
+                    <span className="text-foreground-strong">{r.kind}</span>
+                    {r.eventTitle && <span className="text-sm text-muted-foreground">{r.eventTitle}</span>}
                 </span>
             ),
         },
@@ -50,14 +50,14 @@ export function RefundsToPayList({ canResume, refreshToken = 0 }: { canResume: b
     ];
 
     return (
-        <section id="remboursements-a-verser" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <section id="remboursements-a-verser" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6">
             <div className="flex flex-col gap-1">
-                <h2 id={`${id}-titre`} className="text-lg font-semibold text-fg">Remboursements à verser</h2>
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <h2 id={`${id}-titre`} className="text-lg font-semibold text-foreground-strong">Remboursements à verser</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     Remboursements demandés que les clients n’ont pas encore reçus. Cet argent est sur le compte SamirPay mais leur revient.
                 </p>
                 {list.phase === 'ready' && list.total > 0 && list.amount !== null && (
-                    <p className="text-sm text-fg">
+                    <p className="text-sm text-foreground-strong">
                         <span className="tabular-nums font-semibold">{list.total}</span> {list.total > 1 ? 'remboursements' : 'remboursement'} pour{' '}
                         <span className="font-semibold tabular-nums">{formatFcfaPrecise(list.amount)}</span>.
                     </p>
@@ -65,8 +65,8 @@ export function RefundsToPayList({ canResume, refreshToken = 0 }: { canResume: b
             </div>
             {list.phase === 'loading' && (
                 <div role="status" aria-busy="true" aria-label="Chargement des remboursements à verser" className="flex flex-col gap-2">
-                    <Skeleton className="h-16 rounded-2xl" />
-                    <Skeleton className="h-16 rounded-2xl" />
+                    <Skeleton className="h-16 rounded-xl" />
+                    <Skeleton className="h-16 rounded-xl" />
                 </div>
             )}
             {list.phase === 'error' && (
@@ -76,7 +76,7 @@ export function RefundsToPayList({ canResume, refreshToken = 0 }: { canResume: b
                 <>
                     <DataList
                         items={list.items}
-                        columns={columns}
+                        columns={columns} breakpoint="xl"
                         getKey={(r) => r.id}
                         caption="Remboursements à verser"
                         cardTitle={(r) => <span className="tabular-nums">{formatFcfaPrecise(r.amount)}</span>}

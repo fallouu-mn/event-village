@@ -15,12 +15,16 @@ export function ClosingReportSummary({ closing }: { closing: PilotageClosing }) 
     const { finance, report, absents, entries } = closing;
     const fundsFrom = finance.funds_available_from;
     const fundsTo = finance.funds_available_to;
+    const onlineGross = typeof report.revenue.online_gross === 'number' ? report.revenue.online_gross : null;
+    const refundedOnline = typeof report.revenue.refunded_online === 'number' ? report.revenue.refunded_online : null;
+    const refundedCash = report.revenue.refunded_cash_organizer ?? 0;
+    if (onlineGross === null || refundedOnline === null) console.warn('[clôture] brut ou remboursements en ligne absents du rapport servi');
 
     return (
         <div className="flex flex-col gap-6">
             {/* Une colonne sous sm : à deux colonnes, libellés coupés sur 4 lignes, montant et date sur 2 (run 98) */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <KpiCard label="Montant net organisateur" value={<KpiAmount value={formatFcfa(finance.organizer_net)} />} hint="Ventes en ligne, remboursements déduits" tone="success" icon={<Landmark size={18} />} />
+                <KpiCard label="Recettes nettes" value={<KpiAmount value={formatFcfa(finance.organizer_net)} />} hint="Ventes en ligne moins les remboursements." tone="success" icon={<Landmark size={18} />} />
                 <KpiCard
                     label="Disponibilité des fonds"
                     value={<KpiValue>{fundsFrom ? formatDateTime(fundsFrom) : 'Aucune vente en ligne'}</KpiValue>}
@@ -33,17 +37,22 @@ export function ClosingReportSummary({ closing }: { closing: PilotageClosing }) 
 
             <PilotageSection title="Rapport de clôture" description="Bilan complet de l’événement.">
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <dl className="rounded-2xl border border-border bg-surface px-4 py-1">
+                    <dl className="rounded-2xl border border-border bg-card px-4 py-1">
                         <DefinitionRow label="Billets vendus (hors invitations)" value={formatInteger(report.tickets.sold)} />
                         <DefinitionRow label="Invitations" value={formatInteger(report.tickets.invitations)} />
                         <DefinitionRow label="Capacité mise en vente" value={formatInteger(report.tickets.capacity)} />
                         <DefinitionRow label="Entrées (dont guichet)" value={`${formatInteger(report.entries.total)} (${formatInteger(report.entries.counter)})`} />
                         <DefinitionRow label="Refus au contrôle" value={formatInteger(report.entries.refused)} />
                     </dl>
-                    <dl className="rounded-2xl border border-border bg-surface px-4 py-1">
-                        <DefinitionRow label="Recettes en ligne" value={formatFcfa(report.revenue.online)} />
-                        <DefinitionRow label="Recettes en espèces" value={formatFcfa(report.revenue.cash)} />
-                        <DefinitionRow label="Remboursé" value={formatFcfa(report.revenue.refunded)} />
+                    <dl className="rounded-2xl border border-border bg-card px-4 py-1">
+                        {/* Design 1c (E-64, G-26) : brut → remboursements → net, sans double déduction. revenue.online est
+                            déjà net (Σ VENTE + REMBOURSEMENT) : il est donné comme « Recettes nettes », jamais suivi d'un
+                            « Remboursé » à soustraire. Brut et remboursements en ligne : online_gross, refunded_online. */}
+                        {onlineGross !== null && <DefinitionRow label="Ventes en ligne (brut)" value={formatFcfa(onlineGross)} />}
+                        {refundedOnline !== null && <DefinitionRow label="Remboursements" value={`− ${formatFcfa(refundedOnline)}`} />}
+                        <DefinitionRow label="Recettes nettes" value={formatFcfa(report.revenue.online)} />
+                        <DefinitionRow label="Ventes en espèces (hors solde)" value={formatFcfa(report.revenue.cash)} />
+                        {refundedCash > 0 && <DefinitionRow label="Remboursements en espèces (par vous)" value={formatFcfa(refundedCash)} />}
                         <DefinitionRow label="Frais de service payés par les acheteurs" value={formatFcfa(finance.buyer_service_fees)} />
                         <DefinitionRow label="Déjà disponible / en attente" value={`${formatFcfa(finance.available)} / ${formatFcfa(finance.pending)}`} />
                     </dl>

@@ -1,38 +1,57 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { Calendar, Plus, RefreshCw } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { EventCalendar, type CalendarEvent } from '@/components/events/EventCalendar';
-import { Button } from '@/components/ui/Button';
-import { useToast } from '@/components/ui/Toast';
+import { ErrorState } from '@/components/ui/EmptyState';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { fetchJson } from '@/components/partner/fetch-json';
 
+interface PartnerEventsResponse {
+  events?: Array<{
+    id: string;
+    title: string;
+    start_date: string;
+    start_time?: string | null;
+    location?: string | null;
+    city?: string | null;
+    status?: string | null;
+  }>;
+}
+
+/**
+ * Calendrier de l'organisatrice (design 1c) : ses événements à leur date de début (aucune réservation n'est lue : le
+ * texte ne le promet plus, constat W3-14). Jetons de la charte seulement ; chargement en squelette à la taille du
+ * contenu ; erreur avec « Réessayer ».
+ */
 export default function PartnerCalendarPage() {
-  const toast = useToast();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
-  // Design 1a : chargement nommé pour que « Réessayer » le relance tel quel.
   const load = useCallback(() => {
     setIsLoading(true);
-    fetch('/api/partner/events')
-      .then((res) => res.json())
+    setFailed(false);
+    fetchJson<PartnerEventsResponse>('/api/partner/events')
       .then((data) => {
-        if (data.events) {
-          setEvents(
-            data.events.map((e: any) => ({
-              id: e.id,
-              title: e.title,
-              start_date: e.start_date,
-              image_url: e.image_url,
-              location: e.location,
-            }))
-          );
-        }
+        setEvents((data.events ?? []).map((e) => ({
+          id: e.id,
+          title: e.title,
+          start_date: e.start_date,
+          start_time: e.start_time ?? null,
+          location: e.location ?? null,
+          city: e.city ?? null,
+          status: e.status ?? null,
+        })));
       })
-      .catch(() => { toast.error('Impossible de charger le calendrier des événements.', { onRetry: () => load() }); })
+      .catch((err: unknown) => {
+        console.error('[calendrier] lecture des événements', err);
+        setFailed(true);
+      })
       .finally(() => setIsLoading(false));
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -40,30 +59,23 @@ export default function PartnerCalendarPage() {
 
   return (
     <div className="space-y-6 pb-16">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-zinc-800 pb-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Calendar className="text-[#FF5722]" size={28} />
-            <span>Calendrier Événementiel</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-1">
-            Visualisez le planning de vos événements et réservations.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link href="/partner/events/new">
-            <Button variant="primary" size="sm" leftIcon={<Plus size={16} />}>
-              Nouvel événement
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Calendrier"
+        description="Vos événements, placés à leur date de début."
+        actions={<LinkButton href="/partner/events/new" variant="primary" size="sm" leftIcon={<Plus size={16} />}>Nouvel événement</LinkButton>}
+      />
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <RefreshCw size={24} className="animate-spin text-[#FF5722]" />
+        <div role="status" aria-busy="true" aria-label="Chargement du calendrier" className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+          <Skeleton className="h-96 rounded-2xl lg:col-span-3" />
+          <Skeleton className="h-64 rounded-2xl lg:col-span-2" />
         </div>
+      ) : failed ? (
+        <ErrorState
+          title="Calendrier indisponible"
+          description="Impossible de charger le calendrier des événements. Vérifiez votre connexion, puis réessayez."
+          onRetry={load}
+        />
       ) : (
         <EventCalendar events={events} />
       )}

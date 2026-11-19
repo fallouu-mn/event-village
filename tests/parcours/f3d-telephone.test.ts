@@ -223,7 +223,7 @@ describe('2c. « J’ai perdu mon téléphone » : mot de passe et code de secou
         await forgetDevice(admin);
         const r = await recover(admin, STRONG_PASSWORD, 'ABCDE-FGHJK');
         assert.deepEqual([r.status, r.body.code], [403, 'NO_BACKUP_CODES'], show(r));
-        assert.match(String(r.body.error), /Superadmin/);
+        assert.match(String(r.body.error), /super-administrateur/); // design 1c (point 3) : nouveau mot, même exigence
     });
 });
 

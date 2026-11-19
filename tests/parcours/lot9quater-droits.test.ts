@@ -194,7 +194,9 @@ describe('B2 — anonymiser ou suspendre un ADMIN ou une PARTENAIRE : SUPERADMIN
 
     test('écran : aucun bouton « Supprimer » sur une ligne de partenaire', () => {
         const page = fs.readFileSync('app/admin/users/page.tsx', 'utf8');
-        assert.match(page, /\{!isPartner && \(\s*<Button[\s\S]*?handleDeleteUser\(user\)/, 'bouton Supprimer sous !isPartner');
+        // Design 1c (modification signalée) : « Suspendre » et « Supprimer » partagent un bloc sous la même condition
+        // (… && !isPartner && (<> … </>)) ; le motif accepte le fragment, l'exigence reste : Supprimer sous !isPartner
+        assert.match(page, /!isPartner && \(\s*(?:<>\s*)?<Button[\s\S]*?handleDeleteUser\(user\)/, 'bouton Supprimer sous !isPartner');
     });
 });
 

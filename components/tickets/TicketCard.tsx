@@ -593,12 +593,12 @@ const TicketCardView: React.FC<TicketCardProps> = ({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">
+              <p className="break-words text-sm font-semibold">
                 <span className="sr-only">Catégorie : </span>
                 {seat}
               </p>
-              <h2 className="mt-0.5 line-clamp-2 break-words text-lg font-bold leading-snug">{eventTitle}</h2>
-              {eventSubtitle && <p className="mt-0.5 truncate text-sm font-medium">{eventSubtitle}</p>}
+              <h2 className="mt-0.5 break-words text-lg font-bold leading-snug">{eventTitle}</h2>
+              {eventSubtitle && <p className="mt-0.5 break-words text-sm font-medium">{eventSubtitle}</p>}
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -641,7 +641,7 @@ const TicketCardView: React.FC<TicketCardProps> = ({
             </div>
             <div className="col-span-2 min-w-0">
               <dt className="text-sm font-medium text-muted-foreground">Lieu</dt>
-              <dd className="mt-0.5 truncate text-base font-semibold text-foreground-strong">{venue}</dd>
+              <dd className="mt-0.5 break-words text-base font-semibold text-foreground-strong">{venue}</dd>
             </div>
             {priceLabel && (
               <div className="min-w-0">

@@ -33,7 +33,9 @@ describe('design 1b — rendu identique serveur / navigateur (erreur 418)', () =
     test('billetterie de la fiche : heure du téléphone nulle au premier rendu', () => {
         const src = read('components/event-page/EventTicketing.tsx');
         assert.match(src, /const \[now, setNow\] = useState<number \| null>\(null\);/);
-        assert.match(src, /now === null \|\| refundRuleApplies/);
+        // Design 1c bis (modification signalée, plus stricte) : TOUT l'état de la billetterie qui dépend de l'heure passe
+        // par withClock, sans heure au premier rendu (même rendu que le HTML en cache)
+        assert.match(src, /withClock\(sheet, now === null \? null : new Date\(now\)\)/);
         assert.match(src, /const ended = now !== null && /);
     });
 

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/admin/users/[id]/anonymize
  * DELETE /api/admin/users/[id]/anonymize
- * Anonymisation sécurisée RGPD & Soft Delete Superadmin
+ * Anonymisation sécurisée RGPD & Soft Delete super-administrateur
  */
 async function handleAnonymize(
     req: NextRequest,

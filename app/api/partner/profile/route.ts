@@ -65,7 +65,9 @@ const ProfilePatchSchema = z.object({
     latitude: coordinate(90),
     longitude: coordinate(180),
     phone: z.preprocess(blankToNull, text(0, 20).nullable()),
-    email: z.preprocess(blankToNull, text(0, 200).email('adresse invalide.').nullable()),
+    // Design 1c (point 2) : email obligatoire, comme à l'inscription (confirmations et rapports) ; vidé = refusé
+    email: z.preprocess(blankToNull, z.string(zodTypeErrors({ invalid: 'obligatoire : vos confirmations et rapports y arrivent.' })).trim()
+        .max(200, '200 caractères au plus.').email('adresse invalide.')),
     logo_url: z.preprocess(blankToNull, text(0, 600).nullable()),
     cover_url: z.preprocess(blankToNull, text(0, 600).nullable()),
     activities: z.array(z.enum(PartnerActivityTypes, { error: 'activité hors de la liste proposée.' }), TYPE_ERROR)

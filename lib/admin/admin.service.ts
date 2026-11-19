@@ -318,7 +318,7 @@ export class AdminService {
     }
 
     /**
-     * Anonymisation sécurisée et Soft Delete RGPD d'un utilisateur (Superadmin HQ)
+     * Anonymisation sécurisée et Soft Delete RGPD d'un utilisateur (super-administrateur)
      * Conserve STRICTEMENT l'intégrité financière (orders, tickets, controller_shifts, payments)
      * Libère l'email et le téléphone côté Auth, bannit le compte et efface l'identité publique.
      */
@@ -350,7 +350,7 @@ export class AdminService {
         };
         const [targetRoles, actorRoles] = await Promise.all([rolesOf(targetUserId), rolesOf(actor.id)]);
         if (targetRoles.some((r) => ['SUPERADMIN', 'ADMIN', 'PARTENAIRE'].includes(r)) && !actorRoles.includes('SUPERADMIN')) {
-            throw new PublicError('Seul un Superadmin peut supprimer un compte administrateur ou partenaire.', 'SUPERADMIN_REQUIRED', 403);
+            throw new PublicError('Seul un super-administrateur peut supprimer un compte administrateur ou partenaire.', 'SUPERADMIN_REQUIRED', 403);
         }
 
         // Lot 9 quater (A9 : AUD-33) : journal d'audit pseudonymisé AVANT l'effacement du profil (valeurs d'origine) :

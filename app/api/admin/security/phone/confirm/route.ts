@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     const auth = await verifyAdminAuth(req);
     if (!auth.authorized) return auth.errorResponse!;
     if (!auth.user!.roles.includes('SUPERADMIN')) {
-        return NextResponse.json({ error: 'Votre numéro se change par le Superadmin : demandez-le-lui.', code: 'SUPERADMIN_ONLY' }, { status: 403 });
+        return NextResponse.json({ error: 'Votre numéro se change par le super-administrateur : demandez-le-lui.', code: 'SUPERADMIN_ONLY' }, { status: 403 });
     }
     return confirmPhoneChange(req, { actorId: auth.user!.id, targetId: auth.user!.id, kind: 'SELF', context: 'POST /api/admin/security/phone/confirm' });
 }

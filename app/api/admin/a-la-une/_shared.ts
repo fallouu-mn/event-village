@@ -9,7 +9,7 @@ import { FeaturedRefusal, type FeaturedIdentity } from '@/lib/events/featured.se
  * Design 1b (À LA UNE) — garde commune des routes /api/admin/a-la-une/** :
  *  - verifyAdminAuth : compte actif d'administration, second facteur de l'administration (code SMS sur l'appareil, mot de
  *    passe de la session, 30 minutes d'inactivité) ;
- *  - Superadmin seulement (user_roles), refus 403 SUPERADMIN_ONLY en français ;
+ *  - super-administrateur seulement (user_roles), refus 403 SUPERADMIN_ONLY en français ;
  *  - écriture : mot de passe et code administrateur de moins de 10 minutes (requireAdminIdentity, comme les actions
  *    sensibles de la finition 3d), session et appareil transmis à la base qui les revérifie.
  * Les réponses ne sont jamais mises en cache.
@@ -39,7 +39,7 @@ export async function guardFeatured(req: NextRequest, opts: { write: boolean }):
     if (!auth.user!.roles.includes('SUPERADMIN')) {
         return {
             ok: false,
-            response: NextResponse.json({ error: 'Seul un Superadmin choisit les événements à la une.', code: 'SUPERADMIN_ONLY' }, { status: 403, headers: NO_STORE }),
+            response: NextResponse.json({ error: 'Seul un super-administrateur choisit les événements à la une.', code: 'SUPERADMIN_ONLY' }, { status: 403, headers: NO_STORE }),
         };
     }
     if (!opts.write) return { ok: true, actorId: auth.user!.id, identity: null };

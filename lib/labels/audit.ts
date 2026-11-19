@@ -14,7 +14,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
     ANONYMIZE_USER_CLEANUP_FAILED: 'Suppression incomplète',
     USER_SESSIONS_REVOKED: 'Déconnexion de tous les appareils',
     UPDATE_PERMISSIONS: 'Droits d’un administrateur changés',
-    SUPERADMIN_BOOTSTRAP: 'Premier Superadmin créé',
+    SUPERADMIN_BOOTSTRAP: 'Premier super-administrateur créé',
     UNAUTHORIZED_ACCESS_ATTEMPT: 'Tentative d’accès refusée',
     PARTNER_REGISTRATION: 'Candidature de partenaire déposée',
     PARTNER_DOSSIER_RESUBMITTED: 'Dossier complété après refus',
@@ -76,7 +76,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = {
     ADMIN_PHONE_CHANGED: 'Numéro d’un administrateur changé',
     ADMIN_BACKUP_CODES_GENERATED: 'Codes de secours créés',
     ADMIN_BACKUP_CODE_USED: 'Code de secours utilisé',
-    // Design 1b (point 3) : « À la une » choisi par le Superadmin
+    // Design 1b (point 3) : « À la une » choisi par le super-administrateur
     HOME_FEATURED_ADDED: 'Mis à la une',
     HOME_FEATURED_REORDERED: 'Ordre de la une changé',
     HOME_FEATURED_WINDOW_SET: 'Dates d’affichage changées',
@@ -96,7 +96,7 @@ export const AUDIT_OBJECT_LABELS: Readonly<Record<string, string>> = {
     home_featured: 'À la une',
 };
 
-/** Actions proposées au filtre du journal (les plus utiles au Superadmin), dans l'ordre de la liste. */
+/** Actions proposées au filtre du journal (les plus utiles au super-administrateur), dans l'ordre de la liste. */
 export const AUDIT_ACTION_FILTER: readonly string[] = [
     'USER_STATUS_SET', 'ROLES_SET', 'UPDATE_PERMISSIONS', 'PARTNER_STATUS_SET', 'EVENT_UPDATED', 'CASHOUT_MARKED_PAID',
     'CASHOUT_NOT_SENT', 'ANONYMIZE_USER', 'UNAUTHORIZED_ACCESS_ATTEMPT',

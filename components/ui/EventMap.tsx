@@ -96,7 +96,9 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
             marker.on('popupopen', (e: import('leaflet').PopupEvent) => {
                 e.popup.getElement()?.querySelector('.leaflet-popup-close-button')?.setAttribute('aria-label', 'Fermer la bulle');
             });
-            marker.bindPopup(label);
+            // Design 1c (point 1) : bulle bornée à la largeur de la carte et ramenée dedans (à 320 px, le bouton de
+            // fermeture sortait du cadre)
+            marker.bindPopup(label, { maxWidth: Math.max(120, container.clientWidth - 88), autoPanPadding: [8, 8], keepInView: true });
             // Avec le nom de l'événement sur le repère, la bulle du lieu s'ouvre au toucher seulement.
             if (!eventName) marker.openPopup();
         }

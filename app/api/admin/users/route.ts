@@ -24,12 +24,12 @@ export const dynamic = 'force-dynamic';
 /** Refus de user_roles_set (lot 5, C4) traduits pour l'écran ; un autre refus est une erreur technique. */
 const ROLE_CHANGE_REFUSALS: Record<string, [number, string]> = {
     FORBIDDEN: [403, 'Changement de rôles réservé à un administrateur actif.'],
-    SUPERADMIN_REQUIRED: [403, 'Seul un superadmin peut attribuer ou retirer le rôle de superadmin.'],
+    SUPERADMIN_REQUIRED: [403, 'Seul un super-administrateur peut attribuer ou retirer le rôle de super-administrateur.'],
     INVALID_ROLE: [400, 'Rôle inconnu.'],
     USER_NOT_FOUND: [404, 'Utilisateur cible introuvable.'],
-    ADMIN_ROLE_SUPERADMIN_ONLY: [403, 'Seul un superadmin peut créer un administrateur ou changer ce rôle.'],
+    ADMIN_ROLE_SUPERADMIN_ONLY: [403, 'Seul un super-administrateur peut créer un administrateur ou changer ce rôle.'],
     // Finition 3d (point 3) : le rôle SUPERADMIN ne se donne et ne se retire que par « Changer le rôle » (base)
-    ROLE_SCREEN_REQUIRED: [409, 'Le rôle de Superadmin se donne et se retire depuis « Changer le rôle », sur la ligne du compte.'],
+    ROLE_SCREEN_REQUIRED: [409, 'Le rôle de super-administrateur se donne et se retire depuis « Changer le rôle », sur la ligne du compte.'],
 };
 
 /** Lot 9 bis (R71, B33) : créer un admin, ajouter ou retirer le rôle ADMIN, suspendre un admin : SUPERADMIN seul. */
@@ -47,7 +47,7 @@ function adminRoleSuperadminOnly(): NextResponse {
  */
 function roleScreenRequired(): NextResponse {
     return NextResponse.json(
-        { error: 'Le rôle d’administrateur ou de Superadmin se change depuis « Changer le rôle », sur la ligne du compte (mot de passe, code et motif demandés).', code: 'ROLE_SCREEN_REQUIRED' },
+        { error: 'Le rôle d’administrateur ou de super-administrateur se change depuis « Changer le rôle », sur la ligne du compte (mot de passe, code et motif demandés).', code: 'ROLE_SCREEN_REQUIRED' },
         { status: 409 }
     );
 }
@@ -128,7 +128,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/admin/users
- * Création directe et atomique d'un utilisateur métier (Contrôleur, Admin, Client, Superadmin)
+ * Création directe et atomique d'un utilisateur métier (Contrôleur, Admin, Client, super-administrateur)
  */
 export async function POST(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'users.write' });
@@ -294,7 +294,7 @@ export async function POST(req: NextRequest) {
             email_pending: typedEmail || null,
             ...(emailVerification ? { email_verification: emailVerification } : {}),
             activation,
-            // Finition 3b (E-36) : un administrateur créé n'a aucun droit tant que le Superadmin ne lui en donne pas
+            // Finition 3b (E-36) : un administrateur créé n'a aucun droit tant que le super-administrateur ne lui en donne pas
             message: (activation === 'SENT'
                 ? 'Compte créé. Le titulaire reçoit par SMS un lien pour choisir son mot de passe (valable 24 heures).'
                 : 'Compte créé, mais le SMS d’activation n’est pas parti. Renvoyez le lien depuis la liste des comptes.')
@@ -353,7 +353,7 @@ export async function PATCH(req: NextRequest) {
         if (referralStatus !== undefined) {
             if (!auth.user!.roles.includes('SUPERADMIN')) {
                 return NextResponse.json(
-                    { error: 'Seul un SUPERADMIN peut modifier le statut ambassadeur.', code: 'REFERRAL_STATUS_SUPERADMIN_ONLY' },
+                    { error: 'Seul un super-administrateur peut modifier le statut ambassadeur.', code: 'REFERRAL_STATUS_SUPERADMIN_ONLY' },
                     { status: 403 }
                 );
             }
@@ -402,18 +402,18 @@ export async function PATCH(req: NextRequest) {
         const targetCurrentRoles = (targetRoleRows || []).map((r) => r.role as string);
         const actorIsSuperadmin = auth.user!.roles.includes('SUPERADMIN');
 
-        // 2. Protection contre l'élévation de privilèges Superadmin
+        // 2. Protection contre l'élévation de privilèges super-administrateur
         if (targetRoles?.includes('SUPERADMIN') && !actorIsSuperadmin) {
             return NextResponse.json(
-                { error: 'Seul un Superadmin peut élever un utilisateur au rang de SUPERADMIN.' },
+                { error: 'Seul un super-administrateur peut élever un utilisateur au rang de super-administrateur.' },
                 { status: 403 }
             );
         }
 
-        // 3. Protection contre la modification d'un Superadmin par un Admin ordinaire
+        // 3. Protection contre la modification d'un super-administrateur par un Admin ordinaire
         if ((targetCurrentRoles.includes('SUPERADMIN') || targetUser.role === 'SUPERADMIN') && !actorIsSuperadmin) {
             return NextResponse.json(
-                { error: 'Impossible de modifier un compte SUPERADMIN sans être soi-même SUPERADMIN.' },
+                { error: 'Seul un super-administrateur peut modifier le compte d’un super-administrateur.' },
                 { status: 403 }
             );
         }

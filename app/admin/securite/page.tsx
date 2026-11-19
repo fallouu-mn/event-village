@@ -7,7 +7,7 @@
  *    la création se lance d'elle-même s'il n'en a aucun.
  *  - Mon numéro de téléphone (PhoneChangeFlow) : changé seulement avec la preuve d'un code reçu au nouveau numéro.
  *    `?numero=1` (après « J'ai perdu mon téléphone » et un code de secours) : un bandeau l'invite à le faire tout de suite.
- * Un ADMIN n'a ni codes de secours ni changement de son numéro : la page lui dit de s'adresser au Superadmin. Le serveur
+ * Un ADMIN n'a ni codes de secours ni changement de son numéro : la page lui dit de s'adresser au super-administrateur. Le serveur
  * refuse de toute façon (routes /api/admin/security/*).
  */
 
@@ -47,12 +47,12 @@ export default function SecurityPage() {
 
       {isLoading ? (
         <div role="status" aria-busy="true" aria-label="Chargement de la sécurité du compte" className="flex flex-col gap-3">
-          <Skeleton className="h-40 rounded-2xl" />
-          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-40 rounded-xl" />
+          <Skeleton className="h-48 rounded-xl" />
         </div>
       ) : !isSuperadmin ? (
-        <StatusBanner tone="info" icon={<ShieldAlert size={20} aria-hidden="true" />} title="Réservé au Superadmin">
-          Si vous perdez votre téléphone, demandez au Superadmin de changer votre numéro : il vous dictera la marche à suivre.
+        <StatusBanner tone="info" icon={<ShieldAlert size={20} aria-hidden="true" />} title="Réservé au super-administrateur">
+          Si vous perdez votre téléphone, demandez au super-administrateur de changer votre numéro : il vous dictera la marche à suivre.
         </StatusBanner>
       ) : (
         <>
@@ -62,7 +62,7 @@ export default function SecurityPage() {
             </StatusBanner>
           )}
           <BackupCodesPanel autoStart={flags.creer} />
-          <section aria-labelledby="numero-titre" className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-6">
+          <section aria-labelledby="numero-titre" className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true"><Smartphone size={20} /></span>
               <div className="min-w-0 space-y-1">

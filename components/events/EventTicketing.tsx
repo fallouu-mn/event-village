@@ -301,9 +301,9 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                 error={errors.total_quantity}
                 disabled={disabled}
             />
-            <p className="text-sm text-fg-muted sm:col-span-2">Pour vendre des places supplémentaires à un autre prix, créez une nouvelle catégorie.</p>
+            <p className="text-sm text-muted-foreground sm:col-span-2">Pour vendre des places supplémentaires à un autre prix, créez une nouvelle catégorie.</p>
             {priceLocked && (
-                <p className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-sm font-medium text-warning-fg sm:col-span-2">
+                <p className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-soft px-3 py-2 text-sm font-medium text-warning-text sm:col-span-2">
                     <Lock size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                     <span>{priceLockText(draft)}</span>
                 </p>
@@ -357,7 +357,7 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                 fieldClassName="sm:col-span-2"
             />
             <fieldset className="flex min-w-0 flex-col gap-3 sm:col-span-2">
-                <legend className="text-sm font-semibold text-fg">Où vendre cette catégorie</legend>
+                <legend className="text-sm font-semibold text-foreground-strong">Où vendre cette catégorie</legend>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <ToggleField
                         id={id('sale_online')}
@@ -378,12 +378,12 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
                         error={errors.sale_counter}
                     />
                 </div>
-                <p className="text-sm text-fg">
-                    <span className="text-fg-muted">Résultat : </span>
+                <p className="text-sm text-foreground-strong">
+                    <span className="text-muted-foreground">Résultat : </span>
                     <span className="font-semibold">{categoryChannelLabel(draft)}</span>
                 </p>
                 {!draft.sale_online && !draft.sale_counter && (
-                    <p className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg px-3 py-2 text-sm font-medium text-warning-fg">
+                    <p className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-soft px-3 py-2 text-sm font-medium text-warning-text">
                         <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                         <span>{CATEGORY_CHANNEL_HELP.none}</span>
                     </p>
@@ -391,7 +391,7 @@ export function CategoryFields({ draft, onChange, errors = {}, disabled = false,
             </fieldset>
             {/* Finition 2b (A, E-22) : couleur et consigne pour toute catégorie, dès la création */}
             <fieldset className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
-                <legend className="mb-3 text-sm font-semibold text-fg">Au contrôle des entrées</legend>
+                <legend className="mb-3 text-sm font-semibold text-foreground-strong">Au contrôle des entrées</legend>
                 <div className="sm:col-span-2">
                     <ScanColorPicker
                         id={id('scan_color')}
@@ -445,7 +445,7 @@ function ToggleField({ id, label, hint, checked, onChange, disabled, error }: {
     const describedBy = [errorId, hintId].filter(Boolean).join(' ') || undefined;
     return (
         <div className="flex flex-col gap-1">
-            <label htmlFor={id} className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-base text-fg">
+            <label htmlFor={id} className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-base text-foreground-strong">
                 <input
                     id={id}
                     type="checkbox"
@@ -454,12 +454,12 @@ function ToggleField({ id, label, hint, checked, onChange, disabled, error }: {
                     disabled={disabled}
                     aria-invalid={error ? true : undefined}
                     aria-describedby={describedBy}
-                    className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-border-strong accent-brand"
+                    className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-input accent-primary"
                 />
                 {label}
             </label>
-            {hint && <p id={hintId} className="text-sm leading-snug text-fg-muted">{hint}</p>}
-            {error && <p id={errorId} className="text-sm font-medium text-danger-fg">{error}</p>}
+            {hint && <p id={hintId} className="text-sm leading-snug text-muted-foreground">{hint}</p>}
+            {error && <p id={errorId} className="text-sm font-medium text-danger-text">{error}</p>}
         </div>
     );
 }
@@ -681,14 +681,14 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
 
     return (
         <div className="flex flex-col gap-4">
-            <p className="text-sm leading-relaxed text-fg-muted">
+            <p className="text-sm leading-relaxed text-muted-foreground">
                 Chaque catégorie s’enregistre séparément. Le prix ne change plus dès qu’un billet est vendu ou réservé ; la quantité ne descend jamais sous les ventes.
             </p>
 
             {items.length === 0 && (
-                <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-surface-sunken p-6 text-center">
-                    <Ticket size={24} className="text-fg-muted" aria-hidden="true" />
-                    <p className="text-sm text-fg-muted">Aucune catégorie de billets. Ajoutez-en une pour pouvoir soumettre l’événement.</p>
+                <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-background p-6 text-center">
+                    <Ticket size={24} className="text-muted-foreground" aria-hidden="true" />
+                    <p className="text-sm text-muted-foreground">Aucune catégorie de billets. Ajoutez-en une pour pouvoir soumettre l’événement.</p>
                 </div>
             )}
 
@@ -702,14 +702,14 @@ export function EventTicketingManager({ eventId, initialCategories, onDirtyChang
                     <section
                         key={draft.key}
                         aria-labelledby={`${draft.key}-titre`}
-                        className={cn('flex flex-col gap-4 rounded-2xl border bg-surface p-4 sm:p-5', isNew ? 'border-brand-fg' : 'border-border')}
+                        className={cn('flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:p-5', isNew ? 'border-primary-text' : 'border-border')}
                     >
                         <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0">
-                                <h3 id={`${draft.key}-titre`} className="break-words text-base font-semibold text-fg">
+                                <h3 id={`${draft.key}-titre`} className="break-words text-base font-semibold text-foreground-strong">
                                     {draft.name.trim() || `Catégorie ${index + 1}`}
                                 </h3>
-                                <p className="text-sm text-fg-muted tabular-nums">
+                                <p className="text-sm text-muted-foreground tabular-nums">
                                     {isNew
                                         ? 'Nouvelle catégorie, pas encore enregistrée'
                                         : counted

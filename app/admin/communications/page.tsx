@@ -220,9 +220,9 @@ export default function AdminCommunicationsPage() {
         L’envoi aux destinataires sera ouvert avec le lot des communications (préférences et désabonnement). En attendant, chaque campagne reste un brouillon.
       </StatusBanner>
 
-      <section aria-labelledby={`${formId}-titre`} className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-        <h2 id={`${formId}-titre`} className="flex items-center gap-2 text-lg font-semibold text-fg">
-          <FilePenLine size={20} className="text-brand-fg" aria-hidden="true" />
+      <section aria-labelledby={`${formId}-titre`} className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+        <h2 id={`${formId}-titre`} className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+          <FilePenLine size={20} className="text-primary-text" aria-hidden="true" />
           Nouveau brouillon
         </h2>
 
@@ -258,18 +258,18 @@ export default function AdminCommunicationsPage() {
               options={AUDIENCE_OPTIONS}
             />
             <fieldset className="space-y-1.5">
-              <legend className="text-sm font-semibold text-fg">Canaux</legend>
+              <legend className="text-sm font-semibold text-foreground-strong">Canaux</legend>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(CHANNEL_LABELS).map(([value, label]) => (
                   <label
                     key={value}
-                    className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-surface-sunken px-3 text-sm font-semibold text-fg"
+                    className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-semibold text-foreground-strong"
                   >
                     <input
                       type="checkbox"
                       checked={selectedChannels.includes(value)}
                       onChange={(e) => toggleChannel(value, e.target.checked)}
-                      className="h-5 w-5 rounded accent-brand"
+                      className="h-5 w-5 rounded accent-primary"
                     />
                     {label}
                   </label>
@@ -304,14 +304,14 @@ export default function AdminCommunicationsPage() {
       </section>
 
       <section aria-labelledby={`${formId}-historique`} className="space-y-3">
-        <h2 id={`${formId}-historique`} className="text-lg font-semibold text-fg">Campagnes enregistrées</h2>
+        <h2 id={`${formId}-historique`} className="text-lg font-semibold text-foreground-strong">Campagnes enregistrées</h2>
 
         {loadError && campaigns === null ? (
           <ErrorState title="Historique indisponible" description={loadError} onRetry={() => void fetchCampaigns()} isRetrying={isLoading} />
         ) : campaigns === null ? (
           <div className="space-y-3" aria-busy="true">
             <span className="sr-only">Chargement des campagnes…</span>
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
           </div>
         ) : (
           <>
@@ -331,34 +331,34 @@ export default function AdminCommunicationsPage() {
                 {campaigns.map((camp) => {
                   const meta = statusMeta(camp.status);
                   return (
-                    <li key={camp.id} className="space-y-3 rounded-2xl border border-border bg-surface p-4">
+                    <li key={camp.id} className="space-y-3 rounded-xl border border-border bg-card p-4">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0 space-y-1">
-                          <h3 className="break-words text-base font-semibold text-fg">{camp.title}</h3>
+                          <h3 className="break-words text-base font-semibold text-foreground-strong">{camp.title}</h3>
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge variant={meta.variant} size="sm">{meta.label}</Badge>
                             <Badge variant="brand" size="sm">{camp.sender_profile || 'Expéditeur non indiqué'}</Badge>
                           </div>
                         </div>
-                        <time dateTime={camp.created_at || undefined} className="text-sm tabular-nums text-fg-muted">
+                        <time dateTime={camp.created_at || undefined} className="text-sm tabular-nums text-muted-foreground">
                           {formatDateTime(camp.created_at)}
                         </time>
                       </div>
-                      <p className="whitespace-pre-line break-words rounded-xl border border-border bg-surface-sunken p-3 text-sm leading-relaxed text-fg">
+                      <p className="whitespace-pre-line break-words rounded-xl border border-border bg-background p-3 text-sm leading-relaxed text-foreground-strong">
                         {camp.message}
                       </p>
                       <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
                         <div>
-                          <dt className="text-fg-muted">Destinataires</dt>
-                          <dd className="font-semibold text-fg">{audienceLabel(camp.target_audience)}</dd>
+                          <dt className="text-muted-foreground">Destinataires</dt>
+                          <dd className="font-semibold text-foreground-strong">{audienceLabel(camp.target_audience)}</dd>
                         </div>
                         <div>
-                          <dt className="text-fg-muted">Personnes ciblées</dt>
-                          <dd className="font-semibold tabular-nums text-fg">{formatInteger(camp.recipient_count)}</dd>
+                          <dt className="text-muted-foreground">Personnes ciblées</dt>
+                          <dd className="font-semibold tabular-nums text-foreground-strong">{formatInteger(camp.recipient_count)}</dd>
                         </div>
                         <div>
-                          <dt className="text-fg-muted">Canaux</dt>
-                          <dd className="font-semibold text-fg">{channelsLabel(camp.channels)}</dd>
+                          <dt className="text-muted-foreground">Canaux</dt>
+                          <dd className="font-semibold text-foreground-strong">{channelsLabel(camp.channels)}</dd>
                         </div>
                       </dl>
                     </li>

@@ -250,7 +250,7 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
             title="Remboursement d’un billet"
             description="Retrouvez le billet par le numéro imprimé dessus. Rien n’est remboursé avant votre confirmation."
         >
-            <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4">
+            <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4">
                 <form onSubmit={handleSearch} className="flex flex-col gap-3 sm:flex-row sm:items-end" noValidate>
                     <TextInput
                         ref={numberRef}
@@ -273,9 +273,9 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
                 {notice && <StatusBanner tone={notice.tone} title={notice.title} announce="alert" className="tabular-nums">{notice.text}</StatusBanner>}
 
                 {sheet && copy && (
-                    <section aria-labelledby={sheetTitleId} className="flex flex-col gap-3 rounded-2xl border border-border-strong bg-surface-sunken p-4">
-                        <h3 id={sheetTitleId} className="text-base font-semibold text-fg tabular-nums">Billet <span className="block break-all">{sheet.ticket_number}</span></h3>
-                        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm text-fg tabular-nums">
+                    <section aria-labelledby={sheetTitleId} className="flex flex-col gap-3 rounded-2xl border border-input bg-muted p-4">
+                        <h3 id={sheetTitleId} className="text-base font-semibold text-foreground-strong tabular-nums">Billet <span className="block break-all">{sheet.ticket_number}</span></h3>
+                        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm text-foreground-strong tabular-nums">
                             <SheetRow label="Catégorie">{sheet.category || 'Non renseignée'}</SheetRow>
                             <SheetRow label="Porteur">{sheet.holder_short || 'Non renseigné'}</SheetRow>
                             <SheetRow label="Vente">{SALE_CHANNEL_LABELS[sheet.sale_channel ?? ''] ?? 'Non renseignée'}</SheetRow>
@@ -285,7 +285,7 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
                         </dl>
                         {sheet.refundable ? (
                             <>
-                                <p className="text-sm leading-relaxed text-fg tabular-nums">{copy.effect(amount)}</p>
+                                <p className="text-sm leading-relaxed text-foreground-strong tabular-nums">{copy.effect(amount)}</p>
                                 <Button
                                     variant="danger"
                                     fullWidth
@@ -301,7 +301,7 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
                             </>
                         ) : sheet.refund_closed_reason && sheet.status === 'VALIDE' ? (
                             <StatusBanner tone="info" title="Remboursement réservé à Event Village">
-                                {CLOSED_REASON_MESSAGES[sheet.refund_closed_reason]} Le client peut <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">contacter le support Event Village</Link>.
+                                {CLOSED_REASON_MESSAGES[sheet.refund_closed_reason]} Le client peut <Link href="/aide" className="font-semibold text-primary-text underline underline-offset-4">contacter le support Event Village</Link>.
                             </StatusBanner>
                         ) : (
                             <StatusBanner tone="neutral" title="Ce billet n’est pas remboursable">
@@ -339,7 +339,7 @@ export function TicketRefundPanel({ eventId, onRefunded }: TicketRefundPanelProp
                         variant="danger"
                         isLoading={sending}
                     >
-                        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm text-fg tabular-nums">
+                        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm text-foreground-strong tabular-nums">
                             <SheetRow label="Billet">{sheet.ticket_number}</SheetRow>
                             <SheetRow label="Montant">{sheet.refund_mode === 'AUCUN' ? 'Aucun versement' : amount}</SheetRow>
                             <SheetRow label="Motif">{reason}</SheetRow>

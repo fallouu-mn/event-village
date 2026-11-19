@@ -159,11 +159,11 @@ export default function PartnerEventPilotagePage() {
         return (
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 py-6 lg:py-8" role="status" aria-busy="true" aria-label="Chargement du pilotage">
                 <div className="flex flex-col gap-3">
-                    <span className="h-5 w-40 rounded bg-background motion-safe:animate-pulse" />
-                    <span className="h-8 w-3/4 rounded bg-background motion-safe:animate-pulse" />
-                    <span className="h-5 w-1/2 rounded bg-background motion-safe:animate-pulse" />
+                    <span className="h-5 w-40 rounded bg-muted motion-safe:animate-pulse" />
+                    <span className="h-8 w-3/4 rounded bg-muted motion-safe:animate-pulse" />
+                    <span className="h-5 w-1/2 rounded bg-muted motion-safe:animate-pulse" />
                 </div>
-                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
                     <KpiCardSkeleton />
                     <KpiCardSkeleton />
                     <KpiCardSkeleton />
@@ -207,15 +207,15 @@ export default function PartnerEventPilotagePage() {
                 }
                 title={ev.title}
                 description={
-                    <span className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-x-4">
-                        <span className="inline-flex items-center gap-1.5">
-                            <CalendarDays size={16} aria-hidden="true" />
+                    <span className="flex min-w-0 flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-x-4">
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <CalendarDays size={16} className="flex-shrink-0" aria-hidden="true" />
                             {formatEventDateTime(ev.start_date, ev.start_time)}
                         </span>
                         {place && (
-                            <span className="inline-flex items-center gap-1.5">
-                                <MapPin size={16} aria-hidden="true" />
-                                {place}
+                            <span className="inline-flex min-w-0 items-center gap-1.5">
+                                <MapPin size={16} className="flex-shrink-0" aria-hidden="true" />
+                                <span className="min-w-0 break-words">{place}</span>
                             </span>
                         )}
                     </span>

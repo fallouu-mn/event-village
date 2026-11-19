@@ -69,7 +69,7 @@ export function OrganizerPicker({ onPick }: { onPick: (o: PickedOrganizer) => vo
             />
             {phase === 'loading' && (
                 <div role="status" aria-busy="true" aria-label="Chargement des organisatrices" className="space-y-2">
-                    {[0, 1, 2].map((i) => <span key={i} className="block h-14 rounded-xl bg-background motion-safe:animate-pulse" />)}
+                    {[0, 1, 2].map((i) => <span key={i} className="block h-14 rounded-xl bg-muted motion-safe:animate-pulse" />)}
                 </div>
             )}
             {phase === 'error' && (
@@ -79,7 +79,7 @@ export function OrganizerPicker({ onPick }: { onPick: (o: PickedOrganizer) => vo
                 </StatusBanner>
             )}
             {phase === 'ready' && items.length === 0 && (
-                <p className="rounded-xl border border-border bg-background p-4 text-sm text-foreground-strong">
+                <p className="rounded-xl border border-border bg-muted p-4 text-sm text-foreground-strong">
                     {query.trim()
                         ? <>Aucune organisatrice ne correspond à « {query.trim()} ».</>
                         : <>Aucune organisatrice validée pour le moment.</>}
@@ -92,7 +92,7 @@ export function OrganizerPicker({ onPick }: { onPick: (o: PickedOrganizer) => vo
                             <button
                                 type="button"
                                 onClick={() => onPick({ partner_id: o.partner_id, name: o.name })}
-                                className="flex min-h-11 w-full items-center gap-3 bg-card px-4 py-3 text-left transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                className="flex min-h-11 w-full items-center gap-3 bg-card px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                             >
                                 <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-text" aria-hidden="true"><Building2 size={18} /></span>
                                 <span className="min-w-0 flex-1">

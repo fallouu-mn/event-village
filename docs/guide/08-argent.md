@@ -207,7 +207,7 @@ remboursement de ce billet est en cours : vous serez prévenu dès le versement.
    Un billet vendu au guichet sans compte (cas courant) n'a pas de porteur : **aucun message** ne part
    (`M/…lot9ter_equipe_messages.sql:405-420`, condition « porteur ou numéro d'invitation »). Preuves texte :
    `lib/notifications/catalog.ts:1555-1575`.
-5. **Ce que voient les autres rôles.** Rapport de clôture : « Remboursé » augmente du prix (08.19). Annulation ultérieure
+5. **Ce que voient les autres rôles.** Rapport de clôture : « Remboursements en espèces (par vous) » augmente du prix (08.19). Annulation ultérieure
    de l'événement : voir 08.8 et constat W7-06.
 6. **Refus.** Comme 08.1.
 7. **Preuves et essai.** Fichiers cités. Recette : aucun essai dédié.
@@ -704,17 +704,25 @@ remboursement de ce billet est en cours : vous serez prévenu dès le versement.
 
    | Montant (texte exact) | Formule |
    |---|---|
-   | « Montant net organisateur » — « Ventes en ligne, remboursements déduits » | écritures « Vente en ligne » + « Remboursement » de l'événement au compte de la partenaire (sans régularisations ni retraits) |
-   | « Disponibilité des fonds » | première date de disponibilité d'une vente de l'événement ; « jusqu’au {date} pour les dernières ventes » si les dates diffèrent ; « Aucune vente en ligne » sinon |
-   | « Recettes en ligne » | **même somme** que « Montant net organisateur » (ventes en ligne moins remboursements en ligne) — constat W7-04 |
-   | « Recettes en espèces » | somme des ventes hors plateforme confirmées de l'événement (non diminuée des billets en espèces annulés) |
-   | « Remboursé » | remboursements en ligne (débits de la partenaire) + remboursements à régler par l'organisateur (billets en espèces annulés, sauf échoués) |
-   | « Frais de service payés par les acheteurs » | frais de service des billets payés en ligne encore « Valable » ou « Utilisé » (billets remboursés exclus) |
-   | « Déjà disponible / en attente » | part de « Montant net organisateur » dont la date est passée / à venir |
+   Design 1c (E-64, constats G-26 et W7-04 corrigés) : un seul nom pour le net, « Recettes nettes », et le détail en
+   cascade brut → remboursements → net, sans rien à soustraire à la lecture. Même texte dans le PDF
+   (`lib/partner/partner-dashboard.service.ts`, bandeau « RECETTES NETTES -- VENTES EN LIGNE MOINS LES REMBOURSEMENTS »).
 
-   Exemple, panier de Fatou seul, un « Standard » remboursé avant la fin : « Montant net organisateur » 17 500 F ;
-   « Recettes en ligne » 17 500 F ; « Remboursé » 5 000 F ; « Frais de service payés par les acheteurs » 875 F ; « Déjà
-   disponible / en attente » 0 F / 17 500 F.
+   | Montant (texte exact) | Formule |
+   |---|---|
+   | « Recettes nettes » — « Ventes en ligne moins les remboursements. » (carte) | écritures « Vente en ligne » + « Remboursement » de l'événement au compte de la partenaire (sans régularisations ni retraits) |
+   | « Disponibilité des fonds » | première date de disponibilité d'une vente de l'événement ; « jusqu’au {date} pour les dernières ventes » si les dates diffèrent ; « Aucune vente en ligne » sinon |
+   | « Ventes en ligne (brut) » | écritures « Vente en ligne » seules (`online_gross`) |
+   | « Remboursements » | remboursements en ligne, débits de la partenaire (`refunded_online`), affichés « − … » |
+   | « Recettes nettes » (bloc) | même somme que la carte : brut moins remboursements |
+   | « Ventes en espèces (hors solde) » | somme des ventes hors plateforme confirmées de l'événement (non diminuée des billets en espèces annulés) |
+   | « Remboursements en espèces (par vous) » | remboursements à régler par l'organisateur (billets en espèces annulés, sauf échoués), seulement s'il y en a |
+   | « Frais de service payés par les acheteurs » | frais de service des billets payés en ligne encore « Valable » ou « Utilisé » (billets remboursés exclus) |
+   | « Déjà disponible / en attente » | part des « Recettes nettes » dont la date est passée / à venir |
+
+   Exemple, panier de Fatou seul, un « Standard » remboursé avant la fin : « Ventes en ligne (brut) » 22 500 F ;
+   « Remboursements » − 5 000 F ; « Recettes nettes » 17 500 F ; « Frais de service payés par les acheteurs » 875 F ;
+   « Déjà disponible / en attente » 0 F / 17 500 F.
 4. **Messages envoyés.** Aucun.
 5. **Ce que voient les autres rôles.** L'administration, par « Ouvrir le pilotage ».
 6. **Refus.** 04.23.

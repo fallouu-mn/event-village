@@ -245,7 +245,7 @@ export function CashRefundsList({ eventId, signal = 0 }: CashRefundsListProps) {
                 confirmDisabled={adminMarks && !reasonOk}
             >
                 {pending && (
-                    <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 rounded-2xl border border-border bg-background p-4 text-sm text-foreground-strong tabular-nums">
+                    <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 rounded-2xl border border-border bg-muted p-4 text-sm text-foreground-strong tabular-nums">
                         <dt className="font-semibold">Vente</dt>
                         <dd>{pending.reference}</dd>
                         <dt className="font-semibold">Billets</dt>

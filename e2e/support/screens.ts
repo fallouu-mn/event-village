@@ -149,11 +149,9 @@ export interface Screen {
 }
 
 const UUID = '[0-9a-f-]{36}';
-/**
- * Design 1b (garde-fou des mots) : nœud de texte fait d'un identifiant brut seul, admis seulement sur les écrans de la
- * finance de l'administration (hors du design 1b, lot exclu par la consigne : à reprendre au lot de la finance).
- */
-const RAW_ID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Design 1c (point 5) : l'exception RAW_ID_TEXT du design 1b (identifiant brut admis sur trois écrans de la finance de
+// l'administration) est retirée : la référence d'un paiement sans référence SamirPay s'affiche en référence courte
+// (« Réf. interne … », lib/finance/payment-labels.ts, readablePaymentReference).
 /** Design 1b : préchargement (next/link) d'une fiche fictive de la vitrine ou d'une fiche imposée : 404 attendu. */
 const fakeEventPrefetch = (id: string): RegExp => new RegExp(`/events/${id}(\\?_rsc=[^/]*)?$`);
 /** Lot 8 (8.2 h) : UUID bien formé qu'aucun événement ne porte. */
@@ -530,6 +528,20 @@ const F3B_CREATE_ADMIN: StubResponse = {
 const F3B_NEW_ADMIN_RIGHTS: StubResponse = {
     url: /\/api\/admin\/permissions\?adminId=/, method: 'GET', status: 200, body: { success: true, adminId: F3B_NEW_ADMIN_ID, assignedPermissions: [] },
 };
+/**
+ * Design 1c (administration, point 4) : liste des comptes imposée (un administrateur, une contrôleuse, un client), pour
+ * capturer la liste remplie et la fenêtre « Changer le rôle » ; aucune écriture (la fenêtre est fermée sans valider).
+ */
+const D1C_USERS: StubResponse = {
+    url: /\/api\/admin\/users(\?.*)?$/, method: 'GET', status: 200,
+    body: {
+        users: [
+            { id: '00000000-0000-4000-8000-00000000d1c1', first_name: 'Ousmane', last_name: 'Faye', phone: '+221 77 000 00 41', email: 'ousmane.faye@exemple.sn', role: 'ADMIN', status: 'ACTIF', referral_status: 'STANDARD', created_at: '2026-11-02T09:00:00.000Z', activation: null },
+            { id: '00000000-0000-4000-8000-00000000d1c2', first_name: 'Khadija', last_name: 'Sarr', phone: '+221 76 000 00 42', email: '', role: 'CONTROLEUR', status: 'SUSPENDU', referral_status: 'STANDARD', created_at: '2026-11-05T09:00:00.000Z', activation: 'PENDING' },
+            { id: '00000000-0000-4000-8000-00000000d1c3', first_name: 'Mamadou', last_name: 'Kébé', phone: '+221 78 000 00 43', email: 'mamadou.kebe@exemple.sn', role: 'CLIENT', status: 'ACTIF', referral_status: 'AMBASSADEUR', created_at: '2026-11-07T09:00:00.000Z', activation: null },
+        ],
+    },
+};
 
 // ── Finition 3d : réponses imposées (aucune écriture réelle : codes, numéro et étape de sécurité simulés) ─────────
 const F3D_BACKUP_URL = /\/api\/admin\/security\/backup-codes(\?.*)?$/;
@@ -755,6 +767,9 @@ async function delayedWithdrawalReady(page: Page): Promise<void> {
     await expect(page.getByText('Retardé', { exact: true }).filter({ visible: true }).first(), 'badge « Retardé » (delayed servi par le serveur)').toBeVisible();
     const phrase = page.getByText('Retardé : l’équipe Event Village s’en occupe.', { exact: true }).filter({ visible: true }).first();
     await expect(phrase).toBeVisible();
+    // Design 1c (E-03, N-02) : un retrait retardé n'est jamais dit « Versé » ; son montant est « Montant envoyé : … »
+    await expect(page.getByText(/^Montant envoyé : 5\s940\sF\sCFA · frais : 60\sF\sCFA$/).filter({ visible: true }).first(), 'retrait retardé : « Montant envoyé »').toBeVisible();
+    await expect(page.getByText(/^Versé/).filter({ visible: true }), 'retrait retardé : aucun « Versé »').toHaveCount(0);
     await revealCenter(phrase);
 }
 
@@ -1419,7 +1434,6 @@ export const SCREENS: readonly Screen[] = [
     {
         // Lot 9 bis (7.3, B114) : sous fumee-superadmin, réponse au format du contrat 4.1 ; voir l'en-tête du fichier
         id: 'admin-remboursements-a-reprendre', titre: 'Administration — finances : versements à reprendre (Renvoyer, Marquer versé ; réponses imposées)',
-        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => {
@@ -1619,14 +1633,35 @@ export const SCREENS: readonly Screen[] = [
             await expect(rights.getByRole('checkbox', { name: /^consulter les événements/i }), 'la lecture suit l’écriture').toBeChecked();
         },
     },
+    {
+        id: 'admin-changer-role', titre: 'Administration — comptes : liste remplie, fenêtre « Changer le rôle » (quatre rôles en cartes, qui est prévenu ; aucune écriture)',
+        role: 'fumee-superadmin', needsIds: false, path: () => '/admin/users',
+        stubResponses: [D1C_USERS],
+        ready: async ({ page }) => {
+            await expectHeading(page, /^comptes et administrateurs$/i);
+            await expect(page.getByText('Ousmane Faye', { exact: true })).toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page }) => {
+            const row = page.getByRole('listitem').filter({ hasText: 'Ousmane Faye' });
+            await row.getByRole('button', { name: /^changer le rôle$/i }).click();
+            const dialog = anyDialog(page, /^changer le rôle de ousmane faye \?$/i);
+            await expect(dialog).toBeVisible();
+            await expect(dialog.getByRole('radio')).toHaveCount(4);
+            await expect(dialog.getByRole('radio', { name: /^administrateur/i })).toBeDisabled();
+            await dialog.getByRole('radio', { name: /^super-administrateur/i }).check();
+            await expect(dialog.getByText(/chaque super-administrateur reçoit un sms d’alerte/i)).toBeVisible();
+            await expect(dialog.getByRole('button', { name: /^passer en super-administrateur$/i })).toBeDisabled();
+            await expect(dialog.getByRole('button', { name: /^garder le rôle actuel$/i })).toBeVisible();
+        },
+    },
     // ── Finition 3d : recours et suppléance (sous fumee-superadmin ; réponses imposées, aucune écriture réelle) ──
     // Point 5 : la ligne unique de l'argent est capturée par admin-accueil (F3B_TODO : versements et créances).
-    // Points 2a et 3 : « Changer le numéro » et « Changer le rôle » s'ouvrent sur une ligne de /admin/users, page pas encore
-    // sur le système de design (badges de 10 px, noms de 12 px : contrôles bloquants des 14 px) ; aucune capture de la liste
-    // remplie. PhoneChangeFlow est capturé par admin-numero-apres-secours ; les deux boutons sont prouvés par f3d-ecrans.
+    // Points 2a et 3 : « Changer le numéro » et « Changer le rôle » s'ouvrent sur une ligne de /admin/users. Design 1c : la
+    // page passe aux jetons (liste remplie capturée par admin-changer-role, plus haut) ; PhoneChangeFlow est capturé par
+    // admin-numero-apres-secours ; les deux boutons sont aussi prouvés par f3d-ecrans.
     // Design 1b (point 3) : « À la une » choisi par le Superadmin (ajouter, ordonner, retirer, dates, motif, journal)
     {
-        id: 'admin-a-la-une', titre: 'Administration — « À la une » de l’accueil (Superadmin)', role: 'fumee-superadmin', needsIds: false,
+        id: 'admin-a-la-une', titre: 'Administration — « À la une » de l’accueil (super-administrateur)', role: 'fumee-superadmin', needsIds: false,
         path: () => '/admin/a-la-une',
         ready: async ({ page }) => {
             await expect(page.getByText(/étiquette vue par les visiteurs/i).first()).toBeVisible({ timeout: 30_000 });
@@ -1634,7 +1669,7 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'admin-securite', titre: 'Administration — « Sécurité du compte » du Superadmin : codes de secours restants, son numéro',
+        id: 'admin-securite', titre: 'Administration — « Sécurité du compte » du super-administrateur : codes de secours restants, son numéro',
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/securite',
         stubResponses: [F3D_BACKUP_STATUS],
         ready: async ({ page }) => {
@@ -1916,7 +1951,7 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'caisse-ticket-z', titre: 'Caisse — Z de caisse après la clôture', role: 'controleur', needsIds: true,
+        id: 'caisse-ticket-z', titre: 'Caisse — récapitulatif de caisse après la clôture', role: 'controleur', needsIds: true,
         path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: true,
         stubResponses: [{
             url: /\/api\/controller\/shifts\/close$/, method: 'POST', status: 200,
@@ -2115,7 +2150,6 @@ export const SCREENS: readonly Screen[] = [
     // Rouges jusqu'à leurs écrans (vague E) et aux données du seed (fix(9b.seed)) ; aucune boîte n'est confirmée.
     {
         id: 'admin-versements-marquer-verse', titre: 'Administration — versements à reprendre : boîte « Marquer versé » (justification, référence ; réponses imposées)',
-        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => { await cashoutsReady(page); },
@@ -2381,7 +2415,6 @@ export const SCREENS: readonly Screen[] = [
     // ── Lot 9 ter : versements, retraits retardés, clôture, édition (A.2.6, B.6) ──
     {
         id: 'admin-versements-constater-non-verse', titre: 'Administration — versements à reprendre : boîte « Constater non versé » (référence, motif ; réponses imposées)',
-        references: [RAW_ID_TEXT],
         role: 'fumee-superadmin', needsIds: false, path: () => '/admin/finance',
         stubResponses: CASHOUTS_STUBS,
         ready: async ({ page }) => { await cashoutsReady(page); },
