@@ -628,7 +628,7 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
         assert.ok(cashouts.every((c) => c.status === 'A_ENVOYER' && c.blocked_reason), `cashouts bloqués : ${JSON.stringify(cashouts.map((c) => [c.status, c.blocked_reason]))}`);
         const day = dakarDay(0);
         const rows = await groupRows('CANCEL_REFUNDS_BLOCKED', `CANCEL_REFUNDS_BLOCKED:${ev.eventId}:${day}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], /* finition 4 : + SMS (signalé) */ owner.userId);
-        assert.equal((await outboxRows({ type: 'CANCEL_REFUNDS_BLOCKED', eventId: ev.eventId })).length, 3, 'deux cashouts bloqués le même jour : un seul avis (décision 19)');
+        assert.equal((await outboxRows({ type: 'CANCEL_REFUNDS_BLOCKED', eventId: ev.eventId })).length, 4, 'deux cashouts bloqués le même jour : un seul avis, 4 canaux depuis la finition 4 (décision 19)');
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: owner.userId, title: 'Remboursements en attente', contains: [await titleOf(ev.eventId)], actionUrl: `/partner/events/${ev.eventId}?tab=cloture` });
     });
