@@ -62,7 +62,7 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
 
     test('Mes billets (run 420) : relecture identique sans nouveau rendu ; billets suivants après le chargement', () => {
         const page = read('app/tickets/TicketsView.tsx');
-        assert.match(page, /if \(json !== ticketsJsonRef\.current\) \{\n\s*ticketsJsonRef\.current = json;\n\s*setTickets\(result\.tickets\);/);
+        assert.match(page, /if \(json !== ticketsJsonRef\.current\) \{\n\s*ticketsJsonRef\.current = json;\n\s*setTickets\(list\);/);
         assert.match(page, /if \(json !== incomingJsonRef\.current\) \{\n\s*incomingJsonRef\.current = json;\n\s*setIncoming\(next\);/);
         assert.equal(page.match(/setTickets\(/g)?.length, 1, 'une seule écriture de la liste');
         const card = read('components/tickets/TicketCard.tsx');
@@ -95,9 +95,12 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         assert.match(page, /import \{ GET as listMyTickets \} from '@\/app\/api\/tickets\/route';/);
         assert.match(page, /export const dynamic = 'force-dynamic';/);
         assert.match(page, /new NextRequest\(`\$\{proto\}:\/\/\$\{host\}\/api\/tickets`, \{ headers: new Headers\(h\) \}\)/);
-        assert.match(page, /<TicketsView initialTickets=\{initialTickets\} initialTab=\{tab\} serverNow=\{Date\.now\(\)\} \/>/);
+        // Run 426 : la page n'attend pas la liste (en-tête aussitôt), la liste suit dans la même réponse
+        assert.match(page, /const ticketsPromise = readTicketsOnServer\(\);/);
+        assert.doesNotMatch(page, /await readTicketsOnServer\(\)/);
+        assert.match(page, /<TicketsView ticketsPromise=\{ticketsPromise\} initialTab=\{tab\} serverNow=\{Date\.now\(\)\} \/>/);
         const view = read('app/tickets/TicketsView.tsx');
-        assert.match(view, /useState<'loading' \| 'ready' \| 'error'>\(initialTickets \? 'ready' : 'loading'\)/);
+        assert.match(view, /ticketsPromise\.then\(\(list\) => \{/);
         assert.match(view, /const now = useMinuteNow\(serverNow\);/);
         // Le service worker ne garde jamais /tickets (réseau seulement)
         assert.match(read('public/sw.js'), /const FALLBACK_NAV = new Set\(\['\/', '\/tickets'\]\);/);

@@ -5,11 +5,13 @@ import { TicketsView, type MyTicket } from './TicketsView';
 import { TABS, type TabKey } from './tabs';
 
 /**
- * Mes billets — décision du 19/11 (temps de blocage de la page) : liste préparée par le serveur. La page appelle la route
+ * Mes billets — décision du 19/11 (temps de blocage de la page) : liste lue par le serveur. La page appelle la route
  * GET /api/tickets elle-même, avec les cookies et en-têtes de la requête reçue : mêmes règles de session (compte actif,
  * code de l'administration), même lecture, aucune logique recopiée. Réponse personnelle : page rendue à chaque requête
  * (jamais préparée ni mise en cache ; le service worker ne garde jamais /tickets, réseau seulement). Sans session ou en
  * cas d'échec, la liste se charge dans le navigateur comme avant (TicketsView).
+ * Run 426 : la page n'attend plus la liste ; l'en-tête et le squelette partent aussitôt et la liste suit dans la même réponse
+ * (promesse transmise à TicketsView), sans aller-retour du navigateur vers /api/tickets.
  */
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,6 @@ async function readTicketsOnServer(): Promise<MyTicket[] | null> {
 export default async function TicketsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
     const params = await searchParams;
     const tab = typeof params.tab === 'string' && (TABS as readonly string[]).includes(params.tab) ? (params.tab as TabKey) : undefined;
-    const initialTickets = await readTicketsOnServer();
-    return <TicketsView initialTickets={initialTickets} initialTab={tab} serverNow={Date.now()} />;
+    const ticketsPromise = readTicketsOnServer(); // non attendue : envoyée dans la même réponse
+    return <TicketsView ticketsPromise={ticketsPromise} initialTab={tab} serverNow={Date.now()} />;
 }

@@ -181,16 +181,18 @@ function dropCelebrationParam(): void {
 }
 
 /**
- * Décision du 19/11 : liste préparée par le serveur (app/tickets/page.tsx) et transmise ici (`initialTickets`, null si le
+ * Décision du 19/11 : liste lue par le serveur (app/tickets/page.tsx) et envoyée dans la même réponse (`ticketsPromise`) ;
+ * run 426 : attendre la liste avant d'envoyer la page retardait l'en-tête (affichage principal 2,52 s) et l'hydratation du
+ * portefeuille rendu par le serveur pesait ; l'en-tête et le squelette partent donc tout de suite, la liste suit (null si le
  * serveur n'a pu la lire : chargement côté navigateur comme avant) ; `initialTab` et `serverNow` rendent le premier rendu
  * identique côté serveur et navigateur.
  */
-export function TicketsView({ initialTickets = null, initialTab, serverNow }: { initialTickets?: MyTicket[] | null; initialTab?: TabKey; serverNow?: number }) {
+export function TicketsView({ ticketsPromise, initialTab, serverNow }: { ticketsPromise?: Promise<MyTicket[] | null>; initialTab?: TabKey; serverNow?: number }) {
   const { user, profile, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id ?? null;
   const [tab, setTab] = useTabParam(TABS, 'a-venir', 'tab', initialTab);
-  const [tickets, setTickets] = useState<MyTicket[]>(() => initialTickets ?? []);
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>(initialTickets ? 'ready' : 'loading');
+  const [tickets, setTickets] = useState<MyTicket[]>([]);
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -219,14 +221,22 @@ export function TicketsView({ initialTickets = null, initialTab, serverNow }: { 
   // que le fournisseur de session). La réponse n'est lue qu'une fois le compte connu (effet de chargement ci-dessous).
   const earlyRef = useRef<Promise<LoadResult> | null>(null);
   useEffect(() => {
-    if (!initialTickets) earlyRef.current = readTickets(); // liste déjà préparée par le serveur : rien à demander
-  }, [initialTickets]);
+    if (!ticketsPromise) earlyRef.current = readTickets(); // liste lue par le serveur : rien à demander
+  }, [ticketsPromise]);
 
   // Design 1b (run 420, temps de blocage de Mes billets) : une relecture identique (rattrapage du temps réel à la
   // connexion, synchronisation) ne remplace plus la liste : sans cela, chaque réponse redessinait tout le portefeuille
   // (tâches de 69 à 97 ms au téléphone de référence). Le contenu change : la liste est remplacée, comme avant.
-  const ticketsJsonRef = useRef<string | null>(initialTickets ? JSON.stringify(initialTickets) : null);
+  const ticketsJsonRef = useRef<string | null>(null);
   const incomingJsonRef = useRef<string | null>(null);
+  /** Seule écriture de la liste : remplacée seulement si son contenu change (lecture du serveur ou du navigateur). */
+  const applyList = useCallback((list: MyTicket[]) => {
+    const json = JSON.stringify(list);
+    if (json !== ticketsJsonRef.current) {
+      ticketsJsonRef.current = json;
+      setTickets(list);
+    }
+  }, []);
 
   /** « initial » : écran d'erreur si l'échec survient ; « silent » : la liste reste, un bandeau le signale. */
   const load = useCallback(async (mode: 'initial' | 'silent', early?: Promise<LoadResult> | null) => {
@@ -234,11 +244,7 @@ export function TicketsView({ initialTickets = null, initialTab, serverNow }: { 
     const anticipated = early ? await early : null;
     const result = anticipated?.ok ? anticipated : await readTickets();
     if (result.ok) {
-      const json = JSON.stringify(result.tickets);
-      if (json !== ticketsJsonRef.current) {
-        ticketsJsonRef.current = json;
-        setTickets(result.tickets);
-      }
+      applyList(result.tickets);
       setLoadError(null);
       setRefreshError(null);
       setPhase('ready');
@@ -250,7 +256,7 @@ export function TicketsView({ initialTickets = null, initialTab, serverNow }: { 
     } else {
       setRefreshError(result.message);
     }
-  }, []);
+  }, [applyList]);
 
   const refreshTickets = useCallback(() => load('silent'), [load]);
 
@@ -296,9 +302,23 @@ export function TicketsView({ initialTickets = null, initialTab, serverNow }: { 
     const early = earlyRef.current;
     earlyRef.current = null;
     // Liste préparée par le serveur : seulement les billets reçus (la liste se relit au temps réel et à la demande)
-    if (!initialTickets) void load('initial', early);
+    if (!ticketsPromise) void load('initial', early);
     void loadIncoming('initial');
-  }, [userId, load, loadIncoming, initialTickets]);
+  }, [userId, load, loadIncoming, ticketsPromise]);
+
+  // Liste lue par le serveur, arrivée dans la même réponse ; absente (pas de session, échec) : lue ici comme avant
+  useEffect(() => {
+    if (!ticketsPromise) return undefined;
+    let alive = true;
+    ticketsPromise.then((list) => {
+      if (!alive) return;
+      if (!list) { void load('initial'); return; }
+      applyList(list);
+      setLoadError(null);
+      setPhase('ready');
+    }, () => { if (alive) void load('initial'); });
+    return () => { alive = false; };
+  }, [ticketsPromise, load, applyList]);
 
   // Temps réel (contrat O5) : billets du porteur et notifications (transfert reçu, accepté, annulé). Design 1b (décision
   // du 18/11) : abonnement ouvert une fois la page chargée et le téléphone libre.

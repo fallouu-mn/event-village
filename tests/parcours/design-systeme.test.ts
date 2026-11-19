@@ -727,6 +727,8 @@ const MONO_ALLOWED: Record<string, number> = {
     'components/partner/ClosingReportModal.tsx': 1,
     'components/partner/pilotage/CashTab.tsx': 1,
     'components/tickets/TicketCard.tsx': 1,
+    // Décision du 19/11 : numéro du billet sur la vignette de Mes billets
+    'components/tickets/TicketThumb.tsx': 1,
     'components/tickets/offline/OfflineTicketView.tsx': 1,
 };
 
@@ -743,6 +745,7 @@ const MONO_CONTENT: Record<string, RegExp> = {
     'components/partner/ClosingReportModal.tsx': /reportId/,
     'components/partner/pilotage/CashTab.tsx': /\bpin\b/i,
     'components/tickets/TicketCard.tsx': /ticketNumber/,
+    'components/tickets/TicketThumb.tsx': /ticketNumber/,
     'components/tickets/offline/OfflineTicketView.tsx': /ticket_number/,
 };
 
