@@ -1,0 +1,138 @@
+TAP version 13
+[CVF2B-PRE] 1. [{"setting":"pgrst.db_pre_request=securite.db_pre_request","secdef":true,"config":"search_path=\"\"","anon":true,"auth":true,"svc":true,"pkey":true}]
+# Subtest: 1. branchement de la pré-requête
+    # Subtest: réglage pgrst.db_pre_request sur authenticator ; fonction SECURITY DEFINER, search_path vide, hors du schéma exposé
+    ok 1 - réglage pgrst.db_pre_request sur authenticator ; fonction SECURITY DEFINER, search_path vide, hors du schéma exposé
+      ---
+      duration_ms: 36.373717
+      type: 'test'
+      ...
+    1..1
+ok 1 - 1. branchement de la pré-requête
+  ---
+  duration_ms: 37.143138
+  type: 'suite'
+  ...
+[CVF2B-PRE] 2. B fermée — table : 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."} ; RPC : 401 ; A : 200
+# Subtest: 2-3. API REST
+    # Subtest: 2. jeton valide servi ; session fermée refusée (table et RPC) ; l’autre session servie ; révocation totale ; rafraîchi servi
+    ok 1 - 2. jeton valide servi ; session fermée refusée (table et RPC) ; l’autre session servie ; révocation totale ; rafraîchi servi
+      ---
+      duration_ms: 377.196015
+      type: 'test'
+      ...
+[CVF2B-PRE] 3. sans jeton : 200 ; anon : 200 ; service : 200
+[CVF2B-PRE] 3. jeton authenticated sans session_id : 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."}
+    # Subtest: 3. sans jeton, anon et rôle de service servis ; jeton authenticated sans session_id refusé
+    ok 2 - 3. sans jeton, anon et rôle de service servis ; jeton authenticated sans session_id refusé
+      ---
+      duration_ms: 1058.245609
+      type: 'test'
+      ...
+    1..2
+ok 2 - 2-3. API REST
+  ---
+  duration_ms: 1435.6907
+  type: 'suite'
+  ...
+[CVF2B-PRE] 4. plan (auth.sessions : 299 ligne(s)) :
+  Index Scan using sessions_pkey on sessions s  (cost=0.27..8.30 rows=1 width=4) (actual time=0.032..0.033 rows=1 loops=1)
+    Index Cond: (id = 'c1a25518-e486-4ba7-934f-9a5ebcf60f7b'::uuid)
+    Filter: (((not_after IS NULL) OR (not_after > now())) AND ((user_id)::text = '9ab8cc23-0016-440c-9cec-bb8a15ee5f60'::text))
+    Buffers: shared hit=3
+  Planning:
+    Buffers: shared hit=155
+  Planning Time: 0.334 ms
+  Execution Time: 0.047 ms
+[CVF2B-PRE] 4. coût : 12.7 µs par appel de securite.db_pre_request (10000 appels, 126.9 ms) ; témoin auth.jwt() seul : 4.5 µs ; part de la lecture de la session : 8.2 µs
+# Subtest: 4. coût de la pré-requête
+    # Subtest: plan de la lecture et mesure en boucle (10 000 appels)
+    ok 1 - plan de la lecture et mesure en boucle (10 000 appels)
+      ---
+      duration_ms: 393.774203
+      type: 'test'
+      ...
+    1..1
+ok 3 - 4. coût de la pré-requête
+  ---
+  duration_ms: 393.959433
+  type: 'suite'
+  ...
+[CVF2B-PRE] 5. après l'échéance : témoin reçu ; jeton court : 0 message(s) ; états du canal : SUBSCRIBED → system postgres_changes ok : Subscribed to PostgreSQL → CLOSED
+# Subtest: 5. temps réel : jeton échu
+    # Subtest: un abonnement postgres_changes à une table privée ne reçoit plus rien après l’échéance de son jeton (témoin du même compte qui reçoit)
+    ok 1 - un abonnement postgres_changes à une table privée ne reçoit plus rien après l’échéance de son jeton (témoin du même compte qui reçoit)
+      ---
+      duration_ms: 37675.476603
+      type: 'test'
+      ...
+    1..1
+ok 4 - 5. temps réel : jeton échu
+  ---
+  duration_ms: 37675.853142
+  type: 'suite'
+  ...
+[INVARIANT] cvf2b-correctif-pre-requete — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf2b-correctif-pre-requete — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf2b-correctif-pre-requete — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf2b-correctif-pre-requete — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf2b-correctif-pre-requete — (g)(h)(i) : 2 violation(s)
+[INVARIANT-ACCES]   (g) 363ffd39-40d5-41c7-9213-76b05e951daf : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+[INVARIANT-ACCES]   (g) 50fe27c7-cff5-4670-a4fd-b441afa3c77f : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+not ok 5 - /home/runner/work/event-village/event-village/tests/parcours/cvf2b-correctif-pre-requete.test.ts
+  ---
+  duration_ms: 72.964347
+  location: '/home/runner/work/event-village/event-village/tests/parcours/cvf2b-correctif-pre-requete.test.ts:2:1795'
+  failureType: 'hookFailed'
+  error: |-
+    invariant du contrôle violé :
+    (g) 363ffd39-40d5-41c7-9213-76b05e951daf : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+    (g) 50fe27c7-cff5-4670-a4fd-b441afa3c77f : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé',
+    +     objet: '363ffd39-40d5-41c7-9213-76b05e951daf',
+    +     regle: 'g'
+    +   },
+    +   {
+    +     detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé',
+    +     objet: '50fe27c7-cff5-4670-a4fd-b441afa3c77f',
+    +     regle: 'g'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'g'
+      objet: '363ffd39-40d5-41c7-9213-76b05e951daf'
+      detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé'
+    1:
+      regle: 'g'
+      objet: '50fe27c7-cff5-4670-a4fd-b441afa3c77f'
+      detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:71:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/cvf2b-correctif-pre-requete.test.ts:38:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..4
+# tests 5
+# suites 4
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 49546.410255
