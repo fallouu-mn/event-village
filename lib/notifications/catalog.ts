@@ -997,6 +997,8 @@ const CATALOG = {
     }),
     EVENT_VALIDATED: define('EVENT_VALIDATED', {
         label: 'Événement validé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
+        // Finition 4 (point 1) : décision de l'administration sans urgence, reportée à 07:00 si prise la nuit
+        night: 'DEFER',
         link: (d) => partnerEventPath(d),
         // Finition 2b (D, E-25) : les prochaines étapes dans la cloche, le push (sans coupure) et l'email ; SMS inchangé
         inApp: (d) => ({
@@ -1021,6 +1023,8 @@ const CATALOG = {
     }),
     EVENT_REJECTED: define('EVENT_REJECTED', {
         label: 'Événement non validé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
+        // Finition 4 (point 1) : décision de l'administration sans urgence, reportée à 07:00 si prise la nuit
+        night: 'DEFER',
         link: (d) => partnerEventPath(d),
         inApp: (d) => ({ title: 'Événement non validé', content: `${q(text(d, 'title'))} n'est pas validé. Motif : ${sentence(text(d, 'reason'))}` }),
         sms: (d, ctx) => `${SMS_PREFIX}événement ${smsVar(text(d, 'title'), 25)} non validé. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 40))} ${appLink(ctx, '/partner/events')}`,
@@ -1910,15 +1914,21 @@ const CATALOG = {
     }),
     // N10 (R46) : le destinataire refuse le billet ; l'expéditeur le garde.
     TRANSFER_DECLINED_SENDER: define('TRANSFER_DECLINED_SENDER', {
-        label: 'Transfert refusé (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        label: 'Transfert refusé (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        night: 'DEFER',
         link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Billet refusé', content: `Le destinataire a refusé votre billet pour ${q(text(d, 'title'))} : il reste dans vos billets.` }),
+        // Finition 4 (point 4, E-46) : billet revenu à l'expéditeur
+        sms: (d, ctx) => `${SMS_PREFIX}le destinataire a refusé votre billet ${smsVar(text(d, 'title'), 30)}. Il vous revient : ${appLink(ctx, '/tickets')}`,
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     // N11 (R63) : le destinataire change de numéro ; le transfert est annulé.
     TRANSFER_RECIPIENT_CHANGED: define('TRANSFER_RECIPIENT_CHANGED', {
-        label: 'Transfert annulé (numéro du destinataire changé)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        label: 'Transfert annulé (numéro du destinataire changé)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        night: 'DEFER',
         link: () => '/tickets?tab=a-venir',
+        // Finition 4 (point 4, E-46) : billet revenu à l'expéditeur
+        sms: (d, ctx) => `${SMS_PREFIX}transfert du billet ${smsVar(text(d, 'title'), 25)} annulé, le destinataire a changé de numéro. Il vous revient : ${appLink(ctx, '/tickets')}`,
         inApp: (d) => ({
             title: 'Transfert annulé',
             content: `Le destinataire de votre billet pour ${q(text(d, 'title'))} a changé de numéro : le transfert est annulé et le billet reste dans vos billets.`,
