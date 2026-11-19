@@ -1,0 +1,146 @@
+TAP version 13
+# Subtest: C4 et C6 — RPC du contrat
+    # Subtest: user_roles_set et otp_check : SECURITY DEFINER, search_path = public, service_role seul
+    ok 1 - user_roles_set et otp_check : SECURITY DEFINER, search_path = public, service_role seul
+      ---
+      duration_ms: 9.501481
+      type: 'test'
+      ...
+    # Subtest: setUserRoles passe par user_roles_set (plus d’INSERT puis DELETE séparés) ; otp-store passe par otp_check (plus d’UPDATE de attempts)
+    ok 2 - setUserRoles passe par user_roles_set (plus d’INSERT puis DELETE séparés) ; otp-store passe par otp_check (plus d’UPDATE de attempts)
+      ---
+      duration_ms: 0.496824
+      type: 'test'
+      ...
+    1..2
+ok 1 - C4 et C6 — RPC du contrat
+  ---
+  duration_ms: 305.066839
+  type: 'suite'
+  ...
+# Subtest: C4 — user_roles_set : tout ou rien
+    # Subtest: RPC : remplace l’ensemble des rôles d’un compte (CLIENT → CLIENT + PARTENAIRE)
+    ok 1 - RPC : remplace l’ensemble des rôles d’un compte (CLIENT → CLIENT + PARTENAIRE)
+      ---
+      duration_ms: 151.257791
+      type: 'test'
+      ...
+    # Subtest: RPC : retrait de CONTROLEUR (caisse ouverte) + ajout d’ADMIN → refus CONTROLLER_HAS_OPEN_SHIFT, aucun rôle modifié
+    ok 2 - RPC : retrait de CONTROLEUR (caisse ouverte) + ajout d’ADMIN → refus CONTROLLER_HAS_OPEN_SHIFT, aucun rôle modifié
+      ---
+      duration_ms: 216.096662
+      type: 'test'
+      ...
+    # Subtest: « Changer le rôle » (SUPERADMIN, ADMIN) sur un contrôleur à caisse ouverte → 409 CONTROLLER_HAS_OPEN_SHIFT ; rôles et users.role inchangés ; le PATCH refuse aussi
+    ok 3 - « Changer le rôle » (SUPERADMIN, ADMIN) sur un contrôleur à caisse ouverte → 409 CONTROLLER_HAS_OPEN_SHIFT ; rôles et users.role inchangés ; le PATCH refuse aussi
+      ---
+      duration_ms: 545.475659
+      type: 'test'
+      ...
+    1..3
+ok 2 - C4 — user_roles_set : tout ou rien
+  ---
+  duration_ms: 913.101609
+  type: 'suite'
+  ...
+# Subtest: C6 — otp_check : compteur atomique, limite de 5 essais, consommation
+    # Subtest: 5 essais faux comptés un par un ; le 6ᵉ et le bon code ensuite → TOO_MANY_ATTEMPTS ; attempts = 5
+    ok 1 - 5 essais faux comptés un par un ; le 6ᵉ et le bon code ensuite → TOO_MANY_ATTEMPTS ; attempts = 5
+      ---
+      duration_ms: 29.740154
+      type: 'test'
+      ...
+    # Subtest: bon code → accepté et consommé (verified) ; le même code rejoué → refusé
+    ok 2 - bon code → accepté et consommé (verified) ; le même code rejoué → refusé
+      ---
+      duration_ms: 8.795842
+      type: 'test'
+      ...
+    # Subtest: 10 essais faux simultanés (RPC) : attempts = 5 exactement, au plus 5 refus INVALID, puis le bon code refusé
+    ok 3 - 10 essais faux simultanés (RPC) : attempts = 5 exactement, au plus 5 refus INVALID, puis le bon code refusé
+      ---
+      duration_ms: 46.846827
+      type: 'test'
+      ...
+    # Subtest: 10 essais faux simultanés par verifyStoredOtp (vérificateur du retrait) : attempts = 5, puis le bon code refusé (TOO_MANY_ATTEMPTS)
+    ok 4 - 10 essais faux simultanés par verifyStoredOtp (vérificateur du retrait) : attempts = 5, puis le bon code refusé (TOO_MANY_ATTEMPTS)
+      ---
+      duration_ms: 35.255916
+      type: 'test'
+      ...
+    # Subtest: POST /api/withdrawals/request : quota par compte (WITHDRAWAL_REQUEST_PER_USER_HOUR = 3) → 4ᵉ demande en 429
+    ok 5 - POST /api/withdrawals/request : quota par compte (WITHDRAWAL_REQUEST_PER_USER_HOUR = 3) → 4ᵉ demande en 429
+      ---
+      duration_ms: 198.453798
+      type: 'test'
+      ...
+    1..5
+ok 3 - C6 — otp_check : compteur atomique, limite de 5 essais, consommation
+  ---
+  duration_ms: 319.609046
+  type: 'suite'
+  ...
+[INVARIANT] dette-roles-otp — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] dette-roles-otp — purge des réservations échues : {"expired":0}
+[INVARIANT] dette-roles-otp — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] dette-roles-otp — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] dette-roles-otp — (g)(h)(i) : 2 violation(s)
+[INVARIANT-ACCES]   (g) 5645843f-ce45-4e34-9545-142092bf89af : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+[INVARIANT-ACCES]   (g) c45678a7-c3c1-43a9-a65d-710f27d0554c : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+not ok 4 - /home/runner/work/event-village/event-village/tests/parcours/dette-roles-otp.test.ts
+  ---
+  duration_ms: 54.632678
+  location: '/home/runner/work/event-village/event-village/tests/parcours/dette-roles-otp.test.ts:2:1998'
+  failureType: 'hookFailed'
+  error: |-
+    invariant du contrôle violé :
+    (g) 5645843f-ce45-4e34-9545-142092bf89af : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+    (g) c45678a7-c3c1-43a9-a65d-710f27d0554c : billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé
+    + actual - expected
+    
+    + [
+    +   {
+    +     detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé',
+    +     objet: '5645843f-ce45-4e34-9545-142092bf89af',
+    +     regle: 'g'
+    +   },
+    +   {
+    +     detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé',
+    +     objet: 'c45678a7-c3c1-43a9-a65d-710f27d0554c',
+    +     regle: 'g'
+    +   }
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0:
+      regle: 'g'
+      objet: '5645843f-ce45-4e34-9545-142092bf89af'
+      detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé'
+    1:
+      regle: 'g'
+      objet: 'c45678a7-c3c1-43a9-a65d-710f27d0554c'
+      detail: 'billet UTILISE : 0 scan(s) accepté(s), dont 0 par un scanneur autorisé'
+  operator: 'deepStrictEqual'
+  stack: |-
+    assertAccessInvariants (/home/runner/work/event-village/event-village/tests/helpers/access-invariants.ts:71:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async assertLifecycleInvariants (/home/runner/work/event-village/event-village/tests/helpers/lifecycle-invariants.ts:188:5)
+    async TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/dette-roles-otp.test.ts:64:5)
+    async TestHook.run (node:internal/test_runner/test:1054:7)
+    async Test.runHook (node:internal/test_runner/test:965:9)
+    async after (node:internal/test_runner/test:1005:9)
+    async Test.run (node:internal/test_runner/test:1070:7)
+  ...
+1..3
+# tests 10
+# suites 3
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1602.08107
