@@ -1029,8 +1029,11 @@ export default function ControllerScannerPage() {
         </div>
     ) : null;
 
+    // Design 1c (point 3) : en paysage (téléphone tenu en largeur), caméra à gauche et commandes à droite, sans défilement
+    // pour viser ; en portrait, une colonne dans le même ordre qu'avant.
     const control = (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 paysage:grid paysage:grid-cols-2 paysage:items-start paysage:gap-4">
+            <div className="flex min-w-0 flex-col gap-3">
             {banner ? (
                 <StatusBanner tone={banner.tone} title={banner.title}>
                     {banner.text}
@@ -1056,7 +1059,7 @@ export default function ControllerScannerPage() {
                     ) : (
                         // Repli (caméra préchargée pas encore arrivée) : même cadre que la caméra, aucun décalage
                         <div role="status" aria-busy="true"
-                            className="mx-auto flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-3 rounded-3xl border-2 border-input bg-scan-tech-bg p-6 text-center text-scan-tech-fg">
+                            className="mx-auto flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-3 rounded-3xl border-2 border-input bg-scan-tech-bg p-6 text-center text-scan-tech-fg paysage:max-w-[min(24rem,calc(100svh-9rem))]">
                             <Loader2 size={32} aria-hidden="true" className="motion-safe:animate-spin" />
                             <p className="text-base font-semibold">Préparation de la caméra…</p>
                         </div>
@@ -1075,7 +1078,13 @@ export default function ControllerScannerPage() {
                             />
                         </div>
                     )}
+                </>
+            )}
+            </div>
 
+            <div className="flex min-w-0 flex-col gap-3">
+            {!banner && (
+                <>
                     {pendingNotice && (
                         <StatusBanner tone="warning" title="Scan sans réponse">
                             {pendingNotice}
@@ -1148,6 +1157,7 @@ export default function ControllerScannerPage() {
                     />}
                 </div>
             </details>
+            </div>
         </div>
     );
 
