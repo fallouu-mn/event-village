@@ -23,8 +23,8 @@ const DOT: Record<ScanCategoryColor, string> = {
 export function CategoryPill({ category }: { category: TeamCategory }) {
     const color = isScanCategoryColor(category.scan_color) ? category.scan_color : null;
     return (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-sm text-fg">
-            {color && <span aria-hidden="true" className={`h-3 w-3 flex-shrink-0 rounded-full border border-border-strong ${DOT[color]}`} />}
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-sm text-foreground-strong">
+            {color && <span aria-hidden="true" className={`h-3 w-3 flex-shrink-0 rounded-full border border-input ${DOT[color]}`} />}
             <span>{category.name}</span>
             {color && <span className="sr-only">{`, pastille ${SCAN_CATEGORY_COLOR_LABELS[color].toLowerCase()}`}</span>}
         </span>
@@ -33,12 +33,12 @@ export function CategoryPill({ category }: { category: TeamCategory }) {
 
 /** « Laisse entrer : … » d'une porte, ou « Toutes les catégories » sans zone. */
 export function GateAdmits({ categories, hasZones }: { categories: TeamCategory[] | null; hasZones: boolean }) {
-    if (!hasZones) return <p className="text-sm text-fg-muted">Laisse entrer : toutes les catégories</p>;
+    if (!hasZones) return <p className="text-sm text-muted-foreground">Laisse entrer : toutes les catégories</p>;
     if (!categories) return null;
-    if (categories.length === 0) return <p className="text-sm font-semibold text-warning-fg">Cette porte ne laisse entrer aucune catégorie.</p>;
+    if (categories.length === 0) return <p className="text-sm font-semibold text-warning-text">Cette porte ne laisse entrer aucune catégorie.</p>;
     return (
         <div className="flex flex-wrap items-center gap-1.5 text-sm">
-            <span className="text-fg-muted">Laisse entrer :</span>
+            <span className="text-muted-foreground">Laisse entrer :</span>
             {categories.map((c) => <CategoryPill key={c.name} category={c} />)}
         </div>
     );

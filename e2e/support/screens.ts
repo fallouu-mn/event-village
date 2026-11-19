@@ -767,6 +767,9 @@ async function delayedWithdrawalReady(page: Page): Promise<void> {
     await expect(page.getByText('Retardé', { exact: true }).filter({ visible: true }).first(), 'badge « Retardé » (delayed servi par le serveur)').toBeVisible();
     const phrase = page.getByText('Retardé : l’équipe Event Village s’en occupe.', { exact: true }).filter({ visible: true }).first();
     await expect(phrase).toBeVisible();
+    // Design 1c (E-03, N-02) : un retrait retardé n'est jamais dit « Versé » ; son montant est « Montant envoyé : … »
+    await expect(page.getByText(/^Montant envoyé : 5\s940\sF\sCFA · frais : 60\sF\sCFA$/).filter({ visible: true }).first(), 'retrait retardé : « Montant envoyé »').toBeVisible();
+    await expect(page.getByText(/^Versé/).filter({ visible: true }), 'retrait retardé : aucun « Versé »').toHaveCount(0);
     await revealCenter(phrase);
 }
 
@@ -1948,7 +1951,7 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'caisse-ticket-z', titre: 'Caisse — Z de caisse après la clôture', role: 'controleur', needsIds: true,
+        id: 'caisse-ticket-z', titre: 'Caisse — récapitulatif de caisse après la clôture', role: 'controleur', needsIds: true,
         path: () => '/controller/scanner', views: DARK_VIEWS, fakeCamera: true,
         stubResponses: [{
             url: /\/api\/controller\/shifts\/close$/, method: 'POST', status: 200,

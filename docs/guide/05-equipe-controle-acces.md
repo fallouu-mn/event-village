@@ -38,7 +38,7 @@
 | 05.21 | Guichet : vente en espèces à l'entrée |
 | 05.22 | Code PIN régisseur : générer, régénérer |
 | 05.23 | Ouvrir sa caisse |
-| 05.24 | Clôturer sa caisse : sans écart, avec écart (justification et PIN), Z de caisse |
+| 05.24 | Clôturer sa caisse : sans écart, avec écart (justification et PIN), récapitulatif de caisse |
 | 05.25 | Fermer la caisse d'un contrôleur : par la partenaire ou par un admin |
 | 05.26 | Caisse encore ouverte à la fin de l'événement |
 | 05.27 | Onglet Entrées du pilotage (tableau de bord des entrées) |
@@ -993,8 +993,8 @@ Règles communes à tout le fichier :
 ## 05.22 Code PIN régisseur : générer, régénérer
 
 1. **Qui, où.** Partenaire propriétaire, admin `events.write` ou SUPERADMIN : pilotage, onglet « Caisse », section « Code
-   PIN régisseur » / « Le PIN est exigé à l’ouverture de chaque caisse et co-signe une clôture avec écart. Il n’est
-   affiché qu’une fois, à sa génération. » (`components/partner/pilotage/CashTab.tsx:160-186`,
+   PIN régisseur » / « Code de 6 chiffres, exigé à l’ouverture de chaque caisse. Il n’est affiché qu’une fois, à sa
+   génération. Un écart de clôture se valide ici, depuis votre compte, et non plus par le code PIN. » (design 1c) (`components/partner/pilotage/CashTab.tsx:160-186`,
    `app/api/partner/events/[id]/regisseur-pin/route.ts:15-60`). État : « Un code est en place depuis le {date}. » ou
    « Aucun code PIN : vos contrôleurs ne peuvent ni ouvrir ni clôturer de caisse. » (ce dernier texte est trop large :
    une clôture **sans écart** n'exige pas de PIN, constat W5-05). Bouton « Générer le code PIN » ou « Régénérer le code
@@ -1034,7 +1034,7 @@ Règles communes à tout le fichier :
    | Champ | Aide | Erreur à l'écran |
    |---|---|---|
    | « Fonds de caisse remis par le régisseur (F CFA) » (0 par défaut) | « Montant en espèces remis pour rendre la monnaie. 0 si aucun fonds n’est remis. » | « Saisissez un montant entier en francs, sans virgule (par exemple 2 750). » |
-   | « Code PIN du régisseur » (masqué, 8 chiffres au plus, obligatoire) | « PIN obligatoire : le régisseur le saisit lui-même pour confirmer l’ouverture de la caisse. » | « Saisissez le code PIN du régisseur. » ; « Le code PIN du régisseur compte de 4 à 8 chiffres. » |
+   | « Code PIN du régisseur » (masqué, 6 chiffres, clavier numérique, obligatoire) | « 6 chiffres. Obligatoire : le régisseur le saisit lui-même pour confirmer l’ouverture de la caisse. » | « Saisissez le code PIN du régisseur. » ; « Le code PIN du régisseur compte 6 chiffres. » (design 1c ; même règle côté serveur) |
 
    Boutons « Annuler » et « Ouvrir la caisse » (`components/shifts/ShiftModals.tsx:81-83`, `:124-155`).
 3. **Ce que fait le système.** Contrôle ouvert (05.14), droit d'encaisser, PIN vérifié (5 essais par quart d'heure),
@@ -1053,7 +1053,7 @@ Règles communes à tout le fichier :
    | Pas le droit | « Ouverture de caisse réservée au contrôleur affecté avec la permission espèces, au partenaire propriétaire ou à un admin. » | `lib/shifts/shift.service.ts:186` |
    | Fonds négatif | « Le fond de caisse doit être positif ou nul. » | `lib/shifts/shift.service.ts:187` |
    | Déjà ouverte | « Une session de caisse est déjà ouverte pour cet événement. Clôturez-la avant d’en ouvrir une nouvelle. » | `lib/shifts/shift.service.ts:188` |
-   | PIN | « Saisissez le code PIN du régisseur. » ; « Code PIN régisseur incomplet (4 à 8 chiffres). » ; « Code PIN régisseur incorrect. » ; « Trop de tentatives de code PIN. Réessayez dans {n} s. » ; « Vérification du code PIN momentanément indisponible. » | `lib/shifts/shift.service.ts:190`, `:291-317` |
+   | PIN | « Saisissez le code PIN du régisseur. » ; « Code PIN régisseur incomplet : 6 chiffres. » ; « Code PIN régisseur incorrect. » ; « Trop de tentatives de code PIN. Réessayez dans {n} s. » ; « Vérification du code PIN momentanément indisponible. » | `lib/shifts/shift.service.ts:190`, `:291-317` |
    | Aucun PIN généré | « Aucun code PIN régisseur pour cet événement : l’organisateur le génère dans l’onglet Caisse du pilotage. » | `lib/shifts/shift.service.ts:181`, `:306-308` |
    | Réseau | « Réseau indisponible : la caisse n’est pas ouverte. Réessayez. » | `components/shifts/ShiftModals.tsx:106` |
 
@@ -1061,7 +1061,7 @@ Règles communes à tout le fichier :
 
 ---
 
-## 05.24 Clôturer sa caisse : sans écart, avec écart, Z de caisse
+## 05.24 Clôturer sa caisse : sans écart, avec écart, récapitulatif de caisse
 
 1. **Qui, où.** Le contrôleur de la caisse : scanner, onglet « Caisse », « Clôturer ma caisse » ; fenêtre « Clôturer ma
    caisse » / « Décompte des espèces avec le régisseur » (`components/shifts/ShiftModals.tsx:244-256`). L'onglet reste
@@ -1070,18 +1070,20 @@ Règles communes à tout le fichier :
    champ « Espèces encaissées comptées, hors fonds de caisse (F CFA) » / « Comptez les espèces avec le régisseur, mettez
    de côté le fonds de caisse, puis saisissez le reste. » (erreur « Saisissez le montant compté, en francs entiers, sans
    virgule. ») ; bouton « Clôturer la caisse » (`:204`, `:258-292`). Si le montant diffère des encaissements enregistrés,
-   le serveur renvoie l'écart et la fenêtre ajoute : bandeau « Écart constaté » / « Écart de {montant} avec les
-   encaissements enregistrés. Justifiez l’écart ; le régisseur co-signe la clôture avec son code PIN. » ; « Justification
+   le serveur renvoie l'écart et la fenêtre ajoute : bandeau « Écart constaté » / « Il manque {montant} » ou
+   « {montant} de trop », suivi de « par rapport aux encaissements enregistrés. » (design 1c, écart dit en mots,
+   `lib/partner/ecart-caisse.ts`) Justifiez l’écart ; le régisseur co-signe la clôture avec son code PIN. » ; « Justification
    de l’écart » (« 10 caractères au moins (par exemple : monnaie rendue en trop à un spectateur). », 1 000 au plus) ;
    « Code PIN du régisseur » (« Le régisseur saisit lui-même son code. ») ; bouton « Clôturer avec l’écart »
    (`:293-327`).
 3. **Ce que fait le système.** Écart = compté − attendu (négatif : il manque des espèces). Sans écart : clôture directe,
    **sans PIN**. Avec écart : justification et PIN exigés, contrôlés à nouveau sous verrou ; clôture « co-signée »
    (`lib/shifts/shift.service.ts:386-454`, `M/20261109000008_lot9bis_cycle.sql:792-946`). Journal `SHIFT_CLOSED`.
-   Fenêtre « Caisse clôturée » / « Z de caisse » : « Événement », « Contrôleur », « Ouverture », « Clôture », « Fonds de
-   caisse », « Encaissements enregistrés », « Encaissements comptés », « Écart » (« Aucun écart » ou le montant),
+   Fenêtre « Caisse clôturée » / « Récapitulatif de caisse » : « Événement », « Contrôleur », « Ouverture », « Clôture », « Fonds de
+   caisse », « Encaissements enregistrés », « Encaissements comptés », « Écart » (« Aucun écart », « Il manque {montant} » ou
+   « {montant} de trop »),
    « Justification : … », puis « Clôture co-signée par le code PIN du régisseur. » ou « Clôture sans co-signature (aucun
-   écart). » ; boutons « Imprimer le Z » et « Terminé » (`components/shifts/ShiftModals.tsx:341-386`). La dernière caisse
+   écart). » ; boutons « Imprimer le récapitulatif » et « Terminé » (`components/shifts/ShiftModals.tsx:341-386`). La dernière caisse
    fermée d'un événement Terminé déclenche l'avis du rapport de clôture (`CLOSING_REPORT_READY`, voir 04 et 10)
    (`M/20261109000009_lot9bis_messages.sql:43-45`).
 4. **Messages envoyés.**
@@ -1094,8 +1096,8 @@ Règles communes à tout le fichier :
    Preuves : `lib/notifications/catalog.ts:966-979` ; `M/20261109000008_lot9bis_cycle.sql:897-917` ({contrôleur} =
    « Prénom Nom », sinon « votre contrôleur »).
 5. **Ce que voient les autres rôles.** Partenaire, onglet « Caisse » : la session « Clôturée », « Déclaré », « Écart »
-   et la justification ; « Écart cumulé » / « Déclaré moins attendu, caisses clôturées » ; le Z détaillé est dans
-   l'onglet « Clôture » (`components/partner/pilotage/CashTab.tsx:35-55`, `:147-158`, `:205-213`).
+   (« Il manque {montant} », « {montant} de trop » ou « Aucun écart ») et la justification ; « Écart cumulé » / « Espèces
+   comptées comparées aux espèces attendues, caisses clôturées » ; le récapitulatif détaillé est dans l'onglet « Clôture » (`components/partner/pilotage/CashTab.tsx:35-55`, `:147-158`, `:205-213`).
 6. **Refus (bandeau « Clôture refusée »).** « Un écart de caisse doit être justifié (10 caractères au moins). » ; « Le
    code PIN régisseur est obligatoire pour co-signer une clôture avec écart. » ; « La justification est limitée à 1 000
    caractères. » ; « Le montant déclaré doit être un nombre entier de francs, positif ou nul. » ; « Code PIN régisseur
@@ -1116,7 +1118,7 @@ Règles communes à tout le fichier :
 2. **Ce qu'il saisit.** Fenêtre « Fermer cette caisse » / « Caisse de {contrôleur} : décompte des espèces remises », mêmes
    champs et même règle d'écart qu'en 05.24 (`components/shifts/ShiftModals.tsx:246-247`).
 3. **Ce que fait le système.** Même clôture qu'en 05.24, journalisée au rôle « PARTENAIRE » ou « ADMIN » ; toast
-   « Caisse fermée. » et Z de caisse (`M/20261109000008_lot9bis_cycle.sql:824-840`, `components/partner/pilotage/CashTab.tsx:256-270`).
+   « Caisse fermée. » et récapitulatif de caisse (`M/20261109000008_lot9bis_cycle.sql:824-840`, `components/partner/pilotage/CashTab.tsx:256-270`).
 4. **Messages envoyés.**
 
    | Destinataire | Canal | Indispensable ou optionnel | Quand | Texte exact |

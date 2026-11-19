@@ -222,7 +222,7 @@ pas actif. Contactez le support. » (`app/api/checkout/route.ts:15`, `lib/auth/s
 
 | Section | Entrée | Page | Ce qu’elle montre, ce qu’on y fait |
 |---|---|---|---|
-| Gestion | Tableau de bord | `/partner/dashboard` | « Ventes, entrées et solde de vos événements. » ; boutons « Actualiser », « Export comptable », « Scanner des billets » ; indicateurs « Ventes en ligne », « Net partenaire », « Billets vendus »… ; période d’essai ; étapes du premier événement (voir 03) (`app/partner/dashboard/page.tsx:405-432`, `:486-520`) |
+| Gestion | Tableau de bord | `/partner/dashboard` | « Ventes, entrées et solde de vos événements. » ; boutons « Actualiser », « Export comptable », « Scanner des billets » ; indicateurs « Ventes en ligne (brut) », « Recettes nettes », « Billets vendus »… ; période d’essai ; étapes du premier événement (voir 03) (`app/partner/dashboard/page.tsx:405-432`, `:486-520`) |
 | | Événements | `/partner/events` | « Mes événements » : « Soumettez, publiez et pilotez vos événements. » ; chaque événement ouvre son pilotage `/partner/events/<id>` (ventes, équipe, caisses, remboursements) (voir 04, 05, 08) (`app/partner/events/page.tsx:203-204`) |
 | | Produits et menu | `/partner/products` | masquée (service des repas fermé) |
 | | Salles de fête | `/partner/halls` | masquée (service des salles fermé) |
@@ -230,9 +230,9 @@ pas actif. Contactez le support. » (`app/api/checkout/route.ts:15`, `lib/auth/s
 | | Commandes | `/partner/orders` | masquée (service des repas fermé) |
 | | Équipe | `/partner/team` | « Équipe de contrôle » : invitations, affectations, retraits (voir 05) (`app/partner/team/page.tsx:535`) |
 | Outils | Finances | `/partner/finance` | « Finances » : « Ventes en ligne de vos événements. Les ventes en espèces et les invitations n’alimentent pas ce solde. » ; solde, retraits (voir 08) (`app/partner/finance/page.tsx:533-534`) |
-| | Statistiques | `/partner/stats` | « Statistiques » : « Données réelles isolées à votre espace partenaire » (`app/partner/stats/page.tsx:162-168`) |
+| | Statistiques | `/partner/stats` | « Statistiques de ventes » : « Vos recettes et vos billets sur la période choisie. Les ventes en espèces et les invitations n’y figurent pas. » (`app/partner/stats/page.tsx`, design 1c) |
 | | Scanner les billets | `/partner/scan` | « Contrôle des entrées » : choix d’un événement dont le contrôle est ouvert, caméra ou saisie manuelle (voir 05) (`app/partner/scan/page.tsx:430-434`) |
-| | Calendrier | `/partner/calendar` | « Calendrier Événementiel » : « Visualisez le planning de vos événements et réservations. » ; bouton « Nouvel événement » ; affiche tous les événements de la partenaire (`app/partner/calendar/page.tsx:15-33`, `:41-52`) |
+| | Calendrier | `/partner/calendar` | « Calendrier » : « Vos événements, placés à leur date de début. » ; bouton « Nouvel événement » ; affiche tous les événements de la partenaire (`app/partner/calendar/page.tsx`, design 1c) |
 | | Abonnement | `/partner/subscription` | « Abonnement » : période d’essai, offre actuelle, offres publiées (voir 01.13) |
 | | Profil partenaire | `/partner/profile` | « Page professionnelle » (voir 03) |
 | (pied) | Retour au site | `/` | revient à l’espace client |

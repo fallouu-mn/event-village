@@ -14,7 +14,8 @@ import { OtpInput } from '@/components/auth/OtpInput';
 import { PasswordStrengthChecklist } from '@/components/auth/PasswordStrengthChecklist';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { PartnerActivityTypes, RegisterPartnerFieldsSchema, normalizePhoneNumber } from '@/lib/validations/auth';
-import { partnerActivityLabel } from '@/lib/partner/activity-labels';
+import { orderedPartnerActivities, partnerActivityLabel } from '@/lib/partner/activity-labels';
+import { useFeatureFlags } from '@/lib/features/client';
 import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
 
 /**
@@ -97,6 +98,8 @@ function errorText(body: Record<string, unknown>, fallback: string): string {
 
 export default function PartnerRegisterPage() {
   const { isAuthenticated, signOut } = useAuth();
+  // Design 1c : « Organisation d’événements » d'abord, les activités d'un service fermé en fin de liste
+  const activityChoices = orderedPartnerActivities(PartnerActivityTypes, useFeatureFlags());
 
   const [companyName, setCompanyName] = useState('');
   const [commercialName, setCommercialName] = useState('');
@@ -341,13 +344,13 @@ export default function PartnerRegisterPage() {
     const id = FIELD_IDS[field];
     const error = fieldErrors[field];
     return (
-      <div className={cn('space-y-2 rounded-2xl border border-dashed p-4', file ? 'border-success-border bg-success-bg' : 'border-border-strong bg-surface-sunken', error && 'border-danger')}>
-        <label htmlFor={id} className="block text-sm font-semibold text-fg">
+      <div className={cn('space-y-2 rounded-xl border border-dashed p-4', file ? 'border-success-border bg-success-soft' : 'border-input bg-muted', error && 'border-danger')}>
+        <label htmlFor={id} className="block text-sm font-semibold text-foreground-strong">
           {label}
-          <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+          <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
           <span className="sr-only"> (obligatoire)</span>
         </label>
-        <p id={`${id}-aide`} className="text-sm text-fg-muted">{hint}</p>
+        <p id={`${id}-aide`} className="text-sm text-muted-foreground">{hint}</p>
         <input
           id={id}
           type="file"
@@ -358,15 +361,15 @@ export default function PartnerRegisterPage() {
             setFile(e.target.files?.[0] ?? null);
             clearError(field);
           }}
-          className="block w-full text-sm text-fg file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-brand file:px-4 file:text-sm file:font-semibold file:text-on-brand"
+          className="block w-full text-sm text-foreground-strong file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-primary file:px-4 file:text-sm file:font-semibold file:text-primary-foreground"
         />
         {file && (
-          <p className="flex items-center gap-1.5 text-sm font-medium text-success-fg">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-success-text">
             <CheckCircle2 size={16} aria-hidden="true" />
             <span className="break-all">{`Fichier choisi : ${file.name}`}</span>
           </p>
         )}
-        {error && <p id={`${id}-erreur`} className="text-sm font-medium text-danger-fg">{error}</p>}
+        {error && <p id={`${id}-erreur`} className="text-sm font-medium text-danger-text">{error}</p>}
       </div>
     );
   };
@@ -385,18 +388,18 @@ export default function PartnerRegisterPage() {
       />
 
       {!isSuccess && !(isAuthenticated && !otpPhone) && (
-        <p className="text-sm font-semibold text-fg-muted" aria-live="polite">
+        <p className="text-sm font-semibold text-muted-foreground" aria-live="polite">
           {otpPhone ? 'Étape 2 sur 2 : le code reçu par SMS' : 'Étape 1 sur 2 : votre dossier'}
         </p>
       )}
 
       {isAuthenticated && !otpPhone && !isSuccess ? (
-        <section aria-labelledby="partenaire-connecte" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-          <h2 id="partenaire-connecte" className="text-lg font-semibold text-fg">Vous êtes déjà connecté</h2>
-          <p className="text-base leading-relaxed text-fg-muted">
+        <section aria-labelledby="partenaire-connecte" className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+          <h2 id="partenaire-connecte" className="text-lg font-semibold text-foreground-strong">Vous êtes déjà connecté</h2>
+          <p className="text-base leading-relaxed text-muted-foreground">
             Ce formulaire crée un compte professionnel distinct, avec un autre numéro de téléphone. Votre compte actuel n’est pas transformé en compte partenaire.
           </p>
-          <p className="text-base leading-relaxed text-fg-muted">
+          <p className="text-base leading-relaxed text-muted-foreground">
             Pour inscrire votre structure, déconnectez-vous, puis revenez sur cette page avec le numéro professionnel.
           </p>
           <div className="flex flex-wrap gap-3">
@@ -407,27 +410,27 @@ export default function PartnerRegisterPage() {
           </div>
         </section>
       ) : isSuccess ? (
-        <section aria-labelledby="partenaire-recu" className="space-y-5 rounded-2xl border border-border bg-surface p-4 text-center sm:p-8" role="status">
-          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-warning-bg text-warning-fg" aria-hidden="true">
+        <section aria-labelledby="partenaire-recu" className="space-y-5 rounded-xl border border-border bg-card p-4 text-center sm:p-8" role="status">
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-warning-soft text-warning-text" aria-hidden="true">
             <Clock size={32} />
           </span>
           <Badge variant="warning">En attente de validation</Badge>
-          <h2 id="partenaire-recu" className="text-2xl font-bold text-fg">Dossier reçu</h2>
-          <p className="mx-auto max-w-md text-base leading-relaxed text-fg-muted">
+          <h2 id="partenaire-recu" className="text-2xl font-bold text-foreground-strong">Dossier reçu</h2>
+          <p className="mx-auto max-w-md text-base leading-relaxed text-muted-foreground">
             Votre numéro est vérifié. Notre équipe examine votre dossier et vos pièces.
           </p>
           {emailLink && (
             emailLink.sent && emailLink.to ? (
-              <p className="mx-auto max-w-md break-words text-sm leading-relaxed text-fg">
+              <p className="mx-auto max-w-md break-words text-sm leading-relaxed text-foreground">
                 Un lien de vérification a été envoyé à <strong className="font-semibold">{emailLink.to}</strong>. Il est valable 24 heures.
               </p>
             ) : (
-              <p className="mx-auto max-w-md text-sm leading-relaxed text-fg">
+              <p className="mx-auto max-w-md text-sm leading-relaxed text-foreground">
                 Le lien n’a pas pu être envoyé. Renvoyez-le depuis votre profil.
               </p>
             )
           )}
-          <ol className="mx-auto max-w-md space-y-2 rounded-2xl border border-border bg-surface-sunken p-4 text-left text-sm text-fg">
+          <ol className="mx-auto max-w-md space-y-2 rounded-xl border border-border bg-muted p-4 text-left text-sm text-foreground">
             <li>1. Vérification des pièces, en général sous 24 à 48 heures.</li>
             <li>2. Un SMS vous prévient dès la validation de votre compte.</li>
             <li>3. Vous créez et publiez votre premier événement depuis votre espace.</li>
@@ -441,16 +444,16 @@ export default function PartnerRegisterPage() {
           )}
         </section>
       ) : otpPhone ? (
-        <section aria-labelledby="partenaire-code" className="space-y-5 rounded-2xl border border-border bg-surface p-4 sm:p-6">
+        <section aria-labelledby="partenaire-code" className="space-y-5 rounded-xl border border-border bg-card p-4 sm:p-6">
           <div className="space-y-2 text-center">
-            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
               <MailCheck size={28} />
             </span>
-            <h2 id="partenaire-code" className="text-xl font-bold text-fg">Vérifiez votre numéro</h2>
-            <p className="text-base text-fg-muted">
-              Code envoyé au <strong className="font-semibold tabular-nums text-fg">{otpPhone}</strong>. Saisissez-le pour envoyer votre dossier.
+            <h2 id="partenaire-code" className="text-xl font-bold text-foreground-strong">Vérifiez votre numéro</h2>
+            <p className="text-base text-muted-foreground">
+              Code envoyé au <strong className="font-semibold tabular-nums text-foreground-strong">{otpPhone}</strong>. Saisissez-le pour envoyer votre dossier.
             </p>
-            <p className="text-sm text-fg-muted">Le code à 6 chiffres reste valable 10 minutes. Votre dossier n’est enregistré qu’après sa vérification.</p>
+            <p className="text-sm text-muted-foreground">Le code à 6 chiffres reste valable 10 minutes. Votre dossier n’est enregistré qu’après sa vérification.</p>
           </div>
           <form onSubmit={handleVerify} noValidate className="mx-auto max-w-sm space-y-4">
             {otpError && (
@@ -458,7 +461,7 @@ export default function PartnerRegisterPage() {
             )}
             {otpInfo && <StatusBanner tone="success" title={otpInfo} />}
             <div role="group" aria-labelledby="partenaire-code-libelle" className="space-y-1.5">
-              <p id="partenaire-code-libelle" className="text-sm font-semibold text-fg">Code reçu par SMS</p>
+              <p id="partenaire-code-libelle" className="text-sm font-semibold text-foreground-strong">Code reçu par SMS</p>
               <OtpInput value={otpCode} onChange={setOtpCode} disabled={isVerifying} hasError={Boolean(otpError)} />
             </div>
             <Button type="submit" variant="primary" size="lg" fullWidth isLoading={isVerifying} leftIcon={<Check size={18} aria-hidden="true" />}>
@@ -480,13 +483,13 @@ export default function PartnerRegisterPage() {
       ) : (
         <form onSubmit={handleSubmit} noValidate className="space-y-6">
           {formError && (
-            <div ref={summaryRef} tabIndex={-1} role="alert" aria-labelledby="partenaire-erreurs" className="space-y-2 rounded-2xl border border-danger-border bg-danger-bg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <h2 id="partenaire-erreurs" className="text-base font-semibold text-danger-fg">{formError}</h2>
+            <div ref={summaryRef} tabIndex={-1} role="alert" aria-labelledby="partenaire-erreurs" className="space-y-2 rounded-xl border border-danger-border bg-danger-soft p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <h2 id="partenaire-erreurs" className="text-base font-semibold text-danger-text">{formError}</h2>
               {errorList.length > 0 && (
-                <ul className="list-disc space-y-1 pl-5 text-sm text-fg">
+                <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
                   {errorList.map((f) => (
                     <li key={f}>
-                      <a href={`#${FIELD_IDS[f]}`} className="inline-flex min-h-11 items-center font-semibold text-danger-fg underline underline-offset-4">
+                      <a href={`#${FIELD_IDS[f]}`} className="inline-flex min-h-11 items-center font-semibold text-danger-text underline underline-offset-4">
                         {fieldErrors[f]}
                       </a>
                     </li>
@@ -496,9 +499,9 @@ export default function PartnerRegisterPage() {
             </div>
           )}
 
-          <section aria-labelledby="partenaire-structure" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-            <h2 id="partenaire-structure" className="flex items-center gap-2 text-lg font-semibold text-fg">
-              <Building2 size={20} className="text-brand-fg" aria-hidden="true" />
+          <section aria-labelledby="partenaire-structure" className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+            <h2 id="partenaire-structure" className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+              <Building2 size={20} className="text-primary-text" aria-hidden="true" />
               1. Votre structure
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -509,14 +512,14 @@ export default function PartnerRegisterPage() {
             </div>
 
             <fieldset className="space-y-2">
-              <legend id={FIELD_IDS.activities} tabIndex={-1} className="text-sm font-semibold text-fg">
+              <legend id={FIELD_IDS.activities} tabIndex={-1} className="text-sm font-semibold text-foreground-strong">
                 Activités proposées
-                <span className="ml-0.5 text-danger-fg" aria-hidden="true">*</span>
+                <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
                 <span className="sr-only"> (obligatoire)</span>
               </legend>
-              <p className="text-sm text-fg-muted">Touchez une ou plusieurs activités.</p>
+              <p className="text-sm text-muted-foreground">Touchez une ou plusieurs activités.</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {PartnerActivityTypes.map((type) => {
+                {activityChoices.map((type) => {
                   const selected = activities.includes(type);
                   return (
                     <button
@@ -526,13 +529,13 @@ export default function PartnerRegisterPage() {
                       onClick={() => toggleActivity(type)}
                       className={cn(
                         'flex min-h-11 items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        selected ? 'border-brand-fg bg-brand-bg text-fg' : 'border-border bg-surface-sunken text-fg hover:border-brand-fg',
+                        selected ? 'border-primary-text bg-primary-soft text-foreground-strong' : 'border-border bg-muted text-foreground-strong hover:border-primary-text',
                       )}
                     >
                       <span>{partnerActivityLabel(type)}</span>
                       <span
                         aria-hidden="true"
-                        className={cn('flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border', selected ? 'border-brand bg-brand text-on-brand' : 'border-border-strong bg-surface')}
+                        className={cn('flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border', selected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-card')}
                       >
                         {selected && <Check size={12} strokeWidth={3} />}
                       </span>
@@ -540,7 +543,7 @@ export default function PartnerRegisterPage() {
                   );
                 })}
               </div>
-              {fieldErrors.activities && <p className="text-sm font-medium text-danger-fg">{fieldErrors.activities}</p>}
+              {fieldErrors.activities && <p className="text-sm font-medium text-danger-text">{fieldErrors.activities}</p>}
             </fieldset>
 
             <Textarea id={FIELD_IDS.description} label="Présentation de votre structure" required rows={3} maxLength={2000} showCount
@@ -558,9 +561,9 @@ export default function PartnerRegisterPage() {
             </div>
           </section>
 
-          <section aria-labelledby="partenaire-gerant" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-            <h2 id="partenaire-gerant" className="flex items-center gap-2 text-lg font-semibold text-fg">
-              <User size={20} className="text-brand-fg" aria-hidden="true" />
+          <section aria-labelledby="partenaire-gerant" className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+            <h2 id="partenaire-gerant" className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+              <User size={20} className="text-primary-text" aria-hidden="true" />
               2. Le gérant et le compte
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -571,8 +574,9 @@ export default function PartnerRegisterPage() {
               <TextInput id={FIELD_IDS.phone} label="Téléphone professionnel" type="tel" inputMode="tel" required autoComplete="tel" placeholder="77 800 00 00"
                 hint="Le code de vérification est envoyé à ce numéro. Il ne doit pas déjà servir à un compte."
                 value={phone} onChange={(e) => { setPhone(e.target.value); clearError('phone'); }} error={fieldErrors.phone} className="tabular-nums" />
-              <TextInput id={FIELD_IDS.email} label="Email professionnel" type="email" required autoComplete="email" placeholder="direction@etablissement.sn"
-                hint="Recommandé : recevez vos billets et confirmations par email. Un lien de vérification vous est envoyé ; l’adresse ne reçoit rien d’autre tant qu’elle n’est pas vérifiée."
+              {/* Design 1c (G-51, W3-08) : email obligatoire dit comme tel (le serveur l'exige : RegisterPartnerFieldsSchema) */}
+              <TextInput id={FIELD_IDS.email} label="Email" aside="obligatoire" aria-required="true" type="email" required autoComplete="email" placeholder="direction@etablissement.sn"
+                hint="Vos confirmations et rapports y arrivent. Un lien de vérification vous est envoyé ; l’adresse ne reçoit rien d’autre tant qu’elle n’est pas vérifiée."
                 value={email} onChange={(e) => { setEmail(e.target.value); clearError('email'); }} error={fieldErrors.email} />
               <TextInput id={FIELD_IDS.password} label="Mot de passe" type="password" required autoComplete="new-password" value={password}
                 onChange={(e) => { setPassword(e.target.value); clearError('password'); }} error={fieldErrors.password} />
@@ -582,12 +586,12 @@ export default function PartnerRegisterPage() {
             <PasswordStrengthChecklist password={password} />
           </section>
 
-          <section aria-labelledby="partenaire-pieces" className="space-y-4 rounded-2xl border border-border bg-surface p-4 sm:p-6">
-            <h2 id="partenaire-pieces" className="flex items-center gap-2 text-lg font-semibold text-fg">
-              <Shield size={20} className="text-brand-fg" aria-hidden="true" />
+          <section aria-labelledby="partenaire-pieces" className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+            <h2 id="partenaire-pieces" className="flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+              <Shield size={20} className="text-primary-text" aria-hidden="true" />
               3. Pièces justificatives
             </h2>
-            <p className="text-sm leading-relaxed text-fg-muted">
+            <p className="text-sm leading-relaxed text-muted-foreground">
               Les deux pièces sont obligatoires. Elles sont rangées dans un espace privé, lues seulement par l’équipe qui valide votre dossier. PDF, JPEG, PNG ou WebP, 10 Mo au plus.
             </p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -597,18 +601,18 @@ export default function PartnerRegisterPage() {
           </section>
 
           {progress && (
-            <p role="status" className="flex items-center gap-2 text-sm text-fg-muted">
+            <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
               <FileText size={16} aria-hidden="true" />
               {progress}
             </p>
           )}
 
-          <p className="text-sm text-fg-muted">Un code vous est d’abord envoyé par SMS au téléphone professionnel ; le dossier n’est enregistré qu’une fois ce code saisi.</p>
-          <Button type="submit" variant="primary" size="lg" fullWidth isLoading={isSubmitting} leftIcon={<Upload size={18} aria-hidden="true" />}>
+          <p className="text-sm text-muted-foreground">Un code vous est d’abord envoyé par SMS au téléphone professionnel ; le dossier n’est enregistré qu’une fois ce code saisi.</p>
+          <Button type="submit" variant="gradient" size="lg" fullWidth isLoading={isSubmitting} leftIcon={<Upload size={18} aria-hidden="true" />}>
             Envoyer mon dossier
           </Button>
 
-          <div className="flex flex-wrap items-center justify-center gap-x-2 text-sm text-fg-muted">
+          <div className="flex flex-wrap items-center justify-center gap-x-2 text-sm text-muted-foreground">
             <span>Déjà partenaire ?</span>
             <LinkButton href="/login" variant="ghost" size="sm">Se connecter</LinkButton>
           </div>

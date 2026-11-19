@@ -819,7 +819,7 @@ test('acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, an
         await videoPlaying(page, '« Reprendre le contrôle »');
     });
 
-    await test.step('clôture de caisse sans écart, Z de caisse', async () => {
+    await test.step('clôture de caisse sans écart, récapitulatif de caisse', async () => {
         await openTab(page, /^caisse$/i);
         await page.getByRole('button', { name: /^clôturer ma caisse$/i }).click();
         const dialog = page.getByRole('dialog', { name: /^clôturer ma caisse$/i });

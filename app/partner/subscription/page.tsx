@@ -99,8 +99,8 @@ export default function PartnerSubscriptionPage() {
             ) : loading || !sub ? (
                 <div className="space-y-3" role="status" aria-busy="true">
                     <span className="sr-only">Chargement de l’abonnement…</span>
-                    <Skeleton className="h-36 rounded-2xl" />
-                    <Skeleton className="h-48 rounded-2xl" />
+                    <Skeleton className="h-36 rounded-xl" />
+                    <Skeleton className="h-48 rounded-xl" />
                 </div>
             ) : (
                 <>
@@ -112,11 +112,11 @@ export default function PartnerSubscriptionPage() {
 
                     {/* Essai en cours */}
                     {sub.trialActive && sub.trialEndsAt && (
-                        <section aria-labelledby="essai-titre" className="space-y-3 rounded-2xl border border-success-border bg-success-bg p-5">
+                        <section aria-labelledby="essai-titre" className="space-y-3 rounded-xl border border-success-border bg-success-soft p-5">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <ShieldCheck size={20} className="text-success-fg" aria-hidden="true" />
-                                    <h2 id="essai-titre" className="text-base font-bold text-success-fg">Période d’essai gratuite en cours</h2>
+                                    <ShieldCheck size={20} className="text-success-text" aria-hidden="true" />
+                                    <h2 id="essai-titre" className="text-base font-bold text-success-text">Période d’essai gratuite en cours</h2>
                                     {sub.isFounder && (
                                         <Badge variant="brand" size="sm" icon={<Crown size={12} aria-hidden="true" />}>Fondateur</Badge>
                                     )}
@@ -127,23 +127,23 @@ export default function PartnerSubscriptionPage() {
                                     </Badge>
                                 )}
                             </div>
-                            <div className="flex flex-wrap justify-between gap-2 text-sm text-fg">
+                            <div className="flex flex-wrap justify-between gap-2 text-sm text-foreground">
                                 <span>Début : <time dateTime={sub.trialStartedAt ?? undefined} className="text-sm">{formatDate(sub.trialStartedAt)}</time></span>
                                 <span>Fin : <time dateTime={sub.trialEndsAt} className="text-sm">{formatDate(sub.trialEndsAt)}</time></span>
                             </div>
                             {percent !== null && (
                                 <>
                                     <div
-                                        className="h-2.5 overflow-hidden rounded-full bg-surface"
+                                        className="h-2.5 overflow-hidden rounded-full bg-card"
                                         role="progressbar"
                                         aria-label="Part de la période d’essai écoulée"
                                         aria-valuemin={0}
                                         aria-valuemax={100}
                                         aria-valuenow={percent}
                                     >
-                                        <div className="h-full rounded-full bg-success motion-safe:transition-all" style={{ width: `${percent}%` }} />
+                                        <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
                                     </div>
-                                    <p className="text-sm font-medium tabular-nums text-success-fg">
+                                    <p className="text-sm font-medium tabular-nums text-success-text">
                                         {formatInteger(percent)} % de la période écoulée
                                         {sub.trialDuration !== null && <> · durée totale : {formatInteger(sub.trialDuration)} jours</>}
                                         {sub.isFounder && ' (offre fondateur)'}
@@ -156,7 +156,7 @@ export default function PartnerSubscriptionPage() {
                     {/* Essai terminé */}
                     {sub.trialEndsAt && !sub.trialActive && (
                         <StatusBanner tone="warning" title="Période d’essai terminée" icon={<Clock size={20} />}>
-                            Terminée le <time dateTime={sub.trialEndsAt}>{formatDate(sub.trialEndsAt)}</time>. <Link href="/aide" className="font-semibold text-brand-fg underline underline-offset-4">Contactez le support</Link> pour choisir une offre.
+                            Terminée le <time dateTime={sub.trialEndsAt}>{formatDate(sub.trialEndsAt)}</time>. <Link href="/aide" className="font-semibold text-primary-text underline underline-offset-4">Contactez le support</Link> pour choisir une offre.
                         </StatusBanner>
                     )}
 
@@ -168,26 +168,26 @@ export default function PartnerSubscriptionPage() {
                     )}
 
                     {/* Offre actuelle */}
-                    <section aria-labelledby="offre-actuelle" className="space-y-3 rounded-2xl border-2 border-brand-fg bg-surface p-5">
-                        <h2 id="offre-actuelle" className="text-base font-bold text-fg">Offre actuelle</h2>
+                    <section aria-labelledby="offre-actuelle" className="space-y-3 rounded-xl border-2 border-primary-text bg-card p-5">
+                        <h2 id="offre-actuelle" className="text-base font-bold text-foreground-strong">Offre actuelle</h2>
                         {sub.currentPlan ? (
                             <div className="flex items-center gap-3">
-                                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                                     <Star size={20} />
                                 </span>
                                 <div className="min-w-0">
-                                    <p className="text-lg font-bold text-fg">{sub.currentPlan.name}</p>
-                                    <p className="text-sm tabular-nums text-fg-muted">{priceLabel(sub.currentPlan)}</p>
+                                    <p className="text-lg font-bold text-foreground-strong">{sub.currentPlan.name}</p>
+                                    <p className="text-sm tabular-nums text-muted-foreground">{priceLabel(sub.currentPlan)}</p>
                                 </div>
                             </div>
                         ) : (
-                            <p className="text-sm text-fg-muted">Aucune offre attribuée : vous utilisez la plateforme pendant votre période d’essai.</p>
+                            <p className="text-sm text-muted-foreground">Aucune offre attribuée : vous utilisez la plateforme pendant votre période d’essai.</p>
                         )}
                     </section>
 
                     {/* Offres publiées */}
                     <section aria-labelledby="offres-titre" className="space-y-3">
-                        <h2 id="offres-titre" className="text-lg font-bold text-fg">Offres disponibles</h2>
+                        <h2 id="offres-titre" className="text-lg font-bold text-foreground-strong">Offres disponibles</h2>
                         {plans.length === 0 ? (
                             <EmptyState
                                 title="Aucune offre n’est encore publiée"
@@ -202,22 +202,22 @@ export default function PartnerSubscriptionPage() {
                                         return (
                                             <li
                                                 key={plan.id}
-                                                className={cn('flex flex-col gap-4 rounded-2xl border-2 bg-surface p-5', isCurrent ? 'border-brand-fg' : 'border-border')}
+                                                className={cn('flex flex-col gap-4 rounded-xl border-2 bg-card p-5', isCurrent ? 'border-primary-text' : 'border-border')}
                                                 aria-current={isCurrent ? 'true' : undefined}
                                             >
                                                 <div className="space-y-1">
                                                     <div className="flex flex-wrap items-center justify-between gap-2">
-                                                        <h3 className="text-base font-bold text-fg">{plan.name}</h3>
+                                                        <h3 className="text-base font-bold text-foreground-strong">{plan.name}</h3>
                                                         {isCurrent && <Badge variant="brand" size="sm">Offre actuelle</Badge>}
                                                     </div>
-                                                    <p className="text-xl font-bold tabular-nums text-brand-fg">{priceLabel(plan)}</p>
-                                                    {plan.description && <p className="text-sm leading-relaxed text-fg-muted">{plan.description}</p>}
+                                                    <p className="text-xl font-bold tabular-nums text-primary-text">{priceLabel(plan)}</p>
+                                                    {plan.description && <p className="text-sm leading-relaxed text-muted-foreground">{plan.description}</p>}
                                                 </div>
                                                 {plan.feature_items.length > 0 && (
                                                     <ul className="space-y-2">
                                                         {plan.feature_items.map((f) => (
-                                                            <li key={f.key} className="flex items-start gap-2 text-sm text-fg">
-                                                                <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-success-fg" aria-hidden="true" />
+                                                            <li key={f.key} className="flex items-start gap-2 text-sm text-foreground">
+                                                                <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-success-text" aria-hidden="true" />
                                                                 {f.label}
                                                             </li>
                                                         ))}
@@ -227,8 +227,8 @@ export default function PartnerSubscriptionPage() {
                                         );
                                     })}
                                 </ul>
-                                <div className="flex flex-col items-start gap-3 rounded-2xl border border-border bg-surface-sunken p-4 sm:flex-row sm:items-center sm:justify-between">
-                                    <p className="text-sm text-fg-muted">
+                                <div className="flex flex-col items-start gap-3 rounded-xl border border-border bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="text-sm text-muted-foreground">
                                         Le changement d’offre se fait avec l’équipe Event Village : il n’est pas encore possible en ligne.
                                     </p>
                                     {supportEmail && (

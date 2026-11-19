@@ -15,7 +15,7 @@ import { directionsUrl } from '@/lib/events/directions';
 // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
 const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
     ssr: false,
-    loading: () => <div className="h-48 w-full rounded-xl bg-surface-sunken motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
+    loading: () => <div className="h-48 w-full rounded-xl bg-muted motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
 });
 
 /**
@@ -51,13 +51,13 @@ function text(v: unknown): string | null {
 function InfoItem({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
     return (
         <div className="relative min-h-9 min-w-0 pl-12">
-            <dt className="text-sm text-fg-muted">
-                <span className="absolute left-0 top-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-surface-sunken text-fg-muted" aria-hidden="true">
+            <dt className="text-sm text-muted-foreground">
+                <span className="absolute left-0 top-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-muted text-muted-foreground" aria-hidden="true">
                     {icon}
                 </span>
                 {label}
             </dt>
-            <dd className="break-words text-base font-medium text-fg">{children}</dd>
+            <dd className="break-words text-base font-medium text-foreground-strong">{children}</dd>
         </div>
     );
 }
@@ -98,22 +98,22 @@ export function InfosTab({ eventId }: { eventId: string }) {
     return (
         <div className="flex flex-col gap-8">
             <PilotageSection title="Dates et horaires" description="Heure de Dakar.">
-                <dl className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2">
+                <dl className="grid gap-4 rounded-2xl border border-border bg-card p-4 sm:grid-cols-2">
                     <InfoItem icon={<CalendarDays size={18} />} label="Début">{formatEventDateTime(ev.start_date, ev.start_time)}</InfoItem>
                     <InfoItem icon={<Clock size={18} />} label="Fin">
                         {end ? end.text : '—'}
-                        {end?.note && <span className="block text-sm font-normal text-fg-muted">{end.note}</span>}
+                        {end?.note && <span className="block text-sm font-normal text-muted-foreground">{end.note}</span>}
                     </InfoItem>
                 </dl>
             </PilotageSection>
 
             <PilotageSection title="Lieu">
-                <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4">
+                <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4">
                     <dl className="grid gap-4 sm:grid-cols-2">
                         <InfoItem icon={<MapPin size={18} />} label="Lieu">
                             {[ev.location, ev.city].filter(Boolean).join(', ') || 'Non renseigné'}
                             {!hasPosition && (
-                                <span className="block text-sm font-normal text-fg-muted">Aucun repère sur la carte : placez-le depuis « Modifier », étape Accès.</span>
+                                <span className="block text-sm font-normal text-muted-foreground">Aucun repère sur la carte : placez-le depuis « Modifier », étape Accès.</span>
                             )}
                         </InfoItem>
                     </dl>
@@ -136,8 +136,8 @@ export function InfosTab({ eventId }: { eventId: string }) {
                         <dl className="grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
                             {practical.map((p) => (
                                 <div key={p.key} className="min-w-0">
-                                    <dt className="text-sm text-fg-muted">{p.label}</dt>
-                                    <dd className="whitespace-pre-line break-words text-base text-fg">{p.value}</dd>
+                                    <dt className="text-sm text-muted-foreground">{p.label}</dt>
+                                    <dd className="whitespace-pre-line break-words text-base text-foreground-strong">{p.value}</dd>
                                 </div>
                             ))}
                         </dl>

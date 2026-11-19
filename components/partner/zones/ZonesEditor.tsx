@@ -212,14 +212,14 @@ export function ZonesEditor({ eventId, config, loading, error, refreshing, reloa
             )}
 
             {zones.length === 0 ? (
-                <div className="flex flex-col items-start gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5">
+                <div className="flex flex-col items-start gap-3 rounded-2xl border border-border bg-card p-4 sm:p-5">
                     <div className="flex items-start gap-3">
-                        <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                        <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
                             <DoorOpen size={22} />
                         </span>
                         <div className="min-w-0">
                             {/* Finition 2b (B) : même texte qu'à la création */}
-                            <p className="text-base font-semibold text-fg">{SINGLE_ENTRANCE_TEXT}</p>
+                            <p className="text-base font-semibold text-foreground-strong">{SINGLE_ENTRANCE_TEXT}</p>
                         </div>
                     </div>
                     {editable && (
@@ -259,7 +259,7 @@ export function ZonesEditor({ eventId, config, loading, error, refreshing, reloa
                         </Button>
                     )}
                     {config.configured && (
-                        <Button variant="ghost" onClick={() => setConfirmReset(true)} disabled={saving} className="text-danger-fg">
+                        <Button variant="ghost" onClick={() => setConfirmReset(true)} disabled={saving} className="text-danger-text">
                             Revenir à une seule entrée
                         </Button>
                     )}

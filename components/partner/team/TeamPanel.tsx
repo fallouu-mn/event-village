@@ -71,11 +71,11 @@ function ContactButtons({ phone, message, name }: { phone: string | null; messag
     if (!tel || !wa) return null;
     return (
         <div className="flex flex-wrap gap-2">
-            <a href={tel} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Appeler ${name}`}>
+            <a href={tel} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Appeler ${name}`}>
                 <Phone size={16} aria-hidden="true" />
                 <span>Appeler</span>
             </a>
-            <a href={wa} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Écrire à ${name} sur WhatsApp`}>
+            <a href={wa} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Écrire à ${name} sur WhatsApp`}>
                 <MessageCircle size={16} aria-hidden="true" />
                 <span>WhatsApp</span>
             </a>
@@ -252,7 +252,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
         const place = placeOf(a);
         return (
             <li key={a.assignment_id} className="flex flex-col gap-2">
-                {scope === 'all' && <p className="text-sm font-semibold text-foreground-strong">{`${a.title} · ${eventWhen(a.start_at)}`}</p>}
+                {scope === 'all' && <p className="break-words text-sm font-semibold text-foreground-strong">{`${a.title} · ${eventWhen(a.start_at)}`}</p>}
                 <p className={cn('text-sm', place.missing ? 'font-semibold text-warning-text' : 'text-foreground-strong')}>{a.gate ? `Porte : ${place.text}` : place.text}</p>
                 <GateAdmits categories={a.gate?.categories ?? (a.has_zones ? null : [])} hasZones={a.has_zones} />
                 <div className="flex flex-wrap items-center gap-2">
@@ -302,7 +302,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                         <ul className="mt-2 flex flex-col gap-2" aria-label={`Événements passés de ${memberName(m)}`}>
                             {past.map((a) => (
                                 <li key={a.assignment_id} className="text-sm text-muted-foreground">
-                                    <span className="block text-foreground-strong">{`${a.title} · ${eventWhen(a.start_at)}`}</span>
+                                    <span className="block break-words text-foreground-strong">{`${a.title} · ${eventWhen(a.start_at)}`}</span>
                                     {/* Complément 13 : mêmes chiffres que « Mes soirées » du contrôleur */}
                                     <span className="block tabular-nums">
                                         {a.evening ? `${eveningEntriesText(a.evening.entries)} · ${eveningCashText(a.evening.cash)}` : entriesText(a)}
@@ -368,7 +368,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                         {gateEvents.map((e) => (
                             <li key={e.id} className="flex flex-col gap-2">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <p className="text-sm font-semibold text-foreground-strong">{`${e.title} · ${eventWhen(e.start_at)}`}</p>
+                                    <p className="min-w-0 break-words text-sm font-semibold text-foreground-strong">{`${e.title} · ${eventWhen(e.start_at)}`}</p>
                                     {canManage && gatesLink(e.id, 'ghost')}
                                 </div>
                                 {e.has_zones ? (
@@ -402,7 +402,7 @@ export function TeamPanel({ scope, eventId, partnerId, signal = 0, onOpenTab, li
                         {FILTERS.map((f) => (
                             <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}
                                 className={cn('inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                    filter === f.id ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground-strong hover:bg-background')}>
+                                    filter === f.id ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground-strong hover:bg-muted')}>
                                 {f.label}
                             </button>
                         ))}

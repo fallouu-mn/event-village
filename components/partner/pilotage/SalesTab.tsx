@@ -42,8 +42,8 @@ const COLUMNS: DataColumn<CategoryRow>[] = [
         render: (c) => (
             <span className="font-semibold">
                 {c.name}
-                {!c.is_active && <span className="ml-2 font-normal text-fg-muted">(inactive)</span>}
-                {c.is_active && <span className="block text-sm font-normal text-fg-muted">{categoryChannelLabel(c)}</span>}
+                {!c.is_active && <span className="ml-2 font-normal text-muted-foreground">(inactive)</span>}
+                {c.is_active && <span className="block text-sm font-normal text-muted-foreground">{categoryChannelLabel(c)}</span>}
             </span>
         ),
     },
@@ -54,7 +54,9 @@ const COLUMNS: DataColumn<CategoryRow>[] = [
     // Catégorie inactive : plus aucune place en vente (remaining = 0 côté serveur). « 0 / 40 » contredisait la
     // formule affichée au-dessus de la liste (relecture du run 77).
     { key: 'remaining', header: 'Restants', align: 'right', render: (c) => (c.is_active ? `${formatInteger(c.remaining)} / ${formatInteger(c.total)}` : 'Vente fermée') },
-    { key: 'revenue', header: 'Recettes en ligne', align: 'right', render: (c) => formatFcfa(c.revenue_online) },
+    // Design 1c (E-64) : revenue_online = prix des billets payés en ligne encore valables ou utilisés (pilotage_sales :
+    // les billets remboursés n'y sont plus), c'est-à-dire la part nette de la catégorie : « Recettes nettes ».
+    { key: 'revenue', header: 'Recettes nettes', align: 'right', render: (c) => formatFcfa(c.revenue_online) },
 ];
 
 /** Chiffres des ventes : par catégorie (vendus, en cours de paiement, restants), par canal (R50) et jour par jour. */
@@ -79,11 +81,12 @@ function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
 
     return (
         <>
-            <PilotageSection title="Par catégorie" description="Restants = quantité mise en vente de la catégorie moins les ventes, les invitations et les paiements en cours. Une catégorie inactive n’a plus de place en vente.">
+            <PilotageSection title="Par catégorie" description="Restants = quantité mise en vente de la catégorie moins les ventes, les invitations et les paiements en cours. Une catégorie inactive n’a plus de place en vente. Recettes nettes = billets payés en ligne encore valables, remboursements exclus.">
                 <DataList
                     items={data.by_category}
                     columns={COLUMNS}
                     getKey={(c) => c.category_id}
+                    breakpoint="xl"
                     caption="Ventes par catégorie de billets"
                     cardTitle={(c) => COLUMNS[0].render(c)}
                     empty={<EmptyState title="Aucune catégorie" description="Ajoutez une catégorie de billets depuis la fiche de l’événement." className="my-0" />}
@@ -92,7 +95,7 @@ function SalesFigures({ sales }: { sales: ServerData<PilotageSales> }) {
 
             <PilotageSection title="Par canal" description="Billets valables ou déjà utilisés, comptés par le serveur : vendus en ligne, gratuits pris en ligne, vendus au guichet et invitations.">
                 {byChannel === null ? (
-                    <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Répartition par canal indisponible pour le moment.</p>
+                    <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">Répartition par canal indisponible pour le moment.</p>
                 ) : (
                     <DataList
                         items={byChannel}

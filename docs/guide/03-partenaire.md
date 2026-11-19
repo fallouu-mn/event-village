@@ -91,7 +91,7 @@ Règles communes à tout le fichier :
    |---|---|---|---|
    | « Raison sociale » (exemple `Nom légal de la société`) | oui | 2 caractères au moins ; erreur « La raison sociale est requise » | `app/partner/register/page.tsx:502-503`, `lib/validations/auth.ts:213` |
    | « Nom commercial (enseigne) » (exemple `Nom connu du public`) | non | vide : la raison sociale est reprise | `app/partner/register/page.tsx:504-505`, `app/api/partner/register/route.ts:224` |
-   | « Activités proposées » (aide « Touchez une ou plusieurs activités. ») | oui | une au moins, « Organisation d’événements et festivals » cochée d'office ; huit choix : « Organisation d’événements et festivals », « Salle de fête et de réception », « Restaurant », « Traiteur et buffet », « Prestataire (son, lumière, scène) », « Pâtisserie et desserts », « Établissement alimentaire », « Autre service événementiel » ; erreur « Sélectionnez au moins un type d'activité » | `app/partner/register/page.tsx:105`, `:508-541`, `lib/partner/activity-labels.ts:7-16`, `lib/validations/auth.ts:218` |
+   | « Activités proposées » (aide « Touchez une ou plusieurs activités. ») | oui | une au moins, « Organisation d’événements et festivals » cochée d'office ; huit choix, dans cet ordre (design 1c) : « Organisation d’événements et festivals », « Prestataire (son, lumière, scène) », puis les activités des services hors billetterie, celles d'un service ouvert avant celles d'un service fermé (« Salle de fête et de réception », « Restaurant », « Traiteur et buffet », « Pâtisserie et desserts », « Établissement alimentaire »), enfin « Autre service événementiel » ; tous services fermés, « Restaurant » arrive en 4e position ; erreur « Sélectionnez au moins un type d'activité » | `app/partner/register/page.tsx:105`, `:508-541`, `lib/partner/activity-labels.ts:7-16` (`orderedPartnerActivities`), `lib/validations/auth.ts:218` |
    | « Présentation de votre structure » | oui | 10 à 2 000 caractères, compteur ; aide « 10 caractères au moins : capacité d’accueil, prestations, spécialités. » ; erreur « Une brève description de votre activité est requise » | `app/partner/register/page.tsx:543-545`, `lib/validations/auth.ts:215` |
    | « Adresse » (exemple `Boulevard Martin Luther King`) | oui | 3 caractères au moins ; erreur « L'adresse de l'établissement est requise » | `app/partner/register/page.tsx:547-548`, `lib/validations/auth.ts:216` |
    | « Ville » (exemple `Dakar`) | marqué obligatoire | prérempli « Dakar » ; laissé vide, la fiche reçoit « Dakar » sans message | `app/partner/register/page.tsx:104`, `:549-550`, `lib/validations/auth.ts:217`, `app/api/partner/register/route.ts:227` |
@@ -99,7 +99,7 @@ Règles communes à tout le fichier :
    | « RCCM (facultatif) » | non | mêmes règles que le NINEA | `app/partner/register/page.tsx:554`, `M/20261109000004_lot9bis_droits.sql:542` |
    | « Prénom », « Nom » | oui | 2 caractères au moins ; erreurs « Le prénom du gérant est requis », « Le nom du gérant est requis » | `app/partner/register/page.tsx:564-567`, `lib/validations/auth.ts:221-222` |
    | « Téléphone professionnel » (exemple `77 800 00 00`) | oui | mobile sénégalais 70, 75, 76, 77, 78 ; aide « Le code de vérification est envoyé à ce numéro. Il ne doit pas déjà servir à un compte. » ; erreur « Numéro de mobile sénégalais invalide. Exemple : 77 123 45 67. » | `app/partner/register/page.tsx:568-570`, `lib/validations/auth.ts:8`, `:82-87`, `:223` |
-   | « Email professionnel » (exemple `direction@etablissement.sn`) | **oui** | aide « Recommandé : recevez vos billets et confirmations par email. Un lien de vérification vous est envoyé ; l’adresse ne reçoit rien d’autre tant qu’elle n’est pas vérifiée. » ; erreur « Adresse email professionnelle requise » ; domaine `eventvillage.sn` refusé par le serveur : « Cette adresse est réservée. Saisissez votre propre adresse email. » (l'aide dit « Recommandé » pour un champ obligatoire : constat W3-08) | `app/partner/register/page.tsx:571-573`, `lib/validations/auth.ts:5`, `:224`, `app/api/partner/register/route.ts:82-84` |
+   | « Email » (mention « obligatoire » ; exemple `direction@etablissement.sn`) | **oui** | aide « Vos confirmations et rapports y arrivent. Un lien de vérification vous est envoyé ; l’adresse ne reçoit rien d’autre tant qu’elle n’est pas vérifiée. » ; erreur « Adresse email professionnelle requise » ; domaine `eventvillage.sn` refusé par le serveur : « Cette adresse est réservée. Saisissez votre propre adresse email. » (constat W3-08 corrigé au design 1c : l'aide ne dit plus « Recommandé ») | `app/partner/register/page.tsx:571-573`, `lib/validations/auth.ts:5`, `:224`, `app/api/partner/register/route.ts:82-84` |
    | « Mot de passe » | oui | règle robuste (voir `02-comptes.md`, règles communes), liste « Robustesse du mot de passe » sous les champs | `app/partner/register/page.tsx:574-579`, `lib/validations/auth.ts:93-97`, `:225` |
    | « Confirmer le mot de passe » | oui | erreur « Les mots de passe ne correspondent pas. » ; vide : « Veuillez confirmer le mot de passe » | `app/partner/register/page.tsx:208`, `:576-577`, `lib/validations/auth.ts:226` |
    | « Pièce d’identité du gérant » (aide « CNI ou passeport en cours de validité. ») | oui | PDF, JPEG, PNG ou WebP, 10 Mo au plus ; absente : « Joignez la pièce d’identité du gérant (CNI ou passeport). » | `app/partner/register/page.tsx:209`, `:591` |
@@ -502,7 +502,7 @@ Règles communes à tout le fichier :
    | « Présentation » | non | 2 000 caractères, compteur | `app/partner/profile/page.tsx:218-227`, `app/api/partner/profile/route.ts:61` |
    | « Activités » (« Touchez une activité pour l’ajouter ou la retirer. Une activité au moins. ») | oui | mêmes huit activités qu'à l'inscription | `app/partner/profile/page.tsx:229-264`, `app/api/partner/profile/route.ts:70-72` |
    | « Téléphone » (aide « Numéro mobile sénégalais, affiché aux clients et aux organisateurs. ») | non | mobile sénégalais | `app/partner/profile/page.tsx:272-282`, `app/api/partner/profile/route.ts:178-185` |
-   | « Email professionnel » | non | adresse valide, 200 caractères | `app/partner/profile/page.tsx:284-292`, `app/api/partner/profile/route.ts:67` |
+   | « Email » (mention « obligatoire », aide « Vos confirmations et rapports y arrivent. ») | oui à l'écran (design 1c) ; le serveur accepte encore une adresse vide | adresse valide, 200 caractères ; vide : « Indiquez l’email où arrivent vos confirmations et rapports. » | `app/partner/profile/page.tsx`, `app/api/partner/profile/route.ts:68` |
    | « Adresse », « Ville » | non | 200 et 2 à 80 caractères | `app/partner/profile/page.tsx:293-310`, `app/api/partner/profile/route.ts:62-63` |
    | « Logo » (« Image carrée de préférence. JPEG, PNG ou WebP, 5 Mo au plus. ») et « Photo de couverture » (« Format paysage. JPEG, PNG ou WebP, 5 Mo au plus. ») | non | image déposée depuis cette page | `app/partner/profile/page.tsx:313-336`, `app/api/partner/profile/route.ts:186-193` |
 
@@ -566,12 +566,13 @@ Règles communes à tout le fichier :
    - « Première utilisation » : étapes « Compléter votre page publique », « Créer l’événement », « Ajouter l’affiche »,
      « Ajouter une catégorie de billets », « Soumettre à la validation », « Validation par Event Village », « Publier
      l’événement », chacune cochée par le serveur (`components/partner/onboarding/FirstEventSteps.tsx:40-73`) ;
-   - quatre indicateurs : « Ventes en ligne » (« Prix des billets vendus en ligne, tous événements. »), « Net partenaire »
-     (« Après {montant} de remboursements. »), « Billets vendus » (« {n} entrées validées aux portes. »), « Disponible au
-     retrait » (« Déjà versé : {montant}. ») ; puis « Les ventes en espèces au guichet ({montant}) et les invitations
+   - quatre indicateurs : « Ventes en ligne (brut) » (« Prix des billets vendus en ligne, tous événements, avant
+     remboursements. »), « Recettes nettes » (« Ventes en ligne moins {montant} de remboursements. »), « Billets vendus »
+     (« {n} entrées validées aux portes. »), « Disponible au retrait » (« Déjà versé : {montant}. ») ; les chiffres
+     comptent de 0 à leur valeur une fois, à l’ouverture (rien si le téléphone demande de réduire les animations) ; puis « Les ventes en espèces au guichet ({montant}) et les invitations
      n’alimentent pas le solde. » et « Voir mes finances » (`app/partner/dashboard/page.tsx:495-538`) ;
-   - « Mes événements » : par événement, statut, date et lieu, « Vendus / capacité », « Entrées », « Ventes en ligne »,
-     « Net partenaire », et « Clôture » (rapport), rapport PDF et export CSV ; vide : « Aucun événement pour le moment »,
+   - « Mes événements » : par événement, statut, date et lieu, « Vendus / capacité », « Entrées », « Ventes en ligne
+     (brut) » avec « Remboursements : … » dessous, « Recettes nettes », et « Clôture » (rapport), rapport PDF et export CSV ; vide : « Aucun événement pour le moment »,
      bouton « Créer un événement » seulement pour une fiche validée (`:315-399`, `:540-582`) ;
    - « Activité récente » (ventes, entrées, retraits) ; « Commandes en direct » seulement si le service des commandes est
      ouvert (`:584-650`).
@@ -586,18 +587,21 @@ Règles communes à tout le fichier :
 ## 03.16 Statistiques
 
 1. **Qui, où.** Partenaire `VALIDE`. Menu « Statistiques », `/partner/stats` (`components/layout/AppLayout.tsx:155`).
-   Titre « Statistiques », sous-titre « Données réelles isolées à votre espace partenaire », bouton « Actualiser »
-   (`app/partner/stats/page.tsx:160-178`).
-2. **Ce qu'il saisit.** Une période : « Aujourd'hui », « 7 derniers jours », « 30 derniers jours » (par défaut), « Mois en
-   cours », « Personnalisé » (deux dates et « Appliquer ») (`app/partner/stats/page.tsx:72-78`, `:104`, `:181-211`).
-3. **Ce que fait le système.** Affiche « CA Total », « Billets vendus », « Commandes », « Réservations salles »,
-   « Répartition des revenus » (Billetterie, Commandes, Salles), « Commandes par statut », « Événements » (nombre et
-   répartition par statut), « Billetterie » (« {n} vendus », « Billets utilisés », « Revenus billetterie »), « Catalogue
-   Produits » (`app/partner/stats/page.tsx:245-385`). Les revenus sont le net organisateur des ventes en ligne de la
-   période (`app/api/partner/stats/route.ts:62-80`). Limites (constat W3-07) : les événements et leurs billets ne sont
-   comptés que pour les événements **créés** dans la période (`app/api/partner/stats/route.ts:42-51`, `:71`) ; les
-   statuts d'événement s'affichent en code brut (« PUBLIE », « BROUILLON ») (`app/partner/stats/page.tsx:330-334`) ; les
-   blocs commandes, salles et produits s'affichent même si ces services sont fermés.
+   Titre « Statistiques de ventes », texte « Vos recettes et vos billets sur la période choisie. Les ventes en espèces et
+   les invitations n’y figurent pas. », bouton « Actualiser » (`app/partner/stats/page.tsx`, design 1c).
+2. **Ce qu'il saisit.** Une période (puces) : « Aujourd’hui », « 7 derniers jours », « 30 derniers jours » (par défaut),
+   « Mois en cours », « Personnalisée » (champs « Du » et « Au », bouton « Afficher » ; erreurs « Choisissez une date de
+   début et une date de fin. », « La date de début doit précéder la date de fin. ») (`app/partner/stats/page.tsx`).
+3. **Ce que fait le système.** Affiche « Recettes nettes » (« Ventes en ligne de la période, remboursements déduits. »),
+   « Billets vendus » (« Dont {n} déjà utilisés à l’entrée. »), puis les blocs « Billetterie » (« Billets vendus »,
+   « Billets utilisés à l’entrée », « Recettes nettes de la billetterie ») et « Événements » (nombre créé sur la période
+   et répartition par statut, en mots). Les indicateurs « Commandes », « Réservations de salle », la « Répartition des
+   recettes nettes » (Billetterie, Commandes, Salles, Tables), « Commandes par statut » (en mots), « Catalogue de
+   produits » et « Tables » ne s'affichent que si le service correspondant est ouvert (`useFeatureFlags`), comme le menu
+   (design 1c). Les recettes sont le net organisateur des ventes en ligne de la période
+   (`app/api/partner/stats/route.ts:62-80`). Limite restante (constat W3-07) : les événements et leurs billets ne sont
+   comptés que pour les événements **créés** dans la période (`app/api/partner/stats/route.ts:42-51`, `:71`), ce que dit
+   l'écran (« Billets des événements créés sur la période. »).
 4. **Messages envoyés.** Aucun.
 5. **Ce que voient les autres rôles.** Rien.
 6. **Refus.** « Accès refusé. », « Profil introuvable. », panne « Statistiques momentanément indisponibles. »
@@ -607,13 +611,17 @@ Règles communes à tout le fichier :
 ## 03.17 Calendrier
 
 1. **Qui, où.** Partenaire `VALIDE`. Menu « Calendrier », `/partner/calendar` (`components/layout/AppLayout.tsx:157`).
-   Titre « Calendrier Événementiel », texte « Visualisez le planning de vos événements et réservations. », bouton
-   « Nouvel événement » (`app/partner/calendar/page.tsx:37-55`).
-2. **Ce qu'il saisit.** Une date dans le calendrier (« Sélectionnez une date », « Cliquez sur une date »,
-   `components/events/EventCalendar.tsx:142`, `:168`).
-3. **Ce que fait le système.** Place chaque événement de la partenaire (tous statuts) à sa date de **début** ; aucune
-   réservation n'est lue malgré le texte (`app/partner/calendar/page.tsx:15-33` ; constat W3-14). Échec :
-   « Impossible de charger le calendrier des événements. » (`:31`).
+   Titre « Calendrier », texte « Vos événements, placés à leur date de début. », bouton « Nouvel événement »
+   (`app/partner/calendar/page.tsx`, design 1c).
+2. **Ce qu'il saisit.** Le mois (« Mois précédent », « Mois suivant », « Ce mois-ci ») ; à partir de 640 px, un jour de la
+   grille (lundi en premier ; un jour avec événements est encadré et indique leur nombre, « 2 év. ») pour n'afficher que
+   ses événements, « Tout le mois » pour revenir à la liste du mois (`components/events/EventCalendar.tsx`). Sous 640 px,
+   pas de grille : la liste des événements du mois, jour par jour.
+3. **Ce que fait le système.** Place chaque événement de la partenaire (tous statuts) à sa date de **début** ; chaque
+   événement de la liste (titre, statut, date et heure, lieu) mène à son pilotage. Mois vide : « Aucun événement ce
+   mois-ci » ; jour vide : « Aucun événement ce jour-là ». Échec : « Calendrier indisponible » — « Impossible de charger
+   le calendrier des événements. Vérifiez votre connexion, puis réessayez. », bouton « Réessayer »
+   (`app/partner/calendar/page.tsx`). Le texte ne parle plus de réservations (constat W3-14).
 4. **Messages envoyés.** Aucun.
 5. **Ce que voient les autres rôles.** Rien.
 6. **Refus.** « Nouvel événement » mène à la création ; pour une fiche non validée le serveur refuse (03.4).
@@ -623,8 +631,9 @@ Règles communes à tout le fichier :
 
 1. **Qui, où.** Partenaire `VALIDE` (compte actif). Menu « Finances » ou barre du bas « Finances », `/partner/finance`
    (`components/layout/AppLayout.tsx:154`, `:165`). Titre « Finances », texte « Ventes en ligne de vos événements. Les
-   ventes en espèces et les invitations n’alimentent pas ce solde. », boutons « Statistiques de ventes » et « Actualiser »
-   (`app/partner/finance/page.tsx:531-551`).
+   ventes en espèces et les invitations n’alimentent pas ce solde. », boutons « Statistiques de ventes » (design 1c, E-65 :
+   seulement s'il y a des ventes à montrer — solde disponible, en attente ou en cours de retrait, un retrait, ou une vente
+   dans l'historique) et « Actualiser » (`app/partner/finance/page.tsx`).
 2. **Ce qu'il saisit.** Rien.
 3. **Ce que fait le système.** Tout vient de `GET /api/finance/balance?account=ORGANISATEUR`, lu dans le grand livre du
    compte « organisateur » (`app/api/finance/balance/route.ts:13-33`, `M/20261110000007_lot9ter_evenements.sql:154-195`) :
@@ -636,7 +645,7 @@ Règles communes à tout le fichier :
    | « En attente » — « Prochaine disponibilité : {date}. », ou « Les ventes deviennent disponibles après la fin de l’événement et le délai de garde. » | Écritures non encore échues. Une vente en ligne est disponible à la **fin de l'événement + 48 h** (réglage « délai de garde », 0 à 720 h ; désactivable) ; la fin par défaut d'un événement sans fin est début + 6 h | `app/partner/finance/page.tsx:586-593`, `M/20261101000004_lot3_grand_livre.sql:107-133`, `M/20261101000002_lot3_reglages.sql:67-68`, `M/20261110000002_lot9ter_reglages.sql:83`, `M/20261109000008_lot9bis_cycle.sql:476-488` |
    | « Retraits en cours » — « Montant réservé sur votre solde, frais compris, pendant l’envoi vers Wave ou Orange Money. » | Montant **brut** des retraits en attente ou en cours d'envoi | `app/partner/finance/page.tsx:595-600`, `M/20261110000007_lot9ter_evenements.sql:177-179` |
    | « À compenser » — « Remboursement à compenser : déduit de vos prochaines ventes. » ou « Aucune somme à compenser. » | Créances restantes (remboursement plus grand que le solde) | `app/partner/finance/page.tsx:602-608`, `M/20261110000007_lot9ter_evenements.sql:180-181` |
-   | « Mes retraits » — « Vos 20 dernières demandes. » | Statut (« En attente », « En cours d’envoi », « Versé », « Refusé, montant rendu », « Annulé », ou « Retardé » avec « Retardé : l’équipe Event Village s’en occupe. »), opérateur, numéro masqué, dates, « Motif : {motif} » si refusé, brut, « Versé : {net} · frais : {frais} » | `app/partner/finance/page.tsx:294-305`, `:893-938`, `lib/finance/ledger.ts:60-72`, `:125-156` |
+   | « Mes retraits » — « Vos 20 dernières demandes. » | Statut (« En attente », « En cours d’envoi », « Versé », « Refusé, montant rendu », « Annulé », ou « Retardé » avec « Retardé : l’équipe Event Village s’en occupe. »), opérateur, numéro masqué, dates, « Motif : {motif} » si refusé, brut, puis (design 1c, E-03, N-02) « Versé le {date} : {net} · frais : {frais} » pour un retrait versé seulement, « Montant envoyé : {net} · frais : {frais} » en attente, en cours d'envoi ou retardé, « Montant prévu : {net} · frais : {frais} » refusé ou annulé | `app/partner/finance/page.tsx:294-305`, `lib/finance/withdrawal-text.ts`, `lib/finance/ledger.ts:60-72`, `:125-156` |
    | « Historique du compte » — « Les 50 dernières écritures, de la plus récente à la plus ancienne. » | « Vente en ligne », « Remboursement d’un billet », « Retrait demandé », « Retrait refusé : montant rendu », « Compensation d’une créance »…, avec l'événement, et « · en attente, disponible le {date} » | `app/partner/finance/page.tsx:265-289`, `:941-990` |
 
    Le gel ne touche que l'argent **déjà disponible** : avec le délai de garde par défaut, un événement suspendu avant sa

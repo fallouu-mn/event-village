@@ -65,7 +65,7 @@ export function ZoneListEditor({ prefix, zones, categories, editable, busy, onCh
                 const categoriesError = errors[`zones.${zi}.category_ids`];
                 const gatesError = errors[`zones.${zi}.gates`];
                 return (
-                    <li key={zone.key} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 sm:p-5">
+                    <li key={zone.key} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
                         <TextInput
                             id={`${zoneId}-name`}
                             label="Nom de la zone"
@@ -78,9 +78,9 @@ export function ZoneListEditor({ prefix, zones, categories, editable, busy, onCh
                         />
 
                         <fieldset className="flex flex-col gap-2">
-                            <legend className="mb-1 text-sm font-semibold text-fg">Type</legend>
+                            <legend className="mb-1 text-sm font-semibold text-foreground-strong">Type</legend>
                             {(Object.keys(ZONE_KIND_LABELS) as ZoneKind[]).map((kind) => (
-                                <label key={kind} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-border bg-surface-sunken p-3">
+                                <label key={kind} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-border bg-background p-3">
                                     <input
                                         type="radio"
                                         name={`${zoneId}-kind`}
@@ -88,45 +88,45 @@ export function ZoneListEditor({ prefix, zones, categories, editable, busy, onCh
                                         checked={zone.kind === kind}
                                         disabled={!editable || busy}
                                         onChange={() => updateZone(zone.key, { kind })}
-                                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-brand"
+                                        className="mt-0.5 h-5 w-5 flex-shrink-0 cursor-pointer accent-primary"
                                     />
                                     <span className="flex min-w-0 flex-col">
-                                        <span className="text-sm font-semibold text-fg">{ZONE_KIND_LABELS[kind]}</span>
-                                        <span className="text-sm leading-snug text-fg-muted">{ZONE_KIND_HELP[kind]}</span>
+                                        <span className="text-sm font-semibold text-foreground-strong">{ZONE_KIND_LABELS[kind]}</span>
+                                        <span className="text-sm leading-snug text-muted-foreground">{ZONE_KIND_HELP[kind]}</span>
                                     </span>
                                 </label>
                             ))}
                         </fieldset>
 
                         <fieldset className="flex flex-col gap-1" aria-describedby={categoriesError ? `${zoneId}-c-erreur` : undefined}>
-                            <legend className="mb-1 text-sm font-semibold text-fg">Catégories admises</legend>
-                            {categories.length === 0 && <p className="text-sm text-fg-muted">Aucune catégorie de billets pour le moment.</p>}
+                            <legend className="mb-1 text-sm font-semibold text-foreground-strong">Catégories admises</legend>
+                            {categories.length === 0 && <p className="text-sm text-muted-foreground">Aucune catégorie de billets pour le moment.</p>}
                             {categories.map((c, ci) => {
                                 const color = isScanCategoryColor(c.color) ? c.color : null;
                                 return (
-                                    <label key={c.key} className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-fg">
+                                    <label key={c.key} className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-foreground-strong">
                                         <input
                                             id={`${zoneId}-c${ci}`}
                                             type="checkbox"
                                             checked={zone.categoryKeys.includes(c.key)}
                                             disabled={!editable || busy}
                                             onChange={(e) => toggleCategory(zone.key, c.key, e.target.checked)}
-                                            className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-border-strong accent-brand"
+                                            className="h-5 w-5 flex-shrink-0 cursor-pointer rounded border-input accent-primary"
                                         />
                                         <ScanColorDot color={color} />
                                         <span className="min-w-0 break-words">
                                             <span className="font-semibold">{c.name.trim() || `Catégorie ${ci + 1}`}</span>
-                                            {color && <span className="text-fg-muted"> · {SCAN_CATEGORY_COLOR_LABELS[color]}</span>}
-                                            {!c.active && <span className="text-fg-muted"> · vente fermée</span>}
+                                            {color && <span className="text-muted-foreground"> · {SCAN_CATEGORY_COLOR_LABELS[color]}</span>}
+                                            {!c.active && <span className="text-muted-foreground"> · vente fermée</span>}
                                         </span>
                                     </label>
                                 );
                             })}
-                            {categoriesError && <p id={`${zoneId}-c-erreur`} className="text-sm font-medium text-danger-fg">{categoriesError}</p>}
+                            {categoriesError && <p id={`${zoneId}-c-erreur`} className="text-sm font-medium text-danger-text">{categoriesError}</p>}
                         </fieldset>
 
                         <div className="flex flex-col gap-2">
-                            <p className="text-sm font-semibold text-fg">Portes</p>
+                            <p className="text-sm font-semibold text-foreground-strong">Portes</p>
                             <ul className="flex flex-col gap-2">
                                 {zone.gates.map((gate, gi) => (
                                     <li key={gate.key} className="flex items-end gap-2">
@@ -154,14 +154,14 @@ export function ZoneListEditor({ prefix, zones, categories, editable, busy, onCh
                                     </li>
                                 ))}
                             </ul>
-                            {gatesError && <p className="text-sm font-medium text-danger-fg">{gatesError}</p>}
+                            {gatesError && <p className="text-sm font-medium text-danger-text">{gatesError}</p>}
                             {editable && (
                                 <div className="flex flex-wrap gap-2">
                                     <Button variant="ghost" size="sm" leftIcon={<Plus size={16} />} disabled={busy}
                                         onClick={() => updateZone(zone.key, { gates: [...zone.gates, { key: newKey(), name: '', inUse: false }] })}>
                                         Ajouter une porte
                                     </Button>
-                                    <Button variant="ghost" size="sm" leftIcon={<Trash2 size={16} />} disabled={busy} className="text-danger-fg"
+                                    <Button variant="ghost" size="sm" leftIcon={<Trash2 size={16} />} disabled={busy} className="text-danger-text"
                                         onClick={() => onChange(zones.filter((z) => z.key !== zone.key))}>
                                         {`Retirer la zone ${label}`}
                                     </Button>

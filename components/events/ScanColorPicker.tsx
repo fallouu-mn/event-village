@@ -98,12 +98,13 @@ export function ScanColorPicker({ id, label, value, onChange, others = [], hint,
                             className={cn(
                                 'flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors duration-200',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60',
-                                checked ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-input bg-card text-foreground-strong hover:bg-background',
+                                checked ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-input bg-card text-foreground-strong hover:bg-muted',
                                 error && !checked && 'border-danger',
                             )}
                         >
                             <ScanColorDot color={color} className="h-5 w-5" />
-                            <span className="min-w-0 truncate">{SCAN_CATEGORY_COLOR_LABELS[color]}</span>
+                            {/* Design 1c : le libellé passe à la ligne plutôt que d'être coupé (texte entier toujours visible) */}
+                            <span className="min-w-0 break-words">{SCAN_CATEGORY_COLOR_LABELS[color]}</span>
                             {checked && <Check size={16} aria-hidden="true" className="ml-auto flex-shrink-0" />}
                         </button>
                     );

@@ -242,7 +242,7 @@ export default function PartnerEventsPage() {
                 />
             ) : (
                 <>
-                    <section aria-label="Indicateurs sur tous vos événements" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <section aria-label="Indicateurs sur tous vos événements" className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-4">
                         {loading && !totals ? (
                             <>
                                 <KpiCardSkeleton />
@@ -254,8 +254,10 @@ export default function PartnerEventsPage() {
                             <>
                                 <KpiCard label="Événements" value={formatInteger(totals?.events)} hint="Tous statuts confondus" icon={<CalendarRange size={18} />} tone="brand" />
                                 <KpiCard label="Billets vendus" value={formatInteger(totals?.tickets_sold)} hint="Hors invitations" icon={<Ticket size={18} />} tone="info" />
-                                <KpiCard label="Recettes en ligne" value={<KpiAmount value={formatFcfa(totals?.revenue_online)} />} hint="Billets payés en ligne, remboursements déduits" icon={<Smartphone size={18} />} tone="success" />
-                                <KpiCard label="Recettes en espèces" value={<KpiAmount value={formatFcfa(totals?.revenue_cash)} />} hint="Encaissées par vos contrôleurs" icon={<Banknote size={18} />} tone="warning" />
+                                {/* Design 1c (E-64) : totals.revenue_online = Σ écritures VENTE + REMBOURSEMENT du grand livre (partner_events_overview),
+                                    déjà net : un seul nom, « Recettes nettes ». Le brut n'est pas servi par cette lecture. */}
+                                <KpiCard label="Recettes nettes" value={<KpiAmount value={formatFcfa(totals?.revenue_online)} />} hint="Ventes en ligne moins les remboursements." icon={<Smartphone size={18} />} tone="success" />
+                                <KpiCard label="Ventes en espèces" value={<KpiAmount value={formatFcfa(totals?.revenue_cash)} />} hint="Encaissées par vos contrôleurs, hors solde" icon={<Banknote size={18} />} tone="warning" />
                             </>
                         )}
                     </section>
