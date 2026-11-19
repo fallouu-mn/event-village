@@ -23,6 +23,7 @@ import { newBuyer, service, type Buyer } from './paiement-helpers';
 import { dakarAt, dakarDay, dispatchAt, insertOutboxRow, outboxRows, type OutboxRow } from './notif-helpers';
 import { smsActorLimited } from '../../lib/notifications/dispatcher';
 import { createTimedEvent } from './acces-helpers';
+import { advanceEventTo } from './cycle-helpers';
 
 type SaleEvent = Awaited<ReturnType<typeof createPartnerEvent>>;
 const MIN = 60_000;
@@ -252,6 +253,33 @@ describe('règle du 20/11 — un avis lié à un événement proche (moins de 12
                     public.notif_event_soon($1, '{}'::jsonb, $4) AS c, public.notif_event_soon(NULL, '{}'::jsonb, $3) AS d`,
             [soon.eventId, ev.eventId, at.toISOString(), dakarAt(day, '09:00').toISOString()])).rows[0]);
         assert.deepEqual(fn, { a: true, b: false, c: false, d: false }, 'proche à 03:00 ; lointain ; fini à 09:00 ; sans événement');
+    });
+});
+
+describe('contre-vérification (T1, T2) — avis d’état au porteur', () => {
+    test('T2 : avis « de nouveau en ligne » d’un événement terminé → annulé à la réservation (EVENT_TERMINE)', async () => {
+        const ended = await createTimedEvent(partner.partnerId, 'f4-termine', [{ name: 'Standard', price: 5_000, total: 10 }], { startsInHours: -5, durationHours: 2 });
+        const r0 = await insertOutboxRow({
+            type: 'EVENT_REACTIVATED_HOLDER', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channel: 'IN_APP', recipient_user_id: buyer.userId,
+            event_id: ended.eventId, due_at: new Date().toISOString(), next_attempt_at: new Date().toISOString(),
+        });
+        await dispatchAt(new Date(), { ids: [r0.id] });
+        const r = (await outboxRows({ ids: [r0.id] }))[0];
+        assert.deepEqual([r.status, r.reason], ['CANCELLED', 'EVENT_TERMINE'], JSON.stringify(r.decision));
+    });
+
+    test('T1 : un « suspendu » en attente est annulé par la reprise (déclencheur de l’historique, PUBLIE)', async () => {
+        const ev2 = await createPartnerEvent(partner.partnerId, 'f4-reprise', [{ name: 'Standard', price: 5_000, total: 10 }]);
+        await advanceEventTo(ev2.eventId, 'SUSPENDU');
+        const due = new Date(Date.now() + 3_600_000).toISOString();
+        const r0 = await insertOutboxRow({
+            type: 'EVENT_SUSPENDED_HOLDER', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channel: 'SMS', recipient_user_id: buyer.userId,
+            event_id: ev2.eventId, due_at: due, next_attempt_at: due,
+        });
+        assert.equal((await outboxRows({ ids: [r0.id] }))[0].status, 'PENDING', 'précondition : en attente');
+        await advanceEventTo(ev2.eventId, 'PUBLIE');
+        const r = (await outboxRows({ ids: [r0.id] }))[0];
+        assert.deepEqual([r.status, r.reason], ['CANCELLED', 'NO_LONGER_RELEVANT'], 'la reprise rend l’avis « suspendu » faux : annulé');
     });
 });
 

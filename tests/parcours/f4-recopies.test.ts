@@ -91,6 +91,8 @@ const REPLACED: Record<string, Record<string, string[]>> = {
         "'window_minutes', s.minutes, 'threshold', s.threshold)));": ["'window_minutes', s.minutes, 'threshold', s.threshold),"],
     },
     notif_partners_notify: {},
+    // contre-vérification (T1, migration …06) : seulement des lignes ajoutées (annulation des avis d'état, garde des statuts)
+    notif_cancel_on_status: {},
 };
 
 /** Corps de chaque définition `CREATE OR REPLACE FUNCTION public.<name>(` des migrations, dans l'ordre des fichiers. */

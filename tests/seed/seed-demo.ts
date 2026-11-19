@@ -125,6 +125,7 @@ if (process.env.EV_TEST_GUARD !== '1') {
 process.env.CHECKOUT_PER_USER_15MIN = '1000';
 process.env.CHECKOUT_PER_USER_DAY = '10000';
 process.env.SMS_PER_PHONE_DAY = '1000';
+process.env.SMS_PER_PHONE_DAY_OPTIONAL = '1000'; // finition 4 (T3) : compteur des SMS facultatifs par numéro
 process.env.SMS_PER_ACCOUNT_DAY = '1000';
 process.env.SMS_GLOBAL_DAILY_CAP = '100000';
 resetServerEnvCache();
