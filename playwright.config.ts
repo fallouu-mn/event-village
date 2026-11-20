@@ -78,7 +78,7 @@ export default defineConfig({
         { name: 'desktop', testMatch: /captures\.spec\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: CAPTURE_LAUNCH } },
         { name: 'fumee', testMatch: /fumee\.spec\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: LAUNCH } },
         { name: 'terrain', testMatch: /terrain\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
-        { name: 'pwa', testMatch: /installable\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
+        { name: 'pwa', testMatch: /installable\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: { args: [HOST_RESOLVER_RULES] } }, fullyParallel: false }, // lancement de main, sans l'environnement LANG/TZ : le Chromium persistant du test (fr-FR et Dakar fixés dans le test, aucun champ de date) ne reçoit plus beforeinstallprompt avec (runs 513, 516)
         // Sécurité (déconnexion sans réseau) : un compte créé par le test, réseau coupé, horloge avancée
         { name: 'deconnexion', testMatch: /deconnexion\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
         // Stabilité (mini-lot stabilite/connexion) : connexion d'un ADMIN, aucune page rechargée après l'arrivée
