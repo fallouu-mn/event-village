@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { warmWhenIdle } from '@/lib/ui/warm-when-idle';
 
 /** Distance de tirage (px) au-delà de laquelle relâcher actualise. */
 const THRESHOLD = 64;
@@ -27,72 +28,83 @@ export function PullToRefresh({ onRefresh }: { onRefresh: () => Promise<unknown>
 
   useEffect(() => {
     if (!window.matchMedia('(pointer: coarse)').matches) return undefined;
-    const root = document.documentElement;
-    const previous = root.style.overscrollBehaviorY;
-    root.style.overscrollBehaviorY = 'contain';
-    let startX = 0;
-    let startY = 0;
-    let tracking = false;
-    let decided = false;
-    let current = 0;
-    const onStart = (e: TouchEvent): void => {
-      if (busyRef.current || window.scrollY > 0 || e.touches.length !== 1) return;
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-      tracking = true;
-      decided = false;
-      current = 0;
-    };
-    const onMove = (e: TouchEvent): void => {
-      if (!tracking) return;
-      const dx = e.touches[0].clientX - startX;
-      const dy = e.touches[0].clientY - startY;
-      if (!decided) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        decided = true;
-        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) || window.scrollY > 0) {
-          tracking = false;
+    // Run 504 (Mes billets 89, temps de blocage) : rien pendant l'hydratation de la page. L'écriture sur la racine du
+    // document (recalcul du style de toute la page) et les écouteurs sont posés au premier moment libre une fois la
+    // page prête (lib/ui/warm-when-idle.ts) ; sans réseau, rien (actualiser n'aurait rien à relire).
+    const arm = (): (() => void) => {
+      const root = document.documentElement;
+      const previous = root.style.overscrollBehaviorY;
+      root.style.overscrollBehaviorY = 'contain';
+      let startX = 0;
+      let startY = 0;
+      let tracking = false;
+      let decided = false;
+      let current = 0;
+      const onStart = (e: TouchEvent): void => {
+        if (busyRef.current || window.scrollY > 0 || e.touches.length !== 1) return;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        tracking = true;
+        decided = false;
+        current = 0;
+      };
+      const onMove = (e: TouchEvent): void => {
+        if (!tracking) return;
+        const dx = e.touches[0].clientX - startX;
+        const dy = e.touches[0].clientY - startY;
+        if (!decided) {
+          if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+          decided = true;
+          if (dy <= 0 || Math.abs(dx) > Math.abs(dy) || window.scrollY > 0) {
+            tracking = false;
+            return;
+          }
+          setDragging(true);
+        }
+        current = Math.min(MAX_PULL, Math.max(0, dy * 0.5));
+        setPull(current);
+      };
+      const onEnd = (): void => {
+        if (!tracking) return;
+        tracking = false;
+        setDragging(false);
+        if (current < THRESHOLD) {
+          setPull(0);
           return;
         }
-        setDragging(true);
-      }
-      current = Math.min(MAX_PULL, Math.max(0, dy * 0.5));
-      setPull(current);
+        busyRef.current = true;
+        setBusy(true);
+        setPull(THRESHOLD);
+        setAnnounce('');
+        void refreshRef.current()
+          .then(() => setAnnounce('Billets mis à jour.'))
+          .catch((err: unknown) => {
+            console.warn('[mes billets] actualisation impossible :', err instanceof Error ? err.message : String(err));
+            setAnnounce('Les billets n’ont pas pu être mis à jour.');
+          })
+          .finally(() => {
+            busyRef.current = false;
+            setBusy(false);
+            setPull(0);
+          });
+      };
+      window.addEventListener('touchstart', onStart, { passive: true });
+      window.addEventListener('touchmove', onMove, { passive: true });
+      window.addEventListener('touchend', onEnd, { passive: true });
+      window.addEventListener('touchcancel', onEnd, { passive: true });
+      return () => {
+        root.style.overscrollBehaviorY = previous;
+        window.removeEventListener('touchstart', onStart);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onEnd);
+        window.removeEventListener('touchcancel', onEnd);
+      };
     };
-    const onEnd = (): void => {
-      if (!tracking) return;
-      tracking = false;
-      setDragging(false);
-      if (current < THRESHOLD) {
-        setPull(0);
-        return;
-      }
-      busyRef.current = true;
-      setBusy(true);
-      setPull(THRESHOLD);
-      setAnnounce('');
-      void refreshRef.current()
-        .then(() => setAnnounce('Billets mis à jour.'))
-        .catch((err: unknown) => {
-          console.warn('[mes billets] actualisation impossible :', err instanceof Error ? err.message : String(err));
-          setAnnounce('Les billets n’ont pas pu être mis à jour.');
-        })
-        .finally(() => {
-          busyRef.current = false;
-          setBusy(false);
-          setPull(0);
-        });
-    };
-    window.addEventListener('touchstart', onStart, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: true });
-    window.addEventListener('touchend', onEnd, { passive: true });
-    window.addEventListener('touchcancel', onEnd, { passive: true });
+    let disarm: (() => void) | null = null;
+    const cancelWarm = warmWhenIdle(() => { disarm = arm(); }, 2000);
     return () => {
-      root.style.overscrollBehaviorY = previous;
-      window.removeEventListener('touchstart', onStart);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onEnd);
-      window.removeEventListener('touchcancel', onEnd);
+      cancelWarm();
+      disarm?.();
     };
   }, []);
 

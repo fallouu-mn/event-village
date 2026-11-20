@@ -278,3 +278,16 @@ describe('7. JavaScript commun à toutes les pages (budget de /billet/hors-ligne
         assert.match(layout, /<Suspense fallback=\{null\}><SearchLauncher \/><\/Suspense>/);
     });
 });
+
+describe('8. Mes billets : rien du tirer-pour-actualiser pendant le chargement (run 504, Mes billets 89)', () => {
+    test('écouteurs et overscroll-behavior posés au premier moment libre (warmWhenIdle), retirés au démontage', () => {
+        const src = read('components/tickets/PullToRefresh.tsx');
+        assert.match(src, /import \{ warmWhenIdle \} from '@\/lib\/ui\/warm-when-idle'/);
+        assert.match(src, /warmWhenIdle\(\(\) => \{ disarm = arm\(\); \}/);
+        assert.match(src, /return \(\) => \{\s*cancelWarm\(\);\s*disarm\?\.\(\);/);
+        // L'écriture sur la racine du document (recalcul du style de toute la page) n'a lieu que dans arm()
+        const armBody = src.slice(src.indexOf('const arm = '), src.indexOf('warmWhenIdle(() =>'));
+        assert.match(armBody, /root\.style\.overscrollBehaviorY = 'contain'/);
+        assert.equal((src.match(/overscrollBehaviorY = 'contain'/g) ?? []).length, 1);
+    });
+});
