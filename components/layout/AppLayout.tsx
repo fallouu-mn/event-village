@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 // Design 1b (décision du 18/11) : liens préchargés à l'intention (survol, toucher, focus), pas à l'affichage
 import Link from '@/components/ui/IntentLink';
 import { usePathname } from 'next/navigation';
@@ -37,11 +37,15 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import dynamic from 'next/dynamic';
 import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT, setPendingSearch } from '@/components/search/search-events';
 
-// Design 1d (point 9) : lanceur de la recherche instantanée, monté au premier geste sur un déclencheur (searchWanted)
-const SearchLauncher = dynamic(() => import('@/components/search/SearchLauncher').then((m) => ({ default: m.SearchLauncher })), { ssr: false });
+// Design 1d (point 9) : lanceur de la recherche instantanée, monté au premier geste sur un déclencheur (searchWanted).
+// React.lazy et non next/dynamic (run 504) : next/dynamic ajoute son moteur au JavaScript de CHAQUE page (budget de
+// /billet/hors-ligne dépassé) ; même schéma que NavigationProgressDifferee. Morceau introuvable (hors ligne) : le lien
+// garde son rôle, jamais d'erreur.
+const SearchLauncher = lazy(() => import('@/components/search/SearchLauncher')
+  .then((m): { default: React.ComponentType } => ({ default: m.SearchLauncher }))
+  .catch((): { default: React.ComponentType } => ({ default: () => null })));
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
@@ -499,7 +503,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
             <NotificationBell />
             {/* Design 1d (point 9) : recherche instantanée, ouverte depuis tout déclencheur data-ev-search */}
-            {searchWanted && <SearchLauncher />}
+            {searchWanted && <Suspense fallback={null}><SearchLauncher /></Suspense>}
 
 
             {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px

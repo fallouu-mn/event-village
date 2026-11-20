@@ -267,3 +267,14 @@ describe('2 bis. compte à rebours des cartes (à la minute)', () => {
         assert.equal(cardCountdown(start + MINUTE, iso(start), end).text, 'En cours');
     });
 });
+
+describe('7. JavaScript commun à toutes les pages (budget de /billet/hors-ligne, run 504)', () => {
+    test('le layout racine ne tire pas next/dynamic : le lanceur de recherche passe par React.lazy, comme la barre de progression', () => {
+        for (const rel of ['app/layout.tsx', 'components/layout/AppLayout.tsx', 'components/providers/AuthProvider.tsx']) {
+            assert.doesNotMatch(read(rel), /from 'next\/dynamic'/, `${rel} : next/dynamic dans le JavaScript de chaque page`);
+        }
+        const layout = read('components/layout/AppLayout.tsx');
+        assert.match(layout, /lazy\(\(\) => import\('@\/components\/search\/SearchLauncher'\)/);
+        assert.match(layout, /<Suspense fallback=\{null\}><SearchLauncher \/><\/Suspense>/);
+    });
+});
