@@ -264,7 +264,6 @@ interface HallDraftData {
     cityOther: boolean;
 }
 
-const DRAFT_PREFIX = 'ev_salle_brouillon';
 const PHOTO_URL = /^(https?:\/\/|\/)\S*$/;
 
 function str(v: unknown, max: number): string | null {
@@ -385,7 +384,8 @@ export function HallForm({ mode, hall, policyTexts, defaults }: HallFormProps) {
     const unsaved = useUnsavedGuard(dirty, describeUnsaved);
 
     // ── Brouillon gardé sur l'appareil ──
-    const draftKey = user?.id ? `${DRAFT_PREFIX}:${user.id}:${isEdit && hall ? hall.id : 'nouvelle'}` : null;
+    // Brouillon par compte et par salle (lib/events/local-draft : effacé à la déconnexion)
+    const draftKey = user?.id ? `${user.id}::salle-${isEdit && hall ? hall.id : 'nouvelle'}` : null;
     const draftValue = useMemo<HallDraftData>(() => ({ values, cityOther }), [values, cityOther]);
     const draftBaseline = useMemo<HallDraftData>(() => ({ values: start, cityOther: !!start.city && !senegalCity(start.city) }), [start]);
     const draft = useHallDraft<HallDraftData>({

@@ -14,6 +14,7 @@
  * Aucun montant de réservation ici : seulement les champs saisis de la salle (les photos sont les adresses déjà déposées).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clearDraft, readDraft, writeDraft } from '@/lib/events/local-draft';
 
 const VERSION = 1;
 const WRITE_DELAY_MS = 600;
@@ -39,25 +40,32 @@ function storage(): Storage | null {
     }
 }
 
+/**
+ * Contre-vérification du lot 10b (garde de la déconnexion) : le brouillon passe par lib/events/local-draft (clé
+ * « ev-brouillon:v1:<compte>:salle-<id> »), effacé avec les autres brouillons à la déconnexion (clearAllDrafts,
+ * AuthProvider). Clé du crochet : « <compte>::<brouillon> ».
+ */
+function splitKey(key: string): [string, string] | null {
+    const i = key.indexOf('::');
+    return i > 0 ? [key.slice(0, i), key.slice(i + 2)] : null;
+}
+
 function readRaw(key: string): string | null {
-    try {
-        return storage()?.getItem(key) ?? null;
-    } catch {
-        return null;
-    }
+    const k = splitKey(key);
+    if (!k) return null;
+    const draft = readDraft<object>(k[0], k[1], (d) => (d && typeof d === 'object' ? d : null));
+    return draft ? JSON.stringify(draft.data) : null;
 }
 
 /** Vrai si l'opération a réussi. */
 function writeRaw(key: string, raw: string | null): boolean {
-    try {
-        const s = storage();
-        if (!s) return false;
-        if (raw === null) s.removeItem(key);
-        else s.setItem(key, raw);
+    const k = splitKey(key);
+    if (!k) return false;
+    if (raw === null) {
+        clearDraft(k[0], k[1]);
         return true;
-    } catch {
-        return false;
     }
+    return writeDraft(k[0], k[1], JSON.parse(raw) as unknown);
 }
 
 export interface HallDraftOptions<T> {
