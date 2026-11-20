@@ -12,9 +12,9 @@ import type { CatalogEventDto } from '@/lib/events/catalog.server';
  */
 
 /** Rangée sur téléphone (-mx-4 annule la gouttière de 16 px : les cartes vont jusqu'au bord), grille dès 640 px. */
-export const ROW = '-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto overscroll-x-contain px-4 pb-2 no-scrollbar sm:mx-0 sm:grid sm:snap-none sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-4';
-export const ROW_ITEM = 'w-[78%] flex-none snap-start sm:w-auto';
-export const ROW_SIZES = '(max-width: 640px) 78vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 300px';
+export const ROW = '-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto overscroll-x-contain px-4 pb-2 no-scrollbar sm:mx-0 sm:grid sm:snap-none sm:grid-cols-3 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4';
+export const ROW_ITEM = 'w-[64%] flex-none snap-start sm:w-auto';
+export const ROW_SIZES = '(max-width: 640px) 64vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 300px';
 
 export function SectionHead({ id, title, hint, href, linkLabel, aside }: {
   id: string;
@@ -54,6 +54,7 @@ export function cardProps(e: CardData) {
     title: e.title,
     subtitle: e.subtitle,
     imageUrl: e.imageUrl,
+    posterColor: e.posterColor,
     dateFormatted: e.dateFormatted,
     dayNumber: e.dayNumber,
     monthShort: e.monthShort,
@@ -98,14 +99,14 @@ export function FeaturedRow({ events, priorityFirst }: { events: CardData[]; pri
           key={e.id}
           className={cn(
             'flex-none snap-start',
-            i === 0 ? 'w-[88%] sm:w-[62%] lg:col-span-2 lg:row-span-2 lg:w-auto' : 'w-[72%] sm:w-[40%] lg:w-auto',
+            i === 0 ? 'w-[78%] sm:w-[48%] lg:col-span-2 lg:row-span-2 lg:w-auto' : 'w-[64%] sm:w-[36%] lg:w-auto',
             i >= 9 && 'lg:hidden',
           )}
         >
           <EventCard
             {...cardProps(e)}
             size={i === 0 ? 'feature' : 'default'}
-            sizes={i === 0 ? '(max-width: 640px) 88vw, (max-width: 1024px) 62vw, 600px' : '(max-width: 640px) 72vw, (max-width: 1024px) 40vw, 300px'}
+            sizes={i === 0 ? '(max-width: 640px) 78vw, (max-width: 1024px) 48vw, 600px' : '(max-width: 640px) 64vw, (max-width: 1024px) 36vw, 300px'}
             priority={i === 0 && priorityFirst}
           />
         </li>

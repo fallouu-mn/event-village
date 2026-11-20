@@ -10,6 +10,7 @@ import { loadHomeData, type HomeData } from '@/app/_accueil/data.server';
 import { EventCard } from '@/components/events/EventCard';
 import { CardTransitions } from '@/components/events/CardLink';
 import { CardLiveBadges } from '@/components/events/CardLiveBadge';
+import { CardFavorites } from '@/components/events/CardFavorites';
 import { AccessNotice } from '@/components/layout/AccessNotice';
 import { buttonClasses } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -97,6 +98,8 @@ export default async function HomePage() {
         {/* Design 1b (run 376) : un seul îlot pour les transitions des cartes, un seul pour leurs badges « En cours » */}
         <CardTransitions />
         <CardLiveBadges />
+        {/* Design 1d (point 8) : un seul îlot pour les cœurs des favoris */}
+        <CardFavorites />
       </Suspense>
 
       {/* 1. Accroche et recherche */}
@@ -140,7 +143,7 @@ export default async function HomePage() {
       </section>
 
       {!data ? (
-        <EmptyState
+        <EmptyState illustrated
           icon={<Ticket size={28} />}
           title="Impossible d’afficher les événements"
           description="La liste n’a pas pu être chargée. Vérifiez votre connexion, puis réessayez."
@@ -179,7 +182,7 @@ export default async function HomePage() {
           ) : (
             <section aria-labelledby="une-titre" className="space-y-4">
               <SectionHead id="une-titre" title="À l’affiche" aside={<HomeLive />} />
-              <EmptyState
+              <EmptyState illustrated
                 icon={<Ticket size={28} />}
                 title="Aucun événement à l’affiche pour le moment"
                 description="Les prochains événements apparaîtront ici dès leur publication."
