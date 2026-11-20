@@ -384,8 +384,6 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
 
   return (
     <div className="space-y-6 pb-24 lg:pb-12">
-      {/* Design 1d (point 10) : tirer pour actualiser (écrans tactiles), même relecture que le temps réel */}
-      <PullToRefresh onRefresh={refreshAll} />
       <PageHeader
         title="Mes billets"
         description="Présentez le QR code à l’entrée : il se renouvelle tout seul. Glissez d’un billet à l’autre, et touchez le QR pour l’afficher en grand."
@@ -552,6 +550,11 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
       {isExplainerOpen && <TransferExplainerModal isOpen onClose={() => setIsExplainerOpen(false)} />}
 
       {celebrate && phase === 'ready' && <PurchaseCelebration onDone={endCelebration} />}
+
+      {/* Design 1d (point 10) : tirer pour actualiser (écrans tactiles), même relecture que le temps réel. EN DERNIER : en
+          tête de ce conteneur (space-y-6), son arrivée après le chargement donnait une marge de 24 px à l'en-tête et
+          faisait descendre toute la page (run 485, saut de 0,049) */}
+      <PullToRefresh onRefresh={refreshAll} />
     </div>
   );
 }

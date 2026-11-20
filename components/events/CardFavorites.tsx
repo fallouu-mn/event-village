@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useToast } from '@/components/ui/Toast';
 import { lightVibration } from '@/lib/ui/haptics';
-import { FAV_ATTR } from './FavoriteHeart';
+import { FAV_ATTR, takePendingFavorite } from './fav-pending';
 
 /** Durée du rebond du cœur (classe ev-fav-pop, app/globals.css). */
 const POP_MS = 260;
@@ -36,6 +36,7 @@ export function CardFavorites() {
   const toastRef = useRef(toast);
   toastRef.current = toast;
   userId.current = user?.id ?? null;
+  const toggleRef = useRef<((button: HTMLElement) => void) | null>(null);
 
   // Favoris du compte reportés sur les cœurs de la page
   useEffect(() => {
@@ -89,6 +90,9 @@ export function CardFavorites() {
       if (!button) return;
       e.preventDefault();
       e.stopPropagation();
+      toggle(button);
+    };
+    const toggle = (button: HTMLElement): void => {
       const id = button.getAttribute(FAV_ATTR);
       if (!id || pending.has(id)) return;
       if (!userId.current) {
@@ -131,9 +135,21 @@ export function CardFavorites() {
         }
       })();
     };
+    toggleRef.current = toggle;
     document.addEventListener('click', onClick);
-    return () => document.removeEventListener('click', onClick);
+    return () => {
+      toggleRef.current = null;
+      document.removeEventListener('click', onClick);
+    };
   }, [router]);
+
+  // Un toucher arrivé avant l'îlot (CardFavoritesLazy, fav-pending) est rejoué une fois la session connue ; cet effet est
+  // déclaré APRÈS celui des touchers, qui pose toggleRef
+  useEffect(() => {
+    if (isLoading) return;
+    const button = takePendingFavorite();
+    if (button) toggleRef.current?.(button);
+  }, [isLoading]);
 
   return null;
 }

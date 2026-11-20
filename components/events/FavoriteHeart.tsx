@@ -2,8 +2,9 @@ import React from 'react';
 import { Heart } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 
-/** Attribut posé sur chaque cœur (valeur : identifiant de l'événement), lu par l'îlot unique CardFavorites. */
-export const FAV_ATTR = 'data-ev-fav';
+import { FAV_ATTR } from './fav-pending';
+
+export { FAV_ATTR };
 
 /**
  * Design 1d (point 8) — cœur des favoris, rendu par le SERVEUR (aucun îlot par carte : budget de l'accueil, run 376) :
