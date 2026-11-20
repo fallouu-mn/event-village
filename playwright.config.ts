@@ -30,14 +30,18 @@
  */
 import { defineConfig } from '@playwright/test';
 import { APP_URL, e2eConfig } from './e2e/support/env';
-import { DESKTOP, MOBILE } from './e2e/support/devices';
+import { DESKTOP, FR_CONTEXT, FR_LANG_ARG, MOBILE, frBrowserEnv } from './e2e/support/devices';
 
 e2eConfig();
 
 /** Résolution forcée en IPv4 : voir `launchOptions` de `use`. */
 const HOST_RESOLVER_RULES = '--host-resolver-rules=MAP localhost 127.0.0.1';
-/** Lot 8 (L66) : lanceur des projets de capture. Remplace celui de `use`, d'où la répétition de la première règle. */
-const CAPTURE_LAUNCH = { args: [HOST_RESOLVER_RULES, '--enable-blink-features=LangAttributeAwareFormControlUI', '--lang=fr-FR'] };
+/** Stabilité (mini-lot stabilite/langue) : navigateur en français à l'heure de Dakar pour tous les projets (e2e/support/devices.ts). */
+const FR_ENV = frBrowserEnv();
+/** Lanceur de tous les projets : résolution forcée en IPv4, navigateur en français. */
+const LAUNCH = { args: [HOST_RESOLVER_RULES, FR_LANG_ARG], env: FR_ENV };
+/** Lot 8 (L66) : lanceur des projets de capture. Remplace celui de `use`, d'où la répétition des autres réglages. */
+const CAPTURE_LAUNCH = { args: [HOST_RESOLVER_RULES, '--enable-blink-features=LangAttributeAwareFormControlUI', FR_LANG_ARG], env: FR_ENV };
 
 const phase = (process.env.E2E_PHASE || 'complet').replace(/[^a-z0-9-]/gi, '');
 
@@ -54,8 +58,7 @@ export default defineConfig({
     globalTeardown: './e2e/support/build-index.ts',
     use: {
         baseURL: APP_URL,
-        locale: 'fr-FR',
-        timezoneId: 'Africa/Dakar',
+        ...FR_CONTEXT,
         serviceWorkers: 'block',
         reducedMotion: 'reduce',
         trace: 'retain-on-failure',
@@ -64,25 +67,27 @@ export default defineConfig({
         actionTimeout: 15_000,
         navigationTimeout: 45_000,
         // L'application écoute sur 127.0.0.1 mais est servie sous « localhost » (voir APP_URL) :
-        // résolution forcée en IPv4, pour ne jamais tenter ::1 où rien n'écoute.
-        launchOptions: { args: [HOST_RESOLVER_RULES] },
+        // résolution forcée en IPv4, pour ne jamais tenter ::1 où rien n'écoute. Navigateur en français (mini-lot stabilite/langue).
+        launchOptions: LAUNCH,
     },
+    // Stabilité (mini-lot stabilite/langue) : langue et fuseau répétés dans chaque projet (FR_CONTEXT), lanceur en français
+    // (LAUNCH ou CAPTURE_LAUNCH) : aucun projet ne peut en hériter autrement.
     projects: [
-        { name: 'setup', testMatch: /auth\.setup\.ts$/, use: DESKTOP },
-        { name: 'mobile', testMatch: /captures\.spec\.ts$/, use: { ...MOBILE, launchOptions: CAPTURE_LAUNCH } },
-        { name: 'desktop', testMatch: /captures\.spec\.ts$/, use: { ...DESKTOP, launchOptions: CAPTURE_LAUNCH } },
-        { name: 'fumee', testMatch: /fumee\.spec\.ts$/, use: DESKTOP },
-        { name: 'terrain', testMatch: /terrain\.spec\.ts$/, use: MOBILE, fullyParallel: false },
-        { name: 'pwa', testMatch: /installable\.spec\.ts$/, use: MOBILE, fullyParallel: false },
+        { name: 'setup', testMatch: /auth\.setup\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: LAUNCH } },
+        { name: 'mobile', testMatch: /captures\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: CAPTURE_LAUNCH } },
+        { name: 'desktop', testMatch: /captures\.spec\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: CAPTURE_LAUNCH } },
+        { name: 'fumee', testMatch: /fumee\.spec\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: LAUNCH } },
+        { name: 'terrain', testMatch: /terrain\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
+        { name: 'pwa', testMatch: /installable\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
         // Sécurité (déconnexion sans réseau) : un compte créé par le test, réseau coupé, horloge avancée
-        { name: 'deconnexion', testMatch: /deconnexion\.spec\.ts$/, use: MOBILE, fullyParallel: false },
+        { name: 'deconnexion', testMatch: /deconnexion\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
         // Stabilité (mini-lot stabilite/connexion) : connexion d'un ADMIN, aucune page rechargée après l'arrivée
-        { name: 'connexion-course', testMatch: /connexion-course\.spec\.ts$/, use: DESKTOP, fullyParallel: false },
-        { name: 'perf', testMatch: /perf\.spec\.ts$/, use: { ...MOBILE, reducedMotion: 'no-preference' }, fullyParallel: false },
-        { name: 'emails', testMatch: /emails\.spec\.ts$/, fullyParallel: false },
-        { name: 'dev-page', testMatch: /dev-page\.spec\.ts$/, fullyParallel: false },
-        { name: 'recette', testMatch: /recette\.spec\.ts$/, use: DESKTOP, fullyParallel: false },
+        { name: 'connexion-course', testMatch: /connexion-course\.spec\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
+        { name: 'perf', testMatch: /perf\.spec\.ts$/, use: { ...MOBILE, ...FR_CONTEXT, launchOptions: LAUNCH, reducedMotion: 'no-preference' }, fullyParallel: false },
+        { name: 'emails', testMatch: /emails\.spec\.ts$/, use: { ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
+        { name: 'dev-page', testMatch: /dev-page\.spec\.ts$/, use: { ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
+        { name: 'recette', testMatch: /recette\.spec\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: LAUNCH }, fullyParallel: false },
         // Design 1c (point 1) : contrôle responsive, fenêtre redimensionnée par le test (320 à 1 440 px, paysage du scanner)
-        { name: 'responsive', testMatch: /responsive\.spec\.ts$/, use: { ...DESKTOP, launchOptions: CAPTURE_LAUNCH } },
+        { name: 'responsive', testMatch: /responsive\.spec\.ts$/, use: { ...DESKTOP, ...FR_CONTEXT, launchOptions: CAPTURE_LAUNCH } },
     ],
 });

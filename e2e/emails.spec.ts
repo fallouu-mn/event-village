@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
+import { FR_CONTEXT } from './support/devices';
 import { contrastRatio, parseRgb } from './support/checks';
 import { CAPTURES_DIR, E2E_OUTPUT_DIR } from './support/demo-ids';
 
@@ -177,7 +178,7 @@ for (const id of EMAIL_IDS) {
         const lines: string[] = [`${id} (${(email as RenderedEmail).type}) — objet « ${(email as RenderedEmail).subject} »`];
         for (const width of WIDTHS) {
             for (const theme of THEMES) {
-                const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 2, locale: 'fr-FR', colorScheme: theme.scheme });
+                const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 2, ...FR_CONTEXT, colorScheme: theme.scheme });
                 const requests: string[] = [];
                 try {
                     await context.route('**/*', async (route) => {

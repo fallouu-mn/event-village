@@ -8,6 +8,20 @@
  *  - « 4G » (DevTools « Slow 4G », ex-« Fast 3G ») : 562,5 ms, 1,44 Mbit/s descendant, 675 kbit/s montant ;
  *  - « 3G » (DevTools « 3G », ex-« Slow 3G ») : 2 000 ms, 400 kbit/s descendant, 400 kbit/s montant.
  */
+/**
+ * Stabilité (mini-lot stabilite/langue, run 498 : champ de date de la capture admin-notifications lu « mm/dd/yyyy ») :
+ * langue et fuseau de tout navigateur des tests. `locale` et `timezoneId` règlent la page (navigator.language, Intl, fuseau) ;
+ * le gabarit des champs de date suit, lui, la langue du NAVIGATEUR, que Chromium sous Linux lit dans LANG et LANGUAGE (il y
+ * ignore `--lang`) : ces variables sont données au processus du navigateur, avec `--lang=fr-FR` pour les autres systèmes.
+ */
+export const FR_CONTEXT = { locale: 'fr-FR', timezoneId: 'Africa/Dakar' } as const;
+export const FR_LANG_ARG = '--lang=fr-FR';
+export function frBrowserEnv(): Record<string, string> {
+    const env: Record<string, string> = {};
+    for (const [k, v] of Object.entries(process.env)) if (typeof v === 'string') env[k] = v;
+    return { ...env, LANG: 'fr_FR.UTF-8', LANGUAGE: 'fr', LC_ALL: 'fr_FR.UTF-8', TZ: 'Africa/Dakar' };
+}
+
 export const DESKTOP = {
     browserName: 'chromium' as const,
     viewport: { width: 1440, height: 900 },
