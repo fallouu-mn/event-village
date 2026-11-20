@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import { chromium, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import { test, expect } from './support/fixtures';
-import { FR_CONTEXT, FR_LANG_ARG, MOBILE, frBrowserEnv } from './support/devices';
+import { MOBILE } from './support/devices';
 import { APP_URL, e2eConfig } from './support/env';
 import { installNetworkGuard } from './support/network';
 
@@ -34,16 +34,15 @@ async function persistentContext(testInfo: TestInfo, profil: string): Promise<Br
         context = await chromium.launchPersistentContext(dir, {
             channel: 'chromium',
             headless: true,
-            // Navigateur en français à l'heure de Dakar, comme les projets de playwright.config.ts (mini-lot stabilite/langue)
-            args: ['--host-resolver-rules=MAP localhost 127.0.0.1', FR_LANG_ARG],
-            env: frBrowserEnv(),
+            args: ['--host-resolver-rules=MAP localhost 127.0.0.1'],
             baseURL: APP_URL,
             viewport: MOBILE.viewport,
             deviceScaleFactor: MOBILE.deviceScaleFactor,
             isMobile: MOBILE.isMobile,
             hasTouch: MOBILE.hasTouch,
             userAgent: MOBILE.userAgent,
-            ...FR_CONTEXT,
+            locale: 'fr-FR',
+            timezoneId: 'Africa/Dakar',
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
