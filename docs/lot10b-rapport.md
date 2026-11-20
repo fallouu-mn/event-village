@@ -63,7 +63,11 @@ Les rappels, la veille et les recettes partent de jour (en dehors de `notif.sms_
 |---|---|
 | `…01_l10b_droit_validation` | `hall_validation_decide`, `venue_validation_decide` (droit `halls.validate`, `admin_can`) ; `notif_admin_review_sms` (salles) ; `ADMIN_VENUE_SUBMITTED` → `halls.validate` |
 | `…02_l10b_salles` | réglage `halls.max_pending_per_client` (recopies de `finance_setting_set`, `fin_setting_valid`) ; `hall_client_pending_refusal` ; `halls_validation_guard` ; `hall_submit`, `hall_search`, `hall_calendar`, `hall_cancel_preview`, `hall_partner_earnings` |
-| `…03_l10b_avis` | 6 types nouveaux, SMS ajouté à 4 types ; `trg_halls_notify_admins` ; recopies de `hall_reserve`, `hall_reservations_tick`, `notif_cashouts_notify` |
+| `…03_l10b_avis` | 6 types nouveaux, SMS ajouté à 4 types ; `trg_halls_notify_admins` ; recopies de `hall_reserve`, `hall_reservations_tick`, `notif_cashouts_notify` (depuis la version de la finition 4) |
+| `…04_l10b_cv_correctifs` | contre-vérification T1 à T7, T4 bis et T5 bis : `partner_listed`, règles de lecture des salles, établissements, zones, tables et réservations ; recopies de `hall_reservation_cancel`, `hall_quote`, `hall_booking_refusal`, `notif_admin_review_sms`, `halls_notify_admins`, `hall_reservations_tick` |
+| `…05_l10b_cv_droits_avis` | `ADMIN_PERMISSIONS_CHANGED`, `ADMIN_PERMISSIONS_ALERT` ; recopie de `admin_permissions_set` (avis en file dans la même transaction) |
+| `…06_l10b_cv_envoi` | `halls.submitted_at` (date exacte d'envoi en validation) ; recopies de `halls_validation_guard` et `hall_submit` |
+| `…07_l10b_cv_nuit` | T8 : trois types des salles en `night_policy` DEFER ; recopie de `hall_reservations_tick` sans garde de jour |
 
 Chaque recopie part de la dernière définition (fichier et lignes cités) ; `migration-lot10b-rejouable` vérifie qu'aucune
 ligne n'est perdue. Toutes les fonctions nouvelles sont réservées au rôle de service (`l10b-fonctions`).
@@ -101,29 +105,139 @@ Journaux bruts : branche `ci-results`, `runs/436-44515221134/`, `runs/438-445172
 ## Mise en service (event-village-dev)
 
 ```sql
--- Avant : dernière migration 20261123000113 ; rien du lot
+-- Avant : dernière migration de main appliquée ; rien du lot
 select max(version) from supabase_migrations.schema_migrations;
 select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('hall_submit', 'hall_search');
 -- Après
-select version from supabase_migrations.schema_migrations where version like '20261126%' order by 1;           -- 3 versions
+select version from supabase_migrations.schema_migrations where version like '20261126%' order by 1;           -- 7 versions
 select p.proname, has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute')
   from pg_proc p where p.pronamespace = 'public'::regnamespace
    and p.proname in ('hall_submit','hall_search','hall_calendar','hall_cancel_preview','hall_partner_earnings') order by 1; -- false, false
 select key, value from public.platform_settings where key = 'halls.max_pending_per_client';                      -- 3
+select has_function_privilege('anon', 'public.partner_listed(uuid)', 'execute');                                 -- true (booléen seul)
+select type, night_policy from public.notification_types
+ where type in ('HALL_BALANCE_REMINDER', 'HALL_EVE_REMINDER', 'HALL_EARNINGS_AVAILABLE') order by 1;             -- DEFER × 3
+select type, channels from public.notification_types where type like 'ADMIN_PERMISSIONS_%' order by 1;          -- 4 canaux
 select type, channels, admin_permission from public.notification_types
  where type like 'HALL\_%' or type in ('ADMIN_HALL_SUBMITTED', 'ADMIN_HALL_CHANGED', 'ADMIN_VENUE_SUBMITTED') order by 1;
 ```
 
-Puis `03-verification.sql`, et cocher « Valider les salles et les établissements » aux administrateurs concernés.
+Puis `03-verification.sql` (9 aides des politiques, `partner_listed` comprise), et cocher « Valider les salles et les établissements » aux administrateurs concernés.
 
 ## Points ouverts
 
 - Fusion en dernier (après design-1c et finition-4) : conflits attendus dans `lib/notifications/catalog.ts`,
   `components/layout/admin-nav.ts`, `tests/parcours/notif-*.test.ts` et la recopie de `finance_setting_set` /
   `fin_setting_valid` si une autre branche les redéfinit (la dernière doit garder toutes les clés).
-- Captures e2e et budgets JS des pages des salles : non ajoutés (service fermé, pages en 404 en recette).
+- Captures e2e et contrôle responsive des pages des salles : faits aux correctifs (section suivante). Budgets JS : pages des salles non mesurées.
 - Écrans des établissements de tables (validation comprise) : lot 11b ; le droit est déjà prêt.
-- La valeur par défaut de l'acompte (`halls.deposit_default_percent`) et la durée de garde (`halls.hold_minutes`) ne
-  sont pas montrées dans le formulaire de la salle ni dans le panneau de paiement (texte « valeur par défaut »,
-  « quelques minutes »).
-- Date d'envoi en validation exacte : la file affiche la date de dernière modification.
+- Vraies valeurs (acompte par défaut, durée de garde) et date exacte d'envoi en validation : faites aux correctifs.
+
+## Correctifs de la contre-vérification
+
+Contre-vérification : `docs/audit-lot10b.md` (branche `lot10b/rouges`, `e36ad3e24`), avancée dans cette branche. Ses
+suites `tests/audit/cv10b-1` à `-3` sont les tests rouges du run 456 ; **assertions inchangées**, toutes vertes au run
+482. `main` (design 1c, 1c bis, finition 4 : `40ffd1a74`) fusionné dans la branche (`5a5f00b84`). Migrations
+`20261126000004` à `…07`, sans BEGIN ni COMMIT, rejouables ; chaque recopie part de la dernière définition (fichier et
+lignes cités en tête de migration) et le test `migration-lot10b-rejouable` vérifie qu'aucune ligne n'est perdue.
+
+| # | Trou (gravité) | Correctif | Commit |
+|---|---|---|---|
+| T1 | Fiche partenaire SUSPENDU : modifier, supprimer une salle, annuler une réservation payée (moyenne) | écritures `/api/partner/halls*` refusées à une fiche SUSPENDU (403 `PARTNER_SUSPENDED`, texte des salles) ; en base, `hall_reservation_cancel` exige la fiche VALIDE pour l'origine SALLE (Event Village annule pour elle) ; inventaire `f2acv` mis à jour | `e74538000` |
+| T5 | Note du client non payée lue par la salle par la REST (moyenne) | la salle ne lit plus ses réservations par la REST (`hall_reservations_read` : le client, l'administration) ; ses écrans passent par les routes serveur | `e74538000` |
+| T2 | Contacts de la partenaire avec `halls.validate` seul (faible) | téléphone et email seulement avec `partners.read` ; sinon « Réservé au droit Consulter les partenaires » | `e74538000` |
+| T3 | Salle non validée réservable quand la validation est désactivée (faible) | `hall_quote` et `hall_booking_refusal` exigent VALIDEE quel que soit le réglage | `e74538000` |
+| T4 | Salle d'une partenaire suspendue lisible par la REST (faible) | lecture publique seulement si la partenaire est VALIDE (`partner_listed`, un booléen lisible par anon) | `e74538000` |
+| T6 | Salle validée modifiée : pas de SMS aux administrateurs (faible) | SMS groupé (élément `HALL_CHANGED`, reporté à la fin de la nuit) : « N salle(s) validée(s) modifiée(s) à vérifier » | `e74538000`, `dc78f0a75` |
+| T7 | Rappels du solde écrits en dur à J-10 et J-8 (faible) | rappels 3 jours puis 1 jour avant l'échéance, quel que soit `halls.balance_due_days` (J-10 et J-8 avec l'échéance par défaut) | `e74538000` |
+| T8 | Rappel du solde envoyé la nuit (faible) | après la fusion de la finition 4 : `HALL_BALANCE_REMINDER`, `HALL_EVE_REMINDER`, `HALL_EARNINGS_AVAILABLE` classés `night_policy` DEFER (son mécanisme) ; la garde de jour du lot 10b retirée de `hall_reservations_tick` (aucun second mécanisme) | `5654990a8` |
+
+### Les mêmes trous sur les tables (T4 bis, T5 bis)
+
+Vérifiés par `tests/security/l10b-cv-tables` (clé anon et jetons), **rouges au run 459** (`d607d7500`, tests seuls) :
+
+```
+[L10B-CV] T4 bis visiteur : {"venue":[{"id":"d49b57f7-…"}],"table":[{"id":"14f7b51e-…"}],"zone":[{"id":"ab58f735-…"}]}
+not ok 1 - T4 bis. Établissement d’une partenaire suspendue lisible par la REST anonyme
+[L10B-CV] T5 bis REST de l’établissement : [{"id":"d03e8887-…","client_id":"6aff7404-…","booking_state":"CONFIRMEE","special_requests":"Appelez-moi au 777112889"}]
+not ok 2 - T5 bis. Réservations de tables lues par l’établissement par la REST
+```
+
+Corrigés comme T4 et T5 (`venues`, `restaurant_zones`, `restaurant_tables` : partenaire VALIDE ; `table_reservations` :
+le client et l'administration), verts aux runs 460 et 482. T5 bis est plus faible que T5 : la route de l'établissement
+donne déjà la demande du client ; la REST ajoutait l'identifiant du compte du client et des colonnes internes.
+
+### R1 de la contre-vérification de la finition 4
+
+La recopie de `notif_cashouts_notify` (migration `20261126000003`) partait de la version 11a et aurait effacé la
+finition 4. Elle part désormais de `20261125000003_f4_ventes.sql:568-879` (auteur, canaux choisis, avis groupé
+`PARTNER_REFUND_REQUESTS`, `not_paid` gardés) ; la branche du remboursement d'une salle (`HALL_REFUND_PAID`) s'ajoute à
+côté, l'avis des billets est inchangé. **Preuve : `f4-messages` et `f4-recopies` verts sur la branche (run 482).**
+Même défaut trouvé et corrigé pour `finance_setting_set` (migration `…02`) : elle part de
+`20261124000001_d1cbis_restes.sql:91-143` (message du refus du design 1c bis, vérifié en base par `notif-reglages`).
+
+### Demande du 19/11 : droits d'un administrateur
+
+N'existait pas (le changement n'allait qu'au journal d'audit). Migration `…05` : `admin_permissions_set` met en file, dans
+la même transaction, `ADMIN_PERMISSIONS_CHANGED` pour l'administrateur (4 canaux : « Vous pouvez maintenant valider les
+salles et les établissements. » / « Vous ne pouvez plus … ») et `ADMIN_PERMISSIONS_ALERT` pour les autres
+super-administrateurs actifs (4 canaux) ; rien si les droits ne changent pas ; l'auteur ne reçoit pas d'alerte. SMS d'un
+segment au pire cas : un droit 83 caractères, plusieurs droits (décompte et lien) 132, alerte 158 (noms à 20). Suite
+`tests/parcours/l10b-droits-avis` (route réelle, identité du super-administrateur confirmée).
+
+### Points ouverts du rapport, expérience
+
+- Vraies valeurs : acompte par défaut (« Acompte d'Event Village : 30 % ») et durée de garde (« La date est gardée
+  15 minutes pour payer ») ; date exacte d'envoi en validation (`halls.submitted_at`, migration `…06`, file triée par elle).
+- Formulaire de la salle : saisie gardée sur l'appareil (« Reprendre ma salle en cours ») ; salle refusée : motif
+  visible, « Corriger et renvoyer » (enregistrer puis renvoyer en validation).
+- Fiche : galerie plein écran qu'on fait glisser (chargée à la demande), calendrier des disponibilités coloré avec un
+  second signal et sa légende, prix total recalculé en direct par le serveur (aucun calcul à l'écran).
+- Contrôle responsive (design 1c) : 12 pages des salles contrôlées à 6 largeurs, clair et sombre ; captures e2e
+  (13 écrans) ; interrupteur ouvert le temps de ces tests seulement (verrou entre workers, `e2e/support/halls-switch.ts`).
+- Écrans des salles alignés sur le design 1c (arrondi de 12 px, file en cartes jusqu'à xl).
+
+### Tests modifiés (signalés)
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `r30-salles-lecture`, `r31-tables-lecture` | la salle et l'établissement ne lisent plus leurs réservations par la REST | T5, T5 bis |
+| `tests/audit/cv11a-4-droits` (précondition seulement) | « la propriétaire lit sa réservation » → « lit son établissement » ; assertion de sécurité inchangée | T5 bis (la précondition ne servait qu'à prouver la session) |
+| `f2acv-ecritures-fiche` | écritures des salles retirées de la liste des écritures gardées | T1 |
+| `notif-outbox`, `notif-modeles`, `notif-migration` | 2 types (droits), SMS groupé des salles modifiées, inventaire | demande du 19/11, T6 |
+| `l10b-avis` (suite du lot) | clés J3 et J1 ; nuit sans garde de jour | T7, T8 |
+| `e2e/support/responsive-pages.ts`, `screens.ts`, specs, seed de démonstration | pages et écrans des salles, interrupteur ouvert le temps du test | contrôle responsive, captures |
+| `tests/schema/fonctions-privileges`, `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` | `partner_listed` ajoutée à la liste blanche des aides des politiques (9 au lieu de 8) | T4 (une aide lisible par anon, comme les 8 autres) |
+| `docs/recette-billetterie.md` | lignes citées de `fonctions-privileges` recalées (93, 131) | ajout ci-dessus |
+| `notifications` (responsive et capture) | préchargement du lien d'une réservation de salle toléré (404 tant que le service est fermé) | voir ci-dessous |
+
+### Constat produit
+
+Quand le service des salles est fermé, une notification de réservation de salle mène à une page introuvable (404) :
+à trancher à l'ouverture (masquer le lien, ou laisser « Mes réservations » ouvert service fermé comme l'annulation).
+
+### Runs
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 459 | `d607d7500` | rapide, tests seuls | rouge voulu : T4 bis et T5 bis |
+| 460 | `522e2be9f` | rapide, 21 suites | 18/21 : T8 (attendu avant la finition 4), mon test des droits sans identité confirmée, mes clés J10/J8 |
+| 462 | `dae4ca5d8` | rapide, 11 suites | 10/11 : seul T8 (attendu) |
+| 482 | `a956ba3f7` | rapide, 18 suites | **vert 18/18** : `f4-messages`, `f4-recopies`, `f4-textes`, `cv10b-1` à `-3` (T1-T8), `cv11a-5-recopies`, `l10b-cv-tables`, avis |
+| 483 | `de7d1fd27` | complet | rouge : `partner_listed` hors liste blanche ; brouillon de la salle écrit hors de `local-draft` (non effacé à la déconnexion, `cvf2b-6`) ; `/halls` en erreur (fonction d’un module client appelée par la page serveur) ; jours du calendrier de 34 et 40 px à 320 et 360 px (responsive) ; `notif-pros` (nuit, voir plus bas) |
+| 487 | `731f47502` | complet | tests 554/557, build, budgets JS, **responsive 0 défaut** (74 pages, dont les 12 des salles), Lighthouse (92, 92, 90) ; e2e 685/687 : nom lu de la bande des jours (axe) ; `hotfix-scripts` (compte des aides), `recette-matrice` (lignes citées), `notif-pros` (nuit) |
+| 490 | `50347ac53` | complet | tests 556/557 (seul `notif-pros`, nuit) ; e2e 685/687 et responsive 4 défauts : la fiche d’une salle élargie à 698 px sur téléphone (texte masqué de la bande des jours sorti de la zone qui défile) ; Lighthouse Mes billets 89 (page non touchée, 90 au run 487) |
+
+### `notif-pros` la nuit (hors du lot)
+
+Runs 483, 487 et 490, lancés entre 02:24 et 04:45 (heure de Dakar) : `notif-pros` envoie des avis non urgents
+(`EVENT_REJECTED`, `PARTNER_VALIDATED`…) « maintenant » ; classés DEFER par la finition 4, ils restent en attente pendant
+la plage de nuit (01:00 → 07:00). Journal brut (run 487) :
+
+```
+not ok 1 - refus par l’admin avec motif puis validation : EVENT_REJECTED et EVENT_VALIDATED, quatre canaux, SMS exacts
+EVENT_REJECTED:…:SMS : SMS SENT (statut PENDING, motif null )
+```
+
+La finition 4 l’a déjà corrigé sur sa branche (`eebe40e02`, `nowOutsideNight`, run 480 de main), mais ce commit n’est pas
+dans main (`40ffd1a74`). Rien n’est changé ici : le correctif arrivera avec main ; le run final est lancé après 07:00.
