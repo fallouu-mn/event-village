@@ -38,9 +38,9 @@ import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import dynamic from 'next/dynamic';
-import { SEARCH_OPEN_EVENT } from '@/components/search/search-events';
+import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT, setPendingSearch } from '@/components/search/search-events';
 
-// Design 1d (point 9) : lanceur de la recherche instantanée chargé après l'affichage (aucun poids au premier chargement)
+// Design 1d (point 9) : lanceur de la recherche instantanée, monté au premier geste sur un déclencheur (searchWanted)
 const SearchLauncher = dynamic(() => import('@/components/search/SearchLauncher').then((m) => ({ default: m.SearchLauncher })), { ssr: false });
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
@@ -209,6 +209,32 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     window.addEventListener(SEARCH_OPEN_EVENT, close);
     return () => window.removeEventListener(SEARCH_OPEN_EVENT, close);
   }, []);
+  // Design 1d (run 489, temps de blocage de Mes billets) : lanceur de la recherche chargé au premier geste sur un
+  // déclencheur (toucher, clic, focus du champ de l'accueil), jamais au chargement de la page ; ce geste est rejoué.
+  const [searchWanted, setSearchWanted] = useState(false);
+  useEffect(() => {
+    if (searchWanted) return undefined;
+    const onIntent = (e: Event): void => {
+      const target = (e.target as Element | null)?.closest?.<HTMLElement>(`[${SEARCH_LAUNCH_ATTR}]`);
+      if (!target) return;
+      if (e.type === 'click') {
+        const m = e as MouseEvent;
+        if (m.button !== 0 || m.metaKey || m.ctrlKey || m.shiftKey || m.altKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+      } else if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+      setPendingSearch(target);
+      setSearchWanted(true);
+    };
+    document.addEventListener('click', onIntent, true);
+    document.addEventListener('focusin', onIntent, true);
+    return () => {
+      document.removeEventListener('click', onIntent, true);
+      document.removeEventListener('focusin', onIntent, true);
+    };
+  }, [searchWanted]);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
   const wasMenuOpen = useRef(false);
@@ -473,7 +499,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
             <NotificationBell />
             {/* Design 1d (point 9) : recherche instantanée, ouverte depuis tout déclencheur data-ev-search */}
-            <SearchLauncher />
+            {searchWanted && <SearchLauncher />}
+
 
             {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px
                 avec ses trois boutons de 44 px. */}

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 
-import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT } from './search-events';
+import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT, takePendingSearch } from './search-events';
 
 export { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT };
 
@@ -22,10 +22,10 @@ export function SearchLauncher() {
   const [initial, setInitial] = useState('');
 
   useEffect(() => {
-    const launch = (target: HTMLElement, e: Event): void => {
+    const launch = (target: HTMLElement, e?: Event): void => {
       // Avant le lien (phase de capture) : la navigation vers Explorer n'a pas lieu, la fenêtre s'ouvre à la place
-      e.preventDefault();
-      e.stopPropagation();
+      e?.preventDefault();
+      e?.stopPropagation();
       window.dispatchEvent(new Event(SEARCH_OPEN_EVENT));
       const value = target instanceof HTMLInputElement ? target.value : '';
       if (target instanceof HTMLInputElement) target.blur();
@@ -43,6 +43,9 @@ export function SearchLauncher() {
     };
     document.addEventListener('click', onClick, true);
     document.addEventListener('focusin', onFocus);
+    // Geste qui a déclenché le chargement du lanceur (AppLayout, search-events) : rejoué une fois
+    const pendingTarget = takePendingSearch();
+    if (pendingTarget) launch(pendingTarget);
     return () => {
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('focusin', onFocus);

@@ -18,8 +18,8 @@ import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { PageHeader } from '@/components/ui/PageHeader';
-// Design 1d : tirer pour actualiser chargé après l'affichage (aucun rendu au premier chargement)
-const PullToRefresh = dynamic(() => import('@/components/tickets/PullToRefresh').then((m) => ({ default: m.PullToRefresh })), { ssr: false });
+// Design 1d : tirer pour actualiser importé directement (run 489 : un morceau à part coûtait un rendu de plus)
+import { PullToRefresh } from '@/components/tickets/PullToRefresh';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { TabPanel, useTabParam } from '@/components/ui/Tabs';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
