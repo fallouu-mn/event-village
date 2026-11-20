@@ -118,7 +118,7 @@ function storageWarning(action: string, err: unknown): void {
 const OTP_SESSION_FAILED = 'Code accepté, mais la connexion n’a pas pu s’ouvrir. Demandez un nouveau code et réessayez.';
 
 /** Lien texte de 44 px de haut (cible tactile), couleur de marque lisible. */
-const TEXT_LINK = 'inline-flex min-h-11 items-center rounded-lg font-semibold text-brand-fg underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const TEXT_LINK = 'inline-flex min-h-11 items-center rounded-lg font-semibold text-primary-text underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 export interface LoginFormProps {
     /** Destination demandée (?redirect=), « / » par défaut. */
@@ -551,7 +551,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
     const inputsDisabled = isLockedOut || isLoading;
 
     return (
-        <div className="space-y-6 rounded-3xl border border-border bg-surface p-5 shadow-sm sm:p-8">
+        <div className="space-y-6 rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-8">
             {/* Verrouillage temporaire (5 échecs, ou 429 du serveur) */}
             {isLockedOut && (
                 <StatusBanner tone="danger" announce="alert" icon={<Lock size={20} />} title="Saisie temporairement bloquée">
@@ -579,7 +579,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
             )}
 
             {/* Mode de connexion : mot de passe ou code SMS */}
-            <div role="group" aria-label="Mode de connexion" className="grid grid-cols-2 gap-1 rounded-2xl bg-surface-sunken p-1">
+            <div role="group" aria-label="Mode de connexion" className="grid grid-cols-2 gap-1 rounded-2xl bg-background p-1">
                 <button
                     type="button"
                     disabled={isLockedOut}
@@ -588,7 +588,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
                     className={cn(
                         'min-h-11 cursor-pointer rounded-xl px-3 text-sm font-semibold transition-colors duration-200',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
-                        !isOtpMode ? 'bg-surface text-fg shadow-sm ring-1 ring-border' : 'text-fg-muted hover:text-fg',
+                        !isOtpMode ? 'bg-card text-foreground-strong shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground-strong',
                     )}
                 >
                     Mot de passe
@@ -601,7 +601,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
                     className={cn(
                         'min-h-11 cursor-pointer rounded-xl px-3 text-sm font-semibold transition-colors duration-200',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
-                        isOtpMode ? 'bg-surface text-fg shadow-sm ring-1 ring-border' : 'text-fg-muted hover:text-fg',
+                        isOtpMode ? 'bg-card text-foreground-strong shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground-strong',
                     )}
                 >
                     Code SMS
@@ -705,7 +705,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
                         </form>
                     ) : (
                         <form onSubmit={handleVerifyOtp} className="space-y-5" noValidate>
-                            <p id="login-otp-aide" className="text-center text-sm font-semibold text-fg">
+                            <p id="login-otp-aide" className="text-center text-sm font-semibold text-foreground-strong">
                                 Saisissez le code reçu par SMS
                             </p>
 
@@ -744,7 +744,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    className="text-brand-fg"
+                                    className="text-primary-text"
                                     onClick={() => handleSendOtp()}
                                     disabled={isLockedOut || countdown > 0 || isLoading}
                                     leftIcon={<RotateCcw size={16} />}
@@ -759,7 +759,7 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
 
             {/* Inscription client et espace professionnel */}
             <div className="space-y-3 border-t border-border pt-4">
-                <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-sm text-fg-muted">
+                <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-sm text-muted-foreground">
                     <span>Pas encore de compte ?</span>
                     <Link
                         href={isForwardableRedirect(redirectUrl) ? `/register?redirect=${encodeURIComponent(redirectUrl)}` : '/register'}
@@ -771,22 +771,22 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
 
                 <Link
                     href="/partner/register"
-                    className="group flex min-h-11 items-center justify-between gap-3 rounded-2xl border border-border bg-surface-sunken p-3 transition-colors duration-200 hover:border-brand-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group flex min-h-11 items-center justify-between gap-3 rounded-2xl border border-border bg-background p-3 transition-colors duration-200 hover:border-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     <span className="flex min-w-0 items-center gap-3">
-                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-brand-bg text-brand-fg" aria-hidden="true">
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-text" aria-hidden="true">
                             <Briefcase size={18} />
                         </span>
                         <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-fg group-hover:text-brand-fg">Espace professionnel</span>
-                            <span className="block text-sm text-fg-muted">Organisateurs, salles et restaurants : devenir partenaire</span>
+                            <span className="block text-sm font-semibold text-foreground-strong group-hover:text-primary-text">Espace professionnel</span>
+                            <span className="block text-sm text-muted-foreground">Organisateurs, salles et restaurants : devenir partenaire</span>
                         </span>
                     </span>
-                    <ArrowRight size={18} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
+                    <ArrowRight size={18} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
                 </Link>
 
                 {/* Lot 9 quinquies (B1 : AUTH-06) : le contact du support est toujours à un clic */}
-                <p className="text-center text-sm text-fg-muted">
+                <p className="text-center text-sm text-muted-foreground">
                     Besoin d’aide ?{' '}
                     <Link href="/aide" className={TEXT_LINK}>Aide et contact du support</Link>
                 </p>
