@@ -12,15 +12,15 @@ export function HallSheetSkeleton() {
       <Skeleton className="h-9 w-40" />
       <Skeleton className="h-6 w-48" />
       <Skeleton className="h-9 w-3/4 max-w-xl" />
-      <Skeleton className="h-24 w-full rounded-2xl" />
+      <Skeleton className="h-24 w-full rounded-xl" />
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
-          <Skeleton className="aspect-[16/10] w-full rounded-2xl" />
-          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="aspect-[16/10] w-full rounded-xl" />
+          <Skeleton className="h-40 rounded-xl" />
         </div>
         <div className="flex flex-col gap-4">
-          <Skeleton className="h-56 rounded-2xl" />
-          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-56 rounded-xl" />
+          <Skeleton className="h-40 rounded-xl" />
         </div>
       </div>
       <span className="sr-only">Chargement…</span>

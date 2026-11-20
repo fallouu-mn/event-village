@@ -15,7 +15,7 @@ export default function Loading() {
       </div>
       <div className="flex flex-col gap-3">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4">
+          <div key={i} className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
             <Skeleton className="h-12 w-16 flex-shrink-0 rounded-lg" />
             <div className="flex min-w-0 flex-1 flex-col gap-2">
               <Skeleton className="h-5 w-3/4 max-w-sm" />

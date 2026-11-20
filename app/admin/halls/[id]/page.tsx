@@ -59,7 +59,7 @@ const LOAD_ERROR = 'Impossible de charger la fiche de la salle. Vérifiez votre 
 
 function Section({ title, children, id, action }: { title: string; children: React.ReactNode; id: string; action?: React.ReactNode }) {
   return (
-    <section aria-labelledby={id} className="rounded-2xl border border-border bg-card p-4 sm:p-6">
+    <section aria-labelledby={id} className="rounded-xl border border-border bg-card p-4 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 id={id} className="text-lg font-bold tracking-tight text-foreground-strong">{title}</h2>
         {action}

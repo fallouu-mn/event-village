@@ -601,7 +601,7 @@ export function HallForm({ mode, hall, policyTexts, defaults }: HallFormProps) {
                 )}
 
                 {resubmitError && (
-                    <div ref={resubmitRef} tabIndex={-1} className="rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <div ref={resubmitRef} tabIndex={-1} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         <StatusBanner tone="warning" announce="alert" title="Modifications enregistrées, mais la salle n’a pas été renvoyée en validation">
                             <span className="block break-words">{resubmitError}</span>
                             <span className="mt-1 block">Complétez ce qui est demandé, puis touchez de nouveau « Enregistrer et renvoyer en validation ».</span>

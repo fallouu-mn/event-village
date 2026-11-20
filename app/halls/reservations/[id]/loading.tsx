@@ -10,7 +10,7 @@ export default function Loading() {
                 <Skeleton className="h-8 w-2/3 rounded-xl" />
                 <Skeleton className="h-5 w-1/2 rounded-md" />
             </div>
-            <Skeleton className="h-20 w-full rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 <div className="min-w-0 space-y-6 lg:col-span-2">
                     <div className="space-y-3 rounded-xl border border-border bg-card p-5">
