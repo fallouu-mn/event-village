@@ -1276,7 +1276,8 @@ const CATALOG = {
         sample: { ...HALL_SAMPLE_DATA, paid_amount: 420000, recipient_role: 'CLIENT' },
     }),
     HALL_BALANCE_REMINDER: define('HALL_BALANCE_REMINDER', {
-        label: 'Rappel du solde d’une réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
+        // Contre-vérification du lot 10b (T8) : non urgent, SMS et push préparés la nuit reportés à sa fin (finition 4)
+        label: 'Rappel du solde d’une réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'HALL_RESERVATION',
         link: (d) => hallClientLink(d),
         inApp: (d) => ({
             title: 'Solde à payer',
@@ -1356,7 +1357,7 @@ const CATALOG = {
         sample: { ...HALL_SAMPLE_DATA, cashout_id: SAMPLE_ID.payment, amount: 63000, operator: 'WAVE' },
     }),
     HALL_EVE_REMINDER: define('HALL_EVE_REMINDER', {
-        label: 'Rappel la veille d’une réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
+        label: 'Rappel la veille d’une réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ANY', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'HALL_RESERVATION',
         link: (d) => (text(d, 'recipient_role') === 'PARTNER' ? hallPartnerLink(d) : hallClientLink(d)),
         inApp: (d) => ({
             title: 'C’est demain',
@@ -1370,7 +1371,7 @@ const CATALOG = {
         sample: { ...HALL_SAMPLE_DATA, paid_amount: 420000, recipient_role: 'CLIENT' },
     }),
     HALL_EARNINGS_AVAILABLE: define('HALL_EARNINGS_AVAILABLE', {
-        label: 'Recettes d’une réservation de salle disponibles', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
+        label: 'Recettes d’une réservation de salle disponibles', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'HALL_RESERVATION',
         link: () => '/partner/halls/recettes',
         inApp: (d) => ({
             title: 'Recettes disponibles',

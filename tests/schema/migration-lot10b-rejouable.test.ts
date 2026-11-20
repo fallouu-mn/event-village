@@ -28,6 +28,8 @@ const LOT10B_MIGRATIONS = [
     '20261126000005_l10b_cv_droits_avis.sql',
     // Date exacte de l'envoi en validation (point ouvert du rapport)
     '20261126000006_l10b_cv_envoi.sql',
+    // T8 : rappels des salles dans le report de nuit de la finition 4 (après sa fusion)
+    '20261126000007_l10b_cv_nuit.sql',
 ] as const;
 
 /** Recopies faites par les correctifs : comparées à la définition d'avant LEUR migration (lot 10b compris). */
@@ -57,6 +59,15 @@ const CV_RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
     ] },
     { fn: 'admin_permissions_set', file: LOT10B_MIGRATIONS[4], replaced: [] },
     { fn: 'halls_validation_guard', file: LOT10B_MIGRATIONS[5], replaced: [] },
+    { fn: 'hall_reservations_tick', file: LOT10B_MIGRATIONS[6], replaced: [
+        '-- Lot 10b : rappels, veille et recettes envoyés hors de la nuit (réglages notif.sms_quiet_start / _end)',
+        "v_day       boolean := NOT public.notif_in_quiet_hours(now(), public.fin_setting_num('notif.sms_quiet_start')::int,",
+        "public.fin_setting_num('notif.sms_quiet_end')::int);",
+        "-- calculée avec halls.balance_due_days), un de chaque, de jour ; avec l'échéance par défaut (J-7), J-10 puis J-8",
+        "WHERE v_day AND hr.booking_state = 'ACOMPTE_PAYE' AND hr.balance_due_at IS NOT NULL",
+        "WHERE v_day AND hr.booking_state = 'PAYEE' AND hr.start_date = v_now_local::date + 1",
+        'WHERE v_day AND hr.end_date >= v_now_local::date - 30',
+    ] },
     { fn: 'hall_submit', file: LOT10B_MIGRATIONS[5], replaced: [
         "validated_at = CASE WHEN v_new = 'VALIDEE' THEN now() END, updated_at = now()",
     ] },

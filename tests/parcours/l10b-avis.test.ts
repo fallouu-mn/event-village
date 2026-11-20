@@ -90,6 +90,35 @@ describe('Rappels du solde 3 jours puis 1 jour avant son échéance (J-10 puis J
     });
 });
 
+describe('T8 : un seul mécanisme de nuit (finition 4)', () => {
+    test('passage planifié pendant la plage de nuit : le rappel est mis en file (le report est fait par l’envoyeur) ; trois types classés DEFER', async () => {
+        const hour = new Date().getUTCHours();
+        const before = [await platformSetting('notif.sms_quiet_start'), await platformSetting('notif.sms_quiet_end')];
+        const hall = await newHall(owner, { price_per_day: 120_000 });
+        const r = await reserveRpc(client, hall, { startDate: dayFromNow(26) });
+        assert.equal(r.ok, true, JSON.stringify(r));
+        const id = String(r.reservation_id);
+        await payConfirmed(client, id, 'ACOMPTE');
+        await moveTo(id, dayFromNow(10), { due: true });
+        // Plage de nuit qui couvre l'heure présente (heure de Dakar = UTC)
+        await setPlatformSetting('notif.sms_quiet_start', hour);
+        await setPlatformSetting('notif.sms_quiet_end', (hour + 1) % 24);
+        try {
+            await tick();
+        } finally {
+            await setPlatformSetting('notif.sms_quiet_start', before[0]);
+            await setPlatformSetting('notif.sms_quiet_end', before[1]);
+        }
+        const keys = await keysOf(client.userId, 'HALL_BALANCE_REMINDER', id);
+        assert.equal(keys.length, 4, `rappel mis en file pendant la nuit (aucune garde de jour dans la tâche) : ${JSON.stringify(keys)}`);
+        const { data, error } = await service.from('notification_types').select('type, night_policy')
+            .in('type', ['HALL_BALANCE_REMINDER', 'HALL_EVE_REMINDER', 'HALL_EARNINGS_AVAILABLE']).order('type');
+        assert.equal(error, null, error?.message);
+        assert.deepEqual((data ?? []).map((x) => `${x.type}:${x.night_policy}`),
+            ['HALL_BALANCE_REMINDER:DEFER', 'HALL_EARNINGS_AVAILABLE:DEFER', 'HALL_EVE_REMINDER:DEFER']);
+    });
+});
+
 describe('Rappel la veille', () => {
     test('réservation payée qui commence demain : avis au client et à la salle, une fois, quatre canaux chacun', async () => {
         const hall = await newHall(owner, { price_per_day: 150_000 });
