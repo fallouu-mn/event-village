@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
     LogIn,
     Lock,
@@ -44,10 +43,21 @@ import { formatDelayWords, retryAfterOf } from '@/lib/format-delay';
  *  - /api/auth/resolve-phone ne sert plus qu'au code SMS : il dit seulement si le numéro a un compte ;
  *  - code SMS : /api/auth/send-otp puis /api/auth/verify-otp (isLogin), session par verifyOtp type « email » ;
  *  - après connexion : compte SUSPENDU → appareil détaché du push puis signOut, refreshSession pour les
- *    rôles non client, resolvePostLoginRoute, redirection après 400 ms.
+ *    rôles non client, resolvePostLoginRoute, une seule navigation complète vers la page d'arrivée (mini-lot
+ *    stabilite/connexion).
  * Libellés figés par e2e/auth.setup.ts : « Email ou téléphone », « Mot de passe » (libellé exact, sans
  * mention « obligatoire » dans le nom accessible), « Se connecter ».
  */
+
+/**
+ * Page d'arrivée d'un espace, la même que celle de middleware.ts pour un compte connecté sur /login. /admin et /partner ne
+ * font que rediriger (app/admin/page.tsx, app/partner/page.tsx) ; avec leur loading.tsx, cette redirection est un second
+ * chargement de page : on va directement à la page d'arrivée.
+ */
+const SPACE_LANDING: Record<string, string> = {
+    '/admin': '/admin/dashboard',
+    '/partner': '/partner/dashboard',
+};
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 60;
@@ -127,7 +137,6 @@ export interface LoginFormProps {
 export const LOGIN_PREFILL_PHONE_KEY = 'ev_login_prefill_phone';
 
 export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, modeParam }: LoginFormProps) {
-    const router = useRouter();
     const { refreshProfile } = useAuth();
 
     const [isOtpMode, setIsOtpMode] = useState(modeParam === 'code');
@@ -317,13 +326,15 @@ export function LoginForm({ redirectUrl, errorParam, messageParam, resetParam, m
         }
 
         await refreshProfile();
-        router.refresh();
 
+        // Stabilité (mini-lot stabilite/connexion, runs 474 et 476) : une seule navigation, complète, tout de suite. Avant :
+        // router.refresh() — sur /login d'un compte connecté, middleware.ts redirige vers l'espace du compte sans recharger la
+        // page — puis window.location.href 400 ms plus tard : la page de l'espace était affichée puis rechargée, et un clic
+        // fait entre les deux (« Recevoir le code par SMS ») était perdu ou défait. La cible garde ?redirect= (une simple
+        // annulation du rechargement aurait laissé un client sur « / » au lieu de la page demandée). /admin et /partner vont
+        // directement à leur page d'arrivée (SPACE_LANDING) : pas de second chargement.
         const target = resolvePostLoginRoute(roles, redirectUrl);
-
-        setTimeout(() => {
-            window.location.href = target;
-        }, 400);
+        window.location.assign(SPACE_LANDING[target] ?? target);
     };
 
     // 1. Connexion par mot de passe, côté serveur (lot 9 bis, R58)
