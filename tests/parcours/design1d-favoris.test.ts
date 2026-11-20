@@ -141,8 +141,9 @@ describe('2. couleur de l’affiche', () => {
 
         const detail = await importModule('../../app/api/events/[id]/route');
         const sheet = await asReply(await detail.GET(new NextRequest(`${BASE_URL}/api/events/${ev.eventId}`), routeContext({ id: ev.eventId })));
-        assert.equal(sheet.body.posterColor, style!.color);
-        assert.equal(sheet.body.posterBlur, style!.blur);
+        const served = sheet.body.event as Row;
+        assert.equal(served.posterColor, style!.color);
+        assert.equal(served.posterBlur, style!.blur);
 
         const { posterUrl } = await import('./cycle-helpers');
         const { error: upErr } = await service.from('events').update({ image_url: posterUrl(partner.partnerId) }).eq('id', ev.eventId);

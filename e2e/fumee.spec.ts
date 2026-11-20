@@ -72,12 +72,15 @@
  *    PASSWORD_CONFIRMATION_REQUIRED, boîte « Confirmez votre mot de passe », POST /api/account/password-confirm 200,
  *    puis le même transfert repart (200). Aucune assertion retirée.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect, openRoleContext, prepareContext, projectContextOptions } from './support/fixtures';
 import { fumeePayerPhone } from './support/accounts';
 import { APP_URL, e2eConfig } from './support/env';
 import { cameraDiagSnapshot, describeCameraScan, fakeScanMode, installCameraDiagnostics, installFakeCamera } from './support/fake-camera';
 import { PageGuard } from './support/network';
+import { CAPTURES_DIR, readDemoIds } from './support/demo-ids';
 import { posterHtml, POSTER_SIZE } from './support/poster';
 import type { SimulatedClock } from './support/clock';
 import {
@@ -667,5 +670,54 @@ test('pages et routes de développement : 404 sur next start, avec et sans sessi
     } finally {
         await anonymous.close();
         await signedIn.close();
+    }
+});
+
+// Design 1d (points 5 et 10) : image d'aperçu de partage (publié seulement) et retour arrière à la même position
+test('design 1d : aperçu de partage d’un événement publié, aucun pour un annulé ; retour arrière à la même place', async ({ browser }, testInfo) => {
+    const anonymous = await browser.newContext(projectContextOptions(testInfo));
+    await prepareContext(anonymous, 'clair');
+    try {
+        const demo = readDemoIds();
+        const ok = await anonymous.request.get(`/api/events/${demo.events.ceSoir.id}/apercu`);
+        expect(ok.status()).toBe(200);
+        expect(ok.headers()['content-type']).toBe('image/png');
+        const png = await ok.body();
+        fs.mkdirSync(CAPTURES_DIR, { recursive: true });
+        fs.writeFileSync(path.join(CAPTURES_DIR, 'apercu-partage__ce-soir.png'), png);
+        const cancelled = await anonymous.request.get(`/api/events/${demo.events.annule.id}/apercu`);
+        expect(cancelled.status()).toBe(404);
+        expect(cancelled.headers()['content-type'] ?? '').not.toContain('image');
+
+        const page = await anonymous.newPage();
+        await page.goto('/explore');
+        await expect(page.getByRole('heading', { name: /^explorer les événements$/i })).toBeVisible({ timeout: 30_000 });
+        const max = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+        const target = Math.max(0, Math.min(600, max - 20));
+        await page.evaluate((y) => window.scrollTo(0, y), target);
+        await page.waitForTimeout(300);
+        const links = page.locator('a[data-ev-card-link]');
+        const count = await links.count();
+        let chosen = -1;
+        for (let i = 0; i < count && chosen < 0; i++) {
+            const box = await links.nth(i).boundingBox();
+            if (box && box.y > 120 && box.y + box.height < (page.viewportSize()?.height ?? 800) - 40) chosen = i;
+        }
+        expect(chosen, 'une carte visible sous l’en-tête').toBeGreaterThanOrEqual(0);
+        const link = links.nth(chosen);
+        const before = (await link.boundingBox())!.y;
+        const scrollBefore = await page.evaluate(() => window.scrollY);
+        await link.click();
+        await page.waitForURL(/\/events\//, { timeout: 30_000 });
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 30_000 });
+        await page.goBack();
+        await expect(page.getByRole('heading', { name: /^explorer les événements$/i })).toBeVisible({ timeout: 30_000 });
+        await page.waitForTimeout(800);
+        const after = (await page.locator('a[data-ev-card-link]').nth(chosen).boundingBox())!.y;
+        const scrollAfter = await page.evaluate(() => window.scrollY);
+        console.log(`[e2e][design 1d] retour arrière : défilement ${scrollBefore} → ${scrollAfter} ; carte à ${Math.round(before)} px → ${Math.round(after)} px du haut`);
+        expect(Math.abs(after - before)).toBeLessThan(40);
+    } finally {
+        await anonymous.close();
     }
 });

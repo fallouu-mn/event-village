@@ -104,10 +104,13 @@ describe('2-3. publié : image ; suspendu ou annulé ensuite : plus d’image au
         console.log(`[D1D-PARTAGE] 3. SUSPENDU juste après l'image : ${suspended.status} ${suspended.cache}`);
         assertNoImage(suspended, 'suspendu après publication', ev.title);
 
-        await advanceEventTo(ev.eventId, 'ANNULE', { partnerUserId: partner.userId });
-        const cancelled = await preview(ev.eventId);
-        console.log(`[D1D-PARTAGE] 3. ANNULE : ${cancelled.status} ${cancelled.cache}`);
-        assertNoImage(cancelled, 'annulé après publication', ev.title);
+        // Un événement suspendu ne s'annule pas (event_cancel) : second événement publié, image générée, puis annulé
+        const other = await createEventInStatus(partner, 'd1d-partage-annule', CATEGORIES, 'PUBLIE', { startsInHours: 72 });
+        assert.equal((await preview(other.eventId)).status, 200, 'publié : image');
+        await advanceEventTo(other.eventId, 'ANNULE', { partnerUserId: partner.userId });
+        const cancelled = await preview(other.eventId);
+        console.log(`[D1D-PARTAGE] 3. ANNULE juste après l'image : ${cancelled.status} ${cancelled.cache}`);
+        assertNoImage(cancelled, 'annulé après publication', other.title);
     });
 });
 
