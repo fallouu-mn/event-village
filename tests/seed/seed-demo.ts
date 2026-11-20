@@ -87,6 +87,20 @@
  *    checkout réel (2 restants : design 1b, seuil relatif de 10 % de la jauge en ligne : « Dernières places ») ;
  *  - fin par assertLot9terInvariants('seed-demo') : (a) à (w), schéma du lot 9 ter, puis (x1) à (x13).
  *
+ * Lot 10b (contrôle responsive et captures des salles de fête), graine v5 : salles de l'organisatrice de démonstration
+ * (Baobab Scène), écrites comme tests/parcours/l10a-helpers.ts (newHall, decideHall) :
+ *  - insertion dans halls par la clé de service (le déclencheur trg_halls_validation_guard les met en attente de validation),
+ *    puis hall_validation_decide par le SUPERADMIN du seed de test : une salle VALIDÉE complète (description, capacité, prix
+ *    par jour et par heure, adresse, ville, position, équipements, photo), une EN ATTENTE (photo, position) et une REFUSÉE
+ *    (motif, sans photo) ;
+ *  - photo : copie d'une affiche déjà déposée par ce seed, réencodée en WebP sous un nom de la route de dépôt
+ *    (halls/<partenaire>/<horodatage>_<8 caractères>.webp), seul format accepté par l'écran de modification (hallPhotos) ;
+ *  - réservation du client sur la salle validée par hall_reserve (clé de service), à J+24 pour une journée : l'interrupteur
+ *    features.halls_enabled est ouvert par finance_setting_set (SUPERADMIN) le temps de l'appel, puis remis à sa valeur ;
+ *    l'attente de paiement (halls.hold_minutes, 15 min) est reculée de HOLD_EXTENSION_MINUTES, comme les paiements en
+ *    cours (keepHoldActive), pour que la réservation reste « en attente de paiement » pendant les captures ;
+ *  - identifiants dans demo-ids.json (halls), version 5.
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -108,11 +122,14 @@ import { dispatchNotifications } from '../../lib/notifications/dispatcher';
 import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
 import { inspect } from '../helpers/db';
-import { TEST_PASSWORD } from '../helpers/fixture-data';
+import { FIXTURE_USERS, TEST_PASSWORD } from '../helpers/fixture-data';
 import { assertLot9terInvariants } from '../helpers/lot9ter-invariants';
 import { missingRecetteSchema } from '../helpers/recette-invariants';
 import { missingTerrainSchema } from '../helpers/terrain-invariants';
-import { DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoIds } from '../../e2e/support/demo-ids';
+import {
+    DEMO_HALL_KEYS, DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoHall,
+    type DemoHallKey, type DemoHalls, type DemoIds,
+} from '../../e2e/support/demo-ids';
 import { dakarDateLabel, logoHtml, posterHtml, POSTER_SIZE, renderPng, type PALETTES, type PosterMotif } from '../../e2e/support/poster';
 
 if (process.env.EV_TEST_GUARD !== '1') {
@@ -1190,6 +1207,182 @@ async function drainOutbox(): Promise<number> {
     fail('passage de l’envoyeur', `lignes encore dues après 30 passages (${total} réservées)`);
 }
 
+// ── Salles de fête (lot 10b) ─────────────────────────────────────────────────
+
+const HALLS_SWITCH = 'features.halls_enabled';
+/** Réservation du client : une journée, dans 24 jours (acompte demandé : au-delà de halls.balance_due_days + la marge). */
+const HALL_RESERVATION_DAYS = 24;
+
+interface HallSeed {
+    key: DemoHallKey;
+    name: string;
+    description: string;
+    capacity: number;
+    pricePerDay: number;
+    pricePerHour: number | null;
+    depositMode: 'POURCENTAGE' | 'MONTANT_FIXE';
+    depositValue: number | null;
+    policy: 'SOUPLE' | 'MODEREE' | 'STRICTE';
+    address: string;
+    city: string;
+    lat: number;
+    lng: number;
+    amenities: string[];
+    /** Événement de ce seed dont l'affiche est reprise comme photo (null : salle sans photo). */
+    photoFrom: DemoEventKey | null;
+    /** Décision de l'administration (hall_validation_decide) ; null : laissée en attente de validation. */
+    decision: 'VALIDER' | 'REFUSER' | null;
+    reason?: string;
+    expected: DemoHall['validationStatus'];
+}
+
+const HALLS: HallSeed[] = [
+    {
+        key: 'validee', name: 'Salle des Fromagers',
+        description: 'Grande salle climatisée au cœur du Plateau, avec scène, piste de danse et terrasse ombragée. Mariages, baptêmes, galas et séminaires jusqu’à 350 invités ; cuisine équipée pour le traiteur et parking surveillé.',
+        capacity: 350, pricePerDay: 450_000, pricePerHour: 60_000, depositMode: 'POURCENTAGE', depositValue: 40, policy: 'MODEREE',
+        address: '22, avenue Léopold-Sédar-Senghor, Dakar-Plateau', city: 'Dakar', lat: 14.6712, lng: -17.437,
+        amenities: ['Climatisation', 'Sonorisation', 'Scène', 'Piste de danse', 'Cuisine équipée', 'Parking surveillé', 'Groupe électrogène', 'Terrasse'],
+        photoFrom: 'publieComplet', decision: 'VALIDER', expected: 'VALIDEE',
+    },
+    {
+        key: 'enAttente', name: 'Espace Corniche Ouest',
+        description: 'Salle vitrée face à l’océan, pour les réceptions et les cocktails jusqu’à 180 invités. Terrasse sur la mer et salon privé pour les mariés.',
+        capacity: 180, pricePerDay: 280_000, pricePerHour: null, depositMode: 'MONTANT_FIXE', depositValue: 100_000, policy: 'SOUPLE',
+        address: 'Route de la Corniche Ouest, Fann', city: 'Dakar', lat: 14.6869, lng: -17.4721,
+        amenities: ['Vue sur la mer', 'Climatisation', 'Terrasse', 'Salon privé'],
+        photoFrom: 'annuleSansVente', decision: null, expected: 'EN_ATTENTE_VALIDATION',
+    },
+    {
+        key: 'refusee', name: 'Jardin de Ngor',
+        description: 'Jardin arboré au bord de la plage de Ngor, pour les cérémonies en plein air et les dîners jusqu’à 120 invités.',
+        capacity: 120, pricePerDay: 150_000, pricePerHour: null, depositMode: 'POURCENTAGE', depositValue: null, policy: 'STRICTE',
+        address: 'Village de Ngor, près de l’embarcadère', city: 'Dakar', lat: 14.7505, lng: -17.5135,
+        amenities: ['Plein air', 'Éclairage de jardin'],
+        photoFrom: null, decision: 'REFUSER',
+        reason: 'Ajoutez au moins une photo de la salle et précisez l’accès des véhicules depuis la route de Ngor.', expected: 'REFUSEE',
+    },
+];
+
+/** SUPERADMIN du seed de test (seed:test passe avant seed:demo) : décisions de validation et interrupteur des salles. */
+async function superadminUserId(): Promise<string> {
+    const { data, error } = await service.from('users').select('id').eq('email', FIXTURE_USERS.SUPERADMIN.email).maybeSingle();
+    if (error) fail('super-administrateur du seed de test', error);
+    if (!data?.id) fail('super-administrateur du seed de test', `${FIXTURE_USERS.SUPERADMIN.email} introuvable : seed:test doit passer avant seed:demo`);
+    return String(data.id);
+}
+
+async function hallsSwitchOpen(): Promise<boolean> {
+    const { data, error } = await service.from('platform_settings').select('value').eq('key', HALLS_SWITCH).maybeSingle();
+    if (error) fail(`réglage ${HALLS_SWITCH}`, error);
+    return (data?.value as { value?: unknown } | null | undefined)?.value === true;
+}
+
+/** Interrupteur écrit comme la route du Superadmin (finance_setting_set : historique et motif). */
+async function setHallsSwitch(value: boolean, actorId: string, reason: string): Promise<void> {
+    const { data, error } = await service.rpc('finance_setting_set', { p_key: HALLS_SWITCH, p_value: { value }, p_actor: actorId, p_reason: reason });
+    if (error) fail(`réglage ${HALLS_SWITCH} à ${String(value)}`, error);
+    if ((data as { ok?: boolean } | null)?.ok !== true) fail(`réglage ${HALLS_SWITCH} à ${String(value)}`, `refusé : ${JSON.stringify(data)}`);
+}
+
+/**
+ * Photo d'une salle : copie de l'affiche d'un événement de ce seed, réencodée en WebP sous un nom de la route de dépôt
+ * (STORED_IMAGE_NAME_RE), dans le dossier des salles de la partenaire (isPartnerHallPhotoUrl), comme partnerPosterOf de l'e2e.
+ */
+async function hallPhoto(partnerId: string, sourceEventId: string): Promise<string> {
+    const { data, error } = await service.from('events').select('image_url').eq('id', sourceEventId).single();
+    if (error || !data?.image_url) fail('affiche reprise pour la photo d’une salle', error ?? 'affiche absente');
+    const url = String(data.image_url);
+    const mark = `/storage/v1/object/public/${BUCKET}/`;
+    const at = url.indexOf(mark);
+    if (at < 0) fail('affiche reprise pour la photo d’une salle', `hors du stockage : ${url}`);
+    const source = decodeURIComponent(url.slice(at + mark.length).split(/[?#]/)[0]);
+    const { data: blob, error: readErr } = await service.storage.from(BUCKET).download(source);
+    if (readErr || !blob) fail(`lecture de ${source}`, readErr ?? 'fichier absent');
+    const { default: sharp } = await import('sharp');
+    const webp = await sharp(Buffer.from(await blob.arrayBuffer()))
+        .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+    const objectPath = `halls/${partnerId}/${Date.now()}_${randomUUID().replace(/-/g, '').slice(0, 8)}.webp`;
+    const { error: upErr } = await service.storage.from(BUCKET).upload(objectPath, webp, { contentType: 'image/webp', upsert: false });
+    if (upErr) fail(`téléversement ${objectPath}`, upErr);
+    const publicUrl = service.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl;
+    if (!publicUrl.startsWith(`${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/halls/${partnerId}/`)) fail(`URL publique ${objectPath}`, `origine inattendue : ${publicUrl}`);
+    return publicUrl;
+}
+
+/** Salle insérée par la clé de service : trg_halls_validation_guard la met en attente de validation (halls.validation_required). */
+async function createHall(seed: HallSeed, partnerId: string, photo: string | null): Promise<string> {
+    const { data, error } = await service.from('halls').insert({
+        partner_id: partnerId, name: seed.name, description: seed.description, capacity: seed.capacity,
+        price_per_day: seed.pricePerDay, price_per_hour: seed.pricePerHour, deposit_mode: seed.depositMode, deposit_value: seed.depositValue,
+        cancellation_policy: seed.policy, address: seed.address, city: seed.city, latitude: seed.lat, longitude: seed.lng,
+        amenities: seed.amenities, images: photo ? [photo] : [], is_active: true,
+    }).select('id, validation_status').single();
+    if (error || !data) fail(`salle « ${seed.name} »`, error);
+    if (data.validation_status !== 'EN_ATTENTE_VALIDATION') {
+        fail(`salle « ${seed.name} »`, `créée au statut ${String(data.validation_status)} au lieu de EN_ATTENTE_VALIDATION (réglage halls.validation_required ?)`);
+    }
+    return String(data.id);
+}
+
+/**
+ * Réservation du client par hall_reserve (mêmes contrôles que la route), interrupteur ouvert le temps de l'appel puis remis
+ * à sa valeur ; attente de paiement reculée de HOLD_EXTENSION_MINUTES (réservation « en attente de paiement » pendant les
+ * captures, comme keepHoldActive pour les paiements de billets).
+ */
+async function reserveDemoHall(clientId: string, hallId: string, actorId: string): Promise<DemoHalls['reservation']> {
+    const startDate = dakarParts(dayAt(HALL_RESERVATION_DAYS, 12)).date;
+    const wasOpen = await hallsSwitchOpen();
+    if (!wasOpen) await setHallsSwitch(true, actorId, 'Seed de démonstration : réservation de la salle validée par le client (interrupteur ouvert le temps de l’appel).');
+    const out = await rpcOk('hall_reserve', {
+        client_id: clientId, hall_id: hallId, mode: 'JOUR', start_date: startDate, units: 1, start_time: null,
+        notes: 'Réception de mariage, environ 250 invités.',
+    }, 'réservation de la salle validée par le client de démonstration (hall_reserve)').finally(async () => {
+        if (!wasOpen) await setHallsSwitch(false, actorId, 'Seed de démonstration : interrupteur des salles remis à sa valeur d’origine (fermé).');
+    });
+    const id = String(out.reservation_id ?? '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) fail('réservation de la salle validée', `identifiant absent (${JSON.stringify(out)})`);
+    if (out.booking_state !== 'EN_ATTENTE_PAIEMENT') fail('réservation de la salle validée', `état ${String(out.booking_state)} au lieu de EN_ATTENTE_PAIEMENT`);
+    const until = new Date(Date.now() + HOLD_EXTENSION_MINUTES * 60_000).toISOString();
+    const { data: held, error: holdErr } = await service.from('hall_reservations').update({ hold_expires_at: until })
+        .eq('id', id).eq('booking_state', 'EN_ATTENTE_PAIEMENT').select('id');
+    if (holdErr) fail(`attente de paiement de la réservation ${id}`, holdErr);
+    if ((held ?? []).length !== 1) fail(`attente de paiement de la réservation ${id}`, 'réservation en attente de paiement introuvable');
+    return { id, startDate };
+}
+
+/** Salles de la partenaire (une par statut de validation) et réservation du client sur la salle validée. */
+async function seedHalls(partnerId: string, clientId: string, posterEventId: (key: DemoEventKey) => string): Promise<DemoHalls> {
+    const actor = await superadminUserId();
+    const out: Partial<Record<DemoHallKey, DemoHall>> = {};
+    for (const seed of HALLS) {
+        const photo = seed.photoFrom ? await hallPhoto(partnerId, posterEventId(seed.photoFrom)) : null;
+        const id = await createHall(seed, partnerId, photo);
+        if (seed.decision) {
+            const decided = await rpcOk('hall_validation_decide', { actor_id: actor, hall_id: id, decision: seed.decision, reason: seed.reason ?? null },
+                `décision ${seed.decision} sur la salle « ${seed.name} »`);
+            if (decided.validation_status !== seed.expected) fail(`décision sur la salle « ${seed.name} »`, `statut ${String(decided.validation_status)} au lieu de ${seed.expected}`);
+        }
+        out[seed.key] = { id, name: seed.name, validationStatus: seed.expected };
+    }
+    const halls = {} as Record<DemoHallKey, DemoHall>;
+    for (const key of DEMO_HALL_KEYS) {
+        const h = out[key];
+        if (!h) fail('salles de démonstration', `salle « ${key} » absente de HALLS`);
+        halls[key] = h;
+    }
+    const { data: rows, error } = await service.from('halls').select('id, validation_status').in('id', DEMO_HALL_KEYS.map((k) => halls[k].id));
+    if (error) fail('relecture des salles de démonstration', error);
+    for (const key of DEMO_HALL_KEYS) {
+        const row = (rows ?? []).find((r) => r.id === halls[key].id);
+        if (row?.validation_status !== halls[key].validationStatus) {
+            fail('relecture des salles de démonstration', `« ${halls[key].name} » au statut ${String(row?.validation_status)} au lieu de ${halls[key].validationStatus}`);
+        }
+    }
+    const reservation = await reserveDemoHall(clientId, halls.validee.id, actor);
+    return { ...halls, reservation };
+}
+
 // ── Exécution ────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1523,7 +1716,14 @@ async function main(): Promise<void> {
     if (Number(lastCat.total_quantity) - Number(lastCat.sold_quantity) !== 2) fail('stock de « dernieresPlaces »', `reste ${Number(lastCat.total_quantity) - Number(lastCat.sold_quantity)} place(s) au lieu de 2`);
     log(`« ${lastSeats.seed.title} » : 18 places vendues sur 20, 2 restantes`);
 
-    const demoEvent = (ev: CreatedEvent, status: string): DemoEvent => ({ id: ev.id, title: ev.seed.title, status, organizer: ev.seed.organizer });
+    // Lot 10b : salles de l'organisatrice (validée, en attente, refusée) et réservation du client, après tous les tirages
+    // des lots précédents (aucun appel à rand) ; leurs avis partent avec l'envoyeur des invariants
+    log('salles de fête de l’organisatrice et réservation du client (hall_validation_decide, hall_reserve)…');
+    const halls = await seedHalls(partners.organisateur, client.userId, (key) => byKey(key).id);
+    log(`salles : « ${halls.validee.name} » validée, « ${halls.enAttente.name} » en attente, « ${halls.refusee.name} » refusée ; `
+        + `réservation ${halls.reservation.id} du ${halls.reservation.startDate}, en attente de paiement`);
+
+    const demoEvent =(ev: CreatedEvent, status: string): DemoEvent => ({ id: ev.id, title: ev.seed.title, status, organizer: ev.seed.organizer });
     const finalStatus: Record<Lifecycle, string> = {
         BROUILLON: 'BROUILLON', EN_ATTENTE: 'EN_ATTENTE', REFUSE: 'BROUILLON', VALIDE: 'VALIDE', PUBLIE: 'PUBLIE',
         SUSPENDU: 'SUSPENDU', ANNULE: 'ANNULE', ANNULE_SANS_VENTE: 'ANNULE', TERMINE: 'TERMINE',
@@ -1549,6 +1749,7 @@ async function main(): Promise<void> {
         notifications: { failedId, sentId, otpLogId },
         transfers: { incomingId: incomingTransferId },
         payments: { pending: clientPending.paymentId, success: clientCeSoir.paymentId, failed: clientFailed.paymentId },
+        halls,
     };
     writeDemoIds(ids);
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);

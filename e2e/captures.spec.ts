@@ -21,6 +21,12 @@
  *    fakeCamera 'barcode-detector', expectStatus (screens.ts) ;
  *  - contrôle ponctuel bloquant : cloche ouverte à 390 px, « Tout marquer comme lu » sur une seule ligne (§4.6) ;
  *  - rôle « partenaire-premiers-pas » (partenaire validé sans événement, première utilisation).
+ *
+ * Lot 10b : écrans des salles de fête (`salles` dans screens.ts) capturés interrupteur features.halls_enabled ouvert. Chaque
+ * capture prend d'abord le verrou de la phase (fixture hallsLock, e2e/support/halls-switch.ts) : groupe « salles » pour ces
+ * écrans, « autres » pour tous les autres (projets mobile et desktop ensemble) ; jamais les deux groupes à la fois, si bien
+ * que page-masquee-salles, page-masquee-commandes et admin-services-desactive trouvent toujours l'interrupteur fermé.
+ * L'attente du verrou est ajoutée au délai du test et notée dans l'index.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,6 +38,7 @@ import { CAPTURES_DIR, readDemoIds, type DemoIds } from './support/demo-ids';
 import { e2eConfig } from './support/env';
 import { fakeScanMode, installFakeCamera } from './support/fake-camera';
 import { installFakePush, type FakePushSubscriptionJson } from './support/fake-push';
+import { keepHomeOutOfHallsWindow } from './support/halls-switch';
 import type { PageGuard } from './support/network';
 import { SCREENS, type CaptureView, type Screen, type StubResponse } from './support/screens';
 
@@ -182,7 +189,7 @@ async function markAllOnOneLine(page: Page): Promise<string | null> {
 }
 
 function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRole): void {
-    test(`${screen.id} — ${screen.titre}`, async ({ page, context, guard }, testInfo) => {
+    test(`${screen.id} — ${screen.titre}`, async ({ page, context, guard, hallsLock }, testInfo) => {
         const vue = testInfo.project.name === 'mobile' ? 'mobile' : 'ordinateur';
         const view = `${vue}-${theme.key}` as CaptureView;
         test.skip(Boolean(screen.views) && !screen.views?.includes(view), `vue ${view} non capturée pour cet écran (${(screen.views ?? []).join(', ')})`);
@@ -193,6 +200,13 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
             url: null, status: null, captured: false, blocking: [], warnings: [], axeDetails: [], notes: [], error: null, durationMs: 0,
         };
         try {
+            // Lot 10b : verrou des salles avant tout chargement (attente ajoutée au délai du test)
+            await hallsLock.enter(screen.salles ? 'salles' : 'autres');
+            if (hallsLock.waitedMs >= 1_000) record.notes.push(`attente du verrou des salles : ${Math.round(hallsLock.waitedMs / 1000)} s`);
+            if (screen.salles) {
+                record.notes.push('écran des salles : interrupteur features.halls_enabled ouvert le temps de la capture (e2e/support/halls-switch.ts)');
+                await keepHomeOutOfHallsWindow(page);
+            }
             const demo: DemoIds | null = screen.needsIds ? readDemoIds() : null;
             record.url = screen.path(demo);
             guard.configure({
