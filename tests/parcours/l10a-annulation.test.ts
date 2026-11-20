@@ -9,7 +9,7 @@
  *  C3. Annulation par la salle (tout, motif obligatoire) et par Event Village (tout, droit des remboursements).
  *  C4. Parrainage corrigé : commission annulée au remboursement total, recalculée au prorata au remboursement de 50 %.
  *  C5. Délai de paiement dépassé : réservation annulée, acompte traité selon la règle à l'instant de l'échéance ;
- *      passage idempotent ; rappel du solde 3 jours avant l'échéance, une seule fois.
+ *      passage idempotent ; rappel du solde (lot 10b : J-10 puis J-8 de la date), une seule fois.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -25,7 +25,8 @@ import { POST as clientCancelRoute } from '../../app/api/halls/reservations/[id]
 import { POST as adminCancelRoute } from '../../app/api/admin/halls/reservations/[id]/cancel/route';
 import { POST as partnerStatusRoute } from '../../app/api/partner/halls/reservations/[id]/status/route';
 import {
-    dayFromNow, newBuyer, newHall, newPartner, openHallsService, outboxOf, payConfirmed, reservation, reserveRpc, type Row,
+    dayFromNow, newBuyer, newHall, newPartner, openHallsService, outboxOf, payConfirmed, platformSetting, reservation, reserveRpc,
+    setPlatformSetting, type Row,
 } from './l10a-helpers';
 
 let restore: () => Promise<void>;
@@ -221,13 +222,24 @@ describe('C5. Délai de paiement dépassé, rappel du solde', () => {
         assert.deepEqual((await refundsOf(id)).map((r) => n(r.amount)), [63_000], `second passage sans effet : ${JSON.stringify(tick2)}`);
     });
 
-    test('rappel du solde 3 jours avant l’échéance, une seule fois', async () => {
+    // Lot 10b (décision du client, modification signalée au rapport) : rappel à J-10 puis J-8 de la date (au lieu de 3 jours
+    // avant l'échéance), envoyé de jour : la date est déplacée à J+9 (rappel « J-10 »), la nuit neutralisée le temps du test.
+    test('rappel du solde (J-10 de la date), une seule fois', async () => {
         const client = await newBuyer('l10a-rappel');
         const id = String((await reserveRpc(client, await newHall(partner), { days: 1, startInDays: 30 })).reservation_id);
         await payConfirmed(client, id, 'ACOMPTE');
-        await service.from('hall_reservations').update({ balance_due_at: new Date(Date.now() + 2 * 86_400_000).toISOString() }).eq('id', id);
-        await service.rpc('hall_reservations_tick');
-        await service.rpc('hall_reservations_tick');
+        const day = dayFromNow(9);
+        await service.from('hall_reservations').update({ start_date: day, end_date: day, balance_due_at: new Date(Date.now() + 2 * 86_400_000).toISOString() }).eq('id', id);
+        const quiet = await Promise.all(['notif.sms_quiet_start', 'notif.sms_quiet_end'].map((k) => platformSetting(k)));
+        await setPlatformSetting('notif.sms_quiet_start', 0);
+        await setPlatformSetting('notif.sms_quiet_end', 0);
+        try {
+            await service.rpc('hall_reservations_tick');
+            await service.rpc('hall_reservations_tick');
+        } finally {
+            await setPlatformSetting('notif.sms_quiet_start', quiet[0]);
+            await setPlatformSetting('notif.sms_quiet_end', quiet[1]);
+        }
         const reminders = (await outboxOf(client.userId, id)).filter((t) => t.startsWith('HALL_BALANCE_REMINDER:'));
         assert.ok(reminders.includes('HALL_BALANCE_REMINDER:IN_APP'), reminders.join(', '));
         assert.equal(reminders.filter((t) => t.endsWith(':SMS')).length, 1, `un seul SMS de rappel : ${reminders.join(', ')}`);

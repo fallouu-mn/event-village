@@ -35,6 +35,7 @@
  */
 import { formatDate, formatDateTime, formatFcfa, formatInteger, formatTime } from '@/lib/format';
 import { internalActionUrl } from './action-url';
+import { PERMISSION_LABELS } from '@/lib/admin/permission-labels';
 import type {
     AdminPermission, Audience, Channel, EmailSyncType, Family, NightPolicy, NotificationType, SuspendedPolicy, SyncType, TemplateData, Topic,
 } from './catalog-types';
@@ -1222,21 +1223,33 @@ const CATALOG = {
         inApp: (d) => ({ title: 'Paiement confirmé', content: `Votre paiement de ${money(d, 'amount')} a été validé.` }),
         sample: { payment_id: SAMPLE_ID.payment, amount: 15_000 },
     }),
-    // Lot 10a : parcours de réservation d'une salle (avis mis en file par hall_payment_confirm, hall_cancel_apply,
-    // hall_reservations_tick et hall_validation_decide). SMS en un segment GSM-7 : réservation confirmée, rappel du
-    // solde, délai de paiement dépassé, annulation et remboursement.
+    // Lot 10a : parcours de réservation d'une salle (avis mis en file par hall_reserve, hall_payment_confirm,
+    // hall_cancel_apply, hall_reservations_tick, hall_validation_decide et notif_cashouts_notify). Lot 10b, décision du
+    // client : chaque étape sur les 4 canaux (cloche, push, email, SMS d'un segment GSM-7). Liens vers « Mes
+    // réservations » (client) ou la réservation dans l'espace de la salle (partenaire). Aucun mot technique.
+    HALL_RESERVATION_PENDING: define('HALL_RESERVATION_PENDING', {
+        label: 'Réservation de salle demandée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
+        link: (d) => hallClientLink(d),
+        inApp: (d) => ({
+            title: 'Réservation demandée',
+            content: `Votre demande pour ${hallName(d)} ${hallPeriod(d)} est enregistrée. Payez ${money(d, 'amount_due')} avant ${formatTime(iso(d, 'hold_expires_at'))} pour garder la date : sans paiement, elle sera libérée.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}réservation demandée : ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} Payez ${smsAmount(num(d, 'amount_due'))} avant ${smsTime(iso(d, 'hold_expires_at'))} pour garder la date.`,
+        sample: { ...HALL_SAMPLE_DATA, paid_amount: 0, amount_due: 126000, hold_expires_at: '2026-11-20T14:32:00Z', full_payment_required: false },
+    }),
     HALL_RESERVATION_REQUESTED: define('HALL_RESERVATION_REQUESTED', {
-        label: 'Nouvelle réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
-        link: () => '/partner/halls',
+        label: 'Nouvelle réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
+        link: (d) => hallPartnerLink(d),
         inApp: (d) => ({
             title: 'Nouvelle réservation',
             content: `${hallName(d, true)} est réservée ${hallPeriod(d)}. ${hallPaidSentence(d)}`,
         }),
+        sms: (d) => `${SMS_PREFIX}nouvelle réservation de ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} ${num(d, 'paid_amount') >= num(d, 'total_amount') ? `Payée : ${smsAmount(num(d, 'total_amount'))}.` : `Acompte payé : ${smsAmount(num(d, 'paid_amount'))}.`}`,
         sample: HALL_SAMPLE_DATA,
     }),
     HALL_RESERVATION_CONFIRMED: define('HALL_RESERVATION_CONFIRMED', {
         label: 'Réservation de salle confirmée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
-        link: () => '/orders',
+        link: (d) => hallClientLink(d),
         inApp: (d) => ({
             title: 'Réservation confirmée',
             content: optNum(d, 'balance_amount') !== null
@@ -1249,29 +1262,33 @@ const CATALOG = {
         sample: { ...HALL_SAMPLE_DATA, balance_amount: 294000, balance_due_at: '2026-11-28T00:00:00Z' },
     }),
     HALL_BALANCE_PAID: define('HALL_BALANCE_PAID', {
-        label: 'Solde d’une réservation de salle payé', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
-        link: (d) => (text(d, 'recipient_role') === 'PARTNER' ? '/partner/halls' : '/orders'),
+        label: 'Solde d’une réservation de salle payé', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
+        link: (d) => (text(d, 'recipient_role') === 'PARTNER' ? hallPartnerLink(d) : hallClientLink(d)),
         inApp: (d) => ({
             title: 'Réservation payée',
             content: text(d, 'recipient_role') === 'PARTNER'
                 ? `Le client a payé le solde de la réservation de ${hallName(d)} ${hallPeriod(d)} : ${money(d, 'total_amount')} au total.`
                 : `Vous avez payé le solde : votre réservation de ${hallName(d)} ${hallPeriod(d)} est entièrement payée.`,
         }),
+        sms: (d) => (text(d, 'recipient_role') === 'PARTNER'
+            ? `${SMS_PREFIX}le client a payé le solde de ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} Total payé : ${smsAmount(num(d, 'total_amount'))}.`
+            : `${SMS_PREFIX}solde payé, merci ! Votre réservation de ${smsVar(text(d, 'hall_name'), 25)}, ${smsHallPeriod(d)}, est entièrement payée.`),
         sample: { ...HALL_SAMPLE_DATA, paid_amount: 420000, recipient_role: 'CLIENT' },
     }),
     HALL_BALANCE_REMINDER: define('HALL_BALANCE_REMINDER', {
-        label: 'Rappel du solde d’une réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'HALL_RESERVATION',
-        link: () => '/orders',
+        // Contre-vérification du lot 10b (T8) : non urgent, SMS et push préparés la nuit reportés à sa fin (finition 4)
+        label: 'Rappel du solde d’une réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'HALL_RESERVATION',
+        link: (d) => hallClientLink(d),
         inApp: (d) => ({
             title: 'Solde à payer',
             content: `Il reste ${money(d, 'balance_amount')} à payer pour votre réservation de ${hallName(d)} ${hallPeriod(d)}, au plus tard le ${formatDate(iso(d, 'balance_due_at'))}. Sans paiement, la réservation sera annulée.`,
         }),
         sms: (d) => `${SMS_PREFIX}il reste ${smsAmount(num(d, 'balance_amount'))} à payer pour ${smsVar(text(d, 'hall_name'), 25)} avant le ${dot(smsDay(iso(d, 'balance_due_at')))} Sans paiement, la réservation sera annulée.`,
-        sample: { ...HALL_SAMPLE_DATA, balance_amount: 294000, balance_due_at: '2026-11-28T00:00:00Z' },
+        sample: { ...HALL_SAMPLE_DATA, balance_amount: 294000, balance_due_at: '2026-11-28T00:00:00Z', step: 'J10' },
     }),
     HALL_PAYMENT_DEADLINE_PASSED: define('HALL_PAYMENT_DEADLINE_PASSED', {
         label: 'Délai de paiement d’une réservation de salle dépassé', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
-        link: () => '/orders',
+        link: (d) => hallClientLink(d),
         inApp: (d) => ({
             title: 'Délai de paiement dépassé',
             content: `Le solde n’a pas été payé à temps : votre réservation de ${hallName(d)} ${hallPeriod(d)} est annulée. ${hallRefundSentence(d)}`,
@@ -1281,7 +1298,7 @@ const CATALOG = {
     }),
     HALL_RESERVATION_CANCELLED: define('HALL_RESERVATION_CANCELLED', {
         label: 'Réservation de salle annulée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
-        link: () => '/orders',
+        link: (d) => hallClientLink(d),
         inApp: (d) => {
             const origin = text(d, 'origin');
             const reason = optText(d, 'reason');
@@ -1302,8 +1319,8 @@ const CATALOG = {
         sample: { ...HALL_SAMPLE_DATA, origin: 'SALLE', refund_amount: 126000, refund_percent: 100, reason: 'Travaux imprévus dans la salle.' },
     }),
     HALL_RESERVATION_CANCELLED_PRO: define('HALL_RESERVATION_CANCELLED_PRO', {
-        label: 'Réservation de salle annulée (salle)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
-        link: () => '/partner/halls',
+        label: 'Réservation de salle annulée (salle)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
+        link: (d) => hallPartnerLink(d),
         inApp: (d) => {
             const origin = text(d, 'origin');
             const how = origin === 'CLIENT' ? 'par le client' : origin === 'SALLE' ? 'par vous' : origin === 'EVENT_VILLAGE' ? 'par Event Village' : 'faute de paiement du solde à temps';
@@ -1312,11 +1329,16 @@ const CATALOG = {
                 content: `La réservation de ${hallName(d)} ${hallPeriod(d)} est annulée ${how}. Le client récupère ${money(d, 'refund_amount')} ; la date est de nouveau libre.`,
             };
         },
+        sms: (d) => {
+            const origin = text(d, 'origin');
+            const how = origin === 'CLIENT' ? 'par le client' : origin === 'SALLE' ? 'par vous' : origin === 'EVENT_VILLAGE' ? 'par notre équipe' : 'faute de paiement';
+            return `${SMS_PREFIX}réservation annulée ${how} : ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} Le client récupère ${smsAmount(num(d, 'refund_amount'))}. La date est libre.`;
+        },
         sample: { ...HALL_SAMPLE_DATA, origin: 'CLIENT', refund_amount: 63000, refund_percent: 50 },
     }),
     HALL_PAYMENT_REFUNDED: define('HALL_PAYMENT_REFUNDED', {
         label: 'Paiement de salle remboursé', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
-        link: () => '/orders',
+        link: (d) => hallClientLink(d),
         inApp: (d) => ({
             title: 'Paiement remboursé',
             content: `Votre paiement de ${money(d, 'amount')} pour ${hallName(d)} est arrivé alors que la réservation n’était plus possible (date reprise, réservation annulée ou déjà payée). Il vous est remboursé sur votre compte ${operatorLabel(field(d, 'operator'))}.`,
@@ -1324,9 +1346,43 @@ const CATALOG = {
         sms: (d) => `${SMS_PREFIX}votre paiement de ${smsAmount(num(d, 'amount'))} pour ${smsVar(text(d, 'hall_name'), 25)} n'a pas pu servir. Il vous est remboursé sur ${operatorLabel(field(d, 'operator'))}.`,
         sample: { ...HALL_SAMPLE_DATA, paid_amount: 0, payment_id: SAMPLE_ID.payment, amount: 126000, operator: 'ORANGE_MONEY' },
     }),
+    HALL_REFUND_PAID: define('HALL_REFUND_PAID', {
+        label: 'Remboursement d’une réservation de salle versé', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
+        link: (d) => hallClientLink(d),
+        inApp: (d) => ({
+            title: 'Remboursement versé',
+            content: `${money(d, 'amount')} vous ont été versés sur votre compte ${operatorLabel(field(d, 'operator'))} pour la réservation de ${hallName(d)} ${hallPeriod(d)}.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}${smsAmount(num(d, 'amount'))} vous ont été versés sur ${operatorLabel(field(d, 'operator'))} pour la réservation de ${dot(smsVar(text(d, 'hall_name'), 25))}`,
+        sample: { ...HALL_SAMPLE_DATA, cashout_id: SAMPLE_ID.payment, amount: 63000, operator: 'WAVE' },
+    }),
+    HALL_EVE_REMINDER: define('HALL_EVE_REMINDER', {
+        label: 'Rappel la veille d’une réservation de salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ANY', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'HALL_RESERVATION',
+        link: (d) => (text(d, 'recipient_role') === 'PARTNER' ? hallPartnerLink(d) : hallClientLink(d)),
+        inApp: (d) => ({
+            title: 'C’est demain',
+            content: text(d, 'recipient_role') === 'PARTNER'
+                ? `${hallName(d, true)} est réservée demain${hallStartTime(d)}. Le client a tout payé.`
+                : `Votre réservation de ${hallName(d)} commence demain${hallStartTime(d)}. Bonne fête !`,
+        }),
+        sms: (d) => (text(d, 'recipient_role') === 'PARTNER'
+            ? `${SMS_PREFIX}rappel, ${smsVar(text(d, 'hall_name'), 25)} est réservée demain${hallStartTime(d)}. Le client a tout payé.`
+            : `${SMS_PREFIX}rappel, votre réservation de ${smsVar(text(d, 'hall_name'), 25)} commence demain${hallStartTime(d)}. Profitez-en bien !`),
+        sample: { ...HALL_SAMPLE_DATA, paid_amount: 420000, recipient_role: 'CLIENT' },
+    }),
+    HALL_EARNINGS_AVAILABLE: define('HALL_EARNINGS_AVAILABLE', {
+        label: 'Recettes d’une réservation de salle disponibles', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'HALL_RESERVATION',
+        link: () => '/partner/halls/recettes',
+        inApp: (d) => ({
+            title: 'Recettes disponibles',
+            content: `${money(d, 'earned')} de la réservation de ${hallName(d)} ${hallPeriod(d)} sont disponibles : vous pouvez les retirer depuis votre espace.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}${smsAmount(num(d, 'earned'))} disponibles pour ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} Retrait depuis votre espace.`,
+        sample: { ...HALL_SAMPLE_DATA, paid_amount: 420000, earned: 400000 },
+    }),
     HALL_VALIDATION_DECIDED: define('HALL_VALIDATION_DECIDED', {
-        label: 'Décision sur une salle', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
-        link: () => '/partner/halls',
+        label: 'Décision sur une salle', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'HALL_RESERVATION',
+        link: (d) => `/partner/halls/${encodeURIComponent(text(d, 'hall_id'))}`,
         inApp: (d) => {
             const decision = text(d, 'decision');
             const reason = optText(d, 'reason');
@@ -1334,7 +1390,16 @@ const CATALOG = {
             if (decision === 'VALIDER') return { title: 'Salle validée', content: `${name} est validée : elle est visible et peut être réservée dès l’ouverture du service.` };
             if (decision === 'REACTIVER') return { title: 'Salle réactivée', content: `${name} est de nouveau visible et peut être réservée.` };
             if (decision === 'SUSPENDRE') return { title: 'Salle suspendue', content: `${name} est suspendue : elle n’est plus visible ni réservable.${reason ? ` Motif : ${sentence(reason)}` : ''} Les réservations déjà payées sont maintenues.` };
-            return { title: 'Salle refusée', content: `${name} n’est pas acceptée.${reason ? ` Motif : ${sentence(reason)}` : ''} Modifiez-la pour la proposer de nouveau.` };
+            return { title: 'Salle refusée', content: `${name} n’est pas acceptée.${reason ? ` Motif : ${sentence(reason)}` : ''} Modifiez-la puis renvoyez-la en validation.` };
+        },
+        sms: (d) => {
+            const decision = text(d, 'decision');
+            const name = smsVar(text(d, 'hall_name'), 30);
+            const reason = optText(d, 'reason');
+            if (decision === 'VALIDER') return `${SMS_PREFIX}votre salle ${name} est validée : elle sera visible et réservable.`;
+            if (decision === 'REACTIVER') return `${SMS_PREFIX}votre salle ${name} est de nouveau visible et réservable.`;
+            const what = decision === 'SUSPENDRE' ? 'est suspendue' : "n'est pas acceptée";
+            return `${SMS_PREFIX}votre salle ${name} ${what}.${reason ? ` Motif : ${smsVar(reason, 60)}` : ''}`;
         },
         sample: { hall_id: SAMPLE_ID.reservation, hall_name: 'Salle des fêtes de Ngor', decision: 'REFUSER', reason: 'Photos manquantes.' },
     }),
@@ -1632,13 +1697,61 @@ const CATALOG = {
     }),
     // Lot 11a : établissement soumis à la validation (créé, ou refusé puis modifié) ; le SMS passe par ADMIN_REVIEW_SMS
     ADMIN_VENUE_SUBMITTED: define('ADMIN_VENUE_SUBMITTED', {
-        label: 'Établissement à valider', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
+        label: 'Établissement à valider', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'halls.validate', inAppType: 'ADMIN_REVIEW',
         link: () => '/admin/services',
         inApp: (d) => ({
             title: 'Établissement à valider',
             content: `${q(text(d, 'venue_name'))}${optText(d, 'city') ? ` (${text(d, 'city')})` : ''} ${field(d, 'resubmitted') === true ? 'a été modifié et ' : ''}attend votre validation.`,
         }),
         sample: { venue_id: SAMPLE_ID.reservation, venue_name: 'Le Grand Bleu', kind: 'RESTAURANT', city: 'Dakar' },
+    }),
+    // Lot 10b : salle envoyée en validation, salle validée modifiée (prix, adresse, nom ou photos) ; administrateurs
+    // qui ont halls.validate. Le SMS de la salle à valider passe par le SMS groupé (ADMIN_REVIEW_SMS, hall_count).
+    ADMIN_HALL_SUBMITTED: define('ADMIN_HALL_SUBMITTED', {
+        label: 'Salle à valider', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'halls.validate', inAppType: 'ADMIN_REVIEW',
+        link: (d) => `/admin/halls/${encodeURIComponent(text(d, 'hall_id'))}`,
+        inApp: (d) => ({
+            title: 'Salle à valider',
+            content: `${q(text(d, 'hall_name'))}${optText(d, 'city') ? ` (${text(d, 'city')})` : ''} ${field(d, 'resubmitted') === true ? 'a été corrigée et ' : ''}attend votre validation.`,
+        }),
+        sample: { hall_id: SAMPLE_ID.reservation, hall_name: 'Salle des fêtes de Ngor', city: 'Dakar' },
+    }),
+    ADMIN_HALL_CHANGED: define('ADMIN_HALL_CHANGED', {
+        label: 'Salle validée modifiée', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'halls.validate', inAppType: 'ADMIN_REVIEW',
+        link: (d) => `/admin/halls/${encodeURIComponent(text(d, 'hall_id'))}`,
+        inApp: (d) => ({
+            title: 'Salle modifiée',
+            content: `${q(text(d, 'hall_name'))}${optText(d, 'previous_name') ? ` (avant : ${q(text(d, 'previous_name'))})` : ''} a changé : ${hallChangesText(d)}. Elle reste validée : vérifiez sa fiche.`,
+        }),
+        sample: { hall_id: SAMPLE_ID.reservation, hall_name: 'Salle des fêtes de Ngor', city: 'Dakar', changes: ['PRIX', 'PHOTOS'] },
+    }),
+    // Contre-vérification du lot 10b (demande du 19/11) : droits d'un administrateur donnés ou retirés par un
+    // super-administrateur (admin_permissions_set) : l'administrateur est prévenu, les autres super-administrateurs
+    // reçoivent une alerte (4 canaux).
+    ADMIN_PERMISSIONS_CHANGED: define('ADMIN_PERMISSIONS_CHANGED', {
+        label: 'Droits d’administration modifiés', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', inAppType: 'ADMIN_REVIEW',
+        link: () => '/admin/mes-droits',
+        inApp: (d) => ({ title: 'Vos droits ont changé', content: rightsSentences(d) }),
+        sms: (d, ctx) => {
+            const added = codes(d, 'added');
+            const removed = codes(d, 'removed');
+            if (added.length + removed.length === 1) {
+                const one = added[0] ?? removed[0];
+                return `${SMS_PREFIX}vous ${added.length ? 'pouvez maintenant' : 'ne pouvez plus'} ${smsVar(rightPhrase(one), 95)}.`;
+            }
+            return `${SMS_PREFIX}vos droits d'administration ont changé : ${added.length} ajouté(s), ${removed.length} retiré(s). Détail : ${appLink(ctx, '/admin/mes-droits')}`;
+        },
+        sample: { admin_id: SAMPLE_ID.partner, added: ['halls.validate'], removed: [], target_name: 'Ndeye Administratrice', actor_name: 'Moussa Diop' },
+    }),
+    ADMIN_PERMISSIONS_ALERT: define('ADMIN_PERMISSIONS_ALERT', {
+        label: 'Droits d’un administrateur modifiés (super-administrateurs)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', inAppType: 'ADMIN_REVIEW',
+        link: () => '/admin/users',
+        inApp: (d) => ({
+            title: 'Droits d’un administrateur modifiés',
+            content: `${optText(d, 'actor_name') ?? 'Un super-administrateur'} a modifié les droits de ${optText(d, 'target_name') ?? 'un administrateur'}. ${rightsSentences(d, true)}`,
+        }),
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(optText(d, 'actor_name') ?? 'Un super-admin', 20)} a modifié les droits de ${smsVar(optText(d, 'target_name') ?? 'un admin', 20)} (${codes(d, 'added').length} ajouté(s), ${codes(d, 'removed').length} retiré(s)). Vérifiez : ${appLink(ctx, '/admin/users')}`,
+        sample: { admin_id: SAMPLE_ID.partner, added: ['halls.validate'], removed: ['events.write'], target_name: 'Ndeye Administratrice', actor_name: 'Moussa Diop' },
     }),
     ADMIN_PARTNER_REGISTERED: define('ADMIN_PARTNER_REGISTERED', {
         label: 'Nouvelle candidature partenaire', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.read', inAppType: 'KYC',
@@ -2451,17 +2564,27 @@ export function adminReviewSms(d: object, ctx: RenderContext): string {
     const events = count(d, 'event_count');
     // Lot 11a : établissements soumis à la validation (absent des SMS mis en file avant le lot : 0)
     const venues = optNum(d, 'venue_count') ?? 0;
+    // Lot 10b : salles envoyées en validation (absent des SMS mis en file avant le lot : 0) ; contre-vérification (T6) :
+    // salles validées modifiées, à revoir
+    const halls = optNum(d, 'hall_count') ?? 0;
+    const changed = optNum(d, 'hall_changed_count') ?? 0;
     const company = optText(d, 'company');
     const link = appLink(ctx, '/admin/dashboard');
-    if (partners === 1 && events === 0 && venues === 0 && company) {
+    if (partners === 1 && events === 0 && venues === 0 && halls === 0 && changed === 0 && company) {
         return `${SMS_PREFIX}nouvelle demande de partenaire "${smsVar(company, 40)}". Vérifiez son dossier : ${link}`;
     }
     const parts: string[] = [];
     if (partners > 0) parts.push(`${partners} demande(s) de partenaire`);
     if (events > 0) parts.push(`${events} événement(s)`);
     if (venues > 0) parts.push(`${venues} établissement(s)`);
-    if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count et venue_count à zéro : rien à valider');
-    return `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
+    if (halls > 0) parts.push(`${halls} salle(s)`);
+    if (parts.length === 0 && changed > 0) return `${SMS_PREFIX}${changed} salle(s) validée(s) modifiée(s) à vérifier : ${link}`;
+    if (changed > 0) parts.push(`${changed} salle(s) modifiée(s)`);
+    if (parts.length === 0) throw new TemplateDataError('partner_count', 'event_count, venue_count, hall_count et hall_changed_count à zéro : rien à valider');
+    const detailed = `${SMS_PREFIX}${parts.join(' et ')} attendent votre validation : ${link}`;
+    // Lot 10b : quatre rubriques peuvent dépasser un segment ; alors le total seul
+    if (smsSegments(detailed).segments <= 1) return detailed;
+    return `${SMS_PREFIX}${partners + events + venues + halls + changed} demandes attendent votre validation : ${link}`;
 }
 
 /** Lot 11a : nom de l'établissement entre guillemets, sinon « votre établissement ». */
@@ -2528,6 +2651,54 @@ function hallRefundSentence(d: object): string {
     return num(d, 'refund_amount') > 0
         ? `Vous êtes remboursé de ${money(d, 'refund_amount')} sur votre compte de paiement.`
         : 'Selon les conditions d’annulation de la salle, aucun remboursement n’est dû.';
+}
+
+/** Lot 10b : réservation dans « Mes réservations » (client). */
+function hallClientLink(d: object): string {
+    const id = optText(d, 'reservation_id');
+    return id ? `/halls/reservations/${encodeURIComponent(id)}` : '/halls/reservations';
+}
+
+/** Lot 10b : réservation dans l'espace de la salle (partenaire). */
+function hallPartnerLink(d: object): string {
+    const id = optText(d, 'reservation_id');
+    return id ? `/partner/halls/reservations/${encodeURIComponent(id)}` : '/partner/halls';
+}
+
+/** Lot 10b : « à 18:00 » pour une réservation à l'heure, rien à la journée (précédé d'une espace). */
+function hallStartTime(d: object): string {
+    const from = optText(d, 'start_time');
+    return from ? ` à ${from}` : '';
+}
+
+const HALL_CHANGE_LABELS: Readonly<Record<string, string>> = { NOM: 'nom', ADRESSE: 'adresse', PRIX: 'prix', PHOTOS: 'photos' };
+
+/** Lot 10b : « prix et photos » (champs changés d'une salle validée). */
+function hallChangesText(d: object): string {
+    const raw = field(d, 'changes');
+    const list = (Array.isArray(raw) ? raw : []).map((c) => HALL_CHANGE_LABELS[String(c)]).filter((c): c is string => Boolean(c));
+    if (list.length === 0) return 'sa fiche';
+    return list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} et ${list[list.length - 1]}`;
+}
+
+/** Contre-vérification du lot 10b : codes de droits d'une liste de l'avis (inconnus gardés : phrase générique). */
+function codes(d: object, key: string): string[] {
+    const raw = field(d, key);
+    return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === 'string' && c.length > 0) : [];
+}
+
+/** « valider les salles et les établissements » : libellé du droit, première lettre en minuscule ; jamais le code. */
+function rightPhrase(code: string): string {
+    const label = PERMISSION_LABELS[code] ?? 'Réaliser une action d’administration';
+    return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/** « Vous pouvez maintenant … . Vous ne pouvez plus … . » (ou « Peut maintenant … » pour l'alerte aux super-administrateurs). */
+function rightsSentences(d: object, third = false): string {
+    const can = third ? 'Peut maintenant' : 'Vous pouvez maintenant';
+    const cannot = third ? 'Ne peut plus' : 'Vous ne pouvez plus';
+    const lines = [...codes(d, 'added').map((c) => `${can} ${rightPhrase(c)}.`), ...codes(d, 'removed').map((c) => `${cannot} ${rightPhrase(c)}.`)];
+    return lines.length > 0 ? lines.join(' ') : 'Vos droits ont été revus.';
 }
 
 function smsHallRefund(d: object): string {

@@ -1,0 +1,339 @@
+'use client';
+
+/**
+ * Lot 10b (point 2) : calendrier des disponibilités d'une salle, un mois à la fois (GET /api/halls/[id]/calendar,
+ * du premier au dernier jour du mois affiché). Jour pris en entier : barré, grisé et non choisissable ; jour pris en
+ * partie (réservation à l'heure) : souligné en pointillés, heures prises dites sous le calendrier ; la couleur ne porte
+ * jamais seule l'information (légende, nom complet de chaque jour pour les lecteurs d'écran). Toucher un jour libre le
+ * choisit pour la réservation (date gardée dans l'adresse, lue par le panneau de réservation).
+ * Correctifs du lot 10b : chaque sorte de jour a sa couleur de la charte (libre en vert, pris en partie en orangé, pris
+ * en rouge, passé en gris, votre date en couleur principale ; fonds « -soft », textes « -text », contrastes AA en clair
+ * et en sombre) ET un second signal : coche, horloge et bordure en pointillés, croix et chiffre barré, hachures et
+ * tiret, coche de calendrier et liseré. Aujourd'hui : chiffre souligné. Légende complète sous le calendrier.
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { CalendarCheck, Check, ChevronLeft, ChevronRight, Clock, Minus, X } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import { LinkButton } from '@/components/ui/LinkButton';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { StatusBanner } from '@/components/ui/StatusBanner';
+import { cn } from '@/components/ui/cn';
+import { errorMessage, fetchJson } from '@/components/partner/fetch-json';
+import { longDate } from '@/lib/halls/views';
+import type { BusySlot } from '@/lib/halls/queries';
+import { DAY_RE, writeChoice } from './booking-url';
+import { capitalize } from './format';
+
+const MONTHS_AHEAD = 24;
+const WEEKDAYS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+
+/** Sorte de jour : chacune a sa couleur de la charte ET un second signal (icône, barré, pointillés ou hachures). */
+type DayKind = 'libre' | 'partiel' | 'pris' | 'passe' | 'choisi';
+
+/*
+ * Couleurs : texte « -text » sur fond « -soft » de la charte (AA en clair et en sombre, voir app/globals.css) ;
+ * bordure pleine du ton pour les jours qu'on peut choisir, en pointillés pour le jour pris en partie. Jour passé : fond
+ * hachuré (motif) et texte secondaire ; jour pris : barré et croix ; votre date : bouton principal, coche et liseré.
+ */
+const DAY_STYLE: Record<DayKind, string> = {
+    libre: 'border-success-text/50 bg-success-soft font-semibold text-success-text hover:border-success-text',
+    partiel: 'border-dashed border-warning-text bg-warning-soft font-semibold text-warning-text hover:border-solid',
+    pris: 'border-danger-border bg-danger-soft text-danger-text line-through decoration-2',
+    passe: 'border-transparent bg-muted bg-[repeating-linear-gradient(135deg,transparent_0_5px,rgb(var(--border))_5px_6px)] text-muted-foreground',
+    choisi: 'border-primary bg-primary font-bold text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-card',
+};
+
+function DayMark({ kind }: { kind: DayKind }) {
+    const props = { size: 14, 'aria-hidden': true, strokeWidth: 2.5 } as const;
+    if (kind === 'libre') return <Check {...props} />;
+    if (kind === 'partiel') return <Clock {...props} />;
+    if (kind === 'pris') return <X {...props} />;
+    if (kind === 'choisi') return <CalendarCheck {...props} />;
+    return <Minus {...props} />;
+}
+
+const LEGEND: { kind: DayKind; label: string }[] = [
+    { kind: 'libre', label: 'Libre' },
+    { kind: 'partiel', label: 'Pris en partie (à l’heure)' },
+    { kind: 'pris', label: 'Déjà réservé' },
+    { kind: 'passe', label: 'Passé' },
+    { kind: 'choisi', label: 'Votre date' },
+];
+
+interface DayState {
+    full: boolean;
+    hours: string[];
+}
+
+/** « AAAA-MM » → premier jour, dernier jour, nombre de jours, colonne du 1er (lundi = 0). */
+function monthInfo(month: string) {
+    const [y, m] = month.split('-').map(Number);
+    const first = new Date(Date.UTC(y, m - 1, 1));
+    const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const offset = (first.getUTCDay() + 6) % 7;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return { y, m, days, offset, from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(days)}`, day: (d: number) => `${y}-${pad(m)}-${pad(d)}` };
+}
+
+function shiftMonth(month: string, delta: number): string {
+    const [y, m] = month.split('-').map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(month: string): string {
+    const [y, m] = month.split('-').map(Number);
+    return capitalize(new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 1))));
+}
+
+/** Jours pris d'un mois, à partir des créneaux de la route (journée entière si les heures sont absentes). */
+function busyMap(busy: BusySlot[], from: string, to: string): Map<string, DayState> {
+    const map = new Map<string, DayState>();
+    const get = (day: string) => {
+        const cur = map.get(day) ?? { full: false, hours: [] };
+        map.set(day, cur);
+        return cur;
+    };
+    for (const b of busy) {
+        if (!DAY_RE.test(b.startDate) || !DAY_RE.test(b.endDate)) continue;
+        if (b.startTime && b.endTime) {
+            if (b.startDate >= from && b.startDate <= to) get(b.startDate).hours.push(`${b.startTime} à ${b.endTime}`);
+            continue;
+        }
+        const cursor = new Date(`${b.startDate}T00:00:00Z`);
+        const end = new Date(`${b.endDate}T00:00:00Z`);
+        for (let i = 0; i < 400 && cursor <= end; i += 1) {
+            const day = cursor.toISOString().slice(0, 10);
+            if (day >= from && day <= to) get(day).full = true;
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+    }
+    return map;
+}
+
+export function HallCalendar({ hallId, today, hourly }: { hallId: string; today: string; hourly: boolean }) {
+    const sp = useSearchParams();
+    const selectedRaw = sp?.get('date') ?? '';
+    const selected = DAY_RE.test(selectedRaw) ? selectedRaw : '';
+    const todayMonth = today.slice(0, 7);
+    const lastMonth = shiftMonth(todayMonth, MONTHS_AHEAD);
+    const [month, setMonth] = useState(() => (selected && selected >= today ? selected.slice(0, 7) : todayMonth));
+    const [cache, setCache] = useState<Record<string, BusySlot[]>>({});
+    const [loading, setLoading] = useState(false);
+    const [failure, setFailure] = useState<string | null>(null);
+    const ctrl = useRef<AbortController | null>(null);
+
+    const info = useMemo(() => monthInfo(month), [month]);
+
+    const load = useCallback(async (m: string) => {
+        ctrl.current?.abort();
+        const c = new AbortController();
+        ctrl.current = c;
+        const mi = monthInfo(m);
+        setLoading(true);
+        setFailure(null);
+        try {
+            const body = await fetchJson<{ busy?: BusySlot[] }>(`/api/halls/${hallId}/calendar?from=${mi.from}&to=${mi.to}`, { signal: c.signal });
+            if (c.signal.aborted) return;
+            setCache((prev) => ({ ...prev, [m]: Array.isArray(body.busy) ? body.busy : [] }));
+        } catch (err) {
+            if (c.signal.aborted) return;
+            setFailure(errorMessage(err, 'Le calendrier n’a pas pu être chargé.'));
+        } finally {
+            if (!c.signal.aborted) setLoading(false);
+        }
+    }, [hallId]);
+
+    useEffect(() => {
+        if (cache[month] === undefined) void load(month);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [month, load]);
+
+    useEffect(() => () => ctrl.current?.abort(), []);
+
+    // Le mois suit la date choisie dans le panneau de réservation
+    useEffect(() => {
+        if (selected && selected >= today && selected.slice(0, 7) !== month && selected.slice(0, 7) <= lastMonth) setMonth(selected.slice(0, 7));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selected]);
+
+    const busy = cache[month];
+    const states = useMemo(() => (busy ? busyMap(busy, info.from, info.to) : new Map<string, DayState>()), [busy, info]);
+    const hasPartial = Array.from(states.values()).some((s) => !s.full && s.hours.length > 0);
+    const selectedState = selected ? states.get(selected) : undefined;
+    const label = monthLabel(month);
+    const days = Array.from({ length: info.days }).map((_, i) => {
+        const day = info.day(i + 1);
+        const st = states.get(day);
+        const past = day < today;
+        const full = Boolean(st?.full);
+        const partial = !full && Boolean(st?.hours.length);
+        const isSelected = day === selected;
+        const isToday = day === today;
+        // Un jour passé ou pris garde son aspect même s'il est choisi (saisi à la main) : liseré en plus
+        const kind: DayKind = past ? 'passe' : full ? 'pris' : isSelected ? 'choisi' : partial ? 'partiel' : 'libre';
+        const words = [
+            capitalize(longDate(day)),
+            isToday ? 'aujourd’hui' : null,
+            past ? 'passé' : full ? 'déjà réservé' : partial ? `pris en partie, de ${st?.hours.join(', de ')}` : 'libre',
+            isSelected ? 'votre date' : null,
+        ].filter(Boolean).join(', ');
+        return { day, n: i + 1, weekday: WEEKDAYS[(info.offset + i) % 7], past, full, isSelected, isToday, kind, words };
+    });
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2">
+                <IconButton
+                    aria-label="Mois précédent"
+                    variant="secondary"
+                    disabled={month <= todayMonth}
+                    onClick={() => setMonth((m) => shiftMonth(m, -1))}
+                >
+                    <ChevronLeft size={20} aria-hidden="true" />
+                </IconButton>
+                <h3 className="text-lg font-bold text-foreground-strong" aria-live="polite">{label}</h3>
+                <IconButton
+                    aria-label="Mois suivant"
+                    variant="secondary"
+                    disabled={month >= lastMonth}
+                    onClick={() => setMonth((m) => shiftMonth(m, 1))}
+                >
+                    <ChevronRight size={20} aria-hidden="true" />
+                </IconButton>
+            </div>
+
+            {failure ? (
+                <StatusBanner
+                    tone="danger"
+                    title="Calendrier indisponible"
+                    announce="alert"
+                    action={<Button variant="secondary" size="sm" onClick={() => void load(month)} isLoading={loading}>Réessayer</Button>}
+                >
+                    {failure}
+                </StatusBanner>
+            ) : (
+                <div aria-busy={loading || busy === undefined}>
+                    {busy === undefined ? (
+                        <>
+                            <div className="flex gap-2 overflow-hidden sm:hidden">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                    <Skeleton key={i} className="h-[4.5rem] w-14 flex-shrink-0 rounded-lg" />
+                                ))}
+                            </div>
+                            <div className="hidden grid-cols-7 gap-1 sm:grid">
+                                {Array.from({ length: 35 }).map((_, i) => (
+                                    <Skeleton key={i} className="h-12 rounded-lg" />
+                                ))}
+                            </div>
+                            <span className="sr-only" role="status">Chargement du calendrier…</span>
+                        </>
+                    ) : (
+                        <>
+                            {/* Téléphone : sept colonnes de 44 px ne tiennent pas à 320 px ; bande des jours à venir qu'on fait glisser */}
+                            <ul
+                                className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 py-2 sm:hidden"
+                                aria-label={`Jours de ${label}`}
+                            >
+                                {days.filter((d) => !d.past).map((d) => (
+                                    <li key={d.day} className="snap-start">
+                                        <button
+                                            type="button"
+                                            disabled={d.full}
+                                            aria-pressed={d.isSelected}
+                                            onClick={() => writeChoice({ date: d.day })}
+                                            className={cn(
+                                                'relative flex min-h-[4.5rem] w-14 flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                                                DAY_STYLE[d.kind],
+                                                d.full && 'cursor-not-allowed',
+                                                d.isSelected && d.kind !== 'choisi' && 'ring-2 ring-foreground-strong ring-offset-2 ring-offset-card',
+                                            )}
+                                        >
+                                            {/* Nom lu : la date en entier (le jour abrégé à l'écran n'y figure pas mot pour mot) ; bouton « relative » : le texte
+                                                masqué reste dans la bande qui défile (run 490 : page élargie à 698 px) */}
+                                            <span className="sr-only">{d.words}</span>
+                                            <span aria-hidden="true">{d.weekday}</span>
+                                            <span aria-hidden="true" className={cn('text-base', d.isToday && 'underline decoration-2 underline-offset-2')}>{d.n}</span>
+                                            <DayMark kind={d.kind} />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="hidden sm:block">
+                                <div className="grid grid-cols-7 gap-1 pb-1" aria-hidden="true">
+                                    {WEEKDAYS.map((w) => (
+                                        <span key={w} className="text-center text-sm font-semibold text-muted-foreground">{w}</span>
+                                    ))}
+                                </div>
+                                <ul className="grid grid-cols-7 gap-1" aria-label={`Jours de ${label}`}>
+                                    {Array.from({ length: info.offset }).map((_, i) => (
+                                        <li key={`vide-${i}`} aria-hidden="true" />
+                                    ))}
+                                    {days.map((d) => (
+                                        <li key={d.day}>
+                                            <button
+                                                type="button"
+                                                disabled={d.past || d.full}
+                                                aria-pressed={d.isSelected}
+                                                aria-label={d.words}
+                                                onClick={() => writeChoice({ date: d.day })}
+                                                className={cn(
+                                                    'flex h-12 w-full flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                                                    DAY_STYLE[d.kind],
+                                                    (d.past || d.full) && 'cursor-not-allowed',
+                                                    d.isSelected && d.kind !== 'choisi' && 'ring-2 ring-foreground-strong ring-offset-2 ring-offset-card',
+                                                )}
+                                            >
+                                                <span className={cn(d.isToday && 'underline decoration-2 underline-offset-2')}>{d.n}</span>
+                                                <DayMark kind={d.kind} />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+
+            <ul className="grid grid-cols-1 gap-x-5 gap-y-2 text-sm text-foreground min-[360px]:grid-cols-2 sm:flex sm:flex-wrap" aria-label="Légende du calendrier">
+                {LEGEND.filter((l) => l.kind !== 'partiel' || hourly || hasPartial).map((l) => (
+                    <li key={l.kind} className="flex items-center gap-2">
+                        <span aria-hidden="true" className={cn('inline-flex h-11 w-10 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-md border text-sm tabular-nums', DAY_STYLE[l.kind])}>
+                            <span>5</span>
+                            <DayMark kind={l.kind} />
+                        </span>
+                        {l.label}
+                    </li>
+                ))}
+                <li className="flex items-center gap-2">
+                    <span aria-hidden="true" className="inline-flex h-11 w-10 flex-shrink-0 items-center justify-center rounded-md border border-border text-sm font-semibold tabular-nums text-foreground-strong underline decoration-2 underline-offset-2">5</span>
+                    Aujourd’hui
+                </li>
+            </ul>
+
+            {selected && (
+                <div className="space-y-3 rounded-xl border border-border bg-muted p-4" role="status">
+                    <p className="text-base text-foreground">
+                        {'Date choisie : '}
+                        <span className="font-semibold text-foreground-strong">{capitalize(longDate(selected))}</span>
+                    </p>
+                    {selectedState?.full && (
+                        <p className="text-sm font-semibold text-danger-text">Ce jour est déjà réservé : choisissez une autre date.</p>
+                    )}
+                    {selectedState && !selectedState.full && selectedState.hours.length > 0 && (
+                        <p className="text-sm text-foreground">
+                            {`Déjà pris ce jour-là : de ${selectedState.hours.join(', de ')}.`}
+                            {hourly ? ' Vous pouvez réserver à l’heure en dehors de ces horaires.' : ' La réservation à la journée n’est pas possible ce jour-là.'}
+                        </p>
+                    )}
+                    <LinkButton href="#reserver" variant="secondary" size="sm" className="lg:hidden">
+                        Continuer la réservation
+                    </LinkButton>
+                </div>
+            )}
+        </div>
+    );
+}

@@ -12,12 +12,12 @@ const ASK = 'Choisissez de valider, refuser, suspendre ou réactiver l’établi
 /**
  * POST /api/admin/venues/[id]/validation { decision: VALIDER | REFUSER | SUSPENDRE | REACTIVER, reason? }
  * Lot 11a (décision du client) : un établissement (restaurant, bar, espace) n'est visible qu'après validation par
- * l'administration (réglage tables.validation_required, activé). Droit partners.validate (ou Superadmin), vérifié par
+ * l'administration (réglage tables.validation_required, activé). Lot 10b : droit halls.validate (ou Superadmin), vérifié par
  * la route puis en base par venue_validation_decide (verrou, journal, avis à la partenaire) ; motif obligatoire pour
  * refuser ou suspendre. Sans interrupteur : l'administration prépare les établissements avant l'ouverture du service.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const auth = await verifyAdminAuth(req, { requiredPermission: 'partners.validate' });
+    const auth = await verifyAdminAuth(req, { requiredPermission: 'halls.validate' });
     if (!auth.authorized) return auth.errorResponse!;
     try {
         const { id } = await params;

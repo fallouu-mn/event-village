@@ -28,6 +28,9 @@ export const RLS_HELPER_WHITELIST = [
     // Contre-vérification du lot 9 quinquies (point 4 ; modification signalée au rapport) : 8e aide, affectation de
     // contrôleur de l'appelant active seulement si la fiche partenaire de l'événement est VALIDE ou SUSPENDU
     'controller_assignment_active',
+    // Contre-vérification du lot 10b (T4 ; modification signalée au rapport) : 9e aide, partner_listed (partenaire VALIDE,
+    // un booléen) pour la lecture publique des salles, établissements, zones et tables
+    'partner_listed',
 ] as const;
 
 interface FnRow {

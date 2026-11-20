@@ -67,6 +67,7 @@ export const SETTING_BOUNDS: Readonly<Record<string, SettingBounds>> = {
     'halls.hold_minutes': int(5, 60, 'Durée de garde d’une réservation non payée', 'min'),
     // Correctifs de la contre-vérification du lot 10a (T4) : migration 20261122000010
     'halls.full_payment_margin_hours': int(1, 168, 'Paiement en une fois si le solde serait dû dans moins de', 'h'),
+    'halls.max_pending_per_client': int(1, 10, 'Réservations en attente de paiement au plus par client', 'réservations'),
     'halls.cancel_partial_percent': int(1, 99, 'Part remboursée dans la tranche intermédiaire', '%'),
     'halls.cancel_souple_full_days': int(1, 365, 'Règle souple : remboursement total jusqu’à', 'jours'),
     'halls.cancel_moderee_full_days': int(1, 365, 'Règle modérée : remboursement total jusqu’à', 'jours'),

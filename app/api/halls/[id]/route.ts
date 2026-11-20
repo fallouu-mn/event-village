@@ -1,92 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { guardFeature } from '@/lib/features/flags';
+import { publicHall } from '@/lib/halls/queries';
+import { notFound } from '@/lib/halls/route-helpers';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/halls/[id]
- * Récupère le détail complet d'une salle pour devis et réservation
+ * GET /api/halls/[id] — fiche publique d'une salle.
+ * Lot 10b (point 2) : galerie, capacité, équipements, position, prix au jour et à l'heure, acompte, règle d'annulation
+ * (texte affiché avant de payer) ; salle active, validée, d'une partenaire VALIDE, avec un prix ; sinon 404. Colonnes
+ * publiques seulement : ni réservation, ni client, ni contact de la partenaire.
+ * Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé).
  */
-export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
-    const params = await props.params;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
-        // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
         const closed = await guardFeature('halls', 'GET /api/halls/[id]');
         if (closed) return closed;
-        const hallId = params.id;
-        if (!hallId) {
-            return NextResponse.json({ error: 'ID salle requis.' }, { status: 400 });
-        }
-
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(hallId);
-        if (!isUuid) {
-            return NextResponse.json({ error: 'Salle introuvable.' }, { status: 404 });
-        }
-
-        const supabase = getServiceRoleClient();
-
-        const { data: hall, error } = await supabase
-            .from('halls')
-            .select(`
-                id,
-                name,
-                description,
-                capacity,
-                price_per_day,
-                deposit_percentage,
-                images,
-                is_active,
-                partner_id,
-                partners!inner(id, company_name, commercial_name, status)
-            `)
-            .eq('id', hallId)
-            // Lot 10a : seules les salles actives, validées par l'administration, d'un partenaire validé, sont publiques
-            .eq('is_active', true)
-            .eq('validation_status', 'VALIDEE')
-            .eq('partners.status', 'VALIDE')
-            .maybeSingle();
-
-        if (error || !hall) {
-            return NextResponse.json({ error: 'Salle introuvable.' }, { status: 404 });
-        }
-
-        const price = Number(hall.price_per_day);
-        const image = (hall.images && hall.images.length > 0)
-            ? hall.images[0]
-            : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&auto=format&fit=crop&q=80';
-
-        const partnerData = Array.isArray(hall.partners) ? hall.partners[0] : hall.partners;
-
-        return NextResponse.json({
-            hall: {
-                id: hall.id,
-                name: hall.name,
-                partnerId: hall.partner_id,
-                partnerName: partnerData?.commercial_name || partnerData?.company_name || 'Espace Réception',
-                location: 'Dakar & Environs, Sénégal',
-                areaSqm: Math.max(150, Math.floor(hall.capacity * 1.5)),
-                capacitySeated: Math.max(50, Math.floor(hall.capacity * 0.7)),
-                capacityCocktail: hall.capacity,
-                pricePerDay: price,
-                priceFormatted: `${price.toLocaleString('fr-FR')} FCFA`,
-                depositRate: (hall.deposit_percentage || 30) / 100,
-                depositPercentage: hall.deposit_percentage || 30,
-                imageUrl: image,
-                description: hall.description || 'Cadre d’exception pour vos réceptions, conférences et événements privés.',
-                amenities: [
-                    'Climatisation centrale haut rendement',
-                    'Vidéoprojecteur HD & Écran de projection',
-                    'Régie sonore et microphones sans fil',
-                    'Wifi haut débit pour les invités',
-                    'Espace traiteur et office de réchauffage',
-                    'Service de gardiennage et sécurité',
-                    'Parking privatif surveillé',
-                ],
-            },
-        });
+        const { id } = await params;
+        const hall = await publicHall(id);
+        if (!hall) return notFound('Cette salle n’existe pas ou n’est plus proposée.', 'HALL_NOT_FOUND');
+        return NextResponse.json({ success: true, hall });
     } catch (err: unknown) {
-        console.error('[API /api/halls/[id]] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+        return apiFailure('GET /api/halls/[id]', err, { message: 'Salle momentanément indisponible.', code: 'HALL_UNAVAILABLE', status: 500 });
     }
 }
