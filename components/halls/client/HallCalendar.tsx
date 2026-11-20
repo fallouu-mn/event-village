@@ -245,13 +245,14 @@ export function HallCalendar({ hallId, today, hourly }: { hallId: string; today:
                                             aria-pressed={d.isSelected}
                                             onClick={() => writeChoice({ date: d.day })}
                                             className={cn(
-                                                'flex min-h-[4.5rem] w-14 flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                                                'relative flex min-h-[4.5rem] w-14 flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
                                                 DAY_STYLE[d.kind],
                                                 d.full && 'cursor-not-allowed',
                                                 d.isSelected && d.kind !== 'choisi' && 'ring-2 ring-foreground-strong ring-offset-2 ring-offset-card',
                                             )}
                                         >
-                                            {/* Nom lu : la date en entier (le jour abrégé à l'écran n'y figure pas mot pour mot) */}
+                                            {/* Nom lu : la date en entier (le jour abrégé à l'écran n'y figure pas mot pour mot) ; bouton « relative » : le texte
+                                                masqué reste dans la bande qui défile (run 490 : page élargie à 698 px) */}
                                             <span className="sr-only">{d.words}</span>
                                             <span aria-hidden="true">{d.weekday}</span>
                                             <span aria-hidden="true" className={cn('text-base', d.isToday && 'underline decoration-2 underline-offset-2')}>{d.n}</span>
