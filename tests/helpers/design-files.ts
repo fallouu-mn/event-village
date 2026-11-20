@@ -334,4 +334,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/events/CardFavorites.tsx',
     'components/events/CategoryChipsBar.tsx',
     'components/events/FavoriteHeart.tsx',
+    'components/tickets/AddToCalendar.tsx',
+    'app/profile/favoris/page.tsx',
+    'app/profile/favoris/loading.tsx',
+    'components/search/SearchLauncher.tsx',
+    'components/search/InstantSearch.tsx',
+    'components/tickets/PullToRefresh.tsx',
 ];

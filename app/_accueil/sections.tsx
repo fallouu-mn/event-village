@@ -75,7 +75,7 @@ export function cardProps(e: CardData) {
 /** Rangée de cartes (cascade à l'entrée, coupée si « réduire les animations »). Jamais d'affiche prioritaire ici. */
 export function CardRow({ events, className }: { events: CardData[]; className?: string }) {
   return (
-    <ul className={cn(ROW, 'ev-stagger', className)}>
+    <ul data-ev-row="" className={cn(ROW, 'ev-stagger', className)}>
       {events.map((e) => (
         <li key={e.id} className={ROW_ITEM}>
           <EventCard {...cardProps(e)} sizes={ROW_SIZES} />
@@ -93,7 +93,7 @@ export function CardRow({ events, className }: { events: CardData[]; className?:
  */
 export function FeaturedRow({ events, priorityFirst }: { events: CardData[]; priorityFirst: boolean }) {
   return (
-    <ul className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto overscroll-x-contain px-4 pb-2 no-scrollbar sm:-mx-6 sm:scroll-px-6 sm:px-6 lg:mx-0 lg:grid lg:snap-none lg:grid-cols-4 lg:gap-5 lg:overflow-visible lg:px-0 lg:pb-0">
+    <ul data-ev-row="" className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto overscroll-x-contain px-4 pb-2 no-scrollbar sm:-mx-6 sm:scroll-px-6 sm:px-6 lg:mx-0 lg:grid lg:snap-none lg:grid-cols-4 lg:gap-5 lg:overflow-visible lg:px-0 lg:pb-0">
       {events.map((e, i) => (
         <li
           key={e.id}

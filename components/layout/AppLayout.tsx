@@ -37,6 +37,7 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { SEARCH_OPEN_EVENT, SearchLauncher } from '@/components/search/SearchLauncher';
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
@@ -198,6 +199,12 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Design 1d (point 9) : la recherche instantanée ouverte depuis le menu le referme
+  useEffect(() => {
+    const close = (): void => setIsMobileMenuOpen(false);
+    window.addEventListener(SEARCH_OPEN_EVENT, close);
+    return () => window.removeEventListener(SEARCH_OPEN_EVENT, close);
+  }, []);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
   const wasMenuOpen = useRef(false);
@@ -393,6 +400,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="px-4 pb-1 pt-3 sm:hidden">
             <Link
               href="/explore"
+              data-ev-search=""
               onClick={closeMobileMenu}
               className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3.5 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -450,6 +458,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="hidden max-w-lg flex-1 items-center sm:flex">
             <Link
               href="/explore"
+              data-ev-search=""
               className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Search size={16} aria-hidden="true" />
@@ -459,6 +468,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
             <NotificationBell />
+            {/* Design 1d (point 9) : recherche instantanée, ouverte depuis tout déclencheur data-ev-search */}
+            <SearchLauncher />
 
             {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px
                 avec ses trois boutons de 44 px. */}

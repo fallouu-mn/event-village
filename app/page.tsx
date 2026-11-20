@@ -117,6 +117,7 @@ export default async function HomePage() {
             <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <input
               id="accueil-recherche"
+              data-ev-search=""
               name="q"
               type="search"
               inputMode="search"
@@ -156,7 +157,7 @@ export default async function HomePage() {
           {live.length > 0 && (
             <LiveNowSection items={live.map((e) => ({ id: e.id, startsAt: e.startsAt, endsAt: e.endsAt }))} liveAtRender={liveAtRender} labelledBy="en-ce-moment-titre">
               <SectionHead id="en-ce-moment-titre" title="En ce moment" hint="Ces événements ont déjà commencé." />
-              <ul className={ROW}>
+              <ul data-ev-row="" className={ROW}>
                 {live.map((e) => (
                   <LiveNowItem key={e.id} id={e.id} className={ROW_ITEM}>
                     <EventCard {...cardProps(e)} sizes={ROW_SIZES} priority={e.id === firstLiveId} />
