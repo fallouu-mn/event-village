@@ -22,6 +22,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Clock } from 'lucide-react';
 import { StatusBanner } from '@/components/ui/StatusBanner';
+import { PaymentCountdown } from '@/components/event-page/Countdowns';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -232,6 +233,8 @@ export function PendingPaymentBanner({ eventId, enabled, refreshKey = 0, onChang
             </>
           )}
         </p>
+        {/* Design 1d (point 4) : temps restant pour finir le paiement, à l'heure du téléphone (lecteurs d'écran : à la minute) */}
+        {!holdOver && pending.expiresAt && <PaymentCountdown expiresAt={pending.expiresAt} className="mt-2 font-bold" />}
       </StatusBanner>
       <ConfirmDialog
         isOpen={confirmCancel}

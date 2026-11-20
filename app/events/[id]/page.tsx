@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   ArrowLeft,
@@ -22,8 +23,12 @@ import { EventTicketing } from '@/components/event-page/EventTicketing';
 import { LiveOnPoster } from '@/components/event-page/LiveOnPoster';
 import { PendingPaymentSlot } from '@/components/event-page/PendingPaymentSlot';
 import { ShareButton } from '@/components/event-page/ShareButton';
+import { EventCountdownLazy as EventCountdown } from '@/components/event-page/EventCountdownLazy';
+import { CardFavoritesLazy as CardFavorites } from '@/components/events/CardFavoritesLazy';
+import { FavoriteHeart } from '@/components/events/FavoriteHeart';
 import { VenueMap } from '@/components/event-page/VenueMap';
 import { readPublicSheet } from '@/lib/events/event-detail.server';
+import { shareImagesFor } from '@/lib/events/share-preview.server';
 import type { BannerKind, PublicEventDetail } from '@/lib/events/event-detail';
 import { eventImageSrc, isProjectStorageImage } from '@/lib/events/event-image';
 import { formatDate, formatDateTime } from '@/lib/format';
@@ -62,8 +67,8 @@ const PROGRAM_KIND_LABEL: Record<string, string> = {
   ACTIVITE: 'Activité',
 };
 
-/** Largeur rendue de l'affiche : pleine largeur sur téléphone, deux tiers de 1 200 px au plus sur ordinateur. */
-const POSTER_SIZES = '(min-width: 1280px) 760px, (min-width: 1024px) 62vw, 100vw';
+/** Design 1d : largeur rendue de l'affiche (cadre 4:5) : 76 % de l'écran sur téléphone, 380 px au plus dès 1 024 px. */
+const POSTER_SIZES = '(min-width: 1024px) 380px, 76vw';
 
 function capitalize(text: string): string {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
@@ -90,11 +95,13 @@ export async function generateMetadata(props: { params: Promise<{ id: string }> 
   return {
     title: `${event.title} — Event Village`,
     description,
+    // Design 1d (point 5) : aperçu généré seulement pour un événement publié (shareImagesFor), image du site sinon
     openGraph: {
       title: event.title,
       description,
-      ...(isProjectStorageImage(event.posterUrl) ? { images: [{ url: event.posterUrl, alt: `Affiche de l’événement ${event.title}` }] } : {}),
+      images: shareImagesFor(event),
     },
+    twitter: { card: 'summary_large_image', title: event.title, description, images: shareImagesFor(event).map((i) => i.url) },
   };
 }
 
@@ -150,14 +157,97 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
   const showPayment = event.status === 'PUBLIE' && event.categories.some((c) => !c.isSoldOut);
   const hasPractical = Boolean(info.accessNotes || info.parking || info.contactPhone || info.rules) || showPayment;
 
+  const heroStyle = { '--poster': event.posterColor } as CSSProperties;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <LinkButton href="/explore" variant="ghost" size="sm" leftIcon={<ArrowLeft size={18} />} className="-ml-3">
-          Retour aux événements
-        </LinkButton>
-        <ShareButton title={event.title} />
-      </div>
+    <div>
+      {/* Design 1d (point 3) : haut immersif. Fond : petite image déjà floutée de l'affiche (aucun flou CSS), sous un voile
+          de la couleur de l'affiche ; affiche entière au premier plan ; titre et infos en blanc sur la couleur pleine. */}
+      <section
+        aria-labelledby="fiche-titre"
+        style={heroStyle}
+        className="ev-hero ev-poster-card -mx-4 -mt-4 overflow-hidden px-4 pb-14 pt-3 sm:mx-0 sm:mt-0 sm:rounded-3xl sm:px-6 sm:pb-16 lg:px-10 lg:pt-6"
+      >
+        {event.posterBlur && (
+          <div className="ev-hero-backdrop" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element -- image déjà floutée de 24 px en adresse data:, agrandie */}
+            <img src={event.posterBlur} alt="" />
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          {/* Sous 400 px, « Retour » seul : la barre tient avec le cœur et « Partager » (320 px compris) */}
+          <Link
+            href="/explore"
+            aria-label="Retour aux événements"
+            className="inline-flex min-h-11 min-w-0 items-center gap-2 rounded-full bg-scrim/60 px-4 text-sm font-semibold text-on-tone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ArrowLeft size={18} className="flex-shrink-0" aria-hidden="true" />
+            <span aria-hidden="true" className="xs:hidden">Retour</span>
+            <span aria-hidden="true" className="hidden xs:inline">Retour aux événements</span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <FavoriteHeart id={event.id} title={event.title} />
+            <ShareButton title={event.title} />
+          </div>
+        </div>
+
+        <div className="mt-5 grid items-end gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:gap-10">
+          {/* Affiche entière (4:5, jamais rognée), place réservée : aucun saut ; même nom de transition que la carte */}
+          <div
+            className="relative mx-auto aspect-[4/5] w-full max-w-[min(76vw,380px)] overflow-hidden rounded-2xl bg-scrim/20 shadow-lg lg:mx-0 lg:max-w-none"
+            style={{ viewTransitionName: `ev-poster-${event.id}` }}
+          >
+            <Image
+              src={eventImageSrc(event.posterUrl)}
+              alt={`Affiche de l’événement ${event.title}`}
+              fill
+              priority
+              fetchPriority="high"
+              sizes={POSTER_SIZES}
+              className="object-contain"
+            />
+            <LiveOnPoster startsAt={event.startsAt} endsAt={event.endsAt} enabled={liveEnabled} />
+          </div>
+
+          <header className="min-w-0 space-y-4 lg:pb-4">
+            {event.categoryLabel && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="brand">{event.categoryLabel}</Badge>
+              </div>
+            )}
+            <h1 id="fiche-titre" className="break-words text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl lg:text-5xl">{event.title}</h1>
+            {event.organizer?.name && (
+              <p className="text-base">
+                Organisé par <span className="font-bold">{event.organizer.name}</span>
+              </p>
+            )}
+            <ul className="space-y-2.5" aria-label="Date et lieu">
+              <li className="flex min-w-0 items-start gap-2.5">
+                <CalendarDays size={20} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">
+                  <span className="block text-base font-bold">{capitalize(event.dateFormatted)} à&nbsp;{event.time}</span>
+                  {event.endFormatted && <span className="block text-sm font-medium">{capitalize(event.endFormatted)}</span>}
+                </span>
+              </li>
+              <li className="flex min-w-0 items-start gap-2.5">
+                <MapPin size={20} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">
+                  <span className="block text-base font-bold">{event.venue}</span>
+                  {placeLine && <span className="block text-sm font-medium">{placeLine}</span>}
+                </span>
+              </li>
+            </ul>
+            {/* Design 1d (point 4) : compte à rebours à l'heure du téléphone, jamais dans la page en cache ; sa ligne est
+                réservée (rien ne saute quand il arrive, rien ne manque quand il n'y en a pas) */}
+            <div className="min-h-9">
+              <EventCountdown startsAt={event.startsAt} endsAt={event.endsAt} enabled={liveEnabled} className="rounded-full bg-scrim/40 px-3.5 py-2 text-sm font-bold" />
+            </div>
+          </header>
+        </div>
+      </section>
+
+      {/* Feuille de contenu aux coins arrondis qui monte par-dessus le haut de la fiche */}
+      <div className="ev-sheet-up relative z-[1] -mx-4 -mt-8 space-y-6 rounded-t-[28px] bg-background px-4 pt-6 sm:mx-0 sm:-mt-10 sm:rounded-3xl sm:px-6 lg:px-8">
 
       {event.banner && (
         <StatusBanner tone={BANNER_TONE[event.banner.kind]} title={event.banner.title}>
@@ -179,44 +269,7 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
 
       <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
         <article className="min-w-0 space-y-6 lg:col-span-2">
-          {/* Affiche en grand, bord à bord sur téléphone ; place réservée (16/10) : aucun saut */}
-          <div
-            className="relative -mx-4 aspect-[16/10] overflow-hidden bg-muted sm:mx-0 sm:rounded-[20px] sm:border sm:border-border"
-            style={{ viewTransitionName: `ev-poster-${event.id}` }}
-          >
-            <Image
-              src={eventImageSrc(event.posterUrl)}
-              alt={`Affiche de l’événement ${event.title}`}
-              fill
-              priority
-              fetchPriority="high"
-              sizes={POSTER_SIZES}
-              className="object-cover"
-            />
-            <LiveOnPoster startsAt={event.startsAt} endsAt={event.endsAt} enabled={liveEnabled} />
-          </div>
-
-          <header className="space-y-3">
-            {event.categoryLabel && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="brand">{event.categoryLabel}</Badge>
-              </div>
-            )}
-            <h1 className="break-words text-3xl font-extrabold leading-tight tracking-tight text-foreground-strong sm:text-4xl">{event.title}</h1>
-            {event.organizer?.name && (
-              <p className="text-base text-muted-foreground">
-                Organisé par <span className="font-semibold text-foreground-strong">{event.organizer.name}</span>
-              </p>
-            )}
-          </header>
-
           <ul className="space-y-4" aria-label="Infos de l’événement">
-            <InfoRow icon={<CalendarDays size={20} />} sub={event.endFormatted ? capitalize(event.endFormatted) : undefined}>
-              {capitalize(event.dateFormatted)} à&nbsp;{event.time}
-            </InfoRow>
-            <InfoRow icon={<MapPin size={20} />} sub={placeLine || undefined}>
-              {event.venue}
-            </InfoRow>
             <InfoRow icon={<Ticket size={20} />} sub="Présentez son QR code à l’entrée, depuis Mes billets.">
               Billet dans l’application
             </InfoRow>
@@ -328,6 +381,10 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
           <EventTicketing initial={event} />
         </aside>
       </div>
+      </div>
+
+      {/* Design 1d (point 8) : un seul îlot pour le cœur des favoris de la fiche */}
+      <CardFavorites />
     </div>
   );
 }

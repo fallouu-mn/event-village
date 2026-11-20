@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { rememberListPosition, restoreListPosition } from '@/lib/ui/list-position';
 
 /** Temps maximal pendant lequel l'écran reste figé par la transition, en attendant la fiche (jamais bloquant). */
 const MAX_FREEZE_MS = 400;
@@ -29,6 +30,21 @@ export const CARD_LINK_ATTR = 'data-ev-card-link';
  */
 export function CardTransitions() {
   const router = useRouter();
+  // Design 1d (point 10) : position de la liste gardée au toucher d'une carte (phase de capture : avant le lien), remise au
+  // retour arrière (lib/ui/list-position.ts)
+  useEffect(() => {
+    const cancelRestore = restoreListPosition();
+    const record = (e: MouseEvent): void => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const link = (e.target as Element | null)?.closest?.<HTMLAnchorElement>(`a[${CARD_LINK_ATTR}]`);
+      if (link) rememberListPosition(link);
+    };
+    document.addEventListener('click', record, true);
+    return () => {
+      cancelRestore();
+      document.removeEventListener('click', record, true);
+    };
+  }, []);
   useEffect(() => {
     const onClick = (e: MouseEvent): void => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

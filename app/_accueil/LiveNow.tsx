@@ -7,7 +7,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
  * (en cours, ou qui commencent dans les 12 heures) et l'état au moment du rendu (`liveAtRender`) : le premier affichage
  * est identique au HTML en cache, sans saut. Puis le téléphone recalcule à partir des heures et pose une seule minuterie
  * sur le prochain changement (début ou fin) : la rangée et chaque carte apparaissent ou disparaissent à la bonne minute,
- * page ouverte, malgré le cache de 60 s. Rangée absente quand rien n'est en cours.
+ * page ouverte, malgré le cache de 60 s. Rangée absente quand rien n'est en cours. Design 1d : une rangée absente du HTML
+ * n'est pas insérée au chargement (aucun saut de mise en page), seulement page ouverte.
  */
 
 export interface LiveTimes {
@@ -50,10 +51,17 @@ export function LiveNowSection({ items, liveAtRender, children, labelledBy }: {
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
+    // Design 1d (run 481, saut de 0,642 au chargement) : une rangée ABSENTE du HTML en cache n'est pas insérée au
+    // chargement (avec les cartes d'affiche 4:5, elle pousserait toute la page d'environ 540 px). Les cartes portent déjà
+    // « En cours », et la page régénérée (60 s au plus) l'aura. Page ouverte, les changements suivants s'appliquent à la
+    // bonne minute, comme avant ; un événement fini est toujours retiré.
+    let atLoad = true;
     const tick = (): void => {
       const now = Date.now();
       const current = liveAt(items, now);
-      setLive((prev) => (sameSet(prev, current) ? prev : current));
+      const holdBack = atLoad && liveAtRender.length === 0;
+      atLoad = false;
+      if (!holdBack) setLive((prev) => (sameSet(prev, current) ? prev : current));
       const next = nextChange(items, now);
       if (next === null) return;
       // setTimeout plafonne à ~24,8 jours ; +250 ms pour tomber après l'instant exact

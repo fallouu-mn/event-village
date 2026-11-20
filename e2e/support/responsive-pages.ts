@@ -194,6 +194,8 @@ const PUBLIQUES: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'profil-paiements', titre: 'Mes paiements', role: 'client', path: () => '/profile/payments' }),
     P({ id: 'profil-notifications', titre: 'Réglages des notifications', role: 'client', path: () => '/profile/notifications' }),
     P({ id: 'profil-soirees', titre: 'Mes soirées', role: 'client', path: () => '/profile/soirees' }),
+    // Design 1d (point 8) : Mes favoris
+    P({ id: 'profil-favoris', titre: 'Mes favoris', role: 'client', path: () => '/profile/favoris' }),
     // Lot 10b : notification de la réservation de salle du seed, lien vers une page fermée (HALL_RESERVATION_PREFETCH)
     P({ id: 'notifications', titre: 'Notifications', role: 'client', path: () => '/notifications', allowFailures: [HALL_RESERVATION_PREFETCH] }),
     P({ id: 'invitations', titre: 'Invitations du contrôleur', role: 'client', path: () => '/invitations' }),

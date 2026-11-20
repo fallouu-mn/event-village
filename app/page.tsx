@@ -10,6 +10,7 @@ import { loadHomeData, type HomeData } from '@/app/_accueil/data.server';
 import { EventCard } from '@/components/events/EventCard';
 import { CardTransitions } from '@/components/events/CardLink';
 import { CardLiveBadges } from '@/components/events/CardLiveBadge';
+import { CardFavoritesLazy as CardFavorites } from '@/components/events/CardFavoritesLazy';
 import { AccessNotice } from '@/components/layout/AccessNotice';
 import { buttonClasses } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -97,6 +98,8 @@ export default async function HomePage() {
         {/* Design 1b (run 376) : un seul îlot pour les transitions des cartes, un seul pour leurs badges « En cours » */}
         <CardTransitions />
         <CardLiveBadges />
+        {/* Design 1d (point 8) : un seul îlot pour les cœurs des favoris */}
+        <CardFavorites />
       </Suspense>
 
       {/* 1. Accroche et recherche */}
@@ -114,6 +117,7 @@ export default async function HomePage() {
             <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <input
               id="accueil-recherche"
+              data-ev-search=""
               name="q"
               type="search"
               inputMode="search"
@@ -140,7 +144,7 @@ export default async function HomePage() {
       </section>
 
       {!data ? (
-        <EmptyState
+        <EmptyState illustrated
           icon={<Ticket size={28} />}
           title="Impossible d’afficher les événements"
           description="La liste n’a pas pu être chargée. Vérifiez votre connexion, puis réessayez."
@@ -153,7 +157,7 @@ export default async function HomePage() {
           {live.length > 0 && (
             <LiveNowSection items={live.map((e) => ({ id: e.id, startsAt: e.startsAt, endsAt: e.endsAt }))} liveAtRender={liveAtRender} labelledBy="en-ce-moment-titre">
               <SectionHead id="en-ce-moment-titre" title="En ce moment" hint="Ces événements ont déjà commencé." />
-              <ul className={ROW}>
+              <ul data-ev-row="" className={ROW}>
                 {live.map((e) => (
                   <LiveNowItem key={e.id} id={e.id} className={ROW_ITEM}>
                     <EventCard {...cardProps(e)} sizes={ROW_SIZES} priority={e.id === firstLiveId} />
@@ -179,7 +183,7 @@ export default async function HomePage() {
           ) : (
             <section aria-labelledby="une-titre" className="space-y-4">
               <SectionHead id="une-titre" title="À l’affiche" aside={<HomeLive />} />
-              <EmptyState
+              <EmptyState illustrated
                 icon={<Ticket size={28} />}
                 title="Aucun événement à l’affiche pour le moment"
                 description="Les prochains événements apparaîtront ici dès leur publication."

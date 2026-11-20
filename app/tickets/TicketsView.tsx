@@ -18,6 +18,8 @@ import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { PageHeader } from '@/components/ui/PageHeader';
+// Design 1d : tirer pour actualiser importé directement (run 489 : un morceau à part coûtait un rendu de plus)
+import { PullToRefresh } from '@/components/tickets/PullToRefresh';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { TabPanel, useTabParam } from '@/components/ui/Tabs';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
@@ -367,7 +369,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   if (!isAuthLoading && !isAuthenticated) {
     return (
       <div className="mx-auto max-w-lg pb-24 pt-6 lg:pb-12">
-        <EmptyState
+        <EmptyState illustrated
           icon={<Ticket size={28} />}
           title="Connectez-vous pour voir vos billets"
           description="Vos billets électroniques et leur QR code d’entrée sont liés à votre compte."
@@ -520,7 +522,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
             }))}
           />
         ) : (
-          <EmptyState
+          <EmptyState illustrated
             icon={<Ticket size={28} />}
             title={empty?.title}
             description={empty?.description}
@@ -548,6 +550,11 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
       {isExplainerOpen && <TransferExplainerModal isOpen onClose={() => setIsExplainerOpen(false)} />}
 
       {celebrate && phase === 'ready' && <PurchaseCelebration onDone={endCelebration} />}
+
+      {/* Design 1d (point 10) : tirer pour actualiser (écrans tactiles), même relecture que le temps réel. EN DERNIER : en
+          tête de ce conteneur (space-y-6), son arrivée après le chargement donnait une marge de 24 px à l'en-tête et
+          faisait descendre toute la page (run 485, saut de 0,049) */}
+      <PullToRefresh onRefresh={refreshAll} />
     </div>
   );
 }

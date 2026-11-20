@@ -1005,6 +1005,43 @@ export const SCREENS: readonly Screen[] = [
         id: 'explorer-concerts', titre: 'Explorer — catégorie « Concerts »', role: 'anonyme', needsIds: false, path: () => '/explore?categorie=CONCERT',
         ready: async ({ page }) => { await expectHeading(page, /^explorer les événements$/i); },
     },
+    // ── Design 1d (vitrine) ─────────────────────────────────────────────────
+    // Pastilles de catégories collées en haut pendant le défilement (indicateur sous la pastille choisie)
+    {
+        id: 'explorer-pastilles-collees', titre: 'Explorer — pastilles de catégories collées en haut pendant le défilement', role: 'anonyme', needsIds: false,
+        path: () => '/explore?categorie=CONCERT',
+        ready: async ({ page }) => { await expectHeading(page, /^explorer les événements$/i); },
+        actions: async ({ page }) => {
+            await page.mouse.wheel(0, 900);
+            const chip = page.getByRole('group', { name: /^catégorie$/i }).getByRole('button', { name: /concerts/i });
+            await expect(chip).toBeInViewport();
+            await expect(chip).toHaveAttribute('aria-pressed', 'true');
+        },
+    },
+    // Recherche instantanée : fenêtre ouverte depuis le champ de l'accueil, résultats pendant la saisie
+    {
+        id: 'recherche-instantanee', titre: 'Recherche instantanée — résultats pendant la saisie', role: 'anonyme', needsIds: false, path: () => '/',
+        ready: async ({ page }) => { await expect(page.locator('#accueil-recherche')).toBeVisible({ timeout: 30_000 }); },
+        actions: async ({ page }) => {
+            await page.locator('#accueil-recherche').click();
+            const dialog = page.getByRole('dialog', { name: /^rechercher un événement$/i });
+            await expect(dialog).toBeVisible({ timeout: 30_000 });
+            await dialog.getByRole('searchbox').fill('sabar');
+            await expect(dialog.getByRole('list', { name: /^résultats$/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 });
+        },
+    },
+    // Recherches récentes gardées sur l'appareil, avec « Effacer »
+    {
+        id: 'recherche-recentes', titre: 'Recherche instantanée — recherches récentes de l’appareil', role: 'anonyme', needsIds: false, path: () => '/',
+        initStorage: { 'event-village:appareil:recherches': JSON.stringify(['sabar', 'jazz', 'Gorée']) },
+        ready: async ({ page }) => { await expect(page.locator('#accueil-recherche')).toBeVisible({ timeout: 30_000 }); },
+        actions: async ({ page }) => {
+            await page.locator('#accueil-recherche').click();
+            const dialog = page.getByRole('dialog', { name: /^rechercher un événement$/i });
+            await expect(dialog.getByRole('heading', { name: /^recherches récentes$/i })).toBeVisible({ timeout: 30_000 });
+            await expect(dialog.getByRole('button', { name: /^effacer$/i })).toBeVisible();
+        },
+    },
     // Design 1a : en-tête et logo, composants de base, toasts, fenêtre de confirmation, pages spéciales (vitrine ouverte par
     // scripts/e2e/start-app.mjs, EV_VITRINE_DESIGN=1 ; données fictives)
     {
@@ -2048,6 +2085,34 @@ export const SCREENS: readonly Screen[] = [
             // Bouton radio visuellement masqué : on touche son étiquette, comme une personne
             await page.locator('label').filter({ has: page.locator('input[type="radio"][value="WAVE"]') }).first().click();
             await expect(page.getByRole('radio', { name: /^wave/i }).first()).toBeChecked();
+        },
+    },
+    // Design 1d (point 6) : achat rapide, dernier opérateur et numéro de CET appareil proposés d'avance ; fenêtre qui monte
+    {
+        id: 'paiement-rapide', titre: 'Paiement — achat rapide (dernier opérateur et numéro de l’appareil proposés)', role: 'client', needsIds: true,
+        path: (i) => `/events/${ids(i).events.ceSoir.id}`,
+        initStorage: { 'event-village:appareil:paiement': JSON.stringify({ operator: 'ORANGE_MONEY', phone: '781234567' }) },
+        actions: async ({ page }) => {
+            await page.getByRole('button', { name: /^ajouter un billet standard/i }).click();
+            await page.getByRole('button', { name: /^acheter \d+ billets? \(/i }).click();
+            await expect(page.getByRole('dialog').or(page.getByRole('alertdialog'))).toBeVisible();
+            await expect(page.getByRole('radio', { name: /^orange money/i }).first()).toBeChecked();
+            await expect(page.getByText(/dernier paiement sur ce téléphone/i)).toBeVisible();
+        },
+    },
+    // Design 1d (point 8) : Mes favoris (favori posé par la route, compte de la session)
+    {
+        id: 'mes-favoris', titre: 'Mes favoris — événements gardés avec le cœur', role: 'client', needsIds: true,
+        path: () => '/profile/favoris',
+        ready: async ({ page }) => { await expectHeading(page, /^mes favoris$/i); },
+        actions: async (c) => {
+            const { page } = c;
+            const res = await page.request.put(`/api/favorites/${ids(c.ids).events.publie.id}`);
+            expect(res.status(), await res.text()).toBe(200);
+            await page.reload();
+            await expectHeading(page, /^mes favoris$/i);
+            await expect(page.getByRole('list', { name: /^vos événements favoris$/i }).getByRole('link').first()).toBeVisible({ timeout: 30_000 });
+            await expect(page.locator('[data-ev-fav][aria-pressed="true"]').first()).toBeVisible({ timeout: 30_000 });
         },
     },
     {

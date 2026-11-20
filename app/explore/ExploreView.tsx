@@ -6,6 +6,8 @@ import { RefreshCw, RotateCcw, Search } from 'lucide-react';
 import { EventCard, cityLabel } from '@/components/events/EventCard';
 import { CardTransitions } from '@/components/events/CardLink';
 import { CardLiveBadges } from '@/components/events/CardLiveBadge';
+import { CardFavoritesLazy as CardFavorites } from '@/components/events/CardFavoritesLazy';
+import { CategoryChipsBar } from '@/components/events/CategoryChipsBar';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { FilterChip } from '@/components/ui/FilterChip';
@@ -16,7 +18,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { cn } from '@/components/ui/cn';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
+import { addRecentSearch, clearRecentSearches, readRecentSearches } from '@/lib/device/device-prefs';
 import { readCatalog, type CatalogFilters } from '@/lib/events/catalog-client';
 import type { CatalogEventDto } from '@/lib/events/catalog.server';
 import {
@@ -91,6 +93,12 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
   /** Filtres choisis à l'écran (en avance sur la réponse du serveur), null quand l'écran suit l'adresse. */
   const [draft, setDraft] = useState<CatalogFilterState | null>(null);
   const [query, setQuery] = useState(filters.q);
+  /** Design 1d (point 9) : recherches récentes de l'appareil, lues après le chargement (jamais au rendu du serveur). */
+  const [recent, setRecent] = useState<string[]>([]);
+  useEffect(() => setRecent(readRecentSearches()), []);
+  const rememberQuery = () => {
+    if (query.trim().length >= 2) setRecent(addRecentSearch(query));
+  };
   const [live, setLive] = useState<LiveList | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const loadSeq = useRef(0);
@@ -199,6 +207,7 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
     <div className="space-y-6 pb-24 lg:pb-12">
       <CardTransitions />
       <CardLiveBadges />
+      <CardFavorites />
       <PageHeader
         title="Explorer les événements"
         description="Concerts, festivals, soirées et rencontres à venir au Sénégal. La liste se met à jour d’elle-même."
@@ -218,10 +227,26 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
             placeholder="Titre, lieu, organisateur…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') rememberQuery(); }}
+            onBlur={rememberQuery}
             className="min-h-12 pl-11"
           />
           <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         </div>
+
+        {recent.length > 0 && query.trim() === '' && (
+          <div role="group" aria-label="Recherches récentes" className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+            <span className="flex-shrink-0 text-sm font-semibold text-muted-foreground">Récentes</span>
+            {recent.map((r) => (
+              <FilterChip key={r} pressed={false} onClick={() => setQuery(r)} className="ev-press">
+                {r}
+              </FilterChip>
+            ))}
+            <Button variant="ghost" size="sm" className="flex-shrink-0" onClick={() => { clearRecentSearches(); setRecent([]); }}>
+              Effacer
+            </Button>
+          </div>
+        )}
 
         <div role="group" aria-label="Date et prix" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
           {WHEN_CHIPS.map((w) => (
@@ -234,16 +259,6 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
           </FilterChip>
         </div>
 
-        <div role="group" aria-label="Catégorie" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-          <FilterChip pressed={shown.categorie === null} onClick={() => choose({ categorie: null })} className="ev-press">
-            Toutes les catégories
-          </FilterChip>
-          {EVENT_CATEGORIES.map((c) => (
-            <FilterChip key={c.id} pressed={shown.categorie === c.id} onClick={() => choose({ categorie: shown.categorie === c.id ? null : c.id })} className="ev-press">
-              {c.label}
-            </FilterChip>
-          ))}
-        </div>
 
         <div className="grid grid-cols-2 gap-3 sm:max-w-xl">
           <Select
@@ -260,6 +275,10 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
           />
         </div>
       </section>
+
+      {/* Design 1d (point 10) : pastilles de catégories collées en haut pendant tout le défilement de la liste (enfant direct
+          de la page : un élément collant ne le reste que dans son parent), indicateur qui glisse */}
+      <CategoryChipsBar selected={shown.categorie} onSelect={(categorie) => choose({ categorie })} />
 
       {refreshError && !failed && (
         <StatusBanner
@@ -298,7 +317,7 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
         ) : visible.length > 0 ? (
           <>
             <ul
-              className={cn('ev-stagger grid grid-cols-1 gap-5 transition-opacity duration-base sm:grid-cols-2 xl:grid-cols-3', waiting && 'opacity-60')}
+              className={cn('ev-stagger grid grid-cols-2 gap-3 transition-opacity duration-base sm:grid-cols-3 sm:gap-5 lg:grid-cols-4', waiting && 'opacity-60')}
               aria-busy={waiting || undefined}
             >
               {visible.map((evt, i) => (
@@ -308,6 +327,8 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
                     title={evt.title}
                     subtitle={evt.subtitle}
                     imageUrl={evt.imageUrl}
+                    posterColor={evt.posterColor}
+                    size="compact"
                     dateFormatted={evt.dateFormatted}
                     dayNumber={evt.dayNumber}
                     monthShort={evt.monthShort}
@@ -345,12 +366,12 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
         ) : waiting ? (
           <p className="py-10 text-center text-base text-muted-foreground">Recherche…</p>
         ) : events.length === 0 && !serverFiltersActive ? (
-          <EmptyState
+          <EmptyState illustrated
             title="Aucun événement à venir pour le moment"
             description="Les prochains événements apparaîtront ici dès leur publication, sans recharger la page."
           />
         ) : (
-          <EmptyState
+          <EmptyState illustrated
             title="Aucun événement ne correspond à votre recherche"
             description="Modifiez la recherche ou les filtres pour voir plus d’événements."
             actionLabel="Effacer les filtres"

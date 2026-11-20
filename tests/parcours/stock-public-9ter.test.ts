@@ -69,6 +69,8 @@ const CARD_KEYS = [
     'id', 'slug', 'title', 'subtitle', 'imageUrl', 'dateFormatted', 'dayNumber', 'monthShort', 'timeFormatted', 'venue', 'category',
     'categoryLabel', 'city', 'price', 'priceFormatted', 'onSaleSoon', 'saleLabel', 'endFormatted', 'status', 'stock',
     'startsAt', 'endsAt', 'paidFrom',
+    // Design 1d (point 2) : couleur de l'affiche (aucune donnée de stock) ; attente complétée, signalée au rapport
+    'posterColor',
 ];
 const SETTLE_MS = 1_500;
 

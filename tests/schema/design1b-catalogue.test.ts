@@ -350,7 +350,8 @@ describe('accueil et Explorer : rendu serveur, cache, rien de personnel', () => 
         const src = code('app/_accueil/sections.tsx');
         assert.doesNotMatch(src, /['"]use client['"]|useEffect|onScroll|scrollTo|scrollBy/);
         assert.match(src, /snap-x snap-mandatory/);
-        assert.match(src, /i === 0 \? 'w-\[88%\]/);
+        // Design 1d (point 2) : cartes verticales, la première fait 78 % de l'écran (88 % avant) ; attente modifiée, signalée
+        assert.match(src, /i === 0 \? 'w-\[78%\]/);
         assert.match(src, /size=\{i === 0 \? 'feature' : 'default'\}/);
     });
 

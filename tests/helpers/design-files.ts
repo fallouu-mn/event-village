@@ -379,4 +379,17 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/admin/users/page.tsx',
     'app/admin/audit/page.tsx',
     'app/admin/referral/page.tsx',
+    // Design 1d : vitrine (cartes d'affiche, fiche immersive, comptes à rebours, favoris, recherche, pastilles)
+    'components/event-page/Countdowns.tsx',
+    'components/events/CardFavorites.tsx',
+    'components/events/CategoryChipsBar.tsx',
+    'components/events/FavoriteHeart.tsx',
+    'components/tickets/AddToCalendar.tsx',
+    'app/profile/favoris/page.tsx',
+    'app/profile/favoris/loading.tsx',
+    'components/search/SearchLauncher.tsx',
+    'components/search/InstantSearch.tsx',
+    'components/tickets/PullToRefresh.tsx',
+    'components/events/CardFavoritesLazy.tsx',
+    'components/event-page/EventCountdownLazy.tsx',
 ];

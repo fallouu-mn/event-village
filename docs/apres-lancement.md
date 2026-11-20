@@ -107,6 +107,19 @@ d'où elle vient et pourquoi elle attend.
 | CI trop lente (85 à 91 min) : découper en jobs parallèles (tests et e2e séparés) pour revenir sous 45 min. | La limite du job passe de 90 à 120 min en finition 3d (runs complets 300 et 306 coupés à 90 min), en attendant le découpage. | Finition 3d, run 306 |
 | Perf RLS : évaluer is_admin(), admin_session_code_valid(), is_partner_owner() une fois par requête ((select …) dans toutes les politiques), à faire avant la production. | Coût mesuré accepté pour l'instant : une lecture REST de 1 000 lignes du journal par un Superadmin prend environ 0,3 s de plus depuis les correctifs T2 et T3 (+60 à +71 %, runs 343 et 347), parce que la fonction est appelée sur chaque ligne. | Finition 3d, contre-vérification (T2, T3) |
 
+## Vitrine (design 1d)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Rappel « la veille » des événements en favori (avis), et nombre de favoris montré à l'organisatrice. | La consigne interdit tout nouveau type d'avis dans ce lot ; la table `event_favorites` est prête (une ligne par compte et par événement). | Consigne du design 1d, point 8 |
+| Favoris d'un compte anonymisé ou supprimé : la ligne disparaît avec le compte supprimé (`ON DELETE CASCADE`), mais reste attachée à un compte anonymisé (sans nom ni numéro). | À ajouter à la fonction d'anonymisation dans un lot qui la touche. | Design 1d, point 8 |
+| « Ajouter à mon agenda » juste après le paiement, sur la page de suivi du paiement réussi : la route du statut du paiement ne sert ni le titre ni la fin de l'événement. Aujourd'hui, le bouton est sur le billet, que l'acheteur voit dès son arrivée dans « Mes billets » après l'achat. | Changer la réponse de la route de paiement sort du lot (finance). | Design 1d, point 7 |
+| Recherche instantanée sans limiteur de débit : elle filtre le catalogue public déjà en mémoire (cache de 60 s), comme la page Explorer, qui n'en a pas non plus. | Aucune lecture en base par frappe ; à revoir si le catalogue dépasse quelques milliers d'événements. | Design 1d, point 9 |
+| Image d'aperçu de partage : WhatsApp et les autres messageries gardent leur propre copie de l'aperçu une fois lu ; un aperçu déjà lu avant une suspension ou une annulation peut rester visible chez elles. Le serveur, lui, ne la sert plus (404 aussitôt). | Hors de notre contrôle (cache des messageries). | Design 1d, point 5 |
+| Recherche instantanée sur téléphone : la fenêtre se charge au premier toucher ; sur certains iPhone, le clavier ne s'ouvre qu'au second toucher dans le champ. | Précharger la fenêtre coûterait du travail pendant la mesure Lighthouse (le travail reporté est compté). | Design 1d, point 9 |
+| Rangée « Par catégorie » de l'accueil : ses pastilles ne sont pas collantes (seules celles d'Explorer le sont). | La consigne vise la liste qu'on fait défiler ; l'accueil garde ses sections. | Design 1d, point 10 |
+| Mes billets au seuil de la mesure mobile (90 au run 491, 87 à 89 sur d'autres runs du lot) : la part du lot (trois îlots) est retirée du chargement ; reste le rendu React du portefeuille et le client Supabase de la session (rapport du design 1b). | Décision à prendre sur la structure de la page (déjà soulevée au design 1b). | Design 1d, mesures |
+
 ## Salles de fête (lot 10b)
 
 | Sujet | Pourquoi plus tard | Origine |

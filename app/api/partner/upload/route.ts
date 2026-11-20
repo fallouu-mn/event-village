@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { encodeImage, storedImageName } from '@/lib/images/encode-image';
+import { recordPosterStyle } from '@/lib/events/poster-style-store';
 import { sniffImage } from '@/lib/images/sniff';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { getServerEnv } from '@/lib/env';
@@ -99,6 +100,10 @@ export async function POST(req: NextRequest) {
         console.error(`[upload] dépôt de ${filePath} impossible : ${uploadError.message}`);
         return NextResponse.json({ error: 'Dépôt impossible pour le moment. Réessayez.', code: 'UPLOAD_FAILED' }, { status: 500 });
     }
+
+    // Design 1d (point 1) : couleur dominante assombrie et image floutée d'une affiche, rangées par chemin ; l'événement
+    // les prend en enregistrant l'adresse (trigger). Un échec est journalisé et ne bloque pas le dépôt (« bleu nuit »).
+    if (folder === 'events') await recordPosterStyle(filePath, encoded);
 
     const { data: urlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath);
     return NextResponse.json({ success: true, url: urlData.publicUrl, filePath });

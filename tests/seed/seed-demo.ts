@@ -111,6 +111,7 @@ import { createClient } from '@supabase/supabase-js';
 import { chromium, type Browser } from '@playwright/test';
 import { NextRequest } from 'next/server';
 import { getServiceRoleClient } from '../../lib/supabase/server';
+import { recordPosterStyle } from '../../lib/events/poster-style-store';
 import { resetServerEnvCache } from '../../lib/env';
 import { startTicketCheckout } from '../../lib/payments/checkout.service';
 import { loadPayment, reconcilePayment } from '../../lib/payments/confirmation.service';
@@ -790,6 +791,10 @@ async function createEvent(seed: EventSeed, partnerId: string, ownerId: string, 
         city: seed.city, organizer: organizerName, palette: seed.palette, motif: seed.motif,
     }), POSTER_SIZE);
     const imageUrl = await upload(`events/${partnerId}/${slug}.png`, poster);
+    // Design 1d (point 1) : style de l'affiche (couleur, image floutée) comme au dépôt par la route ; l'événement le prend à
+    // l'insertion (trigger trg_events_poster_style). Un échec est signalé et laisse le « bleu nuit ».
+    const style = await recordPosterStyle(`events/${partnerId}/${slug}.png`, poster);
+    if (!style.ok) console.warn(`[seed-demo] style de l'affiche ${slug} : ${style.reason}`);
     const program = seed.program
         .map((p) => ({ id: randomUUID(), time: p.time, kind: p.kind, title: p.title, ...(p.participant ? { participant: p.participant } : {}) }))
         .sort((a, b) => a.time.localeCompare(b.time));

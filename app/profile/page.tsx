@@ -14,6 +14,7 @@ import {
   Moon,
   Phone,
   QrCode,
+  Heart,
   ReceiptText,
   Shield,
   ShieldCheck,
@@ -180,6 +181,14 @@ export default function ProfilePage() {
       title: 'Mes billets',
       description: 'Vos billets, leur QR code et vos transferts',
       icon: Ticket,
+      tone: 'brand',
+    },
+    // Design 1d (point 8) : événements gardés avec le cœur
+    {
+      href: '/profile/favoris',
+      title: 'Mes favoris',
+      description: 'Les événements que vous avez gardés avec le cœur',
+      icon: Heart,
       tone: 'brand',
     },
     {
