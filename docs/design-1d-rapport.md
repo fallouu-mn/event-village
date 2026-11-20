@@ -1,14 +1,21 @@
 # Design 1d — Vitrine
 
-Branche `design-1d/vitrine`, partie de `main` à `6afe843df` (designs 1a, 1b, 1c et 1c bis fusionnés). Une seule migration,
-`20261127000001_d1d_vitrine.sql`, **non appliquée**. Rien n'est fusionné. Le catalogue des avis (`lib/notifications`), les
+Branche `design-1d/vitrine`, partie de `main` à `6afe843df` (designs 1a, 1b, 1c et 1c bis fusionnés), **fusionnée dans
+`main` le 20/11 (`d0bbe8caa`)**. Une seule migration, `20261127000001_d1d_vitrine.sql`, **appliquée sur event-village-dev le
+20/11** (section 13). Le catalogue des avis (`lib/notifications`), les
 types d'avis, les pages des salles et des tables ne sont pas touchés ; aucun nouveau type d'avis.
 
 ## À lire en premier
 
-**État final : run complet 491 (`1bc8eeec8`) vert.** Tests 545/545 (audits et audits d'authentification compris), budgets
-JavaScript tenus sans relèvement, e2e vert, contrôle responsive à 0 défaut, mesures mobiles **accueil 93, fiche 92,
-Mes billets 90** (seuils et calibration inchangés). Non fusionné ; migration non appliquée.
+**État final : fusionné dans `main` (`d0bbe8caa`), migration appliquée, 03-verification 20/20.** Run de la branche 512
+(main `15a51f663` compris) vert à la 2ᵉ tentative : tests, budgets JavaScript tenus sans relèvement, e2e vert, responsive
+vert, **accueil 91, fiche 93, Mes billets 90**. Run complet de main **515 rouge sur un seul point : Mes billets 89**
+[85 ; 89 ; 91 ; 89 ; 87], machine normale (×3,8 à ×4,4) ; tout le reste vert (accueil 93, fiche 90). **Accepté par
+l'utilisateur pour ce lot** (même code à 90 aux runs 491 et 512) ; le lot « vitesse » qui suit s'en charge. Détail en
+section 13.
+
+- **Le script des affiches existantes n'est pas lancé** (consigne) : à faire par l'utilisateur (section 7, étape 6).
+  Tant qu'il ne l'est pas, les 2 événements à affiche du compartiment s'affichent en « bleu nuit » par défaut.
 
 - **Mes billets est au seuil (90)**, la fiche à 92 : la cible de 93 n'est atteinte que pour l'accueil. Trois tentatives
   ont été faites (mode autonome) ; le détail est en section 10.
@@ -25,8 +32,8 @@ Mes billets 90** (seuils et calibration inchangés). Non fusionné ; migration n
     REST, ni par les fonctions (`tests/security/r32-favoris`, clé anon seule).
 - **« Privé »** : il n'existe aucun champ « événement privé » dans le projet. Est privé tout événement non public
   (brouillon, en attente, validé, terminé sans publication). C'est ce que vérifient les tests.
-- **Migration à appliquer** (après fusion) : `20261127000001`, puis le script rejouable des affiches existantes
-  (`npx tsx scripts/poster-styles.ts`, à blanc puis `--appliquer`). Contrôles prévus : section 7.
+- **Migration appliquée** le 20/11 (section 13). Reste le script rejouable des affiches existantes
+  (`npx tsx scripts/poster-styles.ts`, à blanc puis `--appliquer`), par l'utilisateur.
 - **Tests modifiés, signalés** : section 8.
 
 ## 1. Couleur de l'affiche
@@ -245,18 +252,22 @@ Journaux bruts sur la branche `ci-results`, dossier `runs/<n>-<id>/`.
 | 488 | `72d15e9bb` | complet | tests 545/545, budgets tenus, responsive 0 défaut ; **mesure inexploitable** : machine très rapide (indice 3 400 à 3 800, processeur ×6,4 à ×7,7, cas du run 426 du design 1b), accueil 86 alors que son code n'a fait que s'alléger, fiche 86, Mes billets 83 ; connexion du superadmin en échec dans l'e2e (fenêtre du code remplacée pendant une navigation, instabilité connue de la finition 4) et captures de l'administration en cascade. Nouvelle mesure demandée par un commit vide (`d482bbc5f`), aucun code changé |
 | 489 | `d482bbc5f` | complet (même code que 488) | **tests 545/545**, budgets tenus, **e2e vert**, **responsive 0 défaut**, **accueil 91, fiche 91** ; Mes billets **87** (84 à 88 ; temps de blocage 528 à 631 ms) : trois petits morceaux nouveaux (lanceur de recherche, tirer pour actualiser, agenda) arrivaient pendant le chargement, chacun suivi d'un rendu de React (script de React 1 412 → 1 595 ms). Corrigé dans `1bc8eeec8` (tentative 3, la dernière) |
 | **491** | `1bc8eeec8` | complet | **VERT** (conclusion « success ») : tests **545/545**, budgets JS tenus sans relèvement, e2e vert (captures, fumée, terrain, recette, perf), contrôle responsive **0 défaut** sur 126 résultats ; **accueil 93, fiche 92, Mes billets 90** (seuils et calibration inchangés) |
+| 504 | `eaaf853eb` (main `7a10640ba` fusionné : lot 10b) | complet | **rouge** : budget de `/billet/hors-ligne` dépassé de 166 o (224 434 pour 224 268 permis) : `next/dynamic` dans le layout racine ajoutait son moteur au JavaScript de chaque page ; Mes billets 89 [89 ; 88 ; 93 ; 89 ; 93] ; un échec e2e isolé sur un champ de date (avis de l'administration, mode sombre), non reproduit ensuite. Accueil 92, fiche 91. Corrigé dans `5720d5f7d` (React.lazy, comme la barre de progression) |
+| 510 | `fda0a7351` | complet | budgets **tenus** (`/billet/hors-ligne` 223 340), e2e vert, responsive vert ; Mes billets **86** [86 ; 86 ; 84 ; 89 ; 89] avec « tirer pour actualiser » armé au premier moment libre (`3899bb612`) : aucun gain mesurable (machine ×4,7 à ×5). **Annulé** sur décision de l'utilisateur (`ea60b3d42`) |
+| 512 | `47850a3d3` (main `15a51f663` fusionné : connexion) | complet | 1ʳᵉ tentative : tout vert sauf la mesure, **inexploitable** (machine ×7 : accueil 83, fiche 85, Mes billets 80). Job relancé par l'utilisateur. **2ᵉ tentative VERTE** : budgets tenus, e2e vert, responsive vert, **accueil 91, fiche 93, Mes billets 90** |
+| **515 (main)** | `d0bbe8caa` (fusion) | complet | **rouge sur un seul point** : Mes billets **89** [85 ; 89 ; 91 ; 89 ; 87] (machine ×3,8 à ×4,4, mesure valable) ; tests, budgets JS, e2e, responsive verts ; accueil **93**, fiche **90**. Accepté par l'utilisateur pour ce lot |
 
 ## 10. Poids JavaScript et mesures mobiles
 
 ### Poids JavaScript (gzip, octets ; budgets inchangés)
 
-| Route | Avant (run 471, main) | Run 481 | Après (run 491) | Budget |
-|---|---|---|---|---|
-| `/` | 220 320 | 225 700 | **223 559** | 226 342 |
-| `/events/[id]` | 230 254 | 234 044 (**dépassé**) | **232 333** | 233 316 |
-| `/tickets` | 242 883 | 246 559 | **246 663** | 250 417 |
-| `/controller/scanner` | 231 751 | 233 332 | **233 435** | 234 911 |
-| `/billet/hors-ligne` | 222 006 | 223 875 | **223 978** | 224 268 |
+| Route | Avant (run 471, main) | Run 481 | Run 491 | Run 504 | **Fusionné (run 512)** | Budget |
+|---|---|---|---|---|---|---|
+| `/` | 220 320 | 225 700 | 223 559 | 224 395 | **223 301** | 226 342 |
+| `/events/[id]` | 230 254 | 234 044 (**dépassé**) | 232 333 | 232 962 | **231 868** | 233 316 |
+| `/tickets` | 242 883 | 246 559 | 246 663 | 247 371 | **246 277** | 250 417 |
+| `/controller/scanner` | 231 751 | 233 332 | 233 435 | 234 288 | **233 194** | 234 911 |
+| `/billet/hors-ligne` | 222 006 | 223 875 | 223 978 | 224 434 (**dépassé**) | **223 340** | 224 268 |
 
 Ce qui ne sert pas au premier affichage arrive après lui ou au premier geste : cœurs (compte connecté ou premier
 toucher, toucher rejoué), lanceur de la recherche (premier geste, rejoué), fenêtre de recherche (première ouverture),
@@ -264,11 +275,11 @@ comptes à rebours de la fiche et de la vente, module de l'agenda (toucher).
 
 ### Mesures mobiles (Lighthouse 13.6.0, téléphone de référence calibré, médiane de 5 passages ; seuils inchangés)
 
-| Page | Avant (run 471) | Run 481 | Run 485 | Run 488 (machine ×7) | Run 489 | **Après (run 491)** |
-|---|---|---|---|---|---|---|
-| Accueil | 92 | 91 (saut réel 0,642) | 91 | 86 | 91 | **93** [95 ; 93 ; 92 ; 93 ; 93] |
-| Fiche | 92 | 89 | 88 | 86 | 91 | **92** [92 ; 92 ; 94 ; 95 ; 92] |
-| Mes billets | 91 | 89 | 89 (saut 0,049) | 83 | 87 | **90** [87 ; 92 ; 91 ; 90 ; 88] |
+| Page | Avant (run 471) | Run 481 | Run 485 | Run 488 (machine ×7) | Run 489 | Run 491 | Run 504 | Run 510 | Run 512, 1ʳᵉ (×7) | Run 512, 2ᵉ | **Main (run 515)** |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Accueil | 92 | 91 (saut réel 0,642) | 91 | 86 | 91 | 93 | 92 | 91 | 83 | 91 | **93** [92 ; 93 ; 93 ; 93 ; 91] |
+| Fiche | 92 | 89 | 88 | 86 | 91 | 92 | 91 | 91 | 85 | 93 | **90** [88 ; 90 ; 95 ; 90 ; 92] |
+| Mes billets | 91 | 89 | 89 (saut 0,049) | 83 | 87 | 90 | 89 | 86 | 80 | 90 | **89** [85 ; 89 ; 91 ; 89 ; 87] (accepté) |
 
 - Run 491 : LCP médian accueil 1,06 s (élément : le texte d'accroche), fiche 2,11 s (l'affiche), Mes billets 926 ms ;
   sauts de mise en page réels 0,052 (accueil, comme avant), 0 (fiche), 0 (Mes billets) ; toucher sous 200 ms.
@@ -335,3 +346,30 @@ Sur un téléphone, après la fusion, la migration et le script des affiches :
     la pastille choisie. Ouvrez une carte en bas de liste, revenez en arrière : vous êtes au même endroit.
 11. **Mes billets** : en haut de la page, tirez vers le bas puis relâchez : « Mise à jour… », puis les billets à jour.
 12. **Réduire les animations** (réglage du téléphone) : plus de fondu, de rebond ni de glissement ; tout reste utilisable.
+
+## 13. Fusion et mise en service (20/11)
+
+1. **Fusion** : `main` (`15a51f663`, mini-lot connexion) fusionné dans la branche (`47850a3d3`, aucun conflit), run 512
+   vert à la 2ᵉ tentative (la 1ʳᵉ, sur une machine ×7, était inexploitable), puis branche fusionnée dans `main` sans
+   avance rapide : **`d0bbe8caa`**, poussé alors qu'aucun run ne tournait sur `main`.
+2. **Run complet de main 515** : rouge sur Mes billets seul (89 ; section 9). **Décision de l'utilisateur** : 89 accepté
+   pour ce lot, noté ici ; le lot « vitesse » s'en charge. Aucun autre point rouge.
+3. **Dry-run** (`supabase db push --linked --dry-run`, CLI 2.122.0, depuis `d0bbe8caa`) : **`20261127000001_d1d_vitrine.sql`
+   seule**, la 10b ayant appliqué ses `20261126000001` à `007` avant.
+4. **Contrôle « avant »** (lecture seule) : dernière migration `20261126000007`, aucune version `20261127*`,
+   `event_favorites` et `poster_styles` absentes, 0 colonne de style, aucune fonction du lot, 0 trigger, 2 événements à
+   affiche du compartiment.
+5. **`supabase db push --linked`** : `20261127000001_d1d_vitrine.sql` appliquée sans erreur.
+6. **Contrôle « après »** (lecture seule), tout conforme :
+   - dernière migration `20261127000001` ;
+   - `event_favorites` et `poster_styles` : RLS vraie, 0 politique ;
+   - droits de table : tout faux, sauf la lecture de `poster_styles` par le service_role ;
+   - 6 fonctions, chacune non exécutable par anon ni authenticated, exécutable par le service_role, SECURITY DEFINER,
+     `search_path` fixé ;
+   - trigger `trg_events_poster_style` présent (1) ; contraintes `events_poster_color_check` et `events_poster_blur_check` ;
+   - contraste calculé : 15,97 (bleu nuit `#14213d`), 1,00 (blanc) ;
+   - 0 événement coloré sur 2 à affiche du compartiment (normal avant le script), 0 favori, 0 style enregistré.
+7. **`03-verification.sql`** : **20/20 OK**.
+8. **Non fait, par consigne** : le script des affiches existantes (`npx tsx scripts/poster-styles.ts`, à blanc puis
+   `--appliquer` ; section 7, étapes 6 et 7) reste à lancer par l'utilisateur.
+9. 6,6 Mo d'images dans l'historique (captures, polices de l'aperçu) : gardés, aucune poussée forcée.
