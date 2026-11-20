@@ -7,6 +7,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
 import { THEME_BOOT_SCRIPT } from '@/lib/theme';
+import { POSTER_FADE_BOOT_SCRIPT } from '@/lib/ui/poster-fade';
 import { NavigationProgressDifferee } from '@/components/ui/NavigationProgressDifferee';
 
 // Plus Jakarta Sans auto-hébergée (police variable, sous-ensemble latin, graisses 200-800).
@@ -81,6 +82,8 @@ export default function RootLayout({
       <head>
         {/* Design 1a : thème posé avant le premier affichage (cookie ev-theme, thème du téléphone par défaut) : aucun flash. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        {/* Design 1d (point 2) : affiches des cartes en fondu à leur arrivée, sur la couleur de l'affiche (lib/ui/poster-fade.ts) */}
+        <script dangerouslySetInnerHTML={{ __html: POSTER_FADE_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-screen antialiased font-sans" suppressHydrationWarning>
         <AuthProvider>

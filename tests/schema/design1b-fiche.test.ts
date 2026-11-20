@@ -123,7 +123,8 @@ describe('b. page serveur en cache, vrai 404, îlots', () => {
         const src = code(PAGE);
         assert.equal((src.match(/\bpriority\b/g) ?? []).length, 1, 'priority sur la seule affiche');
         assert.match(src, /sizes=\{POSTER_SIZES\}/);
-        assert.match(src, /aspect-\[16\/10\]/);
+        // Design 1d (point 3) : affiche entière en 4:5 au premier plan (16/10 avant) ; attente modifiée, signalée
+        assert.match(src, /aspect-\[4\/5\]/);
         assert.match(src, /viewTransitionName: `ev-poster-\$\{event\.id\}`/);
     });
 

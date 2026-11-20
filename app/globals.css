@@ -53,6 +53,7 @@
     --op-orange-money: 255 121 0;       /* #FF7900 : Orange Money */
     --on-op: 0 0 0;                     /* texte sur les deux opérateurs */
     --op-logo: 255 255 255;             /* #FFFFFF : pastille des logos des opérateurs (design 1c), mêmes valeurs en sombre */
+    --poster-fallback: 20 33 61;        /* #14213D : « bleu nuit » (design 1d), fond sans couleur d'affiche, texte blanc 15,9:1, mêmes valeurs en sombre */
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
     --shadow-md: 0 6px 16px -6px rgba(0, 0, 0, 0.14);
     --shadow-lg: 0 18px 40px -12px rgba(0, 0, 0, 0.22);
@@ -477,6 +478,126 @@ body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
 }
 .ev-sheet-up {
   animation: evSheetUp 250ms var(--ease-out) backwards;
+}
+
+/* ==========================================================================
+   DESIGN 1d — VITRINE (cartes d'affiche, fiche immersive, favoris, pastilles, fenêtre de paiement)
+   Même règle que le design 1b : 150 à 300 ms, transform et opacity seulement, jamais en boucle, tout coupé par le bloc
+   « mouvement réduit » plus bas.
+   ========================================================================== */
+
+/* Carte d'affiche et haut de la fiche : fond de la couleur de l'affiche (--poster, posée par l'élément ; « bleu nuit » à
+   défaut), texte blanc : contraste d'au moins 4,5:1 garanti par le calcul de la couleur (lib/images/poster-style.ts). Le
+   bas descend vers une teinte plus sombre de la même couleur : le contraste du texte ne fait que monter. */
+.ev-poster-card {
+  --poster-bg: var(--poster, rgb(var(--poster-fallback)));
+  background-color: var(--poster-bg);
+  color: rgb(var(--on-tone));
+}
+.ev-poster-foot {
+  background-image: linear-gradient(180deg, var(--poster-bg) 0%, color-mix(in srgb, var(--poster-bg) 72%, rgb(var(--scrim))) 100%);
+}
+
+/* Affiche d'une carte : la couleur de l'affiche est là dès le premier affichage, l'image arrive en fondu (250 ms) quand
+   elle est chargée (data-ev-loaded posé par le script de app/layout.tsx) : jamais de flash blanc. Image principale
+   (préchargée) : jamais en fondu. Sans script : l'image s'affiche normalement. */
+img[data-ev-fade] {
+  opacity: 0;
+  transition: opacity 250ms var(--ease-out);
+}
+img[data-ev-fade][data-ev-loaded] {
+  opacity: 1;
+}
+@media (scripting: none) {
+  img[data-ev-fade] { opacity: 1; }
+}
+
+/* Cœur des favoris : pastille sombre sur l'affiche ; plein et orange quand l'événement est en favori ; petit rebond au
+   toucher (260 ms, une fois) */
+.ev-fav {
+  color: rgb(var(--on-tone));
+  background-color: rgb(var(--scrim) / 0.6);
+}
+.ev-fav svg {
+  transition: fill 150ms var(--ease-standard), color 150ms var(--ease-standard);
+}
+.ev-fav[aria-pressed='true'] svg {
+  color: rgb(var(--brand));
+  fill: rgb(var(--brand));
+}
+@keyframes evFavPop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+.ev-fav-pop svg {
+  animation: evFavPop 260ms var(--ease-out) 1;
+}
+
+/* Haut de la fiche : petite image déjà floutée (adresse data:, 24 px) agrandie sur toute la largeur, sous un voile de la
+   couleur de l'affiche ; aucun flou CSS (filter) à calculer */
+.ev-hero {
+  position: relative;
+  isolation: isolate;
+}
+.ev-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+.ev-hero-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.2);
+  opacity: 0.85;
+}
+/* Voile : sombre en haut (boutons sur pastilles sombres), puis couleur de l'affiche PLEINE sous l'affiche (téléphone) ou à
+   droite de l'affiche (ordinateur) : le titre et les infos sont toujours sur la couleur pleine (contraste ≥ 4,5:1). */
+.ev-hero-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(180deg, rgb(var(--scrim) / 0.45) 0%, rgb(var(--scrim) / 0) 18%, var(--poster-bg) 62%);
+}
+@media (min-width: 1024px) {
+  .ev-hero-backdrop::after {
+    background-image: linear-gradient(90deg, rgb(var(--scrim) / 0.3) 0%, var(--poster-bg) 46%);
+  }
+}
+
+/* Pastilles collantes d'Explorer : indicateur qui glisse sous la pastille choisie (déplacement et étirement en transform) */
+.ev-chip-indicator {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 3px;
+  border-radius: 2px;
+  background-color: rgb(var(--brand));
+  transform-origin: left center;
+  transition: transform 220ms var(--ease-out), opacity 150ms var(--ease-standard);
+}
+
+/* Fenêtre de paiement : sur téléphone, elle monte du bas de l'écran (260 ms) ; sur ordinateur, ouverture habituelle */
+@keyframes evSheetIn {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@media (max-width: 639.98px) {
+  .animate-in.fade-in.zoom-in-95.ev-sheet-mobile {
+    animation-name: evSheetIn;
+    animation-duration: 260ms;
+  }
+}
+
+/* Tirer pour actualiser (Mes billets) : le geste du navigateur est gardé pour la page, l'indicateur suit le doigt */
+.ev-ptr-indicator {
+  transition: transform 200ms var(--ease-out), opacity 150ms var(--ease-standard);
+}
+.ev-ptr-indicator[data-dragging] {
+  transition: none;
 }
 
 /* Carte → fiche : transition de vue du navigateur (API View Transitions), sans bibliothèque. L'affiche de la carte et

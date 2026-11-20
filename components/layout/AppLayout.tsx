@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 // Design 1b (décision du 18/11) : liens préchargés à l'intention (survol, toucher, focus), pas à l'affichage
 import Link from '@/components/ui/IntentLink';
 import { usePathname } from 'next/navigation';
@@ -37,6 +37,15 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT, setPendingSearch } from '@/components/search/search-events';
+
+// Design 1d (point 9) : lanceur de la recherche instantanée, monté au premier geste sur un déclencheur (searchWanted).
+// React.lazy et non next/dynamic (run 504) : next/dynamic ajoute son moteur au JavaScript de CHAQUE page (budget de
+// /billet/hors-ligne dépassé) ; même schéma que NavigationProgressDifferee. Morceau introuvable (hors ligne) : le lien
+// garde son rôle, jamais d'erreur.
+const SearchLauncher = lazy(() => import('@/components/search/SearchLauncher')
+  .then((m): { default: React.ComponentType } => ({ default: m.SearchLauncher }))
+  .catch((): { default: React.ComponentType } => ({ default: () => null })));
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
@@ -198,6 +207,38 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Design 1d (point 9) : la recherche instantanée ouverte depuis le menu le referme
+  useEffect(() => {
+    const close = (): void => setIsMobileMenuOpen(false);
+    window.addEventListener(SEARCH_OPEN_EVENT, close);
+    return () => window.removeEventListener(SEARCH_OPEN_EVENT, close);
+  }, []);
+  // Design 1d (run 489, temps de blocage de Mes billets) : lanceur de la recherche chargé au premier geste sur un
+  // déclencheur (toucher, clic, focus du champ de l'accueil), jamais au chargement de la page ; ce geste est rejoué.
+  const [searchWanted, setSearchWanted] = useState(false);
+  useEffect(() => {
+    if (searchWanted) return undefined;
+    const onIntent = (e: Event): void => {
+      const target = (e.target as Element | null)?.closest?.<HTMLElement>(`[${SEARCH_LAUNCH_ATTR}]`);
+      if (!target) return;
+      if (e.type === 'click') {
+        const m = e as MouseEvent;
+        if (m.button !== 0 || m.metaKey || m.ctrlKey || m.shiftKey || m.altKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+      } else if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+      setPendingSearch(target);
+      setSearchWanted(true);
+    };
+    document.addEventListener('click', onIntent, true);
+    document.addEventListener('focusin', onIntent, true);
+    return () => {
+      document.removeEventListener('click', onIntent, true);
+      document.removeEventListener('focusin', onIntent, true);
+    };
+  }, [searchWanted]);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
   const wasMenuOpen = useRef(false);
@@ -393,6 +434,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="px-4 pb-1 pt-3 sm:hidden">
             <Link
               href="/explore"
+              data-ev-search=""
               onClick={closeMobileMenu}
               className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3.5 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -450,6 +492,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="hidden max-w-lg flex-1 items-center sm:flex">
             <Link
               href="/explore"
+              data-ev-search=""
               className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Search size={16} aria-hidden="true" />
@@ -459,6 +502,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
             <NotificationBell />
+            {/* Design 1d (point 9) : recherche instantanée, ouverte depuis tout déclencheur data-ev-search */}
+            {searchWanted && <Suspense fallback={null}><SearchLauncher /></Suspense>}
+
 
             {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px
                 avec ses trois boutons de 44 px. */}

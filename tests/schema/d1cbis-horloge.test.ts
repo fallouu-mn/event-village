@@ -25,7 +25,7 @@ function category(over: Partial<PublicCategory> = {}): PublicCategory {
 function sheet(over: Partial<PublicEventDetail> = {}): PublicEventDetail {
     return {
         id: 'e1', slug: 'e1', title: 'Soirée', category: null, categoryLabel: null, description: '', subtitle: '',
-        organizer: { name: 'Org', avatar: null }, posterUrl: null, galleryUrls: [], dateFormatted: '', time: '20:00',
+        organizer: { name: 'Org', avatar: null }, posterUrl: null, posterColor: '#14213d', posterBlur: null, galleryUrls: [], dateFormatted: '', time: '20:00',
         startsAt: new Date(T0 + 2 * H).toISOString(), endsAt: new Date(T0 + 6 * H).toISOString(),
         venue: 'Dakar', city: 'Dakar', latitude: null, longitude: null, capacity: 100, status: 'PUBLIE',
         purchasable: false, banner: null, isFullySoldOut: false, hasHeldSeats: false, salesEnded: false,

@@ -29,6 +29,9 @@ const config: Config = {
     extend: {
       // Design 1c (point 3) : téléphone tenu en largeur (scanner en paysage : caméra à gauche, commandes à droite)
       screens: {
+        // Design 1d : palier de 400 px (« Retour aux événements » entier en haut de la fiche). Avec le palier brut « paysage »,
+        // Tailwind ne produit pas les paliers arbitraires min-[…] : celui-ci doit être déclaré ici.
+        xs: '400px',
         paysage: { raw: '(orientation: landscape) and (max-height: 520px)' },
       },
       // Règle (décision du 18/11) : aucune animation en boucle infinie dans l'application. Pulsation et halo : 3 cycles puis

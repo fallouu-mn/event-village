@@ -11,6 +11,8 @@ export interface EmptyStateProps {
   actionHref?: string;
   onAction?: () => void;
   icon?: React.ReactNode;
+  /** Design 1d (point 10) : état vide illustré, symbole Bras levés à la place de l'icône (pages publiques). */
+  illustrated?: boolean;
   className?: string;
 }
 
@@ -22,13 +24,19 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   actionHref,
   onAction,
   icon,
+  illustrated = false,
   className,
 }) => {
   return (
     <div className={cn('my-4 flex flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-card p-8 text-center', className)}>
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
-        {icon || <FolderSearch size={28} />}
-      </div>
+      {illustrated ? (
+        // eslint-disable-next-line @next/next/no-img-element -- symbole SVG local, servi tel quel
+        <img src="/branding/bras-leves-symbole.svg" alt="" width={88} height={80} className="mb-4 h-20 w-auto" />
+      ) : (
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-soft text-primary-text" aria-hidden="true">
+          {icon || <FolderSearch size={28} />}
+        </div>
+      )}
       <h3 className="mb-1 text-base font-semibold text-foreground-strong">{title}</h3>
       <p className="mb-5 max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p>
 

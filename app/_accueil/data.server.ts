@@ -37,8 +37,8 @@ export interface HomeData {
     hallsEnabled: boolean;
 }
 
-const cachedFeatured = unstable_cache(() => listHomeFeatured(HOME_FEATURED_LIMIT), ['accueil-a-la-une', 'v1'], { revalidate: PUBLIC_REVALIDATE_SECONDS, tags: ['accueil'] });
-const cachedPopular = unstable_cache(() => getPopularEvents(), ['accueil-populaires', 'v1'], { revalidate: PUBLIC_REVALIDATE_SECONDS, tags: ['accueil'] });
+const cachedFeatured = unstable_cache(() => listHomeFeatured(HOME_FEATURED_LIMIT), ['accueil-a-la-une', 'v2'], { revalidate: PUBLIC_REVALIDATE_SECONDS, tags: ['accueil'] });
+const cachedPopular = unstable_cache(() => getPopularEvents(), ['accueil-populaires', 'v2'], { revalidate: PUBLIC_REVALIDATE_SECONDS, tags: ['accueil'] });
 
 /**
  * Offre de parrainage d'un client (sponsor STANDARD, filleul client), lue dans referral_config : jamais écrite en dur.

@@ -626,6 +626,9 @@ describe('13. inventaire des stockages du navigateur', () => {
             // Design 1b (point 9) : réglage de l'appareil « notifications désactivées ici » (valeur fixe « desactive »), sans
             // identifiant ni donnée du compte, lu par le réabonnement automatique après une reconnexion
             'lib/push/client.ts': { what: 'notifications désactivées sur cet appareil, valeur fixe sans donnée du compte (localStorage)', compte: false, purge: null },
+            // Design 1d (points 6 et 9) : dernier opérateur et numéro de paiement, recherches récentes (localStorage,
+            // « event-village:appareil: ») ; le numéro est une donnée du compte, tout est effacé à la déconnexion
+            'lib/device/device-prefs.ts': { what: 'opérateur et numéro de paiement, recherches récentes de l’appareil (localStorage)', compte: true, purge: 'clearDevicePrefs' },
         };
         const writers = [...src].filter(([, s]) => /\b(?:localStorage|sessionStorage)\b/.test(s) && /\.setItem\(/.test(s)).map(([f]) => f);
         const unknown = writers.filter((f) => !(f in known));

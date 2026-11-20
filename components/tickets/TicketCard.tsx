@@ -72,6 +72,9 @@ import { getOfflineLot, hasCachedOfflineShell, OFFLINE_SHELL_PATH, updateLotCloc
 import { ensureOfflineLot, OFFLINE_LOTS_CHANGED, requestOfflineShell } from '@/components/tickets/OfflineTicketsSync';
 import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBadge';
 import { categoryClasses, countdownLabel } from '@/components/tickets/wallet';
+// Design 1d : « Ajouter à mon agenda » importé directement (run 489 : un morceau chargé à part coûtait un rendu de plus
+// pendant le chargement de Mes billets) ; le module de l'agenda lui-même n'est chargé qu'au toucher
+import { AddToCalendar } from '@/components/tickets/AddToCalendar';
 
 // Design 1b (décision du 18/11, temps de blocage de « Mes billets ») : bibliothèque des QR chargée à la demande (au premier
 // QR à dessiner), jamais avec la page ; le QR n'est recalculé que si son contenu change.
@@ -855,6 +858,11 @@ const TicketCardView: React.FC<TicketCardProps> = ({
         >
           PDF
         </Button>
+
+        {/* Design 1d (point 7) : « Ajouter à mon agenda » (.ics ou Google Agenda), heure de Dakar */}
+        {isActive && startsAt && endsAt && (
+          <AddToCalendar eventId={eventId} title={eventTitle} startsAt={startsAt} endsAt={endsAt} location={venue} className="col-span-3" />
+        )}
 
         {onOpenExplainer && (
           <Button
