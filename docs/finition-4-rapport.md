@@ -208,7 +208,31 @@ Tous dans la migration `…06` (aucune n'était appliquée) et dans `lib/sms/sms
 | 480 (`main`) | `40ffd1a74` | 546/547 | vert | Mes billets 88 (page non touchée) | lancé à 01:33 (heure de Dakar), **en pleine plage de nuit** : dans `notif-pros`, quatre tests envoyaient « maintenant » des avis non urgents (événement refusé puis validé, partenaire validé, refusé, réactivé), reportés à 07:00 par ce lot, restés en attente. Défaut des tests de ce lot (risque noté ci-dessous), corrigé : voir § 7 |
 | 484 | `35ab70cae` | **547/547** (lancé à 02:37, de nuit : `notif-pros` vert, correction prouvée) | vert | rouge : accueil 86, fiche 88, Mes billets 81 | machine de mesure lente (indice 3 500, processeur ralenti ×7 au lieu de ×3,8 au run 477 ; scores bruts ×4 : 94-96) ; poids transférés identiques au run 477 (418, 336, 385 Ko) et aucun fichier de l'application changé depuis `944aad167` (tests et rapport seulement) ; run complet relancé par la poussée de cette ligne |
 | 486 | `fa9cc1e79` | **547/547** | **vert** | Mes billets 88 (accueil 93, fiche 92) | page non touchée ; la même nuit, Mes billets à 89, 89, 83 sur design-1d/vitrine et 90, 90 sur lot10b ; correctif de `notif-pros` fusionné dans `main` sur décision de l'utilisateur |
-| RUN_APRES | | | | | |
+| **494 (`main`)** | **`14cc794a8`** | **547/547** | **vert** | **vert (93, 92, 90)** | **run complet de `main` vert en une seule fois, 50 min 28 s** |
+
+## 8 bis. Fusion et application
+
+- **Fusion** : `main` à `40ffd1a74` (fusion de la branche, arbre du run 477), puis `14cc794a8` (correctif de `notif-pros`, tests et rapport seulement). Run complet 494 de `main` vert en une seule fois.
+- **event-village-dev** (`rswkzklxrqswimcxghch`), le 20/11. Contrôles en lecture seule par `supabase db query --linked`.
+- **Dry-run** : exactement `20261125000001_f4_registre.sql` à `20261125000006_f4_evenement_proche.sql`, rien d'autre.
+- **`db push`** : les 6 migrations appliquées sans erreur.
+- **`03-verification.sql`** : 20/20 OK.
+
+| Contrôle | Avant | Après |
+|---|---|---|
+| A. Dernière migration | `20261124000001` | `20261125000006` |
+| A2. Versions `20261125*` | aucune | `…01` à `…06` |
+| B. Colonne `notification_types.night_policy` | absente | présente |
+| B2. Types nouveaux (`SALES_UPDATE_SMS`, `PARTNER_DAILY_SUMMARY`, `ENTRY_WELCOME`, `ENTRY_THANKS`, `PARTNER_REFUND_REQUESTS`) | 0 sur 5 | 5 sur 5 |
+| B3. Sujets « Résumé du matin » et « Après l'événement » admis | non | oui |
+| C. Plage de nuit (début, fin) | 22, 8 | 1, 7 |
+| C2. Plafond quotidien des SMS facultatifs | 700 | 20 000 |
+| D. Droits de `notification_outbox_claim` (anon / authenticated / service_role), SECURITY DEFINER | f/f/t, oui | f/f/t, oui |
+| D2. `notif_event_soon`, `notif_enqueue_grouped`, `notif_sale_recorded` | absentes | f/f/t, SECURITY DEFINER |
+| E. `trg_notif_cancel_on_status` réagit à `PUBLIE` (correctif T1) | non | oui |
+| F. Lignes en attente de la boîte d'envoi | 0 | 0 |
+
+Les valeurs de la plage et du plafond étaient celles d'origine : la migration les a changées (§ 9).
 
 ## 8 ter. Échecs de l'e2e sans lien avec ce lot
 
@@ -221,7 +245,7 @@ Vérifié dans la branche :
 - heures : l'e2e du 474 a démarré vers 20:33, la relance du 476 vers 23:38 (heure de Dakar), hors de la plage 01:00-07:00 ;
 - la trace Playwright (artefact `playwright-report`) n'a pas pu être téléchargée depuis le poste (accès refusé) ; la capture et le contexte d'erreur publiés suffisent : le bouton porte `isLoading={busy}` et il est au repos, la requête n'était donc plus en cours : la fenêtre a été remontée.
 
-Cause, dans du code que ce lot ne touche pas (`components/auth/LoginForm.tsx`, `middleware.ts`, inchangés depuis le lot sécurité de déconnexion) : après « Se connecter », `LoginForm` appelle `router.refresh()` puis arme `setTimeout(() => { window.location.href = target }, 400)`, jamais annulé. Le `router.refresh()` sur `/login` d'un compte connecté est redirigé par `middleware.ts` vers `/admin/dashboard` : l'URL change sans rechargement, le test voit `/admin`, trouve la fenêtre du code et clique ; puis le minuteur recharge toute la page. Si le clic tombe pendant le déchargement, la demande ne part pas (474) ; s'il tombe juste avant, le SMS part et le rechargement remet la fenêtre à zéro (476). La course dépend de la charge de la machine : vue 2 fois sur 6 runs de cette branche, 0 sur les 40 précédents, jamais sur `main` pour l'instant. Correctif possible, hors de ce lot : ne pas armer le rechargement quand `router.refresh()` a déjà quitté `/login`, ou attendre dans l'e2e le chargement complet de la page d'arrivée avant de chercher la fenêtre.
+Cause, dans du code que ce lot ne touche pas (`components/auth/LoginForm.tsx`, `middleware.ts`, inchangés depuis le lot sécurité de déconnexion) : après « Se connecter », `LoginForm` appelle `router.refresh()` puis arme `setTimeout(() => { window.location.href = target }, 400)`, jamais annulé. Le `router.refresh()` sur `/login` d'un compte connecté est redirigé par `middleware.ts` vers `/admin/dashboard` : l'URL change sans rechargement, le test voit `/admin`, trouve la fenêtre du code et clique ; puis le minuteur recharge toute la page. Si le clic tombe pendant le déchargement, la demande ne part pas (474) ; s'il tombe juste avant, le SMS part et le rechargement remet la fenêtre à zéro (476). La course dépend de la charge de la machine : vue 2 fois sur 6 runs de cette branche, 0 sur les 40 précédents, jamais sur `main` pour l'instant. Corrigé à part (mini-lot `stabilite/connexion`, décision de l'utilisateur du 20/11).
 
 **Fumée et terrain du run 475.** La fumée s'est arrêtée à l'étape 5 (le partenaire scanne) : le QR du billet acheté était dessiné, mais la réponse du code vivant n'a pas été vue par le test (erreur d'hydratation React #418 côté client ; événement créé à 00:05 le lendemain, run lancé vers 22:20). La fumée interrompue a laissé son billet valide en tête de « Mes billets » du client ; les deux cas « terrain 1 » ont alors trouvé leur billet en vignette, redessinée pendant le clic. Ni « Mes billets », ni le code vivant, ni la fiche ne sont touchés par ce lot ; au run 476 suivant, fumée et terrain sont verts.
 
@@ -233,6 +257,6 @@ Heure du run : les suites qui envoient « maintenant » un avis non urgent dépe
 
 ## 9. Reste à faire
 
-- Appliquer les migrations `20261125000001…06` sur event-village-dev après fusion, sur feu vert (dry-run : exactement ces 6).
+- ~~Appliquer les migrations sur event-village-dev~~ : fait le 20/11 (§ 8 bis).
 - Liste des avis « non urgents » validée par le client le 20/11 (règle de l'événement proche ajoutée) ; règle des SMS (§ 3) validée le 20/11.
-- Sur event-village-dev, la plage et le plafond ne changent que s'ils avaient leur valeur d'origine ; sinon, les régler à la main.
+- Sur event-village-dev, la plage (1 h - 7 h) et le plafond (20 000) sont posés (valeurs d'origine trouvées). Sur un autre projet où ils auraient été changés, les régler à la main.

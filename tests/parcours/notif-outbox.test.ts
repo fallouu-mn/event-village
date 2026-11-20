@@ -129,15 +129,20 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('SUBSCRIPTION_ACTIVATED', [I, M, P], 'PARTNER', 'A'), // G.49
     ess('PAYMENT_SUCCESS', [I, M, P], 'CLIENT', 'A'), // G.49
     // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle
-    ess('HALL_RESERVATION_REQUESTED', [I, P, M], 'PARTNER', 'B'),
+    // Lot 10b (migration 20261126000003, modification signalée au rapport) : SMS ajouté à chaque étape, 4 types de plus
+    ess('HALL_RESERVATION_PENDING', [I, P, M, S], 'CLIENT', 'B'),
+    ess('HALL_RESERVATION_REQUESTED', [I, P, M, S], 'PARTNER', 'B'),
     ess('HALL_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B'),
     ess('HALL_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A'),
-    ess('HALL_RESERVATION_CANCELLED_PRO', [I, P, M], 'PARTNER', 'A'),
-    ess('HALL_BALANCE_PAID', [I, P, M], 'ANY', 'B'),
+    ess('HALL_RESERVATION_CANCELLED_PRO', [I, P, M, S], 'PARTNER', 'A'),
+    ess('HALL_BALANCE_PAID', [I, P, M, S], 'ANY', 'B'),
     ess('HALL_BALANCE_REMINDER', [I, P, M, S], 'CLIENT', 'B'),
     ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A'),
     ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
-    ess('HALL_VALIDATION_DECIDED', [I, P, M], 'PARTNER', 'A'),
+    ess('HALL_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A'),
+    ess('HALL_EVE_REMINDER', [I, P, M, S], 'ANY', 'B'),
+    ess('HALL_EARNINGS_AVAILABLE', [I, P, M, S], 'PARTNER', 'A'),
+    ess('HALL_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A'),
     // Lot 11a (migration 20261123000108, ajout signalé au rapport) : parcours de réservation d'une table
     ess('TABLE_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B'),
     ess('TABLE_REQUEST_SENT', [I, P, M, S], 'CLIENT', 'B'),
@@ -159,7 +164,12 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('SHIFT_CLOSED_BY_OTHER', [I, P, M, S], 'CONTROLLER', 'A'), // G.49
     ess('CONTROLLER_ACTIVATED', [I, S, M, P], 'CONTROLLER', 'B'), // G.49
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'events.read'),
-    ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'partners.validate'), // lot 11a (ajout signalé)
+    ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 11a (ajout signalé) ; lot 10b : droit halls.validate (modification signalée)
+    ess('ADMIN_HALL_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 10b (ajout signalé)
+    ess('ADMIN_HALL_CHANGED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 10b (ajout signalé)
+    // Contre-vérification du lot 10b (ajout signalé) : droits d'un administrateur donnés ou retirés
+    ess('ADMIN_PERMISSIONS_CHANGED', [I, P, M, S], 'ADMIN', 'B'),
+    ess('ADMIN_PERMISSIONS_ALERT', [I, P, M, S], 'ADMIN', 'B'),
     ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'partners.read'),
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'refunds.manage'),
     ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'refunds.manage'), // lot 8, tâche 8.2 a (L32, migration 20261106000003)

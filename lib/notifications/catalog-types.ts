@@ -50,8 +50,8 @@ export type Audience = 'CLIENT' | 'PARTNER' | 'CONTROLLER' | 'ADMIN' | 'ANY';
 export type SuspendedPolicy = 'BLOCK' | 'ALLOW';
 export type AdminPermission =
     | 'events.read' | 'partners.read' | 'refunds.manage' | 'payments.read' | 'notifications.read'
-    /** Lot 11a : établissement à valider. */
-    | 'partners.validate';
+    /** Lot 11a : établissement à valider ; lot 10b : salles et établissements (halls.validate). */
+    | 'partners.validate' | 'halls.validate';
 
 /** Types journalisés seulement (OTP et invitation d'un contrôleur) : le code n'est jamais stocké. */
 export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE'
@@ -167,12 +167,22 @@ export interface TemplateData {
     HALL_RESERVATION_REQUESTED: HallReservationData;
     HALL_RESERVATION_CONFIRMED: HallReservationData;
     HALL_BALANCE_PAID: HallReservationData & { recipient_role: 'CLIENT' | 'PARTNER' };
-    HALL_BALANCE_REMINDER: HallReservationData;
+    HALL_BALANCE_REMINDER: HallReservationData & { step?: 'J10' | 'J8' | string };
     HALL_PAYMENT_DEADLINE_PASSED: HallReservationData & HallCancelData;
     HALL_RESERVATION_CANCELLED: HallReservationData & HallCancelData;
     HALL_RESERVATION_CANCELLED_PRO: HallReservationData & HallCancelData;
     HALL_PAYMENT_REFUNDED: HallReservationData & { payment_id: string; amount: number; operator?: string | null };
     HALL_VALIDATION_DECIDED: { hall_id: string; hall_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
+    // Lot 10b : réservation demandée, veille, recettes disponibles, remboursement versé ; administrateurs
+    HALL_RESERVATION_PENDING: HallReservationData & { amount_due: number; hold_expires_at: string; full_payment_required?: boolean };
+    HALL_EVE_REMINDER: HallReservationData & { recipient_role: 'CLIENT' | 'PARTNER' };
+    HALL_EARNINGS_AVAILABLE: HallReservationData & { earned: number };
+    HALL_REFUND_PAID: HallReservationData & { cashout_id: string; amount: number; operator?: string | null };
+    ADMIN_HALL_SUBMITTED: { hall_id: string; hall_name: string; city?: string | null; resubmitted?: boolean };
+    ADMIN_HALL_CHANGED: { hall_id: string; hall_name: string; previous_name?: string | null; city?: string | null; changes: string[] };
+    // Contre-vérification du lot 10b : droits d'un administrateur donnés ou retirés (admin_permissions_set)
+    ADMIN_PERMISSIONS_CHANGED: { admin_id: string; added: string[]; removed: string[]; target_name?: string | null; actor_name?: string | null };
+    ADMIN_PERMISSIONS_ALERT: { admin_id: string; added: string[]; removed: string[]; target_name?: string | null; actor_name?: string | null };
     // Lot 11a : données de table_notif_data (réservation de table), plus les champs propres à chaque avis
     TABLE_RESERVATION_CONFIRMED: TableReservationData;
     TABLE_REQUEST_SENT: TableReservationData;

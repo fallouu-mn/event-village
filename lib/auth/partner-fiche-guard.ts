@@ -33,6 +33,9 @@ export const PARTNER_NOT_VALIDATED_SUBMIT_TEXT = 'Votre profil d’organisateur 
 /** Finition 2a (1a) : refus d'une écriture d'événement pour une fiche SUSPENDU (texte de la base), suivi du contact. */
 export const PARTNER_SUSPENDED_TEXT = 'Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support.';
 
+/** Contre-vérification du lot 10b (T1) : refus d'une écriture de salle pour une fiche SUSPENDU. */
+export const PARTNER_SUSPENDED_HALLS_TEXT = 'Votre compte organisateur est suspendu : vos salles et leurs réservations ne sont plus modifiables. Contactez le support.';
+
 type FicheStatus = 'VALIDE' | 'SUSPENDU' | 'EN_ATTENTE' | 'REJETE';
 
 /** Route et méthode : `GET /api/partner/dashboard`. Un segment dynamique s'écrit `*`. */
@@ -82,6 +85,9 @@ export function partnerFicheAllows(status: string | null, method: string, pathna
  * réglages, porte, point d'entrée, espèces, invitation, renvoi, annulation, effacement, retraits) et de ses caisses
  * (/api/partner/shifts/* : validation d'un écart). Inventaire de toutes les écritures /api/partner/* et /api/controller/*
  * avec leur garde : tests/parcours/f2acv-ecritures-fiche.test.ts.
+ * Contre-vérification du lot 10b (T1) : aussi toute écriture des salles (/api/partner/halls*) : création, modification,
+ * suppression, renvoi en validation, annulation d'une réservation ; la base refuse aussi l'annulation par la salle
+ * (hall_reservation_cancel, migration 20261126000004).
  */
 export function partnerEventWrite(method: string, pathname: string): boolean {
     const m = method.toUpperCase();
@@ -91,13 +97,14 @@ export function partnerEventWrite(method: string, pathname: string): boolean {
     const path = key.slice(m.length + 1);
     return path === '/api/partner/events' || path.startsWith('/api/partner/events/') || path === '/api/partner/upload'
         || path === '/api/partner/team' || path.startsWith('/api/partner/team/')
-        || path === '/api/partner/shifts' || path.startsWith('/api/partner/shifts/');
+        || path === '/api/partner/shifts' || path.startsWith('/api/partner/shifts/')
+        || path === '/api/partner/halls' || path.startsWith('/api/partner/halls/');
 }
 
 /** Réponse 403 PARTNER_SUSPENDED : texte de la base suivi du contact du support. */
-export async function partnerSuspendedResponse(): Promise<NextResponse> {
+export async function partnerSuspendedResponse(text: string = PARTNER_SUSPENDED_TEXT): Promise<NextResponse> {
     const support = await supportSentenceOrHelp('fiche suspendue');
-    return NextResponse.json({ error: `${PARTNER_SUSPENDED_TEXT} ${support}`, code: 'PARTNER_SUSPENDED' }, { status: 403 });
+    return NextResponse.json({ error: `${text} ${support}`, code: 'PARTNER_SUSPENDED' }, { status: 403 });
 }
 
 /** La garde s'applique-t-elle à ce compte et à ce chemin ? */
@@ -122,7 +129,9 @@ export async function partnerFicheRefusal(user: { id: string; roles: readonly st
     if (!partnerFicheGuardApplies(user.roles, pathname)) return null;
     const read = await readFicheStatus(user.id, 'partnerFicheRefusal');
     if ('response' in read) return read.response;
-    if (read.status === 'SUSPENDU' && partnerEventWrite(method, pathname)) return partnerSuspendedResponse();
+    if (read.status === 'SUSPENDU' && partnerEventWrite(method, pathname)) {
+        return partnerSuspendedResponse(pathname.startsWith('/api/partner/halls') ? PARTNER_SUSPENDED_HALLS_TEXT : PARTNER_SUSPENDED_TEXT);
+    }
     if (partnerFicheAllows(read.status, method, pathname)) return null;
     return NextResponse.json({ error: PARTNER_NOT_VALIDATED_TEXT, code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });
 }

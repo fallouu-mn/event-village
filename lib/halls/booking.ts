@@ -73,6 +73,7 @@ export function refusalStatus(code: unknown): number {
             return 404;
         case 'ACCOUNT_NOT_ACTIVE':
         case 'FORBIDDEN':
+        case 'PARTNER_SUSPENDED':
             return 403;
         case 'TOO_MANY_PENDING':
         case 'PAYER_PENDING_LIMIT':

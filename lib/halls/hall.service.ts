@@ -1,6 +1,7 @@
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
 import { assertNoPosterFolder } from '@/lib/images/image-address';
+import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { sendHallRefunds } from './refunds';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -56,6 +57,71 @@ const POLICIES: readonly CancellationPolicy[] = ['SOUPLE', 'MODEREE', 'STRICTE']
  */
 const OWN_HALL_COLUMNS = 'id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, deposit_percentage, '
     + 'cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, created_at, updated_at';
+
+/** Préfixe des photos des salles de la partenaire : `${SUPABASE_URL}/storage/v1/object/public/public-images/halls/<partner_id>/`. */
+export function hallPhotoPrefix(partnerId: string): string | null {
+    const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/+$/, '');
+    if (!base) return null;
+    return `${base}/storage/v1/object/public/public-images/halls/${partnerId}/`;
+}
+
+/** Vrai si l'adresse désigne une photo déposée par la route de dépôt (réencodée) dans le dossier des salles de la partenaire. */
+export function isPartnerHallPhotoUrl(url: unknown, partnerId: string): boolean {
+    if (typeof url !== 'string') return false;
+    const prefix = hallPhotoPrefix(partnerId);
+    if (!prefix || !url.startsWith(prefix)) return false;
+    return STORED_IMAGE_NAME_RE.test(url.slice(prefix.length));
+}
+
+export const HALL_PHOTOS_MAX = 12;
+
+/**
+ * Lot 10b (point 3) : photos d'une salle réencodées comme les affiches. Chaque photo doit venir de la route de dépôt
+ * (POST /api/partner/upload, dossier halls/<partenaire>/, fichier réencodé « horodatage_8 caractères.webp ») ; une photo
+ * déjà enregistrée sur la salle et renvoyée telle quelle reste acceptée. 12 photos au plus, sans doublon.
+ */
+export function hallPhotos(images: unknown, partnerId: string, previous: readonly string[] = []): string[] {
+    assertNoPosterFolder(images);
+    if (!Array.isArray(images)) throw new PublicError('Liste de photos illisible.', 'INVALID_FIELD', 400);
+    if (images.length > HALL_PHOTOS_MAX) throw new PublicError(`${HALL_PHOTOS_MAX} photos au plus par salle.`, 'INVALID_FIELD', 400);
+    const out: string[] = [];
+    for (const url of images) {
+        if (typeof url !== 'string' || !(previous.includes(url) || isPartnerHallPhotoUrl(url, partnerId))) {
+            throw new PublicError('Une photo ne vient pas de cette page : déposez-la depuis le formulaire de la salle.', 'IMAGE_ORIGIN_INVALID', 400);
+        }
+        if (!out.includes(url)) out.push(url);
+    }
+    return out;
+}
+
+/** Texte saisi : rogné, sans caractère de contrôle, longueur bornée ; vide = null. */
+function cleanText(value: unknown, max: number, what: string): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'string') throw new PublicError(`${what} : texte attendu.`, 'INVALID_FIELD', 400);
+    const s = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim();
+    if (s.length > max) throw new PublicError(`${what} : ${max} caractères au plus.`, 'INVALID_FIELD', 400);
+    return s.length > 0 ? s : null;
+}
+
+/** Équipements : 30 au plus, 40 caractères chacun, sans doublon. */
+function cleanAmenities(value: unknown): string[] {
+    if (!Array.isArray(value)) throw new PublicError('Liste des équipements illisible.', 'INVALID_FIELD', 400);
+    const out: string[] = [];
+    for (const a of value) {
+        const s = cleanText(a, 40, 'Un équipement');
+        if (s && !out.some((x) => x.toLowerCase() === s.toLowerCase())) out.push(s);
+    }
+    if (out.length > 30) throw new PublicError('30 équipements au plus.', 'INVALID_FIELD', 400);
+    return out;
+}
+
+/** Capacité : nombre entier de personnes, de 1 à 100 000. */
+function cleanCapacity(value: unknown): number {
+    const n = Number(value);
+    if (value === undefined || value === null || value === '' || !(n > 0)) throw new PublicError('La capacité de la salle doit être supérieure à 0.');
+    if (!Number.isInteger(n) || n < 1 || n > 100_000) throw new PublicError('La capacité est un nombre entier de personnes, de 1 à 100 000.', 'INVALID_FIELD', 400);
+    return n;
+}
 
 /** Montant en F CFA entier d'au moins 1, ou une erreur lisible. */
 function wholeFcfa(value: unknown, what: string): number {
@@ -143,65 +209,41 @@ export class HallService {
         const supabase = getServiceRoleClient();
         const partnerId = await this.resolvePartnerId(partnerUserId, { requireValidated: true });
 
-        if (!input.name || !input.name.trim()) {
+        const name = cleanText(input.name, 120, 'Le nom de la salle');
+        if (!name) {
             throw new PublicError('Le nom de la salle est obligatoire.');
         }
-        if (!input.capacity || input.capacity <= 0) {
-            throw new PublicError('La capacité de la salle doit être supérieure à 0.');
-        }
+        const capacity = cleanCapacity(input.capacity);
         const rules = hallRules(input, true);
-        // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/)
-        assertNoPosterFolder(input.images);
+        // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/) ;
+        // lot 10b : seulement des photos déposées (réencodées) dans le dossier des salles de la partenaire
+        const images = hallPhotos(input.images ?? [], partnerId);
 
         // Lot 10a : statut de validation posé par la base (trg_halls_validation_guard, réglage halls.validation_required)
         const { data: hall, error } = await supabase
             .from('halls')
             .insert({
                 partner_id: partnerId,
-                name: input.name.trim(),
-                description: input.description || null,
-                capacity: Number(input.capacity),
+                name,
+                description: cleanText(input.description, 4000, 'La description'),
+                capacity,
                 ...rules,
-                address: input.address || null,
-                city: input.city || 'Dakar',
-                amenities: input.amenities || [],
-                images: input.images || [],
+                address: cleanText(input.address, 200, 'L’adresse'),
+                city: cleanText(input.city, 80, 'La ville') ?? 'Dakar',
+                amenities: cleanAmenities(input.amenities ?? []),
+                images,
                 is_active: true,
             })
-            .select('*')
+            .select(OWN_HALL_COLUMNS)
             .single();
 
         if (error || !hall) {
             throw new Error(`Échec création de salle: ${error?.message}`);
         }
 
-        return hall;
+        return hall as unknown as Record<string, any>;
     }
 
-    /**
-     * Récupère les salles du partenaire avec les réservations actives
-     */
-    public static async getPartnerHalls(partnerUserId: string) {
-        const supabase = getServiceRoleClient();
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-
-        const { data: halls, error } = await supabase
-            .from('halls')
-            .select('*, hall_reservations(*)')
-            .eq('partner_id', partnerId)
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            throw new Error(`Erreur récupération salles: ${error.message}`);
-        }
-
-        return halls || [];
-    }
-
-    /**
-     * Correctifs de la contre-vérification du lot 10a (T1) : identifiant de la fiche partenaire du compte, ou null si le
-     * compte n'en a pas (l'appelant répond alors « Salle introuvable », sans indice). Panne : erreur, journal et 500.
-     */
     private static async ownPartnerId(userId: string): Promise<string | null> {
         const { data, error } = await getServiceRoleClient().from('partners').select('id').eq('user_id', userId).maybeSingle();
         if (error) throw new Error(`partenaire du compte ${userId} illisible : ${error.message}`);
@@ -270,35 +312,44 @@ export class HallService {
             updated_at: new Date().toISOString(),
         };
 
-        if (input.name) updateData.name = input.name.trim();
-        if (input.description !== undefined) updateData.description = input.description;
-        if (input.capacity) updateData.capacity = Number(input.capacity);
+        if (input.name !== undefined) {
+            const name = cleanText(input.name, 120, 'Le nom de la salle');
+            if (!name) throw new PublicError('Le nom de la salle est obligatoire.');
+            updateData.name = name;
+        }
+        if (input.description !== undefined) updateData.description = cleanText(input.description, 4000, 'La description');
+        if (input.capacity !== undefined) updateData.capacity = cleanCapacity(input.capacity);
         // Lot 10a : prix, acompte, règle d'annulation et position contrôlés ; une réservation déjà faite garde ses
         // montants et sa règle (figés à sa création)
         Object.assign(updateData, hallRules(input, false));
-        if (input.address !== undefined) updateData.address = input.address;
-        if (input.city !== undefined) updateData.city = input.city;
-        if (input.amenities !== undefined) updateData.amenities = input.amenities;
+        if (input.address !== undefined) updateData.address = cleanText(input.address, 200, 'L’adresse');
+        if (input.city !== undefined) updateData.city = cleanText(input.city, 80, 'La ville');
+        if (input.amenities !== undefined) updateData.amenities = cleanAmenities(input.amenities);
         if (input.images !== undefined) {
-            // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches
-            assertNoPosterFolder(input.images);
-            updateData.images = input.images;
+            // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches ;
+            // lot 10b : photos déposées dans le dossier de la partenaire, ou déjà sur la salle
+            const { data: current, error: curErr } = await supabase.from('halls').select('images').eq('id', hallId).eq('partner_id', partnerId).single();
+            if (curErr) throw new Error(`photos de la salle ${hallId} illisibles : ${curErr.message}`);
+            updateData.images = hallPhotos(input.images, partnerId, Array.isArray(current?.images) ? current.images as string[] : []);
         }
-        if (input.is_active !== undefined) updateData.is_active = input.is_active;
+        if (input.is_active !== undefined) {
+            if (typeof input.is_active !== 'boolean') throw new PublicError('Choisissez si la salle est proposée ou non.', 'INVALID_FIELD', 400);
+            updateData.is_active = input.is_active;
+        }
 
         const { data: updated, error } = await supabase
             .from('halls')
             .update(updateData)
             .eq('id', hallId)
             .eq('partner_id', partnerId)
-            .select('*')
+            .select(OWN_HALL_COLUMNS)
             .single();
 
         if (error || !updated) {
             throw new Error(`Échec modification salle: ${error?.message}`);
         }
 
-        return updated;
+        return updated as unknown as Record<string, any>;
     }
 
     /**
@@ -320,7 +371,16 @@ export class HallService {
         if (activeErr) throw new Error(`réservations de la salle ${hallId} illisibles : ${activeErr.message}`);
 
         if (activeRes && activeRes.length > 0) {
-            throw new PublicError('Impossible de supprimer une salle ayant des réservations actives. Veuillez la désactiver.');
+            throw new PublicError('Cette salle a des réservations en cours : elle ne peut pas être supprimée. Retirez-la de la vente à la place.', 'HALL_HAS_RESERVATIONS', 409);
+        }
+        // Lot 10b : une salle déjà réservée garde son historique (paiements, remboursements) : on la retire de la vente
+        const { count: pastCount, error: pastErr } = await supabase
+            .from('hall_reservations')
+            .select('id', { count: 'exact', head: true })
+            .eq('hall_id', hallId);
+        if (pastErr) throw new Error(`réservations de la salle ${hallId} illisibles : ${pastErr.message}`);
+        if ((pastCount ?? 0) > 0) {
+            throw new PublicError('Cette salle a déjà été réservée : elle ne peut pas être supprimée. Retirez-la de la vente à la place.', 'HALL_HAS_HISTORY', 409);
         }
 
         const { error } = await supabase
@@ -334,6 +394,23 @@ export class HallService {
         }
 
         return { success: true };
+    }
+
+    /**
+     * Lot 10b (point 3) : renvoi en validation d'une salle refusée par sa propriétaire (hall_submit : compte actif,
+     * partenaire VALIDE, salle refusée et complète). Salle d'une autre partenaire : 404, comme la lecture.
+     */
+    public static async submitHall(hallId: string, partnerUserId: string): Promise<{ status: number; body: Record<string, unknown> }> {
+        await this.assertOwnHall(hallId, partnerUserId);
+        const { data, error } = await getServiceRoleClient().rpc('hall_submit', { p: { actor_id: partnerUserId, hall_id: hallId } });
+        if (error) throw new Error(`hall_submit : ${error.message}`);
+        const r = (data ?? {}) as Record<string, unknown>;
+        if (r.ok !== true) {
+            const code = String(r.code ?? 'REFUSED');
+            const status = code === 'HALL_NOT_FOUND' ? 404 : code === 'ACCOUNT_NOT_ACTIVE' || code === 'PARTNER_NOT_VALIDATED' ? 403 : code === 'HALL_INCOMPLETE' ? 400 : 409;
+            return { status, body: { success: false, error: r.message ?? 'Envoi impossible.', code } };
+        }
+        return { status: 200, body: { success: true, hall: { id: hallId, status: r.validation_status } } };
     }
 
     /**

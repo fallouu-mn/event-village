@@ -131,7 +131,8 @@ export async function GET(req: NextRequest) {
                 paymentStatus: h.payment_status,
                 paymentMethod: 'SamirPay (Wave / OM)',
                 dateFormatted,
-                detailsUrl: `/halls/${h.hall_id}`,
+                // Lot 10b : détail dans « Mes réservations » (payer le solde, annuler)
+                detailsUrl: `/halls/reservations/${h.id}`,
                 createdAt: h.created_at,
             });
         });

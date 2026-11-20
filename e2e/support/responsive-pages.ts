@@ -8,14 +8,21 @@
  *
  * Exclusions déclarées (vérifiées par tests/schema/design1c-responsive.test.ts : toute page de app/ est soit listée ici,
  * soit exclue avec sa raison) :
- *  - salles, tables, menus, commandes et produits : écrans du lot 10b, en cours sur une autre branche (consigne du
- *    design 1c : ne pas y toucher) ;
- *  - redirections pures (/partner, /admin, /scan) ;
+ *  - tables, menus, commandes et produits : écrans des services fermés, hors de ce contrôle (consigne du design 1c : ne pas y
+ *    toucher) ;
+ *  - redirections pures (/partner, /admin, /scan, /partner/halls/reservations) ;
  *  - pages à jeton à usage unique ou de démonstration interne (activation, réclamation d'un billet, vitrine du design).
+ *
+ * Lot 10b : les douze pages des salles de fête sont contrôlées (client : catalogue, fiche d'une salle validée, mes
+ * réservations, une réservation ; organisatrice : mes salles, ajout, fiche et calendrier, modification, détail d'une
+ * réservation, recettes ; super-administrateur : salles à valider, fiche d'une salle en attente). Données : salles et
+ * réservation du seed de démonstration (DemoIds.halls, graine v5). Les pages du client et de l'organisatrice (`salles`)
+ * tournent interrupteur features.halls_enabled ouvert, sous le verrou de e2e/support/halls-switch.ts ; celles de
+ * l'administration n'en dépendent pas.
  */
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 import type { CaptureRole } from './fixtures';
-import type { DemoIds } from './demo-ids';
+import { readDemoIds, type DemoHallKey, type DemoIds } from './demo-ids';
 
 export type ResponsiveGroup = 'public' | 'organisatrice' | 'administration' | 'scanner';
 
@@ -38,6 +45,11 @@ export interface ResponsivePage {
     expectStatus?: number;
     /** Requêtes en échec attendues (404 d'une page introuvable). */
     allowFailures?: RegExp[];
+    /**
+     * Lot 10b : page des salles de fête (app/halls, app/partner/halls), en 404 tant que l'interrupteur features.halls_enabled
+     * est fermé : ouvert le temps du test, sous le verrou entre les workers (e2e/support/halls-switch.ts).
+     */
+    salles?: boolean;
 }
 
 /** Largeurs contrôlées, et hauteur de la fenêtre à chaque largeur (téléphones, tablette portrait, tablette paysage, ordinateur). */
@@ -99,6 +111,65 @@ async function scannerStarted(page: Page): Promise<void> {
     await page.waitForFunction(() => Array.from(document.querySelectorAll('video')).some((v) => v.readyState >= 2), null, { timeout: 30_000 });
 }
 
+// ── Lot 10b : salles de fête (salles et réservation du seed de démonstration, DemoIds.halls) ──────────────
+
+/**
+ * Préchargement de « Voir le détail » de la notification « Réservation demandée » du client (graine v5) : 404 tant que
+ * l'interrupteur des salles est fermé. Même motif que HALL_RESERVATION_PREFETCH de screens.ts (recopié : ce module reste
+ * sans dépendance vers les écrans, il est lu par tests/schema/design1c-responsive.test.ts).
+ */
+const HALL_RESERVATION_PREFETCH = /\/halls\/reservations\/[0-9a-f-]{36}(\?_rsc=[^/]*)?$/;
+
+function hallOf(i: DemoIds | null, key: DemoHallKey): DemoIds['halls'][DemoHallKey] {
+    return ids(i).halls[key];
+}
+
+async function titled(page: Page, name: RegExp | string): Promise<void> {
+    const heading = typeof name === 'string'
+        ? page.getByRole('heading', { level: 1, name, exact: true })
+        : page.getByRole('heading', { level: 1, name });
+    await expect(heading).toBeVisible({ timeout: 30_000 });
+}
+
+/** Titre de niveau 1 : nom d'une salle du seed (lu dans demo-ids.json, comme l'adresse de la page). */
+function hallTitle(key: DemoHallKey) {
+    return async (page: Page): Promise<void> => { await titled(page, readDemoIds().halls[key].name); };
+}
+
+async function hallsCatalogReady(page: Page): Promise<void> {
+    await titled(page, /^salles de fête$/i);
+    const name = readDemoIds().halls.validee.name;
+    await expect(page.getByRole('heading', { level: 3, name, exact: true }), `salle « ${name} » au catalogue`).toBeVisible();
+}
+
+async function myHallReservationsReady(page: Page): Promise<void> {
+    await titled(page, /^mes réservations$/i);
+    await expect(page.getByRole('tab', { name: /^à venir/i, selected: true })).toBeVisible();
+    const name = readDemoIds().halls.validee.name;
+    await expect(page.getByRole('heading', { level: 3, name, exact: true }), `réservation de « ${name} » en attente de paiement`).toBeVisible();
+}
+
+async function partnerHallsReady(page: Page): Promise<void> {
+    await titled(page, /^mes salles$/i);
+    const { validee, enAttente, refusee } = readDemoIds().halls;
+    for (const h of [validee, enAttente, refusee]) {
+        await expect(page.getByRole('heading', { level: 2, name: h.name, exact: true }), `salle « ${h.name} » (${h.validationStatus})`).toBeVisible();
+    }
+}
+
+async function partnerHallSheetReady(page: Page): Promise<void> {
+    await hallTitle('validee')(page);
+    const calendar = page.locator('#calendrier');
+    await expect(calendar.getByRole('heading', { level: 2, name: /^calendrier des réservations$/i })).toBeVisible();
+    await expect(calendar.locator('[aria-busy="true"]'), 'réservations du mois chargées').toHaveCount(0, { timeout: 30_000 });
+}
+
+async function adminHallsReady(page: Page): Promise<void> {
+    await titled(page, /^salles à valider$/i);
+    const name = readDemoIds().halls.enAttente.name;
+    await expect(page.getByRole('link', { name, exact: true }).filter({ visible: true }).first(), `salle « ${name} » en attente de validation`).toBeVisible();
+}
+
 const P = (p: Omit<ResponsivePage, 'groupe'>): Omit<ResponsivePage, 'groupe'> => p;
 
 const PUBLIQUES: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -123,8 +194,14 @@ const PUBLIQUES: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'profil-paiements', titre: 'Mes paiements', role: 'client', path: () => '/profile/payments' }),
     P({ id: 'profil-notifications', titre: 'Réglages des notifications', role: 'client', path: () => '/profile/notifications' }),
     P({ id: 'profil-soirees', titre: 'Mes soirées', role: 'client', path: () => '/profile/soirees' }),
-    P({ id: 'notifications', titre: 'Notifications', role: 'client', path: () => '/notifications' }),
+    // Lot 10b : notification de la réservation de salle du seed, lien vers une page fermée (HALL_RESERVATION_PREFETCH)
+    P({ id: 'notifications', titre: 'Notifications', role: 'client', path: () => '/notifications', allowFailures: [HALL_RESERVATION_PREFETCH] }),
     P({ id: 'invitations', titre: 'Invitations du contrôleur', role: 'client', path: () => '/invitations' }),
+    // Lot 10b : salles de fête du client (interrupteur ouvert le temps du test)
+    P({ id: 'salles-catalogue', titre: 'Salles de fête — catalogue', role: 'client', salles: true, path: () => '/halls', ready: hallsCatalogReady }),
+    P({ id: 'salles-fiche', titre: 'Fiche d’une salle validée', role: 'client', salles: true, needsIds: true, path: (i) => `/halls/${hallOf(i, 'validee').id}`, ready: hallTitle('validee') }),
+    P({ id: 'salles-reservations', titre: 'Mes réservations de salle', role: 'client', salles: true, path: () => '/halls/reservations', ready: myHallReservationsReady }),
+    P({ id: 'salles-reservation', titre: 'Ma réservation de salle (en attente de paiement)', role: 'client', salles: true, needsIds: true, path: (i) => `/halls/reservations/${ids(i).halls.reservation.id}`, ready: hallTitle('validee') }),
 ];
 
 const ORGANISATRICE: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -151,6 +228,13 @@ const ORGANISATRICE: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'org-profil', titre: 'Profil de l’organisatrice', role: 'organisateur', path: () => '/partner/profile' }),
     P({ id: 'org-abonnement', titre: 'Abonnement', role: 'organisateur', path: () => '/partner/subscription' }),
     P({ id: 'org-scan', titre: 'Scanner de l’organisatrice', role: 'organisateur', path: () => '/partner/scan' }),
+    // Lot 10b : salles de fête de l'organisatrice (interrupteur ouvert le temps du test)
+    P({ id: 'org-salles', titre: 'Mes salles (validée, en attente, refusée)', role: 'organisateur', salles: true, path: () => '/partner/halls', ready: partnerHallsReady }),
+    P({ id: 'org-salle-ajout', titre: 'Ajout d’une salle', role: 'organisateur', salles: true, path: () => '/partner/halls/new', ready: (p) => titled(p, /^ajouter une salle$/i) }),
+    P({ id: 'org-salle-fiche', titre: 'Fiche d’une salle et calendrier des réservations', role: 'organisateur', salles: true, needsIds: true, path: (i) => `/partner/halls/${hallOf(i, 'validee').id}`, ready: partnerHallSheetReady }),
+    P({ id: 'org-salle-modification', titre: 'Modification d’une salle', role: 'organisateur', salles: true, needsIds: true, path: (i) => `/partner/halls/${hallOf(i, 'validee').id}/edit`, ready: (p) => titled(p, /^modifier la salle$/i) }),
+    P({ id: 'org-salle-reservation', titre: 'Détail d’une réservation de salle', role: 'organisateur', salles: true, needsIds: true, path: (i) => `/partner/halls/reservations/${ids(i).halls.reservation.id}`, ready: hallTitle('validee') }),
+    P({ id: 'org-salles-recettes', titre: 'Recettes des salles', role: 'organisateur', salles: true, path: () => '/partner/halls/recettes', ready: (p) => titled(p, /^recettes des salles$/i) }),
 ];
 
 const ADMINISTRATION: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -169,6 +253,9 @@ const ADMINISTRATION: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'adm-securite', titre: 'Sécurité', role: 'fumee-superadmin', path: () => '/admin/securite' }),
     P({ id: 'adm-a-la-une', titre: 'À la une', role: 'fumee-superadmin', path: () => '/admin/a-la-une' }),
     P({ id: 'adm-mes-droits', titre: 'Mes droits', role: 'admin', path: () => '/admin/mes-droits' }),
+    // Lot 10b : validation des salles (app/admin/halls ne dépend pas de l'interrupteur)
+    P({ id: 'adm-salles', titre: 'Salles à valider', role: 'fumee-superadmin', path: () => '/admin/halls', ready: adminHallsReady }),
+    P({ id: 'adm-salle', titre: 'Fiche d’une salle en attente de validation', role: 'fumee-superadmin', needsIds: true, path: (i) => `/admin/halls/${hallOf(i, 'enAttente').id}`, ready: hallTitle('enAttente') }),
 ];
 
 const SCANNER: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -198,11 +285,7 @@ export const RESPONSIVE_EXCLUSIONS: Readonly<Record<string, string>> = {
     '/verify-email': 'lien de vérification à usage unique (jeton)',
     '/reset-password': 'lien de réinitialisation à usage unique (jeton)',
     '/vitrine-design': 'vitrine interne des composants (design 1a), hors parcours',
-    '/halls': 'salles : lot 10b en cours sur une autre branche',
-    '/halls/[id]': 'salles : lot 10b en cours sur une autre branche',
-    '/partner/halls': 'salles : lot 10b en cours sur une autre branche',
-    '/partner/halls/new': 'salles : lot 10b en cours sur une autre branche',
-    '/partner/halls/[id]/edit': 'salles : lot 10b en cours sur une autre branche',
+    '/partner/halls/reservations': 'salles : redirection vers « Mes salles » (les réservations se consultent dans le calendrier de chaque salle)',
     '/partner/tables': 'tables : lot 10b en cours sur une autre branche',
     '/partner/products': 'produits : service fermé, écrans du lot 10b',
     '/partner/products/new': 'produits : service fermé, écrans du lot 10b',

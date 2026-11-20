@@ -9,6 +9,12 @@
  * Captures (JPEG, échelle 1, fenêtre visible) : .e2e-captures/captures-responsive/<page>__<largeur>__<thème>.jpg ;
  * résultats : .e2e-captures/responsive/<page>__<thème>.json, résumés par scripts/e2e/responsive-resume.mjs
  * (responsive.tsv et responsive.txt, publiés sur ci-results).
+ *
+ * Lot 10b : pages des salles de fête (`salles` dans responsive-pages.ts) contrôlées interrupteur features.halls_enabled
+ * ouvert. Chaque test prend d'abord le verrou de la phase (fixture hallsLock, e2e/support/halls-switch.ts) : groupe
+ * « salles » pour ces pages, « autres » pour toutes les autres ; jamais les deux groupes à la fois, l'interrupteur est remis
+ * à sa valeur d'origine dès que le dernier test des salles en cours est fini. L'attente du verrou est ajoutée au délai du
+ * test et notée dans le résultat.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +22,7 @@ import type { Page } from '@playwright/test';
 import { test, expect, type CaptureRole, type ThemeKey } from './support/fixtures';
 import { readDemoIds, E2E_OUTPUT_DIR, type DemoIds } from './support/demo-ids';
 import { fakeScanMode, installFakeCamera } from './support/fake-camera';
+import { keepHomeOutOfHallsWindow } from './support/halls-switch';
 import {
     PHONE_MAX_WIDTH, RESPONSIVE_CAPTURE_WIDTHS, RESPONSIVE_LANDSCAPE, RESPONSIVE_PAGES, RESPONSIVE_WIDTHS, type ResponsivePage,
 } from './support/responsive-pages';
@@ -66,10 +73,17 @@ for (const theme of THEMES) {
         test.describe(`${theme.key} · ${role}`, () => {
             test.use({ colorScheme: theme.colorScheme, evTheme: theme.key, evRole: role });
             for (const p of RESPONSIVE_PAGES.filter((x) => x.role === role)) {
-                test(`${p.id} — ${p.titre}`, async ({ page, context, guard }) => {
+                test(`${p.id} — ${p.titre}`, async ({ page, context, guard, hallsLock }) => {
                     test.setTimeout(240_000);
                     const record: ResponsiveRecord = { page: p.id, titre: p.titre, groupe: p.groupe, role, theme: theme.key, url: null, sizes: [], notes: [], error: null };
                     try {
+                        // Lot 10b : verrou des salles avant tout chargement (attente ajoutée au délai du test)
+                        await hallsLock.enter(p.salles ? 'salles' : 'autres');
+                        if (hallsLock.waitedMs >= 1_000) record.notes.push(`attente du verrou des salles : ${Math.round(hallsLock.waitedMs / 1000)} s`);
+                        if (p.salles) {
+                            record.notes.push('page des salles : interrupteur features.halls_enabled ouvert le temps du test (e2e/support/halls-switch.ts)');
+                            await keepHomeOutOfHallsWindow(page);
+                        }
                         const demo: DemoIds | null = p.needsIds ? readDemoIds() : null;
                         record.url = p.path(demo);
                         guard.configure({ allowFailures: p.allowFailures ?? [], ignoreConsoleErrors: false });

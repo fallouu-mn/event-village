@@ -253,15 +253,26 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('PAYMENT_SUCCESS', [I, M, P], 'CLIENT', 'A', 'PAYMENT_SUCCESS', ['/orders', '/partner/subscription'], 'Paiement confirmé'), // G.49
     // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle ; SMS
     // pour la confirmation, le rappel du solde, le délai dépassé, l'annulation et le remboursement seulement.
-    ess('HALL_RESERVATION_REQUESTED', [I, P, M], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls'], 'Nouvelle réservation'),
-    ess('HALL_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Réservation confirmée'),
-    ess('HALL_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Réservation annulée'),
-    ess('HALL_RESERVATION_CANCELLED_PRO', [I, P, M], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls'], 'Réservation annulée'),
-    ess('HALL_BALANCE_PAID', [I, P, M], 'ANY', 'B', 'HALL_RESERVATION', ['/orders', '/partner/halls'], 'Réservation payée'),
-    ess('HALL_BALANCE_REMINDER', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/orders'], 'Solde à payer'),
-    ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Délai de paiement dépassé'),
-    ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/orders'], 'Paiement remboursé'),
-    ess('HALL_VALIDATION_DECIDED', [I, P, M], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls'], 'Salle refusée'),
+    // Lot 10b (migration 20261126000003, modification signalée au rapport) : 4 canaux à chaque étape ; liens vers la
+    // réservation (« Mes réservations » du client, espace de la salle) ; 4 types de plus et 2 avis aux administrateurs.
+    ess('HALL_RESERVATION_PENDING', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Réservation demandée'),
+    ess('HALL_RESERVATION_REQUESTED', [I, P, M, S], 'PARTNER', 'B', 'HALL_RESERVATION', ['/partner/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Nouvelle réservation'),
+    ess('HALL_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Réservation confirmée'),
+    ess('HALL_RESERVATION_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Réservation annulée'),
+    ess('HALL_RESERVATION_CANCELLED_PRO', [I, P, M, S], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Réservation annulée'),
+    ess('HALL_BALANCE_PAID', [I, P, M, S], 'ANY', 'B', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59', '/partner/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Réservation payée'),
+    ess('HALL_BALANCE_REMINDER', [I, P, M, S], 'CLIENT', 'B', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Solde à payer'),
+    ess('HALL_PAYMENT_DEADLINE_PASSED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Délai de paiement dépassé'),
+    ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Paiement remboursé'),
+    ess('HALL_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Remboursement versé'),
+    ess('HALL_EVE_REMINDER', [I, P, M, S], 'ANY', 'B', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59', '/partner/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'C’est demain'),
+    ess('HALL_EARNINGS_AVAILABLE', [I, P, M, S], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls/recettes'], 'Recettes disponibles'),
+    ess('HALL_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle refusée'),
+    ess('ADMIN_HALL_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle à valider', 'halls.validate'),
+    ess('ADMIN_HALL_CHANGED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle modifiée', 'halls.validate'),
+    // Contre-vérification du lot 10b (ajout signalé) : droits d'un administrateur donnés ou retirés
+    ess('ADMIN_PERMISSIONS_CHANGED', [I, P, M, S], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/mes-droits'], 'Vos droits ont changé'),
+    ess('ADMIN_PERMISSIONS_ALERT', [I, P, M, S], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/users'], 'Droits d’un administrateur modifiés'),
     // Lot 11a (migration 20261123000108, ajout signalé au rapport) : parcours de réservation d'une table, 4 canaux à chaque étape
     ess('TABLE_RESERVATION_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'TABLE_RESERVATION', ['/orders'], 'Table réservée'),
     ess('TABLE_REQUEST_SENT', [I, P, M, S], 'CLIENT', 'B', 'TABLE_RESERVATION', ['/orders'], 'Demande envoyée'),
@@ -276,7 +287,8 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('TABLE_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/orders'], 'Paiement remboursé'),
     opt('TABLE_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT', 'REMINDER', ['/orders'], 'Rappel de votre réservation'),
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'TABLE_RESERVATION', ['/partner/tables'], 'Établissement refusé'),
-    ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/services'], 'Établissement à valider', 'partners.validate'),
+    // Lot 10b (point 1, modification signalée) : droit halls.validate
+    ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/services'], 'Établissement à valider', 'halls.validate'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)
@@ -417,7 +429,12 @@ function variants(type: string, base: Data): Data[] {
     // Lot 9 quinquies (D1) : texte nominatif (une candidature) et texte regroupé au pire cas (99 et 99).
     if (type === 'ADMIN_REVIEW_SMS') return [base, dataFrom(base, { partner_count: 99, event_count: 99 }, ['company']), dataFrom(base, { partner_count: 0, event_count: 99 }, ['company']),
         // Lot 11a (ajout signalé) : établissements à valider, pire cas des trois parties
-        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99 }, ['company'])];
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99 }, ['company']),
+        // Lot 10b (ajout signalé) : salles à valider, pire cas des quatre parties
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99 }, ['company']),
+        // Contre-vérification du lot 10b (ajout signalé) : salles validées modifiées, seules puis avec tout le reste
+        dataFrom(base, { partner_count: 0, event_count: 0, venue_count: 0, hall_count: 0, hall_changed_count: 99 }, ['company']),
+        dataFrom(base, { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99, hall_changed_count: 99 }, ['company'])];
     return type === 'ADMIN_EVENT_CHANGED' ? adminChangeVariants(base) : [base]; // lot 9 ter (B.7 T-B3) : parties PRICE et CHANNELS
 }
 
@@ -924,6 +941,46 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 'Event Village : votre établissement Le Grand Bleu est validé : il est visible et réservable.'],
             ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 0, venue_count: 1 }, ['company'],
                 `Event Village : 1 établissement(s) attendent votre validation : ${U}/admin/dashboard`],
+            // Lot 10b (migration 20261126000003) : SMS ajoutés au parcours des salles, texte exact (exemples du catalogue). Ajout signalé.
+            ['HALL_RESERVATION_PENDING', {}, [],
+                'Event Village : réservation demandée : Salle des fetes de Ngor, du 5 déc. au 6 déc. Payez 126 000 F CFA avant 14:32 pour garder la date.'],
+            ['HALL_RESERVATION_REQUESTED', {}, [],
+                'Event Village : nouvelle réservation de Salle des fetes de Ngor, du 5 déc. au 6 déc. Acompte payé : 126 000 F CFA.'],
+            ['HALL_RESERVATION_REQUESTED', { paid_amount: 420000 }, [],
+                'Event Village : nouvelle réservation de Salle des fetes de Ngor, du 5 déc. au 6 déc. Payée : 420 000 F CFA.'],
+            ['HALL_BALANCE_PAID', {}, [],
+                'Event Village : solde payé, merci ! Votre réservation de Salle des fetes de Ngor, du 5 déc. au 6 déc., est entièrement payée.'],
+            ['HALL_BALANCE_PAID', { recipient_role: 'PARTNER' }, [],
+                'Event Village : le client a payé le solde de Salle des fetes de Ngor, du 5 déc. au 6 déc. Total payé : 420 000 F CFA.'],
+            ['HALL_RESERVATION_CANCELLED_PRO', {}, [],
+                'Event Village : réservation annulée par le client : Salle des fetes de Ngor, du 5 déc. au 6 déc. Le client récupère 63 000 F CFA. La date est libre.'],
+            ['HALL_REFUND_PAID', {}, [],
+                'Event Village : 63 000 F CFA vous ont été versés sur Wave pour la réservation de Salle des fetes de Ngor.'],
+            ['HALL_EVE_REMINDER', {}, [],
+                'Event Village : rappel, votre réservation de Salle des fetes de Ngor commence demain. Profitez-en bien !'],
+            ['HALL_EVE_REMINDER', { recipient_role: 'PARTNER', start_time: '18:00' }, [],
+                'Event Village : rappel, Salle des fetes de Ngor est réservée demain à 18:00. Le client a tout payé.'],
+            ['HALL_EARNINGS_AVAILABLE', {}, [],
+                'Event Village : 400 000 F CFA disponibles pour Salle des fetes de Ngor, du 5 déc. au 6 déc. Retrait depuis votre espace.'],
+            ['HALL_VALIDATION_DECIDED', {}, [],
+                'Event Village : votre salle Salle des fetes de Ngor n\'est pas acceptée. Motif : Photos manquantes.'],
+            ['HALL_VALIDATION_DECIDED', { decision: 'VALIDER' }, ['reason'],
+                'Event Village : votre salle Salle des fetes de Ngor est validée : elle sera visible et réservable.'],
+            ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 0, venue_count: 0, hall_count: 1 }, ['company'],
+                `Event Village : 1 salle(s) attendent votre validation : ${U}/admin/dashboard`],
+            ['ADMIN_REVIEW_SMS', { partner_count: 99, event_count: 99, venue_count: 99, hall_count: 99 }, ['company'],
+                `Event Village : 396 demandes attendent votre validation : ${U}/admin/dashboard`],
+            // Contre-vérification du lot 10b (ajouts signalés) : salles validées modifiées ; droits d'un administrateur
+            ['ADMIN_REVIEW_SMS', { partner_count: 0, event_count: 0, venue_count: 0, hall_count: 0, hall_changed_count: 2 }, ['company'],
+                `Event Village : 2 salle(s) validée(s) modifiée(s) à vérifier : ${U}/admin/dashboard`],
+            ['ADMIN_PERMISSIONS_CHANGED', {}, [],
+                'Event Village : vous pouvez maintenant valider les salles et les établissements.'],
+            ['ADMIN_PERMISSIONS_CHANGED', { added: [], removed: ['halls.validate'] }, [],
+                'Event Village : vous ne pouvez plus valider les salles et les établissements.'],
+            ['ADMIN_PERMISSIONS_CHANGED', { added: ['halls.validate', 'events.write'], removed: ['users.write'] }, [],
+                `Event Village : vos droits d'administration ont changé : 2 ajouté(s), 1 retiré(s). Détail : ${U}/admin/mes-droits`],
+            ['ADMIN_PERMISSIONS_ALERT', {}, [],
+                `Event Village : Moussa Diop a modifié les droits de Ndeye Administrat... (1 ajouté(s), 1 retiré(s)). Vérifiez : ${U}/admin/users`],
             // Finition 4 (décision du client du 19/11) : textes exacts des SMS nouveaux et des variantes (ajout signalé au rapport)
             ['CONTROLLER_EVENT_STATUS', {}, [],
                 `Event Village : Gala de la Teranga est suspendu : le scan des billets est fermé jusqu'à nouvel avis.`],

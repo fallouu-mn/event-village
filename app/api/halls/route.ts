@@ -1,84 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRoleClient } from '@/lib/supabase/server';
+import { apiFailure } from '@/lib/api/public-error';
 import { guardFeature } from '@/lib/features/flags';
+import { HallRefusal, searchHalls } from '@/lib/halls/queries';
+import { badRequest, DAY_RE, intParam, refusalResponse } from '@/lib/halls/route-helpers';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/halls
- * Récupère le catalogue public des salles de fête actives
+ * GET /api/halls — recherche publique des salles.
+ * Lot 10b (point 2) : lieu (texte libre `q`, ville `city`), date `date` (AAAA-MM-JJ) et durée `days` (1 à 30 jours :
+ * seules les salles libres sur toute la période), invités `capacity`, prix maximum par jour `price_max`, tri `sort`
+ * (« recent » par défaut, ou « price »), page `offset` / `limit` (48 au plus). Recherche faite en base (hall_search) :
+ * salles actives, validées, d'une partenaire VALIDE, avec un prix ; colonnes publiques seulement (ni réservation, ni
+ * client, ni contact de la partenaire).
+ * Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé).
  */
 export async function GET(req: NextRequest) {
     try {
-        // Lot 7 (7.3, D11, D56) : GET public, interrupteur d'abord (404 si le service est fermé)
         const closed = await guardFeature('halls', 'GET /api/halls');
         if (closed) return closed;
-        const supabase = getServiceRoleClient();
-        const { searchParams } = new URL(req.url);
-        const search = searchParams.get('q')?.trim().toLowerCase();
-        const locationFilter = searchParams.get('location');
-
-        const { data: halls, error } = await supabase
-            .from('halls')
-            .select(`
-                id,
-                name,
-                description,
-                capacity,
-                price_per_day,
-                deposit_percentage,
-                images,
-                is_active,
-                partner_id,
-                partners!inner(id, company_name, commercial_name, status)
-            `)
-            .eq('is_active', true)
-            // Lot 10a : seules les salles validées par l'administration, d'un partenaire validé, sont publiques
-            .eq('validation_status', 'VALIDEE')
-            .eq('partners.status', 'VALIDE')
-            .order('name', { ascending: true });
-
-        if (error) {
-            console.error('[API /api/halls] Erreur Supabase:', error);
-            return NextResponse.json({ error: 'Impossible de charger les salles.' }, { status: 500 });
+        const sp = req.nextUrl.searchParams;
+        const date = sp.get('date')?.trim() || null;
+        if (date !== null && !DAY_RE.test(date)) return badRequest('Choisissez une date valable.');
+        const days = intParam(sp.get('days'));
+        const capacity = intParam(sp.get('capacity'));
+        const priceMax = intParam(sp.get('price_max'));
+        const limit = intParam(sp.get('limit'));
+        const offset = intParam(sp.get('offset'));
+        for (const v of [days, capacity, priceMax, limit, offset]) {
+            if (Number.isNaN(v)) return badRequest('Un des filtres n’est pas valable : vérifiez la date, le nombre d’invités et le prix.');
         }
-
-        const formatted = (halls || []).map((h: any) => {
-            const price = Number(h.price_per_day);
-            const image = (h.images && h.images.length > 0)
-                ? h.images[0]
-                : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&auto=format&fit=crop&q=80';
-
-            return {
-                id: h.id,
-                name: h.name,
-                partnerName: h.partners?.commercial_name || h.partners?.company_name || 'Espace Réception',
-                location: 'Dakar & Environs, Sénégal',
-                capacityMin: Math.max(50, Math.floor(h.capacity * 0.3)),
-                capacityMax: h.capacity,
-                areaSqm: Math.max(150, Math.floor(h.capacity * 1.5)),
-                pricePerDay: price,
-                priceFormatted: `${price.toLocaleString('fr-FR')} FCFA / jour`,
-                depositPercentage: h.deposit_percentage || 30,
-                imageUrl: image,
-                amenities: ['Climatisation', 'Sonorisation & Régie', 'Éclairage d’ambiance', 'Parking sécurisé'],
-                isAvailable: true,
-                description: h.description || 'Magnifique salle de réception modulable pour tous vos événements.',
-            };
+        const result = await searchHalls({
+            q: sp.get('q'),
+            city: sp.get('city'),
+            date,
+            days,
+            capacity,
+            priceMax,
+            sort: sp.get('sort') === 'price' ? 'price' : 'recent',
+            limit: limit ?? 24,
+            offset: offset ?? 0,
         });
-
-        let results = formatted;
-        if (search) {
-            results = results.filter(h =>
-                h.name.toLowerCase().includes(search) ||
-                h.partnerName.toLowerCase().includes(search) ||
-                h.location.toLowerCase().includes(search)
-            );
-        }
-
-        return NextResponse.json({ halls: results });
+        return NextResponse.json({ success: true, ...result });
     } catch (err: unknown) {
-        console.error('[API /api/halls] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+        if (err instanceof HallRefusal) return refusalResponse(err);
+        return apiFailure('GET /api/halls', err, { message: 'Impossible de charger les salles.', code: 'HALLS_UNAVAILABLE', status: 500 });
     }
 }

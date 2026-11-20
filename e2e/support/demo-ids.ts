@@ -10,6 +10,9 @@
  * Lot 9 ter (contrat D.3.2, amendement 3 de D ; commit fix(9t.seed)) : version 4, avec le contrôleur de l'événement à zones
  * (`accounts.controleurZones`), l'événement à zones VALIDE (`events.zones`) et l'événement presque complet
  * (`events.dernieresPlaces`), ajoutés en fin de liste.
+ * Lot 10b (contrôle responsive et captures des salles de fête) : version 5, avec les salles de la partenaire de démonstration
+ * (`halls.validee`, `halls.enAttente`, `halls.refusee`) et la réservation du client sur la salle validée
+ * (`halls.reservation`, en attente de paiement).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +22,7 @@ export const DEMO_IDS_FILE = path.join(E2E_OUTPUT_DIR, 'demo-ids.json');
 export const CAPTURES_DIR = path.join(E2E_OUTPUT_DIR, 'captures');
 export const RESULTS_DIR = path.join(E2E_OUTPUT_DIR, 'results');
 
-export const DEMO_IDS_VERSION = 4;
+export const DEMO_IDS_VERSION = 5;
 
 export const DEMO_ACCOUNT_KEYS = [
     'organisateur', 'organisateur2', 'organisateur3', 'admin', 'client', 'controleur', 'controleur2', 'controleur3',
@@ -48,6 +51,22 @@ export interface DemoEvent {
     organizer: DemoAccountKey;
 }
 
+/** Lot 10b : salles de la partenaire de démonstration (organisateur), une par statut de validation. */
+export const DEMO_HALL_KEYS = ['validee', 'enAttente', 'refusee'] as const;
+export type DemoHallKey = typeof DEMO_HALL_KEYS[number];
+
+export interface DemoHall {
+    id: string;
+    name: string;
+    /** Statut de validation écrit par hall_validation_decide (VALIDEE, REFUSEE) ou laissé à la création (EN_ATTENTE_VALIDATION). */
+    validationStatus: 'VALIDEE' | 'EN_ATTENTE_VALIDATION' | 'REFUSEE';
+}
+
+export interface DemoHalls extends Record<DemoHallKey, DemoHall> {
+    /** Réservation du client de démonstration sur la salle validée (hall_reserve), en attente de paiement ; date AAAA-MM-JJ. */
+    reservation: { id: string; startDate: string };
+}
+
 export interface DemoIds {
     version: typeof DEMO_IDS_VERSION;
     generatedAt: string;
@@ -70,6 +89,8 @@ export interface DemoIds {
     transfers: { incomingId: string };
     /** Lot 7 (7.3) : paiements du client, en attente (réservation active), réussi et refusé (pages /paiement/<id>). */
     payments: { pending: string; success: string; failed: string };
+    /** Lot 10b : salles de fête de l'organisateur et réservation du client (pages des salles, responsive et captures). */
+    halls: DemoHalls;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -107,6 +128,9 @@ export function readDemoIds(): DemoIds {
         ...(['pending', 'success', 'failed'] as const)
             .filter((k) => !UUID_RE.test(String(parsed.payments?.[k] ?? ''))).map((k) => `payments.${k}`),
         ...(parsed.accounts?.partenaireNeuf?.partnerId ? [] : ['accounts.partenaireNeuf.partnerId']),
+        ...DEMO_HALL_KEYS.filter((k) => !UUID_RE.test(String(parsed.halls?.[k]?.id ?? '')) || !parsed.halls?.[k]?.name).map((k) => `halls.${k}`),
+        ...(UUID_RE.test(String(parsed.halls?.reservation?.id ?? '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.halls?.reservation?.startDate ?? ''))
+            ? [] : ['halls.reservation']),
     ];
     if (missing.length > 0) throw new Error(`[e2e] demo-ids.json incomplet : ${missing.join(', ')}.`);
     cached = parsed as DemoIds;

@@ -74,9 +74,12 @@ describe('3. SMS du parcours : un segment GSM-7 dans le pire cas', () => {
             assert.doesNotMatch(text, /\.{4}/, `points de suspension suivis d’un point : ${text}`);
         });
     }
-    test('SMS seulement pour la confirmation, le rappel, le délai dépassé, l’annulation et le remboursement', () => {
-        const withSms = Object.entries(catalog).filter(([type, t]) => type.startsWith('HALL_') && t.channels.includes('SMS')).map(([type]) => type).sort();
-        assert.deepEqual(withSms, ['HALL_BALANCE_REMINDER', 'HALL_PAYMENT_DEADLINE_PASSED', 'HALL_PAYMENT_REFUNDED', 'HALL_RESERVATION_CANCELLED', 'HALL_RESERVATION_CONFIRMED']);
+    // Lot 10b (décision du client, modification signalée au rapport) : SMS à chaque étape du parcours des salles
+    test('SMS à chaque étape du parcours des salles (décision du client, lot 10b)', () => {
+        const halls = Object.entries(catalog).filter(([type]) => type.startsWith('HALL_'));
+        const withoutSms = halls.filter(([, t]) => !t.channels.includes('SMS')).map(([type]) => type).sort();
+        assert.deepEqual(withoutSms, []);
+        assert.equal(halls.length, 13);
     });
 });
 
