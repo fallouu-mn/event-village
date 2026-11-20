@@ -76,6 +76,8 @@ export default defineConfig({
         { name: 'pwa', testMatch: /installable\.spec\.ts$/, use: MOBILE, fullyParallel: false },
         // Sécurité (déconnexion sans réseau) : un compte créé par le test, réseau coupé, horloge avancée
         { name: 'deconnexion', testMatch: /deconnexion\.spec\.ts$/, use: MOBILE, fullyParallel: false },
+        // Stabilité (mini-lot stabilite/connexion) : connexion d'un ADMIN, aucune page rechargée après l'arrivée
+        { name: 'connexion-course', testMatch: /connexion-course\.spec\.ts$/, use: DESKTOP, fullyParallel: false },
         { name: 'perf', testMatch: /perf\.spec\.ts$/, use: { ...MOBILE, reducedMotion: 'no-preference' }, fullyParallel: false },
         { name: 'emails', testMatch: /emails\.spec\.ts$/, fullyParallel: false },
         { name: 'dev-page', testMatch: /dev-page\.spec\.ts$/, fullyParallel: false },
