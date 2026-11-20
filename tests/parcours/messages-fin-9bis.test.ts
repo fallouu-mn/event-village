@@ -157,7 +157,11 @@ describe('9b.37 R72 : avis in-app à la partenaire à la fin de l\'événement, 
 // ── R78 : scans regroupés par commande ─────────────────────────────────────
 
 describe('9b.37 R78 : les avis de scan d\'une même commande sont regroupés', () => {
-    test('commande de 4 billets scannée : une seule ligne in-app TICKET_SCANNED, ticket_count = 4', async () => {
+    // Finition 4 (décision du client du 19/11, point 3 ; modification signalée au rapport) : au premier passage du spectateur,
+    // la bienvenue (ENTRY_WELCOME, 4 canaux, une fois par spectateur et par événement) remplace l'avis « Entrée validée » de
+    // ce billet ; les 3 billets suivants de la commande gardent une seule ligne TICKET_SCANNED groupée (ticket_count = 3) ;
+    // le merci du lendemain (ENTRY_THANKS) est mis en file pour 11:00 le jour qui suit le début.
+    test('commande de 4 billets scannée : bienvenue une fois, une seule ligne in-app TICKET_SCANNED pour les 3 suivants, merci du lendemain', async () => {
         const ev = await publishedEvent('Scans');
         const controller = await newController(partner, ev.eventId, { label: 'fin-scan' });
         const buyer = await newBuyer('fin-scan');
@@ -169,6 +173,14 @@ describe('9b.37 R78 : les avis de scan d\'une même commande sont regroupés', (
         }
         const rows = await outboxRows({ type: 'TICKET_SCANNED', eventId: ev.eventId, userId: buyer.userId, channel: 'IN_APP' });
         assert.equal(rows.length, 1, `une seule ligne in-app pour la commande : ${describeRows(rows)}`);
-        assert.equal(Number(rows[0].template_data.ticket_count), 4, `ticket_count = 4 : ${describeRows(rows)}`);
+        assert.equal(Number(rows[0].template_data.ticket_count), 3, `ticket_count = 3 (le premier billet a la bienvenue) : ${describeRows(rows)}`);
+        const welcome = await outboxRows({ type: 'ENTRY_WELCOME', eventId: ev.eventId, userId: buyer.userId });
+        assert.deepEqual(welcome.map((r) => r.channel).sort(), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], `bienvenue une fois, 4 canaux : ${describeRows(welcome)}`);
+        assert.equal(typeof welcome[0].template_data.organizer, 'string', 'nom de l’organisateur dans la bienvenue');
+        const thanks = await outboxRows({ type: 'ENTRY_THANKS', eventId: ev.eventId, userId: buyer.userId, channel: 'IN_APP' });
+        assert.equal(thanks.length, 1, `merci du lendemain : ${describeRows(thanks)}`);
+        const due = new Date(thanks[0].due_at);
+        assert.equal(`${String(due.getUTCHours()).padStart(2, '0')}:${String(due.getUTCMinutes()).padStart(2, '0')}`, '11:00', `merci à 11:00, heure de Dakar : ${thanks[0].due_at}`);
+        assert.equal(thanks[0].topic, 'AFTER_EVENT', 'désactivable (sujet « Après l’événement »)');
     });
 });

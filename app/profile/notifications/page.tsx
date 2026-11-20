@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BellRing, CalendarClock, LogIn, ShieldCheck, TrendingUp } from 'lucide-react';
+import { BellRing, CalendarClock, HeartHandshake, LogIn, Newspaper, ShieldCheck, TrendingUp } from 'lucide-react';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -55,6 +55,9 @@ const TOPIC_ICONS: Record<string, React.ElementType> = {
   REMINDERS: CalendarClock,
   EVENT_UPDATES: BellRing,
   PRO_ACTIVITY: TrendingUp,
+  // Finition 4 : merci du lendemain, résumé du matin
+  AFTER_EVENT: HeartHandshake,
+  SALES_SUMMARY: Newspaper,
 };
 
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';

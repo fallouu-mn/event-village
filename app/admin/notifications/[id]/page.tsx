@@ -81,7 +81,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const CODE_TOKEN_RE = /\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b/g;
 
 const STAGE_LABELS: Record<string, string> = { ENQUEUE: 'À la mise en file', CLAIM: 'Au moment de l’envoi' };
-const OUTCOME_LABELS: Record<string, string> = { SEND: 'Envoyer', SKIP: 'Ne pas envoyer', CANCEL: 'Annuler', WAIT: 'Attendre le résultat de la notification push' };
+const OUTCOME_LABELS: Record<string, string> = {
+  SEND: 'Envoyer', SKIP: 'Ne pas envoyer', CANCEL: 'Annuler', WAIT: 'Attendre le résultat de la notification push',
+  // Finition 4 : message non urgent préparé pendant la plage de nuit, reporté à sa fin
+  DEFER: 'Reporter à la fin de la plage de nuit',
+};
 const FAMILY_LABELS: Record<string, string> = { ESSENTIAL: 'Indispensable (toujours envoyée)', OPTIONAL: 'Optionnelle (selon les préférences)' };
 const TOPIC_LABELS: Record<string, string> = {
   REMINDERS: 'Rappels avant l’événement',
@@ -89,6 +93,9 @@ const TOPIC_LABELS: Record<string, string> = {
   // que la suspension et la reprise (même libellé que GET /api/notifications/preferences).
   EVENT_UPDATES: 'Suspension et reprise d’un événement',
   PRO_ACTIVITY: 'Activité des ventes',
+  // Finition 4
+  SALES_SUMMARY: 'Résumé du matin',
+  AFTER_EVENT: 'Après l’événement',
 };
 const SMS_POLICY_LABELS: Record<string, string> = {
   ALWAYS: 'SMS toujours envoyé',
@@ -228,7 +235,10 @@ function DecisionList({ decision }: { decision: Row }) {
       )}
       {quiet && (
         <Info label="Plage sans SMS">
-          {`De ${String(quiet.start ?? '?')} h à ${String(quiet.end ?? '?')} h (heure de Dakar) ; heure de la décision : ${String(quiet.hour ?? '?')} h, ${quiet.in_quiet === true ? 'dans la plage' : 'hors de la plage'}`}
+          {quiet.start === undefined && quiet.night === true
+            // Correctif main-414 (19/11) : décision ancienne d'un SMS aux admins, sans les heures de la plage
+            ? `SMS aux administrateurs reporté à la fin de la nuit${str(quiet.until) ? ` : ${formatDateTime(str(quiet.until)!)}` : ''}`
+            : `De ${String(quiet.start ?? '?')} h à ${String(quiet.end ?? '?')} h (heure de Dakar) ; heure de la décision : ${String(quiet.hour ?? '?')} h, ${quiet.in_quiet === true ? 'dans la plage' : 'hors de la plage'}${str(quiet.until) ? ` ; reporté au ${formatDateTime(str(quiet.until)!)}` : ''}${quiet.event_soon === true ? ' ; événement dans moins de 12 h ou en cours : envoyé sans attendre' : ''}`}
         </Info>
       )}
       {smsPolicy && <Info label="Règle du SMS">{SMS_POLICY_LABELS[smsPolicy] ?? 'Règle non répertoriée'}</Info>}

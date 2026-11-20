@@ -36,7 +36,7 @@
 import { formatDate, formatDateTime, formatFcfa, formatInteger, formatTime } from '@/lib/format';
 import { internalActionUrl } from './action-url';
 import type {
-    AdminPermission, Audience, Channel, EmailSyncType, Family, NotificationType, SuspendedPolicy, SyncType, TemplateData, Topic,
+    AdminPermission, Audience, Channel, EmailSyncType, Family, NightPolicy, NotificationType, SuspendedPolicy, SyncType, TemplateData, Topic,
 } from './catalog-types';
 import { emailHeaders, emailLayout, type EmailFact, type EmailList } from './email-layout';
 import { smsAmount, smsDateTime, smsDay, smsSegments, smsShortDateTime, smsTime, smsVar, type SmsMeasure } from './sms-format';
@@ -175,13 +175,13 @@ function money(d: object, key: string): string {
     return formatFcfa(num(d, key));
 }
 
-function signedFcfa(n: number): string {
-    return `${n > 0 ? '+' : n < 0 ? '-' : ''}${formatFcfa(Math.abs(n))}`;
+/** Design 1c : écart de caisse en mots : « Il manque 2 500 F CFA. », « 2 500 F CFA de trop. », « Aucun écart. ». */
+function cashGapText(n: number, fmt: (amount: number) => string): string {
+    if (n < 0) return `Il manque ${fmt(Math.abs(n))}.`;
+    if (n > 0) return `${fmt(n)} de trop.`;
+    return 'Aucun écart.';
 }
 
-function signedSmsAmount(n: number): string {
-    return `${n > 0 ? '+' : n < 0 ? '-' : ''}${smsAmount(Math.abs(n))}`;
-}
 
 const START_FIELDS = new Set(['start_date', 'start_time', 'start_at']);
 const END_FIELDS = new Set(['end_date', 'end_time', 'end_at']);
@@ -235,6 +235,11 @@ export interface NotificationTemplate<D> {
     suspendedPolicy: SuspendedPolicy;
     syncOnly: boolean;
     adminPermission: AdminPermission | null;
+    /**
+     * Finition 4 : DEFER = non urgent (SMS et push préparés pendant la plage de nuit reportés à sa fin), SEND = urgent.
+     * Registre : notification_types.night_policy (égalité imposée par tests/parcours/f4-registre.test.ts).
+     */
+    nightPolicy: NightPolicy;
     /** Valeur de notifications.type (libellé dans notification-types.ts) ; null sans canal IN_APP. */
     inAppType: string | null;
     /** Chemin interne (« / », jamais « // » ni schéma) ; null pour un type sans lien. */
@@ -255,6 +260,8 @@ interface Spec<D> {
     audience: Audience;
     suspendedPolicy: SuspendedPolicy;
     adminPermission?: AdminPermission | null;
+    /** Finition 4 : défaut DEFER pour la famille OPTIONAL, SEND pour l'indispensable. */
+    night?: NightPolicy;
     inAppType: string | null;
     link: ((d: D) => string) | null;
     inApp?: (d: D) => { title: string; content: string };
@@ -307,6 +314,7 @@ function define<T extends NotificationType>(type: T, spec: Spec<TemplateData[T]>
         suspendedPolicy: spec.suspendedPolicy,
         syncOnly: false,
         adminPermission: spec.adminPermission ?? null,
+        nightPolicy: spec.night ?? (family === 'OPTIONAL' ? 'DEFER' : 'SEND'),
         inAppType: spec.inAppType,
         link: spec.link,
         sample: spec.sample,
@@ -344,7 +352,7 @@ function define<T extends NotificationType>(type: T, spec: Spec<TemplateData[T]>
 function defineSync<T extends SyncType>(type: T, label: string): NotificationTemplate<TemplateData[T]> {
     return {
         type, label, family: 'ESSENTIAL', topic: null, channels: ['SMS'], audience: 'ANY', suspendedPolicy: 'ALLOW', syncOnly: true,
-        adminPermission: null, inAppType: null, link: null, sample: { purpose: 'LOGIN' } as TemplateData[T],
+        adminPermission: null, nightPolicy: 'SEND', inAppType: null, link: null, sample: { purpose: 'LOGIN' } as TemplateData[T],
     };
 }
 
@@ -352,7 +360,7 @@ function defineSync<T extends SyncType>(type: T, label: string): NotificationTem
 function defineSyncEmail<T extends EmailSyncType>(type: T, label: string): NotificationTemplate<TemplateData[T]> {
     return {
         type, label, family: 'ESSENTIAL', topic: null, channels: ['EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', syncOnly: true,
-        adminPermission: null, inAppType: null, link: null, sample: { purpose: 'EMAIL_VERIFY' } as TemplateData[T],
+        adminPermission: null, nightPolicy: 'SEND', inAppType: null, link: null, sample: { purpose: 'EMAIL_VERIFY' } as TemplateData[T],
     };
 }
 
@@ -402,6 +410,15 @@ const SAMPLE_MONEY = { cashout_id: SAMPLE_ID.cashout, amount: 25_000, operator: 
 const eventPath = (d: object): string => `/events/${ident(d, 'event_id')}`;
 const partnerEventPath = (d: object, tab?: string): string => `/partner/events/${ident(d, 'event_id')}${tab ? `?tab=${tab}` : ''}`;
 const withdrawalPath = (d: object): string => (optText(d, 'account_kind') === 'PARRAINAGE' ? '/wallet' : '/partner/finance');
+/** Finition 4 : lien d'un avis de ventes, l'événement s'il n'y en a qu'un, sinon la liste. */
+const salesPath = (d: object): string => (optText(d, 'event_id') ? partnerEventPath(d, 'ventes') : '/partner/events');
+/** Finition 4 : entier pour un SMS, milliers séparés par une espace simple (GSM-7, jamais d'espace insécable). */
+const smsCount = (n: number): string => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+/** Finition 4 : qui a lancé un remboursement de billet (REFUND_REQUESTED). */
+function refundBy(d: object): 'CLIENT' | 'ORGANIZER' | 'ADMIN' | 'CANCELLATION' {
+    const by = optText(d, 'by');
+    return by === 'ORGANIZER' || by === 'ADMIN' || by === 'CANCELLATION' ? by : 'CLIENT';
+}
 
 // ── Changement d'un événement (lot 5, regroupé) ────────────────────────────
 
@@ -682,7 +699,7 @@ function confirmationBlocks(facts: EmailFact[], list?: EmailList): EmailBlocks {
 // montre plus ; « À venir » montre les billets qui restent. Les SMS gardent l'adresse courte /tickets (longueur comptée).
 const CATALOG = {
     PURCHASE_CONFIRMED: define('PURCHASE_CONFIRMED', {
-        label: 'Confirmation d’achat', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
+        label: 'Confirmation d’achat', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
         link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'Achat confirmé',
@@ -704,7 +721,7 @@ const CATALOG = {
         },
     }),
     FREE_TICKETS_CONFIRMED: define('FREE_TICKETS_CONFIRMED', {
-        label: 'Billets gratuits confirmés', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
+        label: 'Billets gratuits confirmés', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
         link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'Billets confirmés',
@@ -733,7 +750,8 @@ const CATALOG = {
     // Lot 9 bis (11.2 M3, R79, G.49) : in-app, push et email au compte connu ; la ligne SMS reste sans compte (AR15).
     INVITATION_RECEIVED: define('INVITATION_RECEIVED', {
         label: 'Invitation reçue', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
-        link: () => '/tickets?tab=recus',
+        // Finition 4 (point 5, E-42) : les billets d'une invitation sont dans « À venir » (« Reçus » ne montre que les transferts)
+        link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({
             title: 'Invitation reçue',
             content: `${plural(count(d, 'ticket_count'), 'invitation', 'invitations')} pour ${q(text(d, 'title'))} le ${formatDateTime(iso(d, 'start_at'))} : vos billets sont dans Mes billets.`,
@@ -759,15 +777,20 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     TRANSFER_EXPIRED: define('TRANSFER_EXPIRED', {
-        label: 'Transfert expiré', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        label: 'Transfert expiré', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        night: 'DEFER',
         link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Transfert expiré', content: `Votre billet pour ${q(text(d, 'title'))} n'a pas été accepté à temps : il reste dans vos billets.` }),
+        // Finition 4 (point 4) : billet revenu à l'expéditeur
+        sms: (d, ctx) => `${SMS_PREFIX}votre billet ${smsVar(text(d, 'title'), 30)} n'a pas été accepté à temps : il vous revient. ${appLink(ctx, '/tickets')}`,
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     TRANSFER_CLAIMED_SENDER: define('TRANSFER_CLAIMED_SENDER', {
-        label: 'Transfert accepté (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        label: 'Transfert accepté (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        night: 'DEFER',
         link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Billet accepté', content: `Votre billet pour ${q(text(d, 'title'))} a été accepté par son destinataire.` }),
+        sms: (d, ctx) => `${SMS_PREFIX}votre billet ${smsVar(text(d, 'title'), 30)} a été accepté par son destinataire. ${appLink(ctx, '/tickets')}`,
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     // Lot 7 (7.9, D88, D91, D94) : canal EMAIL ajouté (registre : migration 20261105000007) ; NOUVEAU numéro du
@@ -845,15 +868,17 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, public_notice: 'Intempéries annoncées sur Dakar.', refund_mode: 'AUTO' },
     }),
     EVENT_SUSPENDED_HOLDER: define('EVENT_SUSPENDED_HOLDER', {
-        label: 'Suspension d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
+        label: 'Suspension d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
         inAppType: 'EVENT_STATUS', link: eventPath,
         inApp: (d) => ({ title: 'Événement suspendu', content: `${q(text(d, 'title'))} est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.` }),
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.`,
         sample: { ...SAMPLE_EVENT },
     }),
     EVENT_REACTIVATED_HOLDER: define('EVENT_REACTIVATED_HOLDER', {
-        label: 'Reprise d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
+        label: 'Reprise d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
         inAppType: 'EVENT_STATUS', link: eventPath,
         inApp: (d) => ({ title: 'Événement de nouveau en ligne', content: `${q(text(d, 'title'))} reprend comme prévu. Vos billets restent valables.` }),
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} reprend comme prévu. Vos billets restent valables.`,
         sample: { ...SAMPLE_EVENT },
     }),
     // Lot 9 bis (11.2 M1, R14) : indispensable, sans sujet, + EMAIL ; variantes report (R32) et adresse retirée (R80).
@@ -886,10 +911,30 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, sms_policy: 'IF_NO_PUSH' },
     }),
     REFUND_REQUESTED: define('REFUND_REQUESTED', {
-        label: 'Remboursement demandé', channels: ['IN_APP', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_REQUESTED',
+        label: 'Remboursement demandé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_REQUESTED',
         link: () => '/tickets?tab=historique',
-        inApp: (d) => ({ title: 'Remboursement demandé', content: `Le remboursement de votre billet pour ${q(text(d, 'title'))} (${money(d, 'amount')}) est en cours.` }),
-        sample: { ...SAMPLE_EVENT, cashout_id: SAMPLE_ID.cashout, amount: 5_000 },
+        // Finition 4 (point 4, E-45) : qui a lancé le remboursement (by) ; SMS et push seulement quand ce n'est pas le client
+        // (la mise en file restreint les canaux : le client et l'annulation n'ont ni SMS ni, pour l'annulation, de push)
+        inApp: (d) => {
+            const by = refundBy(d);
+            if (by === 'ORGANIZER' || by === 'ADMIN') {
+                const who = by === 'ADMIN' ? 'l\'équipe Event Village' : 'l\'organisateur';
+                return {
+                    title: by === 'ADMIN' ? 'Billet annulé par Event Village' : 'Billet annulé par l\'organisateur',
+                    content: `Votre billet pour ${q(text(d, 'title'))} est annulé par ${who}. Le remboursement de ${money(d, 'amount')} est lancé sur votre compte ${operatorLabel(field(d, 'operator'))}. Vous serez prévenu dès qu'il est versé.`,
+                };
+            }
+            return { title: 'Remboursement en cours', content: `Le remboursement de votre billet pour ${q(text(d, 'title'))} (${money(d, 'amount')}) est en cours. Vous serez prévenu dès qu'il est versé.` };
+        },
+        sms: (d) => {
+            const by = refundBy(d);
+            if (by === 'ORGANIZER' || by === 'ADMIN') {
+                const who = by === 'ADMIN' ? 'l\'équipe Event Village' : 'l\'organisateur';
+                return `${SMS_PREFIX}billet ${smsVar(text(d, 'title'), 25)} annulé par ${who} : remboursement de ${smsAmount(num(d, 'amount'))} en cours sur votre compte ${operatorLabel(field(d, 'operator'))}.`;
+            }
+            return `${SMS_PREFIX}le remboursement de votre billet ${smsVar(text(d, 'title'), 30)} (${smsAmount(num(d, 'amount'))}) est en cours.`;
+        },
+        sample: { ...SAMPLE_EVENT, cashout_id: SAMPLE_ID.cashout, amount: 5_000, operator: 'ORANGE_MONEY', by: 'ORGANIZER' },
     }),
     REFUND_PAID: define('REFUND_PAID', {
         label: 'Remboursement versé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROCESSED',
@@ -908,7 +953,7 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, cashout_id: SAMPLE_ID.cashout, amount: 5_000, operator: 'WAVE', account_kind: 'PARRAINAGE' },
     }),
     PASSWORD_CHANGED: define('PASSWORD_CHANGED', {
-        label: 'Mot de passe modifié', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
+        label: 'Mot de passe modifié', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
         link: () => '/profile',
         inApp: () => ({
             title: 'Mot de passe modifié',
@@ -935,7 +980,7 @@ const CATALOG = {
     // Lot 9 quater (A9 : AUD-34) : l'adresse en attente sur ce compte vient d'être validée par un autre compte ; elle
     // reste en attente ici jusqu'à la confirmation par le titulaire (son lien répond alors « adresse déjà utilisée »).
     EMAIL_CLAIMED_ELSEWHERE: define('EMAIL_CLAIMED_ELSEWHERE', {
-        label: 'Adresse email validée par un autre compte', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
+        label: 'Adresse email validée par un autre compte', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'BLOCK', inAppType: 'SECURITY',
         link: () => '/profile',
         inApp: () => ({
             title: 'Adresse email validée par un autre compte',
@@ -952,6 +997,8 @@ const CATALOG = {
     }),
     EVENT_VALIDATED: define('EVENT_VALIDATED', {
         label: 'Événement validé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
+        // Finition 4 (point 1) : décision de l'administration sans urgence, reportée à 07:00 si prise la nuit
+        night: 'DEFER',
         link: (d) => partnerEventPath(d),
         // Finition 2b (D, E-25) : les prochaines étapes dans la cloche, le push (sans coupure) et l'email ; SMS inchangé
         inApp: (d) => ({
@@ -976,6 +1023,8 @@ const CATALOG = {
     }),
     EVENT_REJECTED: define('EVENT_REJECTED', {
         label: 'Événement non validé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
+        // Finition 4 (point 1) : décision de l'administration sans urgence, reportée à 07:00 si prise la nuit
+        night: 'DEFER',
         link: (d) => partnerEventPath(d),
         inApp: (d) => ({ title: 'Événement non validé', content: `${q(text(d, 'title'))} n'est pas validé. Motif : ${sentence(text(d, 'reason'))}` }),
         sms: (d, ctx) => `${SMS_PREFIX}événement ${smsVar(text(d, 'title'), 25)} non validé. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 40))} ${appLink(ctx, '/partner/events')}`,
@@ -996,9 +1045,11 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT },
     }),
     EVENT_PUBLISHED_BY_ADMIN: define('EVENT_PUBLISHED_BY_ADMIN', {
-        label: 'Événement publié par l’administration', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
+        label: 'Événement publié par l’administration', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
+        night: 'DEFER',
         link: (d) => partnerEventPath(d),
         inApp: (d) => ({ title: 'Événement publié', content: `${q(text(d, 'title'))} a été publié par l'administration.` }),
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} a été publié par l'administration. ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT },
     }),
     FIRST_TICKET_SOLD: define('FIRST_TICKET_SOLD', {
@@ -1011,10 +1062,19 @@ const CATALOG = {
     NEW_ORDER: define('NEW_ORDER', {
         label: 'Nouvelle commande', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channels: ['IN_APP'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
         inAppType: 'SALES', link: (d) => partnerEventPath(d, 'ventes'),
-        inApp: (d) => ({
-            title: 'Nouvelle commande',
-            content: `${plural(count(d, 'ticket_count'), 'billet vendu', 'billets vendus')} pour ${q(text(d, 'title'))} (${money(d, 'total')}).`,
-        }),
+        // Finition 4 (point 2) : cloche groupée toutes les 15 minutes (order_count commandes depuis since) ; pas de push : un type
+        // facultatif qui a le push doit avoir l'email (G.50), un email toutes les 15 minutes serait de trop
+        inApp: (d) => {
+            const orders = optNum(d, 'order_count') === null ? 1 : count(d, 'order_count');
+            const tickets = plural(count(d, 'ticket_count'), 'billet vendu', 'billets vendus');
+            if (orders > 1) {
+                return {
+                    title: 'Nouvelles ventes',
+                    content: `${tickets} pour ${q(text(d, 'title'))} en ${orders} commandes depuis ${formatTime(iso(d, 'since'))} (+${money(d, 'total')}).`,
+                };
+            }
+            return { title: 'Nouvelle commande', content: `${tickets} pour ${q(text(d, 'title'))} (+${money(d, 'total')}).` };
+        },
         sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, ticket_count: 2, total: 10_000 },
     }),
     CATEGORY_SOLD_OUT: define('CATEGORY_SOLD_OUT', {
@@ -1027,7 +1087,14 @@ const CATALOG = {
     EVENT_SOLD_OUT: define('EVENT_SOLD_OUT', {
         label: 'Événement complet', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channels: ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
         inAppType: 'EVENT_FULLY_SOLD_OUT', link: (d) => partnerEventPath(d, 'ventes'),
-        inApp: (d) => ({ title: 'Événement complet', content: `Toutes les catégories de ${q(text(d, 'title'))} sont vendues.` }),
+        // Finition 4 (point 2) : avis unique quand la dernière catégorie part (category : son nom)
+        inApp: (d) => {
+            const last = optText(d, 'category');
+            return {
+                title: 'Événement complet',
+                content: `Toutes les catégories de ${q(text(d, 'title'))} sont vendues${last ? `, la dernière : ${q(last)}` : ''}.`,
+            };
+        },
         sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} est complet, toutes les catégories sont vendues. ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT },
     }),
@@ -1038,10 +1105,11 @@ const CATALOG = {
             const justification = optText(d, 'justification');
             return {
                 title: 'Écart de caisse',
-                content: `La caisse de ${text(d, 'controller_name')} pour ${q(text(d, 'title'))} est fermée avec un écart de ${signedFcfa(num(d, 'difference'))}.${justification ? ` Justification : ${sentence(justification)}` : ''}`,
+                // Design 1c : l'écart en mots, « Il manque … » ou « … de trop »
+                content: `La caisse de ${text(d, 'controller_name')} pour ${q(text(d, 'title'))} est fermée. ${cashGapText(num(d, 'difference'), formatFcfa)}${justification ? ` Justification : ${sentence(justification)}` : ''}`,
             };
         },
-        sms: (d, ctx) => `${SMS_PREFIX}caisse de ${smsVar(text(d, 'controller_name'), 20)} fermée (${smsVar(text(d, 'title'), 25)}) avec un écart de ${signedSmsAmount(num(d, 'difference'))}. ${appLink(ctx, '/partner/events')}`,
+        sms: (d, ctx) => `${SMS_PREFIX}caisse de ${smsVar(text(d, 'controller_name'), 20)} fermée (${smsVar(text(d, 'title'), 25)}). ${cashGapText(num(d, 'difference'), smsAmount)} ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT, shift_id: SAMPLE_ID.shift, controller_name: 'Fatou Sow', difference: -2_500, declared: 47_500, justification: 'Erreur de monnaie rendue.' },
     }),
     WITHDRAWAL_PAID: define('WITHDRAWAL_PAID', {
@@ -1054,8 +1122,13 @@ const CATALOG = {
     WITHDRAWAL_REJECTED: define('WITHDRAWAL_REJECTED', {
         label: 'Retrait refusé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'WITHDRAWAL_REJECTED',
         link: withdrawalPath,
-        inApp: (d) => ({ title: 'Retrait refusé', content: `Votre retrait de ${money(d, 'amount')} a été refusé par l'opérateur. Le montant est revenu sur votre solde.` }),
-        sms: (d) => `${SMS_PREFIX}votre retrait de ${smsAmount(num(d, 'amount'))} a été refusé par l'opérateur. Le montant est revenu sur votre solde.`,
+        // Finition 4 (point 5, E-33) : « constaté non versé » (not_paid) : rien n'est parti, l'opérateur n'a rien refusé
+        inApp: (d) => (field(d, 'not_paid') === true
+            ? { title: 'Retrait non versé', content: `Votre retrait de ${money(d, 'amount')} n'a pas été versé. Le montant est revenu sur votre solde : vous pouvez demander un nouveau retrait.` }
+            : { title: 'Retrait refusé', content: `Votre retrait de ${money(d, 'amount')} a été refusé par l'opérateur. Le montant est revenu sur votre solde.` }),
+        sms: (d) => (field(d, 'not_paid') === true
+            ? `${SMS_PREFIX}votre retrait de ${smsAmount(num(d, 'amount'))} n'a pas été versé. Le montant est revenu sur votre solde.`
+            : `${SMS_PREFIX}votre retrait de ${smsAmount(num(d, 'amount'))} a été refusé par l'opérateur. Le montant est revenu sur votre solde.`),
         sample: { ...SAMPLE_MONEY },
     }),
     WITHDRAWAL_UNCERTAIN: define('WITHDRAWAL_UNCERTAIN', {
@@ -1066,46 +1139,56 @@ const CATALOG = {
         sample: { ...SAMPLE_MONEY },
     }),
     CANCEL_REFUNDS_DONE: define('CANCEL_REFUNDS_DONE', {
-        label: 'Remboursements d’une annulation terminés', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROGRESS',
+        label: 'Remboursements d’une annulation terminés', channels: ['IN_APP', 'EMAIL', 'PUSH', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROGRESS',
+        night: 'DEFER',
         link: (d) => partnerEventPath(d, 'cloture'),
         inApp: (d) => ({ title: 'Remboursements terminés', content: `Tous les remboursements en ligne de ${q(text(d, 'title'))} sont versés.` }),
+        sms: (d, ctx) => `${SMS_PREFIX}tous les remboursements en ligne de ${smsVar(text(d, 'title'), 30)} sont versés. ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT },
     }),
     CANCEL_REFUNDS_BLOCKED: define('CANCEL_REFUNDS_BLOCKED', {
-        label: 'Remboursements d’une annulation bloqués', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROGRESS',
+        label: 'Remboursements d’une annulation bloqués', channels: ['IN_APP', 'EMAIL', 'PUSH', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROGRESS',
         link: (d) => partnerEventPath(d, 'cloture'),
         inApp: (d) => ({ title: 'Remboursements en attente', content: `Des remboursements de ${q(text(d, 'title'))} sont bloqués : l'administration les reprend.` }),
+        sms: (d, ctx) => `${SMS_PREFIX}des remboursements de ${smsVar(text(d, 'title'), 30)} sont bloqués : l'administration les reprend. ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT },
     }),
     // Lot 9 quinquies (C3 : AUTH-12) : + SMS (l'email de la partenaire n'est pas encore vérifié à l'inscription). Texte du
     // chef de projet, « reçue » remplacé par « enregistrée » (ç hors GSM-7).
     PARTNER_REGISTERED_ACK: define('PARTNER_REGISTERED_ACK', {
-        label: 'Inscription partenaire reçue', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
+        label: 'Inscription partenaire reçue', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
         link: () => '/partner/dashboard',
         inApp: (d) => ({ title: 'Inscription reçue', content: `Votre demande de compte partenaire ${q(text(d, 'company'))} est en cours d'examen.` }),
         sms: (d) => `${SMS_PREFIX}votre demande de compte partenaire ${smsVar(text(d, 'company'), 40)} est enregistrée. Réponse sous 48 h.`,
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
     }),
     PARTNER_VALIDATED: define('PARTNER_VALIDATED', {
-        label: 'Compte partenaire validé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
+        label: 'Compte partenaire validé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
+        night: 'DEFER',
         link: () => '/partner/dashboard',
         inApp: (d) => ({ title: 'Compte partenaire validé', content: `Votre compte partenaire ${q(text(d, 'company'))} est validé. Vous pouvez créer et publier vos événements.` }),
         sms: (d, ctx) => `${SMS_PREFIX}votre compte partenaire ${smsVar(text(d, 'company'), 30)} est validé. Connectez-vous : ${appLink(ctx, '/login')}`,
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
     }),
     PARTNER_REJECTED: define('PARTNER_REJECTED', {
-        label: 'Demande de compte partenaire refusée', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
-        link: () => '/partner/dashboard',
         // Lot 9 bis (11.2 M8, R54) : le dossier refusé peut être complété une fois.
+        label: 'Demande de compte partenaire refusée', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
+        night: 'DEFER',
+        link: () => '/partner/dashboard',
+        // Finition 4 (point 5, E-43) : second refus (dossier déjà complété une fois) : la suite est le support ; le SMS dit la suite
         inApp: (d) => ({
             title: 'Demande refusée',
-            content: `Votre demande de compte partenaire n'est pas acceptée. Motif : ${sentence(text(d, 'reason'))} Vous pouvez compléter votre dossier une fois depuis votre tableau de bord.`,
+            content: field(d, 'resubmitted') === true
+                ? `Votre demande de compte partenaire n'est pas acceptée. Motif : ${sentence(text(d, 'reason'))} Votre dossier a déjà été complété une fois : ouvrez la page Aide pour joindre le support.`
+                : `Votre demande de compte partenaire n'est pas acceptée. Motif : ${sentence(text(d, 'reason'))} Vous pouvez compléter votre dossier une fois depuis votre tableau de bord.`,
         }),
-        sms: (d) => `${SMS_PREFIX}votre demande de compte partenaire n'est pas acceptée. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 60))}`,
+        sms: (d, ctx) => (field(d, 'resubmitted') === true
+            ? `${SMS_PREFIX}demande partenaire refusée. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 34))} Dossier déjà complété une fois. Aide : ${appLink(ctx, '/aide')}`
+            : `${SMS_PREFIX}demande partenaire refusée. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 34))} Complétez votre dossier : ${appLink(ctx, '/partner/dashboard')}`),
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events', reason: 'Pièce d’identité illisible.' },
     }),
     PARTNER_SUSPENDED: define('PARTNER_SUSPENDED', {
-        label: 'Compte partenaire suspendu', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'KYC',
+        label: 'Compte partenaire suspendu', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'KYC',
         link: () => '/partner/dashboard',
         inApp: (d) => ({ title: 'Compte suspendu', content: `Votre compte partenaire est suspendu. Motif : ${sentence(text(d, 'reason'))} Ouvrez la page Aide pour joindre le support.` }),
         // Lot 9 quinquies (B1) : lien de la page d'aide au lieu de « Contactez le support. » ; motif ramené à 40 septets
@@ -1113,7 +1196,8 @@ const CATALOG = {
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events', reason: 'Signalements de fraude en cours d’examen.' },
     }),
     PARTNER_REACTIVATED: define('PARTNER_REACTIVATED', {
-        label: 'Compte partenaire réactivé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
+        label: 'Compte partenaire réactivé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
+        night: 'DEFER',
         link: () => '/partner/dashboard',
         inApp: () => ({ title: 'Compte réactivé', content: 'Votre compte partenaire est réactivé. Vous pouvez de nouveau publier vos événements.' }),
         sms: (_d, ctx) => `${SMS_PREFIX}votre compte partenaire est réactivé. Connectez-vous : ${appLink(ctx, '/login')}`,
@@ -1121,19 +1205,19 @@ const CATALOG = {
     }),
     // Lot 9 bis (11.2 M5, R31) : SMS retiré (décision), + EMAIL (G.49).
     TRIAL_STARTED: define('TRIAL_STARTED', {
-        label: 'Période d’essai activée', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'TRIAL',
+        label: 'Période d’essai activée', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'TRIAL',
         link: () => '/partner/dashboard',
         inApp: (d) => ({ title: 'Période d\'essai activée', content: `Votre période d'essai de ${count(d, 'days')} jours commence aujourd'hui.` }),
         sample: { partner_id: SAMPLE_ID.partner, days: 60 },
     }),
     SUBSCRIPTION_ACTIVATED: define('SUBSCRIPTION_ACTIVATED', {
-        label: 'Abonnement activé', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'SUBSCRIPTION_ACTIVATED',
+        label: 'Abonnement activé', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'SUBSCRIPTION_ACTIVATED',
         link: () => '/partner/subscription',
         inApp: (d) => ({ title: 'Abonnement activé', content: `Votre pack ${q(text(d, 'plan'))} est activé pour ${count(d, 'days')} jours.` }),
         sample: { partner_id: SAMPLE_ID.partner, plan_id: 'pro', plan: 'Pro', days: 30 },
     }),
     PAYMENT_SUCCESS: define('PAYMENT_SUCCESS', {
-        label: 'Paiement confirmé', channels: ['IN_APP', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'PAYMENT_SUCCESS',
+        label: 'Paiement confirmé', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'PAYMENT_SUCCESS',
         link: (d) => (field(d, 'payment_target') === 'SUBSCRIPTION' ? '/partner/subscription' : '/orders'),
         inApp: (d) => ({ title: 'Paiement confirmé', content: `Votre paiement de ${money(d, 'amount')} a été validé.` }),
         sample: { payment_id: SAMPLE_ID.payment, amount: 15_000 },
@@ -1429,8 +1513,20 @@ const CATALOG = {
         sample: { venue_id: SAMPLE_ID.reservation, venue_name: 'Le Grand Bleu', decision: 'REFUSER', reason: 'Photos manquantes.' },
     }),
     PROMOTION_DECIDED: define('PROMOTION_DECIDED', {
-        label: 'Décision sur une mise en avant', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'PROMOTION',
+        label: 'Décision sur une mise en avant', channels: ['IN_APP', 'EMAIL', 'PUSH', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'PROMOTION',
+        night: 'DEFER',
         link: (d) => partnerEventPath(d),
+        sms: (d, ctx) => {
+            const status = text(d, 'status');
+            if (status === 'APPROUVEE') return `${SMS_PREFIX}la mise en avant de ${smsVar(text(d, 'title'), 30)} est acceptée. ${appLink(ctx, '/partner/events')}`;
+            if (status === 'REFUSEE') {
+                const reason = optText(d, 'reason');
+                return reason
+                    ? `${SMS_PREFIX}la mise en avant de ${smsVar(text(d, 'title'), 30)} est refusée. Motif : ${endWithPeriod(smsClause(reason, 40))}`
+                    : `${SMS_PREFIX}la mise en avant de ${smsVar(text(d, 'title'), 30)} est refusée. ${appLink(ctx, '/partner/events')}`;
+            }
+            throw new TemplateDataError('status', 'n’est pas une décision (acceptée ou refusée)');
+        },
         inApp: (d) => {
             const status = text(d, 'status');
             if (status === 'APPROUVEE') return { title: 'Mise en avant acceptée', content: `La mise en avant de ${q(text(d, 'title'))} est acceptée.` };
@@ -1497,8 +1593,15 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, assignment_id: SAMPLE_ID.assignment, entry_point: 'Porte Nord', can_accept_cash: true },
     }),
     SHIFT_CLOSED_BY_OTHER: define('SHIFT_CLOSED_BY_OTHER', {
-        label: 'Caisse fermée par un tiers', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CONTROLLER', suspendedPolicy: 'ALLOW', inAppType: 'ALERT',
+        label: 'Caisse fermée par un tiers', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CONTROLLER', suspendedPolicy: 'ALLOW', inAppType: 'ALERT',
         link: () => '/controller/scanner',
+        sms: (d) => {
+            const by = text(d, 'closed_by');
+            const who = by === 'ADMIN' ? 'l\'administration' : by === 'PARTNER' ? 'l\'organisateur' : null;
+            if (!who) throw new TemplateDataError('closed_by', 'inconnu (PARTNER ou ADMIN attendu)');
+            const declared = optNum(d, 'declared');
+            return `${SMS_PREFIX}votre caisse pour ${smsVar(text(d, 'title'), 30)} a été fermée par ${who}.${declared !== null ? ` Montant déclaré : ${smsAmount(declared)}.` : ''}`;
+        },
         inApp: (d) => {
             const by = text(d, 'closed_by');
             const who = by === 'ADMIN' ? 'l\'administration' : by === 'PARTNER' ? 'l\'organisateur' : null;
@@ -1512,7 +1615,7 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, shift_id: SAMPLE_ID.shift, closed_by: 'PARTNER', declared: 47_500 },
     }),
     CONTROLLER_ACTIVATED: define('CONTROLLER_ACTIVATED', {
-        label: 'Compte de contrôleur activé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Compte de contrôleur activé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
         link: () => '/controller/scanner',
         inApp: () => ({ title: 'Compte activé', content: 'Votre compte est activé : vous pouvez scanner les billets.' }),
         sms: () => `${SMS_PREFIX}votre compte est activé. Vous pouvez vous connecter et scanner les billets.`,
@@ -1576,7 +1679,10 @@ const CATALOG = {
     ADMIN_WITHDRAWAL_REJECTED: define('ADMIN_WITHDRAWAL_REJECTED', {
         label: 'Retrait refusé par l’opérateur', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'refunds.manage', inAppType: 'CASHOUT_ALERT',
         link: () => '/admin/finance#du-aux-partenaires',
-        inApp: (d) => ({ title: 'Retrait refusé par l\'opérateur', content: `Le retrait de ${money(d, 'amount')} a été refusé ; le montant est revenu sur le solde du bénéficiaire.` }),
+        // Finition 4 (point 5, E-33) : variante « constaté non versé » (not_paid), jamais « refusé par l'opérateur »
+        inApp: (d) => (field(d, 'not_paid') === true
+            ? { title: 'Retrait constaté non versé', content: `Le retrait de ${money(d, 'amount')} a été constaté non versé ; le montant est revenu sur le solde du bénéficiaire.` }
+            : { title: 'Retrait refusé par l\'opérateur', content: `Le retrait de ${money(d, 'amount')} a été refusé ; le montant est revenu sur le solde du bénéficiaire.` }),
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 25_000 },
     }),
     ADMIN_FINANCE_DEBT: define('ADMIN_FINANCE_DEBT', {
@@ -1610,7 +1716,9 @@ const CATALOG = {
         link: () => '/admin/notifications',
         inApp: (d) => ({
             title: 'Volume de SMS indispensables élevé',
-            content: `${formatInteger(count(d, 'count'))} SMS indispensables envoyés aujourd'hui (seuil d'alerte : ${formatInteger(count(d, 'threshold'))}). Ils n'ont pas de plafond : vérifiez leur origine dans la supervision.`,
+            // Finition 4 (point 5, E-40) : pas de plafond global, mais une limite par numéro et, pour les numéros saisis à la main
+            // (invitations, transferts), par compte qui les déclenche
+            content: `${formatInteger(count(d, 'count'))} SMS indispensables envoyés aujourd'hui (seuil d'alerte : ${formatInteger(count(d, 'threshold'))}). Ils n'ont pas de plafond global ; chaque numéro en reçoit un nombre limité par jour, et les numéros saisis à la main (invitations, transferts) sont aussi limités par compte qui les déclenche. Vérifiez leur origine dans la supervision.`,
         }),
         sample: { day: '2026-11-02', count: 2_150, threshold: 2_000 },
     }),
@@ -1618,17 +1726,18 @@ const CATALOG = {
         label: 'Plafond de SMS atteint', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_DAILY_CAP_REACHED',
         link: () => '/admin/notifications',
         inApp: (d) => ({
-            title: 'Plafond de SMS atteint',
-            content: `Le plafond de ${formatInteger(count(d, 'cap'))} SMS par jour est atteint : les envois sont suspendus jusqu'à minuit, heure de Dakar.`,
+            title: 'Plafond de SMS atteint : codes bloqués',
+            // Finition 4 (point 5, E-05) : ce qui s'arrête vraiment (lib/sms/sms-guard.ts) ; les indispensables partent toujours
+            content: `Le plafond de ${formatInteger(count(d, 'cap'))} SMS par jour est atteint : jusqu'à minuit, heure de Dakar, plus aucun code par SMS ne part vers les comptes existants (connexion, mot de passe, retrait), ni aucun SMS facultatif. Les SMS indispensables (achat, billet, annulation, remboursement, sécurité du compte) partent toujours.`,
         }),
         sample: { day: '2026-11-02', cap: 1_000 },
     }),
     ADMIN_SMS_CAP_NON_OTP: define('ADMIN_SMS_CAP_NON_OTP', {
-        label: 'Quota de SMS hors code atteint', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_NON_OTP_SHARE_REACHED',
+        label: 'Quota de SMS hors codes atteint', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'notifications.read', inAppType: 'SMS_NON_OTP_SHARE_REACHED',
         link: () => '/admin/notifications',
         inApp: (d) => ({
-            title: 'Quota de SMS hors code atteint',
-            content: `La part des SMS hors codes de connexion (${formatInteger(count(d, 'limit'))} sur ${formatInteger(count(d, 'cap'))} par jour) est atteinte : seuls les codes de connexion partent encore jusqu'à minuit, heure de Dakar.`,
+            title: 'Quota de SMS hors codes atteint',
+            content: `La part des SMS hors codes (${formatInteger(count(d, 'limit'))} sur ${formatInteger(count(d, 'cap'))} par jour) est atteinte : jusqu'à minuit, heure de Dakar, les SMS facultatifs (rappels, ventes, résumés, remerciements) et les invitations de contrôleurs ne partent plus par SMS. Les codes et les SMS indispensables (achat, billet, annulation, remboursement, sécurité du compte) partent toujours.`,
         }),
         sample: { day: '2026-11-02', cap: 1_000, limit: 700 },
     }),
@@ -1807,15 +1916,21 @@ const CATALOG = {
     }),
     // N10 (R46) : le destinataire refuse le billet ; l'expéditeur le garde.
     TRANSFER_DECLINED_SENDER: define('TRANSFER_DECLINED_SENDER', {
-        label: 'Transfert refusé (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        label: 'Transfert refusé (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        night: 'DEFER',
         link: () => '/tickets?tab=a-venir',
         inApp: (d) => ({ title: 'Billet refusé', content: `Le destinataire a refusé votre billet pour ${q(text(d, 'title'))} : il reste dans vos billets.` }),
+        // Finition 4 (point 4, E-46) : billet revenu à l'expéditeur
+        sms: (d, ctx) => `${SMS_PREFIX}le destinataire a refusé votre billet ${endWithPeriod(smsVar(text(d, 'title'), 30))} Il vous revient : ${appLink(ctx, '/tickets')}`,
         sample: { ...SAMPLE_EVENT, transfer_id: SAMPLE_ID.transfer, ticket_id: SAMPLE_ID.ticket },
     }),
     // N11 (R63) : le destinataire change de numéro ; le transfert est annulé.
     TRANSFER_RECIPIENT_CHANGED: define('TRANSFER_RECIPIENT_CHANGED', {
-        label: 'Transfert annulé (numéro du destinataire changé)', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        label: 'Transfert annulé (numéro du destinataire changé)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
+        night: 'DEFER',
         link: () => '/tickets?tab=a-venir',
+        // Finition 4 (point 4, E-46) : billet revenu à l'expéditeur
+        sms: (d, ctx) => `${SMS_PREFIX}transfert du billet ${smsVar(text(d, 'title'), 25)} annulé, le destinataire a changé de numéro. Il vous revient : ${appLink(ctx, '/tickets')}`,
         inApp: (d) => ({
             title: 'Transfert annulé',
             content: `Le destinataire de votre billet pour ${q(text(d, 'title'))} a changé de numéro : le transfert est annulé et le billet reste dans vos billets.`,
@@ -1851,8 +1966,10 @@ const CATALOG = {
     // Finition 1 (E-20) : avis à la partenaire quand le contrôleur invité accepte, refuse ou laisse expirer l'invitation.
     // Cloche, push et email ; jamais de SMS (consigne). Nom complet pour une acceptation, masqué sinon.
     CONTROLLER_INVITATION_ACCEPTED: define('CONTROLLER_INVITATION_ACCEPTED', {
-        label: 'Invitation de contrôleur acceptée', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Invitation de contrôleur acceptée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        night: 'DEFER',
         link: () => '/partner/team',
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'controller_name'), 18)} a accepté de scanner les billets à vos entrées. Choisissez sa porte : ${appLink(ctx, '/partner/team')}`,
         inApp: (d) => ({
             title: 'Invitation acceptée',
             content: `${text(d, 'controller_name')} a accepté votre invitation à contrôler l'entrée de ${invitedEventsClause(d)}. Choisissez sa porte et les espèces dans votre équipe.`,
@@ -1860,8 +1977,10 @@ const CATALOG = {
         sample: { ...SAMPLE_TEAM_NOTICE, controller_name: 'Aminata Fall' },
     }),
     CONTROLLER_INVITATION_DECLINED: define('CONTROLLER_INVITATION_DECLINED', {
-        label: 'Invitation de contrôleur refusée', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Invitation de contrôleur refusée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        night: 'DEFER',
         link: () => '/partner/team',
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'controller_name'), 18)} a refusé de scanner les billets à vos entrées. Invitez une autre personne : ${appLink(ctx, '/partner/team')}`,
         inApp: (d) => ({
             title: 'Invitation refusée',
             content: `${text(d, 'controller_name')} a refusé votre invitation à contrôler l'entrée de ${invitedEventsClause(d)}. Invitez une autre personne depuis votre équipe.`,
@@ -1869,8 +1988,10 @@ const CATALOG = {
         sample: { ...SAMPLE_TEAM_NOTICE, controller_name: 'Ou*** B***' },
     }),
     CONTROLLER_INVITATION_EXPIRED: define('CONTROLLER_INVITATION_EXPIRED', {
-        label: 'Invitation de contrôleur sans réponse', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Invitation de contrôleur sans réponse', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        night: 'DEFER',
         link: () => '/partner/team',
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'controller_name'), 18)} n'a pas répondu à votre invitation à scanner les billets. Invitez de nouveau : ${appLink(ctx, '/partner/team')}`,
         inApp: (d) => ({
             title: 'Invitation sans réponse',
             content: `${text(d, 'controller_name')} n'a pas répondu à votre invitation à contrôler l'entrée de ${invitedEventsClause(d)} : elle a expiré. Invitez de nouveau depuis votre équipe.`,
@@ -1880,8 +2001,10 @@ const CATALOG = {
     // Correctifs de la contre-vérification (migration 20261115000014) : un contrôleur devenu compte d'administration quitte
     // l'équipe de l'organisatrice. Cloche, push et email ; jamais de SMS (décision de l'utilisateur).
     CONTROLLER_BECAME_ADMIN: define('CONTROLLER_BECAME_ADMIN', {
-        label: 'Contrôleur devenu administrateur', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Contrôleur devenu administrateur', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        night: 'DEFER',
         link: () => '/partner/team',
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'controller_name'), 18)} ne fait plus partie de votre équipe d'entrée. Invitez une autre personne : ${appLink(ctx, '/partner/team')}`,
         inApp: (d) => ({
             title: 'Contrôleur retiré de votre équipe',
             content: `${text(d, 'controller_name')} ne fait plus partie de votre équipe : son compte est devenu un compte d'administration Event Village. Invitez une autre personne pour vos entrées.`,
@@ -1890,7 +2013,7 @@ const CATALOG = {
     }),
     // N13 (R15) : propriétaire d'un événement annulé par un admin ; avis public, jamais le motif interne.
     EVENT_CANCELLED_BY_ADMIN: define('EVENT_CANCELLED_BY_ADMIN', {
-        label: 'Annulation d’un événement par l’administration', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        label: 'Annulation d’un événement par l’administration', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
         link: (d) => partnerEventPath(d, 'cloture'),
         inApp: (d) => {
             const notice = optText(d, 'public_notice');
@@ -1921,7 +2044,7 @@ const CATALOG = {
     }),
     // N15 (R33) : contrôleurs affectés (affectations acceptées) à l'annulation.
     CONTROLLER_EVENT_CANCELLED: define('CONTROLLER_EVENT_CANCELLED', {
-        label: 'Annulation d’un événement contrôlé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Annulation d’un événement contrôlé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
         link: () => '/controller/scanner',
         inApp: (d) => ({
             title: 'Contrôle annulé',
@@ -1932,7 +2055,7 @@ const CATALOG = {
     }),
     // N16 (R33) : changement de date ou de lieu ; SMS et email regroupés sur 10 minutes, in-app immédiat.
     CONTROLLER_EVENT_CHANGED: define('CONTROLLER_EVENT_CHANGED', {
-        label: 'Changement d’un événement contrôlé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Changement d’un événement contrôlé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
         link: () => '/controller/scanner',
         inApp: controllerChangedInApp,
         sms: controllerChangedSms,
@@ -1940,8 +2063,14 @@ const CATALOG = {
     }),
     // N17 (R33) : suspension et reprise, in-app et email seulement.
     CONTROLLER_EVENT_STATUS: define('CONTROLLER_EVENT_STATUS', {
-        label: 'Suspension ou reprise d’un événement contrôlé', channels: ['IN_APP', 'EMAIL'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
+        label: 'Suspension ou reprise d’un événement contrôlé', channels: ['IN_APP', 'EMAIL', 'SMS', 'PUSH'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
         link: () => '/controller/scanner',
+        sms: (d) => {
+            const status = text(d, 'status');
+            if (status === 'SUSPENDU') return `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} est suspendu : le scan des billets est fermé jusqu'à nouvel avis.`;
+            if (status === 'PUBLIE') return `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} reprend : votre affectation à l'entrée est maintenue.`;
+            throw new TemplateDataError('status', 'inconnu (SUSPENDU ou PUBLIE attendu)');
+        },
         inApp: (d) => {
             const status = text(d, 'status');
             if (status === 'SUSPENDU') {
@@ -1954,7 +2083,7 @@ const CATALOG = {
     }),
     // N18 (R22) : invitation, billet gratuit ou billet payé en espèces annulé hors annulation de l'événement.
     TICKET_CANCELLED: define('TICKET_CANCELLED', {
-        label: 'Billet annulé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
+        label: 'Billet annulé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
         link: () => '/tickets?tab=historique',
         inApp: (d) => {
             const kind = text(d, 'kind');
@@ -1976,20 +2105,23 @@ const CATALOG = {
     }),
     // N19 (R59, A8, B74) : envoyé malgré la suspension (politique ALLOW) ; les billets payés restent valables à l'entrée.
     ACCOUNT_SUSPENDED: define('ACCOUNT_SUSPENDED', {
-        label: 'Compte suspendu', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
-        link: () => '/billet/hors-ligne',
-        inApp: (d) => ({
-            title: 'Compte suspendu',
-            content: `Votre compte est suspendu. Motif : ${sentence(text(d, 'reason'))} Vos billets payés restent valables à l'entrée : présentez le billet hors ligne déjà enregistré sur votre téléphone, ou donnez le numéro du billet avec une pièce d'identité. Ouvrez la page Aide pour joindre le support.`,
-        }),
         // Lot 9 quinquies (B1) : lien de la page d'aide au lieu de « Contactez le support. » ; « Billets payés valables à
         // l'entrée. » (plus court) pour garder un motif de 33 septets dans un segment
-        sms: (d, ctx) => `${SMS_PREFIX}votre compte est suspendu. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 33))} Billets payés valables à l'entrée. Aide : ${appLink(ctx, '/aide')}`,
+        label: 'Compte suspendu', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        // Finition 4 (point 5, E-04) : aucune promesse du billet hors ligne (la fermeture de session l'efface) ni de la saisie
+        // du numéro (réglage access.manual_entry_scope) ; seulement ce qui est vrai : les billets payés restent valables (le
+        // contrôle d'accès ne lit pas le statut du compte du porteur), le support répond.
+        link: () => '/aide',
+        inApp: (d) => ({
+            title: 'Compte suspendu',
+            content: `Votre compte est suspendu. Motif : ${sentence(text(d, 'reason'))} Vos billets payés restent valables. Pour toute question, et avant de vous rendre à un événement, ouvrez la page Aide pour joindre le support.`,
+        }),
+        sms: (d, ctx) => `${SMS_PREFIX}votre compte est suspendu. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 33))} Vos billets payés restent valables. Aide : ${appLink(ctx, '/aide')}`,
         sample: { reason: 'Paiements contestés' },
     }),
     // N20 (R59) : réactivation du compte.
     ACCOUNT_REACTIVATED: define('ACCOUNT_REACTIVATED', {
-        label: 'Compte réactivé', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        label: 'Compte réactivé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/login',
         inApp: () => ({ title: 'Compte réactivé', content: 'Votre compte est réactivé : vous pouvez de nouveau vous connecter.' }),
         sms: (_d, ctx) => `${SMS_PREFIX}votre compte est réactivé. Vous pouvez de nouveau vous connecter : ${appLink(ctx, '/login')}`,
@@ -2011,7 +2143,7 @@ const CATALOG = {
     }),
     // N22 (R95) : accusé de soumission à la propriétaire.
     EVENT_SUBMITTED_ACK: define('EVENT_SUBMITTED_ACK', {
-        label: 'Événement envoyé en validation', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
+        label: 'Événement envoyé en validation', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
         link: (d) => partnerEventPath(d),
         inApp: (d) => ({
             title: 'Événement envoyé en validation',
@@ -2021,23 +2153,28 @@ const CATALOG = {
     }),
     // N23 (R72) : passage à TERMINE sans caisse ouverte.
     EVENT_FINISHED: define('EVENT_FINISHED', {
-        label: 'Événement terminé', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        label: 'Événement terminé', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        night: 'DEFER',
         link: (d) => partnerEventPath(d, 'cloture'),
         inApp: (d) => ({ title: 'Événement terminé', content: `${q(text(d, 'title'))} est terminé. Le rapport de clôture est prêt dans l'onglet Clôture.` }),
         sample: { ...SAMPLE_EVENT },
     }),
     // N24 (R72) : dernière caisse fermée d'un événement terminé.
     CLOSING_REPORT_READY: define('CLOSING_REPORT_READY', {
-        label: 'Rapport de clôture prêt', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        label: 'Rapport de clôture prêt', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        night: 'DEFER',
         link: (d) => partnerEventPath(d, 'cloture'),
         inApp: (d) => ({ title: 'Rapport de clôture prêt', content: `Toutes les caisses de ${q(text(d, 'title'))} sont fermées : le rapport de clôture est prêt.` }),
         sample: { ...SAMPLE_EVENT },
     }),
     // N25 (R72) : recettes d'un événement terminé disponibles au retrait (règle de B15), sans montant.
     FUNDS_AVAILABLE: define('FUNDS_AVAILABLE', {
-        label: 'Recettes disponibles', channels: ['IN_APP', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'SALES',
+        label: 'Recettes disponibles', channels: ['IN_APP', 'EMAIL', 'PUSH', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'SALES',
+        night: 'DEFER',
         link: () => '/partner/finance',
         inApp: (d) => ({ title: 'Recettes disponibles', content: `Les recettes de ${q(text(d, 'title'))} sont disponibles sur votre solde : vous pouvez demander un retrait.` }),
+        // Finition 4 (point 4, E-47)
+        sms: (d, ctx) => `${SMS_PREFIX}les recettes de ${smsVar(text(d, 'title'), 30)} sont disponibles. Demandez votre retrait : ${appLink(ctx, '/partner/finance')}`,
         sample: { ...SAMPLE_EVENT },
     }),
     // ── Lot 9 ter (contrat 11.1, 11.2 N1 à N4) ──
@@ -2080,8 +2217,10 @@ const CATALOG = {
     }),
     // N4 (9t.18, D-pil 4) : refus en série à une porte, à la partenaire ; aucun SMS (D-P3).
     SCAN_REFUSALS_ALERT: define('SCAN_REFUSALS_ALERT', {
-        label: 'Refus en série à une porte', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ALERT',
+        label: 'Refus en série à une porte', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ALERT',
         link: (d) => partnerEventPath(d, 'entrees'),
+        // Finition 4 (point 4, E-47) : au plus un SMS par porte et par 15 minutes (scan_refusal_alert)
+        sms: (d, ctx) => `${SMS_PREFIX}${smsVar(text(d, 'gate_name'), 12)} : ${count(d, 'refused_count')} refus en ${count(d, 'window_minutes')} min pour ${endWithPeriod(smsVar(text(d, 'title'), 20))} Vérifiez cette porte avec votre équipe. ${appLink(ctx, '/partner/events')}`,
         inApp: (d) => ({
             title: 'Refus en série à une porte',
             content: `${text(d, 'gate_name')} : ${count(d, 'refused_count')} refus en ${plural(count(d, 'window_minutes'), 'minute', 'minutes')} pour ${q(text(d, 'title'))}. Vérifiez la porte avec vos contrôleurs.`,
@@ -2093,6 +2232,8 @@ const CATALOG = {
     // regroupé (la partie à zéro est omise). Guillemets droits : « » n'existent pas en GSM-7.
     ADMIN_REVIEW_SMS: define('ADMIN_REVIEW_SMS', {
         label: 'SMS aux administrateurs : à valider', channels: ['SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', inAppType: null,
+        // Finition 4 (point 1) : D1 suit la plage de nuit réglée (report à sa fin)
+        night: 'DEFER',
         link: () => '/admin/dashboard',
         sms: (d, ctx) => adminReviewSms(d, ctx),
         sample: { partner_count: 1, event_count: 0, company: 'Association culturelle Sabar Events Dakar Plateau' },
@@ -2125,8 +2266,10 @@ const CATALOG = {
     // Finition 3d (point 4a) : espèces d'une vente au guichet marquées rendues par un admin, à la place de l'organisatrice ;
     // le motif est écrit. Lien vers l'onglet Clôture du pilotage (liste des espèces à rembourser).
     CASH_REFUND_MARKED_BY_ADMIN: define('CASH_REFUND_MARKED_BY_ADMIN', {
-        label: 'Espèces marquées rendues par l’administration', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        label: 'Espèces marquées rendues par l’administration', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
+        night: 'DEFER',
         link: (d) => partnerEventPath(d, 'cloture'),
+        sms: (d) => `${SMS_PREFIX}l'administration a marqué rendues les espèces de la vente ${smsVar(text(d, 'reference'), 10)} (${smsAmount(num(d, 'amount'))}) pour ${endWithPeriod(smsVar(text(d, 'title'), 20))}`,
         inApp: (d) => ({
             title: 'Espèces marquées rendues par l’administration',
             content: `L'administration a marqué rendues les espèces de la vente ${text(d, 'reference')} (${money(d, 'amount')}) pour ${q(text(d, 'title'))}. Motif : ${sentence(text(d, 'reason'))}`,
@@ -2136,14 +2279,14 @@ const CATALOG = {
     // Finition 3d (point 3) : un compte devient SUPERADMIN ; alerte (SMS et cloche) à chaque SUPERADMIN actif, l'auteur
     // compris. Pire cas : deux noms tronqués à 25 caractères, 152 septets, un segment GSM-7.
     SUPERADMIN_PROMOTED: define('SUPERADMIN_PROMOTED', {
-        label: 'Nouveau Superadmin (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
+        label: 'Nouveau super-administrateur (alerte)', channels: ['IN_APP', 'SMS', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'ALLOW', inAppType: 'SECURITY',
         link: () => '/admin/users',
         inApp: (d) => ({
-            title: 'Nouveau Superadmin',
-            content: `${text(d, 'user_name')} est maintenant Superadmin, nommé par ${text(d, 'actor_name')}. Si ce n’est pas prévu, réagissez tout de suite : changez son rôle depuis Comptes.`,
+            title: 'Nouveau super-administrateur',
+            content: `${text(d, 'user_name')} est maintenant super-administrateur, nommé par ${text(d, 'actor_name')}. Si ce n’est pas prévu, réagissez tout de suite : changez son rôle depuis Comptes.`,
         }),
         // Run 299 (R74) : nom tronqué (« ... ») sans point ajouté derrière (endWithPeriod)
-        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 25)} est maintenant Superadmin, nommé par ${endWithPeriod(smsVar(text(d, 'actor_name'), 25))} Si ce n'est pas prévu, réagissez tout de suite.`,
+        sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'user_name'), 20)} est maintenant super-administrateur, nommé par ${endWithPeriod(smsVar(text(d, 'actor_name'), 20))} Si ce n'est pas prévu, réagissez tout de suite.`,
         sample: { user_name: 'Mame Diarra Bousso Ndiaye Diop', actor_name: 'Aminata Sophie Gueye Sarr Fall' },
     }),
     // Finition 3d (point 2c) : un code de secours a servi (SMS à l'ancien numéro, écrit dans la ligne d'envoi ; email).
@@ -2152,9 +2295,10 @@ const CATALOG = {
         link: () => '/admin/securite',
         inApp: (d) => ({
             title: 'Code de secours utilisé',
-            content: `Un code de secours de votre compte Superadmin vient de servir pour ouvrir l’administration. Il vous en reste ${formatInteger(count(d, 'remaining'))}. Si ce n’est pas vous, alertez tout de suite un autre Superadmin et créez de nouveaux codes.`,
+            content: `Un code de secours de votre compte de super-administrateur vient de servir pour ouvrir l’administration. Il vous en reste ${formatInteger(count(d, 'remaining'))}. Si ce n’est pas vous, alertez tout de suite un autre super-administrateur et créez de nouveaux codes.`,
         }),
-        sms: () => `${SMS_PREFIX}un code de secours de votre compte Superadmin vient de servir. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`,
+        // Design 1c : « super-administrateur », plus long : « alertez vite » pour tenir en un SMS (157 caractères)
+        sms: () => `${SMS_PREFIX}un code de secours de votre compte de super-administrateur vient de servir. Si ce n'est pas vous, alertez vite un autre super-administrateur.`,
         sample: { remaining: 9 },
     }),
     // Finition 3d (points 2a et 2c) : SMS à l'ANCIEN numéro (sans compte : l'envoyeur viserait le nouveau). EMAIL déclaré
@@ -2166,12 +2310,12 @@ const CATALOG = {
         inApp: (d) => ({
             title: 'Numéro de téléphone remplacé',
             content: bool(d, 'by_self')
-                ? 'Le numéro de votre compte Superadmin a été remplacé. Si ce n’est pas vous, alertez tout de suite un autre Superadmin.'
-                : 'Le Superadmin a remplacé le numéro de votre compte administrateur. L’ancien téléphone ne sert plus pour vos codes.',
+                ? 'Le numéro de votre compte de super-administrateur a été remplacé. Si ce n’est pas vous, alertez tout de suite un autre super-administrateur.'
+                : 'Le super-administrateur a remplacé le numéro de votre compte administrateur. L’ancien téléphone ne sert plus pour vos codes.',
         }),
         sms: (d) => (bool(d, 'by_self')
-            ? `${SMS_PREFIX}le numéro de votre compte Superadmin a été remplacé. Si ce n'est pas vous, alertez tout de suite un autre Superadmin.`
-            : `${SMS_PREFIX}le Superadmin a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.`),
+            ? `${SMS_PREFIX}le numéro de votre compte de super-administrateur a été remplacé. Si ce n'est pas vous, alertez tout de suite un autre super-administrateur.`
+            : `${SMS_PREFIX}le super-administrateur a remplacé ce numéro sur votre compte administrateur. Ce téléphone ne sert plus pour vos codes.`),
         sample: { by_self: false },
     }),
     // Finition 3d (points 2a et 2c) : SMS au NOUVEAU numéro et cloche au compte
@@ -2181,13 +2325,106 @@ const CATALOG = {
         inApp: (d) => ({
             title: 'Numéro de téléphone changé',
             content: bool(d, 'by_self')
-                ? 'Le numéro de votre compte Superadmin a été remplacé. Vos autres appareils sont déconnectés.'
-                : 'Le Superadmin a remplacé le numéro de votre compte administrateur. Les codes administrateur arrivent désormais sur ce numéro.',
+                ? 'Le numéro de votre compte de super-administrateur a été remplacé. Vos autres appareils sont déconnectés.'
+                : 'Le super-administrateur a remplacé le numéro de votre compte administrateur. Les codes administrateur arrivent désormais sur ce numéro.',
         }),
         sms: (d) => (bool(d, 'by_self')
-            ? `${SMS_PREFIX}ce numéro est maintenant celui de votre compte Superadmin. Vos autres appareils sont déconnectés.`
+            ? `${SMS_PREFIX}ce numéro est maintenant celui de votre compte de super-administrateur. Vos autres appareils sont déconnectés.`
             : `${SMS_PREFIX}ce numéro est maintenant celui de votre compte administrateur. Reconnectez-vous avec votre mot de passe.`),
         sample: { by_self: false },
+    }),
+    // ── Finition 4 (décisions du client du 19/11) ──────────────────────────
+    // Point 2 : SMS des ventes groupé, au plus toutes les 30 minutes (notif_sale_recorded), sans recompter le premier billet.
+    SALES_UPDATE_SMS: define('SALES_UPDATE_SMS', {
+        label: 'Ventes groupées par SMS', family: 'OPTIONAL', topic: 'PRO_ACTIVITY', channels: ['SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
+        inAppType: null, link: null,
+        sms: (d) => {
+            const n = count(d, 'ticket_count');
+            return `${SMS_PREFIX}${smsCount(n)} ${n > 1 ? 'billets vendus' : 'billet vendu'} depuis ${smsTime(iso(d, 'since'))} pour ${smsVar(text(d, 'title'), 30)} : ${smsAmount(num(d, 'total'))}.`;
+        },
+        sample: { ...SAMPLE_EVENT, payment_id: SAMPLE_ID.payment, ticket_count: 12, total: 60_000, since: '2026-11-14T14:00:00.000Z' },
+    }),
+    // Point 2 : résumé du matin à 9:00 (notification_daily_checks), ventes, remboursements et entrées de la veille.
+    PARTNER_DAILY_SUMMARY: define('PARTNER_DAILY_SUMMARY', {
+        label: 'Résumé du matin (ventes de la veille)', family: 'OPTIONAL', topic: 'SALES_SUMMARY', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK',
+        inAppType: 'SALES', link: salesPath,
+        inApp: (d) => {
+            const sold = count(d, 'sold_count');
+            const refunds = count(d, 'refund_count');
+            const entries = count(d, 'entry_count');
+            const events = count(d, 'event_count');
+            const title = optText(d, 'title');
+            const parts = [
+                sold > 0 ? `${plural(sold, 'billet vendu', 'billets vendus')} (+${money(d, 'sold_amount')})` : 'aucun billet vendu',
+                refunds > 0 ? `${plural(refunds, 'billet remboursé', 'billets remboursés')} (-${money(d, 'refund_amount')})` : null,
+                entries > 0 ? plural(entries, 'entrée', 'entrées') : null,
+            ].filter((x): x is string => x !== null);
+            const scope = events === 1 && title ? `pour ${q(title)}` : `sur ${events} événements`;
+            return { title: 'Résumé de la veille', content: `Hier (${formatDate(iso(d, 'day'))}), ${scope} : ${parts.join(', ')}.` };
+        },
+        sms: (d) => {
+            const sold = count(d, 'sold_count');
+            const refunds = count(d, 'refund_count');
+            const entries = count(d, 'entry_count');
+            const events = count(d, 'event_count');
+            const title = optText(d, 'title');
+            const parts = [
+                sold > 0 ? `${smsCount(sold)} ${sold > 1 ? 'billets vendus' : 'billet vendu'} (${smsAmount(num(d, 'sold_amount'))})` : 'aucun billet vendu',
+                refunds > 0 ? `${smsCount(refunds)} ${refunds > 1 ? 'remboursés' : 'remboursé'} (-${smsAmount(num(d, 'refund_amount'))})` : null,
+                entries > 0 ? `${smsCount(entries)} ${entries > 1 ? 'entrées' : 'entrée'}` : null,
+            ].filter((x): x is string => x !== null);
+            const scope = events === 1 && title ? `pour ${smsVar(title, 25)}` : `sur ${smsCount(events)} événements`;
+            return `${SMS_PREFIX}hier ${scope} : ${parts.join(', ')}.`;
+        },
+        sample: {
+            ...SAMPLE_EVENT, day: '2026-11-14', sold_count: 1_234, sold_amount: 6_170_000, refund_count: 12, refund_amount: 60_000, entry_count: 1_180, event_count: 1,
+        },
+    }),
+    // Point 3 : bienvenue au premier passage du spectateur (notif_tickets_scanned), une fois par spectateur et par événement ;
+    // tient lieu d'« Entrée validée » pour ce billet.
+    ENTRY_WELCOME: define('ENTRY_WELCOME', {
+        label: 'Bienvenue à l’entrée', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_SCANNED',
+        link: eventPath,
+        inApp: (d) => ({
+            title: 'Bienvenue',
+            content: `Bienvenue à ${q(text(d, 'title'))} ! Bonne soirée avec ${sentence(text(d, 'organizer'))} Votre entrée est validée.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}Bienvenue à ${smsVar(text(d, 'title'), 40)} ! Bonne soirée avec ${endWithPeriod(smsClause(text(d, 'organizer'), 30))}`,
+        sample: { ...SAMPLE_EVENT, organizer: 'Sabar Events', ticket_id: SAMPLE_ID.ticket, entered_at: '2026-11-14T20:05:00.000Z' },
+    }),
+    // Point 3 : merci le lendemain à 11:00 (désactivable, sujet AFTER_EVENT), avec le lien de l'événement.
+    ENTRY_THANKS: define('ENTRY_THANKS', {
+        label: 'Merci du lendemain', family: 'OPTIONAL', topic: 'AFTER_EVENT', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
+        inAppType: 'THANKS', link: eventPath,
+        inApp: (d) => ({
+            title: 'Merci d’être venu',
+            content: `Merci d'être venu à ${q(text(d, 'title'))}. ${text(d, 'organizer')} et Event Village espèrent vous revoir bientôt.`,
+        }),
+        // SMS : « être » n'est pas dans l'alphabet GSM-7 (un seul segment exigé) : « merci de votre présence »
+        sms: (d, ctx) => `${SMS_PREFIX}merci de votre présence à ${smsVar(text(d, 'title'), 30)} ! ${appLink(ctx, eventPath(d))}`,
+        sample: { ...SAMPLE_EVENT, organizer: 'Sabar Events' },
+    }),
+    // Point 2 : demandes de remboursement des clients, groupées toutes les 15 minutes, sans nom ni numéro du client.
+    PARTNER_REFUND_REQUESTS: define('PARTNER_REFUND_REQUESTS', {
+        label: 'Remboursements demandés par des clients', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'REFUND_REQUESTED',
+        night: 'DEFER',
+        link: (d) => partnerEventPath(d, 'ventes'),
+        inApp: (d) => {
+            const n = count(d, 'ticket_count');
+            return n > 1
+                ? {
+                    title: 'Remboursements demandés',
+                    content: `${n} billets de ${q(text(d, 'title'))} sont remboursés à la demande de leurs acheteurs depuis ${formatTime(iso(d, 'since'))} (-${money(d, 'amount')}) : ils sont retirés de vos ventes.`,
+                }
+                : { title: 'Remboursement demandé', content: `Un billet de ${q(text(d, 'title'))} est remboursé à la demande de son acheteur (-${money(d, 'amount')}) : il est retiré de vos ventes.` };
+        },
+        sms: (d) => {
+            const n = count(d, 'ticket_count');
+            return n > 1
+                ? `${SMS_PREFIX}${smsCount(n)} billets de ${smsVar(text(d, 'title'), 25)} remboursés à la demande des acheteurs depuis ${smsTime(iso(d, 'since'))} (-${smsAmount(num(d, 'amount'))}).`
+                : `${SMS_PREFIX}un billet de ${smsVar(text(d, 'title'), 25)} est remboursé à la demande de son acheteur (-${smsAmount(num(d, 'amount'))}).`;
+        },
+        sample: { ...SAMPLE_EVENT, ticket_count: 3, amount: 15_000, since: '2026-11-14T14:05:00.000Z' },
     }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
@@ -2416,7 +2653,7 @@ export function renderSyncSms(type: SyncType, data: { code?: string; firstName?:
             return `${SMS_PREFIX}code administrateur ${code}. Ne le donnez à personne. Valable 10 minutes.`;
         // Finition 3d (point 2a) : la personne dicte ce code au Superadmin qui change son numéro
         case 'OTP_ADMIN_PHONE':
-            return `${SMS_PREFIX}code ${code} pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au Superadmin. Valable 10 minutes.`;
+            return `${SMS_PREFIX}code ${code} pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au super-administrateur. Valable 10 minutes.`;
         case 'CONTROLLER_INVITE': {
             const link = typeof data.setupLink === 'string' ? data.setupLink.trim() : '';
             if (!/^https?:\/\//.test(link)) throw new TemplateDataError('setupLink', 'absent ou illisible');

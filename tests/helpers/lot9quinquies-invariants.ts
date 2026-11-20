@@ -4,7 +4,9 @@
  * (q1) à (q8) (assertLot9quaterInvariants), règles (p1) et suivantes :
  *  (p1) D1 : au plus un SMS ADMIN_REVIEW_SMS en attente (PENDING) par admin ;
  *  (p2) D1 : jamais deux SMS ADMIN_REVIEW_SMS envoyés au même admin à moins de 30 minutes d'écart ;
- *  (p3) D1 : aucun SMS ADMIN_REVIEW_SMS envoyé entre 22 h et 8 h (heure de Dakar).
+ *  (p3) D1 : aucun SMS ADMIN_REVIEW_SMS envoyé pendant la plage de nuit (heure de Dakar). Finition 4 (décision du client du
+ *       19/11, modification signalée au rapport) : la plage est celle du réglage notif.sms_quiet_start / _end (01:00-07:00 par
+ *       défaut), plus 22 h - 8 h écrit en dur.
  * Sortie brute `[INVARIANT-LOT9QUINQUIES]`. Échec explicite qui nomme chaque objet du lot absent (jamais d'erreur Postgres
  * brute, jamais de faux vert).
  */
@@ -38,7 +40,7 @@ SELECT * FROM (
            'SMS aux admins envoyé la nuit (' || to_char(r.sent_at AT TIME ZONE 'Africa/Dakar', 'HH24:MI') || ' à Dakar)'
       FROM r
      WHERE r.status = 'SENT'
-       AND (extract(hour FROM (r.sent_at AT TIME ZONE 'Africa/Dakar')) >= 22 OR extract(hour FROM (r.sent_at AT TIME ZONE 'Africa/Dakar')) < 8)
+       AND public.notif_in_quiet_hours(r.sent_at, public.notif_setting_int('notif.sms_quiet_start'), public.notif_setting_int('notif.sms_quiet_end'))
 ) v
 ORDER BY regle, objet`;
 

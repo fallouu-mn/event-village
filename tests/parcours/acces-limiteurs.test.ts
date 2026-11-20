@@ -65,6 +65,8 @@ const BASE_LIMITS: Record<string, string> = {
     SMS_OTP_PER_IP_HOUR: '1000',
     SMS_OTP_PER_IP_DAY: '1000',
     SMS_PER_PHONE_DAY: '1000',
+    // Finition 4 (T3) : compteur des SMS facultatifs par numéro, levé comme l'autre (ajout signalé au rapport)
+    SMS_PER_PHONE_DAY_OPTIONAL: '1000',
     SMS_GLOBAL_DAILY_CAP: '100000',
     CLIENT_IP_SOURCE: 'x-forwarded-for',
 };

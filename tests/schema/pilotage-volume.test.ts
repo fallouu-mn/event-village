@@ -115,7 +115,8 @@ describe('9t.18 T6 — volume du tableau de bord des entrées', () => {
         const gates = Array.isArray(body.by_gate) ? (body.by_gate as Array<Record<string, unknown>>) : [];
         assert.equal(gates.reduce((s, g) => s + Number(g.accepted), 0), ENTRIES, 'Σ by_gate.accepted = 5 000');
         assert.ok(outcome.entriesMs < MAX_ENTRIES_MS, `pilotage_entries en ${outcome.entriesMs.toFixed(1)} ms (seuil SUPPOSÉ ${MAX_ENTRIES_MS} ms, à remonter)`);
-        assert.deepEqual(outcome.alertChannels, ['EMAIL', 'IN_APP', 'PUSH'], 'une alerte pour la Porte 1 (cloche, push, email ; aucun SMS)');
+        // Finition 4 (décision du client du 19/11 : chaque étape importante sur les 4 canaux ; modification signalée au rapport) : SMS de la porte en plus, au plus un par porte et par 15 minutes
+        assert.deepEqual(outcome.alertChannels, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'une alerte pour la Porte 1 (cloche, push, email, SMS)');
         assert.ok(outcome.refusalMs < MAX_REFUSAL_MS, `refus avec trigger d’alerte : ${outcome.refusalMs.toFixed(2)} ms en moyenne (seuil SUPPOSÉ ${MAX_REFUSAL_MS} ms, à remonter)`);
     });
 });

@@ -40,21 +40,24 @@ export type ConfirmationKey =
     | 'account_reactivate';
 
 const PARTNER_FULL: NoticeChannel[] = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'];
-const PARTNER_ACCOUNT: NoticeChannel[] = ['IN_APP', 'SMS', 'EMAIL'];
+// Finition 4 (décision du client du 19/11) : les avis du compte partenaire et du compte partent aussi en push.
+const PARTNER_ACCOUNT: NoticeChannel[] = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'];
+// Finition 4 : porteurs (suspension, reprise) et contrôleurs affectés prévenus sur les quatre canaux.
+const ALL_CHANNELS: NoticeChannel[] = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'];
 
 export const CONFIRMATION_NOTICES: Readonly<Record<ConfirmationKey, Notice[]>> = {
     event_suspend: [
         { who: 'le partenaire', type: 'EVENT_SUSPENDED', channels: PARTNER_FULL, withReason: true },
-        { who: 'les détenteurs de billets', type: 'EVENT_SUSPENDED_HOLDER', channels: ['IN_APP', 'PUSH', 'EMAIL'], withReason: false, optIn: true },
-        { who: 'les contrôleurs affectés', type: 'CONTROLLER_EVENT_STATUS', channels: ['IN_APP', 'EMAIL'], withReason: false },
+        { who: 'les détenteurs de billets', type: 'EVENT_SUSPENDED_HOLDER', channels: ALL_CHANNELS, withReason: false, optIn: true },
+        { who: 'les contrôleurs affectés', type: 'CONTROLLER_EVENT_STATUS', channels: ALL_CHANNELS, withReason: false },
     ],
     event_reactivate: [
         { who: 'le partenaire', type: 'EVENT_REACTIVATED', channels: PARTNER_FULL, withReason: false },
-        { who: 'les détenteurs de billets', type: 'EVENT_REACTIVATED_HOLDER', channels: ['IN_APP', 'PUSH', 'EMAIL'], withReason: false, optIn: true },
-        { who: 'les contrôleurs affectés', type: 'CONTROLLER_EVENT_STATUS', channels: ['IN_APP', 'EMAIL'], withReason: false },
+        { who: 'les détenteurs de billets', type: 'EVENT_REACTIVATED_HOLDER', channels: ALL_CHANNELS, withReason: false, optIn: true },
+        { who: 'les contrôleurs affectés', type: 'CONTROLLER_EVENT_STATUS', channels: ALL_CHANNELS, withReason: false },
     ],
     event_finish: [
-        { who: 'le partenaire', type: 'EVENT_FINISHED', channels: ['IN_APP', 'EMAIL'], withReason: false },
+        { who: 'le partenaire', type: 'EVENT_FINISHED', channels: ['IN_APP', 'EMAIL', 'PUSH'], withReason: false },
     ],
     event_close: [
         { who: 'le partenaire', type: 'EVENT_CLOSED_BY_ADMIN', channels: PARTNER_FULL, withReason: true },
@@ -76,13 +79,13 @@ export const CONFIRMATION_NOTICES: Readonly<Record<ConfirmationKey, Notice[]>> =
     // prévient leurs détenteurs et leurs contrôleurs, pas la partenaire une seconde fois (marqueur de cascade).
     partner_suspend: [
         { who: 'le partenaire', type: 'PARTNER_SUSPENDED', channels: PARTNER_ACCOUNT, withReason: true },
-        { who: 'les détenteurs de billets de ses événements en ligne', type: 'EVENT_SUSPENDED_HOLDER', channels: ['IN_APP', 'PUSH', 'EMAIL'], withReason: false, optIn: true },
-        { who: 'les contrôleurs de ses événements', type: 'CONTROLLER_EVENT_STATUS', channels: ['IN_APP', 'EMAIL'], withReason: false },
+        { who: 'les détenteurs de billets de ses événements en ligne', type: 'EVENT_SUSPENDED_HOLDER', channels: ALL_CHANNELS, withReason: false, optIn: true },
+        { who: 'les contrôleurs de ses événements', type: 'CONTROLLER_EVENT_STATUS', channels: ALL_CHANNELS, withReason: false },
     ],
     partner_reactivate: [
         { who: 'le partenaire', type: 'PARTNER_REACTIVATED', channels: PARTNER_ACCOUNT, withReason: false },
-        { who: 'les détenteurs de billets des événements qui reviennent en ligne', type: 'EVENT_REACTIVATED_HOLDER', channels: ['IN_APP', 'PUSH', 'EMAIL'], withReason: false, optIn: true },
-        { who: 'les contrôleurs de ces événements', type: 'CONTROLLER_EVENT_STATUS', channels: ['IN_APP', 'EMAIL'], withReason: false },
+        { who: 'les détenteurs de billets des événements qui reviennent en ligne', type: 'EVENT_REACTIVATED_HOLDER', channels: ALL_CHANNELS, withReason: false, optIn: true },
+        { who: 'les contrôleurs de ces événements', type: 'CONTROLLER_EVENT_STATUS', channels: ALL_CHANNELS, withReason: false },
     ],
     account_suspend: [
         { who: 'la personne', type: 'ACCOUNT_SUSPENDED', channels: PARTNER_ACCOUNT, withReason: true },

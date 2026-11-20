@@ -65,7 +65,10 @@ describe('1. chaque avis annoncé correspond au registre des avis', () => {
         const { noticesText } = await mod();
         const suspend = noticesText('event_suspend');
         assert.match(suspend, /^Prévenus : /);
-        assert.match(suspend, /les détenteurs de billets par notification et email \(si une adresse vérifiée\), sans SMS, sans votre motif/);
+        // Finition 4 (décision du client du 19/11) : les détenteurs sont prévenus aussi par SMS ; l'avis sans SMS est celui de la fin
+        // d'un événement à la partenaire (modification signalée au rapport)
+        assert.match(suspend, /les détenteurs de billets par SMS, notification et email \(si une adresse vérifiée\), sans votre motif/);
+        assert.match(noticesText('event_finish'), /le partenaire par notification et email \(si une adresse vérifiée\), sans SMS, sans votre motif/);
         assert.match(noticesText('account_reactivate'), /sans votre motif/);
         assert.match(noticesText('partner_reactivate'), /sans votre motif/);
         assert.match(noticesText('event_close'), /les détenteurs de billets par SMS/);

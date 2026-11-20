@@ -42,7 +42,10 @@ export type Channel = 'IN_APP' | 'SMS' | 'EMAIL' | 'PUSH';
 export const CHANNELS: readonly Channel[] = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'];
 
 export type Family = 'ESSENTIAL' | 'OPTIONAL';
-export type Topic = 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY';
+/** Finition 4 : SALES_SUMMARY (résumé du matin des ventes, partenaires), AFTER_EVENT (merci du lendemain). */
+export type Topic = 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | 'SALES_SUMMARY' | 'AFTER_EVENT';
+/** Finition 4 : DEFER = non urgent, SMS et push de la nuit reportés à sa fin ; SEND = urgent. */
+export type NightPolicy = 'SEND' | 'DEFER';
 export type Audience = 'CLIENT' | 'PARTNER' | 'CONTROLLER' | 'ADMIN' | 'ANY';
 export type SuspendedPolicy = 'BLOCK' | 'ALLOW';
 export type AdminPermission =
@@ -125,7 +128,8 @@ export interface TemplateData {
     };
     REMINDER_J1: EventData & { sms_policy?: string };
     REMINDER_H3: EventData & { sms_policy?: string };
-    REFUND_REQUESTED: EventData & { cashout_id: string; amount: number };
+    /** Finition 4 : by = qui a lancé le remboursement (CLIENT, ORGANIZER, ADMIN, CANCELLATION) ; operator du paiement. */
+    REFUND_REQUESTED: EventData & { cashout_id: string; amount: number; operator?: string | null; by?: 'CLIENT' | 'ORGANIZER' | 'ADMIN' | 'CANCELLATION' };
     REFUND_PAID: OptionalEventData & MoneyData;
     PASSWORD_CHANGED: Record<string, never>;
     /** Lot 9 (9.2, L30) : SMS à l'ancien numéro, aucune donnée. */
@@ -138,18 +142,22 @@ export interface TemplateData {
     EVENT_REACTIVATED: EventData;
     EVENT_PUBLISHED_BY_ADMIN: EventData;
     FIRST_TICKET_SOLD: EventData;
-    NEW_ORDER: EventData & { payment_id: string; ticket_count: number; total: number };
+    /** Finition 4 : cloche groupée toutes les 15 minutes (order_count commandes depuis since). */
+    NEW_ORDER: EventData & { payment_id: string; ticket_count: number; total: number; order_count?: number; since?: string };
     CATEGORY_SOLD_OUT: EventData & { category_id: string; category: string };
-    EVENT_SOLD_OUT: EventData;
+    /** Finition 4 : dernière catégorie vendue (avis fusionné avec « catégorie complète »). */
+    EVENT_SOLD_OUT: EventData & { category_id?: string; category?: string };
     SHIFT_DISCREPANCY: EventData & { shift_id: string; controller_name: string; difference: number; declared?: number | null; justification?: string | null };
     WITHDRAWAL_PAID: MoneyData;
-    WITHDRAWAL_REJECTED: MoneyData;
+    /** Finition 4 : not_paid = retrait constaté non versé (jamais un refus de l'opérateur). */
+    WITHDRAWAL_REJECTED: MoneyData & { not_paid?: boolean };
     WITHDRAWAL_UNCERTAIN: MoneyData;
     CANCEL_REFUNDS_DONE: EventData;
     CANCEL_REFUNDS_BLOCKED: EventData;
     PARTNER_REGISTERED_ACK: { partner_id: string; company: string };
     PARTNER_VALIDATED: { partner_id: string; company: string };
-    PARTNER_REJECTED: { partner_id: string; company?: string; reason: string };
+    /** Finition 4 : resubmitted = second refus (dossier déjà complété une fois). */
+    PARTNER_REJECTED: { partner_id: string; company?: string; reason: string; resubmitted?: boolean };
     PARTNER_SUSPENDED: { partner_id: string; company?: string; reason: string };
     PARTNER_REACTIVATED: { partner_id: string; company?: string };
     TRIAL_STARTED: { partner_id: string; days: number };
@@ -192,7 +200,7 @@ export interface TemplateData {
     /** Lot 8 (8.2 a, L32) : second paiement réussi d'un même panier. */
     ADMIN_DUPLICATE_PAYMENT: { payment_id: string; duplicate_of: string; amount: number; duplicate_rank?: number; withheld?: number };
     ADMIN_CASHOUT_UNCERTAIN: { cashout_id: string; amount: number };
-    ADMIN_WITHDRAWAL_REJECTED: { cashout_id: string; amount: number };
+    ADMIN_WITHDRAWAL_REJECTED: { cashout_id: string; amount: number; not_paid?: boolean };
     ADMIN_FINANCE_DEBT: { debt_id: string; amount: number; debt: number; account_kind: AccountKind | string; entry_type?: string };
     ADMIN_NOTIFICATION_FAILED: { outbox_id: string; failed_type: string; channel: Channel | string; reason?: string; attempts?: number };
     ADMIN_SMS_DAILY_THRESHOLD: { day: string; count: number; threshold: number };
@@ -285,6 +293,19 @@ export interface TemplateData {
     ADMIN_PHONE_CHANGED: { by_self: boolean };
     /** Points 2a et 2c : SMS au NOUVEAU numéro et cloche. */
     ADMIN_PHONE_CONFIRMED: { by_self: boolean };
+    // Finition 4 (décisions du client du 19/11)
+    /** SMS des ventes groupé (30 min) : ticket_count billets, total (hors frais) depuis since. */
+    SALES_UPDATE_SMS: EventData & { payment_id?: string; ticket_count: number; total: number; since: string };
+    /** Résumé du matin (9 h) : activité de la veille (day, AAAA-MM-JJ) ; données de l'événement quand il n'y en a qu'un. */
+    PARTNER_DAILY_SUMMARY: Partial<EventData> & {
+        day: string; sold_count: number; sold_amount: number; refund_count: number; refund_amount: number; entry_count: number; event_count: number;
+    };
+    /** Bienvenue au premier passage du spectateur : organizer = nom de la structure. */
+    ENTRY_WELCOME: EventData & { organizer: string; ticket_id?: string; entered_at?: string };
+    /** Merci du lendemain à 11 h. */
+    ENTRY_THANKS: EventData & { organizer: string };
+    /** Demandes de remboursement des clients, groupées (15 min), sans nom ni numéro. */
+    PARTNER_REFUND_REQUESTS: EventData & { ticket_count: number; amount: number; since: string };
 }
 
 export type NotificationType = keyof TemplateData;

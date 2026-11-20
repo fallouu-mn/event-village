@@ -114,7 +114,12 @@ function rulesFor(recipient: string, ctx: SmsContext): QuotaRule[] {
     // par destinataire, par compte et par caisse (consigne : quotas anti-abus du lot 1C maintenus).
     const rules: QuotaRule[] = [];
     if (ctx.family !== 'ESSENTIAL') rules.push({ scope: 'sms_global', bucket: 'all', windowSecs: DAY, max: nonOtpGlobalCap() });
-    rules.push({ scope: 'sms_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY });
+    // Finition 4 (contre-vérification, T3) : deux compteurs par numéro et par jour. Un SMS facultatif (famille OPTIONAL du
+    // registre) compte sur sa propre part (SMS_PER_PHONE_DAY_OPTIONAL) et ne peut jamais consommer celle des indispensables ;
+    // tout autre SMS non OTP (indispensable, reçu du guichet, invitation, appel sans famille) garde SMS_PER_PHONE_DAY.
+    rules.push(ctx.family === 'OPTIONAL'
+        ? { scope: 'sms_phone_optional', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY_OPTIONAL }
+        : { scope: 'sms_phone', bucket: recipient, windowSecs: DAY, max: env.SMS_PER_PHONE_DAY });
     if ((ctx.category ?? 'TRANSACTIONAL') === 'COUNTER_RECEIPT') {
         // Reçu du guichet : limite par destinataire, quota par caisse (et part non OTP du plafond global sans
         // famille ; l'envoyeur passe ESSENTIAL, registre : hors plafond global depuis le lot 7)

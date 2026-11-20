@@ -132,8 +132,9 @@ async function becameAdminNotices(partner: TestPartner, controllerId: string): P
 function checkTeamChannels(rows: Row[], what: string): void {
     const channels = new Set(rows.map((r) => String(r.channel)));
     assert.ok(channels.has('IN_APP'), `${what} : cloche absente (${[...channels].join(', ')})`);
-    assert.ok(!channels.has('SMS'), `${what} : SMS envoyé`);
-    for (const ch of channels) assert.ok(['IN_APP', 'PUSH', 'EMAIL'].includes(ch), `${what} : canal ${ch}`);
+    // Finition 4 (décision du client du 19/11 : chaque étape importante sur les 4 canaux ; modification signalée au rapport) : l'avis à l'organisatrice part aussi par SMS
+    assert.ok(channels.has('SMS'), `${what} : SMS absent`);
+    for (const ch of channels) assert.ok(['IN_APP', 'PUSH', 'EMAIL', 'SMS'].includes(ch), `${what} : canal ${ch}`);
 }
 
 describe('a. caisse ouverte : promotion refusée, rien ne change', () => {

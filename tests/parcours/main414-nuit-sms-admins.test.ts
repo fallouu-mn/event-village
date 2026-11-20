@@ -13,6 +13,10 @@
  * Invariants du lot 9 quinquies (p1 à p3) vérifiés à la fin.
  *
  * Rouge avant correctif : à 22:00 simulé, l'envoyeur envoyait le SMS dû à 21:55 (SMS aux admins envoyé la nuit).
+ *
+ * Finition 4 (décision du client du 19/11, modification signalée au rapport) : plage par défaut 01:00 → 07:00 (réglage) ;
+ * le report de nuit est commun à tous les messages non urgents (motif NIGHT au lieu d'ADMIN_NIGHT). Les deux runs simulés
+ * sont décalés sur la nouvelle plage : 00:55 → 01:00 (reporté) → 06:59 → 07:00 ; 06:55 (dû à 07:00) → 06:56 → 07:00.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -60,51 +64,51 @@ const smsCount = (): number => getFakes().sms.messagesTo(admin.phoneE164).length
 const hourDakar = (iso: string | null): number => new Date(String(iso)).getUTCHours(); // Dakar = UTC toute l'année
 
 describe('D1 — plage de nuit des SMS aux admins revérifiée à l’envoi (heure simulée)', () => {
-    test('run simulé qui démarre à 21:55 : mis en file à 21:55, rien à 22:00 ni à 07:59, un SMS à 08:00', async () => {
+    test('run simulé qui démarre à 00:55 : mis en file à 00:55, rien à 01:00 ni à 06:59, un SMS à 07:00', async () => {
         const day = dakarDay(3);
-        const next = dakarDay(4);
+        const next = day;
         const sms0 = smsCount();
-        const ref = await addReview(dakarAt(day, '21:55'));
+        const ref = await addReview(dakarAt(day, '00:55'));
         const queued = await rowOf(ref);
         assert.equal(queued.status, 'PENDING');
-        assert.equal(Date.parse(queued.due_at), dakarAt(day, '21:55').getTime(), 'dû tout de suite (avant la nuit)');
+        assert.equal(Date.parse(queued.due_at), dakarAt(day, '00:55').getTime(), 'dû tout de suite (avant la nuit)');
 
-        await dispatchRow(ref, dakarAt(day, '22:00'));
+        await dispatchRow(ref, dakarAt(day, '01:00'));
         const deferred = await rowOf(ref);
-        assert.equal(deferred.status, 'PENDING', 'à 22:00 : toujours en attente, jamais envoyé ni perdu');
-        assert.equal(smsCount(), sms0, 'à 22:00 : aucun SMS');
-        assert.equal(Date.parse(String(deferred.next_attempt_at)), dakarAt(next, '08:00').getTime(), 'reporté à 8 h');
-        assert.equal(Date.parse(deferred.due_at), dakarAt(next, '08:00').getTime(), 'échéance reportée à 8 h');
+        assert.equal(deferred.status, 'PENDING', 'à 01:00 : toujours en attente, jamais envoyé ni perdu');
+        assert.equal(smsCount(), sms0, 'à 01:00 : aucun SMS');
+        assert.equal(Date.parse(String(deferred.next_attempt_at)), dakarAt(next, '07:00').getTime(), 'reporté à 7 h');
+        assert.equal(Date.parse(deferred.due_at), dakarAt(next, '07:00').getTime(), 'échéance reportée à 7 h');
         const decision = deferred.decision as { outcome?: string; reason?: string } | null;
         assert.equal(decision?.outcome, 'DEFER');
-        assert.equal(decision?.reason, 'ADMIN_NIGHT');
+        assert.equal(decision?.reason, 'NIGHT');
         assert.equal(Number(deferred.attempts), Number(queued.attempts), 'aucune tentative consommée');
 
-        await dispatchRow(ref, dakarAt(next, '07:59'));
-        assert.equal((await rowOf(ref)).status, 'PENDING', 'à 07:59 : toujours en attente');
-        assert.equal(smsCount(), sms0, 'à 07:59 : aucun SMS');
+        await dispatchRow(ref, dakarAt(next, '06:59'));
+        assert.equal((await rowOf(ref)).status, 'PENDING', 'à 06:59 : toujours en attente');
+        assert.equal(smsCount(), sms0, 'à 06:59 : aucun SMS');
 
-        await dispatchRow(ref, dakarAt(next, '08:00'));
+        await dispatchRow(ref, dakarAt(next, '07:00'));
         const sent = await rowOf(ref);
-        assert.equal(sent.status, 'SENT', 'à 08:00 : envoyé');
-        assert.equal(hourDakar(sent.sent_at), 8, 'envoyé à 8 h');
+        assert.equal(sent.status, 'SENT', 'à 07:00 : envoyé');
+        assert.equal(hourDakar(sent.sent_at), 7, 'envoyé à 7 h');
         assert.equal(smsCount(), sms0 + 1, 'un seul SMS');
     });
 
-    test('run simulé qui démarre à 07:55 : mis en file à 07:55 (dû à 8 h), rien à 07:56, un SMS à 08:00', async () => {
+    test('run simulé qui démarre à 06:55 : mis en file à 06:55 (dû à 7 h), rien à 06:56, un SMS à 07:00', async () => {
         const day = dakarDay(6);
         const sms0 = smsCount();
-        const ref = await addReview(dakarAt(day, '07:55'));
-        assert.equal(Date.parse((await rowOf(ref)).due_at), dakarAt(day, '08:00').getTime(), 'dû à 8 h');
+        const ref = await addReview(dakarAt(day, '06:55'));
+        assert.equal(Date.parse((await rowOf(ref)).due_at), dakarAt(day, '07:00').getTime(), 'dû à 7 h');
 
-        await dispatchRow(ref, dakarAt(day, '07:56'));
-        assert.equal((await rowOf(ref)).status, 'PENDING', 'à 07:56 : en attente');
-        assert.equal(smsCount(), sms0, 'à 07:56 : aucun SMS');
+        await dispatchRow(ref, dakarAt(day, '06:56'));
+        assert.equal((await rowOf(ref)).status, 'PENDING', 'à 06:56 : en attente');
+        assert.equal(smsCount(), sms0, 'à 06:56 : aucun SMS');
 
-        await dispatchRow(ref, dakarAt(day, '08:00'));
+        await dispatchRow(ref, dakarAt(day, '07:00'));
         const sent = await rowOf(ref);
         assert.equal(sent.status, 'SENT');
-        assert.equal(hourDakar(sent.sent_at), 8);
+        assert.equal(hourDakar(sent.sent_at), 7);
         assert.equal(smsCount(), sms0 + 1);
     });
 
