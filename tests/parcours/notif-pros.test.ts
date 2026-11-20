@@ -48,7 +48,7 @@ import {
 import { authed, newController, openShift, scan, ticketPayload, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, eventHistory, rpcTransition, type DraftEvent, type EventStatus } from './cycle-helpers';
 import {
-    assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, markEmailVerified, noonDakarTomorrow, outboxRows, smsMark, smsTo,
+    assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, markEmailVerified, noonDakarTomorrow, nowOutsideNight, outboxRows, smsMark, smsTo,
     type OutboxChannel, type OutboxRow,
 } from './notif-helpers';
 import { gotrueEmail } from '../helpers/gotrue-email';
@@ -283,7 +283,8 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
             assert.equal(r.status, 'PENDING', `${r.idempotency_key} : PENDING dès la transition (${r.status} ${r.reason})`);
         }
         let mark = smsMark(p.phoneE164);
-        let sent = await deliver(rej, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        let sent = await deliver(rej, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : événement ${ev.title} non validé. Motif : ${reason}. ${APP_URL}/partner/events`);
         await assertInApp(sent, { userId: p.userId, title: 'Événement non validé', contains: [ev.title, reason], actionUrl: `/partner/events/${ev.eventId}` });
 
@@ -291,7 +292,8 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         const hVal = await historyId(ev.eventId, 'EN_ATTENTE', 'VALIDE');
         const val = await groupRows('EVENT_VALIDATED', `EVENT_VALIDATED:${hVal}`, ALL4, p.userId);
         mark = smsMark(p.phoneE164);
-        sent = await deliver(val, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        sent = await deliver(val, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre événement ${ev.title} est validé. Publiez-le depuis votre espace : ${APP_URL}/partner/events`);
         await assertInApp(sent, { userId: p.userId, title: 'Événement validé', contains: [ev.title], actionUrl: `/partner/events/${ev.eventId}` });
         assert.equal((await outboxRows({ type: 'EVENT_REJECTED', eventId: ev.eventId })).length, 4, 'refus : aucune ligne de plus après la validation');
@@ -684,7 +686,8 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const group = await singleGroup('PARTNER_VALIDATED', `PARTNER_VALIDATED:${p.partnerId}:tx`);
         const rows = await groupRows('PARTNER_VALIDATED', group, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
         const mark = smsMark(p.phoneE164);
-        const sent = await deliver(rows, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        const sent = await deliver(rows, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre compte partenaire ${p.company} est validé. Connectez-vous : ${APP_URL}/login`);
         await assertInApp(sent, { userId: p.userId, title: 'Compte partenaire validé', contains: [], actionUrl: '/partner/dashboard' });
     });
@@ -705,7 +708,8 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const group = await singleGroup('PARTNER_REJECTED', `PARTNER_REJECTED:${p.partnerId}:tx`);
         const rows = await groupRows('PARTNER_REJECTED', group, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
         const mark = smsMark(p.phoneE164);
-        const sent = await deliver(rows, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        const sent = await deliver(rows, await nowOutsideNight());
         // Finition 4 (E-43, modification signalée au rapport) : le SMS dit la suite
         assertSms(sent, p.phoneE164, mark, `Event Village : demande partenaire refusée. Motif : Pièce d'identité illisible. Complétez votre dossier : ${APP_URL}/partner/dashboard`);
         await assertInApp(sent, { userId: p.userId, title: 'Demande refusée', contains: [reason], actionUrl: '/partner/dashboard' });
@@ -738,7 +742,8 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const rgroup = await singleGroup('PARTNER_REACTIVATED', `PARTNER_REACTIVATED:${p.partnerId}:tx`);
         const rrows = await groupRows('PARTNER_REACTIVATED', rgroup, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
         mark = smsMark(p.phoneE164);
-        sent = await deliver(rrows, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        sent = await deliver(rrows, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre compte partenaire est réactivé. Connectez-vous : ${APP_URL}/login`);
         await assertInApp(sent, { userId: p.userId, title: 'Compte réactivé', contains: [], actionUrl: '/partner/dashboard' });
         assert.deepEqual(await outboxRows({ type: 'PARTNER_VALIDATED', keyPrefix: `PARTNER_VALIDATED:${p.partnerId}:` }), [], 'réactivation : PARTNER_REACTIVATED, pas PARTNER_VALIDATED');
