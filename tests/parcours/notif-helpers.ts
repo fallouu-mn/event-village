@@ -88,6 +88,22 @@ export function noonDakarTomorrow(): Date {
     return dakarAt(dakarDay(1), '12:00');
 }
 
+/**
+ * Finition 4 (règle de nuit ; ajout signalé au rapport) : maintenant si l'heure de Dakar est hors de la plage de nuit du
+ * réglage, sinon la fin de la plage plus une minute, l'heure où un avis non urgent part réellement. Pour envoyer « maintenant »
+ * un avis non urgent sans dépendre de l'heure du run (run 480 de main, lancé à 01:33 : avis restés en attente).
+ */
+export async function nowOutsideNight(): Promise<Date> {
+    const start = Number(await getNotifSetting('notif.sms_quiet_start'));
+    const end = Number(await getNotifSetting('notif.sms_quiet_end'));
+    const now = new Date();
+    const h = now.getUTCHours();
+    const inNight = start === end ? false : start < end ? h >= start && h < end : h >= start || h < end;
+    if (!inNight) return now;
+    const day = start > end && h >= start ? dakarDay(1, now) : dakarDay(0, now);
+    return addMinutes(dakarAt(day, `${String(end).padStart(2, '0')}:00`), 1);
+}
+
 export function addMinutes(d: Date, minutes: number): Date {
     return new Date(d.getTime() + minutes * 60_000);
 }
