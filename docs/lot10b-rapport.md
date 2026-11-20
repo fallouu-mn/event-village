@@ -229,6 +229,7 @@ Quand le service des salles est fermé, une notification de réservation de sall
 | 490 | `50347ac53` | complet | tests 556/557 (seul `notif-pros`, nuit) ; e2e 685/687 et responsive 4 défauts : la fiche d’une salle élargie à 698 px sur téléphone (texte masqué de la bande des jours sorti de la zone qui défile) ; Lighthouse Mes billets 89 (page non touchée, 90 au run 487) |
 | 493 | `fb3915a25` | complet, lancé à 06:55 | **tests 557/557**, **e2e 687/687**, build, budgets JS ; responsive 0 défaut sur 116 résultats : les 16 pages de l’administration non contrôlées (connexion du super-administrateur en échec dans la préparation, course de `LoginForm` déjà relevée par la finition 4) ; Lighthouse (93, 92, **88**) |
 | 495 | `e5bb14f0a` | complet, après la fusion de main (`14cc794a8`) | 1re tentative : tests 557/557, responsive 0 défaut ; e2e : captures de l’administration (même connexion) ; Lighthouse (91, 92, **89**). 2e tentative : **tests 557/557, e2e 687/687, responsive 148 résultats et 0 défaut**, build, budgets JS ; Lighthouse (90, **89**, **88**) |
+| 499 | `84ab9bdcc` | complet (relance de la mesure) | **tests 557/557, e2e 687/687, responsive 148 résultats et 0 défaut**, build, budgets JS ; Lighthouse (90, **89**, **89**) |
 
 ### `notif-pros` la nuit (hors du lot)
 
@@ -251,3 +252,20 @@ plus : premier chargement de Mes billets 225 Ko sur la branche contre 226 Ko sur
 JS tenus et non relevés. Mes billets oscille autour du seuil, sur main aussi (run 494 : médiane 90, passages
 [91 ; 89 ; 91 ; 90 ; 90]) ; sur la branche, médianes 88 à 90 selon la machine (calibration ×4,7 à ×4,9). Seuil 90
 inchangé : le job est relancé, rien d’autre.
+
+Run 499 encore sous le seuil (fiche 89, Mes billets 89). Comparaison des rapports Lighthouse avec main (run 494,
+`perf/lighthouse-*.json.gz`) :
+
+| Mes billets (passage retenu) | main 494 | branche 499 |
+|---|---|---|
+| transféré | 385 275 o | 392 461 o (+7 186) |
+| dont JS (découpage différent, mêmes modules) | | +1 à 2 Ko |
+| dont `/api/notifications` (seed de démonstration v5 : avis des salles du client) | 19 994 o | 22 048 o |
+| exécution des scripts | 1 868 ms | 1 861 ms |
+| TBT | 397 ms | 452 ms |
+| calibration du processeur | ×5,25 à ×5,49 | ×4,67 à ×4,88 |
+
+Le nouveau fichier partagé (`1620.js`, 7 Ko) est la cloche des notifications, inchangée : webpack a regroupé autrement les
+modules partagés (`5412` et `8017` de main) à cause des pages nouvelles. Aucun code du lot ne s’exécute sur ces trois
+pages ; l’écart vient du TBT, qui varie d’un passage à l’autre (main : 255 à 503 ms sur la fiche). Seuil et budgets
+inchangés ; **à trancher par vous** : nouvelle relance du job, ou acceptation de l’écart sur des pages non touchées.
