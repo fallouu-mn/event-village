@@ -202,7 +202,23 @@ Tous dans la migration `…06` (aucune n'était appliquée) et dans `lib/sms/sms
 | 470 | `8c0373b2c` | rouge (invariant n) | vert | — | correctifs T1-T3 : l'invariant (n) refusait les SMS facultatifs partis la nuit pour un événement proche (règle du 20/11) ; la vérification d'état était faite avant la décision de nuit |
 | 474 | `25f70efac` | 2 lots rouges | connexion du super-administrateur (code SMS non lu, 1re fois sur 40 runs ; aucun changement de l'OTP) | rouge (pages non touchées) | renvois vers `notif-pros` décalés de 2 lignes ; isolation de `cvf4-4` (82 suites rouges par l'invariant g) |
 | 475 | `9297f6a90` | 1 lot rouge | fumée (scan du partenaire) et terrain 1 (vignette de « Mes billets » sans cesse redessinée) | vert | `main` fusionné ; la ligne de scan ajoutée à `cvf4-4` n'avait pas de version de secret (invariant p, 66 suites) ; e2e : voir § 8 ter |
+| 476 | `1f1174ca5` | **547/547** | **vert** (fumée, terrain, recette) | Mes billets 88 (page non touchée) | relance du seul job e2e (règle du 19/11) : mesure verte (91, 91, 90), mais connexion du super-administrateur rouge : voir § 8 ter |
 | RUN_APRES | | | | | |
+
+## 8 ter. Échecs de l'e2e sans lien avec ce lot
+
+**Connexion du super-administrateur (runs 474 et relance du 476).** Symptômes : au run 474, le SMS du code n'arrive jamais ; à la relance du 476, le SMS du code part (88 caractères, numéro …07 du super-administrateur du seed) et le test le lit, mais la fenêtre est revenue à « Recevoir le code par SMS » (bouton au repos, aucun message d'erreur) et la case « chiffre 1 sur 6 » n'apparaît jamais.
+
+Vérifié dans la branche :
+- la demande de code (`POST /api/admin/step-up/sms`) réserve son SMS dans la catégorie OTP de `lib/sms/sms-guard.ts`, dont les règles sortent **avant** la ligne changée par T3 : un code ne passe jamais par le compteur des SMS facultatifs ;
+- l'envoi est synchrone (`mTargetService.sendOtp`), hors boîte d'envoi : la règle de nuit (`notification_outbox_claim`) ne le voit pas ; aucune règle de nuit dans `lib/sms` ;
+- la réponse de la route n'a pas changé (`{ ok: true, sent: true }` ; seul le texte de `NO_PHONE` dit « super-administrateur », venu de `main`) ; le texte du SMS du code n'a pas changé ;
+- heures : l'e2e du 474 a démarré vers 20:33, la relance du 476 vers 23:38 (heure de Dakar), hors de la plage 01:00-07:00 ;
+- la trace Playwright (artefact `playwright-report`) n'a pas pu être téléchargée depuis le poste (accès refusé) ; la capture et le contexte d'erreur publiés suffisent : le bouton porte `isLoading={busy}` et il est au repos, la requête n'était donc plus en cours : la fenêtre a été remontée.
+
+Cause, dans du code que ce lot ne touche pas (`components/auth/LoginForm.tsx`, `middleware.ts`, inchangés depuis le lot sécurité de déconnexion) : après « Se connecter », `LoginForm` appelle `router.refresh()` puis arme `setTimeout(() => { window.location.href = target }, 400)`, jamais annulé. Le `router.refresh()` sur `/login` d'un compte connecté est redirigé par `middleware.ts` vers `/admin/dashboard` : l'URL change sans rechargement, le test voit `/admin`, trouve la fenêtre du code et clique ; puis le minuteur recharge toute la page. Si le clic tombe pendant le déchargement, la demande ne part pas (474) ; s'il tombe juste avant, le SMS part et le rechargement remet la fenêtre à zéro (476). La course dépend de la charge de la machine : vue 2 fois sur 6 runs de cette branche, 0 sur les 40 précédents, jamais sur `main` pour l'instant. Correctif possible, hors de ce lot : ne pas armer le rechargement quand `router.refresh()` a déjà quitté `/login`, ou attendre dans l'e2e le chargement complet de la page d'arrivée avant de chercher la fenêtre.
+
+**Fumée et terrain du run 475.** La fumée s'est arrêtée à l'étape 5 (le partenaire scanne) : le QR du billet acheté était dessiné, mais la réponse du code vivant n'a pas été vue par le test (erreur d'hydratation React #418 côté client ; événement créé à 00:05 le lendemain, run lancé vers 22:20). La fumée interrompue a laissé son billet valide en tête de « Mes billets » du client ; les deux cas « terrain 1 » ont alors trouvé leur billet en vignette, redessinée pendant le clic. Ni « Mes billets », ni le code vivant, ni la fiche ne sont touchés par ce lot ; au run 476 suivant, fumée et terrain sont verts.
 
 La mesure mobile a varié d'un run à l'autre sur des pages que ce lot ne touche pas (accueil, fiche, Mes billets), avec le poids JavaScript toujours vert : variation de la machine de mesure, déjà vue au run 432 de main. Rien n'a été changé pour elle.
 
