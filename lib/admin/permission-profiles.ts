@@ -36,8 +36,8 @@ export const PERMISSION_PROFILES: ReadonlyArray<{ key: string; label: string; hi
     {
         key: 'validation',
         label: 'Validation',
-        hint: 'Valide les événements et les partenaires.',
-        permissions: withDependencies(['events.write', 'partners.validate']),
+        hint: 'Valide les événements, les partenaires, les salles et les établissements.',
+        permissions: withDependencies(['events.write', 'partners.validate', 'halls.validate']),
     },
     {
         key: 'support',
@@ -61,7 +61,7 @@ export const PERMISSION_PROFILES: ReadonlyArray<{ key: string; label: string; hi
 
 /** Thèmes de la grille des droits (fieldset et légende). */
 export const PERMISSION_GROUPS: ReadonlyArray<{ title: string; permissions: string[] }> = [
-    { title: 'Événements et partenaires', permissions: ['events.read', 'events.write', 'partners.read', 'partners.validate', 'partners.suspend'] },
+    { title: 'Événements et partenaires', permissions: ['events.read', 'events.write', 'partners.read', 'partners.validate', 'partners.suspend', 'halls.validate'] },
     { title: 'Comptes et messages', permissions: ['users.read', 'users.write', 'notifications.read', 'notifications.write', 'communications.manage'] },
     { title: 'Argent', permissions: ['payments.read', 'refunds.manage', 'referrals.manage', 'statistics.read'] },
     { title: 'Terrain et réglages', permissions: ['access.operate', 'settings.read'] },

@@ -3,6 +3,7 @@ import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { HallService } from '@/lib/halls/hall.service';
 import { guardFeature } from '@/lib/features/flags';
+import { partnerHalls } from '@/lib/halls/queries';
 
 /**
  * GET /api/partner/halls
@@ -20,7 +21,9 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
         }
 
-        const halls = await HallService.getPartnerHalls(user.id);
+        // Lot 10b : colonnes de la fiche et nombre de réservations à venir (plus aucune ligne de réservation : client,
+        // note et montants se lisent réservation par réservation, dans le calendrier)
+        const halls = await partnerHalls(user.id);
         return NextResponse.json({ success: true, halls });
     } catch (error: unknown) {
         return apiFailure('GET /api/partner/halls', error, { message: 'Salles momentanément indisponibles.', code: 'HALLS_UNAVAILABLE', status: 500 });

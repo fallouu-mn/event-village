@@ -394,7 +394,9 @@ interface Insertion {
 
 const INVENTORY: Insertion[] = [
     // Lot 8 (T9, tâche 8.2 a) : la RPC émet aussi l'alerte du paiement en double ; rouge jusqu'à fix(8.2a).
-    { k1: 'B1-B3, B4', fn: 'payment_confirm', types: ['PURCHASE_CONFIRMED', 'NEW_ORDER', 'ADMIN_DUPLICATE_PAYMENT'] },
+    // Finition 4 (point 2, modification signalée au rapport) : la cloche des ventes passe par notif_sale_recorded (groupée)
+    { k1: 'B1-B3, B4', fn: 'payment_confirm', types: ['PURCHASE_CONFIRMED', 'ADMIN_DUPLICATE_PAYMENT'] },
+    { k1: 'B4 (finition 4)', fn: 'notif_sale_recorded', types: ['NEW_ORDER', 'SALES_UPDATE_SMS'] },
     { k1: 'gratuits', fn: 'free_tickets_claim', types: ['FREE_TICKETS_CONFIRMED'] },
     { k1: 'B16', fn: 'counter_sale', types: ['COUNTER_RECEIPT'] },
     { k1: 'B5', trigger: { name: 'trg_tickets_first_sale', table: 'public.tickets' }, types: ['FIRST_TICKET_SOLD'] },
@@ -441,7 +443,14 @@ const INVENTORY: Insertion[] = [
     // l'attente de 15 minutes) ; les avis d'une salle partent des fonctions du parcours.
     { k1: 'P10-P12 (lot 10a)', fn: 'hall_payment_confirm', types: ['HALL_RESERVATION_REQUESTED', 'HALL_RESERVATION_CONFIRMED', 'HALL_BALANCE_PAID', 'HALL_PAYMENT_REFUNDED'] },
     { k1: 'lot 10a annulation', fn: 'hall_cancel_apply', types: ['HALL_RESERVATION_CANCELLED', 'HALL_RESERVATION_CANCELLED_PRO', 'HALL_PAYMENT_DEADLINE_PASSED'] },
-    { k1: 'lot 10a rappel', fn: 'hall_reservations_tick', types: ['HALL_BALANCE_REMINDER'] },
+    // Lot 10b (ajouts signalés) : rappels J-10 et J-8, veille, recettes ; réservation demandée ; remboursement versé ;
+    // salle à valider et salle validée modifiée
+    { k1: 'lot 10a rappel', fn: 'hall_reservations_tick', types: ['HALL_BALANCE_REMINDER', 'HALL_EVE_REMINDER', 'HALL_EARNINGS_AVAILABLE'] },
+    { k1: 'lot 10b demande', fn: 'hall_reserve', types: ['HALL_RESERVATION_PENDING'] },
+    { k1: 'lot 10b remboursement versé', fn: 'notif_cashouts_notify', types: ['HALL_REFUND_PAID'] },
+    { k1: 'lot 10b salles à valider', trigger: { name: 'trg_halls_notify_admins', table: 'public.halls' }, types: ['ADMIN_HALL_SUBMITTED', 'ADMIN_HALL_CHANGED'] },
+    // Contre-vérification du lot 10b (ajout signalé) : droits d'un administrateur donnés ou retirés
+    { k1: 'lot 10b droits', fn: 'admin_permissions_set', types: ['ADMIN_PERMISSIONS_CHANGED', 'ADMIN_PERMISSIONS_ALERT'] },
     { k1: 'lot 10a validation', fn: 'hall_validation_decide', types: ['HALL_VALIDATION_DECIDED'] },
     // Lot 11a (ajout signalé au rapport) : avis du parcours de réservation d'une table, mis en file par les fonctions du
     // parcours (table_notify) ; établissement soumis par trg_venues_submitted

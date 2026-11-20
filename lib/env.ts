@@ -60,6 +60,9 @@ const serverEnvSchema = z.object({
     SMS_OTP_PER_IP_HOUR: limit(10),
     SMS_OTP_PER_IP_DAY: limit(30),
     SMS_PER_PHONE_DAY: limit(30), // notifications (hors OTP) par destinataire ; l'OTP a ses propres compteurs (lot 4)
+    // Finition 4 (contre-vérification, T3) : SMS FACULTATIFS par destinataire et par jour, compteur à part : les ventes, résumés
+    // et rappels ne consomment jamais la part des SMS indispensables (SMS_PER_PHONE_DAY). Même valeur par défaut.
+    SMS_PER_PHONE_DAY_OPTIONAL: limit(30),
     SMS_GLOBAL_DAILY_CAP: limit(1000), // tous SMS confondus, par jour UTC (minuit à Dakar)
     // Lot 4 : SMS non OTP déclenchés par un compte connecté (invitations, équipe, transferts, billets gratuits)
     SMS_PER_ACCOUNT_DAY: limit(30),

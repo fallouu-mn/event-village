@@ -315,8 +315,9 @@ describe('E-20 — avis à la partenaire : acceptée, refusée, expirée (cloche
     function checkChannels(rows: Row[], what: string): void {
         const channels = new Set(rows.map((r) => String(r.channel)));
         assert.ok(channels.has('IN_APP'), `${what} : cloche absente (${[...channels].join(', ')})`);
-        assert.ok(!channels.has('SMS'), `${what} : SMS envoyé à la partenaire`);
-        for (const ch of channels) assert.ok(['IN_APP', 'PUSH', 'EMAIL'].includes(ch), `${what} : canal ${ch}`);
+        // Finition 4 (décision du client du 19/11 : chaque étape importante sur les 4 canaux ; modification signalée au rapport) : la partenaire est prévenue aussi par SMS
+        assert.ok(channels.has('SMS'), `${what} : SMS absent pour la partenaire`);
+        for (const ch of channels) assert.ok(['IN_APP', 'PUSH', 'EMAIL', 'SMS'].includes(ch), `${what} : canal ${ch}`);
     }
 
     test('acceptée et refusée : un avis chacun, avec le nom', async () => {

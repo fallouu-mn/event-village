@@ -79,10 +79,16 @@
  *  - partenaire-rapport-cloture : « Entrées (dont guichet) » au lieu de « Entrées » (un seul rapport, R106 b, T-B16) ;
  *  - invitations-confirmation : premier numéro saisi dans le champ « Numéro 1 » (lignes numéro et nom, 9t.17).
  * Le contraste de chaque nœud [data-scan-contrast] du plein écran est contrôlé par checks.ts (arbitrage 19).
+ *
+ * Lot 10b (contrôle responsive et captures des salles de fête) : treize écrans des salles, données de la graine v5
+ * (DemoIds.halls : salle validée, en attente, refusée de l'organisatrice ; réservation du client en attente de paiement).
+ * Champ nouveau de `Screen` : `salles`, interrupteur features.halls_enabled ouvert le temps de la capture (pages de
+ * app/halls et app/partner/halls, en 404 sinon), sous le verrou entre les workers de e2e/support/halls-switch.ts ; les
+ * écrans de l'administration des salles n'en dépendent pas. Aucune action qui écrit : pages ouvertes puis capturées.
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { DemoAccountKey, DemoEvent, DemoEventKey, DemoIds } from './demo-ids';
+import type { DemoAccountKey, DemoEvent, DemoEventKey, DemoHall, DemoHallKey, DemoIds } from './demo-ids';
 import type { FakePushCounters, FakePushMode } from './fake-push';
 import type { CaptureRole } from './fixtures';
 import type { PageGuard } from './network';
@@ -146,6 +152,11 @@ export interface Screen {
     expectStatus?: number;
     /** Lot 8 : formats exacts, ancrés, de références affichées, qui ne sont pas des valeurs techniques (checks.ts). */
     references?: readonly RegExp[];
+    /**
+     * Lot 10b : écran d'une page des salles de fête (app/halls, app/partner/halls), en 404 tant que l'interrupteur
+     * features.halls_enabled est fermé : ouvert le temps de la capture, sous le verrou de e2e/support/halls-switch.ts.
+     */
+    salles?: boolean;
 }
 
 const UUID = '[0-9a-f-]{36}';
@@ -922,6 +933,52 @@ async function zonesEditorReady(page: Page): Promise<Locator> {
     return heading;
 }
 
+// ── Lot 10b : salles de fête (graine v5, DemoIds.halls) ─────────────────────
+
+/**
+ * Lot 10b : préchargement (next/link) de « Voir le détail » de la notification « Réservation demandée » du client de
+ * démonstration (graine v5) : la page /halls/reservations/<id> répond 404 tant que l'interrupteur des salles est fermé,
+ * ce qui est le cas de toute capture hors des écrans des salles. 404 attendu sur la liste des notifications du client
+ * (modification signalée : constat produit, un lien de notification mène à un service fermé).
+ */
+export const HALL_RESERVATION_PREFETCH = /\/halls\/reservations\/[0-9a-f-]{36}(\?_rsc=[^/]*)?$/;
+
+function demoHall(i: DemoIds | null, key: DemoHallKey): DemoHall {
+    const hall = ids(i).halls?.[key];
+    if (!hall?.id) throw new Error(`[e2e] demo-ids.json : halls.${key} absent (graine v5 du lot 10b)`);
+    return hall;
+}
+
+/** Titre de niveau 1 au nom exact d'une salle du seed (fiche, réservation, administration). */
+async function hallHeading(page: Page, name: string): Promise<void> {
+    await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible({ timeout: 30_000 });
+}
+
+/** Fiche d'une salle de la partenaire : titre, puis calendrier des réservations chargé. */
+async function partnerHallSheetReady(c: ScreenContext): Promise<Locator> {
+    await hallHeading(c.page, demoHall(c.ids, 'validee').name);
+    const calendar = c.page.locator('#calendrier');
+    await expect(calendar.getByRole('heading', { level: 2, name: /^calendrier des réservations$/i })).toBeVisible();
+    await expect(calendar.locator('[aria-busy="true"]'), 'réservations du mois chargées').toHaveCount(0, { timeout: 30_000 });
+    return calendar;
+}
+
+/**
+ * Calendrier de la salle validée ouvert sur le mois de la réservation du client (J+24 au seed : ce mois-ci ou le suivant).
+ * Jours de Dakar (UTC toute l'année), comme HallCalendar ; la réservation doit figurer dans la liste du mois.
+ */
+async function showReservationMonth(c: ScreenContext): Promise<void> {
+    const calendar = await partnerHallSheetReady(c);
+    const { id, startDate } = ids(c.ids).halls.reservation;
+    const now = new Date();
+    const months = (Number(startDate.slice(0, 4)) - now.getUTCFullYear()) * 12 + (Number(startDate.slice(5, 7)) - 1 - now.getUTCMonth());
+    for (let k = 0; k < months; k++) await calendar.getByRole('button', { name: /^mois suivant$/i }).click();
+    await expect(calendar.locator(`a[href="/partner/halls/reservations/${id}"]`), `réservation du ${startDate} dans la liste du mois`).toBeVisible({ timeout: 30_000 });
+    await expect(calendar.locator('[aria-busy="true"]')).toHaveCount(0);
+    // Haut du calendrier en haut de la fenêtre (scroll-mt-24 : sous l'en-tête fixe)
+    await calendar.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+}
+
 function tabScreen(id: string, titre: string, tab: RegExp): Screen {
     return {
         id, titre, role: 'organisateur', needsIds: true, path: pilotage('ceSoir'),
@@ -1217,7 +1274,8 @@ export const SCREENS: readonly Screen[] = [
         stubResponse: { url: /\/api\/notifications(\?|$)/, status: 200, body: { notifications: [], unreadCount: 0, total: 0, page: 1, pageSize: 20 } },
         ready: async ({ page }) => { await expect(page.getByText('Aucune notification', { exact: true })).toBeVisible(); },
     },
-    { id: 'notifications', titre: 'Notifications du client', role: 'client', needsIds: true, path: () => '/notifications' },
+    // Lot 10b : notification de la réservation de salle du seed, lien vers une page fermée (HALL_RESERVATION_PREFETCH)
+    { id: 'notifications', titre: 'Notifications du client', role: 'client', needsIds: true, path: () => '/notifications', allowFailures: [HALL_RESERVATION_PREFETCH] },
     {
         id: 'notifications-erreur', titre: 'Notifications du client — état d’erreur', role: 'client', needsIds: true, path: () => '/notifications',
         injectError: /\/api\/notifications(\?|$)/, ready: expectRetry,
@@ -2535,5 +2593,91 @@ export const SCREENS: readonly Screen[] = [
             await expect(dialog, 'garde avant de quitter avec des modifications (R93)').toBeVisible();
             await expect(dialog.getByRole('button', { name: /^rester sur la page$/i })).toBeVisible();
         },
+    },
+    // ── Lot 10b : salles de fête (graine v5 ; `salles` : interrupteur ouvert le temps de la capture) ──
+    {
+        id: 'salles-catalogue', titre: 'Salles de fête — catalogue (salle validée de la démonstration)', role: 'client', needsIds: true, salles: true,
+        path: () => '/halls',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^salles de fête$/i);
+            const name = demoHall(i, 'validee').name;
+            await expect(page.getByRole('heading', { level: 3, name, exact: true }), `salle « ${name} » au catalogue`).toBeVisible();
+        },
+    },
+    {
+        id: 'salles-fiche', titre: 'Fiche d’une salle validée (photo, équipements, conditions, disponibilités)', role: 'client', needsIds: true, salles: true,
+        path: (i) => `/halls/${demoHall(i, 'validee').id}`,
+        ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'validee').name),
+    },
+    {
+        id: 'salles-mes-reservations', titre: 'Mes réservations de salle — à venir (réservation en attente de paiement)', role: 'client', needsIds: true, salles: true,
+        path: () => '/halls/reservations',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^mes réservations$/i);
+            await expect(page.getByRole('tab', { name: /^à venir/i })).toHaveAttribute('aria-selected', 'true');
+            const name = demoHall(i, 'validee').name;
+            await expect(page.getByRole('heading', { level: 3, name, exact: true }), `réservation de « ${name} »`).toBeVisible();
+        },
+    },
+    {
+        id: 'salles-ma-reservation', titre: 'Ma réservation de salle (en attente de paiement de l’acompte)', role: 'client', needsIds: true, salles: true,
+        path: (i) => `/halls/reservations/${ids(i).halls.reservation.id}`,
+        ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'validee').name),
+    },
+    {
+        id: 'salles-partenaire-liste', titre: 'Partenaire — mes salles (validée, en attente, refusée avec son motif)', role: 'organisateur', needsIds: true, salles: true,
+        path: () => '/partner/halls',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^mes salles$/i);
+            for (const key of ['validee', 'enAttente', 'refusee'] as const) {
+                const h = demoHall(i, key);
+                await expect(page.getByRole('heading', { level: 2, name: h.name, exact: true }), `salle « ${h.name} » (${h.validationStatus})`).toBeVisible();
+            }
+        },
+    },
+    {
+        id: 'salles-partenaire-ajout', titre: 'Partenaire — ajout d’une salle (formulaire)', role: 'organisateur', needsIds: false, salles: true,
+        path: () => '/partner/halls/new',
+        ready: async ({ page }) => expectHeading(page, /^ajouter une salle$/i),
+    },
+    {
+        id: 'salles-partenaire-fiche', titre: 'Partenaire — fiche d’une salle validée (informations clés)', role: 'organisateur', needsIds: true, salles: true,
+        path: (i) => `/partner/halls/${demoHall(i, 'validee').id}`,
+        ready: async (c) => { await partnerHallSheetReady(c); },
+    },
+    {
+        id: 'salles-partenaire-calendrier', titre: 'Partenaire — calendrier des réservations d’une salle (mois de la réservation du client)', role: 'organisateur', needsIds: true, salles: true,
+        path: (i) => `/partner/halls/${demoHall(i, 'validee').id}`,
+        ready: async (c) => { await partnerHallSheetReady(c); },
+        actions: showReservationMonth,
+    },
+    {
+        id: 'salles-partenaire-modification', titre: 'Partenaire — modification d’une salle validée (formulaire prérempli)', role: 'organisateur', needsIds: true, salles: true,
+        path: (i) => `/partner/halls/${demoHall(i, 'validee').id}/edit`,
+        ready: async ({ page }) => expectHeading(page, /^modifier la salle$/i),
+    },
+    {
+        id: 'salles-partenaire-reservation', titre: 'Partenaire — détail d’une réservation de salle (en attente de paiement)', role: 'organisateur', needsIds: true, salles: true,
+        path: (i) => `/partner/halls/reservations/${ids(i).halls.reservation.id}`,
+        ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'validee').name),
+    },
+    {
+        id: 'salles-partenaire-recettes', titre: 'Partenaire — recettes des salles', role: 'organisateur', needsIds: false, salles: true,
+        path: () => '/partner/halls/recettes',
+        ready: async ({ page }) => expectHeading(page, /^recettes des salles$/i),
+    },
+    {
+        id: 'salles-admin-liste', titre: 'Administration — salles à valider (salle en attente de la démonstration)', role: 'fumee-superadmin', needsIds: true,
+        path: () => '/admin/halls',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^salles à valider$/i);
+            const name = demoHall(i, 'enAttente').name;
+            await expect(page.getByRole('link', { name, exact: true }).filter({ visible: true }).first(), `salle « ${name} » en attente`).toBeVisible();
+        },
+    },
+    {
+        id: 'salles-admin-fiche', titre: 'Administration — fiche d’une salle en attente de validation (décision)', role: 'fumee-superadmin', needsIds: true,
+        path: (i) => `/admin/halls/${demoHall(i, 'enAttente').id}`,
+        ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'enAttente').name),
     },
 ];

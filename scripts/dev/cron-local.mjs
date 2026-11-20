@@ -2,8 +2,12 @@
 /**
  * Lot 8 (8.1, contrat 5.2) — npm run cron:local : appelle les routes /api/cron/* aux fréquences de
  * supabase/ops/schedule-crons.sql, en développement seulement.
+ * Finition 4 : aussi lancé par npm run taches (recette sur poste). Chaque appel est annoncé en clair (« lancé : … »),
+ * l'adresse appelée est contrôlée (localhost seulement, assertLocalTarget), et Ctrl+C arrête proprement : plus aucun
+ * nouvel appel, attente de la fin des appels en cours, bilan, code 0 ; un second Ctrl+C force l'arrêt (code 130).
+ * schedule-crons.sql (pg_cron) reste la planification de la préproduction et de la production.
  *
- *   npm run cron:local                     boucle calée sur la minute
+ *   npm run taches  (ou npm run cron:local)  boucle calée sur la minute
  *   node scripts/dev/cron-local.mjs --list           liste des tâches, aucun appel
  *   node scripts/dev/cron-local.mjs --once <tâche>   un seul appel, puis fin (code 1 si l'appel échoue)
  *   Sous PowerShell 5.1, npm run cron:local -- --list perd le « -- » : passer par node directement.
@@ -14,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertCronAllowed, createCronRunner, parseSchedule } from './cron-local.core.mjs';
+import { assertCronAllowed, assertLocalTarget, createCronRunner, parseSchedule } from './cron-local.core.mjs';
 import { loadLocalEnv, portOf } from './env-local.mjs';
 
 const TAG = 'cron-local';
@@ -53,8 +57,10 @@ function connectionCode(err) {
 }
 
 /** Un appel, journalisé. Rend vrai si la route a répondu 2xx ; ne lève jamais : la boucle continue. */
-async function callTask(task, { origin, secret, log }) {
+async function callTask(task, { origin, secret, log, stats }) {
     const started = Date.now();
+    if (stats) stats.launched += 1;
+    log(`lancé : ${task.name} → POST ${origin}${task.route}`);
     try {
         const res = await fetch(`${origin}${task.route}`, {
             method: 'POST',
@@ -66,6 +72,7 @@ async function callTask(task, { origin, secret, log }) {
         log(`${task.name} HTTP ${res.status} ${Date.now() - started} ms ${body}`);
         const help = HELP_BY_STATUS.get(res.status);
         if (help) log(`${task.name} aide : ${help}`);
+        if (stats) stats[res.ok ? 'ok' : 'failed'] += 1;
         return res.ok;
     } catch (err) {
         const elapsed = `${Date.now() - started} ms`;
@@ -76,15 +83,20 @@ async function callTask(task, { origin, secret, log }) {
         } else {
             log(`${task.name} appel impossible (${elapsed}) : ${connectionCode(err) ?? (err instanceof Error ? err.message : String(err))}`);
         }
+        if (stats) stats.failed += 1;
         return false;
     }
 }
 
 function runLoop(tasks, target) {
-    const runner = createCronRunner({ tasks, call: (task) => callTask(task, target), log: target.log });
+    const stats = { launched: 0, ok: 0, failed: 0 };
+    const runner = createCronRunner({ tasks, call: (task) => callTask(task, { ...target, stats }), log: target.log });
     let lastMinute = Math.floor(Date.now() / MINUTE_MS);
+    let timer = null;
+    let stopping = false;
     const arm = () => {
-        setTimeout(() => {
+        timer = setTimeout(() => {
+            if (stopping) return;
             const minute = Math.floor(Date.now() / MINUTE_MS);
             if (minute !== lastMinute) {
                 lastMinute = minute;
@@ -93,7 +105,27 @@ function runLoop(tasks, target) {
             arm();
         }, MINUTE_MS - (Date.now() % MINUTE_MS) + TICK_MARGIN_MS);
     };
+    // Finition 4 : arrêt propre au premier Ctrl+C (ou SIGTERM), forcé au second
+    const stop = (signal) => {
+        if (stopping) {
+            target.log(`arrêt forcé (${signal}) : ${runner.inFlight().join(', ') || 'aucun appel'} interrompu`);
+            process.exit(130);
+        }
+        stopping = true;
+        if (timer) clearTimeout(timer);
+        const inFlight = runner.inFlight();
+        target.log(inFlight.length > 0
+            ? `arrêt demandé (${signal}) : plus aucun nouvel appel ; attente de la fin de ${inFlight.join(', ')} (Ctrl+C de nouveau pour forcer)`
+            : `arrêt demandé (${signal}) : aucun appel en cours`);
+        runner.drain().then(() => {
+            target.log(`arrêté proprement : ${stats.launched} appels lancés, ${stats.ok} réussis, ${stats.failed} en échec`);
+            process.exitCode = 0;
+        });
+    };
+    process.on('SIGINT', () => stop('SIGINT'));
+    process.on('SIGTERM', () => stop('SIGTERM'));
     target.log(`${tasks.length} tâches, appels vers ${target.origin} ; Ctrl+C pour arrêter`);
+    for (const task of tasks) target.log(`  ${task.name}  ${task.expr}  POST ${task.route}`);
     arm();
 }
 
@@ -113,6 +145,8 @@ async function main() {
         secret: process.env.CRON_SECRET,
         log: openLog(cwd),
     };
+    // Finition 4 : jamais d'appel hors de l'application locale
+    assertLocalTarget(target.origin);
     if (args.mode === 'once') {
         const task = tasks.find((t) => t.name === args.task);
         if (!task) throw new Error(`Tâche inconnue : ${args.task}. Liste : node scripts/dev/cron-local.mjs --list`);

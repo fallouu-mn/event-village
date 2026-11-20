@@ -119,3 +119,9 @@ d'où elle vient et pourquoi elle attend.
 | Recherche instantanée sur téléphone : la fenêtre se charge au premier toucher ; sur certains iPhone, le clavier ne s'ouvre qu'au second toucher dans le champ. | Précharger la fenêtre coûterait du travail pendant la mesure Lighthouse (le travail reporté est compté). | Design 1d, point 9 |
 | Rangée « Par catégorie » de l'accueil : ses pastilles ne sont pas collantes (seules celles d'Explorer le sont). | La consigne vise la liste qu'on fait défiler ; l'accueil garde ses sections. | Design 1d, point 10 |
 | Mes billets au seuil de la mesure mobile (90 au run 491, 87 à 89 sur d'autres runs du lot) : la part du lot (trois îlots) est retirée du chargement ; reste le rendu React du portefeuille et le client Supabase de la session (rapport du design 1b). | Décision à prendre sur la structure de la page (déjà soulevée au design 1b). | Design 1d, mesures |
+
+## Salles de fête (lot 10b)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| « Mes réservations » (`/halls/reservations`) et le détail d’une réservation (`/halls/reservations/[id]`) restent ouverts quand le service des salles est fermé (`features.halls_enabled`), pour que le lien d’une notification de réservation ne mène plus à une page introuvable. | Décision du 20/11/2026 : à faire au lot 11b. Aujourd’hui, service fermé, ces pages répondent 404 (l’annulation, elle, reste possible). | Lot 10b, constat produit des correctifs de la contre-vérification |

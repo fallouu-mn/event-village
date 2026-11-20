@@ -23,7 +23,10 @@ export const dynamic = 'force-dynamic';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
-const TOPICS = ['REMINDERS', 'EVENT_UPDATES', 'PRO_ACTIVITY'] as const;
+// Finition 4 : AFTER_EVENT (merci du lendemain) et SALES_SUMMARY (résumé du matin, partenaires seulement)
+const TOPICS = ['REMINDERS', 'EVENT_UPDATES', 'AFTER_EVENT', 'PRO_ACTIVITY', 'SALES_SUMMARY'] as const;
+/** Sujets présentés aux seuls partenaires. */
+const PARTNER_TOPICS: readonly Topic[] = ['PRO_ACTIVITY', 'SALES_SUMMARY'];
 type Topic = (typeof TOPICS)[number];
 const CHANNELS = ['IN_APP', 'SMS', 'EMAIL', 'PUSH'] as const;
 type Channel = (typeof CHANNELS)[number];
@@ -37,9 +40,17 @@ const TOPIC_TEXT: Record<Topic, { label: string; description: string }> = {
         label: 'Suspension et reprise d’un événement',
         description: 'Suspension ou reprise d’un événement dont vous avez un billet.',
     },
+    AFTER_EVENT: {
+        label: 'Après l’événement',
+        description: 'Le lendemain d’un événement où vous êtes entré, un message de remerciement avec le lien de l’événement.',
+    },
     PRO_ACTIVITY: {
         label: 'Activité de vos ventes',
-        description: 'Premier billet vendu, nouvelles commandes, catégories et événements complets.',
+        description: 'Premier billet vendu, nouvelles ventes (regroupées toutes les 15 minutes ; par SMS au plus toutes les 30 minutes), demandes de remboursement des clients, catégories et événements complets.',
+    },
+    SALES_SUMMARY: {
+        label: 'Résumé du matin',
+        description: 'Chaque matin à 9 h, les ventes, les remboursements et les entrées de la veille.',
     },
 };
 
@@ -113,7 +124,7 @@ export async function GET(req: NextRequest) {
             return unavailable('sujet inattendu', JSON.stringify(t.topic));
         }
         const topic = t.topic as Topic;
-        if (topic === 'PRO_ACTIVITY' && !isPartner) continue;
+        if (PARTNER_TOPICS.includes(topic) && !isPartner) continue;
         const channels = [];
         for (const c of CHANNELS) {
             const enabled = t.channels?.[c];
@@ -149,7 +160,7 @@ export async function PUT(req: NextRequest) {
     if (!parsed.success) return invalidPreference();
 
     // « Activité de vos ventes » n'est présentée qu'aux partenaires : un autre compte ne la règle pas.
-    if (parsed.data.topic === 'PRO_ACTIVITY') {
+    if (PARTNER_TOPICS.includes(parsed.data.topic)) {
         const prefs = await readPreferences(session.user.id);
         if (!prefs.ok) return prefs.response;
         if (prefs.body.is_partner !== true) return invalidPreference();

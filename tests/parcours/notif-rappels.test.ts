@@ -14,8 +14,9 @@
  *    tolérance de 15 min : premier passage à 10:14 crée, premier passage à 10:16 ne crée rien, ni ensuite ;
  *  - H-3 : rien à début - 3 h - 1 min, créé à début - 3 h (canaux I P S, politique IF_NO_PUSH), le J-1
  *    n'est pas rattrapé ; `notif.reminder_h3_hours = 5` déplace l'échéance ; rappels désactivés → rien ;
- *  - plage de silence (J-1 réglé à 7 h) : application et push envoyés, SMS SKIPPED QUIET_HOURS (instantané
- *    `quiet.in_quiet`), aucun report à 08:05 ; textes in-app et push du J-1 ;
+ *  - plage de nuit (J-1 réglé à 7 h, plage 06:00-08:00) : application et email envoyés ; SMS et push REPORTÉS à 08:00
+ *    (finition 4, décision du client du 19/11 : plus jamais « non envoyé » ; modification signalée au rapport), envoyés à
+ *    08:05 ; textes in-app et push du J-1 ;
  *  - achat tardif à l'heure réelle (événement dans 2 h 50 : échéance du H-3 dépassée de 10 min) → aucun
  *    rappel ; témoin acheté avant l'échéance (événement dans 3 h 05) → rappel ;
  *  - 5 billets d'un compte → une ligne par canal ; deux planifications et deux envois → aucun doublon,
@@ -372,35 +373,40 @@ describe('6.5 Rappel J-1 : la veille à l’heure réglée (contrat I2)', () => 
         assert.ok(createdOf(h3, 'REMINDER_H3') >= 1, 'H-3 réactivé dans la fenêtre : créé');
     });
 
-    test('plage de silence (J-1 réglé à 7 h) : application et push envoyés, SMS SKIPPED QUIET_HOURS sans report ; textes in-app et push', async () => {
+    test('plage de nuit (J-1 réglé à 7 h, plage 6 h - 8 h) : application et email envoyés, SMS et push reportés à 8 h puis envoyés ; textes in-app et push', async () => {
         const ev = await reminderEvent('Veille Tot');
         const holder = await holderWithTicket(ev, 'j1-silence');
         const keys = newVapidKeys();
         const device = await addDevice(holder.userId, keys);
         const due = dakarAt(EVE, '07:00');
 
-        await withNotifSettings({ 'notif.reminder_j1_hour': 7 }, async () => {
+        const night = { 'notif.sms_quiet_start': 6, 'notif.sms_quiet_end': 8 };
+        await withNotifSettings({ 'notif.reminder_j1_hour': 7, ...night }, async () => {
             const r = await scheduleAt(due, [ev.eventId]);
             assert.ok(createdOf(r, 'REMINDER_J1') >= 1, `7 h : J-1 créé (${JSON.stringify(r)})`);
         });
         const rows = await assertReminderRows('REMINDER_J1', ev, holder.userId, { due, channels: J1_CHANNELS, smsPolicy: 'ALWAYS', status: 'PENDING' });
 
         const mark = smsMark(holder.phoneE164);
-        await withVapid(async () => {
+        await withNotifSettings(night, () => withVapid(async () => {
             await dispatchTwice(due, [ev.eventId]);
             const sms = await freshRow(rows.SMS.id);
-            assertStatus(sms, 'SKIPPED', 'QUIET_HOURS', 'SMS du J-1 à 7 h');
+            assertStatus(sms, 'PENDING', null, 'SMS du J-1 à 7 h : reporté, jamais « non envoyé »');
+            assert.equal((sms.decision as Row | null)?.outcome, 'DEFER', `décision DEFER (decision ${JSON.stringify(sms.decision)})`);
             assert.equal((sms.decision?.quiet as Row | undefined)?.in_quiet, true, `instantané : quiet.in_quiet (decision ${JSON.stringify(sms.decision)})`);
-            assertStatus(await freshRow(rows.PUSH.id), 'SENT', null, 'PUSH du J-1 à 7 h');
-            assert.notEqual((await freshRow(rows.EMAIL.id)).reason, 'QUIET_HOURS', 'la plage de silence ne vise que le SMS');
+            assert.equal(Date.parse(String(sms.next_attempt_at)), dakarAt(EVE, '08:00').getTime(), 'SMS reporté à 8 h');
+            const push = await freshRow(rows.PUSH.id);
+            assertStatus(push, 'PENDING', null, 'PUSH du J-1 à 7 h : reporté (push facultatif)');
+            assert.equal((push.decision as Row | null)?.outcome, 'DEFER');
+            assert.notEqual((await freshRow(rows.EMAIL.id)).status, 'PENDING', 'l’email n’est pas soumis à la nuit');
+            assert.deepEqual(remindersSmsTo(holder.phoneE164, mark, /rappel/i), [], 'aucun SMS de rappel la nuit');
 
-            // Aucun report : un passage après la fin de la plage ne renvoie rien.
-            await dispatchAt(dakarAt(EVE, '08:05'), { eventIds: [ev.eventId] });
-        }, keys);
+            // Fin de la plage : SMS et push partent (rappel encore utile : événement le lendemain)
+            await dispatchTwice(dakarAt(EVE, '08:05'), [ev.eventId]);
+        }, keys));
         const after8 = await freshRow(rows.SMS.id);
-        assertStatus(after8, 'SKIPPED', 'QUIET_HOURS', 'SMS du J-1 après 8 h (sans report)');
-        assert.equal(after8.sent_at, null, 'SMS jamais envoyé');
-        assert.deepEqual(remindersSmsTo(holder.phoneE164, mark, /rappel/i), [], 'aucun SMS de rappel au porteur');
+        assertStatus(after8, 'SENT', null, 'SMS du J-1 envoyé après la fin de la plage');
+        assert.equal(remindersSmsTo(holder.phoneE164, mark, /rappel/i).length, 1, 'un SMS de rappel au porteur, à 8 h');
 
         const n = await inAppOf(rows.IN_APP);
         assert.equal(norm(n.title), J1_TITLE, 'titre in-app du J-1');

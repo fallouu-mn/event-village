@@ -48,7 +48,7 @@ import {
 import { authed, newController, openShift, scan, ticketPayload, type RouteResult } from './acces-helpers';
 import { advanceEventTo, createDraftEvent, eventHistory, rpcTransition, type DraftEvent, type EventStatus } from './cycle-helpers';
 import {
-    assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, markEmailVerified, noonDakarTomorrow, outboxRows, smsMark, smsTo,
+    assertNotificationInvariants, dakarDay, dispatchAt, loadLotModule, markEmailVerified, noonDakarTomorrow, nowOutsideNight, outboxRows, smsMark, smsTo,
     type OutboxChannel, type OutboxRow,
 } from './notif-helpers';
 import { gotrueEmail } from '../helpers/gotrue-email';
@@ -283,7 +283,8 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
             assert.equal(r.status, 'PENDING', `${r.idempotency_key} : PENDING dès la transition (${r.status} ${r.reason})`);
         }
         let mark = smsMark(p.phoneE164);
-        let sent = await deliver(rej, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        let sent = await deliver(rej, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : événement ${ev.title} non validé. Motif : ${reason}. ${APP_URL}/partner/events`);
         await assertInApp(sent, { userId: p.userId, title: 'Événement non validé', contains: [ev.title, reason], actionUrl: `/partner/events/${ev.eventId}` });
 
@@ -291,17 +292,19 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         const hVal = await historyId(ev.eventId, 'EN_ATTENTE', 'VALIDE');
         const val = await groupRows('EVENT_VALIDATED', `EVENT_VALIDATED:${hVal}`, ALL4, p.userId);
         mark = smsMark(p.phoneE164);
-        sent = await deliver(val, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        sent = await deliver(val, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre événement ${ev.title} est validé. Publiez-le depuis votre espace : ${APP_URL}/partner/events`);
         await assertInApp(sent, { userId: p.userId, title: 'Événement validé', contains: [ev.title], actionUrl: `/partner/events/${ev.eventId}` });
         assert.equal((await outboxRows({ type: 'EVENT_REJECTED', eventId: ev.eventId })).length, 4, 'refus : aucune ligne de plus après la validation');
     });
 
-    test('publication par l’admin : EVENT_PUBLISHED_BY_ADMIN (in-app et push, sans SMS) ; publication par le partenaire : rien', async () => {
+    // Finition 4 (décision du client du 19/11, modification signalée au rapport) : SMS en plus
+    test('publication par l’admin : EVENT_PUBLISHED_BY_ADMIN (in-app, push, email et SMS) ; publication par le partenaire : rien', async () => {
         const p = await newProPartner('publie');
         const byAdmin = await proEvent(p, 'Pub admin', 'PUBLIE', undefined, { publishedBy: 'ADMIN' });
         const h = await historyId(byAdmin.eventId, 'VALIDE', 'PUBLIE');
-        const rows = await groupRows('EVENT_PUBLISHED_BY_ADMIN', `EVENT_PUBLISHED_BY_ADMIN:${h}`, ['IN_APP', 'PUSH', 'EMAIL'], p.userId);
+        const rows = await groupRows('EVENT_PUBLISHED_BY_ADMIN', `EVENT_PUBLISHED_BY_ADMIN:${h}`, ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], p.userId);
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: p.userId, title: 'Événement publié', contains: [byAdmin.title], actionUrl: `/partner/events/${byAdmin.eventId}` });
 
@@ -331,21 +334,23 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         const hSus = await historyId(ev.eventId, 'PUBLIE', 'SUSPENDU');
         const sus = await groupRows('EVENT_SUSPENDED', `EVENT_SUSPENDED:${hSus}`, ALL4, p.userId);
         for (const who of [holder, used]) {
-            await groupRows('EVENT_SUSPENDED_HOLDER', `EVENT_SUSPENDED_HOLDER:${hSus}:${who.userId}`, ['IN_APP', 'PUSH', 'EMAIL'], who.userId);
+            await groupRows('EVENT_SUSPENDED_HOLDER', `EVENT_SUSPENDED_HOLDER:${hSus}:${who.userId}`, ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], who.userId);
         }
         const holderRows = await outboxRows({ type: 'EVENT_SUSPENDED_HOLDER', eventId: ev.eventId });
-        assert.equal(holderRows.length, 6, `deux porteurs distincts × (IN_APP, PUSH, EMAIL : G.49) : ${holderRows.length} ligne(s)`);
+        assert.equal(holderRows.length, 8, `deux porteurs distincts × (IN_APP, PUSH, EMAIL, et SMS depuis la finition 4) : ${holderRows.length} ligne(s)`);
         let mark = smsMark(p.phoneE164);
         let sent = await deliver(sus, new Date());
         assertSms(sent, p.phoneE164, mark, `Event Village : événement ${ev.title} suspendu. Motif : ${reason}. ${APP_URL}/partner/events`);
         await assertInApp(sent, { userId: p.userId, title: 'Événement suspendu', contains: [ev.title, reason], actionUrl: `/partner/events/${ev.eventId}` });
-        const hs = await deliver(holderRows);
+        // Finition 4 (contre-vérification, T2 ; modification signalée au rapport) : envoyés maintenant, pendant la suspension ;
+        // par défaut l'outil envoie demain à midi, après la fin de cet événement (début dans 3 h, 4 h) : l'avis serait annulé
+        const hs = await deliver(holderRows, new Date());
         await assertInApp(hs.filter((r) => r.recipient_user_id === holder.userId), { userId: holder.userId, title: 'Événement suspendu', contains: [ev.title], actionUrl: `/events/${ev.eventId}` });
 
         await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: p.userId });
         const hRea = await historyId(ev.eventId, 'SUSPENDU', 'PUBLIE');
         const rea = await groupRows('EVENT_REACTIVATED', `EVENT_REACTIVATED:${hRea}`, ALL4, p.userId);
-        await groupRows('EVENT_REACTIVATED_HOLDER', `EVENT_REACTIVATED_HOLDER:${hRea}:${holder.userId}`, ['IN_APP', 'PUSH', 'EMAIL'], holder.userId);
+        await groupRows('EVENT_REACTIVATED_HOLDER', `EVENT_REACTIVATED_HOLDER:${hRea}:${holder.userId}`, ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], holder.userId);
         mark = smsMark(p.phoneE164);
         sent = await deliver(rea, new Date());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre événement ${ev.title} est de nouveau en ligne. ${APP_URL}/partner/events`);
@@ -369,7 +374,9 @@ async function openCashier(partner: TestPartner, eventId: string, label: string)
 }
 
 describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
-    test('premier billet vendu en ligne : une seule fois par événement (quatre canaux), une « nouvelle commande » in-app par paiement', async () => {
+    // Finition 4 (point 2, modification signalée au rapport) : la cloche des ventes est groupée (15 min) : les deux paiements
+    // dans la même cloche « Nouvelles ventes » (3 billets, 2 commandes) ; aucun SMS par vente (le SMS groupé attend 30 min)
+    test('premier billet vendu en ligne : une seule fois par événement (quatre canaux), une cloche groupée pour les deux paiements', async () => {
         const p = await newProPartner('premier');
         const ev = await proEvent(p, 'Premier', 'PUBLIE');
         const b1 = await newBuyer('pros-prem-1');
@@ -379,16 +386,16 @@ describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
         const rows = await groupRows('FIRST_TICKET_SOLD', `FIRST_TICKET_SOLD:${ev.eventId}`, ALL4, p.userId);
         const second = await buyConfirmed(b2, ev, [['Standard', 2]]);
         assert.equal((await outboxRows({ type: 'FIRST_TICKET_SOLD', eventId: ev.eventId })).length, 4, 'deuxième vente : aucun nouveau « premier billet »');
-        for (const pay of [first.payment, second.payment]) {
-            await groupRows('NEW_ORDER', `NEW_ORDER:${pay.id}`, ['IN_APP'], p.userId);
-        }
+        const bells = await outboxRows({ type: 'NEW_ORDER', userId: p.userId, eventId: ev.eventId });
+        assert.deepEqual(bells.map((r) => r.channel), ['IN_APP'], `une seule cloche pour les deux paiements : ${JSON.stringify(bells.map((r) => r.group_key))}`);
+        assert.deepEqual([Number(bells[0].template_data.ticket_count), Number(bells[0].template_data.order_count)], [3, 2], 'cloche groupée : 3 billets, 2 commandes');
         const mark = smsMark(p.phoneE164);
         const sent = await deliver(rows);
         assertSms(sent, p.phoneE164, mark, `Event Village : premier billet vendu pour ${ev.title}. Suivez vos ventes : ${APP_URL}/partner/events`);
         await assertInApp(sent, { userId: p.userId, title: 'Premier billet vendu', contains: [ev.title], actionUrl: `/partner/events/${ev.eventId}?tab=ventes` });
-        const orders = await deliver(await outboxRows({ type: 'NEW_ORDER', userId: p.userId }), new Date());
-        await assertInApp(orders.filter((r) => r.group_key === `NEW_ORDER:${second.payment.id}`), {
-            userId: p.userId, title: 'Nouvelle commande', contains: [ev.title], actionUrl: `/partner/events/${ev.eventId}?tab=ventes`,
+        const orders = await deliver(bells, new Date());
+        await assertInApp(orders, {
+            userId: p.userId, title: 'Nouvelles ventes', contains: [ev.title], actionUrl: `/partner/events/${ev.eventId}?tab=ventes`,
         });
         assert.equal(smsTo(p.phoneE164, mark).length, 1, 'aucun SMS par vente (décision 11) : un seul SMS, le premier billet');
     });
@@ -406,7 +413,7 @@ describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
         assert.equal(fErr, null, `billets gratuits : ${fErr?.message}`);
         assert.equal((free ?? []).length, 2, 'deux billets gratuits émis');
         assert.ok((free ?? []).every((t) => t.sale_channel === 'FREE'), 'canal FREE');
-        await groupRows('FREE_TICKETS_CONFIRMED', `FREE_TICKETS_CONFIRMED:${[...(free ?? []).map((t) => String(t.id))].sort()[0]}`, ['EMAIL', 'IN_APP', 'SMS'], guest.userId);
+        await groupRows('FREE_TICKETS_CONFIRMED', `FREE_TICKETS_CONFIRMED:${[...(free ?? []).map((t) => String(t.id))].sort()[0]}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], guest.userId);
         assert.deepEqual(await outboxRows({ type: 'FIRST_TICKET_SOLD', eventId: ev.eventId }), [], 'un billet gratuit ne compte pas comme vendu (décision 17)');
         await buyConfirmed(await newBuyer('pros-gratuit-payant'), ev, [['Standard', 1]]);
         await groupRows('FIRST_TICKET_SOLD', `FIRST_TICKET_SOLD:${ev.eventId}`, ALL4, p.userId);
@@ -445,8 +452,11 @@ describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
         await groupRows('CATEGORY_SOLD_OUT', `CATEGORY_SOLD_OUT:${petite}:3`, ALL4, p.userId);
 
         await buyConfirmed(await newBuyer('pros-cplt-3'), ev, [['Unique', 1]]);
-        await groupRows('CATEGORY_SOLD_OUT', `CATEGORY_SOLD_OUT:${ev.categories.Unique.id}:1`, ALL4, p.userId);
+        // Finition 4 (point 2, modification signalée au rapport) : dernière catégorie et événement complets ensemble → un seul
+        // avis « événement complet » qui nomme la catégorie, plus de « catégorie complète » en double
+        assert.deepEqual(await outboxRows({ type: 'CATEGORY_SOLD_OUT', eventId: ev.eventId, keyPrefix: `CATEGORY_SOLD_OUT:${ev.categories.Unique.id}:` }), [], 'aucune « catégorie complète » en double');
         const full = await groupRows('EVENT_SOLD_OUT', `EVENT_SOLD_OUT:${ev.eventId}:4`, ALL4, p.userId);
+        assert.equal(full[0].template_data.category, 'Unique', 'la dernière catégorie est nommée');
         const mark2 = smsMark(p.phoneE164);
         const sentFull = await deliver(full);
         assertSms(sentFull, p.phoneE164, mark2, `Event Village : ${ev.title} est complet, toutes les catégories sont vendues. ${APP_URL}/partner/events`);
@@ -473,7 +483,7 @@ describe('6.6 Partenaire — ventes (J1.4, J1.5, J1.1, J2.1)', () => {
         const fmt = await smsFormat();
         const mark = smsMark(p.phoneE164);
         const sent = await deliver(rows, new Date());
-        assertSms(sent, p.phoneE164, mark, `Event Village : caisse de Ibrahima Controleur fermée (${ev.title}) avec un écart de +${fmt.smsAmount(2_500)}. ${APP_URL}/partner/events`);
+        assertSms(sent, p.phoneE164, mark, `Event Village : caisse de Ibrahima Controleur fermée (${ev.title}). ${fmt.smsAmount(2_500)} de trop. ${APP_URL}/partner/events`); // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
         await assertInApp(sent, { userId: p.userId, title: 'Écart de caisse', contains: ['Ibrahima Controleur', ev.title, JUSTIFICATION], actionUrl: `/partner/events/${ev.eventId}?tab=caisse` });
 
         const res2 = await invoke(closeRoute as Handler, authed('/api/controller/shifts/close', 'POST', clean.ctrl, { shiftId: clean.shiftId, declaredCashTotal: clean.expected }));
@@ -599,7 +609,7 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
         const cashouts = await cancellationCashouts([String(p1.payment.id), String(p2.payment.id)]);
         assert.equal(cashouts.length, 2, 'un cashout par paiement en ligne');
         assert.ok(cashouts.every((c) => c.status === 'CONFIRME'), `cashouts confirmés : ${JSON.stringify(cashouts.map((c) => c.status))}`);
-        const rows = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH'], owner.userId);
+        const rows = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], /* finition 4 : + SMS */ owner.userId);
         for (const c of cashouts) await groupRows('REFUND_PAID', `REFUND_PAID:${c.id}`, ALL4, String(c.beneficiary_user_id));
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: owner.userId, title: 'Remboursements terminés', contains: [await titleOf(ev.eventId)], actionUrl: `/partner/events/${ev.eventId}?tab=cloture` });
@@ -621,8 +631,8 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
         assert.equal(cashouts.length, 2, 'deux cashouts');
         assert.ok(cashouts.every((c) => c.status === 'A_ENVOYER' && c.blocked_reason), `cashouts bloqués : ${JSON.stringify(cashouts.map((c) => [c.status, c.blocked_reason]))}`);
         const day = dakarDay(0);
-        const rows = await groupRows('CANCEL_REFUNDS_BLOCKED', `CANCEL_REFUNDS_BLOCKED:${ev.eventId}:${day}`, ['EMAIL', 'IN_APP', 'PUSH'], owner.userId);
-        assert.equal((await outboxRows({ type: 'CANCEL_REFUNDS_BLOCKED', eventId: ev.eventId })).length, 3, 'deux cashouts bloqués le même jour : un seul avis (décision 19)');
+        const rows = await groupRows('CANCEL_REFUNDS_BLOCKED', `CANCEL_REFUNDS_BLOCKED:${ev.eventId}:${day}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], /* finition 4 : + SMS (signalé) */ owner.userId);
+        assert.equal((await outboxRows({ type: 'CANCEL_REFUNDS_BLOCKED', eventId: ev.eventId })).length, 4, 'deux cashouts bloqués le même jour : un seul avis, 4 canaux depuis la finition 4 (décision 19)');
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: owner.userId, title: 'Remboursements en attente', contains: [await titleOf(ev.eventId)], actionUrl: `/partner/events/${ev.eventId}?tab=cloture` });
     });
@@ -655,7 +665,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.equal(error, null, `compte : ${error?.message}`);
         const pr = await service.from('partners').select('id').eq('user_id', user.id).single();
         assert.equal(pr.error, null, `partenaire : ${pr.error?.message}`);
-        const rows = await groupRows('PARTNER_REGISTERED_ACK', `PARTNER_REGISTERED_ACK:${pr.data!.id}`, ['EMAIL', 'IN_APP', 'SMS'], String(user.id));
+        const rows = await groupRows('PARTNER_REGISTERED_ACK', `PARTNER_REGISTERED_ACK:${pr.data!.id}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], String(user.id));
         assert.ok(rows.every((r) => (r.channel === 'EMAIL' ? r.status === 'SKIPPED' && r.reason === 'NO_REAL_EMAIL' : r.status === 'PENDING')), `compte EN_ATTENTE : avis non bloqué ; EMAIL SKIPPED NO_REAL_EMAIL, adresse technique (contrat 4.6, B100) (${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))})`);
         const outboxSms = [...await outboxRows({ userId: String(user.id), channel: 'SMS' }), ...await outboxRows({ phone, channel: 'SMS' })]
             .filter((r) => r.origin === 'OUTBOX');
@@ -674,9 +684,10 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.equal((await partnerRow(p.partnerId)).status, 'VALIDE', 'partners.status');
         assert.equal(await userStatus(p.userId), 'ACTIF', 'users.status synchronisé');
         const group = await singleGroup('PARTNER_VALIDATED', `PARTNER_VALIDATED:${p.partnerId}:tx`);
-        const rows = await groupRows('PARTNER_VALIDATED', group, ['EMAIL', 'IN_APP', 'SMS'], p.userId);
+        const rows = await groupRows('PARTNER_VALIDATED', group, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
         const mark = smsMark(p.phoneE164);
-        const sent = await deliver(rows, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        const sent = await deliver(rows, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre compte partenaire ${p.company} est validé. Connectez-vous : ${APP_URL}/login`);
         await assertInApp(sent, { userId: p.userId, title: 'Compte partenaire validé', contains: [], actionUrl: '/partner/dashboard' });
     });
@@ -695,10 +706,12 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.equal(row.status, 'REJETE', 'partners.status');
         assert.equal(row.rejection_reason, reason, 'rejection_reason');
         const group = await singleGroup('PARTNER_REJECTED', `PARTNER_REJECTED:${p.partnerId}:tx`);
-        const rows = await groupRows('PARTNER_REJECTED', group, ['EMAIL', 'IN_APP', 'SMS'], p.userId);
+        const rows = await groupRows('PARTNER_REJECTED', group, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
         const mark = smsMark(p.phoneE164);
-        const sent = await deliver(rows, new Date());
-        assertSms(sent, p.phoneE164, mark, `Event Village : votre demande de compte partenaire n'est pas acceptée. Motif : Pièce d'identité illisible.`);
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        const sent = await deliver(rows, await nowOutsideNight());
+        // Finition 4 (E-43, modification signalée au rapport) : le SMS dit la suite
+        assertSms(sent, p.phoneE164, mark, `Event Village : demande partenaire refusée. Motif : Pièce d'identité illisible. Complétez votre dossier : ${APP_URL}/partner/dashboard`);
         await assertInApp(sent, { userId: p.userId, title: 'Demande refusée', contains: [reason], actionUrl: '/partner/dashboard' });
     });
 
@@ -715,7 +728,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const { data: s, error: sErr } = await anon().auth.refreshSession({ refresh_token: refresh });
         assert.ok(sErr || !s.session, 'jeton de rafraîchissement révoqué par la suspension (revoke_user_sessions)');
         const group = await singleGroup('PARTNER_SUSPENDED', `PARTNER_SUSPENDED:${p.partnerId}:tx`);
-        const rows = await groupRows('PARTNER_SUSPENDED', group, ['EMAIL', 'IN_APP', 'SMS'], p.userId);
+        const rows = await groupRows('PARTNER_SUSPENDED', group, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
         assert.ok(rows.every((r) => r.status === 'PENDING'), `avis de suspension non bloqué (politique ALLOW, décision 41) : ${JSON.stringify(rows.map((r) => [r.channel, r.status, r.reason]))}`);
         let mark = smsMark(p.phoneE164);
         let sent = await deliver(rows, new Date());
@@ -727,9 +740,10 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.equal((await partnerRow(p.partnerId)).status, 'VALIDE', 'partners.status réactivé');
         assert.equal(await userStatus(p.userId), 'ACTIF', 'users.status réactivé');
         const rgroup = await singleGroup('PARTNER_REACTIVATED', `PARTNER_REACTIVATED:${p.partnerId}:tx`);
-        const rrows = await groupRows('PARTNER_REACTIVATED', rgroup, ['EMAIL', 'IN_APP', 'SMS'], p.userId);
+        const rrows = await groupRows('PARTNER_REACTIVATED', rgroup, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
         mark = smsMark(p.phoneE164);
-        sent = await deliver(rrows, new Date());
+        // Finition 4 (règle de nuit, run 480 ; signalé au rapport) : avis non urgent, envoyé hors de la plage de nuit
+        sent = await deliver(rrows, await nowOutsideNight());
         assertSms(sent, p.phoneE164, mark, `Event Village : votre compte partenaire est réactivé. Connectez-vous : ${APP_URL}/login`);
         await assertInApp(sent, { userId: p.userId, title: 'Compte réactivé', contains: [], actionUrl: '/partner/dashboard' });
         assert.deepEqual(await outboxRows({ type: 'PARTNER_VALIDATED', keyPrefix: `PARTNER_VALIDATED:${p.partnerId}:` }), [], 'réactivation : PARTNER_REACTIVATED, pas PARTNER_VALIDATED');
@@ -762,7 +776,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         assert.equal(await userStatus(p.userId), 'SUSPENDU', 'users.status');
         assert.equal(smsTo(p.phoneE164, mark).length, 0, 'la route n’envoie aucun SMS : avis dans la boîte d’envoi');
         const group = await singleGroup('PARTNER_SUSPENDED', `PARTNER_SUSPENDED:${p.partnerId}:tx`);
-        await groupRows('PARTNER_SUSPENDED', group, ['EMAIL', 'IN_APP', 'SMS'], p.userId);
+        await groupRows('PARTNER_SUSPENDED', group, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], p.userId);
     });
 
     // Lot 9 bis (T25, R31 décision « un seul SMS à la validation », G.49) : TRIAL_STARTED en in-app et email, plus de SMS.
@@ -771,12 +785,12 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const first = await service.rpc('activate_partner_trial', { p_partner_id: p.partnerId });
         assert.equal(first.error, null, `activation : ${first.error?.message}`);
         assert.equal((first.data as Row).is_new_activation, true, `première activation : ${JSON.stringify(first.data)}`);
-        const rows = await groupRows('TRIAL_STARTED', `TRIAL_STARTED:${p.partnerId}`, ['EMAIL', 'IN_APP'], p.userId);
+        const rows = await groupRows('TRIAL_STARTED', `TRIAL_STARTED:${p.partnerId}`, ['EMAIL', 'IN_APP', 'PUSH'], p.userId);
         assert.equal((await outboxRows({ type: 'TRIAL_STARTED', userId: p.userId, channel: 'SMS' })).length, 0, 'aucune ligne SMS TRIAL_STARTED (R31, décision)');
         const again = await service.rpc('activate_partner_trial', { p_partner_id: p.partnerId });
         assert.equal(again.error, null, `seconde activation : ${again.error?.message}`);
         assert.equal((again.data as Row).is_new_activation, false, 'seconde activation : idempotente');
-        assert.equal((await outboxRows({ type: 'TRIAL_STARTED', userId: p.userId })).length, 2, 'seconde activation : aucune nouvelle ligne');
+        assert.equal((await outboxRows({ type: 'TRIAL_STARTED', userId: p.userId })).length, 3, 'seconde activation : aucune nouvelle ligne (in-app, email et push depuis la finition 4)');
         const mark = smsMark(p.phoneE164);
         const sent = await deliver(rows, new Date());
         assert.equal(smsTo(p.phoneE164, mark).length, 0, 'aucun SMS à l’activation de l’essai : le seul SMS est celui de la validation');
@@ -793,10 +807,10 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const { error: upErr } = await service.from('partners').update({ subscription_plan_id: plan.id, trial_ends_at: trialEnds }).eq('id', p.partnerId);
         assert.equal(upErr, null, `abonnement : ${upErr?.message}`);
         const group = await singleGroup('SUBSCRIPTION_ACTIVATED', `SUBSCRIPTION_ACTIVATED:${p.partnerId}:${plan.id}:`);
-        const rows = await groupRows('SUBSCRIPTION_ACTIVATED', group, ['IN_APP', 'EMAIL'], p.userId);
+        const rows = await groupRows('SUBSCRIPTION_ACTIVATED', group, ['IN_APP', 'EMAIL', 'PUSH'], p.userId);
         const { error: sameErr } = await service.from('partners').update({ subscription_plan_id: plan.id }).eq('id', p.partnerId);
         assert.equal(sameErr, null, `rejeu : ${sameErr?.message}`);
-        assert.equal((await outboxRows({ type: 'SUBSCRIPTION_ACTIVATED', userId: p.userId })).length, 2, 'même formule : aucune nouvelle ligne (IN_APP et EMAIL, G.49)');
+        assert.equal((await outboxRows({ type: 'SUBSCRIPTION_ACTIVATED', userId: p.userId })).length, 3, 'même formule : aucune nouvelle ligne (IN_APP, EMAIL et, depuis la finition 4, PUSH)');
         const sent = await deliver(rows, new Date());
         await assertInApp(sent, { userId: p.userId, title: 'Abonnement activé', contains: [String(plan.name)], actionUrl: '/partner/subscription' });
     });
@@ -817,7 +831,7 @@ describe('6.6 — aucun nouvel envoi à un compte suspendu, sauf messages indisp
         const { error: qErr } = await service.from('ticket_categories').update({ total_quantity: 1 }).eq('id', cat);
         assert.equal(qErr, null, `baisse du quota : ${qErr?.message}`);
         const blocked = [
-            ...await groupRows('CATEGORY_SOLD_OUT', `CATEGORY_SOLD_OUT:${cat}:1`, ALL4, p.userId),
+            // Finition 4 (point 2) : catégorie unique → seul « événement complet » (modification signalée au rapport)
             ...await groupRows('EVENT_SOLD_OUT', `EVENT_SOLD_OUT:${ev.eventId}:1`, ALL4, p.userId),
         ];
         for (const r of blocked) {
@@ -830,7 +844,7 @@ describe('6.6 — aucun nouvel envoi à un compte suspendu, sauf messages indisp
         assert.equal(ids.length, 1, `un cashout de remboursement : ${JSON.stringify(advanced.steps[advanced.steps.length - 1].result)}`);
         const { CashoutService } = await importModule('../../lib/payments/cashout.service');
         await CashoutService.sendBatch(ids);
-        const done = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH'], p.userId);
+        const done = await groupRows('CANCEL_REFUNDS_DONE', `CANCEL_REFUNDS_DONE:${ev.eventId}`, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], /* finition 4 : + SMS */ p.userId);
         assert.ok(done.every((r) => r.status === 'PENDING'), `remboursements terminés (ALLOW) : non bloqués (${JSON.stringify(done.map((r) => [r.channel, r.status, r.reason]))})`);
         const sent = await deliver(done, new Date());
         assert.equal(byChannel(sent, 'IN_APP').status, 'SENT', 'compte suspendu : avis lié à son argent livré');

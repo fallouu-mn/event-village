@@ -4,13 +4,16 @@
  *  - thème posé avant le chargement : localStorage['ev-theme'] par script d'initialisation (lu par
  *    le script anti-flash de app/layout.tsx et par ThemeProvider), plus colorScheme du contexte ;
  *  - état de connexion du rôle de l'écran (evRole), erreur explicite s'il manque ;
- *  - collecte des erreurs de la page (guard).
+ *  - collecte des erreurs de la page (guard) ;
+ *  - lot 10b : verrou des pages des salles de fête (hallsLock, e2e/support/halls-switch.ts), pris (enter) par les phases
+ *    captures et responsive seulement ; rendu après la fermeture du contexte du test, même après un dépassement du délai.
  * Le paramètre des fixtures s'appelle `provide` (et non `use`) : eslint-plugin-react-hooks
  * confond sinon la fonction de Playwright avec le hook React `use`.
  */
 import { test as base, expect, type Browser, type BrowserContext, type BrowserContextOptions, type TestInfo } from '@playwright/test';
 import { requireStorageState, type RoleKey } from './accounts';
 import { e2eConfig } from './env';
+import { HallsLock } from './halls-switch';
 import { installNetworkGuard, PageGuard } from './network';
 
 export type ThemeKey = 'clair' | 'sombre';
@@ -39,6 +42,7 @@ interface Fixtures {
     evTheme: ThemeKey;
     evRole: CaptureRole;
     guard: PageGuard;
+    hallsLock: HallsLock;
 }
 
 export const test = base.extend<Fixtures>({
@@ -47,12 +51,23 @@ export const test = base.extend<Fixtures>({
     storageState: async ({ evRole }, provide) => {
         await provide(evRole === 'anonyme' ? { cookies: [], origins: [] } : requireStorageState(evRole));
     },
-    context: async ({ context, evTheme }, provide) => {
+    // Lot 10b : le contexte dépend du verrou des salles, pour que le verrou ne soit rendu qu'après la fermeture du contexte
+    // (aucune requête d'une page encore ouverte pendant que l'autre groupe de tests tourne) ; sans `enter`, rien n'est pris
+    context: async ({ context, evTheme, hallsLock }, provide) => {
+        void hallsLock;
         await prepareContext(context, evTheme);
         await provide(context);
     },
     guard: async ({ page }, provide) => {
         await provide(new PageGuard(page));
+    },
+    hallsLock: async ({}, provide, testInfo) => {
+        const lock = new HallsLock(testInfo);
+        try {
+            await provide(lock);
+        } finally {
+            await lock.leave();
+        }
     },
 });
 

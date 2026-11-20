@@ -11,12 +11,12 @@ const DECISIONS = new Set(['VALIDER', 'REFUSER', 'SUSPENDRE', 'REACTIVER']);
 /**
  * POST /api/admin/halls/[id]/validation { decision: VALIDER | REFUSER | SUSPENDRE | REACTIVER, reason? }
  * Lot 10a (décision du client) : une salle n'est visible qu'après validation par l'administration (réglage
- * halls.validation_required). Droit partners.validate (ou Superadmin), vérifié par la route puis en base par
+ * halls.validation_required). Lot 10b : droit halls.validate (ou Superadmin), vérifié par la route puis en base par
  * hall_validation_decide (verrou, journal, avis à la partenaire) ; motif obligatoire pour refuser ou suspendre.
  * Sans interrupteur : l'administration prépare les salles avant l'ouverture du service.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    const auth = await verifyAdminAuth(req, { requiredPermission: 'partners.validate' });
+    const auth = await verifyAdminAuth(req, { requiredPermission: 'halls.validate' });
     if (!auth.authorized) return auth.errorResponse!;
     try {
         const { id } = await params;

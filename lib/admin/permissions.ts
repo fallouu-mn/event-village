@@ -8,6 +8,8 @@ export const ADMIN_PERMISSIONS = [
     'partners.read',
     'partners.validate',
     'partners.suspend',
+    // Lot 10b (point 1) : valider, refuser, suspendre ou réactiver les salles et les établissements de tables
+    'halls.validate',
     'events.read',
     'events.write',
     'payments.read',

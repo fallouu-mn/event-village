@@ -344,7 +344,8 @@ describe('R5 — partenaire suspendue : cascade sur ses événements', () => {
         const toHolder = await outboxRows({ type: 'EVENT_SUSPENDED_HOLDER', eventId: ev.eventId, userId: holder.userId });
         const channels = toHolder.map((r) => r.channel);
         assert.ok(channels.includes('IN_APP'), `porteur avisé en in-app (R24) : ${JSON.stringify(channels)}`);
-        assert.ok(!channels.includes('SMS'), `aucun SMS au porteur pour une suspension (R24) : ${JSON.stringify(channels)}`);
+        // Finition 4 (décision du client du 19/11 : chaque étape importante sur les 4 canaux ; modification signalée au rapport) : R24 remplacée, le porteur est prévenu aussi par SMS
+        assert.ok(channels.includes('SMS'), `SMS au porteur pour une suspension : ${JSON.stringify(channels)}`);
     });
 
     test('paiement ouvert avant la suspension, succès après : aucune VENTE ni billet, paiement remboursé (REFUND_REQUIRED)', async () => {

@@ -73,8 +73,10 @@ describe('R31 — réservations de table : chacun ne lit que ce qui le regarde',
         assert.deepEqual(await visible('table_reservations', alice.accessToken, [aliceRes, bobRes]), [aliceRes]);
         assert.deepEqual(await visible('table_reservations', bob.accessToken, [aliceRes, bobRes]), [bobRes]);
     });
-    test('l’établissement voit celles de ses établissements ; une autre partenaire ne voit rien', async () => {
-        assert.deepEqual(await visible('table_reservations', owner.accessToken, [aliceRes, bobRes]), [aliceRes, bobRes].sort());
+    // Contre-vérification du lot 10b (T5 bis, modification signalée au rapport) : l’établissement ne lit plus ses
+    // réservations par la REST (ses écrans passent par les routes serveur)
+    test('l’établissement ne lit plus ses réservations par la REST ; une autre partenaire ne voit rien', async () => {
+        assert.deepEqual(await visible('table_reservations', owner.accessToken, [aliceRes, bobRes]), []);
         assert.deepEqual(await visible('table_reservations', otherPartner.accessToken, [aliceRes, bobRes]), []);
     });
     test('un visiteur ne voit rien', async () => {
