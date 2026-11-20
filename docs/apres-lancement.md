@@ -106,3 +106,9 @@ d'où elle vient et pourquoi elle attend.
 | `/admin/users` n'est toujours pas sur le système de design ; la 3d n'y ajoute que des boutons (« Changer le rôle », « Changer le numéro ») et des fenêtres, elles sur le système de design. Conséquence : aucune capture de ces deux fenêtres, la liste remplie dessous ne passe pas les contrôles bloquants (badges de 10 px, noms de 12 px). | Refonte d'écran hors des cinq points (déjà notée pour la 3b). | Finition 3d, points 2 et 3 |
 | CI trop lente (85 à 91 min) : découper en jobs parallèles (tests et e2e séparés) pour revenir sous 45 min. | La limite du job passe de 90 à 120 min en finition 3d (runs complets 300 et 306 coupés à 90 min), en attendant le découpage. | Finition 3d, run 306 |
 | Perf RLS : évaluer is_admin(), admin_session_code_valid(), is_partner_owner() une fois par requête ((select …) dans toutes les politiques), à faire avant la production. | Coût mesuré accepté pour l'instant : une lecture REST de 1 000 lignes du journal par un Superadmin prend environ 0,3 s de plus depuis les correctifs T2 et T3 (+60 à +71 %, runs 343 et 347), parce que la fonction est appelée sur chaque ligne. | Finition 3d, contre-vérification (T2, T3) |
+
+## Salles de fête (lot 10b)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| « Mes réservations » (`/halls/reservations`) et le détail d’une réservation (`/halls/reservations/[id]`) restent ouverts quand le service des salles est fermé (`features.halls_enabled`), pour que le lien d’une notification de réservation ne mène plus à une page introuvable. | Décision du 20/11/2026 : à faire au lot 11b. Aujourd’hui, service fermé, ces pages répondent 404 (l’annulation, elle, reste possible). | Lot 10b, constat produit des correctifs de la contre-vérification |

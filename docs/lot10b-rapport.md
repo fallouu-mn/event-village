@@ -213,8 +213,9 @@ segment au pire cas : un droit 83 caractères, plusieurs droits (décompte et li
 
 ### Constat produit
 
-Quand le service des salles est fermé, une notification de réservation de salle mène à une page introuvable (404) :
-à trancher à l'ouverture (masquer le lien, ou laisser « Mes réservations » ouvert service fermé comme l'annulation).
+Quand le service des salles est fermé, une notification de réservation de salle mène à une page introuvable (404).
+**Décision du 20/11** : « Mes réservations » et le détail d'une réservation restent ouverts service fermé ; à faire au
+lot 11b (noté dans `docs/apres-lancement.md`).
 
 ### Runs
 
@@ -268,4 +269,7 @@ Run 499 encore sous le seuil (fiche 89, Mes billets 89). Comparaison des rapport
 Le nouveau fichier partagé (`1620.js`, 7 Ko) est la cloche des notifications, inchangée : webpack a regroupé autrement les
 modules partagés (`5412` et `8017` de main) à cause des pages nouvelles. Aucun code du lot ne s’exécute sur ces trois
 pages ; l’écart vient du TBT, qui varie d’un passage à l’autre (main : 255 à 503 ms sur la fiche). Seuil et budgets
-inchangés ; **à trancher par vous** : nouvelle relance du job, ou acceptation de l’écart sur des pages non touchées.
+inchangés.
+
+**Décision du 20/11 : exception acceptée pour ce lot** (pages non touchées, écart dans la variation de main). Le seuil
+de 90 reste inchangé pour la suite.
