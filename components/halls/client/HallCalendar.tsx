@@ -164,6 +164,24 @@ export function HallCalendar({ hallId, today, hourly }: { hallId: string; today:
     const hasPartial = Array.from(states.values()).some((s) => !s.full && s.hours.length > 0);
     const selectedState = selected ? states.get(selected) : undefined;
     const label = monthLabel(month);
+    const days = Array.from({ length: info.days }).map((_, i) => {
+        const day = info.day(i + 1);
+        const st = states.get(day);
+        const past = day < today;
+        const full = Boolean(st?.full);
+        const partial = !full && Boolean(st?.hours.length);
+        const isSelected = day === selected;
+        const isToday = day === today;
+        // Un jour passé ou pris garde son aspect même s'il est choisi (saisi à la main) : liseré en plus
+        const kind: DayKind = past ? 'passe' : full ? 'pris' : isSelected ? 'choisi' : partial ? 'partiel' : 'libre';
+        const words = [
+            capitalize(longDate(day)),
+            isToday ? 'aujourd’hui' : null,
+            past ? 'passé' : full ? 'déjà réservé' : partial ? `pris en partie, de ${st?.hours.join(', de ')}` : 'libre',
+            isSelected ? 'votre date' : null,
+        ].filter(Boolean).join(', ');
+        return { day, n: i + 1, weekday: WEEKDAYS[(info.offset + i) % 7], past, full, isSelected, isToday, kind, words };
+    });
 
     return (
         <div className="space-y-4">
@@ -198,61 +216,82 @@ export function HallCalendar({ hallId, today, hourly }: { hallId: string; today:
                 </StatusBanner>
             ) : (
                 <div aria-busy={loading || busy === undefined}>
-                    <div className="grid grid-cols-7 gap-1 pb-1" aria-hidden="true">
-                        {WEEKDAYS.map((d) => (
-                            <span key={d} className="text-center text-sm font-semibold text-muted-foreground">{d}</span>
-                        ))}
-                    </div>
                     {busy === undefined ? (
-                        <div className="grid grid-cols-7 gap-1">
-                            {Array.from({ length: 35 }).map((_, i) => (
-                                <Skeleton key={i} className="h-12 rounded-lg" />
-                            ))}
+                        <>
+                            <div className="flex gap-2 overflow-hidden sm:hidden">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                    <Skeleton key={i} className="h-[4.5rem] w-14 flex-shrink-0 rounded-lg" />
+                                ))}
+                            </div>
+                            <div className="hidden grid-cols-7 gap-1 sm:grid">
+                                {Array.from({ length: 35 }).map((_, i) => (
+                                    <Skeleton key={i} className="h-12 rounded-lg" />
+                                ))}
+                            </div>
                             <span className="sr-only" role="status">Chargement du calendrier…</span>
-                        </div>
+                        </>
                     ) : (
-                        <ul className="grid grid-cols-7 gap-1" aria-label={`Jours de ${label}`}>
-                            {Array.from({ length: info.offset }).map((_, i) => (
-                                <li key={`vide-${i}`} aria-hidden="true" />
-                            ))}
-                            {Array.from({ length: info.days }).map((_, i) => {
-                                const day = info.day(i + 1);
-                                const st = states.get(day);
-                                const past = day < today;
-                                const full = Boolean(st?.full);
-                                const partial = !full && Boolean(st?.hours.length);
-                                const isSelected = day === selected;
-                                const isToday = day === today;
-                                // Un jour passé ou pris garde son aspect même s'il est choisi (saisi à la main) : liseré en plus
-                                const kind: DayKind = past ? 'passe' : full ? 'pris' : isSelected ? 'choisi' : partial ? 'partiel' : 'libre';
-                                const words = [
-                                    capitalize(longDate(day)),
-                                    isToday ? 'aujourd’hui' : null,
-                                    past ? 'passé' : full ? 'déjà réservé' : partial ? `pris en partie, de ${st?.hours.join(', de ')}` : 'libre',
-                                    isSelected ? 'votre date' : null,
-                                ].filter(Boolean).join(', ');
-                                return (
-                                    <li key={day}>
+                        <>
+                            {/* Téléphone : sept colonnes de 44 px ne tiennent pas à 320 px ; bande des jours à venir qu'on fait glisser */}
+                            <ul
+                                className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 py-2 sm:hidden"
+                                aria-label={`Jours de ${label}`}
+                            >
+                                {days.filter((d) => !d.past).map((d) => (
+                                    <li key={d.day} className="snap-start">
                                         <button
                                             type="button"
-                                            disabled={past || full}
-                                            aria-pressed={isSelected}
-                                            aria-label={words}
-                                            onClick={() => writeChoice({ date: day })}
+                                            disabled={d.full}
+                                            aria-pressed={d.isSelected}
+                                            aria-label={d.words}
+                                            onClick={() => writeChoice({ date: d.day })}
                                             className={cn(
-                                                'flex h-12 w-full flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                                                DAY_STYLE[kind],
-                                                (past || full) && 'cursor-not-allowed',
-                                                isSelected && kind !== 'choisi' && 'ring-2 ring-foreground-strong ring-offset-2 ring-offset-card',
+                                                'flex min-h-[4.5rem] w-14 flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                                                DAY_STYLE[d.kind],
+                                                d.full && 'cursor-not-allowed',
+                                                d.isSelected && d.kind !== 'choisi' && 'ring-2 ring-foreground-strong ring-offset-2 ring-offset-card',
                                             )}
                                         >
-                                            <span className={cn(isToday && 'underline decoration-2 underline-offset-2')}>{i + 1}</span>
-                                            <DayMark kind={kind} />
+                                            <span aria-hidden="true">{d.weekday}</span>
+                                            <span className={cn('text-base', d.isToday && 'underline decoration-2 underline-offset-2')}>{d.n}</span>
+                                            <DayMark kind={d.kind} />
                                         </button>
                                     </li>
-                                );
-                            })}
-                        </ul>
+                                ))}
+                            </ul>
+                            <div className="hidden sm:block">
+                                <div className="grid grid-cols-7 gap-1 pb-1" aria-hidden="true">
+                                    {WEEKDAYS.map((w) => (
+                                        <span key={w} className="text-center text-sm font-semibold text-muted-foreground">{w}</span>
+                                    ))}
+                                </div>
+                                <ul className="grid grid-cols-7 gap-1" aria-label={`Jours de ${label}`}>
+                                    {Array.from({ length: info.offset }).map((_, i) => (
+                                        <li key={`vide-${i}`} aria-hidden="true" />
+                                    ))}
+                                    {days.map((d) => (
+                                        <li key={d.day}>
+                                            <button
+                                                type="button"
+                                                disabled={d.past || d.full}
+                                                aria-pressed={d.isSelected}
+                                                aria-label={d.words}
+                                                onClick={() => writeChoice({ date: d.day })}
+                                                className={cn(
+                                                    'flex h-12 w-full flex-col items-center justify-center gap-0.5 rounded-lg border text-sm tabular-nums transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                                                    DAY_STYLE[d.kind],
+                                                    (d.past || d.full) && 'cursor-not-allowed',
+                                                    d.isSelected && d.kind !== 'choisi' && 'ring-2 ring-foreground-strong ring-offset-2 ring-offset-card',
+                                                )}
+                                            >
+                                                <span className={cn(d.isToday && 'underline decoration-2 underline-offset-2')}>{d.n}</span>
+                                                <DayMark kind={d.kind} />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </>
                     )}
                 </div>
             )}

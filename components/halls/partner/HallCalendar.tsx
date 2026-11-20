@@ -43,6 +43,12 @@ function monthLabel(y: number, m: number): string {
     return new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m, 1)));
 }
 
+/** « sam. 14 déc. » (bouton d'un jour réservé sur téléphone). */
+function shortDay(key: string): string {
+    return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+        .format(new Date(`${key}T00:00:00Z`));
+}
+
 function countText(n: number): string {
     return n === 1 ? '1 réservation' : `${n} réservations`;
 }
@@ -76,6 +82,7 @@ export function HallCalendar({ hallId }: { hallId: string }) {
         return out;
     }, [reservations, daysInMonth, month]);
 
+    const booked = cells.filter((c) => c.all > 0);
     const leading = (new Date(Date.UTC(month.y, month.m, 1)).getUTCDay() + 6) % 7;
     const label = monthLabel(month.y, month.m);
     const isCurrentMonth = from.slice(0, 7) === today.slice(0, 7);
@@ -115,8 +122,45 @@ export function HallCalendar({ hallId }: { hallId: string }) {
                 </IconButton>
             </div>
 
-            {/* Grille du mois : 7 colonnes, jamais plus large que l'écran (390 px compris) */}
-            <div className="mt-3" role="group" aria-label={`Jours de ${label}`} aria-busy={loading}>
+            {/* Téléphone : sept colonnes de 44 px ne tiennent pas ; les jours réservés du mois, qu'on touche pour filtrer */}
+            <div className="mt-3 sm:hidden" aria-busy={loading}>
+                {loading && !data ? (
+                    <div className="flex flex-wrap gap-2">
+                        <Skeleton className="h-11 w-28 rounded-lg" />
+                        <Skeleton className="h-11 w-28 rounded-lg" />
+                    </div>
+                ) : booked.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{`Aucun jour réservé en ${label}.`}</p>
+                ) : (
+                    <ul className="flex flex-wrap gap-2" aria-label={`Jours réservés de ${label}`}>
+                        {booked.map((c) => (
+                            <li key={c.key}>
+                                <button
+                                    type="button"
+                                    aria-pressed={selected === c.key}
+                                    onClick={() => setSelected((s) => (s === c.key ? null : c.key))}
+                                    className={cn(
+                                        'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm font-semibold text-foreground-strong transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                        c.live > 0 ? 'border-primary-text bg-primary-soft' : 'border-dashed border-input bg-card',
+                                        selected === c.key && 'ring-2 ring-ring',
+                                    )}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={cn('h-1.5 w-5 rounded-full', c.live > 0 ? 'bg-primary' : 'border border-dashed border-muted-foreground')}
+                                    />
+                                    <span className={cn('tabular-nums', c.key === today && 'underline decoration-2 underline-offset-4')}>
+                                        {`${shortDay(c.key)} · ${countText(c.all)}`}
+                                    </span>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
+            {/* Grille du mois : 7 colonnes à partir de sm */}
+            <div className="mt-3 hidden sm:block" role="group" aria-label={`Jours de ${label}`} aria-busy={loading}>
                 <div className="grid grid-cols-7 gap-1" aria-hidden="true">
                     {WEEKDAYS.map((w) => (
                         <div key={w.short} className="py-1 text-center text-sm font-semibold text-muted-foreground">
