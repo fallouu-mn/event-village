@@ -22,7 +22,10 @@ whitelist(name) AS (
     VALUES ('is_admin'), ('is_superadmin'), ('is_controller'), ('has_role'), ('is_partner_owner'), ('auth_user_role'),
            ('ticket_category_private_read'),
     -- Lot 9 quinquies, contre-vérification (point 4) : 8e aide RLS, controller_assignment_active (politique tickets_read)
-           ('controller_assignment_active')
+           ('controller_assignment_active'),
+    -- Contre-vérification du lot 10b (T4) : 9e aide RLS, partner_listed (partenaire VALIDE, un booléen ; lecture publique
+    -- des salles, établissements, zones et tables)
+           ('partner_listed')
 ),
 checks(point, ok, detail) AS (
     -- 1A.1
