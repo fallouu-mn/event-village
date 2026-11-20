@@ -178,6 +178,7 @@ Chaque modification porte en commentaire « Finition 4 … modification signalé
 | `f3d-ecrans` | le SMS du code du numéro administrateur dit « super-administrateur » | demande du design 1c (la règle de `f3b-ecrans` est celle de `main` depuis la fusion : « super-administrateur » partout) |
 | invariant (n) de `tests/helpers/notification-invariants.ts` | un SMS facultatif parti la nuit est admis s'il est marqué « événement dans moins de 12 h ou en cours » (`quiet.event_soon`) | règle du client du 20/11 |
 | `notif-pros` (avis aux porteurs d'un événement suspendu) | envoyés « maintenant » au lieu de « demain à midi » (heure par défaut de l'outil) : l'événement du test commence dans 3 h et finit avant midi le lendemain, l'avis serait annulé comme « événement terminé » | correctif T2 |
+| `notif-pros` (4 tests), aide `nowOutsideNight` de `tests/parcours/notif-helpers.ts` | les avis non urgents de ces tests sont envoyés « maintenant » hors de la plage de nuit, sinon à la fin de la plage plus une minute (réglage lu en base) ; avant : « maintenant », donc reportés quand le run tombe la nuit (run 480 de `main`) ; aucune assertion changée | point 1 (nuit) |
 | `acces-limiteurs`, `tests/seed/seed-demo.ts` | le compteur nouveau des SMS facultatifs par numéro est levé comme l'autre (1 000) | correctif T3 |
 
 ## 7 bis. Correctifs de la contre-vérification
@@ -203,6 +204,8 @@ Tous dans la migration `…06` (aucune n'était appliquée) et dans `lib/sms/sms
 | 474 | `25f70efac` | 2 lots rouges | connexion du super-administrateur (code SMS non lu, 1re fois sur 40 runs ; aucun changement de l'OTP) | rouge (pages non touchées) | renvois vers `notif-pros` décalés de 2 lignes ; isolation de `cvf4-4` (82 suites rouges par l'invariant g) |
 | 475 | `9297f6a90` | 1 lot rouge | fumée (scan du partenaire) et terrain 1 (vignette de « Mes billets » sans cesse redessinée) | vert | `main` fusionné ; la ligne de scan ajoutée à `cvf4-4` n'avait pas de version de secret (invariant p, 66 suites) ; e2e : voir § 8 ter |
 | 476 | `1f1174ca5` | **547/547** | **vert** (fumée, terrain, recette) | Mes billets 88 (page non touchée) | relance du seul job e2e (règle du 19/11) : mesure verte (91, 91, 90), mais connexion du super-administrateur rouge : voir § 8 ter |
+| **477** | **`944aad167`** | **547/547** | **vert** | **vert (93, 91, 90)** | **run complet vert en une seule fois, 55 min 41 s** ; fusion dans `main` (`40ffd1a74`, même arbre) |
+| 480 (`main`) | `40ffd1a74` | 546/547 | vert | Mes billets 88 (page non touchée) | lancé à 01:33 (heure de Dakar), **en pleine plage de nuit** : dans `notif-pros`, quatre tests envoyaient « maintenant » des avis non urgents (événement refusé puis validé, partenaire validé, refusé, réactivé), reportés à 07:00 par ce lot, restés en attente. Défaut des tests de ce lot (risque noté ci-dessous), corrigé : voir § 7 |
 | RUN_APRES | | | | | |
 
 ## 8 ter. Échecs de l'e2e sans lien avec ce lot
@@ -224,7 +227,7 @@ La mesure mobile a varié d'un run à l'autre sur des pages que ce lot ne touche
 
 Tests sans base passés aussi sur le poste : `f4-textes` 111/111, `f4-recopies` (partie sans base) 11/11, `f4-taches-locales` 14/14 (arrêt par Ctrl+C : CI seulement), contrôle de types et lint.
 
-Remarque : les suites qui envoient « maintenant » un avis non urgent (SMS ou push) dépendent de l'heure du run ; un run lancé entre 01:00 et 07:00 (heure de Dakar) verrait ces envois reportés. Le même risque existait avant, sur 10 heures (22 h - 8 h) ; il porte désormais sur 6 heures.
+Heure du run : les suites qui envoient « maintenant » un avis non urgent dépendaient de l'heure du run ; le run 480 de `main`, lancé de nuit, l'a montré (seule `notif-pros` touchée, alors que toutes les suites ont tourné de nuit). Corrigé par `nowOutsideNight` ; le run suivant, lui aussi de nuit, en est la preuve.
 
 ## 9. Reste à faire
 
