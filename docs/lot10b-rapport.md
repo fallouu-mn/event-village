@@ -226,7 +226,9 @@ Quand le service des salles est fermé, une notification de réservation de sall
 | 482 | `a956ba3f7` | rapide, 18 suites | **vert 18/18** : `f4-messages`, `f4-recopies`, `f4-textes`, `cv10b-1` à `-3` (T1-T8), `cv11a-5-recopies`, `l10b-cv-tables`, avis |
 | 483 | `de7d1fd27` | complet | rouge : `partner_listed` hors liste blanche ; brouillon de la salle écrit hors de `local-draft` (non effacé à la déconnexion, `cvf2b-6`) ; `/halls` en erreur (fonction d’un module client appelée par la page serveur) ; jours du calendrier de 34 et 40 px à 320 et 360 px (responsive) ; `notif-pros` (nuit, voir plus bas) |
 | 487 | `731f47502` | complet | tests 554/557, build, budgets JS, **responsive 0 défaut** (74 pages, dont les 12 des salles), Lighthouse (92, 92, 90) ; e2e 685/687 : nom lu de la bande des jours (axe) ; `hotfix-scripts` (compte des aides), `recette-matrice` (lignes citées), `notif-pros` (nuit) |
-| 490 | `50347ac53` | complet | tests 556/557 (seul `notif-pros`, nuit) ; e2e 685/687 et responsive 4 défauts : la fiche d’une salle élargie à 698 px sur téléphone (texte masqué de la bande des jours sorti de la zone qui défile) ; Lighthouse Mes billets 89 (page non touchée, 90 au run 487) |
+| 490 | `50347ac53` | complet | tests 556/557 (seul `notif-pros`, nuit) ; e2e 685/687 et responsive 4 défauts : la fiche d’une salle élargie à 698 px sur téléphone (texte masqué de la bande des jours sorti de la zone qui défile) ; Lighthouse Mes billets 89 (page non touchée, 90 au run 487) |
+| 493 | `fb3915a25` | complet, lancé à 06:55 | **tests 557/557**, **e2e 687/687**, build, budgets JS ; responsive 0 défaut sur 116 résultats : les 16 pages de l’administration non contrôlées (connexion du super-administrateur en échec dans la préparation, course de `LoginForm` déjà relevée par la finition 4) ; Lighthouse (93, 92, **88**) |
+| 495 | `e5bb14f0a` | complet, après la fusion de main (`14cc794a8`) | 1re tentative : tests 557/557, responsive 0 défaut ; e2e : captures de l’administration (même connexion) ; Lighthouse (91, 92, **89**). 2e tentative : **tests 557/557, e2e 687/687, responsive 148 résultats et 0 défaut**, build, budgets JS ; Lighthouse (90, **89**, **88**) |
 
 ### `notif-pros` la nuit (hors du lot)
 
@@ -239,5 +241,13 @@ not ok 1 - refus par l’admin avec motif puis validation : EVENT_REJECTED et EV
 EVENT_REJECTED:…:SMS : SMS SENT (statut PENDING, motif null )
 ```
 
-La finition 4 l’a déjà corrigé sur sa branche (`eebe40e02`, `nowOutsideNight`, run 480 de main), mais ce commit n’est pas
-dans main (`40ffd1a74`). Rien n’est changé ici : le correctif arrivera avec main ; le run final est lancé après 07:00.
+La finition 4 l’a corrigé sur sa branche (`eebe40e02`, `nowOutsideNight`), arrivé dans main le 20/11 (`14cc794a8`) et
+fusionné ici (`e5bb14f0a`) : `notif-pros` verte au run 495. Rien n’est changé dans ce lot.
+
+### Mesure mobile (pages non touchées)
+
+Les trois pages mesurées (accueil, fiche d’un événement, Mes billets) ne sont pas touchées par le lot ; leur poids non
+plus : premier chargement de Mes billets 225 Ko sur la branche contre 226 Ko sur main (run 494, `next build`) ; budgets
+JS tenus et non relevés. Mes billets oscille autour du seuil, sur main aussi (run 494 : médiane 90, passages
+[91 ; 89 ; 91 ; 90 ; 90]) ; sur la branche, médianes 88 à 90 selon la machine (calibration ×4,7 à ×4,9). Seuil 90
+inchangé : le job est relancé, rien d’autre.
