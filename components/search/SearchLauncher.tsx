@@ -3,11 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 
-/** Attribut des déclencheurs de la recherche instantanée (lien de l'en-tête, du menu, champ de l'accueil). */
-export const SEARCH_LAUNCH_ATTR = 'data-ev-search';
+import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT } from './search-events';
 
-/** Signal envoyé à l'ouverture (le menu du téléphone se ferme). */
-export const SEARCH_OPEN_EVENT = 'ev:search-open';
+export { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT };
 
 // Fenêtre de recherche chargée seulement à la première ouverture : rien de plus dans le JavaScript de chaque page, et
 // aucun chargement différé pendant la mesure (Lighthouse compte le travail reporté, design 1b).

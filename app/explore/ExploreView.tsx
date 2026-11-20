@@ -6,7 +6,7 @@ import { RefreshCw, RotateCcw, Search } from 'lucide-react';
 import { EventCard, cityLabel } from '@/components/events/EventCard';
 import { CardTransitions } from '@/components/events/CardLink';
 import { CardLiveBadges } from '@/components/events/CardLiveBadge';
-import { CardFavorites } from '@/components/events/CardFavorites';
+import { CardFavoritesLazy as CardFavorites } from '@/components/events/CardFavoritesLazy';
 import { CategoryChipsBar } from '@/components/events/CategoryChipsBar';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';

@@ -10,7 +10,7 @@ import { loadHomeData, type HomeData } from '@/app/_accueil/data.server';
 import { EventCard } from '@/components/events/EventCard';
 import { CardTransitions } from '@/components/events/CardLink';
 import { CardLiveBadges } from '@/components/events/CardLiveBadge';
-import { CardFavorites } from '@/components/events/CardFavorites';
+import { CardFavoritesLazy as CardFavorites } from '@/components/events/CardFavoritesLazy';
 import { AccessNotice } from '@/components/layout/AccessNotice';
 import { buttonClasses } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';

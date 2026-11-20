@@ -23,8 +23,8 @@ import { EventTicketing } from '@/components/event-page/EventTicketing';
 import { LiveOnPoster } from '@/components/event-page/LiveOnPoster';
 import { PendingPaymentSlot } from '@/components/event-page/PendingPaymentSlot';
 import { ShareButton } from '@/components/event-page/ShareButton';
-import { EventCountdown } from '@/components/event-page/Countdowns';
-import { CardFavorites } from '@/components/events/CardFavorites';
+import { EventCountdownLazy as EventCountdown } from '@/components/event-page/EventCountdownLazy';
+import { CardFavoritesLazy as CardFavorites } from '@/components/events/CardFavoritesLazy';
 import { FavoriteHeart } from '@/components/events/FavoriteHeart';
 import { VenueMap } from '@/components/event-page/VenueMap';
 import { readPublicSheet } from '@/lib/events/event-detail.server';
@@ -67,8 +67,8 @@ const PROGRAM_KIND_LABEL: Record<string, string> = {
   ACTIVITE: 'Activité',
 };
 
-/** Largeur rendue de l'affiche : pleine largeur sur téléphone, deux tiers de 1 200 px au plus sur ordinateur. */
-const POSTER_SIZES = '(min-width: 1280px) 760px, (min-width: 1024px) 62vw, 100vw';
+/** Design 1d : largeur rendue de l'affiche (cadre 4:5) : 76 % de l'écran sur téléphone, 380 px au plus dès 1 024 px. */
+const POSTER_SIZES = '(min-width: 1024px) 380px, 76vw';
 
 function capitalize(text: string): string {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
@@ -175,12 +175,15 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
           </div>
         )}
         <div className="flex items-center justify-between gap-3">
+          {/* Sous 400 px, « Retour » seul : la barre tient avec le cœur et « Partager » (320 px compris) */}
           <Link
             href="/explore"
-            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-scrim/60 px-4 text-sm font-semibold text-on-tone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Retour aux événements"
+            className="inline-flex min-h-11 min-w-0 items-center gap-2 rounded-full bg-scrim/60 px-4 text-sm font-semibold text-on-tone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ArrowLeft size={18} aria-hidden="true" />
-            Retour aux événements
+            <ArrowLeft size={18} className="flex-shrink-0" aria-hidden="true" />
+            <span aria-hidden="true" className="min-[400px]:hidden">Retour</span>
+            <span aria-hidden="true" className="hidden min-[400px]:inline">Retour aux événements</span>
           </Link>
           <div className="flex items-center gap-2">
             <FavoriteHeart id={event.id} title={event.title} />
@@ -234,8 +237,11 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
                 </span>
               </li>
             </ul>
-            {/* Design 1d (point 4) : compte à rebours à l'heure du téléphone, jamais dans la page en cache */}
-            <EventCountdown startsAt={event.startsAt} endsAt={event.endsAt} enabled={liveEnabled} className="rounded-full bg-scrim/40 px-3.5 py-2 text-sm font-bold" />
+            {/* Design 1d (point 4) : compte à rebours à l'heure du téléphone, jamais dans la page en cache ; sa ligne est
+                réservée (rien ne saute quand il arrive, rien ne manque quand il n'y en a pas) */}
+            <div className="min-h-9">
+              <EventCountdown startsAt={event.startsAt} endsAt={event.endsAt} enabled={liveEnabled} className="rounded-full bg-scrim/40 px-3.5 py-2 text-sm font-bold" />
+            </div>
           </header>
         </div>
       </section>

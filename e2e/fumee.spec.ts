@@ -72,15 +72,12 @@
  *    PASSWORD_CONFIRMATION_REQUIRED, boîte « Confirmez votre mot de passe », POST /api/account/password-confirm 200,
  *    puis le même transfert repart (200). Aucune assertion retirée.
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect, openRoleContext, prepareContext, projectContextOptions } from './support/fixtures';
 import { fumeePayerPhone } from './support/accounts';
 import { APP_URL, e2eConfig } from './support/env';
 import { cameraDiagSnapshot, describeCameraScan, fakeScanMode, installCameraDiagnostics, installFakeCamera } from './support/fake-camera';
 import { PageGuard } from './support/network';
-import { CAPTURES_DIR, readDemoIds } from './support/demo-ids';
 import { posterHtml, POSTER_SIZE } from './support/poster';
 import type { SimulatedClock } from './support/clock';
 import {
@@ -678,6 +675,10 @@ test('design 1d : aperçu de partage d’un événement publié, aucun pour un a
     const anonymous = await browser.newContext(projectContextOptions(testInfo));
     await prepareContext(anonymous, 'clair');
     try {
+        // Imports ici (et pas en tête) : les lignes du fichier citées par la recette (docs/recette-billetterie.md) ne bougent pas
+        const fs = await import('node:fs');
+        const path = await import('node:path');
+        const { CAPTURES_DIR, readDemoIds } = await import('./support/demo-ids');
         const demo = readDemoIds();
         const ok = await anonymous.request.get(`/api/events/${demo.events.ceSoir.id}/apercu`);
         expect(ok.status()).toBe(200);

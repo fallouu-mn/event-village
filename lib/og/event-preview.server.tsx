@@ -54,8 +54,9 @@ function loadLogo(): Promise<string> {
     return logoPromise;
 }
 
-/** Affiche du stockage du projet en JPEG (data:), contenue dans 440 × 550 sur la couleur de l'affiche ; null sinon. */
-async function posterData(url: string | null, background: string): Promise<string | null> {
+/** Affiche du stockage du projet en JPEG (data:), réduite pour tenir dans 440 × 550 en gardant sa forme ; null sinon. */
+interface PosterImage { src: string; width: number; height: number }
+async function posterData(url: string | null, background: string): Promise<PosterImage | null> {
     if (!isProjectStorageImage(url)) return null;
     try {
         const res = await fetch(url, { signal: AbortSignal.timeout(POSTER_FETCH_TIMEOUT_MS), cache: 'no-store' });
@@ -65,11 +66,11 @@ async function posterData(url: string | null, background: string): Promise<strin
         }
         const jpeg = await sharp(Buffer.from(await res.arrayBuffer()), { limitInputPixels: IMAGE_MAX_INPUT_PIXELS })
             .rotate()
-            .resize({ width: POSTER_W, height: POSTER_H, fit: 'contain', background })
+            .resize({ width: POSTER_W, height: POSTER_H, fit: 'inside' })
             .flatten({ background })
             .jpeg({ quality: 82 })
-            .toBuffer();
-        return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+            .toBuffer({ resolveWithObject: true });
+        return { src: `data:image/jpeg;base64,${jpeg.data.toString('base64')}`, width: jpeg.info.width, height: jpeg.info.height };
     } catch (err) {
         console.warn(`[aperçu] affiche non chargée : ${url} :`, err instanceof Error ? err.message : String(err));
         return null;
@@ -103,15 +104,17 @@ export async function renderSharePreview(data: SharePreviewData): Promise<Buffer
             backgroundImage: 'linear-gradient(90deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.35) 100%)',
         },
     },
-    h('div', {
-        style: {
-            display: 'flex', width: POSTER_W, height: POSTER_H, flexShrink: 0, borderRadius: 28, overflow: 'hidden',
-            alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.18)',
-            boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
-        },
-    }, poster
-        ? h('img', { src: poster, width: POSTER_W, height: POSTER_H, style: { objectFit: 'contain' } })
-        : h('img', { src: logo, width: 220, height: 200 })),
+    // Colonne de l'affiche de taille fixe ; le cadre prend la forme de l'affiche (paysage ou portrait), centré
+    h('div', { style: { display: 'flex', width: POSTER_W, height: POSTER_H, flexShrink: 0, alignItems: 'center', justifyContent: 'center' } },
+        h('div', {
+            style: {
+                display: 'flex', width: poster ? poster.width : POSTER_W, height: poster ? poster.height : POSTER_H, borderRadius: 24,
+                overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.18)',
+                boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+            },
+        }, poster
+            ? h('img', { src: poster.src, width: poster.width, height: poster.height })
+            : h('img', { src: logo, width: 220, height: 200 }))),
     h('div', { style: { display: 'flex', flexDirection: 'column', width: TEXT_W, height: POSTER_H, justifyContent: 'space-between' } },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 16 } },
             h('img', { src: logo, width: 56, height: 51 }),

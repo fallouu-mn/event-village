@@ -3,7 +3,7 @@
 import React from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useServerData } from '@/components/partner/useServerData';
-import { CardFavorites } from '@/components/events/CardFavorites';
+import { CardFavoritesLazy as CardFavorites } from '@/components/events/CardFavoritesLazy';
 import { CardLiveBadges } from '@/components/events/CardLiveBadge';
 import { CardTransitions } from '@/components/events/CardLink';
 import { EventCard } from '@/components/events/EventCard';

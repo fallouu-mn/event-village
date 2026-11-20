@@ -37,7 +37,11 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
-import { SEARCH_OPEN_EVENT, SearchLauncher } from '@/components/search/SearchLauncher';
+import dynamic from 'next/dynamic';
+import { SEARCH_OPEN_EVENT } from '@/components/search/search-events';
+
+// Design 1d (point 9) : lanceur de la recherche instantanée chargé après l'affichage (aucun poids au premier chargement)
+const SearchLauncher = dynamic(() => import('@/components/search/SearchLauncher').then((m) => ({ default: m.SearchLauncher })), { ssr: false });
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 

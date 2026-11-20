@@ -340,4 +340,6 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/search/SearchLauncher.tsx',
     'components/search/InstantSearch.tsx',
     'components/tickets/PullToRefresh.tsx',
+    'components/events/CardFavoritesLazy.tsx',
+    'components/event-page/EventCountdownLazy.tsx',
 ];

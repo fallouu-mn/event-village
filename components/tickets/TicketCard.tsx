@@ -72,7 +72,12 @@ import { getOfflineLot, hasCachedOfflineShell, OFFLINE_SHELL_PATH, updateLotCloc
 import { ensureOfflineLot, OFFLINE_LOTS_CHANGED, requestOfflineShell } from '@/components/tickets/OfflineTicketsSync';
 import { OfflineStatusBadge } from '@/components/tickets/offline/OfflineStatusBadge';
 import { categoryClasses, countdownLabel } from '@/components/tickets/wallet';
-import { AddToCalendar } from '@/components/tickets/AddToCalendar';
+// Design 1d : « Ajouter à mon agenda » chargé à la demande (poids de Mes billets)
+const AddToCalendar = dynamic(() => import('@/components/tickets/AddToCalendar').then((m) => ({ default: m.AddToCalendar })), {
+  ssr: false,
+  // Place réservée (deux boutons de 44 px sur téléphone, un rang dès 640 px) : rien ne saute à leur arrivée
+  loading: () => <div aria-hidden="true" className="col-span-3 h-24 sm:h-11" />,
+});
 
 // Design 1b (décision du 18/11, temps de blocage de « Mes billets ») : bibliothèque des QR chargée à la demande (au premier
 // QR à dessiner), jamais avec la page ; le QR n'est recalculé que si son contenu change.

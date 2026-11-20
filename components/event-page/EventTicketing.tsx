@@ -37,7 +37,8 @@ import {
 } from '@/lib/events/event-detail';
 import { OperatorLogo } from '@/components/payment/OperatorLogo';
 import { CATEGORY_STRIPE, CATEGORY_STRIPE_NONE } from './category-colors';
-import { SaleCloseCountdown } from './Countdowns';
+// Design 1d : compte à rebours des ventes chargé après l'affichage (il ne montre rien au premier rendu)
+const SaleCloseCountdown = dynamic(() => import('./Countdowns').then((m) => ({ default: m.SaleCloseCountdown })), { ssr: false });
 import { onPending, requestPendingRefresh, TICKETS_AFTER_PURCHASE } from './signals';
 
 // Lot 7 (7.3, 7.5) : la fenêtre de paiement (formulaire, opérateurs, Modal) n'est chargée qu'au premier « Acheter » ;
@@ -583,7 +584,9 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
   return (
     <>
       <div className="space-y-5">
-        <div className="flex items-start justify-between gap-3">
+        {/* Design 1d (run 481, 1 024 px) : panneau plus étroit dans la feuille de la fiche ; « En direct » passe dessous
+            plutôt que de chevaucher le titre */}
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <div className="min-w-0">
             <h2 id="billetterie-titre" tabIndex={-1} className="scroll-mt-24 text-xl font-bold tracking-tight text-foreground-strong focus:outline-none">
               Billetterie

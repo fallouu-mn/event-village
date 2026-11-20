@@ -193,6 +193,12 @@ describe('4. préférences de l’appareil', () => {
             savePaymentPreference({ operator: 'ORANGE_MONEY', phone: '781234567' });
             addRecentSearch('sabar');
             store.setItem('theme', 'dark');
+            // Page chargée sans session (visiteur compris) : le numéro de paiement seulement, les recherches restent
+            clearDevicePrefs('paiement');
+            assert.equal(readPaymentPreference(), null, 'numéro de paiement effacé');
+            assert.deepEqual(readRecentSearches(), ['sabar'], 'recherches récentes gardées pour une visite sans compte');
+            // Déconnexion (bouton, SIGNED_OUT) : tout
+            savePaymentPreference({ operator: 'ORANGE_MONEY', phone: '781234567' });
             clearDevicePrefs();
             assert.deepEqual([...store.map.keys()], ['theme'], 'préférences de l’appareil effacées, rien d’autre');
             assert.ok(PAYMENT_PREF_KEY.startsWith(DEVICE_PREFS_PREFIX) && RECENT_SEARCHES_KEY.startsWith(DEVICE_PREFS_PREFIX));
@@ -208,9 +214,10 @@ describe('4. préférences de l’appareil', () => {
         }
     });
 
-    test('purge appelée par les trois chemins de déconnexion d’AuthProvider', () => {
+    test('purge : tout au bouton et sur SIGNED_OUT ; numéro de paiement sur une page chargée sans session', () => {
         const src = read('components/providers/AuthProvider.tsx');
-        assert.equal((src.match(/clearDevicePrefs\(\);/g) ?? []).length, 3, 'SIGNED_OUT, session close à l’insu, bouton');
+        assert.equal((src.match(/clearDevicePrefs\(\);/g) ?? []).length, 2, 'SIGNED_OUT et bouton : tout');
+        assert.equal((src.match(/clearDevicePrefs\('paiement'\);/g) ?? []).length, 1, 'session close à l’insu ou visite sans compte : le numéro');
     });
 });
 

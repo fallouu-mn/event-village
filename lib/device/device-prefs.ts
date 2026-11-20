@@ -7,7 +7,7 @@
  *  - Recherche : 6 recherches récentes au plus, 60 caractères chacune, « Effacer » les retire.
  * Tout est effacé à la déconnexion (lib/device/device-prefs-purge.ts, AuthProvider).
  */
-import { DEVICE_PREFS_PREFIX } from './device-prefs-purge';
+import { DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX } from './device-prefs-purge';
 
 export type DeviceOperator = 'WAVE' | 'ORANGE_MONEY';
 
@@ -17,7 +17,7 @@ export interface PaymentPreference {
     phone: string;
 }
 
-export const PAYMENT_PREF_KEY = `${DEVICE_PREFS_PREFIX}paiement`;
+export const PAYMENT_PREF_KEY = DEVICE_PAYMENT_KEY;
 export const RECENT_SEARCHES_KEY = `${DEVICE_PREFS_PREFIX}recherches`;
 export const RECENT_SEARCHES_MAX = 6;
 export const RECENT_SEARCH_MAX_LENGTH = 60;
