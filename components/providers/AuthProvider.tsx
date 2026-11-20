@@ -8,6 +8,7 @@ import { clearOfflineStore } from '@/lib/tickets/offline-store';
 import { clearAllScanMemory } from '@/lib/scan/scan-memory';
 import { clearAllDrafts } from '@/lib/events/draft-purge';
 import { clearPaymentHandoffs } from '@/lib/payments/payment-handoff-purge';
+import { clearDevicePrefs } from '@/lib/device/device-prefs-purge';
 import { dropLocalSession, revokeSoon, unsubscribePush } from '@/lib/auth/sign-out-here';
 import { sessionEnded } from '@/lib/auth/session-signal';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -205,6 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // boutons de déconnexion : contrôleur, mot de passe réinitialisé)
                     clearAllDrafts();
                     clearPaymentHandoffs(); // cvf2b 6.13b : liens de paiement de l'onglet
+                    clearDevicePrefs(); // design 1d : opérateur et numéro de paiement, recherches récentes de l’appareil
                     setSignedOut(true); // cvf2b 6.2 : la page affichée est remplacée, dans tous les onglets
                     // Cvf2b 6.9 : abonnement push de ce navigateur retiré sur toute fin de session (autre onglet, autre
                     // appareil, jeton de rafraîchissement refusé, mot de passe réinitialisé), pas seulement au bouton
@@ -222,6 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     clearAllScanMemory();
                     clearAllDrafts();
                     clearPaymentHandoffs();
+                    clearDevicePrefs(); // design 1d : préférences de l’appareil
                     void unsubscribePush(); // cvf2b 6.9 : même règle que SIGNED_OUT
                 }
                 if (nextUserId) {
@@ -287,6 +290,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearAllScanMemory();
         clearAllDrafts();
         clearPaymentHandoffs(); // cvf2b 6.13b
+        clearDevicePrefs(); // design 1d : préférences de l’appareil
         void clearOfflineStore();
         setSignedOut(true);
         setUser(null);

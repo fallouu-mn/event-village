@@ -6,6 +6,7 @@ import { eventEndAt } from '@/lib/events/event-end';
 import { eventStartAt } from '@/lib/events/live-status';
 import { lowStockThreshold } from '@/lib/events/low-stock.server';
 import { isEventId, isPublicEvent, type PublicEventStatus } from '@/lib/events/public-status';
+import { posterBlurOrNull, posterColorOrFallback } from '@/lib/events/poster-color';
 import { isScanCategoryColor } from '@/lib/scan/scan-result';
 import { formatSnPhone, toSenegaleseContactE164 } from '@/lib/validations/auth';
 import {
@@ -108,6 +109,8 @@ export async function buildPublicEventSnapshot(eventId: string): Promise<PublicE
             end_date,
             end_time,
             image_url,
+            poster_color,
+            poster_blur,
             gallery_urls,
             capacity,
             status,
@@ -235,6 +238,8 @@ export async function buildPublicEventSnapshot(eventId: string): Promise<PublicE
         subtitle: organizerName,
         organizer: { id: partnerData?.id, name: organizerName, avatar: partnerData?.logo_url || null },
         posterUrl: event.image_url || null,
+        posterColor: posterColorOrFallback(event.poster_color),
+        posterBlur: posterBlurOrNull(event.poster_blur),
         galleryUrls: event.gallery_urls || [],
         dateFormatted,
         time: timeFormatted,
@@ -289,8 +294,9 @@ const cachedRead = unstable_cache(
         const event = await buildPublicEventSnapshot(eventId);
         return event ? { kind: 'public', event } : { kind: 'not-public' };
     },
-    // Design 1c bis : forme changée (fiche sans heure) : nouvelle clé, aucune ancienne entrée relue
-    ['fiche-publique-v2'],
+    // Design 1c bis : forme changée (fiche sans heure) ; design 1d : couleur et image floutée de l'affiche. Nouvelle clé,
+    // aucune ancienne entrée relue
+    ['fiche-publique-v3'],
     { revalidate: PUBLIC_SHEET_REVALIDATE_SECONDS, tags: ['fiche-publique'] },
 );
 

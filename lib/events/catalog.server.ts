@@ -1,6 +1,7 @@
 import { getCategoryLabel } from '@/lib/constants/event-categories';
 import { eventEndAt } from '@/lib/events/event-end';
 import { eventStartAt } from '@/lib/events/live-status';
+import { posterColorOrFallback } from '@/lib/events/poster-color';
 import { foldText } from '@/lib/text/fold';
 
 /**
@@ -32,6 +33,7 @@ export const CATALOG_SELECT = `
     end_date,
     end_time,
     image_url,
+    poster_color,
     status,
     created_at,
     partner_id,
@@ -51,6 +53,8 @@ export interface CatalogRow {
     end_date: string | null;
     end_time: string | null;
     image_url: string | null;
+    /** Design 1d : couleur de l'affiche (migration 20261127000001), NULL sans calcul. */
+    poster_color?: string | null;
     status: string;
     partners: { company_name: string | null; commercial_name: string | null } | null;
     ticket_categories: CatalogCategoryRow[] | null;
@@ -74,6 +78,8 @@ export interface CatalogEventDto {
     title: string;
     subtitle: string;
     imageUrl: string | null;
+    /** Design 1d (point 2) : couleur de l'affiche, contraste ≥ 4,5:1 avec le blanc, « bleu nuit » à défaut. */
+    posterColor: string;
     dateFormatted: string;
     dayNumber: string;
     monthShort: string;
@@ -245,6 +251,7 @@ export function formatCatalogEvent(evt: CatalogRow, _ancienSeuil?: number): Cata
         title: evt.title,
         subtitle: evt.partners?.commercial_name || evt.partners?.company_name || 'Event Village',
         imageUrl: evt.image_url || null,
+        posterColor: posterColorOrFallback(evt.poster_color),
         dateFormatted,
         dayNumber,
         monthShort,

@@ -64,6 +64,10 @@ export interface PublicEventDetail {
     subtitle: string;
     organizer: { id?: string; name: string; avatar: string | null };
     posterUrl: string | null;
+    /** Design 1d (point 1) : couleur de l'affiche (contraste ≥ 4,5:1 avec le blanc), « bleu nuit » à défaut. */
+    posterColor: string;
+    /** Design 1d (point 1) : petite image floutée de l'affiche (adresse data:), null sans calcul. */
+    posterBlur: string | null;
     galleryUrls: string[];
     dateFormatted: string;
     time: string;

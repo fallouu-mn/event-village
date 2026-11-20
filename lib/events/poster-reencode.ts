@@ -18,6 +18,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { encodeImage, storedImageName } from '@/lib/images/encode-image';
 import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { removePosterIfUnused, storagePathOf } from '@/lib/events/poster-storage';
+import { recordPosterStyle } from '@/lib/events/poster-style-store';
 
 const BUCKET = 'public-images';
 /** Fichier rangé directement dans un dossier de partenaire : events/<uuid>/<nom> (rien d'autre). */
@@ -108,6 +109,8 @@ export async function reencodeLegacyPosters(opts: ReencodeOptions = {}): Promise
         const target = `${folder}/${storedImageName()}`;
         const { error: upErr } = await storage.upload(target, encoded, { contentType: 'image/webp', upsert: false });
         if (upErr) throw new Error(`dépôt de ${target} impossible : ${upErr.message}`);
+        // Design 1d (point 1) : style du nouveau fichier enregistré avant que les événements ne le citent (trigger)
+        await recordPosterStyle(target, encoded);
         const newUrl = storage.getPublicUrl(target).data.publicUrl;
         const updated: string[] = [];
         for (const c of cited) {

@@ -245,3 +245,18 @@ describe('6. prix d’appel de l’aperçu', () => {
         assert.equal(sharePriceLabel([]), null);
     });
 });
+
+describe('2 bis. compte à rebours des cartes (à la minute)', () => {
+    test('jours et heures, puis heures et minutes, jamais de secondes', async () => {
+        const { cardCountdown } = await import('../../lib/events/countdown');
+        const start = Date.UTC(2026, 10, 21, 20, 0, 0);
+        const iso = (ms: number): string => new Date(ms).toISOString();
+        const end = iso(start + 6 * HOUR);
+        assert.equal(cardCountdown(start - 8 * DAY, iso(start), end).text, null);
+        assert.equal(cardCountdown(start - (2 * DAY + 4 * HOUR), iso(start), end).text, 'Commence dans 2 j 4 h');
+        assert.equal(cardCountdown(start - (3 * HOUR + 11 * MINUTE + 30 * SECOND), iso(start), end).text, 'Commence dans 3 h 12 min');
+        assert.equal(cardCountdown(start - 30 * SECOND, iso(start), end).text, 'Commence dans 1 min');
+        assert.ok((cardCountdown(start - 3 * HOUR - 30 * SECOND, iso(start), end).nextIn ?? 0) >= SECOND);
+        assert.equal(cardCountdown(start + MINUTE, iso(start), end).text, 'En cours');
+    });
+});
