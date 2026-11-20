@@ -11,6 +11,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/Toast';
+import { lightVibration } from '@/lib/ui/haptics';
 
 const PIECES = [
   { color: 'bg-brand-vif', dx: -96, dy: -64 },
@@ -42,6 +43,8 @@ export function PurchaseCelebration({ onDone }: { onDone: () => void }) {
     if (!announcedRef.current) {
       announcedRef.current = true;
       toastRef.current.success(CELEBRATION_MESSAGE);
+      // Design 1d (point 10) : vibration légère à l'achat confirmé (téléphones qui le permettent)
+      lightVibration();
     }
     const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) {

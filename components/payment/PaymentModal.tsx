@@ -32,6 +32,7 @@ import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { formatFcfa, formatTime } from '@/lib/format';
 import { normalizePayerPhone } from '@/lib/payments/payer-phone';
+import { readPaymentPreference, savePaymentPreference } from '@/lib/device/device-prefs';
 import {
   formatDelay,
   formatLocalPhone,
@@ -264,6 +265,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
   const [phoneInput, setPhoneInput] = useState('');
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [phonePrefilled, setPhonePrefilled] = useState(false);
+  const [prefillFromDevice, setPrefillFromDevice] = useState(false);
   const [phoneRejected, setPhoneRejected] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failure, setFailure] = useState<PaymentRequestError | null>(null);
@@ -290,14 +292,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
         : null
       : null);
   const phoneHelp = phonePrefilled
-    ? `Numéro de votre profil. Modifiez-le si un autre compte ${chosenLabel ?? 'Mobile Money'} paie.`
+    ? prefillFromDevice
+      ? `Numéro de votre dernier paiement sur ce téléphone. Modifiez-le si un autre compte ${chosenLabel ?? 'Mobile Money'} paie.`
+      : `Numéro de votre profil. Modifiez-le si un autre compte ${chosenLabel ?? 'Mobile Money'} paie.`
     : 'Mobile sénégalais, avec ou sans +221. La demande de paiement sera liée à ce numéro.';
 
-  // Préremplissage unique depuis le profil, jamais par-dessus une saisie.
+  // Préremplissage unique, jamais par-dessus une saisie ni un choix. Design 1d (point 6, achat rapide) : d'abord le dernier
+  // opérateur et le dernier numéro de paiement de CET appareil (stockage local, effacé à la déconnexion), sinon le numéro
+  // du profil. Rien n'est envoyé ni validé d'avance : le bouton « Payer » et tous les contrôles du serveur restent.
   useEffect(() => {
     if (!isOpen || prefillDoneRef.current) return;
     if (phoneInput.trim() !== '') {
       prefillDoneRef.current = true;
+      return;
+    }
+    const device = readPaymentPreference();
+    if (device) {
+      prefillDoneRef.current = true;
+      setOperator((current) => current ?? device.operator);
+      setPhoneInput(formatLocalPhone(device.phone));
+      setPhonePrefilled(true);
+      setPrefillFromDevice(true);
       return;
     }
     const fromProfile = normalizePayerPhone(profile?.phone);
@@ -450,6 +465,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
 
     const paymentOperator = outcome.operator ?? operator;
     const label = operatorLabel(paymentOperator);
+    // Design 1d (point 6) : demande acceptée par le serveur : opérateur et numéro gardés sur cet appareil seulement
+    if (!FINISHED_FAILED[outcome.status]) savePaymentPreference({ operator: paymentOperator, phone: payerPhone });
     const failedAs = FINISHED_FAILED[outcome.status];
     if (failedAs) {
       // Rejeu d'une tentative déjà close : la suivante doit créer un nouveau paiement.
@@ -508,6 +525,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
       title="Paiement sécurisé"
       subtitle="Mobile Money, par SamirPay"
       icon={<ShieldCheck size={18} />}
+      sheetOnMobile
     >
       {redirect ? (
         /* ── Initiation réussie : ouverture de l'opérateur et renvoi vers le suivi ── */

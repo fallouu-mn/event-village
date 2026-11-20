@@ -37,6 +37,7 @@ import {
 } from '@/lib/events/event-detail';
 import { OperatorLogo } from '@/components/payment/OperatorLogo';
 import { CATEGORY_STRIPE, CATEGORY_STRIPE_NONE } from './category-colors';
+import { SaleCloseCountdown } from './Countdowns';
 import { onPending, requestPendingRefresh, TICKETS_AFTER_PURCHASE } from './signals';
 
 // Lot 7 (7.3, 7.5) : la fenêtre de paiement (formulaire, opérateurs, Modal) n'est chargée qu'au premier « Acheter » ;
@@ -650,6 +651,8 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
                       <h3 className="break-words text-base font-semibold text-foreground-strong">{cat.name}</h3>
                       <p className="text-lg font-bold tabular-nums text-foreground-strong">{priceLabel(cat.price)}</p>
                       {!event.banner && <p className={cn('mt-0.5 text-sm font-medium', AVAILABILITY_TEXT[avail.tone])}>{avail.label}</p>}
+                      {/* Design 1d (point 4) : fin des ventes en ligne proche (48 h au plus), à l'heure du téléphone */}
+                      {canBuy && cat.saleEnd && <SaleCloseCountdown saleEnd={cat.saleEnd} className="mt-1 text-sm font-semibold text-warning-text" />}
                       {cat.description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{cat.description}</p>}
                     </div>
                     {canBuy && (

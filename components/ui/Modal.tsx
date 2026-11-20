@@ -32,6 +32,8 @@ export interface ModalProps {
   initialFocusRef?: React.RefObject<HTMLElement>;
   /** Le clic sur le voile ferme la modale (oui par défaut, jamais pendant `busy`). */
   closeOnOverlayClick?: boolean;
+  /** Design 1d (point 6) : sur téléphone, la fenêtre monte du bas de l'écran (translation seule, 260 ms). */
+  sheetOnMobile?: boolean;
 }
 
 const FOCUSABLE = [
@@ -113,6 +115,7 @@ export const Modal: React.FC<ModalProps> = ({
   initialFocusRef,
   closeOnOverlayClick = true,
   scrollRegionLabel,
+  sheetOnMobile = false,
 }) => {
   const uid = useId();
   const titleId = `${uid}-titre`;
@@ -207,6 +210,7 @@ export const Modal: React.FC<ModalProps> = ({
         className={cn(
           'relative z-10 flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-popover text-left text-foreground-strong shadow-2xl focus:outline-none sm:max-h-[85dvh] sm:rounded-3xl',
           'animate-in fade-in zoom-in-95',
+          sheetOnMobile && 'ev-sheet-mobile',
           variant === 'glass' && 'bg-popover/95 backdrop-blur-xl',
           MAX_WIDTH[maxWidth],
         )}

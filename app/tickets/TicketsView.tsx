@@ -18,6 +18,7 @@ import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { PullToRefresh } from '@/components/tickets/PullToRefresh';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { TabPanel, useTabParam } from '@/components/ui/Tabs';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
@@ -367,7 +368,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   if (!isAuthLoading && !isAuthenticated) {
     return (
       <div className="mx-auto max-w-lg pb-24 pt-6 lg:pb-12">
-        <EmptyState
+        <EmptyState illustrated
           icon={<Ticket size={28} />}
           title="Connectez-vous pour voir vos billets"
           description="Vos billets électroniques et leur QR code d’entrée sont liés à votre compte."
@@ -382,6 +383,8 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
 
   return (
     <div className="space-y-6 pb-24 lg:pb-12">
+      {/* Design 1d (point 10) : tirer pour actualiser (écrans tactiles), même relecture que le temps réel */}
+      <PullToRefresh onRefresh={refreshAll} />
       <PageHeader
         title="Mes billets"
         description="Présentez le QR code à l’entrée : il se renouvelle tout seul. Glissez d’un billet à l’autre, et touchez le QR pour l’afficher en grand."
@@ -520,7 +523,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
             }))}
           />
         ) : (
-          <EmptyState
+          <EmptyState illustrated
             icon={<Ticket size={28} />}
             title={empty?.title}
             description={empty?.description}
