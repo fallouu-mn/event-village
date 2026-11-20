@@ -273,3 +273,122 @@ inchangés.
 
 **Décision du 20/11 : exception acceptée pour ce lot** (pages non touchées, écart dans la variation de main). Le seuil
 de 90 reste inchangé pour la suite.
+
+## Fusion et mise en service (20/11)
+
+Feu vert du 20/11. Ordre suivi : migrations de la finition 4 vérifiées sur event-village-dev, fusion, run complet de
+main, dry-run, contrôles avant, `db push`, contrôles après, `03-verification`.
+
+### Migrations de la finition 4 sur event-village-dev (avant la fusion)
+
+`20261124000001` et `20261125000001` à `…006` présentes, aucune `20261126` : la fusion pouvait partir.
+
+### Fusion
+
+`main` (`08b91d153`) fusionné dans la branche (`c1a49a289`), puis commit de fusion `eff47f2db` poussé sur `main`
+(`08b91d153..eff47f2db`, arbre identique à la branche `2245a0d48`). Le run précédent de main (497) était terminé.
+
+### Run complet de main (503, `eff47f2db`)
+
+| Job | Résultat |
+|---|---|
+| typecheck · lint | vert |
+| tests 1/4 à 4/4 (Supabase local) | verts |
+| build · budgets JS · e2e | e2e 742 passés, 61 ignorés, 0 échec ; **mesure mobile hors seuil** |
+| responsive (320 à 1 440 px) | vert, 0 défaut |
+| verdict | rouge (mesure mobile seule) |
+
+Mesure mobile (`runs/503-44737362913/perf-mobile.log`) :
+
+```
+OK — Fiche événement (« ce soir »)
+  OK — score Lighthouse mobile : médiane 91 sur 5 passage(s) [90 ; 90 ; 92 ; 91 ; 93] (seuil ≥ 90)
+HORS SEUIL — Mes billets (client connecté)
+  HORS SEUIL — score Lighthouse mobile : médiane 87 sur 5 passage(s) [86 ; 86 ; 87 ; 87 ; 88] (seuil ≥ 90)
+  OK — affichage principal (LCP, Lighthouse) : médiane 919 ms sur 5 passage(s) [983 ms ; 917 ms ; 930 ms ; 919 ms ; 917 ms] (seuil < 2,50 s)
+  OK — sauts de mise en page (CLS, Lighthouse) : médiane 0,000 sur 5 passage(s) [0,000 ; 0,000 ; 0,000 ; 0,000 ; 0,000] (seuil < 0,100)
+  · poids transféré (médiane) : 392,4 Ko ; TBT 512 ms ; FCP 919 ms ; Speed Index 1,47 s
+OK — Réaction au toucher
+  OK — réaction au toucher (Event Timing, la plus longue sur 10 toucher(s)) : 88 ms (seuil < 200 ms)
+VERDICT : HORS SEUIL — au moins une mesure ne tient pas son seuil (le run est rouge)
+```
+
+Accueil : passages [87 ; 90 ; 91 ; 89 ; 93], médiane 90 (OK). Processeur calibré de ×4,48 à ×5,01.
+
+**Décision du 20/11 : 87 sur Mes billets (page non touchée) accepté pour ce lot.** Seuil de 90 inchangé pour la suite.
+
+Le job « build · js-budget · e2e » relancé (2e tentative du run 503) est **vert, run 503 vert** : e2e 742 passés,
+61 ignorés, 0 échec ; mesure mobile :
+
+```
+  OK — score Lighthouse mobile : médiane 91 sur 5 passage(s) [90 ; 91 ; 91 ; 92 ; 92] (seuil ≥ 90)
+  OK — score Lighthouse mobile : médiane 91 sur 5 passage(s) [97 ; 91 ; 91 ; 91 ; 95] (seuil ≥ 90)
+  OK — score Lighthouse mobile : médiane 91 sur 5 passage(s) [91 ; 94 ; 91 ; 90 ; 92] (seuil ≥ 90)
+  OK — réaction au toucher (Event Timing, la plus longue sur 10 toucher(s)) : 80 ms (seuil < 200 ms)
+VERDICT : OK — tous les seuils sont tenus
+```
+
+Les journaux de `runs/503-44737362913/` sur `ci-results` sont ceux de la 2e tentative ; la 1re est citée ci-dessus.
+
+### Dry-run (exactement `20261126000001` à `…007`)
+
+```
+DRY RUN: migrations will *not* be pushed to the database.
+Would push these migrations:
+ • 20261126000001_l10b_droit_validation.sql
+ • 20261126000002_l10b_salles.sql
+ • 20261126000003_l10b_avis.sql
+ • 20261126000004_l10b_cv_correctifs.sql
+ • 20261126000005_l10b_cv_droits_avis.sql
+ • 20261126000006_l10b_cv_envoi.sql
+ • 20261126000007_l10b_cv_nuit.sql
+```
+
+### Contrôles avant
+
+```
+derniere: 20261125000006 | l10b: 0 | fonctions_du_lot (hall_submit, hall_search, partner_listed): 0
+```
+
+### db push
+
+```
+Applying migration 20261126000001_l10b_droit_validation.sql...
+Applying migration 20261126000002_l10b_salles.sql...
+Applying migration 20261126000003_l10b_avis.sql...
+Applying migration 20261126000004_l10b_cv_correctifs.sql...
+Applying migration 20261126000005_l10b_cv_droits_avis.sql...
+Applying migration 20261126000006_l10b_cv_envoi.sql...
+Applying migration 20261126000007_l10b_cv_nuit.sql...
+Finished supabase db push.
+```
+
+### Contrôles après (requêtes de la section « Mise en service »)
+
+```
+version | 20261126000001 … 20261126000007 (7 versions)
+privileges hall_calendar | false,false
+privileges hall_cancel_preview | false,false
+privileges hall_partner_earnings | false,false
+privileges hall_search | false,false
+privileges hall_submit | false,false
+reglage halls.max_pending_per_client | {"value": 3}
+anon partner_listed | true
+nuit HALL_BALANCE_REMINDER | DEFER
+nuit HALL_EARNINGS_AVAILABLE | DEFER
+nuit HALL_EVE_REMINDER | DEFER
+canaux ADMIN_PERMISSIONS_ALERT | {IN_APP,PUSH,EMAIL,SMS}
+canaux ADMIN_PERMISSIONS_CHANGED | {IN_APP,PUSH,EMAIL,SMS}
+type ADMIN_HALL_CHANGED | {IN_APP,PUSH,EMAIL} halls.validate
+type ADMIN_HALL_SUBMITTED | {IN_APP,PUSH,EMAIL} halls.validate
+type ADMIN_VENUE_SUBMITTED | {IN_APP,PUSH,EMAIL} halls.validate
+type HALL_BALANCE_PAID … HALL_VALIDATION_DECIDED (13 types) | {IN_APP,PUSH,EMAIL,SMS} -
+```
+
+Tout est conforme.
+
+### 03-verification
+
+**20/20 OK**, dont « 1A.3 aides RLS exécutables par anon et authenticated » avec les 9 aides (`partner_listed` comprise).
+
+Reste à faire dans l’administration : cocher « Valider les salles et les établissements » aux administrateurs concernés.
