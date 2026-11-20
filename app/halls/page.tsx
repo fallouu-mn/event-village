@@ -6,7 +6,8 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { HallResults } from '@/components/halls/client/HallResults';
-import { HallSearch, filtersQuery, type HallFilters } from '@/components/halls/client/HallSearch';
+import { HallSearch } from '@/components/halls/client/HallSearch';
+import { filtersQuery, type HallFilters } from '@/components/halls/client/search-filters';
 import { RetryError } from '@/components/halls/client/RetryError';
 import { HallRefusal, searchHalls, type HallCard } from '@/lib/halls/queries';
 

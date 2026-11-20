@@ -13,33 +13,9 @@ import { Button } from '@/components/ui/Button';
 import { Select, TextInput } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
 
-export interface HallFilters {
-    q: string;
-    city: string;
-    date: string;
-    days: string;
-    capacity: string;
-    priceMax: string;
-    sort: 'recent' | 'price';
-}
+import { EMPTY_FILTERS, filtersQuery, type HallFilters } from './search-filters';
 
-export const EMPTY_FILTERS: HallFilters = { q: '', city: '', date: '', days: '', capacity: '', priceMax: '', sort: 'recent' };
-
-/** Adresse de recherche (paramètres vides retirés ; la durée n'a de sens qu'avec une date). */
-export function filtersQuery(f: HallFilters): string {
-    const p = new URLSearchParams();
-    if (f.q.trim()) p.set('q', f.q.trim());
-    if (f.city) p.set('city', f.city);
-    if (f.date) {
-        p.set('date', f.date);
-        if (f.days && f.days !== '1') p.set('days', f.days);
-    }
-    if (f.capacity.trim()) p.set('capacity', f.capacity.trim());
-    if (f.priceMax.trim()) p.set('price_max', f.priceMax.trim());
-    if (f.sort === 'price') p.set('sort', 'price');
-    return p.toString();
-}
-
+export { EMPTY_FILTERS, filtersQuery, type HallFilters };
 const DAY_OPTIONS = Array.from({ length: 30 }, (_, i) => ({ value: String(i + 1), label: i === 0 ? '1 jour' : `${i + 1} jours` }));
 const SORT_OPTIONS = [
     { value: 'recent', label: 'Les plus récentes' },
