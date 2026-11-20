@@ -207,6 +207,7 @@ Tous dans la migration `…06` (aucune n'était appliquée) et dans `lib/sms/sms
 | **477** | **`944aad167`** | **547/547** | **vert** | **vert (93, 91, 90)** | **run complet vert en une seule fois, 55 min 41 s** ; fusion dans `main` (`40ffd1a74`, même arbre) |
 | 480 (`main`) | `40ffd1a74` | 546/547 | vert | Mes billets 88 (page non touchée) | lancé à 01:33 (heure de Dakar), **en pleine plage de nuit** : dans `notif-pros`, quatre tests envoyaient « maintenant » des avis non urgents (événement refusé puis validé, partenaire validé, refusé, réactivé), reportés à 07:00 par ce lot, restés en attente. Défaut des tests de ce lot (risque noté ci-dessous), corrigé : voir § 7 |
 | 484 | `35ab70cae` | **547/547** (lancé à 02:37, de nuit : `notif-pros` vert, correction prouvée) | vert | rouge : accueil 86, fiche 88, Mes billets 81 | machine de mesure lente (indice 3 500, processeur ralenti ×7 au lieu de ×3,8 au run 477 ; scores bruts ×4 : 94-96) ; poids transférés identiques au run 477 (418, 336, 385 Ko) et aucun fichier de l'application changé depuis `944aad167` (tests et rapport seulement) ; run complet relancé par la poussée de cette ligne |
+| 486 | `fa9cc1e79` | **547/547** | **vert** | Mes billets 88 (accueil 93, fiche 92) | page non touchée ; la même nuit, Mes billets à 89, 89, 83 sur design-1d/vitrine et 90, 90 sur lot10b ; correctif de `notif-pros` fusionné dans `main` sur décision de l'utilisateur |
 | RUN_APRES | | | | | |
 
 ## 8 ter. Échecs de l'e2e sans lien avec ce lot
@@ -233,5 +234,5 @@ Heure du run : les suites qui envoient « maintenant » un avis non urgent dépe
 ## 9. Reste à faire
 
 - Appliquer les migrations `20261125000001…06` sur event-village-dev après fusion, sur feu vert (dry-run : exactement ces 6).
-- Liste des avis « non urgents » validée par le client le 20/11 (règle de l'événement proche ajoutée) ; règle des SMS (§ 3) à confirmer.
+- Liste des avis « non urgents » validée par le client le 20/11 (règle de l'événement proche ajoutée) ; règle des SMS (§ 3) validée le 20/11.
 - Sur event-village-dev, la plage et le plafond ne changent que s'ils avaient leur valeur d'origine ; sinon, les régler à la main.
