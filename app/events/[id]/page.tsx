@@ -182,8 +182,8 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
             className="inline-flex min-h-11 min-w-0 items-center gap-2 rounded-full bg-scrim/60 px-4 text-sm font-semibold text-on-tone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ArrowLeft size={18} className="flex-shrink-0" aria-hidden="true" />
-            <span aria-hidden="true" className="min-[400px]:hidden">Retour</span>
-            <span aria-hidden="true" className="hidden min-[400px]:inline">Retour aux événements</span>
+            <span aria-hidden="true" className="xs:hidden">Retour</span>
+            <span aria-hidden="true" className="hidden xs:inline">Retour aux événements</span>
           </Link>
           <div className="flex items-center gap-2">
             <FavoriteHeart id={event.id} title={event.title} />

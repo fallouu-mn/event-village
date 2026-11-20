@@ -14,7 +14,7 @@ Mes billets 90** (seuils et calibration inchangés). Non fusionné ; migration n
   ont été faites (mode autonome) ; le détail est en section 10.
 - **Un défaut de mon code trouvé par les captures et corrigé** (pas une faille) : les recherches récentes d'un visiteur
   étaient effacées à chaque page, la purge « session close à l'insu » valant aussi pour toute visite sans compte.
-- **Un écart restant, signalé** : « Retour » au lieu de « Retour aux événements » en haut de la fiche sur grand écran
+- **Un écart relevé sur les captures, corrigé avant la fusion** : « Retour » au lieu de « Retour aux événements » en haut de la fiche sur grand écran
   (section 11).
 
 - **Sécurité** : aucune faille trouvée dans le code existant pendant le lot. Les deux sujets de sécurité du lot ont leurs
@@ -133,7 +133,7 @@ rendu identique serveur et navigateur (aucune erreur d'hydratation).
 - **Animations** : 150 à 300 ms, transform et opacity seulement, jamais en boucle, toutes coupées par « réduire les
   animations » (bloc existant). Aucun mot technique à l'écran (garde-fous verts).
 
-### Décisions prises pendant le lot (à relire)
+### Décisions prises pendant le lot (validées par l'utilisateur le 20/11)
 
 1. **« En ce moment » à l'accueil** (règle du design 1b modifiée) : une rangée **absente du HTML en cache** n'est plus
    insérée au chargement de la page (avec les cartes 4:5, elle poussait toute la page d'environ 540 px : saut mesuré de
@@ -282,23 +282,30 @@ comptes à rebours de la fiche et de la vente, module de l'agenda (toucher).
 
 ## 11. Captures
 
-Gardées dans le dépôt (`ci-results` purge les anciennes captures : celles du run 471 n'y sont déjà plus), en JPEG :
-- **avant** : `docs/design-1d-captures/avant/` — run 486 (branche `finition-4/messages`, qui contient main `6afe843df` et
-  ne touche que les messages : pages publiques identiques à main) : accueil, Explorer, fiche, fenêtre de paiement,
-  Mes billets ; téléphone et ordinateur, clair et sombre ; image de partage générique d'avant (`apercu-partage__generique`) ;
-- **après** : `docs/design-1d-captures/apres/` — run 491 : les mêmes écrans, plus `explorer-pastilles-collees`,
-  `paiement-rapide`, `mes-favoris`, `recherche-instantanee`, `recherche-recentes` et l'image d'aperçu
-  `apercu-partage__ce-soir` ; téléphone et ordinateur, clair et sombre ;
-- **responsive** : `docs/design-1d-captures/responsive/` — run 491, accueil, Explorer, fiche, Mes billets, Mes favoris à
-  **360, 768 et 1 440 px, clair et sombre** (les 386 captures du contrôle sont dans `ci-results`, `runs/491-44683320670/
-  captures-responsive/`, et les 691 captures de l'e2e dans `runs/491-44683320670/captures/`).
+**Dans le dépôt** (décision du 20/11 : 20 captures clés au plus, le dépôt pèse déjà 4,3 Go), `docs/design-1d-captures/`,
+téléphone, clair et sombre, JPEG compressé (1,4 Mo en tout) : accueil, Explorer (« Concerts »), fiche, fenêtre de paiement,
+Mes billets.
+- **avant** (`avant/`) : run 486, branche `finition-4/messages`, qui contient main `6afe843df` et ne touche que les
+  messages (pages publiques identiques à main ; les captures du run 471 n'étaient déjà plus dans `ci-results`) ;
+- **après** (`apres/`) : run 491.
+
+**Dans `ci-results`**, par numéro de run :
+- run 491, `runs/491-44683320670/captures/` (691 captures, téléphone et ordinateur, clair et sombre) : en plus des écrans
+  ci-dessus, `explorer-pastilles-collees`, `paiement-rapide`, `mes-favoris`, `recherche-instantanee`,
+  `recherche-recentes`, et l'image d'aperçu de partage `apercu-partage__ce-soir.png` ;
+- run 491, `runs/491-44683320670/captures-responsive/` (386 captures du contrôle responsive, 360, 768 et 1 440 px, clair
+  et sombre, dont `fiche`, `explorer`, `profil-favoris`) ;
+- « avant » : run 486, `runs/486-44669202308/captures/`. L'image de partage d'avant était l'image générique du site
+  (`public/images/og-image.png`).
 
 « Partage », « favoris » et « recherche instantanée » n'existaient pas avant le lot : pas de capture « avant » propre.
 
-**Écart relevé sur les captures, non corrigé (signalé)** : le bouton du haut de la fiche devait écrire « Retour aux
-événements » dès 400 px et « Retour » en dessous ; le palier `min-[400px]` n'est pas produit par la configuration Tailwind
-du projet, et c'est « Retour » qui s'affiche partout (nom accessible : « Retour aux événements »). Je n'ai pas changé le
-code après le run 491, entièrement vert ; correction d'une ligne notée dans `docs/apres-lancement.md`.
+**Écart relevé sur les captures du run 491, corrigé avant la fusion** : le bouton du haut de la fiche devait écrire
+« Retour aux événements » dès 400 px et « Retour » en dessous ; le palier arbitraire `min-[400px]` n'était pas produit
+(Tailwind ne produit pas les paliers `min-[…]` quand la configuration déclare un palier brut, ici `paysage`), et c'est
+« Retour » qui s'affichait partout. Correctif : palier `xs` (400 px) déclaré dans `tailwind.config.ts`, classes
+`xs:hidden` et `hidden xs:inline` (vérifié dans la feuille produite par Tailwind ; la classe `container`, qui reçoit aussi
+ce palier, n'est utilisée nulle part).
 
 ## 12. Essais pour un non-développeur
 
