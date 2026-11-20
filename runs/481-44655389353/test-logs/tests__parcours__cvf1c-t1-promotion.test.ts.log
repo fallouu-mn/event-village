@@ -1,0 +1,117 @@
+TAP version 13
+[CVF1C-PRO] caisse ouverte, page des comptes → HTTP 409 {"error":"Cette personne a une caisse ouverte sur « TEST Accès cvf1-cvf1c-pro-caisse 1795139223951 ». Elle doit la fermer avec l’organisatrice avant de devenir administrateur.","code":"CONTROLLER_HAS_OPEN_SHIFT"}
+[CVF1C-PRO] caisse ouverte, écriture directe du rôle → refus EV409 Cette personne a une caisse ouverte sur « TEST Accès cvf1-cvf1c-pro-caisse 1795139223951 ». Elle doit la fermer avec l’organisatrice avant de devenir administrateur.
+# Subtest: a. caisse ouverte : promotion refusée, rien ne change
+    # Subtest: route, fonction et écriture directe du rôle : refus au texte exact
+    ok 1 - route, fonction et écriture directe du rôle : refus au texte exact
+      ---
+      duration_ms: 407.453318
+      type: 'test'
+      ...
+    1..1
+ok 1 - a. caisse ouverte : promotion refusée, rien ne change
+  ---
+  duration_ms: 1888.305671
+  type: 'suite'
+  ...
+[CVF1C-PRO] deux organisatrices, sans confirmation → HTTP 200 {"requires_confirmation":true,"code":"STAFF_PROMOTION_CONFIRMATION","message":"Cette personne contrôle les entrées pour 2 organisateurs. En devenant administrateur, elle sera retirée de leurs équipes.","organizers":2}
+# Subtest: b, c. confirmation puis promotion
+    # Subtest: b. confirmation demandée (pluriel et singulier) ; rien ne change
+    ok 1 - b. confirmation demandée (pluriel et singulier) ; rien ne change
+      ---
+      duration_ms: 424.389217
+      type: 'test'
+      ...
+[CVF1C-PRO] promotion confirmée → HTTP 200 {"ok":true,"role_before":"CLIENT","role_after":"ADMIN","roles":["ADMIN","CLIENT"],"sessions_revoked":0}
+[CVF1C-PRO] scanner resté ouvert après la promotion → HTTP 401 {"error":"Authentification requise.","code":"AUTH_REQUIRED"}
+    # Subtest: c. promotion confirmée : tout retiré dans la même transaction, passé intact, avis sans SMS
+    ok 2 - c. promotion confirmée : tout retiré dans la même transaction, passé intact, avis sans SMS
+      ---
+      duration_ms: 718.70323
+      type: 'test'
+      ...
+    1..2
+ok 2 - b, c. confirmation puis promotion
+  ---
+  duration_ms: 1143.327596
+  type: 'suite'
+  ...
+# Subtest: d. autre voie qui donne le rôle (écriture par le serveur, comme l’amorçage du superadmin)
+    # Subtest: SUPERADMIN accordé directement : même nettoyage, avis à l’organisatrice
+    ok 1 - SUPERADMIN accordé directement : même nettoyage, avis à l’organisatrice
+      ---
+      duration_ms: 198.508928
+      type: 'test'
+      ...
+    1..1
+ok 3 - d. autre voie qui donne le rôle (écriture par le serveur, comme l’amorçage du superadmin)
+  ---
+  duration_ms: 198.703762
+  type: 'suite'
+  ...
+[CVF1C-PRO] acceptation : demande en attente de la promotion (pid 499)
+[CVF1C-PRO] acceptation → HTTP 410 {"error":"L’organisateur a annulé cette invitation.","code":"INVITATION_CANCELLED"}
+# Subtest: e. promotion et invitation simultanées
+    # Subtest: acceptation pendant la promotion : refusée, aucune affectation
+    ok 1 - acceptation pendant la promotion : refusée, aucune affectation
+      ---
+      duration_ms: 243.927186
+      type: 'test'
+      ...
+[CVF1C-PRO] affectation directe : demande en attente de la promotion (pid 346)
+[CVF1C-PRO] affectation directe → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+    # Subtest: affectation directe (invitation d’un contrôleur déjà connu) pendant la promotion : 409 neutre
+    ok 2 - affectation directe (invitation d’un contrôleur déjà connu) pendant la promotion : 409 neutre
+      ---
+      duration_ms: 286.070838
+      type: 'test'
+      ...
+[CVF1C-PRO] nouvelle invitation : demande en attente de la promotion (pid 850)
+[CVF1C-PRO] nouvelle invitation → HTTP 409 {"error":"Ce numéro ne peut pas être invité comme contrôleur. Choisissez une autre personne.","code":"NOT_INVITABLE"}
+    # Subtest: nouvelle invitation pendant la promotion : 409 neutre, aucune invitation en attente
+    ok 3 - nouvelle invitation pendant la promotion : 409 neutre, aucune invitation en attente
+      ---
+      duration_ms: 279.936139
+      type: 'test'
+      ...
+[CVF1C-PRO] promotion en attente de l’affectation en cours
+[CVF1C-PRO] affectation puis promotion → HTTP 200 {"ok":true,"role_before":"CLIENT","role_after":"ADMIN","roles":["ADMIN","CLIENT"],"sessions_revoked":0}
+    # Subtest: affectation en cours quand la promotion commence : la promotion attend puis la retire
+    ok 4 - affectation en cours quand la promotion commence : la promotion attend puis la retire
+      ---
+      duration_ms: 257.520626
+      type: 'test'
+      ...
+    1..4
+ok 4 - e. promotion et invitation simultanées
+  ---
+  duration_ms: 1068.103831
+  type: 'suite'
+  ...
+[INVARIANT] cvf1c-t1-promotion — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf1c-t1-promotion — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf1c-t1-promotion — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf1c-t1-promotion — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf1c-t1-promotion — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf1c-t1-promotion — cron events_finish_overdue : 1 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf1c-t1-promotion — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cvf1c-t1-promotion — envoyeur : 852 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cvf1c-t1-promotion — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cvf1c-t1-promotion — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cvf1c-t1-promotion — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cvf1c-t1-promotion — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cvf1c-t1-promotion — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cvf1c-t1-promotion — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cvf1c-t1-promotion — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cvf1c-t1-promotion — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cvf1c-t1-promotion — (f) : 0 violation(s)
+1..4
+# tests 8
+# suites 4
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5940.52872
