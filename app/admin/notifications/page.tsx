@@ -233,7 +233,7 @@ function ListSkeleton() {
   return (
     <div className="space-y-3" aria-hidden="true">
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="h-16 rounded-2xl border border-border bg-surface motion-safe:animate-pulse" />
+        <div key={i} className="h-16 rounded-xl border border-border bg-card motion-safe:animate-pulse" />
       ))}
     </div>
   );
@@ -364,7 +364,7 @@ export default function AdminNotificationsPage() {
       render: (n) => (
         <span className="block min-w-0">
           <span className="block font-semibold">{outboxTypeLabel(n.type)}</span>
-          {n.event_title && <span className="block text-fg-muted">{n.event_title}</span>}
+          {n.event_title && <span className="block text-muted-foreground">{n.event_title}</span>}
         </span>
       ),
     },
@@ -387,16 +387,16 @@ export default function AdminNotificationsPage() {
   const renderCard = (n: OutboxItem) => (
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="min-w-0 font-semibold text-fg">{outboxTypeLabel(n.type)}</p>
+        <p className="min-w-0 font-semibold text-foreground-strong">{outboxTypeLabel(n.type)}</p>
         <StatusBadge domain="notification" catalog={OUTBOX_STATUS_CATALOG} status={n.status} size="sm" />
       </div>
-      {n.event_title && <p className="text-fg-muted">{n.event_title}</p>}
-      <p className="text-fg">
+      {n.event_title && <p className="text-muted-foreground">{n.event_title}</p>}
+      <p className="text-foreground-strong">
         {outboxChannelLabel(n.channel)} · <span className="break-words">{n.recipient_masked}</span>
       </p>
-      {n.reason && <p className="text-fg-muted">{outboxReasonLabel(n.reason)}</p>}
+      {n.reason && <p className="text-muted-foreground">{outboxReasonLabel(n.reason)}</p>}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <time dateTime={n.created_at} className="tabular-nums text-fg-muted">{formatDateTime(n.created_at)}</time>
+        <time dateTime={n.created_at} className="tabular-nums text-muted-foreground">{formatDateTime(n.created_at)}</time>
         <LinkButton href={`/admin/notifications/${n.id}`} variant="secondary" size="sm" rightIcon={<ChevronRight size={16} aria-hidden="true" />}>
           Voir le détail
         </LinkButton>
@@ -499,7 +499,7 @@ export default function AdminNotificationsPage() {
       </section>
 
       <section aria-labelledby="notif-liste" className="space-y-4">
-        <h2 id="notif-liste" className="text-lg font-semibold text-fg">Envois</h2>
+        <h2 id="notif-liste" className="text-lg font-semibold text-foreground-strong">Envois</h2>
 
         <ScrollableTabs
           tabs={tabs}
@@ -512,7 +512,7 @@ export default function AdminNotificationsPage() {
           idPrefix="notif-statut"
         />
 
-        <form role="search" onSubmit={(e) => e.preventDefault()} className="grid grid-cols-1 gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-3">
+        <form role="search" onSubmit={(e) => e.preventDefault()} className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3">
           <TextInput
             label="Rechercher"
             type="search"
@@ -578,7 +578,7 @@ export default function AdminNotificationsPage() {
             <div className="space-y-3" aria-busy={isFetching || undefined}>
               <DataList
                 items={list.items}
-                columns={columns}
+                columns={columns} breakpoint="xl"
                 getKey={(n) => n.id}
                 caption="Notifications de la boîte d’envoi"
                 renderCard={renderCard}
@@ -604,19 +604,19 @@ export default function AdminNotificationsPage() {
 
       <section aria-labelledby="notif-par-jour" className="space-y-3">
         <div className="space-y-1">
-          <h2 id="notif-par-jour" className="text-lg font-semibold text-fg">Par jour et par canal</h2>
-          <p className="text-sm tabular-nums text-fg-muted">
+          <h2 id="notif-par-jour" className="text-lg font-semibold text-foreground-strong">Par jour et par canal</h2>
+          <p className="text-sm tabular-nums text-muted-foreground">
             {stats ? `${formatInteger(stats.days)} derniers jours, heure de Dakar.` : 'Derniers jours, heure de Dakar.'}
           </p>
         </div>
         {stats ? (
           <DataList
             items={stats.byDay}
-            columns={dayColumns}
+            columns={dayColumns} breakpoint="xl"
             getKey={(d) => `${d.day}-${d.channel}`}
             caption="Notifications par jour et par canal"
             cardTitle={(d) => `${formatDay(d.day)} · ${outboxChannelLabel(d.channel)}`}
-            empty={<p className="rounded-2xl border border-border bg-surface p-4 text-sm text-fg-muted">Aucun envoi terminé sur la période.</p>}
+            empty={<p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">Aucun envoi terminé sur la période.</p>}
           />
         ) : statsError ? (
           <ErrorState title="Compteurs indisponibles" description={statsError} onRetry={() => void loadStats()} />

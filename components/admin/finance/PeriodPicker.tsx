@@ -44,10 +44,10 @@ export function PeriodPicker({ value, range, error, disabled, onChange }: {
     }, [value.from, value.to]);
 
     return (
-        <div role="group" aria-labelledby={`${id}-titre`} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5">
+        <div role="group" aria-labelledby={`${id}-titre`} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5">
             <div className="flex items-center gap-2">
-                <CalendarRange size={18} className="flex-shrink-0 text-brand-fg" aria-hidden="true" />
-                <h2 id={`${id}-titre`} className="text-base font-semibold text-fg">Période</h2>
+                <CalendarRange size={18} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
+                <h2 id={`${id}-titre`} className="text-base font-semibold text-foreground-strong">Période</h2>
             </div>
             <div className="flex flex-col gap-3 md:flex-row md:items-end">
                 <Select
@@ -77,11 +77,11 @@ export function PeriodPicker({ value, range, error, disabled, onChange }: {
                     </form>
                 )}
             </div>
-            <p className="text-sm leading-relaxed text-fg-muted" aria-live="polite">
+            <p className="text-sm leading-relaxed text-muted-foreground" aria-live="polite">
                 {error
-                    ? <span className="font-semibold text-danger-fg">{error}</span>
+                    ? <span className="font-semibold text-danger-text">{error}</span>
                     : range
-                        ? <>Période affichée : <span className="font-semibold text-fg">{range}</span>. Elle change « Gagné par Event Village » et la liste des paiements ; les autres chiffres sont à l’instant.</>
+                        ? <>Période affichée : <span className="font-semibold text-foreground-strong">{range}</span>. Elle change « Gagné par Event Village » et la liste des paiements ; les autres chiffres sont à l’instant.</>
                         : 'Chargement de la période…'}
             </p>
         </div>

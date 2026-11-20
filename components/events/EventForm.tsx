@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronLeft, ChevronRight, Lock, Plus, Save, Send, Trash2 } from 'lucide-react';
+import { AlertCircle, Check, ChevronLeft, ChevronRight, ListChecks, Lock, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -84,7 +84,7 @@ import {
 
 const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => m.MapPicker), {
     ssr: false,
-    loading: () => <div className="h-64 w-full rounded-2xl bg-background motion-safe:animate-pulse" aria-hidden="true" />,
+    loading: () => <div className="h-64 w-full rounded-2xl bg-muted motion-safe:animate-pulse" aria-hidden="true" />,
 });
 
 type StepId = 'infos' | 'programme' | 'acces' | 'billetterie' | 'controle';
@@ -1285,8 +1285,8 @@ export function EventForm(props: EventFormProps) {
                 {header}
                 <div className="flex flex-col gap-4" aria-busy="true" aria-live="polite">
                     <span className="sr-only">Chargement de l’événement…</span>
-                    <div className="h-11 w-full rounded-xl bg-background motion-safe:animate-pulse" />
-                    <div className="h-96 w-full rounded-3xl bg-background motion-safe:animate-pulse" />
+                    <div className="h-24 w-full rounded-xl bg-muted motion-safe:animate-pulse" />
+                    <div className="h-96 w-full rounded-3xl bg-muted motion-safe:animate-pulse" />
                 </div>
             </div>
         );
@@ -1424,7 +1424,8 @@ export function EventForm(props: EventFormProps) {
     };
 
     return (
-        <div className="mx-auto w-full max-w-4xl pb-40 pt-6 lg:pb-10">
+        // Design 1c : sur l'écran « Vérifier », la barre fixe porte en plus le grand bouton (56 px) : place réservée dessous
+        <div className={cn('mx-auto w-full max-w-4xl pt-6 lg:pb-10', onReview && canSend ? 'pb-64' : 'pb-40')}>
             {header}
 
             {/* Finition 2b (C) : brouillon gardé dans le navigateur, proposé au retour */}
@@ -1484,30 +1485,56 @@ export function EventForm(props: EventFormProps) {
                 </StatusBanner>
             )}
 
-            <nav aria-label="Étapes du formulaire" className="mb-4">
-                <p className="mb-2 text-sm font-medium text-muted-foreground">
-                    {onReview ? 'Dernière étape : vérifier avant d’envoyer' : `Étape ${stepIndex + 1} sur ${STEPS.length} : ${currentStep.heading}`}
+            {/* Design 1c : stepper numéroté. Une ligne « Étape n sur 5 — {titre} » dit où l'on est (aria-live) ; dessous, une
+                pastille par écran reliée aux autres par un trait (rempli jusqu'à l'étape courante) : numéro pour l'étape à venir
+                et l'étape courante (pleine, aria-current="step"), coche pour une étape terminée (avant l'étape courante, sans
+                erreur ; lue « terminée »), point d'exclamation pour une étape à corriger (lue « à corriger »). À 320 px, six
+                pastilles de 48 px tiennent sans défilement ; le nom de chaque étape s'affiche dessous à partir de sm (court sous
+                lg), toujours entier (aucune coupure) ; le nom complet est lu par les lecteurs d'écran. */}
+            {/* Design 1c : isolate, pour que le trait de liaison (-z-10) passe derrière les pastilles sans sortir de l’indicateur */}
+            <nav aria-label="Étapes du formulaire" className="isolate mb-5" data-testid="ev-stepper">
+                <p className="text-base font-semibold text-foreground-strong" aria-live="polite" data-testid="ev-stepper-courante">
+                    {onReview ? 'Dernière étape : vérifier avant d’envoyer' : `Étape ${stepIndex + 1} sur ${STEPS.length} — ${currentStep.heading}`}
                 </p>
-                {/* Finition 2b (C) : nom de chaque étape visible, sur téléphone aussi (3 colonnes, 6 sur grand écran) */}
-                <ol className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                <ol className="mt-3 flex items-start">
                     {SCREENS.map((s, i) => {
                         const active = s.id === step;
                         const hasError = s.id !== 'verifier' && stepsWithErrors.has(s.id);
+                        const done = !active && !hasError && i < stepIndex;
+                        const state = active ? 'courante' : hasError ? 'a-corriger' : done ? 'terminee' : 'a-venir';
                         return (
-                            <li key={s.id} className="min-w-0">
+                            <li key={s.id} className="relative min-w-0 flex-1" data-etat={state}>
+                                {i > 0 && (
+                                    <span
+                                        aria-hidden="true"
+                                        className={cn('pointer-events-none absolute right-1/2 top-[21px] -z-10 h-0.5 w-full', i <= stepIndex ? 'bg-primary' : 'bg-border')}
+                                    />
+                                )}
                                 <button
                                     type="button"
                                     onClick={() => goToStep(s.id)}
                                     aria-current={active ? 'step' : undefined}
-                                    className={cn(
-                                        'flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border px-2 text-sm font-semibold transition-colors duration-200',
-                                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                        active ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-border bg-card text-muted-foreground hover:bg-background hover:text-foreground-strong',
-                                        hasError && !active && 'border-danger text-danger-text',
-                                    )}
+                                    className="group relative flex min-h-11 w-full cursor-pointer flex-col items-center gap-1.5 rounded-xl px-1 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
-                                    <span aria-hidden="true" className="tabular-nums">{s.id === 'verifier' ? <Check size={16} /> : i + 1}</span>
-                                    <span aria-hidden="true" className="min-w-0 truncate">
+                                    <span
+                                        aria-hidden="true"
+                                        className={cn(
+                                            'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border-2 text-sm font-bold tabular-nums transition-colors duration-150',
+                                            active && 'border-primary bg-primary text-primary-foreground',
+                                            hasError && !active && 'border-danger bg-danger-soft text-danger-text',
+                                            done && 'border-primary bg-primary-soft text-primary-text',
+                                            state === 'a-venir' && 'border-input bg-background text-muted-foreground group-hover:text-foreground-strong',
+                                        )}
+                                    >
+                                        {hasError && !active ? <AlertCircle size={18} /> : done ? <Check size={18} /> : s.id === 'verifier' ? <ListChecks size={18} /> : i + 1}
+                                    </span>
+                                    <span
+                                        aria-hidden="true"
+                                        className={cn(
+                                            'hidden max-w-full break-words text-center text-sm leading-tight sm:block',
+                                            active ? 'font-bold text-foreground-strong' : hasError ? 'font-semibold text-danger-text' : 'font-medium text-muted-foreground',
+                                        )}
+                                    >
                                         {s.short ? (
                                             <>
                                                 <span className="lg:hidden">{s.short}</span>
@@ -1515,7 +1542,9 @@ export function EventForm(props: EventFormProps) {
                                             </>
                                         ) : s.label}
                                     </span>
-                                    <span className="sr-only">{`${s.heading}${hasError ? ' (à corriger)' : ''}`}</span>
+                                    <span className="sr-only">
+                                        {`${s.id === 'verifier' ? s.heading : `Étape ${i + 1} : ${s.heading}`}${hasError ? ' (à corriger)' : done ? ' (terminée)' : ''}`}
+                                    </span>
                                 </button>
                             </li>
                         );
@@ -1616,7 +1645,7 @@ export function EventForm(props: EventFormProps) {
                                     hint={hint('Facultative ; avec une heure de fin, la date de fin est demandée.', true)} />
                             </div>
                             {retained && (
-                                <div className="rounded-xl bg-background px-4 py-3">
+                                <div className="rounded-xl bg-muted px-4 py-3">
                                     <p className="text-base font-semibold text-foreground-strong">Fin retenue : {retained.text}</p>
                                     <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{RETAINED_END_HELP}</p>
                                 </div>
@@ -1883,10 +1912,19 @@ export function EventForm(props: EventFormProps) {
                     barre « Navigation rapide » de l'application est masquée tant que celle-ci est affichée (QuickNavHidden) */}
                 <div className="form-action-bar fixed inset-x-0 bottom-0 z-40 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 pt-3 shadow-lg lg:static lg:z-auto lg:gap-3 lg:bg-transparent lg:px-0 lg:pt-4 lg:shadow-none">
                     <QuickNavHidden />
+                    {/* Design 1c (direction.md § 7) : le seul grand bouton en dégradé de la page, sur l'écran « Vérifier » ; en
+                        tête de la barre et sur toute la largeur sous 1 024 px, à droite au-delà */}
+                    {onReview && canSend && (
+                        <Button type="button" variant="gradient" onClick={() => void save(true)} isLoading={sending}
+                            disabled={missing.length > 0 || (submitting && !sending)} leftIcon={<Send size={20} />}
+                            className="w-full lg:order-last lg:w-auto">
+                            Envoyer pour validation
+                        </Button>
+                    )}
                     <Button type="button" variant="ghost" onClick={handlePrevious} disabled={stepIndex === 0} leftIcon={<ChevronLeft size={18} />}>
                         Précédent
                     </Button>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2 lg:ml-auto">
                         {!lastStep && (
                             <Button type="button" variant={isEdit ? 'secondary' : 'primary'} onClick={handleNext} rightIcon={<ChevronRight size={18} />}>
                                 Suivant
@@ -1895,12 +1933,6 @@ export function EventForm(props: EventFormProps) {
                         {(isEdit || lastStep) && (
                             <Button type="submit" variant={onReview && canSend ? 'secondary' : 'primary'} isLoading={submitting && !sending} disabled={sending} leftIcon={<Save size={18} />}>
                                 {isEdit ? 'Enregistrer les modifications' : 'Enregistrer le brouillon'}
-                            </Button>
-                        )}
-                        {onReview && canSend && (
-                            <Button type="button" variant="primary" onClick={() => void save(true)} isLoading={sending}
-                                disabled={missing.length > 0 || (submitting && !sending)} leftIcon={<Send size={18} />}>
-                                Envoyer pour validation
                             </Button>
                         )}
                     </div>
@@ -2009,7 +2041,7 @@ function CategoryRadios({ value, onChange, locked, error }: {
                             className={cn(
                                 'flex min-h-11 cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left text-sm font-semibold transition-colors duration-200',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60',
-                                checked ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-input bg-card text-foreground-strong hover:bg-background',
+                                checked ? 'border-primary-text bg-primary-soft text-primary-text' : 'border-input bg-card text-foreground-strong hover:bg-muted',
                                 error && !checked && 'border-danger',
                             )}
                         >

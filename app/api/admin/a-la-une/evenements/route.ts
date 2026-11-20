@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/admin/a-la-une/evenements?q=… — événements publiés non terminés, pas déjà à la une, à proposer (titre ou ville
- * contenant le texte ; les plus proches d'abord ; 20 au plus). Superadmin seulement ; lecture, sans mot de passe redemandé.
+ * contenant le texte ; les plus proches d'abord ; 20 au plus). Super-administrateur seulement ; lecture, sans mot de passe redemandé.
  */
 export async function GET(req: NextRequest) {
     const guard = await guardFeatured(req, { write: false });

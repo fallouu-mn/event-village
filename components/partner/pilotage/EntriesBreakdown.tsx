@@ -51,22 +51,22 @@ interface ShareItem {
  */
 function ShareList({ items, emptyLabel, ariaLabel }: { items: ShareItem[]; emptyLabel: string; ariaLabel: string }) {
     if (items.length === 0) {
-        return <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">{emptyLabel}</p>;
+        return <p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">{emptyLabel}</p>;
     }
     return (
-        <ul aria-label={ariaLabel} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
+        <ul aria-label={ariaLabel} className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
             {items.map((item) => {
                 const width = item.whole !== null && item.whole > 0 ? Math.min(100, (item.part / item.whole) * 100) : 0;
                 return (
                     <li key={item.key} className="flex flex-col gap-1">
                         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
-                            <span className="min-w-0 break-words text-fg">{item.label}</span>
-                            <span className="font-semibold text-fg tabular-nums">{item.text}</span>
+                            <span className="min-w-0 break-words text-foreground-strong">{item.label}</span>
+                            <span className="font-semibold text-foreground-strong tabular-nums">{item.text}</span>
                         </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-surface-sunken" aria-hidden="true">
-                            <div className="h-full rounded-full bg-brand transition-[width] duration-300" style={{ width: `${width}%` }} />
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                            <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${width}%` }} />
                         </div>
-                        {item.detail && <p className="text-sm text-fg-muted">{item.detail}</p>}
+                        {item.detail && <p className="text-sm text-muted-foreground">{item.detail}</p>}
                     </li>
                 );
             })}
@@ -116,7 +116,7 @@ function gateColumns(configured: boolean, live: boolean): DataColumn<EntriesGate
         },
     ];
     if (configured) {
-        columns.push({ key: 'zone', header: 'Zone', render: (g) => g.zone_name || <span className="text-fg-muted">Non précisée</span> });
+        columns.push({ key: 'zone', header: 'Zone', render: (g) => g.zone_name || <span className="text-muted-foreground">Non précisée</span> });
     }
     columns.push(
         { key: 'accepted', header: 'Entrées', align: 'right', render: (g) => formatInteger(g.accepted) },
@@ -149,11 +149,11 @@ function guestColumns(ownerView: boolean): DataColumn<GuestRow>[] {
         },
     ];
     if (ownerView) {
-        columns.push({ key: 'guest', header: 'Invité', render: (r) => r.guest_name || <span className="text-fg-muted">Nom non renseigné</span> });
+        columns.push({ key: 'guest', header: 'Invité', render: (r) => r.guest_name || <span className="text-muted-foreground">Nom non renseigné</span> });
     }
     columns.push(
         { key: 'category', header: 'Catégorie', render: (r) => r.category || 'Catégorie inconnue' },
-        { key: 'gate', header: 'Porte', render: (r) => r.gate || <span className="text-fg-muted">Point d’entrée non précisé</span> },
+        { key: 'gate', header: 'Porte', render: (r) => r.gate || <span className="text-muted-foreground">Point d’entrée non précisé</span> },
         { key: 'controller', header: 'Contrôleur', render: (r) => r.controller },
     );
     return columns;
@@ -188,7 +188,7 @@ export function EntriesBreakdown({ views, live, ownerView }: { views: EntriesVie
                     getKey={(g) => g.gate_key}
                     caption={views.configured ? 'Entrées par porte' : 'Entrées par point d’entrée'}
                     cardTitle={(g) => gates[0].render(g)}
-                    empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune entrée pour le moment.</p>}
+                    empty={<p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">Aucune entrée pour le moment.</p>}
                 />
             </PilotageSection>
 
@@ -257,7 +257,7 @@ export function EntriesBreakdown({ views, live, ownerView }: { views: EntriesVie
                     getKey={(r) => r.scan_id}
                     caption="Entrées validées par la liste des invités"
                     cardTitle={(r) => guests[0].render(r)}
-                    empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucune entrée validée par la liste des invités.</p>}
+                    empty={<p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">Aucune entrée validée par la liste des invités.</p>}
                 />
             </PilotageSection>
         </div>

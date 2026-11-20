@@ -19,7 +19,7 @@ type IncidentRow = PilotageEntries['incidents'][number];
 type AlertRow = PilotageEntries['alerts'][number];
 
 function Moment({ at, timeOnly = false }: { at: string | null; timeOnly?: boolean }) {
-    if (!at) return <span className="text-fg-muted">Aucune</span>;
+    if (!at) return <span className="text-muted-foreground">Aucune</span>;
     return <time dateTime={at} className="tabular-nums">{timeOnly ? formatTime(at) : formatDateTime(at)}</time>;
 }
 
@@ -33,13 +33,13 @@ const SCANNER_TAIL: DataColumn<ScannerRow>[] = [
 /** Sans zone : colonne « Point d’entrée » d'avant le lot 9 ter. */
 const SCANNER_COLUMNS: DataColumn<ScannerRow>[] = [
     SCANNER_NAME,
-    { key: 'entry_point', header: 'Point d’entrée', render: (s) => s.entry_point || <span className="text-fg-muted">Non précisé</span> },
+    { key: 'entry_point', header: 'Point d’entrée', render: (s) => s.entry_point || <span className="text-muted-foreground">Non précisé</span> },
     ...SCANNER_TAIL,
 ];
 /** Événement à zones : la même colonne devient « Porte » (porte de l'affectation, servie par la base). */
 const SCANNER_GATE_COLUMNS: DataColumn<ScannerRow>[] = [
     SCANNER_NAME,
-    { key: 'gate', header: 'Porte', render: (s) => s.gate || <span className="text-fg-muted">Non précisée</span> },
+    { key: 'gate', header: 'Porte', render: (s) => s.gate || <span className="text-muted-foreground">Non précisée</span> },
     ...SCANNER_TAIL,
 ];
 
@@ -85,7 +85,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
 
     if (loading) {
         return (
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-3" role="status" aria-busy="true" aria-label="Chargement des entrées">
+            <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 xl:grid-cols-3" role="status" aria-busy="true" aria-label="Chargement des entrées">
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
                 <KpiCardSkeleton />
@@ -115,7 +115,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
 
     return (
         <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 xl:grid-cols-3">
                 <KpiCard label="Entrées validées" value={formatInteger(data.total)} hint="Scans acceptés, guichet compris" tone="success" icon={<DoorOpen size={18} />} />
                 <KpiCard label="Au guichet" value={formatInteger(data.counter)} hint="Billets vendus et validés sur place" tone="info" icon={<Store size={18} />} />
                 <KpiCard label="Refus" value={formatInteger(data.refused)} hint="Tentatives refusées au contrôle" tone="danger" icon={<Ban size={18} />} />
@@ -124,7 +124,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
                 <KpiCard label="Contrôleurs actifs" value={activeOf(data.controllers.active, data.controllers.assigned)} hint="Un scan dans les 10 dernières minutes" tone="neutral" icon={<Users size={18} />} />
             </div>
             {updatedAt && (
-                <p className="-mt-3 text-sm text-fg-muted">
+                <p className="-mt-3 text-sm text-muted-foreground">
                     Mis à jour à <time dateTime={updatedAt.toISOString()} className="tabular-nums">{formatTime(updatedAt)}</time>
                 </p>
             )}
@@ -187,7 +187,7 @@ export function EntriesTab({ eventId, signal }: { eventId: string; signal: numbe
                     getKey={(i) => `${i.scanner_id}-${i.kind}`}
                     caption="Incidents techniques par contrôleur"
                     cardTitle={(i) => INCIDENT_COLUMNS[0].render(i)}
-                    empty={<p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">Aucun incident technique.</p>}
+                    empty={<p className="rounded-2xl border border-dashed border-border bg-card p-4 text-sm text-muted-foreground">Aucun incident technique.</p>}
                 />
             </PilotageSection>
         </div>

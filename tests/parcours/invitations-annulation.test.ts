@@ -202,7 +202,7 @@ describe('9.0 Annulation : effets (5.1, L11)', () => {
         assert.equal(ticket.user_id, invitee.userId, 'porteur conservé');
         assert.equal((await transferRow(transferId)).status, 'CLAIMED', 'transfert réclamé inchangé');
         await assertStockExact(ev, 0, 'après annulation');
-        const added = (await outboxRows({ eventId: ev.eventId })).filter((r) => !outboxBefore.includes(r.id)).map((r) => [r.type, r.channel, r.recipient_user_id, r.recipient_phone]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))); assert.deepEqual(added, ['EMAIL', 'IN_APP', 'SMS'].map((c) => ['TICKET_CANCELLED', c, invitee.userId, null]), `lot 9 bis (R22, B73, la consigne renverse L11 ; G.49) : seul avis, TICKET_CANCELLED au porteur, une ligne par canal du registre : ${JSON.stringify(added)}`);
+        const added = (await outboxRows({ eventId: ev.eventId })).filter((r) => !outboxBefore.includes(r.id)).map((r) => [r.type, r.channel, r.recipient_user_id, r.recipient_phone]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))); assert.deepEqual(added, ['EMAIL', 'IN_APP', 'PUSH', 'SMS'].map((c) => ['TICKET_CANCELLED', c, invitee.userId, null]), /* finition 4 : + push (modification signalée) */ `lot 9 bis (R22, B73, la consigne renverse L11 ; G.49) : seul avis, TICKET_CANCELLED au porteur, une ligne par canal du registre : ${JSON.stringify(added)}`);
     });
 
     test('attribution directe à un compte vérifié : annulable, stock rendu', async () => {

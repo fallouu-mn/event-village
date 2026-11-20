@@ -52,7 +52,7 @@ const MONEY_PARTS: Record<'to_resume' | 'debts', { explain: (a: number | null) =
 function MoneyCard({ money }: { money: MoneyLine }) {
     const unreadable = money.parts.some((p) => p.unavailable);
     return (
-        <li className="flex flex-col gap-3 rounded-2xl border border-warning-border bg-card p-4 sm:p-5">
+        <li className="flex flex-col gap-3 rounded-xl border border-warning-border bg-card p-4 sm:p-5">
             <div className="flex items-start gap-3">
                 <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-warning-soft text-warning-text" aria-hidden="true"><Banknote size={20} /></span>
                 <p className="min-w-0 break-words text-base font-semibold leading-snug text-foreground-strong tabular-nums">{money.title}</p>
@@ -197,17 +197,17 @@ export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRig
             <h2 id={`${id}-titre`} className="text-lg font-bold tracking-tight text-foreground-strong">À faire aujourd’hui</h2>
             {phase === 'loading' && (
                 <div role="status" aria-busy="true" aria-label="Chargement de ce qui est à faire aujourd’hui" className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {[0, 1, 2].map((i) => <span key={i} className="h-36 rounded-2xl bg-background motion-safe:animate-pulse" />)}
+                    {[0, 1, 2].map((i) => <span key={i} className="h-36 rounded-xl bg-background motion-safe:animate-pulse" />)}
                 </div>
             )}
             {phase === 'error' && (
-                <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-border bg-danger-soft p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div role="alert" className="flex flex-col gap-3 rounded-xl border border-danger-border bg-danger-soft p-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm font-semibold text-danger-text">Liste indisponible pour le moment. Les files restent ouvertes depuis le menu.</p>
                     <Button variant="secondary" size="sm" isLoading={retrying} onClick={() => { setRetrying(true); void load(); }}>Réessayer</Button>
                 </div>
             )}
             {phase === 'ready' && allowed.length === 0 && (
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-foreground-strong">{hasAnyRight ? 'Aucune des files à traiter ne vous est ouverte.' : NO_RIGHTS_YET}</p>
                     <LinkButton href="/admin/mes-droits" variant="secondary" size="sm" rightIcon={<ArrowRight size={16} />}>Voir mes droits</LinkButton>
                 </div>
@@ -215,7 +215,7 @@ export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRig
             {phase === 'ready' && allowed.length > 0 && (
                 <>
                     {lines.length === 0 && !moneyDue && (
-                        <p className="flex items-center gap-2 rounded-2xl border border-success-border bg-success-soft p-4 text-base font-semibold text-success-text">
+                        <p className="flex items-center gap-2 rounded-xl border border-success-border bg-success-soft p-4 text-base font-semibold text-success-text">
                             <CheckCircle2 size={20} className="flex-shrink-0" aria-hidden="true" />
                             {NOTHING_URGENT}
                         </p>
@@ -227,7 +227,7 @@ export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRig
                                 const s = TODO_SPECS[l.key as CardKey];
                                 const unavailable = l.unavailable === true;
                                 return (
-                                    <li key={l.key} className={cn('flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:p-5', unavailable ? 'border-border' : 'border-warning-border')}>
+                                    <li key={l.key} className={cn('flex flex-col gap-3 rounded-xl border bg-card p-4 sm:p-5', unavailable ? 'border-border' : 'border-warning-border')}>
                                         <div className="flex items-start gap-3">
                                             <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', unavailable ? 'bg-background text-muted-foreground' : 'bg-warning-soft text-warning-text')} aria-hidden="true">{s.icon}</span>
                                             <p className="min-w-0 break-words text-base font-semibold leading-snug text-foreground-strong tabular-nums">
@@ -244,7 +244,7 @@ export function TodoToday({ hasAnyRight, isSuperadmin, signal = 0 }: { hasAnyRig
                         </ul>
                     )}
                     {(upToDate.length > 0 || (money && !moneyDue)) && (
-                        <ul className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-4" aria-label="À jour">
+                        <ul className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4" aria-label="À jour">
                             {money && !moneyDue && (
                                 <li className="flex items-center gap-2 text-sm text-foreground-strong">
                                     <CheckCircle2 size={18} className="flex-shrink-0 text-success-text" aria-hidden="true" />

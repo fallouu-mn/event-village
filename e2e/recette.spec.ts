@@ -350,7 +350,7 @@ test('acte 1 [admin] : délai de garde coupé à l’écran, motif exigé, histo
     await test.step('un ADMIN lit les réglages sans « Modifier » (R51), sa modification envoyée directement est refusée', async () => {
         const admin = await asRole(browser, testInfo, 'admin');
         await admin.goto('/admin/finance-settings');
-        await expect(admin.getByText(/^lecture seule : seul un superadmin peut modifier ces réglages\./i), 'lecture seule annoncée (finition 3b, E-37 : rôle nommé « Superadmin » ; signalé)').toBeVisible();
+        await expect(admin.getByText(/^lecture seule : seul un super-administrateur peut modifier ces réglages\./i), 'lecture seule annoncée (finition 3b, E-37 ; design 1c : rôle nommé « super-administrateur »)').toBeVisible();
         await expect(settingRow(admin, hold).getByText('Désactivé', { exact: true }), 'réglage lu par un ADMIN').toBeVisible();
         await expect(admin.getByRole('button', { name: /^modifier /i }), 'aucun bouton « Modifier » sans le droit (R51, B34)').toHaveCount(0);
         // Le serveur reste juge : la même modification envoyée sans l'écran est refusée
@@ -819,7 +819,7 @@ test('acte 5 [contrôleur] : activation, caisse, scan en ligne et hors ligne, an
         await videoPlaying(page, '« Reprendre le contrôle »');
     });
 
-    await test.step('clôture de caisse sans écart, Z de caisse', async () => {
+    await test.step('clôture de caisse sans écart, récapitulatif de caisse', async () => {
         await openTab(page, /^caisse$/i);
         await page.getByRole('button', { name: /^clôturer ma caisse$/i }).click();
         const dialog = page.getByRole('dialog', { name: /^clôturer ma caisse$/i });

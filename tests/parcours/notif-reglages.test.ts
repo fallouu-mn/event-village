@@ -50,7 +50,8 @@ type Row = Record<string, unknown>;
 
 const KEYS = Object.keys(NOTIF_SETTING_DEFAULTS) as NotifSettingKey[];
 const ROUTE = '/api/admin/finance-settings';
-const FORBIDDEN_MESSAGE = 'Seul un SUPERADMIN actif modifie les réglages de la plateforme.';
+// Design 1c bis (migration 20261124000001, modification signalée) : message en mots simples
+const FORBIDDEN_MESSAGE = 'Seul un super-administrateur actif peut modifier les réglages.';
 const PRICING_REFUSAL = 'Réglage des notifications : utilisez /api/admin/finance-settings (SUPERADMIN).';
 
 let GET: Handler;

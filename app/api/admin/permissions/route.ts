@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     // Lot 9 quater (B5 : AUD-37) : les permissions d'un autre admin ne se lisent que par le SUPERADMIN
     if (targetAdminId && targetAdminId !== auth.user!.id && !auth.user!.roles.includes('SUPERADMIN')) {
         return NextResponse.json(
-            { error: 'Seul un Superadmin peut consulter les permissions d’un autre administrateur.', code: 'SUPERADMIN_REQUIRED' },
+            { error: 'Seul un super-administrateur peut consulter les permissions d’un autre administrateur.', code: 'SUPERADMIN_REQUIRED' },
             { status: 403 }
         );
     }
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
  * POST /api/admin/permissions
  * Attribue ou révoque des permissions granulaires pour un profil ADMIN (SUPERADMIN STRICT)
  * Contre-vérification de la finition 3d (T4) : mot de passe et code administrateur de moins de 10 minutes exigés
- * (requireAdminIdentity), comme pour créer un ADMIN : une session de Superadmin laissée ouverte ne suffit plus.
+ * (requireAdminIdentity), comme pour créer un ADMIN : une session de super-administrateur laissée ouverte ne suffit plus.
  */
 export async function POST(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requireSuperadmin: true });
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Administrateur cible introuvable.', code: outcome.code }, { status: 404 });
             }
             if (outcome.code === 'TARGET_IS_SUPERADMIN') {
-                return NextResponse.json({ error: 'Le Superadmin dispose de toutes les permissions par défaut.', code: outcome.code }, { status: 400 });
+                return NextResponse.json({ error: 'Le super-administrateur dispose de toutes les permissions par défaut.', code: outcome.code }, { status: 400 });
             }
             // Finition 3a (1b) : rôles de la cible lus dans user_roles par la base ; un compte sans rôle ADMIN est refusé
             if (outcome.code === 'TARGET_NOT_ADMIN') {
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
             // Finition 3a (1b) : auteur contrôlé aussi par la base (SUPERADMIN au compte actif) ; un refus ici suit un
             // changement de rôle ou de statut entre le contrôle de la route et l'écriture
             if (outcome.code === 'FORBIDDEN') {
-                return NextResponse.json({ error: 'Seul un Superadmin actif modifie les droits d’un administrateur.', code: outcome.code }, { status: 403 });
+                return NextResponse.json({ error: 'Seul un super-administrateur actif modifie les droits d’un administrateur.', code: outcome.code }, { status: 403 });
             }
             return apiFailure('POST /api/admin/permissions', new Error(`refus inattendu : ${outcome.code}`), { message: 'Permissions non enregistrées. Réessayez.', code: 'PERMISSIONS_SAVE_FAILED' });
         }

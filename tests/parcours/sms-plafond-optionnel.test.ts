@@ -248,7 +248,8 @@ describe('7.0 a Réglages du budget SMS optionnel (M1, D15)', () => {
         const byKey = new Map(rows.map((r) => [r.key, r]));
         assert.deepEqual(rows.map((r) => r.key).sort(), ['notif.free_ticket_reminder_sms', 'notif.sms_optional_daily_cap'],
             `clés en base : ${JSON.stringify(rows.map((r) => r.key))} (migration 20261105000001 : deux clés créées, notif.sms_daily_alert supprimée)`);
-        assert.deepEqual(byKey.get('notif.sms_optional_daily_cap')!.value, { value: 700 }, 'défaut du budget optionnel');
+        // Finition 4 (décision du client du 19/11, modification signalée au rapport) : plafond fortement relevé, 700 → 20 000
+        assert.deepEqual(byKey.get('notif.sms_optional_daily_cap')!.value, { value: 20000 }, 'défaut du budget optionnel');
         assert.deepEqual(byKey.get('notif.free_ticket_reminder_sms')!.value, { value: 'NEVER' }, 'défaut des rappels de billets gratuits');
         for (const r of rows) assert.ok(typeof r.description === 'string' && r.description.trim().length >= 10, `${r.key} : description française`);
 
@@ -403,6 +404,9 @@ describe('7.0 a Alerte à 80 % du budget optionnel, une fois par jour (M2.6, D15
         const day = randomFutureDay();
         const at = dakarAt(day, '12:00');
         const out = await inRolledBackTransaction(async (db) => {
+            // Finition 4 (modification signalée au rapport) : le défaut passe à 20 000 ; le cas garde un plafond de 700, posé dans la
+            // transaction annulée (invisible des autres suites)
+            await db.query(`UPDATE public.platform_settings SET value = '{"value": 700}'::jsonb WHERE key = 'notif.sms_optional_daily_cap'`);
             const insert = async (from: number, to: number) => db.query(
                 `INSERT INTO public.notification_outbox (idempotency_key, group_key, type, family, topic, channel, origin, recipient_phone,
                         template_data, status, attempts, max_attempts, due_at, next_attempt_at, claimed_at, sent_at, finished_at, decision)

@@ -53,6 +53,7 @@ import {
   type PaymentTargetType,
 } from '@/lib/payments/payment-client';
 import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
+import { OperatorLogo } from './OperatorLogo';
 
 // Aides réexportées (écrans de retrait, administration, suivi du paiement) : même comportement qu'avant le
 // lot 7, sauf formatFcfa, désormais celui de lib/format (« F CFA », D60).
@@ -630,7 +631,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                     />
                     <span
                       className={cn(
-                        'flex min-h-[4.5rem] flex-col items-start justify-center gap-0.5 rounded-xl px-4 py-3 text-on-op shadow-sm transition-shadow duration-200',
+                        'flex min-h-[4.5rem] flex-col items-start gap-2 rounded-xl px-3 py-3 text-on-op shadow-sm transition-shadow duration-200 min-[420px]:flex-row min-[420px]:items-center min-[420px]:gap-3',
                         OPERATOR_TILE[op],
                         'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-popover',
                         selected
@@ -640,8 +641,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = (props) => {
                           : '',
                       )}
                     >
-                      <span className="block text-lg font-extrabold leading-tight">{operatorLabel(op)}</span>
-                      <span className="block text-sm font-semibold">Mobile Money</span>
+                      {/* Design 1c (point 5) : logo officiel, nom toujours écrit à côté */}
+                      <OperatorLogo operator={op} size="md" className="min-[420px]:h-12 min-[420px]:w-12" />
+                      <span className="flex min-w-0 flex-col items-start gap-0.5">
+                        <span className="block text-base font-extrabold leading-tight min-[420px]:text-lg">{operatorLabel(op)}</span>
+                        <span className="block text-sm font-semibold">Mobile Money</span>
+                      </span>
                     </span>
                     {selected && (
                       <span aria-hidden="true" className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-foreground-strong text-background">

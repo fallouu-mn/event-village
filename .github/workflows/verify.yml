@@ -42,7 +42,10 @@ concurrency:
 #            (connexion, captures, emails, dev-page, fumée, terrain, pwa, deconnexion, fake-prod, perf, recette)
 #   verdict  vert seulement si TOUS les jobs le sont ET si les lots couvrent exactement la liste des suites, chacune
 #            une fois ; publie les journaux et captures sur ci-results (un seul dossier par run, scripts/ci-verdict.mjs)
+#   responsive  design 1c (point 1) : build, base de démonstration, puis le contrôle responsive de toutes les pages
+#            (320 à 1 440 px, paysage du scanner ; e2e/responsive.spec.ts), en parallèle de l'e2e, mêmes étapes (ancres)
 # Mode rapide (ligne « ci-rapide: <suites> ») : un seul job « rapide », identique à l'ancien mode rapide, puis verdict.
+# Une ligne « ci-responsive: oui » en mode rapide lance aussi le job « responsive » (pendant le travail d'un lot).
 # Chaque job : 60 min au plus (les 120 min du lot sécurité visaient l'ancien job unique, en série : sans objet ici).
 # Étapes chronométrées comme avant (/tmp/etape.sh → etapes.txt → run.txt, par job).
 
@@ -57,6 +60,7 @@ jobs:
       suites: ${{ steps.mode.outputs.suites }}
       graine: ${{ steps.mode.outputs.graine }}
       lots: ${{ steps.mode.outputs.lots }}
+      responsive: ${{ steps.mode.outputs.responsive }}
     steps:
       - name: Horodatage du début du run
         id: t0
@@ -93,6 +97,13 @@ jobs:
             echo "Répartition mélangée des lots, graine $graine"
           fi
           echo "lots=4" >> "$GITHUB_OUTPUT"
+          # Design 1c (point 1) : « ci-responsive: oui » lance aussi le contrôle responsive en mode rapide
+          if printf '%s\n' "$message" | grep -qE '^ci-responsive:[[:space:]]*oui[[:space:]]*$'; then
+            echo "responsive=1" >> "$GITHUB_OUTPUT"
+            echo "Contrôle responsive demandé"
+          else
+            echo "responsive=0" >> "$GITHUB_OUTPUT"
+          fi
 
   # ── Mode rapide : inchangé (typecheck, lint, suites citées), sur une base locale ──────────────────────────────────
   rapide:
@@ -370,7 +381,8 @@ jobs:
       # contextes pendant plus de 30 min : au-delà de 10 min, chaque contexte rafraîchirait le même jeton de rafraîchissement,
       # et GoTrue (détection de réutilisation) fermerait la session, comme il le doit face à un vol. Ce job seul garde donc
       # 3 600 s ; l'échéance de 600 s et la coupure du temps réel sont prouvées par tests/parcours/cvf2b-correctif-pre-requete.
-      - name: "E2E : jetons d'accès à 3 600 s pour ce job seulement (états de connexion rejoués)"
+      - &e2e-jwt
+        name: "E2E : jetons d'accès à 3 600 s pour ce job seulement (états de connexion rejoués)"
         run: |
           . /tmp/etape.sh e2e-jwt-expiry
           sed -i -E 's/^jwt_expiry = 600$/jwt_expiry = 3600/' supabase/config.toml
@@ -378,7 +390,8 @@ jobs:
           echo "jwt_expiry du job e2e : $(grep -E '^jwt_expiry' supabase/config.toml)"
 
       # Chemin critique du run : Supabase démarre pendant npm ci (même script, mêmes tentatives) ; attendu juste après
-      - name: Démarrer Supabase local en arrière-plan (pendant npm ci)
+      - &supabase-start-lance
+        name: Démarrer Supabase local en arrière-plan (pendant npm ci)
         run: |
           . /tmp/etape.sh supabase-start-lance
           nohup bash scripts/ci-supabase-start.sh /tmp/supabase-start.log > /dev/null 2>&1 &
@@ -387,7 +400,8 @@ jobs:
       - *node
       - *npm-ci
 
-      - name: Attendre Supabase local
+      - &supabase-start-attente
+        name: Attendre Supabase local
         run: |
           . /tmp/etape.sh supabase-start-attente
           for i in $(seq 1 300); do
@@ -402,7 +416,8 @@ jobs:
       # propre » (lancée ci-dessous, pendant le build) refait db reset, seed de test et seed de démonstration, comme en série.
       - *env-test
 
-      - name: "E2E : générer .env.e2e (instance locale, faux services, secrets aléatoires du run)"
+      - &e2e-env
+        name: "E2E : générer .env.e2e (instance locale, faux services, secrets aléatoires du run)"
         run: |
           . /tmp/etape.sh e2e-env
           set -euo pipefail
@@ -478,18 +493,21 @@ jobs:
 
       # Run 314 : seed:demo lance Chromium (Playwright) ; il est donc installé avant la base de l'e2e, qui se prépare
       # pendant le build (sans lui, seed:demo s'arrêtait sur « Executable doesn't exist » sans rendre la main).
-      - name: "E2E : version de Playwright"
+      - &e2e-pw
+        name: "E2E : version de Playwright"
         id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: "E2E : cache du navigateur Chromium"
+      - &e2e-pw-cache
+        name: "E2E : cache du navigateur Chromium"
         id: pw-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      - name: "E2E : installer Chromium"
+      - &e2e-chromium
+        name: "E2E : installer Chromium"
         run: |
           . /tmp/etape.sh e2e-chromium
           set -o pipefail
@@ -501,7 +519,8 @@ jobs:
 
       # Chemin critique : la base de l'e2e (db reset, seed de test, seed de démonstration : mêmes commandes qu'en série)
       # se prépare pendant le build, qui ne lit pas la base ; attendue avant le démarrage de l'application.
-      - name: "E2E : base propre en arrière-plan (db reset, seed de test puis seed de démonstration, pendant le build)"
+      - &e2e-seed-lance
+        name: "E2E : base propre en arrière-plan (db reset, seed de test puis seed de démonstration, pendant le build)"
         run: |
           . /tmp/etape.sh e2e-seed-lance
           nohup bash -c '{ set -e; supabase db reset; npm run seed:test; EV_ENV_FILE=.env.e2e npm run seed:demo; } > /tmp/e2e-seed.log 2>&1; echo $? > /tmp/e2e-seed.code' > /dev/null 2>&1 &
@@ -510,7 +529,8 @@ jobs:
       # Mêmes commandes et même environnement qu'en série (verify.mjs : .env.test chargé, build sans EV_INTEGRATIONS,
       # clés de .env.local neutralisées). Le poids JavaScript est une étape à part : au-dessus du budget, le job est
       # rouge mais l'e2e tourne quand même sur le build (comme le build de mesure du run série).
-      - name: Build (scripts/verify.mjs --etapes build)
+      - &build
+        name: Build (scripts/verify.mjs --etapes build)
         id: build
         run: |
           . /tmp/etape.sh build
@@ -525,7 +545,8 @@ jobs:
           set -o pipefail
           node scripts/verify.mjs --etapes js-budget 2>&1 | tee -a /tmp/build.log
 
-      - name: "E2E : base propre (attendre db reset, seed de test et seed de démonstration)"
+      - &e2e-seed
+        name: "E2E : base propre (attendre db reset, seed de test et seed de démonstration)"
         id: e2e-seed
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
@@ -537,7 +558,8 @@ jobs:
           cat /tmp/e2e-seed.log
           if [ "$(cat /tmp/e2e-seed.code 2>/dev/null)" != "0" ]; then echo "::error::base de l'e2e non prête (db reset ou seed en échec)"; exit 1; fi
 
-      - name: "E2E : démarrer les faux services et l'application (next start, arrière-plan)"
+      - &e2e-start
+        name: "E2E : démarrer les faux services et l'application (next start, arrière-plan)"
         id: e2e-start
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
@@ -633,10 +655,78 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # ── Design 1c (point 1) : contrôle responsive, en parallèle de l'e2e ───────────────────────────────────────────────
+  # Toutes les pages publiques, de l'organisatrice, de l'administration et du scanner à 320, 360, 390, 768, 1024 et
+  # 1440 px (et le scanner en paysage) : aucun défilement horizontal, aucun texte coupé ni chevauchement, cibles ≥ 44 px,
+  # textes ≥ 14 px, tableaux en cartes sur téléphone (e2e/support/responsive-checks.ts). Captures à 360, 768 et 1440 px en
+  # clair et en sombre. Job à part : l'e2e prend déjà ≈ 38 min de ses 47. Mêmes étapes que le job e2e (ancres YAML), puis
+  # les seules phases « connexion » et « responsive » (EV_E2E_PHASES). Lancé au run complet, ou en mode rapide avec la
+  # ligne « ci-responsive: oui ».
+  responsive:
+    name: responsive (320 à 1 440 px)
+    needs: mode
+    if: ${{ needs.mode.outputs.rapide == '0' || needs.mode.outputs.responsive == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      responsive: ${{ steps.responsive.outcome }}
+    steps:
+      - *horodatage
+      - *checkout
+      - *supabase-cli
+      - *e2e-jwt
+      - *supabase-start-lance
+      - *node
+      - *npm-ci
+      - *supabase-start-attente
+      - *env-test
+      - *e2e-env
+      - *e2e-pw
+      - *e2e-pw-cache
+      - *e2e-chromium
+      - *e2e-seed-lance
+      - *build
+      - *e2e-seed
+      - *e2e-start
+
+      - name: "Responsive : toutes les pages de 320 à 1 440 px (EV_E2E_PHASES=connexion,responsive)"
+        id: responsive
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        timeout-minutes: 40
+        env:
+          EV_E2E_PHASES: connexion,responsive
+        run: |
+          . /tmp/etape.sh responsive
+          set -o pipefail
+          npm run e2e 2>&1 | tee /tmp/e2e.log
+
+      - *diagnostic
+      - *annotations
+
+      - name: Rassembler le résumé et les captures du contrôle responsive
+        if: always()
+        run: |
+          mkdir -p /tmp/sortie
+          W="$GITHUB_WORKSPACE"
+          for f in responsive.tsv responsive.txt; do
+            if [ -f "$W/.e2e-captures/$f" ]; then cp "$W/.e2e-captures/$f" "/tmp/sortie/$f"; fi
+          done
+          if [ -d "$W/.e2e-captures/captures-responsive" ]; then
+            mkdir -p /tmp/sortie/captures-responsive && cp -r "$W/.e2e-captures/captures-responsive/." /tmp/sortie/captures-responsive/
+            echo "captures responsive : $(find /tmp/sortie/captures-responsive -name '*.jpg' | wc -l) JPEG"
+          fi
+          if [ -d "$W/test-results" ]; then
+            mkdir -p /tmp/sortie/playwright
+            ( cd "$W" && find test-results -type f -name 'error-context.md' -size -512k -print0 ) | while IFS= read -r -d '' f; do mkdir -p "/tmp/sortie/playwright/$(dirname "$f")"; cp "$W/$f" "/tmp/sortie/playwright/$f"; done
+          fi
+
+      - *rassembler
+      - *deposer
+
   # ── Verdict : vert seulement si tout est vert ; seul job qui publie sur ci-results ───────────────────────────────
   verdict:
     name: verdict (tous les jobs verts) · journaux sur ci-results
-    needs: [mode, rapide, qualite, tests, e2e]
+    needs: [mode, rapide, qualite, tests, e2e, responsive]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -698,7 +788,7 @@ jobs:
             if [ -d /tmp/run ]; then cp -r /tmp/run/. "$RUN_DIR/"; fi
             if [ -d "$RUN_DIR/captures" ]; then echo "captures publiées : $(find "$RUN_DIR/captures" -name '*.png' | wc -l) PNG"; fi
             # Rétention : captures et diagnostic Playwright des 5 derniers runs à la pointe de ci-results ; les journaux restent
-            for kind in captures playwright; do
+            for kind in captures playwright captures-responsive playwright-responsive; do
               for d in $(find runs -mindepth 2 -maxdepth 2 -type d -name "$kind" | sed -e 's#^runs/##' -e "s#/${kind}##" | sort -t- -k1,1n | head -n -5); do
                 rm -rf "runs/${d}/${kind}"
                 echo "${kind} purgé(es) de la pointe : runs/${d}/${kind}"
@@ -717,5 +807,5 @@ jobs:
 
       - name: Verdict
         run: |
-          echo "verdict : ${{ steps.verdict.outputs.verdict }} (mode ${{ needs.mode.outputs.rapide == '1' && 'rapide' || 'complet' }}) ; jobs : mode ${{ needs.mode.result }}, rapide ${{ needs.rapide.result }}, qualite ${{ needs.qualite.result }}, tests ${{ needs.tests.result }}, e2e ${{ needs.e2e.result }}"
+          echo "verdict : ${{ steps.verdict.outputs.verdict }} (mode ${{ needs.mode.outputs.rapide == '1' && 'rapide' || 'complet' }}) ; jobs : mode ${{ needs.mode.result }}, rapide ${{ needs.rapide.result }}, qualite ${{ needs.qualite.result }}, tests ${{ needs.tests.result }}, e2e ${{ needs.e2e.result }}, responsive ${{ needs.responsive.result }}"
           [ "${{ steps.verdict.outputs.verdict }}" = "success" ]

@@ -25,7 +25,7 @@ const COLOR_TOKENS = [
     'primary-soft', 'accent-text', 'gradient-from', 'gradient-to', 'gradient-foreground',
     'success', 'success-soft', 'success-text', 'success-border', 'warning', 'warning-soft', 'warning-text', 'warning-border',
     'danger', 'danger-soft', 'danger-text', 'danger-border', 'info', 'info-soft', 'info-text', 'info-border',
-    'on-tone', 'op-wave', 'op-orange-money', 'on-op',
+    'on-tone', 'op-wave', 'op-orange-money', 'on-op', 'op-logo',
 ];
 
 /** Déclarations `--nom: valeur;` d'un bloc (premier `selecteur {` trouvé, jusqu'à l'accolade fermante). */

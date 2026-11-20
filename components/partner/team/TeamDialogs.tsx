@@ -188,7 +188,7 @@ export function InviteDialog({ isOpen, onClose, events, defaultEventIds, actsAsA
                         {assignable.length === 0 ? (
                             <p className="text-sm text-muted-foreground">Aucun événement validé ou publié : l’invitation sera possible après la validation.</p>
                         ) : assignable.map((e) => (
-                            <label key={e.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border px-3 text-sm text-foreground-strong hover:bg-background">
+                            <label key={e.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border px-3 text-sm text-foreground-strong hover:bg-muted">
                                 <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggle(e.id)} className="h-5 w-5 cursor-pointer rounded border-input accent-primary" />
                                 <span className="min-w-0 flex-1 break-words">{e.title}</span>
                                 <span className="text-sm tabular-nums text-muted-foreground">{eventWhen(e.start_at)}</span>

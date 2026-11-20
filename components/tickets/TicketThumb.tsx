@@ -34,12 +34,12 @@ export function TicketThumb({ title, ticketNumber, seat, dateFormatted, timeForm
         )}
       >
         {seat && (
-          <span className="truncate text-sm font-semibold">
+          <span className="break-words text-sm font-semibold">
             <span className="sr-only">Catégorie : </span>
             {seat}
           </span>
         )}
-        <span className="line-clamp-2 text-lg font-bold leading-snug">{title}</span>
+        <span className="break-words text-lg font-bold leading-snug">{title}</span>
         <span className="text-sm">
           {dateFormatted} · {timeFormatted} · {venue}
         </span>

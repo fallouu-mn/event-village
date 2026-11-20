@@ -149,7 +149,8 @@ describe('2. téléphone perdu : écrans', () => {
         assert.match(gate, /autoComplete="current-password"/);
         assert.match(gate, /['"]\/admin\/securite\?numero=1['"]/, 'après le code de secours, la page Sécurité doit mener au changement de numéro');
         assert.match(gate, /reply\.ok === true/, 'la suite ne doit venir que sur la réponse du serveur');
-        assert.match(gate, /Demandez au Superadmin de changer votre numéro/, 'un ADMIN doit être invité à s’adresser au Superadmin');
+        // Design 1c (point 3) : « super-administrateur » partout (décision de l'utilisateur) ; même exigence, nouveau mot.
+        assert.match(gate, /Demandez au super-administrateur de changer votre numéro/, 'un ADMIN doit être invité à s’adresser au super-administrateur');
     });
 
     test('après la double vérification, un SUPERADMIN sans codes de secours se les voit proposer', () => {
@@ -196,7 +197,7 @@ describe('2. téléphone perdu : écrans', () => {
         const page = read('app/admin/securite/page.tsx');
         assert.match(page, /<BackupCodesPanel\b/);
         assert.match(page, /<PhoneChangeFlow target=\{\{ kind: 'SELF' \}\}/);
-        assert.match(page, /Réservé au Superadmin/);
+        assert.match(page, /Réservé au super-administrateur/);
     });
 
     // Garde-fou (vert dès l'écriture, signalé au rapport) : le code envoyé au nouveau numéro est un envoi synchrone, hors de
@@ -204,7 +205,7 @@ describe('2. téléphone perdu : écrans', () => {
     test('SMS du code au nouveau numéro (OTP_ADMIN_PHONE) : texte exact, GSM-7 de base, un seul segment', async () => {
         const mod = (await import('../../lib/notifications/catalog')) as { renderSyncSms: (type: string, d: Record<string, unknown>) => string };
         const text = mod.renderSyncSms('OTP_ADMIN_PHONE', { code: '483920' });
-        assert.equal(text, 'Event Village : code 483920 pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au Superadmin. Valable 10 minutes.');
+        assert.equal(text, 'Event Village : code 483920 pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au super-administrateur. Valable 10 minutes.'); // design 1c (signalé au rapport)
         const gsm7 = new Set(Array.from('@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà'));
         const outside = Array.from(text).filter((c) => !gsm7.has(c));
         assert.deepEqual(outside, [], `caractères hors GSM-7 de base : ${outside.join(' ')}`);
@@ -215,11 +216,11 @@ describe('2. téléphone perdu : écrans', () => {
 // ── 3. Changer le rôle : écrans ───────────────────────────────────────────────────────────────────────────────────
 
 describe('3. changer le rôle : écrans', () => {
-    test('« Changer le rôle » sur la ligne d’un compte, pour le SUPERADMIN ; « Quitter le rôle de Superadmin » sur la sienne', () => {
+    test('« Changer le rôle » sur la ligne d’un compte, pour le SUPERADMIN ; « Quitter le rôle de super-administrateur » sur la sienne', () => {
         const page = read('app/admin/users/page.tsx');
         assert.match(page, /isSuperadmin && !isDeleted && !isPartner/);
-        assert.match(page, /Quitter le rôle de Superadmin/);
-        assert.match(page, /Pour nommer un Superadmin : créez un administrateur, puis « Changer le rôle » sur sa ligne\./);
+        assert.match(page, /Quitter le rôle de super-administrateur/);
+        assert.match(page, /Pour nommer un super-administrateur : créez un administrateur, puis « Changer le rôle » sur sa ligne\./);
     });
 
     test('« fait » seulement si le serveur rend le rôle demandé ; motif ; confirmation de la finition 1', () => {

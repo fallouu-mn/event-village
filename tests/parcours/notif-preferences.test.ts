@@ -54,6 +54,9 @@ const TOPIC_LABELS: Record<string, string> = {
     REMINDERS: "Rappels avant l'événement",
     EVENT_UPDATES: "Suspension et reprise d'un événement", // lot 9 bis (R14, T54) : la date et le lieu deviennent indispensables
     PRO_ACTIVITY: 'Activité de vos ventes',
+    // Finition 4 (décision du client du 19/11, ajout signalé au rapport)
+    AFTER_EVENT: "Après l'événement",
+    SALES_SUMMARY: 'Résumé du matin',
 };
 const ESSENTIALS = [
     'Codes de connexion', "Confirmations d'achat et reçus", 'Billets transférés', 'Annulations', 'Remboursements', 'Sécurité du compte', 'Changements de date ou de lieu', // lot 9 bis (R14, T54)
@@ -235,7 +238,7 @@ describe('6.4 Préférences : lecture, défauts et indispensables (H1, H2)', () 
         const client = await newBuyer('pref-lecture');
         const r = await getPrefs(client);
         const topics = topicsOf(r, 'GET client');
-        assert.deepEqual(Array.from(topics.keys()).sort(), ['EVENT_UPDATES', 'REMINDERS'], 'sujets d’un client : rappels et changements (PRO_ACTIVITY réservé aux partenaires)');
+        assert.deepEqual(Array.from(topics.keys()).sort(), ['AFTER_EVENT', 'EVENT_UPDATES', 'REMINDERS'], 'sujets d’un client : rappels, changements et (finition 4, signalé) « Après l’événement » ; PRO_ACTIVITY et SALES_SUMMARY réservés aux partenaires');
         for (const t of Array.from(topics.values())) {
             assert.equal(norm(t.label), TOPIC_LABELS[t.topic], `libellé du sujet ${t.topic}`);
             assert.ok(t.description.trim().length > 0, `description du sujet ${t.topic}`);
@@ -254,7 +257,7 @@ describe('6.4 Préférences : lecture, défauts et indispensables (H1, H2)', () 
     test('partenaire : « Activité de vos ventes » en plus ; RPC notification_preferences_get : is_partner', async () => {
         const p = await newPartner('pref-partenaire');
         const topics = topicsOf(await getPrefs(p), 'GET partenaire');
-        assert.deepEqual(Array.from(topics.keys()).sort(), ['EVENT_UPDATES', 'PRO_ACTIVITY', 'REMINDERS'], 'sujets d’un partenaire');
+        assert.deepEqual(Array.from(topics.keys()).sort(), ['AFTER_EVENT', 'EVENT_UPDATES', 'PRO_ACTIVITY', 'REMINDERS', 'SALES_SUMMARY'], 'sujets d’un partenaire (finition 4, signalé : « Après l’événement » et « Résumé du matin » en plus)');
         assert.equal(topics.get('PRO_ACTIVITY')?.label, TOPIC_LABELS.PRO_ACTIVITY);
 
         const forPartner = await service.rpc('notification_preferences_get', { p: { user_id: p.userId } });

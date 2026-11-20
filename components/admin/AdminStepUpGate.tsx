@@ -36,7 +36,7 @@ import { INPUT_AGE_HEADER } from '@/lib/admin/input-age';
  *
  * Finition 3d (point 2) :
  *  - « J'ai perdu mon téléphone » dans la fenêtre du code administrateur : mot de passe et code de secours remplacent le
- *    SMS (POST /api/admin/step-up/recovery, SUPERADMIN seulement ; un ADMIN est invité à s'adresser au Superadmin), puis
+ *    SMS (POST /api/admin/step-up/recovery, SUPERADMIN seulement ; un ADMIN est invité à s'adresser au super-administrateur), puis
  *    la page « Sécurité du compte » mène au changement de son numéro (/admin/securite?numero=1) ;
  *  - après le code reçu par SMS, un SUPERADMIN qui n'a aucun code de secours se les voit proposer (« Plus tard » possible).
  */
@@ -206,7 +206,7 @@ function BackupCodesOffer({ onLater }: { onLater: () => void }) {
 
 /**
  * Finition 3d (point 2c) — « J'ai perdu mon téléphone » : mot de passe et un code de secours. Réussi : la page « Sécurité du
- * compte » s'ouvre pour changer le numéro. Un ADMIN n'a pas de codes : on lui dit de s'adresser au Superadmin.
+ * compte » s'ouvre pour changer le numéro. Un ADMIN n'a pas de codes : on lui dit de s'adresser au super-administrateur.
  */
 function RecoveryForm({ onBack }: { onBack: () => void }) {
   const errorId = useId();
@@ -220,7 +220,7 @@ function RecoveryForm({ onBack }: { onBack: () => void }) {
     return (
       <div className="space-y-4">
         <StatusBanner tone="info" icon={<Smartphone size={20} aria-hidden="true" />} title="Téléphone perdu">
-          Demandez au Superadmin de changer votre numéro de téléphone. Il vous fera saisir un code reçu sur votre nouveau numéro.
+          Demandez au super-administrateur de changer votre numéro de téléphone. Il vous fera saisir un code reçu sur votre nouveau numéro.
         </StatusBanner>
         <Button type="button" variant="secondary" size="sm" fullWidth onClick={onBack}>Retour au code par SMS</Button>
       </div>

@@ -317,7 +317,7 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                         {lines.map((line, index) => {
                             const lineError = errorLine?.line === index ? phonesError : undefined;
                             return (
-                                <li key={line.key} className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-start">
+                                <li key={line.key} className="grid grid-cols-1 gap-2 rounded-xl border border-border bg-muted p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-start">
                                     <TextInput
                                         data-line={`${index}-phone`}
                                         label={`Numéro ${index + 1}`}
@@ -397,7 +397,7 @@ function InvitationForm({ eventId, categories, onChanged }: { eventId: string; c
                 maxWidth="md"
             >
                 {draft && (
-                    <dl className="rounded-2xl border border-border bg-background px-4 py-1 text-sm">
+                    <dl className="rounded-2xl border border-border bg-muted px-4 py-1 text-sm">
                         <div className="flex items-baseline justify-between gap-3 border-b border-border py-2">
                             <dt className="text-muted-foreground">Catégorie</dt>
                             <dd className="min-w-0 break-words text-right font-semibold text-foreground-strong">{draft.categoryName}</dd>

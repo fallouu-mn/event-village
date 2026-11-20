@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Banknote, CalendarRange, CalendarPlus, Search, Smartphone, Ticket } from 'lucide-react';
+import { Banknote, CalendarRange, CalendarPlus, Search, Smartphone, Ticket, TrendingUp } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { Button } from '@/components/ui/Button';
@@ -42,7 +42,11 @@ const TABS_PREFIX = 'evenements-statut';
 
 interface Overview {
     counts: Partial<Record<EventStatus, number>>;
-    totals: { events: number; tickets_sold: number; revenue_online: number; revenue_cash: number };
+    totals: {
+        events: number; tickets_sold: number; revenue_online: number; revenue_cash: number;
+        /** Design 1c bis (migration 20261124000001) : brut (Σ VENTE) et remboursements ; revenue_online = brut − remboursements. */
+        revenue_online_gross?: number; revenue_online_refunded?: number;
+    };
 }
 
 interface PendingTransition {
@@ -242,9 +246,10 @@ export default function PartnerEventsPage() {
                 />
             ) : (
                 <>
-                    <section aria-label="Indicateurs sur tous vos événements" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <section aria-label="Indicateurs sur tous vos événements" className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                         {loading && !totals ? (
                             <>
+                                <KpiCardSkeleton />
                                 <KpiCardSkeleton />
                                 <KpiCardSkeleton />
                                 <KpiCardSkeleton />
@@ -254,8 +259,17 @@ export default function PartnerEventsPage() {
                             <>
                                 <KpiCard label="Événements" value={formatInteger(totals?.events)} hint="Tous statuts confondus" icon={<CalendarRange size={18} />} tone="brand" />
                                 <KpiCard label="Billets vendus" value={formatInteger(totals?.tickets_sold)} hint="Hors invitations" icon={<Ticket size={18} />} tone="info" />
-                                <KpiCard label="Recettes en ligne" value={<KpiAmount value={formatFcfa(totals?.revenue_online)} />} hint="Billets payés en ligne, remboursements déduits" icon={<Smartphone size={18} />} tone="success" />
-                                <KpiCard label="Recettes en espèces" value={<KpiAmount value={formatFcfa(totals?.revenue_cash)} />} hint="Encaissées par vos contrôleurs" icon={<Banknote size={18} />} tone="warning" />
+                                {/* Design 1c bis : brut → remboursements → recettes nettes, comme le tableau de bord (partner_events_overview,
+                                    migration 20261124000001 : revenue_online_gross, revenue_online_refunded ; revenue_online = net, une seule déduction) */}
+                                <KpiCard label="Ventes en ligne (brut)" value={<KpiAmount value={formatFcfa(totals?.revenue_online_gross)} />} hint="Prix des billets vendus en ligne, avant remboursements." icon={<TrendingUp size={18} />} tone="brand" />
+                                <KpiCard
+                                    label="Recettes nettes"
+                                    value={<KpiAmount value={formatFcfa(totals?.revenue_online)} />}
+                                    hint={`Ventes en ligne moins ${formatFcfa(totals?.revenue_online_refunded ?? 0)} de remboursements.`}
+                                    icon={<Smartphone size={18} />}
+                                    tone="success"
+                                />
+                                <KpiCard label="Ventes en espèces" value={<KpiAmount value={formatFcfa(totals?.revenue_cash)} />} hint="Encaissées par vos contrôleurs, hors solde" icon={<Banknote size={18} />} tone="warning" />
                             </>
                         )}
                     </section>

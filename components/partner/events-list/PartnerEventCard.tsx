@@ -72,12 +72,12 @@ export function PartnerEventCard({ event, pendingTo, onTransition, onCancel, onD
     const reason = event.last_reason;
 
     return (
-        <article aria-labelledby={titleId} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-surface sm:flex-row">
-            <div className="relative aspect-[16/9] w-full flex-shrink-0 bg-surface-sunken sm:aspect-auto sm:w-48 lg:w-56">
+        <article aria-labelledby={titleId} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card sm:flex-row">
+            <div className="relative aspect-[16/9] w-full flex-shrink-0 bg-muted sm:aspect-auto sm:w-48 lg:w-56">
                 {isProjectStorageImage(event.image_url) ? (
                     <Image src={event.image_url} alt="" fill sizes="(min-width: 1024px) 224px, (min-width: 640px) 192px, 100vw" className="object-cover" />
                 ) : (
-                    <div className="flex h-full min-h-32 w-full items-center justify-center text-fg-muted" aria-hidden="true">
+                    <div className="flex h-full min-h-32 w-full items-center justify-center text-muted-foreground" aria-hidden="true">
                         <ImageOff size={28} />
                     </div>
                 )}
@@ -87,8 +87,8 @@ export function PartnerEventCard({ event, pendingTo, onTransition, onCancel, onD
                 <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge domain="event" status={event.status} size="sm" />
                 </div>
-                <h2 id={titleId} className="break-words text-lg font-bold leading-snug text-fg">{event.title}</h2>
-                <ul className="flex flex-col gap-1.5 text-sm text-fg-muted">
+                <h2 id={titleId} className="break-words text-lg font-bold leading-snug text-foreground-strong">{event.title}</h2>
+                <ul className="flex flex-col gap-1.5 text-sm text-muted-foreground">
                     <li className="flex items-start gap-2">
                         <CalendarDays size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                         <span>{formatEventDateTime(event.start_date, event.start_time)}</span>
@@ -108,7 +108,7 @@ export function PartnerEventCard({ event, pendingTo, onTransition, onCancel, onD
                     >
                         <p>{reason.reason || 'Aucun motif communiqué.'}</p>
                         {reason.at && (
-                            <p className="mt-1 text-fg-muted">
+                            <p className="mt-1 text-muted-foreground">
                                 Le <time dateTime={reason.at}>{formatDateTime(reason.at)}</time>
                             </p>
                         )}
@@ -140,12 +140,12 @@ export function PartnerEventCard({ event, pendingTo, onTransition, onCancel, onD
                         </LinkButton>
                     )}
                     {event.can_cancel && (
-                        <Button variant="ghost" size="sm" leftIcon={<Ban size={18} />} disabled={busy} onClick={() => onCancel(event)} className="text-danger-fg">
+                        <Button variant="ghost" size="sm" leftIcon={<Ban size={18} />} disabled={busy} onClick={() => onCancel(event)} className="text-danger-text">
                             Annuler l’événement
                         </Button>
                     )}
                     {event.can_delete === true && (
-                        <Button variant="ghost" size="sm" leftIcon={<Trash2 size={18} />} disabled={busy} onClick={() => onDelete(event)} className="text-danger-fg">
+                        <Button variant="ghost" size="sm" leftIcon={<Trash2 size={18} />} disabled={busy} onClick={() => onDelete(event)} className="text-danger-text">
                             Supprimer le brouillon
                         </Button>
                     )}

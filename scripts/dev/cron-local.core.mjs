@@ -94,6 +94,18 @@ export function assertCronAllowed(env) {
 }
 
 /**
+ * Finition 4 (npm run taches) : l'adresse appelée doit être l'application locale, en http, sans identifiants ; toute autre
+ * adresse est refusée avant le moindre appel (CRON_SECRET ne part jamais ailleurs).
+ * @param {string} origin
+ */
+export function assertLocalTarget(origin) {
+    const url = parseUrl(origin);
+    if (!url || url.protocol !== 'http:' || hasCredentials(url) || !LOCAL_HOSTS.has(url.hostname)) {
+        throw new Error(`adresse des appels refusée : ${origin} (seule l'application locale, http://localhost, est admise).`);
+    }
+}
+
+/**
  * Boucle pilotable : `tick(date)` lance les tâches dues et ignore celles encore en cours (aucun recouvrement).
  * Un appel en échec libère sa tâche : la boucle ne s'arrête pas.
  * @param {{
@@ -105,7 +117,17 @@ export function assertCronAllowed(env) {
  */
 export function createCronRunner({ tasks, call, log }) {
     const running = new Set();
+    // Finition 4 (npm run taches) : appels en cours, attendus par drain() à l'arrêt (aucun appel coupé en plein milieu)
+    const pending = new Map();
     return {
+        /** Tâches dont l'appel est en cours. */
+        inFlight() {
+            return [...running];
+        },
+        /** Promesse tenue quand tous les appels en cours sont terminés (réussis ou non). */
+        drain() {
+            return Promise.allSettled([...pending.values()]).then(() => undefined);
+        },
         tick(date) {
             const started = [];
             const skipped = [];
@@ -118,10 +140,14 @@ export function createCronRunner({ tasks, call, log }) {
                 }
                 running.add(task.name);
                 started.push(task.name);
-                Promise.resolve()
+                const done = Promise.resolve()
                     .then(() => call(task))
                     .catch((err) => log(`${task.name} : échec de l'appel (${err instanceof Error ? err.message : String(err)})`))
-                    .finally(() => running.delete(task.name));
+                    .finally(() => {
+                        running.delete(task.name);
+                        pending.delete(task.name);
+                    });
+                pending.set(task.name, done);
             }
             return { started, skipped };
         },

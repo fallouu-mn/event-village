@@ -187,7 +187,8 @@ describe('8.2 l — chaque colonne de la liste fermée', () => {
         });
     }
 
-    for (const [column] of VALUES.filter(([c]) => c !== 'company_name')) {
+    // Design 1c (décision signalée au rapport) : l'email est obligatoire, comme à l'inscription : il ne se vide plus
+    for (const [column] of VALUES.filter(([c]) => c !== 'company_name' && c !== 'email')) {
         test(`${column} : vidée, NULL ; les autres inchangées`, async () => {
             const start = await fieldsOf(p.partnerId);
             assertSaved(await patchProfile(p, { [column]: null }), `${column} vidée`);
@@ -196,6 +197,16 @@ describe('8.2 l — chaque colonne de la liste fermée', () => {
             assertSaved(await patchProfile(p, { [column]: value }), `${column} reposée`);
         });
     }
+
+    test('email vidé (null ou chaîne vide) : refusé, rien n’est écrit (design 1c)', async () => {
+        const start = await fieldsOf(p.partnerId);
+        for (const empty of [null, '', '   ']) {
+            const r = await patchProfile(p, { email: empty });
+            assert.equal(r.status, 400, `email ${JSON.stringify(empty)} : ${r.status} ${r.text.slice(0, 300)}`);
+            assert.match(r.text, /obligatoire/, `email ${JSON.stringify(empty)} : motif du refus`);
+        }
+        assert.deepEqual(await fieldsOf(p.partnerId), start, 'email vidé : rien n’a changé');
+    });
 
     test('champ absent : inchangé, chaîne vide : NULL', async () => {
         const start = await fieldsOf(p.partnerId);

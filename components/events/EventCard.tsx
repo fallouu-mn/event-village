@@ -140,8 +140,8 @@ export const EventCard: React.FC<EventCardProps> = ({
       </div>
 
       <div className={cn('flex flex-1 flex-col gap-1.5', feature ? 'p-4 sm:p-5' : 'p-4')}>
-        {subtitle && <p className="truncate text-sm font-semibold text-primary-text">{subtitle}</p>}
-        <h3 className={cn('line-clamp-2 font-bold leading-snug tracking-tight text-foreground-strong', feature ? 'text-xl sm:text-2xl' : 'text-lg')}>
+        {subtitle && <p className="break-words text-sm font-semibold text-primary-text">{subtitle}</p>}
+        <h3 className={cn('break-words font-bold leading-snug tracking-tight text-foreground-strong', feature ? 'text-xl sm:text-2xl' : 'text-lg')}>
           <Link
             href={`/events/${id}`}
             prefetch={false}
@@ -153,11 +153,11 @@ export const EventCard: React.FC<EventCardProps> = ({
         </h3>
         <p className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
           <CalendarDays size={16} className="flex-shrink-0" aria-hidden="true" />
-          <span className="truncate">{when}</span>
+          <span className="min-w-0 break-words">{when}</span>
         </p>
         <p className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
           <MapPin size={16} className="flex-shrink-0" aria-hidden="true" />
-          <span className="truncate">{place}</span>
+          <span className="min-w-0 break-words">{place}</span>
         </p>
 
         {(stock || categoryLabel) && (
@@ -168,7 +168,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         )}
 
         <p className="mt-auto flex min-w-0 items-baseline gap-1.5 border-t border-border pt-3">
-          {priceLine.lead && <span className="truncate text-sm text-muted-foreground">{priceLine.lead}</span>}
+          {priceLine.lead && <span className="text-sm text-muted-foreground">{priceLine.lead}</span>}
           <span className="whitespace-nowrap text-base font-extrabold tabular-nums text-foreground-strong">{priceLine.value}</span>
         </p>
       </div>

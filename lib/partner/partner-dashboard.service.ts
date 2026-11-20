@@ -243,6 +243,13 @@ export interface LedgerSplit {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 1000;
+
+/**
+ * Couleurs du PDF de clôture (opérateur « rg » : rouge, vert, bleu de 0 à 1), prises dans la charte (design 1c) :
+ * « primary » et « primary-hover » du mode clair (docs/design/jetons.css). Le format PDF n’a pas de jetons CSS.
+ */
+const PDF_PRIMARY = '0.761 0.255 0.047';
+const PDF_PRIMARY_HOVER = '0.604 0.204 0.071';
 const ID_CHUNK = 100;
 
 /** Colonnes et types d'écritures de vente lus dans le grand livre organisateur. */
@@ -864,7 +871,7 @@ export class PartnerDashboardService {
     }
 
     /**
-     * Génère un document PDF vectoriel officiel pour le Rapport de Clôture (Z de Caisse).
+     * Génère le PDF du rapport de clôture.
      */
     public static async generateClosingReportPdf(data: ClosingReportData): Promise<Buffer> {
         const pageWidth = 595.28; // A4 portrait (points)
@@ -877,13 +884,13 @@ export class PartnerDashboardService {
         stream += '0.98 0.98 0.99 rg\n';
         stream += `0 0 ${pageWidth} ${pageHeight} re f\n`;
 
-        // 2. En-tête Sunset Coral Event Village
+        // 2. En-tête aux couleurs de la charte (design 1c) : orange profond « primary » du mode clair (texte blanc 5,18:1)
         const headerY = pageHeight - 90;
-        stream += '1 0.34 0.13 rg\n'; // #FF5722 Sunset Coral
+        stream += `${PDF_PRIMARY} rg\n`;
         stream += `36 ${headerY} ${pageWidth - 72} 70 re f\n`;
 
-        // Accent Gradient Bar
-        stream += '1 0.24 0.41 rg\n'; // #FF3D68
+        // Liseré d'accent : « primary-hover » de la charte
+        stream += `${PDF_PRIMARY_HOVER} rg\n`;
         stream += `36 ${headerY} ${pageWidth - 72} 4 re f\n`;
 
         // Titres Header
@@ -918,7 +925,7 @@ export class PartnerDashboardService {
         stream += `50 ${infoY + 12} Td\n(${pdfText(`Statut : ${eventStatusLabel(data.event.status)} -- Capacité mise en vente : ${data.event.capacity} places`)}) Tj\nET\n`;
 
         // Colonne 2 : Organisateur / Partenaire
-        stream += 'BT\n/F2 10 Tf\n1 0.34 0.13 rg\n';
+        stream += `BT\n/F2 10 Tf\n${PDF_PRIMARY} rg\n`;
         stream += `${pageWidth - 230} ${infoY + 40} Td\n(${pdfText(`Organisateur : ${data.partner.commercialName.slice(0, 28)}`)}) Tj\nET\n`;
 
         stream += 'BT\n/F1 8.5 Tf\n0.45 0.52 0.60 rg\n';
@@ -944,9 +951,16 @@ export class PartnerDashboardService {
             ['Entrées (dont guichet)', pdfLabel(`${tickets.entries.toLocaleString('fr-FR')} (${tickets.counterEntries.toLocaleString('fr-FR')})`)],
             ['Refus au contrôle', pdfCount(tickets.refused)],
             ['Absents (billets valides jamais scannés)', pdfCount(tickets.absents)],
-            ['Recettes en ligne', pdfAmount(Number(revenue.online ?? 0))],
-            ['Recettes en espèces', pdfAmount(Number(revenue.cash ?? 0))],
-            ['Remboursé', pdfAmount(Number(revenue.refunded ?? 0))],
+            // Design 1c (E-64, G-26) : brut → remboursements → recettes nettes, sans double déduction. revenue.online est déjà
+            // net (Σ VENTE + REMBOURSEMENT du grand livre, pilotage_compute_overview) ; online_gross et refunded_online en
+            // donnent le détail. Les espèces sont à part (hors solde), avec les remboursements en espèces faits par vous.
+            ...(typeof revenue.online_gross === 'number' ? [['Ventes en ligne (brut)', pdfAmount(revenue.online_gross)] as [string, string]] : []),
+            ...(typeof revenue.refunded_online === 'number' ? [['Remboursements', pdfAmount(revenue.refunded_online)] as [string, string]] : []),
+            ['Recettes nettes', pdfAmount(Number(revenue.online ?? 0))],
+            ['Ventes en espèces (hors solde)', pdfAmount(Number(revenue.cash ?? 0))],
+            ...(Number(revenue.refunded_cash_organizer ?? 0) > 0
+                ? [['Remboursements en espèces (par vous)', pdfAmount(Number(revenue.refunded_cash_organizer))] as [string, string]]
+                : []),
             ['Frais de service payés par les acheteurs', pdfAmount(fin.buyerServiceFees)],
             ['Déjà disponible / en attente', pdfText(`${fin.availableNet.toLocaleString('fr-FR')} / ${fin.pendingNet.toLocaleString('fr-FR')} F CFA`)],
         ];
@@ -963,11 +977,11 @@ export class PartnerDashboardService {
             stream += `${pageWidth - 200} ${y} Td\n(${value}) Tj\nET\n`;
         });
 
-        // Montant net organisateur (grand livre, ventes en ligne, remboursements déduits)
-        stream += '1 0.34 0.13 rg\n';
+        // Recettes nettes (grand livre : ventes en ligne moins les remboursements), un seul nom partout (design 1c, E-64)
+        stream += `${PDF_PRIMARY} rg\n`;
         stream += `36 ${boxY} ${pageWidth - 72} 26 re f\n`;
         stream += 'BT\n/F2 11 Tf\n1 1 1 rg\n';
-        stream += `52 ${boxY + 8} Td\n(${pdfText('MONTANT NET ORGANISATEUR -- VENTES EN LIGNE, REMBOURSEMENTS DÉDUITS')}) Tj\nET\n`;
+        stream += `52 ${boxY + 8} Td\n(${pdfText('RECETTES NETTES -- VENTES EN LIGNE MOINS LES REMBOURSEMENTS')}) Tj\nET\n`;
         stream += 'BT\n/F2 13 Tf\n1 1 1 rg\n';
         stream += `${pageWidth - 150} ${boxY + 7} Td\n(${pdfAmount(fin.totalNet)}) Tj\nET\n`;
 
@@ -1166,7 +1180,7 @@ export class PartnerDashboardService {
             'Prix facial (F CFA)',
             'Frais de service acheteur (F CFA, informatif)',
             'Remboursement (F CFA)',
-            'Net organisateur en ligne (F CFA)',
+            'Recettes nettes (F CFA)',
             'Statut du billet',
         ];
 

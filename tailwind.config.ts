@@ -27,6 +27,10 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Design 1c (point 3) : téléphone tenu en largeur (scanner en paysage : caméra à gauche, commandes à droite)
+      screens: {
+        paysage: { raw: '(orientation: landscape) and (max-height: 520px)' },
+      },
       // Règle (décision du 18/11) : aucune animation en boucle infinie dans l'application. Pulsation et halo : 3 cycles puis
       // fixe (le halo finit effacé) ; rotation des indicateurs de chargement : 10 tours (≈ 10 s) puis fixe, le texte
       // « Chargement… » qui l'accompagne reste. Mêmes noms de classes (animate-pulse, animate-ping, animate-spin).
@@ -73,6 +77,8 @@ const config: Config = {
         'op-wave': tone('op-wave'),
         'op-orange-money': tone('op-orange-money'),
         'on-op': tone('on-op'),
+        // Design 1c (point 5) : pastille blanche des logos des opérateurs, dans les deux thèmes
+        'op-logo': tone('op-logo'),
         scan: {
           'accept-bg': tone('scan-accept-bg'),
           'accept-fg': tone('scan-accept-fg'),

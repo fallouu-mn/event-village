@@ -35,8 +35,8 @@ export const PERMISSION_DESCRIPTIONS: Readonly<Record<string, string>> = {
     'users.write': 'Créer, suspendre, réactiver ou supprimer des comptes de clients et de contrôleurs, jamais un administrateur.',
     'partners.read': 'Voir les candidatures et les dossiers des partenaires : pièces, NINEA, contacts.',
     'partners.validate': 'Valider, refuser ou réactiver un partenaire. Le partenaire en est prévenu.',
-    'partners.suspend': 'Suspendre un partenaire. Attention : seul le Superadmin peut le faire, ce droit ne suffit pas à un administrateur.',
     'halls.validate': 'Valider, refuser, suspendre ou réactiver une salle de fête ou un établissement de tables. La partenaire en est prévenue.',
+    'partners.suspend': 'Suspendre un partenaire. Attention : seul le super-administrateur peut le faire, ce droit ne suffit pas à un administrateur.',
     'events.read': 'Voir les événements, leur pilotage, leurs équipes, leurs caisses et les catalogues.',
     'events.write': 'Valider, refuser, suspendre, réactiver, clore ou annuler un événement ; valider un écart de caisse.',
     'payments.read': 'Voir la finance : ce que gagne Event Village, ce qui est dû, les paiements et les créances.',
@@ -47,7 +47,7 @@ export const PERMISSION_DESCRIPTIONS: Readonly<Record<string, string>> = {
     'notifications.read': 'Voir les envois de SMS, d’emails et de notifications, et recevoir leurs alertes.',
     'notifications.write': 'Relancer un envoi en échec.',
     'access.operate': 'Contrôler les entrées et tenir une caisse sur un événement.',
-    'settings.read': 'Lire les réglages de la plateforme ; seul le Superadmin les change.',
+    'settings.read': 'Lire les réglages de la plateforme ; seul le super-administrateur les change.',
 };
 
 /** Phrase d'une permission ; un code inconnu reçoit une phrase générique, jamais le code brut. */

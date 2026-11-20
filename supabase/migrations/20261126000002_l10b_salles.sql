@@ -3,7 +3,7 @@
 -- ============================================================================
 -- Consigne du lot 10b (points 2 et 3) et décisions du client reportées du lot 10a :
 --  1. réglage halls.max_pending_per_client (3) : réservations en attente de paiement au plus par client (au lieu de 3
---     écrit en dur) ; finance_setting_set : recopie de 20261123000101_l11a_reglages.sql:30-82 ; fin_setting_valid :
+--     écrit en dur) ; finance_setting_set : recopie de 20261124000001_d1cbis_restes.sql:91-143 ; fin_setting_valid :
 --     recopie de 20261123000101_l11a_reglages.sql:85-177 ; changement : la clé et ses bornes (1 à 10, identiques à
 --     lib/settings/catalog.ts) ; hall_client_pending_refusal : recopie de 20261122000011_l10a_cv_verrou_client.sql:18-40 ;
 --     changement : limite lue dans le réglage ;
@@ -23,7 +23,7 @@ INSERT INTO public.platform_settings (key, value, description) VALUES
     ('halls.max_pending_per_client', '{"value": 3}', 'Salles : réservations en attente de paiement au plus par client')
 ON CONFLICT (key) DO NOTHING;
 
--- Recopie de 20261123000101_l11a_reglages.sql:30-82 ; changement : clé halls.max_pending_per_client admise.
+-- Recopie de 20261124000001_d1cbis_restes.sql:91-143 ; changement : clé halls.max_pending_per_client admise.
 CREATE OR REPLACE FUNCTION public.finance_setting_set(p_key text, p_value jsonb, p_actor uuid, p_reason text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -67,7 +67,7 @@ BEGIN
         SELECT 1 FROM public.user_roles r JOIN public.users u ON u.id = r.user_id
          WHERE r.user_id = p_actor AND r.role = 'SUPERADMIN' AND u.status = 'ACTIF'
     ) THEN
-        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Seul un SUPERADMIN actif modifie les réglages de la plateforme.');
+        RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Seul un super-administrateur actif peut modifier les réglages.');
     END IF;
     IF NOT public.fin_setting_valid(p_key, v) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_VALUE', 'message', format('Valeur refusée pour %s : %s', p_key, COALESCE(v::text, 'absente')));

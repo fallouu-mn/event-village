@@ -373,4 +373,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/halls/partner/HallsListView.tsx',
     'components/halls/partner/ReservationDetailView.tsx',
     'components/halls/partner/useHallActions.tsx',
+    // Design 1c : espace organisatrice, administration, scanner, paiement
+    'components/payment/OperatorLogo.tsx',
+    // Design 1c (administration) : comptes, journal, parrainage passés aux jetons de la charte
+    'app/admin/users/page.tsx',
+    'app/admin/audit/page.tsx',
+    'app/admin/referral/page.tsx',
 ];

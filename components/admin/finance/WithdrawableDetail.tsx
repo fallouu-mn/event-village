@@ -24,7 +24,7 @@ export const RESERVE_EXPLAINED = 'En attendant la confirmation du délai de Sami
 /** Phrase de la réserve de prudence selon son réglage. */
 export function reserveText(reserve: FinanceSummary['reserve']): React.ReactNode {
     return reserve.mode === 'FIXED'
-        ? <>Montant fixe choisi par le Superadmin : <span className="font-semibold tabular-nums">{formatFcfaPrecise(reserve.fixed_amount)}</span>.</>
+        ? <>Montant fixe choisi par le super-administrateur : <span className="font-semibold tabular-nums">{formatFcfaPrecise(reserve.fixed_amount)}</span>.</>
         : <>Automatique : les encaissements des 3 derniers jours, soit <span className="font-semibold tabular-nums">{formatFcfaPrecise(reserve.auto_amount)}</span> aujourd’hui.</>;
 }
 
@@ -37,10 +37,10 @@ export function WithdrawableDetail({ view, summary }: { view: WithdrawableView; 
     const id = useId();
     const { balance, amount, shortfall } = view;
     return (
-        <section id="calcul-retirable" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <section id="calcul-retirable" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6">
             <div className="flex flex-col gap-1">
-                <h2 id={`${id}-titre`} className="text-lg font-semibold text-fg">Calcul de ce qui est retirable</h2>
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <h2 id={`${id}-titre`} className="text-lg font-semibold text-foreground-strong">Calcul de ce qui est retirable</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     Ce que vous pouvez sortir du compte SamirPay sans empêcher un partenaire, un parrain ou un client d’être payé.
                     Si ce chiffre est à 0, ne retirez rien.
                 </p>

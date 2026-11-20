@@ -85,7 +85,7 @@ function ListSkeleton() {
   return (
     <div role="status" aria-busy="true" aria-label="Chargement des événements" className="flex flex-col gap-3">
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
+        <div key={i} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <Skeleton className="h-5 w-3/4 max-w-sm" />
             <Skeleton className="h-4 w-1/2 max-w-xs" />
@@ -386,7 +386,7 @@ export default function AdminEventsPage() {
           <>
             <DataList
               items={data.items}
-              columns={columns}
+              columns={columns} breakpoint="xl"
               getKey={(ev) => ev.id}
               caption={`Événements : ${tabLabel(tab)}`}
               renderCard={renderCard}

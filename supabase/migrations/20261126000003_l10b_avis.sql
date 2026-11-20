@@ -19,7 +19,7 @@
 --  4. hall_reservations_tick : recopie de 20261122000005_l10a_annulation.sql:225-281 ; changements : rappel du solde
 --     10 jours puis 8 jours avant la date (au lieu d'un rappel 3 jours avant l'échéance), rappel la veille (client et
 --     salle), recettes disponibles (salle) ; ces avis partent hors de la nuit (réglages notif.sms_quiet_start / _end) ;
---  5. notif_cashouts_notify : recopie de 20261123000106_l11a_annulation.sql:497-774 ; changement : le
+--  5. notif_cashouts_notify : recopie de 20261125000003_f4_ventes.sql:568-879 ; changement : le
 --     remboursement versé d'une réservation de salle envoie HALL_REFUND_PAID (au lieu de l'avis des billets).
 -- Rejouable : ON CONFLICT DO UPDATE, CREATE OR REPLACE (droits d'exécution conservés), DROP TRIGGER IF EXISTS puis CREATE.
 -- ============================================================================
@@ -313,7 +313,7 @@ $$;
 -- ----------------------------------------------------------------------------
 -- 5. Remboursement d'une réservation de salle versé : avis de la salle
 -- ----------------------------------------------------------------------------
--- Recopie de 20261123000106_l11a_annulation.sql:497-774 ; changement : HALL_REFUND_PAID pour un paiement de salle.
+-- Recopie de 20261125000003_f4_ventes.sql:568-879 ; changement : HALL_REFUND_PAID pour un paiement de salle.
 CREATE OR REPLACE FUNCTION public.notif_cashouts_notify()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -345,6 +345,12 @@ DECLARE
     v_pay_amount    numeric;
     v_pay_operator  text;
     v_duplicate_of  text;
+    -- Finition 4 : auteur d'un remboursement de billet ; retrait constaté non versé
+    v_refund_as     text;
+    v_refund_ctx    text;
+    v_refund_by     text;
+    v_refund_facial numeric;
+    v_not_paid      boolean := NEW.provider_status IS NOT DISTINCT FROM 'NON_VERSE';
     -- Lot 10b : réservation de salle du paiement remboursé (avis « Remboursement versé » propre aux salles)
     v_hall_res      uuid;
 BEGIN
@@ -386,14 +392,41 @@ BEGIN
     END IF;
 
     -- 1. Demande de remboursement d'un billet (création du cashout)
-    IF TG_OP = 'INSERT' AND NEW.kind = 'TICKET_REFUND' AND v_user IS NOT NULL THEN
-        PERFORM public.notif_enqueue(jsonb_build_object(
-            'type', 'REFUND_REQUESTED',
-            'key', 'REFUND_REQUESTED:' || NEW.id::text,
-            'user_id', v_user,
-            'event_id', v_event,
-            'data', v_event_data || jsonb_build_object('cashout_id', NEW.id, 'amount', NEW.amount)
-        ));
+    -- Finition 4 (points 2 et 4) : qui a lancé le remboursement (journal TICKET_REFUND_REQUESTED de ticket_refund_request,
+    -- même transaction) : le client (report de plus de 24 h), l'organisatrice, l'administration, ou l'annulation de
+    -- l'événement. Lancé par quelqu'un d'autre que le client : SMS et push en plus (le client n'a rien demandé) ; lancé par
+    -- le client : l'organisatrice reçoit un avis groupé toutes les 15 minutes, sans nom ni numéro du client.
+    IF TG_OP = 'INSERT' AND NEW.kind = 'TICKET_REFUND' THEN
+        SELECT a.metadata->>'as', a.metadata->>'context' INTO v_refund_as, v_refund_ctx
+          FROM public.audit_logs a
+         WHERE a.action = 'TICKET_REFUND_REQUESTED' AND a.object_type = 'tickets' AND a.object_id = NEW.ticket_id
+         ORDER BY a.created_at DESC, a.id DESC
+         LIMIT 1;
+        v_refund_by := CASE WHEN v_refund_ctx = 'CANCELLATION' THEN 'CANCELLATION'
+                            WHEN v_refund_as = 'ADMIN' THEN 'ADMIN'
+                            WHEN v_refund_as = 'OWNER' THEN 'ORGANIZER'
+                            ELSE 'CLIENT' END;
+        IF v_user IS NOT NULL THEN
+            PERFORM public.notif_enqueue(jsonb_build_object(
+                'type', 'REFUND_REQUESTED',
+                'key', 'REFUND_REQUESTED:' || NEW.id::text,
+                'user_id', v_user,
+                'event_id', v_event,
+                'data', v_event_data || jsonb_strip_nulls(jsonb_build_object('cashout_id', NEW.id, 'amount', NEW.amount,
+                                                                             'operator', NEW.operator, 'by', v_refund_by)),
+                'channels', CASE v_refund_by
+                                WHEN 'CANCELLATION' THEN jsonb_build_array('IN_APP', 'EMAIL')
+                                WHEN 'CLIENT' THEN jsonb_build_array('IN_APP', 'EMAIL', 'PUSH')
+                                ELSE jsonb_build_array('IN_APP', 'SMS', 'EMAIL', 'PUSH') END
+            ));
+        END IF;
+        IF v_refund_by = 'CLIENT' AND v_partner_user IS NOT NULL AND v_event IS NOT NULL THEN
+            SELECT COALESCE(NULLIF(r.facial_part, 0), NEW.amount) INTO v_refund_facial FROM public.refunds r WHERE r.id = NEW.refund_id;
+            PERFORM public.notif_enqueue_grouped(jsonb_build_object(
+                'type', 'PARTNER_REFUND_REQUESTS', 'scope', v_event::text || ':' || v_partner_user::text, 'window_minutes', 15,
+                'user_id', v_partner_user, 'event_id', v_event, 'data', v_event_data,
+                'add', jsonb_build_object('ticket_count', 1, 'amount', COALESCE(v_refund_facial, NEW.amount))));
+        END IF;
     END IF;
 
     -- 1 bis. Lot 9 bis (R30, H1, B11) : paiement encaissé sans billet possible, ou en double du même panier
@@ -546,19 +579,20 @@ BEGIN
                 END IF;
                 v_refund_delayed := true;
             ELSE
+                -- Finition 4 (point 5) : « constaté non versé » (provider_status NON_VERSE) n'est pas un refus de l'opérateur
                 IF v_user IS NOT NULL OR v_phone IS NOT NULL THEN
                     PERFORM public.notif_enqueue(jsonb_strip_nulls(jsonb_build_object(
                         'type', 'WITHDRAWAL_REJECTED',
                         'key', 'WITHDRAWAL_REJECTED:' || NEW.id::text,
                         'user_id', v_user,
                         'phone', v_phone,
-                        'data', v_money
+                        'data', v_money || jsonb_build_object('not_paid', v_not_paid)
                     )));
                 END IF;
                 PERFORM public.notif_enqueue_admins(jsonb_build_object(
                     'type', 'ADMIN_WITHDRAWAL_REJECTED',
                     'ref', NEW.id::text,
-                    'data', jsonb_build_object('cashout_id', NEW.id, 'amount', NEW.amount)
+                    'data', jsonb_build_object('cashout_id', NEW.id, 'amount', NEW.amount, 'not_paid', v_not_paid)
                 ));
             END IF;
 

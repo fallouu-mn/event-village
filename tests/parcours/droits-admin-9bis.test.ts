@@ -1,7 +1,7 @@
 /**
  * Lot 9 bis, tâche 11 (R71 ; contrat 5.11, B33, 4.2) — seul le SUPERADMIN crée ou promeut un admin : l'ajout ET le
  * retrait du rôle ADMIN, et la suspension d'un compte ADMIN, sont réservés au SUPERADMIN (403
- * ADMIN_ROLE_SUPERADMIN_ONLY « Seul un superadmin peut créer un administrateur ou changer ce rôle. », contrôlé AVANT
+ * ADMIN_ROLE_SUPERADMIN_ONLY « Seul un super-administrateur peut créer un administrateur ou changer ce rôle. », contrôlé AVANT
  * toute création de compte GoTrue). Même règle en base dans user_roles_set (acteur en paramètre).
  *
  * Acteurs : un ADMIN muni de users.write (la permission de la route), un SUPERADMIN. Cibles : comptes neufs.
@@ -31,7 +31,8 @@ after(async () => {
 });
 
 const ROUTE = '../../app/api/admin/users/route';
-const ONLY_SUPER = 'Seul un superadmin peut créer un administrateur ou changer ce rôle.';
+// Design 1c (point 3) : « super-administrateur » partout (décision de l'utilisateur) ; même exigence, texte exact.
+const ONLY_SUPER = 'Seul un super-administrateur peut créer un administrateur ou changer ce rôle.';
 const REASON = 'Test lot 9 bis : rôle administrateur réservé au superadmin';
 
 let writer: TestAdmin;

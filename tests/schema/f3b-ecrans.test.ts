@@ -5,8 +5,8 @@
  *     au super-administrateur. » ; une phrase et un bouton par ligne ; « Compteur indisponible », jamais 0 ; plus de bloc
  *     « À traiter » ; onglets des candidatures comptés par GET /api/admin/partners (plus par les indicateurs) ; indicateurs
  *     seulement avec statistics.read, sinon le refus nomme la permission (plus « Vérifiez votre connexion »).
- *  6 bis. Libellés (E-37, revue 5.2) restés ouverts au run complet 277 : « Superadmin » à l'écran sauf la phrase dictée par
- *     la consigne ; « Partenaire » (journal, historique) ; aucun code HTTP dans un message ; alertes SMS sans « UTC » ;
+ *  6 bis. Libellés (E-37, revue 5.2) restés ouverts au run complet 277 : « super-administrateur » à l'écran (design 1c,
+ *     décision de l'utilisateur ; auparavant « Superadmin ») ; « Partenaire » (journal, historique) ; aucun code HTTP dans un message ; alertes SMS sans « UTC » ;
  *     origine d'un envoi en mots ; parrainage sans « N1 » ni « N2 ».
  * Sans base : aucune écriture, donc aucun appel d'invariants (écart signalé).
  */
@@ -15,6 +15,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { MIGRATED_DESIGN_FILES } from '../helpers/design-files';
 
 const ROOT = process.cwd();
@@ -76,7 +77,8 @@ type AdminNav = { groups: Array<{ label: string; items: NavItem[] }>; proItems: 
 const NAV_MODULE = 'components/layout/admin-nav.ts';
 
 async function navFor(perms: string[], superadmin = false): Promise<AdminNav> {
-    const mod = (await import(path.join(ROOT, NAV_MODULE))) as { buildAdminNav: (can: (p: string) => boolean, isSuperAdmin: boolean) => AdminNav };
+    // Design 1c bis (point 4) : un chemin absolu Windows (C:\…) n'est pas une URL d'import ; pathToFileURL le convertit
+    const mod = (await import(pathToFileURL(path.join(ROOT, NAV_MODULE)).href)) as { buildAdminNav: (can: (p: string) => boolean, isSuperAdmin: boolean) => AdminNav };
     return mod.buildAdminNav((p) => superadmin || perms.includes(p), superadmin);
 }
 const hrefs = (nav: AdminNav): string[] => nav.groups.flatMap((g) => g.items.map((i) => i.href));
@@ -183,7 +185,7 @@ describe('3. E-35 — réglages groupés, expliqués, bornés à l’écran, con
 describe('3 bis. garde-fou : un seul libellé par réglage (page et catalogue des bornes)', () => {
     test('chaque réglage borné a le même libellé et la même unité sur la page et dans lib/settings/catalog.ts', async () => {
         const page = read(SETTINGS_PAGE);
-        const { SETTING_BOUNDS } = (await import(path.join(ROOT, 'lib/settings/catalog.ts'))) as { SETTING_BOUNDS: Record<string, { label: string; unit?: string }> };
+        const { SETTING_BOUNDS } = (await import(pathToFileURL(path.join(ROOT, 'lib/settings/catalog.ts')).href)) as { SETTING_BOUNDS: Record<string, { label: string; unit?: string }> };
         const faults: string[] = [];
         for (const [key, b] of Object.entries(SETTING_BOUNDS)) {
             const line = page.split(String.fromCharCode(10)).find((l) => l.includes(`'${key}': { label:`));
@@ -270,7 +272,7 @@ describe('6. E-37, E-39 — français simple, statuts sans capitales, aucun code
     });
 
     test('libellés d’audit : une action inconnue dit « Autre action », jamais son code', async () => {
-        const mod = (await import(path.join(ROOT, 'lib/labels/audit.ts'))) as {
+        const mod = (await import(pathToFileURL(path.join(ROOT, 'lib/labels/audit.ts')).href)) as {
             auditActionLabel: (a: string | null) => string; auditObjectLabel: (o: string | null) => string; auditActorRoleLabel: (r: string | null) => string;
         };
         assert.equal(mod.auditActionLabel('UPDATE_PERMISSIONS'), 'Droits d’un administrateur changés');
@@ -279,7 +281,7 @@ describe('6. E-37, E-39 — français simple, statuts sans capitales, aucun code
         assert.equal(mod.auditObjectLabel('table_inconnue'), 'Autre');
         assert.equal(mod.auditActorRoleLabel(null), 'Automatique');
         assert.equal(mod.auditActorRoleLabel('SYSTEM'), 'Automatique');
-        assert.equal(mod.auditActorRoleLabel('SUPERADMIN'), 'Superadmin');
+        assert.equal(mod.auditActorRoleLabel('SUPERADMIN'), 'Super-administrateur');
     });
 
     test('statuts et rôles sans capitales forcées dans les comptes ; suppression d’un compte dite simplement', () => {
@@ -307,25 +309,30 @@ function appFiles(): string[] {
     return out.sort();
 }
 
-/** Phrase dictée mot pour mot par la consigne (point 2) : seule forme longue du rôle admise à l'écran. */
-const DICTATED_NO_RIGHTS = norm("Vous n'avez encore aucun droit : demandez-les au super-administrateur.");
-// Contre-vérification de la finition 3d (T1 ; modification signalée au rapport) : refus du changement de numéro d'un
-// ADMIN par le profil client, phrase dictée mot pour mot par la consigne (lib/admin/phone-path.ts).
-const DICTATED_ADMIN_PHONE = norm('Demandez au super-administrateur de changer votre numéro.');
+// Design 1c (point 3 ; décision de l'utilisateur, qui remplace l'usage « Superadmin » du glossaire) : le rôle s'écrit
+// « super-administrateur » partout à l'écran (« Super-administrateur » en tête de phrase et comme libellé). La règle
+// s'inverse, à exigence égale : plus aucune autre forme (« Superadmin », « Super admin », « superadministrateur »…), hors
+// modèles de messages (lib/notifications/catalog.ts, finition 4) et identifiants de code (isSuperadmin, SUPERADMIN).
+// Minuscule « superadmin » : relevée seulement après un article (« un superadmin »), une variable `superadmin` n'étant pas
+// un texte. Modification signalée au compte rendu du design 1c.
+const ROLE_FORMS = new RegExp('(?<![\\w./@-])(?:Superadmins?(?![\\w-])|SuperAdmin(?![\\w-])|[Ss]uper[ -]admin(?![\\w-])|[Ss]uper ?administrat\\w*)'
+    + '|(?<=(?:^|[\\s(«’\'"])(?:[Uu]n|[Ll]es?|[Aa]ux?|[Dd]u|[Dd]es|[Ll]’|[Ll]\') ?)superadmins?(?![\\w-])');
+const MESSAGE_TEMPLATES = new Set(['lib/notifications/catalog.ts']);
 
 describe('6 bis. E-37 — table des libellés de la revue (5.2) : rôles, codes HTTP, alertes SMS, origine d’un envoi, parrainage', () => {
-    test('rôle SUPERADMIN : « Superadmin » à l’écran (G-45 : menu, profil, connexion, réglages), sauf la phrase dictée par la consigne', () => {
+    test('rôle SUPERADMIN : « super-administrateur » à l’écran (menu, profil, connexion, réglages), aucune autre forme', () => {
         const faults: string[] = [];
         for (const f of appFiles()) {
+            if (MESSAGE_TEMPLATES.has(f)) continue;
             for (const line of code(f).split('\n')) {
-                const rest = norm(line).replace(DICTATED_NO_RIGHTS, '').replace(DICTATED_ADMIN_PHONE, '');
-                const hit = /super[- ]?administrat\w*/i.exec(rest);
+                const hit = ROLE_FORMS.exec(norm(line));
                 if (hit) faults.push(`${f} : « ${hit[0]} »`);
             }
         }
         assert.deepEqual(faults, [], faults.join('\n'));
-        assert.match(code('components/layout/AppLayout.tsx'), /SUPERADMIN: 'Superadmin',/, 'menu : rôle SUPERADMIN mal nommé');
-        assert.match(code('app/profile/page.tsx'), /SUPERADMIN: 'Superadmin',/, 'profil : rôle SUPERADMIN mal nommé');
+        assert.match(code('components/layout/AppLayout.tsx'), /SUPERADMIN: 'Super-administrateur',/, 'menu : rôle SUPERADMIN mal nommé');
+        assert.match(code('app/profile/page.tsx'), /SUPERADMIN: 'Super-administrateur',/, 'profil : rôle SUPERADMIN mal nommé');
+        assert.match(code('lib/labels/account.ts'), /SUPERADMIN: 'Super-administrateur',/, 'libellés des comptes : rôle SUPERADMIN mal nommé');
         assert.ok(norm(code('components/auth/LoginForm.tsx')).includes(norm("unauthorized_admin: 'Cet espace est réservé aux administrateurs.'")),
             'connexion : message différent de celui des redirections (lib/auth/access-errors.ts)');
     });

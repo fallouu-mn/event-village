@@ -86,7 +86,7 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                             <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-primary-soft text-primary-text" aria-hidden="true">
                                 <User size={16} />
                             </span>
-                            <span className="sr-only sm:not-sr-only sm:max-w-[120px] sm:truncate">{displayName}</span>
+                            <span className="sr-only sm:not-sr-only sm:max-w-[120px] sm:truncate" title={displayName}>{displayName}</span>
                         </Link>
                     )}
 
@@ -98,7 +98,8 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                 </div>
             </header>
 
-            <main className={onScanner ? 'mx-auto max-w-2xl px-4 py-3' : 'mx-auto max-w-2xl px-4 py-6'}>
+            {/* Design 1c (point 3) : en paysage, le scanner prend la largeur (caméra et commandes côte à côte) */}
+            <main className={onScanner ? 'mx-auto max-w-2xl px-4 py-3 paysage:max-w-4xl paysage:py-2' : 'mx-auto max-w-2xl px-4 py-6'}>
                 {scannerClosed ? (
                     <EmptyState
                         title="Aucun contrôle ouvert pour vous"

@@ -15,7 +15,7 @@ Il a été établi au lot 9 bis (constat R76 de la revue critique de `docs/parco
 | **organisateur** | La même entreprise, mais **vue par le public et les clients** : fiche publique d'un événement, « Remboursement par l'organisateur », « Espèces à rembourser par l'organisateur », mention « Organisateur » du billet PDF. | partenaire, dans un texte lu par un client |
 | **contrôleur** | La personne qui scanne les billets à l'entrée et tient une caisse au guichet. | scanneur, agent |
 | **administrateur** | Un membre de l'équipe Event Village. Il n'agit que sur ce que ses **permissions** lui ouvrent. | admin, dans un texte lu par un client |
-| **Superadmin** | L'administrateur principal. Lui seul crée un administrateur, change ses permissions et modifie les **Réglages de la plateforme**. | super-administrateur |
+| **super-administrateur** | L'administrateur principal. Lui seul crée un administrateur, change ses permissions et modifie les **Réglages de la plateforme**. En tête de phrase et comme libellé de rôle : « Super-administrateur ». Décision de l'utilisateur au design 1c, qui remplace « Superadmin » (lot 9 bis à finition 3b). | Superadmin, super admin, superadministrateur, super administrateur |
 | **compte de démonstration** | Un compte créé par `npm run seed:dev` pour les essais sur le PC. En réel, il ne reçoit jamais rien : la supervision affiche « Non envoyé : compte de démonstration ». | compte de test, faux compte |
 
 États d'un compte, tels que l'écran les affiche : **Actif**, **Suspendu**, **En attente**, **Supprimé**. Un compte effacé à la demande de son titulaire s'affiche « Données effacées ».
@@ -44,7 +44,7 @@ Il a été établi au lot 9 bis (constat R76 de la revue critique de `docs/parco
 
 Fin d'un événement : la date et l'heure de fin saisies ; une date de fin sans heure vaut 23 h 59 ; **sans date de fin, l'événement se termine 6 heures après son début**.
 
-Stock affiché au public (lot 9 ter) : sur les cartes, **« Complet »** quand plus aucune catégorie vendue en ligne n'est achetable, **« Dernières places »** quand il en reste peu (seuil réglé par le Superadmin) ; sur la fiche, par catégorie, **« Plus que 3 places »** (« Plus qu’une place » pour une seule) et « Complet ». On ne dit pas « bientôt complet », « épuisé » ni « sold out » dans un texte lu par le public.
+Stock affiché au public (lot 9 ter) : sur les cartes, **« Complet »** quand plus aucune catégorie vendue en ligne n'est achetable, **« Dernières places »** quand il en reste peu (seuil réglé par le super-administrateur) ; sur la fiche, par catégorie, **« Plus que 3 places »** (« Plus qu’une place » pour une seule) et « Complet ». On ne dit pas « bientôt complet », « épuisé » ni « sold out » dans un texte lu par le public.
 
 ---
 
@@ -105,8 +105,8 @@ Seule exception, depuis le lot 9 ter : le **téléphone de contact** d'un évén
 
 | Mot retenu | Ce que c'est | À ne pas dire |
 |---|---|---|
-| **Réglages de la plateforme** | La page où le Superadmin change les valeurs de la plateforme : frais, délais, seuils, durée de garde des places. | Réglages financiers, Tarification |
-| **permission** | Ce qu'un administrateur a le droit de faire : « Consulter les événements », « Gérer les remboursements »… Sans la permission, le bouton n'apparaît pas, et l'action est refusée avec un message en français. | droit, rôle (le rôle est Administrateur ou Superadmin) |
+| **Réglages de la plateforme** | La page où le super-administrateur change les valeurs de la plateforme : frais, délais, seuils, durée de garde des places. | Réglages financiers, Tarification |
+| **permission** | Ce qu'un administrateur a le droit de faire : « Consulter les événements », « Gérer les remboursements »… Sans la permission, le bouton n'apparaît pas, et l'action est refusée avec un message en français. | droit, rôle (le rôle est Administrateur ou Super-administrateur) |
 | **supervision** | La page **Notifications** de l'administration, qui montre chaque SMS, email et push avec son état. | journal, logs |
 
 ---

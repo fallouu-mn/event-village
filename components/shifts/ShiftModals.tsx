@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Caisse du contrôleur : ouverture, clôture (Z de caisse) et récapitulatif imprimable (lot 4.5, migrés au
+ * Caisse du contrôleur : ouverture, clôture et récapitulatif de caisse imprimable (lot 4.5, migrés au
  * lot 7, tâche 7.2 ; décision D46). Alignés sur le serveur :
  *  - lot 9 bis (R42, B51, A11) : PIN du régisseur obligatoire à l'ouverture, vérifié par le serveur (PIN_REQUIRED,
  *    PIN_NOT_SET, PIN_INVALID dits sous le champ) ; à la clôture, il n'est demandé que si le serveur constate un
@@ -10,7 +10,10 @@
  *    POST /api/controller/shifts/close ; titre et texte selon `byOrganizer` ;
  *  - fonds de caisse, espèces encaissées, total attendu en caisse et écart viennent du serveur : aucun
  *    calcul dans le navigateur ;
- *  - montants entiers de francs, sans pas imposé (2 750 F est accepté), formatés par lib/format.
+ *  - montants entiers de francs, sans pas imposé (2 750 F est accepté), formatés par lib/format ;
+ *  - design 1c : « Récapitulatif de caisse » (plus de « Z ») ; écart dit en mots (lib/partner/ecart-caisse.ts :
+ *    « Il manque … », « … de trop », « Aucun écart ») ; code PIN du régisseur annoncé « 6 chiffres » (code généré par
+ *    le serveur : 6 chiffres, lib/shifts/shift.service.ts, generateRegisseurPin).
  * Sur Modal et Field (système de design) ; chargés à la demande (next/dynamic) par le scanner.
  */
 import React, { useEffect, useId, useState } from 'react';
@@ -20,6 +23,7 @@ import { Modal } from '@/components/ui/Modal';
 import { TextInput, Textarea } from '@/components/ui/Field';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { formatDateTime, formatFcfa } from '@/lib/format';
+import { ecartCaisseText } from '@/lib/partner/ecart-caisse';
 import type { Shift, ShiftSummary } from '@/lib/shifts/shift.service';
 import type { ServedShift } from '@/components/scan/ScannerShiftBanner';
 
@@ -77,9 +81,10 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
         setError('');
         const amount = openingFloat.trim() === '' ? 0 : parseAmount(openingFloat);
         const pin = regisseurPin.trim();
-        // R42 : PIN obligatoire, 4 à 8 chiffres (même règle que le serveur), dit sous le champ avant tout envoi
+        // R42 : PIN obligatoire, dit sous le champ avant tout envoi ; design 1c : 6 chiffres, comme le code généré par le
+        // serveur (même règle côté serveur : lib/shifts/shift.service.ts, PIN_FORMAT)
         const pinProblem = pin === '' ? 'Saisissez le code PIN du régisseur.'
-            : !/^\d{4,8}$/.test(pin) ? 'Le code PIN du régisseur compte de 4 à 8 chiffres.' : '';
+            : !/^\d{6}$/.test(pin) ? 'Le code PIN du régisseur compte 6 chiffres.' : '';
         setFloatError(amount === null ? 'Saisissez un montant entier en francs, sans virgule (par exemple 2 750).' : '');
         setPinError(pinProblem);
         if (amount === null || pinProblem) return;
@@ -136,11 +141,12 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
                 <TextInput
                     id={pinId}
                     label="Code PIN du régisseur"
-                    hint="PIN obligatoire : le régisseur le saisit lui-même pour confirmer l’ouverture de la caisse."
+                    hint="6 chiffres. Obligatoire : le régisseur le saisit lui-même pour confirmer l’ouverture de la caisse."
                     type="password"
                     inputMode="numeric"
+                    pattern="[0-9]{6}"
                     autoComplete="off"
-                    maxLength={8}
+                    maxLength={6}
                     required
                     // R42 : obligatoire annoncé aussi par aria-required (TextInput ne pose que l'attribut HTML required)
                     aria-required="true"
@@ -158,7 +164,7 @@ export function OpenShiftModal({ isOpen, onClose, eventId, eventTitle, onShiftOp
     );
 }
 
-// ── Clôture (Z de caisse) ─────────────────────────────────────────────────
+// ── Clôture de caisse ─────────────────────────────────────────────────────
 
 /** Caisse à clôturer : servie par /api/controller/shifts/active (scanner) ou par pilotage_cash (onglet Caisse). */
 export type ClosableShift = Pick<ServedShift, 'id' | 'opening_float_amount' | 'expected_cash_total' | 'expected_cash_in_drawer'>;
@@ -254,19 +260,19 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
             )}
         >
             <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-                <dl className="flex flex-col gap-1.5 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+                <dl className="flex flex-col gap-1.5 rounded-2xl border border-border bg-muted p-4 text-sm">
                     <div className="flex justify-between gap-3">
-                        <dt className="text-fg-muted">Fonds de caisse</dt>
-                        <dd className="font-semibold text-fg tabular-nums">{formatFcfa(Number(shift.opening_float_amount))}</dd>
+                        <dt className="text-muted-foreground">Fonds de caisse</dt>
+                        <dd className="font-semibold text-foreground-strong tabular-nums">{formatFcfa(Number(shift.opening_float_amount))}</dd>
                     </div>
                     <div className="flex justify-between gap-3">
-                        <dt className="text-fg-muted">Espèces encaissées (enregistrées)</dt>
-                        <dd className="font-semibold text-fg tabular-nums">{formatFcfa(Number(shift.expected_cash_total))}</dd>
+                        <dt className="text-muted-foreground">Espèces encaissées (enregistrées)</dt>
+                        <dd className="font-semibold text-foreground-strong tabular-nums">{formatFcfa(Number(shift.expected_cash_total))}</dd>
                     </div>
                     {shift.expected_cash_in_drawer !== undefined && shift.expected_cash_in_drawer !== null && (
                         <div className="flex justify-between gap-3 border-t border-border pt-1.5">
-                            <dt className="font-semibold text-fg">Total attendu en caisse</dt>
-                            <dd className="font-bold text-fg tabular-nums">{formatFcfa(shift.expected_cash_in_drawer)}</dd>
+                            <dt className="font-semibold text-foreground-strong">Total attendu en caisse</dt>
+                            <dd className="font-bold text-foreground-strong tabular-nums">{formatFcfa(shift.expected_cash_in_drawer)}</dd>
                         </div>
                     )}
                 </dl>
@@ -290,7 +296,7 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
                     <>
                         <StatusBanner tone="warning" title="Écart constaté" announce="alert" className="tabular-nums">
                             {cosign.discrepancy !== null
-                                ? `Écart de ${formatFcfa(cosign.discrepancy)} avec les encaissements enregistrés. `
+                                ? `${ecartCaisseText(cosign.discrepancy)} par rapport aux encaissements enregistrés. `
                                 : 'Le montant compté ne correspond pas aux encaissements enregistrés. '}
                             Justifiez l’écart&nbsp;; l’organisateur le validera depuis son espace.
                         </StatusBanner>
@@ -311,15 +317,15 @@ export function CloseShiftModal({ isOpen, onClose, shift, onShiftClosed, byOrgan
     );
 }
 
-// ── Z de caisse (récapitulatif imprimable) ────────────────────────────────
+// ── Récapitulatif de caisse (imprimable) ──────────────────────────────────
 
-interface ZSummaryModalProps {
+interface CashSummaryModalProps {
     isOpen: boolean;
     onClose: () => void;
     summary: ShiftSummary | null;
 }
 
-export function ZSummaryModal({ isOpen, onClose, summary }: ZSummaryModalProps) {
+export function CashSummaryModal({ isOpen, onClose, summary }: CashSummaryModalProps) {
     if (!summary) return null;
     const discrepancy = summary.discrepancy_amount;
     const rows: Array<[string, string]> = [
@@ -330,7 +336,7 @@ export function ZSummaryModal({ isOpen, onClose, summary }: ZSummaryModalProps) 
         ['Fonds de caisse', formatFcfa(summary.opening_float_amount)],
         ['Encaissements enregistrés', formatFcfa(summary.expected_cash_total)],
         ['Encaissements comptés', formatFcfa(summary.declared_cash_total)],
-        ['Écart', discrepancy === null ? 'Aucun' : discrepancy === 0 ? 'Aucun écart' : formatFcfa(discrepancy)],
+        ['Écart', discrepancy === null ? 'Aucun écart' : ecartCaisseText(discrepancy)],
     ];
 
     return (
@@ -338,31 +344,31 @@ export function ZSummaryModal({ isOpen, onClose, summary }: ZSummaryModalProps) 
             isOpen={isOpen}
             onClose={onClose}
             title="Caisse clôturée"
-            subtitle="Z de caisse"
+            subtitle="Récapitulatif de caisse"
             icon={<Receipt size={20} />}
             maxWidth="md"
             footer={(
                 <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:justify-end print:hidden">
-                    <Button variant="secondary" onClick={() => window.print()} leftIcon={<Printer size={18} />}>Imprimer le Z</Button>
+                    <Button variant="secondary" onClick={() => window.print()} leftIcon={<Printer size={18} />}>Imprimer le récapitulatif</Button>
                     <Button variant="primary" onClick={onClose}>Terminé</Button>
                 </div>
             )}
         >
-            <dl className="flex flex-col gap-1.5 rounded-2xl border border-border bg-surface-sunken p-4 text-sm">
+            <dl className="flex flex-col gap-1.5 rounded-2xl border border-border bg-muted p-4 text-sm">
                 {rows.map(([label, value]) => (
                     <div key={label} className="flex justify-between gap-3">
-                        <dt className="text-fg-muted">{label}</dt>
-                        <dd className="text-right font-semibold text-fg tabular-nums">{value}</dd>
+                        <dt className="text-muted-foreground">{label}</dt>
+                        <dd className="text-right font-semibold text-foreground-strong tabular-nums">{value}</dd>
                     </div>
                 ))}
             </dl>
             {summary.discrepancy_justification && (
-                <p className="mt-3 text-sm text-fg">
+                <p className="mt-3 text-sm text-foreground-strong">
                     <span className="font-semibold">Justification : </span>{summary.discrepancy_justification}
                 </p>
             )}
             {/* Lot 9 quater (C7 : AUD-16) : l'écart est validé par l'organisateur depuis son espace, plus par le PIN */}
-            <p className="mt-3 text-sm text-fg-muted">
+            <p className="mt-3 text-sm text-muted-foreground">
                 {!discrepancy
                     ? 'Clôture sans écart.'
                     : summary.discrepancy_validated_at
@@ -374,3 +380,6 @@ export function ZSummaryModal({ isOpen, onClose, summary }: ZSummaryModalProps) 
         </Modal>
     );
 }
+
+/** Ancien nom, gardé pour le scanner du contrôleur (app/controller/scanner/page.tsx, hors du lot organisatrice). */
+export const ZSummaryModal = CashSummaryModal;

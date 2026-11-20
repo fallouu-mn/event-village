@@ -30,33 +30,33 @@ export interface MoneyFigureProps {
 
 export function MoneyFigure({ id, title, tone, icon, value, loading = false, explanation, basis, detailHref, detailLabel, children, className }: MoneyFigureProps) {
     return (
-        <section aria-labelledby={id} className={cn('flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:p-5', className)}>
+        <section aria-labelledby={id} className={cn('flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5', className)}>
             <div className="flex items-start justify-between gap-3">
-                <h2 id={id} className="min-w-0 break-words text-base font-semibold leading-snug text-fg">{title}</h2>
+                <h2 id={id} className="min-w-0 break-words text-base font-semibold leading-snug text-foreground-strong">{title}</h2>
                 <span className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', TONE_ICON[tone])} aria-hidden="true">
                     {icon}
                 </span>
             </div>
             {loading ? (
                 <div className="flex flex-col gap-3" role="status" aria-busy="true" aria-label={`Chargement : ${title}`}>
-                    <span className="h-9 w-40 rounded bg-surface-sunken motion-safe:animate-pulse" />
-                    <span className="h-4 w-full rounded bg-surface-sunken motion-safe:animate-pulse" />
-                    <span className="h-4 w-2/3 rounded bg-surface-sunken motion-safe:animate-pulse" />
+                    <span className="h-9 w-40 rounded bg-background motion-safe:animate-pulse" />
+                    <span className="h-4 w-full rounded bg-background motion-safe:animate-pulse" />
+                    <span className="h-4 w-2/3 rounded bg-background motion-safe:animate-pulse" />
                 </div>
             ) : (
                 <>
                     {value !== null && (
-                        <p className="break-words text-3xl font-bold leading-tight tracking-tight text-fg tabular-nums">{value}</p>
+                        <p className="break-words text-3xl font-bold leading-tight tracking-tight text-foreground-strong tabular-nums">{value}</p>
                     )}
-                    <p className="text-sm leading-relaxed text-fg-muted">{explanation}</p>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{explanation}</p>
                     {children}
-                    {basis && <p className="text-sm leading-relaxed text-fg-muted">{basis}</p>}
+                    {basis && <p className="text-sm leading-relaxed text-muted-foreground">{basis}</p>}
                 </>
             )}
             {detailHref && detailLabel && (
                 <a
                     href={detailHref}
-                    className="mt-auto inline-flex min-h-11 items-center self-start rounded-lg text-sm font-semibold text-brand-fg underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="mt-auto inline-flex min-h-11 items-center self-start rounded-lg text-sm font-semibold text-primary-text underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     {detailLabel}
                 </a>
@@ -87,11 +87,11 @@ export function MoneyLines({ lines, className }: { lines: MoneyLine[]; className
                         l.total ? 'mt-1 border-t border-border pt-3' : i > 0 ? 'border-t border-border/60' : '',
                     )}
                 >
-                    <dt className={cn('min-w-0 flex-1 text-sm', l.total ? 'font-semibold text-fg' : 'text-fg-muted')}>
+                    <dt className={cn('min-w-0 flex-1 text-sm', l.total ? 'font-semibold text-foreground-strong' : 'text-muted-foreground')}>
                         <span className="block break-words">{l.label}</span>
-                        {l.hint && <span className="mt-0.5 block text-sm text-fg-muted">{l.hint}</span>}
+                        {l.hint && <span className="mt-0.5 block text-sm text-muted-foreground">{l.hint}</span>}
                     </dt>
-                    <dd className={cn('text-right text-sm tabular-nums', l.total ? 'text-base font-bold text-fg' : 'font-semibold text-fg')}>{l.value}</dd>
+                    <dd className={cn('text-right text-sm tabular-nums', l.total ? 'text-base font-bold text-foreground-strong' : 'font-semibold text-foreground-strong')}>{l.value}</dd>
                 </div>
             ))}
         </dl>

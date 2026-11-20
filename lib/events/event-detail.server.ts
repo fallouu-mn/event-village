@@ -10,8 +10,8 @@ import { isScanCategoryColor } from '@/lib/scan/scan-result';
 import { formatSnPhone, toSenegaleseContactE164 } from '@/lib/validations/auth';
 import {
     POSTPONEMENT_MIN_MS,
-    POSTPONEMENT_REFUND_INFO,
     REFUND_INFO,
+    withClock,
     type BannerKind,
     type ProgramItem,
     type PublicCategory,
@@ -75,10 +75,20 @@ function remainingOf(c: CategoryRow): number {
 }
 
 /**
- * Fiche publique, lue maintenant (aucun cache). null : événement non public. Lève EventDetailUnavailable si la base ne
- * répond pas.
+ * Fiche publique à l'heure donnée (route de l'API, lue sans cache) : l'instantané sans heure, puis withClock.
+ * null : événement non public. Lève EventDetailUnavailable si la base ne répond pas.
  */
 export async function buildPublicEventDetail(eventId: string, now: Date = new Date()): Promise<PublicEventDetail | null> {
+    const snapshot = await buildPublicEventSnapshot(eventId);
+    return snapshot ? withClock(snapshot, now) : null;
+}
+
+/**
+ * Design 1c bis (point 3, erreur 418) — fiche publique SANS HEURE, la seule mise en cache : les faits (dates de vente,
+ * début, fin, statut, stock, report de plus de 24 h, catégorie vendue au guichet) sans aucun état qui dépend de
+ * l'heure (withClock(…, null) : horloge inconnue). La billetterie applique l'heure du téléphone après le chargement.
+ */
+export async function buildPublicEventSnapshot(eventId: string): Promise<PublicEventDetail | null> {
     if (!isEventId(eventId)) return null;
     const supabase = getServiceRoleClient();
     const { data: event, error } = await supabase
@@ -119,7 +129,6 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
     const times = { start_date: String(event.start_date), start_time: event.start_time ?? null, end_date: event.end_date ?? null, end_time: event.end_time ?? null };
     const startsAt = eventStartAt(times);
     const endsAt = eventEndAt(times);
-    const ended = endsAt.getTime() <= now.getTime();
     let threshold: number;
     try {
         threshold = await lowStockThreshold();
@@ -139,13 +148,9 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
 
     const categories: PublicCategory[] = rows.map((cat) => {
         const price = Number(cat.price);
-        const saleStarted = !cat.sale_start || new Date(cat.sale_start) <= now;
-        const saleEnded = cat.sale_end ? new Date(cat.sale_end) <= now : false;
-        const saleOpen = saleStarted && !saleEnded;
         const remaining = remainingOf(cat);
         const availability: PublicCategory['availability'] = remaining === 0 ? 'SOLD_OUT' : remaining <= threshold ? 'LOW' : 'AVAILABLE';
         const isSoldOut = availability === 'SOLD_OUT';
-        const isAvailable = status === 'PUBLIE' && !ended && saleOpen && !isSoldOut;
         return {
             id: cat.id,
             name: cat.name,
@@ -159,10 +164,11 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
             isSoldOut,
             isHeld: false,
             isClosed: false,
-            isAvailable,
-            saleOpen,
-            saleStarted,
-            saleEnded,
+            // Sans heure : withClock les calcule (route de l'API : heure du serveur ; billetterie : heure du téléphone)
+            isAvailable: false,
+            saleOpen: false,
+            saleStarted: false,
+            saleEnded: false,
             saleStart: cat.sale_start || null,
             saleEnd: cat.sale_end || null,
             maxPerOrder: cat.max_per_order ?? 10,
@@ -171,15 +177,12 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
         };
     });
 
-    const hasAvailableTickets = categories.some((c) => c.isAvailable);
-    const purchasable = status === 'PUBLIE' && !ended && hasAvailableTickets;
     const isFullySoldOut = categories.length > 0 && categories.every((c) => c.isSoldOut);
     // Lot 9 bis (R104, D-txt 2) : places retenues par des paiements en cours ; ventes en ligne closes partout.
     const hasHeldSeats = rows.some((c) => Number(c.held_quantity ?? 0) > 0);
-    const salesEnded = categories.length > 0 && categories.every((c) => c.saleEnded);
-    // Design 1b (point 11) : guichet sur place, en un seul booléen.
-    const counterSale = status === 'PUBLIE' && !ended
-        && allRows.some((c) => c.is_active === true && c.sale_counter === true && remainingOf(c) > 0);
+    // Design 1b (point 11) : guichet sur place, en un seul booléen ; design 1c bis : sans heure (withClock ajoute « publié et
+    // pas fini »).
+    const counterCapable = allRows.some((c) => c.is_active === true && c.sale_counter === true && remainingOf(c) > 0);
     const banner = status === 'PUBLIE' ? null : { kind: status as BannerKind, ...BANNERS[status as SheetBannerKind] };
 
     let cancellation: PublicEventDetail['cancellation'];
@@ -197,7 +200,9 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
             refundInfo: REFUND_INFO,
         };
         refund = { kind: 'ANNULATION', text: REFUND_INFO };
-    } else if ((status === 'PUBLIE' || status === 'SUSPENDU') && now.getTime() < startsAt.getTime()) {
+    }
+    let postponedOver24h = false;
+    if (status === 'PUBLIE' || status === 'SUSPENDU') {
         // Report de plus de 24 h (ticket_postponement_refund_open) : le début actuel dépasse un ancien début de plus de 24 h.
         const { data: changes, error: chErr } = await supabase
             .from('event_start_changes')
@@ -208,7 +213,8 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
             const old = Date.parse(String((row as { old_start_at?: unknown }).old_start_at ?? ''));
             return Number.isFinite(old) && startsAt.getTime() - old > POSTPONEMENT_MIN_MS;
         });
-        if (postponed) refund = { kind: 'REPORT', text: POSTPONEMENT_REFUND_INFO };
+        // Le remboursement d'un report vaut jusqu'au début : withClock le dit à l'heure donnée, jamais la fiche en cache
+        postponedOver24h = postponed;
     }
 
     const practicalInfo = event.practical_info as {
@@ -219,7 +225,7 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
     const contactPhoneRaw = practicalInfo?.contactPhone || null;
     const organizerName = partnerData?.commercial_name || partnerData?.company_name || 'Organisateur Officiel';
 
-    return {
+    return withClock({
         id: event.id,
         slug: event.slug || event.id,
         title: event.title,
@@ -241,15 +247,18 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
         longitude: event.longitude || null,
         capacity: event.capacity || null,
         status,
-        purchasable,
+        purchasable: false,
         banner,
         ...(cancellation ? { cancellation } : {}),
         isFullySoldOut,
         hasHeldSeats,
-        salesEnded,
-        hasAvailableTickets,
-        counterSale,
+        salesEnded: false,
+        hasAvailableTickets: false,
+        counterSale: false,
         refund,
+        clockKnown: false,
+        counterCapable,
+        postponedOver24h,
         program: ((event.program as ProgramItem[] | null) || []),
         practicalInfo: {
             address: practicalInfo?.address || null,
@@ -260,7 +269,7 @@ export async function buildPublicEventDetail(eventId: string, now: Date = new Da
             rules: practicalInfo?.rules || null,
         },
         categories,
-    };
+    }, null);
 }
 
 /** Durée du cache des pages publiques (consigne commune : 60 s). */
@@ -276,10 +285,12 @@ type CachedRead = { kind: 'public'; event: PublicEventDetail } | { kind: 'not-pu
  */
 const cachedRead = unstable_cache(
     async (eventId: string): Promise<CachedRead> => {
-        const event = await buildPublicEventDetail(eventId);
+        // Design 1c bis : seule la fiche sans heure est mise en cache (erreur 418)
+        const event = await buildPublicEventSnapshot(eventId);
         return event ? { kind: 'public', event } : { kind: 'not-public' };
     },
-    ['fiche-publique-v1'],
+    // Design 1c bis : forme changée (fiche sans heure) : nouvelle clé, aucune ancienne entrée relue
+    ['fiche-publique-v2'],
     { revalidate: PUBLIC_SHEET_REVALIDATE_SECONDS, tags: ['fiche-publique'] },
 );
 
@@ -301,7 +312,7 @@ export async function readPublicSheet(eventId: string): Promise<PublicSheetRead>
             return await cachedRead(eventId);
         } catch (err) {
             if (!isMissingIncrementalCache(err)) throw err;
-            const event = await buildPublicEventDetail(eventId);
+            const event = await buildPublicEventSnapshot(eventId);
             return event ? { kind: 'public', event } : { kind: 'not-public' };
         }
     } catch (err) {

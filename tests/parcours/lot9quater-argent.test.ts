@@ -224,7 +224,7 @@ describe('C7 — écart de caisse validé par l’organisatrice', () => {
         assert.match(block, /Valider l’écart/);
         assert.match(block, /discrepancy_validated_at/, 'caisses lues dans les données du pilotage (pilotage_compute_cash)');
         const modals = fs.readFileSync('components/shifts/ShiftModals.tsx', 'utf8');
-        const close = modals.slice(modals.indexOf('export function CloseShiftModal'), modals.indexOf('interface ZSummaryModalProps'));
+        const close = modals.slice(modals.indexOf('export function CloseShiftModal'), modals.indexOf('interface CashSummaryModalProps'));
         assert.doesNotMatch(close, /regisseurPin/, 'aucun PIN envoyé à la clôture');
         assert.match(modals, /Écart en attente de validation par l’organisateur/);
     });

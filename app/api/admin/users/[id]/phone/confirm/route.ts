@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const auth = await verifyAdminAuth(req);
     if (!auth.authorized) return auth.errorResponse!;
     if (!auth.user!.roles.includes('SUPERADMIN')) {
-        return NextResponse.json({ error: 'Seul un Superadmin change le numéro d’un administrateur.', code: 'SUPERADMIN_ONLY' }, { status: 403 });
+        return NextResponse.json({ error: 'Seul un super-administrateur change le numéro d’un administrateur.', code: 'SUPERADMIN_ONLY' }, { status: 403 });
     }
     const { id } = await context.params;
     if (typeof id !== 'string' || !UUID_RE.test(id)) return NextResponse.json({ error: 'Compte introuvable.', code: 'USER_NOT_FOUND' }, { status: 404 });

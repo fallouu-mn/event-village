@@ -22,6 +22,8 @@ import { api, service, show, sql, trace, type Row } from './cv11a-helpers';
 
 const MIGRATIONS = join(process.cwd(), 'supabase', 'migrations');
 const FIRST_11A = '20261123000101';
+/** Première migration d'un lot postérieur qui recopie aussi ces fonctions (finition 4). */
+const LATER = '20261125000001';
 
 const RECOPIED = [
     'finance_setting_set', 'fin_setting_valid', 'platform_settings_defaults', 'fin_payout_available_at', 'calculate_referral_commissions',
@@ -30,7 +32,12 @@ const RECOPIED = [
 
 /** Lignes de main remplacées par la 11a : ligne d'origine → lignes qui doivent la remplacer (même sens, tables en plus). */
 const REPLACED: Record<string, Record<string, string[]>> = {
-    finance_setting_set: { "'halls.full_payment_margin_hours') THEN": ["'halls.full_payment_margin_hours',"] },
+    finance_setting_set: {
+        "'halls.full_payment_margin_hours') THEN": ["'halls.full_payment_margin_hours',"],
+        // Design 1c bis (migration 20261124000001, modification signalée) : seul le message du refus change
+        "RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Seul un SUPERADMIN actif modifie les réglages de la plateforme.');":
+            ["RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Seul un super-administrateur actif peut modifier les réglages.');"],
+    },
     fin_setting_valid: { "'halls.validation_required') THEN": ["'halls.validation_required', 'tables.validation_required') THEN"] },
     platform_settings_defaults: {
         "WHERE s.key ~ '^(finance|access|notif|features|support|halls)\\.'": ["WHERE s.key ~ '^(finance|access|notif|features|support|halls|tables)\\.'"],
@@ -85,11 +92,14 @@ describe('5.1 Recopies de la 11a : tout le code de main', () => {
         test(`${name} : chaque ligne de sa dernière version dans main est en base (ou remplacée par sa version élargie)`, async () => {
             const defs = definitions(name);
             const main = defs.filter((d) => d.file < FIRST_11A).at(-1);
-            const l11a = defs.filter((d) => d.file >= FIRST_11A).at(-1);
+            // Finition 4 (modification signalée au rapport) : une recopie postérieure (20261125…) remplace la version de la 11a en base,
+            // et tests/parcours/f4-recopies.test.ts la vérifie ; ici, la 11a est alors contrôlée sur son fichier.
+            const l11a = defs.filter((d) => d.file >= FIRST_11A && d.file < LATER).at(-1);
+            const later = defs.some((d) => d.file >= LATER);
             assert.ok(main, `${name} : aucune définition dans main`);
             assert.ok(l11a, `${name} : pas recopiée par la 11a`);
             const rows = await sql<{ src: string }>(`SELECT string_agg(prosrc, E'\\n') AS src FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = $1`, [name]);
-            const live = new Set(lines(String(rows[0]?.src ?? '')));
+            const live = new Set(later ? lines(l11a?.body ?? '') : lines(String(rows[0]?.src ?? '')));
             const replaced = REPLACED[name] ?? {};
             const lost: string[] = [];
             const badReplacement: string[] = [];

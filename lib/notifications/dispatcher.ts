@@ -274,6 +274,18 @@ function deliverInApp(item: ClaimedItem, data: Record<string, unknown>, ctx: Ren
     };
 }
 
+/**
+ * Finition 4 (décision du client du 19/11, point 4) : types dont le numéro est saisi à la main par le compte déclencheur
+ * (invitation d'un contrôleur, invitation ou transfert d'un billet vers un numéro). Pour ces SMS seulement, la garde
+ * applique la limite quotidienne par compte déclencheur ; les autres (destinataire déjà connu : client, organisatrice,
+ * contrôleur affecté, porteur) n'y sont plus soumis, la limite par numéro et les plafonds restent.
+ */
+export const SMS_TYPED_NUMBER_TYPES: readonly string[] = ['CONTROLLER_INVITATION', 'INVITATION_RECEIVED', 'TRANSFER_OFFERED'];
+
+export function smsActorLimited(item: { type: string; actor_id: string | null }): boolean {
+    return item.actor_id !== null && SMS_TYPED_NUMBER_TYPES.includes(item.type);
+}
+
 async function deliverSms(item: ClaimedItem, data: Record<string, unknown>, ctx: RenderCtx): Promise<MarkResult> {
     const phone = item.recipient.phone;
     if (!phone) return skipped(item, 'NO_PHONE');
@@ -294,7 +306,9 @@ async function deliverSms(item: ClaimedItem, data: Record<string, unknown>, ctx:
         // Lot 7 (7.0 a, D12) : la famille du registre décide du plafond global de la garde (aucun pour ESSENTIAL).
         res = await mTargetService.sendSms(phone, text, {
             category: isReceipt ? 'COUNTER_RECEIPT' : 'TRANSACTIONAL',
-            actorId: item.actor_id ?? undefined,
+            // Finition 4 (point 4, E-41) : la limite par compte déclencheur (SMS_PER_ACCOUNT_DAY) ne vaut plus que pour un
+            // numéro saisi à la main par ce compte ; un destinataire déjà connu garde sa limite par numéro.
+            actorId: smsActorLimited(item) ? item.actor_id ?? undefined : undefined,
             shiftId: item.shift_id ?? undefined,
             family: item.family,
         });

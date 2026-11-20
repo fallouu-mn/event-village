@@ -152,11 +152,15 @@ W4-01).
    brouillon. Vous le soumettrez à la validation depuis la liste de vos événements. »
    (`components/events/EventForm.tsx:744-752`). Les accès par rôle (partenaire en attente, refusée, suspendue) sont
    décrits dans `01-roles-menus-ecrans.md`.
-2. **Ce qu'il saisit.** Quatre étapes, numérotées 1 à 4, libellés courts « Informations », « Programme », « Accès »,
-   « Billets » ; titres « Informations générales », « Programme », « Accès et informations pratiques »,
-   « Billetterie » (`components/events/EventForm.tsx:80-85`). Au-dessus : « Étape {n} sur 4 : {titre} » — ex. « Étape 1
-   sur 4 : Informations générales » (`components/events/EventForm.tsx:857-859`). On peut toucher une étape à tout
-   moment (`:866-869`). En bas : « Précédent », « Suivant », et à la dernière étape « Enregistrer le brouillon »
+2. **Ce qu'il saisit.** Cinq étapes, numérotées 1 à 5, libellés courts « Infos » (« Informations » sur ordinateur),
+   « Programme », « Accès », « Billets », « Contrôle » ; titres « Informations générales », « Programme », « Accès et
+   informations pratiques », « Billetterie », « Contrôle à l’entrée (facultatif) », puis l'écran « Vérifier avant
+   d’envoyer » (`components/events/EventForm.tsx`, `STEPS`). Au-dessus, une ligne « Étape {n} sur 5 — {titre} » — ex.
+   « Étape 1 sur 5 — Informations générales » (« Dernière étape : vérifier avant d’envoyer » sur l'écran de
+   vérification) ; dessous, une pastille par écran reliée aux autres : numéro (étape courante pleine, à venir vide),
+   coche pour une étape terminée (avant l'étape courante, sans erreur ; lue « terminée »), point d'exclamation pour une
+   étape à corriger (lue « à corriger ») ; le nom de l'étape sous la pastille à partir de 640 px (design 1c). On peut
+   toucher une étape à tout moment. En bas : « Précédent », « Suivant », et à la dernière étape « Enregistrer le brouillon »
    (`:1191-1206`). À la création, « Suivant » contrôle d'abord les champs de l'étape affichée et reste sur place s'il y a
    une erreur (`:653-666`) ; toucher directement le numéro d'une étape ne contrôle rien (`:866-869`).
 3. **Ce que fait le système.** Rien n'est enregistré avant « Enregistrer le brouillon » (04.5). Les erreurs
@@ -927,14 +931,15 @@ W4-01).
    participants le jour de l’événement » ; bouton « Exporter les participants » (`components/partner/pilotage/ClosingTab.tsx:21-24`,
    `:194-257`). Sans finalité : « Choisissez la finalité de l’export des contacts. » (`:234-238`).
 3. **Ce que fait le système.**
-   - **Rapport** (le même partout, `components/partner/pilotage/ClosingReportSummary.tsx:9-13`) : « Montant net
-     organisateur » (« Ventes en ligne, remboursements déduits »), « Disponibilité des fonds » (date, ou « Aucune vente en
+   - **Rapport** (le même partout, `components/partner/pilotage/ClosingReportSummary.tsx:9-13`) : « Recettes nettes »
+     (« Ventes en ligne moins les remboursements. »), « Disponibilité des fonds » (date, ou « Aucune vente en
      ligne »), « Absents » (« Billets valides jamais scannés à l’entrée ») ; bloc « Rapport de clôture » : « Billets vendus
      (hors invitations) », « Invitations », « Capacité mise en vente », « Entrées (dont guichet) », « Refus au contrôle »,
-     « Recettes en ligne », « Recettes en espèces », « Remboursé », « Frais de service payés par les acheteurs », « Déjà
-     disponible / en attente » ; bloc « Entrées » (`:20-57`). Formules des montants : `08-argent.md`.
-   - « Z de caisse » : une fiche par caisse (fonds, attendu, déclaré, écart, co-signature, détail) (`components/partner/pilotage/ClosingTab.tsx:40-82`,
-     `:163-173`) ; voir 05.
+     « Ventes en ligne (brut) », « Remboursements », « Recettes nettes », « Ventes en espèces (hors solde) »,
+     « Remboursements en espèces (par vous) » s'il y en a, « Frais de service payés par les acheteurs », « Déjà
+     disponible / en attente » ; bloc « Entrées ». Formules des montants : `08-argent.md` (design 1c, E-64).
+   - « Récapitulatifs de caisse » : un récapitulatif par caisse (fonds, attendu, déclaré, écart dit en mots : « Il manque
+     … », « … de trop » ou « Aucun écart », co-signature, détail) (`components/partner/pilotage/ClosingTab.tsx`) ; voir 05.
    - « Absents » : le nombre en direct ; la liste nominative seulement après la fin (« La liste nominative est disponible
      après la fin de l’événement ; le nombre est tenu à jour en direct. ») (`components/partner/pilotage/ClosingTab.tsx:175-192`,
      `M/20261110000010_lot9ter_pilotage.sql:793-807`).

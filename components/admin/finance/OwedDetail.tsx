@@ -17,7 +17,7 @@ function OwedList({ kind, refreshToken }: { kind: 'ORGANISATEUR' | 'PARRAINAGE';
     const partner = kind === 'ORGANISATEUR';
     const list = usePagedList<OwedLine>(`/api/admin/finance/owed?kind=${kind}`, partner ? 'dû aux partenaires' : 'dû aux parrains', true, refreshToken);
     const columns: DataColumn<OwedLine>[] = [
-        { key: 'who', header: partner ? 'Partenaire' : 'Parrain', render: (o) => <span className="font-semibold text-fg">{o.who}</span> },
+        { key: 'who', header: partner ? 'Partenaire' : 'Parrain', render: (o) => <span className="font-semibold text-foreground-strong">{o.who}</span> },
         { key: 'total', header: 'Dû', align: 'right', render: (o) => <span className="font-semibold tabular-nums">{formatFcfaPrecise(o.total)}</span> },
         { key: 'now', header: 'Retirable aujourd’hui', align: 'right', render: (o) => <span className="tabular-nums">{formatFcfaPrecise(o.withdrawableNow)}</span> },
         { key: 'pending', header: 'En attente', align: 'right', render: (o) => <span className="tabular-nums">{formatFcfaPrecise(o.pending)}</span> },
@@ -27,8 +27,8 @@ function OwedList({ kind, refreshToken }: { kind: 'ORGANISATEUR' | 'PARRAINAGE';
     if (list.phase === 'loading') {
         return (
             <div role="status" aria-busy="true" aria-label={partner ? 'Chargement du dû aux partenaires' : 'Chargement du dû aux parrains'} className="flex flex-col gap-2">
-                <Skeleton className="h-14 rounded-2xl" />
-                <Skeleton className="h-14 rounded-2xl" />
+                <Skeleton className="h-14 rounded-xl" />
+                <Skeleton className="h-14 rounded-xl" />
             </div>
         );
     }
@@ -39,7 +39,7 @@ function OwedList({ kind, refreshToken }: { kind: 'ORGANISATEUR' | 'PARRAINAGE';
         <>
             <DataList
                 items={list.items}
-                columns={columns}
+                columns={columns} breakpoint="xl"
                 getKey={(o) => o.id}
                 caption={partner ? 'Dû aux partenaires, compte par compte' : 'Dû aux parrains, compte par compte'}
                 cardTitle={(o) => o.who}
@@ -58,10 +58,10 @@ function OwedList({ kind, refreshToken }: { kind: 'ORGANISATEUR' | 'PARRAINAGE';
 export function OwedDetail({ partners, referrers, refreshToken = 0 }: { partners: OwedBlock | null; referrers: OwedBlock | null; refreshToken?: number }) {
     const id = useId();
     return (
-        <section id="du-aux-partenaires" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+        <section id="du-aux-partenaires" aria-labelledby={`${id}-titre`} className="flex scroll-mt-20 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6">
             <div className="flex flex-col gap-1">
-                <h2 id={`${id}-titre`} className="text-lg font-semibold text-fg">Dû aux partenaires</h2>
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <h2 id={`${id}-titre`} className="text-lg font-semibold text-foreground-strong">Dû aux partenaires</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     L’argent des ventes qui appartient aux partenaires, qu’ils puissent déjà le retirer ou qu’ils attendent la fin de leurs
                     événements. Il est sur le compte SamirPay mais n’est pas à Event Village. Chiffres à l’instant.
                 </p>
@@ -83,10 +83,10 @@ export function OwedDetail({ partners, referrers, refreshToken = 0 }: { partners
             <OwedList kind="ORGANISATEUR" refreshToken={refreshToken} />
 
             <div id="du-aux-parrains" className="flex scroll-mt-20 flex-col gap-3 border-t border-border pt-4">
-                <h3 className="text-base font-semibold text-fg">Dû aux parrains</h3>
-                <p className="text-sm leading-relaxed text-fg-muted">
+                <h3 className="text-base font-semibold text-foreground-strong">Dû aux parrains</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">
                     Commissions de parrainage pas encore retirées : elles sont aussi sur le compte SamirPay et n’appartiennent pas à Event Village.
-                    {referrers && <> Total : <span className="font-semibold text-fg tabular-nums">{formatFcfaPrecise(referrers.total)}</span>.</>}
+                    {referrers && <> Total : <span className="font-semibold text-foreground-strong tabular-nums">{formatFcfaPrecise(referrers.total)}</span>.</>}
                 </p>
                 <OwedList kind="PARRAINAGE" refreshToken={refreshToken} />
             </div>

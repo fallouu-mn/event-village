@@ -223,7 +223,7 @@ describe('2c. « J’ai perdu mon téléphone » : mot de passe et code de secou
         await forgetDevice(admin);
         const r = await recover(admin, STRONG_PASSWORD, 'ABCDE-FGHJK');
         assert.deepEqual([r.status, r.body.code], [403, 'NO_BACKUP_CODES'], show(r));
-        assert.match(String(r.body.error), /Superadmin/);
+        assert.match(String(r.body.error), /super-administrateur/); // design 1c (point 3) : nouveau mot, même exigence
     });
 });
 
@@ -237,7 +237,8 @@ describe('2a. le SUPERADMIN change le numéro d’un ADMIN', () => {
         const start = await startFor(boss, target.userId, { phone: newPhone, reason: 'Téléphone perdu pendant un événement' });
         assert.equal(start.status, 200, show(start));
         const sms = smsTo(newPhone).at(-1) ?? '';
-        assert.match(sms, /Donnez-le seulement au Superadmin/, `texte du code : ${sms}`);
+        // Design 1c (via la finition 4, modification signalée au rapport) : « super-administrateur » ; écart de caisse en mots
+        assert.match(sms, /Donnez-le seulement au super-administrateur/, `texte du code : ${sms}`);
         const code = await lastSmsCode(newPhone);
         const done = await confirmFor(boss, target.userId, { request_id: start.body.request_id, code });
         assert.equal(done.status, 200, show(done));

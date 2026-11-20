@@ -299,7 +299,7 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
 
   const actionsOf = (item: ResumeItem) => (
     <div className="flex flex-col items-stretch gap-2 md:items-start">
-      {item.advice && <p className="text-sm leading-relaxed text-fg-muted">{item.advice}</p>}
+      {item.advice && <p className="text-sm leading-relaxed text-muted-foreground">{item.advice}</p>}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {item.can_resend !== false && (
           <Button
@@ -347,18 +347,18 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
   const stateCell = (item: ResumeItem) => (
     <div className="flex flex-col items-start gap-1">
       <Badge variant={STATE_VARIANTS[item.state] ?? 'neutral'} size="sm">{item.state_label}</Badge>
-      {item.block_label && <span className="text-sm text-fg-muted">{item.block_label}</span>}
+      {item.block_label && <span className="text-sm text-muted-foreground">{item.block_label}</span>}
     </div>
   );
 
   const sinceCell = (item: ResumeItem) => (
-    <time dateTime={item.since} className="whitespace-nowrap text-sm tabular-nums text-fg-muted">{formatDateTime(item.since)}</time>
+    <time dateTime={item.since} className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{formatDateTime(item.since)}</time>
   );
 
   const whatCell = (item: ResumeItem) => (
     <div className="min-w-0 break-words">
-      <p className="text-fg">{item.kind_label}</p>
-      {item.event_title && <p className="text-fg-muted">{item.event_title}</p>}
+      <p className="text-foreground-strong">{item.kind_label}</p>
+      {item.event_title && <p className="text-muted-foreground">{item.event_title}</p>}
     </div>
   );
 
@@ -376,15 +376,15 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
   const renderCard = (item: ResumeItem) => (
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-base font-semibold tabular-nums text-fg">{formatFcfa(item.amount)}</p>
+        <p className="text-base font-semibold tabular-nums text-foreground-strong">{formatFcfa(item.amount)}</p>
         <div className="flex-shrink-0">
           <Badge variant={STATE_VARIANTS[item.state] ?? 'neutral'} size="sm">{item.state_label}</Badge>
         </div>
       </div>
       <div className="text-sm">{whatCell(item)}</div>
-      {item.block_label && <p className="text-sm text-fg-muted">{item.block_label}</p>}
+      {item.block_label && <p className="text-sm text-muted-foreground">{item.block_label}</p>}
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span className="text-sm tabular-nums text-fg">{beneficiaryOf(item)}</span>
+        <span className="text-sm tabular-nums text-foreground-strong">{beneficiaryOf(item)}</span>
         {sinceCell(item)}
       </div>
       {actionsOf(item)}
@@ -406,10 +406,10 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
         : 'Le versement repart vers ce bénéficiaire dès votre confirmation.';
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-4 rounded-3xl border border-border bg-surface p-4 sm:p-6">
+    <section aria-labelledby={headingId} className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6">
       <div className="flex flex-col gap-1">
-        <h2 id={headingId} ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-fg focus:outline-none">Versements à reprendre</h2>
-        <p className="text-sm leading-relaxed text-fg-muted">
+        <h2 id={headingId} ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-foreground-strong focus:outline-none">Versements à reprendre</h2>
+        <p className="text-sm leading-relaxed text-muted-foreground">
           Remboursements et retraits refusés, bloqués, à l’issue incertaine ou en attente depuis plus de 30 minutes, du plus ancien au plus récent.
         </p>
       </div>
@@ -438,12 +438,12 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
       )}
 
       {phase === 'ready' && (items.length === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-fg-muted">
-          <CheckCircle2 size={18} className="flex-shrink-0 text-success-fg" aria-hidden="true" />
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle2 size={18} className="flex-shrink-0 text-success-text" aria-hidden="true" />
           Aucun versement à reprendre.
         </p>
       ) : (
-        <DataList items={items} columns={columns} getKey={(item) => item.id} caption="Versements à reprendre" renderCard={renderCard} />
+        <DataList items={items} columns={columns} breakpoint="xl" getKey={(item) => item.id} caption="Versements à reprendre" renderCard={renderCard} />
       ))}
 
       {phase === 'ready' && total > items.length && (
@@ -467,14 +467,14 @@ export function RefundsToRetry({ refreshToken = 0 }: RefundsToRetryProps) {
         {target && (
           <div className="flex flex-col gap-4">
             <dl className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-x-3 gap-y-2 text-sm">
-              <dt className="text-fg-muted">Montant</dt>
-              <dd className="font-semibold tabular-nums text-fg">{formatFcfa(target.amount)}</dd>
-              <dt className="text-fg-muted">Versement</dt>
-              <dd className="min-w-0 break-words text-fg">{target.kind_label}{target.event_title ? ` · ${target.event_title}` : ''}</dd>
-              <dt className="text-fg-muted">Bénéficiaire</dt>
-              <dd className="min-w-0 break-words tabular-nums text-fg">{beneficiaryOf(target)}</dd>
-              <dt className="text-fg-muted">État</dt>
-              <dd className="min-w-0 break-words text-fg">{target.block_label ? `${target.state_label} : ${target.block_label}` : target.state_label}</dd>
+              <dt className="text-muted-foreground">Montant</dt>
+              <dd className="font-semibold tabular-nums text-foreground-strong">{formatFcfa(target.amount)}</dd>
+              <dt className="text-muted-foreground">Versement</dt>
+              <dd className="min-w-0 break-words text-foreground-strong">{target.kind_label}{target.event_title ? ` · ${target.event_title}` : ''}</dd>
+              <dt className="text-muted-foreground">Bénéficiaire</dt>
+              <dd className="min-w-0 break-words tabular-nums text-foreground-strong">{beneficiaryOf(target)}</dd>
+              <dt className="text-muted-foreground">État</dt>
+              <dd className="min-w-0 break-words text-foreground-strong">{target.block_label ? `${target.state_label} : ${target.block_label}` : target.state_label}</dd>
             </dl>
             {isNotSent && (
               <TextInput

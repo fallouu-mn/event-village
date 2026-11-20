@@ -98,10 +98,11 @@ const META: Record<string, SettingMeta> = {
   'notif.reminder_h3_hours': { label: 'Heures avant le début', help: 'Nombre d’heures entre le rappel et le début de l’événement. De 1 à 12.', kind: 'integer', unit: 'h' },
   'notif.j1_sms': { label: 'SMS du rappel de la veille', help: 'Envoi du SMS en plus de l’application et des notifications push.', kind: 'choice', options: SMS_POLICY_LABELS },
   'notif.h3_sms': { label: 'SMS du rappel avant le début', help: 'Envoi du SMS en plus de l’application et des notifications push.', kind: 'choice', options: SMS_POLICY_LABELS },
-  'notif.sms_quiet_start': { label: 'Début de la plage sans SMS', help: 'Heure de Dakar à partir de laquelle aucun SMS optionnel ne part ; le rappel passe alors par les autres canaux. De 0 à 23.', kind: 'integer', unit: 'h' },
-  'notif.sms_quiet_end': { label: 'Fin de la plage sans SMS', help: 'Heure de Dakar de fin de la plage. Un début égal à la fin supprime la plage. De 0 à 23.', kind: 'integer', unit: 'h' },
-  'notif.sms_optional_daily_cap': { label: 'Plafond quotidien des SMS optionnels', help: 'Nombre maximal de SMS optionnels (rappels, annonces, signaux aux professionnels) envoyés par jour de Dakar ; au-delà, ils partent sans SMS, par l’application et les notifications push. Les SMS indispensables (achat, transfert, annulation, remboursement, sécurité du compte) ne sont jamais plafonnés. Les administrateurs sont alertés à 80 %. De 0 à 1 000 000 ; 0 : aucun SMS optionnel.', kind: 'integer', unit: 'SMS' },
-  'notif.sms_essential_daily_alert': { label: 'Seuil d’alerte des SMS indispensables du jour', help: 'Nombre de SMS indispensables envoyés dans la journée de Dakar à partir duquel les administrateurs sont alertés, une fois par jour. Ces SMS ne sont jamais plafonnés : le seuil sert à repérer un volume anormal. De 1 à 1 000 000.', kind: 'integer', unit: 'SMS' },
+  // Finition 4 (points 1 et 5) : la nuit reporte, elle ne supprime plus ; aides justes (plus de « jamais plafonnés »)
+  'notif.sms_quiet_start': { label: 'Début de la plage sans SMS', help: 'Heure de Dakar à partir de laquelle les SMS et les notifications push non urgents (rappels, ventes, résumés, remerciements, décisions sans délai) ne partent plus : ils sont reportés à la fin de la plage et envoyés s’ils sont encore utiles (un rappel n’est jamais envoyé à moins de 30 minutes du début). Les messages urgents (achat, billet, annulation, remboursement, sécurité du compte) partent tout de suite. Les SMS aux administrateurs suivent la même plage. Par défaut 1 h. De 0 à 23.', kind: 'integer', unit: 'h' },
+  'notif.sms_quiet_end': { label: 'Fin de la plage sans SMS', help: 'Heure de Dakar de fin de la plage de nuit : les messages reportés partent à cette heure. Par défaut 7 h. Un début égal à la fin supprime la plage. De 0 à 23.', kind: 'integer', unit: 'h' },
+  'notif.sms_optional_daily_cap': { label: 'Plafond quotidien des SMS optionnels', help: 'Nombre maximal de SMS facultatifs (rappels, ventes groupées, résumés du matin, remerciements) envoyés par jour de Dakar ; au-delà, ils ne partent plus par SMS mais arrivent toujours dans l’application, par notification push et par email. Les SMS reportés la nuit ne comptent que le jour où ils partent. Les SMS indispensables n’ont pas ce plafond ; comme tous les SMS, ils restent limités par numéro et par jour. Les administrateurs sont alertés à 80 %. De 0 à 1 000 000 ; 0 : aucun SMS facultatif.', kind: 'integer', unit: 'SMS' },
+  'notif.sms_essential_daily_alert': { label: 'Seuil d’alerte des SMS indispensables du jour', help: 'Nombre de SMS indispensables envoyés dans la journée de Dakar à partir duquel les administrateurs sont alertés, une fois par jour. Ces SMS n’ont pas de plafond global : chaque numéro en reçoit un nombre limité par jour, et les numéros saisis à la main (invitations, transferts) sont aussi limités par compte qui les déclenche. Le seuil sert à repérer un volume anormal. De 1 à 1 000 000.', kind: 'integer', unit: 'SMS' },
   'notif.free_ticket_reminder_sms': { label: 'SMS des rappels pour les billets gratuits', help: 'Pour un porteur qui ne détient que des billets gratuits ou des invitations de l’événement. Les rappels arrivent toujours dans l’application et en notification push.', kind: 'choice', options: FREE_REMINDER_SMS_LABELS },
   'features.halls_enabled': { label: 'Salles de fête', help: 'Réservation de salles par les clients et gestion des salles par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
   'features.tables_enabled': { label: 'Réservation de tables', help: 'Réservation de tables dans les restaurants et gestion des tables par les partenaires. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent.', kind: 'boolean' },
@@ -279,7 +280,7 @@ export default function AdminFinanceSettingsPage() {
       const res = await fetch('/api/admin/finance-settings', { cache: 'no-store' });
       const body = await readJsonBody(res, 'réglages de la plateforme');
       if (!res.ok) {
-        setLoadError(serverErrorMessage(body) ?? (res.status === 403 ? 'Votre compte n’a pas la permission « Lire les réglages ». Demandez-la au Superadmin.' : 'Réglages indisponibles pour le moment.'));
+        setLoadError(serverErrorMessage(body) ?? (res.status === 403 ? 'Votre compte n’a pas la permission « Lire les réglages ». Demandez-la au super-administrateur.' : 'Réglages indisponibles pour le moment.'));
         return;
       }
       const parsed = parseSettings(body);
@@ -360,7 +361,7 @@ export default function AdminFinanceSettingsPage() {
       if (!res.ok) {
         setSaveError(
           serverErrorMessage(body) ??
-            (res.status === 403 ? 'Seul un Superadmin peut modifier ce réglage.' : 'Le serveur n’a pas répondu comme prévu. Réessayez ; si cela continue, prévenez l’équipe technique.')
+            (res.status === 403 ? 'Seul un super-administrateur peut modifier ce réglage.' : 'Le serveur n’a pas répondu comme prévu. Réessayez ; si cela continue, prévenez l’équipe technique.')
         );
         return;
       }
@@ -387,7 +388,7 @@ export default function AdminFinanceSettingsPage() {
         title="Réglages de la plateforme"
         description={isSuperadmin
           ? 'Chaque modification est historisée et ne s’applique qu’aux opérations futures.'
-          : 'Lecture seule : seul un Superadmin peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
+          : 'Lecture seule : seul un super-administrateur peut modifier ces réglages. Chaque modification est historisée et ne s’applique qu’aux opérations futures.'}
         back={{ href: '/admin/dashboard', label: 'Accueil' }}
         actions={(
           <Button variant="secondary" leftIcon={<RefreshCw size={18} aria-hidden="true" />} onClick={() => void load()} isLoading={isLoading && Boolean(data)} disabled={isLoading}>
@@ -401,7 +402,7 @@ export default function AdminFinanceSettingsPage() {
       ) : !data ? (
         <div className="space-y-3" aria-busy="true">
           <span className="sr-only">Chargement des réglages…</span>
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       ) : (
         <>
@@ -410,7 +411,7 @@ export default function AdminFinanceSettingsPage() {
               {loadError} Les valeurs affichées sont celles du dernier chargement.
             </StatusBanner>
           )}
-          <nav aria-label="Sommaire des réglages" className="rounded-2xl border border-border bg-card p-4">
+          <nav aria-label="Sommaire des réglages" className="rounded-xl border border-border bg-card p-4">
             <p className="text-sm font-semibold text-foreground-strong">Thèmes</p>
             <ul className="mt-2 flex flex-wrap gap-2">
               {SETTING_SECTIONS.filter((t) => data.settings.some((x) => x.key.startsWith(t.prefix))).map((t) => (
@@ -438,7 +439,7 @@ export default function AdminFinanceSettingsPage() {
                   </h2>
                   <p className="text-sm text-muted-foreground">{section.help}</p>
                 </div>
-                <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+                <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                   {items.map((s) => {
                     const meta = META[s.key];
                     const label = meta?.label ?? 'Réglage sans libellé';
@@ -481,7 +482,7 @@ export default function AdminFinanceSettingsPage() {
                               e.preventDefault();
                               prepare(s.key);
                             }}
-                            className="grid grid-cols-1 items-start gap-3 rounded-2xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
+                            className="grid grid-cols-1 items-start gap-3 rounded-xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,14rem)_1fr]"
                           >
                             {meta?.kind === 'boolean' ? (
                               <Select
@@ -571,9 +572,9 @@ export default function AdminFinanceSettingsPage() {
               Historique des modifications
             </h2>
             {data.history.length === 0 ? (
-              <p className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">Aucune modification enregistrée.</p>
+              <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">Aucune modification enregistrée.</p>
             ) : (
-              <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+              <ul className="divide-y divide-border rounded-xl border border-border bg-card">
                 {data.history.map((h, i) => (
                   <li key={`${h.key}-${h.changedAt}-${i}`} className="space-y-0.5 px-4 py-3 text-sm">
                     <p className="font-semibold text-foreground-strong">{META[h.key]?.label ?? 'Réglage retiré ou sans libellé'}</p>

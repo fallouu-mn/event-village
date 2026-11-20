@@ -12,7 +12,8 @@
  *  1. une candidature (route réelle, déclencheur) → un SMS au SUPERADMIN dans la minute ; l'ADMIN sans partners.validate
  *     ne reçoit rien ; l'ADMIN qui a partners.validate reçoit ;
  *  2. trois candidatures en 10 minutes → deux SMS (le premier, puis le regroupé à +30 min) ;
- *  3. candidature à 23 h → SMS à 8 h, rien avant ;
+ *  3. candidature à 23 h → SMS à 8 h, rien avant ; finition 4 (décision du client du 19/11, modification signalée au rapport) :
+ *     plage du réglage, 01:00-07:00 par défaut → candidature à 02 h, SMS à 7 h ;
  *  4. événement soumis → SMS à l'ADMIN qui a events.write, rien à celui qui n'a que partners.validate.
  * Les cas 2 à 4 appellent notif_admin_review_sms avec une horloge simulée future (jamais dans le passé) et la liste des
  * admins de la suite (only_admin_ids : l'éligibilité reste exigée), puis l'envoyeur à ces heures, sur leurs seules lignes.
@@ -105,8 +106,8 @@ describe('D1 — SMS aux administrateurs pour ce qui attend leur action', () => 
         const saRows = await reviewRows(superadmin);
         assert.equal(saRows.length, 1, `SUPERADMIN : une ligne ADMIN_REVIEW_SMS (${JSON.stringify(saRows.map((r) => r.template_data))})`);
         assert.equal(saRows[0].family, 'ESSENTIAL', 'SMS indispensable (hors plafond optionnel)');
-        assert.ok(Date.parse(saRows[0].due_at) <= Date.now() + 60_000 || new Date(saRows[0].due_at).getUTCHours() === 8,
-            `échéance dans la minute (ou 8 h si la candidature tombe la nuit) : ${saRows[0].due_at}`);
+        assert.ok(Date.parse(saRows[0].due_at) <= Date.now() + 60_000 || new Date(saRows[0].due_at).getUTCHours() === 7,
+            `échéance dans la minute (ou 7 h si la candidature tombe la nuit, plage 01:00-07:00) : ${saRows[0].due_at}`);
         assert.equal((await reviewRows(validator)).length, 1, 'l\'ADMIN qui a partners.validate reçoit');
         assert.equal((await reviewRows(reader)).length, 0, 'l\'ADMIN sans partners.validate ne reçoit rien');
         assert.equal((await reviewRows(eventsWriter)).length, 0, 'l\'ADMIN qui n\'a que events.write ne reçoit rien pour une candidature');
@@ -141,19 +142,19 @@ describe('D1 — SMS aux administrateurs pour ce qui attend leur action', () => 
         ], 'deux SMS en tout : le premier, puis le regroupé');
     });
 
-    test('candidature à 23 h : rien la nuit, SMS à 8 h', async () => {
+    test('candidature à 02 h : rien la nuit, SMS à 7 h (plage 01:00-07:00)', async () => {
         const day = dakarDay(230);
-        const night = dakarAt(day, '23:00');
+        const night = dakarAt(day, '02:00');
         const start = smsCount(superadmin);
         await addReview('PARTNER_NEW', night, 'Nuit Blanche Events');
         const row = (await reviewRows(superadmin)).find((r) => r.status === 'PENDING');
         assert.ok(row, 'ligne en attente');
-        assert.equal(Date.parse(row.due_at), dakarAt(dakarDay(231), '08:00').getTime(), `échéance à 8 h : ${row.due_at}`);
+        assert.equal(Date.parse(row.due_at), dakarAt(day, '07:00').getTime(), `échéance à 7 h : ${row.due_at}`);
         await dispatchFor(superadmin, addMinutes(night, 30));
-        await dispatchFor(superadmin, dakarAt(dakarDay(231), '07:59'));
-        assert.equal(smsSince(superadmin, start).length, 0, 'aucun SMS entre 22 h et 8 h');
-        await dispatchFor(superadmin, dakarAt(dakarDay(231), '08:00'));
-        assert.deepEqual(smsSince(superadmin, start), [singleText('Nuit Blanche Events')], 'SMS à 8 h');
+        await dispatchFor(superadmin, dakarAt(day, '06:59'));
+        assert.equal(smsSince(superadmin, start).length, 0, 'aucun SMS entre 1 h et 7 h');
+        await dispatchFor(superadmin, dakarAt(day, '07:00'));
+        assert.deepEqual(smsSince(superadmin, start), [singleText('Nuit Blanche Events')], 'SMS à 7 h');
     });
 
     test('événement soumis : SMS à l\'ADMIN qui a events.write et au SUPERADMIN, rien à celui qui n\'a que partners.validate', async () => {

@@ -107,7 +107,8 @@ const SHIFT_COLUMNS = 'id, controller_id, event_id, partner_id, opening_float_am
 const SHIFT_WITH_PEOPLE = `${SHIFT_COLUMNS}, events(id, title, partner_id), users:controller_id(id, first_name, last_name, phone)`;
 
 const PIN_WINDOW_SECONDS = 15 * 60;
-const PIN_FORMAT = /^\d{4,8}$/;
+// Design 1c (point 2) : le PIN régisseur est toujours généré sur 6 chiffres (randomInt ci-dessous) ; l'écran l'annonce ainsi
+const PIN_FORMAT = /^\d{6}$/;
 
 // ── Retrait d'un contrôleur (trigger controller_removal_guard) ─────────────
 
@@ -305,7 +306,7 @@ export class ShiftService {
     static async verifyRegisseurPin(eventId: string, candidatePin: string, quotaBucket: string): Promise<PinCheck> {
         const pin = (candidatePin ?? '').trim();
         if (!PIN_FORMAT.test(pin)) {
-            return { valid: false, status: 400, code: 'PIN_FORMAT', message: 'Code PIN régisseur incomplet (4 à 8 chiffres).' };
+            return { valid: false, status: 400, code: 'PIN_FORMAT', message: 'Code PIN régisseur incomplet : 6 chiffres.' };
         }
         const quota = await reserveQuota(
             [{ scope: 'regisseur_pin', bucket: quotaBucket, windowSecs: PIN_WINDOW_SECONDS, max: pinMaxAttempts() }],
@@ -467,7 +468,7 @@ export class ShiftService {
      * sel courant de l'événement, haché HMAC du candidat. La comparaison se fait en base, sous verrou.
      */
     private static async regisseurPinProof(eventId: string, candidatePin: string, quotaBucket: string): Promise<{ pin_salt: string; pin_hash: string }> {
-        if (!PIN_FORMAT.test(candidatePin)) throw new ShiftError(400, 'PIN_FORMAT', 'Code PIN régisseur incomplet (4 à 8 chiffres).');
+        if (!PIN_FORMAT.test(candidatePin)) throw new ShiftError(400, 'PIN_FORMAT', 'Code PIN régisseur incomplet : 6 chiffres.');
         const quota = await reserveQuota(
             [{ scope: 'regisseur_pin', bucket: quotaBucket, windowSecs: PIN_WINDOW_SECONDS, max: pinMaxAttempts() }],
             'PIN régisseur');

@@ -64,7 +64,7 @@ const P: Ch = 'PUSH';
 interface RegistryRow {
     type: string;
     family: 'ESSENTIAL' | 'OPTIONAL';
-    topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | null;
+    topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | 'SALES_SUMMARY' | 'AFTER_EVENT' | null;
     channels: Ch[];
     audience: 'CLIENT' | 'PARTNER' | 'CONTROLLER' | 'ADMIN' | 'ANY';
     suspended_policy: 'BLOCK' | 'ALLOW';
@@ -76,7 +76,7 @@ type Audience = RegistryRow['audience'];
 const ess = (type: string, channels: Ch[], audience: Audience, sus: 'A' | 'B', perm: string | null = null): RegistryRow => ({
     type, family: 'ESSENTIAL', topic: null, channels, audience, suspended_policy: sus === 'A' ? 'ALLOW' : 'BLOCK', sync_only: false, admin_permission: perm,
 });
-const opt = (type: string, topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY', channels: Ch[], audience: Audience): RegistryRow => ({
+const opt = (type: string, topic: 'REMINDERS' | 'EVENT_UPDATES' | 'PRO_ACTIVITY' | 'SALES_SUMMARY' | 'AFTER_EVENT', channels: Ch[], audience: Audience): RegistryRow => ({
     type, family: 'OPTIONAL', topic, channels, audience, suspended_policy: 'BLOCK', sync_only: false, admin_permission: null,
 });
 const sync = (type: string): RegistryRow => ({
@@ -84,32 +84,32 @@ const sync = (type: string): RegistryRow => ({
 });
 
 const EXPECTED_REGISTRY: RegistryRow[] = [
-    ess('PURCHASE_CONFIRMED', [I, S, M], 'CLIENT', 'A'),
-    ess('FREE_TICKETS_CONFIRMED', [I, S, M], 'CLIENT', 'B'),
+    ess('PURCHASE_CONFIRMED', [I, S, M, P], 'CLIENT', 'A'),
+    ess('FREE_TICKETS_CONFIRMED', [I, S, M, P], 'CLIENT', 'B'),
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A'),
     ess('INVITATION_RECEIVED', [S, I, P, M], 'ANY', 'A'), // lot 9, tâche 9.0 ; lot 9 bis (R79, 11.2 M3)
     ess('TRANSFER_OFFERED', [S, I, P, M], 'CLIENT', 'B'), // G.49
     ess('TRANSFER_CANCELLED', [S, I, P, M], 'CLIENT', 'B'), // G.49
-    ess('TRANSFER_EXPIRED', [I, P, M], 'CLIENT', 'B'), // G.49
-    ess('TRANSFER_CLAIMED_SENDER', [I, P, M], 'CLIENT', 'B'), // G.49
+    ess('TRANSFER_EXPIRED', [I, P, M, S], 'CLIENT', 'B'), // G.49
+    ess('TRANSFER_CLAIMED_SENDER', [I, P, M, S], 'CLIENT', 'B'), // G.49
     ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B'), // lot 7, tâche 7.9 (D91, migration 20261105000007)
     ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B'), // 11.2 M4
     ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A'),
-    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT'), // G.50
-    opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M], 'CLIENT'), // G.50
+    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT'), // G.50
+    opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT'), // G.50
     ess('EVENT_CHANGED', [I, P, S, M], 'CLIENT', 'B'), // lot 9 bis (R14, 11.2 M1) : indispensable, sujet NULL
     opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT'),
     opt('REMINDER_H3', 'REMINDERS', [I, P, S, M], 'CLIENT'), // G.50
-    ess('REFUND_REQUESTED', [I, M], 'CLIENT', 'A'), // G.49
+    ess('REFUND_REQUESTED', [I, S, M, P], 'CLIENT', 'A'), // G.49
     ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A'),
-    ess('PASSWORD_CHANGED', [I, S, M], 'ANY', 'B'),
+    ess('PASSWORD_CHANGED', [I, S, M, P], 'ANY', 'B'),
     ess('PHONE_CHANGED', [S, M], 'ANY', 'A'), // lot 9, tâche 9.2 ; lot 9 bis (11.2 M22) : + EMAIL au compte
     ess('PUSH_TEST', [P], 'ANY', 'B'),
     ess('EVENT_VALIDATED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_REJECTED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_SUSPENDED', [I, S, M, P], 'PARTNER', 'B'),
     ess('EVENT_REACTIVATED', [I, S, M, P], 'PARTNER', 'B'),
-    ess('EVENT_PUBLISHED_BY_ADMIN', [I, P, M], 'PARTNER', 'B'), // G.49
+    ess('EVENT_PUBLISHED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'B'), // G.49
     opt('FIRST_TICKET_SOLD', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
     opt('NEW_ORDER', 'PRO_ACTIVITY', [I], 'PARTNER'),
     opt('CATEGORY_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER'),
@@ -118,16 +118,16 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('WITHDRAWAL_PAID', [I, S, M, P], 'ANY', 'A'),
     ess('WITHDRAWAL_REJECTED', [I, S, M, P], 'ANY', 'A'),
     ess('WITHDRAWAL_UNCERTAIN', [I, S, P, M], 'ANY', 'A'), // G.49
-    ess('CANCEL_REFUNDS_DONE', [I, M, P], 'PARTNER', 'A'),
-    ess('CANCEL_REFUNDS_BLOCKED', [I, M, P], 'PARTNER', 'A'),
-    ess('PARTNER_REGISTERED_ACK', [I, S, M], 'PARTNER', 'B'), // lot 9 quinquies (C3) : + SMS d'accusé, modification signalée
-    ess('PARTNER_VALIDATED', [I, S, M], 'PARTNER', 'B'),
-    ess('PARTNER_REJECTED', [I, S, M], 'PARTNER', 'B'),
-    ess('PARTNER_SUSPENDED', [I, S, M], 'PARTNER', 'A'),
-    ess('PARTNER_REACTIVATED', [I, S, M], 'PARTNER', 'B'),
-    ess('TRIAL_STARTED', [I, M], 'PARTNER', 'B'), // lot 9 bis (R31, 11.2 M5) : SMS retiré, + EMAIL
-    ess('SUBSCRIPTION_ACTIVATED', [I, M], 'PARTNER', 'A'), // G.49
-    ess('PAYMENT_SUCCESS', [I, M], 'CLIENT', 'A'), // G.49
+    ess('CANCEL_REFUNDS_DONE', [I, M, P, S], 'PARTNER', 'A'),
+    ess('CANCEL_REFUNDS_BLOCKED', [I, M, P, S], 'PARTNER', 'A'),
+    ess('PARTNER_REGISTERED_ACK', [I, S, M, P], 'PARTNER', 'B'), // lot 9 quinquies (C3) : + SMS d'accusé, modification signalée
+    ess('PARTNER_VALIDATED', [I, S, M, P], 'PARTNER', 'B'),
+    ess('PARTNER_REJECTED', [I, S, M, P], 'PARTNER', 'B'),
+    ess('PARTNER_SUSPENDED', [I, S, M, P], 'PARTNER', 'A'),
+    ess('PARTNER_REACTIVATED', [I, S, M, P], 'PARTNER', 'B'),
+    ess('TRIAL_STARTED', [I, M, P], 'PARTNER', 'B'), // lot 9 bis (R31, 11.2 M5) : SMS retiré, + EMAIL
+    ess('SUBSCRIPTION_ACTIVATED', [I, M, P], 'PARTNER', 'A'), // G.49
+    ess('PAYMENT_SUCCESS', [I, M, P], 'CLIENT', 'A'), // G.49
     // Lot 10a (migration 20261122000007, modification signalée au rapport) : parcours de réservation d'une salle
     // Lot 10b (migration 20261126000003, modification signalée au rapport) : SMS ajouté à chaque étape, 4 types de plus
     ess('HALL_RESERVATION_PENDING', [I, P, M, S], 'CLIENT', 'B'),
@@ -157,12 +157,12 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('TABLE_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
     opt('TABLE_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT'),
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A'),
-    ess('PROMOTION_DECIDED', [I, M], 'PARTNER', 'B'), // G.49
+    ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B'), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     opt('CONTROLLER_REMINDER', 'REMINDERS', [I, P, S, M], 'CONTROLLER'), // G.50
-    ess('SHIFT_CLOSED_BY_OTHER', [I, P, M], 'CONTROLLER', 'A'), // G.49
-    ess('CONTROLLER_ACTIVATED', [I, S, M], 'CONTROLLER', 'B'), // G.49
+    ess('SHIFT_CLOSED_BY_OTHER', [I, P, M, S], 'CONTROLLER', 'A'), // G.49
+    ess('CONTROLLER_ACTIVATED', [I, S, M, P], 'CONTROLLER', 'B'), // G.49
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'events.read'),
     ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 11a (ajout signalé) ; lot 10b : droit halls.validate (modification signalée)
     ess('ADMIN_HALL_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'halls.validate'), // lot 10b (ajout signalé)
@@ -200,31 +200,31 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('EVENT_CLOSED_BY_ADMIN', [I, S, M, P], 'PARTNER', 'B'),
     ess('SHIFT_OPEN_AT_END', [I, P, S, M], 'PARTNER', 'A'),
     ess('TRANSFER_REVOKED', [S, I, P, M], 'CLIENT', 'B'),
-    ess('TRANSFER_DECLINED_SENDER', [I, P, M], 'CLIENT', 'B'),
-    ess('TRANSFER_RECIPIENT_CHANGED', [I, P, M], 'CLIENT', 'B'),
+    ess('TRANSFER_DECLINED_SENDER', [I, P, M, S], /* finition 4 : + SMS (signalé) */ 'CLIENT', 'B'),
+    ess('TRANSFER_RECIPIENT_CHANGED', [I, P, M, S], 'CLIENT', 'B'),
     ess('CONTROLLER_INVITATION', [S, I, P, M], 'CLIENT', 'B'),
-    ess('EVENT_CANCELLED_BY_ADMIN', [I, S, M], 'PARTNER', 'A'),
+    ess('EVENT_CANCELLED_BY_ADMIN', [I, S, M, P], 'PARTNER', 'A'),
     ess('ADMIN_EVENT_CANCELLED', [I, M], 'ADMIN', 'B', 'events.read'),
-    ess('CONTROLLER_EVENT_CANCELLED', [I, S, M], 'CONTROLLER', 'B'),
-    ess('CONTROLLER_EVENT_CHANGED', [I, S, M], 'CONTROLLER', 'B'),
-    ess('CONTROLLER_EVENT_STATUS', [I, M], 'CONTROLLER', 'B'),
-    ess('TICKET_CANCELLED', [I, S, M], 'ANY', 'A'),
-    ess('ACCOUNT_SUSPENDED', [I, S, M], 'ANY', 'A'),
-    ess('ACCOUNT_REACTIVATED', [I, S, M], 'ANY', 'A'),
+    ess('CONTROLLER_EVENT_CANCELLED', [I, S, M, P], 'CONTROLLER', 'B'),
+    ess('CONTROLLER_EVENT_CHANGED', [I, S, M, P], 'CONTROLLER', 'B'),
+    ess('CONTROLLER_EVENT_STATUS', [I, M, S, P], 'CONTROLLER', 'B'),
+    ess('TICKET_CANCELLED', [I, S, M, P], 'ANY', 'A'),
+    ess('ACCOUNT_SUSPENDED', [I, S, M, P], 'ANY', 'A'),
+    ess('ACCOUNT_REACTIVATED', [I, S, M, P], 'ANY', 'A'),
     ess('ADMIN_EVENT_CHANGED', [I, M], 'ADMIN', 'B', 'events.read'),
-    ess('EVENT_SUBMITTED_ACK', [I, M], 'PARTNER', 'B'),
-    ess('EVENT_FINISHED', [I, M], 'PARTNER', 'A'),
-    ess('CLOSING_REPORT_READY', [I, M], 'PARTNER', 'A'),
-    ess('FUNDS_AVAILABLE', [I, M], 'PARTNER', 'B'),
+    ess('EVENT_SUBMITTED_ACK', [I, M, P], 'PARTNER', 'B'),
+    ess('EVENT_FINISHED', [I, M, P], 'PARTNER', 'A'),
+    ess('CLOSING_REPORT_READY', [I, M, P], 'PARTNER', 'A'),
+    ess('FUNDS_AVAILABLE', [I, M, P, S], 'PARTNER', 'B'),
     { type: 'EMAIL_VERIFICATION', family: 'ESSENTIAL', topic: null, channels: [M], audience: 'ANY', suspended_policy: 'ALLOW', sync_only: true, admin_permission: null },
     // Lot 9 ter (B.7 T-B4, contrat 11.1) : types nouveaux du lot, dont SCAN_REFUSALS_ALERT de la section D ; rouges jusqu'à M04.
     ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A'),
     ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'events.read'),
     ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'events.read'),
-    ess('SCAN_REFUSALS_ALERT', [I, P, M], 'PARTNER', 'B'),
+    ess('SCAN_REFUSALS_ALERT', [I, P, M, S], 'PARTNER', 'B'),
     // Lot 9 quater (A8 : AUD-05 ; A9 : AUD-34) : deux types nouveaux (migrations 20261111000002 et …04), modification signalée
     ess('ADMIN_SMS_CAP_NEW_NUMBERS', [I, M], 'ADMIN', 'B', 'notifications.read'),
-    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M], 'ANY', 'B'),
+    ess('EMAIL_CLAIMED_ELSEWHERE', [I, S, M, P], 'ANY', 'B'),
     // Lot 9 quinquies (D1, A1, A2, A3, C2) : types nouveaux (migrations 20261112000001, …02, …06, …08), modification signalée
     ess('ADMIN_REVIEW_SMS', [S], 'ADMIN', 'B'),
     ess('ACCOUNT_LOGIN_FAILURES', [S, M], 'ANY', 'B'),
@@ -232,16 +232,22 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     sync('OTP_ADMIN'),
     ess('EMAIL_ADDED', [S, M], 'ANY', 'B'),
     // Finition 1 (E-20) : avis à la partenaire, cloche, push et email, sans SMS (migration 20261115000002), modification signalée
-    ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M], 'PARTNER', 'B'),
-    ess('CONTROLLER_INVITATION_DECLINED', [I, P, M], 'PARTNER', 'B'),
-    ess('CONTROLLER_INVITATION_EXPIRED', [I, P, M], 'PARTNER', 'B'),
-    ess('CONTROLLER_BECAME_ADMIN', [I, P, M], 'PARTNER', 'B'), // migration 20261115000014, ajout signalé
+    ess('CONTROLLER_INVITATION_ACCEPTED', [I, P, M, S], 'PARTNER', 'B'),
+    ess('CONTROLLER_INVITATION_DECLINED', [I, P, M, S], 'PARTNER', 'B'),
+    ess('CONTROLLER_INVITATION_EXPIRED', [I, P, M, S], 'PARTNER', 'B'),
+    ess('CONTROLLER_BECAME_ADMIN', [I, P, M, S], 'PARTNER', 'B'), // migration 20261115000014, ajout signalé
     // Finition 3d (migrations 20261120…) : types nouveaux de la finition, ajout signalé
-    ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M], 'PARTNER', 'A'),
+    ess('CASH_REFUND_MARKED_BY_ADMIN', [I, P, M, S], 'PARTNER', 'A'),
     ess('SUPERADMIN_PROMOTED', [I, S, M], 'ADMIN', 'A'),
     ess('ADMIN_BACKUP_CODE_USED', [S, M], 'ADMIN', 'A'),
     ess('ADMIN_PHONE_CHANGED', [S, M], 'ANY', 'A'),
     ess('ADMIN_PHONE_CONFIRMED', [I, S, M], 'ADMIN', 'A'),
+    // Finition 4 (décisions du client du 19/11, migration 20261125000001) : cinq types nouveaux (ajout signalé au rapport)
+    opt('SALES_UPDATE_SMS', 'PRO_ACTIVITY', [S], 'PARTNER'),
+    opt('PARTNER_DAILY_SUMMARY', 'SALES_SUMMARY', [I, S, M, P], 'PARTNER'),
+    ess('ENTRY_WELCOME', [I, S, M, P], 'CLIENT', 'B'),
+    opt('ENTRY_THANKS', 'AFTER_EVENT', [I, S, M, P], 'CLIENT'),
+    ess('PARTNER_REFUND_REQUESTS', [I, S, M, P], 'PARTNER', 'B'),
     sync('OTP_ADMIN_PHONE'),
 ];
 
@@ -957,8 +963,9 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             const rowsAfter = await groupRows(db, key);
             return { created, rows, replay, rowsAfter };
         });
-        assert.equal(r.created, 3, `lignes créées : ${show(r.rows)}`);
-        assert.deepEqual(channelsOf(r.rows), ['EMAIL', 'IN_APP', 'SMS'], 'canaux du registre (I S M)');
+        // Finition 4 (décision du client du 19/11, modification signalée au rapport) : PURCHASE_CONFIRMED a aussi le push
+        assert.equal(r.created, 4, `lignes créées : ${show(r.rows)}`);
+        assert.deepEqual(channelsOf(r.rows), ['EMAIL', 'IN_APP', 'PUSH', 'SMS'], 'canaux du registre (I S M P)');
         for (const row of r.rows) {
             const what = `ligne ${row.channel}`;
             assert.equal(row.idempotency_key, `${key}:${row.channel}`, `${what} : clé`);
@@ -1012,7 +1019,7 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
             const nPhone = await enqueue(db, { type: 'TRANSFER_OFFERED', key: k.phoneOnly, phone, data: { transfer_id: randomUUID() }, channels: ['SMS', 'IN_APP', 'PUSH'], now: now.toISOString() });
             return { nDue, due: await groupRows(db, k.due), nSms, sms: await groupRows(db, k.sms), nPhone, phone: await groupRows(db, k.phoneOnly) };
         });
-        assert.equal(r.nDue, 3);
+        assert.equal(r.nDue, 4); // finition 4 : + push (signalé)
         for (const row of r.due) {
             assert.equal(new Date(row.due_at).getTime(), due.getTime(), `${row.channel} : due_at fourni`);
             assert.equal(new Date(row.next_attempt_at).getTime(), due.getTime(), `${row.channel} : next_attempt_at = due_at`);
@@ -1085,7 +1092,8 @@ describe('6.1 notif_enqueue : mise en file dans la transaction de l’appelant (
                 partnerBlock: await groupRows(db, k.partnerBlock), partnerAllow: await groupRows(db, k.partnerAllow),
             };
         });
-        assert.deepEqual(r.n, { block: 4, allow: 3, partnerBlock: 4, partnerAllow: 4 }, 'une ligne par canal du registre, SKIPPED compris (SHIFT_DISCREPANCY + EMAIL, G.49)');
+        // Finition 4 : PURCHASE_CONFIRMED a aussi le push (modification signalée au rapport)
+        assert.deepEqual(r.n, { block: 4, allow: 4, partnerBlock: 4, partnerAllow: 4 }, 'une ligne par canal du registre, SKIPPED compris (SHIFT_DISCREPANCY + EMAIL, G.49)');
         for (const row of [...r.block, ...r.partnerBlock]) {
             assert.equal(row.status, 'SKIPPED', `${row.type}/${row.channel} : ${show([row])}`);
             assert.equal(row.reason, 'ACCOUNT_SUSPENDED', `${row.type}/${row.channel} : le compte bloqué passe avant la préférence`);
