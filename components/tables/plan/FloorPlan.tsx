@@ -442,6 +442,9 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                                 />
                                 <span aria-hidden="true" className="relative flex flex-col items-center gap-0.5 leading-none">
                                     <span className={cn('break-all text-sm font-bold tabular-nums', state === 'HORS_CAPACITE' && 'line-through')}>{t.number}</span>
+                                    {/* Espace entre numéro et capacité : sans lui, axe-core lit « 14 » pour la table 1 à 4 places (textes collés) et
+                                        ne le retrouve pas dans « Table 1, 4 places » (label-content-name-mismatch). Invisible dans un conteneur flex. */}
+                                    {' '}
                                     <small className="inline-flex items-center gap-0.5 text-caption tabular-nums">
                                         <Users size={11} strokeWidth={2.5} />
                                         {t.capacity}
