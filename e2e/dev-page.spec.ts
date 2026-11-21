@@ -17,7 +17,7 @@ import { test, expect } from '@playwright/test';
 import { runPageChecks } from './support/checks';
 import { writeCaptureRecord, type CaptureRecord } from './support/capture-record';
 import { CAPTURES_DIR, E2E_OUTPUT_DIR } from './support/demo-ids';
-import { DESKTOP, MOBILE } from './support/devices';
+import { DESKTOP, FR_CONTEXT, MOBILE } from './support/devices';
 
 const RENDER_SCRIPT = path.join('scripts', 'e2e', 'render-dev-page.tsx');
 const OUT_DIR = path.join(E2E_OUTPUT_DIR, 'dev-page');
@@ -58,7 +58,7 @@ for (const { key: vue, device } of DEVICES) {
                 url: null, status: null, captured: false, blocking: [], warnings: [], axeDetails: [], notes: ['rendu statique de FakePaymentPanel (L75) : réseau refusé, aucun serveur'], error: null, durationMs: 0,
             };
             const { browserName: _browser, ...options } = device;
-            const context = await browser.newContext({ ...options, locale: 'fr-FR', timezoneId: 'Africa/Dakar', colorScheme: theme.scheme });
+            const context = await browser.newContext({ ...options, ...FR_CONTEXT, colorScheme: theme.scheme });
             const requests: string[] = [];
             try {
                 await context.route('**/*', async (route) => {

@@ -329,6 +329,16 @@ async function expectFrenchDateField(c: ScreenContext): Promise<void> {
         const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
         const input = findDateInput(root);
         if (!input) throw new Error('[e2e] aucun champ de date dans l’arbre lu par CDP');
+        // Stabilité (mini-lot stabilite/langue) : preuve brute, langue et fuseau vus par la page, langue de la page et gabarit
+        const seen = await c.page.evaluate(() => ({
+            navigateur: navigator.language,
+            langues: navigator.languages.join(','),
+            fuseau: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            page: document.documentElement.lang,
+        }));
+        const viewport = c.page.viewportSize();
+        const scheme = await c.page.evaluate(() => (matchMedia('(prefers-color-scheme: dark)').matches ? 'sombre' : 'clair'));
+        console.log(`[LANGUE] champ de date ${viewport?.width ?? '?'} px, ${scheme} : gabarit « ${cdpText(input)} », navigateur ${seen.navigateur} (${seen.langues}), fuseau ${seen.fuseau}, lang de la page « ${seen.page} »`);
         expect(cdpText(input), 'gabarit du champ de date, lu par CDP (8.2 t)').toBe('dd/mm/yyyy');
     } finally {
         await cdp.detach();

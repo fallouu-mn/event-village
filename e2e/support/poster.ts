@@ -5,6 +5,7 @@
  * Toutes les données affichées sont fictives.
  */
 import type { Browser } from '@playwright/test';
+import { FR_CONTEXT } from './devices';
 
 export interface PosterPalette {
     from: string;
@@ -113,7 +114,7 @@ export function logoHtml(initials: string, palette: keyof typeof PALETTES): stri
 
 /** Rendu PNG d'un document HTML autonome (aucune ressource réseau : tout est en ligne). */
 export async function renderPng(browser: Browser, html: string, size: { width: number; height: number }, transparent = false): Promise<Buffer> {
-    const context = await browser.newContext({ viewport: size, deviceScaleFactor: 1, colorScheme: 'light' });
+    const context = await browser.newContext({ viewport: size, deviceScaleFactor: 1, colorScheme: 'light', ...FR_CONTEXT });
     try {
         await context.route('**/*', (route) => route.abort('blockedbyclient'));
         const page = await context.newPage();
