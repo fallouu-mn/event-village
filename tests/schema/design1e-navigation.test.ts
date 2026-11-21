@@ -115,8 +115,11 @@ describe('design 1e — menu du téléphone (< 1024 px)', () => {
         assert.match(src, /aria-label="Fermer le menu"/);
         assert.match(src, /role="dialog"\n\s*aria-modal="true"\n\s*aria-label="Menu"/);
     });
-    test('rien au premier affichage : contenu rendu à la première ouverture', () => {
+    test('rien au premier affichage : module chargé et contenu rendu à la première ouverture', () => {
         assert.match(src, /if \(!rendered\) return null;/);
+        const layout = read('components/layout/AppLayout.tsx');
+        assert.match(layout, /const PushMenu = lazyPart\(\(\) => import\('\.\/PushMenu'\)/);
+        assert.match(layout, /\{menuWanted && <Suspense fallback=\{null\}><PushMenu/);
     });
 });
 
@@ -139,7 +142,8 @@ describe('design 1e — ordinateur (≥ 1024 px)', () => {
     test('barre latérale : espaces organisatrice et administration seulement, surlignage qui glisse, repliable par transform', () => {
         const layout = read('components/layout/AppLayout.tsx');
         assert.match(layout, /const isProShell = isPartnerRoute \|\| isAdminRoute;/);
-        assert.match(layout, /\{isProShell && \(\n\s*<ProSidebar/);
+        assert.match(layout, /\{isProShell && <Suspense fallback=\{<div className="ev-side-spacer hidden flex-shrink-0 lg:block" aria-hidden="true" \/>\}>\n\s*<ProSidebar/);
+        assert.match(layout, /const ProSidebar = lazyPart\(\(\) => import\('\.\/ProSidebar'\)/, 'chargée seulement dans les espaces pro');
         const css = navCss();
         assert.match(css, /html\[data-sidebar='replie'\] \.ev-side \{\s*transform: translateX\(calc\(var\(--side-mini\) - var\(--side-w\)\)\);/);
         assert.match(css, /html\[data-sidebar='replie'\] \.ev-side-icon \{\s*transform: translateX\(calc\(var\(--side-w\) - var\(--side-mini\)\)\);/);
@@ -159,16 +163,18 @@ describe('design 1e — ordinateur (≥ 1024 px)', () => {
 
 describe('design 1e — panneau des notifications', () => {
     test('glisse (droite sur ordinateur, du bas et plein écran sur téléphone), fermé en glissant vers le bas', async () => {
-        const src = read('components/notifications/NotificationBell.tsx');
-        assert.match(src, /panelShown \? 'translate-x-0 translate-y-0' : 'translate-y-full sm:translate-x-full sm:translate-y-0'/);
+        const src = read('components/layout/NotificationPanel.tsx');
+        assert.match(src, /p\.shown \? 'translate-x-0 translate-y-0' : 'translate-y-full sm:translate-x-full sm:translate-y-0'/);
         assert.match(src, /'ev-notif-panel fixed inset-0 z-\[61\] flex flex-col bg-popover/);
-        assert.match(src, /if \(dragY > 110\) closePanel\(\); else setDragY\(0\);/);
+        assert.match(src, /if \(dragY > 110\) p\.onClose\(\);/);
         assert.match(src, /createPortal\(/);
-        assert.match(src, /key=\{countText\} className="ev-count-pop /, 'compteur animé une fois par nouveau nombre');
+        const bell = read('components/notifications/NotificationBell.tsx');
+        assert.match(bell, /key=\{countText\} className="ev-count-pop /, 'compteur animé une fois par nouveau nombre');
+        assert.match(bell, /import\('@\/components\/layout\/NotificationPanel'\)/, 'panneau chargé à la demande (rien dans chaque page)');
         assert.match(navCss(), /\.ev-count-pop \{\s*animation: ev-count-pop 300ms var\(--ease-out\) 1;/);
     });
     test('avis groupés par jour : « Aujourd’hui », « Hier », puis la date (heure de Dakar)', async () => {
-        const { groupByDay } = await import('../../components/notifications/NotificationBell');
+        const { groupByDay } = await import('../../components/layout/NotificationPanel');
         const now = new Date('2026-11-21T10:00:00Z');
         const n = (id: string, createdAt: string) => ({ id, userId: 'u', type: 'SYSTEM', title: id, content: '', status: '', isRead: false, readAt: null, actionUrl: null, createdAt });
         const groups = groupByDay([

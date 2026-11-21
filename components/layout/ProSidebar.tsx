@@ -34,7 +34,7 @@ export function ProSidebar({ pathname, header, children, footer }: {
     if (!active) { setHl(null); return; }
     const navBox = nav.getBoundingClientRect();
     const box = active.getBoundingClientRect();
-    setHl({ y: box.top - navBox.top + nav.scrollTop, h: box.height });
+    setHl({ y: box.top - navBox.top, h: box.height });
   }, []);
 
   useEffect(() => {
@@ -70,7 +70,7 @@ export function ProSidebar({ pathname, header, children, footer }: {
   return (
     <>
       <div className="ev-side-spacer hidden flex-shrink-0 lg:block" aria-hidden="true" />
-      <aside className="ev-side fixed left-0 top-0 z-30 hidden h-screen flex-col border-r border-border bg-card shadow-subtle lg:flex">
+      <aside className="ev-side fixed left-0 top-0 z-30 hidden h-screen flex-col overflow-y-auto overflow-x-hidden border-r border-border bg-card shadow-subtle lg:flex">
         <div className="flex flex-shrink-0 items-center justify-between gap-2 px-4 py-4">
           <div className="ev-side-label min-w-0">{header}</div>
           <button
@@ -85,7 +85,7 @@ export function ProSidebar({ pathname, header, children, footer }: {
         </div>
         <div
           ref={navRef}
-          className="relative flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3"
+          className="relative flex-1 px-3 pb-3"
           onMouseOver={showTip}
           onFocus={showTip}
           onMouseLeave={() => setTip(null)}
@@ -101,7 +101,7 @@ export function ProSidebar({ pathname, header, children, footer }: {
             {children}
           </nav>
         </div>
-        <div className="flex-shrink-0 border-t border-border p-3">{footer}</div>
+        <div className="mt-auto flex-shrink-0 border-t border-border p-3">{footer}</div>
       </aside>
       {tip && (
         <span

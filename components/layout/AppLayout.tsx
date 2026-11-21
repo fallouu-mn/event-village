@@ -41,10 +41,8 @@ import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT, setPendingSearch } from '@/components/search/search-events';
 import { useUnreadCount } from '@/components/notifications/unread-store';
 import { BottomNav, type BottomNavItem } from './BottomNav';
-import { PushMenu } from './PushMenu';
 import { DesktopNav } from './DesktopNav';
 import { AccountMenu } from './AccountMenu';
-import { ProSidebar } from './ProSidebar';
 
 // Design 1d (point 9) : lanceur de la recherche instantanée, monté au premier geste sur un déclencheur (searchWanted).
 // React.lazy et non next/dynamic (run 504) : next/dynamic ajoute son moteur au JavaScript de CHAQUE page (budget de
@@ -53,6 +51,17 @@ import { ProSidebar } from './ProSidebar';
 const SearchLauncher = lazy(() => import('@/components/search/SearchLauncher')
   .then((m): { default: React.ComponentType } => ({ default: m.SearchLauncher }))
   .catch((): { default: React.ComponentType } => ({ default: () => null })));
+// Design 1e (poids JavaScript de chaque page, budgets non relevés) : le menu du téléphone n'est chargé qu'à sa première
+// ouverture, la barre latérale que dans les espaces organisatrice et administration ; React.lazy, comme le lanceur de la
+// recherche. Morceau introuvable (hors ligne) : rien ne s'affiche, l'erreur est journalisée.
+const lazyPart = <P,>(load: () => Promise<React.ComponentType<P>>, what: string) => lazy(() => load()
+  .then((C) => ({ default: C }))
+  .catch((err: unknown): { default: React.ComponentType<P> } => {
+    console.error(`[mise en page] ${what} non chargé :`, err instanceof Error ? err.message : String(err));
+    return { default: () => null };
+  }));
+const PushMenu = lazyPart(() => import('./PushMenu').then((m) => m.PushMenu), 'menu');
+const ProSidebar = lazyPart(() => import('./ProSidebar').then((m) => m.ProSidebar), 'barre latérale');
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
@@ -262,8 +271,11 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   // Design 1e : page qui recule sous le menu ; point « du nouveau » de l’onglet Notifications (compteur de la cloche)
   const pageRef = useRef<HTMLDivElement>(null);
   const unreadCount = useUnreadCount();
-  // Menu refermé à chaque changement de page ; ouverture, fermeture, focus et Échap : PushMenu (design 1e)
+  // Menu refermé à chaque changement de page ; ouverture, fermeture, focus et Échap : PushMenu (design 1e), monté à la
+  // première ouverture seulement
   useEffect(() => { setIsMobileMenuOpen(false); }, [pathname]);
+  const [menuWanted, setMenuWanted] = useState(false);
+  useEffect(() => { if (isMobileMenuOpen) setMenuWanted(true); }, [isMobileMenuOpen]);
 
   const canShowRoleNav = mounted && !isLoading;
 
@@ -411,7 +423,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   return (
     <>
       {/* 1. Menu du téléphone et de la tablette (< 1024 px) : derrière la page, sur l'orange de la marque (design 1e) */}
-      <PushMenu
+      {menuWanted && <Suspense fallback={null}><PushMenu
         open={isMobileMenuOpen}
         onClose={closeMobileMenu}
         pageRef={pageRef}
@@ -442,12 +454,12 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       >
         <div className="sm:hidden">{searchLink('bg-card', closeMobileMenu)}</div>
         {renderRoleNav(closeMobileMenu, 'menu')}
-      </PushMenu>
+      </PushMenu></Suspense>}
 
       {/* 2. La page (recule quand le menu s'ouvre) */}
       <div ref={pageRef} className="ev-push-page relative z-10 flex min-h-screen flex-col bg-background text-foreground-strong lg:flex-row">
         {/* 2a. Barre latérale repliable des espaces organisatrice et administration (≥ 1024 px) */}
-        {isProShell && (
+        {isProShell && <Suspense fallback={<div className="ev-side-spacer hidden flex-shrink-0 lg:block" aria-hidden="true" />}>
           <ProSidebar
             pathname={pathname}
             header={<Logo variant="full" />}
@@ -478,7 +490,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           >
             {renderRoleNav()}
           </ProSidebar>
-        )}
+        </Suspense>}
 
         {/* 2b. Zone principale : en-tête et contenu */}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -504,7 +516,9 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
               )}
             </div>
 
-            <div className="hidden max-w-lg flex-1 items-center sm:flex">{searchLink('flex-1')}</div>
+            {/* Design 1e : à 1 024 px, l'en-tête du client porte les rubriques ; la recherche revient à 1 280 px (Explorer reste
+                une rubrique). min-w-0 : le champ rétrécit au lieu de faire déborder l'en-tête. */}
+            <div className={cn('hidden min-w-0 max-w-lg flex-1 items-center sm:flex', !isProShell && 'lg:hidden xl:flex')}>{searchLink('min-w-0 flex-1')}</div>
 
             <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
               <NotificationBell />

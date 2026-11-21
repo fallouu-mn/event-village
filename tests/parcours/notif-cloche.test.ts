@@ -622,7 +622,10 @@ describe('6.10 Cloche et page : chaînes figées et chargement par le serveur (N
     const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
 
     test('NotificationBell : chaînes figées conservées, « Non lues » par le serveur, libellés partagés, lien vers les préférences', () => {
-        const src = read('components/notifications/NotificationBell.tsx');
+        // Design 1e : le panneau de la cloche est dans components/layout/NotificationPanel.tsx (chargé à la demande) : les
+        // chaînes figées sont cherchées dans la cloche ET son panneau (test modifié, signalé au rapport du design 1e)
+        const src = `${read('components/notifications/NotificationBell.tsx')}
+${read('components/layout/NotificationPanel.tsx')}`;
         assert.ok(src.includes("fetch('/api/notifications?limit=20')"), "fetch('/api/notifications?limit=20') conservé (notifications-and-documents.test.ts)");
         assert.ok(src.includes('unreadCount'), 'unreadCount conservé');
         assert.ok(src.includes('handleMarkAllAsRead'), 'handleMarkAllAsRead conservé');

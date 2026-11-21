@@ -312,6 +312,8 @@ const LOGIN_PAGE = 'app/login/page.tsx';
 const APP_LAYOUT_HEADER = 'components/layout/AppLayoutHeader.tsx';
 const IMAGE_UPLOAD = 'components/ui/ImageUpload.tsx';
 const BELL = 'components/notifications/NotificationBell.tsx';
+/** Design 1e : panneau de la cloche, chargé à la demande (test modifié, signalé au rapport du design 1e). */
+const BELL_PANEL = 'components/layout/NotificationPanel.tsx';
 const CAMPAIGNS = 'app/admin/communications/page.tsx';
 const TRANSFER_EXPLAINER = 'components/tickets/TransferExplainerModal.tsx';
 const CONTROLLER_SETUP = 'app/controller/setup/page.tsx';
@@ -427,9 +429,9 @@ describe('7.0 f — ImageUpload : zone cliquable du titre ramenée au bouton', (
 
 describe('7.0 f — cloche : « Tout marquer comme lu » sur sa propre ligne (D68)', () => {
     test('bouton en whitespace-nowrap, hors du conteneur du titre « Notifications » et du bouton Fermer', () => {
-        const sf = sourceOf(BELL);
+        const sf = sourceOf(BELL_PANEL);
         const faults: string[] = [];
-        const tags = jsxTags(BELL);
+        const tags = jsxTags(BELL_PANEL);
         const markAll = tags.filter((el) => /^(button|Button)$/.test(tagOf(el)) && childTexts(el).some((t) => t === 'Tout marquer comme lu'));
         const title = tags.filter((el) => /^h[1-6]$/.test(tagOf(el)) && childTexts(el).includes('Notifications'));
         const close = tags.filter((el) => attrValue(el, 'aria-label') === 'Fermer les notifications');
@@ -447,7 +449,7 @@ describe('7.0 f — cloche : « Tout marquer comme lu » sur sa propre ligne (D6
                 }
             }
         }
-        assert.deepEqual(faults, [], faultsMessage(BELL, faults));
+        assert.deepEqual(faults, [], faultsMessage(BELL_PANEL, faults));
     });
 });
 

@@ -8,7 +8,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions } from 'sharp';
 import { computePosterStyle } from '../../lib/images/poster-style';
 import { contrastWithWhite, hexToRgb, pickPosterColor, type Rgb } from '../../lib/events/poster-color';
 
@@ -28,7 +28,7 @@ const hueGap = (a: number, b: number): number => { const d = Math.abs(a - b) % 3
 /** Affiche 400 × 500 : fond, puis bandes horizontales [couleur, part de la hauteur]. */
 async function poster(bg: string, bands: Array<[string, number]>): Promise<Buffer> {
     const W = 400; const H = 500;
-    const parts: sharp.OverlayOptions[] = [];
+    const parts: OverlayOptions[] = [];
     let y = 40;
     for (const [color, share] of bands) {
         const h = Math.max(1, Math.round(H * share));

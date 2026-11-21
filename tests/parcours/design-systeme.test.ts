@@ -1279,7 +1279,9 @@ describe('Q — composants partagés (components/ui)', () => {
 
     test('LinkButton : next/link stylé en bouton, sans <button> imbriqué, 44 px', () => {
         const { file, code } = requireComponent('LinkButton');
-        assert.ok(bindingsOf(file).some((b) => b.spec === 'next/link'), `${file} : n'utilise pas next/link`);
+        // Design 1e : LinkButton passe par IntentLink (next/link préchargé à l'intention) ; test modifié, signalé au rapport
+        const viaIntent = bindingsOf(file).some((b) => b.spec === './IntentLink') && bindingsOf('components/ui/IntentLink.tsx').some((b) => b.spec === 'next/link');
+        assert.ok(viaIntent || bindingsOf(file).some((b) => b.spec === 'next/link'), `${file} : n'utilise pas next/link`);
         assert.doesNotMatch(code, /<(?:button|Button)\b/, `${file} : rend un bouton dans le lien (HTML invalide)`);
         const sized = /(?<![\w-])min-h-11(?![\w-])/.test(code) || bindingsOf(file).some((b) => b.from === 'components/ui/Button.tsx' && b.imported !== 'Button');
         assert.ok(sized, `${file} : ni min-h-11 ni classes partagées de Button.tsx`);

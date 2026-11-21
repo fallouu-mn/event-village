@@ -392,4 +392,11 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/tickets/PullToRefresh.tsx',
     'components/events/CardFavoritesLazy.tsx',
     'components/event-page/EventCountdownLazy.tsx',
+    // Design 1e : coquille commune (barre du bas, menu, en-tête, compte, barre latérale, panneau des notifications)
+    'components/layout/AccountMenu.tsx',
+    'components/layout/BottomNav.tsx',
+    'components/layout/DesktopNav.tsx',
+    'components/layout/NotificationPanel.tsx',
+    'components/layout/ProSidebar.tsx',
+    'components/layout/PushMenu.tsx',
 ];
