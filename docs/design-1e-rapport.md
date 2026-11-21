@@ -7,9 +7,7 @@ barre latérale).
 
 ## À lire en premier — reprise du 21/11 (décisions de l'utilisateur)
 
-**État final : NON FUSIONNÉ.** Feu vert de fusion donné sous condition « run complet entièrement vert avec Mes billets ≥ 90 ».
-Le run complet **561** (`aa877ec32`) n'est pas entièrement vert, sur **un seul test, qui n'est pas une lenteur** ; je me suis
-arrêté comme demandé (« si le run n'est pas vert, arrête-toi et fais ton rapport »). Worktree conservé.
+<!-- etat-final-reprise -->
 
 | Contrôle | Run complet 557 (`ad9ea6db7`) | Run complet 561 (`aa877ec32`) |
 |---|---|---|
@@ -20,20 +18,25 @@ arrêté comme demandé (« si le run n'est pas vert, arrête-toi et fais ton ra
 | Mesure mobile (client de mesure fixe, seuils et calibration inchangés) | accueil 93, fiche 94, **Mes billets 91** | accueil 91, fiche 90, **Mes billets 92** (×4,6 à ×5,2) |
 | Poids JavaScript | rouge : `/billet/hors-ligne` +44 octets | **tenus, budgets non relevés** |
 
-- **Le seul rouge du run 561** : `e2e/perf.spec.ts:391`, « Accueil : premier affichage utile », s'arrête sur
-  `request.sizes: Target page, context or browser has been closed`. Un écouteur du test demande la taille d'un fichier
-  JavaScript après la fermeture de la page ; la promesse rejetée n'est pas rattrapée et casse le contexte du navigateur, et
-  la passe suivante ne peut plus en ouvrir (`browser.newContext : Failed to find browser context`). Ce n'est pas une mesure
-  hors seuil : les deux autres écrans de ce test (fiche, Mes billets) passent, et la mesure Lighthouse est verte.
-  **Première apparition sur les 40 derniers runs publiés**, toutes branches confondues. `e2e/perf.spec.ts` n'est pas modifié par
-  ce lot. **À décider par vous** : relancer le run complet tel quel, ou corriger d'abord le test (rattraper le rejet de
-  `req.sizes()` quand la page est déjà fermée, sans toucher aux seuils). Je n'ai fait ni l'un ni l'autre, conformément à la
-  consigne.
-- **Règle temporaire de Mes billets** : les deux runs complets avec le client de mesure fixe donnent Mes billets **≥ 90** (91
-  et 92). La condition de levée que vous avez posée sur la mesure est donc remplie, mais la levée était liée à un run 561
-  entièrement vert : **elle n'est pas inscrite comme acquise** tant que vous ne l'avez pas confirmée. Aucun code ne porte cette
-  règle (la mesure rend déjà le run rouge sous 90 pour toutes les pages) ; la lever revient à cesser d'accepter Mes billets
-  sous 90 lors d'une fusion, et à clore l'entrée « Mes billets au seuil » de `docs/apres-lancement.md`.
+- **Le seul rouge du run 561 — corrigé (décision du 21/11)** : `e2e/perf.spec.ts:391`, « Accueil : premier affichage
+  utile », s'arrêtait sur `request.sizes: Target page, context or browser has been closed`. Le test poussait chaque lecture de
+  taille de script (`req.sizes()`) dans une liste sans gestionnaire d'erreur et ne l'attendait que plus tard ; une lecture en
+  cours quand la page se fermait laissait une promesse rejetée sans gestionnaire, qui cassait le test, puis la passe suivante ne
+  pouvait plus ouvrir de contexte (`browser.newContext : Failed to find browser context`). Ce n'était pas une mesure hors
+  seuil (première apparition sur les 40 derniers runs publiés ; `e2e/perf.spec.ts` n'était pas modifié par ce lot).
+  **Correctif** : toute lecture de requête du test passe par `e2e/support/request-read.ts` (`readRequest`), dont la promesse ne
+  rejette jamais : page, contexte ou navigateur déjà fermés → **seule cette requête est ignorée** (comptée et notée dans le
+  journal) ; toute autre erreur reste gardée et fait échouer la mesure comme avant. **Aucun seuil ni aucune mesure changés.**
+  **Preuves** : `tests/schema/design1e-lecture-requetes.test.ts` (rejet « page fermée » ignoré même si personne n'attend la
+  promesse, autre erreur relancée, plus aucune lecture de requête hors du module) et `e2e/lecture-requetes-perf.spec.ts`
+  (vrai Chromium, projet perf : un serveur local retient le corps d'un script, la taille est demandée puis le contexte fermé
+  pendant le téléchargement ; sur 5 passes, la lecture non protégée rejette avec le message exact du run 561, la lecture sûre
+  ignore la requête, aucun rejet non géré, et un nouveau contexte s'ouvre et charge une page). Essai local : 5/5 passes.
+- **Règle temporaire de Mes billets : LEVÉE** (décision de l'utilisateur du 21/11), sur deux runs complets avec le client de
+  mesure fixe (Awa Sow, 10 billets à venir, 30 passés) : Mes billets **91** (run 557) et **92** (run 561). **Le seuil de 90 est
+  de nouveau bloquant pour toutes les pages, Mes billets compris** : un run où une page mesurée est sous 90 n'est plus accepté
+  pour une fusion. Aucun code ne portait cette exception (la mesure rendait déjà le run rouge sous 90) ; l'entrée « Mes billets
+  au seuil » de `docs/apres-lancement.md` est close.
 - **93 reste un objectif** (décision du 21/11) : atteint au job « perf » (93 au run 533 ; 92 au run 552), pas aux runs complets.
   Le profil processeur du run 559 ne montre plus de coût propre à l'application au-dessus de quelques millisecondes sur Mes
   billets. Ce qui reste : le framework, le client Supabase (report refusé le 21/11) et le dessin du QR (≈ 28 ms ; report

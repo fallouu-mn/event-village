@@ -118,7 +118,7 @@ d'où elle vient et pourquoi elle attend.
 | Image d'aperçu de partage : WhatsApp et les autres messageries gardent leur propre copie de l'aperçu une fois lu ; un aperçu déjà lu avant une suspension ou une annulation peut rester visible chez elles. Le serveur, lui, ne la sert plus (404 aussitôt). | Hors de notre contrôle (cache des messageries). | Design 1d, point 5 |
 | Recherche instantanée sur téléphone : la fenêtre se charge au premier toucher ; sur certains iPhone, le clavier ne s'ouvre qu'au second toucher dans le champ. | Précharger la fenêtre coûterait du travail pendant la mesure Lighthouse (le travail reporté est compté). | Design 1d, point 9 |
 | Rangée « Par catégorie » de l'accueil : ses pastilles ne sont pas collantes (seules celles d'Explorer le sont). | La consigne vise la liste qu'on fait défiler ; l'accueil garde ses sections. | Design 1d, point 10 |
-| Mes billets au seuil de la mesure mobile (90 au run 491, 87 à 89 sur d'autres runs du lot) : la part du lot (trois îlots) est retirée du chargement ; reste le rendu React du portefeuille et le client Supabase de la session (rapport du design 1b). | Décision à prendre sur la structure de la page (déjà soulevée au design 1b). | Design 1d, mesures |
+| ~~Mes billets au seuil de la mesure mobile (90 au run 491, 87 à 89 sur d'autres runs du lot).~~ **CLOS le 21/11 (design 1e)** : Mes billets à venir seulement au premier affichage, portefeuille par 10, mesure par un client fixe (10 billets à venir, 30 passés) ; 91 et 92 aux runs complets 557 et 561 ; règle temporaire levée, seuil de 90 bloquant pour toutes les pages. | — | Design 1d, mesures ; clos au design 1e |
 
 ## Salles de fête (lot 10b)
 
