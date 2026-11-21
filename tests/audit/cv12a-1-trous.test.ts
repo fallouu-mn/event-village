@@ -18,6 +18,10 @@
  *  T6 Nouveau code de remise demandé avec le service fermé (POST /api/orders/[id]/code sans interrupteur) : SMS envoyé.
  *  T7 Aides internes (code en clair, clôture, remise, stock, historique) appelables en RPC par la clé de service :
  *     contournent les contrôles d'acteur et d'état des fonctions publiques (contrôle du catalogue, aucune attaque).
+ *  T2d Commande payable à la remise dont un produit devient réglementé : acceptée et remise (contrôle au seul paiement).
+ *  T8 GET /api/partner/products/[id] (route de l'ancien code, gardée) : produit non publié d'une autre partenaire lu.
+ *  T9 Envoi immédiat du code : un seul journal par commande (clé ORDER_HANDOVER_CODE:<commande>, ON CONFLICT DO NOTHING) ;
+ *     les nouveaux codes envoyés ensuite ne laissent aucune trace.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -33,6 +37,7 @@ import { POST as clientCodeRoute } from '../../app/api/orders/[id]/code/route';
 import { POST as couriersPost } from '../../app/api/partner/couriers/route';
 import { GET as partnerMetricsGet } from '../../app/api/partner/metrics/route';
 import { GET as partnerDashboardGet } from '../../app/api/partner/dashboard/route';
+import { GET as partnerProductGet } from '../../app/api/partner/products/[id]/route';
 import {
     n, newBuyer, newDeliveryZone, newPartner, newProduct, newShop, openOrdersService, order, orderBody, orderRoute, partnerAct,
     payOrder, placed, releaseUnpaid, service, setPlatformSetting, setPortions, shiftOrder, smsOfOrder, startOrderPay, superadminId,
@@ -180,6 +185,25 @@ describe('cv12a — trous', () => {
             `solde d'un produit devenu réglementé encaissé : paid_goods ${before.paid_goods} → ${after.paid_goods} sur ${after.goods_total}, paiement ${pay.status}, payment_status ${after.payment_status}`);
     });
 
+    test('T2d — commande payable à la remise dont un produit devient réglementé : la partenaire ne peut plus l’accepter ni la remettre', async () => {
+        const client = await buyer('t2d');
+        const beer = await newProduct(partner, shop, { price: 7_000, name: 'Bière blonde' });
+        const id = await placed(client, orderBody(shop, [{ productId: beer, quantity: 1 }], { mode: 'SUR_PLACE', onsiteLabel: 'Table 4', payment: 'DIFFERE' }));
+        assert.equal((await order(id)).order_state, 'RECUE', 'payable à la remise : reçue tout de suite');
+        await regulate(beer);
+        const acc = await partnerAct(partner, id, { action: 'ACCEPTER' });
+        const steps = [`ACCEPTER ${acc.status} ${String(acc.body.code ?? (acc.body.order as Row | undefined)?.state)}`];
+        if (acc.status === 200) {
+            for (const body of [{ action: 'PRETE' }, { action: 'REMETTRE', balanceReceived: true }]) {
+                const r = await partnerAct(partner, id, body);
+                steps.push(`${body.action} ${r.status} ${String(r.body.code ?? (r.body.order as Row | undefined)?.state)}`);
+            }
+        }
+        const o = await order(id);
+        assert.notEqual(acc.status, 200,
+            `produit réglementé accepté puis remis par la plateforme : ${steps.join(' → ')} ; état final ${o.order_state}, noté sur place ${o.onsite_amount}`);
+    });
+
     test('T3 — même produit sur plusieurs lignes : plus de 99 unités refusées (pas 297 portions du plat du jour tenues sans payer)', async () => {
         const hoarder = await buyer('t3');
         const dish = await newProduct(partner, shop, { price: 1_500, daily: true, name: 'Yassa du jour' });
@@ -235,6 +259,33 @@ describe('cv12a — trous', () => {
         }
         const afterCount = (await smsOfOrder(client, id)).length;
         assert.equal(res.status, 404, `service fermé, nouveau code envoyé quand même : HTTP ${res.status} ${JSON.stringify(res.body)} ; SMS de la commande ${before} → ${afterCount}`);
+    });
+
+    test('T8 — GET /api/partner/products/[id] : le produit non publié d’une autre partenaire n’est pas lisible', async () => {
+        const rival = await newPartner('cv12a-rivale');
+        const rivalShop = await newShop(rival);
+        const secret = await newProduct(rival, rivalShop, { price: 9_900, name: 'Plat en préparation (non publié)', status: 'INDISPONIBLE', stock: 42 });
+        const res = await reply(await partnerProductGet(req(`/api/partner/products/${secret}`, 'GET', partner.accessToken), ctx(secret)));
+        const p = res.body.product as Row | undefined;
+        assert.equal(res.status, 404,
+            `produit non publié d'une autre partenaire lu : HTTP ${res.status} ${JSON.stringify(p ? { id: p.id, partner_id: p.partner_id, name: p.name, status: p.status, stock_quantity: p.stock_quantity, price: p.price } : res.body)}`);
+    });
+
+    test('T9 — chaque SMS de code de remise est journalisé (code de retrait, puis nouveau code demandé par le client)', async () => {
+        const client = await buyer('t9');
+        const p = await newProduct(partner, shop, { price: 3_500 });
+        const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
+        await payOrder(client, id);
+        await toReady(partner, id);
+        const resend = await reply(await clientCodeRoute(req(`/api/orders/${id}/code`, 'POST', client.accessToken), ctx(id)));
+        assert.equal(resend.status, 200, JSON.stringify(resend.body));
+        const sent = (await smsOfOrder(client, id)).filter((m) => /code/i.test(m) && /\b\d{4}\b/.test(m.replace(/CMD-\S+/g, '')));
+        assert.equal(sent.length, 2, `SMS de code reçus : ${JSON.stringify(sent)}`);
+        const { data: journal, error } = await service.from('notification_outbox')
+            .select('idempotency_key, status, created_at').eq('type', 'ORDER_HANDOVER_CODE').eq('recipient_user_id', client.userId);
+        assert.equal(error, null, error?.message);
+        assert.equal((journal ?? []).length, sent.length,
+            `${sent.length} SMS de code envoyés, ${(journal ?? []).length} ligne(s) au journal : ${JSON.stringify(journal)}`);
     });
 
     test('T7 — aides internes des commandes non appelables en RPC par la clé de service (contrôle du catalogue)', async () => {
