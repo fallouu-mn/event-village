@@ -49,7 +49,7 @@ export function DayStrip({ value, today, onChange }: { value: string; today: str
                                 aria-pressed={on}
                                 onClick={() => onChange(day)}
                                 className={cn(
-                                    'flex min-h-16 min-w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-1.5 transition-colors duration-fast ease-standard',
+                                    'relative flex min-h-16 min-w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-1.5 transition-colors duration-fast ease-standard',
                                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                     on ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border bg-card text-foreground-strong hover:bg-muted',
                                 )}
