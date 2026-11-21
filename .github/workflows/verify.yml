@@ -63,6 +63,7 @@ jobs:
       graine: ${{ steps.mode.outputs.graine }}
       lots: ${{ steps.mode.outputs.lots }}
       responsive: ${{ steps.mode.outputs.responsive }}
+      perf: ${{ steps.mode.outputs.perf }}
     steps:
       - name: Horodatage du début du run
         id: t0
@@ -105,6 +106,13 @@ jobs:
             echo "Contrôle responsive demandé"
           else
             echo "responsive=0" >> "$GITHUB_OUTPUT"
+          fi
+          # Design 1e (vitesse) : « ci-perf: oui » lance aussi, en mode rapide, la mesure mobile seule (job « perf »)
+          if printf '%s\n' "$message" | grep -qE '^ci-perf:[[:space:]]*oui[[:space:]]*$'; then
+            echo "perf=1" >> "$GITHUB_OUTPUT"
+            echo "Mesure mobile demandée"
+          else
+            echo "perf=0" >> "$GITHUB_OUTPUT"
           fi
 
   # ── Mode rapide : inchangé (typecheck, lint, suites citées), sur une base locale ──────────────────────────────────
@@ -725,10 +733,91 @@ jobs:
       - *rassembler
       - *deposer
 
+  # ── Design 1e (vitesse) : mesure mobile seule, en mode rapide (ligne « ci-perf: oui ») ──────────────────────────────
+  # Pendant le travail d'un lot de vitesse : mesurer chaque piste au lieu de la deviner, sans attendre le run complet.
+  # Mêmes étapes que le job e2e (ancres YAML : build, poids JavaScript, base de démonstration, application), puis la seule
+  # phase « connexion » (états de connexion de .auth/, dont le client de Mes billets) et la même mesure, même script,
+  # mêmes seuils, même calibration. La base n'a pas vécu l'e2e complet (moins de billets achetés pendant le run) : les
+  # notes se comparent entre deux runs de ce job ; le run complet (job e2e) reste la seule preuve finale.
+  perf:
+    name: perf (mesure mobile seule, mode rapide)
+    needs: mode
+    if: ${{ needs.mode.outputs.rapide == '1' && needs.mode.outputs.perf == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      build: ${{ steps.build.outcome }}
+      js_budget: ${{ steps.js-budget-perf.outcome }}
+      perf_mobile: ${{ steps.perf-mobile-rapide.outcome }}
+    steps:
+      - *horodatage
+      - *checkout
+      - *supabase-cli
+      - *e2e-jwt
+      - *supabase-start-lance
+      - *node
+      - *npm-ci
+      - *supabase-start-attente
+      - *env-test
+      - *e2e-env
+      - *e2e-pw
+      - *e2e-pw-cache
+      - *e2e-chromium
+      - *e2e-seed-lance
+      - *build
+
+      - name: "Perf : poids JavaScript (scripts/verify.mjs --etapes js-budget)"
+        id: js-budget-perf
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          . /tmp/etape.sh js-budget
+          set -o pipefail
+          node scripts/verify.mjs --etapes js-budget 2>&1 | tee -a /tmp/build.log
+
+      - *e2e-seed
+      - *e2e-start
+
+      - name: "Perf : connexion des rôles de démonstration (EV_E2E_PHASES=connexion)"
+        id: connexion-perf
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          EV_E2E_PHASES: connexion
+        run: |
+          . /tmp/etape.sh connexion
+          set -o pipefail
+          npm run e2e 2>&1 | tee /tmp/e2e.log
+
+      - name: "Perf : performance mobile mesurée (mode rapide, ligne ci-perf ; mêmes seuils)"
+        id: perf-mobile-rapide
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        timeout-minutes: 15
+        run: |
+          . /tmp/etape.sh perf-mobile
+          set -o pipefail
+          node scripts/e2e/perf-mobile.mjs 2>&1 | tee /tmp/perf-mobile.log
+
+      - *diagnostic
+      - *annotations
+
+      - name: Rassembler les mesures et le poids JavaScript
+        if: always()
+        run: |
+          mkdir -p /tmp/sortie
+          W="$GITHUB_WORKSPACE"
+          if [ -f "$W/.verify/js-budget.tsv" ]; then cp "$W/.verify/js-budget.tsv" /tmp/sortie/js-budget.tsv; fi
+          if [ -d "$W/.e2e-captures/perf" ]; then
+            mkdir -p /tmp/sortie/perf
+            find "$W/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' -o -name 'lighthouse*.json' -o -name 'lighthouse*.json.gz' \) -exec cp {} /tmp/sortie/perf/ \;
+          fi
+
+      - *rassembler
+      - *deposer
+
   # ── Verdict : vert seulement si tout est vert ; seul job qui publie sur ci-results ───────────────────────────────
   verdict:
     name: verdict (tous les jobs verts) · journaux sur ci-results
-    needs: [mode, rapide, qualite, tests, e2e, responsive]
+    needs: [mode, rapide, qualite, tests, e2e, responsive, perf]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -809,5 +898,5 @@ jobs:
 
       - name: Verdict
         run: |
-          echo "verdict : ${{ steps.verdict.outputs.verdict }} (mode ${{ needs.mode.outputs.rapide == '1' && 'rapide' || 'complet' }}) ; jobs : mode ${{ needs.mode.result }}, rapide ${{ needs.rapide.result }}, qualite ${{ needs.qualite.result }}, tests ${{ needs.tests.result }}, e2e ${{ needs.e2e.result }}, responsive ${{ needs.responsive.result }}"
+          echo "verdict : ${{ steps.verdict.outputs.verdict }} (mode ${{ needs.mode.outputs.rapide == '1' && 'rapide' || 'complet' }}) ; jobs : mode ${{ needs.mode.result }}, rapide ${{ needs.rapide.result }}, qualite ${{ needs.qualite.result }}, tests ${{ needs.tests.result }}, e2e ${{ needs.e2e.result }}, responsive ${{ needs.responsive.result }}, perf ${{ needs.perf.result }}"
           [ "${{ steps.verdict.outputs.verdict }}" = "success" ]
