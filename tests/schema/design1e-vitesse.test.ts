@@ -95,3 +95,31 @@ describe('design 1e — vitesse : tri des villes de l’accueil par un seul comp
         assert.deepEqual([...labels].sort(collator.compare), [...labels].sort((a, b) => a.localeCompare(b, 'fr-FR')));
     });
 });
+
+describe('design 1e — vitesse : dates de Dakar sans Intl (profil du run 552 : 35 ms au premier Intl.DateTimeFormat)', () => {
+    test('formatDate, formatShortDate, formatTime et formatDateTime n’appellent plus Intl.DateTimeFormat', () => {
+        const src = read('lib/format.ts');
+        assert.doesNotMatch(src, /new Intl\.DateTimeFormat/);
+        assert.match(src, /function dakarParts\(/);
+    });
+    test('même texte qu’Intl fr-FR à Dakar, sur 3 000 instants de 1999 à 2061 (et bornes de mois, d’année, de minuit)', async () => {
+        const f = await import('../../lib/format');
+        const opt = { timeZone: 'Africa/Dakar' } as const;
+        const date = new Intl.DateTimeFormat('fr-FR', { ...opt, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+        const short = new Intl.DateTimeFormat('fr-FR', { ...opt, day: 'numeric', month: 'short', year: 'numeric' });
+        const time = new Intl.DateTimeFormat('fr-FR', { ...opt, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        const instants: Date[] = [new Date('2026-12-31T23:59:59Z'), new Date('2027-01-01T00:00:00Z'), new Date('2028-02-29T12:00:00Z'), new Date('2026-08-15T00:00:00Z')];
+        let seed = 11;
+        for (let i = 0; i < 3000; i += 1) { seed = (seed * 48271) % 2147483647; instants.push(new Date(915148800000 + (seed % 1_000_000) * 1_966_000)); }
+        const faults: string[] = [];
+        for (const d of instants) {
+            if (f.formatDate(d) !== date.format(d)) faults.push(`formatDate ${d.toISOString()} : ${f.formatDate(d)} ≠ ${date.format(d)}`);
+            if (f.formatShortDate(d) !== short.format(d)) faults.push(`formatShortDate ${d.toISOString()} : ${f.formatShortDate(d)} ≠ ${short.format(d)}`);
+            if (f.formatTime(d) !== time.format(d)) faults.push(`formatTime ${d.toISOString()} : ${f.formatTime(d)} ≠ ${time.format(d)}`);
+            if (f.formatDateTime(d) !== `${date.format(d)} à ${time.format(d)}`) faults.push(`formatDateTime ${d.toISOString()}`);
+        }
+        assert.deepEqual(faults.slice(0, 10), []);
+        assert.equal(f.formatDate('2026-11-14'), 'sam. 14 nov. 2026');
+        assert.equal(f.formatDate(null), '—');
+    });
+});

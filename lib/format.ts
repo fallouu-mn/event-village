@@ -35,15 +35,27 @@ function lazily<T>(make: () => T): () => T {
     };
 }
 
-const DATE_FORMAT = lazily(() => new Intl.DateTimeFormat('fr-FR', {
-    timeZone: DAKAR_TIME_ZONE, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-}));
-const SHORT_DATE_FORMAT = lazily(() => new Intl.DateTimeFormat('fr-FR', {
-    timeZone: DAKAR_TIME_ZONE, day: 'numeric', month: 'short', year: 'numeric',
-}));
-const TIME_FORMAT = lazily(() => new Intl.DateTimeFormat('fr-FR', {
-    timeZone: DAKAR_TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-}));
+/**
+ * Design 1e (vitesse) : dates de Dakar écrites sans Intl. Africa/Dakar = UTC+0 toute l'année, sans heure d'été (voir
+ * toDakarDateTimeLocal) : jour, mois, année, heure et minute sont ceux de l'heure UTC. Mêmes abréviations qu'Intl fr-FR
+ * (« sam. 14 nov. 2026 », « 14 nov. 2026 », « 08:05 ») : comparé instant par instant à Intl par
+ * tests/schema/design1e-vitesse.test.ts. Le premier Intl.DateTimeFormat coûtait 35 ms au téléphone de référence (profil
+ * du run 552, Mes billets).
+ */
+const WEEKDAYS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+function dakarParts(d: Date): { weekday: string; day: number; month: string; year: number; time: string } {
+    return {
+        weekday: WEEKDAYS[d.getUTCDay()], day: d.getUTCDate(), month: MONTHS[d.getUTCMonth()], year: d.getUTCFullYear(),
+        time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`,
+    };
+}
+
+const DATE_FORMAT = (d: Date): string => { const p = dakarParts(d); return `${p.weekday} ${p.day} ${p.month} ${p.year}`; };
+const SHORT_DATE_FORMAT = (d: Date): string => { const p = dakarParts(d); return `${p.day} ${p.month} ${p.year}`; };
+const TIME_FORMAT = (d: Date): string => dakarParts(d).time;
 const INTEGER_FORMAT = lazily(() => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }));
 const PRECISE_FORMAT = lazily(() => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }));
 
@@ -69,25 +81,25 @@ export function toDate(input: DateInput): Date | null {
 /** Date et heure à Dakar : « sam. 15 nov. 2026 à 20:00 ». */
 export function formatDateTime(input: DateInput): string {
     const d = toDate(input);
-    return d ? `${DATE_FORMAT().format(d)} à ${TIME_FORMAT().format(d)}` : MISSING_VALUE;
+    return d ? `${DATE_FORMAT(d)} à ${TIME_FORMAT(d)}` : MISSING_VALUE;
 }
 
 /** Date seule à Dakar : « sam. 15 nov. 2026 ». */
 export function formatDate(input: DateInput): string {
     const d = toDate(input);
-    return d ? DATE_FORMAT().format(d) : MISSING_VALUE;
+    return d ? DATE_FORMAT(d) : MISSING_VALUE;
 }
 
 /** Date courte à Dakar, sans jour de la semaine : « 15 nov. 2026 » (tableaux denses). */
 export function formatShortDate(input: DateInput): string {
     const d = toDate(input);
-    return d ? SHORT_DATE_FORMAT().format(d) : MISSING_VALUE;
+    return d ? SHORT_DATE_FORMAT(d) : MISSING_VALUE;
 }
 
 /** Heure à Dakar : « 20:00 ». */
 export function formatTime(input: DateInput): string {
     const d = toDate(input);
-    return d ? TIME_FORMAT().format(d) : MISSING_VALUE;
+    return d ? TIME_FORMAT(d) : MISSING_VALUE;
 }
 
 /**
