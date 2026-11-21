@@ -71,7 +71,7 @@ describe('A. Réserver une table : contrôles et argent en base', () => {
         const expected: Record<string, unknown> = {
             'tables.service_fee_rate': 5, 'tables.commission_rate': 0, 'tables.validation_required': true, 'tables.slot_minutes': 120,
             'tables.hold_minutes': 15, 'tables.response_minutes': 120, 'tables.no_show_minutes': 30, 'tables.cancel_free_hours': 2,
-            'tables.max_pending_per_client': 3, 'tables.reminder_hours': 3, 'finance.aggregator_fee_rate.WAVE': 1.5, 'finance.payout_delay_hours': 48,
+            'tables.max_pending_per_client': 3, 'tables.reminder_hours': 2, 'finance.aggregator_fee_rate.WAVE': 1.5, 'finance.payout_delay_hours': 48,
         };
         for (const [key, value] of Object.entries(expected)) assert.equal(await platformSetting(key), value, key);
     });
