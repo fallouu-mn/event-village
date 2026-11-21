@@ -1,0 +1,263 @@
+TAP version 13
+[CV11B] T1 fermeture confirmée après changement de la liste : {"apercu":["1b91d544-ebfa-4732-b925-548a2ce8d2bb"],"annuleeEntreTemps":"1b91d544-ebfa-4732-b925-548a2ce8d2bb","priseEntreTemps":"be71d1cb-ba79-475e-83c7-b31af5ba79ee","confirmation":"HTTP 201 {\"success\":true,\"closure\":{\"id\":\"35c2333c-64d1-4510-93e1-531d1d80ebef\",\"startsAt\":\"2026-12-31T00:00:00\",\"endsAt\":\"2027-01-01T00:00:00\",\"cancelled\":1,\"refundTotal\":21000}}","B":{"etat":"ANNULEE_ETABLISSEMENT","rendu":21000,"motif":"Fermeture exceptionnelle : Travaux de cuisine imprévus"}}
+# Subtest: T1. Fermeture : liste confirmée = liste de l’aperçu
+    # Subtest: aperçu (A), A annulée, B prise sur la période, confirmation avec le même nombre → B ne doit pas être annulée sans avoir été montrée
+    not ok 1 - aperçu (A), A annulée, B prise sur la période, confirmation avec le même nombre → B ne doit pas être annulée sans avoir été montrée
+      ---
+      duration_ms: 348.778486
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:2217'
+      failureType: 'testCodeFailure'
+      error: 'confirmation acceptée alors que la liste a changé (B jamais montrée) : HTTP 201 {"success":true,"closure":{"id":"35c2333c-64d1-4510-93e1-531d1d80ebef","startsAt":"2026-12-31T00:00:00","endsAt":"2027-01-01T00:00:00","cancelled":1,"refundTotal":21000}}'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 201
+      actual: 201
+      operator: 'notStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:81:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..1
+not ok 1 - T1. Fermeture : liste confirmée = liste de l’aperçu
+  ---
+  duration_ms: 1346.287746
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:2121'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CV11B] T2 absent marqué 5 min après l’heure : {"regle":"30 min","promesse":{"held_until":"14:57","starts":"14:27"},"boutonAbsent":true,"reponse":"HTTP 200 {\"success\":true,\"state\":\"Absent\",\"refundAmount\":0}","etat":"ABSENT","paye":21000,"rendu":0,"cashouts":0}
+# Subtest: T2. Absence : 30 minutes de garde
+    # Subtest: réservation payée commencée il y a 5 min : « Client absent » par l’établissement → refusé (trop tôt), acompte non gardé
+    not ok 1 - réservation payée commencée il y a 5 min : « Client absent » par l’établissement → refusé (trop tôt), acompte non gardé
+      ---
+      duration_ms: 139.010849
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:4145'
+      failureType: 'testCodeFailure'
+      error: 'absent accepté 5 min après l’heure (règle : 30 min, table promise « gardée jusqu’à 14:57 ») : HTTP 200 {"success":true,"state":"Absent","refundAmount":0}'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 200
+      actual: 200
+      operator: 'notStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:100:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 2 - T2. Absence : 30 minutes de garde
+  ---
+  duration_ms: 139.185963
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:4078'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CV11B] T3 aperçu puis annulation après l’heure gratuite : {"apercu":{"canCancel":true,"message":null,"paidAmount":21000,"refundAmount":21000,"keptAmount":0,"refundPercent":100,"freeUntil":"2026-11-21T14:33","cancelFreeHours":2},"annulation":"HTTP 200 {\"success\":true,\"message\":\"Réservation annulée. L’acompte n’est pas remboursé : l’annulation arrive moins de 2 h avant l’heure.\",\"reservation\":{\"id\":\"af096cba-131c-4eb4-833b-eaafe92d4369\",\"state\":\"Annulée par le client\",\"refundAmount\":0}}","etat":"ANNULEE_CLIENT","rendu":0,"cashouts":0}
+# Subtest: T3. Aperçu d’annulation = remboursement réel
+    # Subtest: aperçu « tout rendu », l’heure gratuite passe, annulation confirmée → doit rendre le montant annoncé ou demander une nouvelle confirmation
+    not ok 1 - aperçu « tout rendu », l’heure gratuite passe, annulation confirmée → doit rendre le montant annoncé ou demander une nouvelle confirmation
+      ---
+      duration_ms: 106.534616
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:5936'
+      failureType: 'testCodeFailure'
+      error: 'annulation acceptée avec 0 F rendus au lieu des 21000 F annoncés, sans nouvelle confirmation : HTTP 200 {"success":true,"message":"Réservation annulée. L’acompte n’est pas remboursé : l’annulation arrive moins de 2 h avant l’heure.","reservation":{"id":"af096cba-131c-4eb4-833b-eaafe92d4369","state":"Annulée par le client","refundAmount":0}}'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:123:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 3 - T3. Aperçu d’annulation = remboursement réel
+  ---
+  duration_ms: 106.696961
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:5847'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CV11B] T4 téléphone d’un client arrivé, créneau fini depuis 3 jours : {"etat":"ARRIVEE","creneau":"2026-11-18 14:32:07","detail":{"name":"Eva M.","phone":"+221776726016"},"planning":{"name":"Eva M.","phone":"+221776726016"}}
+# Subtest: T4. Téléphone du client : seulement pour une réservation qui tient la table
+    # Subtest: « Client arrivé », créneau fini depuis 3 jours : détail et planning de l’établissement ne donnent plus le téléphone
+    not ok 1 - « Client arrivé », créneau fini depuis 3 jours : détail et planning de l’établissement ne donnent plus le téléphone
+      ---
+      duration_ms: 97.304385
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:7882'
+      failureType: 'testCodeFailure'
+      error: |-
+        téléphone donné pour une réservation finie depuis 3 jours : +221776726016
+        + actual - expected
+        
+        + '+221776726016'
+        - null
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: ~
+      actual: '+221776726016'
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:149:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 4 - T4. Téléphone du client : seulement pour une réservation qui tient la table
+  ---
+  duration_ms: 97.489605
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:7764'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CV11B] T6 REST de la propriétaire sur son établissement non public : {"venues":[{"id":"3dfe547c-a4cf-4de9-9ce1-07d3ffb1e767","name":"TEST Restaurant 11a 61780c8f","validation_status":"EN_ATTENTE_VALIDATION","validation_reason":null,"photos":[],"submitted_at":"2026-11-21T14:32:07.513861+00:00"}],"tables":[{"id":"49102b2d-422c-447a-a1be-b8cc70296c84","table_number":"NP1","plan_x":null}],"hours":7,"anon":[]}
+# Subtest: T6. Lecture REST d’un établissement non public par sa propriétaire
+    # Subtest: établissement en attente de validation : venues, restaurant_tables, venue_opening_hours → aucune ligne par la REST
+    not ok 1 - établissement en attente de validation : venues, restaurant_tables, venue_opening_hours → aucune ligne par la REST
+      ---
+      duration_ms: 36.746842
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:10014'
+      failureType: 'testCodeFailure'
+      error: |-
+        établissement non public lu par la REST : [{"id":"3dfe547c-a4cf-4de9-9ce1-07d3ffb1e767","name":"TEST Restaurant 11a 61780c8f","validation_status":"EN_ATTENTE_VALIDATION","validation_reason":null,"photos":[],"submitted_at":"2026-11-21T14:32:07.513861+00:00"}]
+        
+        1 !== 0
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 0
+      actual: 1
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:169:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 5 - T6. Lecture REST d’un établissement non public par sa propriétaire
+  ---
+  duration_ms: 36.89086
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:9903'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[CV11B] T7 plan refusé : {"reponse":"HTTP 404 {\"success\":false,\"error\":\"Une table du plan n’appartient pas à cet établissement.\",\"code\":\"TABLE_NOT_FOUND\"}","maTable":{"plan_x":"42.00","plan_y":"17.00","plan_shape":"RONDE","plan_rotation":90},"tableDAutrui":{"plan_x":null}}
+# Subtest: T7. Plan de salle refusé = rien d’enregistré
+    # Subtest: liste du plan : une table à soi puis une table d’un autre établissement → 404 et la première table n’a pas bougé
+    not ok 1 - liste du plan : une table à soi puis une table d’un autre établissement → 404 et la première table n’a pas bougé
+      ---
+      duration_ms: 58.763313
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:11700'
+      failureType: 'testCodeFailure'
+      error: |-
+        plan refusé mais position enregistrée : {"plan_x":"42.00","plan_y":"17.00","plan_shape":"RONDE","plan_rotation":90}
+        + actual - expected
+        
+          [
+        +   '42.00',
+        +   'RONDE',
+        +   90
+        -   null,
+        -   'CARREE',
+        -   0
+          ]
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        0: ~
+        1: 'CARREE'
+        2: 0
+      actual:
+        0: '42.00'
+        1: 'RONDE'
+        2: 90
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:187:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..1
+not ok 6 - T7. Plan de salle refusé = rien d’enregistré
+  ---
+  duration_ms: 58.898698
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cv11b-1-trous.test.ts:2:11611'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] cv11b-1-trous — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cv11b-1-trous — purge des réservations échues : {"expired":0}
+[INVARIANT] cv11b-1-trous — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cv11b-1-trous — (d)(e)(f) : 0 violation(s)
+[INVARIANT] cv11b-1-trous — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cv11b-1-trous — purge des réservations échues : {"expired":0}
+[INVARIANT] cv11b-1-trous — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cv11b-1-trous — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cv11b-1-trous — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cv11b-1-trous — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cv11b-1-trous — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cv11b-1-trous — envoyeur : 152 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cv11b-1-trous — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cv11b-1-trous — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cv11b-1-trous — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cv11b-1-trous — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cv11b-1-trous — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cv11b-1-trous — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cv11b-1-trous — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cv11b-1-trous — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cv11b-1-trous — (f) : 0 violation(s)
+[INVARIANT-FINITION3A] cv11b-1-trous : 0 violation(s)
+[INVARIANT-FINITION3B] cv11b-1-trous — (h1) : 0 violation(s)
+[INVARIANT-FINITION3D] cv11b-1-trous — (i1) : 0 violation(s)
+[INVARIANT-LOT10A] cv11b-1-trous — (h1)(h2)(h3)(h4) : 0 violation(s)
+[INVARIANT-LOT11A] cv11b-1-trous — (t1)(t2)(t3)(t4)(t5)(t6) : 0 violation(s)
+1..6
+# tests 6
+# suites 6
+# pass 0
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2526.678703
