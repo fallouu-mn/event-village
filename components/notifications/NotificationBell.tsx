@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { usePageSettled } from '@/hooks/usePageSettled';
 import { setUnreadCount as publishUnread } from '@/components/notifications/unread-store';
 import { IconButton } from '@/components/ui/IconButton';
 import { cn } from '@/components/ui/cn';
@@ -307,11 +308,14 @@ export function NotificationBell() {
 
     // Temps réel : une notification reçue ou lue ailleurs (INSERT, UPDATE) recharge la liste et le compteur ;
     // rechargement aussi à la connexion et à chaque reconnexion.
+    // Design 1e (vitesse) : abonnement ouvert une fois la page chargée et le téléphone libre, comme Mes billets (avant :
+    // pendant le chargement de chaque page) ; le compteur est lu tout de suite par le chargement initial ci-dessus.
+    const settled = usePageSettled();
     useRealtimeRefresh({
         channelKey: `notifications-bell-${user?.id ?? 'anonyme'}`,
         subscriptions: [{ table: 'notifications', filter: `user_id=eq.${user?.id ?? ''}` }],
         onSignal: fetchNotifications,
-        enabled: isUserLoggedIn && !!user?.id,
+        enabled: isUserLoggedIn && !!user?.id && settled,
     });
 
     /** Lot 7 (7.5) : charge le contenu du panneau (survol, focus, ouverture) ; un échec est journalisé et affiché. */

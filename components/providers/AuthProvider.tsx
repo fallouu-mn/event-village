@@ -146,6 +146,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const pathname = usePathname();
     /** Lot 7 (7.1) : compte de la dernière session vue, pour purger le stockage hors ligne d'un autre compte. */
     const lastUserIdRef = useRef<string | null>(null);
+    /** Design 1e : jeton d'accès de la dernière session appliquée (même session annoncée deux fois au chargement). */
+    const appliedTokenRef = useRef<string | null>(null);
 
     /**
      * Lot 1B.1 — profil et rôles viennent uniquement du serveur (/api/auth/me : public.users et
@@ -229,6 +231,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     clearDevicePrefs('paiement');
                     void unsubscribePush(); // cvf2b 6.9 : même règle que SIGNED_OUT
                 }
+                // Design 1e (vitesse) : au chargement, le client annonce la MÊME session deux fois (INITIAL_SESSION puis
+                // SIGNED_IN, même jeton d'accès) ; la seconde relisait le profil (/api/auth/me) et redessinait toute la page.
+                // Seul ce doublon exact est ignoré, après les effacements ci-dessus (inchangés) : un nouveau jeton
+                // (TOKEN_REFRESHED, autre compte) et toute fin de session (SIGNED_OUT, jeton nul) passent comme avant.
+                const token: string | null = newSession?.access_token ?? null;
+                if (event !== 'SIGNED_OUT' && token !== null && token === appliedTokenRef.current) return;
+                appliedTokenRef.current = token;
                 if (nextUserId) {
                     lastUserIdRef.current = nextUserId;
                     setSignedOut(false); // un compte connecté referme l'écran « déconnecté »
