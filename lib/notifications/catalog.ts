@@ -1709,7 +1709,8 @@ const CATALOG = {
     // order_set_en_route, order_handover_apply, order_close_apply, order_expire_hold, order_code_resend, order_tick et
     // notif_cashouts_notify). Décision du client : chaque étape sur les 4 canaux (cloche, push, email, SMS d'un segment
     // GSM-7 au pire cas). Complément du 21/11 : chaque avis mène à la commande et dit quoi faire ensuite. Le code de
-    // remise n'est jamais dans la cloche (gardée en base) : seulement dans le SMS, le push et l'email.
+    // remise n'est jamais dans la boîte d'envoi (contrainte notification_outbox_no_secret_chk) : il part par un SMS
+    // immédiat (ORDER_HANDOVER_CODE, renderSyncSms), comme les codes à usage unique.
     ORDER_RECEIVED: define('ORDER_RECEIVED', {
         label: 'Commande reçue', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
         link: orderLink,
@@ -1759,11 +1760,10 @@ const CATALOG = {
         inApp: (d) => {
             const mode = text(d, 'mode');
             if (mode === 'RETRAIT') {
-                const code = orderCode(d);
                 const balance = num(d, 'balance_due') > 0 ? ` Reste à payer sur place : ${money(d, 'balance_due')}.` : '';
                 return {
                     title: 'Commande prête',
-                    content: `${code ? `Donnez le code ${code} au comptoir.` : 'Donnez au comptoir le code reçu par SMS.'} Votre commande ${orderRef(d)} vous attend chez ${venueName(d)}.${balance}`,
+                    content: `Votre commande ${orderRef(d)} vous attend chez ${venueName(d)}. Donnez au comptoir le code reçu par SMS.${balance}`,
                 };
             }
             if (mode === 'SUR_PLACE') {
@@ -1773,29 +1773,25 @@ const CATALOG = {
         },
         sms: (d) => {
             const mode = text(d, 'mode');
-            if (mode === 'RETRAIT') return `${SMS_PREFIX}donnez le code ${smsOrderCode(d)} au comptoir : votre commande ${orderRef(d)} vous attend chez ${smsVar(text(d, 'venue_name'), 28)}.`;
+            if (mode === 'RETRAIT') return `${SMS_PREFIX}votre commande ${orderRef(d)} vous attend chez ${smsVar(text(d, 'venue_name'), 28)}. Le code de retrait arrive par SMS.`;
             if (mode === 'SUR_PLACE') return `${SMS_PREFIX}votre commande ${orderRef(d)} est terminée : elle vous est servie dans un instant.`;
             return `${SMS_PREFIX}votre commande ${orderRef(d)} est terminée chez ${smsVar(text(d, 'venue_name'), 28)}, le livreur part dans un instant.`;
         },
-        sample: { ...ORDER_SAMPLE_DATA, mode: 'RETRAIT', state: 'PRETE', code: '4821', balance_due: 875_000 },
+        sample: { ...ORDER_SAMPLE_DATA, mode: 'RETRAIT', state: 'PRETE', balance_due: 875_000 },
     }),
+    // SMS de cette étape : le code de remise, envoyé tout de suite par la route (ORDER_HANDOVER_CODE, jamais stocké)
     ORDER_ON_THE_WAY: define('ORDER_ON_THE_WAY', {
-        label: 'Commande en route', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        label: 'Commande en route', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
         link: orderLink,
         inApp: (d) => {
-            const code = orderCode(d);
             const eta = orderEta(d);
             const balance = num(d, 'balance_due') > 0 ? ` Reste à payer au livreur : ${money(d, 'balance_due')}.` : '';
             return {
                 title: 'Commande en route',
-                content: `${code ? `Donnez le code ${code} au livreur.` : 'Donnez au livreur le code reçu par SMS.'} Votre commande ${orderRef(d)} est en route${eta ? `, arrivée prévue vers ${eta}` : ''}.${balance}`,
+                content: `Votre commande ${orderRef(d)} est en route${eta ? `, arrivée prévue vers ${eta}` : ''}. À son arrivée, donnez au livreur le code reçu par SMS.${balance}`,
             };
         },
-        sms: (d) => {
-            const eta = orderEta(d);
-            return `${SMS_PREFIX}donnez le code ${smsOrderCode(d)} au livreur : commande ${orderRef(d)} en route${eta ? `, arrivée vers ${eta}` : ''}.`;
-        },
-        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE', code: '4821', balance_due: 875_000 },
+        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE', balance_due: 875_000 },
     }),
     ORDER_HANDED_OVER: define('ORDER_HANDED_OVER', {
         label: 'Commande remise', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
@@ -1874,21 +1870,6 @@ const CATALOG = {
         }),
         sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} non retirée à temps chez ${smsVar(text(d, 'venue_name'), 30)} : close, sans remboursement.`,
         sample: { ...ORDER_SAMPLE_DATA, mode: 'RETRAIT', state: 'NON_RETIREE', origin: 'NON_RETIREE', refund_amount: 0 },
-    }),
-    ORDER_CODE: define('ORDER_CODE', {
-        label: 'Nouveau code de remise', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
-        link: orderLink,
-        inApp: (d) => {
-            const code = orderCode(d);
-            const who = text(d, 'mode') === 'LIVRAISON' ? 'au livreur' : 'au comptoir';
-            return {
-                title: 'Nouveau code',
-                content: code ? `Donnez le code ${code} ${who}. C’est le nouveau code de la commande ${orderRef(d)} : l’ancien ne marche plus.`
-                    : `Un nouveau code pour la commande ${orderRef(d)} vous est envoyé par SMS : donnez-le ${who}. L’ancien ne marche plus.`,
-            };
-        },
-        sms: (d) => `${SMS_PREFIX}nouveau code de la commande ${orderRef(d)} : ${smsOrderCode(d)}. Donnez-le ${text(d, 'mode') === 'LIVRAISON' ? 'au livreur' : 'au comptoir'}. L'ancien ne marche plus.`,
-        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE', code: '0937' },
     }),
     ORDER_NEW: define('ORDER_NEW', {
         label: 'Nouvelle commande à accepter', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
@@ -2822,6 +2803,8 @@ const CATALOG = {
     OTP_ADMIN: defineSync('OTP_ADMIN', 'Code administrateur'),
     // Finition 3d (point 2a) : code au nouveau numéro d'un administrateur, à dicter au Superadmin
     OTP_ADMIN_PHONE: defineSync('OTP_ADMIN_PHONE', 'Code au nouveau numéro d’un administrateur'),
+    // Lot 12a : code de remise d'une commande (retrait, livraison, nouveau code), envoyé tout de suite, jamais stocké
+    ORDER_HANDOVER_CODE: defineSync('ORDER_HANDOVER_CODE', 'Code de remise d’une commande'),
     // N26 (tâche 48) : lien de vérification d'une adresse email, seul envoi vers une adresse non vérifiée.
     EMAIL_VERIFICATION: defineSyncEmail('EMAIL_VERIFICATION', 'Vérification de l’adresse email'),
 } satisfies { readonly [T in NotificationType]: NotificationTemplate<TemplateData[T]> };
@@ -2929,20 +2912,6 @@ function partnerOrderLink(d: object): string {
 
 function courierOrderLink(d: object): string {
     return `/courier/orders/${ident(d, 'order_id')}`;
-}
-
-/** Lot 12a : code de remise, seulement dans les données du SMS, du push et de l'email (4 chiffres), sinon null. */
-function orderCode(d: object): string | null {
-    const code = optText(d, 'code');
-    if (code !== null && !/^\d{4}$/.test(code)) throw new TemplateDataError('code', 'n’est pas un code à 4 chiffres');
-    return code;
-}
-
-/** Lot 12a : code obligatoire (SMS d'un avis qui annonce le code). */
-function smsOrderCode(d: object): string {
-    const code = orderCode(d);
-    if (!code) throw new TemplateDataError('code');
-    return code;
 }
 
 function hallName(d: object, capital = false): string {
@@ -3132,7 +3101,7 @@ export function renderNotification(type: NotificationType | string, channel: Cha
  * unique « Event Village : », code de retrait dédié, invitation d'un contrôleur sur un segment (prénom translittéré et
  * borné à 9 septets). Le code n'est passé qu'ici, au moment de l'envoi : il n'est jamais stocké.
  */
-export function renderSyncSms(type: SyncType, data: { code?: string; firstName?: string; setupLink?: string }): string {
+export function renderSyncSms(type: SyncType, data: { code?: string; firstName?: string; setupLink?: string; orderNumber?: string; step?: 'RETRAIT' | 'LIVRAISON' | 'NOUVEAU' }): string {
     // Lot 9 quinquies (A2) : le lien d'activation d'un compte créé par un admin n'a pas de code (le jeton est dans le lien)
     if (type === 'ACCOUNT_ACTIVATION') {
         const link = typeof data?.setupLink === 'string' ? data.setupLink.trim() : '';
@@ -3158,6 +3127,16 @@ export function renderSyncSms(type: SyncType, data: { code?: string; firstName?:
         // Finition 3d (point 2a) : la personne dicte ce code au Superadmin qui change son numéro
         case 'OTP_ADMIN_PHONE':
             return `${SMS_PREFIX}code ${code} pour confirmer ce numéro sur un compte administrateur. Donnez-le seulement au super-administrateur. Valable 10 minutes.`;
+        // Lot 12a : code de remise d'une commande (complément du 21/11 : le texte dit quoi faire)
+        case 'ORDER_HANDOVER_CODE': {
+            if (!/^\d{4}$/.test(code)) throw new TemplateDataError('code', 'n’est pas un code à 4 chiffres');
+            const ref = typeof data.orderNumber === 'string' ? data.orderNumber.trim() : '';
+            if (!/^[A-Z0-9-]{4,24}$/.test(ref)) throw new TemplateDataError('orderNumber', 'absent ou illisible');
+            if (data.step === 'RETRAIT') return `${SMS_PREFIX}votre commande ${ref} vous attend. Donnez le code ${code} au comptoir pour la retirer, à personne d'autre.`;
+            if (data.step === 'LIVRAISON') return `${SMS_PREFIX}votre commande ${ref} est en route. Donnez le code ${code} au livreur à son arrivée, pas avant.`;
+            if (data.step === 'NOUVEAU') return `${SMS_PREFIX}nouveau code de la commande ${ref} : ${code}. L'ancien ne marche plus. Donnez-le seulement à la remise.`;
+            throw new TemplateDataError('step', 'absent ou illisible');
+        }
         case 'CONTROLLER_INVITE': {
             const link = typeof data.setupLink === 'string' ? data.setupLink.trim() : '';
             if (!/^https?:\/\//.test(link)) throw new TemplateDataError('setupLink', 'absent ou illisible');

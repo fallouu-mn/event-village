@@ -19,7 +19,10 @@
 --  5. order_courier_action(p) : le livreur de la commande, membre ACTIF de l'équipe : EN_ROUTE, REMETTRE ;
 --  6. remise (order_handover_apply) : code à 4 chiffres comparé à son empreinte, essais limités
 --     (orders.code_max_attempts), solde dû encaissé sur place et noté (jamais compté) ; order_code_resend(p) : nouveau
---     code demandé par le client (orders.code_resend_max) ;
+--     code demandé par le client (orders.code_resend_max). Un code émis (prête à retirer, en route, nouveau code) est
+--     rendu une seule fois dans la réponse de la fonction à la route serveur (`handover_code`, avec le numéro du
+--     client), qui l'envoie aussitôt par SMS (ORDER_HANDOVER_CODE, journal sans le code) et ne le renvoie jamais au
+--     navigateur ; il n'est stocké qu'en empreinte et n'entre jamais dans la boîte d'envoi ;
 --  7. livreurs : order_courier_invite (par la partenaire, compte actif existant), order_courier_respond (accord du
 --     livreur), order_courier_remove ;
 --  8. lectures serveur : order_view (client, partenaire, livreur, administration), order_partner_list,
@@ -270,6 +273,21 @@ BEGIN
 END;
 $$;
 
+-- Code à envoyer tout de suite par la route serveur : le code, l'étape, le client et son numéro, le numéro de la commande.
+-- Jamais rendu au navigateur (les routes le retirent de la réponse après l'envoi du SMS).
+CREATE OR REPLACE FUNCTION public.order_code_delivery(p_order_id uuid, p_code text, p_step text)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT jsonb_build_object('handover_code', p_code, 'handover_step', p_step, 'client_id', o.client_id,
+                              'client_phone', u.phone, 'order_number', o.order_number)
+      FROM public.orders o JOIN public.users u ON u.id = o.client_id
+     WHERE o.id = p_order_id;
+$$;
+
 -- Départ du livreur (ou de la partenaire) : code envoyé au client, heure estimée
 CREATE OR REPLACE FUNCTION public.order_set_en_route(p_order_id uuid, p_actor uuid, p_role text, p_eta_minutes integer)
 RETURNS jsonb
@@ -301,8 +319,9 @@ BEGIN
     PERFORM public.order_log_state(o.id, 'PRETE', 'EN_ROUTE', p_actor, p_role, NULL);
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value)
     VALUES (p_actor, p_role, 'ORDER_ON_THE_WAY', 'orders', o.id, jsonb_build_object('order_state', 'EN_ROUTE', 'estimated_at', v_eta));
-    PERFORM public.order_notify('ORDER_ON_THE_WAY', o.id, 'CLIENT', jsonb_build_object('code', v_code));
-    RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'EN_ROUTE', 'estimated_at', v_eta);
+    PERFORM public.order_notify('ORDER_ON_THE_WAY', o.id, 'CLIENT');
+    RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'EN_ROUTE', 'estimated_at', v_eta)
+           || public.order_code_delivery(o.id, v_code, 'LIVRAISON');
 END;
 $$;
 
@@ -413,9 +432,9 @@ BEGIN
     UPDATE public.orders SET code_resends = code_resends + 1, updated_at = now() WHERE id = o.id;
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
     VALUES (v_client, 'CLIENT', 'ORDER_CODE_RESENT', 'orders', o.id, jsonb_build_object('resends', o.code_resends + 1));
-    PERFORM public.order_notify('ORDER_CODE', o.id, 'CLIENT', jsonb_build_object('code', v_code), (o.code_resends + 1)::text);
     RETURN jsonb_build_object('ok', true, 'order_id', o.id,
-                              'resends_left', public.fin_setting_num('orders.code_resend_max')::int - o.code_resends - 1);
+                              'resends_left', public.fin_setting_num('orders.code_resend_max')::int - o.code_resends - 1)
+           || public.order_code_delivery(o.id, v_code, 'NOUVEAU');
 END;
 $$;
 
@@ -537,11 +556,12 @@ BEGIN
          WHERE id = o.id;
         PERFORM public.order_log_state(o.id, o.order_state, 'PRETE', v_actor, 'PARTENAIRE', NULL);
         IF o.delivery_mode::text = 'RETRAIT' THEN
+            -- Le SMS de l'étape est le code de retrait, envoyé tout de suite par la route ; cloche, push et email ici
             v_code := public.order_issue_code(o.id);
-            PERFORM public.order_notify('ORDER_READY', o.id, 'CLIENT', jsonb_build_object('code', v_code));
-        ELSE
-            PERFORM public.order_notify('ORDER_READY', o.id, 'CLIENT');
+            PERFORM public.order_notify('ORDER_READY', o.id, 'CLIENT', '{}'::jsonb, NULL, ARRAY['IN_APP', 'PUSH', 'EMAIL']);
+            RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'PRETE') || public.order_code_delivery(o.id, v_code, 'RETRAIT');
         END IF;
+        PERFORM public.order_notify('ORDER_READY', o.id, 'CLIENT');
         RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'PRETE');
     END IF;
 
@@ -981,6 +1001,7 @@ REVOKE ALL ON FUNCTION public.order_refund_payment(uuid, numeric, text) FROM PUB
 REVOKE ALL ON FUNCTION public.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_cancel(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_issue_code(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.order_code_delivery(uuid, text, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.order_set_en_route(uuid, uuid, text, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_handover_apply(uuid, uuid, text, text, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_code_resend(jsonb) FROM PUBLIC, anon, authenticated;

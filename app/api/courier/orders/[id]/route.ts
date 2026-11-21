@@ -3,7 +3,7 @@ import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { guardFeature } from '@/lib/features/flags';
-import { UUID_RE, invalidBody, orderNotFound, orderRefusal, orderResponse, orderStateLabel, readJson } from '@/lib/orders/booking';
+import { UUID_RE, deliverHandoverCode, invalidBody, orderNotFound, orderRefusal, orderResponse, orderStateLabel, readJson } from '@/lib/orders/booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +55,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (error) throw new Error(`order_courier_action : ${error.message}`);
         const r = data as Record<string, unknown>;
         if (r?.ok !== true) return orderRefusal(r, 'Action impossible pour le moment.');
+        // Code de remise (en route) : SMS immédiat au client, jamais renvoyé au livreur
+        await deliverHandoverCode(r, activeSession.user.id);
         return NextResponse.json({ success: true, order: { id, state: r.order_state, stateLabel: orderStateLabel(r.order_state, 'LIVRAISON'), estimatedAt: r.estimated_at ?? null } });
     } catch (error: unknown) {
         return apiFailure('PATCH /api/courier/orders/[id]', error, { message: 'Action impossible pour le moment. Réessayez.', code: 'COURIER_ACTION_FAILED', status: 500 });

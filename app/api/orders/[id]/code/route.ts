@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession } from '@/lib/auth/session';
-import { UUID_RE, orderNotFound, orderRefusal } from '@/lib/orders/booking';
+import { UUID_RE, deliverHandoverCode, orderNotFound, orderRefusal } from '@/lib/orders/booking';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/orders/[id]/code — le client demande un nouveau code de remise (perdu, ou trop d'essais) : order_code_resend.
- * Le code part par SMS, push et email (jamais dans la cloche, gardée en base) ; l'ancien ne vaut plus ; nombre de
- * demandes borné (orders.code_resend_max). Le code n'est jamais rendu dans la réponse.
+ * Le code part par SMS immédiat (ORDER_HANDOVER_CODE, journal sans le code) ; l'ancien ne vaut plus ; nombre de
+ * demandes borné (orders.code_resend_max). Le code n'est jamais rendu dans la réponse ni stocké en clair.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (error) throw new Error(`order_code_resend : ${error.message}`);
         const r = data as Record<string, unknown>;
         if (r?.ok !== true) return orderRefusal(r, 'Nouveau code impossible pour le moment.');
+        await deliverHandoverCode(r, session.user.id);
         return NextResponse.json({
             success: true,
             message: 'Un nouveau code vous est envoyé par SMS. L’ancien ne marche plus.',

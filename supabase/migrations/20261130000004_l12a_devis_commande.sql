@@ -4,7 +4,7 @@
 -- Trous de l'existant (rapport § 1) : total calculé par la route, produit d'une autre partenaire accepté, aucun produit
 -- réglementé refusé, quantité négative ou nulle non refusée, aucun stock ni portion, aucun plafond.
 --  1. aides : verrous (établissement, client, portions), données et envoi des avis (order_notif_data, order_notify :
---     la cloche est mise en file SANS le code de remise, les autres canaux avec, effacé ensuite), historique des états
+--     jamais le code de remise, envoyé à part par la route), historique des états
 --     (order_log_state), clôture du stock et des portions (order_release_stock) ;
 --  2. order_quote_compute(p) : devis complet en base (établissement validé et ouvert à la vente, partenaire VALIDE,
 --     mode de remise accepté, produits de cet établissement, disponibles, jamais réglementés, quantités 1 à 99,
@@ -92,10 +92,11 @@ AS $$
 $$;
 
 -- Avis d'une étape : au client ('CLIENT'), à la partenaire propriétaire ('OWNER') ou au livreur de la commande
--- ('COURIER') ; une fois par type, commande et destinataire (p_ref distingue un avis répété : nouveau code).
--- Le code de remise (p_extra->>'code') ne va jamais dans la cloche (gardée en base) : la cloche est mise en file à part,
--- sans lui ; les autres canaux le portent et la file l'efface dès leur envoi terminé (trg_notification_outbox_order_code).
-CREATE OR REPLACE FUNCTION public.order_notify(p_type text, p_order_id uuid, p_to text, p_extra jsonb DEFAULT '{}'::jsonb, p_ref text DEFAULT NULL)
+-- ('COURIER') ; une fois par type, commande et destinataire (p_ref distingue un avis répété). p_channels : canaux voulus
+-- (vide = tous ceux du registre) ; sert quand le SMS de l'étape est le code de remise, envoyé tout de suite par la route
+-- (ORDER_HANDOVER_CODE). Le code n'entre jamais dans la boîte d'envoi (contrainte notification_outbox_no_secret_chk).
+CREATE OR REPLACE FUNCTION public.order_notify(p_type text, p_order_id uuid, p_to text, p_extra jsonb DEFAULT '{}'::jsonb,
+                                               p_ref text DEFAULT NULL, p_channels text[] DEFAULT NULL)
 RETURNS integer
 LANGUAGE plpgsql
 VOLATILE
@@ -104,9 +105,7 @@ SET search_path = public
 AS $$
 DECLARE
     v_user uuid;
-    v_data jsonb;
-    v_key  text;
-    v_n    integer := 0;
+    v_req  jsonb;
 BEGIN
     IF p_to = 'CLIENT' THEN
         SELECT o.client_id INTO v_user FROM public.orders o WHERE o.id = p_order_id;
@@ -118,17 +117,15 @@ BEGIN
     IF v_user IS NULL THEN
         RETURN 0;
     END IF;
-    v_data := COALESCE(public.order_notif_data(p_order_id), '{}'::jsonb) || jsonb_build_object('recipient_role', p_to)
-              || COALESCE(p_extra, '{}'::jsonb);
-    v_key := p_type || ':' || p_order_id::text || ':' || v_user::text || COALESCE(':' || p_ref, '');
-    IF v_data ? 'code' THEN
-        v_n := COALESCE(public.notif_enqueue(jsonb_build_object(
-            'type', p_type, 'key', v_key, 'user_id', v_user, 'channels', jsonb_build_array('IN_APP'), 'data', v_data - 'code')), 0);
-        v_n := v_n + COALESCE(public.notif_enqueue(jsonb_build_object(
-            'type', p_type, 'key', v_key, 'user_id', v_user, 'channels', jsonb_build_array('PUSH', 'EMAIL', 'SMS'), 'data', v_data)), 0);
-        RETURN v_n;
+    v_req := jsonb_build_object(
+        'type', p_type, 'key', p_type || ':' || p_order_id::text || ':' || v_user::text || COALESCE(':' || p_ref, ''),
+        'user_id', v_user,
+        'data', COALESCE(public.order_notif_data(p_order_id), '{}'::jsonb) || jsonb_build_object('recipient_role', p_to)
+                || COALESCE(p_extra, '{}'::jsonb));
+    IF p_channels IS NOT NULL THEN
+        v_req := v_req || jsonb_build_object('channels', to_jsonb(p_channels));
     END IF;
-    RETURN COALESCE(public.notif_enqueue(jsonb_build_object('type', p_type, 'key', v_key, 'user_id', v_user, 'data', v_data)), 0);
+    RETURN COALESCE(public.notif_enqueue(v_req), 0);
 END;
 $$;
 
@@ -613,7 +610,7 @@ REVOKE ALL ON FUNCTION public.order_venue_lock(uuid) FROM PUBLIC, anon, authenti
 REVOKE ALL ON FUNCTION public.order_client_lock(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_lock(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_notif_data(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_notify(text, uuid, text, jsonb, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.order_notify(text, uuid, text, jsonb, text, text[]) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_log_state(uuid, text, text, uuid, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_release_stock(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_quote_compute(jsonb) FROM PUBLIC, anon, authenticated;
@@ -623,7 +620,7 @@ GRANT EXECUTE ON FUNCTION public.order_venue_lock(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_client_lock(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_lock(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_notif_data(uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.order_notify(text, uuid, text, jsonb, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.order_notify(text, uuid, text, jsonb, text, text[]) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_log_state(uuid, text, text, uuid, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_release_stock(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_quote_compute(jsonb) TO service_role;

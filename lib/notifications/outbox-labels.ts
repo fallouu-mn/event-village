@@ -206,7 +206,6 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ORDER_REFUND_PAID: 'Remboursement de commande versé',
     ORDER_PICKUP_REMINDER: 'Commande à retirer',
     ORDER_NOT_COLLECTED: 'Commande non retirée',
-    ORDER_CODE: 'Nouveau code de remise',
     ORDER_NEW: 'Nouvelle commande à accepter',
     ORDER_CANCELLED_PRO: 'Commande annulée (établissement)',
     ORDER_HANDED_OVER_PRO: 'Commande remise par le livreur',
@@ -282,6 +281,7 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ADMIN_PHONE_CHANGED: 'Numéro d’un administrateur remplacé (ancien numéro)',
     ADMIN_PHONE_CONFIRMED: 'Numéro d’un administrateur confirmé (nouveau numéro)',
     OTP_ADMIN_PHONE: 'Code au nouveau numéro d’un administrateur',
+    ORDER_HANDOVER_CODE: 'Code de remise d’une commande',
 };
 
 export function outboxStatusLabel(status: string): string {

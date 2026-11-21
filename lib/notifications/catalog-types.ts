@@ -58,7 +58,9 @@ export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OT
     /** Lot 9 quinquies : lien d'activation d'un compte créé par un admin (A2) ; code administrateur (A3). */
     | 'ACCOUNT_ACTIVATION' | 'OTP_ADMIN'
     /** Finition 3d (point 2a) : code au nouveau numéro d'un administrateur, à dicter au Superadmin. */
-    | 'OTP_ADMIN_PHONE';
+    | 'OTP_ADMIN_PHONE'
+    /** Lot 12a : code de remise d'une commande (retrait, livraison, nouveau code), envoyé tout de suite, jamais stocké. */
+    | 'ORDER_HANDOVER_CODE';
 
 /** Lot 9 bis (11.1 N26) : email synchrone, journal seulement ; le jeton du lien n'est jamais stocké. */
 export type EmailSyncType = 'EMAIL_VERIFICATION';
@@ -198,20 +200,19 @@ export interface TemplateData {
     TABLE_REMINDER: TableReservationData;
     VENUE_VALIDATION_DECIDED: { venue_id: string; venue_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
     ADMIN_VENUE_SUBMITTED: { venue_id: string; venue_name: string; kind?: string; city?: string | null; resubmitted?: boolean };
-    // Lot 12a : données de order_notif_data (commande), plus les champs propres à chaque avis ; code : seulement pour le
-    // SMS, le push et l'email (jamais pour la cloche, gardée en base)
+    // Lot 12a : données de order_notif_data (commande), plus les champs propres à chaque avis ; jamais le code de remise
+    // (envoyé à part, par SMS immédiat : ORDER_HANDOVER_CODE)
     ORDER_RECEIVED: OrderNotifData;
     ORDER_ACCEPTED: OrderNotifData;
     ORDER_PREPARING: OrderNotifData;
-    ORDER_READY: OrderNotifData & { code?: string };
-    ORDER_ON_THE_WAY: OrderNotifData & { code?: string };
+    ORDER_READY: OrderNotifData;
+    ORDER_ON_THE_WAY: OrderNotifData;
     ORDER_HANDED_OVER: OrderNotifData;
     ORDER_CANCELLED: OrderNotifData & OrderCancelData;
     ORDER_PAYMENT_REFUNDED: OrderNotifData & { payment_id: string; amount: number; operator?: string | null };
     ORDER_REFUND_PAID: OrderNotifData & { cashout_id: string; amount: number; operator?: string | null };
     ORDER_PICKUP_REMINDER: OrderNotifData & { closes_at: string };
     ORDER_NOT_COLLECTED: OrderNotifData & Partial<OrderCancelData>;
-    ORDER_CODE: OrderNotifData & { code?: string };
     ORDER_NEW: OrderNotifData;
     ORDER_CANCELLED_PRO: OrderNotifData & OrderCancelData;
     ORDER_HANDED_OVER_PRO: OrderNotifData;
@@ -251,6 +252,7 @@ export interface TemplateData {
     ACCOUNT_ACTIVATION: { purpose?: string };
     OTP_ADMIN: { purpose?: string };
     OTP_ADMIN_PHONE: { purpose?: string };
+    ORDER_HANDOVER_CODE: { purpose?: string };
 
     // ── Lot 9 bis (contrat 11.1, N1 à N26) ──
     REFUND_DELAYED: OptionalEventData & { cashout_id: string; amount: number };

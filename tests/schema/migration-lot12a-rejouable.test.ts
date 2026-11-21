@@ -51,6 +51,7 @@ const RECOPIES: Record<string, { file: string; replaced: string[] }> = {
     notif_cashouts_notify: { file: LOT12A_MIGRATIONS[5], replaced: [
         "AND hp.payment_target::text IN ('HALL_RESERVATION', 'TABLE_RESERVATION')) THEN",
     ] },
+    notification_sync_log: { file: LOT12A_MIGRATIONS[6], replaced: [] },
     finance_admin_earned: { file: LOT12A_MIGRATIONS[7], replaced: [
         "COALESCE(sum(CASE WHEN p.payment_target::text IN ('HALL_RESERVATION', 'TABLE_RESERVATION')",
     ] },
@@ -128,11 +129,12 @@ describe('Lot 12a — migrations 20261130000001… rejouables (transaction annul
                    FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'order\\_%' ORDER BY 1`);
             assert.ok(rows.length >= 25, `fonctions order_* : ${rows.length}`);
             assert.deepEqual(rows.filter((r) => r.anon || r.auth).map((r) => r.proname), [], 'aucune ouverte à anon ou authenticated');
-            const { rows: svc } = await c.query<{ hash: boolean; issue: boolean; key: boolean }>(
+            const { rows: svc } = await c.query<{ hash: boolean; issue: boolean; delivery: boolean; key: boolean }>(
                 `SELECT has_function_privilege('service_role', 'public.order_code_hash(uuid, text)', 'execute') AS hash,
                         has_function_privilege('service_role', 'public.order_issue_code(uuid)', 'execute') AS issue,
+                        has_function_privilege('service_role', 'public.order_code_delivery(uuid, text, text)', 'execute') AS delivery,
                         has_table_privilege('service_role', 'private.order_code_key', 'select') AS key`);
-            assert.deepEqual(svc[0], { hash: false, issue: false, key: false });
+            assert.deepEqual(svc[0], { hash: false, issue: false, delivery: false, key: false });
         });
     });
 });

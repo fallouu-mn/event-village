@@ -133,6 +133,36 @@ export async function sendOrderRefunds(ids: unknown): Promise<void> {
     }
 }
 
+/**
+ * Code de remise émis par la base (prête à retirer, en route, nouveau code) : envoyé tout de suite au client par SMS
+ * (ORDER_HANDOVER_CODE, journal sans le code), puis retiré de la réponse : il n'est jamais rendu au navigateur (ni à la
+ * partenaire, ni au livreur, ni au client), jamais stocké en clair, jamais mis dans la boîte d'envoi. Un envoi en échec
+ * n'annule pas l'étape : le client demande un nouveau code depuis sa commande.
+ */
+export async function deliverHandoverCode(r: Record<string, unknown>, actorId: string): Promise<void> {
+    const code = r.handover_code;
+    const fields = ['handover_code', 'handover_step', 'client_id', 'client_phone', 'order_number'];
+    try {
+        if (typeof code !== 'string') return;
+        const phone = typeof r.client_phone === 'string' ? r.client_phone : '';
+        const step = r.handover_step === 'RETRAIT' || r.handover_step === 'LIVRAISON' ? r.handover_step : 'NOUVEAU';
+        if (!phone) {
+            console.error(`[commandes] code de remise de la commande ${String(r.order_id)} non envoyé : aucun numéro sur le compte du client.`);
+            return;
+        }
+        const { mTargetService } = await import('@/lib/sms/mtarget.service');
+        const sent = await mTargetService.sendOrderCode(phone, code, String(r.order_number ?? ''), step, {
+            actorId,
+            log: { type: 'ORDER_HANDOVER_CODE', ref: String(r.order_id), userId: typeof r.client_id === 'string' ? r.client_id : null, actorId },
+        });
+        if (!sent.success) console.error(`[commandes] code de remise de la commande ${String(r.order_id)} non envoyé : ${sent.code ?? sent.error ?? 'refus'}`);
+    } catch (err) {
+        console.error(`[commandes] code de remise de la commande ${String(r.order_id)} non envoyé :`, err instanceof Error ? err.message : String(err));
+    } finally {
+        for (const k of fields) delete r[k];
+    }
+}
+
 /** Message rendu au client qui annule. */
 export function orderCancelMessage(r: { refund_amount?: unknown }): string {
     const refund = Number(r.refund_amount ?? 0);
