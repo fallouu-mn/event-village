@@ -226,7 +226,9 @@ describe('C5. Client absent', () => {
         await tick();
         assert.equal((await reservation(id)).booking_state, 'ARRIVEE');
         const other = await paidReservation('l11a-absent-main', 600);
-        await shiftReservation(other.id, { startMinutes: -5 });
+        // Contre-vérification du lot 11b (T2, modification signalée au rapport) : « Absent » seulement après la garde de
+        // 30 minutes promise par les avis ; commencée il y a 31 minutes (au lieu de 5)
+        await shiftReservation(other.id, { startMinutes: -31 });
         const absent = await partnerAction(other.id, partner.accessToken, { action: 'ABSENT' });
         assert.equal(absent.status, 200, JSON.stringify(absent.body));
         assert.equal((await reservation(other.id)).booking_state, 'ABSENT');
@@ -234,9 +236,10 @@ describe('C5. Client absent', () => {
 });
 
 describe('C6. Rappel et tâche planifiée', () => {
-    test('rappel 3 h avant l’heure, sur les canaux du rappel, une seule fois', async () => {
-        // Début dans 150 à 165 minutes (arrondi au quart d'heure) : dans la fenêtre du rappel (3 h), quelle que soit l'heure
-        const { client, id } = await paidReservation('l11a-rappel', 150);
+    // Lot 11b (modification signalée au rapport) : rappel 2 h avant (décision du client, réglage tables.reminder_hours)
+    test('rappel 2 h avant l’heure, sur les canaux du rappel, une seule fois', async () => {
+        // Début dans 90 à 105 minutes (arrondi au quart d'heure) : dans la fenêtre du rappel (2 h), quelle que soit l'heure
+        const { client, id } = await paidReservation('l11a-rappel', 90);
         await tick();
         await tick();
         const reminders = (await outboxOf(client.userId, id)).filter((x) => x.startsWith('TABLE_REMINDER:'));

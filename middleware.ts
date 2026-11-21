@@ -37,6 +37,8 @@ const PUBLIC_API_EXACT = [
     // contrôle elle-même son interrupteur (404 s'il est fermé)
     '/api/features',
     '/api/halls',
+    // Lot 11b : recherche publique des établissements (la route contrôle l'interrupteur des tables)
+    '/api/tables',
     // Lot 8 (A41) : devis d'un panier, sans session. Sans cette ligne, un visiteur lisait « Total indisponible » sur
     // la fiche et ne pouvait pas commencer un achat. POST /api/checkout reste protégé.
     '/api/checkout/quote',
@@ -53,6 +55,8 @@ const PUBLIC_API_EXACT = [
 const PUBLIC_API_PATTERNS: readonly RegExp[] = [
     /^\/api\/halls\/[0-9a-f-]{36}$/,
     /^\/api\/restaurants\/[^/]+\/(tables|menu)$/,
+    // Lot 11b : fiche, créneaux, plan de salle et devis d'un établissement public (GET seulement côté route)
+    /^\/api\/tables\/[0-9a-f-]{36}(\/(slots|floor|quote))?$/,
 ];
 
 const PUBLIC_EXACT_ROUTES = [
@@ -63,6 +67,8 @@ const PUBLIC_EXACT_ROUTES = [
     '/forgot-password',
     '/reset-password',
     '/halls',
+    // Lot 11b : recherche des établissements (tables)
+    '/tables',
     '/partner/register',
     '/controller/setup',
     // Lot 9 bis (R87, fix(9b.48-SB)) : page du lien de vérification de l'email, ouverte depuis la boîte de réception
@@ -133,7 +139,11 @@ export async function middleware(req: NextRequest) {
     const isPublicDynamic =
         pathname.startsWith('/events/') ||
         pathname.startsWith('/halls/') ||
-        pathname.startsWith('/restaurants/');
+        pathname.startsWith('/restaurants/') ||
+        // Lot 11b : fiche d'un établissement ; « Mes réservations » et le lien court /t/<code> vérifient eux-mêmes la
+        // session (renvoi vers la connexion, puis retour)
+        pathname.startsWith('/tables/') ||
+        pathname.startsWith('/t/');
     const isAuthPage =
         pathname === '/login' ||
         pathname === '/register' ||

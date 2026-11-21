@@ -40,8 +40,9 @@ const publicUrl = (p: string) => service.storage.from(BUCKET).getPublicUrl(p).da
 const webp = async () => sharp({ create: { width: 48, height: 30, channels: 3, background: { r: 30, g: 140, b: 90 } } }).webp().toBuffer();
 
 /** Colonnes lues par storage_public_citations (migration 20261116000008), et colonnes écartées avec leur raison. */
+// Lot 11b (ajout signalé au rapport) : photos des établissements (venues.photos, migration 20261129000005)
 const READ = ['events.image_url', 'events.gallery_urls', 'public_event_state.image_url', 'halls.images', 'products.images', 'partners.logo_url',
-    'partners.cover_url', 'partners.id_card_url', 'partners.business_doc_url', 'users.avatar_url'];
+    'partners.cover_url', 'partners.id_card_url', 'partners.business_doc_url', 'users.avatar_url', 'venues.photos'];
 const SET_ASIDE: Readonly<Record<string, string>> = {};
 
 describe('a. inventaire des colonnes qui citent le stockage', () => {

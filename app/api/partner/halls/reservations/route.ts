@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
-import { guardFeature } from '@/lib/features/flags';
 import { partnerReservations, UUID_RE } from '@/lib/halls/queries';
 import { badRequest, DAY_RE } from '@/lib/halls/route-helpers';
 
@@ -18,8 +17,7 @@ export async function GET(req: NextRequest) {
     try {
         const session = await requireActiveSession(req);
         if (session.response) return session.response;
-        const closed = await guardFeature('halls', 'GET /api/partner/halls/reservations');
-        if (closed) return closed;
+        // Lot 11b (décision du 20/11) : sans interrupteur, une réservation existante se lit et se gère même service fermé
         if (!serverIsPartner(session.user)) {
             return NextResponse.json({ success: false, error: 'Espace réservé aux partenaires.', code: 'FORBIDDEN' }, { status: 403 });
         }

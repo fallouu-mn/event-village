@@ -126,6 +126,21 @@ d'où elle vient et pourquoi elle attend.
 |---|---|---|
 | « Mes réservations » (`/halls/reservations`) et le détail d’une réservation (`/halls/reservations/[id]`) restent ouverts quand le service des salles est fermé (`features.halls_enabled`), pour que le lien d’une notification de réservation ne mène plus à une page introuvable. | Décision du 20/11/2026 : à faire au lot 11b. Aujourd’hui, service fermé, ces pages répondent 404 (l’annulation, elle, reste possible). | Lot 10b, constat produit des correctifs de la contre-vérification |
 
+## Tables : écrans, plan de salle, fermetures (lot 11b)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Entrée « Établissements à valider » dans le menu de l'administration et entrée « Restaurants et tables » du menu client vers `/tables`. | Le menu fait partie de la coquille commune, travaillée par une autre session (Design 1e) : le lot ne la touche pas. En attendant : lien « Établissements à valider » dans la page « Salles à valider », liens directs des avis, et l'ancienne adresse du menu (`/restaurants/…/tables`) redirige vers `/tables`. | Consigne du lot 11b |
+| Avis à l'administration quand un établissement validé change de nom, d'adresse, d'acompte ou de photos (comme les salles, lot 10b). | Demande de recopier `notif_admin_review_sms` (SMS groupé) et d'ajouter un type ; non demandé par la consigne. Un établissement validé et modifié reste validé. | Lot 11b |
+| Corriger une absence marquée par erreur (« Client absent » annulé). | L'acompte est déjà gardé par l'établissement et la table a pu être reprise : règle d'argent à décider avec le client. | Lot 11a, point ouvert repris au lot 11b |
+| Une seule table par créneau et par client dans TOUS les établissements (et non par établissement). | La règle par établissement a été validée par l'utilisateur le 18/11 (contre-vérification du lot 11a, T2) ; l'étendre change les suites d'audit du lot 11a. À trancher avec le client. | Lot 11b |
+| Recherche : tri par distance (position du client) et carte des résultats. | Carte publique : Design B, hors périmètre. | Consigne du lot 11b |
+| Recherche : calcul des créneaux de chaque établissement en une requête groupée (aujourd'hui : une vérification par établissement et par créneau, 24 établissements par page). | Suffisant au lancement ; à revoir avec le volume réel. | Lot 11b |
+| Planning du jour en temps réel par le temps réel de la base (au lieu d'une relecture toutes les 20 secondes). | Changement de la publication temps réel (charge, politiques) ; aucune lecture REST pour l'établissement (consigne). | Lot 11b |
+| Réglage par défaut du rappel : `platform_settings_defaults` garde 3 h comme valeur d'origine du réglage `tables.reminder_hours` (la migration a posé 2 h par une mise à jour, historisée). | La fonction des valeurs d'origine est recopiée par plusieurs lots en parallèle ; « Revenir aux valeurs d'origine » remettrait 3 h. À aligner dans un lot de réglages. | Lot 11b |
+| Boutons « J'arrive » et « Annuler » directement dans la notification push du rappel (actions du service worker). | Le service worker est partagé par toute l'application et couvert par plusieurs suites (push, hors-ligne, déconnexion) ; le rappel ouvre aujourd'hui la réservation (`?rappel=1`) avec ces deux boutons mis en avant. | Lot 11b |
+| e2e : les captures et le contrôle responsive « sombre » des pages connectées sortent en clair (cookie `ev-theme=light` enregistré avec la session par `e2e/auth.setup.ts`, prioritaire sur le thème posé par les fixtures). Poser aussi le cookie dans `prepareContext`, ou le retirer de l'état de connexion (le design 1e le fait déjà pour ses seules captures : `e2e/design1e-captures.responsive.spec.ts:52-55`). | Change les captures et les contrôles de tous les lots (contrastes sombres jamais contrôlés sur les pages connectées) : à faire par la session du design, avec ses corrections. | Lot 11b (captures du run 547) |
+
 ## Identité et navigation (design 1e)
 
 | Sujet | Pourquoi plus tard | Origine |

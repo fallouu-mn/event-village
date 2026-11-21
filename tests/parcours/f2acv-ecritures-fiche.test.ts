@@ -69,15 +69,8 @@ const PARTNER_KEPT: Readonly<Record<string, string>> = {
     'PATCH /api/partner/products/*': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
     'DELETE /api/partner/products/*': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
     'POST /api/partner/products/*/status': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
-    'POST /api/partner/tables': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
-    'PATCH /api/partner/tables/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
-    'DELETE /api/partner/tables/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
-    // Lot 11a (modification signalée au rapport) : POST /api/partner/tables/reservations supprimée (création d'une
-    // réservation par la partenaire, sans contrôle) ; établissements ajoutés (création réservée à une fiche VALIDE)
-    'POST /api/partner/venues': 'service des tables fermé (interrupteur, 404) ; création d’un établissement réservée à une fiche VALIDE (TableService.createVenue)',
-    'PATCH /api/partner/venues/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
-    'PATCH /api/partner/tables/reservations/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
-    'DELETE /api/partner/tables/reservations/*': 'service des tables fermé (interrupteur, 404) : à trancher à son ouverture',
+    // Lot 11b (F1, modification signalée au rapport) : les écritures des établissements et des tables
+    // (/api/partner/venues*, /api/partner/tables*) ne sont plus gardées ; refusées à une fiche SUSPENDU (partnerEventWrite)
 };
 
 /** Écritures /api/controller/* sans ownEventFicheRefusal, avec la raison (décision du correctif T1). */
