@@ -25,6 +25,16 @@ export const LOT11B_MIGRATIONS = [
     '20261129000004_l11b_avis.sql',
     // Photos des établissements citées pour la purge du stockage (run complet 541)
     '20261129000005_l11b_photos_citees.sql',
+    // Contre-vérification du lot 11b (docs/audit-lot11b.md) : T1, fermeture confirmée sur l'empreinte de la liste
+    '20261129000006_l11b_cv_fermeture_empreinte.sql',
+    // T2 absence après la garde, T3 annulation au montant de l'aperçu
+    '20261129000007_l11b_cv_absence_annulation.sql',
+    // T7 plan de salle tout ou rien
+    '20261129000008_l11b_cv_plan_tout_ou_rien.sql',
+    // T6 établissements lus par la REST seulement publics, colonnes publiques de venues
+    '20261129000009_l11b_cv_lectures_etablissements.sql',
+    // T8 paiements et remboursements lus par le client et l'administration seulement (toute l'application)
+    '20261129000010_l11b_cv_paiements_lecture.sql',
 ] as const;
 
 /** Recopies : fonction, migration de la recopie, lignes de la définition précédente qu'elle remplace (aucune ici). */
@@ -44,6 +54,18 @@ const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
     { fn: 'notif_event_soon', file: LOT11B_MIGRATIONS[3], replaced: [] },
     { fn: 'notif_cashouts_notify', file: LOT11B_MIGRATIONS[3], replaced: [] },
     { fn: 'storage_public_citations', file: LOT11B_MIGRATIONS[4], replaced: [] },
+    // Contre-vérification : l'aperçu rend aussi l'empreinte (la dernière ligne du résultat se prolonge)
+    { fn: 'venue_closure_preview', file: LOT11B_MIGRATIONS[5], replaced: [
+        "'refund_total', COALESCE((SELECT sum((x->>'refund_amount')::numeric) FROM jsonb_array_elements(v_touched) x), 0));",
+    ] },
+    { fn: 'venue_closure_create', file: LOT11B_MIGRATIONS[5], replaced: [] },
+    { fn: 'table_reservation_presence', file: LOT11B_MIGRATIONS[6], replaced: [] },
+    { fn: 'table_reservation_cancel', file: LOT11B_MIGRATIONS[6], replaced: [] },
+    // Refus levés dans le bloc des écritures (annulées) au lieu d'un RETURN qui gardait les écritures déjà faites
+    { fn: 'venue_plan_set', file: LOT11B_MIGRATIONS[7], replaced: [
+        "RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PLAN', 'message', 'Placez au moins une table sur le plan avant de le montrer aux clients.');",
+        'EXCEPTION WHEN check_violation OR invalid_text_representation OR numeric_value_out_of_range THEN',
+    ] },
 ];
 
 /** Texte de la dernière définition de public.<nom> dans les fichiers donnés (du CREATE au second $$). */
