@@ -118,10 +118,20 @@ d'où elle vient et pourquoi elle attend.
 | Image d'aperçu de partage : WhatsApp et les autres messageries gardent leur propre copie de l'aperçu une fois lu ; un aperçu déjà lu avant une suspension ou une annulation peut rester visible chez elles. Le serveur, lui, ne la sert plus (404 aussitôt). | Hors de notre contrôle (cache des messageries). | Design 1d, point 5 |
 | Recherche instantanée sur téléphone : la fenêtre se charge au premier toucher ; sur certains iPhone, le clavier ne s'ouvre qu'au second toucher dans le champ. | Précharger la fenêtre coûterait du travail pendant la mesure Lighthouse (le travail reporté est compté). | Design 1d, point 9 |
 | Rangée « Par catégorie » de l'accueil : ses pastilles ne sont pas collantes (seules celles d'Explorer le sont). | La consigne vise la liste qu'on fait défiler ; l'accueil garde ses sections. | Design 1d, point 10 |
-| Mes billets au seuil de la mesure mobile (90 au run 491, 87 à 89 sur d'autres runs du lot) : la part du lot (trois îlots) est retirée du chargement ; reste le rendu React du portefeuille et le client Supabase de la session (rapport du design 1b). | Décision à prendre sur la structure de la page (déjà soulevée au design 1b). | Design 1d, mesures |
+| ~~Mes billets au seuil de la mesure mobile (90 au run 491, 87 à 89 sur d'autres runs du lot).~~ **CLOS le 21/11 (design 1e)** : Mes billets à venir seulement au premier affichage, portefeuille par 10, mesure par un client fixe (10 billets à venir, 30 passés) ; 91 et 92 aux runs complets 557 et 561 ; règle temporaire levée, seuil de 90 bloquant pour toutes les pages. | — | Design 1d, mesures ; clos au design 1e |
 
 ## Salles de fête (lot 10b)
 
 | Sujet | Pourquoi plus tard | Origine |
 |---|---|---|
 | « Mes réservations » (`/halls/reservations`) et le détail d’une réservation (`/halls/reservations/[id]`) restent ouverts quand le service des salles est fermé (`features.halls_enabled`), pour que le lien d’une notification de réservation ne mène plus à une page introuvable. | Décision du 20/11/2026 : à faire au lot 11b. Aujourd’hui, service fermé, ces pages répondent 404 (l’annulation, elle, reste possible). | Lot 10b, constat produit des correctifs de la contre-vérification |
+
+## Identité et navigation (design 1e)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Avis qui mènent au billet, à la réservation ou à la commande PRÉCIS (aujourd'hui : au bon onglet, par exemple « Mes billets › À venir » ou « Reçus »). Il faut un lien par avis dans le catalogue (`lib/notifications/catalog.ts`, champ `link`) et une page qui sait ouvrir un billet ou une réservation donnés. | Le catalogue des avis est hors du périmètre de ce lot (lot 11b en parallèle) ; le panneau suit déjà le lien servi par le serveur, sans rien changer de son côté. | Demande du 21/11 (cloche), design 1e |
+| Logo « Bras levés » encore en dégradé orange → rose (symbole, icônes de l'application, image de partage, en-tête des courriels), alors que le dégradé de l'interface est désormais tout orange. | Changer le logo touche les icônes installées et l'image de partage : décision du client à prendre (garder, ou régénérer avec docs/design/outils/logos.mjs). | Design 1e, point 1 |
+| Affiches déposées entre le design 1d et ce lot : leur couleur reste la dominante (souvent un gris). Le script des affiches existantes ne reprend que les affiches SANS couleur. | Une option « tout recalculer » est à ajouter si le client le souhaite (une écriture par événement, rejouable). | Design 1e, point 4 |
+| « Commandes » n'est plus dans la barre du bas du client (remplacée par « Notifications », cinq onglets au plus) ; elle reste dans le menu et dans les rubriques de l'ordinateur. | À revoir avec le lot des commandes (12a) s'il faut un accès en un toucher. | Design 1e, point 2 |
+| Barre latérale repliée : le bouton « Se déconnecter » et le choix du thème n'y sont plus visibles (dépliée ou page Profil). | Choix d'ergonomie à confirmer par le client. | Design 1e, point 3 |

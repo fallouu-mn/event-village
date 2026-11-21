@@ -24,6 +24,7 @@ import {
   Activity,
   ShieldCheck,
   ArrowLeft,
+  Bell,
   X,
   Menu,
   Search,
@@ -38,6 +39,10 @@ import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT, setPendingSearch } from '@/components/search/search-events';
+import { useUnreadCount } from '@/components/notifications/unread-store';
+import { BottomNav, type BottomNavItem } from './BottomNav';
+import { DesktopNav } from './DesktopNav';
+import { AccountMenu } from './AccountMenu';
 
 // Design 1d (point 9) : lanceur de la recherche instantanée, monté au premier geste sur un déclencheur (searchWanted).
 // React.lazy et non next/dynamic (run 504) : next/dynamic ajoute son moteur au JavaScript de CHAQUE page (budget de
@@ -46,6 +51,17 @@ import { SEARCH_LAUNCH_ATTR, SEARCH_OPEN_EVENT, setPendingSearch } from '@/compo
 const SearchLauncher = lazy(() => import('@/components/search/SearchLauncher')
   .then((m): { default: React.ComponentType } => ({ default: m.SearchLauncher }))
   .catch((): { default: React.ComponentType } => ({ default: () => null })));
+// Design 1e (poids JavaScript de chaque page, budgets non relevés) : le menu du téléphone n'est chargé qu'à sa première
+// ouverture, la barre latérale que dans les espaces organisatrice et administration ; React.lazy, comme le lanceur de la
+// recherche. Morceau introuvable (hors ligne) : rien ne s'affiche, l'erreur est journalisée.
+const lazyPart = <P,>(load: () => Promise<React.ComponentType<P>>, what: string) => lazy(() => load()
+  .then((C) => ({ default: C }))
+  .catch((err: unknown): { default: React.ComponentType<P> } => {
+    console.error(`[mise en page] ${what} non chargé :`, err instanceof Error ? err.message : String(err));
+    return { default: () => null };
+  }));
+const PushMenu = lazyPart(() => import('./PushMenu').then((m) => m.PushMenu), 'menu');
+const ProSidebar = lazyPart(() => import('./ProSidebar').then((m) => m.ProSidebar), 'barre latérale');
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { isDeliverableEmail } from '@/lib/notifications/channels';
 
@@ -93,12 +109,24 @@ function roleLabel(role: string | null | undefined): string {
   return (role && ROLE_LABELS[role]) || 'Client';
 }
 
-/** Lien de navigation (barre latérale et tiroir) : 44 px, page courante annoncée, tokens du thème. */
-function navLinkClass(active: boolean): string {
+/**
+ * Lien de navigation, 44 px, page courante annoncée, tokens du thème. Design 1e : barre latérale (« side » : surlignage
+ * glissant posé par ProSidebar, libellé et icône marqués pour le mode replié) ou menu orange du téléphone (« menu » :
+ * blanc gras de 19 px, « grand texte » 3,40:1 ; page courante marquée d'un trait blanc).
+ */
+type NavVariant = 'side' | 'menu';
+function navLinkClass(active: boolean, variant: NavVariant = 'side'): string {
+  if (variant === 'menu') {
+    return cn(
+      'relative flex min-h-12 items-center gap-3 rounded-xl px-3 text-[1.1875rem] font-bold leading-tight text-primary-foreground-large transition-opacity duration-150',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      active ? 'before:absolute before:left-0 before:top-2 before:bottom-2 before:w-1 before:rounded-full before:bg-primary-foreground-large' : 'hover:opacity-90',
+    );
+  }
   return cn(
-    'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150',
+    'relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-    active ? 'bg-primary-soft font-semibold text-primary-text' : 'text-muted-foreground hover:bg-background hover:text-foreground-strong',
+    active ? 'font-semibold text-primary-text' : 'text-muted-foreground hover:bg-muted hover:text-foreground-strong',
   );
 }
 
@@ -240,26 +268,14 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     };
   }, [searchWanted]);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const drawerCloseRef = useRef<HTMLButtonElement>(null);
-  const wasMenuOpen = useRef(false);
-
+  // Design 1e : page qui recule sous le menu ; point « du nouveau » de l’onglet Notifications (compteur de la cloche)
+  const pageRef = useRef<HTMLDivElement>(null);
+  const unreadCount = useUnreadCount();
+  // Menu refermé à chaque changement de page ; ouverture, fermeture, focus et Échap : PushMenu (design 1e), monté à la
+  // première ouverture seulement
   useEffect(() => { setIsMobileMenuOpen(false); }, [pathname]);
-
-  useEffect(() => {
-    if (isMobileMenuOpen) {
-      wasMenuOpen.current = true;
-      document.body.style.overflow = 'hidden';
-      drawerCloseRef.current?.focus();
-      const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsMobileMenuOpen(false); };
-      document.addEventListener('keydown', onEsc);
-      return () => { document.body.style.overflow = ''; document.removeEventListener('keydown', onEsc); };
-    }
-    if (wasMenuOpen.current) {
-      wasMenuOpen.current = false;
-      menuButtonRef.current?.focus();
-    }
-    return undefined;
-  }, [isMobileMenuOpen]);
+  const [menuWanted, setMenuWanted] = useState(false);
+  useEffect(() => { if (isMobileMenuOpen) setMenuWanted(true); }, [isMobileMenuOpen]);
 
   const canShowRoleNav = mounted && !isLoading;
 
@@ -270,7 +286,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
-  const renderNavLink = (item: NavItem, onNavigate?: () => void) => {
+  const renderNavLink = (item: NavItem, onNavigate?: () => void, variant: NavVariant = 'side') => {
     const active = isNavActive(item.href);
     const Icon = item.icon;
     return (
@@ -279,26 +295,37 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
         href={item.href}
         onClick={onNavigate}
         aria-current={active ? 'page' : undefined}
-        className={navLinkClass(active)}
+        className={navLinkClass(active, variant)}
       >
-        <Icon size={18} className={active ? 'text-primary-text' : 'text-muted-foreground'} />
-        <span className="min-w-0 break-words">{item.name}</span>
+        <Icon
+          size={variant === 'menu' ? 22 : 18}
+          aria-hidden="true"
+          className={cn('flex-shrink-0', variant === 'menu' ? 'ml-1' : cn('ev-side-icon', active ? 'text-primary-text' : 'text-muted-foreground'))}
+        />
+        <span className={cn('min-w-0 break-words', variant === 'side' && 'ev-side-label')}>{item.name}</span>
       </Link>
     );
   };
 
-  const renderNavSection = (label: string, items: NavItem[], onNavigate?: () => void) => (
+  const renderNavSection = (label: string, items: NavItem[], onNavigate?: () => void, variant: NavVariant = 'side') => (
     <div key={label}>
-      <p className="mb-1.5 block px-3 text-sm font-semibold text-muted-foreground">{label}</p>
-      <div className="flex flex-col gap-0.5">{items.map((item) => renderNavLink(item, onNavigate))}</div>
+      <p className={cn('mb-1.5 block px-3 text-sm font-semibold', variant === 'menu' ? 'text-brand-vif-foreground' : 'ev-side-label text-muted-foreground')}>{label}</p>
+      <div className="flex flex-col gap-0.5">{items.map((item) => renderNavLink(item, onNavigate, variant))}</div>
     </div>
   );
 
-  const adminBadge = (
-    <div className="flex items-center gap-2.5 rounded-xl border border-border bg-background px-3 py-2">
-      <ShieldCheck size={16} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
-      <span className="text-sm font-semibold text-foreground-strong">Administration</span>
-    </div>
+  const adminBadge = (variant: NavVariant) => (
+    variant === 'menu' ? (
+      <p className="flex items-center gap-2 px-3 text-sm font-semibold text-brand-vif-foreground">
+        <ShieldCheck size={16} className="flex-shrink-0" aria-hidden="true" />
+        Administration
+      </p>
+    ) : (
+      <div className="ev-side-label flex items-center gap-2.5 rounded-xl border border-border bg-background px-3 py-2">
+        <ShieldCheck size={16} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
+        <span className="text-sm font-semibold text-foreground-strong">Administration</span>
+      </div>
+    )
   );
 
   const userFirst = profile?.first_name || (user?.user_metadata?.first_name as string) || '';
@@ -325,23 +352,39 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     return <>{children}</>;
   }
 
-  const mobileItems = canShowRoleNav && isPartnerRoute && isPartner
+  // Design 1e (point 2) : barre du bas du client avec « Notifications » (point du nouveau) ; « Commandes » reste dans le
+  // menu et dans les rubriques de l'ordinateur (cinq onglets au plus)
+  const clientMobileItems: BottomNavItem[] = [
+    { name: 'Accueil', href: '/', icon: Home },
+    { name: 'Explorer', href: '/explore', icon: Compass },
+    { name: 'Mes billets', short: 'Billets', href: '/tickets', icon: Ticket },
+    { name: 'Notifications', short: 'Avis', href: '/notifications', icon: Bell, dot: isUserLoggedIn && unreadCount > 0 },
+    // Césure douce : « Porte-feuille » sur deux lignes si la place manque (360 px), jamais « Portefeuil / le »
+    { name: 'Portefeuille', short: 'Porte\u00adfeuille', href: '/wallet', icon: Wallet },
+  ];
+
+  const mobileItems: BottomNavItem[] = canShowRoleNav && isPartnerRoute && isPartner
     ? partnerMobileItems
     : canShowRoleNav && isAdminRoute && isAdmin
     ? (adminNav?.mobile ?? [{ name: 'Accueil', href: '/admin/dashboard', icon: LayoutDashboard }])
     : scannerNav
     ? controllerMobileItems
-    : navItems;
+    : clientMobileItems;
+  const activeMobileHref = mobileItems.find((item) => isNavActive(item.href))?.href ?? null;
 
-  const renderRoleNav = (onNavigate?: () => void) => {
+  // Design 1e (point 3) : barre latérale seulement dans les espaces organisatrice et administration ; ailleurs, sur
+  // ordinateur, les rubriques sont dans l'en-tête (trait orange) et le compte dans un menu qui glisse
+  const isProShell = isPartnerRoute || isAdminRoute;
+
+  const renderRoleNav = (onNavigate?: () => void, variant: NavVariant = 'side') => {
     if (canShowRoleNav && isAdminRoute && isAdmin) {
       return (
         <>
-          {adminBadge}
-          {renderNavLink({ name: 'Tableau de bord', href: '/admin/dashboard', icon: LayoutDashboard }, onNavigate)}
-          {(adminNav?.groups ?? []).map((group) => renderNavSection(group.label, group.items, onNavigate))}
-          <div className="border-t border-border pt-2">
-            {renderNavLink({ name: 'Retour au site', href: '/', icon: ArrowLeft }, onNavigate)}
+          {adminBadge(variant)}
+          {renderNavLink({ name: 'Tableau de bord', href: '/admin/dashboard', icon: LayoutDashboard }, onNavigate, variant)}
+          {(adminNav?.groups ?? []).map((group) => renderNavSection(group.label, group.items, onNavigate, variant))}
+          <div className={cn('pt-2', variant === 'side' && 'border-t border-border')}>
+            {renderNavLink({ name: 'Retour au site', href: '/', icon: ArrowLeft }, onNavigate, variant)}
           </div>
         </>
       );
@@ -349,230 +392,202 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     if (canShowRoleNav && isPartnerRoute && isPartner) {
       return (
         <>
-          {renderNavSection('Gestion', partnerNavItems, onNavigate)}
-          {renderNavSection('Outils', partnerSecondaryItems, onNavigate)}
-          <div className="border-t border-border pt-2">
-            {renderNavLink({ name: 'Retour au site', href: '/', icon: Home }, onNavigate)}
+          {renderNavSection('Gestion', partnerNavItems, onNavigate, variant)}
+          {renderNavSection('Outils', partnerSecondaryItems, onNavigate, variant)}
+          <div className={cn('pt-2', variant === 'side' && 'border-t border-border')}>
+            {renderNavLink({ name: 'Retour au site', href: '/', icon: Home }, onNavigate, variant)}
           </div>
         </>
       );
     }
     return (
       <>
-        {renderNavSection('Menu principal', navItems, onNavigate)}
-        {serviceItems.length > 0 && renderNavSection('Services et espaces', serviceItems, onNavigate)}
-        {proItems.length > 0 && renderNavSection('Espaces métier', proItems, onNavigate)}
+        {renderNavSection('Menu principal', navItems, onNavigate, variant)}
+        {serviceItems.length > 0 && renderNavSection('Services et espaces', serviceItems, onNavigate, variant)}
+        {proItems.length > 0 && renderNavSection('Espaces métier', proItems, onNavigate, variant)}
       </>
     );
   };
 
+  const searchLink = (extra: string, onNavigate?: () => void) => (
+    <Link
+      href="/explore"
+      data-ev-search=""
+      onClick={onNavigate}
+      className={cn('flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', extra)}
+    >
+      <Search size={16} aria-hidden="true" />
+      <span className="min-w-0 break-words">Rechercher un événement…</span>
+    </Link>
+  );
+
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground-strong transition-colors duration-200 lg:flex-row">
-      {/* 1. Barre latérale (à partir de lg : 1024 px) */}
-      <aside className="sticky top-0 z-30 hidden h-screen w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-card p-5 shadow-subtle lg:flex xl:w-72">
-        <div className="mb-6 py-2">
-          <Logo variant="full" />
-        </div>
-
-        <nav aria-label="Navigation principale" className="flex flex-1 flex-col gap-5">
-          {renderRoleNav()}
-        </nav>
-
-        <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-4">
-          {isUserLoggedIn ? (
-            <div className="flex w-full min-w-0 items-center justify-between gap-1">
-              <Link href="/profile" className="group flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                {avatar}
-                <span className="min-w-0 leading-tight">
-                  <span className="block break-words text-sm font-semibold text-foreground-strong group-hover:text-primary-text">{displayName}</span>
-                  <span className="block break-words text-sm text-muted-foreground">{accountSubtitle}</span>
-                </span>
-              </Link>
-              <div className="flex flex-shrink-0 items-center gap-1">
-                <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => signOut()}>
-                  <LogOut size={18} />
-                </IconButton>
-                <ThemeToggle />
-              </div>
-            </div>
-          ) : (
-            <div className="flex w-full items-center justify-between gap-2">
-              <LinkButton href="/login" prefetch={false} variant="outline" size="sm" leftIcon={<LogIn size={16} />}>
-                Se connecter
-              </LinkButton>
-              <ThemeToggle />
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* 1b. Tiroir mobile (< 1024 px) : invisible et hors tabulation quand il est fermé */}
-      <div
-        className={cn(
-          'fixed inset-0 z-50 duration-300 lg:hidden',
-          isMobileMenuOpen ? 'visible opacity-100 transition-opacity' : 'pointer-events-none invisible opacity-0 transition-[opacity,visibility]',
-        )}
-      >
-        <div className="absolute inset-0 bg-scrim/60 backdrop-blur-sm" aria-hidden="true" onClick={closeMobileMenu} />
-
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Menu"
-          className={cn(
-            'absolute bottom-0 left-0 top-0 flex w-[85vw] max-w-[320px] flex-col bg-popover shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none',
-            isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full',
-          )}
-        >
-          <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3">
-            <Logo variant="full" />
-            <IconButton ref={drawerCloseRef} aria-label="Fermer le menu" onClick={closeMobileMenu}>
-              <X size={20} />
+    <>
+      {/* 1. Menu du téléphone et de la tablette (< 1024 px) : derrière la page, sur l'orange de la marque (design 1e) */}
+      {menuWanted && <Suspense fallback={null}><PushMenu
+        open={isMobileMenuOpen}
+        onClose={closeMobileMenu}
+        pageRef={pageRef}
+        returnFocusRef={menuButtonRef}
+        pathname={pathname}
+        header={<span className="text-[1.375rem] font-extrabold leading-none tracking-[-0.012em] text-primary-foreground-large">Event Village</span>}
+        footer={isUserLoggedIn ? (
+          <div className="flex items-center justify-between gap-2">
+            <Link href="/profile" onClick={closeMobileMenu} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {avatar}
+              <span className="min-w-0 leading-tight">
+                <span className="block break-words text-[1.1875rem] font-bold text-primary-foreground-large">{displayName}</span>
+                <span className="block break-words text-sm font-semibold text-brand-vif-foreground">{accountSubtitle}</span>
+              </span>
+            </Link>
+            {/* Sur l'orange, l'icône rouge seule manquait de contraste : pastille blanche (bg-card) */}
+            <IconButton aria-label="Se déconnecter" variant="danger" className="bg-card hover:bg-card" onClick={() => { closeMobileMenu(); signOut(); }}>
+              <LogOut size={18} />
             </IconButton>
           </div>
-
-          <div className="px-4 pb-1 pt-3 sm:hidden">
-            <Link
-              href="/explore"
-              data-ev-search=""
-              onClick={closeMobileMenu}
-              className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3.5 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Search size={16} aria-hidden="true" />
-              <span>Rechercher un événement</span>
-            </Link>
+        ) : (
+          <div className="flex items-center gap-2">
+            <LinkButton href="/login" prefetch={false} variant="secondary" onClick={closeMobileMenu} fullWidth leftIcon={<LogIn size={16} />}>
+              Se connecter
+            </LinkButton>
+            <ThemeToggle />
           </div>
+        )}
+      >
+        <div className="sm:hidden">{searchLink('bg-card', closeMobileMenu)}</div>
+        {renderRoleNav(closeMobileMenu, 'menu')}
+      </PushMenu></Suspense>}
 
-          <nav aria-label="Navigation principale" className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-3">
-            {renderRoleNav(closeMobileMenu)}
-          </nav>
-
-          <div className="flex-shrink-0 border-t border-border px-4 py-3">
-            {isUserLoggedIn ? (
-              <div className="flex items-center justify-between gap-2">
-                <Link href="/profile" onClick={closeMobileMenu} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {avatar}
-                  <span className="min-w-0 leading-tight">
-                    <span className="block break-words text-sm font-semibold text-foreground-strong">{displayName}</span>
+      {/* 2. La page (recule quand le menu s'ouvre) */}
+      <div ref={pageRef} className="ev-push-page relative z-10 flex min-h-screen flex-col bg-background text-foreground-strong lg:flex-row">
+        {/* 2a. Barre latérale repliable des espaces organisatrice et administration (≥ 1024 px) */}
+        {isProShell && <Suspense fallback={<div className="ev-side-spacer hidden flex-shrink-0 lg:block" aria-hidden="true" />}>
+          <ProSidebar
+            pathname={pathname}
+            header={<Logo variant="full" />}
+            footer={isUserLoggedIn ? (
+              <div className="flex w-full min-w-0 items-center justify-between gap-1">
+                <Link href="/profile" className="group flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <span className="ev-side-icon flex-shrink-0">{avatar}</span>
+                  <span className="ev-side-label min-w-0 leading-tight">
+                    <span className="block break-words text-sm font-semibold text-foreground-strong group-hover:text-primary-text">{displayName}</span>
                     <span className="block break-words text-sm text-muted-foreground">{accountSubtitle}</span>
                   </span>
                 </Link>
-                <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => { closeMobileMenu(); signOut(); }}>
-                  <LogOut size={18} />
-                </IconButton>
+                <div className="ev-side-hide flex flex-shrink-0 items-center gap-1">
+                  <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => signOut()}>
+                    <LogOut size={18} />
+                  </IconButton>
+                  <ThemeToggle />
+                </div>
               </div>
             ) : (
-              <LinkButton href="/login" prefetch={false} onClick={closeMobileMenu} fullWidth leftIcon={<LogIn size={16} />}>
-                Se connecter
-              </LinkButton>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Zone principale : en-tête et contenu */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-2 shadow-subtle lg:px-8">
-          {/* Design 1c (point 1) : le logo ne rétrécit plus (à 768 px, « Event Village » passait sous la recherche) */}
-          <div className="flex flex-shrink-0 items-center gap-1.5">
-            <IconButton
-              ref={menuButtonRef}
-              aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
-              aria-expanded={isMobileMenuOpen}
-              onClick={() => setIsMobileMenuOpen((v) => !v)}
-              className="lg:hidden"
-            >
-              {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-            </IconButton>
-            <div className="lg:hidden">
-              <Logo variant="auto" />
-            </div>
-          </div>
-
-          <div className="hidden max-w-lg flex-1 items-center sm:flex">
-            <Link
-              href="/explore"
-              data-ev-search=""
-              className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm text-muted-foreground transition-colors hover:text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Search size={16} aria-hidden="true" />
-              <span className="min-w-0 break-words">Rechercher un événement…</span>
-            </Link>
-          </div>
-
-          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
-            <NotificationBell />
-            {/* Design 1d (point 9) : recherche instantanée, ouverte depuis tout déclencheur data-ev-search */}
-            {searchWanted && <Suspense fallback={null}><SearchLauncher /></Suspense>}
-
-
-            {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px
-                avec ses trois boutons de 44 px. */}
-            {scannerNav && (
-              <div className="hidden sm:block">
-                <LinkButton href="/controller/scanner" prefetch={false} size="sm" leftIcon={<QrCode size={16} />}>
-                  Scanner
+              <div className="ev-side-hide flex w-full items-center justify-between gap-2">
+                <LinkButton href="/login" prefetch={false} variant="outline" size="sm" leftIcon={<LogIn size={16} />}>
+                  Se connecter
                 </LinkButton>
+                <ThemeToggle />
               </div>
             )}
+          >
+            {renderRoleNav()}
+          </ProSidebar>
+        </Suspense>}
 
-            <div className="lg:hidden">
-              <ThemeToggle />
+        {/* 2b. Zone principale : en-tête et contenu */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-2 shadow-subtle lg:gap-6 lg:px-8">
+            {/* Design 1c (point 1) : le logo ne rétrécit plus (à 768 px, « Event Village » passait sous la recherche) */}
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <IconButton
+                ref={menuButtonRef}
+                aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+                aria-expanded={isMobileMenuOpen}
+                onClick={() => setIsMobileMenuOpen((v) => !v)}
+                className="lg:hidden"
+              >
+                {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+              </IconButton>
+              <div className={isProShell ? 'lg:hidden' : undefined}>
+                <Logo variant="auto" />
+              </div>
+              {!isProShell && (
+                <div className="ml-4 hidden lg:flex">
+                  <DesktopNav items={navItems} activeHref={navItems.find((i) => isNavActive(i.href))?.href ?? null} />
+                </div>
+              )}
             </div>
 
-            {isUserLoggedIn ? (
-              // Nom porté par un texte masqué plutôt que par aria-label : les initiales visibles (« MN »)
-              // ne figuraient pas dans « Mon profil (…) » (axe label-content-name-mismatch). Cible de 44 px.
-              <Link
-                href="/profile"
-                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-              >
-                {avatar}
-                <span className="sr-only">{`Mon profil (${displayName})`}</span>
-              </Link>
-            ) : (
-              <Link
-                href="/login"
-                aria-label="Se connecter"
-                className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-primary-soft text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-              >
-                <LogIn size={18} aria-hidden="true" />
-              </Link>
-            )}
-          </div>
-        </header>
+            {/* Design 1e : à 1 024 px, l'en-tête du client porte les rubriques ; la recherche revient à 1 280 px (Explorer reste
+                une rubrique). min-w-0 : le champ rétrécit au lieu de faire déborder l'en-tête. */}
+            <div className={cn('hidden min-w-0 max-w-lg flex-1 items-center sm:flex', !isProShell && 'lg:hidden xl:flex')}>{searchLink('min-w-0 flex-1')}</div>
 
-        {/* Contenu de la page : une seule gouttière, réserve pour la barre du bas sur mobile */}
-        <main className="mx-auto w-full max-w-7xl flex-1 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">
-          {children}
-        </main>
-      </div>
+            <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-3">
+              <NotificationBell />
+              {/* Design 1d (point 9) : recherche instantanée, ouverte depuis tout déclencheur data-ev-search */}
+              {searchWanted && <Suspense fallback={null}><SearchLauncher /></Suspense>}
 
-      {/* 3. Barre du bas (< 1024 px) */}
-      <nav aria-label="Navigation rapide" className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card px-1 py-1 shadow-lg lg:hidden">
-        <div className="flex items-stretch justify-around">
-          {mobileItems.map((item) => {
-            const active = isNavActive(item.href);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 transition-colors duration-150',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                  active ? 'text-primary-text' : 'text-muted-foreground hover:text-foreground-strong',
-                )}
-              >
-                <Icon size={20} aria-hidden="true" />
-                {/* Design 1c (point 1) : libellé entier, au besoin sur deux lignes (aucun texte tronqué à 320 px) */}
-                <small className="text-caption max-w-full text-center font-semibold leading-tight [overflow-wrap:anywhere]">{item.short ?? item.name}</small>
-              </Link>
-            );
-          })}
+              {/* Sous 640 px, le scanner est dans la barre du bas du contrôleur : l'en-tête tient à 390 px
+                  avec ses trois boutons de 44 px. */}
+              {scannerNav && (
+                <div className="hidden sm:block">
+                  <LinkButton href="/controller/scanner" prefetch={false} size="sm" leftIcon={<QrCode size={16} />}>
+                    Scanner
+                  </LinkButton>
+                </div>
+              )}
+
+              <div className="lg:hidden">
+                <ThemeToggle />
+              </div>
+
+              {isUserLoggedIn ? (
+                // Nom porté par un texte masqué plutôt que par aria-label : les initiales visibles (« MN »)
+                // ne figuraient pas dans « Mon profil (…) » (axe label-content-name-mismatch). Cible de 44 px.
+                <Link
+                  href="/profile"
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                >
+                  {avatar}
+                  <span className="sr-only">{`Mon profil (${displayName})`}</span>
+                </Link>
+              ) : (
+                <Link
+                  href="/login"
+                  aria-label="Se connecter"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-primary-soft text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+                >
+                  <LogIn size={18} aria-hidden="true" />
+                </Link>
+              )}
+
+              {/* Design 1e (point 3) : menu du compte de l'ordinateur, qui glisse */}
+              <AccountMenu
+                pathname={pathname}
+                loggedIn={isUserLoggedIn}
+                avatar={avatar}
+                displayName={displayName}
+                subtitle={accountSubtitle}
+                sections={isProShell ? [] : [
+                  { label: 'Services et espaces', items: serviceItems },
+                  { label: 'Espaces métier', items: proItems },
+                ]}
+                onSignOut={() => signOut()}
+                themeToggle={<ThemeToggle />}
+                compact={isProShell}
+              />
+            </div>
+          </header>
+
+          {/* Contenu de la page : une seule gouttière, réserve pour la barre du bas sur mobile */}
+          <main className="mx-auto w-full max-w-7xl flex-1 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-8">
+            {children}
+          </main>
         </div>
-      </nav>
-    </div>
+
+        {/* 3. Barre du bas flottante (< 1024 px) */}
+        <BottomNav items={mobileItems} activeHref={activeMobileHref} />
+      </div>
+    </>
   );
 };

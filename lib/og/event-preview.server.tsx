@@ -127,7 +127,7 @@ export async function renderSharePreview(data: SharePreviewData): Promise<Buffer
             data.price
                 ? h('div', {
                     style: {
-                        display: 'flex', backgroundColor: '#FF8A3D', color: '#1A1A1A', fontSize: 32, fontWeight: 800,
+                        display: 'flex', backgroundColor: '#F05A1A', color: '#1A1A1A', fontSize: 32, fontWeight: 800,
                         padding: '14px 28px', borderRadius: 999,
                     },
                 }, data.price)

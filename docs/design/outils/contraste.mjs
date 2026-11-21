@@ -51,14 +51,15 @@ const COUPLES = [
     ['Texte courant', 'foreground', ['background', 'card', 'muted', 'popover'], 4.5],
     ['Titres, montants', 'foreground-strong', ['background', 'card', 'popover'], 4.5],
     ['Texte secondaire', 'muted-foreground', ['background', 'card', 'muted', 'popover'], 4.5],
-    ['Orange en texte, liens', 'primary-text', ['background', 'card', 'muted', 'primary-soft'], 4.5],
+    ['Orange foncé en texte, liens, bouton secondaire (design 1e)', 'primary-text', ['background', 'card', 'muted', 'popover', 'primary-soft'], 4.5],
     ['Rose en texte', 'accent-text', ['background', 'card'], 4.5],
     ['Succès (pastille, bandeau)', 'success-text', ['success-soft'], 4.5],
     ['Attention', 'warning-text', ['warning-soft'], 4.5],
     ['Erreur', 'danger-text', ['danger-soft', 'background', 'card'], 4.5],
     ['Information', 'info-text', ['info-soft'], 4.5],
     ['Texte sur un ton plein', 'on-tone', ['success', 'warning', 'danger', 'info'], 4.5],
-    ['Texte du bouton principal', 'primary-foreground', ['primary', 'primary-hover'], 4.5],
+    ['Texte des petits boutons sur orange (#1A1A1A)', 'primary-foreground', ['primary', 'primary-hover'], 4.5],
+    ['Bouton principal en grande taille (blanc gras ≥ 19 px, design 1e)', 'primary-foreground-large', ['primary', 'primary-hover'], 3],
     ['Bouton Wave', 'on-op', ['op-wave'], 4.5],
     ['Bouton Orange Money', 'on-op', ['op-orange-money'], 4.5],
     ['Bord des champs', 'input', ['background', 'card'], 3],
@@ -107,15 +108,15 @@ for (const theme of ['clair', 'sombre']) {
     lignes.push(`| Grand bouton en dégradé (blanc gras 19 px) | ${theme} | \`--gradient-foreground\` ${t['gradient-foreground']} | dégradé ${t['gradient-from']} → ${t['gradient-to']}, pire point ${pire} | **${fmt(min)}:1** | 3,00:1 | ${ok ? 'oui (grand texte)' : '**NON**'} |`);
 }
 
-// Interdits de la charte, mesurés pour mémoire.
+// Interdits de la charte, mesurés pour mémoire (design 1e : le blanc sur l'orange n'est admis qu'en gras de 19 px au moins).
 const interdits = [
-    ['Blanc sur l\'orange vif (interdit par la charte)', '#FFFFFF', clair.brand],
-    ['Orange vif en texte sur blanc (interdit)', clair.brand, '#FFFFFF'],
+    ['Blanc en petit texte sur l\'orange de la marque (interdit sous 19 px gras)', '#FFFFFF', clair.brand],
+    ['Orange de la marque en petit texte sur blanc (interdit : orange foncé)', clair.brand, '#FFFFFF'],
 ];
 for (const [nom, a, b] of interdits) lignes.push(`| ${nom} | — | ${a} | ${b} | **${fmt(contraste(a, b))}:1** | — | interdit |`);
 
 const tableau = [
-    '| Couple | Thème (boutons B en clair, A en sombre) | Texte | Fond | Contraste | Seuil | Conforme |',
+    '| Couple | Thème | Texte | Fond | Contraste | Seuil | Conforme |',
     '|---|---|---|---|---|---|---|',
     ...lignes,
 ].join('\n');

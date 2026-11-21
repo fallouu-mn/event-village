@@ -20,7 +20,7 @@ export const AUTH_DIR = path.resolve(process.cwd(), '.auth');
 export type RoleKey =
     | 'organisateur' | 'admin' | 'client' | 'controleur' | 'partenaire-premiers-pas'
     | 'fumee-organisateur' | 'fumee-superadmin' | 'fumee-client'
-    | 'fumee-client-bis' | 'fumee-controleur';
+    | 'fumee-client-bis' | 'fumee-controleur' | 'mesure';
 
 export interface RoleSpec {
     key: RoleKey;
@@ -48,6 +48,8 @@ export const ROLES: readonly RoleSpec[] = [
     // projet terrain (CLIENT_BIS) ; contrôleur des projets terrain et de la fumée prolongée (CONTROLLER_A).
     { key: 'fumee-client-bis', libelle: 'second client (seed de test)', source: 'fixtures', arrivee: /^\/$/, email: () => FIXTURE_USERS.CLIENT_BIS.email },
     { key: 'fumee-controleur', libelle: 'contrôleur A (seed de test)', source: 'fixtures', arrivee: /\/controller\/scanner/, email: () => FIXTURE_USERS.CONTROLLER_A.email },
+    // Design 1e : client de la mesure mobile (10 billets à venir, 30 passés), utilisé par scripts/e2e/perf-mobile.mjs seulement
+    { key: 'mesure', libelle: 'client de la mesure mobile (démonstration)', source: 'demonstration', arrivee: /^\/$/, email: demoEmail('clientMesure') },
 ];
 
 export function roleSpec(key: RoleKey): RoleSpec {
