@@ -13,7 +13,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Building2, CalendarClock, ClipboardCheck, ImageOff, MapPin, Search, Users } from 'lucide-react';
+import { Building2, CalendarClock, ClipboardCheck, ImageOff, MapPin, Search, Store, Users } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
@@ -355,6 +355,12 @@ export default function AdminHallsPage() {
       <PageHeader
         title="Salles à valider"
         description="Examinez les salles de fête envoyées par les partenaires : validez-les pour les rendre réservables, refusez-les avec un motif, ou suspendez une salle déjà validée."
+        actions={(
+          // Lot 11b : file des établissements (tables), sans entrée dans le menu (coquille commune).
+          <LinkButton href="/admin/venues" variant="ghost" size="sm" leftIcon={<Store size={18} />}>
+            Établissements à valider
+          </LinkButton>
+        )}
       />
 
       <form
