@@ -1813,6 +1813,7 @@ const CATALOG = {
             const why = reason ? ` Motif : ${sentence(reason)}` : '';
             const refund = orderRefundSentence(d);
             if (origin === 'EXPIREE') return { title: 'Commande annulée', content: `Le paiement de la commande ${ref} n’est pas arrivé à temps : elle est annulée et rien ne vous est pris. Vous pouvez la refaire.` };
+            if (origin === 'REGLEMENTE') return { title: 'Commande annulée', content: `Votre commande ${ref} chez ${venueName(d)} est annulée par Event Village : un de ses produits est réglementé (alcool, tabac) et ne se vend pas en ligne. ${refund}`.trim() };
             if (origin === 'REFUSEE') return { title: 'Commande refusée', content: `${venueName(d, true)} ne peut pas préparer votre commande ${ref}.${why} ${refund}`.trim() };
             if (origin === 'SANS_REPONSE') return { title: 'Commande annulée', content: `${venueName(d, true)} n’a pas répondu à temps : votre commande ${ref} est annulée. ${refund}`.trim() };
             const who = origin === 'PARTENAIRE' ? ' par l’établissement' : origin === 'EVENT_VILLAGE' ? ' par Event Village' : '';
@@ -1824,6 +1825,7 @@ const CATALOG = {
             const name = smsVar(text(d, 'venue_name'), 25);
             const refund = num(d, 'refund_amount') > 0 ? ` ${smsAmount(num(d, 'refund_amount'))} remboursés.` : '';
             if (origin === 'EXPIREE') return `${SMS_PREFIX}paiement non arrivé à temps : commande ${ref} annulée, rien ne vous est pris.`;
+            if (origin === 'REGLEMENTE') return `${SMS_PREFIX}commande ${ref} annulée : produit réglementé, non vendu en ligne.${refund}`;
             if (origin === 'REFUSEE') return `${SMS_PREFIX}${name} ne peut pas préparer la commande ${ref}.${refund}`;
             if (origin === 'SANS_REPONSE') return `${SMS_PREFIX}${name} n'a pas répondu : commande ${ref} annulée.${refund}`;
             const by = origin === 'PARTENAIRE' ? ` par ${name}` : origin === 'EVENT_VILLAGE' ? ' par notre équipe' : '';
@@ -1893,6 +1895,7 @@ const CATALOG = {
             const ref = orderRef(d);
             if (origin === 'NON_RETIREE') return { title: 'Commande non retirée', content: `La commande ${ref} n’a pas été retirée à temps : elle est close. Ce que le client a payé vous reste.` };
             if (origin === 'SANS_REPONSE') return { title: 'Commande annulée', content: `La commande ${ref} est annulée faute de réponse dans le délai : le client est remboursé. Pensez à répondre plus vite aux prochaines.` };
+            if (origin === 'REGLEMENTE') return { title: 'Commande annulée', content: `La commande ${ref} est annulée par Event Village : un de ses produits est réglementé (alcool, tabac) et ne se vend pas en ligne. Le client est remboursé. Ne la préparez pas et ne la remettez pas ; retirez ce produit de la vente en ligne.` };
             const reason = optText(d, 'reason');
             const by = origin === 'EVENT_VILLAGE' ? 'par Event Village' : 'par le client';
             return { title: 'Commande annulée', content: `La commande ${ref} est annulée ${by}.${reason && origin === 'EVENT_VILLAGE' ? ` Motif : ${sentence(reason)}` : ''} Ne la préparez pas.` };
@@ -1902,6 +1905,7 @@ const CATALOG = {
             const ref = orderRef(d);
             if (origin === 'NON_RETIREE') return `${SMS_PREFIX}commande ${ref} non retirée à temps : elle est close.`;
             if (origin === 'SANS_REPONSE') return `${SMS_PREFIX}commande ${ref} annulée faute de réponse. Le client est remboursé.`;
+            if (origin === 'REGLEMENTE') return `${SMS_PREFIX}commande ${ref} annulée : produit réglementé, non vendu en ligne. Client remboursé. Ne la remettez pas.`;
             return `${SMS_PREFIX}commande ${ref} annulée ${origin === 'EVENT_VILLAGE' ? 'par Event Village' : 'par le client'}. Ne la préparez pas.`;
         },
         sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', origin: 'EVENT_VILLAGE', refund_amount: 1_312_500, reason: 'Le client signale une erreur de commande.' },
@@ -1932,8 +1936,12 @@ const CATALOG = {
     ORDER_COURIER_CANCELLED: define('ORDER_COURIER_CANCELLED', {
         label: 'Livraison annulée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
         link: () => '/courier/orders',
-        inApp: (d) => ({ title: 'Livraison annulée', content: `La livraison de la commande ${orderRef(d)} est annulée ou confiée à quelqu’un d’autre : ne la livrez pas.` }),
-        sms: (d) => `${SMS_PREFIX}livraison de la commande ${orderRef(d)} annulée ou confiée à un autre livreur : ne la livrez pas.`,
+        inApp: (d) => (optText(d, 'origin') === 'REGLEMENTE'
+            ? { title: 'Livraison annulée', content: `La commande ${orderRef(d)} est annulée par Event Village : un de ses produits est réglementé et ne se vend pas en ligne. Ne la livrez pas ; rapportez-la à l’établissement.` }
+            : { title: 'Livraison annulée', content: `La livraison de la commande ${orderRef(d)} est annulée ou confiée à quelqu’un d’autre : ne la livrez pas.` }),
+        sms: (d) => (optText(d, 'origin') === 'REGLEMENTE'
+            ? `${SMS_PREFIX}commande ${orderRef(d)} annulée (produit réglementé) : ne la livrez pas, rapportez-la à l'établissement.`
+            : `${SMS_PREFIX}livraison de la commande ${orderRef(d)} annulée ou confiée à un autre livreur : ne la livrez pas.`),
         sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'COURIER' },
     }),
     ORDER_COURIER_INVITED: define('ORDER_COURIER_INVITED', {

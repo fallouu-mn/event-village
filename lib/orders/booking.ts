@@ -76,6 +76,7 @@ export function orderRefusalStatus(code: unknown): number {
         case 'PAYER_PENDING_LIMIT':
         case 'TOO_MANY_CODES':
         case 'TOO_MANY_PORTIONS':
+        case 'TOO_MANY_INVITES':
             return 429;
         case 'INVALID_ITEM':
         case 'INVALID_QUANTITY':

@@ -39,6 +39,7 @@
 -- Contre-vérification (T7) : aides internes dans le schéma private (non exposé par l'API, hors de la règle 1A.3) ;
 -- anciennes versions publiques retirées
 DROP FUNCTION IF EXISTS public.order_refund_payment(uuid, numeric, text);
+DROP FUNCTION IF EXISTS private.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean);
 DROP FUNCTION IF EXISTS public.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean);
 DROP FUNCTION IF EXISTS public.order_issue_code(uuid);
 DROP FUNCTION IF EXISTS public.order_code_delivery(uuid, text, text);
@@ -114,8 +115,11 @@ $$;
 -- ----------------------------------------------------------------------------
 -- 2. Fin d'une commande (l'appelant tient le verrou de l'établissement)
 -- ----------------------------------------------------------------------------
+-- p_notice 'REGLEMENTE' : commande refusée par Event Village parce qu'un produit est devenu réglementé ; avis à part au
+-- client, à la partenaire et au livreur (sur leurs canaux)
 CREATE OR REPLACE FUNCTION private.order_close_apply(p_order_id uuid, p_state text, p_origin text, p_actor uuid, p_role text,
-                                                    p_reason text, p_percent numeric, p_fault boolean DEFAULT FALSE)
+                                                    p_reason text, p_percent numeric, p_fault boolean DEFAULT FALSE,
+                                                    p_notice text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -175,7 +179,8 @@ BEGIN
             jsonb_build_object('order_state', p_state, 'refunded_amount', v_refund, 'refund_percent', p_percent),
             jsonb_build_object('origin', p_origin, 'reason', p_reason, 'partner_fault', COALESCE(p_fault, FALSE), 'cashout_ids', to_jsonb(v_ids)));
 
-    v_shown := CASE WHEN p_state IN ('REFUSEE', 'SANS_REPONSE') THEN p_state ELSE COALESCE(p_origin, p_state) END;
+    v_shown := CASE WHEN p_notice = 'REGLEMENTE' THEN 'REGLEMENTE'
+                    WHEN p_state IN ('REFUSEE', 'SANS_REPONSE') THEN p_state ELSE COALESCE(p_origin, p_state) END;
     v_extra := jsonb_strip_nulls(jsonb_build_object(
         'origin', v_shown, 'refund_amount', v_refund,
         'reason', CASE WHEN p_origin IN ('PARTENAIRE', 'EVENT_VILLAGE') OR p_state = 'REFUSEE' THEN p_reason END));
@@ -184,11 +189,13 @@ BEGIN
         PERFORM public.order_notify('ORDER_CANCELLED_PRO', o.id, 'OWNER', v_extra || jsonb_build_object('origin', 'NON_RETIREE'));
     ELSE
         PERFORM public.order_notify('ORDER_CANCELLED', o.id, 'CLIENT', v_extra);
-        IF p_origin IS DISTINCT FROM 'PARTENAIRE' AND p_state <> 'REFUSEE' THEN
+        -- Refus pour produit réglementé : la partenaire est prévenue aussi (elle n'a pas refusé elle-même)
+        IF p_origin IS DISTINCT FROM 'PARTENAIRE' AND (p_state <> 'REFUSEE' OR p_notice = 'REGLEMENTE') THEN
             PERFORM public.order_notify('ORDER_CANCELLED_PRO', o.id, 'OWNER', v_extra);
         END IF;
         IF o.courier_user_id IS NOT NULL THEN
-            PERFORM public.order_notify('ORDER_COURIER_CANCELLED', o.id, 'COURIER', '{}'::jsonb, o.courier_user_id::text);
+            PERFORM public.order_notify('ORDER_COURIER_CANCELLED', o.id, 'COURIER',
+                                        jsonb_strip_nulls(jsonb_build_object('origin', p_notice)), o.courier_user_id::text);
         END IF;
     END IF;
     RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', p_state,
@@ -375,7 +382,7 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED', 'message', 'L’établissement est suspendu : ses commandes sont en lecture seule.');
     END IF;
     IF EXISTS (SELECT 1 FROM public.order_items i WHERE i.order_id = o.id AND public.product_regulated(i.product_id)) THEN
-        PERFORM private.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'Produit réglementé : il ne se vend pas en ligne', 100, FALSE);
+        PERFORM private.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'Produit réglementé : il ne se vend pas en ligne', 100, FALSE, 'REGLEMENTE');
         RETURN jsonb_build_object('ok', false, 'code', 'REGULATED_ORDER_REFUSED',
             'message', 'Un produit de cette commande est réglementé : elle ne peut pas être remise. Elle est annulée et le client remboursé.');
     END IF;
@@ -545,7 +552,7 @@ BEGIN
         END IF;
         -- Contre-vérification (T2) : produit devenu réglementé : commande refusée par Event Village, tout rendu au client
         IF EXISTS (SELECT 1 FROM public.order_items i WHERE i.order_id = o.id AND public.product_regulated(i.product_id)) THEN
-            PERFORM private.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'Produit réglementé : il ne se vend pas en ligne', 100, FALSE);
+            PERFORM private.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'Produit réglementé : il ne se vend pas en ligne', 100, FALSE, 'REGLEMENTE');
             RETURN jsonb_build_object('ok', false, 'code', 'REGULATED_ORDER_REFUSED',
                 'message', 'Un produit de cette commande est réglementé : elle ne peut pas être acceptée. Elle est annulée et le client remboursé.');
         END IF;
@@ -695,6 +702,8 @@ AS $$
 DECLARE
     v_actor  uuid := public.try_uuid(p->>'actor_id');
     v_phone  text := regexp_replace(COALESCE(p->>'phone', ''), '[^0-9+]', '', 'g');
+    v_max    integer := public.fin_setting_num('orders.courier_invites_per_day')::int;
+    v_sent   integer;
     pa       record;
     u        record;
     c        record;
@@ -708,6 +717,16 @@ BEGIN
     END IF;
     IF v_phone !~ '^(\+221|00221|221)?7[0-9]{8}$' THEN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PHONE', 'message', 'Indiquez un numéro de mobile sénégalais (9 chiffres).');
+    END IF;
+    -- Invitations au plus par partenaire et par jour (heure de Dakar), sous verrou de la partenaire : réglage
+    -- orders.courier_invites_per_day (décision du chef de projet, 21/11)
+    PERFORM pg_advisory_xact_lock(hashtextextended('order_courier_invite:' || pa.id::text, 0));
+    SELECT count(*) INTO v_sent FROM public.audit_logs l
+     WHERE l.action = 'ORDER_COURIER_INVITED' AND l.user_id = v_actor
+       AND l.created_at >= (date_trunc('day', now() AT TIME ZONE 'Africa/Dakar') AT TIME ZONE 'Africa/Dakar');
+    IF v_sent >= v_max THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_INVITES',
+            'message', format('Vous avez déjà envoyé %s invitations aujourd’hui : réessayez demain.', v_sent));
     END IF;
     v_phone := '+221' || right(v_phone, 9);
     SELECT id, first_name, last_name, status::text AS status INTO u FROM public.users WHERE phone = v_phone AND status::text = 'ACTIF' LIMIT 1;
@@ -1039,7 +1058,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION private.order_refund_payment(uuid, numeric, text) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION private.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.order_cancel(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION private.order_issue_code(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.order_code_delivery(uuid, text, text) FROM PUBLIC, anon, authenticated, service_role;

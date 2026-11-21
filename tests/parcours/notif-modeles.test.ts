@@ -1119,6 +1119,13 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 "Event Village : commande CMD-261205-A1B2 annulée faute de réponse. Le client est remboursé."],
             ["ORDER_CANCELLED_PRO", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "origin": "NON_RETIREE"}, [],
                 "Event Village : commande CMD-261205-A1B2 non retirée à temps : elle est close."],
+            // Lot 12a, décision du 21/11 : commande refusée par Event Village, un produit étant devenu réglementé
+            ["ORDER_CANCELLED_PRO", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "origin": "REGLEMENTE"}, [],
+                "Event Village : commande CMD-261205-A1B2 annulée : produit réglementé, non vendu en ligne. Client remboursé. Ne la remettez pas."],
+            ["ORDER_CANCELLED", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "origin": "REGLEMENTE", "refund_amount": 5250}, [],
+                "Event Village : commande CMD-261205-A1B2 annulée : produit réglementé, non vendu en ligne. 5 250 F CFA remboursés."],
+            ["ORDER_COURIER_CANCELLED", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "origin": "REGLEMENTE"}, [],
+                "Event Village : commande CMD-261205-A1B2 annulée (produit réglementé) : ne la livrez pas, rapportez-la à l'établissement."],
             ["ORDER_HANDED_OVER_PRO", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000}, [],
                 "Event Village : votre livreur a remis la commande CMD-261205-A1B2 au client."],
             ["ORDER_COURIER_ASSIGNED", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000}, [],

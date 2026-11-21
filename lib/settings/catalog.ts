@@ -93,6 +93,7 @@ export const SETTING_BOUNDS: Readonly<Record<string, SettingBounds>> = {
     'orders.response_minutes': int(5, 120, 'Délai de réponse de la partenaire à une commande', 'min'),
     'orders.max_unpaid_per_client': int(1, 10, 'Commandes non payées au plus par client', 'commandes'),
     'orders.max_unpaid_portions': int(1, 99, 'Portions d’un plat du jour tenues sans paiement', 'portions'),
+    'orders.courier_invites_per_day': int(1, 50, 'Invitations de livreurs par jour', 'invitations'),
     'orders.pickup_grace_hours': int(2, 168, 'Commande prête non retirée close après l’heure prévue', 'h'),
     'orders.pickup_warning_hours': int(1, 24, 'Client prévenu avant la clôture d’une commande non retirée', 'h'),
     'orders.contact_retention_days': int(1, 90, 'Adresse et téléphone du client masqués après la remise', 'jours'),

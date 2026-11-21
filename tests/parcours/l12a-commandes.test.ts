@@ -35,10 +35,11 @@ import { GET as partnerOrderGet } from '../../app/api/partner/orders/[id]/route'
 import { GET as courierOrdersGet } from '../../app/api/courier/orders/route';
 import { POST as adminCancelRoute } from '../../app/api/admin/orders/[id]/cancel/route';
 import { POST as cronOrders } from '../../app/api/cron/orders/route';
+import { POST as couriersPost } from '../../app/api/partner/couriers/route';
 import {
     addCourier, allChannels, codeOf, courierAct, smsOfOrder, historyOf, itemsOf, ledgerOfPayment, n, newBuyer, newDeliveryZone, newOption, newPartner,
     newProduct, newShop, openOrdersService, order, orderBody, orderRoute, orderRpc, outboxOf, partnerAct, payOrder, placed, platformSetting,
-    refundsOfOrder, releaseUnpaid, setPortions, shiftOrder, startOrderPay, superadminId, tick, toReady, userClient, type Buyer, type Row,
+    refundsOfOrder, releaseUnpaid, setPlatformSetting, setPortions, shiftOrder, startOrderPay, superadminId, tick, toReady, userClient, type Buyer, type Row,
     type TestPartner,
 } from './l12a-helpers';
 
@@ -84,6 +85,10 @@ const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 async function reply(res: Response): Promise<{ status: number; body: Row }> {
     return { status: res.status, body: (await res.json()) as Row };
 }
+/** Invitation d'un livreur par la route de la partenaire. */
+async function couriersRoute(owner: Buyer, phone: string): Promise<{ status: number; body: Row }> {
+    return reply(await couriersPost(req('/api/partner/couriers', 'POST', owner.accessToken, { phone })));
+}
 async function sql<T extends Row = Row>(text: string, params: unknown[] = []): Promise<T[]> {
     const c = await openConcurrentClient({ applicationName: 'ev-test-l12a-sql' });
     try {
@@ -100,7 +105,7 @@ describe('A. Devis et commande : tout calculé en base', () => {
     test('réglages par défaut (décisions du client)', async () => {
         const expected: Record<string, unknown> = {
             'orders.service_fee_rate': 5, 'orders.commission_rate': 0, 'orders.deposit_default_percent': 30, 'orders.hold_minutes': 15,
-            'orders.response_minutes': 15, 'orders.max_unpaid_per_client': 3, 'orders.max_unpaid_portions': 10,
+            'orders.response_minutes': 15, 'orders.max_unpaid_per_client': 3, 'orders.max_unpaid_portions': 10, 'orders.courier_invites_per_day': 10,
             'orders.pickup_grace_hours': 24, 'orders.pickup_warning_hours': 2,
             'orders.contact_retention_days': 7, 'orders.code_max_attempts': 5, 'orders.code_resend_max': 3, 'orders.prep_minutes_default': 30,
             'finance.aggregator_fee_rate.WAVE': 1.5, 'finance.payout_delay_hours': 48,
@@ -200,6 +205,57 @@ describe('A. Devis et commande : tout calculé en base', () => {
                                           VALUES ($1, $2, 'Rhum', 1, 9000, 9000)`, [id, rum]), /réglementé/);
         } finally {
             await c.close();
+        }
+    });
+
+    test('produit devenu réglementé : refusé par Event Village à l’acceptation et à la remise par le livreur, tout rendu ; avis au client, à la partenaire et au livreur sur les 4 canaux', async () => {
+        // Contre-vérification T2 et décision du chef de projet (21/11) : avis à la partenaire et au livreur
+        const buyerR = await newBuyer('l12a-reglemente');
+        try {
+            const regulate = async (productId: string): Promise<void> => {
+                const { data } = await service.rpc('order_product_regulation_decide', { p: { actor_id: await superadminId(), product_id: productId, regulated: true, reason: 'Boisson alcoolisée' } });
+                assert.equal((data as Row).ok, true, JSON.stringify(data));
+            };
+            const of = (box: string[], type: string): string[] => box.filter((x) => x.startsWith(`${type}:`));
+            const origins = async (type: string, orderId: string): Promise<string[]> => {
+                const { data } = await service.from('notification_outbox').select('template_data').eq('type', type).eq('template_data->>order_id', orderId);
+                return Array.from(new Set((data ?? []).map((r) => String((r.template_data as Row).origin))));
+            };
+
+            // 1. À l'acceptation : commande payable à la remise
+            const wine = await newProduct(partner, shop, { price: 6_000, name: 'Vin rouge' });
+            const a = await placed(buyerR, orderBody(shop, [{ productId: wine, quantity: 1 }], { mode: 'SUR_PLACE', onsiteLabel: 'Table 2', payment: 'DIFFERE' }));
+            await regulate(wine);
+            const acc = await partnerAct(partner, a, { action: 'ACCEPTER' });
+            assert.deepEqual([acc.status, acc.body.code], [409, 'REGULATED_ORDER_REFUSED'], JSON.stringify(acc.body));
+            assert.equal(acc.body.error, 'Un produit de cette commande est réglementé : elle ne peut pas être acceptée. Elle est annulée et le client remboursé.');
+            assert.equal((await order(a)).order_state, 'REFUSEE');
+            assert.deepEqual(of(await outboxOf(partner.userId, a), 'ORDER_CANCELLED_PRO'), allChannels('ORDER_CANCELLED_PRO'));
+            assert.deepEqual(of(await outboxOf(buyerR.userId, a), 'ORDER_CANCELLED'), allChannels('ORDER_CANCELLED'));
+            assert.deepEqual([await origins('ORDER_CANCELLED_PRO', a), await origins('ORDER_CANCELLED', a)], [['REGLEMENTE'], ['REGLEMENTE']]);
+
+            // 2. À la remise par le livreur : commande payée, en route
+            const beer = await newProduct(partner, shop, { price: 5_000, name: 'Bière pression' });
+            const b = await placed(buyerR, orderBody(shop, [{ productId: beer, quantity: 1 }], { mode: 'LIVRAISON', zoneId: zone, address: 'Villa 4, Ouakam', phone: buyerR.phone9 }));
+            await payOrder(buyerR, b);
+            for (const body of [{ action: 'ACCEPTER' }, { action: 'PRETE' }, { action: 'CONFIER', courierId: courier.userId }]) {
+                const r = await partnerAct(partner, b, body);
+                assert.equal(r.status, 200, `${body.action} : ${JSON.stringify(r.body)}`);
+            }
+            assert.equal((await courierAct(courier, b, { action: 'EN_ROUTE' })).status, 200);
+            await regulate(beer);
+            const code = await codeOf(buyerR, b);
+            const rem = await courierAct(courier, b, { action: 'REMETTRE', code });
+            assert.deepEqual([rem.status, rem.body.code], [409, 'REGULATED_ORDER_REFUSED'], JSON.stringify(rem.body));
+            const o = await order(b);
+            assert.equal(o.order_state, 'REFUSEE');
+            assert.ok(n(o.paid_goods) > 0 && n(o.refunded_amount) === n(o.paid_goods) + n(o.paid_fees), `tout rendu : ${o.refunded_amount} sur ${n(o.paid_goods) + n(o.paid_fees)}`);
+            assert.deepEqual(of(await outboxOf(courier.userId, b), 'ORDER_COURIER_CANCELLED'), allChannels('ORDER_COURIER_CANCELLED'));
+            assert.deepEqual(of(await outboxOf(partner.userId, b), 'ORDER_CANCELLED_PRO'), allChannels('ORDER_CANCELLED_PRO'));
+            assert.deepEqual(of(await outboxOf(buyerR.userId, b), 'ORDER_CANCELLED'), allChannels('ORDER_CANCELLED'));
+            assert.deepEqual([await origins('ORDER_COURIER_CANCELLED', b), await origins('ORDER_CANCELLED_PRO', b)], [['REGLEMENTE'], ['REGLEMENTE']]);
+        } finally {
+            await releaseUnpaid(buyerR.userId);
         }
     });
 
@@ -708,6 +764,26 @@ describe('D. Accès d’autrui', () => {
         assert.equal(cannotAssign.body.code, 'COURIER_NOT_FOUND', 'un livreur d’une autre équipe ne se voit pas confier la commande');
         const own = await reply(await courierOrdersGet(req('/api/courier/orders', 'GET', courier.accessToken)));
         assert.equal(((own.body.orders as Row[]) ?? []).some((o) => o.id === id), true, 'le livreur de l’équipe la voit');
+    });
+
+    test('invitations de livreurs : au plus orders.courier_invites_per_day par partenaire et par jour (réglage), refus 429 au-delà', async () => {
+        // Décision du chef de projet (21/11) : 10 par jour ; réglage ramené à 2 le temps du test
+        const boss = await newPartner('l12a-invitations');
+        const targets = [await newBuyer('l12a-invite-1'), await newBuyer('l12a-invite-2'), await newBuyer('l12a-invite-3')];
+        await setPlatformSetting('orders.courier_invites_per_day', 2, 'test du lot 12a');
+        try {
+            const replies: Array<[number, unknown]> = [];
+            for (const t of targets) {
+                const r = await couriersRoute(boss, t.phone9);
+                replies.push([r.status, r.body.code ?? (r.body.invitation as Row | undefined)?.displayName]);
+            }
+            assert.deepEqual(replies.map((r) => r[0]), [201, 201, 429], JSON.stringify(replies));
+            assert.equal(replies[2][1], 'TOO_MANY_INVITES');
+            const third = await couriersRoute(boss, targets[2].phone9);
+            assert.equal(third.body.error, 'Vous avez déjà envoyé 2 invitations aujourd’hui : réessayez demain.');
+        } finally {
+            await setPlatformSetting('orders.courier_invites_per_day', 10, 'test du lot 12a');
+        }
     });
 
     test('livreur invité mais pas encore d’accord, puis retiré de l’équipe : plus aucune commande', async () => {
