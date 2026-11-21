@@ -36,6 +36,9 @@ export const PARTNER_SUSPENDED_TEXT = 'Votre compte organisateur est suspendu : 
 /** Contre-vérification du lot 10b (T1) : refus d'une écriture de salle pour une fiche SUSPENDU. */
 export const PARTNER_SUSPENDED_HALLS_TEXT = 'Votre compte organisateur est suspendu : vos salles et leurs réservations ne sont plus modifiables. Contactez le support.';
 
+/** Lot 11b (F1) : refus d'une écriture d'établissement, de zone, de table ou de réservation de table pour une fiche SUSPENDU. */
+export const PARTNER_SUSPENDED_TABLES_TEXT = 'Votre compte organisateur est suspendu : vos établissements et leurs réservations ne sont plus modifiables. Contactez le support.';
+
 type FicheStatus = 'VALIDE' | 'SUSPENDU' | 'EN_ATTENTE' | 'REJETE';
 
 /** Route et méthode : `GET /api/partner/dashboard`. Un segment dynamique s'écrit `*`. */
@@ -59,6 +62,16 @@ const OWN_REFUSAL: readonly RouteKey[] = [
     'POST /api/partner/events',
     'POST /api/partner/events/*/transition',
     'POST /api/partner/upload',
+];
+
+/**
+ * Lot 11b (F1) : routes d'écriture qui filtrent ELLES-MÊMES une fiche SUSPENDU (partnerSuspendedTablesRefusal). Actions sur
+ * une réservation de table : accepter ou refuser une demande passent en base, qui refuse l'acceptation d'une fiche non
+ * VALIDE et rembourse le client en entier (correctif T5 de la contre-vérification du lot 11a) ; présence, annulation et
+ * paiement sur place sont refusés par la route.
+ */
+const OWN_SUSPENDED_CHECK: readonly RouteKey[] = [
+    'PATCH /api/partner/tables/reservations/*',
 ];
 
 const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -88,6 +101,10 @@ export function partnerFicheAllows(status: string | null, method: string, pathna
  * Contre-vérification du lot 10b (T1) : aussi toute écriture des salles (/api/partner/halls*) : création, modification,
  * suppression, renvoi en validation, annulation d'une réservation ; la base refuse aussi l'annulation par la salle
  * (hall_reservation_cancel, migration 20261126000004).
+ * Lot 11b (F1) : aussi toute écriture des établissements et des tables (/api/partner/venues*, /api/partner/tables*) :
+ * création, modification, envoi en validation, plan de salle, fermetures, zones, tables, réponse à une demande,
+ * présence, annulation, paiement sur place ; la base refuse aussi la présence, l'annulation par l'établissement et les
+ * écritures de l'établissement (venue_owner_refusal, migrations 20261129…).
  * Lot 12a : aussi toute écriture des commandes, des produits, des livreurs et des réglages de vente d'un établissement.
  */
 export function partnerEventWrite(method: string, pathname: string): boolean {
@@ -100,6 +117,8 @@ export function partnerEventWrite(method: string, pathname: string): boolean {
         || path === '/api/partner/team' || path.startsWith('/api/partner/team/')
         || path === '/api/partner/shifts' || path.startsWith('/api/partner/shifts/')
         || path === '/api/partner/halls' || path.startsWith('/api/partner/halls/')
+        || path === '/api/partner/venues' || path.startsWith('/api/partner/venues/')
+        || path === '/api/partner/tables' || path.startsWith('/api/partner/tables/')
         // Lot 12a : commandes, produits, livreurs et réglages de vente d'un établissement (fiche SUSPENDU = lecture seule ;
         // les fonctions en base refusent aussi : order_partner_action, order_venue_settings_set, order_courier_*)
         || isOrderServiceWrite(path);
@@ -117,6 +136,17 @@ function isOrderServiceWrite(path: string): boolean {
 export async function partnerSuspendedResponse(text: string = PARTNER_SUSPENDED_TEXT): Promise<NextResponse> {
     const support = await supportSentenceOrHelp('fiche suspendue');
     return NextResponse.json({ error: `${text} ${support}`, code: 'PARTNER_SUSPENDED' }, { status: 403 });
+}
+
+/**
+ * Lot 11b (F1) : refus 403 PARTNER_SUSPENDED d'une action sur les tables pour une fiche SUSPENDU (routes de
+ * OWN_SUSPENDED_CHECK), ou null. Lecture en échec : 503, jamais un passage.
+ */
+export async function partnerSuspendedTablesRefusal(user: { id: string; roles: readonly string[] }): Promise<NextResponse | null> {
+    if (!partnerFicheGuardApplies(user.roles, '/api/partner/tables/reservations')) return null;
+    const read = await readFicheStatus(user.id, 'partnerSuspendedTablesRefusal');
+    if ('response' in read) return read.response;
+    return read.status === 'SUSPENDU' ? partnerSuspendedResponse(PARTNER_SUSPENDED_TABLES_TEXT) : null;
 }
 
 /** La garde s'applique-t-elle à ce compte et à ce chemin ? */
@@ -141,8 +171,11 @@ export async function partnerFicheRefusal(user: { id: string; roles: readonly st
     if (!partnerFicheGuardApplies(user.roles, pathname)) return null;
     const read = await readFicheStatus(user.id, 'partnerFicheRefusal');
     if ('response' in read) return read.response;
-    if (read.status === 'SUSPENDU' && partnerEventWrite(method, pathname)) {
-        return partnerSuspendedResponse(pathname.startsWith('/api/partner/halls') ? PARTNER_SUSPENDED_HALLS_TEXT : PARTNER_SUSPENDED_TEXT);
+    if (read.status === 'SUSPENDU' && partnerEventWrite(method, pathname) && !OWN_SUSPENDED_CHECK.includes(routeKey(method, pathname))) {
+        const text = pathname.startsWith('/api/partner/halls') ? PARTNER_SUSPENDED_HALLS_TEXT
+            : pathname.startsWith('/api/partner/venues') || pathname.startsWith('/api/partner/tables') ? PARTNER_SUSPENDED_TABLES_TEXT
+                : PARTNER_SUSPENDED_TEXT;
+        return partnerSuspendedResponse(text);
     }
     if (partnerFicheAllows(read.status, method, pathname)) return null;
     return NextResponse.json({ error: PARTNER_NOT_VALIDATED_TEXT, code: 'PARTNER_NOT_VALIDATED' }, { status: 403 });

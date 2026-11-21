@@ -244,7 +244,7 @@ Un paiement de commande n'envoie plus l'avis générique « Paiement confirmé �
 | `…03_l12a_commandes_schema` | colonnes des commandes et des lignes, historique, livreurs, clé du code (schéma `private`), `order_code_hash`, état dérivé, garde, reprise des anciennes commandes de repas, lecture (client et administration) |
 | `…04_l12a_devis_commande` | verrous, données et envoi des avis, historique, stock rendu ; `order_quote_compute`, `order_quote`, `order_create` |
 | `…05_l12a_paiement` | `order_payable_refusal`, `order_expire_hold`, `order_payment_create`, `order_payment_confirm` ; recopies de `fin_payout_available_at`, `calculate_referral_commissions` (20261123000105) |
-| `…06_l12a_etapes` | remboursement, clôture, annulation, code (émission, remise, nouveau code), actions de la partenaire et du livreur, livreurs, lectures serveur, `order_tick` ; recopie de `notif_cashouts_notify` (20261126000003) |
+| `…06_l12a_etapes` | remboursement, clôture, annulation, code (émission, remise, nouveau code), actions de la partenaire et du livreur, livreurs, lectures serveur, `order_tick` ; recopie de `notif_cashouts_notify` (20261129000004, lot 11b : refaite après sa fusion, avis de la table gardé) |
 | `…07_l12a_avis` | 17 types d'avis (canaux, classement de nuit) et l'envoi immédiat `ORDER_HANDOVER_CODE` ; `trg_payments_other_success` (ORDER exclu) ; recopie de `notification_sync_log` (20261120000005, objet ORDER_HANDOVER) |
 | `…08_l12a_releves` | commission des commandes dans les relevés ; recopies de `finance_admin_earned`, `finance_admin_payments` (20261123000109) |
 

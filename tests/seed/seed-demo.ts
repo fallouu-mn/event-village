@@ -101,6 +101,26 @@
  *    cours (keepHoldActive), pour que la réservation reste « en attente de paiement » pendant les captures ;
  *  - identifiants dans demo-ids.json (halls), version 5.
  *
+ * Lot 11b (contrôle responsive et captures des tables), graine v6 : établissements de la même organisatrice (Baobab Scène),
+ * toutes les écritures par les fonctions en base :
+ *  - venue_create par la propriétaire (fiche, photos, horaires, zones, tables en une transaction ; en attente de validation
+ *    à la création), puis venue_validation_decide par le SUPERADMIN du seed de test : « La Terrasse du Plateau » VALIDÉ
+ *    complet (2 photos, 12:00-15:00 et 19:00-23:30 tous les jours, 2 zones, 8 tables de 2 à 8 places, plan de salle placé
+ *    et montré par venue_plan_set, acompte de 5 000 F par personne, confirmation automatique), « Le Comptoir de la
+ *    Médina » EN ATTENTE (bar, 1 photo, 3 tables), « Espace Lounge des Almadies » REFUSÉ (motif) et « Le Petit Jardin »
+ *    VALIDÉ, gratuit, à acceptation manuelle (4 tables, 07:00-02:00 tous les jours) ;
+ *  - photos : copies d'affiches de ce seed réencodées en WebP comme celles des salles, dossier venues/<partenaire>/
+ *    (venuePhotos de lib/tables/table.service.ts) ;
+ *  - fermeture exceptionnelle du restaurant dans 10 jours, un jour entier sans réservation : venue_closure_preview, puis
+ *    venue_closure_create avec expected_count = 0 ;
+ *  - réservations du client par table_reserve, interrupteur features.tables_enabled ouvert le temps des appels puis remis :
+ *    au Petit Jardin, une réservation du jour (planning) acceptée par table_reservation_respond (propriétaire) et une
+ *    demande à accepter à J+2 ; au restaurant, une réservation en attente de paiement à J+3 (4 personnes : 20 000 F
+ *    d'acompte et les frais de service). Fin de l'attente de paiement et échéance de la réponse reculées de
+ *    HOLD_EXTENSION_MINUTES par une écriture locale sous le drapeau des fonctions en base (comme l'horloge des suites du
+ *    lot 11a) ; aucune insertion directe dans table_reservations ;
+ *  - identifiants dans demo-ids.json (tables), version 6.
+ *
  * Toutes les personnes, entreprises, lieux et numéros sont inventés (le dépôt est public).
  */
 import '../helpers/env';
@@ -122,14 +142,15 @@ import type { ScanCategoryColor } from '../../lib/scan/scan-result';
 import { dispatchNotifications } from '../../lib/notifications/dispatcher';
 import { scheduleReminders } from '../../lib/notifications/reminders';
 import { getFakes } from '../fakes';
-import { inspect } from '../helpers/db';
+import { inspect, openConcurrentClient } from '../helpers/db';
 import { FIXTURE_USERS, TEST_PASSWORD } from '../helpers/fixture-data';
 import { assertLot9terInvariants } from '../helpers/lot9ter-invariants';
 import { missingRecetteSchema } from '../helpers/recette-invariants';
 import { missingTerrainSchema } from '../helpers/terrain-invariants';
 import {
-    DEMO_HALL_KEYS, DEMO_IDS_FILE, DEMO_IDS_VERSION, writeDemoIds, type DemoAccount, type DemoAccountKey, type DemoEvent, type DemoEventKey, type DemoHall,
-    type DemoHallKey, type DemoHalls, type DemoIds,
+    DEMO_HALL_KEYS, DEMO_IDS_FILE, DEMO_IDS_VERSION, DEMO_TABLE_RESERVATION_KEYS, DEMO_VENUE_KEYS, writeDemoIds, type DemoAccount, type DemoAccountKey,
+    type DemoEvent, type DemoEventKey, type DemoHall, type DemoHallKey, type DemoHalls, type DemoIds, type DemoTableReservation, type DemoTables,
+    type DemoVenue, type DemoVenueKey,
 } from '../../e2e/support/demo-ids';
 import { dakarDateLabel, logoHtml, posterHtml, POSTER_SIZE, renderPng, type PALETTES, type PosterMotif } from '../../e2e/support/poster';
 
@@ -297,6 +318,9 @@ const PEOPLE: Record<DemoAccountKey, Person & { roles: string[]; primaryRole: st
     partenaireNeuf: { firstName: 'Ndèye', lastName: 'Gning', phone: '+221700000109', email: 'ndeye.gning@demo.eventvillage.local', roles: ['CLIENT', 'PARTENAIRE'], primaryRole: 'PARTENAIRE' },
     // Lot 9 ter (D.3.2) : contrôleur de l'événement à zones, porte Nord
     controleurZones: { firstName: 'Mamadou', lastName: 'Sall', phone: '+221700000110', email: 'mamadou.sall@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
+    // Design 1e (mesure mobile) : client dédié de la mesure de Mes billets (scripts/e2e/perf-mobile.mjs), semé une fois avec
+    // 10 billets à venir et 30 passés ; aucune phase de l'e2e ne s'en sert, sa liste ne change donc pas d'un run à l'autre
+    clientMesure: { firstName: 'Awa', lastName: 'Sow', phone: '+221700000111', email: 'awa.sow.mesure@demo.eventvillage.local', roles: ['CLIENT'], primaryRole: 'CLIENT' },
 };
 
 /** Lot 9 bis (R87) : adresse saisie par le client de démonstration, en attente de vérification (jamais une adresse technique). */
@@ -1277,24 +1301,29 @@ async function superadminUserId(): Promise<string> {
     return String(data.id);
 }
 
-async function hallsSwitchOpen(): Promise<boolean> {
-    const { data, error } = await service.from('platform_settings').select('value').eq('key', HALLS_SWITCH).maybeSingle();
-    if (error) fail(`réglage ${HALLS_SWITCH}`, error);
+/** Lot 11b : interrupteur d'un service (salles : features.halls_enabled ; tables : features.tables_enabled). */
+async function switchOpen(key: string): Promise<boolean> {
+    const { data, error } = await service.from('platform_settings').select('value').eq('key', key).maybeSingle();
+    if (error) fail(`réglage ${key}`, error);
     return (data?.value as { value?: unknown } | null | undefined)?.value === true;
 }
 
 /** Interrupteur écrit comme la route du Superadmin (finance_setting_set : historique et motif). */
-async function setHallsSwitch(value: boolean, actorId: string, reason: string): Promise<void> {
-    const { data, error } = await service.rpc('finance_setting_set', { p_key: HALLS_SWITCH, p_value: { value }, p_actor: actorId, p_reason: reason });
-    if (error) fail(`réglage ${HALLS_SWITCH} à ${String(value)}`, error);
-    if ((data as { ok?: boolean } | null)?.ok !== true) fail(`réglage ${HALLS_SWITCH} à ${String(value)}`, `refusé : ${JSON.stringify(data)}`);
+async function setSwitch(key: string, value: boolean, actorId: string, reason: string): Promise<void> {
+    const { data, error } = await service.rpc('finance_setting_set', { p_key: key, p_value: { value }, p_actor: actorId, p_reason: reason });
+    if (error) fail(`réglage ${key} à ${String(value)}`, error);
+    if ((data as { ok?: boolean } | null)?.ok !== true) fail(`réglage ${key} à ${String(value)}`, `refusé : ${JSON.stringify(data)}`);
 }
+
+const hallsSwitchOpen = (): Promise<boolean> => switchOpen(HALLS_SWITCH);
+const setHallsSwitch = (value: boolean, actorId: string, reason: string): Promise<void> => setSwitch(HALLS_SWITCH, value, actorId, reason);
 
 /**
  * Photo d'une salle : copie de l'affiche d'un événement de ce seed, réencodée en WebP sous un nom de la route de dépôt
  * (STORED_IMAGE_NAME_RE), dans le dossier des salles de la partenaire (isPartnerHallPhotoUrl), comme partnerPosterOf de l'e2e.
+ * Lot 11b : même chose pour la photo d'un établissement (dossier venues/<partenaire>/, venuePhotos de lib/tables/table.service.ts).
  */
-async function hallPhoto(partnerId: string, sourceEventId: string): Promise<string> {
+async function hallPhoto(partnerId: string, sourceEventId: string, folder: 'halls' | 'venues' = 'halls'): Promise<string> {
     const { data, error } = await service.from('events').select('image_url').eq('id', sourceEventId).single();
     if (error || !data?.image_url) fail('affiche reprise pour la photo d’une salle', error ?? 'affiche absente');
     const url = String(data.image_url);
@@ -1307,11 +1336,11 @@ async function hallPhoto(partnerId: string, sourceEventId: string): Promise<stri
     const { default: sharp } = await import('sharp');
     const webp = await sharp(Buffer.from(await blob.arrayBuffer()))
         .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
-    const objectPath = `halls/${partnerId}/${Date.now()}_${randomUUID().replace(/-/g, '').slice(0, 8)}.webp`;
+    const objectPath = `${folder}/${partnerId}/${Date.now()}_${randomUUID().replace(/-/g, '').slice(0, 8)}.webp`;
     const { error: upErr } = await service.storage.from(BUCKET).upload(objectPath, webp, { contentType: 'image/webp', upsert: false });
     if (upErr) fail(`téléversement ${objectPath}`, upErr);
     const publicUrl = service.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl;
-    if (!publicUrl.startsWith(`${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/halls/${partnerId}/`)) fail(`URL publique ${objectPath}`, `origine inattendue : ${publicUrl}`);
+    if (!publicUrl.startsWith(`${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${folder}/${partnerId}/`)) fail(`URL publique ${objectPath}`, `origine inattendue : ${publicUrl}`);
     return publicUrl;
 }
 
@@ -1386,6 +1415,325 @@ async function seedHalls(partnerId: string, clientId: string, posterEventId: (ke
     }
     const reservation = await reserveDemoHall(clientId, halls.validee.id, actor);
     return { ...halls, reservation };
+}
+
+// ── Tables (lot 11b) ─────────────────────────────────────────────────────────
+
+const TABLES_SWITCH = 'features.tables_enabled';
+/** Demande à accepter du Petit Jardin : dans 2 jours, 19:30 (échéance de réponse reculée, voir keepTableWaitActive). */
+const TABLE_REQUEST_DAYS = 2;
+/** Réservation en attente de paiement du restaurant : dans 3 jours, 20:00 (service du soir). */
+const TABLE_PENDING_DAYS = 3;
+/** Fermeture exceptionnelle du restaurant : un jour entier, dans 10 jours (aucune réservation ce jour-là). */
+const TABLE_CLOSURE_DAYS = 10;
+const TABLE_CLOSURE_REASON = 'Inventaire et grand nettoyage de la cuisine';
+const TABLE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type PlanShape = 'RONDE' | 'CARREE' | 'RECTANGLE';
+
+interface VenueTableSeed {
+    number: string;
+    capacity: number;
+    min: number;
+    /** Clé de la zone (VenueSeed.zones) ; null : hors zone. */
+    zone: string | null;
+    /** Position sur le plan de salle (centre de la table, en % du plan) ; absente : table hors du plan. */
+    plan?: { x: number; y: number; shape: PlanShape; rotation: number };
+}
+
+interface VenueSeed {
+    key: DemoVenueKey;
+    kind: DemoVenue['kind'];
+    name: string;
+    description: string;
+    address: string;
+    city: string;
+    lat: number;
+    lng: number;
+    slotMinutes: number | null;
+    depositPerPerson: number | null;
+    confirmation: 'AUTO' | 'MANUELLE';
+    /** Événements de ce seed dont l'affiche est reprise comme photo (une au moins : venue_create l'exige). */
+    photosFrom: DemoEventKey[];
+    hours: Array<{ weekday: number; opens_at: string; closes_at: string }>;
+    zones: Array<{ key: string; name: string; plan?: { x: number; y: number; w: number; h: number } }>;
+    tables: VenueTableSeed[];
+    /** Plan de salle placé et montré au client (venue_plan_set). */
+    showPlan?: boolean;
+    /** Décision de l'administration (venue_validation_decide) ; null : laissé en attente de validation. */
+    decision: 'VALIDER' | 'REFUSER' | null;
+    reason?: string;
+    expected: DemoVenue['validationStatus'];
+}
+
+const EVERY_DAY = [1, 2, 3, 4, 5, 6, 7];
+function hoursOf(days: number[], ranges: Array<[string, string]>): VenueSeed['hours'] {
+    return days.flatMap((weekday) => ranges.map(([opens_at, closes_at]) => ({ weekday, opens_at, closes_at })));
+}
+
+const VENUES: VenueSeed[] = [
+    {
+        key: 'restaurant', kind: 'RESTAURANT', name: 'La Terrasse du Plateau',
+        description: 'Cuisine sénégalaise et grillades de la mer au cœur du Plateau : thiéboudiène le midi, poissons braisés le soir. Salle climatisée et terrasse ombragée ; menus de groupe sur demande.',
+        address: '8, rue Carnot, Dakar-Plateau', city: 'Dakar', lat: 14.6681, lng: -17.4335,
+        slotMinutes: null, depositPerPerson: 5_000, confirmation: 'AUTO', photosFrom: ['termine', 'zones'],
+        hours: hoursOf(EVERY_DAY, [['12:00', '15:00'], ['19:00', '23:30']]),
+        zones: [
+            { key: 'salle', name: 'Salle climatisée', plan: { x: 3, y: 5, w: 58, h: 90 } },
+            { key: 'terrasse', name: 'Terrasse', plan: { x: 65, y: 5, w: 32, h: 90 } },
+        ],
+        tables: [
+            { number: '1', capacity: 2, min: 1, zone: 'salle', plan: { x: 14, y: 22, shape: 'RONDE', rotation: 0 } },
+            { number: '2', capacity: 2, min: 1, zone: 'salle', plan: { x: 31, y: 22, shape: 'RONDE', rotation: 0 } },
+            { number: '3', capacity: 4, min: 2, zone: 'salle', plan: { x: 48, y: 22, shape: 'CARREE', rotation: 0 } },
+            { number: '4', capacity: 4, min: 2, zone: 'salle', plan: { x: 14, y: 62, shape: 'CARREE', rotation: 0 } },
+            { number: '5', capacity: 6, min: 3, zone: 'salle', plan: { x: 40, y: 66, shape: 'RECTANGLE', rotation: 0 } },
+            { number: '6', capacity: 4, min: 2, zone: 'terrasse', plan: { x: 81, y: 20, shape: 'CARREE', rotation: 45 } },
+            { number: '7', capacity: 6, min: 3, zone: 'terrasse', plan: { x: 81, y: 48, shape: 'RECTANGLE', rotation: 90 } },
+            { number: '8', capacity: 8, min: 4, zone: 'terrasse', plan: { x: 81, y: 79, shape: 'RECTANGLE', rotation: 0 } },
+        ],
+        showPlan: true, decision: 'VALIDER', expected: 'VALIDEE',
+    },
+    {
+        key: 'bar', kind: 'BAR', name: 'Le Comptoir de la Médina',
+        description: 'Bar à jus et cocktails sans alcool, musique live le week-end. Tables hautes au comptoir et salon au calme pour les groupes.',
+        address: '45, avenue Blaise-Diagne, Médina', city: 'Dakar', lat: 14.6833, lng: -17.4489,
+        slotMinutes: 90, depositPerPerson: null, confirmation: 'AUTO', photosFrom: ['brouillon'],
+        hours: hoursOf([2, 3, 4, 5, 6, 7], [['18:00', '01:00']]),
+        zones: [],
+        tables: [
+            { number: 'C1', capacity: 2, min: 1, zone: null },
+            { number: 'C2', capacity: 2, min: 1, zone: null },
+            { number: 'S1', capacity: 6, min: 2, zone: null },
+        ],
+        decision: null, expected: 'EN_ATTENTE_VALIDATION',
+    },
+    {
+        key: 'espace', kind: 'ESPACE', name: 'Espace Lounge des Almadies',
+        description: 'Espace privatisable pour les dîners d’entreprise et les anniversaires, jusqu’à 40 convives.',
+        address: 'Route des Almadies', city: 'Dakar', lat: 14.7447, lng: -17.5123,
+        slotMinutes: 180, depositPerPerson: null, confirmation: 'MANUELLE', photosFrom: ['refuse'],
+        hours: hoursOf([4, 5, 6], [['19:00', '02:00']]),
+        zones: [],
+        tables: [
+            { number: 'L1', capacity: 12, min: 6, zone: null },
+            { number: 'L2', capacity: 8, min: 4, zone: null },
+        ],
+        decision: 'REFUSER',
+        reason: 'Les photos ne montrent pas l’espace : ajoutez des photos de la salle et précisez l’accès depuis la route des Almadies.',
+        expected: 'REFUSEE',
+    },
+    {
+        key: 'jardin', kind: 'RESTAURANT', name: 'Le Petit Jardin',
+        description: 'Petite table de quartier sous les manguiers : cuisine maison, jus frais et pâtisseries, du petit-déjeuner au dernier service. Chaque demande est confirmée par l’équipe.',
+        address: 'Rue 10, Sicap Liberté 2', city: 'Dakar', lat: 14.7167, lng: -17.461,
+        slotMinutes: null, depositPerPerson: null, confirmation: 'MANUELLE', photosFrom: ['valide'],
+        hours: hoursOf(EVERY_DAY, [['07:00', '02:00']]),
+        zones: [],
+        tables: [
+            { number: 'J1', capacity: 2, min: 1, zone: null },
+            { number: 'J2', capacity: 2, min: 1, zone: null },
+            { number: 'J3', capacity: 4, min: 2, zone: null },
+            { number: 'J4', capacity: 6, min: 3, zone: null },
+        ],
+        decision: 'VALIDER', expected: 'VALIDEE',
+    },
+];
+
+/** Heure du quart d'heure suivant `minutes` minutes après maintenant, à Dakar (= UTC). */
+function quarterIn(minutes: number): { date: string; time: string } {
+    const quarter = 15 * 60_000;
+    const p = dakarParts(new Date(Math.ceil((Date.now() + minutes * 60_000) / quarter) * quarter));
+    return { date: p.date, time: p.time.slice(0, 5) };
+}
+
+/**
+ * Réservation confirmée du Petit Jardin pour le planning du jour (ouvert de 07:00 à 02:00, créneau de 120 min) : dans
+ * 4 h, sinon dans 30 min, toujours aujourd'hui (07:00 au plus tôt) ; seed lancé trop tard le soir : demain midi (signalé).
+ */
+function jardinTodaySlot(): { date: string; time: string } {
+    const today = dakarParts(new Date()).date;
+    for (const minutes of [240, 30]) {
+        const at = quarterIn(minutes);
+        if (at.date !== today) continue;
+        return at.time < '07:00' ? { date: today, time: '07:00' } : at;
+    }
+    const tomorrow = dakarParts(new Date(Date.now() + 86_400_000)).date;
+    log(`Petit Jardin : seed trop tard pour une réservation du jour, réservation confirmée demain ${tomorrow} à 12:00 (planning du jour vide)`);
+    return { date: tomorrow, time: '12:00' };
+}
+
+/** Établissement créé par venue_create (fiche, photos, horaires, zones, tables en une transaction), comme l'écran de création. */
+async function createVenue(seed: VenueSeed, partnerId: string, ownerId: string, posterEventId: (key: DemoEventKey) => string): Promise<string> {
+    const photos: string[] = [];
+    for (const key of seed.photosFrom) photos.push(await hallPhoto(partnerId, posterEventId(key), 'venues'));
+    const out = await rpcOk('venue_create', {
+        actor_id: ownerId, kind: seed.kind, name: seed.name, description: seed.description, address: seed.address, city: seed.city,
+        latitude: seed.lat, longitude: seed.lng, slot_minutes: seed.slotMinutes, deposit_per_person: seed.depositPerPerson,
+        confirmation_mode: seed.confirmation, photos, hours: seed.hours,
+        zones: seed.zones.map((z) => ({ key: z.key, name: z.name })),
+        tables: seed.tables.map((t) => ({ number: t.number, capacity: t.capacity, min_capacity: t.min, zone_key: t.zone })),
+    }, `établissement « ${seed.name} » (venue_create)`);
+    const id = String(out.venue_id ?? '');
+    if (!TABLE_UUID_RE.test(id)) fail(`établissement « ${seed.name} »`, `identifiant absent (${JSON.stringify(out)})`);
+    if (out.validation_status !== 'EN_ATTENTE_VALIDATION') {
+        fail(`établissement « ${seed.name} »`, `créé au statut ${String(out.validation_status)} au lieu de EN_ATTENTE_VALIDATION (réglage tables.validation_required ?)`);
+    }
+    return id;
+}
+
+/** Plan de salle : chaque table et chaque zone placées (positions de VenueSeed), plan montré au client (venue_plan_set). */
+async function placeFloorPlan(seed: VenueSeed, venueId: string, ownerId: string): Promise<void> {
+    const [{ data: tables, error: tErr }, { data: zones, error: zErr }] = await Promise.all([
+        service.from('restaurant_tables').select('id, table_number').eq('venue_id', venueId),
+        service.from('restaurant_zones').select('id, name').eq('venue_id', venueId),
+    ]);
+    if (tErr) fail(`tables de « ${seed.name} »`, tErr);
+    if (zErr) fail(`zones de « ${seed.name} »`, zErr);
+    const tableId = (n: string): string => {
+        const row = (tables ?? []).find((t) => t.table_number === n);
+        if (!row) fail(`plan de « ${seed.name} »`, `table « ${n} » introuvable`);
+        return String(row.id);
+    };
+    const zoneId = (name: string): string => {
+        const row = (zones ?? []).find((z) => z.name === name);
+        if (!row) fail(`plan de « ${seed.name} »`, `zone « ${name} » introuvable`);
+        return String(row.id);
+    };
+    const placedTables = seed.tables.filter((t) => t.plan);
+    const out = await rpcOk('venue_plan_set', {
+        actor_id: ownerId, venue_id: venueId, enabled: true,
+        tables: placedTables.map((t) => ({ id: tableId(t.number), x: t.plan?.x, y: t.plan?.y, shape: t.plan?.shape, rotation: t.plan?.rotation })),
+        zones: seed.zones.filter((z) => z.plan).map((z) => ({ id: zoneId(z.name), x: z.plan?.x, y: z.plan?.y, w: z.plan?.w, h: z.plan?.h })),
+    }, `plan de salle de « ${seed.name} » (venue_plan_set)`);
+    if (Number(out.placed) !== placedTables.length || out.enabled !== true) {
+        fail(`plan de salle de « ${seed.name} »`, `${String(out.placed)} table(s) placée(s) au lieu de ${placedTables.length}, plan montré : ${String(out.enabled)}`);
+    }
+}
+
+/** Réservation du client par table_reserve (mêmes contrôles que la route) ; l'interrupteur est ouvert par l'appelant. */
+async function reserveDemoTable(clientId: string, venueId: string, at: { date: string; time: string }, guests: number, notes: string,
+    expected: DemoTableReservation['bookingState'], step: string): Promise<string> {
+    const out = await rpcOk('table_reserve', {
+        client_id: clientId, venue_id: venueId, date: at.date, time: at.time, guests, table_id: null, zone_id: null, notes,
+    }, `${step} (table_reserve)`);
+    const id = String(out.reservation_id ?? '');
+    if (!TABLE_UUID_RE.test(id)) fail(step, `identifiant absent (${JSON.stringify(out)})`);
+    if (out.booking_state !== expected) fail(step, `état ${String(out.booking_state)} au lieu de ${expected}`);
+    return id;
+}
+
+/**
+ * Attentes reculées de HOLD_EXTENSION_MINUTES (comme les paiements en cours, keepHoldActive, et la réservation de salle) :
+ * fin de l'attente de paiement de la réservation du restaurant et échéance de la réponse de la demande du Petit Jardin,
+ * pour que l'une reste « en attente de paiement » et l'autre « à accepter » pendant les captures. Écriture locale avec le
+ * drapeau des fonctions en base (la garde trg_0_table_reservations_guard refuse toute autre écriture), comme l'horloge des
+ * suites du lot 11a (shiftReservation) ; aucune insertion directe.
+ */
+async function keepTableWaitActive(holdId: string, requestId: string): Promise<void> {
+    const c = await openConcurrentClient({ applicationName: 'ev-seed-demo-tables' });
+    try {
+        await c.query(`SELECT set_config('event_village.table_booking', 'on', true)`);
+        const held = await c.query(`UPDATE public.table_reservations SET hold_expires_at = now() + make_interval(mins => $2::int)
+                                     WHERE id = $1 AND booking_state = 'EN_ATTENTE_PAIEMENT' RETURNING id`, [holdId, HOLD_EXTENSION_MINUTES]);
+        if (held.rowCount !== 1) fail(`attente de paiement de la réservation ${holdId}`, 'réservation en attente de paiement introuvable');
+        // Échéance jamais après le début de la réservation (règle de table_reserve)
+        const due = await c.query(`UPDATE public.table_reservations
+                                      SET response_due_at = LEAST(now() + make_interval(mins => $2::int), lower(slot) AT TIME ZONE 'Africa/Dakar')
+                                    WHERE id = $1 AND booking_state = 'EN_ATTENTE_ACCEPTATION' RETURNING id`, [requestId, HOLD_EXTENSION_MINUTES]);
+        if (due.rowCount !== 1) fail(`échéance de la demande ${requestId}`, 'demande en attente de réponse introuvable');
+        await c.commit();
+    } finally {
+        await c.close();
+    }
+}
+
+/**
+ * Établissements de la partenaire (validé complet avec plan de salle, en attente, refusé, Petit Jardin gratuit à
+ * acceptation manuelle), fermeture exceptionnelle à venir du restaurant, réservations du client (interrupteur des tables
+ * ouvert le temps des appels à table_reserve, puis remis à sa valeur).
+ */
+async function seedTables(partnerId: string, ownerId: string, clientId: string, posterEventId: (key: DemoEventKey) => string): Promise<DemoTables> {
+    const actor = await superadminUserId();
+    const venues = {} as Record<DemoVenueKey, DemoVenue>;
+    for (const seed of VENUES) {
+        const id = await createVenue(seed, partnerId, ownerId, posterEventId);
+        if (seed.showPlan) await placeFloorPlan(seed, id, ownerId);
+        if (seed.decision) {
+            const decided = await rpcOk('venue_validation_decide', { actor_id: actor, venue_id: id, decision: seed.decision, reason: seed.reason ?? null },
+                `décision ${seed.decision} sur l’établissement « ${seed.name} »`);
+            if (decided.validation_status !== seed.expected) fail(`décision sur l’établissement « ${seed.name} »`, `statut ${String(decided.validation_status)} au lieu de ${seed.expected}`);
+        }
+        venues[seed.key] = { id, name: seed.name, kind: seed.kind, validationStatus: seed.expected };
+    }
+    for (const key of DEMO_VENUE_KEYS) if (!venues[key]) fail('établissements de démonstration', `établissement « ${key} » absent de VENUES`);
+    const { data: rows, error } = await service.from('venues').select('id, validation_status, floor_plan_enabled, photos').in('id', DEMO_VENUE_KEYS.map((k) => venues[k].id));
+    if (error) fail('relecture des établissements de démonstration', error);
+    for (const seed of VENUES) {
+        const row = (rows ?? []).find((r) => r.id === venues[seed.key].id);
+        if (!row || row.validation_status !== seed.expected) fail('relecture des établissements de démonstration', `« ${seed.name} » au statut ${String(row?.validation_status)} au lieu de ${seed.expected}`);
+        if (Boolean(row.floor_plan_enabled) !== Boolean(seed.showPlan)) fail('relecture des établissements de démonstration', `« ${seed.name} » : plan montré ${String(row.floor_plan_enabled)}`);
+        const photos = Array.isArray(row.photos) ? row.photos.length : 0;
+        if (photos !== seed.photosFrom.length) fail('relecture des établissements de démonstration', `« ${seed.name} » : ${photos} photo(s) au lieu de ${seed.photosFrom.length}`);
+    }
+
+    // Fermeture exceptionnelle : aperçu (aucune réservation touchée), puis création avec la liste de l'aperçu
+    const closureDate = dakarParts(dayAt(TABLE_CLOSURE_DAYS, 12)).date;
+    const closure = { actor_id: ownerId, venue_id: venues.restaurant.id, start_date: closureDate, start_time: null, end_date: null, end_time: null, reason: TABLE_CLOSURE_REASON };
+    const preview = await rpcOk('venue_closure_preview', closure, `aperçu de la fermeture du ${closureDate} (venue_closure_preview)`);
+    if (Number(preview.count) !== 0) fail('fermeture exceptionnelle de démonstration', `${String(preview.count)} réservation(s) touchée(s) au lieu de 0`);
+    const created = await rpcOk('venue_closure_create', { ...closure, expected_count: 0 }, `fermeture du ${closureDate} (venue_closure_create)`);
+    const closureId = String(created.closure_id ?? '');
+    if (!TABLE_UUID_RE.test(closureId) || Number(created.cancelled) !== 0) fail('fermeture exceptionnelle de démonstration', `réponse inattendue ${JSON.stringify(created)}`);
+
+    // Réservations du client : interrupteur ouvert le temps des appels, puis remis à sa valeur d'origine
+    const todayAt = jardinTodaySlot();
+    const requestAt = { date: dakarParts(dayAt(TABLE_REQUEST_DAYS, 12)).date, time: '19:30' };
+    const pendingAt = { date: dakarParts(dayAt(TABLE_PENDING_DAYS, 12)).date, time: '20:00' };
+    const wasOpen = await switchOpen(TABLES_SWITCH);
+    if (!wasOpen) await setSwitch(TABLES_SWITCH, true, actor, 'Seed de démonstration : réservations de tables du client (interrupteur ouvert le temps des appels).');
+    let confirmedId = '';
+    let requestId = '';
+    let pendingId = '';
+    try {
+        confirmedId = await reserveDemoTable(clientId, venues.jardin.id, todayAt, 4, 'Déjeuner en famille : une chaise haute pour un enfant, merci.',
+            'EN_ATTENTE_ACCEPTATION', 'réservation du jour au Petit Jardin');
+        const accepted = await rpcOk('table_reservation_respond', { reservation_id: confirmedId, actor_id: ownerId, action: 'ACCEPTER' },
+            'acceptation de la réservation du jour par l’établissement (table_reservation_respond)');
+        if (accepted.booking_state !== 'CONFIRMEE') fail('acceptation de la réservation du jour', `état ${String(accepted.booking_state)} au lieu de CONFIRMEE`);
+        requestId = await reserveDemoTable(clientId, venues.jardin.id, requestAt, 2, 'Anniversaire de mariage : une table au calme si possible.',
+            'EN_ATTENTE_ACCEPTATION', 'demande à accepter au Petit Jardin');
+        pendingId = await reserveDemoTable(clientId, venues.restaurant.id, pendingAt, 4, 'Table en terrasse si possible.',
+            'EN_ATTENTE_PAIEMENT', 'réservation avec acompte au restaurant');
+    } finally {
+        if (!wasOpen) await setSwitch(TABLES_SWITCH, false, actor, 'Seed de démonstration : interrupteur des tables remis à sa valeur d’origine (fermé).');
+    }
+    await keepTableWaitActive(pendingId, requestId);
+
+    const reservations: DemoTables['reservations'] = {
+        confirmee: { id: confirmedId, venue: 'jardin', ...todayAt, bookingState: 'CONFIRMEE' },
+        demande: { id: requestId, venue: 'jardin', ...requestAt, bookingState: 'EN_ATTENTE_ACCEPTATION' },
+        attentePaiement: { id: pendingId, venue: 'restaurant', ...pendingAt, bookingState: 'EN_ATTENTE_PAIEMENT' },
+    };
+    const { data: resRows, error: resErr } = await service.from('table_reservations')
+        .select('id, booking_state, reservation_date, total_amount').in('id', DEMO_TABLE_RESERVATION_KEYS.map((k) => reservations[k].id));
+    if (resErr) fail('relecture des réservations de tables', resErr);
+    for (const key of DEMO_TABLE_RESERVATION_KEYS) {
+        const r = reservations[key];
+        const row = (resRows ?? []).find((x) => x.id === r.id);
+        if (!row || row.booking_state !== r.bookingState || String(row.reservation_date) !== r.date) {
+            fail('relecture des réservations de tables', `${key} : ${JSON.stringify(row)} au lieu de ${r.bookingState} le ${r.date}`);
+        }
+    }
+    // Acompte : 5 000 F × 4 personnes, plus les frais de service (tables.service_fee_rate, 5 % par défaut : 21 000 F en tout)
+    const feeRate = await settingInt('tables.service_fee_rate');
+    const expectedTotal = 20_000 + Math.ceil((20_000 * feeRate) / 100);
+    const pendingRow = (resRows ?? []).find((x) => x.id === pendingId);
+    if (Number(pendingRow?.total_amount) !== expectedTotal) {
+        fail('relecture des réservations de tables', `acompte et frais de la réservation du restaurant : ${String(pendingRow?.total_amount)} au lieu de ${expectedTotal}`);
+    }
+
+    return { ...venues, reservations, fermeture: { id: closureId, date: closureDate, reason: TABLE_CLOSURE_REASON } };
 }
 
 // ── Exécution ────────────────────────────────────────────────────────────────
@@ -1472,6 +1820,14 @@ async function main(): Promise<void> {
     purchases.get(byKey('publie').id)?.push(clientPublie);
     purchases.get(byKey('annule').id)?.push(clientAnnule);
     purchases.get(byKey('termine').id)?.push(clientTermine);
+    // Design 1e (mesure mobile) : billets du client de mesure, achetés par le parcours de paiement simulé (5 par achat,
+    // max_per_order 10) : 10 à venir (« Festival Jazz sur le Fleuve », dans 12 jours, hors de la fenêtre hors ligne) et 30
+    // passés (les deux événements terminés). Hors de la liste « purchases » : ni contrôlés à l'entrée, ni comptés ailleurs.
+    const mesure = accounts.clientMesure;
+    for (let i = 0; i < 2; i += 1) await buyOnline(byKey('publie'), mesure, 'Pass soirée', 5);
+    for (let i = 0; i < 3; i += 1) await buyOnline(byKey('termine'), mesure, 'Brunch', 5);
+    for (let i = 0; i < 3; i += 1) await buyOnline(byKey('termine2'), mesure, 'Tribune', 5);
+    log(`client de mesure ${mesure.firstName} ${mesure.lastName} : 10 billets à venir, 30 billets passés`);
     // Lot 7 : billet du client « la veille » (fenêtre hors ligne ouverte : début − 24 h)
     const veille = byKey('veille');
     const clientVeille = await buyOnline(veille, client, 'Entrée', 1);
@@ -1728,6 +2084,16 @@ async function main(): Promise<void> {
     log(`salles : « ${halls.validee.name} » validée, « ${halls.enAttente.name} » en attente, « ${halls.refusee.name} » refusée ; `
         + `réservation ${halls.reservation.id} du ${halls.reservation.startDate}, en attente de paiement`);
 
+    // Lot 11b : établissements de l'organisatrice, plan de salle, fermeture exceptionnelle et réservations de tables du client,
+    // après tous les tirages des lots précédents (aucun appel à rand) ; leurs avis partent avec l'envoyeur des invariants
+    log('établissements et réservations de tables (venue_create, venue_plan_set, venue_validation_decide, venue_closure_create, table_reserve, table_reservation_respond)…');
+    const tables = await seedTables(partners.organisateur, accounts.organisateur.userId, client.userId, (key) => byKey(key).id);
+    log(`tables : « ${tables.restaurant.name} » validé (plan de salle montré, fermeture le ${tables.fermeture.date}), « ${tables.bar.name} » en attente, `
+        + `« ${tables.espace.name} » refusé, « ${tables.jardin.name} » validé ; réservations : demande ${tables.reservations.demande.id} `
+        + `(${tables.reservations.demande.date} ${tables.reservations.demande.time}), confirmée ${tables.reservations.confirmee.id} `
+        + `(${tables.reservations.confirmee.date} ${tables.reservations.confirmee.time}), en attente de paiement ${tables.reservations.attentePaiement.id} `
+        + `(${tables.reservations.attentePaiement.date} ${tables.reservations.attentePaiement.time})`);
+
     const demoEvent =(ev: CreatedEvent, status: string): DemoEvent => ({ id: ev.id, title: ev.seed.title, status, organizer: ev.seed.organizer });
     const finalStatus: Record<Lifecycle, string> = {
         BROUILLON: 'BROUILLON', EN_ATTENTE: 'EN_ATTENTE', REFUSE: 'BROUILLON', VALIDE: 'VALIDE', PUBLIE: 'PUBLIE',
@@ -1755,6 +2121,7 @@ async function main(): Promise<void> {
         transfers: { incomingId: incomingTransferId },
         payments: { pending: clientPending.paymentId, success: clientCeSoir.paymentId, failed: clientFailed.paymentId },
         halls,
+        tables,
     };
     writeDemoIds(ids);
     log(`identifiants écrits : ${path.relative(process.cwd(), DEMO_IDS_FILE)}`);

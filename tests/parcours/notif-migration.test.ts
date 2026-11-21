@@ -479,6 +479,9 @@ const INVENTORY: Insertion[] = [
     { k1: 'lot 12a retrait', fn: 'order_tick', types: ['ORDER_PICKUP_REMINDER'] },
     { k1: 'lot 12a livreur', fn: 'order_courier_invite', types: ['ORDER_COURIER_INVITED'] },
     { k1: 'lot 12a remboursement versé', fn: 'notif_cashouts_notify', types: ['ORDER_REFUND_PAID'] },
+    // Lot 11b (ajouts signalés au rapport) : « J'arrive » du client ; remboursement d'une table versé
+    { k1: 'lot 11b j’arrive', fn: 'table_client_coming', types: ['TABLE_CLIENT_COMING'] },
+    { k1: 'lot 11b remboursement versé', fn: 'notif_cashouts_notify', types: ['TABLE_REFUND_PAID'] },
     { k1: 'sécurité', trigger: { name: 'on_auth_user_password_changed', table: 'auth.users' }, types: ['PASSWORD_CHANGED'] },
     { k1: 'essai push', fn: 'notification_test_push_enqueue', types: ['PUSH_TEST'] },
     // Point d'insertion réel : notif_failed_alert, appelée par notification_outbox_mark et par la reprise des SENDING

@@ -22,11 +22,12 @@
  *  - contrôle ponctuel bloquant : cloche ouverte à 390 px, « Tout marquer comme lu » sur une seule ligne (§4.6) ;
  *  - rôle « partenaire-premiers-pas » (partenaire validé sans événement, première utilisation).
  *
- * Lot 10b : écrans des salles de fête (`salles` dans screens.ts) capturés interrupteur features.halls_enabled ouvert. Chaque
- * capture prend d'abord le verrou de la phase (fixture hallsLock, e2e/support/halls-switch.ts) : groupe « salles » pour ces
- * écrans, « autres » pour tous les autres (projets mobile et desktop ensemble) ; jamais les deux groupes à la fois, si bien
- * que page-masquee-salles, page-masquee-commandes et admin-services-desactive trouvent toujours l'interrupteur fermé.
- * L'attente du verrou est ajoutée au délai du test et notée dans l'index.
+ * Lot 10b, généralisé au lot 11b : écrans des salles de fête et des tables (`services` dans screens.ts) capturés
+ * interrupteurs features.halls_enabled et features.tables_enabled ouverts. Chaque capture prend d'abord le verrou de la
+ * phase (fixture servicesLock, e2e/support/services-switch.ts) : groupe « services » pour ces écrans, « autres » pour tous
+ * les autres (projets mobile et desktop ensemble) ; jamais les deux groupes à la fois, si bien que page-masquee-salles,
+ * page-masquee-commandes et admin-services-desactive trouvent toujours les interrupteurs fermés. L'attente du verrou est
+ * ajoutée au délai du test et notée dans l'index.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,9 +39,9 @@ import { CAPTURES_DIR, readDemoIds, type DemoIds } from './support/demo-ids';
 import { e2eConfig } from './support/env';
 import { fakeScanMode, installFakeCamera } from './support/fake-camera';
 import { installFakePush, type FakePushSubscriptionJson } from './support/fake-push';
-import { keepHomeOutOfHallsWindow } from './support/halls-switch';
 import type { PageGuard } from './support/network';
 import { SCREENS, type CaptureView, type Screen, type StubResponse } from './support/screens';
+import { keepHomeOutOfServicesWindow } from './support/services-switch';
 
 /** Abonné neuf du faux service push (clés P-256 réelles), pour l'état « activé » simulé. */
 async function fakePushSubscriber(): Promise<FakePushSubscriptionJson> {
@@ -189,7 +190,7 @@ async function markAllOnOneLine(page: Page): Promise<string | null> {
 }
 
 function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRole): void {
-    test(`${screen.id} — ${screen.titre}`, async ({ page, context, guard, hallsLock }, testInfo) => {
+    test(`${screen.id} — ${screen.titre}`, async ({ page, context, guard, servicesLock }, testInfo) => {
         const vue = testInfo.project.name === 'mobile' ? 'mobile' : 'ordinateur';
         const view = `${vue}-${theme.key}` as CaptureView;
         test.skip(Boolean(screen.views) && !screen.views?.includes(view), `vue ${view} non capturée pour cet écran (${(screen.views ?? []).join(', ')})`);
@@ -200,12 +201,12 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
             url: null, status: null, captured: false, blocking: [], warnings: [], axeDetails: [], notes: [], error: null, durationMs: 0,
         };
         try {
-            // Lot 10b : verrou des salles avant tout chargement (attente ajoutée au délai du test)
-            await hallsLock.enter(screen.salles ? 'salles' : 'autres');
-            if (hallsLock.waitedMs >= 1_000) record.notes.push(`attente du verrou des salles : ${Math.round(hallsLock.waitedMs / 1000)} s`);
-            if (screen.salles) {
-                record.notes.push('écran des salles : interrupteur features.halls_enabled ouvert le temps de la capture (e2e/support/halls-switch.ts)');
-                await keepHomeOutOfHallsWindow(page);
+            // Lot 10b (lot 11b : salles et tables) : verrou des services avant tout chargement (attente ajoutée au délai du test)
+            await servicesLock.enter(screen.services ? 'services' : 'autres');
+            if (servicesLock.waitedMs >= 1_000) record.notes.push(`attente du verrou des services : ${Math.round(servicesLock.waitedMs / 1000)} s`);
+            if (screen.services) {
+                record.notes.push('écran des services : interrupteurs features.halls_enabled et features.tables_enabled ouverts le temps de la capture (e2e/support/services-switch.ts)');
+                await keepHomeOutOfServicesWindow(page);
             }
             const demo: DemoIds | null = screen.needsIds ? readDemoIds() : null;
             record.url = screen.path(demo);
@@ -293,7 +294,13 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
                 const problem = await markAllOnOneLine(page);
                 if (problem) record.blocking.push(problem);
             }
+            // Design 1e (décision du 21/11, modification signalée) : contrôles toujours faits page en HAUT (position fixe) :
+            // selon le défilement laissé par l'écran, une cible pouvait se trouver à moitié sous l'en-tête collant et le
+            // verdict d'axe changeait d'un run à l'autre. Aucune règle d'axe changée ; la capture garde ensuite la position
+            // de l'écran (barre d'achat sur page défilée…).
+            const scrolledTo = await page.evaluate(() => { const y = window.scrollY; window.scrollTo({ top: 0, behavior: 'instant' }); return y; });
             const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true, references: screen.references });
+            if (scrolledTo > 0) await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'instant' }), scrolledTo);
             record.blocking.push(...checks.blocking);
             record.warnings.push(...checks.warnings);
             record.axeDetails = checks.axeDetails;

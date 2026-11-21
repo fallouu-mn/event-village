@@ -804,6 +804,49 @@ describe('D. Accès d’autrui', () => {
         assert.equal((await order(id)).courier_user_id, null);
     });
 
+    test('REST : ni la partenaire ni le livreur ne lisent un paiement ni un remboursement de commande (payée, annulée et remboursée) ; le client lit les siens', async () => {
+        // Lot 11b, contre-vérification T8 (payments_read et refunds_read : le client ou l'administration, pour toute
+        // l'application) : vérifié pour les commandes
+        const payer = await newBuyer('l12a-rest-paiements');
+        try {
+            const dish = await newProduct(partner, shop, { price: 4_000 });
+            const kept = await placed(payer, orderBody(shop, [{ productId: dish, quantity: 1 }], { mode: 'LIVRAISON', zoneId: zone, address: 'Villa 8, Fann', phone: payer.phone9 }));
+            const keptPay = await payOrder(payer, kept);
+            const refunded = await placed(payer, orderBody(shop, [{ productId: dish, quantity: 1 }]));
+            const refundedPay = await payOrder(payer, refunded);
+            const cancel = await partnerAct(partner, refunded, { action: 'ANNULER', reason: 'Plus de poisson ce soir' });
+            assert.equal(cancel.status, 200, JSON.stringify(cancel.body));
+            await partnerAct(partner, kept, { action: 'ACCEPTER' });
+            await partnerAct(partner, kept, { action: 'CONFIER', courierId: courier.userId });
+            const ids = [String(keptPay.id), String(refundedPay.id)];
+            const { data: real } = await service.from('payments').select('id, partner_id, status').in('id', ids);
+            assert.ok((real ?? []).length === 2 && (real ?? []).every((x) => x.partner_id === partner.partnerId), `précondition : paiements rattachés à la partenaire ${JSON.stringify(real)}`);
+            const { data: refundRows } = await service.from('refunds').select('id').in('payment_id', ids);
+            assert.ok((refundRows ?? []).length >= 1, 'précondition : un remboursement (commande annulée par la partenaire)');
+
+            const seen: Record<string, unknown> = {};
+            for (const [who, token] of [['partenaire', partner.accessToken], ['livreur', courier.accessToken]] as const) {
+                const rest = userClient(token);
+                const byPartner = await rest.from('payments').select('id, amount, payer_phone, client_id').eq('partner_id', partner.partnerId).eq('payment_target', 'ORDER');
+                const byIds = await rest.from('payments').select('id').in('id', ids);
+                const byOrder = await rest.from('payments').select('id').in('order_id', [kept, refunded]);
+                const refunds = await rest.from('refunds').select('id, amount').in('payment_id', ids);
+                seen[who] = { parFiche: byPartner.data ?? [], parIdentifiants: byIds.data ?? [], parCommande: byOrder.data ?? [], remboursements: refunds.data ?? [] };
+            }
+            assert.deepEqual(seen, {
+                partenaire: { parFiche: [], parIdentifiants: [], parCommande: [], remboursements: [] },
+                livreur: { parFiche: [], parIdentifiants: [], parCommande: [], remboursements: [] },
+            }, `paiements ou remboursements de commande lus par la REST : ${JSON.stringify(seen)}`);
+            const mine = userClient(payer.accessToken);
+            const clientPays = await mine.from('payments').select('id').in('id', ids);
+            const clientRefunds = await mine.from('refunds').select('id').in('payment_id', ids);
+            assert.equal((clientPays.data ?? []).length, 2, `le client lit ses 2 paiements : ${JSON.stringify(clientPays)}`);
+            assert.ok((clientRefunds.data ?? []).length >= 1, `le client lit son remboursement : ${JSON.stringify(clientRefunds)}`);
+        } finally {
+            await releaseUnpaid(payer.userId);
+        }
+    });
+
     test('REST : ni la partenaire ni le livreur ne lisent les commandes ; le client lit les siennes ; aucune écriture REST ; livreurs illisibles', async () => {
         const p = await newProduct(partner, shop, { price: 7_000 });
         const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }], delivery()));

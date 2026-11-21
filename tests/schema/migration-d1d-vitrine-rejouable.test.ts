@@ -32,10 +32,12 @@ describe('Design 1d — migration « vitrine » rejouable (transaction annulée)
         assert.ok(fs.existsSync(file), `migration absente : supabase/migrations/${NAME}`);
         const sql = fs.readFileSync(file, 'utf8');
         assert.doesNotMatch(sql, /^\s*(BEGIN|COMMIT)\s*;\s*$/im, `${NAME} : la migration ne gère pas elle-même sa transaction`);
+        // Lot 11b (modification signalée au rapport) : « dernière migration » devient « aucune migration postérieure ne
+        // redéfinit les fonctions de la vitrine » (les migrations 20261129… des tables viennent après)
         const later = fs.readdirSync(DIR).filter((f) => f.endsWith('.sql') && f > NAME);
-        // Lot 12a (modification signalée au rapport) : les migrations 20261130… du lot 12a, non appliquées, viennent après ;
-        // la règle vaut pour les migrations des lots déjà appliqués (aucune entre 20261127000001 et 20261130).
-        assert.deepEqual(later.filter((f) => f < '20261130'), [], `migrations postérieures à ${NAME} : ${later.join(', ')}`);
+        const own = ['event_favorite_list', 'event_favorite_set', 'events_poster_style_sync', 'poster_color_contrast', 'poster_path_of', 'poster_style_put'];
+        const redefined = later.filter((f) => own.some((fn) => new RegExp(`FUNCTION public\\.${fn}\\s*\\(`).test(fs.readFileSync(path.join(DIR, f), 'utf8'))));
+        assert.deepEqual(redefined, [], `migrations postérieures à ${NAME} qui redéfinissent ses fonctions : ${redefined.join(', ')}`);
         assert.match(sql, /v_count >= 500/, 'plafond de 500 favoris');
 
         await inRolledBackTransaction(async (db) => {

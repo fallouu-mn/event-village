@@ -39,6 +39,7 @@ import { readDemoIds } from './support/demo-ids';
 import { cdpNetworkConditions, NET_4G } from './support/devices';
 import { installFakeCamera } from './support/fake-camera';
 import { appendPerfFile, fmtMs, median } from './support/terrain';
+import { readRequest, sumReads, type RequestRead } from './support/request-read';
 
 const PASSES = 5;
 const BUDGET_FILE = path.resolve(process.cwd(), 'scripts', 'js-budget.json');
@@ -302,7 +303,9 @@ async function onePass(browser: Browser, testInfo: TestInfo, screen: Screen, pas
         await cdp.send('Network.emulateNetworkConditions', cdpNetworkConditions(NET_4G));
         await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
 
-        const networkSizes: Array<Promise<number>> = [];
+        // Design 1e (run 561) : lectures sûres (e2e/support/request-read.ts) : une réponse lue pendant la fermeture de la
+        // page est ignorée, jamais un rejet non géré ; toute autre erreur fait échouer la mesure comme avant
+        const networkSizes: Array<Promise<RequestRead<number>>> = [];
         page.on('response', (r) => {
             const req = r.request();
             if (req.resourceType() !== 'script') return;
@@ -314,7 +317,7 @@ async function onePass(browser: Browser, testInfo: TestInfo, screen: Screen, pas
                 return;
             }
             if (!p.startsWith('/_next/static/')) return;
-            networkSizes.push(req.sizes().then((s) => s.responseBodySize));
+            networkSizes.push(readRequest(() => req.sizes().then((s) => s.responseBodySize)));
         });
 
         await page.goto(screen.path(), { waitUntil: 'commit', timeout: 120_000 });
@@ -346,7 +349,9 @@ async function onePass(browser: Browser, testInfo: TestInfo, screen: Screen, pas
         out.js3s = later.js;
         out.css = later.css;
         out.total = later.total;
-        out.jsNetwork = (await Promise.all(networkSizes)).reduce((a, b) => a + b, 0);
+        const sized = await sumReads(networkSizes);
+        out.jsNetwork = sized.total;
+        if (sized.ignored > 0) console.log(`[PERF] ${screen.id} passage ${pass} : ${sized.ignored} taille(s) de script non lue(s), page déjà fermée (ignorées)`);
         if (later.biggest) out.biggest = { ...later.biggest, minMs: (later.biggest.bytes / NET_4G.downloadThroughput) * 1000 };
 
         if (screen.camera) {

@@ -22,17 +22,22 @@ function visibleSpaces(formatted: string): string {
     return formatted.replace(NARROW_NBSP_RE, NBSP);
 }
 
-const DATE_FORMAT = new Intl.DateTimeFormat('fr-FR', {
-    timeZone: DAKAR_TIME_ZONE, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-});
-const SHORT_DATE_FORMAT = new Intl.DateTimeFormat('fr-FR', {
-    timeZone: DAKAR_TIME_ZONE, day: 'numeric', month: 'short', year: 'numeric',
-});
-const TIME_FORMAT = new Intl.DateTimeFormat('fr-FR', {
-    timeZone: DAKAR_TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-});
-const INTEGER_FORMAT = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
-const PRECISE_FORMAT = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
+/**
+ * Design 1e (vitesse) : aucun formateur Intl construit au chargement du module (profil du run 526 : 52 ms au téléphone de
+ * référence sur Mes billets). Nombres : formateur fr-FR construit à son premier usage, puis gardé (0 ou 2 décimales).
+ * Dates de Dakar écrites sans Intl : Africa/Dakar = UTC+0 toute l'année, sans heure d'été (voir toDakarDateTimeLocal),
+ * donc jour, mois, année, heure et minute sont ceux de l'heure UTC, avec les abréviations d'Intl fr-FR (« sam. 14 nov.
+ * 2026 », « 14 nov. 2026 », « 08:05 ») ; comparé instant par instant à Intl par tests/schema/design1e-vitesse.test.ts (le
+ * premier Intl.DateTimeFormat coûtait 35 ms, profil du run 552). Écriture compacte : ce module est dans le JavaScript de
+ * chaque page (budget de /billet/hors-ligne, run 557).
+ */
+const numberFormats: Intl.NumberFormat[] = [];
+const numberFormat = (digits: 0 | 2): Intl.NumberFormat => (numberFormats[digits] ??= new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits }));
+const WEEKDAYS = 'dim. lun. mar. mer. jeu. ven. sam.'.split(' ');
+const MONTHS = 'janv. févr. mars avr. mai juin juil. août sept. oct. nov. déc.'.split(' ');
+const SHORT_DATE_FORMAT = (d: Date): string => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+const DATE_FORMAT = (d: Date): string => `${WEEKDAYS[d.getUTCDay()]} ${SHORT_DATE_FORMAT(d)}`;
+const TIME_FORMAT = (d: Date): string => d.toISOString().slice(11, 16);
 
 type DateInput = Date | string | number | null | undefined;
 
@@ -56,25 +61,25 @@ export function toDate(input: DateInput): Date | null {
 /** Date et heure à Dakar : « sam. 15 nov. 2026 à 20:00 ». */
 export function formatDateTime(input: DateInput): string {
     const d = toDate(input);
-    return d ? `${DATE_FORMAT.format(d)} à ${TIME_FORMAT.format(d)}` : MISSING_VALUE;
+    return d ? `${DATE_FORMAT(d)} à ${TIME_FORMAT(d)}` : MISSING_VALUE;
 }
 
 /** Date seule à Dakar : « sam. 15 nov. 2026 ». */
 export function formatDate(input: DateInput): string {
     const d = toDate(input);
-    return d ? DATE_FORMAT.format(d) : MISSING_VALUE;
+    return d ? DATE_FORMAT(d) : MISSING_VALUE;
 }
 
 /** Date courte à Dakar, sans jour de la semaine : « 15 nov. 2026 » (tableaux denses). */
 export function formatShortDate(input: DateInput): string {
     const d = toDate(input);
-    return d ? SHORT_DATE_FORMAT.format(d) : MISSING_VALUE;
+    return d ? SHORT_DATE_FORMAT(d) : MISSING_VALUE;
 }
 
 /** Heure à Dakar : « 20:00 ». */
 export function formatTime(input: DateInput): string {
     const d = toDate(input);
-    return d ? TIME_FORMAT.format(d) : MISSING_VALUE;
+    return d ? TIME_FORMAT(d) : MISSING_VALUE;
 }
 
 /**
@@ -100,10 +105,31 @@ export function toDakarDateTimeLocal(input: DateInput): string {
     return d.toISOString().slice(0, 16);
 }
 
-/** Entier formaté en français : « 12 345 ». */
+/**
+ * Chiffres d'un entier groupés par trois, séparés par l'insécable visible : même texte qu'Intl fr-FR après visibleSpaces
+ * (« -12 345 », zéro signé « -0 » compris ; vérifié valeur par valeur par tests/schema/design1e-vitesse.test.ts).
+ */
+function groupDigits(rounded: number): string {
+    const negative = rounded < 0 || Object.is(rounded, -0);
+    const digits = String(Math.abs(rounded));
+    let out = '';
+    for (let i = 0; i < digits.length; i += 1) {
+        if (i > 0 && (digits.length - i) % 3 === 0) out += NBSP;
+        out += digits[i];
+    }
+    return negative ? `-${out}` : out;
+}
+
+/**
+ * Entier formaté en français : « 12 345 ». Design 1e (vitesse) : sans Intl pour un entier ordinaire (le premier
+ * Intl.NumberFormat coûtait 43 à 45 ms au téléphone de référence, au premier prix affiché de la fiche et de Mes billets) ;
+ * Intl seulement au-delà de 10^21 (écriture scientifique de String).
+ */
 export function formatInteger(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) return MISSING_VALUE;
-    return visibleSpaces(INTEGER_FORMAT.format(Math.round(value)));
+    const rounded = Math.round(value);
+    if (Math.abs(rounded) >= 1e21) return visibleSpaces(numberFormat(0).format(rounded));
+    return groupDigits(rounded);
 }
 
 /** Montant en francs CFA entiers : « 5 000 F CFA ». */
@@ -118,7 +144,7 @@ export function formatFcfa(amount: number | null | undefined): string {
  */
 export function formatFcfaPrecise(amount: number | null | undefined): string {
     if (amount === null || amount === undefined || !Number.isFinite(amount)) return MISSING_VALUE;
-    return `${visibleSpaces(PRECISE_FORMAT.format(amount))}${NBSP}F${NBSP}CFA`;
+    return `${visibleSpaces(numberFormat(2).format(amount))}${NBSP}F${NBSP}CFA`;
 }
 
 /**

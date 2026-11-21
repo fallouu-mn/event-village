@@ -7,7 +7,8 @@
  * aucun saut de mise en page (CLS < 0,1) sur un Android moyen en 4G simulée ; réaction au toucher < 200 ms. »
  *
  * Ce que fait le script (seuils, médiane et verdicts : module pur scripts/e2e/perf-mobile-seuils.mjs) :
- *  1. Session du client de démonstration (Fatou Mbaye) : .auth/client.json rejoué une fois sur « Mes billets » ; la page
+ *  1. Session du client de MESURE (design 1e : Awa Sow, compte dédié semé une fois avec 10 billets à venir et 30 passés,
+ *     jamais touché par l'e2e : même liste au job perf et au run complet) : .auth/mesure.json rejoué une fois sur « Mes billets » ; la page
  *     doit rester sur /tickets (sinon : session refusée, échec explicite). L'état de connexion est ensuite PORTÉ d'une
  *     mesure à la suivante (cookies relus après chaque passage) : si le jeton d'accès est renouvelé par l'application,
  *     le passage suivant utilise le nouveau, jamais un jeton de rafraîchissement déjà consommé.
@@ -35,7 +36,7 @@
  * Code de sortie : 0 si tous les seuils sont tenus, 1 sinon (ou application injoignable, ou temps imparti dépassé).
  *
  * `--dry` : vérifie la configuration (Lighthouse, Chromium complet, WebSocket, fichiers de la CI : .env.e2e,
- * demo-ids.json, .auth/client.json) puis fait un ESSAI COMPLET de la mécanique sur une page locale servie par le script
+ * demo-ids.json, .auth/mesure.json) puis fait un ESSAI COMPLET de la mécanique sur une page locale servie par le script
  * (Lighthouse avec cookie transmis, chargement réel avec CLS, touchers mesurés) : sans l'application ni la base.
  * Code 0 si la mécanique fonctionne (les fichiers propres à la CI peuvent manquer en local : signalé, non bloquant).
  */
@@ -60,7 +61,7 @@ const require = createRequire(import.meta.url);
 
 const PERF_DIR = path.join(ROOT, '.e2e-captures', 'perf');
 const DEMO_IDS_FILE = path.join(ROOT, '.e2e-captures', 'demo-ids.json');
-const CLIENT_STATE_FILE = path.join(ROOT, '.auth', 'client.json');
+const CLIENT_STATE_FILE = path.join(ROOT, '.auth', 'mesure.json');
 const ENV_FILE = path.join(ROOT, process.env.EV_E2E_ENV_FILE || '.env.e2e');
 
 /** Temps imparti (l'étape CI a timeout-minutes: 15 ; 5 passages depuis le 18/11) : au-delà, les passages restants sont notés en erreur. */
@@ -133,7 +134,7 @@ function ceSoirId() {
 
 function readClientState() {
     if (!fs.existsSync(CLIENT_STATE_FILE)) {
-        throw new Error(`${path.relative(ROOT, CLIENT_STATE_FILE)} absent : la phase de connexion de l'e2e (e2e/auth.setup.ts) a échoué pour le client.`);
+        throw new Error(`${path.relative(ROOT, CLIENT_STATE_FILE)} absent : la phase de connexion de l'e2e (e2e/auth.setup.ts) a échoué pour le client de mesure.`);
     }
     const state = readJson(CLIENT_STATE_FILE);
     if (!Array.isArray(state?.cookies) || state.cookies.length === 0) throw new Error(`${path.relative(ROOT, CLIENT_STATE_FILE)} : aucun cookie de session.`);
@@ -851,8 +852,8 @@ async function dry() {
     try { check('événement « ce soir » (demo-ids.json)', true, ceSoirId()); } catch (err) { check('événement « ce soir » (demo-ids.json)', false, `${errText(err)} (normal hors CI)`, false); }
     try {
         const s = readClientState();
-        check('session du client (.auth/client.json)', true, `${s.cookies.length} cookie(s) : ${s.cookies.map((c) => c.name).join(', ')}`);
-    } catch (err) { check('session du client (.auth/client.json)', false, `${errText(err)} (normal hors CI)`, false); }
+        check('session du client de mesure (.auth/mesure.json)', true, `${s.cookies.length} cookie(s) : ${s.cookies.map((c) => c.name).join(', ')}`);
+    } catch (err) { check('session du client de mesure (.auth/mesure.json)', false, `${errText(err)} (normal hors CI)`, false); }
     check('WebSocket de Node', typeof WebSocket === 'function', `Node ${process.version}`);
     let exe = null;
     try { exe = chromiumPath(); check('Chromium complet de Playwright', true, exe); } catch (err) { check('Chromium complet de Playwright', false, errText(err)); }

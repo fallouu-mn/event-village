@@ -19,8 +19,7 @@ export async function GET(
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
-        const closed = await guardFeature('halls', '/api/partner/halls/[id]');
-        if (closed) return closed;
+        // Lot 11b (décision du 20/11) : sans interrupteur, une réservation existante se lit et se gère même service fermé
         const { id } = await params;
         const hall = await HallService.getOwnHall(id, activeSession.user.id);
         return NextResponse.json({ success: true, hall });

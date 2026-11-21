@@ -260,17 +260,21 @@ describe('D. Public : recherche, fiche, calendrier, devis', () => {
         assert.equal(count ?? 0, 0, 'le devis a écrit une réservation');
     });
 
-    test('service fermé : routes publiques nouvelles en 404', async () => {
+    // Lot 11b (décision du 20/11, modification signalée au rapport) : service fermé, les lectures de l'espace de la
+    // propriétaire (réservations, recettes) restent ouvertes (liens des notifications) ; catalogue et écritures fermés
+    test('service fermé : routes publiques nouvelles et écritures en 404, lectures de la propriétaire ouvertes', async () => {
         await setPlatformSetting('features.halls_enabled', false);
         try {
             for (const r of [
                 await api('GET', 'halls', { token: null }),
                 await routeId('GET', 'halls/[id]/calendar', hall, null),
                 await routeId('GET', 'halls/[id]/quote', hall, null, undefined, `?date=${dayFromNow(30)}&units=1`),
-                await api('GET', 'partner/halls/reservations', { token: owner.accessToken }),
-                await api('GET', 'partner/halls/earnings', { token: owner.accessToken }),
                 await routeId('POST', 'partner/halls/[id]/submit', hall, owner.accessToken, {}),
             ]) assert.equal(r.status, 404, show(r));
+            for (const r of [
+                await api('GET', 'partner/halls/reservations', { token: owner.accessToken }),
+                await api('GET', 'partner/halls/earnings', { token: owner.accessToken }),
+            ]) assert.equal(r.status, 200, show(r));
         } finally {
             await setPlatformSetting('features.halls_enabled', true);
         }

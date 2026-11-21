@@ -23,9 +23,10 @@ const ROUTES: RouteRule[] = [
     { file: 'app/api/halls/reservations/[id]/route.ts', session: 'client', feature: false },
     { file: 'app/api/halls/reservations/[id]/cancel/route.ts', session: 'client', feature: false },
     { file: 'app/api/partner/halls/[id]/submit/route.ts', session: 'partner', feature: true },
-    { file: 'app/api/partner/halls/reservations/route.ts', session: 'partner', feature: true },
-    { file: 'app/api/partner/halls/reservations/[id]/route.ts', session: 'partner', feature: true },
-    { file: 'app/api/partner/halls/earnings/route.ts', session: 'partner', feature: true },
+    // Lot 11b (décision du 20/11, modification signalée au rapport) : lectures de la propriétaire ouvertes service fermé
+    { file: 'app/api/partner/halls/reservations/route.ts', session: 'partner', feature: false },
+    { file: 'app/api/partner/halls/reservations/[id]/route.ts', session: 'partner', feature: false },
+    { file: 'app/api/partner/halls/earnings/route.ts', session: 'partner', feature: false },
     { file: 'app/api/admin/halls/route.ts', session: 'admin', feature: false },
     { file: 'app/api/admin/halls/[id]/route.ts', session: 'admin', feature: false },
     { file: 'app/api/admin/halls/[id]/validation/route.ts', session: 'admin', feature: false },

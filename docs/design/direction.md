@@ -96,7 +96,7 @@ Calculés par `node docs/design/outils/contraste.mjs`, qui lit `jetons.css` et r
 obligatoire passe sous son seuil. Résultat : **89 couples, aucun sous le seuil** (les lignes « — » sont mesurées pour information : l'orange de la marque n'y est jamais seul).
 
 <!-- contraste:debut -->
-| Couple | Thème (boutons B en clair, A en sombre) | Texte | Fond | Contraste | Seuil | Conforme |
+| Couple | Thème | Texte | Fond | Contraste | Seuil | Conforme |
 |---|---|---|---|---|---|---|
 | Texte courant | clair | `--foreground` #3A3A3A | `--background` #FFFFFF | **11,37:1** | 4,50:1 | oui |
 | Texte courant | clair | `--foreground` #3A3A3A | `--card` #FFFFFF | **11,37:1** | 4,50:1 | oui |
@@ -109,10 +109,11 @@ obligatoire passe sous son seuil. Résultat : **89 couples, aucun sous le seuil*
 | Texte secondaire | clair | `--muted-foreground` #666666 | `--card` #FFFFFF | **5,74:1** | 4,50:1 | oui |
 | Texte secondaire | clair | `--muted-foreground` #666666 | `--muted` #F5F5F5 | **5,27:1** | 4,50:1 | oui |
 | Texte secondaire | clair | `--muted-foreground` #666666 | `--popover` #FFFFFF | **5,74:1** | 4,50:1 | oui |
-| Orange en texte, liens | clair | `--primary-text` #C2410C | `--background` #FFFFFF | **5,18:1** | 4,50:1 | oui |
-| Orange en texte, liens | clair | `--primary-text` #C2410C | `--card` #FFFFFF | **5,18:1** | 4,50:1 | oui |
-| Orange en texte, liens | clair | `--primary-text` #C2410C | `--muted` #F5F5F5 | **4,75:1** | 4,50:1 | oui |
-| Orange en texte, liens | clair | `--primary-text` #C2410C | `--primary-soft` #FFF1E7 | **4,68:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | clair | `--primary-text` #C2410C | `--background` #FFFFFF | **5,18:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | clair | `--primary-text` #C2410C | `--card` #FFFFFF | **5,18:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | clair | `--primary-text` #C2410C | `--muted` #F5F5F5 | **4,75:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | clair | `--primary-text` #C2410C | `--popover` #FFFFFF | **5,18:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | clair | `--primary-text` #C2410C | `--primary-soft` #FFF1E7 | **4,68:1** | 4,50:1 | oui |
 | Rose en texte | clair | `--accent-text` #BE185D | `--background` #FFFFFF | **6,04:1** | 4,50:1 | oui |
 | Rose en texte | clair | `--accent-text` #BE185D | `--card` #FFFFFF | **6,04:1** | 4,50:1 | oui |
 | Succès (pastille, bandeau) | clair | `--success-text` #166534 | `--success-soft` #F0FDF4 | **6,81:1** | 4,50:1 | oui |
@@ -125,23 +126,25 @@ obligatoire passe sous son seuil. Résultat : **89 couples, aucun sous le seuil*
 | Texte sur un ton plein | clair | `--on-tone` #FFFFFF | `--warning` #B45309 | **5,02:1** | 4,50:1 | oui |
 | Texte sur un ton plein | clair | `--on-tone` #FFFFFF | `--danger` #B91C1C | **6,47:1** | 4,50:1 | oui |
 | Texte sur un ton plein | clair | `--on-tone` #FFFFFF | `--info` #0369A1 | **5,93:1** | 4,50:1 | oui |
-| Texte du bouton principal | clair | `--primary-foreground` #FFFFFF | `--primary` #C2410C | **5,18:1** | 4,50:1 | oui |
-| Texte du bouton principal | clair | `--primary-foreground` #FFFFFF | `--primary-hover` #9A3412 | **7,31:1** | 4,50:1 | oui |
+| Texte des petits boutons sur orange (#1A1A1A) | clair | `--primary-foreground` #1A1A1A | `--primary` #F05A1A | **5,12:1** | 4,50:1 | oui |
+| Texte des petits boutons sur orange (#1A1A1A) | clair | `--primary-foreground` #1A1A1A | `--primary-hover` #E8561A | **4,79:1** | 4,50:1 | oui |
+| Bouton principal en grande taille (blanc gras ≥ 19 px, design 1e) | clair | `--primary-foreground-large` #FFFFFF | `--primary` #F05A1A | **3,40:1** | 3,00:1 | oui |
+| Bouton principal en grande taille (blanc gras ≥ 19 px, design 1e) | clair | `--primary-foreground-large` #FFFFFF | `--primary-hover` #E8561A | **3,63:1** | 3,00:1 | oui |
 | Bouton Wave | clair | `--on-op` #000000 | `--op-wave` #1DC8F2 | **10,60:1** | 4,50:1 | oui |
 | Bouton Orange Money | clair | `--on-op` #000000 | `--op-orange-money` #FF7900 | **7,99:1** | 4,50:1 | oui |
 | Bord des champs | clair | `--input` #858585 | `--background` #FFFFFF | **3,69:1** | 3,00:1 | oui |
 | Bord des champs | clair | `--input` #858585 | `--card` #FFFFFF | **3,69:1** | 3,00:1 | oui |
-| Texte sur l'orange de la marque (repère choisi, « À la une ») | clair | `--brand-foreground` #1A1A1A | `--brand` #FF8A3D | **7,42:1** | 4,50:1 | oui |
-| Anneau de focus : orange de la marque | clair | `--ring` #FF8A3D | `--background` #FFFFFF | **2,35:1** | — | pas seul : doublé (liseré sombre, texte gras, libellé) |
-| Anneau de focus : orange de la marque | clair | `--ring` #FF8A3D | `--card` #FFFFFF | **2,35:1** | — | pas seul : doublé (liseré sombre, texte gras, libellé) |
-| Anneau de focus : orange de la marque | clair | `--ring` #FF8A3D | `--muted` #F5F5F5 | **2,15:1** | — | pas seul : doublé (liseré sombre, texte gras, libellé) |
+| Texte sur l'orange de la marque (repère choisi, « À la une ») | clair | `--brand-foreground` #1A1A1A | `--brand` #F05A1A | **5,12:1** | 4,50:1 | oui |
+| Anneau de focus : orange de la marque | clair | `--ring` #F05A1A | `--background` #FFFFFF | **3,40:1** | — | visible seul |
+| Anneau de focus : orange de la marque | clair | `--ring` #F05A1A | `--card` #FFFFFF | **3,40:1** | — | visible seul |
+| Anneau de focus : orange de la marque | clair | `--ring` #F05A1A | `--muted` #F5F5F5 | **3,12:1** | — | visible seul |
 | Anneau de focus : liseré sombre (clair) | clair | `--ring-halo` #1A1A1A | `--background` #FFFFFF | **17,40:1** | 3,00:1 | oui |
 | Anneau de focus : liseré sombre (clair) | clair | `--ring-halo` #1A1A1A | `--card` #FFFFFF | **17,40:1** | 3,00:1 | oui |
 | Anneau de focus : liseré sombre (clair) | clair | `--ring-halo` #1A1A1A | `--muted` #F5F5F5 | **15,96:1** | 3,00:1 | oui |
-| Onglet actif, accents : orange de la marque | clair | `--brand` #FF8A3D | `--background` #FFFFFF | **2,35:1** | — | pas seul : doublé (liseré sombre, texte gras, libellé) |
-| Onglet actif, accents : orange de la marque | clair | `--brand` #FF8A3D | `--card` #FFFFFF | **2,35:1** | — | pas seul : doublé (liseré sombre, texte gras, libellé) |
-| Bord du bouton principal sur le fond | clair | `--primary` #C2410C | `--background` #FFFFFF | **5,18:1** | 3,00:1 | oui |
-| Bord du bouton principal sur le fond | clair | `--primary` #C2410C | `--card` #FFFFFF | **5,18:1** | 3,00:1 | oui |
+| Onglet actif, accents : orange de la marque | clair | `--brand` #F05A1A | `--background` #FFFFFF | **3,40:1** | — | visible seul |
+| Onglet actif, accents : orange de la marque | clair | `--brand` #F05A1A | `--card` #FFFFFF | **3,40:1** | — | visible seul |
+| Bord du bouton principal sur le fond | clair | `--primary` #F05A1A | `--background` #FFFFFF | **3,40:1** | 3,00:1 | oui |
+| Bord du bouton principal sur le fond | clair | `--primary` #F05A1A | `--card` #FFFFFF | **3,40:1** | 3,00:1 | oui |
 | Texte courant | sombre | `--foreground` #F2F2F2 | `--background` #121212 | **16,73:1** | 4,50:1 | oui |
 | Texte courant | sombre | `--foreground` #F2F2F2 | `--card` #1A1A1A | **15,55:1** | 4,50:1 | oui |
 | Texte courant | sombre | `--foreground` #F2F2F2 | `--muted` #262626 | **13,52:1** | 4,50:1 | oui |
@@ -153,10 +156,11 @@ obligatoire passe sous son seuil. Résultat : **89 couples, aucun sous le seuil*
 | Texte secondaire | sombre | `--muted-foreground` #A6A6A6 | `--card` #1A1A1A | **7,15:1** | 4,50:1 | oui |
 | Texte secondaire | sombre | `--muted-foreground` #A6A6A6 | `--muted` #262626 | **6,22:1** | 4,50:1 | oui |
 | Texte secondaire | sombre | `--muted-foreground` #A6A6A6 | `--popover` #222222 | **6,54:1** | 4,50:1 | oui |
-| Orange en texte, liens | sombre | `--primary-text` #FF8A3D | `--background` #121212 | **7,99:1** | 4,50:1 | oui |
-| Orange en texte, liens | sombre | `--primary-text` #FF8A3D | `--card` #1A1A1A | **7,42:1** | 4,50:1 | oui |
-| Orange en texte, liens | sombre | `--primary-text` #FF8A3D | `--muted` #262626 | **6,45:1** | 4,50:1 | oui |
-| Orange en texte, liens | sombre | `--primary-text` #FF8A3D | `--primary-soft` #2B1A10 | **7,12:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | sombre | `--primary-text` #FA7036 | `--background` #121212 | **6,63:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | sombre | `--primary-text` #FA7036 | `--card` #1A1A1A | **6,16:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | sombre | `--primary-text` #FA7036 | `--muted` #262626 | **5,36:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | sombre | `--primary-text` #FA7036 | `--popover` #222222 | **5,63:1** | 4,50:1 | oui |
+| Orange foncé en texte, liens, bouton secondaire (design 1e) | sombre | `--primary-text` #FA7036 | `--primary-soft` #2B1A10 | **5,91:1** | 4,50:1 | oui |
 | Rose en texte | sombre | `--accent-text` #F472B6 | `--background` #121212 | **7,07:1** | 4,50:1 | oui |
 | Rose en texte | sombre | `--accent-text` #F472B6 | `--card` #1A1A1A | **6,57:1** | 4,50:1 | oui |
 | Succès (pastille, bandeau) | sombre | `--success-text` #4ADE80 | `--success-soft` #0B2A17 | **8,88:1** | 4,50:1 | oui |
@@ -169,24 +173,26 @@ obligatoire passe sous son seuil. Résultat : **89 couples, aucun sous le seuil*
 | Texte sur un ton plein | sombre | `--on-tone` #FFFFFF | `--warning` #B45309 | **5,02:1** | 4,50:1 | oui |
 | Texte sur un ton plein | sombre | `--on-tone` #FFFFFF | `--danger` #B91C1C | **6,47:1** | 4,50:1 | oui |
 | Texte sur un ton plein | sombre | `--on-tone` #FFFFFF | `--info` #0369A1 | **5,93:1** | 4,50:1 | oui |
-| Texte du bouton principal | sombre | `--primary-foreground` #1A1A1A | `--primary` #FF8A3D | **7,42:1** | 4,50:1 | oui |
-| Texte du bouton principal | sombre | `--primary-foreground` #1A1A1A | `--primary-hover` #FF7A21 | **6,68:1** | 4,50:1 | oui |
+| Texte des petits boutons sur orange (#1A1A1A) | sombre | `--primary-foreground` #1A1A1A | `--primary` #F05A1A | **5,12:1** | 4,50:1 | oui |
+| Texte des petits boutons sur orange (#1A1A1A) | sombre | `--primary-foreground` #1A1A1A | `--primary-hover` #E8561A | **4,79:1** | 4,50:1 | oui |
+| Bouton principal en grande taille (blanc gras ≥ 19 px, design 1e) | sombre | `--primary-foreground-large` #FFFFFF | `--primary` #F05A1A | **3,40:1** | 3,00:1 | oui |
+| Bouton principal en grande taille (blanc gras ≥ 19 px, design 1e) | sombre | `--primary-foreground-large` #FFFFFF | `--primary-hover` #E8561A | **3,63:1** | 3,00:1 | oui |
 | Bouton Wave | sombre | `--on-op` #000000 | `--op-wave` #1DC8F2 | **10,60:1** | 4,50:1 | oui |
 | Bouton Orange Money | sombre | `--on-op` #000000 | `--op-orange-money` #FF7900 | **7,99:1** | 4,50:1 | oui |
 | Bord des champs | sombre | `--input` #7A7A7A | `--background` #121212 | **4,36:1** | 3,00:1 | oui |
 | Bord des champs | sombre | `--input` #7A7A7A | `--card` #1A1A1A | **4,05:1** | 3,00:1 | oui |
-| Texte sur l'orange de la marque (repère choisi, « À la une ») | sombre | `--brand-foreground` #1A1A1A | `--brand` #FF8A3D | **7,42:1** | 4,50:1 | oui |
-| Anneau de focus : orange de la marque | sombre | `--ring` #FF8A3D | `--background` #121212 | **7,99:1** | — | visible seul |
-| Anneau de focus : orange de la marque | sombre | `--ring` #FF8A3D | `--card` #1A1A1A | **7,42:1** | — | visible seul |
-| Anneau de focus : orange de la marque | sombre | `--ring` #FF8A3D | `--muted` #262626 | **6,45:1** | — | visible seul |
-| Onglet actif, accents : orange de la marque | sombre | `--brand` #FF8A3D | `--background` #121212 | **7,99:1** | — | visible seul |
-| Onglet actif, accents : orange de la marque | sombre | `--brand` #FF8A3D | `--card` #1A1A1A | **7,42:1** | — | visible seul |
-| Bord du bouton principal sur le fond | sombre | `--primary` #FF8A3D | `--background` #121212 | **7,99:1** | 3,00:1 | oui |
-| Bord du bouton principal sur le fond | sombre | `--primary` #FF8A3D | `--card` #1A1A1A | **7,42:1** | 3,00:1 | oui |
-| Grand bouton en dégradé (blanc gras 19 px) | clair | `--gradient-foreground` #FFFFFF | dégradé #EA580C → #DB2777, pire point #EA580C | **3,56:1** | 3,00:1 | oui (grand texte) |
-| Grand bouton en dégradé (blanc gras 19 px) | sombre | `--gradient-foreground` #FFFFFF | dégradé #EA580C → #DB2777, pire point #EA580C | **3,56:1** | 3,00:1 | oui (grand texte) |
-| Blanc sur l'orange vif (interdit par la charte) | — | #FFFFFF | #FF8A3D | **2,35:1** | — | interdit |
-| Orange vif en texte sur blanc (interdit) | — | #FF8A3D | #FFFFFF | **2,35:1** | — | interdit |
+| Texte sur l'orange de la marque (repère choisi, « À la une ») | sombre | `--brand-foreground` #1A1A1A | `--brand` #F05A1A | **5,12:1** | 4,50:1 | oui |
+| Anneau de focus : orange de la marque | sombre | `--ring` #F05A1A | `--background` #121212 | **5,52:1** | — | visible seul |
+| Anneau de focus : orange de la marque | sombre | `--ring` #F05A1A | `--card` #1A1A1A | **5,12:1** | — | visible seul |
+| Anneau de focus : orange de la marque | sombre | `--ring` #F05A1A | `--muted` #262626 | **4,46:1** | — | visible seul |
+| Onglet actif, accents : orange de la marque | sombre | `--brand` #F05A1A | `--background` #121212 | **5,52:1** | — | visible seul |
+| Onglet actif, accents : orange de la marque | sombre | `--brand` #F05A1A | `--card` #1A1A1A | **5,12:1** | — | visible seul |
+| Bord du bouton principal sur le fond | sombre | `--primary` #F05A1A | `--background` #121212 | **5,52:1** | 3,00:1 | oui |
+| Bord du bouton principal sur le fond | sombre | `--primary` #F05A1A | `--card` #1A1A1A | **5,12:1** | 3,00:1 | oui |
+| Grand bouton en dégradé (blanc gras 19 px) | clair | `--gradient-foreground` #FFFFFF | dégradé #F05A1A → #D9480F, pire point #F05A1A | **3,40:1** | 3,00:1 | oui (grand texte) |
+| Grand bouton en dégradé (blanc gras 19 px) | sombre | `--gradient-foreground` #FFFFFF | dégradé #F05A1A → #D9480F, pire point #F05A1A | **3,40:1** | 3,00:1 | oui (grand texte) |
+| Blanc en petit texte sur l'orange de la marque (interdit sous 19 px gras) | — | #FFFFFF | #F05A1A | **3,40:1** | — | interdit |
+| Orange de la marque en petit texte sur blanc (interdit : orange foncé) | — | #F05A1A | #FFFFFF | **3,40:1** | — | interdit |
 <!-- contraste:fin -->
 
 ## 3. Typographie, espacements, formes

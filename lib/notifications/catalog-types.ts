@@ -198,6 +198,8 @@ export interface TemplateData {
     TABLE_NO_SHOW: TableReservationData & Partial<TableCancelData>;
     TABLE_PAYMENT_REFUNDED: TableReservationData & { payment_id: string; amount: number; operator?: string | null };
     TABLE_REMINDER: TableReservationData;
+    TABLE_CLIENT_COMING: TableReservationData;
+    TABLE_REFUND_PAID: TableReservationData & { cashout_id: string; amount: number; operator?: string | null; account_kind?: string | null };
     VENUE_VALIDATION_DECIDED: { venue_id: string; venue_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
     ADMIN_VENUE_SUBMITTED: { venue_id: string; venue_name: string; kind?: string; city?: string | null; resubmitted?: boolean };
     // Lot 12a : données de order_notif_data (commande), plus les champs propres à chaque avis ; jamais le code de remise
@@ -373,6 +375,11 @@ export interface TableReservationData {
     total_amount: number;
     paid_amount: number;
     response_due_at?: string | null;
+    /** Lot 11b : code court de la réservation (lien des SMS), heure de garde, fin de l'attente, fin de l'annulation gratuite. */
+    short_code: string;
+    held_until: string;
+    hold_expires_at?: string | null;
+    cancel_free_until?: string | null;
 }
 
 /** Lot 12a : données d'une commande (order_notif_data) ; montants en F CFA, heures en UTC (= Dakar). */

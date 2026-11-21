@@ -146,7 +146,8 @@ describe('design 1c — contrôle responsive en CI', () => {
     });
 
     test('requis par le verdict', () => {
-        assert.match(yml, /needs: \[mode, rapide, qualite, tests, e2e, responsive\]/);
+        // Design 1e : job « perf » ajouté à la liste (mesure mobile en mode rapide, ligne « ci-perf: oui »)
+        assert.match(yml, /needs: \[mode, rapide, qualite, tests, e2e, responsive, perf\]/);
         const verdict = read('scripts/ci-verdict.mjs');
         assert.match(verdict, /const avecResponsive = !rapide \|\| needs\.mode\?\.outputs\?\.responsive === '1';/);
         assert.match(verdict, /\.\.\.\(avecResponsive \? \['responsive'\] : \[\]\)/);

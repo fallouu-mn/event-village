@@ -92,6 +92,8 @@ describe('3. Avis du parcours : tous les canaux, SMS d’un segment, aucun mot t
         reservation_id: 'a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59', venue_id: 'a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59', venue_name: long,
         date: '2026-09-28', time: '23:45', end_time: '01:45', guests: 50, table_number: 'Terrasse 12 bis',
         deposit_amount: 9_999_999, total_amount: 9_999_999, paid_amount: 9_999_999, response_due_at: '2026-09-28T21:45:00Z',
+        // Lot 11b (modification signalée au rapport) : code court de la réservation (lien des SMS) et heure de garde de la table
+        short_code: 'k7m2p9x', held_until: '00:15',
     };
     const cases: Array<[string, Record<string, unknown>]> = [
         ['TABLE_RESERVATION_CONFIRMED', base],

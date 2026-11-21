@@ -31,7 +31,8 @@
 --  9. order_tick() (tâche /api/cron/orders, toutes les 5 minutes) : attentes de paiement échues, commandes sans
 --     réponse (tout rendu), client prévenu avant la clôture d'une commande non retirée, commande prête non retirée
 --     close sans remboursement, adresse et téléphone masqués orders.contact_retention_days après la remise ; idempotente ;
--- 10. notif_cashouts_notify : recopie de 20261126000003_l10b_avis.sql:317-645 ; le remboursement d'une commande est
+-- 10. notif_cashouts_notify : recopie de 20261129000004_l11b_avis.sql:116-457 (dernière définition de main, lot 11b) ; le
+--     remboursement d'une commande est
 --     annoncé par l'avis de la commande (pas par le texte des billets), et son versement par ORDER_REFUND_PAID.
 -- Rejouable : CREATE OR REPLACE, REVOKE et GRANT idempotents.
 -- ============================================================================
@@ -1087,7 +1088,7 @@ GRANT EXECUTE ON FUNCTION public.order_courier_list(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_tick() TO service_role;
 
 
--- Recopie de 20261126000003_l10b_avis.sql:317-645 ; changements : remboursement d'une commande annoncé par l'avis de la
+-- Recopie de 20261129000004_l11b_avis.sql:116-457 (lot 11b : avis de la table gardé) ; changements : remboursement d'une commande annoncé par l'avis de la
 -- commande (pas de PAYMENT_REFUND_STARTED), versement annoncé par ORDER_REFUND_PAID.
 CREATE OR REPLACE FUNCTION public.notif_cashouts_notify()
 RETURNS trigger
@@ -1128,6 +1129,9 @@ DECLARE
     v_not_paid      boolean := NEW.provider_status IS NOT DISTINCT FROM 'NON_VERSE';
     -- Lot 10b : réservation de salle du paiement remboursé (avis « Remboursement versé » propre aux salles)
     v_hall_res      uuid;
+    -- Lot 11b : réservation de table remboursée (avis de la table, lien vers la réservation)
+    v_table_res     uuid;
+    -- Lot 12a : commande d'établissement remboursée (avis de la commande)
     v_order_res     uuid;
 BEGIN
     IF NOT (v_status_new OR v_blocked_new OR v_delay_new) THEN
@@ -1165,6 +1169,8 @@ BEGIN
     IF v_refund THEN
         SELECT p.hall_reservation_id INTO v_hall_res FROM public.payments p
          WHERE p.id = NEW.payment_id AND p.payment_target::text = 'HALL_RESERVATION';
+        SELECT p.table_reservation_id INTO v_table_res FROM public.payments p
+         WHERE p.id = NEW.payment_id AND p.payment_target::text = 'TABLE_RESERVATION';
         -- Lot 12a : remboursement d'une commande d'établissement (pas une commande de billets)
         SELECT o.id INTO v_order_res FROM public.payments p JOIN public.orders o ON o.id = p.order_id
          WHERE p.id = NEW.payment_id AND p.payment_target::text = 'ORDER' AND o.venue_id IS NOT NULL;
@@ -1301,6 +1307,15 @@ BEGIN
                             'user_id', v_user,
                             'phone', v_phone,
                             'data', COALESCE(public.hall_notif_data(v_hall_res), '{}'::jsonb) || v_money
+                        )));
+                    -- Lot 11b : remboursement d'une réservation de table, avis de la table
+                    ELSIF v_table_res IS NOT NULL THEN
+                        PERFORM public.notif_enqueue(jsonb_strip_nulls(jsonb_build_object(
+                            'type', 'TABLE_REFUND_PAID',
+                            'key', 'TABLE_REFUND_PAID:' || NEW.id::text,
+                            'user_id', v_user,
+                            'phone', v_phone,
+                            'data', COALESCE(public.table_notif_data(v_table_res), '{}'::jsonb) || v_money
                         )));
                     -- Lot 12a : remboursement d'une commande versé, avis de la commande (étape « remboursée »)
                     ELSIF v_order_res IS NOT NULL THEN

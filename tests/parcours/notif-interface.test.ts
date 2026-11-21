@@ -412,6 +412,8 @@ const PUSH_CARD = 'components/notifications/PushDeviceCard.tsx';
 const PREFS_PAGE = 'app/profile/notifications/page.tsx';
 const PROFILE_PAGE = 'app/profile/page.tsx';
 const BELL = 'components/notifications/NotificationBell.tsx';
+/** Design 1e : panneau de la cloche (pied, liens), chargé à la demande (test modifié, signalé au rapport du design 1e). */
+const BELL_PANEL = 'components/layout/NotificationPanel.tsx';
 const NOTIFS_PAGE = 'app/notifications/page.tsx';
 const ADMIN_NOTIFS = 'app/admin/notifications/page.tsx';
 const ADMIN_NOTIF_DETAIL = 'app/admin/notifications/[id]/page.tsx';
@@ -862,7 +864,7 @@ describe('6.4 — page « Préférences de notification » (H4)', () => {
             if (!isFile(f)) faults.push(`${f} absent`);
             else if (linkTo(f).length === 0) faults.push(`${f} : aucun lien vers /profile/notifications`);
         }
-        if (!linkTo(BELL).some((el) => childTexts(el).includes('Préférences'))) faults.push(`${BELL} : pied sans lien « Préférences » vers /profile/notifications`);
+        if (!linkTo(BELL_PANEL).some((el) => childTexts(el).includes('Préférences'))) faults.push(`${BELL_PANEL} : pied sans lien « Préférences » vers /profile/notifications`);
         assert.deepEqual(faults, [], faults.join('\n'));
     });
 
@@ -1106,14 +1108,16 @@ describe('6.10 — cloche et page /notifications (N3)', () => {
         const local = localUnreadFilters(BELL);
         if (local.length > 0) faults.push(`filtrage local des non lues (.filter sur isRead, ligne ${local.join(', ')})`);
         if (/\bTYPE_ICONS\b/.test(code)) faults.push('TYPE_ICONS encore utilisé (libellés et icônes par notificationTypeMeta)');
-        if (!/\bnotificationTypeMeta\(/.test(code)) faults.push('notificationTypeMeta jamais appelé');
+        // Design 1e : libellés rendus par le panneau, chargé à la demande (test modifié, signalé au rapport du design 1e)
+        if (!/\bnotificationTypeMeta\(/.test(`${code}\n${codeOf(BELL_PANEL)}`)) faults.push('notificationTypeMeta jamais appelé');
+        if (/\bTYPE_ICONS\b/.test(codeOf(BELL_PANEL))) faults.push('TYPE_ICONS encore utilisé dans le panneau');
         const sf = sourceOf(BELL);
         const rawPush = callsTo(BELL, 'push').filter((c) => c.expression.getText(sf).startsWith('router.') && c.arguments.some((a) => /metadata/.test(a.getText(sf))));
         const viaVar = /const\s+(\w+)\s*=\s*[\w.?]*metadata\??\.actionUrl\b/.exec(code);
         if (rawPush.length > 0 || (viaVar && callsTo(BELL, 'push').some((c) => c.arguments.some((a) => a.getText(sf) === viaVar[1])))) {
             faults.push('router.push sur metadata.actionUrl tel quel (actionUrl interne de l\'API ou internalActionUrl attendu)');
         }
-        if (!jsxTags(BELL, /^(?:Link|LinkButton)$/).some((el) => attrTexts(el, 'href').includes('/notifications') && childTexts(el).includes('Voir toutes les notifications'))) faults.push('pied « Voir toutes les notifications » absent');
+        if (!jsxTags(BELL_PANEL, /^(?:Link|LinkButton)$/).some((el) => attrTexts(el, 'href').includes('/notifications') && childTexts(el).includes('Voir toutes les notifications'))) faults.push('pied « Voir toutes les notifications » absent');
         assert.deepEqual(faults, [], `${BELL} :\n  ${faults.join('\n  ')}`);
     });
 

@@ -7,7 +7,7 @@
  *  - Recherche : 6 recherches récentes au plus, 60 caractères chacune, « Effacer » les retire.
  * Tout est effacé à la déconnexion (lib/device/device-prefs-purge.ts, AuthProvider).
  */
-import { DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX } from './device-prefs-purge';
+import { DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX, DEVICE_TABLE_NOTES_PREFIX } from './device-prefs-purge';
 
 export type DeviceOperator = 'WAVE' | 'ORANGE_MONEY';
 
@@ -93,4 +93,47 @@ export function clearRecentSearches(): void {
     } catch {
         // stockage refusé : rien à effacer
     }
+}
+
+// ── Lot 11b : tables ─────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Lot 11b : demande particulière saisie sur la fiche d'un établissement (gardée pendant la connexion, 500 caractères) ;
+ * donnée du compte, effacée aussi quand la session se ferme à l'insu du navigateur (contre-vérification T5).
+ */
+export const TABLE_NOTES_PREFIX = DEVICE_TABLE_NOTES_PREFIX;
+export const TABLE_NOTES_MAX = 500;
+/** Lot 11b : signal des nouvelles réservations du planning de l'établissement (« on », « off »). */
+export const TABLE_SIGNAL_KEY = `${DEVICE_PREFS_PREFIX}signal-reservations`;
+
+const VENUE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Demande particulière gardée pour cet établissement, vide s'il n'y en a pas. */
+export function readTableNotes(venueId: string): string {
+    if (!VENUE_ID_RE.test(venueId)) return '';
+    const v = readJson(`${TABLE_NOTES_PREFIX}${venueId}`);
+    return typeof v === 'string' ? v.slice(0, TABLE_NOTES_MAX) : '';
+}
+
+/** Garde (ou retire, si vide) la demande particulière de cet établissement. */
+export function saveTableNotes(venueId: string, notes: string): boolean {
+    if (!VENUE_ID_RE.test(venueId)) return false;
+    if (!notes.trim()) {
+        try {
+            storage()?.removeItem(`${TABLE_NOTES_PREFIX}${venueId}`);
+            return true;
+        } catch {
+            return false; // stockage refusé : rien à retirer
+        }
+    }
+    return writeJson(`${TABLE_NOTES_PREFIX}${venueId}`, notes.slice(0, TABLE_NOTES_MAX));
+}
+
+/** Signal des nouvelles réservations : activé sauf choix « off » gardé sur l'appareil. */
+export function readTableSignal(): boolean {
+    return readJson(TABLE_SIGNAL_KEY) !== 'off';
+}
+
+export function saveTableSignal(on: boolean): boolean {
+    return writeJson(TABLE_SIGNAL_KEY, on ? 'on' : 'off');
 }

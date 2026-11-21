@@ -13,6 +13,11 @@
  * Lot 10b (contrôle responsive et captures des salles de fête) : version 5, avec les salles de la partenaire de démonstration
  * (`halls.validee`, `halls.enAttente`, `halls.refusee`) et la réservation du client sur la salle validée
  * (`halls.reservation`, en attente de paiement).
+ * Lot 11b (contrôle responsive et captures des tables) : version 6, avec les établissements de la partenaire de
+ * démonstration (`tables.restaurant` validé complet avec plan de salle, `tables.bar` en attente, `tables.espace` refusé,
+ * `tables.jardin` validé gratuit à acceptation manuelle), les réservations du client (`tables.reservations` : demande à
+ * accepter et réservation confirmée du jour au Petit Jardin, attente de paiement au restaurant) et la fermeture
+ * exceptionnelle à venir du restaurant (`tables.fermeture`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,11 +27,13 @@ export const DEMO_IDS_FILE = path.join(E2E_OUTPUT_DIR, 'demo-ids.json');
 export const CAPTURES_DIR = path.join(E2E_OUTPUT_DIR, 'captures');
 export const RESULTS_DIR = path.join(E2E_OUTPUT_DIR, 'results');
 
-export const DEMO_IDS_VERSION = 5;
+export const DEMO_IDS_VERSION = 6;
 
 export const DEMO_ACCOUNT_KEYS = [
     'organisateur', 'organisateur2', 'organisateur3', 'admin', 'client', 'controleur', 'controleur2', 'controleur3',
     'partenaireNeuf', 'controleurZones',
+    // Design 1e : client de la mesure mobile (10 billets à venir, 30 passés), jamais utilisé par l'e2e
+    'clientMesure',
 ] as const;
 export type DemoAccountKey = typeof DEMO_ACCOUNT_KEYS[number];
 
@@ -67,6 +74,46 @@ export interface DemoHalls extends Record<DemoHallKey, DemoHall> {
     reservation: { id: string; startDate: string };
 }
 
+/**
+ * Lot 11b : établissements de la partenaire de démonstration (organisateur) : restaurant validé complet (photos, horaires,
+ * zones, tables, plan de salle montré, acompte), bar en attente de validation, espace refusé (motif), et « Le Petit
+ * Jardin », validé, gratuit, à acceptation manuelle.
+ */
+export const DEMO_VENUE_KEYS = ['restaurant', 'bar', 'espace', 'jardin'] as const;
+export type DemoVenueKey = typeof DEMO_VENUE_KEYS[number];
+
+export interface DemoVenue {
+    id: string;
+    name: string;
+    kind: 'RESTAURANT' | 'BAR' | 'ESPACE';
+    /** Statut écrit par venue_validation_decide (VALIDEE, REFUSEE) ou laissé à la création (EN_ATTENTE_VALIDATION). */
+    validationStatus: 'VALIDEE' | 'EN_ATTENTE_VALIDATION' | 'REFUSEE';
+}
+
+/** Lot 11b : réservations de tables du client de démonstration (table_reserve, puis table_reservation_respond). */
+export const DEMO_TABLE_RESERVATION_KEYS = ['demande', 'confirmee', 'attentePaiement'] as const;
+export type DemoTableReservationKey = typeof DEMO_TABLE_RESERVATION_KEYS[number];
+
+export interface DemoTableReservation {
+    id: string;
+    venue: DemoVenueKey;
+    /** Jour (AAAA-MM-JJ) et heure (HH:MM) de Dakar. */
+    date: string;
+    time: string;
+    /** État relu après le seed : EN_ATTENTE_ACCEPTATION, CONFIRMEE ou EN_ATTENTE_PAIEMENT. */
+    bookingState: 'EN_ATTENTE_ACCEPTATION' | 'CONFIRMEE' | 'EN_ATTENTE_PAIEMENT';
+}
+
+export interface DemoTables extends Record<DemoVenueKey, DemoVenue> {
+    /**
+     * `demande` : au Petit Jardin, en attente de la réponse de l'établissement ; `confirmee` : au Petit Jardin, acceptée,
+     * du jour quand l'heure du seed le permet (planning du jour) ; `attentePaiement` : au restaurant, acompte à payer.
+     */
+    reservations: Record<DemoTableReservationKey, DemoTableReservation>;
+    /** Fermeture exceptionnelle à venir du restaurant (venue_closure_create), un jour entier sans réservation. */
+    fermeture: { id: string; date: string; reason: string };
+}
+
 export interface DemoIds {
     version: typeof DEMO_IDS_VERSION;
     generatedAt: string;
@@ -91,6 +138,8 @@ export interface DemoIds {
     payments: { pending: string; success: string; failed: string };
     /** Lot 10b : salles de fête de l'organisateur et réservation du client (pages des salles, responsive et captures). */
     halls: DemoHalls;
+    /** Lot 11b : établissements, réservations du client et fermeture exceptionnelle (pages des tables). */
+    tables: DemoTables;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -131,6 +180,13 @@ export function readDemoIds(): DemoIds {
         ...DEMO_HALL_KEYS.filter((k) => !UUID_RE.test(String(parsed.halls?.[k]?.id ?? '')) || !parsed.halls?.[k]?.name).map((k) => `halls.${k}`),
         ...(UUID_RE.test(String(parsed.halls?.reservation?.id ?? '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.halls?.reservation?.startDate ?? ''))
             ? [] : ['halls.reservation']),
+        ...DEMO_VENUE_KEYS.filter((k) => !UUID_RE.test(String(parsed.tables?.[k]?.id ?? '')) || !parsed.tables?.[k]?.name).map((k) => `tables.${k}`),
+        ...DEMO_TABLE_RESERVATION_KEYS.filter((k) => {
+            const r = parsed.tables?.reservations?.[k];
+            return !UUID_RE.test(String(r?.id ?? '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(r?.date ?? '')) || !/^\d{2}:\d{2}$/.test(String(r?.time ?? ''));
+        }).map((k) => `tables.reservations.${k}`),
+        ...(UUID_RE.test(String(parsed.tables?.fermeture?.id ?? '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.tables?.fermeture?.date ?? ''))
+            ? [] : ['tables.fermeture']),
     ];
     if (missing.length > 0) throw new Error(`[e2e] demo-ids.json incomplet : ${missing.join(', ')}.`);
     cached = parsed as DemoIds;

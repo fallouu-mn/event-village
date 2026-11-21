@@ -8,9 +8,7 @@ export async function GET(request: NextRequest) {
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
-        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
-        const closed = await guardFeature('tables', '/api/partner/tables');
-        if (closed) return closed;
+        // Lot 11b (décision du 20/11) : sans interrupteur, une réservation existante se lit et se gère même service fermé
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Non autorise.' }, { status: 401 });

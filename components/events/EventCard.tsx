@@ -107,7 +107,7 @@ export const EventCard: React.FC<EventCardProps> = ({
   return (
     <article
       style={style}
-      className="ev-press ev-poster-card group relative flex h-full flex-col overflow-hidden rounded-2xl shadow-sm transition-shadow duration-fast ease-standard focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background hover:shadow-lg"
+      className="ev-press ev-lift ev-poster-card group relative flex h-full flex-col overflow-hidden rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background"
     >
       <div data-ev-poster={id} className={cn('relative w-full overflow-hidden', feature ? 'aspect-[4/5] lg:aspect-auto lg:min-h-80 lg:flex-1' : 'aspect-[4/5]')}>
         {priority ? (
