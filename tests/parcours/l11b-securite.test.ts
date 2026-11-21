@@ -107,7 +107,9 @@ describe('F1. Fiche partenaire SUSPENDU : établissements, tables et réservatio
     });
 
     test('garde-fou : fiche VALIDE, mêmes actions acceptées (le refus vise bien la suspension)', async () => {
-        const paidRes = await paidReservation(10);
+        // Contre-vérification T2 (modification signalée au rapport) : « Client absent » seulement après la garde de
+        // 30 minutes ; commencée il y a 31 minutes (au lieu de 10)
+        const paidRes = await paidReservation(31);
         const absent = await routeId('PATCH', 'partner/tables/reservations/[id]', paidRes, host.accessToken, { action: 'ABSENT' });
         assert.equal(absent.status, 200, show(absent));
         assert.equal((await reservation(paidRes)).booking_state, 'ABSENT');

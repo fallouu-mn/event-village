@@ -226,7 +226,9 @@ describe('C5. Client absent', () => {
         await tick();
         assert.equal((await reservation(id)).booking_state, 'ARRIVEE');
         const other = await paidReservation('l11a-absent-main', 600);
-        await shiftReservation(other.id, { startMinutes: -5 });
+        // Contre-vérification du lot 11b (T2, modification signalée au rapport) : « Absent » seulement après la garde de
+        // 30 minutes promise par les avis ; commencée il y a 31 minutes (au lieu de 5)
+        await shiftReservation(other.id, { startMinutes: -31 });
         const absent = await partnerAction(other.id, partner.accessToken, { action: 'ABSENT' });
         assert.equal(absent.status, 200, JSON.stringify(absent.body));
         assert.equal((await reservation(other.id)).booking_state, 'ABSENT');

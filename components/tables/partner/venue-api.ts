@@ -237,12 +237,14 @@ export function actionsAt(r: PartnerTableReservationView, now: number): TimedAct
     const s = r.state;
     const start = startMs(r);
     const end = endMs(r);
+    // Contre-vérification T2 : fin de la garde de la table (« gardée jusqu'à », heure + tables.no_show_minutes)
+    const heldUntil = start + (((minutesOf(r.heldUntil) - minutesOf(r.time)) % 1440 + 1440) % 1440) * 60_000;
     const live = s === 'EN_ATTENTE_PAIEMENT' || s === 'EN_ATTENTE_ACCEPTATION' || s === 'CONFIRMEE';
     return {
         accept: s === 'EN_ATTENTE_ACCEPTATION',
         refuse: s === 'EN_ATTENTE_ACCEPTATION',
         arrived: s === 'CONFIRMEE' && now >= start - 3_600_000 && now < end,
-        absent: s === 'CONFIRMEE' && now >= start && now < end,
+        absent: s === 'CONFIRMEE' && now >= heldUntil && now < end,
         cancel: live && now < start,
         onsite: s === 'CONFIRMEE' || s === 'ARRIVEE',
     };

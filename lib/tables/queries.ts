@@ -561,7 +561,7 @@ export async function partnerReservation(userId: string, id: string): Promise<Pa
         .eq('id', id).eq('partner_id', partner.id).maybeSingle();
     if (error) throw new Error(`réservation : ${error.message}`);
     if (!data || !(data as unknown as Row).venue_id) return null;
-    const [view] = await partnerViews([data as unknown as Row]);
+    const [[view], grace] = await Promise.all([partnerViews([data as unknown as Row]), noShowMinutes()]);
     const now = Date.now();
     const start = Date.parse(`${view.date}T${view.time}:00Z`);
     const end = Date.parse(`${view.date}T${view.time}:00Z`) + ((num((data as unknown as Row).slot_minutes) || 120) * 60_000);
@@ -571,7 +571,8 @@ export async function partnerReservation(userId: string, id: string): Promise<Pa
         actions: {
             accept: s === 'EN_ATTENTE_ACCEPTATION', refuse: s === 'EN_ATTENTE_ACCEPTATION',
             arrived: s === 'CONFIRMEE' && now >= start - 3_600_000 && now < end,
-            absent: s === 'CONFIRMEE' && now >= start && now < end,
+            // Contre-vérification T2 : la table est gardée tables.no_show_minutes après l'heure (la base refuse avant)
+            absent: s === 'CONFIRMEE' && now >= start + grace * 60_000 && now < end,
             cancel: tableStateIsLive(s) && now < start,
             onsite: s === 'CONFIRMEE' || s === 'ARRIVEE',
         },

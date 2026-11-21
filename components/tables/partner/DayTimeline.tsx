@@ -123,8 +123,8 @@ function BookingCard({ r, now, isToday, actions, highlighted, previousDay }: {
                             Le client paie l’acompte. Sans paiement à temps, la table redevient libre.
                         </p>
                     )}
-                    {isToday && r.state === 'CONFIRMEE' && now >= startMs(r) && (
-                        <p className="text-sm font-medium text-warning-text">{`L’heure est passée : table gardée jusqu’à ${hmText(r.heldUntil)}.`}</p>
+                    {isToday && r.state === 'CONFIRMEE' && now >= startMs(r) && !can.absent && (
+                        <p className="text-sm font-medium text-warning-text">{`L’heure est passée : table gardée jusqu’à ${hmText(r.heldUntil)}. Sans le client à cette heure, vous pourrez le marquer absent.`}</p>
                     )}
                 </div>
             </div>
