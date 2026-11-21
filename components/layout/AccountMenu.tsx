@@ -39,6 +39,21 @@ export function AccountMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
+  // Run 540 : le panneau fermé n'est plus dans la page (il restait invisible sous l'en-tête, à droite, et axe le comptait
+  // comme masquant les cibles en dessous) ; présent à l'ouverture, retiré après son animation de fermeture (200 ms)
+  const [present, setPresent] = useState(false);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (open) { setPresent(true); return undefined; }
+    setShown(false);
+    const timer = window.setTimeout(() => setPresent(false), 220);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+  useEffect(() => {
+    if (!open || !present) return undefined;
+    const id = window.requestAnimationFrame(() => setShown(true));
+    return () => window.cancelAnimationFrame(id);
+  }, [open, present]);
 
   useEffect(() => { setOpen(false); }, [pathname]);
   useEffect(() => {
@@ -58,21 +73,21 @@ export function AccountMenu({
         ref={buttonRef}
         type="button"
         aria-expanded={open}
-        aria-controls={panelId}
+        aria-controls={present ? panelId : undefined}
         data-ev-account=""
         onClick={() => setOpen((v) => !v)}
-        className="flex min-h-11 items-center gap-2 rounded-full border border-border bg-background py-1 pl-1 pr-3 text-sm font-semibold text-foreground-strong transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-h-11 items-center gap-2 rounded-full border border-border bg-background py-0.5 pl-0.5 pr-3 text-sm font-semibold text-foreground-strong transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {loggedIn ? avatar : <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary-text"><UserRound size={18} aria-hidden="true" /></span>}
         <span className="max-w-[12rem] break-words text-left leading-tight">{loggedIn ? displayName : 'Mon compte'}</span>
         <ChevronDown size={16} aria-hidden="true" className={cn('transition-transform duration-200', open && 'rotate-180')} />
       </button>
-      <div
+      {present && <div
         id={panelId}
-        data-open={open ? '' : undefined}
+        data-open={shown ? '' : undefined}
         className={cn(
           'ev-account-menu absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-border bg-popover p-2 shadow-lg',
-          open ? 'visible translate-y-0 opacity-100' : 'invisible -translate-y-2 opacity-0',
+          shown ? 'visible translate-y-0 opacity-100' : 'invisible -translate-y-2 opacity-0',
         )}
       >
         {loggedIn && (
@@ -121,7 +136,7 @@ export function AccountMenu({
             </button>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

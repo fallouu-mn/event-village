@@ -135,8 +135,9 @@ describe('design 1e — ordinateur (≥ 1024 px)', () => {
     test('menu du compte : bouton à état, glisse (translation et fondu), Échap et clic ailleurs', () => {
         const src = read('components/layout/AccountMenu.tsx');
         assert.match(src, /aria-expanded=\{open\}/);
-        assert.match(src, /open \? 'visible translate-y-0 opacity-100' : 'invisible -translate-y-2 opacity-0'/);
+        assert.match(src, /shown \? 'visible translate-y-0 opacity-100' : 'invisible -translate-y-2 opacity-0'/);
         assert.match(src, /e\.key === 'Escape'/);
+        assert.match(src, /\{present && <div\n\s*id=\{panelId\}/, 'panneau fermé retiré de la page (run 540)');
         assert.match(navCss(), /\.ev-account-menu \{\s*transition: transform 200ms/);
     });
     test('barre latérale : espaces organisatrice et administration seulement, surlignage qui glisse, repliable par transform', () => {
