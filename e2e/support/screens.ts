@@ -82,13 +82,26 @@
  *
  * Lot 10b (contrôle responsive et captures des salles de fête) : treize écrans des salles, données de la graine v5
  * (DemoIds.halls : salle validée, en attente, refusée de l'organisatrice ; réservation du client en attente de paiement).
- * Champ nouveau de `Screen` : `salles`, interrupteur features.halls_enabled ouvert le temps de la capture (pages de
- * app/halls et app/partner/halls, en 404 sinon), sous le verrou entre les workers de e2e/support/halls-switch.ts ; les
- * écrans de l'administration des salles n'en dépendent pas. Aucune action qui écrit : pages ouvertes puis capturées.
+ * Champ nouveau de `Screen` : `salles` (lot 11b : renommé `services`), interrupteur features.halls_enabled ouvert le temps
+ * de la capture (pages de app/halls et app/partner/halls, en 404 sinon), sous le verrou entre les workers de
+ * e2e/support/halls-switch.ts (lot 11b : e2e/support/services-switch.ts) ; les écrans de l'administration des salles n'en
+ * dépendent pas. Aucune action qui écrit : pages ouvertes puis capturées.
+ *
+ * Lot 11b (contrôle responsive et captures des tables) : dix-neuf écrans des tables, données de la graine v6
+ * (DemoIds.tables : restaurant validé avec plan de salle et fermeture à venir, bar en attente, espace refusé, Petit Jardin
+ * gratuit à acceptation manuelle ; réservations du client : demande à accepter, confirmée du jour, acompte à payer).
+ * Client : recherche, fiche (pastilles et devis), plan de salle de la fiche, confirmation d'une demande (réponse de
+ * POST /api/restaurants/reserve-table imposée, identifiant inconnu de la base), mes réservations, une réservation à payer,
+ * une réservation ouverte depuis le rappel ; établissement : mes établissements, planning du jour, demande à accepter,
+ * détail, création, modification, plan de salle (édition), fermetures et aperçu d'une fermeture (lecture, jamais
+ * confirmée), recettes ; administration : file et fiche de décision. Toutes en `services` (interrupteurs des salles et des
+ * tables ouverts, administration comprise pour des menus identiques). Aucune action qui écrit.
  */
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
-import type { DemoAccountKey, DemoEvent, DemoEventKey, DemoHall, DemoHallKey, DemoIds } from './demo-ids';
+import type {
+    DemoAccountKey, DemoEvent, DemoEventKey, DemoHall, DemoHallKey, DemoIds, DemoTableReservation, DemoTableReservationKey, DemoVenue, DemoVenueKey,
+} from './demo-ids';
 import type { FakePushCounters, FakePushMode } from './fake-push';
 import type { CaptureRole } from './fixtures';
 import type { PageGuard } from './network';
@@ -153,10 +166,12 @@ export interface Screen {
     /** Lot 8 : formats exacts, ancrés, de références affichées, qui ne sont pas des valeurs techniques (checks.ts). */
     references?: readonly RegExp[];
     /**
-     * Lot 10b : écran d'une page des salles de fête (app/halls, app/partner/halls), en 404 tant que l'interrupteur
-     * features.halls_enabled est fermé : ouvert le temps de la capture, sous le verrou de e2e/support/halls-switch.ts.
+     * Lot 10b, généralisé au lot 11b (ancien champ `salles`) : écran d'une page des services, salles de fête (app/halls,
+     * app/partner/halls) ou tables (app/tables, app/partner/tables, app/admin/venues), en 404 pour une partie d'entre elles
+     * tant que l'interrupteur de leur service est fermé : features.halls_enabled et features.tables_enabled ouverts le temps
+     * de la capture, sous le verrou de e2e/support/services-switch.ts.
      */
-    salles?: boolean;
+    services?: boolean;
 }
 
 const UUID = '[0-9a-f-]{36}';
@@ -988,6 +1003,61 @@ async function showReservationMonth(c: ScreenContext): Promise<void> {
     // Haut du calendrier en haut de la fenêtre (scroll-mt-24 : sous l'en-tête fixe)
     await calendar.evaluate((el) => el.scrollIntoView({ block: 'start' }));
 }
+
+// ── Lot 11b : tables (graine v6, DemoIds.tables) ────────────────────────────
+
+function demoVenue(i: DemoIds | null, key: DemoVenueKey): DemoVenue {
+    const venue = ids(i).tables?.[key];
+    if (!venue?.id) throw new Error(`[e2e] demo-ids.json : tables.${key} absent (graine v6 du lot 11b)`);
+    return venue;
+}
+
+function demoTableReservation(i: DemoIds | null, key: DemoTableReservationKey): DemoTableReservation {
+    const r = ids(i).tables?.reservations?.[key];
+    if (!r?.id) throw new Error(`[e2e] demo-ids.json : tables.reservations.${key} absent (graine v6 du lot 11b)`);
+    return r;
+}
+
+/** « 20:00 » → « 20 h », « 19:30 » → « 19 h 30 » (comme hmText de lib/tables/views.ts). */
+function hmLabel(time: string): string {
+    const [h, m] = time.split(':');
+    return m === '00' ? `${Number(h)} h` : `${Number(h)} h ${m}`;
+}
+
+/** Fiche d'un établissement, choix gardé dans l'adresse (components/tables/client/booking-choice.ts). */
+function venueSheetPath(i: DemoIds | null, key: DemoVenueKey, choice: Record<string, string>): string {
+    return `/tables/${demoVenue(i, key).id}?${new URLSearchParams(choice).toString()}`;
+}
+
+/** Fiche du restaurant : titre, panneau « Réserver une table », pastilles du jour choisi et devis de la base. */
+async function venueSheetReady(c: ScreenContext): Promise<void> {
+    await hallHeading(c.page, demoVenue(c.ids, 'restaurant').name);
+    await expect(c.page.getByRole('heading', { level: 2, name: /^réserver une table$/i })).toBeVisible();
+    await expect(c.page.getByRole('button', { name: '20 h', exact: true }), 'pastille de 20 h libre').toBeVisible({ timeout: 30_000 });
+    await expect(c.page.getByText(/^total à payer$/i).first(), 'devis de la base (acompte de 4 personnes)').toBeVisible({ timeout: 30_000 });
+}
+
+/** Planning du jour d'un établissement : titre, frise du jour chargée. */
+async function planningReady(c: ScreenContext, key: DemoVenueKey): Promise<void> {
+    await hallHeading(c.page, demoVenue(c.ids, key).name);
+    await expect(c.page.locator('#planning-frise'), 'frise du jour').toBeVisible({ timeout: 30_000 });
+}
+
+/** Détail d'une réservation côté établissement : « 2 personnes à 19 h 30 ». */
+async function partnerReservationHeading(c: ScreenContext, key: DemoTableReservationKey, guests: number): Promise<void> {
+    const name = `${guests} personne${guests > 1 ? 's' : ''} à ${hmLabel(demoTableReservation(c.ids, key).time)}`;
+    await expect(c.page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * Lot 11b : confirmation après une demande au Petit Jardin (gratuit, acceptation manuelle). Aucune écriture : la réponse de
+ * POST /api/restaurants/reserve-table est imposée (identifiant inconnu de la base), la relecture de la réservation reçoit
+ * une réponse vide (la confirmation garde l'état de la réponse) ; le client du seed a déjà ses trois réservations non
+ * payées, la base refuserait une quatrième (tables.max_pending_per_client).
+ */
+const FAKE_TABLE_RESERVATION_ID = '00000000-0000-4000-8000-0000000011b0';
+const CONFIRMATION_DAY = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+const CONFIRMATION_RESPONSE_DUE = new Date(Date.now() + 3 * 3_600_000).toISOString();
 
 function tabScreen(id: string, titre: string, tab: RegExp): Screen {
     return {
@@ -2604,9 +2674,9 @@ export const SCREENS: readonly Screen[] = [
             await expect(dialog.getByRole('button', { name: /^rester sur la page$/i })).toBeVisible();
         },
     },
-    // ── Lot 10b : salles de fête (graine v5 ; `salles` : interrupteur ouvert le temps de la capture) ──
+    // ── Lot 10b : salles de fête (graine v5 ; `services` : interrupteurs ouverts le temps de la capture) ──
     {
-        id: 'salles-catalogue', titre: 'Salles de fête — catalogue (salle validée de la démonstration)', role: 'client', needsIds: true, salles: true,
+        id: 'salles-catalogue', titre: 'Salles de fête — catalogue (salle validée de la démonstration)', role: 'client', needsIds: true, services: true,
         path: () => '/halls',
         ready: async ({ page, ids: i }) => {
             await expectHeading(page, /^salles de fête$/i);
@@ -2615,12 +2685,12 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'salles-fiche', titre: 'Fiche d’une salle validée (photo, équipements, conditions, disponibilités)', role: 'client', needsIds: true, salles: true,
+        id: 'salles-fiche', titre: 'Fiche d’une salle validée (photo, équipements, conditions, disponibilités)', role: 'client', needsIds: true, services: true,
         path: (i) => `/halls/${demoHall(i, 'validee').id}`,
         ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'validee').name),
     },
     {
-        id: 'salles-mes-reservations', titre: 'Mes réservations de salle — à venir (réservation en attente de paiement)', role: 'client', needsIds: true, salles: true,
+        id: 'salles-mes-reservations', titre: 'Mes réservations de salle — à venir (réservation en attente de paiement)', role: 'client', needsIds: true, services: true,
         path: () => '/halls/reservations',
         ready: async ({ page, ids: i }) => {
             await expectHeading(page, /^mes réservations$/i);
@@ -2630,12 +2700,12 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'salles-ma-reservation', titre: 'Ma réservation de salle (en attente de paiement de l’acompte)', role: 'client', needsIds: true, salles: true,
+        id: 'salles-ma-reservation', titre: 'Ma réservation de salle (en attente de paiement de l’acompte)', role: 'client', needsIds: true, services: true,
         path: (i) => `/halls/reservations/${ids(i).halls.reservation.id}`,
         ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'validee').name),
     },
     {
-        id: 'salles-partenaire-liste', titre: 'Partenaire — mes salles (validée, en attente, refusée avec son motif)', role: 'organisateur', needsIds: true, salles: true,
+        id: 'salles-partenaire-liste', titre: 'Partenaire — mes salles (validée, en attente, refusée avec son motif)', role: 'organisateur', needsIds: true, services: true,
         path: () => '/partner/halls',
         ready: async ({ page, ids: i }) => {
             await expectHeading(page, /^mes salles$/i);
@@ -2646,33 +2716,33 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'salles-partenaire-ajout', titre: 'Partenaire — ajout d’une salle (formulaire)', role: 'organisateur', needsIds: false, salles: true,
+        id: 'salles-partenaire-ajout', titre: 'Partenaire — ajout d’une salle (formulaire)', role: 'organisateur', needsIds: false, services: true,
         path: () => '/partner/halls/new',
         ready: async ({ page }) => expectHeading(page, /^ajouter une salle$/i),
     },
     {
-        id: 'salles-partenaire-fiche', titre: 'Partenaire — fiche d’une salle validée (informations clés)', role: 'organisateur', needsIds: true, salles: true,
+        id: 'salles-partenaire-fiche', titre: 'Partenaire — fiche d’une salle validée (informations clés)', role: 'organisateur', needsIds: true, services: true,
         path: (i) => `/partner/halls/${demoHall(i, 'validee').id}`,
         ready: async (c) => { await partnerHallSheetReady(c); },
     },
     {
-        id: 'salles-partenaire-calendrier', titre: 'Partenaire — calendrier des réservations d’une salle (mois de la réservation du client)', role: 'organisateur', needsIds: true, salles: true,
+        id: 'salles-partenaire-calendrier', titre: 'Partenaire — calendrier des réservations d’une salle (mois de la réservation du client)', role: 'organisateur', needsIds: true, services: true,
         path: (i) => `/partner/halls/${demoHall(i, 'validee').id}`,
         ready: async (c) => { await partnerHallSheetReady(c); },
         actions: showReservationMonth,
     },
     {
-        id: 'salles-partenaire-modification', titre: 'Partenaire — modification d’une salle validée (formulaire prérempli)', role: 'organisateur', needsIds: true, salles: true,
+        id: 'salles-partenaire-modification', titre: 'Partenaire — modification d’une salle validée (formulaire prérempli)', role: 'organisateur', needsIds: true, services: true,
         path: (i) => `/partner/halls/${demoHall(i, 'validee').id}/edit`,
         ready: async ({ page }) => expectHeading(page, /^modifier la salle$/i),
     },
     {
-        id: 'salles-partenaire-reservation', titre: 'Partenaire — détail d’une réservation de salle (en attente de paiement)', role: 'organisateur', needsIds: true, salles: true,
+        id: 'salles-partenaire-reservation', titre: 'Partenaire — détail d’une réservation de salle (en attente de paiement)', role: 'organisateur', needsIds: true, services: true,
         path: (i) => `/partner/halls/reservations/${ids(i).halls.reservation.id}`,
         ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'validee').name),
     },
     {
-        id: 'salles-partenaire-recettes', titre: 'Partenaire — recettes des salles', role: 'organisateur', needsIds: false, salles: true,
+        id: 'salles-partenaire-recettes', titre: 'Partenaire — recettes des salles', role: 'organisateur', needsIds: false, services: true,
         path: () => '/partner/halls/recettes',
         ready: async ({ page }) => expectHeading(page, /^recettes des salles$/i),
     },
@@ -2689,5 +2759,179 @@ export const SCREENS: readonly Screen[] = [
         id: 'salles-admin-fiche', titre: 'Administration — fiche d’une salle en attente de validation (décision)', role: 'fumee-superadmin', needsIds: true,
         path: (i) => `/admin/halls/${demoHall(i, 'enAttente').id}`,
         ready: async ({ page, ids: i }) => hallHeading(page, demoHall(i, 'enAttente').name),
+    },
+    // ── Lot 11b : tables (graine v6 ; `services` : interrupteurs ouverts le temps de la capture) ──
+    {
+        id: 'tables-recherche', titre: 'Tables — recherche des établissements (restaurant et Petit Jardin de la démonstration)', role: 'client', needsIds: true, services: true,
+        path: () => '/tables',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^réserver une table$/i);
+            for (const key of ['restaurant', 'jardin'] as const) {
+                const name = demoVenue(i, key).name;
+                await expect(page.getByRole('heading', { level: 3, name, exact: true }), `établissement « ${name} » dans la recherche`).toBeVisible({ timeout: 30_000 });
+            }
+        },
+    },
+    {
+        id: 'tables-fiche', titre: 'Fiche d’un établissement validé : pastilles du jour et devis (4 personnes, acompte)', role: 'client', needsIds: true, services: true,
+        path: (i) => venueSheetPath(i, 'restaurant', { date: demoTableReservation(i, 'attentePaiement').date, guests: '4' }),
+        ready: venueSheetReady,
+        actions: async ({ page }) => { await revealCenter(page.getByRole('heading', { level: 3, name: /à quelle heure \?$/i })); },
+    },
+    {
+        id: 'tables-fiche-plan', titre: 'Fiche d’un établissement : plan de salle au créneau choisi (table de la démonstration prise)', role: 'client', needsIds: true, services: true,
+        path: (i) => venueSheetPath(i, 'restaurant', { date: demoTableReservation(i, 'attentePaiement').date, time: '20:00', guests: '4' }),
+        ready: async (c) => {
+            await venueSheetReady(c);
+            const plan = c.page.getByRole('group', { name: `Plan de salle de ${demoVenue(c.ids, 'restaurant').name} à 20 h`, exact: true });
+            await expect(plan, 'plan de salle au créneau choisi').toBeVisible({ timeout: 30_000 });
+        },
+        actions: async ({ page, ids: i }) => {
+            await revealCenter(page.getByRole('group', { name: `Plan de salle de ${demoVenue(i, 'restaurant').name} à 20 h`, exact: true }));
+        },
+    },
+    {
+        id: 'tables-confirmation', titre: 'Fiche d’un établissement : demande envoyée (confirmation, réponse de la réservation imposée)', role: 'client', needsIds: true, services: true,
+        path: (i) => venueSheetPath(i, 'jardin', { date: CONFIRMATION_DAY, time: '12:00', guests: '2' }),
+        stubResponses: [
+            {
+                url: /\/api\/restaurants\/reserve-table(\?.*)?$/, method: 'POST', status: 200,
+                body: {
+                    success: true,
+                    reservation: {
+                        id: FAKE_TABLE_RESERVATION_ID, state: 'Demande envoyée', venueName: 'Le Petit Jardin', tableNumber: 'J1', guests: 2,
+                        date: CONFIRMATION_DAY, time: '12:00', endTime: '14:00', depositAmount: 0, serviceFee: 0, totalToPay: 0,
+                        holdExpiresAt: null, responseDueAt: CONFIRMATION_RESPONSE_DUE,
+                        cancellation: 'Réservation sans acompte : vous pouvez l’annuler jusqu’à l’heure prévue.',
+                    },
+                },
+            },
+            { url: new RegExp(`/api/tables/reservations/${FAKE_TABLE_RESERVATION_ID}(\\?.*)?$`), method: 'GET', status: 200, body: {} },
+        ],
+        // Préchargement de « Voir ma réservation » : identifiant imposé, inconnu de la base (404 attendu)
+        allowFailures: [new RegExp(`/tables/reservations/${FAKE_TABLE_RESERVATION_ID}(\\?_rsc=[^/]*)?$`)],
+        ready: async ({ page, ids: i }) => hallHeading(page, demoVenue(i, 'jardin').name),
+        actions: async ({ page }) => {
+            const send = page.getByRole('button', { name: /^envoyer la demande$/i });
+            await expect(send, 'créneau de 12 h choisi, demande possible').toBeEnabled({ timeout: 30_000 });
+            await send.click();
+            const heading = page.getByRole('heading', { level: 2, name: /^demande envoyée$/i });
+            await expect(heading).toBeVisible({ timeout: 30_000 });
+            await revealCenter(heading);
+        },
+    },
+    {
+        id: 'tables-mes-reservations', titre: 'Mes réservations de table — à venir (demande, confirmée, acompte à payer)', role: 'client', needsIds: true, services: true,
+        path: () => '/tables/reservations',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^mes réservations$/i);
+            await expect(page.getByRole('tab', { name: /^à venir/i })).toHaveAttribute('aria-selected', 'true');
+            for (const key of ['restaurant', 'jardin'] as const) {
+                const name = demoVenue(i, key).name;
+                await expect(page.getByRole('heading', { level: 3, name, exact: true }).first(), `réservation à « ${name} »`).toBeVisible();
+            }
+        },
+    },
+    {
+        id: 'tables-ma-reservation', titre: 'Ma réservation de table (acompte à payer, compte à rebours)', role: 'client', needsIds: true, services: true,
+        path: (i) => `/tables/reservations/${demoTableReservation(i, 'attentePaiement').id}`,
+        ready: async ({ page, ids: i }) => hallHeading(page, demoVenue(i, 'restaurant').name),
+    },
+    {
+        id: 'tables-ma-reservation-rappel', titre: 'Ma réservation de table confirmée, ouverte depuis le rappel (« Votre table vous attend »)', role: 'client', needsIds: true, services: true,
+        path: (i) => `/tables/reservations/${demoTableReservation(i, 'confirmee').id}?rappel=1`,
+        ready: async ({ page, ids: i }) => {
+            await hallHeading(page, demoVenue(i, 'jardin').name);
+            await expect(page.getByRole('heading', { level: 2, name: /^votre table vous attend à /i }), 'carte du rappel').toBeVisible();
+        },
+    },
+    {
+        id: 'org-tables-liste', titre: 'Établissement — mes établissements (validés, en attente, refusé avec son motif)', role: 'organisateur', needsIds: true, services: true,
+        path: () => '/partner/tables',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^mes établissements$/i);
+            for (const key of ['restaurant', 'bar', 'espace', 'jardin'] as const) {
+                const v = demoVenue(i, key);
+                await expect(page.getByRole('heading', { level: 2, name: v.name, exact: true }), `établissement « ${v.name} » (${v.validationStatus})`).toBeVisible({ timeout: 30_000 });
+            }
+        },
+    },
+    {
+        id: 'org-tables-planning', titre: 'Établissement — planning du jour (réservation confirmée du jour, demande à accepter en tête)', role: 'organisateur', needsIds: true, services: true,
+        path: (i) => `/partner/tables/${demoVenue(i, 'jardin').id}`,
+        ready: async (c) => {
+            await planningReady(c, 'jardin');
+            await expect(c.page.getByRole('heading', { level: 2, name: /^une demande à accepter$/i }), 'demande du client').toBeVisible({ timeout: 30_000 });
+        },
+    },
+    {
+        id: 'org-tables-demande', titre: 'Établissement — demande de réservation à accepter (détail, accepter ou refuser)', role: 'organisateur', needsIds: true, services: true,
+        path: (i) => `/partner/tables/reservations/${demoTableReservation(i, 'demande').id}`,
+        ready: async (c) => partnerReservationHeading(c, 'demande', 2),
+    },
+    {
+        id: 'org-tables-detail', titre: 'Établissement — détail d’une réservation confirmée du jour', role: 'organisateur', needsIds: true, services: true,
+        path: (i) => `/partner/tables/reservations/${demoTableReservation(i, 'confirmee').id}`,
+        ready: async (c) => partnerReservationHeading(c, 'confirmee', 4),
+    },
+    {
+        id: 'org-tables-creation', titre: 'Établissement — création d’un établissement (formulaire)', role: 'organisateur', needsIds: false, services: true,
+        path: () => '/partner/tables/edition/nouveau',
+        ready: async ({ page }) => expectHeading(page, /^ajouter un établissement$/i),
+    },
+    {
+        id: 'org-tables-modification', titre: 'Établissement — modification d’un établissement validé (formulaire prérempli)', role: 'organisateur', needsIds: true, services: true,
+        path: (i) => `/partner/tables/edition/${demoVenue(i, 'restaurant').id}`,
+        ready: async ({ page }) => expectHeading(page, /^modifier l’établissement$/i),
+    },
+    {
+        id: 'org-tables-plan', titre: 'Établissement — plan de salle (édition : deux zones, huit tables placées)', role: 'organisateur', needsIds: true, services: true,
+        path: (i) => `/partner/tables/edition/${demoVenue(i, 'restaurant').id}/plan`,
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^plan de salle$/i);
+            await expect(page.getByRole('group', { name: `Plan de salle de ${demoVenue(i, 'restaurant').name}`, exact: true }), 'plan de salle placé').toBeVisible({ timeout: 30_000 });
+        },
+    },
+    {
+        id: 'org-tables-fermetures', titre: 'Établissement — fermetures exceptionnelles (fermeture à venir de la démonstration)', role: 'organisateur', needsIds: true, services: true,
+        path: (i) => `/partner/tables/edition/${demoVenue(i, 'restaurant').id}/fermetures`,
+        ready: async ({ page }) => {
+            await expectHeading(page, /^fermetures exceptionnelles$/i);
+            await expect(page.getByRole('heading', { name: /^fermetures à venir$/i })).toBeVisible({ timeout: 30_000 });
+        },
+    },
+    {
+        // Aperçu seulement (venue_closure_preview, lecture) : jamais confirmé
+        id: 'org-tables-fermeture-apercu', titre: 'Établissement — aperçu d’une fermeture (réservation touchée, remboursée en entier), jamais confirmée', role: 'organisateur', needsIds: true, services: true,
+        path: (i) => `/partner/tables/edition/${demoVenue(i, 'restaurant').id}/fermetures`,
+        ready: async ({ page }) => expectHeading(page, /^fermetures exceptionnelles$/i),
+        actions: async ({ page, ids: i }) => {
+            await page.locator('#fermeture-startDate').fill(demoTableReservation(i, 'attentePaiement').date);
+            await page.locator('#fermeture-reason').fill('Coupure d’électricité annoncée dans le quartier');
+            await page.getByRole('button', { name: /^voir les réservations touchées$/i }).click();
+            const heading = page.getByRole('heading', { name: /^vérifiez avant de confirmer$/i });
+            await expect(heading, 'aperçu de la fermeture').toBeVisible({ timeout: 30_000 });
+            await expect(page.getByText(/^1 réservation sera annulée et remboursée en entier$/i), 'réservation en attente de paiement du seed touchée').toBeVisible();
+            await revealCenter(heading);
+        },
+    },
+    {
+        id: 'org-tables-recettes', titre: 'Établissement — recettes des tables', role: 'organisateur', needsIds: false, services: true,
+        path: () => '/partner/tables/recettes',
+        ready: async ({ page }) => expectHeading(page, /^recettes des tables$/i),
+    },
+    {
+        id: 'adm-etablissements-liste', titre: 'Administration — établissements à valider (bar en attente de la démonstration)', role: 'fumee-superadmin', needsIds: true, services: true,
+        path: () => '/admin/venues',
+        ready: async ({ page, ids: i }) => {
+            await expectHeading(page, /^établissements à valider$/i);
+            const name = demoVenue(i, 'bar').name;
+            await expect(page.getByRole('link', { name, exact: true }).filter({ visible: true }).first(), `établissement « ${name} » en attente`).toBeVisible({ timeout: 30_000 });
+        },
+    },
+    {
+        id: 'adm-etablissements-fiche', titre: 'Administration — fiche d’un établissement en attente de validation (décision)', role: 'fumee-superadmin', needsIds: true, services: true,
+        path: (i) => `/admin/venues/${demoVenue(i, 'bar').id}`,
+        ready: async ({ page, ids: i }) => hallHeading(page, demoVenue(i, 'bar').name),
     },
 ];

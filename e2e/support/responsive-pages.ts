@@ -8,9 +8,10 @@
  *
  * Exclusions déclarées (vérifiées par tests/schema/design1c-responsive.test.ts : toute page de app/ est soit listée ici,
  * soit exclue avec sa raison) :
- *  - tables, menus, commandes et produits : écrans des services fermés, hors de ce contrôle (consigne du design 1c : ne pas y
+ *  - menus, commandes et produits : écrans des services fermés, hors de ce contrôle (consigne du design 1c : ne pas y
  *    toucher) ;
- *  - redirections pures (/partner, /admin, /scan, /partner/halls/reservations) ;
+ *  - redirections pures (/partner, /admin, /scan, /partner/halls/reservations ; lot 11b : /restaurants/[id]/tables et le
+ *    lien court /t/[code]) ;
  *  - pages à jeton à usage unique ou de démonstration interne (activation, réclamation d'un billet, vitrine du design).
  *
  * Lot 10b : les douze pages des salles de fête sont contrôlées (client : catalogue, fiche d'une salle validée, mes
@@ -19,10 +20,19 @@
  * réservation du seed de démonstration (DemoIds.halls, graine v5). Les pages du client et de l'organisatrice (`salles`)
  * tournent interrupteur features.halls_enabled ouvert, sous le verrou de e2e/support/halls-switch.ts ; celles de
  * l'administration n'en dépendent pas.
+ *
+ * Lot 11b : exclusions des tables retirées ; les pages des tables sont contrôlées (client : recherche, fiche d'un
+ * établissement validé, avec et sans plan de salle et devis, mes réservations, une réservation en attente de paiement,
+ * une réservation confirmée ouverte depuis le rappel ; établissement : mes établissements, planning du jour du restaurant
+ * et du Petit Jardin (demande à accepter), détail d'une demande, recettes, création, modification, plan de salle,
+ * fermetures ; super-administrateur : établissements à valider, fiche d'un établissement en attente). Données : graine v6
+ * (DemoIds.tables). Le champ `salles` devient `services` : toutes les pages des salles et des tables (administration des
+ * tables comprise, pour des captures cohérentes) tournent interrupteurs features.halls_enabled et features.tables_enabled
+ * ouverts, sous le verrou de e2e/support/services-switch.ts (ancien halls-switch.ts).
  */
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 import type { CaptureRole } from './fixtures';
-import { readDemoIds, type DemoHallKey, type DemoIds } from './demo-ids';
+import { readDemoIds, type DemoHallKey, type DemoIds, type DemoTableReservationKey, type DemoVenueKey } from './demo-ids';
 
 export type ResponsiveGroup = 'public' | 'organisatrice' | 'administration' | 'scanner';
 
@@ -46,10 +56,12 @@ export interface ResponsivePage {
     /** Requêtes en échec attendues (404 d'une page introuvable). */
     allowFailures?: RegExp[];
     /**
-     * Lot 10b : page des salles de fête (app/halls, app/partner/halls), en 404 tant que l'interrupteur features.halls_enabled
-     * est fermé : ouvert le temps du test, sous le verrou entre les workers (e2e/support/halls-switch.ts).
+     * Lot 10b, généralisé au lot 11b (ancien champ `salles`) : page des services, salles de fête (app/halls,
+     * app/partner/halls) ou tables (app/tables, app/partner/tables, app/admin/venues), en 404 pour une partie d'entre elles
+     * tant que l'interrupteur de leur service est fermé : features.halls_enabled et features.tables_enabled ouverts le temps
+     * du test, sous le verrou entre les workers (e2e/support/services-switch.ts).
      */
-    salles?: boolean;
+    services?: boolean;
 }
 
 /** Largeurs contrôlées, et hauteur de la fenêtre à chaque largeur (téléphones, tablette portrait, tablette paysage, ordinateur). */
@@ -170,6 +182,105 @@ async function adminHallsReady(page: Page): Promise<void> {
     await expect(page.getByRole('link', { name, exact: true }).filter({ visible: true }).first(), `salle « ${name} » en attente de validation`).toBeVisible();
 }
 
+// ── Lot 11b : tables (établissements, réservations et fermeture du seed de démonstration, DemoIds.tables) ──────
+
+function venueOf(i: DemoIds | null, key: DemoVenueKey): DemoIds['tables'][DemoVenueKey] {
+    return ids(i).tables[key];
+}
+
+function tableReservationOf(i: DemoIds | null, key: DemoTableReservationKey): DemoIds['tables']['reservations'][DemoTableReservationKey] {
+    return ids(i).tables.reservations[key];
+}
+
+/** Titre de niveau 1 : nom d'un établissement du seed (lu dans demo-ids.json, comme l'adresse de la page). */
+function venueTitle(key: DemoVenueKey) {
+    return async (page: Page): Promise<void> => { await titled(page, readDemoIds().tables[key].name); };
+}
+
+/**
+ * Fiche du restaurant, choix dans l'adresse (booking-choice) : jour de la réservation en attente de paiement du seed, 20:00,
+ * 4 personnes ; plan de salle au créneau (table de la réservation du seed prise) et devis de la base.
+ */
+function venueChoicePath(i: DemoIds | null): string {
+    const day = tableReservationOf(i, 'attentePaiement').date;
+    return `/tables/${venueOf(i, 'restaurant').id}?${new URLSearchParams({ date: day, time: '20:00', guests: '4' }).toString()}`;
+}
+
+async function tablesSearchReady(page: Page): Promise<void> {
+    await titled(page, /^réserver une table$/i);
+    const name = readDemoIds().tables.restaurant.name;
+    await expect(page.getByRole('heading', { level: 3, name, exact: true }), `établissement « ${name} » dans la recherche`).toBeVisible({ timeout: 30_000 });
+}
+
+async function venueSheetReady(page: Page): Promise<void> {
+    await venueTitle('restaurant')(page);
+    await expect(page.getByRole('heading', { level: 2, name: /^réserver une table$/i })).toBeVisible();
+}
+
+async function venueSheetPlanReady(page: Page): Promise<void> {
+    await venueSheetReady(page);
+    const name = readDemoIds().tables.restaurant.name;
+    await expect(page.getByRole('group', { name: `Plan de salle de ${name} à 20 h`, exact: true }), 'plan de salle au créneau choisi').toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/^total à payer$/i).first(), 'devis de la base (acompte de 4 personnes)').toBeVisible({ timeout: 30_000 });
+}
+
+async function myTableReservationsReady(page: Page): Promise<void> {
+    await titled(page, /^mes réservations$/i);
+    await expect(page.getByRole('tab', { name: /^à venir/i, selected: true })).toBeVisible();
+    const { restaurant, jardin } = readDemoIds().tables;
+    for (const v of [restaurant, jardin]) {
+        await expect(page.getByRole('heading', { level: 3, name: v.name, exact: true }).first(), `réservation à « ${v.name} »`).toBeVisible();
+    }
+}
+
+async function reminderReady(page: Page): Promise<void> {
+    await venueTitle('jardin')(page);
+    await expect(page.getByRole('heading', { level: 2, name: /^votre table vous attend à /i }), 'carte du rappel').toBeVisible();
+}
+
+async function partnerVenuesReady(page: Page): Promise<void> {
+    await titled(page, /^mes établissements$/i);
+    const t = readDemoIds().tables;
+    for (const v of [t.restaurant, t.bar, t.espace, t.jardin]) {
+        await expect(page.getByRole('heading', { level: 2, name: v.name, exact: true }), `établissement « ${v.name} » (${v.validationStatus})`).toBeVisible({ timeout: 30_000 });
+    }
+}
+
+/** Planning du jour : nom de l'établissement, puis la frise du jour chargée (et la demande à accepter du Petit Jardin). */
+function planningReady(key: DemoVenueKey, withRequest = false) {
+    return async (page: Page): Promise<void> => {
+        await venueTitle(key)(page);
+        await expect(page.locator('#planning-frise'), 'frise du jour').toBeVisible({ timeout: 30_000 });
+        if (withRequest) await expect(page.getByRole('heading', { level: 2, name: /^une demande à accepter$/i }), 'demande du client').toBeVisible({ timeout: 30_000 });
+    };
+}
+
+/** Détail d'une réservation côté établissement : « 2 personnes à 19 h 30 » (personnes et heure de la réservation du seed). */
+function partnerReservationReady(key: DemoTableReservationKey, guests: number) {
+    return async (page: Page): Promise<void> => {
+        const [h, m] = readDemoIds().tables.reservations[key].time.split(':');
+        const hm = m === '00' ? `${Number(h)} h` : `${Number(h)} h ${m}`;
+        await titled(page, `${guests} personne${guests > 1 ? 's' : ''} à ${hm}`);
+    };
+}
+
+async function planEditorReady(page: Page): Promise<void> {
+    await titled(page, /^plan de salle$/i);
+    const name = readDemoIds().tables.restaurant.name;
+    await expect(page.getByRole('group', { name: `Plan de salle de ${name}`, exact: true }), 'plan de salle placé').toBeVisible({ timeout: 30_000 });
+}
+
+async function closuresReady(page: Page): Promise<void> {
+    await titled(page, /^fermetures exceptionnelles$/i);
+    await expect(page.getByRole('heading', { name: /^fermetures à venir$/i })).toBeVisible({ timeout: 30_000 });
+}
+
+async function adminVenuesReady(page: Page): Promise<void> {
+    await titled(page, /^établissements à valider$/i);
+    const name = readDemoIds().tables.bar.name;
+    await expect(page.getByRole('link', { name, exact: true }).filter({ visible: true }).first(), `établissement « ${name} » en attente de validation`).toBeVisible({ timeout: 30_000 });
+}
+
 const P = (p: Omit<ResponsivePage, 'groupe'>): Omit<ResponsivePage, 'groupe'> => p;
 
 const PUBLIQUES: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -200,10 +311,17 @@ const PUBLIQUES: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'notifications', titre: 'Notifications', role: 'client', path: () => '/notifications', allowFailures: [HALL_RESERVATION_PREFETCH] }),
     P({ id: 'invitations', titre: 'Invitations du contrôleur', role: 'client', path: () => '/invitations' }),
     // Lot 10b : salles de fête du client (interrupteur ouvert le temps du test)
-    P({ id: 'salles-catalogue', titre: 'Salles de fête — catalogue', role: 'client', salles: true, path: () => '/halls', ready: hallsCatalogReady }),
-    P({ id: 'salles-fiche', titre: 'Fiche d’une salle validée', role: 'client', salles: true, needsIds: true, path: (i) => `/halls/${hallOf(i, 'validee').id}`, ready: hallTitle('validee') }),
-    P({ id: 'salles-reservations', titre: 'Mes réservations de salle', role: 'client', salles: true, path: () => '/halls/reservations', ready: myHallReservationsReady }),
-    P({ id: 'salles-reservation', titre: 'Ma réservation de salle (en attente de paiement)', role: 'client', salles: true, needsIds: true, path: (i) => `/halls/reservations/${ids(i).halls.reservation.id}`, ready: hallTitle('validee') }),
+    P({ id: 'salles-catalogue', titre: 'Salles de fête — catalogue', role: 'client', services: true, path: () => '/halls', ready: hallsCatalogReady }),
+    P({ id: 'salles-fiche', titre: 'Fiche d’une salle validée', role: 'client', services: true, needsIds: true, path: (i) => `/halls/${hallOf(i, 'validee').id}`, ready: hallTitle('validee') }),
+    P({ id: 'salles-reservations', titre: 'Mes réservations de salle', role: 'client', services: true, path: () => '/halls/reservations', ready: myHallReservationsReady }),
+    P({ id: 'salles-reservation', titre: 'Ma réservation de salle (en attente de paiement)', role: 'client', services: true, needsIds: true, path: (i) => `/halls/reservations/${ids(i).halls.reservation.id}`, ready: hallTitle('validee') }),
+    // Lot 11b : tables du client (interrupteurs ouverts le temps du test)
+    P({ id: 'tables-recherche', titre: 'Tables — recherche des établissements', role: 'client', services: true, needsIds: true, path: () => '/tables', ready: tablesSearchReady }),
+    P({ id: 'tables-fiche', titre: 'Fiche d’un établissement validé', role: 'client', services: true, needsIds: true, path: (i) => `/tables/${venueOf(i, 'restaurant').id}`, ready: venueSheetReady }),
+    P({ id: 'tables-fiche-plan', titre: 'Fiche d’un établissement : créneau choisi, plan de salle et devis', role: 'client', services: true, needsIds: true, path: venueChoicePath, ready: venueSheetPlanReady }),
+    P({ id: 'tables-reservations', titre: 'Mes réservations de table', role: 'client', services: true, needsIds: true, path: () => '/tables/reservations', ready: myTableReservationsReady }),
+    P({ id: 'tables-reservation', titre: 'Ma réservation de table (en attente de paiement)', role: 'client', services: true, needsIds: true, path: (i) => `/tables/reservations/${tableReservationOf(i, 'attentePaiement').id}`, ready: venueTitle('restaurant') }),
+    P({ id: 'tables-reservation-rappel', titre: 'Ma réservation de table confirmée, ouverte depuis le rappel', role: 'client', services: true, needsIds: true, path: (i) => `/tables/reservations/${tableReservationOf(i, 'confirmee').id}?rappel=1`, ready: reminderReady }),
 ];
 
 const ORGANISATRICE: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -231,12 +349,22 @@ const ORGANISATRICE: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'org-abonnement', titre: 'Abonnement', role: 'organisateur', path: () => '/partner/subscription' }),
     P({ id: 'org-scan', titre: 'Scanner de l’organisatrice', role: 'organisateur', path: () => '/partner/scan' }),
     // Lot 10b : salles de fête de l'organisatrice (interrupteur ouvert le temps du test)
-    P({ id: 'org-salles', titre: 'Mes salles (validée, en attente, refusée)', role: 'organisateur', salles: true, path: () => '/partner/halls', ready: partnerHallsReady }),
-    P({ id: 'org-salle-ajout', titre: 'Ajout d’une salle', role: 'organisateur', salles: true, path: () => '/partner/halls/new', ready: (p) => titled(p, /^ajouter une salle$/i) }),
-    P({ id: 'org-salle-fiche', titre: 'Fiche d’une salle et calendrier des réservations', role: 'organisateur', salles: true, needsIds: true, path: (i) => `/partner/halls/${hallOf(i, 'validee').id}`, ready: partnerHallSheetReady }),
-    P({ id: 'org-salle-modification', titre: 'Modification d’une salle', role: 'organisateur', salles: true, needsIds: true, path: (i) => `/partner/halls/${hallOf(i, 'validee').id}/edit`, ready: (p) => titled(p, /^modifier la salle$/i) }),
-    P({ id: 'org-salle-reservation', titre: 'Détail d’une réservation de salle', role: 'organisateur', salles: true, needsIds: true, path: (i) => `/partner/halls/reservations/${ids(i).halls.reservation.id}`, ready: hallTitle('validee') }),
-    P({ id: 'org-salles-recettes', titre: 'Recettes des salles', role: 'organisateur', salles: true, path: () => '/partner/halls/recettes', ready: (p) => titled(p, /^recettes des salles$/i) }),
+    P({ id: 'org-salles', titre: 'Mes salles (validée, en attente, refusée)', role: 'organisateur', services: true, path: () => '/partner/halls', ready: partnerHallsReady }),
+    P({ id: 'org-salle-ajout', titre: 'Ajout d’une salle', role: 'organisateur', services: true, path: () => '/partner/halls/new', ready: (p) => titled(p, /^ajouter une salle$/i) }),
+    P({ id: 'org-salle-fiche', titre: 'Fiche d’une salle et calendrier des réservations', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/halls/${hallOf(i, 'validee').id}`, ready: partnerHallSheetReady }),
+    P({ id: 'org-salle-modification', titre: 'Modification d’une salle', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/halls/${hallOf(i, 'validee').id}/edit`, ready: (p) => titled(p, /^modifier la salle$/i) }),
+    P({ id: 'org-salle-reservation', titre: 'Détail d’une réservation de salle', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/halls/reservations/${ids(i).halls.reservation.id}`, ready: hallTitle('validee') }),
+    P({ id: 'org-salles-recettes', titre: 'Recettes des salles', role: 'organisateur', services: true, path: () => '/partner/halls/recettes', ready: (p) => titled(p, /^recettes des salles$/i) }),
+    // Lot 11b : tables de l'établissement (interrupteurs ouverts le temps du test)
+    P({ id: 'org-tables', titre: 'Mes établissements (validé, en attente, refusé)', role: 'organisateur', services: true, needsIds: true, path: () => '/partner/tables', ready: partnerVenuesReady }),
+    P({ id: 'org-tables-planning', titre: 'Planning du jour d’un établissement validé', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/tables/${venueOf(i, 'restaurant').id}`, ready: planningReady('restaurant') }),
+    P({ id: 'org-tables-planning-demande', titre: 'Planning du jour avec une demande à accepter', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/tables/${venueOf(i, 'jardin').id}`, ready: planningReady('jardin', true) }),
+    P({ id: 'org-tables-reservation', titre: 'Détail d’une demande de réservation à accepter', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/tables/reservations/${tableReservationOf(i, 'demande').id}`, ready: partnerReservationReady('demande', 2) }),
+    P({ id: 'org-tables-recettes', titre: 'Recettes des tables', role: 'organisateur', services: true, path: () => '/partner/tables/recettes', ready: (p) => titled(p, /^recettes des tables$/i) }),
+    P({ id: 'org-tables-creation', titre: 'Création d’un établissement', role: 'organisateur', services: true, path: () => '/partner/tables/edition/nouveau', ready: (p) => titled(p, /^ajouter un établissement$/i) }),
+    P({ id: 'org-tables-modification', titre: 'Modification d’un établissement validé', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/tables/edition/${venueOf(i, 'restaurant').id}`, ready: (p) => titled(p, /^modifier l’établissement$/i) }),
+    P({ id: 'org-tables-plan', titre: 'Plan de salle (édition)', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/tables/edition/${venueOf(i, 'restaurant').id}/plan`, ready: planEditorReady }),
+    P({ id: 'org-tables-fermetures', titre: 'Fermetures exceptionnelles', role: 'organisateur', services: true, needsIds: true, path: (i) => `/partner/tables/edition/${venueOf(i, 'restaurant').id}/fermetures`, ready: closuresReady }),
 ];
 
 const ADMINISTRATION: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -258,6 +386,10 @@ const ADMINISTRATION: Array<Omit<ResponsivePage, 'groupe'>> = [
     // Lot 10b : validation des salles (app/admin/halls ne dépend pas de l'interrupteur)
     P({ id: 'adm-salles', titre: 'Salles à valider', role: 'fumee-superadmin', path: () => '/admin/halls', ready: adminHallsReady }),
     P({ id: 'adm-salle', titre: 'Fiche d’une salle en attente de validation', role: 'fumee-superadmin', needsIds: true, path: (i) => `/admin/halls/${hallOf(i, 'enAttente').id}`, ready: hallTitle('enAttente') }),
+    // Lot 11b : validation des établissements (app/admin/venues ne dépend pas de l'interrupteur ; groupe « services » pour des
+    // menus identiques à ceux des autres pages des tables)
+    P({ id: 'adm-etablissements', titre: 'Établissements à valider', role: 'fumee-superadmin', services: true, needsIds: true, path: () => '/admin/venues', ready: adminVenuesReady }),
+    P({ id: 'adm-etablissement', titre: 'Fiche d’un établissement en attente de validation', role: 'fumee-superadmin', services: true, needsIds: true, path: (i) => `/admin/venues/${venueOf(i, 'bar').id}`, ready: venueTitle('bar') }),
 ];
 
 const SCANNER: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -288,13 +420,13 @@ export const RESPONSIVE_EXCLUSIONS: Readonly<Record<string, string>> = {
     '/reset-password': 'lien de réinitialisation à usage unique (jeton)',
     '/vitrine-design': 'vitrine interne des composants (design 1a), hors parcours',
     '/partner/halls/reservations': 'salles : redirection vers « Mes salles » (les réservations se consultent dans le calendrier de chaque salle)',
-    '/partner/tables': 'tables : lot 10b en cours sur une autre branche',
     '/partner/products': 'produits : service fermé, écrans du lot 10b',
     '/partner/products/new': 'produits : service fermé, écrans du lot 10b',
     '/partner/orders': 'commandes : service fermé, écrans du lot 10b',
     '/orders': 'commandes : service fermé, écrans du lot 10b',
     '/restaurants/[id]/menu': 'menus : service fermé, écrans du lot 10b',
-    '/restaurants/[id]/tables': 'tables : service fermé, écrans du lot 10b',
+    '/restaurants/[id]/tables': 'tables : redirection vers la fiche de l’établissement (/tables/<id>) ou la recherche (/tables), lot 11b',
+    '/t/[code]': 'tables : lien court des SMS, redirection vers la réservation (client ou établissement), lot 11b',
 };
 
 /** Contexte : caméra simulée posée avant le chargement (scanner démarré). */
