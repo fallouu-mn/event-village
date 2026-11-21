@@ -574,6 +574,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 ]}
                 onSignOut={() => signOut()}
                 themeToggle={<ThemeToggle />}
+                compact={isProShell}
               />
             </div>
           </header>

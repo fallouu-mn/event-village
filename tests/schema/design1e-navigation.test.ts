@@ -186,3 +186,18 @@ describe('design 1e — panneau des notifications', () => {
         ]);
     });
 });
+
+describe('design 1e — décisions du 21/11 (point A)', () => {
+    test('espaces pro : bouton du compte réduit à l’avatar (44 × 44 px), nom accessible gardé', () => {
+        const src = read('components/layout/AccountMenu.tsx');
+        assert.match(src, /compact \? 'h-11 w-11 justify-center' : 'gap-2 py-0\.5 pl-0\.5 pr-3'/);
+        assert.match(src, /<span className=\{compact \? 'sr-only' : /);
+        assert.match(read('components/layout/AppLayout.tsx'), /compact=\{isProShell\}/);
+    });
+    test('plus de scroll-padding-top ; captures contrôlées page en haut (position fixe), puis remises à leur position', () => {
+        assert.doesNotMatch(read('app/globals.css'), /scroll-padding-top/);
+        const spec = read('e2e/captures.spec.ts');
+        assert.match(spec, /window\.scrollTo\(\{ top: 0, behavior: 'instant' \}\); return y; \}\);\n\s*const checks = await runPageChecks\(page, \{ mobile: vue === 'mobile', axe: true, references: screen\.references \}\);/);
+        assert.match(read('e2e/support/checks.ts'), /withTags\(\['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'\]\)/, 'règles d’axe inchangées');
+    });
+});

@@ -25,6 +25,7 @@ export function AccountMenu({
   sections,
   onSignOut,
   themeToggle,
+  compact = false,
 }: {
   pathname: string;
   loggedIn: boolean;
@@ -34,6 +35,11 @@ export function AccountMenu({
   sections: Array<{ label: string; items: AccountMenuLink[] }>;
   onSignOut: () => void;
   themeToggle: React.ReactNode;
+  /**
+   * Design 1e (décision du 21/11) : espaces organisatrice et administration : bouton réduit à l'avatar (44 × 44 px, nom
+   * accessible gardé) ; un bouton large y passait au-dessus des cibles du haut de page quand la page défilait.
+   */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -76,11 +82,14 @@ export function AccountMenu({
         aria-controls={present ? panelId : undefined}
         data-ev-account=""
         onClick={() => setOpen((v) => !v)}
-        className="flex min-h-11 items-center gap-2 rounded-full border border-border bg-background py-0.5 pl-0.5 pr-3 text-sm font-semibold text-foreground-strong transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          'flex min-h-11 items-center rounded-full border border-border bg-background text-sm font-semibold text-foreground-strong transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          compact ? 'h-11 w-11 justify-center' : 'gap-2 py-0.5 pl-0.5 pr-3',
+        )}
       >
         {loggedIn ? avatar : <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary-text"><UserRound size={18} aria-hidden="true" /></span>}
-        <span className="max-w-[12rem] break-words text-left leading-tight">{loggedIn ? displayName : 'Mon compte'}</span>
-        <ChevronDown size={16} aria-hidden="true" className={cn('transition-transform duration-200', open && 'rotate-180')} />
+        <span className={compact ? 'sr-only' : 'max-w-[12rem] break-words text-left leading-tight'}>{loggedIn ? displayName : 'Mon compte'}</span>
+        {!compact && <ChevronDown size={16} aria-hidden="true" className={cn('transition-transform duration-200', open && 'rotate-180')} />}
       </button>
       {present && <div
         id={panelId}
