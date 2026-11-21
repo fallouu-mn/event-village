@@ -19,6 +19,8 @@ export const SETTING_SECTIONS: ReadonlyArray<{ prefix: string; anchor: string; t
     { prefix: 'halls.', anchor: 'salles', title: 'Salles de fête' },
     // Lot 11a : réservation de tables (frais, créneau, attentes, absence, annulation, validation)
     { prefix: 'tables.', anchor: 'tables', title: 'Restaurants et tables' },
+    // Lot 12a : commandes (frais, acompte, délais, retrait, code de remise, masquage des coordonnées)
+    { prefix: 'orders.', anchor: 'commandes', title: 'Commandes' },
 ];
 
 export interface SettingBounds {
@@ -83,6 +85,19 @@ export const SETTING_BOUNDS: Readonly<Record<string, SettingBounds>> = {
     'tables.cancel_free_hours': int(0, 72, 'Acompte rendu si le client annule au moins', 'h'),
     'tables.max_pending_per_client': int(1, 10, 'Réservations non payées au plus par client', 'réservations'),
     'tables.reminder_hours': int(1, 24, 'Rappel au client avant l’heure', 'h'),
+    // Lot 12a : commandes (bornes identiques à fin_setting_valid, migration 20261130000001)
+    'orders.service_fee_rate': rate(0, 50, 'Frais de service des commandes'),
+    'orders.commission_rate': rate(0, 50, 'Commission sur les commandes'),
+    'orders.deposit_default_percent': int(10, 90, 'Acompte par défaut d’une commande', '%'),
+    'orders.hold_minutes': int(5, 60, 'Durée de garde d’une commande non payée', 'min'),
+    'orders.response_minutes': int(5, 120, 'Délai de réponse de la partenaire à une commande', 'min'),
+    'orders.max_unpaid_per_client': int(1, 10, 'Commandes non payées au plus par client', 'commandes'),
+    'orders.pickup_grace_hours': int(2, 168, 'Commande prête non retirée close après l’heure prévue', 'h'),
+    'orders.pickup_warning_hours': int(1, 24, 'Client prévenu avant la clôture d’une commande non retirée', 'h'),
+    'orders.contact_retention_days': int(1, 90, 'Adresse et téléphone du client masqués après la remise', 'jours'),
+    'orders.code_max_attempts': int(3, 10, 'Essais au plus du code de remise', 'essais'),
+    'orders.code_resend_max': int(1, 10, 'Nouveaux codes de remise au plus par commande', 'codes'),
+    'orders.prep_minutes_default': int(10, 240, 'Préparation d’une commande par défaut', 'min'),
 };
 
 /** Nombre écrit à la française, sans unité : « 1 000 000 », « 1,5 ». */
