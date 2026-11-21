@@ -376,6 +376,22 @@ Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'est changée.
 
 ## 12. Points à faire trancher par le client
 
+Décisions reçues le 21/11 (après le run 544) :
+
+| # | Point | Décision |
+|---|---|---|
+| 1 | Code de remise par SMS immédiat seulement | **Validé.** Au lot 12b, le client verra aussi son code dans l'application, sur sa commande, compte connecté seulement : code gardé chiffré dans `private`, jamais lisible par la partenaire ni le livreur, jamais en file, push ni email. |
+| 2 | Frais de service sur ce qui est payé en ligne | **Validé.** |
+| 3 | Délai de réponse de la partenaire : 15 minutes | **Gardé**, à confirmer par le client. |
+| 4 | Commande prête non retirée ; livraison ratée | Retrait : tel quel. **Livraison ratée : question posée au client**, rien d'automatique d'ici là (comportement actuel). |
+| 5 | Recettes disponibles 48 h après l'heure prévue | **Validé.** |
+| 6 | Produit non vérifié par l'administration | **Changé, au lot 12b** : détection par mots-clés (bière, vin, whisky, liqueur, cigarette, chicha…) → produit « à vérifier », non vendable jusqu'à la décision de l'administration. Aujourd'hui (lot 12a) : commandable tant que ni la partenaire ni l'administration ne l'ont marqué réglementé. |
+| 7 | Plafond des non payées | **Validé.** |
+| 8 | Annulation gratuite après acceptation, avant préparation | **Validé.** |
+| 9 | Livreur invité par son numéro ; la partenaire peut livrer elle-même | **Validé.** |
+
+Texte des points tels que posés :
+
 1. **Code de remise** : envoyé par SMS seulement (envoi immédiat, comme un code de connexion) ; la cloche, le push et
    l'email disent « donnez le code reçu par SMS ». La plateforme interdit déjà tout code dans la boîte d'envoi (lot 6) :
    le mettre dans le push ou l'email demanderait d'assouplir cette règle. Exemple du 21/11 respecté dans le SMS : « Donnez
