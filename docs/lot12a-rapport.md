@@ -24,14 +24,18 @@ sur la branche du lot.
 | F7 | Le montant d'un paiement de commande était lu sur la commande écrite par la route. | `order_payment_create` relit la part payée au départ (ou le solde) sur la commande figée en base. | `l12a-commandes` A, B |
 | F8 | Aucun produit réglementé, aucun stock tenu sous verrou, aucun plafond, aucune expiration. | Voir § 4 et § 5. | `l12a-commandes` A, C |
 
-Résultats des runs : § 10.
+Run complet final **544** (commit `d3f4cdfe7`) : les 566 suites vertes (4 tâches de tests, aucun « not ok »), e2e vert
+(707 cas et la fumée), budgets JS tenus sans relèvement, captures responsive vertes, accueil et fiche événement au-dessus
+de 90 sur mobile. Seul rouge : la note mobile de **Mes billets**, médiane 88 (page non touchée par le lot ; la règle
+temporaire de la consigne dit qu'elle ne bloque pas). Aucune suite de `tests/audit/` ni de `tests/audit-auth/` rouge, aucune
+de leurs assertions changée. Détail des runs : § 10.
 
 ### Ce qui change pour les autres lots
 
 - **Recopies de fonctions communes** (dernière définition, aucune ligne perdue : `migration-lot12a-rejouable`) :
   `finance_setting_set`, `fin_setting_valid` (lot 10b), `platform_settings_defaults`, `fin_payout_available_at`,
   `calculate_referral_commissions`, `finance_admin_earned`, `finance_admin_payments` (lot 11a), `notif_cashouts_notify`
-  (lot 10b). Si le lot 11b ou le design 1e changent l'une d'elles avant la fusion, la recopie du lot 12a est à refaire (le
+  (lot 10b), `notification_sync_log` (finition 3d). Si le lot 11b ou le design 1e changent l'une d'elles avant la fusion, la recopie du lot 12a est à refaire (le
   test devient rouge).
 - La table `orders` porte aussi les **commandes de billets payés à l'entrée** (lot 4 : `tickets.order_id`,
   `ticket_cash_checkin`) : sans établissement ni état détaillé, elles restent écrites comme avant. Rien ne change pour la
@@ -322,7 +326,30 @@ not ok 5 - F5 … commande jamais payée listée à la partenaire (HTTP 200)
 # fail 5
 ```
 
-Run complet : voir la fin de cette section.
+Run complet final : **544**, commit `d3f4cdfe7`, lancé à 06:51 (UTC) dès qu'un seul run complet tournait sur les autres
+branches (journaux : `runs/544-44877528079/`, branche `ci-results`).
+
+| Tâche | Résultat |
+|---|---|
+| typecheck · lint | vert |
+| tests 1/4 à 4/4 (Supabase local) | **verts** : 566 suites listées (`jobs/qualite/liste-suites.txt`), aucun « not ok » dans les 4 journaux ; suites du lot comprises |
+| construction, budgets JS | verts, budgets non relevés (`/` 223,5 Ko pour 226,3 ; `/tickets` 246,5 pour 250,4 ; `/events/[id]` 232,1 pour 233,3 ; `/controller/scanner` 233,4 pour 234,9 ; `/billet/hors-ligne` 223,6 pour 224,3) |
+| e2e | vert : 707 cas en 36,2 min, puis les passes de fumée (envoyeur des avis, captures, courriels) toutes vertes |
+| captures responsive (320 à 1 440 px) | vert |
+| mesure mobile | accueil médiane 94, fiche événement OK, réaction au toucher 96 ms : verts ; **Mes billets : médiane 88** sur 5 passages [88 ; 85 ; 94 ; 88 ; 91], seuil 90 |
+| verdict | rouge, du seul fait de Mes billets |
+
+Extrait brut (`jobs/e2e/perf-mobile.log`) :
+
+```
+HORS SEUIL — Mes billets (client connecté)
+  HORS SEUIL — score Lighthouse mobile : médiane 88 sur 5 passage(s) [88 ; 85 ; 94 ; 88 ; 91] (seuil ≥ 90)
+  OK — affichage principal (LCP, Lighthouse) : médiane 926 ms sur 5 passage(s) [941 ms ; 926 ms ; 916 ms ; 918 ms ; 938 ms] (seuil < 2,50 s)
+VERDICT : HORS SEUIL — au moins une mesure ne tient pas son seuil (le run est rouge)
+```
+
+Le lot ne touche pas Mes billets (seul écran modifié depuis `main` : `app/admin/finance-settings/page.tsx` ; budget JS de `/tickets` tenu) ; la règle temporaire de la consigne (« une note
+mobile de Mes billets sous 90 ne bloque pas ce lot ») s'applique. Le run complet n'a pas été relancé.
 
 ## 11. Tests existants modifiés (signalés)
 
