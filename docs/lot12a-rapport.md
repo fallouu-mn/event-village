@@ -290,7 +290,37 @@ Puis `03-verification.sql` (comme aux lots précédents) et `schedule-crons.sql`
 
 ## 10. Tests et preuves
 
-(à compléter)
+Suites du lot :
+
+| Suite | Contenu |
+|---|---|
+| `tests/parcours/l12a-failles-existant` | F1 à F5 par les routes et la lecture REST, corps acceptés par l'ancien comme par le nouveau code (preuve des rouges) |
+| `tests/parcours/l12a-commandes` (37 cas) | A. devis et commande (exemples chiffrés, montants du navigateur ignorés, réglementés : case, décision de l'administration, insertion directe refusée ; produit d'autrui, quantités 0, -1, 2,5, 100 ; stock, portions, minimum, plafond de 3 sous verrou, modes et paiements refusés) ; B. paiement, double confirmation sans effet, frise des étapes et heures, heure estimée, code par SMS immédiat (jamais en base, en file ni dans une réponse ; envoi journalisé sans le code), codes devinés (5 essais, blocage, nouveau code), solde en ligne ou sur place, partenaire sans commande non payée, réponse tardive ; C. annulations et remboursements (11 288 rendus, Wave 169,32 à Event Village, vente reprise), parrainage annulé, tâche (attente échue, paiement arrivé trop tard remboursé, sans réponse, rappel puis non retirée, masquage à 7 jours, tâche sans secret refusée) ; D. accès d'autrui (autre partenaire, autre client, livreur d'une autre équipe, invité non d'accord, retiré ; REST ; garde même pour le rôle de service ; fiche SUSPENDU) ; E. concurrence (deux créations de paiement, deux confirmations, deux paiements encaissés, deux remises, deux annulations) |
+| `tests/schema/migration-lot12a-rejouable` | 8 migrations sans BEGIN ni COMMIT, appliquées deux fois de plus dans une transaction annulée ; 9 recopies sans ligne perdue ; fonctions réservées au rôle de service, clé du code et fonctions du code fermées même au rôle de service |
+| `tests/helpers/lot12a-invariants` | o1 à o7 (montants, encaissé, état et argent, vente au grand livre, portions et stock, code, aucun code en clair), appelés en fin de suite après les invariants de toutes les livraisons précédentes (financier compris) |
+
+Runs :
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 528 | `adb6f124d` (`lot12a/rouges` = main + la suite des trous) | rapide | **rouge voulu, 0/5**, chacun pour la bonne raison (extrait brut ci-dessous) ; typecheck et lint verts |
+| 529 | `c42554db9` | rapide, 23 suites | 8 migrations appliquées sans erreur ; 19 suites vertes ; rouges : le code dans les données d'un avis refusé par la contrainte existante `notification_outbox_no_secret_chk` (étapes « prête » et « en route » en 500), textes exacts des SMS non déclarés (notif-modeles), minute 2 de `ev_orders` vérifiée par essai-cron-local, régularisation du parrainage mal vérifiée par mon test |
+| 532 | `b998f9868` | rapide, 12 suites | code par SMS immédiat : vert ; restent 2 erreurs de mon test (chiffres d'un retrait pris pour une livraison ; forme de la régularisation) et le compte des envois journalisés (notif-migration) |
+| 535 | `8c1529f4e` | rapide, 2 suites | **vert** : `l12a-commandes` 37/37, `notif-migration` 20/20 |
+
+Extrait brut du run 528 (`runs/528-44863009363/jobs/rapide/verify.log`, branche `ci-results`) :
+
+```
+not ok 1 - F1 … error: 'commande jamais payée écrite « livrée » par la partenaire (HTTP 200)'
+not ok 2 - F2 … lecture REST de la commande et de l’adresse du client par la partenaire : [{"id":"ebb6cf3b-…","delivery_address":"Villa 3, Ouakam"}]
+not ok 3 - F3 … commande créée avec une quantité négative (HTTP 200) : {"success":true,"order":{…,"totalAmount":2000,"totalFormatted":"2 000 FCFA"}}
+not ok 4 - F4 … commande créée chez une partenaire avec le produit d’une autre (HTTP 200)
+not ok 5 - F5 … commande jamais payée listée à la partenaire (HTTP 200)
+# pass 0
+# fail 5
+```
+
+Run complet : voir la fin de cette section.
 
 ## 11. Tests existants modifiés (signalés)
 
