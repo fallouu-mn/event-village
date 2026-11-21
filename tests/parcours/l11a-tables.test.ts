@@ -460,9 +460,11 @@ describe('B. Payer l’acompte : montant relu en base, confirmation, paiement su
         assert.deepEqual((refunds ?? []).map((r) => [n(r.amount), r.aggregator_fee_bearer]), [[21_000, 'EVENT_VILLAGE']]);
         const row = await reservation(id);
         assert.deepEqual([row.booking_state, n(row.paid_amount)], ['EXPIREE', 0]);
-        // Deux avis : la table rendue à la fin de l'attente, puis le paiement arrivé trop tard, remboursé
+        // Deux avis : la table rendue à la fin de l'attente, puis le paiement arrivé trop tard, remboursé.
+        // Lot 11b (modification signalée au rapport) : le remboursement versé (faux SamirPay, versement confirmé tout de
+        // suite) a son avis de table, lié à la réservation (TABLE_REFUND_PAID, au lieu de l'avis générique REFUND_PAID)
         const notices = await outboxOf(client.userId, id);
-        assert.deepEqual(notices, [...allChannels('TABLE_HOLD_EXPIRED'), ...allChannels('TABLE_PAYMENT_REFUNDED')].sort());
+        assert.deepEqual(notices, [...allChannels('TABLE_HOLD_EXPIRED'), ...allChannels('TABLE_PAYMENT_REFUNDED'), ...allChannels('TABLE_REFUND_PAID')].sort());
     });
 
     test('échec du paiement : la demande reste en attente de paiement (la table est tenue jusqu’à la fin de l’attente)', async () => {
@@ -559,31 +561,37 @@ describe('Établissements : création par la route', () => {
         }));
         return { status: res.status, body: (await res.json()) as Row };
     }
-    const body = {
+    // Lot 11b (modification signalée au rapport) : la création se fait en une fois (venue_create) : une photo réencodée
+    // de la route de dépôt (dossier venues/<partenaire>/), une plage d'ouverture et une table au moins
+    const photoOf = (partnerId: string): string => {
+        const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/+$/, '');
+        return `${base}/storage/v1/object/public/public-images/venues/${partnerId}/${Date.now()}_${Math.random().toString(16).slice(2, 10).padEnd(8, '0')}.webp`;
+    };
+    const bodyFor = (partnerId: string) => ({
         kind: 'BAR', name: 'Bar de la Pointe', address: 'Pointe des Almadies', city: 'Dakar', latitude: 14.74, longitude: -17.52,
         deposit_per_person: 2_000, confirmation_mode: 'MANUELLE', hours: [{ weekday: 5, opens_at: '19:00', closes_at: '03:00' }],
-        validation_status: 'VALIDEE',
-    };
+        validation_status: 'VALIDEE', photos: [photoOf(partnerId)], tables: [{ number: 'B1', capacity: 4 }],
+    });
 
     test('attaque : une fiche partenaire en attente ou suspendue ne crée pas d’établissement', async () => {
-        // Fiche en attente : refusée par la garde existante des fiches (403) ; fiche suspendue : la garde la laisse
-        // passer (lectures et écritures hors événements), le service des tables la refuse (400)
+        // Fiche en attente : refusée par la garde existante des fiches (403) ; fiche suspendue : lot 11b (F1, modification
+        // signalée au rapport), refusée aussi par la garde des fiches (403 PARTNER_SUSPENDED, texte des établissements)
         const cases: Array<[string, number, string]> = [
             ['EN_ATTENTE', 403, 'Votre profil d’organisateur doit être validé avant cette action.'],
-            ['SUSPENDU', 400, 'Votre compte partenaire doit être validé avant de créer un établissement.'],
+            ['SUSPENDU', 403, 'Votre compte organisateur est suspendu : vos établissements et leurs réservations ne sont plus modifiables. Contactez le support.'],
         ];
         for (const [status, code, message] of cases) {
             const p = await newPartner(`l11a-fiche-${status.toLowerCase()}`);
             await service.from('partners').update({ status }).eq('id', p.partnerId);
-            const res = await createVenue(p.accessToken, body);
-            assert.deepEqual([res.status, res.body.error], [code, message], status);
+            const res = await createVenue(p.accessToken, bodyFor(p.partnerId));
+            assert.deepEqual([res.status, String(res.body.error).startsWith(message)], [code, true], `${status} : ${JSON.stringify(res.body)}`);
             const { count } = await service.from('venues').select('id', { count: 'exact', head: true }).eq('partner_id', p.partnerId);
             assert.equal(count, 0, `${status} : aucun établissement`);
         }
     });
 
     test('fiche VALIDE : établissement créé « En attente de validation » (statut envoyé ignoré), horaires posés, administrateurs prévenus', async () => {
-        const res = await createVenue(partner.accessToken, body);
+        const res = await createVenue(partner.accessToken, bodyFor(partner.partnerId));
         assert.equal(res.status, 201, JSON.stringify(res.body));
         const v = res.body.venue as Row;
         assert.deepEqual([v.validation_status, v.status, v.kindLabel], ['EN_ATTENTE_VALIDATION', 'En attente de validation', 'Bar']);

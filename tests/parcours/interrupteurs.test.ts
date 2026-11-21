@@ -76,6 +76,8 @@ let suspended: Buyer;
 let hallId = '';
 let tableId = '';
 let venueId = '';
+/** Lot 11b : nom de l'établissement de test (recherche publique filtrée sur lui). */
+let venueName = '';
 let productId = '';
 let dayOffset = 70;
 
@@ -102,8 +104,9 @@ before(async () => {
     assert.equal(decErr, null, `validation de la salle : ${decErr?.message}`);
     assert.equal((decided as { ok?: boolean }).ok, true, `validation de la salle : ${JSON.stringify(decided)}`);
     // Lot 11a (modification signalée au rapport) : une table appartient à un établissement validé par l'administration
+    venueName = `TEST Restaurant interrupteur ${randomUUID().slice(0, 8)}`;
     const { data: venue, error: venueErr } = await service.from('venues').insert({
-        partner_id: partner.partnerId, name: `TEST Restaurant interrupteur ${randomUUID().slice(0, 8)}`, city: 'Dakar',
+        partner_id: partner.partnerId, name: venueName, city: 'Dakar',
     }).select('id').single();
     assert.equal(venueErr, null, `établissement : ${venueErr?.message}`);
     venueId = venue.id;
@@ -218,29 +221,35 @@ const PUBLIC_GETS: PublicGet[] = [
         label: 'GET /api/restaurants/[id]/menu', mod: '../../app/api/restaurants/[id]/menu/route', path: () => `/api/restaurants/${partner.partnerId}/menu`,
         params: () => ({ id: partner.partnerId }), flag: 'orders', expectId: () => productId,
     },
+    // Lot 11b (modification signalée au rapport) : recherche et fiche publiques des établissements
+    { label: 'GET /api/tables', mod: '../../app/api/tables/route', path: () => `/api/tables?q=${encodeURIComponent(venueName)}`, flag: 'tables', expectId: () => venueId },
+    { label: 'GET /api/tables/[id]', mod: '../../app/api/tables/[id]/route', path: () => `/api/tables/${venueId}`, params: () => ({ id: venueId }), flag: 'tables', expectId: () => venueId },
 ];
 
 interface PartnerHandler { file: string; method: string; flag: FeatureFlag; path: string; withId: boolean }
 
-/** Tous les gestionnaires partenaire des services (fichier, méthode, interrupteur). */
+/**
+ * Tous les gestionnaires partenaire des services (fichier, méthode, interrupteur).
+ * Lot 11b (décision du 20/11, modification signalée au rapport) : service fermé, plus de nouvelle salle ni de nouvel
+ * établissement, plus de modification ; mais les LECTURES de l'espace partenaire (salles, établissements, tables,
+ * réservations, recettes) et les actions sur une réservation EXISTANTE (accepter, refuser, présence, annuler, paiement
+ * sur place) restent ouvertes : retirées de cette liste, contrôlées par tests/parcours/l11b-interrupteur.test.ts. Écritures nouvelles
+ * des établissements ajoutées (renvoi en validation, plan de salle, fermetures).
+ */
 const PARTNER_HANDLERS: PartnerHandler[] = [
-    { file: 'app/api/partner/halls/route.ts', method: 'GET', flag: 'halls', path: '/api/partner/halls', withId: false },
     { file: 'app/api/partner/halls/route.ts', method: 'POST', flag: 'halls', path: '/api/partner/halls', withId: false },
-    { file: 'app/api/partner/halls/[id]/route.ts', method: 'GET', flag: 'halls', path: '/api/partner/halls/:id', withId: true },
     { file: 'app/api/partner/halls/[id]/route.ts', method: 'PUT', flag: 'halls', path: '/api/partner/halls/:id', withId: true },
     { file: 'app/api/partner/halls/[id]/route.ts', method: 'DELETE', flag: 'halls', path: '/api/partner/halls/:id', withId: true },
-    { file: 'app/api/partner/halls/reservations/[id]/status/route.ts', method: 'POST', flag: 'halls', path: '/api/partner/halls/reservations/:id/status', withId: true },
-    { file: 'app/api/partner/tables/route.ts', method: 'GET', flag: 'tables', path: '/api/partner/tables', withId: false },
     { file: 'app/api/partner/tables/route.ts', method: 'POST', flag: 'tables', path: '/api/partner/tables', withId: false },
     { file: 'app/api/partner/tables/[id]/route.ts', method: 'PATCH', flag: 'tables', path: '/api/partner/tables/:id', withId: true },
     { file: 'app/api/partner/tables/[id]/route.ts', method: 'DELETE', flag: 'tables', path: '/api/partner/tables/:id', withId: true },
-    { file: 'app/api/partner/tables/reservations/route.ts', method: 'GET', flag: 'tables', path: '/api/partner/tables/reservations', withId: false },
     // Lot 11a : plus de création de réservation par la partenaire (POST retiré) ; établissements ajoutés
-    { file: 'app/api/partner/venues/route.ts', method: 'GET', flag: 'tables', path: '/api/partner/venues', withId: false },
     { file: 'app/api/partner/venues/route.ts', method: 'POST', flag: 'tables', path: '/api/partner/venues', withId: false },
     { file: 'app/api/partner/venues/[id]/route.ts', method: 'PATCH', flag: 'tables', path: '/api/partner/venues/:id', withId: true },
-    { file: 'app/api/partner/tables/reservations/[id]/route.ts', method: 'PATCH', flag: 'tables', path: '/api/partner/tables/reservations/:id', withId: true },
-    { file: 'app/api/partner/tables/reservations/[id]/route.ts', method: 'DELETE', flag: 'tables', path: '/api/partner/tables/reservations/:id', withId: true },
+    { file: 'app/api/partner/venues/[id]/submit/route.ts', method: 'POST', flag: 'tables', path: '/api/partner/venues/:id/submit', withId: true },
+    { file: 'app/api/partner/venues/[id]/plan/route.ts', method: 'PUT', flag: 'tables', path: '/api/partner/venues/:id/plan', withId: true },
+    { file: 'app/api/partner/venues/[id]/closures/route.ts', method: 'POST', flag: 'tables', path: '/api/partner/venues/:id/closures', withId: true },
+    { file: 'app/api/partner/venues/closures/[id]/route.ts', method: 'DELETE', flag: 'tables', path: '/api/partner/venues/closures/:id', withId: true },
     { file: 'app/api/partner/orders/route.ts', method: 'GET', flag: 'orders', path: '/api/partner/orders', withId: false },
     { file: 'app/api/partner/orders/[id]/route.ts', method: 'GET', flag: 'orders', path: '/api/partner/orders/:id', withId: true },
     { file: 'app/api/partner/orders/[id]/route.ts', method: 'PATCH', flag: 'orders', path: '/api/partner/orders/:id', withId: true },
