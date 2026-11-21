@@ -243,22 +243,41 @@ describe('cv12a — trous', () => {
         assert.deepEqual(seen, [], `commande jamais payée montrée à la partenaire : ${seen.join(' | ')}`);
     });
 
-    test('T6 — service des commandes fermé : POST /api/orders/[id]/code répond 404, aucun SMS', async () => {
+    // Décision du chef de projet (21/11 ; règle du 20/11 : ce qui est en cours reste ouvert) : service fermé, un nouveau
+    // code reste possible pour une commande EN COURS (plafond de 3 gardé), refusé pour une commande close, sans SMS.
+    // Condition du test adaptée à cette décision (elle attendait 404 pour toute commande) ; le refus d'une commande close
+    // et le plafond sont vérifiés en plus, rien n'est affaibli.
+    test('T6 — service des commandes fermé : nouveau code possible pour une commande en cours (plafond de 3 gardé), refusé pour une commande close, aucun SMS pour celle-ci', async () => {
         const client = await buyer('t6');
         const p = await newProduct(partner, shop, { price: 2_500 });
         const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
         await payOrder(client, id);
         await toReady(partner, id);
+        const closed = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
+        await payOrder(client, closed);
+        await toReady(partner, closed);
+        const cancel = await partnerAct(partner, closed, { action: 'ANNULER', reason: 'Plat renversé en cuisine' });
+        assert.equal(cancel.status, 200, `annulation par la partenaire : ${JSON.stringify(cancel.body)}`);
+        assert.equal((await order(closed)).order_state, 'ANNULEE_PARTENAIRE', 'commande close');
         const before = (await smsOfOrder(client, id)).length;
+        const beforeClosed = (await smsOfOrder(client, closed)).length;
         await setPlatformSetting('features.orders_enabled', false, 'contre-vérification du lot 12a');
-        let res: { status: number; body: Row };
+        const ongoing: Array<{ status: number; body: Row }> = [];
+        let onClosed: { status: number; body: Row };
         try {
-            res = await reply(await clientCodeRoute(req(`/api/orders/${id}/code`, 'POST', client.accessToken), ctx(id)));
+            for (let i = 0; i < 4; i += 1) ongoing.push(await reply(await clientCodeRoute(req(`/api/orders/${id}/code`, 'POST', client.accessToken), ctx(id))));
+            onClosed = await reply(await clientCodeRoute(req(`/api/orders/${closed}/code`, 'POST', client.accessToken), ctx(closed)));
         } finally {
             await setPlatformSetting('features.orders_enabled', true, 'contre-vérification du lot 12a');
         }
         const afterCount = (await smsOfOrder(client, id)).length;
-        assert.equal(res.status, 404, `service fermé, nouveau code envoyé quand même : HTTP ${res.status} ${JSON.stringify(res.body)} ; SMS de la commande ${before} → ${afterCount}`);
+        const afterClosed = (await smsOfOrder(client, closed)).length;
+        assert.deepEqual(ongoing.map((r) => r.status), [200, 200, 200, 429],
+            `commande en cours, service fermé : 3 nouveaux codes puis refus ; ${JSON.stringify(ongoing.map((r) => [r.status, r.body.code ?? r.body.message]))}`);
+        assert.equal(afterCount - before, 3, `3 SMS de code pour la commande en cours (${before} → ${afterCount})`);
+        assert.notEqual(onClosed.status, 200,
+            `service fermé, nouveau code envoyé pour une commande close : HTTP ${onClosed.status} ${JSON.stringify(onClosed.body)} ; SMS ${beforeClosed} → ${afterClosed}`);
+        assert.equal(afterClosed, beforeClosed, `aucun SMS pour la commande close (${beforeClosed} → ${afterClosed})`);
     });
 
     test('T8 — GET /api/partner/products/[id] : le produit non publié d’une autre partenaire n’est pas lisible', async () => {

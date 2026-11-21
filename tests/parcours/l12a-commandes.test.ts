@@ -100,7 +100,8 @@ describe('A. Devis et commande : tout calculé en base', () => {
     test('réglages par défaut (décisions du client)', async () => {
         const expected: Record<string, unknown> = {
             'orders.service_fee_rate': 5, 'orders.commission_rate': 0, 'orders.deposit_default_percent': 30, 'orders.hold_minutes': 15,
-            'orders.response_minutes': 15, 'orders.max_unpaid_per_client': 3, 'orders.pickup_grace_hours': 24, 'orders.pickup_warning_hours': 2,
+            'orders.response_minutes': 15, 'orders.max_unpaid_per_client': 3, 'orders.max_unpaid_portions': 10,
+            'orders.pickup_grace_hours': 24, 'orders.pickup_warning_hours': 2,
             'orders.contact_retention_days': 7, 'orders.code_max_attempts': 5, 'orders.code_resend_max': 3, 'orders.prep_minutes_default': 30,
             'finance.aggregator_fee_rate.WAVE': 1.5, 'finance.payout_delay_hours': 48,
         };
@@ -234,9 +235,43 @@ describe('A. Devis et commande : tout calculé en base', () => {
         assert.equal(await stock(), 3);
         const c2 = await service.rpc('order_cancel', { p: { order_id: id, actor_id: client.userId, origin: 'CLIENT' } });
         assert.equal((c2.data as Row).code, 'NOT_CANCELLABLE');
-        const { data: again } = await service.rpc('order_release_stock', { p_order_id: id });
+        // Aide interne (schéma private, contre-vérification T7) : appelée directement en base
+        const db = await openConcurrentClient({ applicationName: 'ev-test-l12a' });
+        let again: boolean;
+        try {
+            again = (await db.query<{ r: boolean }>('SELECT private.order_release_stock($1) AS r', [id])).rows[0].r;
+            await db.commit();
+        } finally {
+            await db.close();
+        }
         assert.equal(again, false, 'stock rendu une seule fois');
         assert.equal(await stock(), 3);
+    });
+
+    test('plat du jour : 10 portions au plus tenues sans paiement par client et par plat (réglage), toutes commandes non payées comprises ; 99 au plus par produit sur toute la commande', async () => {
+        // Contre-vérification T3
+        const hoarder = await newBuyer('l12a-portions');
+        try {
+            const dish = await newProduct(partner, shop, { price: 1_500, daily: true, name: 'Thiéboudienne du jour' });
+            assert.equal((await setPortions(partner, dish, 200)).ok, true);
+            const lines = (q: number[]) => q.map((quantity) => ({ productId: dish, quantity }));
+            const first = await orderRpc(hoarder, orderBody(shop, lines([4, 2])));
+            assert.equal(first.ok, true, JSON.stringify(first));
+            const over = await orderRpc(hoarder, orderBody(shop, lines([5])));
+            assert.deepEqual([over.ok, over.code], [false, 'TOO_MANY_PORTIONS'], JSON.stringify(over));
+            assert.match(String(over.message), /Vous tenez déjà 6 portions de « Thiéboudienne du jour » sans les avoir payées : 10 au plus/);
+            const rest = await orderRpc(hoarder, orderBody(shop, lines([4])));
+            assert.equal(rest.ok, true, `6 + 4 = 10 : ${JSON.stringify(rest)}`);
+            const route = await orderRoute(hoarder, orderBody(shop, lines([1])));
+            assert.deepEqual([route.status, route.body.code], [429, 'TOO_MANY_PORTIONS'], JSON.stringify(route.body));
+            const drink = await newProduct(partner, shop, { price: 500, name: 'Bissap' });
+            const big = await orderRpc(stranger, orderBody(shop, [{ productId: drink, quantity: 60 }, { productId: drink, quantity: 40 }]));
+            assert.deepEqual([big.ok, big.code, big.message], [false, 'INVALID_QUANTITY', 'Au plus 99 « Bissap » par commande.']);
+            const { data: held } = await service.from('product_daily_portions').select('sold').eq('product_id', dish);
+            assert.deepEqual((held ?? []).map((r) => n(r.sold)), [10], 'portions tenues : 10');
+        } finally {
+            await releaseUnpaid(hoarder.userId);
+        }
     });
 
     test('plat du jour : 2 portions, 2 vendues, plus rien ; acompte refusé (payé en entier) ; demain refusé ; portions d’hier sans effet', async () => {

@@ -679,26 +679,24 @@ const LOT11A_RPCS: Array<[string, Record<string, unknown>]> = [
     ['table_reservations_tick', {}],
 ];
 
-// Lot 12a (ajout signalé au rapport) : fonctions des commandes, réservées au rôle de service
+// Lot 12a (ajout signalé au rapport) : fonctions des commandes, réservées au rôle de service. Contre-vérification T7 :
+// les aides internes (order_code_hash, order_issue_code, order_release_stock, order_refund_payment…) sont dans le schéma
+// private, hors de l'API (migration-lot12a-rejouable le vérifie) : retirées de cette liste
 const LOT12A_RPCS: Array<[string, Record<string, unknown>]> = [
     ['order_venue_settings_set', { p: {} }],
     ['order_daily_portions_set', { p: {} }],
     ['order_product_regulation_decide', { p: {} }],
     ['product_regulated', { p_product_id: ZERO_UUID }],
-    ['order_code_hash', { p_order_id: ZERO_UUID, p_code: '0000' }],
     ['order_quote', { p: {} }],
     ['order_quote_compute', { p: {} }],
     ['order_create', { p: {} }],
     ['order_lock', { p_order_id: ZERO_UUID }],
     ['order_notif_data', { p_order_id: ZERO_UUID }],
-    ['order_release_stock', { p_order_id: ZERO_UUID }],
     ['order_payable_refusal', { p_order_id: ZERO_UUID }],
     ['order_expire_hold', { p_order_id: ZERO_UUID }],
     ['order_payment_create', { p: {} }],
     ['order_payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
-    ['order_refund_payment', { p_payment_id: ZERO_UUID, p_percent: 100, p_reason: 'TEST' }],
     ['order_cancel', { p: {} }],
-    ['order_issue_code', { p_order_id: ZERO_UUID }],
     ['order_code_resend', { p: {} }],
     ['order_partner_action', { p: {} }],
     ['order_courier_action', { p: {} }],

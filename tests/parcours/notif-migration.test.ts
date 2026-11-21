@@ -333,12 +333,12 @@ describe('6.7 — envois TypeScript retirés', () => {
 
 interface FnDef { name: string; def: string }
 
-async function publicFunctions(db: Client, names?: string[]): Promise<FnDef[]> {
+async function publicFunctions(db: Client, names?: string[], schemas: string[] = ['public']): Promise<FnDef[]> {
     const { rows } = await db.query<{ name: string; def: string }>(
         `SELECT p.proname AS name, pg_get_functiondef(p.oid) AS def
            FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-          WHERE n.nspname = 'public' AND p.prokind = 'f' AND ($1::text[] IS NULL OR p.proname = ANY($1::text[]))
-          ORDER BY p.proname`, [names ?? null]);
+          WHERE n.nspname = ANY($2::text[]) AND p.prokind = 'f' AND ($1::text[] IS NULL OR p.proname = ANY($1::text[]))
+          ORDER BY p.proname`, [names ?? null, schemas]);
     return rows;
 }
 
@@ -534,7 +534,9 @@ describe('6.7 K1 — inventaire : chaque envoi migré a son type au registre et 
 
     test('RPC recopiées : chacune existe et nomme ses types', async () => {
         const fnNames = INVENTORY.filter((i) => i.fn).map((i) => i.fn!);
-        const defs = await inspect(async (db) => publicFunctions(db, fnNames));
+        // Lot 12a, contre-vérification T7 (modification signalée au rapport) : order_close_apply, order_set_en_route et
+        // order_handover_apply, aides internes, sont dans le schéma private (non exposé par l'API)
+        const defs = await inspect(async (db) => publicFunctions(db, fnNames, ['public', 'private']));
         const problems: string[] = [];
         for (const i of INVENTORY.filter((x) => x.fn)) {
             const def = defs.filter((d) => d.name === i.fn).map((d) => d.def).join('\n');

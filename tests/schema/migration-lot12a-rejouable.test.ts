@@ -29,7 +29,7 @@ const LOT12A_MIGRATIONS = [
     '20261130000005_l12a_paiement.sql',
     // Étapes, remise contre code, annulations et remboursements, livreurs, lectures serveur, tâche planifiée
     '20261130000006_l12a_etapes.sql',
-    // Avis des étapes, classement de nuit, code effacé de la boîte d'envoi
+    // Avis des étapes, classement de nuit, envoi immédiat du code
     '20261130000007_l12a_avis.sql',
     // Commission des commandes dans les relevés
     '20261130000008_l12a_releves.sql',
@@ -120,20 +120,27 @@ describe('Lot 12a — migrations 20261130000001… rejouables (transaction annul
         });
     }
 
-    test('fonctions du lot réservées au rôle de service ; la clé du code jamais lisible hors des fonctions', async () => {
+    test('fonctions du lot réservées au rôle de service ; aides internes dans private, exécutables par aucun rôle de l’API ; clé du code illisible', async () => {
         await inRolledBackTransaction(async (c) => {
             const { rows } = await c.query<{ proname: string; anon: boolean; auth: boolean }>(
                 `SELECT p.proname, has_function_privilege('anon', p.oid, 'execute') AS anon, has_function_privilege('authenticated', p.oid, 'execute') AS auth
                    FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'order\\_%' ORDER BY 1`);
             assert.ok(rows.length >= 25, `fonctions order_* : ${rows.length}`);
             assert.deepEqual(rows.filter((r) => r.anon || r.auth).map((r) => r.proname), [], 'aucune ouverte à anon ou authenticated');
-            const { rows: svc } = await c.query<{ hash: boolean; issue: boolean; delivery: boolean; key: boolean }>(
-                `SELECT has_function_privilege('service_role', 'public.order_code_hash(uuid, text)', 'execute') AS hash,
-                        has_function_privilege('service_role', 'public.order_issue_code(uuid)', 'execute') AS issue,
-                        has_function_privilege('service_role', 'public.order_code_delivery(uuid, text, text)', 'execute') AS delivery,
-                        has_table_privilege('service_role', 'private.order_code_key', 'select') AS key`);
-            // Règle 1A.3 (03-verification.sql) : RPC métier exécutables par le rôle de service ; la clé illisible hors des fonctions
-            assert.deepEqual(svc[0], { hash: true, issue: true, delivery: true, key: false });
+            // Contre-vérification T7 (modification signalée au rapport) : les aides internes (code en clair, empreinte,
+            // clôture, remise, départ, stock, historique, remboursement, contrôle d'une commande en cours) sont dans le schéma
+            // private, non exposé par l'API : ni anon, ni authenticated, ni le rôle de service ne les exécutent
+            const internal = ['order_issue_code', 'order_code_hash', 'order_code_delivery', 'order_close_apply', 'order_handover_apply',
+                'order_set_en_route', 'order_release_stock', 'order_log_state', 'order_refund_payment', 'order_ongoing_refusal'];
+            const { rows: helpers } = await c.query<{ proname: string; schema: string; open: boolean }>(
+                `SELECT p.proname, n.nspname AS schema,
+                        has_function_privilege('service_role', p.oid, 'execute') OR has_function_privilege('anon', p.oid, 'execute')
+                        OR has_function_privilege('authenticated', p.oid, 'execute') AS open
+                   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE p.proname = ANY($1::text[]) ORDER BY 1, 2`, [internal]);
+            assert.deepEqual(helpers.map((h) => `${h.schema}.${h.proname}`), internal.map((f) => `private.${f}`).sort(), 'aides internes dans private seulement');
+            assert.deepEqual(helpers.filter((h) => h.open).map((h) => h.proname), [], 'aucune aide interne exécutable par un rôle de l’API');
+            const { rows: key } = await c.query<{ key: boolean }>(`SELECT has_table_privilege('service_role', 'private.order_code_key', 'select') AS key`);
+            assert.equal(key[0].key, false, 'clé du code illisible par le rôle de service');
         });
     });
 });

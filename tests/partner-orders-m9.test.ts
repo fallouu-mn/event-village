@@ -85,7 +85,8 @@ test('Test 1 : CRUD PRODUIT - Créer catégorie + produit, modifier, changer sta
         prod = await ProductService.setProductStatus(prod.id, partnerUserId, 'INDISPONIBLE');
         assert.equal(prod.status, 'INDISPONIBLE');
 
-        const dbProd = await ProductService.getProductById(prod.id);
+        // Lot 12a, contre-vérification T8 (modification signalée au rapport) : lecture par la partenaire propriétaire
+        const dbProd = await ProductService.getProductById(prod.id, partnerUserId);
         assert.equal(dbProd.status, 'INDISPONIBLE');
     } finally {
         await cleanupTestUsers(partnerUserId, clientId);
