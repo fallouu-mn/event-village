@@ -23,6 +23,8 @@ export const LOT11B_MIGRATIONS = [
     '20261129000003_l11b_reservations.sql',
     // Avis : lien vers la réservation, nuit, « J'arrive », remboursement versé, rappel 2 h avant
     '20261129000004_l11b_avis.sql',
+    // Photos des établissements citées pour la purge du stockage (run complet 541)
+    '20261129000005_l11b_photos_citees.sql',
 ] as const;
 
 /** Recopies : fonction, migration de la recopie, lignes de la définition précédente qu'elle remplace (aucune ici). */
@@ -41,6 +43,7 @@ const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
     { fn: 'table_notif_data', file: LOT11B_MIGRATIONS[3], replaced: [] },
     { fn: 'notif_event_soon', file: LOT11B_MIGRATIONS[3], replaced: [] },
     { fn: 'notif_cashouts_notify', file: LOT11B_MIGRATIONS[3], replaced: [] },
+    { fn: 'storage_public_citations', file: LOT11B_MIGRATIONS[4], replaced: [] },
 ];
 
 /** Texte de la dernière définition de public.<nom> dans les fichiers donnés (du CREATE au second $$). */
