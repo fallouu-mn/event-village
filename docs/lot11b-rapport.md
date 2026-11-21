@@ -1,10 +1,28 @@
 # Lot 11b — Tables : écrans, plan de salle, fermetures et absences
 
 Branche `lot11b/tables-ecrans`, partie de `main` à `2ec11bb66`. **Non fusionnée.** Migrations `20261129000001` à
-`…005`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur event-village-dev. Le service reste fermé par son
-interrupteur (`features.tables_enabled`) ; les suites et l'e2e l'ouvrent le temps de leur passage.
+`…010` (dont `…006` à `…010` : correctifs de la contre-vérification), sans BEGIN ni COMMIT, rejouables, **non
+appliquées** sur event-village-dev. Le service reste fermé par son interrupteur (`features.tables_enabled`) ; les
+suites et l'e2e l'ouvrent le temps de leur passage.
 
 ## À lire en premier
+
+### Correctifs de la contre-vérification (`docs/audit-lot11b.md`, branche `lot11b/cv-rouges` 8d178c84c)
+
+Branche de la contre-vérification récupérée en avance rapide (ses suites `tests/audit/cv11b-*` sont dans la branche).
+Aucun trou critique ni élevé ; tous corrigés, un commit chacun. **T8 vaut pour toute l'application.**
+
+| # | Trou (gravité) | Correctif | Commit |
+|---|---|---|---|
+| T1 | Fermeture confirmée sur le seul **nombre** de réservations : une réservation prise entre l'aperçu et la confirmation, jamais montrée, était annulée (moyenne) | Migration 06 : l'aperçu rend l'**empreinte** de sa liste (md5 des identifiants triés et des montants rendus) ; la confirmation la renvoie (`expected_hash`) ; la base la recalcule **sous le verrou** de l'établissement : `PREVIEW_CHANGED` sinon, avec la nouvelle liste, que l'écran remontre avant une nouvelle confirmation. Sans empreinte, seul un aperçu **vide** se confirme (`PREVIEW_REQUIRED`). | `a705f93a2` |
+| T2 | « Client absent » accepté 5 min après l'heure, acompte gardé, alors que les avis promettent la table « gardée jusqu'à » l'heure + 30 min (moyenne) | Migration 07 (recopie de `table_reservation_presence`) : `TOO_EARLY` tant que l'heure + `tables.no_show_minutes` n'est pas passée (« La table est gardée jusqu'à 20 h 30 : vous pourrez marquer le client absent à partir de cette heure. ») ; bouton « Client absent » (détail et planning en direct) seulement ensuite. | `25331e6af` |
+| T3 | Aperçu « vous récupérez 21 000 F », l'heure gratuite passe pendant la lecture : annulation avec 0 F rendu sans nouvelle confirmation (faible) | Migration 07 (recopie de `table_reservation_cancel`) : l'écran envoie le montant de l'aperçu (`expected_refund`) ; s'il a changé, `PREVIEW_CHANGED` avec le nouveau montant, rien n'est annulé ; l'écran relit l'aperçu et redemande la confirmation (« Le montant rendu a changé »). | `25331e6af` |
+| T4 | Téléphone d'un client « arrivé » donné 3 jours après son créneau (faible) | Contact seulement pour une demande à accepter, une réservation confirmée, ou un client arrivé **avant la fin de son créneau** (`lib/tables/queries.ts`). | `c77f436af` |
+| T5 | Demande particulière laissée sur l'appareil quand la session se ferme à l'insu du navigateur (faible) | La purge des données du compte (page chargée sans session) retire aussi les clés `table-demande:` ; les recherches récentes d'un visiteur restent. | `e0dcb484e` |
+| T6 | Établissement non public et ses tables lus par sa propriétaire par la REST (faible) | Migration 09 : `venues_read`, `restaurant_zones_read`, `restaurant_tables_read`, `venue_opening_hours_read` : public ou administration (plus `is_partner_owner`). Colonnes de `venues` lisibles par `anon` et `authenticated` réduites à la fiche publique (plus `validated_by`, `validated_at`, `validation_reason`, `submitted_at`, `created_at`, `updated_at`). | `c87fde2ed` |
+| T7 | Plan de salle refusé mais à moitié enregistré (faible) | Migration 08 (recopie de `venue_plan_set`) : tables et zones vérifiées **avant** la première écriture ; écritures dans un bloc annulé en entier par tout refus (le refus « placez au moins une table » gardait lui aussi des positions). | `7c4955bfb` |
+| T8 | **Paiements des clients** (numéro du payeur, compte, montant, état) et remboursements lus par la partenaire par la REST — billets, salles, tables (moyenne, antérieur au lot) | Migration 10 : `payments_read` et `refunds_read` limitées **au client et à l'administration**, pour toute l'application (et les commandes à venir). Vérifié avant : aucune lecture de `payments` ni de `refunds` hors des routes serveur, aucune fonction non `SECURITY DEFINER` qui les lise. Nouveau test `tests/security/l11b-cv-paiements-partenaire` : billet, salle, table payée, table annulée → la partenaire ne lit rien par la REST, le client lit les siens, recettes justes par les routes serveur. | `e49d27e87` |
+| SMS | Annulation par Event Village à 160 caractères pile au pire cas | « nous avons annulé la table chez … » : **154** au pire cas ; nouveau test `l11b-cv-sms-marge` : tous les SMS des tables à 155 au plus. | `809a1d28e` |
 
 ### Faille trouvée et corrigée (sécurité)
 
@@ -112,6 +130,11 @@ caractères, contrat G3). « Pire cas » : nom de 46 caractères (tronqué), 50 
 | `VENUE_VALIDATION_DECIDED` | établissement | reporté | **Établissement refusé** — « Le Grand Bleu » n’est pas accepté. Motif : Photos manquantes. Corrigez-le puis renvoyez-le en validation depuis sa fiche. | Event Village : votre établissement Le Grand Bleu n'est pas accepté. Motif : Photos manquantes. | 95 / 107 |
 | `ADMIN_VENUE_SUBMITTED` | administrateurs | tout de suite | **Établissement à valider** — « Le Grand Bleu » (Dakar) attend votre validation. | (SMS groupé des administrateurs) |  |
 
+Annulation par Event Village (`TABLE_RESERVATION_CANCELLED`, origine `EVENT_VILLAGE`), raccourcie après la
+contre-vérification (160 caractères pile au pire cas) : « Event Village : nous avons annulé la table chez Le Grand Bleu
+le 5 déc. à 20:00. 21 000 F CFA remboursés. https://app.eventvillage.sn/t/k7m2p9x », **154** au pire cas. Tous les SMS
+des tables tiennent en 155 caractères au plus (test `l11b-cv-sms-marge`).
+
 ## Migrations
 
 | Fichier | Contenu |
@@ -121,6 +144,11 @@ caractères, contrat G3). « Pire cas » : nom de 46 caractères (tronqué), 50 
 | `…03_l11b_reservations` | `short_code` (lien court), `client_coming_at` ; `table_partner_fiche_refusal`, `table_cancel_preview`, `table_client_coming`, `table_partner_earnings`, `table_quote` ; recopies de `table_reservation_presence` et `table_reservation_cancel` (F1) |
 | `…04_l11b_avis` | types `TABLE_CLIENT_COMING`, `TABLE_REFUND_PAID` ; nuit ; `tables.reminder_hours` 3 → 2 ; recopies de `table_notif_data`, `notif_event_soon`, `notif_cashouts_notify` |
 | `…05_l11b_photos_citees` | recopie de `storage_public_citations` : photos des établissements comptées comme citées (run complet 541 : une purge des images non citées aurait pu les effacer) |
+| `…06_l11b_cv_fermeture_empreinte` | CV T1 : `venue_closure_fingerprint` ; recopies de `venue_closure_preview` (empreinte rendue) et `venue_closure_create` (empreinte exigée et recalculée sous le verrou) |
+| `…07_l11b_cv_absence_annulation` | CV T2 et T3 : recopies de `table_reservation_presence` (absence après la garde) et `table_reservation_cancel` (montant de l'aperçu vérifié) ; contrôles ajoutés seulement, aucune ligne recopiée retirée |
+| `…08_l11b_cv_plan_tout_ou_rien` | CV T7 : recopie de `venue_plan_set` (vérification complète, écritures annulées ensemble au moindre refus) |
+| `…09_l11b_cv_lectures_etablissements` | CV T6 : règles de lecture de `venues`, `restaurant_zones`, `restaurant_tables`, `venue_opening_hours` sans la propriétaire ; colonnes publiques de `venues` |
+| `…10_l11b_cv_paiements_lecture` | CV T8 : `payments_read` et `refunds_read` : le client ou l'administration (toute l'application) |
 
 Chaque recopie part de la **dernière** définition (fichier et lignes cités en tête de migration) ; le test
 `migration-lot11b-rejouable` vérifie qu'aucune ligne n'est perdue (lignes remplacées listées une à une : seulement
@@ -154,6 +182,20 @@ select type, channels, night_policy from public.notification_types
                 'VENUE_VALIDATION_DECIDED','TABLE_REMINDER','TABLE_REQUEST_SENT') order by 1;    -- DEFER sauf REFUND_PAID et REQUEST_SENT
 select key, value from public.platform_settings where key = 'tables.reminder_hours';              -- {"value": 2}
 select pg_get_functiondef('public.storage_public_citations()'::regprocedure) like '%public.venues ve, unnest(ve.photos)%'; -- true
+
+-- Correctifs de la contre-vérification (migrations 06 à 10)
+select count(*) from supabase_migrations.schema_migrations where version like '20261129%';        -- 10
+select has_function_privilege('anon', 'public.venue_closure_fingerprint(jsonb)', 'execute'),
+       has_function_privilege('authenticated', 'public.venue_closure_fingerprint(jsonb)', 'execute'); -- false, false
+select pg_get_functiondef('public.venue_closure_create(jsonb)'::regprocedure) like '%expected_hash%';  -- true
+select pg_get_functiondef('public.table_reservation_presence(jsonb)'::regprocedure) like '%tables.no_show_minutes%'; -- true
+select pg_get_functiondef('public.table_reservation_cancel(jsonb)'::regprocedure) like '%expected_refund%';         -- true
+select tablename, policyname, qual from pg_policies where schemaname = 'public'
+   and policyname in ('payments_read','refunds_read','venues_read','restaurant_zones_read','restaurant_tables_read','venue_opening_hours_read')
+ order by 1;                                                                     -- 6 lignes, aucune ne contient is_partner_owner
+select has_column_privilege('anon','public.venues','validated_by','select'),
+       has_column_privilege('authenticated','public.venues','validation_reason','select'),
+       has_column_privilege('anon','public.venues','name','select');                                -- false, false, true
 ```
 
 Puis `03-verification.sql`. Aucune tâche planifiée nouvelle (`ev_tables` existe depuis le lot 11a).
@@ -182,6 +224,19 @@ plan de salle et plan public, fermetures, plage horaire et recherche, aperçu d'
 | `l10b-routes` | GET des réservations, d'une réservation et des recettes de la propriétaire sans interrupteur | décision du 20/11 (run complet 541) |
 | `docs/recette-billetterie.md` | A37 : chemins déplacés ; lignes citées recalées (`interrupteurs.test.ts:391`, `notif-modeles.test.ts:556`) | contrôle `recette-matrice` |
 
+**Correctifs de la contre-vérification** (entrées seulement, aucune assertion changée) :
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `tests/audit/cv11b-2-gardes` G6a, G6b, G6c (suite de la contre-vérification) | chaque fermeture est précédée de son aperçu et confirmée avec l'empreinte de cet aperçu (`expected_hash`) ; G6a : un aperçu par période | T1 : sans empreinte, un aperçu non vide ne se confirme plus ; les assertions (une seule fermeture, un seul remboursement de 21 000, attente annulée puis rendue) sont inchangées |
+| `l11b-tables` § 3 | confirmation avec l'empreinte ; ajout : sans empreinte → `400 PREVIEW_REQUIRED`, empreinte de 32 caractères rendue par l'aperçu | T1 |
+| `l11a-annulation` C5 et `l11b-securite` (garde-fou fiche VALIDE) | « Client absent » marqué 31 minutes après l'heure au lieu de 5 et 10 | T2 : absence seulement après la garde de 30 minutes |
+| `migration-lot11b-rejouable` | migrations 06 à 10 ajoutées ; recopies `venue_closure_preview`, `venue_closure_create`, `table_reservation_presence`, `table_reservation_cancel`, `venue_plan_set` contrôlées, lignes remplacées listées | migrations nouvelles |
+
+Ajoutés : `tests/security/l11b-cv-paiements-partenaire` (T8, toute l'application), `tests/schema/l11b-cv-sms-marge`
+(5 caractères de marge). Les suites `tests/audit/cv11b-1-trous`, `cv11b-2-gardes`, `cv11b-3-statique` doivent passer
+au vert sans changer leurs assertions (§ Runs).
+
 Aucun test changé pour les échecs d'accessibilité des captures (runs 541 et 547) : ce sont les écrans qui ont été
 corrigés (`8e79b577f`). Les mots visibles d'un bouton se suivent maintenant dans son nom accessible (WCAG 2.5.3 :
 « Copier sur tous les jours les horaires du lundi », « Placer sur le plan la table 3 », « Table 3, 4 places, à partir de
@@ -208,6 +263,7 @@ Aucune assertion des suites `tests/audit/` ni `tests/audit-auth/` n'a changé (r
 | 549 | `8e79b577f` | **complet** | tests, contrôle des lots, build, budgets JS, responsive verts ; e2e : fiche, création et modification corrigées ; **restent 8 échecs** (`tables-fiche-plan`, `org-tables-plan` × 4 vues, 8 nœuds = les 8 tables du plan) : axe-core assemble le texte visible des enfants sans séparateur, « 1 » et « 4 » donnaient « 14 », absent du nom « Table 1, 4 places » ; mesure mobile : seule la fiche événement « ce soir » à 89 (médiane [93 ; 93 ; 89 ; 89 ; 85], page non touchée par le lot, écart d'un point d'une mesure à l'autre) |
 | 551 | `89f9de75f` | **complet** | tests, contrôle des lots, build, budgets JS verts ; **captures vertes** (787 captures, 0 en échec ; les 19 écrans du lot dans les 4 vues) ; contrôle responsive 0 défaut (184 pages × thème) ; **mesure mobile verte** (« tous les seuils sont tenus ») ; e2e rouge sur une seule phase, « perf », test de l'accueil : le navigateur s'est fermé sous le test au 4e passage (« Target page, context or browser has been closed », 16 s), les 3 premiers passages normaux (FCP 1,64 s) ; page non touchée par le lot, phase verte aux runs 541, 547 et 549 ; les 3 autres pages de la phase vertes |
 | 556 | `7fb2253af` | **complet (final)** | tests **566/566** (142 + 141 + 141 + 142), contrôle des lots, build, budgets JS, contrôle responsive (0 défaut, 184 pages × thème) verts ; **e2e : les 12 phases vertes** (787 captures, 0 en échec ; perf de l'accueil de nouveau verte) ; mesure mobile hors seuil sur deux pages non touchées : Mes billets 84 (non bloquant) et fiche événement « ce soir » 86 [86 ; 94 ; 81 ; 89 ; 85] (verte au run 551 sur le même code des écrans) |
+| 569 | `265e774cc` | rapide, 25 suites (correctifs de la contre-vérification) | **vert : 25/25**, typecheck et lint verts. `cv11b-1-trous` **7/7** (avant : 0/7) : T1 `400 PREVIEW_REQUIRED`, B reste `CONFIRMEE` ; T2 `409 TOO_EARLY` « La table est gardée jusqu’à 16 h 04 : vous pourrez marquer le client absent à partir de cette heure. », bouton absent caché ; T3 `409 PREVIEW_CHANGED` (nouveau montant 0), rien annulé ; T4 téléphone `null` au détail et au planning ; T6 `permission denied` sur les colonnes internes, 0 table, 0 horaire ; T7 `404 TABLE_NOT_FOUND`, table inchangée ; T8 0 paiement, 0 remboursement lisibles. `cv11b-2-gardes` **20/20** (G6a : une fermeture `201`, l'autre `409 PREVIEW_CHANGED`) ; `cv11b-3-statique` vert (T5, SMS, recopies) ; `l11b-cv-paiements-partenaire` 2/2 (partenaire : 0 paiement et 0 remboursement lus ; client : 4 paiements, 1 remboursement ; recettes justes) ; audits `aud-06`, `cv10a-4`, `cv11a-1`, `-2`, `-4`, `cvf2b-6` verts, assertions inchangées ; invariants : 0 violation |
 
 Journaux bruts : branche `ci-results`, dossiers `runs/<numéro>-<identifiant>/`.
 
