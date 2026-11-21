@@ -54,6 +54,38 @@ BEGIN
 END;
 $$;
 
+-- Contre-vérification (T2) : contrôle d'une commande EN COURS, au paiement du solde (création et confirmation), à
+-- l'acceptation et à la remise : fiche de la partenaire suspendue, ou produit devenu réglementé. L'établissement fermé
+-- aux nouvelles commandes (orders_open) n'empêche pas de finir une commande déjà acceptée.
+CREATE OR REPLACE FUNCTION private.order_ongoing_refusal(p_order_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_status text;
+    v_name   text;
+BEGIN
+    SELECT pa.status::text INTO v_status FROM public.orders o JOIN public.partners pa ON pa.id = o.partner_id WHERE o.id = p_order_id;
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('code', 'ORDER_NOT_FOUND', 'message', 'Commande introuvable.');
+    END IF;
+    IF v_status <> 'VALIDE' THEN
+        RETURN jsonb_build_object('code', 'VENUE_NOT_AVAILABLE', 'message', 'Cet établissement ne prend plus de paiement pour le moment.');
+    END IF;
+    SELECT i.product_name INTO v_name FROM public.order_items i
+     WHERE i.order_id = p_order_id AND public.product_regulated(i.product_id) LIMIT 1;
+    IF FOUND THEN
+        RETURN jsonb_build_object('code', 'REGULATED_PRODUCT',
+            'message', format('« %s » est un produit réglementé : il ne se commande pas en ligne.', v_name));
+    END IF;
+    RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION private.order_ongoing_refusal(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.order_expire_hold(p_order_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -70,10 +102,13 @@ BEGIN
     END IF;
     PERFORM set_config('event_village.order_flow', 'on', true);
     UPDATE public.orders
-       SET order_state = 'EXPIREE', payment_status = 'CANCELLED', hold_expires_at = NULL, closed_at = now(), updated_at = now()
+       SET order_state = 'EXPIREE', payment_status = 'CANCELLED', hold_expires_at = NULL, closed_at = now(), updated_at = now(),
+           -- Contre-vérification (T1) : jamais transmise à la partenaire, coordonnées masquées tout de suite
+           delivery_address = NULL, contact_phone = NULL, delivery_notes = NULL, delivery_latitude = NULL,
+           delivery_longitude = NULL, contact_masked_at = COALESCE(contact_masked_at, now())
      WHERE id = o.id;
-    PERFORM public.order_release_stock(o.id);
-    PERFORM public.order_log_state(o.id, o.order_state, 'EXPIREE', NULL, 'SYSTEM', 'Non payée à temps');
+    PERFORM private.order_release_stock(o.id);
+    PERFORM private.order_log_state(o.id, o.order_state, 'EXPIREE', NULL, 'SYSTEM', 'Non payée à temps');
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value)
     VALUES (NULL, 'SYSTEM', 'ORDER_HOLD_EXPIRED', 'orders', o.id,
             jsonb_build_object('order_state', o.order_state), jsonb_build_object('order_state', 'EXPIREE'));
@@ -162,6 +197,10 @@ BEGIN
         END IF;
         IF r.onsite_amount IS NOT NULL OR r.goods_total - r.paid_goods <= 0 THEN
             RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_PAID', 'message', 'Cette commande est déjà payée.');
+        END IF;
+        v_refusal := private.order_ongoing_refusal(r.id);
+        IF v_refusal IS NOT NULL THEN
+            RETURN jsonb_build_object('ok', false) || v_refusal;
         END IF;
         v_goods := r.goods_total - r.paid_goods;
         v_fee := public.fin_round_up(v_goods * COALESCE(r.service_fee_rate, public.fin_setting_num('orders.service_fee_rate')) / 100);
@@ -274,6 +313,9 @@ BEGIN
             v_blocking := 'solde déjà payé';
         ELSIF v_goods <> o.goods_total - o.paid_goods OR v_pay.amount <> v_goods + COALESCE(v_pay.service_fee, 0) THEN
             v_blocking := 'montant différent du solde';
+        ELSE
+            -- Contre-vérification (T2) : comme la première part, fiche suspendue ou produit devenu réglementé
+            v_blocking := private.order_ongoing_refusal(o.id)->>'message';
         END IF;
     END IF;
 
@@ -307,7 +349,7 @@ BEGIN
                payment_status = CASE WHEN goods_total - (paid_goods + v_goods) = 0 THEN 'SUCCESS' ELSE 'PARTIAL' END::public.payment_status_enum,
                order_state = 'RECUE', received_at = now(), response_due_at = v_due, hold_expires_at = NULL, updated_at = now()
          WHERE id = o.id;
-        PERFORM public.order_log_state(o.id, o.order_state, 'RECUE', NULL, 'SYSTEM', 'Paiement reçu');
+        PERFORM private.order_log_state(o.id, o.order_state, 'RECUE', NULL, 'SYSTEM', 'Paiement reçu');
     ELSE
         UPDATE public.orders
            SET paid_goods = paid_goods + v_goods, paid_fees = paid_fees + COALESCE(v_pay.service_fee, 0),

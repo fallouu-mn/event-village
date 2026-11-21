@@ -20,6 +20,11 @@
 -- Heure de Dakar = UTC toute l'année.
 -- ============================================================================
 
+-- Contre-vérification (T7) : aides internes dans le schéma private (non exposé par l'API, hors de la règle 1A.3) ;
+-- anciennes versions publiques retirées
+DROP FUNCTION IF EXISTS public.order_log_state(uuid, text, text, uuid, text, text);
+DROP FUNCTION IF EXISTS public.order_release_stock(uuid);
+
 -- ----------------------------------------------------------------------------
 -- 1. Aides
 -- ----------------------------------------------------------------------------
@@ -130,7 +135,7 @@ END;
 $$;
 
 -- Historique d'un changement d'état (dans la transaction de la fonction qui le fait)
-CREATE OR REPLACE FUNCTION public.order_log_state(p_order_id uuid, p_from text, p_to text, p_actor uuid, p_role text, p_note text DEFAULT NULL)
+CREATE OR REPLACE FUNCTION private.order_log_state(p_order_id uuid, p_from text, p_to text, p_actor uuid, p_role text, p_note text DEFAULT NULL)
 RETURNS void
 LANGUAGE plpgsql
 VOLATILE
@@ -145,7 +150,7 @@ END;
 $$;
 
 -- Stock et portions d'une commande rendus, une seule fois (stock_released_at) ; jamais après la remise
-CREATE OR REPLACE FUNCTION public.order_release_stock(p_order_id uuid)
+CREATE OR REPLACE FUNCTION private.order_release_stock(p_order_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
 VOLATILE
@@ -327,6 +332,12 @@ BEGIN
                          bool_or((l->>'daily')::boolean) AS daily, bool_or((l->>'stock_managed')::boolean) AS managed
                     FROM jsonb_array_elements(v_lines) l GROUP BY 1 ORDER BY 1 LOOP
         SELECT * INTO pr FROM public.products WHERE id = v_need.product_id;
+        -- Contre-vérification (T3) : 99 au plus par produit sur toute la commande (le même produit peut revenir sur
+        -- plusieurs lignes, avec d'autres suppléments)
+        IF v_need.qty > 99 THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'INVALID_QUANTITY', 'product_id', pr.id,
+                'message', format('Au plus 99 « %s » par commande.', pr.name));
+        END IF;
         IF v_need.managed AND pr.stock_quantity < v_need.qty THEN
             RETURN jsonb_build_object('ok', false, 'code', 'OUT_OF_STOCK', 'product_id', pr.id,
                 'message', CASE WHEN pr.stock_quantity <= 0 THEN format('« %s » est épuisé.', pr.name)
@@ -482,6 +493,8 @@ DECLARE
     v_need     record;
     v_unpaid   integer;
     v_max      integer := public.fin_setting_num('orders.max_unpaid_per_client')::int;
+    v_max_portions integer := public.fin_setting_num('orders.max_unpaid_portions')::int;
+    v_held     integer;
     v_state    text;
     v_id       uuid;
     v_number   text;
@@ -522,6 +535,23 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_UNPAID',
             'message', format('Vous avez déjà %s commandes non payées. Payez-en une ou attendez qu’elle se termine.', v_unpaid));
     END IF;
+
+    -- Contre-vérification (T3) : portions d'un plat du jour tenues sans paiement, par client et par plat, au plus
+    -- orders.max_unpaid_portions (commandes non payées comptées comme pour le plafond ci-dessus ; verrou du client tenu)
+    FOR v_need IN SELECT (x->>'product_id')::uuid AS product_id, min(x->>'name') AS name, sum((x->>'quantity')::int)::int AS qty
+                    FROM jsonb_array_elements(q->'lines') x WHERE (x->>'daily')::boolean GROUP BY 1 ORDER BY 1 LOOP
+        SELECT COALESCE(sum(i.quantity), 0)::int INTO v_held
+          FROM public.order_items i JOIN public.orders o ON o.id = i.order_id
+         WHERE o.client_id = v_client AND o.venue_id IS NOT NULL AND i.product_id = v_need.product_id AND i.portion_day = v_today
+           AND ((o.order_state = 'EN_ATTENTE_PAIEMENT' AND o.hold_expires_at > now())
+                OR (o.order_state IN ('RECUE', 'ACCEPTEE', 'EN_PREPARATION', 'PRETE', 'EN_ROUTE') AND o.paid_goods = 0));
+        IF v_held + v_need.qty > v_max_portions THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_PORTIONS', 'product_id', v_need.product_id,
+                'message', CASE WHEN v_held > 0
+                    THEN format('Vous tenez déjà %s portions de « %s » sans les avoir payées : %s au plus. Payez votre commande en cours ou attendez qu’elle se termine.', v_held, v_need.name, v_max_portions)
+                    ELSE format('Au plus %s portions de « %s » par commande non payée.', v_max_portions, v_need.name) END);
+        END IF;
+    END LOOP;
 
     PERFORM set_config('event_village.order_flow', 'on', true);
 
@@ -584,7 +614,7 @@ BEGIN
                 CASE WHEN (l->>'daily')::boolean THEN v_today END, (l->>'stock_managed')::boolean);
     END LOOP;
 
-    PERFORM public.order_log_state(v_id, NULL, v_state, v_client, 'CLIENT', 'Commande passée');
+    PERFORM private.order_log_state(v_id, NULL, v_state, v_client, 'CLIENT', 'Commande passée');
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value, metadata)
     VALUES (v_client, 'CLIENT', 'ORDER_CREATED', 'orders', v_id,
             jsonb_build_object('order_state', v_state, 'goods_total', q->'goods_total', 'to_pay_now', q->'to_pay_now'),
@@ -611,8 +641,8 @@ REVOKE ALL ON FUNCTION public.order_client_lock(uuid) FROM PUBLIC, anon, authent
 REVOKE ALL ON FUNCTION public.order_lock(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_notif_data(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_notify(text, uuid, text, jsonb, text, text[]) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_log_state(uuid, text, text, uuid, text, text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_release_stock(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION private.order_log_state(uuid, text, text, uuid, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.order_release_stock(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.order_quote_compute(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_quote(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_create(jsonb) FROM PUBLIC, anon, authenticated;
@@ -621,8 +651,6 @@ GRANT EXECUTE ON FUNCTION public.order_client_lock(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_lock(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_notif_data(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_notify(text, uuid, text, jsonb, text, text[]) TO service_role;
-GRANT EXECUTE ON FUNCTION public.order_log_state(uuid, text, text, uuid, text, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.order_release_stock(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_quote_compute(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_quote(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_create(jsonb) TO service_role;

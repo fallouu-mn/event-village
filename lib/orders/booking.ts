@@ -75,6 +75,7 @@ export function orderRefusalStatus(code: unknown): number {
         case 'TOO_MANY_UNPAID':
         case 'PAYER_PENDING_LIMIT':
         case 'TOO_MANY_CODES':
+        case 'TOO_MANY_PORTIONS':
             return 429;
         case 'INVALID_ITEM':
         case 'INVALID_QUANTITY':
@@ -141,7 +142,7 @@ export async function sendOrderRefunds(ids: unknown): Promise<void> {
  */
 export async function deliverHandoverCode(r: Record<string, unknown>, actorId: string): Promise<void> {
     const code = r.handover_code;
-    const fields = ['handover_code', 'handover_step', 'client_id', 'client_phone', 'order_number'];
+    const fields = ['handover_code', 'handover_step', 'handover_ref', 'client_id', 'client_phone', 'order_number'];
     try {
         if (typeof code !== 'string') return;
         const phone = typeof r.client_phone === 'string' ? r.client_phone : '';
@@ -153,7 +154,12 @@ export async function deliverHandoverCode(r: Record<string, unknown>, actorId: s
         const { mTargetService } = await import('@/lib/sms/mtarget.service');
         const sent = await mTargetService.sendOrderCode(phone, code, String(r.order_number ?? ''), step, {
             actorId,
-            log: { type: 'ORDER_HANDOVER_CODE', ref: String(r.order_id), userId: typeof r.client_id === 'string' ? r.client_id : null, actorId },
+            // Contre-vérification (T9) : une référence par envoi (commande, étape, nouveaux codes demandés), donc une ligne
+            // de journal par SMS du code ; le code lui-même n'est jamais journalisé
+            log: {
+                type: 'ORDER_HANDOVER_CODE', ref: typeof r.handover_ref === 'string' ? r.handover_ref : String(r.order_id),
+                userId: typeof r.client_id === 'string' ? r.client_id : null, actorId,
+            },
         });
         if (!sent.success) console.error(`[commandes] code de remise de la commande ${String(r.order_id)} non envoyé : ${sent.code ?? sent.error ?? 'refus'}`);
     } catch (err) {

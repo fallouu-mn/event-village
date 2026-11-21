@@ -28,6 +28,10 @@
 -- mises à jour idempotentes, clé tirée une seule fois (ON CONFLICT DO NOTHING).
 -- ============================================================================
 
+-- Contre-vérification (T7) : aides internes dans le schéma private (non exposé par l'API, hors de la règle 1A.3) ;
+-- anciennes versions publiques retirées
+DROP FUNCTION IF EXISTS public.order_code_hash(uuid, text);
+
 -- ----------------------------------------------------------------------------
 -- 1. Commandes : colonnes
 -- ----------------------------------------------------------------------------
@@ -170,7 +174,7 @@ INSERT INTO private.order_code_key (singleton, secret) VALUES (TRUE, extensions.
 ON CONFLICT (singleton) DO NOTHING;
 
 -- Empreinte d'un code : HMAC-SHA256(commande:code, clé) ; la clé n'est lisible que par cette fonction
-CREATE OR REPLACE FUNCTION public.order_code_hash(p_order_id uuid, p_code text)
+CREATE OR REPLACE FUNCTION private.order_code_hash(p_order_id uuid, p_code text)
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -406,7 +410,6 @@ GRANT SELECT ON public.order_state_history TO authenticated;
 GRANT ALL ON public.order_state_history, public.partner_couriers TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.order_state_history_id_seq TO service_role;
 
--- Règle 1A.3 (03-verification.sql) : toute RPC métier est exécutable par le rôle de service, jamais par anon ni
--- authenticated ; la clé, elle, n'est lisible que par cette fonction
-REVOKE ALL ON FUNCTION public.order_code_hash(uuid, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.order_code_hash(uuid, text) TO service_role;
+-- Aide interne (schéma private, contre-vérification T7) : exécutable seulement par les fonctions en base, jamais par
+-- anon, authenticated ni le rôle de service ; la clé n'est lisible que par cette fonction
+REVOKE ALL ON FUNCTION private.order_code_hash(uuid, text) FROM PUBLIC, anon, authenticated, service_role;

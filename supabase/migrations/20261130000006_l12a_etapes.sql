@@ -36,10 +36,19 @@
 -- Rejouable : CREATE OR REPLACE, REVOKE et GRANT idempotents.
 -- ============================================================================
 
+-- Contre-vérification (T7) : aides internes dans le schéma private (non exposé par l'API, hors de la règle 1A.3) ;
+-- anciennes versions publiques retirées
+DROP FUNCTION IF EXISTS public.order_refund_payment(uuid, numeric, text);
+DROP FUNCTION IF EXISTS public.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean);
+DROP FUNCTION IF EXISTS public.order_issue_code(uuid);
+DROP FUNCTION IF EXISTS public.order_code_delivery(uuid, text, text);
+DROP FUNCTION IF EXISTS public.order_set_en_route(uuid, uuid, text, integer);
+DROP FUNCTION IF EXISTS public.order_handover_apply(uuid, uuid, text, text, boolean);
+
 -- ----------------------------------------------------------------------------
 -- 1. Remboursement d'un paiement de commande
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.order_refund_payment(p_payment_id uuid, p_percent numeric, p_reason text)
+CREATE OR REPLACE FUNCTION private.order_refund_payment(p_payment_id uuid, p_percent numeric, p_reason text)
 RETURNS uuid
 LANGUAGE plpgsql
 VOLATILE
@@ -105,7 +114,7 @@ $$;
 -- ----------------------------------------------------------------------------
 -- 2. Fin d'une commande (l'appelant tient le verrou de l'établissement)
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.order_close_apply(p_order_id uuid, p_state text, p_origin text, p_actor uuid, p_role text,
+CREATE OR REPLACE FUNCTION private.order_close_apply(p_order_id uuid, p_state text, p_origin text, p_actor uuid, p_role text,
                                                     p_reason text, p_percent numeric, p_fault boolean DEFAULT FALSE)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -124,7 +133,7 @@ DECLARE
 BEGIN
     SELECT * INTO o FROM public.orders WHERE id = p_order_id FOR UPDATE;
     FOR v_pay IN SELECT id FROM public.payments WHERE order_id = o.id AND status::text = 'SUCCESS' ORDER BY paid_at, id LOOP
-        v_cashout := public.order_refund_payment(v_pay.id, p_percent, p_reason);
+        v_cashout := private.order_refund_payment(v_pay.id, p_percent, p_reason);
         IF v_cashout IS NOT NULL THEN
             v_ids := v_ids || v_cashout;
         END IF;
@@ -135,7 +144,7 @@ BEGIN
 
     -- Produits préparés d'une commande non retirée : rien n'est rendu au stock
     IF p_state <> 'NON_RETIREE' THEN
-        PERFORM public.order_release_stock(o.id);
+        PERFORM private.order_release_stock(o.id);
     END IF;
     PERFORM set_config('event_village.order_flow', 'on', true);
     UPDATE public.orders
@@ -144,12 +153,19 @@ BEGIN
            refund_percent = CASE WHEN o.paid_goods + o.paid_fees > 0 THEN p_percent END,
            refunded_amount = LEAST(v_refund, paid_goods + paid_fees), hold_expires_at = NULL, response_due_at = NULL,
            code_hash = NULL,
+           -- Contre-vérification (T1) : commande jamais transmise à la partenaire, coordonnées masquées tout de suite
+           delivery_address = CASE WHEN o.received_at IS NULL THEN NULL ELSE delivery_address END,
+           contact_phone = CASE WHEN o.received_at IS NULL THEN NULL ELSE contact_phone END,
+           delivery_notes = CASE WHEN o.received_at IS NULL THEN NULL ELSE delivery_notes END,
+           delivery_latitude = CASE WHEN o.received_at IS NULL THEN NULL ELSE delivery_latitude END,
+           delivery_longitude = CASE WHEN o.received_at IS NULL THEN NULL ELSE delivery_longitude END,
+           contact_masked_at = CASE WHEN o.received_at IS NULL THEN COALESCE(contact_masked_at, now()) ELSE contact_masked_at END,
            payment_status = CASE WHEN v_refund > 0 THEN 'REFUND_PENDING'
                                  WHEN o.paid_goods + o.paid_fees > 0 THEN o.payment_status::text
                                  ELSE 'CANCELLED' END::public.payment_status_enum,
            updated_at = now()
      WHERE id = o.id;
-    PERFORM public.order_log_state(o.id, o.order_state, p_state, p_actor, p_role, p_reason);
+    PERFORM private.order_log_state(o.id, o.order_state, p_state, p_actor, p_role, p_reason);
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
     VALUES (p_actor, p_role,
             CASE p_state WHEN 'REFUSEE' THEN 'ORDER_REFUSED' WHEN 'SANS_REPONSE' THEN 'ORDER_UNANSWERED'
@@ -213,7 +229,8 @@ BEGIN
     IF v_origin = 'CLIENT' AND (v_actor IS NULL OR v_actor <> o.client_id) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'ORDER_NOT_FOUND', 'message', 'Commande introuvable.');
     END IF;
-    IF v_origin = 'PARTENAIRE' AND (v_actor IS NULL OR v_actor <> o.owner_id OR o.order_state = 'EN_ATTENTE_PAIEMENT'
+    -- Contre-vérification (T1) : la partenaire n'agit que sur une commande qui lui a été transmise (received_at)
+    IF v_origin = 'PARTENAIRE' AND (v_actor IS NULL OR v_actor <> o.owner_id OR o.received_at IS NULL
         OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF')) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'ORDER_NOT_FOUND', 'message', 'Commande introuvable.');
     END IF;
@@ -242,7 +259,7 @@ BEGIN
     v_role := CASE v_origin WHEN 'CLIENT' THEN 'CLIENT' WHEN 'PARTENAIRE' THEN 'PARTENAIRE'
                    ELSE CASE WHEN EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = v_actor AND ur.role::text = 'SUPERADMIN')
                              THEN 'SUPERADMIN' ELSE 'ADMIN' END END;
-    RETURN public.order_close_apply(o.id,
+    RETURN private.order_close_apply(o.id,
         CASE v_origin WHEN 'CLIENT' THEN 'ANNULEE_CLIENT' WHEN 'PARTENAIRE' THEN 'ANNULEE_PARTENAIRE' ELSE 'ANNULEE_EV' END,
         v_origin, v_actor, v_role, COALESCE(v_reason, 'Annulation par le client'), 100,
         CASE WHEN v_origin = 'PARTENAIRE' THEN TRUE WHEN v_origin = 'EVENT_VILLAGE' THEN v_fault ELSE FALSE END);
@@ -253,7 +270,7 @@ $$;
 -- 6. Code de remise
 -- ----------------------------------------------------------------------------
 -- Nouveau code à 4 chiffres (tirage cryptographique) ; seule son empreinte est gardée ; essais remis à zéro
-CREATE OR REPLACE FUNCTION public.order_issue_code(p_order_id uuid)
+CREATE OR REPLACE FUNCTION private.order_issue_code(p_order_id uuid)
 RETURNS text
 LANGUAGE plpgsql
 VOLATILE
@@ -267,7 +284,7 @@ BEGIN
     v_code := lpad((((get_byte(b, 0)::bigint << 24) | (get_byte(b, 1) << 16) | (get_byte(b, 2) << 8) | get_byte(b, 3)) % 10000)::text, 4, '0');
     PERFORM set_config('event_village.order_flow', 'on', true);
     UPDATE public.orders
-       SET code_hash = public.order_code_hash(id, v_code), code_issued_at = now(), code_attempts = 0, updated_at = now()
+       SET code_hash = private.order_code_hash(id, v_code), code_issued_at = now(), code_attempts = 0, updated_at = now()
      WHERE id = p_order_id;
     RETURN v_code;
 END;
@@ -275,21 +292,24 @@ $$;
 
 -- Code à envoyer tout de suite par la route serveur : le code, l'étape, le client et son numéro, le numéro de la commande.
 -- Jamais rendu au navigateur (les routes le retirent de la réponse après l'envoi du SMS).
-CREATE OR REPLACE FUNCTION public.order_code_delivery(p_order_id uuid, p_code text, p_step text)
+CREATE OR REPLACE FUNCTION private.order_code_delivery(p_order_id uuid, p_code text, p_step text)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
+    -- Contre-vérification (T9) : une référence par envoi (commande, étape, nouveaux codes déjà demandés) : chaque SMS
+    -- du code est journalisé
     SELECT jsonb_build_object('handover_code', p_code, 'handover_step', p_step, 'client_id', o.client_id,
-                              'client_phone', u.phone, 'order_number', o.order_number)
+                              'client_phone', u.phone, 'order_number', o.order_number,
+                              'handover_ref', o.id::text || ':' || p_step || ':' || o.code_resends::text)
       FROM public.orders o JOIN public.users u ON u.id = o.client_id
      WHERE o.id = p_order_id;
 $$;
 
 -- Départ du livreur (ou de la partenaire) : code envoyé au client, heure estimée
-CREATE OR REPLACE FUNCTION public.order_set_en_route(p_order_id uuid, p_actor uuid, p_role text, p_eta_minutes integer)
+CREATE OR REPLACE FUNCTION private.order_set_en_route(p_order_id uuid, p_actor uuid, p_role text, p_eta_minutes integer)
 RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -315,18 +335,18 @@ BEGIN
                   ELSE GREATEST(COALESCE(o.estimated_at, o.scheduled_for), now()) END;
     PERFORM set_config('event_village.order_flow', 'on', true);
     UPDATE public.orders SET order_state = 'EN_ROUTE', en_route_at = now(), estimated_at = v_eta, updated_at = now() WHERE id = o.id;
-    v_code := public.order_issue_code(o.id);
-    PERFORM public.order_log_state(o.id, 'PRETE', 'EN_ROUTE', p_actor, p_role, NULL);
+    v_code := private.order_issue_code(o.id);
+    PERFORM private.order_log_state(o.id, 'PRETE', 'EN_ROUTE', p_actor, p_role, NULL);
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value)
     VALUES (p_actor, p_role, 'ORDER_ON_THE_WAY', 'orders', o.id, jsonb_build_object('order_state', 'EN_ROUTE', 'estimated_at', v_eta));
     PERFORM public.order_notify('ORDER_ON_THE_WAY', o.id, 'CLIENT');
     RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'EN_ROUTE', 'estimated_at', v_eta)
-           || public.order_code_delivery(o.id, v_code, 'LIVRAISON');
+           || private.order_code_delivery(o.id, v_code, 'LIVRAISON');
 END;
 $$;
 
 -- Remise : code (retrait et livraison), solde encaissé sur place et noté ; une seule fois
-CREATE OR REPLACE FUNCTION public.order_handover_apply(p_order_id uuid, p_actor uuid, p_role text, p_code text, p_balance_received boolean)
+CREATE OR REPLACE FUNCTION private.order_handover_apply(p_order_id uuid, p_actor uuid, p_role text, p_code text, p_balance_received boolean)
 RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -349,6 +369,16 @@ BEGIN
             'message', CASE WHEN o.delivery_mode::text = 'LIVRAISON' THEN 'La commande doit être en route pour être remise.'
                             ELSE 'La commande doit être prête pour être remise.' END);
     END IF;
+    -- Contre-vérification (T2) : fiche suspendue, remise refusée ; produit devenu réglementé, jamais remis : commande
+    -- refusée par Event Village, tout rendu au client, sans faute de la partenaire (avant tout essai du code)
+    IF EXISTS (SELECT 1 FROM public.partners pa WHERE pa.id = o.partner_id AND pa.status::text <> 'VALIDE') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED', 'message', 'L’établissement est suspendu : ses commandes sont en lecture seule.');
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.order_items i WHERE i.order_id = o.id AND public.product_regulated(i.product_id)) THEN
+        PERFORM private.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'Produit réglementé : il ne se vend pas en ligne', 100, FALSE);
+        RETURN jsonb_build_object('ok', false, 'code', 'REGULATED_ORDER_REFUSED',
+            'message', 'Un produit de cette commande est réglementé : elle ne peut pas être remise. Elle est annulée et le client remboursé.');
+    END IF;
     PERFORM set_config('event_village.order_flow', 'on', true);
     IF o.delivery_mode::text IN ('LIVRAISON', 'RETRAIT') THEN
         IF o.code_hash IS NULL THEN
@@ -358,7 +388,7 @@ BEGIN
             RETURN jsonb_build_object('ok', false, 'code', 'CODE_LOCKED',
                 'message', 'Trop d’essais : le client doit demander un nouveau code depuis sa commande.');
         END IF;
-        IF p_code IS NULL OR p_code !~ '^[0-9]{4}$' OR public.order_code_hash(o.id, p_code) <> o.code_hash THEN
+        IF p_code IS NULL OR p_code !~ '^[0-9]{4}$' OR private.order_code_hash(o.id, p_code) <> o.code_hash THEN
             UPDATE public.orders SET code_attempts = code_attempts + 1, updated_at = now() WHERE id = o.id;
             v_left := v_max - o.code_attempts - 1;
             INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
@@ -384,7 +414,7 @@ BEGIN
            onsite_recorded_by = CASE WHEN v_balance > 0 THEN p_actor END,
            updated_at = now()
      WHERE id = o.id;
-    PERFORM public.order_log_state(o.id, o.order_state, 'REMISE', p_actor, p_role,
+    PERFORM private.order_log_state(o.id, o.order_state, 'REMISE', p_actor, p_role,
         CASE WHEN v_balance > 0 THEN format('Solde de %s F CFA reçu sur place', v_balance) END);
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
     VALUES (p_actor, p_role, 'ORDER_HANDED_OVER', 'orders', o.id,
@@ -428,13 +458,13 @@ BEGIN
     IF o.code_resends >= public.fin_setting_num('orders.code_resend_max')::int THEN
         RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_CODES', 'message', 'Vous avez déjà demandé plusieurs codes : contactez l’établissement.');
     END IF;
-    v_code := public.order_issue_code(o.id);
+    v_code := private.order_issue_code(o.id);
     UPDATE public.orders SET code_resends = code_resends + 1, updated_at = now() WHERE id = o.id;
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
     VALUES (v_client, 'CLIENT', 'ORDER_CODE_RESENT', 'orders', o.id, jsonb_build_object('resends', o.code_resends + 1));
     RETURN jsonb_build_object('ok', true, 'order_id', o.id,
                               'resends_left', public.fin_setting_num('orders.code_resend_max')::int - o.code_resends - 1)
-           || public.order_code_delivery(o.id, v_code, 'NOUVEAU');
+           || private.order_code_delivery(o.id, v_code, 'NOUVEAU');
 END;
 $$;
 
@@ -475,8 +505,9 @@ BEGIN
       INTO o
       FROM public.orders od JOIN public.partners pa ON pa.id = od.partner_id JOIN public.venues ve ON ve.id = od.venue_id
      WHERE od.id = v_order_id FOR UPDATE OF od;
-    -- La partenaire ne voit jamais une commande d'une autre, ni une commande pas encore payée
-    IF v_actor IS NULL OR v_actor <> o.owner_id OR o.order_state = 'EN_ATTENTE_PAIEMENT'
+    -- La partenaire ne voit jamais une commande d'une autre, ni une commande qui ne lui a pas été transmise (payée, ou
+    -- payable à la remise) : contre-vérification T1
+    IF v_actor IS NULL OR v_actor <> o.owner_id OR o.received_at IS NULL
        OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF') THEN
         RETURN jsonb_build_object('ok', false, 'code', 'ORDER_NOT_FOUND', 'message', 'Commande introuvable.');
     END IF;
@@ -489,7 +520,7 @@ BEGIN
         RETURN public.order_cancel(jsonb_build_object('order_id', o.id, 'actor_id', v_actor, 'origin', 'PARTENAIRE', 'reason', v_reason));
     END IF;
     IF v_action = 'REMETTRE' THEN
-        RETURN public.order_handover_apply(o.id, v_actor, 'PARTENAIRE', NULLIF(p->>'code', ''),
+        RETURN private.order_handover_apply(o.id, v_actor, 'PARTENAIRE', NULLIF(p->>'code', ''),
                                            COALESCE(NULLIF(p->>'balance_received', '')::boolean, FALSE));
     END IF;
 
@@ -498,19 +529,25 @@ BEGIN
             RETURN jsonb_build_object('ok', false, 'code', 'NOT_PENDING', 'message', 'Cette commande a déjà reçu une réponse.');
         END IF;
         IF o.response_due_at IS NOT NULL AND o.response_due_at <= now() THEN
-            PERFORM public.order_close_apply(o.id, 'SANS_REPONSE', 'SANS_REPONSE', NULL, 'SYSTEM', 'Pas de réponse de l’établissement à temps', 100, TRUE);
+            PERFORM private.order_close_apply(o.id, 'SANS_REPONSE', 'SANS_REPONSE', NULL, 'SYSTEM', 'Pas de réponse de l’établissement à temps', 100, TRUE);
             RETURN jsonb_build_object('ok', false, 'code', 'RESPONSE_TOO_LATE', 'message', 'Le délai de réponse est passé : la commande est annulée et le client remboursé.');
         END IF;
         IF v_action = 'REFUSER' THEN
             IF v_reason IS NULL OR length(v_reason) < 5 THEN
                 RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif : il est envoyé au client.');
             END IF;
-            RETURN public.order_close_apply(o.id, 'REFUSEE', NULL, v_actor, 'PARTENAIRE', v_reason, 100, FALSE);
+            RETURN private.order_close_apply(o.id, 'REFUSEE', NULL, v_actor, 'PARTENAIRE', v_reason, 100, FALSE);
         END IF;
         -- Établissement suspendu ou retiré entre-temps : la commande est refusée, le client remboursé
         IF NOT o.venue_active OR o.venue_status <> 'VALIDEE' THEN
-            PERFORM public.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'L’établissement ne prend plus de commande', 100, TRUE);
+            PERFORM private.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'L’établissement ne prend plus de commande', 100, TRUE);
             RETURN jsonb_build_object('ok', false, 'code', 'VENUE_NOT_AVAILABLE', 'message', 'Cet établissement ne prend plus de commande : le client est remboursé.');
+        END IF;
+        -- Contre-vérification (T2) : produit devenu réglementé : commande refusée par Event Village, tout rendu au client
+        IF EXISTS (SELECT 1 FROM public.order_items i WHERE i.order_id = o.id AND public.product_regulated(i.product_id)) THEN
+            PERFORM private.order_close_apply(o.id, 'REFUSEE', NULL, NULL, 'SYSTEM', 'Produit réglementé : il ne se vend pas en ligne', 100, FALSE);
+            RETURN jsonb_build_object('ok', false, 'code', 'REGULATED_ORDER_REFUSED',
+                'message', 'Un produit de cette commande est réglementé : elle ne peut pas être acceptée. Elle est annulée et le client remboursé.');
         END IF;
         IF v_minutes IS NOT NULL AND v_minutes NOT BETWEEN 5 AND 240 THEN
             RETURN jsonb_build_object('ok', false, 'code', 'INVALID_MINUTES', 'message', 'Indiquez une préparation de 5 à 240 minutes.');
@@ -521,7 +558,7 @@ BEGIN
            SET order_state = 'ACCEPTEE', accepted_at = now(), response_due_at = NULL, estimated_at = v_eta,
                prep_minutes = COALESCE(v_minutes, prep_minutes), updated_at = now()
          WHERE id = o.id;
-        PERFORM public.order_log_state(o.id, 'RECUE', 'ACCEPTEE', v_actor, 'PARTENAIRE', NULL);
+        PERFORM private.order_log_state(o.id, 'RECUE', 'ACCEPTEE', v_actor, 'PARTENAIRE', NULL);
         INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value)
         VALUES (v_actor, 'PARTENAIRE', 'ORDER_ACCEPTED', 'orders', o.id,
                 jsonb_build_object('order_state', 'RECUE'), jsonb_build_object('order_state', 'ACCEPTEE', 'estimated_at', v_eta));
@@ -539,7 +576,7 @@ BEGIN
         v_eta := CASE WHEN v_minutes IS NOT NULL THEN GREATEST(o.scheduled_for, now() + make_interval(mins => v_minutes)) ELSE o.estimated_at END;
         PERFORM set_config('event_village.order_flow', 'on', true);
         UPDATE public.orders SET order_state = 'EN_PREPARATION', preparing_at = now(), estimated_at = v_eta, updated_at = now() WHERE id = o.id;
-        PERFORM public.order_log_state(o.id, 'ACCEPTEE', 'EN_PREPARATION', v_actor, 'PARTENAIRE', NULL);
+        PERFORM private.order_log_state(o.id, 'ACCEPTEE', 'EN_PREPARATION', v_actor, 'PARTENAIRE', NULL);
         PERFORM public.order_notify('ORDER_PREPARING', o.id, 'CLIENT');
         RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'EN_PREPARATION', 'estimated_at', v_eta);
     END IF;
@@ -554,12 +591,12 @@ BEGIN
                estimated_at = CASE WHEN delivery_mode::text = 'LIVRAISON' THEN estimated_at ELSE GREATEST(now(), LEAST(estimated_at, scheduled_for)) END,
                updated_at = now()
          WHERE id = o.id;
-        PERFORM public.order_log_state(o.id, o.order_state, 'PRETE', v_actor, 'PARTENAIRE', NULL);
+        PERFORM private.order_log_state(o.id, o.order_state, 'PRETE', v_actor, 'PARTENAIRE', NULL);
         IF o.delivery_mode::text = 'RETRAIT' THEN
             -- Le SMS de l'étape est le code de retrait, envoyé tout de suite par la route ; cloche, push et email ici
-            v_code := public.order_issue_code(o.id);
+            v_code := private.order_issue_code(o.id);
             PERFORM public.order_notify('ORDER_READY', o.id, 'CLIENT', '{}'::jsonb, NULL, ARRAY['IN_APP', 'PUSH', 'EMAIL']);
-            RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'PRETE') || public.order_code_delivery(o.id, v_code, 'RETRAIT');
+            RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'PRETE') || private.order_code_delivery(o.id, v_code, 'RETRAIT');
         END IF;
         PERFORM public.order_notify('ORDER_READY', o.id, 'CLIENT');
         RETURN jsonb_build_object('ok', true, 'order_id', o.id, 'order_state', 'PRETE');
@@ -593,7 +630,7 @@ BEGIN
     END IF;
 
     -- EN_ROUTE : la partenaire livre elle-même (ou fait partir le livreur choisi)
-    RETURN public.order_set_en_route(o.id, v_actor, 'PARTENAIRE', v_minutes);
+    RETURN private.order_set_en_route(o.id, v_actor, 'PARTENAIRE', v_minutes);
 END;
 $$;
 
@@ -638,9 +675,9 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED', 'message', 'L’établissement est suspendu : ses commandes sont en lecture seule.');
     END IF;
     IF v_action = 'EN_ROUTE' THEN
-        RETURN public.order_set_en_route(o.id, v_actor, 'LIVREUR', v_minutes);
+        RETURN private.order_set_en_route(o.id, v_actor, 'LIVREUR', v_minutes);
     END IF;
-    RETURN public.order_handover_apply(o.id, v_actor, 'LIVREUR', NULLIF(p->>'code', ''),
+    RETURN private.order_handover_apply(o.id, v_actor, 'LIVREUR', NULLIF(p->>'code', ''),
                                        COALESCE(NULLIF(p->>'balance_received', '')::boolean, FALSE));
 END;
 $$;
@@ -673,7 +710,7 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PHONE', 'message', 'Indiquez un numéro de mobile sénégalais (9 chiffres).');
     END IF;
     v_phone := '+221' || right(v_phone, 9);
-    SELECT id, first_name, status::text AS status INTO u FROM public.users WHERE phone = v_phone AND status::text = 'ACTIF' LIMIT 1;
+    SELECT id, first_name, last_name, status::text AS status INTO u FROM public.users WHERE phone = v_phone AND status::text = 'ACTIF' LIMIT 1;
     IF NOT FOUND THEN
         RETURN jsonb_build_object('ok', false, 'code', 'ACCOUNT_NOT_FOUND', 'message', 'Aucun compte actif avec ce numéro : la personne doit d’abord créer son compte.');
     END IF;
@@ -698,7 +735,9 @@ BEGIN
         'type', 'ORDER_COURIER_INVITED', 'key', 'ORDER_COURIER_INVITED:' || c.id::text || ':' || extract(epoch FROM c.invited_at)::bigint::text,
         'user_id', u.id, 'actor_id', v_actor,
         'data', jsonb_build_object('invitation_id', c.id, 'partner_name', COALESCE(pa.commercial_name, pa.company_name))));
-    RETURN jsonb_build_object('ok', true, 'invitation_id', c.id, 'status', 'PENDING', 'first_name', u.first_name);
+    -- Contre-vérification (T4) : avant l'accord, le numéro saisi et un nom masqué seulement (comme pour les contrôleurs)
+    RETURN jsonb_build_object('ok', true, 'invitation_id', c.id, 'status', 'PENDING', 'phone', v_phone,
+                              'display_name', public.team_mask_name(u.first_name, u.last_name));
 END;
 $$;
 
@@ -812,7 +851,8 @@ BEGIN
         RETURN NULL;
     END IF;
     IF v_as = 'CLIENT' AND o.client_id <> v_actor THEN RETURN NULL; END IF;
-    IF v_as = 'PARTNER' AND (o.owner_id <> v_actor OR o.order_state = 'EN_ATTENTE_PAIEMENT') THEN RETURN NULL; END IF;
+    -- Contre-vérification (T1) : la partenaire ne lit qu'une commande qui lui a été transmise, coordonnées comprises
+    IF v_as = 'PARTNER' AND (o.owner_id <> v_actor OR o.received_at IS NULL) THEN RETURN NULL; END IF;
     IF v_as = 'COURIER' AND (o.courier_user_id IS DISTINCT FROM v_actor
         OR NOT EXISTS (SELECT 1 FROM public.partner_couriers c WHERE c.partner_id = o.partner_id AND c.user_id = v_actor AND c.status = 'ACTIVE')
         OR o.order_state NOT IN ('ACCEPTEE', 'EN_PREPARATION', 'PRETE', 'EN_ROUTE')) THEN RETURN NULL; END IF;
@@ -859,7 +899,8 @@ BEGIN
 END;
 $$;
 
--- Commandes d'une partenaire (jamais celles pas encore payées) : ouvertes ou terminées, 200 au plus
+-- Commandes d'une partenaire (seulement celles qui lui ont été transmises : payées, ou payables à la remise) : ouvertes ou
+-- terminées, 200 au plus
 CREATE OR REPLACE FUNCTION public.order_partner_list(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -879,7 +920,7 @@ BEGIN
                               ORDER BY x.created_at DESC), '[]'::jsonb)
       INTO v_list
       FROM (SELECT o.id, o.created_at FROM public.orders o JOIN public.partners pa ON pa.id = o.partner_id
-             WHERE pa.user_id = v_actor AND o.venue_id IS NOT NULL AND o.order_state <> 'EN_ATTENTE_PAIEMENT'
+             WHERE pa.user_id = v_actor AND o.venue_id IS NOT NULL AND o.received_at IS NOT NULL
                AND (CASE WHEN v_filter = 'CLOSED' THEN o.closed_at IS NOT NULL ELSE o.closed_at IS NULL END)
              ORDER BY o.created_at DESC LIMIT 200) x;
     RETURN v_list;
@@ -950,7 +991,7 @@ BEGIN
         IF rr.order_state <> 'RECUE' OR rr.response_due_at > now() THEN
             CONTINUE;
         END IF;
-        v_res := public.order_close_apply(rr.id, 'SANS_REPONSE', 'SANS_REPONSE', NULL, 'SYSTEM', 'Pas de réponse de l’établissement à temps', 100, TRUE);
+        v_res := private.order_close_apply(rr.id, 'SANS_REPONSE', 'SANS_REPONSE', NULL, 'SYSTEM', 'Pas de réponse de l’établissement à temps', 100, TRUE);
         v_ids := v_ids || ARRAY(SELECT jsonb_array_elements_text(v_res->'cashout_ids')::uuid);
         v_unanswered := v_unanswered + 1;
     END LOOP;
@@ -977,7 +1018,7 @@ BEGIN
         IF rr.order_state <> 'PRETE' OR now() < GREATEST(rr.scheduled_for, rr.ready_at) + v_grace THEN
             CONTINUE;
         END IF;
-        PERFORM public.order_close_apply(rr.id, 'NON_RETIREE', NULL, NULL, 'SYSTEM', 'Commande non retirée à temps', 0, FALSE);
+        PERFORM private.order_close_apply(rr.id, 'NON_RETIREE', NULL, NULL, 'SYSTEM', 'Commande non retirée à temps', 0, FALSE);
         v_uncollected := v_uncollected + 1;
     END LOOP;
 
@@ -997,15 +1038,13 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.order_refund_payment(uuid, numeric, text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION private.order_refund_payment(uuid, numeric, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.order_cancel(jsonb) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_issue_code(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_code_delivery(uuid, text, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.order_issue_code(uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.order_code_delivery(uuid, text, text) TO service_role;
-REVOKE ALL ON FUNCTION public.order_set_en_route(uuid, uuid, text, integer) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_handover_apply(uuid, uuid, text, text, boolean) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION private.order_issue_code(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.order_code_delivery(uuid, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.order_set_en_route(uuid, uuid, text, integer) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.order_handover_apply(uuid, uuid, text, text, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.order_code_resend(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_partner_action(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_courier_action(jsonb) FROM PUBLIC, anon, authenticated;
@@ -1016,11 +1055,7 @@ REVOKE ALL ON FUNCTION public.order_view(jsonb) FROM PUBLIC, anon, authenticated
 REVOKE ALL ON FUNCTION public.order_partner_list(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_courier_list(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_tick() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.order_refund_payment(uuid, numeric, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_cancel(jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.order_set_en_route(uuid, uuid, text, integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.order_handover_apply(uuid, uuid, text, text, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_code_resend(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_partner_action(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.order_courier_action(jsonb) TO service_role;

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
         }
 
-        const product = await ProductService.getProductById(params.id);
+        const product = await ProductService.getProductById(params.id, user.id);
         return NextResponse.json({ success: true, product });
     } catch (error: unknown) {
         return apiFailure('GET /api/partner/products/[id]', error, { message: 'Produit momentanément indisponible.', code: 'PRODUCT_UNAVAILABLE', status: 500 });

@@ -4,6 +4,9 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
 import { fetchAllRows, ticketsOfEvents, toPartnerSummary } from '@/lib/partner/partner-dashboard.service';
 
+/** Commandes visibles de la partenaire : sans établissement (billets), ou transmises (contre-vérification T5). */
+const TRANSMITTED_ORDERS = 'venue_id.is.null,received_at.not.is.null';
+
 export const dynamic = 'force-dynamic';
 
 /**
@@ -48,12 +51,15 @@ export async function GET(req: NextRequest) {
         const [events, recentOrdersRes, ordersCountRes, summaryRes] = await Promise.all([
             fetchAllRows<{ id: string; status: string }>('événements', (from, to) => supabase
                 .from('events').select('id, status').eq('partner_id', partnerId).order('id', { ascending: true }).range(from, to)),
+            // Contre-vérification (T5) : une commande d'établissement ne compte qu'une fois transmise à la partenaire
+            // (received_at : payée, ou payable à la remise) ; les commandes sans établissement (billets) restent comptées
             supabase.from('orders')
                 .select('id, order_number, total_amount, order_status, delivery_mode, created_at')
                 .eq('partner_id', partnerId)
+                .or(TRANSMITTED_ORDERS)
                 .order('created_at', { ascending: false })
                 .limit(10),
-            supabase.from('orders').select('id', { count: 'exact', head: true }).eq('partner_id', partnerId),
+            supabase.from('orders').select('id', { count: 'exact', head: true }).eq('partner_id', partnerId).or(TRANSMITTED_ORDERS),
             supabase.rpc('finance_partner_summary', { p_partner_id: partnerId, p_event_id: null }),
         ]);
         if (recentOrdersRes.error) throw new Error(`Lecture impossible (commandes) : ${recentOrdersRes.error.message}`);

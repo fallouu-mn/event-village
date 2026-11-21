@@ -605,14 +605,18 @@ export class PartnerDashboardService {
                 .order('start_date', { ascending: false })
                 .order('id', { ascending: true })
                 .range(from, to)),
+            // Contre-vérification (T5) : une commande d'établissement ne compte qu'une fois transmise à la partenaire
+            // (received_at : payée, ou payable à la remise) ; les commandes sans établissement (billets) restent comptées
             supabase.from('orders')
                 .select('id, order_number, delivery_mode, total_amount, order_status, created_at')
                 .eq('partner_id', partnerId)
+                .or('venue_id.is.null,received_at.not.is.null')
                 .order('created_at', { ascending: false })
                 .limit(5),
             supabase.from('orders')
                 .select('id', { count: 'exact', head: true })
                 .eq('partner_id', partnerId)
+                .or('venue_id.is.null,received_at.not.is.null')
                 .not('order_status', 'in', '(ANNULEE,REJETEE)'),
             supabase.rpc('finance_partner_summary', { p_partner_id: partnerId, p_event_id: null }),
             fetchAllRows<LedgerSalesRow>('grand livre', (from, to) => supabase

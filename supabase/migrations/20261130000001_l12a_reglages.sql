@@ -21,6 +21,7 @@ INSERT INTO public.platform_settings (key, value, description) VALUES
     ('orders.hold_minutes', '{"value": 15}', 'Commandes : durée pendant laquelle une commande non payée garde ses produits, en minutes'),
     ('orders.response_minutes', '{"value": 15}', 'Commandes : délai de réponse de la partenaire, en minutes ; sans réponse, la commande est annulée et remboursée'),
     ('orders.max_unpaid_per_client', '{"value": 3}', 'Commandes : nombre de commandes non payées au plus par client'),
+    ('orders.max_unpaid_portions', '{"value": 10}', 'Commandes : portions d''un plat du jour tenues sans paiement au plus, par client et par plat'),
     ('orders.pickup_grace_hours', '{"value": 24}', 'Commandes : une commande prête non retirée est close sans remboursement ce nombre d''heures après l''heure prévue'),
     ('orders.pickup_warning_hours', '{"value": 2}', 'Commandes : le client est prévenu ce nombre d''heures avant la clôture d''une commande non retirée'),
     ('orders.contact_retention_days', '{"value": 7}', 'Commandes : adresse et téléphone du client masqués ce nombre de jours après la remise'),
@@ -69,7 +70,8 @@ BEGIN
         'halls.max_pending_per_client',
         -- Lot 12a : commandes
         'orders.service_fee_rate', 'orders.commission_rate', 'orders.deposit_default_percent', 'orders.hold_minutes',
-        'orders.response_minutes', 'orders.max_unpaid_per_client', 'orders.pickup_grace_hours', 'orders.pickup_warning_hours',
+        'orders.response_minutes', 'orders.max_unpaid_per_client', 'orders.max_unpaid_portions', 'orders.pickup_grace_hours',
+        'orders.pickup_warning_hours',
         'orders.contact_retention_days', 'orders.code_max_attempts', 'orders.code_resend_max', 'orders.prep_minutes_default') THEN
         RETURN jsonb_build_object('ok', false, 'code', 'UNKNOWN_KEY', 'message', 'Réglage inconnu.');
     END IF;
@@ -191,6 +193,7 @@ BEGIN
         WHEN 'orders.hold_minutes' THEN n = trunc(n) AND n >= 5 AND n <= 60
         WHEN 'orders.response_minutes' THEN n = trunc(n) AND n >= 5 AND n <= 120
         WHEN 'orders.max_unpaid_per_client' THEN n = trunc(n) AND n >= 1 AND n <= 10
+        WHEN 'orders.max_unpaid_portions' THEN n = trunc(n) AND n >= 1 AND n <= 99
         WHEN 'orders.pickup_grace_hours' THEN n = trunc(n) AND n >= 2 AND n <= 168
         WHEN 'orders.pickup_warning_hours' THEN n = trunc(n) AND n >= 1 AND n <= 24
         WHEN 'orders.contact_retention_days' THEN n = trunc(n) AND n >= 1 AND n <= 90
