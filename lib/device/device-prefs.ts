@@ -7,7 +7,7 @@
  *  - Recherche : 6 recherches récentes au plus, 60 caractères chacune, « Effacer » les retire.
  * Tout est effacé à la déconnexion (lib/device/device-prefs-purge.ts, AuthProvider).
  */
-import { DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX } from './device-prefs-purge';
+import { DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX, DEVICE_TABLE_NOTES_PREFIX } from './device-prefs-purge';
 
 export type DeviceOperator = 'WAVE' | 'ORANGE_MONEY';
 
@@ -97,8 +97,11 @@ export function clearRecentSearches(): void {
 
 // ── Lot 11b : tables ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** Lot 11b : demande particulière saisie sur la fiche d'un établissement (gardée pendant la connexion, 500 caractères). */
-export const TABLE_NOTES_PREFIX = `${DEVICE_PREFS_PREFIX}table-demande:`;
+/**
+ * Lot 11b : demande particulière saisie sur la fiche d'un établissement (gardée pendant la connexion, 500 caractères) ;
+ * donnée du compte, effacée aussi quand la session se ferme à l'insu du navigateur (contre-vérification T5).
+ */
+export const TABLE_NOTES_PREFIX = DEVICE_TABLE_NOTES_PREFIX;
 export const TABLE_NOTES_MAX = 500;
 /** Lot 11b : signal des nouvelles réservations du planning de l'établissement (« on », « off »). */
 export const TABLE_SIGNAL_KEY = `${DEVICE_PREFS_PREFIX}signal-reservations`;

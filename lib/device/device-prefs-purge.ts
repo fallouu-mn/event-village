@@ -4,8 +4,9 @@
  * comme les liens de paiement (cvf2b 6.13b) :
  *  - bouton « Se déconnecter » et SIGNED_OUT dans chaque onglet : TOUT (numéro de paiement et recherches) ;
  *  - page chargée sans session (session close à l'insu du navigateur, mais aussi toute visite sans compte, car le
- *    signal ne les distingue pas) : le numéro de paiement seulement (`'paiement'`). Sinon, les recherches récentes d'un
- *    visiteur seraient effacées à chaque page (run 481, captures « recherches récentes »).
+ *    signal ne les distingue pas) : les données du compte seulement (`'paiement'`) : numéro de paiement et, depuis la
+ *    contre-vérification du lot 11b (T5), demandes particulières des réservations de table (« table-demande: »). Les
+ *    recherches récentes d'un visiteur restent (run 481, captures « recherches récentes »).
  *
  * Module à part, sans dépendance : AuthProvider est chargé par chaque page, l'achat et la recherche n'y entrent pas.
  */
@@ -14,22 +15,22 @@
 export const DEVICE_PREFS_PREFIX = 'event-village:appareil:';
 /** Clé du dernier opérateur et numéro de paiement (donnée du compte). */
 export const DEVICE_PAYMENT_KEY = `${DEVICE_PREFS_PREFIX}paiement`;
+/** Préfixe des demandes particulières d'une réservation de table, une clé par établissement (données du compte). */
+export const DEVICE_TABLE_NOTES_PREFIX = `${DEVICE_PREFS_PREFIX}table-demande:`;
 
 /**
- * Efface les préférences de l'appareil : toutes (`'tout'`, par défaut) ou le numéro de paiement seulement
- * (`'paiement'`). Stockage absent ou refusé : rien à effacer, ne lève jamais.
+ * Efface les préférences de l'appareil : toutes (`'tout'`, par défaut) ou les données du compte seulement
+ * (`'paiement'` : numéro de paiement et demandes particulières des tables). Stockage absent ou refusé : rien à
+ * effacer, ne lève jamais.
  */
 export function clearDevicePrefs(scope: 'tout' | 'paiement' = 'tout'): void {
     try {
         const s = window.localStorage;
-        if (scope === 'paiement') {
-            s.removeItem(DEVICE_PAYMENT_KEY);
-            return;
-        }
         const keys: string[] = [];
         for (let i = 0; i < s.length; i++) {
             const k = s.key(i);
-            if (k?.startsWith(DEVICE_PREFS_PREFIX)) keys.push(k);
+            if (!k?.startsWith(DEVICE_PREFS_PREFIX)) continue;
+            if (scope === 'tout' || k === DEVICE_PAYMENT_KEY || k.startsWith(DEVICE_TABLE_NOTES_PREFIX)) keys.push(k);
         }
         for (const k of keys) s.removeItem(k);
     } catch {
