@@ -359,7 +359,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
     { name: 'Explorer', href: '/explore', icon: Compass },
     { name: 'Mes billets', short: 'Billets', href: '/tickets', icon: Ticket },
     { name: 'Notifications', short: 'Avis', href: '/notifications', icon: Bell, dot: isUserLoggedIn && unreadCount > 0 },
-    { name: 'Portefeuille', href: '/wallet', icon: Wallet },
+    // Césure douce : « Porte-feuille » sur deux lignes si la place manque (360 px), jamais « Portefeuil / le »
+    { name: 'Portefeuille', short: 'Porte\u00adfeuille', href: '/wallet', icon: Wallet },
   ];
 
   const mobileItems: BottomNavItem[] = canShowRoleNav && isPartnerRoute && isPartner
@@ -439,7 +440,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
                 <span className="block break-words text-sm font-semibold text-brand-vif-foreground">{accountSubtitle}</span>
               </span>
             </Link>
-            <IconButton aria-label="Se déconnecter" variant="danger" onClick={() => { closeMobileMenu(); signOut(); }}>
+            {/* Sur l'orange, l'icône rouge seule manquait de contraste : pastille blanche (bg-card) */}
+            <IconButton aria-label="Se déconnecter" variant="danger" className="bg-card hover:bg-card" onClick={() => { closeMobileMenu(); signOut(); }}>
               <LogOut size={18} />
             </IconButton>
           </div>

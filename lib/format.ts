@@ -113,10 +113,31 @@ export function toDakarDateTimeLocal(input: DateInput): string {
     return d.toISOString().slice(0, 16);
 }
 
-/** Entier formaté en français : « 12 345 ». */
+/**
+ * Chiffres d'un entier groupés par trois, séparés par l'insécable visible : même texte qu'Intl fr-FR après visibleSpaces
+ * (« -12 345 », zéro signé « -0 » compris ; vérifié valeur par valeur par tests/schema/design1e-vitesse.test.ts).
+ */
+function groupDigits(rounded: number): string {
+    const negative = rounded < 0 || Object.is(rounded, -0);
+    const digits = String(Math.abs(rounded));
+    let out = '';
+    for (let i = 0; i < digits.length; i += 1) {
+        if (i > 0 && (digits.length - i) % 3 === 0) out += NBSP;
+        out += digits[i];
+    }
+    return negative ? `-${out}` : out;
+}
+
+/**
+ * Entier formaté en français : « 12 345 ». Design 1e (vitesse) : sans Intl pour un entier ordinaire (le premier
+ * Intl.NumberFormat coûtait 43 à 45 ms au téléphone de référence, au premier prix affiché de la fiche et de Mes billets) ;
+ * Intl seulement au-delà de 10^21 (écriture scientifique de String).
+ */
 export function formatInteger(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) return MISSING_VALUE;
-    return visibleSpaces(INTEGER_FORMAT().format(Math.round(value)));
+    const rounded = Math.round(value);
+    if (Math.abs(rounded) >= 1e21) return visibleSpaces(INTEGER_FORMAT().format(rounded));
+    return groupDigits(rounded);
 }
 
 /** Montant en francs CFA entiers : « 5 000 F CFA ». */

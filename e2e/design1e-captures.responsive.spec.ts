@@ -49,6 +49,11 @@ const SCREENS: Array<{ id: string; role: CaptureRole; url: () => string }> = [
 for (const theme of THEMES) {
     test.describe(`design 1e · captures · ${theme.key}`, () => {
         test.use({ colorScheme: theme.colorScheme, evTheme: theme.key });
+        // L'état de connexion enregistré porte un cookie « ev-theme » clair, qui l'emporte sur le thème du test (captures
+        // « sombre » des comptes connectés en clair, déjà sur main) : le cookie du thème voulu est posé avant chaque page
+        test.beforeEach(async ({ context }) => {
+            await context.addInitScript((value: string) => { document.cookie = `ev-theme=${value}; path=/`; }, theme.colorScheme);
+        });
 
         for (const s of SCREENS) {
             test.describe(s.role, () => {

@@ -62,3 +62,36 @@ describe('design 1e — vitesse : formateurs de lib/format.ts construits au prem
         assert.equal(f.formatDateTime(null), '—');
     });
 });
+
+describe('design 1e — vitesse : entiers formatés sans Intl (profil du run 530 : 43 à 45 ms au premier prix, fiche et Mes billets)', () => {
+    test('formatInteger n’appelle plus Intl.NumberFormat pour un entier ordinaire', () => {
+        const src = read('lib/format.ts');
+        const body = src.slice(src.indexOf('export function formatInteger'), src.indexOf('export function formatFcfa('));
+        assert.doesNotMatch(body, /INTEGER_FORMAT\(\)\.format\(Math\.round\(value\)\)/, 'formateur Intl encore appelé pour chaque entier');
+        assert.match(src, /function groupDigits\(/);
+    });
+    test('même texte qu’Intl fr-FR (espace insécable visible) : négatifs, zéro signé, milliers, très grands nombres', async () => {
+        const f = await import('../../lib/format');
+        const intl = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+        const ref = (v: number): string => intl.format(Math.round(v)).replace(/ /g, ' ');
+        const values = [0, -0, 0.4, -0.4, 0.5, -0.5, 1, -1, 9, 10, 99, 100, 999, 1000, -1000, 1001, 9999, 10000, 12345, -12345, 99999, 100000,
+            999999, 1000000, 1234567, -987654321, 2 ** 31, 2 ** 53 - 1, 1e15, 1e20, 123456.789, -999.5, 351000];
+        let seed = 7;
+        for (let i = 0; i < 2000; i += 1) { seed = (seed * 48271) % 2147483647; values.push((seed % 2_000_000_000) - 1_000_000_000); }
+        const diff = values.filter((v) => f.formatInteger(v) !== ref(v)).map((v) => `${v} → ${JSON.stringify(f.formatInteger(v))} au lieu de ${JSON.stringify(ref(v))}`);
+        assert.deepEqual(diff, []);
+        assert.equal(f.formatInteger(NaN), '—');
+        assert.equal(f.formatFcfa(351000), '351 000 F CFA');
+    });
+});
+
+describe('design 1e — vitesse : tri des villes de l’accueil par un seul comparateur (profil du run 530 : 27 ms)', () => {
+    test('HomeDiscovery : Intl.Collator créé une fois, plus de localeCompare(…, locale) à chaque comparaison ; même ordre', () => {
+        const src = read('components/events/HomeDiscovery.tsx');
+        assert.doesNotMatch(src, /localeCompare\([^)]*'fr-FR'\)/);
+        assert.match(src, /new Intl\.Collator\('fr-FR'\)/);
+        const labels = ['Ziguinchor', 'Dakar', 'Saint-Louis', 'Thiès', 'Mbour', 'Kaolack', 'Île de Gorée', 'Éthiopie', 'dakar'];
+        const collator = new Intl.Collator('fr-FR');
+        assert.deepEqual([...labels].sort(collator.compare), [...labels].sort((a, b) => a.localeCompare(b, 'fr-FR')));
+    });
+});
