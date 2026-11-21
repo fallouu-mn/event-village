@@ -2,30 +2,21 @@
 
 /**
  * Lot 11b : signal discret d'une nouvelle réservation sur le planning du jour.
- *  - Choix « Signal des nouvelles réservations » gardé sur l'appareil (localStorage), activé par défaut.
+ *  - Choix « Signal des nouvelles réservations » gardé sur l'appareil (préférences de l'appareil, lib/device/device-prefs.ts :
+ *    effacées à la déconnexion, audit cvf2b-6), activé par défaut.
  *  - Vibration courte (navigator.vibrate) si le téléphone la propose et si la personne ne demande pas à réduire les
  *    animations ; sinon un petit bip généré (Web Audio, aucun fichier), jamais avant une première interaction de la
  *    personne avec la page (règle des navigateurs, et pas de son surprise à l'ouverture).
  *  - Aucun signal quand l'onglet est caché : le planning est relu au retour et la nouveauté reste surlignée.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readTableSignal, saveTableSignal } from '@/lib/device/device-prefs';
 
-const STORAGE_KEY = 'ev:tables:signal-nouvelles';
+const readPreference = readTableSignal;
 
-function readPreference(): boolean {
-    try {
-        return window.localStorage.getItem(STORAGE_KEY) !== 'off';
-    } catch {
-        return true;
-    }
-}
-
+/** Stockage refusé (navigation privée) : le choix vaut pour cette visite seulement. */
 function writePreference(on: boolean): void {
-    try {
-        window.localStorage.setItem(STORAGE_KEY, on ? 'on' : 'off');
-    } catch {
-        // Stockage refusé (navigation privée) : le choix vaut pour cette visite seulement
-    }
+    saveTableSignal(on);
 }
 
 type AudioCtor = typeof AudioContext;

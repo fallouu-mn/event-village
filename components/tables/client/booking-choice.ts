@@ -1,9 +1,10 @@
 /**
  * Lot 11b (écrans du client) : choix de réservation d'une table gardé dans l'adresse de la fiche (jour, heure, nombre
- * de personnes, zone, table) et demande particulière gardée sur l'appareil (stockage de session de l'onglet). Le choix
- * survit à la connexion (/login?redirect=…) et au retour arrière. Écriture par history.replaceState : Next.js met à
- * jour useSearchParams sans relancer le rendu serveur de la fiche. Aucun montant ici.
+ * de personnes, zone, table) et demande particulière gardée sur l'appareil (préférences de l'appareil, effacées à la
+ * déconnexion). Le choix survit à la connexion (/login?redirect=…) et au retour arrière. Écriture par
+ * history.replaceState : Next.js met à jour useSearchParams sans relancer le rendu serveur de la fiche. Aucun montant ici.
  */
+import { readTableNotes, saveTableNotes, TABLE_NOTES_MAX } from '@/lib/device/device-prefs';
 
 export interface TableChoice {
     /** Jour AAAA-MM-JJ (aujourd'hui par défaut). */
@@ -67,37 +68,18 @@ export function loginHref(): string {
     return `/login?redirect=${encodeURIComponent(`${window.location.pathname}${window.location.search}#reserver`)}`;
 }
 
-// ── Demande particulière : gardée dans l'onglet (survit à la connexion), jamais envoyée ailleurs ───────────────────
+// ── Demande particulière : gardée sur l'appareil (survit à la connexion), effacée à la déconnexion ─────────────────
+// Préférences de l'appareil (lib/device/device-prefs.ts, effacées par AuthProvider : audit cvf2b-6) ; stockage refusé
+// (navigation privée, quota) : la saisie reste à l'écran, rien n'est gardé.
 
-const NOTES_PREFIX = 'ev-table-demande:v1:';
-export const NOTES_MAX = 500;
-
-function session(): Storage | null {
-    try {
-        return typeof window === 'undefined' ? null : window.sessionStorage;
-    } catch {
-        return null;
-    }
-}
+export const NOTES_MAX = TABLE_NOTES_MAX;
 
 export function readNotes(venueId: string): string {
-    try {
-        const v = session()?.getItem(`${NOTES_PREFIX}${venueId}`);
-        return typeof v === 'string' ? v.slice(0, NOTES_MAX) : '';
-    } catch {
-        return '';
-    }
+    return readTableNotes(venueId);
 }
 
 export function writeNotes(venueId: string, notes: string): void {
-    try {
-        const s = session();
-        if (!s) return;
-        if (notes.trim()) s.setItem(`${NOTES_PREFIX}${venueId}`, notes.slice(0, NOTES_MAX));
-        else s.removeItem(`${NOTES_PREFIX}${venueId}`);
-    } catch {
-        // Stockage refusé (navigation privée, quota) : la saisie reste à l'écran, rien n'est gardé
-    }
+    saveTableNotes(venueId, notes);
 }
 
 export function clearNotes(venueId: string): void {
