@@ -1504,7 +1504,8 @@ const CATALOG = {
                 : num(d, 'paid_amount') > 0 ? 'Acompte non remboursé.' : '';
             const link = tableSmsLink(d, ctx);
             if (origin === 'ETABLISSEMENT') return `${SMS_PREFIX}${name} a annulé votre table ${smsTablePeriod(d)}. ${refund ? `${refund} ` : ''}${link}`;
-            if (origin === 'EVENT_VILLAGE') return `${SMS_PREFIX}notre équipe a annulé votre table chez ${name} ${smsTablePeriod(d)}. ${refund ? `${refund} ` : ''}${link}`;
+            // Contre-vérification du lot 11b : 160 caractères pile au pire cas avec « notre équipe a annulé » ; 154 ici (au moins 5 de marge)
+            if (origin === 'EVENT_VILLAGE') return `${SMS_PREFIX}nous avons annulé la table chez ${name} ${smsTablePeriod(d)}. ${refund ? `${refund} ` : ''}${link}`;
             return `${SMS_PREFIX}table chez ${name} ${smsTablePeriod(d)} annulée. ${refund ? `${refund} ` : ''}${link}`;
         },
         sample: { ...TABLE_SAMPLE_DATA, origin: 'ETABLISSEMENT', refund_amount: 21_000, refund_percent: 100, reason: 'Fermeture exceptionnelle : travaux dans la salle.' },
