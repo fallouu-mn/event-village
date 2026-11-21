@@ -1,0 +1,216 @@
+TAP version 13
+# Subtest: Lot 10b — routes des salles : session, droit, interrupteur
+    # Subtest: app/api/halls/route.ts
+    ok 1 - app/api/halls/route.ts
+      ---
+      duration_ms: 0.763442
+      type: 'test'
+      ...
+    # Subtest: app/api/halls/[id]/route.ts
+    ok 2 - app/api/halls/[id]/route.ts
+      ---
+      duration_ms: 0.108404
+      type: 'test'
+      ...
+    # Subtest: app/api/halls/[id]/calendar/route.ts
+    ok 3 - app/api/halls/[id]/calendar/route.ts
+      ---
+      duration_ms: 0.060862
+      type: 'test'
+      ...
+    # Subtest: app/api/halls/[id]/quote/route.ts
+    ok 4 - app/api/halls/[id]/quote/route.ts
+      ---
+      duration_ms: 0.094042
+      type: 'test'
+      ...
+    # Subtest: app/api/halls/reservations/route.ts
+    ok 5 - app/api/halls/reservations/route.ts
+      ---
+      duration_ms: 0.136506
+      type: 'test'
+      ...
+    # Subtest: app/api/halls/reservations/[id]/route.ts
+    ok 6 - app/api/halls/reservations/[id]/route.ts
+      ---
+      duration_ms: 0.062675
+      type: 'test'
+      ...
+    # Subtest: app/api/halls/reservations/[id]/cancel/route.ts
+    ok 7 - app/api/halls/reservations/[id]/cancel/route.ts
+      ---
+      duration_ms: 0.143857
+      type: 'test'
+      ...
+    # Subtest: app/api/partner/halls/[id]/submit/route.ts
+    ok 8 - app/api/partner/halls/[id]/submit/route.ts
+      ---
+      duration_ms: 0.0993
+      type: 'test'
+      ...
+    # Subtest: app/api/partner/halls/reservations/route.ts
+    not ok 9 - app/api/partner/halls/reservations/route.ts
+      ---
+      duration_ms: 1.066689
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/l10b-routes.test.ts:2:2412'
+      failureType: 'testCodeFailure'
+      error: 'GET : interrupteur non vérifié'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        GET(req: NextRequest) {
+            try {
+                const session = await requireActiveSession(req);
+                if (session.response) return session.response;
+                // Lot 11b (décision du 20/11) : sans interrupteur, une réservation existante se lit et se gère même service fermé
+                if (!serverIsPartner(session.user)) {
+                    return NextResponse.json({ success: false, error: 'Espace réservé aux partenaires.', code: 'FORBIDDEN' }, { status: 403 });
+                }
+                const sp = req.nextUrl.searchParams;
+                const today = new Date().toISOString().slice(0, 10);
+                const from = sp.get('from') || today;
+                const to = sp.get('to') || new Date(Date.parse(`${from}T00:00:00Z`) + 41 * 86_400_000).toISOString().slice(0, 10);
+                const hall = sp.get('hall');
+                if (!DAY_RE.test(from) || !DAY_RE.test(to)) return badRequest('Période non valable.', 'INVALID_DATES');
+                const span = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+                if (!Number.isFinite(span) || span < 0 || span > 92) return badRequest('Choisissez une période de 3 mois au plus.', 'INVALID_DATES');
+                if (hall !== null && hall !== '' && !UUID_RE.test(hall)) return badRequest('Salle inconnue.', 'INVALID_FILTER');
+                const reservations = await partnerReservations(session.user.id, { from, to, hallId: hall || null });
+                return NextResponse.json({ success: true, from, to, reservations });
+            } catch (err: unknown) {
+                return apiFailure('GET /api/partner/halls/reservations', err, { message: 'Réservations momentanément indisponibles.', code: 'HALL_RESERVATIONS_UNAVAILABLE', status: 500 });
+            }
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/l10b-routes.test.ts:48:39)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: app/api/partner/halls/reservations/[id]/route.ts
+    not ok 10 - app/api/partner/halls/reservations/[id]/route.ts
+      ---
+      duration_ms: 0.376057
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/l10b-routes.test.ts:2:2412'
+      failureType: 'testCodeFailure'
+      error: 'GET : interrupteur non vérifié'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+            try {
+                const session = await requireActiveSession(req);
+                if (session.response) return session.response;
+                // Lot 11b (décision du 20/11) : sans interrupteur, une réservation existante se lit et se gère même service fermé
+                if (!serverIsPartner(session.user)) {
+                    return NextResponse.json({ success: false, error: 'Espace réservé aux partenaires.', code: 'FORBIDDEN' }, { status: 403 });
+                }
+                const { id } = await params;
+                const reservation = await partnerReservation(session.user.id, id);
+                if (!reservation) return notFound('Réservation introuvable.', 'RESERVATION_NOT_FOUND');
+                return NextResponse.json({ success: true, reservation });
+            } catch (err: unknown) {
+                return apiFailure('GET /api/partner/halls/reservations/[id]', err, { message: 'Réservation momentanément indisponible.', code: 'HALL_RESERVATION_UNAVAILABLE', status: 500 });
+            }
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/l10b-routes.test.ts:48:39)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: app/api/partner/halls/earnings/route.ts
+    not ok 11 - app/api/partner/halls/earnings/route.ts
+      ---
+      duration_ms: 0.128183
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/l10b-routes.test.ts:2:2412'
+      failureType: 'testCodeFailure'
+      error: 'GET : interrupteur non vérifié'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        GET(req: NextRequest) {
+            try {
+                const session = await requireActiveSession(req);
+                if (session.response) return session.response;
+                // Lot 11b (décision du 20/11) : sans interrupteur, une réservation existante se lit et se gère même service fermé
+                if (!serverIsPartner(session.user)) {
+                    return NextResponse.json({ success: false, error: 'Espace réservé aux partenaires.', code: 'FORBIDDEN' }, { status: 403 });
+                }
+                const earnings = await partnerEarnings(session.user.id);
+                return NextResponse.json({ success: true, ...earnings });
+            } catch (err: unknown) {
+                if (err instanceof HallRefusal) return refusalResponse(err);
+                return apiFailure('GET /api/partner/halls/earnings', err, { message: 'Recettes momentanément indisponibles.', code: 'HALL_EARNINGS_UNAVAILABLE', status: 500 });
+            }
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/l10b-routes.test.ts:48:39)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: app/api/admin/halls/route.ts
+    ok 12 - app/api/admin/halls/route.ts
+      ---
+      duration_ms: 0.062645
+      type: 'test'
+      ...
+    # Subtest: app/api/admin/halls/[id]/route.ts
+    ok 13 - app/api/admin/halls/[id]/route.ts
+      ---
+      duration_ms: 0.04024
+      type: 'test'
+      ...
+    # Subtest: app/api/admin/halls/[id]/validation/route.ts
+    ok 14 - app/api/admin/halls/[id]/validation/route.ts
+      ---
+      duration_ms: 0.096045
+      type: 'test'
+      ...
+    # Subtest: lectures des salles : colonnes nommées, jamais « * » renvoyé à un écran
+    ok 15 - lectures des salles : colonnes nommées, jamais « * » renvoyé à un écran
+      ---
+      duration_ms: 0.1922
+      type: 'test'
+      ...
+    1..15
+not ok 1 - Lot 10b — routes des salles : session, droit, interrupteur
+  ---
+  duration_ms: 4.165726
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/l10b-routes.test.ts:2:2292'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 15
+# suites 1
+# pass 12
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 36.92318
