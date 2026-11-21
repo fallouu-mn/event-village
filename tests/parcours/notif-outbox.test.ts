@@ -162,14 +162,13 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ORDER_ACCEPTED', [I, P, M, S], 'CLIENT', 'B'),
     ess('ORDER_PREPARING', [I, P, M, S], 'CLIENT', 'B'),
     ess('ORDER_READY', [I, P, M, S], 'CLIENT', 'B'),
-    ess('ORDER_ON_THE_WAY', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_ON_THE_WAY', [I, P, M], 'CLIENT', 'B'),
     ess('ORDER_HANDED_OVER', [I, P, M, S], 'CLIENT', 'B'),
     ess('ORDER_CANCELLED', [I, P, M, S], 'CLIENT', 'A'),
     ess('ORDER_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
     ess('ORDER_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A'),
     ess('ORDER_PICKUP_REMINDER', [I, P, M, S], 'CLIENT', 'B'),
     ess('ORDER_NOT_COLLECTED', [I, P, M, S], 'CLIENT', 'A'),
-    ess('ORDER_CODE', [I, P, M, S], 'CLIENT', 'B'),
     ess('ORDER_NEW', [I, P, M, S], 'PARTNER', 'B'),
     ess('ORDER_CANCELLED_PRO', [I, P, M, S], 'PARTNER', 'A'),
     ess('ORDER_HANDED_OVER_PRO', [I, P, M, S], 'PARTNER', 'B'),
@@ -268,6 +267,7 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     opt('ENTRY_THANKS', 'AFTER_EVENT', [I, S, M, P], 'CLIENT'),
     ess('PARTNER_REFUND_REQUESTS', [I, S, M, P], 'PARTNER', 'B'),
     sync('OTP_ADMIN_PHONE'),
+    sync('ORDER_HANDOVER_CODE'), // lot 12a (ajout signalé)
 ];
 
 const LOT6_TABLES = ['notification_outbox', 'notification_types', 'notification_preferences', 'push_subscriptions'] as const;

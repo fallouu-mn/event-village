@@ -61,7 +61,7 @@ const EXPECTED: CronTask[] = [
     // Lot 11a (modification signalée au rapport) : réservations de table, toutes les 5 minutes
     { name: 'ev_tables', expr: '3-59/5 * * * *', route: '/api/cron/tables', timeoutMs: 60000 },
     // Lot 12a (modification signalée au rapport) : commandes, toutes les 5 minutes
-    { name: 'ev_orders', expr: '2-59/5 * * * *', route: '/api/cron/orders', timeoutMs: 60000 },
+    { name: 'ev_orders', expr: '3-59/5 * * * *', route: '/api/cron/orders', timeoutMs: 60000 },
 ];
 
 const TUNNEL = 'https://mot-mot-mot-mot.trycloudflare.com';

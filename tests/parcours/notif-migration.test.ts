@@ -165,7 +165,7 @@ const WHITELIST_FILES: ReadonlyArray<[string, string]> = [
  * par la nouvelle route app/api/auth/register/start (numéro d'abord) ; app/api/auth/register vérifie le code et
  * n'envoie plus de SMS (elle sort de la liste : tout appel à l'adaptateur y devient un motif interdit).
  */
-const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendControllerInvite'; why: string }>> = {
+const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendControllerInvite' | 'sendOrderCode'; why: string }>> = {
     'app/api/auth/register/start/route.ts': { method: 'sendOtp', why: "code d'inscription (démarrage, numéro d'abord)" },
     'app/api/auth/send-otp/route.ts': { method: 'sendOtp', why: 'code de connexion, inscription, réinitialisation' },
     'app/api/auth/sms-hook/route.ts': { method: 'sendOtp', why: 'hook « Send SMS » de Supabase Auth' },
@@ -178,6 +178,9 @@ const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendController
     // Finition 3d (point 2 ; ajout signalé au rapport) : code au nouveau numéro d'un administrateur, envoyé par le module
     // commun des routes /api/admin/users/[id]/phone/start et /api/admin/security/phone/start (journal `log:` compris)
     'lib/admin/phone-change.ts': { method: 'sendOtp', why: "code au nouveau numéro d'un administrateur" },
+    // Lot 12a (ajout signalé au rapport) : code de remise d'une commande, envoyé tout de suite au client par le module commun
+    // des routes de la partenaire, du livreur et du client (journal ORDER_HANDOVER_CODE sans le code)
+    'lib/orders/booking.ts': { method: 'sendOrderCode', why: "code de remise d'une commande (jamais stocké en clair)" },
 };
 
 function fullyWhitelisted(file: string): boolean {
@@ -298,11 +301,12 @@ describe('6.7 — envois TypeScript retirés', () => {
     });
 
     // Lot 9 quinquies (A2 ; ajout signalé au rapport) : sendAccountActivation, lien d'activation d'un compte créé par un admin
-    test('MTargetService : seules sendSms, sendNotification (alias), sendOtp, sendControllerInvite et sendAccountActivation restent', () => {
+    // Lot 12a (modification signalée au rapport) : sendOrderCode, code de remise d'une commande
+    test('MTargetService : seules sendSms, sendNotification (alias), sendOtp, sendControllerInvite, sendAccountActivation et sendOrderCode restent', () => {
         const file = 'lib/sms/mtarget.service.ts';
         assert.ok(exists(file), `${file} absent`);
         const methods = Array.from(source(file).matchAll(/^\s*(?:public\s+)?(?:async\s+)?(send\w*)\s*\(/gm)).map((m) => m[1]).sort();
-        assert.deepEqual(Array.from(new Set(methods)), ['sendAccountActivation', 'sendControllerInvite', 'sendNotification', 'sendOtp', 'sendSms'],
+        assert.deepEqual(Array.from(new Set(methods)), ['sendAccountActivation', 'sendControllerInvite', 'sendNotification', 'sendOrderCode', 'sendOtp', 'sendSms'],
             `méthodes send* de MTargetService : ${methods.join(', ')}`);
     });
 
@@ -471,7 +475,6 @@ const INVENTORY: Insertion[] = [
     { k1: 'lot 12a étapes', fn: 'order_partner_action', types: ['ORDER_ACCEPTED', 'ORDER_PREPARING', 'ORDER_READY', 'ORDER_COURIER_ASSIGNED', 'ORDER_COURIER_CANCELLED'] },
     { k1: 'lot 12a en route', fn: 'order_set_en_route', types: ['ORDER_ON_THE_WAY'] },
     { k1: 'lot 12a remise', fn: 'order_handover_apply', types: ['ORDER_HANDED_OVER', 'ORDER_HANDED_OVER_PRO'] },
-    { k1: 'lot 12a nouveau code', fn: 'order_code_resend', types: ['ORDER_CODE'] },
     { k1: 'lot 12a retrait', fn: 'order_tick', types: ['ORDER_PICKUP_REMINDER'] },
     { k1: 'lot 12a livreur', fn: 'order_courier_invite', types: ['ORDER_COURIER_INVITED'] },
     { k1: 'lot 12a remboursement versé', fn: 'notif_cashouts_notify', types: ['ORDER_REFUND_PAID'] },

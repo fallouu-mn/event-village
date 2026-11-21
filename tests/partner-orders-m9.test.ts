@@ -131,7 +131,7 @@ test('Test 3 : CYCLE STATUTS (lot 12a : chaque étape par la fonction en base, r
         assert.equal(res.status, 200, `${action} : ${JSON.stringify(res.body)}`);
         seen.push(String((await order(id)).order_status));
     }
-    const res = await partnerAct(partner, id, { action: 'REMETTRE', code: await codeOf(client.userId, id, 'ORDER_ON_THE_WAY') });
+    const res = await partnerAct(partner, id, { action: 'REMETTRE', code: await codeOf(client, id) });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     seen.push(String((await order(id)).order_status));
     assert.deepEqual(seen, ['EN_ATTENTE', 'CONFIRMEE', 'EN_PREPARATION', 'PRETE', 'EN_LIVRAISON', 'LIVREE']);

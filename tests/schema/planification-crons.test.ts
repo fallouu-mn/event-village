@@ -65,7 +65,7 @@ const EXPECTED_JOBS: ExpectedJob[] = [
     // Lot 11a (modification signalée au rapport) : réservations de table, toutes les 5 minutes
     { jobname: 'ev_tables', schedule: '3-59/5 * * * *', path: '/api/cron/tables', timeoutMs: 60_000 },
     // Lot 12a (modification signalée au rapport) : commandes, toutes les 5 minutes
-    { jobname: 'ev_orders', schedule: '2-59/5 * * * *', path: '/api/cron/orders', timeoutMs: 60_000 },
+    { jobname: 'ev_orders', schedule: '3-59/5 * * * *', path: '/api/cron/orders', timeoutMs: 60_000 },
     { jobname: 'ev_cron_history_purge', schedule: '30 3 * * *', path: null, timeoutMs: null },
 ];
 

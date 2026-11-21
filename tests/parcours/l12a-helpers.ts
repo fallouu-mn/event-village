@@ -10,6 +10,7 @@ import { BASE_URL } from './helpers';
 import { deliverWebhook, newBuyer, paymentById, providerSays, service, type Buyer, type PaymentRow } from './paiement-helpers';
 import { newPartner, superadminId, type TestPartner } from './finance-helpers';
 import { openConcurrentClient } from '../helpers/db';
+import { getFakes } from '../fakes';
 import { platformSetting, setPlatformSetting } from './l10a-helpers';
 import { newVenue, type VenueSpec } from './l11a-helpers';
 import { POST as createOrderRoute } from '../../app/api/orders/create/route';
@@ -183,20 +184,23 @@ export async function toReady(partner: Buyer, id: string): Promise<void> {
     }
 }
 
+/** SMS reçus par le client (faux adaptateur) qui portent le numéro de la commande, du plus ancien au plus récent. */
+export async function smsOfOrder(client: Buyer, orderId: string): Promise<string[]> {
+    const number = String((await order(orderId)).order_number);
+    return getFakes().sms.messagesTo(client.phoneE164).map((m) => m.message).filter((m) => m.includes(number));
+}
+
 /**
- * Code de remise lu dans la boîte d'envoi (ligne SMS, push ou email encore en attente) : le seul endroit où il existe en
- * clair, jusqu'à la fin de l'envoi. Le plus récent pour ce type d'avis.
+ * Code de remise lu dans le dernier SMS reçu par le client pour cette commande (faux adaptateur) : le seul endroit où il
+ * existe en clair. Il n'est ni dans la base (empreinte), ni dans la boîte d'envoi, ni dans une réponse de route.
  */
-export async function codeOf(clientId: string, orderId: string, type = ''): Promise<string> {
-    let q = service.from('notification_outbox').select('type, channel, template_data, created_at')
-        .eq('recipient_user_id', clientId).eq('template_data->>order_id', orderId).neq('channel', 'IN_APP')
-        .order('created_at', { ascending: false });
-    if (type) q = q.eq('type', type);
-    const { data, error } = await q;
-    assert.equal(error, null, `boîte d'envoi : ${error?.message}`);
-    const row = (data ?? []).find((r) => typeof (r.template_data as Row)?.code === 'string');
-    assert.ok(row, `aucun code en attente d'envoi pour la commande ${orderId} (${type || 'tout type'})`);
-    return String((row!.template_data as Row).code);
+export async function codeOf(client: Buyer, orderId: string): Promise<string> {
+    const texts = await smsOfOrder(client, orderId);
+    for (let i = texts.length - 1; i >= 0; i -= 1) {
+        const m = /code (\d{4})\b|: (\d{4})\./.exec(texts[i]);
+        if (m) return m[1] ?? m[2];
+    }
+    assert.fail(`aucun SMS de code pour la commande ${orderId} : ${JSON.stringify(texts)}`);
 }
 
 /** Avis en file pour un destinataire et une commande : « TYPE:CANAL », triés. */

@@ -35,8 +35,10 @@ import { GET as partnerOrderGet } from '../../app/api/partner/orders/[id]/route'
 import { GET as courierOrdersGet } from '../../app/api/courier/orders/route';
 import { POST as adminCancelRoute } from '../../app/api/admin/orders/[id]/cancel/route';
 import { POST as cronOrders } from '../../app/api/cron/orders/route';
+import { sendOrderRefunds } from '../../lib/orders/booking';
+import { confirmCashouts } from './finance-helpers';
 import {
-    addCourier, allChannels, codeOf, courierAct, historyOf, itemsOf, ledgerOfPayment, n, newBuyer, newDeliveryZone, newOption, newPartner,
+    addCourier, allChannels, codeOf, courierAct, smsOfOrder, historyOf, itemsOf, ledgerOfPayment, n, newBuyer, newDeliveryZone, newOption, newPartner,
     newProduct, newShop, openOrdersService, order, orderBody, orderRoute, orderRpc, outboxOf, partnerAct, payOrder, placed, platformSetting,
     refundsOfOrder, releaseUnpaid, setPortions, shiftOrder, startOrderPay, superadminId, tick, toReady, userClient, type Buyer, type Row,
     type TestPartner,
@@ -349,7 +351,7 @@ describe('B. Payer et suivre la commande', () => {
         assert.deepEqual(await outboxOf(courier.userId, id), allChannels('ORDER_COURIER_ASSIGNED'));
         const go = await courierAct(courier, id, { action: 'EN_ROUTE', minutes: 20 });
         assert.equal(go.status, 200, JSON.stringify(go.body));
-        const code = await codeOf(client.userId, id, 'ORDER_ON_THE_WAY');
+        const code = await codeOf(client, id);
         assert.match(code, /^\d{4}$/);
         const done = await courierAct(courier, id, { action: 'REMETTRE', code });
         assert.equal(done.status, 200, JSON.stringify(done.body));
@@ -362,9 +364,15 @@ describe('B. Payer et suivre la commande', () => {
             '∅→EN_ATTENTE_PAIEMENT (CLIENT)', 'EN_ATTENTE_PAIEMENT→RECUE (SYSTEM)', 'RECUE→ACCEPTEE (PARTENAIRE)', 'ACCEPTEE→EN_PREPARATION (PARTENAIRE)',
             'EN_PREPARATION→PRETE (PARTENAIRE)', 'PRETE→EN_ROUTE (LIVREUR)', 'EN_ROUTE→REMISE (LIVREUR)']);
         const box = await outboxOf(client.userId, id);
-        for (const t of ['ORDER_RECEIVED', 'ORDER_ACCEPTED', 'ORDER_PREPARING', 'ORDER_READY', 'ORDER_ON_THE_WAY', 'ORDER_HANDED_OVER']) {
+        for (const t of ['ORDER_RECEIVED', 'ORDER_ACCEPTED', 'ORDER_PREPARING', 'ORDER_READY', 'ORDER_HANDED_OVER']) {
             assert.deepEqual(box.filter((x) => x.startsWith(`${t}:`)), allChannels(t), `${t} sur les 4 canaux`);
         }
+        // En route : cloche, push et email en file ; le SMS de l'étape est le code, envoyé tout de suite (jamais en file)
+        assert.deepEqual(box.filter((x) => x.startsWith('ORDER_ON_THE_WAY:')), ['ORDER_ON_THE_WAY:EMAIL', 'ORDER_ON_THE_WAY:IN_APP', 'ORDER_ON_THE_WAY:PUSH']);
+        const number = String(o.order_number);
+        assert.ok((await smsOfOrder(client, id)).includes(`Event Village : votre commande ${number} est en route. Donnez le code ${code} au livreur à son arrivée, pas avant.`),
+            'SMS du code au client, texte qui dit quoi faire');
+        assert.equal(JSON.stringify(go.body).includes(code), false, 'le code n’est pas rendu au livreur');
         assert.deepEqual(await outboxOf(partner.userId, id), [...allChannels('ORDER_HANDED_OVER_PRO'), ...allChannels('ORDER_NEW')].sort());
         const view = await reply(await clientOrderGet(req(`/api/orders/${id}`, 'GET', client.accessToken), ctx(id)));
         assert.equal(view.status, 200);
@@ -374,22 +382,28 @@ describe('B. Payer et suivre la commande', () => {
         assert.equal(JSON.stringify(view.body).includes(code), false, 'le code n’est jamais rendu par la route');
     });
 
-    test('code : jamais en clair en base (empreinte), ni dans la cloche ; effacé de la boîte d’envoi dès l’envoi terminé', async () => {
+    test('code de retrait : SMS immédiat au client ; jamais en clair en base (empreinte), ni dans la boîte d’envoi, ni dans une réponse ; envoi journalisé sans le code', async () => {
         const p = await newProduct(partner, shop, { price: 2_000 });
         const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
         await payOrder(client, id);
-        await toReady(partner, id);
-        const code = await codeOf(client.userId, id, 'ORDER_READY');
+        for (const action of ['ACCEPTER', 'PREPARER']) assert.equal((await partnerAct(partner, id, { action })).status, 200);
+        const ready = await partnerAct(partner, id, { action: 'PRETE' });
+        assert.equal(ready.status, 200, JSON.stringify(ready.body));
+        const code = await codeOf(client, id);
         const o = await order(id);
+        assert.equal(JSON.stringify(ready.body).includes(code), false, 'le code n’est pas rendu à la partenaire');
+        assert.deepEqual(Object.keys(ready.body.order as Row).filter((k) => /code|phone/i.test(k)), [], 'ni code ni numéro dans la réponse');
         assert.match(String(o.code_hash), /^[0-9a-f]{64}$/);
         assert.equal(JSON.stringify(o).includes(`"${code}"`), false, 'le code n’est pas dans la ligne de la commande');
-        const rows = await sql<{ channel: string; has: boolean; id: string }>(
-            `SELECT id::text, channel, template_data ? 'code' AS has FROM public.notification_outbox WHERE type = 'ORDER_READY' AND template_data->>'order_id' = $1`, [id]);
-        assert.deepEqual(rows.map((r) => [r.channel, r.has]).sort(), [['EMAIL', true], ['IN_APP', false], ['PUSH', true], ['SMS', true]]);
-        const sms = rows.find((r) => r.channel === 'SMS')!;
-        await sql(`UPDATE public.notification_outbox SET status = 'SENT', finished_at = now() WHERE id = $1`, [sms.id]);
-        const after = await sql<{ has: boolean }>(`SELECT template_data ? 'code' AS has FROM public.notification_outbox WHERE id = $1`, [sms.id]);
-        assert.equal(after[0].has, false, 'code effacé dès l’envoi terminé');
+        assert.ok((await smsOfOrder(client, id)).includes(`Event Village : votre commande ${String(o.order_number)} vous attend. Donnez le code ${code} au comptoir pour la retirer, à personne d'autre.`));
+        const rows = await sql<{ channel: string; has: boolean }>(
+            `SELECT channel, template_data ? 'code' AS has FROM public.notification_outbox WHERE type = 'ORDER_READY' AND template_data->>'order_id' = $1`, [id]);
+        assert.deepEqual(rows.map((r) => [r.channel, r.has]).sort(), [['EMAIL', false], ['IN_APP', false], ['PUSH', false]], 'cloche, push et email sans le code ; pas de second SMS');
+        const log = await sql<{ data: Row; status: string }>(
+            `SELECT template_data AS data, status FROM public.notification_outbox WHERE type = 'ORDER_HANDOVER_CODE' AND recipient_user_id = $1 ORDER BY created_at DESC LIMIT 1`, [client.userId]);
+        assert.deepEqual([log[0]?.data, log[0]?.status], [{ purpose: 'ORDER_HANDOVER' }, 'SENT'], 'envoi journalisé, sans le code');
+        const hits = await sql<{ n: number }>(`SELECT count(*)::int AS n FROM public.notification_outbox WHERE template_data::text LIKE '%' || $1 || '%' AND template_data->>'order_id' = $2`, [code, id]);
+        assert.equal(hits[0].n, 0, 'le code n’apparaît dans aucune donnée d’avis de la commande');
     });
 
     test('codes devinés : 4 erreurs (il reste 1 essai), 5e → bloqué, même le bon code ; nouveau code demandé par le client : l’ancien ne marche plus', async () => {
@@ -397,7 +411,7 @@ describe('B. Payer et suivre la commande', () => {
         const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
         await payOrder(client, id);
         await toReady(partner, id);
-        const code = await codeOf(client.userId, id, 'ORDER_READY');
+        const code = await codeOf(client, id);
         const wrong = code === '0000' ? '1111' : '0000';
         const left: unknown[] = [];
         for (let i = 0; i < 4; i += 1) left.push((await partnerAct(partner, id, { action: 'REMETTRE', code: wrong })).body.attempts_left);
@@ -409,7 +423,7 @@ describe('B. Payer et suivre la commande', () => {
         const resend = await reply(await clientCodeRoute(req(`/api/orders/${id}/code`, 'POST', client.accessToken), ctx(id)));
         assert.equal(resend.status, 200, JSON.stringify(resend.body));
         assert.equal(resend.body.resendsLeft, 2);
-        const fresh = await codeOf(client.userId, id, 'ORDER_CODE');
+        const fresh = await codeOf(client, id);
         if (fresh !== code) {
             const old = await partnerAct(partner, id, { action: 'REMETTRE', code });
             assert.equal(old.body.code, 'WRONG_CODE', 'l’ancien code ne marche plus');
@@ -434,7 +448,7 @@ describe('B. Payer et suivre la commande', () => {
         assert.deepEqual([n(o.paid_goods), n(o.paid_fees), n(o.balance_amount), o.payment_status], [13_345, 669, 0, 'SUCCESS']);
         assert.equal((await partnerAct(partner, id, { action: 'PRETE' })).status, 200);
         assert.equal((await partnerAct(partner, id, { action: 'EN_ROUTE' })).status, 200);
-        const done = await partnerAct(partner, id, { action: 'REMETTRE', code: await codeOf(client.userId, id, 'ORDER_ON_THE_WAY') });
+        const done = await partnerAct(partner, id, { action: 'REMETTRE', code: await codeOf(client, id) });
         assert.equal(done.status, 200, JSON.stringify(done.body));
         assert.equal((await order(id)).onsite_amount, null);
     });
@@ -444,7 +458,7 @@ describe('B. Payer et suivre la commande', () => {
         const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }], { mode: 'RETRAIT', payment: 'ACOMPTE' }));
         const first = await payOrder(client, id);
         await toReady(partner, id);
-        const code = await codeOf(client.userId, id, 'ORDER_READY');
+        const code = await codeOf(client, id);
         const due = await partnerAct(partner, id, { action: 'REMETTRE', code });
         assert.deepEqual([due.status, due.body.code, due.body.balance_due], [409, 'BALANCE_DUE', 9_341]);
         const ledgerBefore = await ledgerOfPayment(first.id);
@@ -555,6 +569,9 @@ describe('C. Annuler, rembourser, tâche planifiée', () => {
         assert.equal(n(comm[0]?.amount), Math.round(685 * n(cfg?.rate_n1 ?? 5)) / 100);
         const c = await service.rpc('order_cancel', { p: { order_id: id, actor_id: buyer.userId, origin: 'CLIENT' } });
         assert.equal((c.data as Row).ok, true);
+        // La régularisation suit le remboursement versé (paiement REFUNDED), comme pour les billets et les tables
+        await sendOrderRefunds((c.data as Row).cashout_ids);
+        await confirmCashouts();
         const regul = await sql<{ s: string }>(`SELECT COALESCE(sum(amount), 0) AS s FROM public.referral_commissions WHERE kind = 'REGULARISATION'
                                                  AND regularizes_id IN (SELECT id FROM public.referral_commissions WHERE payment_id = $1)`, [pay.id]);
         assert.equal(n(regul[0].s), -n(comm[0].amount), 'commission régularisée');
@@ -621,7 +638,7 @@ describe('C. Annuler, rembourser, tâche planifiée', () => {
         await payOrder(client, id);
         await toReady(partner, id);
         await partnerAct(partner, id, { action: 'EN_ROUTE' });
-        await partnerAct(partner, id, { action: 'REMETTRE', code: await codeOf(client.userId, id, 'ORDER_ON_THE_WAY') });
+        await partnerAct(partner, id, { action: 'REMETTRE', code: await codeOf(client, id) });
         await shiftOrder(id, { handed_over_at: -6 * 1440, closed_at: -6 * 1440 });
         await tick();
         assert.equal((await order(id)).contact_phone, client.phoneE164, 'gardé avant 7 jours');
@@ -764,7 +781,7 @@ describe('E. Concurrence', () => {
         const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
         await payOrder(client, id);
         await toReady(partner, id);
-        const code = await codeOf(client.userId, id, 'ORDER_READY');
+        const code = await codeOf(client, id);
         const two = await Promise.all([partnerAct(partner, id, { action: 'REMETTRE', code }), partnerAct(partner, id, { action: 'REMETTRE', code })]);
         assert.deepEqual(two.map((x) => x.status).sort(), [200, 409]);
         assert.equal(two.find((x) => x.status === 409)!.body.code, 'ALREADY_HANDED_OVER');

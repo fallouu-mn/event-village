@@ -107,7 +107,7 @@ BEGIN
             -- Lot 11a : réservations de table (attente de 15 min, réponse sous 2 h, absence 30 min après l'heure)
             ('ev_tables',                 '3-59/5 * * * *',  '/api/cron/tables',                 60000),
             -- Lot 12a : commandes (attente de paiement, réponse de la partenaire, retrait, masquage des coordonnées)
-            ('ev_orders',                 '2-59/5 * * * *',  '/api/cron/orders',                 60000)
+            ('ev_orders',                 '3-59/5 * * * *',  '/api/cron/orders',                 60000)
           ) AS e(jobname, schedule, path, timeout_ms)
     LOOP
         -- URL et secret relus dans Vault à chaque exécution de la tâche : rien de secret dans cron.job.
