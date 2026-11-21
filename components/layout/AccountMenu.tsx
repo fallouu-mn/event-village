@@ -59,6 +59,7 @@ export function AccountMenu({
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
+        data-ev-account=""
         onClick={() => setOpen((v) => !v)}
         className="flex min-h-11 items-center gap-2 rounded-full border border-border bg-background py-1 pl-1 pr-3 text-sm font-semibold text-foreground-strong transition-colors duration-150 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
