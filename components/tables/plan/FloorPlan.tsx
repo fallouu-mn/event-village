@@ -386,12 +386,12 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                                             dragging && 'shadow-lg',
                                         )}
                                     >
-                                        <span className="block break-words px-2 pt-1.5 text-sm font-semibold leading-tight text-muted-foreground">{z.name}</span>
+                                        {/* Lot 11b (contrôle responsive) : nom écrit seulement pour la zone choisie ; les autres sont
+                                            nommées dans la liste sous le plan (un nom posé dans la zone passait sous les tables) */}
+                                        {isSel && <span className="block break-words px-2 pt-1.5 text-sm font-semibold leading-tight text-primary-text">{z.name}</span>}
                                     </button>
                                 ) : (
-                                    <div className="absolute inset-0 rounded-xl border-2 border-dashed border-input bg-card/50">
-                                        <span className="block break-words px-2 pt-1.5 text-sm font-semibold leading-tight text-muted-foreground">{z.name}</span>
-                                    </div>
+                                    <div title={z.name} className="absolute inset-0 rounded-xl border-2 border-dashed border-input bg-card/50" />
                                 )}
                                 {isSel && (
                                     <button
@@ -516,6 +516,13 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                     </p>
                 )}
             </div>
+
+            {placedZones.length > 0 && (
+                <p className="mt-3 text-sm text-muted-foreground">
+                    <span className="font-semibold text-foreground-strong">Zones du plan : </span>
+                    {placedZones.map((z) => z.name).join(', ')}
+                </p>
+            )}
 
             {legend.length > 0 && (
                 <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2" aria-label="Légende du plan">

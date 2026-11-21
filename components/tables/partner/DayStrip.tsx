@@ -31,11 +31,13 @@ export function DayStrip({ value, today, onChange }: { value: string; today: str
     }, [value]);
 
     return (
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end">
+        // Lot 11b (contrôle responsive) : grille à une colonne bornée (minmax(0, 1fr)) : la bande des jours défile dans sa
+        // largeur sans élargir la page, et « Autre jour » passe dessous (jamais à côté de jours cachés par le défilement)
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
             <ul
                 ref={listRef}
                 aria-label="Choisir le jour du planning"
-                className="-mx-1 flex min-w-0 flex-1 snap-x gap-2 overflow-x-auto px-1 py-1 [scrollbar-width:thin]"
+                className="-mx-1 flex w-full min-w-0 snap-x gap-2 overflow-x-auto px-1 py-1 [scrollbar-width:thin]"
             >
                 {days.map((day) => {
                     const l = labelOf(day, today);
