@@ -82,6 +82,26 @@ export function aggregateProfile(profile) {
     return { self, total, byFile };
 }
 
+/**
+ * Où se trouve une fonction du profil dans le build de la CI (.next/static/…, mêmes fichiers que ceux mesurés) : le module
+ * webpack qui la contient (dernier « <id>:(e,t,r)=> » avant la colonne) et un extrait du code. Rien si le fichier manque.
+ */
+const chunkCache = new Map();
+function sourceAt(urlPath, line, column) {
+    if (!urlPath.startsWith('/_next/static/')) return null;
+    const file = path.join(ROOT, '.next', urlPath.slice('/_next/'.length).split('?')[0]);
+    if (!chunkCache.has(file)) chunkCache.set(file, fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : null);
+    const lines = chunkCache.get(file);
+    const text = lines?.[line - 1];
+    if (!text) return null;
+    const before = text.slice(0, column - 1);
+    let moduleId = '?';
+    for (const m of before.matchAll(/[,{](\d{1,6}):(?:function\(|\(\w?,?\w?,?\w?\)=>|\w=>)/g)) moduleId = m[1];
+    const snippet = text.slice(Math.max(0, column - 1), column - 1 + 220).replace(/\s+/g, ' ');
+    const strings = [...text.slice(Math.max(0, column - 1), column - 1 + 4000).matchAll(/"([^"\\]{6,60})"/g)].slice(0, 6).map((m) => m[1]);
+    return { moduleId, snippet, strings };
+}
+
 function addInto(acc, m) {
     for (const [k, v] of m) acc.set(k, (acc.get(k) ?? 0) + v);
 }
@@ -153,6 +173,17 @@ async function main() {
             '', '== 60 plus grands temps propres (fonction, fichier, ligne, colonne) ==', ...top(self, 60, ok || 1, skipRoot),
             '', '== 40 plus grands temps totaux (hors racine) ==', ...top(total, 40, ok || 1, skipRoot),
         ];
+        // Sources des 30 fonctions les plus coûteuses (temps propre et temps total) : module et extrait du build mesuré
+        const seen = new Set();
+        lines.push('', '== Sources (module webpack et extrait du build mesuré) des fonctions les plus coûteuses ==');
+        const ranked = (m) => [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 30).map(([k]) => k);
+        for (const k of [...ranked(self), ...ranked(total)]) {
+            if (seen.has(k) || skipRoot(k)) continue;
+            seen.add(k);
+            const [fn, url, ln, col] = k.split('\t');
+            const src = sourceAt(url, Number(ln), Number(col));
+            if (src) lines.push(`${fn} ${url}:${ln}:${col} — module ${src.moduleId} — ${src.snippet}${src.strings.length ? ` — textes : ${src.strings.join(' | ')}` : ''}`);
+        }
         fs.writeFileSync(path.join(PERF_DIR, `profil-${def.id}.txt`), `${lines.join('\n')}\n`, 'utf8');
         if (lastProfile) fs.writeFileSync(path.join(PERF_DIR, `profil-${def.id}.cpuprofile.gz`), zlib.gzipSync(JSON.stringify(lastProfile)));
         log(`${def.id} : ${ok}/${PASSAGES} passage(s) ; ${lines.slice(4, 9).join(' | ')}`);
