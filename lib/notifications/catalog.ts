@@ -401,6 +401,15 @@ const TABLE_SAMPLE_DATA = {
     end_time: '22:00', guests: 4, table_number: '12', deposit_amount: 20000, total_amount: 21000, paid_amount: 21000,
 } as const;
 
+/** Lot 12a : données d'exemple d'une commande (rendu des modèles et tests ; valeurs longues réalistes). */
+const ORDER_SAMPLE_DATA = {
+    order_id: SAMPLE_ID.reservation, order_number: 'CMD-261205-A1B2C3', venue_id: SAMPLE_ID.reservation,
+    venue_name: 'Chez Fatou, cuisine du Sénégal et grillades', mode: 'LIVRAISON', state: 'RECUE', items_count: 12,
+    goods_total: 1_250_000, paid_amount: 1_312_500, balance_due: 0, payment_type: 'INTEGRAL',
+    scheduled_for: '2026-12-05T12:45:00Z', estimated_at: '2026-12-05T12:45:00Z', response_due_at: '2026-12-05T12:15:00Z',
+    zone_name: 'Almadies et Ngor', recipient_role: 'CLIENT',
+} as const;
+
 /** Finition 1 (E-20) : données d'exemple des avis d'invitation de contrôleur à la partenaire. */
 const SAMPLE_TEAM_NOTICE = {
     invitation_id: 'b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04',
@@ -1696,6 +1705,268 @@ const CATALOG = {
         sample: { ...SAMPLE_EVENT, company: 'Sabar Events' },
     }),
     // Lot 11a : établissement soumis à la validation (créé, ou refusé puis modifié) ; le SMS passe par ADMIN_REVIEW_SMS
+    // Lot 12a : étapes d'une commande (avis mis en file par order_create, order_payment_confirm, order_partner_action,
+    // order_set_en_route, order_handover_apply, order_close_apply, order_expire_hold, order_code_resend, order_tick et
+    // notif_cashouts_notify). Décision du client : chaque étape sur les 4 canaux (cloche, push, email, SMS d'un segment
+    // GSM-7 au pire cas). Complément du 21/11 : chaque avis mène à la commande et dit quoi faire ensuite. Le code de
+    // remise n'est jamais dans la cloche (gardée en base) : seulement dans le SMS, le push et l'email.
+    ORDER_RECEIVED: define('ORDER_RECEIVED', {
+        label: 'Commande reçue', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Commande reçue',
+            content: `Votre commande ${orderRef(d)} est transmise à ${venueName(d)}. L’établissement l’accepte au plus tard à ${formatTime(iso(d, 'response_due_at'))} ; sans réponse, elle est annulée${num(d, 'paid_amount') > 0 ? ' et vous êtes remboursé' : ''}. Suivez chaque étape depuis la commande.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} transmise à ${smsVar(text(d, 'venue_name'), 28)}. Réponse avant ${smsTime(iso(d, 'response_due_at'))}, sinon ${num(d, 'paid_amount') > 0 ? 'remboursée' : 'annulée'}.`,
+        sample: ORDER_SAMPLE_DATA,
+    }),
+    ORDER_ACCEPTED: define('ORDER_ACCEPTED', {
+        label: 'Commande acceptée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const eta = orderEta(d);
+            const mode = text(d, 'mode');
+            const next = mode === 'LIVRAISON' ? 'Au départ du livreur, vous recevrez le code à lui donner.'
+                : mode === 'SUR_PLACE' ? 'Elle vous sera servie sur place.' : 'Quand elle sera prête, vous recevrez le code à donner au comptoir.';
+            const balance = num(d, 'balance_due') > 0 ? ` Reste à payer à la remise : ${money(d, 'balance_due')}.` : '';
+            return {
+                title: 'Commande acceptée',
+                content: `${venueName(d, true)} a accepté votre commande ${orderRef(d)}${eta ? `, prévue vers ${eta}` : ''}. ${next}${balance}`,
+            };
+        },
+        sms: (d) => {
+            const eta = orderEta(d);
+            return `${SMS_PREFIX}${smsVar(text(d, 'venue_name'), 28)} a accepté la commande ${orderRef(d)}.${eta ? ` Prévue vers ${eta}.` : ''}`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, state: 'ACCEPTEE', balance_due: 875_000 },
+    }),
+    ORDER_PREPARING: define('ORDER_PREPARING', {
+        label: 'Commande en préparation', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const eta = orderEta(d);
+            return { title: 'Commande en préparation', content: `Votre commande ${orderRef(d)} est en préparation chez ${venueName(d)}${eta ? `, prévue vers ${eta}` : ''}. Elle ne peut plus être annulée.` };
+        },
+        sms: (d) => {
+            const eta = orderEta(d);
+            return `${SMS_PREFIX}commande ${orderRef(d)} en préparation chez ${smsVar(text(d, 'venue_name'), 28)}.${eta ? ` Prévue vers ${eta}.` : ''}`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_PREPARATION' },
+    }),
+    ORDER_READY: define('ORDER_READY', {
+        label: 'Commande prête', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const mode = text(d, 'mode');
+            if (mode === 'RETRAIT') {
+                const code = orderCode(d);
+                const balance = num(d, 'balance_due') > 0 ? ` Reste à payer sur place : ${money(d, 'balance_due')}.` : '';
+                return {
+                    title: 'Commande prête',
+                    content: `${code ? `Donnez le code ${code} au comptoir.` : 'Donnez au comptoir le code reçu par SMS.'} Votre commande ${orderRef(d)} vous attend chez ${venueName(d)}.${balance}`,
+                };
+            }
+            if (mode === 'SUR_PLACE') {
+                return { title: 'Commande prête', content: `Votre commande ${orderRef(d)} est prête : elle vous est servie dans un instant.` };
+            }
+            return { title: 'Commande prête', content: `Votre commande ${orderRef(d)} est prête chez ${venueName(d)} : le livreur part bientôt. Vous recevrez alors le code à lui donner.` };
+        },
+        sms: (d) => {
+            const mode = text(d, 'mode');
+            if (mode === 'RETRAIT') return `${SMS_PREFIX}donnez le code ${smsOrderCode(d)} au comptoir : votre commande ${orderRef(d)} vous attend chez ${smsVar(text(d, 'venue_name'), 28)}.`;
+            if (mode === 'SUR_PLACE') return `${SMS_PREFIX}votre commande ${orderRef(d)} est terminée : elle vous est servie dans un instant.`;
+            return `${SMS_PREFIX}votre commande ${orderRef(d)} est terminée chez ${smsVar(text(d, 'venue_name'), 28)}, le livreur part dans un instant.`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, mode: 'RETRAIT', state: 'PRETE', code: '4821', balance_due: 875_000 },
+    }),
+    ORDER_ON_THE_WAY: define('ORDER_ON_THE_WAY', {
+        label: 'Commande en route', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const code = orderCode(d);
+            const eta = orderEta(d);
+            const balance = num(d, 'balance_due') > 0 ? ` Reste à payer au livreur : ${money(d, 'balance_due')}.` : '';
+            return {
+                title: 'Commande en route',
+                content: `${code ? `Donnez le code ${code} au livreur.` : 'Donnez au livreur le code reçu par SMS.'} Votre commande ${orderRef(d)} est en route${eta ? `, arrivée prévue vers ${eta}` : ''}.${balance}`,
+            };
+        },
+        sms: (d) => {
+            const eta = orderEta(d);
+            return `${SMS_PREFIX}donnez le code ${smsOrderCode(d)} au livreur : commande ${orderRef(d)} en route${eta ? `, arrivée vers ${eta}` : ''}.`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE', code: '4821', balance_due: 875_000 },
+    }),
+    ORDER_HANDED_OVER: define('ORDER_HANDED_OVER', {
+        label: 'Commande remise', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const word = orderDoneWord(d);
+            return { title: `Commande ${word}`, content: `Votre commande ${orderRef(d)} de ${venueName(d)} est ${word}. Merci et à bientôt !` };
+        },
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} de ${smsVar(text(d, 'venue_name'), 30)} ${orderDoneWord(d)}. Merci et à la prochaine !`,
+        sample: { ...ORDER_SAMPLE_DATA, state: 'REMISE' },
+    }),
+    ORDER_CANCELLED: define('ORDER_CANCELLED', {
+        label: 'Commande annulée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const origin = text(d, 'origin');
+            const reason = optText(d, 'reason');
+            const ref = orderRef(d);
+            const why = reason ? ` Motif : ${sentence(reason)}` : '';
+            const refund = orderRefundSentence(d);
+            if (origin === 'EXPIREE') return { title: 'Commande annulée', content: `Le paiement de la commande ${ref} n’est pas arrivé à temps : elle est annulée et rien ne vous est pris. Vous pouvez la refaire.` };
+            if (origin === 'REFUSEE') return { title: 'Commande refusée', content: `${venueName(d, true)} ne peut pas préparer votre commande ${ref}.${why} ${refund}`.trim() };
+            if (origin === 'SANS_REPONSE') return { title: 'Commande annulée', content: `${venueName(d, true)} n’a pas répondu à temps : votre commande ${ref} est annulée. ${refund}`.trim() };
+            const who = origin === 'PARTENAIRE' ? ' par l’établissement' : origin === 'EVENT_VILLAGE' ? ' par Event Village' : '';
+            return { title: 'Commande annulée', content: `Votre commande ${ref} chez ${venueName(d)} est annulée${who}.${why} ${refund}`.trim() };
+        },
+        sms: (d) => {
+            const origin = text(d, 'origin');
+            const ref = orderRef(d);
+            const name = smsVar(text(d, 'venue_name'), 25);
+            const refund = num(d, 'refund_amount') > 0 ? ` ${smsAmount(num(d, 'refund_amount'))} remboursés.` : '';
+            if (origin === 'EXPIREE') return `${SMS_PREFIX}paiement non arrivé à temps : commande ${ref} annulée, rien ne vous est pris.`;
+            if (origin === 'REFUSEE') return `${SMS_PREFIX}${name} ne peut pas préparer la commande ${ref}.${refund}`;
+            if (origin === 'SANS_REPONSE') return `${SMS_PREFIX}${name} n'a pas répondu : commande ${ref} annulée.${refund}`;
+            const by = origin === 'PARTENAIRE' ? ` par ${name}` : origin === 'EVENT_VILLAGE' ? ' par notre équipe' : '';
+            return `${SMS_PREFIX}commande ${ref} annulée${by}.${refund}`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, state: 'ANNULEE_PARTENAIRE', origin: 'PARTENAIRE', refund_amount: 1_312_500, reason: 'Rupture de poisson frais ce midi.' },
+    }),
+    ORDER_PAYMENT_REFUNDED: define('ORDER_PAYMENT_REFUNDED', {
+        label: 'Paiement de commande remboursé', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Paiement remboursé',
+            content: `Votre paiement de ${money(d, 'amount')} pour la commande ${orderRef(d)} est arrivé alors qu’elle n’était plus possible (annulée, déjà payée ou établissement fermé). Il vous est remboursé sur votre compte ${operatorLabel(field(d, 'operator'))}.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}votre paiement de ${smsAmount(num(d, 'amount'))} pour la commande ${orderRef(d)} n'a pas pu servir. Il vous est remboursé sur ${operatorLabel(field(d, 'operator'))}.`,
+        sample: { ...ORDER_SAMPLE_DATA, payment_id: SAMPLE_ID.payment, amount: 1_312_500, operator: 'ORANGE_MONEY' },
+    }),
+    ORDER_REFUND_PAID: define('ORDER_REFUND_PAID', {
+        label: 'Remboursement de commande versé', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Remboursement versé',
+            content: `${money(d, 'amount')} pour la commande ${orderRef(d)} vous ont été versés sur votre compte ${operatorLabel(field(d, 'operator'))}.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}${smsAmount(num(d, 'amount'))} versés sur votre compte ${operatorLabel(field(d, 'operator'))} : remboursement de la commande ${orderRef(d)}.`,
+        sample: { ...ORDER_SAMPLE_DATA, cashout_id: SAMPLE_ID.cashout, amount: 1_312_500, operator: 'ORANGE_MONEY' },
+    }),
+    ORDER_PICKUP_REMINDER: define('ORDER_PICKUP_REMINDER', {
+        label: 'Commande à retirer', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Commande à retirer',
+            content: `Votre commande ${orderRef(d)} vous attend chez ${venueName(d)}. Retirez-la avant le ${formatDateTime(iso(d, 'closes_at'))} : ensuite, elle est close sans remboursement.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} à retirer chez ${smsVar(text(d, 'venue_name'), 22)} avant le ${smsShortDateTime(iso(d, 'closes_at'))}, sinon close sans remboursement.`,
+        sample: { ...ORDER_SAMPLE_DATA, mode: 'RETRAIT', state: 'PRETE', closes_at: '2026-12-06T12:45:00Z' },
+    }),
+    ORDER_NOT_COLLECTED: define('ORDER_NOT_COLLECTED', {
+        label: 'Commande non retirée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => ({
+            title: 'Commande non retirée',
+            content: `Votre commande ${orderRef(d)} n’a pas été retirée à temps chez ${venueName(d)} : elle est close, sans remboursement.`,
+        }),
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} non retirée à temps chez ${smsVar(text(d, 'venue_name'), 30)} : close, sans remboursement.`,
+        sample: { ...ORDER_SAMPLE_DATA, mode: 'RETRAIT', state: 'NON_RETIREE', origin: 'NON_RETIREE', refund_amount: 0 },
+    }),
+    ORDER_CODE: define('ORDER_CODE', {
+        label: 'Nouveau code de remise', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: orderLink,
+        inApp: (d) => {
+            const code = orderCode(d);
+            const who = text(d, 'mode') === 'LIVRAISON' ? 'au livreur' : 'au comptoir';
+            return {
+                title: 'Nouveau code',
+                content: code ? `Donnez le code ${code} ${who}. C’est le nouveau code de la commande ${orderRef(d)} : l’ancien ne marche plus.`
+                    : `Un nouveau code pour la commande ${orderRef(d)} vous est envoyé par SMS : donnez-le ${who}. L’ancien ne marche plus.`,
+            };
+        },
+        sms: (d) => `${SMS_PREFIX}nouveau code de la commande ${orderRef(d)} : ${smsOrderCode(d)}. Donnez-le ${text(d, 'mode') === 'LIVRAISON' ? 'au livreur' : 'au comptoir'}. L'ancien ne marche plus.`,
+        sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE', code: '0937' },
+    }),
+    ORDER_NEW: define('ORDER_NEW', {
+        label: 'Nouvelle commande à accepter', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => {
+            const n = count(d, 'items_count');
+            const balance = num(d, 'balance_due') > 0 ? ` À encaisser à la remise : ${money(d, 'balance_due')}.` : '';
+            return {
+                title: 'Nouvelle commande',
+                content: `Commande ${orderRef(d)} chez ${venueName(d)} : ${plural(n, 'article', 'articles')}, ${money(d, 'goods_total')}. ${orderModeText(d)}.${balance} Acceptez-la ou refusez-la avant ${formatTime(iso(d, 'response_due_at'))} ; sans réponse, elle est annulée et le client remboursé.`,
+            };
+        },
+        sms: (d) => `${SMS_PREFIX}nouvelle commande ${orderRef(d)} : ${plural(count(d, 'items_count'), 'article', 'articles')}, ${smsAmount(num(d, 'goods_total'))}. Répondez avant ${smsTime(iso(d, 'response_due_at'))}, sinon elle sera annulée.`,
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', balance_due: 875_000 },
+    }),
+    ORDER_CANCELLED_PRO: define('ORDER_CANCELLED_PRO', {
+        label: 'Commande annulée (établissement)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => {
+            const origin = text(d, 'origin');
+            const ref = orderRef(d);
+            if (origin === 'NON_RETIREE') return { title: 'Commande non retirée', content: `La commande ${ref} n’a pas été retirée à temps : elle est close. Ce que le client a payé vous reste.` };
+            if (origin === 'SANS_REPONSE') return { title: 'Commande annulée', content: `La commande ${ref} est annulée faute de réponse dans le délai : le client est remboursé. Pensez à répondre plus vite aux prochaines.` };
+            const reason = optText(d, 'reason');
+            const by = origin === 'EVENT_VILLAGE' ? 'par Event Village' : 'par le client';
+            return { title: 'Commande annulée', content: `La commande ${ref} est annulée ${by}.${reason && origin === 'EVENT_VILLAGE' ? ` Motif : ${sentence(reason)}` : ''} Ne la préparez pas.` };
+        },
+        sms: (d) => {
+            const origin = text(d, 'origin');
+            const ref = orderRef(d);
+            if (origin === 'NON_RETIREE') return `${SMS_PREFIX}commande ${ref} non retirée à temps : elle est close.`;
+            if (origin === 'SANS_REPONSE') return `${SMS_PREFIX}commande ${ref} annulée faute de réponse. Le client est remboursé.`;
+            return `${SMS_PREFIX}commande ${ref} annulée ${origin === 'EVENT_VILLAGE' ? 'par Event Village' : 'par le client'}. Ne la préparez pas.`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', origin: 'EVENT_VILLAGE', refund_amount: 1_312_500, reason: 'Le client signale une erreur de commande.' },
+    }),
+    ORDER_HANDED_OVER_PRO: define('ORDER_HANDED_OVER_PRO', {
+        label: 'Commande remise par le livreur', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'ORDER',
+        link: partnerOrderLink,
+        inApp: (d) => ({ title: 'Commande livrée', content: `Votre livreur a remis la commande ${orderRef(d)} au client.` }),
+        sms: (d) => `${SMS_PREFIX}votre livreur a remis la commande ${orderRef(d)} au client.`,
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'OWNER', state: 'REMISE' },
+    }),
+    ORDER_COURIER_ASSIGNED: define('ORDER_COURIER_ASSIGNED', {
+        label: 'Livraison confiée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
+        link: courierOrderLink,
+        inApp: (d) => {
+            const zone = optText(d, 'zone_name');
+            return {
+                title: 'Livraison à faire',
+                content: `Commande ${orderRef(d)} à livrer pour ${venueName(d)}${zone ? `, zone ${zone}` : ''}. Ouvrez-la pour l’adresse et le téléphone du client ; à la remise, demandez-lui son code.`,
+            };
+        },
+        sms: (d) => {
+            const zone = optText(d, 'zone_name');
+            return `${SMS_PREFIX}commande ${orderRef(d)} à livrer pour ${smsVar(text(d, 'venue_name'), 22)}${zone ? `, zone ${smsVar(zone, 20)}` : ''}. Adresse dans l'application.`;
+        },
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'COURIER' },
+    }),
+    ORDER_COURIER_CANCELLED: define('ORDER_COURIER_CANCELLED', {
+        label: 'Livraison annulée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'ORDER',
+        link: () => '/courier/orders',
+        inApp: (d) => ({ title: 'Livraison annulée', content: `La livraison de la commande ${orderRef(d)} est annulée ou confiée à quelqu’un d’autre : ne la livrez pas.` }),
+        sms: (d) => `${SMS_PREFIX}livraison de la commande ${orderRef(d)} annulée ou confiée à un autre livreur : ne la livrez pas.`,
+        sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'COURIER' },
+    }),
+    ORDER_COURIER_INVITED: define('ORDER_COURIER_INVITED', {
+        label: 'Invitation à livrer', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'ORDER',
+        link: (d) => `/courier/invitations/${ident(d, 'invitation_id')}`,
+        inApp: (d) => {
+            const name = optText(d, 'partner_name');
+            return {
+                title: 'Invitation à livrer',
+                content: `${name ? q(name) : 'Un établissement'} vous invite à livrer ses commandes avec Event Village. Acceptez ou refusez l’invitation ; vous verrez seulement les livraisons qui vous sont confiées.`,
+            };
+        },
+        sample: { invitation_id: SAMPLE_ID.invitation, partner_name: 'Chez Fatou, cuisine du Sénégal et grillades' },
+    }),
     ADMIN_VENUE_SUBMITTED: define('ADMIN_VENUE_SUBMITTED', {
         label: 'Établissement à valider', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'halls.validate', inAppType: 'ADMIN_REVIEW',
         link: () => '/admin/services',
@@ -2610,6 +2881,68 @@ function guestsText(d: object): string {
 function tableRefundSentence(d: object): string {
     if (num(d, 'refund_amount') > 0) return `Vous êtes remboursé de ${money(d, 'refund_amount')} sur votre compte de paiement.`;
     return num(d, 'paid_amount') > 0 ? 'Selon les conditions de réservation, l’acompte n’est pas remboursé.' : '';
+}
+
+/** Lot 12a : numéro de la commande (« CMD-261121-A1B2C3 »). */
+function orderRef(d: object): string {
+    return text(d, 'order_number');
+}
+
+/** Lot 12a : heure estimée de la remise (« 12:45 »), ou null. */
+function orderEta(d: object): string | null {
+    const at = optIso(d, 'estimated_at');
+    return at ? formatTime(at) : null;
+}
+
+/** Lot 12a : remise selon le mode, au participe : livrée, retirée, servie. */
+function orderDoneWord(d: object): string {
+    const mode = text(d, 'mode');
+    return mode === 'LIVRAISON' ? 'livrée' : mode === 'SUR_PLACE' ? 'servie' : 'retirée';
+}
+
+/** Lot 12a : mode de remise, pour la partenaire : « Livraison (zone Almadies) », « Retrait », « Sur place (table 4) ». */
+function orderModeText(d: object): string {
+    const mode = text(d, 'mode');
+    if (mode === 'LIVRAISON') {
+        const zone = optText(d, 'zone_name');
+        return zone ? `Livraison (zone ${zone})` : 'Livraison';
+    }
+    if (mode === 'SUR_PLACE') {
+        const spot = optText(d, 'onsite_label');
+        return spot ? `Sur place (${spot})` : 'Sur place';
+    }
+    return 'Retrait';
+}
+
+/** Lot 12a : remboursement annoncé au client, ou rien. */
+function orderRefundSentence(d: object): string {
+    return num(d, 'refund_amount') > 0 ? `Vous êtes remboursé de ${money(d, 'refund_amount')} sur votre compte de paiement.` : '';
+}
+
+function orderLink(d: object): string {
+    return `/orders/${ident(d, 'order_id')}`;
+}
+
+function partnerOrderLink(d: object): string {
+    return `/partner/orders/${ident(d, 'order_id')}`;
+}
+
+function courierOrderLink(d: object): string {
+    return `/courier/orders/${ident(d, 'order_id')}`;
+}
+
+/** Lot 12a : code de remise, seulement dans les données du SMS, du push et de l'email (4 chiffres), sinon null. */
+function orderCode(d: object): string | null {
+    const code = optText(d, 'code');
+    if (code !== null && !/^\d{4}$/.test(code)) throw new TemplateDataError('code', 'n’est pas un code à 4 chiffres');
+    return code;
+}
+
+/** Lot 12a : code obligatoire (SMS d'un avis qui annonce le code). */
+function smsOrderCode(d: object): string {
+    const code = orderCode(d);
+    if (!code) throw new TemplateDataError('code');
+    return code;
 }
 
 function hallName(d: object, capital = false): string {

@@ -198,6 +198,26 @@ export interface TemplateData {
     TABLE_REMINDER: TableReservationData;
     VENUE_VALIDATION_DECIDED: { venue_id: string; venue_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
     ADMIN_VENUE_SUBMITTED: { venue_id: string; venue_name: string; kind?: string; city?: string | null; resubmitted?: boolean };
+    // Lot 12a : données de order_notif_data (commande), plus les champs propres à chaque avis ; code : seulement pour le
+    // SMS, le push et l'email (jamais pour la cloche, gardée en base)
+    ORDER_RECEIVED: OrderNotifData;
+    ORDER_ACCEPTED: OrderNotifData;
+    ORDER_PREPARING: OrderNotifData;
+    ORDER_READY: OrderNotifData & { code?: string };
+    ORDER_ON_THE_WAY: OrderNotifData & { code?: string };
+    ORDER_HANDED_OVER: OrderNotifData;
+    ORDER_CANCELLED: OrderNotifData & OrderCancelData;
+    ORDER_PAYMENT_REFUNDED: OrderNotifData & { payment_id: string; amount: number; operator?: string | null };
+    ORDER_REFUND_PAID: OrderNotifData & { cashout_id: string; amount: number; operator?: string | null };
+    ORDER_PICKUP_REMINDER: OrderNotifData & { closes_at: string };
+    ORDER_NOT_COLLECTED: OrderNotifData & Partial<OrderCancelData>;
+    ORDER_CODE: OrderNotifData & { code?: string };
+    ORDER_NEW: OrderNotifData;
+    ORDER_CANCELLED_PRO: OrderNotifData & OrderCancelData;
+    ORDER_HANDED_OVER_PRO: OrderNotifData;
+    ORDER_COURIER_ASSIGNED: OrderNotifData;
+    ORDER_COURIER_CANCELLED: OrderNotifData;
+    ORDER_COURIER_INVITED: { invitation_id: string; partner_name?: string | null };
     PROMOTION_DECIDED: EventData & { promotion_id: string; status: 'APPROUVEE' | 'REFUSEE' | string; reason?: string | null };
     CONTROLLER_ASSIGNED: Partial<EventData> & { assignment_id?: string; entry_point: string | null; can_accept_cash: boolean; events?: ControllerEventRef[] };
     CONTROLLER_UNASSIGNED: Partial<EventData> & { assignment_id?: string; events?: ControllerEventRef[] };
@@ -351,6 +371,34 @@ export interface TableReservationData {
     total_amount: number;
     paid_amount: number;
     response_due_at?: string | null;
+}
+
+/** Lot 12a : données d'une commande (order_notif_data) ; montants en F CFA, heures en UTC (= Dakar). */
+export interface OrderNotifData {
+    order_id: string;
+    order_number: string;
+    venue_id?: string;
+    venue_name?: string | null;
+    mode: 'LIVRAISON' | 'RETRAIT' | 'SUR_PLACE' | string;
+    state?: string;
+    items_count: number;
+    goods_total: number;
+    paid_amount: number;
+    balance_due: number;
+    payment_type?: string;
+    scheduled_for?: string | null;
+    estimated_at?: string | null;
+    response_due_at?: string | null;
+    zone_name?: string | null;
+    onsite_label?: string | null;
+    recipient_role?: 'CLIENT' | 'OWNER' | 'COURIER' | string;
+}
+
+/** Lot 12a : fin d'une commande (order_close_apply, order_expire_hold). */
+export interface OrderCancelData {
+    origin: 'CLIENT' | 'PARTENAIRE' | 'EVENT_VILLAGE' | 'SANS_REPONSE' | 'REFUSEE' | 'EXPIREE' | 'NON_RETIREE' | string;
+    refund_amount: number;
+    reason?: string | null;
 }
 
 /** Lot 11a : fin d'une réservation de table (table_close_apply). */
