@@ -63,7 +63,8 @@ export async function loadPayment(id: string): Promise<PaymentRecord | null> {
  * honorer).
  */
 export async function confirmTicketPayment(
-    paymentId: string, source: ConfirmSource, rpc: 'payment_confirm' | 'hall_payment_confirm' | 'table_payment_confirm' = 'payment_confirm',
+    paymentId: string, source: ConfirmSource,
+    rpc: 'payment_confirm' | 'hall_payment_confirm' | 'table_payment_confirm' | 'order_payment_confirm' = 'payment_confirm',
 ): Promise<{ result: string; cashout_id?: string; ticket_ids?: string[] }> {
     const { data, error } = await rpcWithRetry<{ result: string; cashout_id?: string; ticket_ids?: string[]; reason?: string }>(rpc, { p_payment_id: paymentId, p_source: source });
     if (error || !data) throw new Error(`Confirmation du paiement ${paymentId} impossible : ${error?.message}`);
@@ -81,8 +82,8 @@ export async function confirmTicketPayment(
 /** Confirmation d'un paiement hors billetterie (commande, salle, table, abonnement). */
 async function confirmOtherPayment(payment: PaymentRecord, source: ConfirmSource): Promise<'CONFIRMED' | 'ALREADY_CONFIRMED' | 'NOT_CONFIRMABLE'> {
     // Lot 10a (S4) : jamais pour une salle (confirmation en base, hall_payment_confirm) ; lot 11a : ni pour une table
-    // (table_payment_confirm)
-    if (payment.payment_target === 'HALL_RESERVATION' || payment.payment_target === 'TABLE_RESERVATION') return 'NOT_CONFIRMABLE';
+    // (table_payment_confirm) ; lot 12a : ni pour une commande (order_payment_confirm)
+    if (payment.payment_target === 'HALL_RESERVATION' || payment.payment_target === 'TABLE_RESERVATION' || payment.payment_target === 'ORDER') return 'NOT_CONFIRMABLE';
     const supabase = getServiceRoleClient();
     const now = new Date().toISOString();
     const { data: won, error } = await supabase
@@ -95,11 +96,6 @@ async function confirmOtherPayment(payment: PaymentRecord, source: ConfirmSource
     if (!won?.length) {
         const current = await loadPayment(payment.id);
         return current?.status === 'SUCCESS' ? 'ALREADY_CONFIRMED' : 'NOT_CONFIRMABLE';
-    }
-    const effects: Array<PromiseLike<{ error: { message: string } | null }>> = [];
-    if (payment.order_id) effects.push(supabase.from('orders').update({ payment_status: 'SUCCESS', order_status: 'CONFIRMEE', paid_amount: payment.amount, balance_amount: 0, updated_at: now }).eq('id', payment.order_id));
-    for (const r of await Promise.all(effects)) {
-        if (r.error) console.error(`[confirmation] effet métier du paiement ${payment.id} en échec :`, r.error.message);
     }
     if (payment.payment_target === 'SUBSCRIPTION') await activateSubscription(payment);
     // Lot 6 (J2.10) : l'avis « paiement confirmé » est mis en file par le trigger trg_payments_other_success.
@@ -138,17 +134,13 @@ async function activateSubscription(payment: PaymentRecord): Promise<void> {
 }
 
 async function releaseOther(payment: PaymentRecord, status: 'FAILED' | 'CANCELLED' | 'EXPIRED'): Promise<void> {
-    const supabase = getServiceRoleClient();
-    const now = new Date().toISOString();
-    const effects: Array<PromiseLike<{ error: { message: string } | null }>> = [];
-    if (payment.order_id) effects.push(supabase.from('orders').update({ payment_status: 'FAILED', order_status: 'ANNULEE', updated_at: now }).eq('id', payment.order_id));
     // Lot 10a : un paiement de salle en échec ne touche plus la réservation (l'attente de 15 minutes se libère seule ;
     // avant, l'échec du paiement du solde annulait une réservation dont l'acompte était payé). Lot 11a : de même pour
-    // une table (l'attente de paiement se libère seule ; l'état ne change que par les fonctions en base).
+    // une table (l'attente de paiement se libère seule ; l'état ne change que par les fonctions en base). Lot 12a : de
+    // même pour une commande (avant, l'échec annulait la commande par une écriture directe, sans rendre le stock) : ses
+    // produits restent tenus jusqu'à la fin de l'attente, l'état ne change que par les fonctions en base.
+    void payment;
     void status;
-    for (const r of await Promise.all(effects)) {
-        if (r.error) console.error(`[confirmation] effet d'échec du paiement ${payment.id} en échec :`, r.error.message);
-    }
 }
 
 /** Passage en échec, annulation ou expiration (réservations rendues). */
@@ -193,9 +185,11 @@ export async function reconcilePayment(payment: PaymentRecord, source: ConfirmSo
     }
 
     if (providerStatus === 'SUCCESS') {
-        if (payment.payment_target === 'TICKET' || payment.payment_target === 'HALL_RESERVATION' || payment.payment_target === 'TABLE_RESERVATION') {
+        if (payment.payment_target === 'TICKET' || payment.payment_target === 'HALL_RESERVATION' || payment.payment_target === 'TABLE_RESERVATION'
+            || payment.payment_target === 'ORDER') {
             const rpc = payment.payment_target === 'TICKET' ? 'payment_confirm'
-                : payment.payment_target === 'HALL_RESERVATION' ? 'hall_payment_confirm' : 'table_payment_confirm';
+                : payment.payment_target === 'HALL_RESERVATION' ? 'hall_payment_confirm'
+                : payment.payment_target === 'TABLE_RESERVATION' ? 'table_payment_confirm' : 'order_payment_confirm';
             const r = await confirmTicketPayment(payment.id, source, rpc);
             if (r.result === 'CONFIRMED' || r.result === 'ALREADY_CONFIRMED' || r.result === 'REFUND_REQUIRED' || r.result === 'REFUND_IN_PROGRESS') return r.result;
             console.error(`[réconciliation] paiement ${payment.id} payé chez SamirPay mais non confirmable (${r.result})`);

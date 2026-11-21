@@ -1,126 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { requireActiveSession } from '@/lib/auth/session';
+import { apiFailure } from '@/lib/api/public-error';
+import { requireActiveSession, requireVerifiedPhone } from '@/lib/auth/session';
 import { guardFeature } from '@/lib/features/flags';
+import { invalidBody, orderInput, orderRefusal, orderStateLabel, readJson } from '@/lib/orders/booking';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/orders/create
- * Crée une commande de repas / traiteur en base et retourne l'ID réel pour paiement.
- * Lot 4.0 : session ACTIVE obligatoire (401 sans session, 403 compte non actif) ; le client est
- * toujours le compte de la session, un `clientId` envoyé dans le corps est ignoré.
+ * POST /api/orders/create { venueId, mode, payment?, items: [{ productId, quantity, optionIds?, notes? }], zoneId?,
+ * address?, phone?, onsiteTableId?, onsiteLabel?, scheduledFor?, notes? }
+ * Lot 4.0 : session ACTIVE obligatoire ; le client est toujours le compte de la session.
+ * Lot 12a : une seule fonction en base, order_create, fait tout sous le verrou de l'établissement puis du client :
+ * établissement validé et ouvert à la vente, partenaire VALIDE, produits de cet établissement, jamais réglementés,
+ * prix et suppléments relus en base, stock et portions pris une seule fois, zone et minimum, heure dans les horaires,
+ * plafond des commandes non payées. Aucun montant n'est lu dans le corps (un prix ou un total envoyé est ignoré).
+ * Avant ce lot : total calculé par la route à partir des produits de n'importe quelle partenaire, quantités non bornées,
+ * aucun produit réglementé refusé.
  */
 export async function POST(req: NextRequest) {
     try {
         const session = await requireActiveSession(req);
         if (session.response) return session.response;
+        // Lot 9 quater (A2) : numéro prouvé par un code SMS exigé avant toute action qui engage de l'argent
+        const unverified = requireVerifiedPhone(session.user);
+        if (unverified) return unverified;
         // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
         const closed = await guardFeature('orders', 'POST /api/orders/create');
         if (closed) return closed;
-        const clientId = session.user.id;
-        const supabase = getServiceRoleClient();
 
-        let body: {
-            partnerId: string;
-            items: Array<{ id: string; quantity: number }>;
-            deliveryMode: 'LIVRAISON' | 'RETRAIT' | 'SUR_PLACE';
-        };
-
-        try {
-            body = await req.json();
-        } catch {
-            return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
-        }
-
-        const { partnerId, items, deliveryMode } = body;
-        if (!partnerId || !items || items.length === 0) {
-            return NextResponse.json({ error: 'Le panier ne peut pas être vide.' }, { status: 400 });
-        }
-
-        // 1. Récupération des prix réels depuis la table products
-        const productIds = items.map(i => i.id);
-        const { data: dbProducts, error: prodErr } = await supabase
-            .from('products')
-            .select('id, name, price, partner_id')
-            .in('id', productIds);
-
-        if (prodErr || !dbProducts || dbProducts.length === 0) {
-            return NextResponse.json({ error: 'Produits introuvables.' }, { status: 404 });
-        }
-
-        let subtotal = 0;
-        const validatedItems: Array<{ productId: string; name: string; quantity: number; unitPrice: number; totalPrice: number }> = [];
-
-        for (const cartItem of items) {
-            const dbProd = dbProducts.find(p => p.id === cartItem.id);
-            if (dbProd) {
-                const unitPrice = Number(dbProd.price);
-                const itemTotal = unitPrice * cartItem.quantity;
-                subtotal += itemTotal;
-                validatedItems.push({
-                    productId: dbProd.id,
-                    name: dbProd.name,
-                    quantity: cartItem.quantity,
-                    unitPrice,
-                    totalPrice: itemTotal,
-                });
-            }
-        }
-
-        if (subtotal <= 0) {
-            return NextResponse.json({ error: 'Le montant de la commande doit être supérieur à 0.' }, { status: 400 });
-        }
-
-        const orderNumber = `CMD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-        // 2. Insertion de la commande
-        const { data: order, error: orderErr } = await supabase
-            .from('orders')
-            .insert({
-                order_number: orderNumber,
-                client_id: clientId,
-                partner_id: partnerId,
-                subtotal,
-                total_amount: subtotal,
-                paid_amount: 0,
-                balance_amount: subtotal,
-                delivery_mode: deliveryMode || 'LIVRAISON',
-                payment_type: 'INTEGRAL',
-                order_status: 'EN_ATTENTE',
-                payment_status: 'PENDING',
-            })
-            .select('*')
-            .single();
-
-        if (orderErr || !order) {
-            console.error('[API /api/orders/create] Erreur création commande:', orderErr);
-            return NextResponse.json({ error: 'Impossible de créer la commande.' }, { status: 500 });
-        }
-
-        // 3. Insertion des lignes de commande (order_items)
-        const orderItemsPayload = validatedItems.map(item => ({
-            order_id: order.id,
-            product_id: item.productId,
-            product_name: item.name,
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            total_price: item.totalPrice,
-        }));
-
-        await supabase.from('order_items').insert(orderItemsPayload);
-
+        const body = await readJson(req);
+        if (!body) return invalidBody();
+        const { data, error } = await getServiceRoleClient().rpc('order_create', { p: orderInput(session.user.id, body) });
+        if (error) throw new Error(`order_create : ${error.message}`);
+        const r = data as Record<string, unknown>;
+        if (r?.ok !== true) return orderRefusal(r, 'Commande impossible pour le moment.');
         return NextResponse.json({
             success: true,
             order: {
-                id: order.id,
-                orderNumber: order.order_number,
-                totalAmount: subtotal,
-                totalFormatted: `${subtotal.toLocaleString('fr-FR')} FCFA`,
+                id: r.order_id,
+                orderNumber: r.order_number,
+                state: r.order_state,
+                stateLabel: orderStateLabel(r.order_state, r.mode),
+                venueName: r.venue_name,
+                mode: r.mode,
+                payment: r.payment,
+                lines: r.lines,
+                itemsAmount: Number(r.items_amount),
+                deliveryFee: Number(r.delivery_fee),
+                goodsTotal: Number(r.goods_total),
+                depositPercent: r.deposit_percent ?? null,
+                serviceFee: Number(r.first_fee),
+                toPayNow: Number(r.to_pay_now),
+                balanceDue: Number(r.balance_due),
+                scheduledFor: r.scheduled_for,
+                asap: r.asap,
+                holdExpiresAt: r.hold_expires_at ?? null,
+                responseDueAt: r.response_due_at ?? null,
             },
-        });
+        }, { status: 201 });
     } catch (err: unknown) {
-        console.error('[API /api/orders/create] Exception:', err);
-        return NextResponse.json({ error: 'Erreur interne du serveur' }, { status: 500 });
+        return apiFailure('POST /api/orders/create', err, { message: 'Commande impossible pour le moment. Réessayez.', code: 'ORDER_CREATE_FAILED' });
     }
 }

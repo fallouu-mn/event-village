@@ -11,7 +11,7 @@
 --        ev_cron_secret valeur de CRON_SECRET, identique à celle de l'hébergeur ;
 --      les secrets sont créés par l'opérateur, jamais par ce script ;
 --   2. active pg_cron et pg_net s'ils ne le sont pas ;
---   3. planifie exactement les 9 tâches ev_% ci-dessous (création ou mise à jour par nom) ;
+--   3. planifie exactement les tâches ev_% ci-dessous (création ou mise à jour par nom) ;
 --   4. retire toute autre tâche ev_% (ancienne tâche ev_event_change_notifications du lot 5…) ;
 --      les tâches sans préfixe ev_ ne sont jamais touchées ;
 --   5. réactive une tâche ev_% attendue qui aurait été désactivée à la main.
@@ -105,7 +105,9 @@ BEGIN
             ('ev_moratoriums',            '27 * * * *',      '/api/cron/moratoriums',            60000),
             ('ev_referral_commissions',   '37 * * * *',      '/api/cron/referral-commissions',   60000),
             -- Lot 11a : réservations de table (attente de 15 min, réponse sous 2 h, absence 30 min après l'heure)
-            ('ev_tables',                 '3-59/5 * * * *',  '/api/cron/tables',                 60000)
+            ('ev_tables',                 '3-59/5 * * * *',  '/api/cron/tables',                 60000),
+            -- Lot 12a : commandes (attente de paiement, réponse de la partenaire, retrait, masquage des coordonnées)
+            ('ev_orders',                 '2-59/5 * * * *',  '/api/cron/orders',                 60000)
           ) AS e(jobname, schedule, path, timeout_ms)
     LOOP
         -- URL et secret relus dans Vault à chaque exécution de la tâche : rien de secret dans cron.job.
@@ -146,7 +148,7 @@ BEGIN
 END
 $plan$;
 
--- Contrôle affiché dans l'éditeur SQL : 9 lignes, toutes actives.
+-- Contrôle affiché dans l'éditeur SQL : 11 lignes (10 routes et la purge), toutes actives.
 SELECT jobname, schedule, active
   FROM cron.job
  WHERE starts_with(jobname, 'ev_')

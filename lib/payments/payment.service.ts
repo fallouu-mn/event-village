@@ -38,7 +38,7 @@ export class PaymentService {
 
         let payableAmount = 0;
         let partnerId: string | null = null;
-        let orderRefId: string | null = null;
+        const orderRefId: string | null = null;
         const hallResRefId: string | null = null;
         const tableResRefId: string | null = null;
         let subscriptionRefId: string | null = null;
@@ -47,40 +47,10 @@ export class PaymentService {
         // 1. Récupération et vérification du montant réel depuis PostgreSQL
         switch (input.targetType) {
             case 'ORDER': {
-                const { data: order, error } = await supabase
-                    .from('orders')
-                    .select('*')
-                    .eq('id', input.targetId)
-                    .single();
-
-                if (error || !order) {
-                    throw new PublicError('Commande introuvable.');
-                }
-                if (order.client_id !== userId) {
-                    throw new PublicError('Non autorisé : Cette commande appartient à un autre utilisateur.');
-                }
-                if (order.payment_status === 'SUCCESS') {
-                    throw new PublicError('Cette commande est déjà entièrement payée.');
-                }
-                if (order.order_status === 'ANNULEE' || order.order_status === 'REJETEE') {
-                    throw new PublicError('Cette commande est annulée ou rejetée.');
-                }
-
-                // Vérification des produits interdits / suspendus à la vente en ligne (§CDC V3.0)
-                const { data: orderItems } = await supabase
-                    .from('order_items')
-                    .select('product_id, products(status)')
-                    .eq('order_id', order.id);
-
-                if (orderItems && orderItems.some((item: any) => item.products?.status === 'SUSPENDU' || item.products?.status === 'INDISPONIBLE')) {
-                    throw new PublicError('Paiement en ligne refusé : La commande contient des produits interdits ou indisponibles à la vente en ligne.');
-                }
-
-                payableAmount = Number(order.balance_amount > 0 ? order.balance_amount : order.total_amount);
-                partnerId = order.partner_id;
-                orderRefId = order.id;
-                description = `Commande ${order.order_number}`;
-                break;
+                // Lot 12a : une commande se paie par startOrderPayment (order_payment_create, montant relu sur la commande) ;
+                // ce chemin générique lisait un total écrit par la route de création (prix envoyés au serveur, aucun
+                // produit réglementé refusé).
+                throw new PaymentInputError('Le paiement de cette commande se fait depuis la commande.', 'INVALID_TARGET');
             }
 
             case 'HALL_RESERVATION': {
