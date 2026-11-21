@@ -19,7 +19,7 @@ sur la branche du lot.
 | F2 | La partenaire lisait **par REST** toutes ses commandes, avec l'adresse du client (`orders_read`), donc aussi en temps réel. | `orders_read` : le client et l'administration seulement ; la partenaire et le livreur lisent par les routes serveur (`order_view`, `order_partner_list`, `order_courier_list`). | F2, `l12a-commandes` D, `dette-publication-reservations` |
 | F3 | Une **quantité négative** faisait une remise : 10 000 F de produits pour 2 000 F (`POST /api/orders/create`, total calculé par la route). | Devis et commande en base (`order_quote_compute`, `order_create`) : quantités 1 à 99, prix et suppléments relus en base, montants envoyés par le navigateur ignorés. | F3, `l12a-commandes` A |
 | F4 | Un **produit d'une autre partenaire** était vendu sous le nom de la partenaire choisie (identifiant de partenaire pris dans le corps). | Produits de l'établissement choisi seulement (même partenaire, contrôle en base et déclencheur). | F4, `l12a-commandes` A |
-| F5 | La liste de la partenaire montrait les commandes **jamais payées**, avec le nom complet et le téléphone du client, sans limite de durée. | Liste par la base : jamais une commande non payée ; adresse et téléphone seulement pour la commande, masqués 7 jours après la remise (tâche `ev_orders`). | F5, `l12a-commandes` C |
+| F5 | La liste de la partenaire montrait les commandes **jamais payées**, avec le nom complet et le téléphone du client, sans limite de durée. | Liste par la base : seulement les commandes transmises (payées, ou payables à la remise ; contre-vérification T1) ; adresse et téléphone seulement pour la commande, masqués 7 jours après la remise (tâche `ev_orders`). | F5, `l12a-commandes` C |
 | F6 | La confirmation d'un paiement de commande écrivait la commande « payée, confirmée » par un chemin générique, sans verrou ni contrôle ; un échec de paiement l'annulait (sans rendre le stock). | `order_payment_confirm` en base (une seule fois, montant relu, commande encore payable, sinon remboursement en entier) ; l'échec d'un paiement ne touche plus la commande. | `finance-cibles`, `l12a-commandes` B, C, E |
 | F7 | Le montant d'un paiement de commande était lu sur la commande écrite par la route. | `order_payment_create` relit la part payée au départ (ou le solde) sur la commande figée en base. | `l12a-commandes` A, B |
 | F8 | Aucun produit réglementé, aucun stock tenu sous verrou, aucun plafond, aucune expiration. | Voir § 4 et § 5. | `l12a-commandes` A, C |
@@ -29,6 +29,14 @@ Run complet final **544** (commit `d3f4cdfe7`) : les 566 suites vertes (4 tâche
 de 90 sur mobile. Seul rouge : la note mobile de **Mes billets**, médiane 88 (page non touchée par le lot ; la règle
 temporaire de la consigne dit qu'elle ne bloque pas). Aucune suite de `tests/audit/` ni de `tests/audit-auth/` rouge, aucune
 de leurs assertions changée. Détail des runs : § 10.
+
+### Contre-vérification (21/11) : trous corrigés
+
+La contre-vérification indépendante (`docs/audit-lot12a.md`, branche `lot12a/cv-rouges`, `aa00aeb58`) a trouvé
+**aucun trou critique ni élevé, 2 moyens (T1, T2) et 7 faibles (T3 à T9)**. Ses trois suites (`tests/audit/cv12a-*`)
+sont récupérées sur la branche ; elles passent au vert sans changement de leurs assertions, sauf T6, adapté à la décision
+du chef de projet (§ 13). Run rapide 560 : 12/12 trous fermés, 7/7 garde-fous, 3/3 contrôles statiques, invariants à 0.
+Détail, migrations touchées et tests modifiés : § 13.
 
 ### Ce qui change pour les autres lots
 
@@ -75,7 +83,7 @@ de leurs assertions changée. Détail des runs : § 10.
 | `order_items` (03) | `base_price`, `options` (copie : nom et prix), `unit_price` = prix + suppléments, `total_price` = unitaire × quantité (1 à 99), `portion_day`, `stock_managed`. Une ligne d'un produit réglementé est refusée par un déclencheur, même sous le drapeau des fonctions. |
 | `order_state_history` (03) | chaque changement d'état : de, vers, heure, auteur (CLIENT, PARTENAIRE, LIVREUR, ADMIN, SUPERADMIN, SYSTEM), note. |
 | `partner_couriers` (03) | livreurs d'une partenaire : PENDING (invité), ACTIVE (a accepté), DECLINED, REMOVED. Rôle de service seul. |
-| `private.order_code_key` (03) | 32 octets tirés une fois ; `order_code_hash` = HMAC-SHA256(commande:code, clé). La clé n'est lisible que par `order_code_hash` (schéma `private`, aucun droit pour anon, authenticated ni le rôle de service) : une copie des tables publiques ne permet pas d'essayer les 10 000 codes hors de la base. Les fonctions du code, comme toute fonction métier (règle 1A.3 de `03-verification.sql`), sont exécutables par le rôle de service seulement. |
+| `private.order_code_key` (03) | 32 octets tirés une fois ; `order_code_hash` = HMAC-SHA256(commande:code, clé). La clé n'est lisible que par `private.order_code_hash` (aucun droit pour anon, authenticated ni le rôle de service) : une copie des tables publiques ne permet pas d'essayer les 10 000 codes hors de la base. Les fonctions du code (`order_code_hash`, `order_issue_code`, `order_code_delivery`) sont des aides internes du schéma `private`, exécutables par aucun rôle de l'API (contre-vérification T7). |
 
 Garde (`trg_0_orders_flow_guard`, `trg_0_order_items_flow_guard`, `trg_0_order_state_history_guard`) : toute insertion,
 suppression ou modification d'une commande d'établissement, de ses lignes ou de son historique est refusée hors des
@@ -231,7 +239,7 @@ Un paiement de commande n'envoie plus l'avis générique « Paiement confirmé �
 
 | Fichier | Contenu |
 |---|---|
-| `…01_l12a_reglages` | 12 réglages `orders.*` ; recopies de `finance_setting_set` et `fin_setting_valid` (20261126000002, lot 10b), `platform_settings_defaults` (20261123000101) |
+| `…01_l12a_reglages` | 13 réglages `orders.*` (dont `orders.max_unpaid_portions`, contre-vérification T3) ; recopies de `finance_setting_set` et `fin_setting_valid` (20261126000002, lot 10b), `platform_settings_defaults` (20261123000101) |
 | `…02_l12a_catalogue` | réglages de vente des établissements, sorte BOUTIQUE ; produits : établissement, prix entier, réglementé et décision de l'administration ; options ; portions du plat du jour ; zones de livraison ; `order_venue_settings_set`, `order_daily_portions_set`, `order_product_regulation_decide`, `product_regulated` ; lecture, aucune écriture REST |
 | `…03_l12a_commandes_schema` | colonnes des commandes et des lignes, historique, livreurs, clé du code (schéma `private`), `order_code_hash`, état dérivé, garde, reprise des anciennes commandes de repas, lecture (client et administration) |
 | `…04_l12a_devis_commande` | verrous, données et envoi des avis, historique, stock rendu ; `order_quote_compute`, `order_quote`, `order_create` |
@@ -240,8 +248,10 @@ Un paiement de commande n'envoie plus l'avis générique « Paiement confirmé �
 | `…07_l12a_avis` | 17 types d'avis (canaux, classement de nuit) et l'envoi immédiat `ORDER_HANDOVER_CODE` ; `trg_payments_other_success` (ORDER exclu) ; recopie de `notification_sync_log` (20261120000005, objet ORDER_HANDOVER) |
 | `…08_l12a_releves` | commission des commandes dans les relevés ; recopies de `finance_admin_earned`, `finance_admin_payments` (20261123000109) |
 
-Toutes les fonctions du lot sont réservées au rôle de service (`r3-fonctions-rpc`, `migration-lot12a-rejouable`) ;
-la clé du code n'est lisible par aucun rôle de l'API. Plus la tâche planifiée `ev_orders`
+Toutes les fonctions publiques du lot sont réservées au rôle de service (`r3-fonctions-rpc`, `migration-lot12a-rejouable`) ;
+les 10 aides internes (code, empreinte, clôture, remise, départ, stock, historique, remboursement, contrôle d'une commande
+en cours) sont dans le schéma `private`, exécutables par aucun rôle de l'API (contre-vérification T7) ; la clé du code
+n'est lisible par aucun rôle de l'API. Plus la tâche planifiée `ev_orders`
 (`supabase/ops/schedule-crons.sql`, minute 3, toutes les 5 minutes, comme `ev_tables`).
 
 ## 9. Mise en service : contrôles avant et après (event-village-dev)
@@ -273,7 +283,7 @@ select version from supabase_migrations.schema_migrations where version like '20
 -- B. Fonctions du lot réservées au rôle de service : anon false, authenticated false (au moins 28 lignes)
 select p.proname, has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute')
   from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'order\_%' order by 1;
--- C. 12 réglages orders.*
+-- C. 13 réglages orders.* (dont orders.max_unpaid_portions = 10)
 select key, value from public.platform_settings where key like 'orders.%' order by 1;
 -- D. Anciennes commandes de repas closes (aucune sans état), commandes de billets sans état (intactes)
 select order_state, count(*) from public.orders group by 1 order by 1;
@@ -288,6 +298,12 @@ select exists (select 1 from pg_trigger where tgname = 'trg_0_orders_flow_guard'
 select pg_get_expr(polqual, polrelid) from pg_policy where polname = 'orders_read';
 -- G. 18 types ORDER_* (17 en file, ORDER_HANDOVER_CODE en envoi immédiat : sync_only true), nuit
 select type, channels, night_policy from public.notification_types where type like 'ORDER\_%' order by 1;
+-- H. Aides internes dans private (10 lignes, schéma private, toutes false) ; aucune dans public (0)
+select n.nspname, p.proname, has_function_privilege('service_role', p.oid, 'execute') as service
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where p.proname in ('order_issue_code', 'order_code_hash', 'order_code_delivery', 'order_close_apply', 'order_handover_apply',
+                     'order_set_en_route', 'order_release_stock', 'order_log_state', 'order_refund_payment', 'order_ongoing_refusal')
+ order by 1, 2;
 ```
 
 Puis `03-verification.sql` (comme aux lots précédents) et `schedule-crons.sql` : 11 lignes actives dont `ev_orders`.
@@ -413,3 +429,78 @@ Texte des points tels que posés :
    veut s'en protéger passe en préparation dès l'acceptation.
 9. **Livreur** : invité par son numéro, livreur après son accord ; la partenaire peut aussi livrer elle-même (étape « en
    route » par la partenaire).
+
+## 13. Contre-vérification : correctifs
+
+Rapport de la contre-vérification : `docs/audit-lot12a.md` (branche `lot12a/cv-rouges` à `aa00aeb58`, partie de
+`14b7a718f`), récupéré en avance rapide avec ses trois suites : `tests/audit/cv12a-1-trous` (un test par trou),
+`cv12a-2-gardes` (garde-fous, invariants à la fin), `cv12a-3-statique` (recopies, SMS, codes). Les migrations du lot,
+jamais appliquées, sont corrigées **en place** (aucune nouvelle migration) : une recopie reste unique dans le lot (S1).
+
+| # | Trou (gravité) | Correctif | Où |
+|---|---|---|---|
+| T1 | Commande jamais payée (annulée avant le paiement, échue) listée et lisible par la partenaire, adresse et téléphone compris (moyenne) | La partenaire ne voit et n'agit que sur une commande **transmise** (`received_at` posé au paiement de la première part ou à la création d'une commande payable à la remise) : `order_view` (« PARTNER »), `order_partner_list`, `order_partner_action`, annulation par la partenaire. Coordonnées d'une commande close sans transmission masquées tout de suite (`order_expire_hold`, `order_close_apply`). | `…05`, `…06` |
+| T2 | Solde payé sans le contrôle d'une commande payable ; commande payable à la remise acceptée et remise avec un produit devenu réglementé (moyenne) | Nouvelle aide `private.order_ongoing_refusal` : fiche de la partenaire suspendue ou produit réglementé. Solde : création refusée, confirmation remboursée en entier (comme la première part). Acceptation et remise : produit réglementé → commande **refusée par Event Village**, tout rendu au client, sans faute de la partenaire, avis au client ; fiche suspendue → remise refusée. L'établissement fermé aux nouvelles commandes n'empêche pas de finir une commande déjà acceptée. | `…05`, `…06` |
+| T3 | Même produit sur plusieurs lignes : 297 portions tenues par une commande non payée (faible) | 99 au plus par produit sur **toute** la commande (`order_quote_compute`) ; plat du jour : **10 portions au plus tenues sans paiement par client et par plat**, toutes ses commandes non payées comprises (réglage `orders.max_unpaid_portions`, 1 à 99, écran des réglages, refus 429 `TOO_MANY_PORTIONS`). | `…01`, `…04`, réglages |
+| T4 | Prénom du titulaire de n'importe quel numéro rendu à la partenaire (faible) | Avant l'accord, comme pour les contrôleurs : le **numéro saisi et un nom masqué** (« Nd*** S*** », `team_mask_name`) dans la réponse de l'invitation et dans la liste ; le prénom seulement pour un livreur actif. | `…06`, `app/api/partner/couriers/route.ts` |
+| T5 | Commandes jamais payées au tableau de bord et aux métriques de la partenaire (faible) | Liste et comptes : une commande d'établissement n'apparaît qu'une fois transmise ; les commandes sans établissement (billets de l'ancien code) restent comptées comme avant. | `app/api/partner/metrics/route.ts`, `lib/partner/partner-dashboard.service.ts` |
+| T6 | Nouveau code envoyé service fermé (faible) | **Décision du chef de projet** (règle du 20/11 : ce qui est en cours reste ouvert) : un nouveau code reste possible pour une commande **en cours**, service fermé, plafond de 3 gardé ; refusé pour une commande close (c'était déjà le cas : `order_code_resend` n'accepte que « prête à retirer » ou « en route »). Aucun changement de code ; condition du test adaptée (ci-dessous). | test seulement |
+| T7 | 9 aides internes exécutables par le rôle de service, appelables en RPC sans contrôle d'acteur ni d'état (faible) | Les 9 aides (et la nouvelle `order_ongoing_refusal`) passent dans le schéma **`private`** (non exposé par l'API, hors de la règle 1A.3) : exécutables par aucun rôle de l'API, appelées seulement par les fonctions publiques ; anciennes versions publiques retirées (`DROP FUNCTION IF EXISTS`). | `…03`, `…04`, `…05`, `…06` |
+| T8 | `GET /api/partner/products/[id]` : produit non publié d'une autre partenaire lu (faible) | Produit de la partenaire de la session seulement (404 sinon). | `lib/products/product.service.ts`, route |
+| T9 | Nouveaux codes envoyés sans journal (faible) | Une référence par envoi (commande, étape, nouveaux codes déjà demandés) : une ligne de journal par SMS du code, toujours sans le code. | `…06`, `lib/orders/booking.ts` |
+
+Textes nouveaux (réponses des routes, en français simple) :
+
+| Code | Texte |
+|---|---|
+| `REGULATED_ORDER_REFUSED` (acceptation) | Un produit de cette commande est réglementé : elle ne peut pas être acceptée. Elle est annulée et le client remboursé. |
+| `REGULATED_ORDER_REFUSED` (remise) | Un produit de cette commande est réglementé : elle ne peut pas être remise. Elle est annulée et le client remboursé. |
+| `REGULATED_PRODUCT` (solde) | « Bière blonde » est un produit réglementé : il ne se commande pas en ligne. |
+| `VENUE_NOT_AVAILABLE` (solde, fiche suspendue) | Cet établissement ne prend plus de paiement pour le moment. |
+| `INVALID_QUANTITY` (somme par produit) | Au plus 99 « Bissap » par commande. |
+| `TOO_MANY_PORTIONS` | Vous tenez déjà 6 portions de « Thiéboudienne du jour » sans les avoir payées : 10 au plus. Payez votre commande en cours ou attendez qu’elle se termine. (ou, sans commande en cours : Au plus 10 portions de « … » par commande non payée.) |
+
+Le client reçoit l'avis de commande refusée existant (`ORDER_CANCELLED`, origine « refusée », motif « Produit
+réglementé : il ne se vend pas en ligne », montant remboursé).
+
+Tests modifiés (signalés) :
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `tests/audit/cv12a-1-trous` T6 | La condition attendait 404 pour toute commande, service fermé ; elle attend maintenant, service fermé : 3 nouveaux codes pour une commande **en cours** puis 429 (plafond gardé), 3 SMS ; refus et **aucun SMS** pour une commande close. Commentaire « Décision du chef de projet ». Seule assertion de la contre-vérification changée. | décision du chef de projet du 21/11 |
+| `migration-lot12a-rejouable` | Les aides internes : dans `private`, exécutables par aucun rôle (au lieu de « exécutables par le rôle de service ») ; clé illisible | T7 |
+| `r3-fonctions-rpc` | 4 aides retirées de la liste des fonctions publiques | T7 |
+| `notif-migration` | Les points d'insertion `order_close_apply`, `order_set_en_route`, `order_handover_apply` sont cherchés dans `public` et `private` (paramètre `schemas` de l'aide de lecture) | T7 |
+| `l12a-commandes` | Stock rendu une seule fois : `private.order_release_stock` appelée en base (plus en RPC) ; réglage `orders.max_unpaid_portions` = 10 parmi les défauts ; nouveau cas : 10 portions tenues au plus, 99 par produit sur deux lignes | T7, T3 |
+| `partner-orders-m9` | `getProductById(produit, partenaire)` | T8 |
+
+Runs :
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 560 | `f55a08a85` | rapide, 20 suites | **vert**, 20/20 suites, aucun « not ok » : `cv12a-1-trous` 12/12 (T1 à T9, dont T2a à T2d), `cv12a-2-gardes` 7/7, `cv12a-3-statique` 3/3 ; suites du lot, `fonctions-privileges` et `hotfix-scripts` (règle 1A.3), réglages (`f3b-*`), interrupteurs, `notif-migration`, `r3-fonctions-rpc`, temps réel et pannes ; invariants de toutes les livraisons (jusqu'à o1-o7) : 0 violation |
+
+Extrait brut du run 560 (`runs/560-44913113802/jobs/rapide/verify.log`, branche `ci-results`) :
+
+```
+ok 1 - T1 — commande jamais payée (annulée avant paiement, puis échue) : ni listée ni lisible par la partenaire, ni son adresse ni son téléphone
+ok 2 - T2a — solde en ligne refusé quand un produit de la commande est devenu réglementé (décision de l’administration après l’acompte)
+ok 3 - T2b — solde en ligne refusé quand la fiche de la partenaire est suspendue (comme la première part)
+ok 4 - T2c — solde confirmé après que le produit est devenu réglementé : remboursé, jamais compté (comme la première part)
+ok 5 - T2d — commande payable à la remise dont un produit devient réglementé : la partenaire ne peut plus l’accepter ni la remettre
+ok 6 - T3 — même produit sur plusieurs lignes : plus de 99 unités refusées (pas 297 portions du plat du jour tenues sans payer)
+ok 7 - T4 — invitation d’un livreur : le prénom d’un compte quelconque n’est pas rendu à la partenaire à partir de son seul numéro
+ok 8 - T5 — tableau de bord et métriques de la partenaire : aucune commande jamais payée
+ok 9 - T6 — service des commandes fermé : nouveau code possible pour une commande en cours (plafond de 3 gardé), refusé pour une commande close, aucun SMS pour celle-ci
+ok 10 - T8 — GET /api/partner/products/[id] : le produit non publié d’une autre partenaire n’est pas lisible
+ok 11 - T9 — chaque SMS de code de remise est journalisé (code de retrait, puis nouveau code demandé par le client)
+ok 12 - T7 — aides internes des commandes non appelables en RPC par la clé de service (contrôle du catalogue)
+[INVARIANT-LOT12A] cv12a-2-gardes — (o1)(o2)(o3)(o4)(o5)(o6)(o7) : 0 violation(s)
+```
+
+Restent, hors trous : invitations d'un livreur sans limite par jour (signalé par la contre-vérification, non demandé ;
+`docs/apres-lancement.md`) ; quand un livreur tente de remettre une commande devenue réglementée, la partenaire le voit
+dans sa liste (commande refusée), sans avis à part.
+
+À faire avant la fusion : le lot 11b fusionne d'abord et redéfinit aussi `notif_cashouts_notify` ; la recopie du lot 12a
+(`…06`) sera refaite à partir de sa version, puis runs rapides et un run complet (résultat ci-dessous quand il existe).
