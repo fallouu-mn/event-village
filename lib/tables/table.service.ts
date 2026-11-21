@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { getServiceRoleClient } from '../supabase/server';
 import { PublicError } from '@/lib/api/public-error';
+import { assertNoPosterFolder } from '@/lib/images/image-address';
+import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { tableStateLabel } from './booking';
+import { okOrRefuse } from './queries';
 
 /**
  * Lot 11a — service des tables côté partenaire : établissements (restaurant, bar, espace), horaires, zones et tables.
@@ -10,7 +13,50 @@ import { tableStateLabel } from './booking';
  * zone du même établissement, statut de validation jamais écrit ici). Une réservation n'est jamais écrite ici : elle
  * ne change que par les fonctions en base (table_reserve, table_reservation_cancel, table_reservation_respond,
  * table_reservation_presence, table_onsite_payment_record), sous verrou et avec journal.
+ * Lot 11b : création en une transaction (venue_create : fiche, photos, horaires, zones, tables), photos réencodées
+ * vérifiées (dossier venues/<partenaire>/ de la route de dépôt), renvoi en validation, plan de salle, fermetures
+ * exceptionnelles : fonctions en base (propriétaire, compte ACTIF, fiche VALIDE revérifiés).
  */
+
+/** Préfixe des photos des établissements de la partenaire : `${SUPABASE_URL}/storage/v1/object/public/public-images/venues/<partner_id>/`. */
+export function venuePhotoPrefix(partnerId: string): string | null {
+    const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/+$/, '');
+    if (!base) return null;
+    return `${base}/storage/v1/object/public/public-images/venues/${partnerId}/`;
+}
+
+export const VENUE_PHOTOS_MAX = 12;
+
+/**
+ * Photos d'un établissement : chacune vient de la route de dépôt (POST /api/partner/upload, dossier venues/<partenaire>/,
+ * fichier réencodé « horodatage_8 caractères.webp », métadonnées retirées) ; une photo déjà enregistrée sur
+ * l'établissement et renvoyée telle quelle reste acceptée. 12 au plus, sans doublon (comme les salles, lot 10b).
+ */
+export function venuePhotos(images: unknown, partnerId: string, previous: readonly string[] = []): string[] {
+    assertNoPosterFolder(images);
+    if (!Array.isArray(images)) throw new PublicError('Liste de photos illisible.', 'INVALID_FIELD', 400);
+    if (images.length > VENUE_PHOTOS_MAX) throw new PublicError(`${VENUE_PHOTOS_MAX} photos au plus par établissement.`, 'INVALID_FIELD', 400);
+    const prefix = venuePhotoPrefix(partnerId);
+    const out: string[] = [];
+    for (const url of images) {
+        const fromUpload = typeof url === 'string' && prefix !== null && url.startsWith(prefix) && STORED_IMAGE_NAME_RE.test(url.slice(prefix.length));
+        if (typeof url !== 'string' || !(previous.includes(url) || fromUpload)) {
+            throw new PublicError('Une photo ne vient pas de cette page : déposez-la depuis le formulaire de l’établissement.', 'IMAGE_ORIGIN_INVALID', 400);
+        }
+        if (!out.includes(url)) out.push(url);
+    }
+    return out;
+}
+
+/** Refus d'une fonction de la base levé en P0001 (venue_create) : message en français simple, code dans HINT. */
+function rpcRaise(error: { code?: string; message?: string; hint?: string | null }): Error {
+    if (error.code === 'P0001' && error.message) {
+        const code = error.hint ?? 'REFUSED';
+        const status = code === 'FORBIDDEN' || code === 'ACCOUNT_NOT_ACTIVE' || code === 'PARTNER_NOT_VALIDATED' ? 403 : 400;
+        return new PublicError(error.message, code, status);
+    }
+    return new Error(`venue_create : ${error.message ?? 'réponse vide'}`);
+}
 
 const time = z.string().regex(/^([01]\d|2[0-4]):[0-5]\d$/, 'Heure au format HH:MM.');
 
@@ -29,6 +75,48 @@ export const VenueInputSchema = z.object({
     hours: z.array(z.object({ weekday: z.number().int().min(1).max(7), opens_at: time, closes_at: time })).max(28).optional(),
 });
 export type VenueInput = z.infer<typeof VenueInputSchema>;
+
+/** Lot 11b : création complète (une photo, une plage d'ouverture et une table au moins ; zones facultatives). */
+export const VenueCreateSchema = VenueInputSchema.extend({
+    photos: z.array(z.string()).min(1, 'Ajoutez au moins une photo de l’établissement.').max(12, '12 photos au plus.'),
+    hours: z.array(z.object({ weekday: z.number().int().min(1).max(7), opens_at: time, closes_at: time })).min(1, 'Indiquez au moins une plage d’ouverture.').max(28),
+    zones: z.array(z.object({ key: z.string().trim().min(1).max(40), name: z.string().trim().min(1, 'Chaque zone a un nom.').max(80) })).max(20, '20 zones au plus.').default([]),
+    tables: z.array(z.object({
+        number: z.string().trim().min(1, 'Chaque table a un numéro.').max(20),
+        capacity: z.number().int().min(1).max(50),
+        min_capacity: z.number().int().min(1).max(50).optional(),
+        zone_key: z.string().trim().max(40).optional().nullable(),
+    })).min(1, 'Ajoutez au moins une table.').max(200, '200 tables au plus.'),
+});
+
+/** Lot 11b : plan de salle (positions en % du plan). */
+export const PlanSchema = z.object({
+    enabled: z.boolean(),
+    tables: z.array(z.object({
+        id: z.string().uuid(),
+        x: z.number().min(0).max(100).nullable(),
+        y: z.number().min(0).max(100).nullable(),
+        shape: z.enum(['RONDE', 'CARREE', 'RECTANGLE']).optional(),
+        rotation: z.number().int().min(0).max(345).refine((n) => n % 15 === 0, 'Rotation par 15°.').optional(),
+    })).max(200),
+    zones: z.array(z.object({
+        id: z.string().uuid(),
+        x: z.number().min(0).max(100).nullable(),
+        y: z.number().min(0).max(100).nullable(),
+        w: z.number().min(5).max(100).nullable(),
+        h: z.number().min(5).max(100).nullable(),
+    })).max(20).default([]),
+});
+
+/** Lot 11b : fermeture exceptionnelle (jour entier si aucune heure). */
+export const ClosureSchema = z.object({
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choisissez le jour de la fermeture.'),
+    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    start_time: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+    end_time: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+    reason: z.string().trim().min(3, 'Indiquez le motif : il est envoyé aux clients.').max(200),
+    expected_count: z.number().int().min(0).max(10_000).optional(),
+});
 
 export const ZoneInputSchema = z.object({
     venue_id: z.string().uuid('Choisissez l’établissement.').optional(),
@@ -79,27 +167,73 @@ export class TableService {
         return data ?? [];
     }
 
+    /**
+     * Lot 11b : création en une transaction par venue_create (fiche partenaire VALIDE et compte ACTIF revérifiés en base,
+     * fiche, photos, horaires, zones, tables) ; tout refus annule tout, aucun avis aux administrateurs.
+     */
     public static async createVenue(partnerUserId: string, raw: unknown) {
-        const parsed = VenueInputSchema.safeParse(raw);
+        const parsed = VenueCreateSchema.safeParse(raw);
         if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
-        const { hours, ...fields } = parsed.data;
         const partnerId = await this.resolvePartnerId(partnerUserId);
-        // Comme une salle (lot 10a) : seule une fiche partenaire VALIDE crée un établissement
-        const { data: fiche } = await getServiceRoleClient().from('partners').select('status').eq('id', partnerId).maybeSingle();
-        if (fiche?.status !== 'VALIDE') throw new PublicError('Votre compte partenaire doit être validé avant de créer un établissement.');
-        const { data, error } = await getServiceRoleClient().from('venues').insert({ ...fields, partner_id: partnerId }).select('*').single();
-        if (error || !data) throw dbRefusal(error, 'création de l’établissement');
-        if (hours) await this.setHours(partnerUserId, data.id, hours);
-        return data;
+        const photos = venuePhotos(parsed.data.photos, partnerId);
+        const { data, error } = await getServiceRoleClient().rpc('venue_create', { p: { ...parsed.data, photos, actor_id: partnerUserId } });
+        if (error) throw rpcRaise(error);
+        const r = okOrRefuse((data ?? {}) as Record<string, unknown>);
+        const { data: venue, error: readErr } = await getServiceRoleClient().from('venues').select('*').eq('id', String(r.venue_id)).single();
+        if (readErr || !venue) throw new Error(`établissement créé illisible : ${readErr?.message ?? 'absent'}`);
+        return venue;
+    }
+
+    /** Lot 11b : renvoi en validation d'un établissement refusé (venue_submit). */
+    public static async submitVenue(partnerUserId: string, venueId: string) {
+        const { data, error } = await getServiceRoleClient().rpc('venue_submit', { p: { actor_id: partnerUserId, venue_id: venueId } });
+        if (error) throw new Error(`venue_submit : ${error.message}`);
+        return okOrRefuse((data ?? {}) as Record<string, unknown>);
+    }
+
+    /** Lot 11b : plan de salle (venue_plan_set) : positions des tables et des zones, plan montré ou non. */
+    public static async setPlan(partnerUserId: string, venueId: string, raw: unknown) {
+        const parsed = PlanSchema.safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
+        const { data, error } = await getServiceRoleClient().rpc('venue_plan_set', { p: { ...parsed.data, actor_id: partnerUserId, venue_id: venueId } });
+        if (error) throw new Error(`venue_plan_set : ${error.message}`);
+        return okOrRefuse((data ?? {}) as Record<string, unknown>);
+    }
+
+    /** Lot 11b : fermeture exceptionnelle (aperçu, puis création avec le nombre de réservations vu à l'aperçu). */
+    public static async closure(partnerUserId: string, venueId: string, raw: unknown, mode: 'preview' | 'create') {
+        const parsed = ClosureSchema.safeParse(raw);
+        if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
+        const fn = mode === 'preview' ? 'venue_closure_preview' : 'venue_closure_create';
+        const { data, error } = await getServiceRoleClient().rpc(fn, { p: { ...parsed.data, actor_id: partnerUserId, venue_id: venueId } });
+        if (error) throw new Error(`${fn} : ${error.message}`);
+        return okOrRefuse((data ?? {}) as Record<string, unknown>);
+    }
+
+    /** Lot 11b : fermeture retirée (pas encore finie). */
+    public static async removeClosure(partnerUserId: string, closureId: string) {
+        const { data, error } = await getServiceRoleClient().rpc('venue_closure_delete', { p: { actor_id: partnerUserId, closure_id: closureId } });
+        if (error) throw new Error(`venue_closure_delete : ${error.message}`);
+        return okOrRefuse((data ?? {}) as Record<string, unknown>);
     }
 
     public static async updateVenue(partnerUserId: string, venueId: string, raw: unknown) {
-        const parsed = VenueInputSchema.partial().safeParse(raw);
+        const parsed = VenueInputSchema.partial().extend({ photos: z.array(z.string()).max(12, '12 photos au plus.').optional() }).safeParse(raw);
         if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
-        const { hours, ...fields } = parsed.data;
+        const { hours, photos, ...fields } = parsed.data;
         const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Lot 11b : photos réencodées de la route de dépôt, ou déjà sur l'établissement ; au moins une
+        let checkedPhotos: string[] | undefined;
+        if (photos !== undefined) {
+            const { data: current, error: curErr } = await getServiceRoleClient().from('venues').select('photos').eq('id', venueId).eq('partner_id', partnerId).maybeSingle();
+            if (curErr) throw new Error(`établissement : ${curErr.message}`);
+            if (!current) throw new PublicError('Établissement introuvable.', 'VENUE_NOT_FOUND', 404);
+            checkedPhotos = venuePhotos(photos, partnerId, Array.isArray(current.photos) ? (current.photos as string[]) : []);
+            if (checkedPhotos.length === 0) throw new PublicError('Gardez au moins une photo de l’établissement.', 'INVALID_FIELD', 400);
+        }
         const { data, error } = await getServiceRoleClient().from('venues')
-            .update({ ...fields, updated_at: new Date().toISOString() }).eq('id', venueId).eq('partner_id', partnerId).select('*').maybeSingle();
+            .update({ ...fields, ...(checkedPhotos ? { photos: checkedPhotos } : {}), updated_at: new Date().toISOString() })
+            .eq('id', venueId).eq('partner_id', partnerId).select('*').maybeSingle();
         if (error) throw dbRefusal(error, 'modification de l’établissement');
         if (!data) throw new PublicError('Établissement introuvable.');
         if (hours) await this.setHours(partnerUserId, venueId, hours);

@@ -78,9 +78,16 @@ export function refusalStatus(code: unknown): number {
         case 'VENUE_NOT_FOUND':
         case 'RESERVATION_NOT_FOUND':
         case 'SERVICE_CLOSED':
+        // Lot 11b
+        case 'CLOSURE_NOT_FOUND':
+        case 'TABLE_NOT_FOUND':
+        case 'ZONE_NOT_FOUND':
             return 404;
         case 'ACCOUNT_NOT_ACTIVE':
         case 'FORBIDDEN':
+        // Lot 11b (F1) : fiche partenaire suspendue ou non validée
+        case 'PARTNER_SUSPENDED':
+        case 'PARTNER_NOT_VALIDATED':
             return 403;
         case 'TOO_MANY_PENDING':
         case 'PAYER_PENDING_LIMIT':
@@ -99,6 +106,12 @@ export function refusalStatus(code: unknown): number {
         case 'INVALID_METHOD':
         case 'INVALID_HOURS':
         case 'OVERLAPPING_HOURS':
+        // Lot 11b
+        case 'INVALID_FILTER':
+        case 'INVALID_PLAN':
+        case 'INVALID_FIELD':
+        case 'VENUE_INCOMPLETE':
+        case 'PREVIEW_REQUIRED':
             return 400;
         default:
             return 409;

@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 /** Compartiment public créé par la migration 20261102000004_lot5_edition.sql (plus de création à l'exécution). */
 const BUCKET_NAME = 'public-images';
-const FOLDERS = new Set(['events', 'halls', 'products', 'misc']);
+const FOLDERS = new Set(['events', 'halls', 'venues', 'products', 'misc']);
 
 /**
  * POST /api/partner/upload — dépôt d'une image publique (affiche, salle, produit) par un organisateur.

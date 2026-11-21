@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { TableService } from '@/lib/tables/table.service';
-import { guardFeature } from '@/lib/features/flags';
 
 /**
  * GET /api/partner/tables/reservations?date=AAAA-MM-JJ&venueId=… — réservations des établissements de la partenaire.
@@ -14,9 +13,7 @@ export async function GET(request: NextRequest) {
     try {
         const activeSession = await requireActiveSession(request);
         if (activeSession.response) return activeSession.response;
-        // Lot 7 (7.3, D56) : session d'abord, puis interrupteur (404 si le service est fermé)
-        const closed = await guardFeature('tables', '/api/partner/tables/reservations');
-        if (closed) return closed;
+        // Lot 11b (décision du 20/11) : sans interrupteur, une réservation existante se lit et se gère même service fermé
         const user = activeSession.user;
         if (!user || !serverIsPartner(user)) {
             return NextResponse.json({ error: 'Réservé aux partenaires.' }, { status: 403 });
