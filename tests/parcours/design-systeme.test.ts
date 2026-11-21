@@ -1070,7 +1070,9 @@ describe('Q — tokens sémantiques (globals.css, tailwind.config)', () => {
         const root = ROOT_VARS();
         const missing = DARK_TOKENS.filter((t) => !dark.has(`--${t}`));
         assert.deepEqual(missing, [], `variables absentes de .dark : ${missing.map((t) => `--${t}`).join(', ')}`);
-        for (const t of ['background', 'foreground', 'border', 'primary']) {
+        // Design 1e (consigne « mode sombre : même orange sur fond noir profond ») : --primary n'est plus dans cette liste
+        // (même orange dans les deux thèmes) ; son texte orange (--primary-text) bascule, lui (test modifié, signalé au rapport).
+        for (const t of ['background', 'foreground', 'border', 'primary-text']) {
             assert.notEqual(dark.get(`--${t}`), root.get(`--${t}`), `--${t} identique en clair et en sombre : le token ne bascule pas`);
         }
     });
@@ -1122,7 +1124,9 @@ describe('Q — tokens sémantiques (globals.css, tailwind.config)', () => {
         assert.deepEqual(problems, [], problems.join('\n'));
     });
 
-    test('contraste WCAG (charte) : bouton principal B en clair et A en sombre ≥ 4,5:1, texte sur l’orange de la marque ≥ 4,5:1 ; --brand = #FF8A3D', () => {
+    // Design 1e : valeurs de l'orange de marque #F05A1A (test modifié, signalé au rapport) ; seuils inchangés pour les petits
+    // boutons (#1A1A1A sur l'orange ≥ 4,5:1) ; le blanc du bouton principal en grande taille : tests/schema/design1e-orange.test.ts.
+    test('contraste WCAG (charte) : petits boutons sur l’orange ≥ 4,5:1 en clair et en sombre, texte sur l’orange de la marque ≥ 4,5:1 ; --brand = #F05A1A', () => {
         const root = ROOT_VARS();
         const dark = DARK_VARS();
         const color = (name: string, scopes: Array<Map<string, string>>): Rgb => {
@@ -1138,9 +1142,9 @@ describe('Q — tokens sémantiques (globals.css, tailwind.config)', () => {
             const onBrand = contrastRatio(color('brand', [...scopes]), color('brand-foreground', [...scopes]));
             assert.ok(onBrand >= 4.5, `${theme} : --brand-foreground sur --brand ${onBrand.toFixed(2)}:1 < 4,5:1`);
         }
-        assert.deepEqual(color('brand', [root]), [255, 138, 61], '--brand doit valoir #FF8A3D (orange de la marque)');
-        assert.deepEqual(color('primary', [root]), [194, 65, 12], 'clair : --primary doit valoir #C2410C (bouton B)');
-        assert.deepEqual(color('primary', [dark, root]), [255, 138, 61], 'sombre : --primary doit valoir #FF8A3D (bouton A)');
+        assert.deepEqual(color('brand', [root]), [240, 90, 26], '--brand doit valoir #F05A1A (orange de la marque, design 1e)');
+        assert.deepEqual(color('primary', [root]), [240, 90, 26], 'clair : --primary doit valoir #F05A1A (orange plein)');
+        assert.deepEqual(color('primary', [dark, root]), [240, 90, 26], 'sombre : --primary doit valoir #F05A1A (même orange)');
     });
 });
 

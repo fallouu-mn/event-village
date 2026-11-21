@@ -64,6 +64,8 @@ const config: Config = {
           DEFAULT: tone('primary'),
           hover: tone('primary-hover'),
           foreground: tone('primary-foreground'),
+          // Design 1e : blanc du bouton principal en grande taille (gras de 19 px au moins, « grand texte »)
+          'foreground-large': tone('primary-foreground-large'),
           text: tone('primary-text'),
           soft: tone('primary-soft'),
         },
