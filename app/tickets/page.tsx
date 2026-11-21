@@ -1,7 +1,8 @@
 import { headers } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { GET as listMyTickets } from '@/app/api/tickets/route';
-import { TicketsView, type MyTicket } from './TicketsView';
+import { TicketsView, type MyTicket, type TicketList } from './TicketsView';
+import { upcomingOnly } from '@/lib/tickets/periode';
 import { TABS, type TabKey } from './tabs';
 
 /**
@@ -12,10 +13,13 @@ import { TABS, type TabKey } from './tabs';
  * cas d'échec, la liste se charge dans le navigateur comme avant (TicketsView).
  * Run 426 : la page n'attend plus la liste ; l'en-tête et le squelette partent aussitôt et la liste suit dans la même réponse
  * (promesse transmise à TicketsView), sans aller-retour du navigateur vers /api/tickets.
+ * Design 1e (point B) : onglet « À venir » (par défaut) : seuls les billets à venir partent avec la page (le navigateur en
+ * dessine moins, quel que soit le nombre de billets passés) ; « Tous mes billets » et « Historique » chargent la liste
+ * complète à leur ouverture. Un autre onglet demandé dans l'adresse : liste complète, comme avant.
  */
 export const dynamic = 'force-dynamic';
 
-async function readTicketsOnServer(): Promise<MyTicket[] | null> {
+async function readTicketsOnServer(upcoming: boolean): Promise<TicketList | null> {
     try {
         const h = await headers();
         if (!h.get('cookie')) return null;
@@ -25,7 +29,9 @@ async function readTicketsOnServer(): Promise<MyTicket[] | null> {
         const res = await listMyTickets(new NextRequest(`${proto}://${host}/api/tickets`, { headers: new Headers(h) }));
         if (!res.ok) return null;
         const body = (await res.json()) as { tickets?: unknown };
-        return Array.isArray(body.tickets) ? (body.tickets as MyTicket[]) : null;
+        if (!Array.isArray(body.tickets)) return null;
+        const list = body.tickets as MyTicket[];
+        return { tickets: upcoming ? upcomingOnly(list) : list, complete: !upcoming };
     } catch (err) {
         console.error('[Mes billets] liste non préparée par le serveur (lue dans le navigateur) :', err instanceof Error ? err.message : String(err));
         return null;
@@ -35,6 +41,6 @@ async function readTicketsOnServer(): Promise<MyTicket[] | null> {
 export default async function TicketsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
     const params = await searchParams;
     const tab = typeof params.tab === 'string' && (TABS as readonly string[]).includes(params.tab) ? (params.tab as TabKey) : undefined;
-    const ticketsPromise = readTicketsOnServer(); // non attendue : envoyée dans la même réponse
+    const ticketsPromise = readTicketsOnServer(!tab || tab === 'a-venir'); // non attendue : envoyée dans la même réponse
     return <TicketsView ticketsPromise={ticketsPromise} initialTab={tab} serverNow={Date.now()} />;
 }

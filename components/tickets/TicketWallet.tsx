@@ -52,7 +52,12 @@ function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-export function TicketWallet({ items, label }: { items: WalletItem[]; label: string }) {
+/**
+ * Design 1e (point B) : `total` = nombre de billets de l'onglet (le portefeuille n'en affiche que les premiers, par 10) ;
+ * `onEndReached` : appelé quand la fin des billets affichés approche (deux avant le dernier sur téléphone, ou le dernier
+ * près de l'écran sur ordinateur), pour afficher les suivants.
+ */
+export function TicketWallet({ items, label, total, onEndReached }: { items: WalletItem[]; label: string; total?: number; onEndReached?: () => void }) {
   const listRef = useRef<HTMLUListElement>(null);
   const [index, setIndex] = useState(0);
   const count = items.length;
@@ -114,6 +119,21 @@ export function TicketWallet({ items, label }: { items: WalletItem[]; label: str
     if (index > count - 1) setIndex(Math.max(0, count - 1));
   }, [count, index]);
 
+  // Design 1e (point B) : suite des billets. Téléphone (rangée qui glisse) : à deux billets de la fin ; ordinateur (grille) :
+  // dernier billet à moins d'un écran du bas. Rien à faire si tous les billets sont déjà affichés.
+  const hasMore = total !== undefined && total > count;
+  useEffect(() => {
+    if (hasMore && onEndReached && index >= count - 2) onEndReached();
+  }, [hasMore, onEndReached, index, count]);
+  useEffect(() => {
+    const last = listRef.current?.lastElementChild;
+    if (!hasMore || !onEndReached || !last || typeof IntersectionObserver !== 'function') return undefined;
+    if (!window.matchMedia('(min-width: 768px)').matches) return undefined;
+    const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) onEndReached(); }, { rootMargin: '0px 0px 100% 0px' });
+    io.observe(last);
+    return () => io.disconnect();
+  }, [hasMore, onEndReached, count]);
+
   const go = useCallback((target: number) => {
     const list = listRef.current;
     const next = Math.min(Math.max(target, 0), count - 1);
@@ -139,7 +159,7 @@ export function TicketWallet({ items, label }: { items: WalletItem[]; label: str
       {several && (
         <div className="flex items-center justify-between gap-3 md:hidden">
           <p className="text-sm font-semibold tabular-nums text-muted-foreground" aria-live="polite" aria-atomic="true">
-            {`Billet ${index + 1} sur ${count}`}
+            {`Billet ${index + 1} sur ${total ?? count}`}
           </p>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" aria-label="Billet précédent" onClick={() => go(index - 1)} disabled={index === 0}>

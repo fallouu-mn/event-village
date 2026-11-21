@@ -98,8 +98,9 @@ describe('design 1b — travail au chargement de l’accueil et de Mes billets',
         assert.match(page, /export const dynamic = 'force-dynamic';/);
         assert.match(page, /new NextRequest\(`\$\{proto\}:\/\/\$\{host\}\/api\/tickets`, \{ headers: new Headers\(h\) \}\)/);
         // Run 426 : la page n'attend pas la liste (en-tête aussitôt), la liste suit dans la même réponse
-        assert.match(page, /const ticketsPromise = readTicketsOnServer\(\);/);
-        assert.doesNotMatch(page, /await readTicketsOnServer\(\)/);
+        // Design 1e (modification signalée) : portée « à venir » sur l'onglet par défaut
+        assert.match(page, /const ticketsPromise = readTicketsOnServer\(!tab \|\| tab === 'a-venir'\);/);
+        assert.doesNotMatch(page, /await readTicketsOnServer\(/);
         assert.match(page, /<TicketsView ticketsPromise=\{ticketsPromise\} initialTab=\{tab\} serverNow=\{Date\.now\(\)\} \/>/);
         const view = read('app/tickets/TicketsView.tsx');
         assert.match(view, /ticketsPromise\.then\(\(list\) => \{/);

@@ -297,6 +297,9 @@ const PEOPLE: Record<DemoAccountKey, Person & { roles: string[]; primaryRole: st
     partenaireNeuf: { firstName: 'Ndèye', lastName: 'Gning', phone: '+221700000109', email: 'ndeye.gning@demo.eventvillage.local', roles: ['CLIENT', 'PARTENAIRE'], primaryRole: 'PARTENAIRE' },
     // Lot 9 ter (D.3.2) : contrôleur de l'événement à zones, porte Nord
     controleurZones: { firstName: 'Mamadou', lastName: 'Sall', phone: '+221700000110', email: 'mamadou.sall@demo.eventvillage.local', roles: ['CLIENT', 'CONTROLEUR'], primaryRole: 'CONTROLEUR' },
+    // Design 1e (mesure mobile) : client dédié de la mesure de Mes billets (scripts/e2e/perf-mobile.mjs), semé une fois avec
+    // 10 billets à venir et 30 passés ; aucune phase de l'e2e ne s'en sert, sa liste ne change donc pas d'un run à l'autre
+    clientMesure: { firstName: 'Awa', lastName: 'Sow', phone: '+221700000111', email: 'awa.sow.mesure@demo.eventvillage.local', roles: ['CLIENT'], primaryRole: 'CLIENT' },
 };
 
 /** Lot 9 bis (R87) : adresse saisie par le client de démonstration, en attente de vérification (jamais une adresse technique). */
@@ -1472,6 +1475,14 @@ async function main(): Promise<void> {
     purchases.get(byKey('publie').id)?.push(clientPublie);
     purchases.get(byKey('annule').id)?.push(clientAnnule);
     purchases.get(byKey('termine').id)?.push(clientTermine);
+    // Design 1e (mesure mobile) : billets du client de mesure, achetés par le parcours de paiement simulé (5 par achat,
+    // max_per_order 10) : 10 à venir (« Festival Jazz sur le Fleuve », dans 12 jours, hors de la fenêtre hors ligne) et 30
+    // passés (les deux événements terminés). Hors de la liste « purchases » : ni contrôlés à l'entrée, ni comptés ailleurs.
+    const mesure = accounts.clientMesure;
+    for (let i = 0; i < 2; i += 1) await buyOnline(byKey('publie'), mesure, 'Pass soirée', 5);
+    for (let i = 0; i < 3; i += 1) await buyOnline(byKey('termine'), mesure, 'Brunch', 5);
+    for (let i = 0; i < 3; i += 1) await buyOnline(byKey('termine2'), mesure, 'Tribune', 5);
+    log(`client de mesure ${mesure.firstName} ${mesure.lastName} : 10 billets à venir, 30 billets passés`);
     // Lot 7 : billet du client « la veille » (fenêtre hors ligne ouverte : début − 24 h)
     const veille = byKey('veille');
     const clientVeille = await buyOnline(veille, client, 'Entrée', 1);

@@ -5,6 +5,7 @@ import { eventStartAt } from '@/lib/events/live-status';
 import { isScanCategoryColor } from '@/lib/scan/scan-result';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
+import { upcomingOnly } from '@/lib/tickets/periode';
 
 export const dynamic = 'force-dynamic';
 
@@ -250,8 +251,12 @@ export async function GET(req: NextRequest) {
             };
         });
 
+        // Design 1e (point B) : ?periode=a-venir ne renvoie que les billets à venir du MÊME compte (sous-ensemble, après les
+        // contrôles de session ci-dessus) : premier affichage et relectures de Mes billets tant que l'onglet des billets
+        // passés n'a pas été ouvert. Sans le paramètre : la liste complète, inchangée (synchronisation hors ligne comprise).
+        const list = new URL(req.url).searchParams.get('periode') === 'a-venir' ? upcomingOnly(formatted) : formatted;
         // Design 1b (point 8) : réponse personnelle, jamais mise en cache (navigateur, mandataire ou CDN).
-        return NextResponse.json({ tickets: formatted }, { headers: { 'Cache-Control': 'private, no-store' } });
+        return NextResponse.json({ tickets: list }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (err: unknown) {
         return apiFailure('GET /api/tickets', err, { message: 'Impossible de charger vos billets.', code: 'TICKETS_UNAVAILABLE' });
     }

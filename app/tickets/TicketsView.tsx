@@ -27,6 +27,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { usePageSettled } from '@/hooks/usePageSettled';
 import type { OfflineAvailability } from '@/lib/tickets/offline-clock';
+import { isActiveUpcoming, TICKETS_UPCOMING_PARAM } from '@/lib/tickets/periode';
 
 // Lot 7 (7.5) : les modales ne sont chargées qu'à leur ouverture (poids JS de /tickets).
 const TransferModal = dynamic(() => import('@/components/tickets/TransferModal').then((m) => m.TransferModal), { ssr: false });
@@ -116,12 +117,20 @@ const EMPTY_COPY: Record<TicketTabKey, { title: string; description: string }> =
 
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
 
-type LoadResult = { ok: true; tickets: MyTicket[] } | { ok: false; message: string };
+/** Design 1e (point B) : liste reçue et si elle est COMPLÈTE (tous les billets) ou limitée aux billets à venir. */
+export interface TicketList { tickets: MyTicket[]; complete: boolean }
 
-async function readTickets(): Promise<LoadResult> {
+type LoadResult = { ok: true; tickets: MyTicket[]; complete: boolean } | { ok: false; message: string };
+
+/** Portefeuille affiché par 10 billets ; la suite au défilement (ou par le bouton). */
+const WALLET_PAGE = 10;
+
+type Scope = 'a-venir' | 'tout';
+
+async function readTickets(scope: Scope): Promise<LoadResult> {
   let res: Response;
   try {
-    res = await fetch('/api/tickets', { cache: 'no-store' });
+    res = await fetch(`/api/tickets${scope === 'a-venir' ? `?${TICKETS_UPCOMING_PARAM}` : ''}`, { cache: 'no-store' });
   } catch (err) {
     console.error('[Mes billets] liste injoignable :', err instanceof Error ? err.message : String(err));
     return { ok: false, message: NETWORK_MESSAGE };
@@ -142,11 +151,7 @@ async function readTickets(): Promise<LoadResult> {
     console.error('[Mes billets] réponse sans liste de billets :', body);
     return { ok: false, message: 'Réponse inattendue du serveur.' };
   }
-  return { ok: true, tickets: payload.tickets as MyTicket[] };
-}
-
-function isActiveUpcoming(t: MyTicket): boolean {
-  return t.status === 'VALIDE' && t.isUpcoming;
+  return { ok: true, tickets: payload.tickets as MyTicket[], complete: scope === 'tout' };
 }
 
 /** Squelette à la forme de la carte Wallet (talon, informations, QR de 216 px, encadré), aucun saut à l'arrivée. */
@@ -189,7 +194,7 @@ function dropCelebrationParam(): void {
  * serveur n'a pu la lire : chargement côté navigateur comme avant) ; `initialTab` et `serverNow` rendent le premier rendu
  * identique côté serveur et navigateur.
  */
-export function TicketsView({ ticketsPromise, initialTab, serverNow }: { ticketsPromise?: Promise<MyTicket[] | null>; initialTab?: TabKey; serverNow?: number }) {
+export function TicketsView({ ticketsPromise, initialTab, serverNow }: { ticketsPromise?: Promise<TicketList | null>; initialTab?: TabKey; serverNow?: number }) {
   const { user, profile, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id ?? null;
   const [tab, setTab] = useTabParam(TABS, 'a-venir', 'tab', initialTab);
@@ -223,8 +228,9 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   // que le fournisseur de session). La réponse n'est lue qu'une fois le compte connu (effet de chargement ci-dessous).
   const earlyRef = useRef<Promise<LoadResult> | null>(null);
   useEffect(() => {
-    if (!ticketsPromise) earlyRef.current = readTickets(); // liste lue par le serveur : rien à demander
-  }, [ticketsPromise]);
+    // liste lue par le serveur : rien à demander ; sinon, à venir seulement sur l'onglet par défaut (design 1e)
+    if (!ticketsPromise) earlyRef.current = readTickets(!initialTab || initialTab === 'a-venir' ? 'a-venir' : 'tout');
+  }, [ticketsPromise, initialTab]);
 
   // Design 1b (run 420, temps de blocage de Mes billets) : une relecture identique (rattrapage du temps réel à la
   // connexion, synchronisation) ne remplace plus la liste : sans cela, chaque réponse redessinait tout le portefeuille
@@ -232,11 +238,19 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   const ticketsJsonRef = useRef<string | null>(null);
   const incomingJsonRef = useRef<string | null>(null);
   /** Seule écriture de la liste : remplacée seulement si son contenu change (lecture du serveur ou du navigateur). */
-  const applyList = useCallback((list: MyTicket[]) => {
+  // Design 1e (point B) : liste complète reçue (sinon : billets à venir seulement). Une liste complète ne redevient jamais partielle.
+  const [complete, setComplete] = useState(false);
+  const completeRef = useRef(false);
+  const applyList = useCallback((list: MyTicket[], isComplete: boolean) => {
+    if (completeRef.current && !isComplete) return; // relecture partielle arrivée après la liste complète : ignorée
     const json = JSON.stringify(list);
     if (json !== ticketsJsonRef.current) {
       ticketsJsonRef.current = json;
       setTickets(list);
+    }
+    if (isComplete && !completeRef.current) {
+      completeRef.current = true;
+      setComplete(true);
     }
   }, []);
 
@@ -244,9 +258,10 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   const load = useCallback(async (mode: 'initial' | 'silent', early?: Promise<LoadResult> | null) => {
     // Réponse anticipée gardée seulement si elle a réussi (session encore à renouveler : nouvelle demande, même règle).
     const anticipated = early ? await early : null;
-    const result = anticipated?.ok ? anticipated : await readTickets();
+    // Design 1e : relecture à la même portée (à venir tant que la liste complète n'a pas été demandée)
+    const result = anticipated?.ok ? anticipated : await readTickets(completeRef.current ? 'tout' : 'a-venir');
     if (result.ok) {
-      applyList(result.tickets);
+      applyList(result.tickets, result.complete);
       setLoadError(null);
       setRefreshError(null);
       setPhase('ready');
@@ -262,11 +277,34 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
 
   const refreshTickets = useCallback(() => load('silent'), [load]);
 
-  // Lot 7 (7.1) : réconciliation des billets enregistrés hors ligne après chaque chargement réussi.
+  // Lot 7 (7.1) : réconciliation des billets enregistrés hors ligne après chaque chargement réussi. Design 1e (point B) :
+  // avec la liste COMPLÈTE seulement (elle efface les billets absents de la liste : jamais avec les seuls billets à venir) ;
+  // l'enregistrement de tous les billets reste fait en arrière-plan par la synchronisation (OfflineTicketsSync), inchangée.
   useEffect(() => {
-    if (phase !== 'ready' || !userId) return;
+    if (phase !== 'ready' || !userId || !complete) return;
     void reconcileWithServerTickets(userId, tickets);
-  }, [phase, tickets, userId]);
+  }, [phase, tickets, userId, complete]);
+
+  // Design 1e (point B) : « Tous mes billets » et « Historique » chargent la liste complète à leur première ouverture
+  const [fullError, setFullError] = useState<string | null>(null);
+  const [fullAttempt, setFullAttempt] = useState(0);
+  useEffect(() => {
+    if (tab === 'a-venir' || complete) return undefined;
+    if (tab === 'recus' || phase !== 'ready') return undefined;
+    let alive = true;
+    setFullError(null);
+    void readTickets('tout').then((result) => {
+      if (!alive) return;
+      if (result.ok) applyList(result.tickets, true);
+      else setFullError(result.message);
+    });
+    return () => { alive = false; };
+  }, [tab, complete, phase, applyList, fullAttempt]);
+
+  // Design 1e (point B) : portefeuille par 10 billets, la suite au défilement ; remis à 10 à chaque onglet
+  const [limit, setLimit] = useState(WALLET_PAGE);
+  useEffect(() => { setLimit(WALLET_PAGE); }, [tab]);
+  const more = useCallback(() => setLimit((l) => l + WALLET_PAGE), []);
 
   /** R45 : la bascule vers « Reçus » n'a lieu qu'une fois, au premier chargement. */
   const autoTabDoneRef = useRef(false);
@@ -315,7 +353,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
     ticketsPromise.then((list) => {
       if (!alive) return;
       if (!list) { void load('initial'); return; }
-      applyList(list);
+      applyList(list.tickets, list.complete);
       setLoadError(null);
       setPhase('ready');
     }, () => { if (alive) void load('initial'); });
@@ -440,7 +478,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
           </StatusBanner>
         )}
 
-        {phase === 'loading' ? (
+        {phase === 'loading' || (tab !== 'a-venir' && !complete && !fullError) ? (
           <div className="flex items-start gap-3 overflow-hidden md:grid md:grid-cols-2 md:gap-6" aria-busy="true">
             <span className="sr-only">Chargement de vos billets…</span>
             <div className="w-[calc(100%-2rem)] shrink-0 md:w-auto"><TicketSkeleton /></div>
@@ -453,10 +491,19 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
             onRetry={() => void retry()}
             isRetrying={isRetrying}
           />
+        ) : tab !== 'a-venir' && !complete ? (
+          <ErrorState
+            title="Impossible d’afficher vos billets"
+            description={fullError ?? NETWORK_MESSAGE}
+            onRetry={() => setFullAttempt((n) => n + 1)}
+          />
         ) : shown.length > 0 ? (
+          <>
           <TicketWallet
             label={tab === 'a-venir' ? 'Billets à venir' : tab === 'historique' ? 'Historique de vos billets' : 'Tous vos billets'}
-            items={shown.map((ticket, index) => ({
+            total={shown.length}
+            onEndReached={more}
+            items={shown.slice(0, limit).map((ticket, index) => ({
               key: ticket.id,
               // Décision du 19/11 (option 1) : vignette légère tant que le billet n'est pas à l'écran ou touché
               thumb: (open: () => void) => (
@@ -521,6 +568,14 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
               ),
             }))}
           />
+          {shown.length > limit && (
+            <div className="flex justify-center">
+              <Button variant="secondary" onClick={more}>
+                {`Afficher les billets suivants (${shown.length - limit} restant${shown.length - limit > 1 ? 's' : ''})`}
+              </Button>
+            </div>
+          )}
+          </>
         ) : (
           <EmptyState illustrated
             icon={<Ticket size={28} />}

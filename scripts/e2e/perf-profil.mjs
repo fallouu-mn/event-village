@@ -112,10 +112,10 @@ function top(m, n, divisor, skip = () => false) {
 }
 
 async function main() {
-    const authFile = path.join(ROOT, '.auth', 'client.json');
+    const authFile = path.join(ROOT, '.auth', 'mesure.json');
     const demoFile = path.join(ROOT, '.e2e-captures', 'demo-ids.json');
     if (!fs.existsSync(authFile) || !fs.existsSync(demoFile)) {
-        log(`configuration absente (${fs.existsSync(authFile) ? '' : '.auth/client.json '}${fs.existsSync(demoFile) ? '' : 'demo-ids.json'}) : aucun profil.`);
+        log(`configuration absente (${fs.existsSync(authFile) ? '' : '.auth/mesure.json '}${fs.existsSync(demoFile) ? '' : 'demo-ids.json'}) : aucun profil.`);
         process.exit(1);
     }
     const state = JSON.parse(fs.readFileSync(authFile, 'utf8'));

@@ -235,7 +235,9 @@ describe('e. liens des avis vers le bon onglet de Mes billets', () => {
 
     test('règles des onglets de la page : « À venir » = billet valable d’un événement pas fini, « Historique » = le reste', () => {
         const page = read('app/tickets/TicketsView.tsx');
-        assert.match(page, /return t\.status === 'VALIDE' && t\.isUpcoming;/);
+        // Design 1e (modification signalée) : règle commune au serveur et à la page, dans lib/tickets/periode.ts
+        assert.match(read('lib/tickets/periode.ts'), /return t\.status === 'VALIDE' && t\.isUpcoming;/);
+        assert.match(page, /import \{ isActiveUpcoming, TICKETS_UPCOMING_PARAM \} from '@\/lib\/tickets\/periode';/);
         assert.match(page, /tab === 'historique'\) return tickets\.filter\(\(t\) => !isActiveUpcoming\(t\)\)/);
     });
 });
