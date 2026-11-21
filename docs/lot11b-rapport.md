@@ -1,7 +1,7 @@
 # Lot 11b — Tables : écrans, plan de salle, fermetures et absences
 
 Branche `lot11b/tables-ecrans`, partie de `main` à `2ec11bb66`. **Non fusionnée.** Migrations `20261129000001` à
-`…004`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur event-village-dev. Le service reste fermé par son
+`…005`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur event-village-dev. Le service reste fermé par son
 interrupteur (`features.tables_enabled`) ; les suites et l'e2e l'ouvrent le temps de leur passage.
 
 ## À lire en premier
@@ -70,6 +70,7 @@ interrupteur (`features.tables_enabled`) ; les suites et l'e2e l'ouvrent le temp
 | Coordonnées du client données à l'établissement | Prénom et initiale ; téléphone seulement pour une réservation qui tient la table (demande, confirmée, arrivée) | Pas de données pour une attente de paiement ou une réservation close |
 | « J'arrive » | Possible de 24 h avant l'heure à la fin de la garde de la table ; une fois ; avis à l'établissement | Rappel 2 h avant |
 | Nuit | Reportés à 7 h (sauf réservation à moins de 12 h) : confirmation, nouvelle réservation, « le client arrive », décision sur un établissement, rappel. Tout de suite : demande envoyée (réponse sous 2 h), demande à accepter, annulations, refus, absences, remboursements | Règle de la finition 4 ; une demande reportée à 7 h serait périmée |
+| Saisie gardée sur l'appareil | Demande particulière du client et choix du signal du planning dans les préférences de l'appareil (`lib/device/device-prefs.ts`), effacées à la déconnexion ; formulaire de l'établissement en brouillon local (comme les salles) ; jour, heure, personnes, table dans l'adresse de la fiche | Audit `cvf2b-6` : toute donnée liée au compte effacée à la déconnexion (run complet 541) |
 | « En direct » | Le planning dit « Mis à jour à 14:32 » | Relecture toutes les 20 s, pas d'abonnement temps réel (règle R49 de l'indicateur) ; aucune lecture REST pour l'établissement |
 
 ## Avis : textes exacts
@@ -105,6 +106,7 @@ caractères, contrat G3). « Pire cas » : nom de 46 caractères (tronqué), 50 
 | `…02_l11b_fermetures_disponibilites` | `venue_closures` (REST fermée) ; `venue_closed_during`, `venue_closure_parse/_touched/_preview/_create/_delete` ; `table_free_count`, `venue_is_public`, `venue_slots`, `venue_floor`, `venue_search` ; recopies de `table_reserve` et `table_hold_refusal` (refus `VENUE_CLOSED`) |
 | `…03_l11b_reservations` | `short_code` (lien court), `client_coming_at` ; `table_partner_fiche_refusal`, `table_cancel_preview`, `table_client_coming`, `table_partner_earnings`, `table_quote` ; recopies de `table_reservation_presence` et `table_reservation_cancel` (F1) |
 | `…04_l11b_avis` | types `TABLE_CLIENT_COMING`, `TABLE_REFUND_PAID` ; nuit ; `tables.reminder_hours` 3 → 2 ; recopies de `table_notif_data`, `notif_event_soon`, `notif_cashouts_notify` |
+| `…05_l11b_photos_citees` | recopie de `storage_public_citations` : photos des établissements comptées comme citées (run complet 541 : une purge des images non citées aurait pu les effacer) |
 
 Chaque recopie part de la **dernière** définition (fichier et lignes cités en tête de migration) ; le test
 `migration-lot11b-rejouable` vérifie qu'aucune ligne n'est perdue (lignes remplacées listées une à une : seulement
@@ -122,7 +124,7 @@ select to_regclass('public.venue_closures');                                    
 select key, value from public.platform_settings where key = 'tables.reminder_hours';              -- {"value": 3}
 
 -- Après
-select version from supabase_migrations.schema_migrations where version like '20261129%' order by 1; -- 4 versions
+select version from supabase_migrations.schema_migrations where version like '20261129%' order by 1; -- 5 versions
 select p.proname, has_function_privilege('anon', p.oid, 'execute') a, has_function_privilege('authenticated', p.oid, 'execute') u
   from pg_proc p where p.pronamespace = 'public'::regnamespace
    and p.proname in ('venue_owner_refusal','venue_create','venue_submit','venue_plan_set','venue_closed_during','table_free_count',
@@ -137,6 +139,7 @@ select type, channels, night_policy from public.notification_types
  where type in ('TABLE_CLIENT_COMING','TABLE_REFUND_PAID','TABLE_RESERVATION_CONFIRMED','TABLE_NEW_RESERVATION',
                 'VENUE_VALIDATION_DECIDED','TABLE_REMINDER','TABLE_REQUEST_SENT') order by 1;    -- DEFER sauf REFUND_PAID et REQUEST_SENT
 select key, value from public.platform_settings where key = 'tables.reminder_hours';              -- {"value": 2}
+select pg_get_functiondef('public.storage_public_citations()'::regprocedure) like '%public.venues ve, unnest(ve.photos)%'; -- true
 ```
 
 Puis `03-verification.sql`. Aucune tâche planifiée nouvelle (`ev_tables` existe depuis le lot 11a).
@@ -160,6 +163,9 @@ plan de salle et plan public, fermetures, plage horaire et recherche, aperçu d'
 | `notif-modeles`, `notif-outbox`, `notif-migration`, `l11a-textes` | liens vers la réservation, textes exacts des SMS (lien court), deux types, émetteurs, données (code court, heure de garde) | ajout de l'utilisateur en cours de lot |
 | `tests/helpers/design-files.ts` | 71 écrans des tables ; chemins des pages des salles déplacées | système de design |
 | `e2e/*` | verrou des services (salles et tables), champ `salles` → `services` (aucune assertion changée), pages et captures des tables, graine v6 | contrôle responsive et captures |
+| `f2acv-stockage-cite` | `venues.photos` ajoutée à l'inventaire des colonnes lues par la purge | migration 05 (run complet 541) |
+| `migration-d1d-vitrine-rejouable` | « aucune migration après la vitrine » devient « aucune migration postérieure ne redéfinit ses fonctions » | migrations 20261129… (run complet 541) |
+| `l10b-routes` | GET des réservations, d'une réservation et des recettes de la propriétaire sans interrupteur | décision du 20/11 (run complet 541) |
 | `docs/recette-billetterie.md` | A37 : chemins déplacés ; lignes citées recalées (`interrupteurs.test.ts:391`, `notif-modeles.test.ts:556`) | contrôle `recette-matrice` |
 
 Aucune assertion des suites `tests/audit/` ni `tests/audit-auth/` n'a changé (runs 524, 527 : `cv11a-1` à `-5`,
@@ -176,6 +182,8 @@ Aucune assertion des suites `tests/audit/` ni `tests/audit-auth/` n'a changé (r
 | 534 | `1f0f05134` | rapide + contrôle responsive | tests verts ; responsive : 44 défauts (noms des zones sous les numéros des tables, bande des jours du planning) |
 | 538 | `3c9bba210` | rapide + contrôle responsive | 18 défauts restants (défilement horizontal du planning : texte sr-only du 14e jour) |
 | 539 | `69f8f02a1` | rapide + contrôle responsive | **vert : 0 défaut** sur 184 pages × thème (17 pages des tables comprises), 836 contrôles |
+| 541 | `f15e70d09` | **complet** | tests : 4 suites rouges sur le lot (audit `cvf2b-6` : deux écritures du stockage web non classées ; `f2acv-stockage-cite` : `venues.photos` non lue par la purge ; `l10b-routes` et `migration-d1d-vitrine-rejouable` à aligner) ; build, budgets JS, e2e, captures et contrôle responsive verts ; mesure mobile : seule Mes billets 89 (page non touchée, non bloquante) |
+| 545 | `308864a6c` | rapide, 8 suites | **vert** : correctifs du run 541 (audit `cvf2b-6` 15/15, assertions inchangées) |
 | RUN_COMPLET |
 
 Journaux bruts : branche `ci-results`, dossiers `runs/<numéro>-<identifiant>/`.
