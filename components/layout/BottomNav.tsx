@@ -24,7 +24,7 @@ export interface BottomNavItem {
  *  - zone sûre de l'iPhone : marge du bas = max(8 px, env(safe-area-inset-bottom)) (.ev-bottom-nav, app/globals.css) ;
  *  - rien de plus au premier affichage : aucune mesure de la page, aucun effet coûteux (une position en pourcentage).
  */
-export function BottomNav({ items, activeHref }: { items: BottomNavItem[]; activeHref: string | null }) {
+function BottomNavView({ items, activeHref }: { items: BottomNavItem[]; activeHref: string | null }) {
   const [pending, setPending] = useState<string | null>(null);
   useEffect(() => { setPending(null); }, [activeHref]);
   const current = pending ?? activeHref;
@@ -72,3 +72,12 @@ export function BottomNav({ items, activeHref }: { items: BottomNavItem[]; activ
     </nav>
   );
 }
+
+/**
+ * Design 1e (vitesse) : la coquille se redessine à chaque changement de session ou de réglage pendant le chargement ; la
+ * barre ne se redessine que si ses onglets (adresse, libellé, point) ou l'onglet actif changent.
+ */
+const sameBar = (a: { items: BottomNavItem[]; activeHref: string | null }, b: { items: BottomNavItem[]; activeHref: string | null }): boolean =>
+  a.activeHref === b.activeHref && a.items.length === b.items.length
+  && a.items.every((x, i) => x.href === b.items[i].href && x.name === b.items[i].name && x.short === b.items[i].short && x.icon === b.items[i].icon && Boolean(x.dot) === Boolean(b.items[i].dot));
+export const BottomNav = React.memo(BottomNavView, sameBar);

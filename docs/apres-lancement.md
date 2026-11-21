@@ -125,3 +125,13 @@ d'où elle vient et pourquoi elle attend.
 | Sujet | Pourquoi plus tard | Origine |
 |---|---|---|
 | « Mes réservations » (`/halls/reservations`) et le détail d’une réservation (`/halls/reservations/[id]`) restent ouverts quand le service des salles est fermé (`features.halls_enabled`), pour que le lien d’une notification de réservation ne mène plus à une page introuvable. | Décision du 20/11/2026 : à faire au lot 11b. Aujourd’hui, service fermé, ces pages répondent 404 (l’annulation, elle, reste possible). | Lot 10b, constat produit des correctifs de la contre-vérification |
+
+## Identité et navigation (design 1e)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Avis qui mènent au billet, à la réservation ou à la commande PRÉCIS (aujourd'hui : au bon onglet, par exemple « Mes billets › À venir » ou « Reçus »). Il faut un lien par avis dans le catalogue (`lib/notifications/catalog.ts`, champ `link`) et une page qui sait ouvrir un billet ou une réservation donnés. | Le catalogue des avis est hors du périmètre de ce lot (lot 11b en parallèle) ; le panneau suit déjà le lien servi par le serveur, sans rien changer de son côté. | Demande du 21/11 (cloche), design 1e |
+| Logo « Bras levés » encore en dégradé orange → rose (symbole, icônes de l'application, image de partage, en-tête des courriels), alors que le dégradé de l'interface est désormais tout orange. | Changer le logo touche les icônes installées et l'image de partage : décision du client à prendre (garder, ou régénérer avec docs/design/outils/logos.mjs). | Design 1e, point 1 |
+| Affiches déposées entre le design 1d et ce lot : leur couleur reste la dominante (souvent un gris). Le script des affiches existantes ne reprend que les affiches SANS couleur. | Une option « tout recalculer » est à ajouter si le client le souhaite (une écriture par événement, rejouable). | Design 1e, point 4 |
+| « Commandes » n'est plus dans la barre du bas du client (remplacée par « Notifications », cinq onglets au plus) ; elle reste dans le menu et dans les rubriques de l'ordinateur. | À revoir avec le lot des commandes (12a) s'il faut un accès en un toucher. | Design 1e, point 2 |
+| Barre latérale repliée : le bouton « Se déconnecter » et le choix du thème n'y sont plus visibles (dépliée ou page Profil). | Choix d'ergonomie à confirmer par le client. | Design 1e, point 3 |

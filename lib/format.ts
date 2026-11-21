@@ -22,17 +22,30 @@ function visibleSpaces(formatted: string): string {
     return formatted.replace(NARROW_NBSP_RE, NBSP);
 }
 
-const DATE_FORMAT = new Intl.DateTimeFormat('fr-FR', {
+/**
+ * Design 1e (vitesse) : un formateur Intl n'est construit qu'à son premier usage, puis gardé. Avant, les cinq étaient
+ * construits au chargement du module, sur chaque page qui l'importe (profil du run 526 : 52 ms au téléphone de référence
+ * sur Mes billets, pour des formateurs souvent inutiles à l'affichage). Mêmes options, mêmes sorties.
+ */
+function lazily<T>(make: () => T): () => T {
+    let value: T | undefined;
+    return () => {
+        if (value === undefined) value = make();
+        return value;
+    };
+}
+
+const DATE_FORMAT = lazily(() => new Intl.DateTimeFormat('fr-FR', {
     timeZone: DAKAR_TIME_ZONE, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-});
-const SHORT_DATE_FORMAT = new Intl.DateTimeFormat('fr-FR', {
+}));
+const SHORT_DATE_FORMAT = lazily(() => new Intl.DateTimeFormat('fr-FR', {
     timeZone: DAKAR_TIME_ZONE, day: 'numeric', month: 'short', year: 'numeric',
-});
-const TIME_FORMAT = new Intl.DateTimeFormat('fr-FR', {
+}));
+const TIME_FORMAT = lazily(() => new Intl.DateTimeFormat('fr-FR', {
     timeZone: DAKAR_TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-});
-const INTEGER_FORMAT = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
-const PRECISE_FORMAT = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
+}));
+const INTEGER_FORMAT = lazily(() => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }));
+const PRECISE_FORMAT = lazily(() => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }));
 
 type DateInput = Date | string | number | null | undefined;
 
@@ -56,25 +69,25 @@ export function toDate(input: DateInput): Date | null {
 /** Date et heure à Dakar : « sam. 15 nov. 2026 à 20:00 ». */
 export function formatDateTime(input: DateInput): string {
     const d = toDate(input);
-    return d ? `${DATE_FORMAT.format(d)} à ${TIME_FORMAT.format(d)}` : MISSING_VALUE;
+    return d ? `${DATE_FORMAT().format(d)} à ${TIME_FORMAT().format(d)}` : MISSING_VALUE;
 }
 
 /** Date seule à Dakar : « sam. 15 nov. 2026 ». */
 export function formatDate(input: DateInput): string {
     const d = toDate(input);
-    return d ? DATE_FORMAT.format(d) : MISSING_VALUE;
+    return d ? DATE_FORMAT().format(d) : MISSING_VALUE;
 }
 
 /** Date courte à Dakar, sans jour de la semaine : « 15 nov. 2026 » (tableaux denses). */
 export function formatShortDate(input: DateInput): string {
     const d = toDate(input);
-    return d ? SHORT_DATE_FORMAT.format(d) : MISSING_VALUE;
+    return d ? SHORT_DATE_FORMAT().format(d) : MISSING_VALUE;
 }
 
 /** Heure à Dakar : « 20:00 ». */
 export function formatTime(input: DateInput): string {
     const d = toDate(input);
-    return d ? TIME_FORMAT.format(d) : MISSING_VALUE;
+    return d ? TIME_FORMAT().format(d) : MISSING_VALUE;
 }
 
 /**
@@ -103,7 +116,7 @@ export function toDakarDateTimeLocal(input: DateInput): string {
 /** Entier formaté en français : « 12 345 ». */
 export function formatInteger(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) return MISSING_VALUE;
-    return visibleSpaces(INTEGER_FORMAT.format(Math.round(value)));
+    return visibleSpaces(INTEGER_FORMAT().format(Math.round(value)));
 }
 
 /** Montant en francs CFA entiers : « 5 000 F CFA ». */
@@ -118,7 +131,7 @@ export function formatFcfa(amount: number | null | undefined): string {
  */
 export function formatFcfaPrecise(amount: number | null | undefined): string {
     if (amount === null || amount === undefined || !Number.isFinite(amount)) return MISSING_VALUE;
-    return `${visibleSpaces(PRECISE_FORMAT.format(amount))}${NBSP}F${NBSP}CFA`;
+    return `${visibleSpaces(PRECISE_FORMAT().format(amount))}${NBSP}F${NBSP}CFA`;
 }
 
 /**

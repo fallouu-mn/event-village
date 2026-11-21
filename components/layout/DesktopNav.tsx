@@ -17,7 +17,7 @@ const LARGE = '(min-width: 1024px)';
  * ordinateur seulement (rien sur téléphone, où la liste est masquée) ; trait déplacé par transform (translateX et scaleX
  * d'un trait de 100 px), 250 ms, coupé si « réduire les animations ».
  */
-export function DesktopNav({ items, activeHref }: { items: DesktopNavItem[]; activeHref: string | null }) {
+function DesktopNavView({ items, activeHref }: { items: DesktopNavItem[]; activeHref: string | null }) {
   const navRef = useRef<HTMLDivElement>(null);
   const [target, setTarget] = useState<number | null>(null);
   const [box, setBox] = useState<{ x: number; w: number } | null>(null);
@@ -76,3 +76,7 @@ export function DesktopNav({ items, activeHref }: { items: DesktopNavItem[]; act
     </div>
   );
 }
+
+/** Design 1e (vitesse) : redessinée seulement si ses rubriques ou la rubrique active changent (pas à chaque rendu de la coquille). */
+export const DesktopNav = React.memo(DesktopNavView, (a, b) => a.activeHref === b.activeHref
+  && a.items.length === b.items.length && a.items.every((x, i) => x.href === b.items[i].href && x.name === b.items[i].name));

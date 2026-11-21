@@ -84,7 +84,7 @@ function toNotification(raw: unknown): InAppNotification | null {
  *  - panneau qui glisse (components/layout/NotificationPanel.tsx) ; pied « Voir toutes les notifications » et
  *    « Préférences » ; temps réel par useRealtimeRefresh, ouvert une fois la page chargée.
  */
-export function NotificationBell() {
+function NotificationBellView() {
     const router = useRouter();
     const { user, isAuthenticated } = useAuth();
     const panelId = useId();
@@ -328,3 +328,6 @@ export function NotificationBell() {
         </div>
     );
 }
+
+/** Design 1e (vitesse) : sans propriété, la cloche ne se redessine plus à chaque rendu de la coquille (seulement sur son état et la session). */
+export const NotificationBell = React.memo(NotificationBellView);

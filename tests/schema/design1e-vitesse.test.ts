@@ -42,3 +42,23 @@ describe('design 1e — vitesse : causes corrigées', () => {
         assert.match(src, /if \(!isUserLoggedIn \|\| !user\?\.id\) return;\n\s*void fetchNotifications\(\);/);
     });
 });
+
+describe('design 1e — vitesse : formateurs de lib/format.ts construits au premier usage', () => {
+    test('aucun Intl.DateTimeFormat ni Intl.NumberFormat construit au chargement du module (profil du run 526 : 52 ms)', () => {
+        const src = read('lib/format.ts');
+        const topLevel = src.split('\n').filter((l) => /^(?:export )?const \w+ = new Intl\./.test(l));
+        assert.deepEqual(topLevel, [], 'formateur construit au chargement du module');
+        assert.match(src, /function lazily<T>\(make: \(\) => T\): \(\) => T/);
+    });
+    test('sorties inchangées (Dakar, insécables visibles)', async () => {
+        const f = await import('../../lib/format');
+        assert.equal(f.formatDateTime('2026-11-14T20:00:00Z'), 'sam. 14 nov. 2026 à 20:00');
+        assert.equal(f.formatDate('2026-11-14'), 'sam. 14 nov. 2026');
+        assert.equal(f.formatShortDate('2026-11-14'), '14 nov. 2026');
+        assert.equal(f.formatTime('2026-11-14T08:05:00Z'), '08:05');
+        assert.equal(f.formatFcfa(351000), '351 000 F CFA');
+        assert.equal(f.formatFcfaPrecise(19.7), '19,7 F CFA');
+        assert.equal(f.formatInteger(12345), '12 345');
+        assert.equal(f.formatDateTime(null), '—');
+    });
+});
