@@ -63,8 +63,9 @@ lot (§ Runs).
   « Restaurants et tables » du menu client mène maintenant à `/tables` (redirection de l'ancienne page) ; lien
   « Établissements à valider » dans la page « Salles à valider ».
 - **Défaut de l'e2e trouvé en passant (hors lot, non corrigé)** : les captures et le contrôle responsive « sombre »
-  des pages connectées sortent en clair depuis le design 1a, pour tous les lots (cause et correctif proposé à la
-  section Captures ; noté dans `docs/apres-lancement.md`).
+  des pages connectées sortent en clair depuis le design 1a, pour tous les lots. Le design 1e ne l'a contourné que pour
+  ses propres captures (`e2e/design1e-captures.responsive.spec.ts:52-55`) ; `e2e/captures.spec.ts` et le contrôle
+  responsive restent concernés (cause et correctif proposé à la section Captures ; noté dans `docs/apres-lancement.md`).
 
 ## Ce que le lot livre
 
@@ -280,7 +281,8 @@ a ses propres captures dans `captures-responsive/`.
 | Administration | `adm-etablissements-liste`, `adm-etablissements-fiche` (fiche de décision) |
 
 **Défaut de l'outillage e2e (hors lot) : les variantes « sombre » des pages connectées sortent en clair**, dans les
-captures comme dans le contrôle responsive, pour tous les lots. Cause : `e2e/auth.setup.ts:55` connecte les comptes
+captures comme dans le contrôle responsive, pour tous les lots (le design 1e l'a contourné pour ses seules captures,
+`e2e/design1e-captures.responsive.spec.ts:52-55`, en posant le cookie du thème). Cause : `e2e/auth.setup.ts:55` connecte les comptes
 en thème clair ; `ThemeProvider` recopie ce choix dans le cookie `ev-theme=light`, que `context.storageState` (ligne 67)
 enregistre avec la session ; ensuite le cookie l'emporte sur `localStorage['ev-theme']` posé par
 `e2e/support/fixtures.ts` (ordre de `THEME_BOOT_SCRIPT`, `lib/theme.ts`). Le défaut date du cookie de thème (design
