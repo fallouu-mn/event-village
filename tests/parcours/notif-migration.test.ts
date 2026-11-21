@@ -245,7 +245,8 @@ describe('6.7 K2 — aucun appel direct aux adaptateurs hors de l’envoyeur, de
         // Finition 3d (modification signalée) : app/ et les fichiers de la liste nominative hors de app/ (lib/admin/phone-change.ts)
         for (const file of sourceFiles().filter((f) => f.startsWith('app/') || f in SYNC_ROUTES)) {
             const src = source(file);
-            for (const m of Array.from(src.matchAll(/\.(sendOtp|sendControllerInvite)\s*\(/g))) {
+            // Lot 12a (modification signalée au rapport) : sendOrderCode, code de remise d'une commande, journalisé de même
+            for (const m of Array.from(src.matchAll(/\.(sendOtp|sendControllerInvite|sendOrderCode)\s*\(/g))) {
                 count++;
                 const open = (m.index ?? 0) + m[0].length - 1;
                 const args = callText(src, open);

@@ -35,8 +35,6 @@ import { GET as partnerOrderGet } from '../../app/api/partner/orders/[id]/route'
 import { GET as courierOrdersGet } from '../../app/api/courier/orders/route';
 import { POST as adminCancelRoute } from '../../app/api/admin/orders/[id]/cancel/route';
 import { POST as cronOrders } from '../../app/api/cron/orders/route';
-import { sendOrderRefunds } from '../../lib/orders/booking';
-import { confirmCashouts } from './finance-helpers';
 import {
     addCourier, allChannels, codeOf, courierAct, smsOfOrder, historyOf, itemsOf, ledgerOfPayment, n, newBuyer, newDeliveryZone, newOption, newPartner,
     newProduct, newShop, openOrdersService, order, orderBody, orderRoute, orderRpc, outboxOf, partnerAct, payOrder, placed, platformSetting,
@@ -453,19 +451,20 @@ describe('B. Payer et suivre la commande', () => {
         assert.equal((await order(id)).onsite_amount, null);
     });
 
-    test('acompte, solde payé sur place à la remise : refusé tant qu’il n’est pas déclaré, puis noté 9 341, jamais compté (aucun paiement, grand livre inchangé)', async () => {
+    test('acompte, retrait, solde payé sur place à la remise : 12 345 → acompte 3 703,5 → 3 704 ; solde 8 641 refusé tant qu’il n’est pas déclaré, puis noté, jamais compté (aucun paiement, grand livre inchangé)', async () => {
         const p = await newProduct(partner, shop, { price: 12_345 });
         const id = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }], { mode: 'RETRAIT', payment: 'ACOMPTE' }));
         const first = await payOrder(client, id);
         await toReady(partner, id);
         const code = await codeOf(client, id);
         const due = await partnerAct(partner, id, { action: 'REMETTRE', code });
-        assert.deepEqual([due.status, due.body.code, due.body.balance_due], [409, 'BALANCE_DUE', 9_341]);
+        assert.deepEqual([due.status, due.body.code, due.body.balance_due], [409, 'BALANCE_DUE', 8_641]);
+        assert.equal(due.body.error, 'Le client doit encore 8 641 F CFA : encaissez-les, puis confirmez « solde reçu ».');
         const ledgerBefore = await ledgerOfPayment(first.id);
         const done = await partnerAct(partner, id, { action: 'REMETTRE', code, balanceReceived: true });
         assert.equal(done.status, 200, JSON.stringify(done.body));
         const o = await order(id);
-        assert.deepEqual([o.order_state, n(o.onsite_amount), n(o.paid_goods), o.onsite_recorded_by], ['REMISE', 9_341, 4_004, partner.userId]);
+        assert.deepEqual([o.order_state, n(o.onsite_amount), n(o.paid_goods), o.onsite_recorded_by], ['REMISE', 8_641, 3_704, partner.userId]);
         const { data: pays } = await service.from('payments').select('id').eq('order_id', id);
         assert.equal(pays?.length, 1, 'aucune ligne de paiement pour le solde sur place');
         assert.equal(await ledgerOfPayment(first.id), ledgerBefore);
@@ -569,12 +568,11 @@ describe('C. Annuler, rembourser, tâche planifiée', () => {
         assert.equal(n(comm[0]?.amount), Math.round(685 * n(cfg?.rate_n1 ?? 5)) / 100);
         const c = await service.rpc('order_cancel', { p: { order_id: id, actor_id: buyer.userId, origin: 'CLIENT' } });
         assert.equal((c.data as Row).ok, true);
-        // La régularisation suit le remboursement versé (paiement REFUNDED), comme pour les billets et les tables
-        await sendOrderRefunds((c.data as Row).cashout_ids);
-        await confirmCashouts();
-        const regul = await sql<{ s: string }>(`SELECT COALESCE(sum(amount), 0) AS s FROM public.referral_commissions WHERE kind = 'REGULARISATION'
-                                                 AND regularizes_id IN (SELECT id FROM public.referral_commissions WHERE payment_id = $1)`, [pay.id]);
-        assert.equal(n(regul[0].s), -n(comm[0].amount), 'commission régularisée');
+        // Commission jamais versée : annulée et débitée du grand livre du parrain (fin_refund_apply), comme pour les tables
+        const after = await sql<{ status: string }>(`SELECT status FROM public.referral_commissions WHERE payment_id = $1 AND kind = 'COMMISSION'`, [pay.id]);
+        assert.deepEqual(after.map((x) => x.status), ['CANCELLED'], 'commission annulée');
+        const sponsorNet = await sql<{ s: string }>(`SELECT COALESCE(sum(amount), 0) AS s FROM public.finance_ledger WHERE owner_id = $1`, [sponsor.userId]);
+        assert.equal(n(sponsorNet[0].s), 0, 'le parrain ne garde rien d’une commande remboursée');
     });
 
     test('tâche : attente échue → non payée à temps (produits rendus) ; paiement arrivé ensuite : remboursé en entier ; tâche rejouée sans effet', async () => {
