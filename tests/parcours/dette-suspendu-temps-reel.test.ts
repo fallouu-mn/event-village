@@ -483,10 +483,9 @@ function probes(): Probe[] {
             key: 'ticket_categories', target: { table: 'ticket_categories', filter: `event_id=eq.${ev.eventId}` }, witness: 'admin',
             produce: touchHiddenCategory, matches: (e, m) => e.new.id === hiddenCategoryId && e.new.description === m, leak: about('id', [hiddenCategoryId]),
         },
-        {
-            key: 'orders', target: { table: 'orders', filter: `partner_id=eq.${partner.partnerId}` }, witness: 'admin',
-            produce: touchOrder, matches: (e, m) => e.new.id === orderId && e.new.delivery_notes === m, leak: about('id', [orderId]),
-        },
+        // Lot 12a (modification signalée au rapport) : la partenaire ne lit plus les commandes par REST, donc plus en temps
+        // réel, active ou suspendue (consigne : aucune lecture REST des commandes par la partenaire) ; la table orders sort
+        // des sondes de la partenaire (dette-publication-reservations éprouve le client et les tiers)
         {
             key: 'notifications', target: { table: 'notifications', filter: `user_id=eq.${partner.userId}` }, witness: 'client',
             produce: () => insertNotification(partner.userId), matches: (e, title) => e.new.title === title, leak: about('user_id', [partner.userId]),

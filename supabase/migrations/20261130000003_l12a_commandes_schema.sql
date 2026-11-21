@@ -406,4 +406,7 @@ GRANT SELECT ON public.order_state_history TO authenticated;
 GRANT ALL ON public.order_state_history, public.partner_couriers TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.order_state_history_id_seq TO service_role;
 
-REVOKE ALL ON FUNCTION public.order_code_hash(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+-- Règle 1A.3 (03-verification.sql) : toute RPC métier est exécutable par le rôle de service, jamais par anon ni
+-- authenticated ; la clé, elle, n'est lisible que par cette fonction
+REVOKE ALL ON FUNCTION public.order_code_hash(uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.order_code_hash(uuid, text) TO service_role;

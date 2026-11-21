@@ -1718,7 +1718,7 @@ const CATALOG = {
             title: 'Commande reçue',
             content: `Votre commande ${orderRef(d)} est transmise à ${venueName(d)}. L’établissement l’accepte au plus tard à ${formatTime(iso(d, 'response_due_at'))} ; sans réponse, elle est annulée${num(d, 'paid_amount') > 0 ? ' et vous êtes remboursé' : ''}. Suivez chaque étape depuis la commande.`,
         }),
-        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} transmise à ${smsVar(text(d, 'venue_name'), 28)}. Réponse avant ${smsTime(iso(d, 'response_due_at'))}, sinon ${num(d, 'paid_amount') > 0 ? 'remboursée' : 'annulée'}.`,
+        sms: (d) => `${SMS_PREFIX}commande ${orderRef(d)} transmise à ${endWithPeriod(smsVar(text(d, 'venue_name'), 28))} Réponse avant ${smsTime(iso(d, 'response_due_at'))}, sinon ${num(d, 'paid_amount') > 0 ? 'remboursée' : 'annulée'}.`,
         sample: ORDER_SAMPLE_DATA,
     }),
     ORDER_ACCEPTED: define('ORDER_ACCEPTED', {
@@ -1750,7 +1750,7 @@ const CATALOG = {
         },
         sms: (d) => {
             const eta = orderEta(d);
-            return `${SMS_PREFIX}commande ${orderRef(d)} en préparation chez ${smsVar(text(d, 'venue_name'), 28)}.${eta ? ` Prévue vers ${eta}.` : ''}`;
+            return `${SMS_PREFIX}commande ${orderRef(d)} en préparation chez ${endWithPeriod(smsVar(text(d, 'venue_name'), 28))}${eta ? ` Prévue vers ${eta}.` : ''}`;
         },
         sample: { ...ORDER_SAMPLE_DATA, state: 'EN_PREPARATION' },
     }),
@@ -1773,7 +1773,7 @@ const CATALOG = {
         },
         sms: (d) => {
             const mode = text(d, 'mode');
-            if (mode === 'RETRAIT') return `${SMS_PREFIX}votre commande ${orderRef(d)} vous attend chez ${smsVar(text(d, 'venue_name'), 28)}. Le code de retrait arrive par SMS.`;
+            if (mode === 'RETRAIT') return `${SMS_PREFIX}votre commande ${orderRef(d)} vous attend chez ${endWithPeriod(smsVar(text(d, 'venue_name'), 28))} Le code de retrait arrive par SMS.`;
             if (mode === 'SUR_PLACE') return `${SMS_PREFIX}votre commande ${orderRef(d)} est terminée : elle vous est servie dans un instant.`;
             return `${SMS_PREFIX}votre commande ${orderRef(d)} est terminée chez ${smsVar(text(d, 'venue_name'), 28)}, le livreur part dans un instant.`;
         },
@@ -1827,7 +1827,7 @@ const CATALOG = {
             if (origin === 'REFUSEE') return `${SMS_PREFIX}${name} ne peut pas préparer la commande ${ref}.${refund}`;
             if (origin === 'SANS_REPONSE') return `${SMS_PREFIX}${name} n'a pas répondu : commande ${ref} annulée.${refund}`;
             const by = origin === 'PARTENAIRE' ? ` par ${name}` : origin === 'EVENT_VILLAGE' ? ' par notre équipe' : '';
-            return `${SMS_PREFIX}commande ${ref} annulée${by}.${refund}`;
+            return `${SMS_PREFIX}${endWithPeriod(`commande ${ref} annulée${by}`)}${refund}`;
         },
         sample: { ...ORDER_SAMPLE_DATA, state: 'ANNULEE_PARTENAIRE', origin: 'PARTENAIRE', refund_amount: 1_312_500, reason: 'Rupture de poisson frais ce midi.' },
     }),
@@ -1925,7 +1925,7 @@ const CATALOG = {
         },
         sms: (d) => {
             const zone = optText(d, 'zone_name');
-            return `${SMS_PREFIX}commande ${orderRef(d)} à livrer pour ${smsVar(text(d, 'venue_name'), 22)}${zone ? `, zone ${smsVar(zone, 20)}` : ''}. Adresse dans l'application.`;
+            return `${SMS_PREFIX}${endWithPeriod(`commande ${orderRef(d)} à livrer pour ${smsVar(text(d, 'venue_name'), 22)}${zone ? `, zone ${smsVar(zone, 20)}` : ''}`)} Adresse dans l'application.`;
         },
         sample: { ...ORDER_SAMPLE_DATA, recipient_role: 'COURIER' },
     }),

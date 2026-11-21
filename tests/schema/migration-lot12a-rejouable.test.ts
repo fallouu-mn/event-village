@@ -48,9 +48,7 @@ const RECOPIES: Record<string, { file: string; replaced: string[] }> = {
         'table_reservation_id',
     ] },
     calculate_referral_commissions: { file: LOT12A_MIGRATIONS[4], replaced: [] },
-    notif_cashouts_notify: { file: LOT12A_MIGRATIONS[5], replaced: [
-        "AND hp.payment_target::text IN ('HALL_RESERVATION', 'TABLE_RESERVATION')) THEN",
-    ] },
+    notif_cashouts_notify: { file: LOT12A_MIGRATIONS[5], replaced: [] },
     notification_sync_log: { file: LOT12A_MIGRATIONS[6], replaced: [] },
     finance_admin_earned: { file: LOT12A_MIGRATIONS[7], replaced: [
         "COALESCE(sum(CASE WHEN p.payment_target::text IN ('HALL_RESERVATION', 'TABLE_RESERVATION')",
@@ -122,7 +120,7 @@ describe('Lot 12a — migrations 20261130000001… rejouables (transaction annul
         });
     }
 
-    test('fonctions du lot réservées au rôle de service ; code de remise et sa clé jamais lisibles hors des fonctions', async () => {
+    test('fonctions du lot réservées au rôle de service ; la clé du code jamais lisible hors des fonctions', async () => {
         await inRolledBackTransaction(async (c) => {
             const { rows } = await c.query<{ proname: string; anon: boolean; auth: boolean }>(
                 `SELECT p.proname, has_function_privilege('anon', p.oid, 'execute') AS anon, has_function_privilege('authenticated', p.oid, 'execute') AS auth
@@ -134,7 +132,8 @@ describe('Lot 12a — migrations 20261130000001… rejouables (transaction annul
                         has_function_privilege('service_role', 'public.order_issue_code(uuid)', 'execute') AS issue,
                         has_function_privilege('service_role', 'public.order_code_delivery(uuid, text, text)', 'execute') AS delivery,
                         has_table_privilege('service_role', 'private.order_code_key', 'select') AS key`);
-            assert.deepEqual(svc[0], { hash: false, issue: false, delivery: false, key: false });
+            // Règle 1A.3 (03-verification.sql) : RPC métier exécutables par le rôle de service ; la clé illisible hors des fonctions
+            assert.deepEqual(svc[0], { hash: true, issue: true, delivery: true, key: false });
         });
     });
 });

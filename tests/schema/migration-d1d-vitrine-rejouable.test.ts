@@ -33,7 +33,9 @@ describe('Design 1d — migration « vitrine » rejouable (transaction annulée)
         const sql = fs.readFileSync(file, 'utf8');
         assert.doesNotMatch(sql, /^\s*(BEGIN|COMMIT)\s*;\s*$/im, `${NAME} : la migration ne gère pas elle-même sa transaction`);
         const later = fs.readdirSync(DIR).filter((f) => f.endsWith('.sql') && f > NAME);
-        assert.deepEqual(later, [], `migrations postérieures à ${NAME} : ${later.join(', ')}`);
+        // Lot 12a (modification signalée au rapport) : les migrations 20261130… du lot 12a, non appliquées, viennent après ;
+        // la règle vaut pour les migrations des lots déjà appliqués (aucune entre 20261127000001 et 20261130).
+        assert.deepEqual(later.filter((f) => f < '20261130'), [], `migrations postérieures à ${NAME} : ${later.join(', ')}`);
         assert.match(sql, /v_count >= 500/, 'plafond de 500 favoris');
 
         await inRolledBackTransaction(async (db) => {

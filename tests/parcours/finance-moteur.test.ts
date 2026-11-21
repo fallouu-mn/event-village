@@ -268,7 +268,8 @@ const HARDCODED: Array<{ file: string; method?: string; optional?: boolean; patt
     { file: 'lib/partner/partner-dashboard.service.ts', pattern: /FinancialCalculatorService\.calculate/, what: 'recalcul avec les taux courants (L245, L255, L285)' },
     { file: 'app/api/partner/finance/route.ts', pattern: /FinancialCalculatorService\.calculate/, what: 'recalcul avec les défauts 5 / 1,5 du calculateur (L97-110)' },
     { file: 'app/api/partner/metrics/route.ts', pattern: /FinancialCalculatorService\.calculate/, what: 'recalcul avec ticketing_fee_config et les taux courants (L53, L97-107)' },
-    { file: 'lib/orders/order.service.ts', pattern: /FinancialCalculatorService\.calculate/, what: 'commission commande au taux par défaut de 5 % (L144)' },
+    // Lot 12a (modification signalée au rapport) : lib/orders/order.service.ts retiré ; les commandes sont calculées en base
+    // (order_quote_compute, taux orders.* relus en base)
     { file: 'lib/payments/financial-calculator.service.ts', optional: true, pattern: /!==\s*undefined\s*\?\s*params\.\w+\s*:\s*\d/, what: 'défauts 5 / 1,5 / 30 / 1 / 5000 (L61-62, L100-101, L136-137, L165-166)' },
     { file: 'app/partner/finance/page.tsx', pattern: /\*\s*0\.01\b|1\.5\s*%/, what: 'frais de retrait × 0,01 (L117), libellé « Frais agrégateur 1.5% » (L320)' },
     { file: 'app/wallet/page.tsx', pattern: /\*\s*0\.01\b/, what: 'frais de retrait × 0,01 (L133)' },

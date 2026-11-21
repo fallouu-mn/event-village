@@ -71,7 +71,7 @@ Résultats des runs : § 10.
 | `order_items` (03) | `base_price`, `options` (copie : nom et prix), `unit_price` = prix + suppléments, `total_price` = unitaire × quantité (1 à 99), `portion_day`, `stock_managed`. Une ligne d'un produit réglementé est refusée par un déclencheur, même sous le drapeau des fonctions. |
 | `order_state_history` (03) | chaque changement d'état : de, vers, heure, auteur (CLIENT, PARTENAIRE, LIVREUR, ADMIN, SUPERADMIN, SYSTEM), note. |
 | `partner_couriers` (03) | livreurs d'une partenaire : PENDING (invité), ACTIVE (a accepté), DECLINED, REMOVED. Rôle de service seul. |
-| `private.order_code_key` (03) | 32 octets tirés une fois ; `order_code_hash` = HMAC-SHA256(commande:code, clé). Ni le rôle de service ni la clé de service ne lisent la clé ni n'appellent `order_code_hash`, `order_issue_code`, `order_code_delivery` : une copie complète des tables publiques ne permet pas d'essayer les 10 000 codes hors de la base. |
+| `private.order_code_key` (03) | 32 octets tirés une fois ; `order_code_hash` = HMAC-SHA256(commande:code, clé). La clé n'est lisible que par `order_code_hash` (schéma `private`, aucun droit pour anon, authenticated ni le rôle de service) : une copie des tables publiques ne permet pas d'essayer les 10 000 codes hors de la base. Les fonctions du code, comme toute fonction métier (règle 1A.3 de `03-verification.sql`), sont exécutables par le rôle de service seulement. |
 
 Garde (`trg_0_orders_flow_guard`, `trg_0_order_items_flow_guard`, `trg_0_order_state_history_guard`) : toute insertion,
 suppression ou modification d'une commande d'établissement, de ses lignes ou de son historique est refusée hors des
@@ -237,7 +237,7 @@ Un paiement de commande n'envoie plus l'avis générique « Paiement confirmé �
 | `…08_l12a_releves` | commission des commandes dans les relevés ; recopies de `finance_admin_earned`, `finance_admin_payments` (20261123000109) |
 
 Toutes les fonctions du lot sont réservées au rôle de service (`r3-fonctions-rpc`, `migration-lot12a-rejouable`) ;
-`order_code_hash` et `order_issue_code` ne sont même pas ouvertes au rôle de service. Plus la tâche planifiée `ev_orders`
+la clé du code n'est lisible par aucun rôle de l'API. Plus la tâche planifiée `ev_orders`
 (`supabase/ops/schedule-crons.sql`, minute 2, toutes les 5 minutes).
 
 ## 9. Mise en service : contrôles avant et après (event-village-dev)

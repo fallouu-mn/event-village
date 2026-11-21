@@ -1000,8 +1000,10 @@ $$;
 REVOKE ALL ON FUNCTION public.order_refund_payment(uuid, numeric, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_close_apply(uuid, text, text, uuid, text, text, numeric, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_cancel(jsonb) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.order_issue_code(uuid) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION public.order_code_delivery(uuid, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.order_issue_code(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.order_code_delivery(uuid, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.order_issue_code(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.order_code_delivery(uuid, text, text) TO service_role;
 REVOKE ALL ON FUNCTION public.order_set_en_route(uuid, uuid, text, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_handover_apply(uuid, uuid, text, text, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.order_code_resend(jsonb) FROM PUBLIC, anon, authenticated;
@@ -1158,10 +1160,10 @@ BEGIN
     -- dépassé, paiement arrivé trop tard), pas par le texte des billets
     -- Lot 11a : de même pour le remboursement d'une réservation de table
     IF TG_OP = 'INSERT' AND NEW.kind = 'REFUND' AND (v_user IS NOT NULL OR v_phone IS NOT NULL)
-       AND NOT EXISTS (SELECT 1 FROM public.payments hp WHERE hp.id = NEW.payment_id
-                          AND hp.payment_target::text IN ('HALL_RESERVATION', 'TABLE_RESERVATION'))
        -- Lot 12a : de même pour le remboursement d'une commande (avis de la commande)
-       AND v_order_res IS NULL THEN
+       AND v_order_res IS NULL
+       AND NOT EXISTS (SELECT 1 FROM public.payments hp WHERE hp.id = NEW.payment_id
+                          AND hp.payment_target::text IN ('HALL_RESERVATION', 'TABLE_RESERVATION')) THEN
         SELECT p.amount, p.operator::text, NULLIF(p.metadata->>'duplicate_of', ''),
                NULLIF(p.metadata->>'duplicate_fee_withheld', '')::numeric
           INTO v_pay_amount, v_pay_operator, v_duplicate_of, v_withheld
