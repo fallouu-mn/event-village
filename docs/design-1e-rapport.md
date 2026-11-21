@@ -7,7 +7,23 @@ barre latérale).
 
 ## À lire en premier — reprise du 21/11 (décisions de l'utilisateur)
 
-<!-- etat-final-reprise -->
+**État final : FUSIONNÉ dans `main`** le 21/11 (`be1494ba5`, sur `2ec11bb66` inchangé), feu vert de l'utilisateur sous
+condition « run complet entièrement vert avec Mes billets ≥ 90 ». **Aucune migration.** Preuve de la branche : **run complet
+571** (`a01769ad7`) entièrement vert : tests 570/570 (sécurité, `tests/audit/`, `tests/audit-auth/` compris), e2e sans aucun
+échec (captures, fumée, terrain, recette, perf avec la preuve des lectures sûres), contrôle responsive 0 défaut, budgets
+JavaScript tenus sans relèvement, mesure mobile accueil **90**, fiche **93**, Mes billets **91** (machine rapide, ×4,9 à
+×5,5). Run complet de `main` après la fusion : **run complet 572 (`be1494ba5`) vert** : tests 570/570, e2e, responsive (0 défaut), budgets, mesure mobile accueil **91**, fiche **93**, Mes billets **93** (machine rapide, ×4,9 à ×5,6). Worktree retiré.
+
+| Contrôle | Run complet 557 (`ad9ea6db7`) | Run complet 561 (`aa877ec32`) | **Run complet 571 (`a01769ad7`)** |
+|---|---|---|---|
+| Tests | 569/569 | 569/569 | **570/570** |
+| Contrôle responsive | 0 défaut | 0 défaut | **0 défaut** |
+| E2E (captures, fumée, terrain, recette…) | verts | verts | **verts** |
+| E2E phase « perf » | verte | rouge (défaut de l'outil, corrigé) | **verte** |
+| Mesure mobile | 93 / 94 / **91** | 91 / 90 / **92** | **90 / 93 / 91** |
+| Poids JavaScript | rouge (+44 o) | tenus | **tenus** |
+
+Historique (runs 557 et 561) :
 
 | Contrôle | Run complet 557 (`ad9ea6db7`) | Run complet 561 (`aa877ec32`) |
 |---|---|---|
@@ -33,7 +49,8 @@ barre latérale).
   pendant le téléchargement ; sur 5 passes, la lecture non protégée rejette avec le message exact du run 561, la lecture sûre
   ignore la requête, aucun rejet non géré, et un nouveau contexte s'ouvre et charge une page). Essai local : 5/5 passes.
 - **Règle temporaire de Mes billets : LEVÉE** (décision de l'utilisateur du 21/11), sur deux runs complets avec le client de
-  mesure fixe (Awa Sow, 10 billets à venir, 30 passés) : Mes billets **91** (run 557) et **92** (run 561). **Le seuil de 90 est
+  mesure fixe (Awa Sow, 10 billets à venir, 30 passés) : Mes billets **91** (run 557) et **92** (run 561) ; confirmé par le
+  run complet 571 (**91**). **Le seuil de 90 est
   de nouveau bloquant pour toutes les pages, Mes billets compris** : un run où une page mesurée est sous 90 n'est plus accepté
   pour une fusion. Aucun code ne portait cette exception (la mesure rendait déjà le run rouge sous 90) ; l'entrée « Mes billets
   au seuil » de `docs/apres-lancement.md` est close.
