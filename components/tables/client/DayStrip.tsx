@@ -49,16 +49,16 @@ export function DayStrip({ value, today, onChange }: { value: string; today: str
                             ref={pressed ? selectedRef : undefined}
                             type="button"
                             aria-pressed={pressed}
-                            aria-label={i === 0 ? `Aujourd’hui, ${dayText(d)}` : i === 1 ? `Demain, ${dayText(d)}` : dayText(d)}
                             onClick={() => onChange(d)}
                             className={cn(
-                                'flex min-h-[4.5rem] w-16 flex-none snap-start flex-col items-center justify-center rounded-xl border text-center transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.97]',
+                                'relative flex min-h-[4.5rem] w-16 flex-none snap-start flex-col items-center justify-center rounded-xl border text-center transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.97]',
                                 pressed ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border bg-card text-foreground-strong hover:bg-muted',
                             )}
                         >
                             <span className={cn('text-sm font-semibold capitalize', pressed ? 'text-primary-foreground' : 'text-muted-foreground')}>{label}</span>
                             <span className="text-xl font-bold leading-tight tabular-nums">{date.getUTCDate()}</span>
                             <span className={cn('text-sm', pressed ? 'text-primary-foreground' : 'text-muted-foreground')}>{monthFmt.format(date).replace('.', '')}</span>
+                            <span className="sr-only">{i === 0 ? `, aujourd’hui, ${dayText(d)}` : i === 1 ? `, demain, ${dayText(d)}` : `, ${dayText(d)}`}</span>
                         </button>
                     );
                 })}

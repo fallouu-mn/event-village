@@ -170,7 +170,7 @@ export function HoursEditor({ idPrefix, week, onChange, errors }: {
                                                 Ajouter une plage
                                             </Button>
                                         )}
-                                        <Button type="button" variant="ghost" size="sm" leftIcon={<Copy size={16} />} onClick={() => copyToAll(i)} aria-label={`Copier les horaires du ${WEEKDAYS[i]} sur tous les jours`}>
+                                        <Button type="button" variant="ghost" size="sm" leftIcon={<Copy size={16} />} onClick={() => copyToAll(i)} aria-label={`Copier sur tous les jours les horaires du ${WEEKDAYS[i]}`}>
                                             Copier sur tous les jours
                                         </Button>
                                     </div>

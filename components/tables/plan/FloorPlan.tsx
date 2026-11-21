@@ -81,6 +81,15 @@ function capacityText(t: FloorPlanTable): string {
     return min ? `${min} à ${t.capacity} places` : `${t.capacity} place${t.capacity > 1 ? 's' : ''}`;
 }
 
+/**
+ * Capacité lue par un lecteur d'écran, le nombre maximal juste après le numéro : la face de la table montre « numéro,
+ * capacité » et ces mots doivent se suivre dans le nom accessible (règle axe label-content-name-mismatch, WCAG 2.5.3).
+ */
+function spokenCapacity(t: FloorPlanTable): string {
+    const min = t.minCapacity && t.minCapacity > 1 && t.minCapacity < t.capacity ? t.minCapacity : null;
+    return `${t.capacity} place${t.capacity > 1 ? 's' : ''}${min ? `, à partir de ${min}` : ''}`;
+}
+
 type Kind = 'table' | 'zone';
 interface Sel { kind: Kind; id: string }
 interface Live { kind: Kind; id: string; x: number; y: number; w: number; h: number }
@@ -421,7 +430,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                             width: `max(${minPx}px, ${tableWidthPct(t.capacity, t.shape)}%)`,
                             aspectRatio: String(tableAspect(t.shape)),
                         };
-                        const spoken = [`Table ${t.number}`, capacityText(t), state ? STATE_VIEW[state].spoken : null, edit ? `forme ${SHAPE_LABEL[t.shape]}` : null, t.hint ?? null]
+                        const spoken = [`Table ${t.number}`, spokenCapacity(t), state ? STATE_VIEW[state].spoken : null, edit ? `forme ${SHAPE_LABEL[t.shape]}` : null, t.hint ?? null]
                             .filter(Boolean).join(', ');
                         const radius = t.shape === 'RONDE' ? 'rounded-full' : 'rounded-lg';
                         const face = (
@@ -653,7 +662,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                             {unplacedZones.map((z) => (
                                 <li key={`uz:${z.id}`} className="flex flex-wrap items-center justify-between gap-2 py-2">
                                     <span className="min-w-0 break-words text-sm font-medium text-foreground-strong">Zone {z.name}</span>
-                                    <Button type="button" variant="secondary" size="sm" leftIcon={<Plus size={16} />} onClick={() => placeZone(z.id)} aria-label={`Placer la zone ${z.name} sur le plan`}>
+                                    <Button type="button" variant="secondary" size="sm" leftIcon={<Plus size={16} />} onClick={() => placeZone(z.id)} aria-label={`Placer sur le plan la zone ${z.name}`}>
                                         Placer sur le plan
                                     </Button>
                                 </li>
@@ -664,7 +673,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                                         <span className="font-medium">Table {t.number}</span>
                                         <span className="text-muted-foreground"> · {capacityText(t)}</span>
                                     </span>
-                                    <Button type="button" variant="secondary" size="sm" leftIcon={<Plus size={16} />} onClick={() => placeTable(t.id)} aria-label={`Placer la table ${t.number} sur le plan`}>
+                                    <Button type="button" variant="secondary" size="sm" leftIcon={<Plus size={16} />} onClick={() => placeTable(t.id)} aria-label={`Placer sur le plan la table ${t.number}`}>
                                         Placer sur le plan
                                     </Button>
                                 </li>

@@ -79,7 +79,11 @@ export function VenueGallery({ photos, name }: { photos: string[]; name: string 
         >
             <div
                 ref={track}
-                className="no-scrollbar flex aspect-[16/10] snap-x snap-mandatory overflow-x-auto overscroll-x-contain bg-muted sm:rounded-2xl sm:border sm:border-border"
+                // Zone qui défile : atteignable au clavier (flèches gauche et droite, règle axe scrollable-region-focusable)
+                tabIndex={many ? 0 : undefined}
+                role={many ? 'group' : undefined}
+                aria-label={many ? 'Faire défiler les photos avec les flèches gauche et droite' : undefined}
+                className="no-scrollbar flex aspect-[16/10] snap-x snap-mandatory overflow-x-auto overscroll-x-contain bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:rounded-2xl sm:border sm:border-border"
             >
                 {photos.map((src, i) => (
                     <div key={`${src}-${i}`} className="relative h-full w-full flex-none snap-center snap-always" aria-hidden={i !== index}>
