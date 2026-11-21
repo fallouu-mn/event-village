@@ -7,8 +7,9 @@
 -- 2 h avant l'heure (avec « J'arrive » et « Annuler » sur la réservation).
 --  1. types nouveaux : TABLE_CLIENT_COMING (le client arrive, à l'établissement), TABLE_REFUND_PAID (remboursement
 --     versé, au client ; au lieu de l'avis générique) ;
---  2. nuit : DEFER pour la confirmation, la demande envoyée, la nouvelle réservation, « le client arrive » et la décision
---     sur un établissement ; les annulations, refus, demandes à accepter, absences et remboursements restent urgents ;
+--  2. nuit : DEFER pour la confirmation, la nouvelle réservation, « le client arrive » et la décision sur un
+--     établissement ; la demande envoyée (échéance de réponse de 2 h), les annulations, refus, demandes à accepter,
+--     absences et remboursements restent urgents ;
 --  3. table_notif_data : recopie de 20261123000104_l11a_reserver.sql:27-51 ; changement : code court, heure de garde de
 --     la table, fin de l'attente du paiement, fin de l'annulation gratuite ;
 --  4. notif_event_soon : recopie de 20261125000006_f4_evenement_proche.sql:23-41 ; changement : une réservation de table
@@ -29,7 +30,7 @@ ON CONFLICT (type) DO UPDATE SET
 
 UPDATE public.notification_types SET night_policy = 'DEFER'
  WHERE night_policy <> 'DEFER' AND type IN (
-    'TABLE_RESERVATION_CONFIRMED', 'TABLE_REQUEST_SENT', 'TABLE_NEW_RESERVATION', 'VENUE_VALIDATION_DECIDED', 'TABLE_REMINDER');
+    'TABLE_RESERVATION_CONFIRMED', 'TABLE_NEW_RESERVATION', 'VENUE_VALIDATION_DECIDED', 'TABLE_REMINDER');
 
 UPDATE public.platform_settings SET value = '{"value": 2}',
        description = 'Tables : rappel au client ce nombre d''heures avant l''heure (avec « J''arrive » et « Annuler »)'

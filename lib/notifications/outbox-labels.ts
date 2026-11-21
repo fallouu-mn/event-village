@@ -185,6 +185,8 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     TABLE_NO_SHOW: 'Absence à une réservation de table',
     TABLE_PAYMENT_REFUNDED: 'Paiement de table remboursé',
     TABLE_REMINDER: 'Rappel de réservation de table',
+    TABLE_CLIENT_COMING: 'Client qui confirme sa venue',
+    TABLE_REFUND_PAID: 'Remboursement d’une table versé',
     VENUE_VALIDATION_DECIDED: 'Décision sur un établissement',
     PROMOTION_DECIDED: 'Mise en avant décidée',
     CONTROLLER_ASSIGNED: 'Affectation de contrôle',
