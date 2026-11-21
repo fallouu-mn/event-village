@@ -145,3 +145,18 @@ describe('design 1e — orange de marque : paires couleur / texte des jetons', (
         assert.deepEqual(faults, [], `ancien orange ou rose encore présent : ${faults.join(', ')}`);
     });
 });
+
+describe('design 1e — blanc sur l’orange seulement en grand texte (run 537 : boutons du scanner en blanc de 14 px, 3,39:1)', () => {
+    test('bouton principal en grande taille dont la classe locale réduit le texte : #1A1A1A, jamais le blanc', async () => {
+        const { buttonClasses } = await import('../../components/ui/Button');
+        const big = buttonClasses({ variant: 'primary', size: 'lg' });
+        assert.match(big, /text-primary-foreground-large/);
+        assert.match(big, /text-\[1\.1875rem\]/);
+        for (const local of ['text-sm', 'text-base', 'text-lg']) {
+            const c = buttonClasses({ variant: 'primary', size: 'lg', className: local });
+            assert.doesNotMatch(c, /text-primary-foreground-large/, `${local} : blanc sur orange sous 19 px`);
+            assert.match(c, /(^|\s)text-primary-foreground(\s|$)/, `${local} : texte #1A1A1A attendu`);
+        }
+        assert.doesNotMatch(buttonClasses({ variant: 'primary', size: 'md' }), /text-primary-foreground-large/);
+    });
+});

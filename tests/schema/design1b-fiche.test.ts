@@ -143,8 +143,8 @@ describe('c. billetterie et barre d’achat du téléphone', () => {
         assert.match(src, /Choisir mes billets/);
         assert.match(src, /`Acheter \(\$\{cartTotalQty\}\)`/);
         assert.match(src, /fromPriceLabel\(categories\)/);
-        // Design 1e (modification signalée) : barre juste au-dessus de la barre du bas flottante (52 px + max(8 px, zone sûre))
-        assert.match(src, /className="fixed inset-x-0 bottom-\[calc\(3\.25rem\+max\(0\.5rem,env\(safe-area-inset-bottom\)\)\)\][^"]*lg:hidden"/);
+        // Design 1e (modification signalée) : barre juste au-dessus de la barre du bas flottante (56 px + max(8 px, zone sûre))
+        assert.match(src, /className="fixed inset-x-0 bottom-\[calc\(3\.5rem\+max\(0\.5rem,env\(safe-area-inset-bottom\)\)\)\][^"]*lg:hidden"/);
         // Design 1c (point 1, modification signalée) : sous 390 px, le grand bouton passe sous le montant : place plus haute
         assert.match(src, /\{barKind && <div aria-hidden="true" className="h-36 min-\[390px\]:h-20 lg:hidden" \/>\}/, 'place réservée sous la barre');
         assert.match(src, /getElementById\('billetterie-titre'\)/, '« Choisir mes billets » amène aux catégories');

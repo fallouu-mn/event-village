@@ -20,7 +20,8 @@ export interface BottomNavItem {
  *    d'un onglet à l'autre (transform seulement, ressort de 250 ms ; coupé si « réduire les animations ») ; texte et icône
  *    de l'onglet actif en #1A1A1A sur l'orange (5,12:1) ;
  *  - la pastille part dès le toucher (onglet visé), sans attendre la fin de la navigation ;
- *  - cibles de 44 px au moins, libellés entiers (deux lignes au besoin, aucun texte tronqué à 320 px) ;
+ *  - hauteur fixe (onglets de 48 px, barre de 64 px avec sa marge) : un libellé sur deux lignes (« Porte-feuille ») ne la
+ *    grandit pas, la barre d'achat de la fiche se cale dessus (run 537) ; cibles de 44 px au moins, libellés entiers ;
  *  - zone sûre de l'iPhone : marge du bas = max(8 px, env(safe-area-inset-bottom)) (.ev-bottom-nav, app/globals.css) ;
  *  - rien de plus au premier affichage : aucune mesure de la page, aucun effet coûteux (une position en pourcentage).
  */
@@ -49,19 +50,19 @@ function BottomNavView({ items, activeHref }: { items: BottomNavItem[]; activeHr
               onClick={() => setPending(item.href)}
               aria-current={item.href === activeHref ? 'page' : undefined}
               className={cn(
-                'relative z-10 flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-1 transition-colors duration-200',
+                'relative z-10 flex h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-1 transition-colors duration-200',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                 active ? 'text-brand-vif-foreground' : 'text-muted-foreground hover:text-foreground-strong',
               )}
             >
               <span className="relative inline-flex">
-                <Icon size={20} aria-hidden="true" />
+                <Icon size={18} aria-hidden="true" />
                 {item.dot && (
                   <span aria-hidden="true" className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full bg-danger ring-2 ring-nav-bar" />
                 )}
               </span>
               {/* Design 1c (point 1) : libellé entier, au besoin sur deux lignes (aucun texte tronqué à 320 px) */}
-              <small className="text-caption max-w-full text-center font-semibold leading-tight [overflow-wrap:anywhere]">
+              <small className="text-caption max-w-full text-center font-semibold leading-[1.1] [overflow-wrap:anywhere]">
                 {item.short ?? item.name}
                 {item.dot && <span className="sr-only"> (nouvelles notifications)</span>}
               </small>

@@ -73,7 +73,7 @@ describe('design 1e — barre du bas (< 1024 px)', () => {
     });
     test('onglet actif en #1A1A1A sur l’orange ; cibles de 44 px ; zone sûre ; libellés entiers', () => {
         assert.match(src, /active \? 'text-brand-vif-foreground'/);
-        assert.match(src, /min-h-11 min-w-0 flex-1/);
+        assert.match(src, /flex h-12 min-w-0 flex-1/, 'onglets de 48 px, hauteur fixe');
         assert.match(navCss(), /\.ev-bottom-nav \{\s*padding-bottom: max\(0\.5rem, env\(safe-area-inset-bottom, 0px\)\);/);
         assert.match(src, /\[overflow-wrap:anywhere\]/);
         assert.doesNotMatch(src, /truncate/);
@@ -87,7 +87,7 @@ describe('design 1e — barre du bas (< 1024 px)', () => {
         assert.doesNotMatch(read('components/notifications/unread-store.ts'), /fetch\(/);
     });
     test('la barre d’achat de la fiche reste juste au-dessus de la barre flottante', () => {
-        assert.match(read('components/event-page/EventTicketing.tsx'), /bottom-\[calc\(3\.25rem\+max\(0\.5rem,env\(safe-area-inset-bottom\)\)\)\]/);
+        assert.match(read('components/event-page/EventTicketing.tsx'), /bottom-\[calc\(3\.5rem\+max\(0\.5rem,env\(safe-area-inset-bottom\)\)\)\]/);
     });
 });
 

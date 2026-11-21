@@ -58,7 +58,13 @@ export function buttonClasses(options: {
   className?: string;
 } = {}): string {
   const { variant = 'primary', size = 'md', fullWidth = false, className } = options;
-  return cn(baseStyles, variant === 'gradient' ? GRADIENT_SIZE : sizes[size], variants[variant], variant === 'primary' && size === 'lg' && PRIMARY_LARGE, fullWidth && 'w-full', className);
+  const classes = cn(baseStyles, variant === 'gradient' ? GRADIENT_SIZE : sizes[size], variants[variant], variant === 'primary' && size === 'lg' && PRIMARY_LARGE, fullWidth && 'w-full', className);
+  // Design 1e (run 537) : le blanc sur l'orange n'est permis qu'en grand texte (gras de 19 px) ; si la classe locale réduit
+  // le texte (boutons du scanner en 14 px), le texte repasse en #1A1A1A (5,12:1)
+  if (classes.includes('text-primary-foreground-large') && !/(^|\s)text-\[1\.1875rem\](\s|$)/.test(classes)) {
+    return classes.replace('text-primary-foreground-large', 'text-primary-foreground');
+  }
+  return classes;
 }
 
 export const Button: React.FC<ButtonProps> = ({
