@@ -3,10 +3,11 @@
  * Procédure d'exploitation (compte de service), après la fusion et la migration 20261127000001 ; voir
  * docs/design-1d-rapport.md (migrations et contrôles prévus).
  *
- * Usage (variables d'environnement du projet visé chargées dans le shell, comme scripts/reencode-posters.ts) :
- *   npx tsx scripts/poster-styles.ts               à blanc : liste ce qui sera fait (avec la couleur), rien n'est écrit
- *   npx tsx scripts/poster-styles.ts --appliquer   calcule et enregistre le style ; chaque événement qui cite l'affiche
- *                                                  le prend (une écriture par événement, seulement s'il change)
+ * Usage (variables du projet visé lues dans .env.local par --env-file, sinon le script ne trouve pas le projet) :
+ *   npx tsx --env-file=.env.local scripts/poster-styles.ts               à blanc : liste ce qui sera fait (avec la couleur)
+ *   npx tsx --env-file=.env.local scripts/poster-styles.ts --appliquer   calcule et enregistre le style ; chaque événement
+ *                                                  qui cite l'affiche le prend (une écriture par événement, s'il change)
+ * Design 1e : couleur VIVE de l'affiche (lib/events/poster-color.ts, pickPosterColor), plus la dominante.
  * 100 fichiers au plus par passage : relancer tant que « restants » n'est pas 0. Rejouable : un passage de plus ne
  * retrouve que les fichiers absents ou illisibles, signalés ; l’écran garde pour eux le « bleu nuit ».
  */
