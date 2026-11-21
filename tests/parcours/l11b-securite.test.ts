@@ -58,11 +58,11 @@ after(async () => {
 
 describe('F1. Fiche partenaire SUSPENDU : établissements, tables et réservations en lecture seule', () => {
     test('routes : renommer l’établissement, créer une table, marquer absent, annuler → 403 PARTNER_SUSPENDED, rien d’écrit', async () => {
-        const { data: before0 } = await service.from('venues').select('name').eq('id', venue).single();
-        const { count: tablesBefore } = await service.from('restaurant_tables').select('id', { count: 'exact', head: true }).eq('venue_id', venue);
         // Commencée il y a 10 minutes : « Client absent » serait possible pour une fiche VALIDE
         const paidRes = await paidReservation(10);
         const laterRes = await paidReservation();
+        const { data: before0 } = await service.from('venues').select('name').eq('id', venue).single();
+        const { count: tablesBefore } = await service.from('restaurant_tables').select('id', { count: 'exact', head: true }).eq('venue_id', venue);
         await setFiche(host.partnerId, 'SUSPENDU');
         try {
             const rename = await routeId('PATCH', 'partner/venues/[id]', venue, host.accessToken, { name: 'Renommé pendant la suspension' });

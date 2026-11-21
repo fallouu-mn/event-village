@@ -36,10 +36,6 @@ const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
     ] },
     { fn: 'table_reserve', file: LOT11B_MIGRATIONS[1], replaced: [] },
     { fn: 'table_hold_refusal', file: LOT11B_MIGRATIONS[1], replaced: [] },
-    { fn: 'table_client_slot_refusal', file: LOT11B_MIGRATIONS[1], replaced: [
-        // La requête se poursuit (UNION ALL) : le « ; » final passe à la fin de la nouvelle requête
-        "AND o.status::text IN ('EN_ATTENTE', 'CONFIRMEE') AND o.slot && p_slot);",
-    ] },
     { fn: 'table_reservation_presence', file: LOT11B_MIGRATIONS[2], replaced: [] },
     { fn: 'table_reservation_cancel', file: LOT11B_MIGRATIONS[2], replaced: [] },
     { fn: 'table_notif_data', file: LOT11B_MIGRATIONS[3], replaced: [] },

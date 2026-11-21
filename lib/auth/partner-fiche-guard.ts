@@ -64,6 +64,16 @@ const OWN_REFUSAL: readonly RouteKey[] = [
     'POST /api/partner/upload',
 ];
 
+/**
+ * Lot 11b (F1) : routes d'écriture qui filtrent ELLES-MÊMES une fiche SUSPENDU (partnerSuspendedTablesRefusal). Actions sur
+ * une réservation de table : accepter ou refuser une demande passent en base, qui refuse l'acceptation d'une fiche non
+ * VALIDE et rembourse le client en entier (correctif T5 de la contre-vérification du lot 11a) ; présence, annulation et
+ * paiement sur place sont refusés par la route.
+ */
+const OWN_SUSPENDED_CHECK: readonly RouteKey[] = [
+    'PATCH /api/partner/tables/reservations/*',
+];
+
 const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function routeKey(method: string, pathname: string): RouteKey {
@@ -116,6 +126,17 @@ export async function partnerSuspendedResponse(text: string = PARTNER_SUSPENDED_
     return NextResponse.json({ error: `${text} ${support}`, code: 'PARTNER_SUSPENDED' }, { status: 403 });
 }
 
+/**
+ * Lot 11b (F1) : refus 403 PARTNER_SUSPENDED d'une action sur les tables pour une fiche SUSPENDU (routes de
+ * OWN_SUSPENDED_CHECK), ou null. Lecture en échec : 503, jamais un passage.
+ */
+export async function partnerSuspendedTablesRefusal(user: { id: string; roles: readonly string[] }): Promise<NextResponse | null> {
+    if (!partnerFicheGuardApplies(user.roles, '/api/partner/tables/reservations')) return null;
+    const read = await readFicheStatus(user.id, 'partnerSuspendedTablesRefusal');
+    if ('response' in read) return read.response;
+    return read.status === 'SUSPENDU' ? partnerSuspendedResponse(PARTNER_SUSPENDED_TABLES_TEXT) : null;
+}
+
 /** La garde s'applique-t-elle à ce compte et à ce chemin ? */
 export function partnerFicheGuardApplies(roles: readonly string[], pathname: string): boolean {
     if (!roles.includes('PARTENAIRE') || roles.includes('ADMIN') || roles.includes('SUPERADMIN')) return false;
@@ -138,7 +159,7 @@ export async function partnerFicheRefusal(user: { id: string; roles: readonly st
     if (!partnerFicheGuardApplies(user.roles, pathname)) return null;
     const read = await readFicheStatus(user.id, 'partnerFicheRefusal');
     if ('response' in read) return read.response;
-    if (read.status === 'SUSPENDU' && partnerEventWrite(method, pathname)) {
+    if (read.status === 'SUSPENDU' && partnerEventWrite(method, pathname) && !OWN_SUSPENDED_CHECK.includes(routeKey(method, pathname))) {
         const text = pathname.startsWith('/api/partner/halls') ? PARTNER_SUSPENDED_HALLS_TEXT
             : pathname.startsWith('/api/partner/venues') || pathname.startsWith('/api/partner/tables') ? PARTNER_SUSPENDED_TABLES_TEXT
                 : PARTNER_SUSPENDED_TEXT;

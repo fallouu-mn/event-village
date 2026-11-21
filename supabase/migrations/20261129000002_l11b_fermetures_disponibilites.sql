@@ -3,7 +3,7 @@
 -- ============================================================================
 -- Décisions du client : une fermeture exceptionnelle (jour entier ou plage horaire) rend l'établissement non
 -- réservable ; les réservations déjà prises sur la période sont annulées et remboursées en entier, clients prévenus.
--- Une seule table par créneau et par client (tous établissements). Créneaux montrés en pastilles.
+-- Créneaux montrés en pastilles.
 --  1. venue_closures (lecture et écriture REST fermées) ; venue_closed_during(établissement, créneau) ;
 --     venue_closure_parse(p) (période et motif) ; venue_closure_touched (réservations qui tiennent une table sur la
 --     période, montant rendu = tout ce qui a été payé) ; venue_closure_preview(p) (aperçu avant de confirmer) ;
@@ -18,8 +18,6 @@
 --     fermeture exceptionnelle ;
 --  4. table_hold_refusal : recopie de 20261123000105_l11a_paiement.sql:31-73 ; changement : même refus au paiement (une
 --     attente échue reprise par un paiement repasse tous les contrôles) ;
---  5. table_client_slot_refusal : recopie de 20261123000111_l11a_cv_limite_client.sql:55-67 ; changement : une table par créneau
---     et par client dans TOUS les établissements (message propre pour un autre établissement).
 -- Toutes réservées au rôle de service. Rejouable : CREATE TABLE IF NOT EXISTS, DROP … IF EXISTS puis ADD,
 -- CREATE OR REPLACE, REVOKE et GRANT idempotents.
 -- ============================================================================
@@ -837,37 +835,6 @@ BEGIN
 END;
 $$;
 
--- ----------------------------------------------------------------------------
--- 5. Une table par créneau et par client, tous établissements
--- ----------------------------------------------------------------------------
--- Recopie de 20261123000111_l11a_cv_limite_client.sql:55-67 ; changement : autre établissement compris.
-CREATE OR REPLACE FUNCTION public.table_client_slot_refusal(p_client uuid, p_venue_id uuid, p_slot tsrange, p_exclude uuid)
-RETURNS jsonb
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-    SELECT jsonb_build_object('ok', false, 'code', 'CLIENT_SLOT_TAKEN',
-               'message', 'Vous avez déjà une table dans cet établissement à cette heure-là.')
-     WHERE EXISTS (SELECT 1 FROM public.table_reservations o
-                    WHERE o.client_id = p_client AND o.venue_id = p_venue_id AND o.id IS DISTINCT FROM p_exclude
-                      AND o.status::text IN ('EN_ATTENTE', 'CONFIRMEE') AND o.slot && p_slot)
-    -- Lot 11b (décision du client) : une seule table par créneau et par client, tous établissements confondus ; une
-    -- attente de paiement échue ne compte plus
-    UNION ALL
-    SELECT jsonb_build_object('ok', false, 'code', 'CLIENT_SLOT_TAKEN',
-               'message', 'Vous avez déjà une table réservée à cette heure-là dans un autre établissement.')
-     WHERE NOT EXISTS (SELECT 1 FROM public.table_reservations o
-                        WHERE o.client_id = p_client AND o.venue_id = p_venue_id AND o.id IS DISTINCT FROM p_exclude
-                          AND o.status::text IN ('EN_ATTENTE', 'CONFIRMEE') AND o.slot && p_slot)
-       AND EXISTS (SELECT 1 FROM public.table_reservations o
-                    WHERE o.client_id = p_client AND o.venue_id IS DISTINCT FROM p_venue_id AND o.id IS DISTINCT FROM p_exclude
-                      AND o.status::text IN ('EN_ATTENTE', 'CONFIRMEE') AND o.slot && p_slot
-                      AND NOT (o.booking_state = 'EN_ATTENTE_PAIEMENT' AND o.hold_expires_at <= now()))
-    LIMIT 1;
-$$;
-
 REVOKE ALL ON FUNCTION public.venue_closed_during(uuid, tsrange) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.table_free_count(uuid, tsrange, integer, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.venue_closure_parse(jsonb) FROM PUBLIC, anon, authenticated;
@@ -881,7 +848,6 @@ REVOKE ALL ON FUNCTION public.venue_floor(jsonb) FROM PUBLIC, anon, authenticate
 REVOKE ALL ON FUNCTION public.venue_search(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.table_reserve(jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.table_hold_refusal(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.table_client_slot_refusal(uuid, uuid, tsrange, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.venue_closed_during(uuid, tsrange) TO service_role;
 GRANT EXECUTE ON FUNCTION public.table_free_count(uuid, tsrange, integer, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.venue_closure_parse(jsonb) TO service_role;
@@ -895,4 +861,3 @@ GRANT EXECUTE ON FUNCTION public.venue_floor(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.venue_search(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.table_reserve(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.table_hold_refusal(uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.table_client_slot_refusal(uuid, uuid, tsrange, uuid) TO service_role;
