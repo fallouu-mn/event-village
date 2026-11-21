@@ -494,9 +494,12 @@ async function partnerViews(rows: Row[]): Promise<PartnerTableReservationView[]>
         const r = rows[i];
         const c = clients.get(String(r.client_id));
         const last = str(c?.last_name);
-        // Coordonnées du client données à l'établissement seulement pour une réservation qui tient la table (ou arrivée) :
-        // jamais pour une attente de paiement ni une réservation close
-        const contact = ['EN_ATTENTE_ACCEPTATION', 'CONFIRMEE', 'ARRIVEE'].includes(String(r.booking_state));
+        // Coordonnées du client données à l'établissement seulement pour une réservation qui tient la table : demande à
+        // accepter, confirmée, ou client arrivé tant que son créneau n'est pas fini (contre-vérification T4 : l'état
+        // ARRIVEE ne se clôt jamais) ; jamais pour une attente de paiement ni une réservation close
+        const state = String(r.booking_state);
+        const slotEnd = Date.parse(`${String(r.reservation_date)}T${clock(r.reservation_time)}:00Z`) + (num(r.slot_minutes) || 120) * 60_000;
+        const contact = state === 'EN_ATTENTE_ACCEPTATION' || state === 'CONFIRMEE' || (state === 'ARRIVEE' && Date.now() < slotEnd);
         return {
             ...v, tableId: str(r.table_id),
             client: { name: `${str(c?.first_name) ?? 'Client'}${last ? ` ${last.slice(0, 1)}.` : ''}`, phone: contact ? str(c?.phone) : null },
