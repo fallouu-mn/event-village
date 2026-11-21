@@ -460,8 +460,21 @@ Textes nouveaux (réponses des routes, en français simple) :
 | `INVALID_QUANTITY` (somme par produit) | Au plus 99 « Bissap » par commande. |
 | `TOO_MANY_PORTIONS` | Vous tenez déjà 6 portions de « Thiéboudienne du jour » sans les avoir payées : 10 au plus. Payez votre commande en cours ou attendez qu’elle se termine. (ou, sans commande en cours : Au plus 10 portions de « … » par commande non payée.) |
 
-Le client reçoit l'avis de commande refusée existant (`ORDER_CANCELLED`, origine « refusée », motif « Produit
-réglementé : il ne se vend pas en ligne », montant remboursé).
+Décisions du chef de projet du 21/11, appliquées dans le même passage :
+
+- **Avis du refus « produit réglementé »** (acceptation ou remise) : le client, la partenaire et le livreur (s'il y en a
+  un) reçoivent chacun un avis sur les 4 canaux (cloche, push, email, SMS), avec une origine dédiée `REGLEMENTE` des avis
+  existants `ORDER_CANCELLED`, `ORDER_CANCELLED_PRO` et `ORDER_COURIER_CANCELLED` (aide interne `order_close_apply`,
+  paramètre `p_notice`).
+- **Invitations de livreurs** : au plus 10 par partenaire et par jour, heure de Dakar (réglage
+  `orders.courier_invites_per_day`, 1 à 50, écran des réglages), comptées sous verrou de la partenaire ; au-delà, 429
+  `TOO_MANY_INVITES` : « Vous avez déjà envoyé 10 invitations aujourd’hui : réessayez demain. »
+
+| Avis (origine `REGLEMENTE`) | Cloche, push, email | SMS (un segment GSM-7) |
+|---|---|---|
+| Client (`ORDER_CANCELLED`) | Commande annulée : Votre commande CMD-… chez « Chez Fatou… » est annulée par Event Village : un de ses produits est réglementé (alcool, tabac) et ne se vend pas en ligne. Vous êtes remboursé de 5 250 F CFA sur votre compte de paiement. | Event Village : commande CMD-261205-A1B2 annulée : produit réglementé, non vendu en ligne. 5 250 F CFA remboursés. |
+| Partenaire (`ORDER_CANCELLED_PRO`) | Commande annulée : La commande CMD-… est annulée par Event Village : un de ses produits est réglementé (alcool, tabac) et ne se vend pas en ligne. Le client est remboursé. Ne la préparez pas et ne la remettez pas ; retirez ce produit de la vente en ligne. | Event Village : commande CMD-261205-A1B2 annulée : produit réglementé, non vendu en ligne. Client remboursé. Ne la remettez pas. |
+| Livreur (`ORDER_COURIER_CANCELLED`) | Livraison annulée : La commande CMD-… est annulée par Event Village : un de ses produits est réglementé et ne se vend pas en ligne. Ne la livrez pas ; rapportez-la à l’établissement. | Event Village : commande CMD-261205-A1B2 annulée (produit réglementé) : ne la livrez pas, rapportez-la à l'établissement. |
 
 Tests modifiés (signalés) :
 
@@ -473,11 +486,14 @@ Tests modifiés (signalés) :
 | `notif-migration` | Les points d'insertion `order_close_apply`, `order_set_en_route`, `order_handover_apply` sont cherchés dans `public` et `private` (paramètre `schemas` de l'aide de lecture) | T7 |
 | `l12a-commandes` | Stock rendu une seule fois : `private.order_release_stock` appelée en base (plus en RPC) ; réglage `orders.max_unpaid_portions` = 10 parmi les défauts ; nouveau cas : 10 portions tenues au plus, 99 par produit sur deux lignes | T7, T3 |
 | `partner-orders-m9` | `getProductById(produit, partenaire)` | T8 |
+| `l12a-commandes` (ajouts) | Refus « produit réglementé » à l'acceptation et à la remise par le livreur : tout rendu, avis aux trois destinataires sur les 4 canaux ; limite des invitations (réglage ramené à 2 le temps du test) ; défaut `orders.courier_invites_per_day` = 10 | décisions du 21/11 |
+| `notif-modeles` | 3 textes SMS exacts ajoutés (origine `REGLEMENTE`) | décisions du 21/11 |
 
 Runs :
 
 | Run | Commit | Mode | Résultat |
 |---|---|---|---|
+| 566 | `985abae95` | rapide, 13 suites | **vert**, 13/13, aucun « not ok » : avis du refus « réglementé » et limite des invitations (`l12a-commandes` 40/40), textes (`notif-modeles`, `textes-sms-9bis`, `f4-textes`, `design1b-mots`), réglages (`f3b-*`), suites de la contre-vérification |
 | 560 | `f55a08a85` | rapide, 20 suites | **vert**, 20/20 suites, aucun « not ok » : `cv12a-1-trous` 12/12 (T1 à T9, dont T2a à T2d), `cv12a-2-gardes` 7/7, `cv12a-3-statique` 3/3 ; suites du lot, `fonctions-privileges` et `hotfix-scripts` (règle 1A.3), réglages (`f3b-*`), interrupteurs, `notif-migration`, `r3-fonctions-rpc`, temps réel et pannes ; invariants de toutes les livraisons (jusqu'à o1-o7) : 0 violation |
 
 Extrait brut du run 560 (`runs/560-44913113802/jobs/rapide/verify.log`, branche `ci-results`) :
@@ -498,9 +514,7 @@ ok 12 - T7 — aides internes des commandes non appelables en RPC par la clé de
 [INVARIANT-LOT12A] cv12a-2-gardes — (o1)(o2)(o3)(o4)(o5)(o6)(o7) : 0 violation(s)
 ```
 
-Restent, hors trous : invitations d'un livreur sans limite par jour (signalé par la contre-vérification, non demandé ;
-`docs/apres-lancement.md`) ; quand un livreur tente de remettre une commande devenue réglementée, la partenaire le voit
-dans sa liste (commande refusée), sans avis à part.
-
-À faire avant la fusion : le lot 11b fusionne d'abord et redéfinit aussi `notif_cashouts_notify` ; la recopie du lot 12a
-(`…06`) sera refaite à partir de sa version, puis runs rapides et un run complet (résultat ci-dessous quand il existe).
+À faire avant la fusion : le lot 11b fusionne d'abord ; il redéfinit aussi `notif_cashouts_notify` (la recopie du lot
+12a, `…06`, sera refaite à partir de sa version) et ferme la lecture REST des paiements et remboursements pour toutes les
+partenaires (un test du lot 12a vérifiera qu'aucune partenaire ne lit un paiement ni un remboursement de commande par la
+REST). Puis runs rapides et un run complet (résultat ci-dessous quand il existe).
