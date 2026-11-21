@@ -12,6 +12,14 @@ interrupteur (`features.tables_enabled`) ; les suites et l'e2e l'ouvrent le temp
 |---|---|---|---|
 | F1 | **Fiche partenaire SUSPENDU (compte ACTIF) : écriture gardée sur les établissements, les tables et leurs réservations.** La garde des fiches (`lib/auth/partner-fiche-guard.ts`, `partnerEventWrite`) couvrait événements, équipe, caisses et salles, pas `/api/partner/venues*` ni `/api/partner/tables*`. Run 522 : une partenaire suspendue a renommé un établissement validé, créé une table, **marqué « absent » un client qui avait payé son acompte (acompte gardé)** et annulé une réservation. En base, `table_reservation_presence` et `table_reservation_cancel` (établissement) ne regardaient que le compte. Gravité : moyenne (il faut une partenaire déjà suspendue). | Garde étendue aux deux préfixes (403 `PARTNER_SUSPENDED`, texte propre aux établissements) ; en base, fiche `VALIDE` exigée pour la présence, l'annulation par l'établissement et toutes les écritures nouvelles (`venue_owner_refusal`, `table_partner_fiche_refusal`). Exception voulue : accepter ou refuser une demande va en base, qui refuse l'acceptation d'une fiche suspendue et **rembourse le client en entier** (correctif T5 du lot 11a gardé). | Rouge run 522 (`e003f640b`, tests seuls) ; vert runs 527 et 531 (`l11b-securite`, 3/3) |
 
+### État des vérifications
+
+Run complet 551 (`89f9de75f`, code du lot complet) : tests, contrôle des lots, build, budgets JS, **captures (787, 0
+en échec)**, contrôle responsive (0 défaut) et mesure mobile verts. Un seul rouge : la phase « perf » de l'accueil, le
+navigateur fermé sous le test (page non touchée, verte aux trois runs complets précédents). Le run du commit de ce
+rapport (ligne RUN_FINAL du § Runs) la rejoue. Les runs 541 à 549 ont trouvé puis fait corriger des défauts
+d'accessibilité des écrans du lot (§ Runs).
+
 ### À savoir avant tout
 
 - **Interrupteur fermé (décision du 20/11, salles comprises).** Fermé, le service n'a plus de catalogue (recherche,
@@ -33,6 +41,9 @@ interrupteur (`features.tables_enabled`) ; les suites et l'e2e l'ouvrent le temp
 - **Le menu n'est pas touché** (coquille commune d'une autre session). Accès : liens des avis ; l'ancienne entrée
   « Restaurants et tables » du menu client mène maintenant à `/tables` (redirection de l'ancienne page) ; lien
   « Établissements à valider » dans la page « Salles à valider ».
+- **Défaut de l'e2e trouvé en passant (hors lot, non corrigé)** : les captures et le contrôle responsive « sombre »
+  des pages connectées sortent en clair depuis le design 1a, pour tous les lots (cause et correctif proposé à la
+  section Captures ; noté dans `docs/apres-lancement.md`).
 
 ## Ce que le lot livre
 
@@ -168,6 +179,12 @@ plan de salle et plan public, fermetures, plage horaire et recherche, aperçu d'
 | `l10b-routes` | GET des réservations, d'une réservation et des recettes de la propriétaire sans interrupteur | décision du 20/11 (run complet 541) |
 | `docs/recette-billetterie.md` | A37 : chemins déplacés ; lignes citées recalées (`interrupteurs.test.ts:391`, `notif-modeles.test.ts:556`) | contrôle `recette-matrice` |
 
+Aucun test changé pour les échecs d'accessibilité des captures (runs 541 et 547) : ce sont les écrans qui ont été
+corrigés (`8e79b577f`). Les mots visibles d'un bouton se suivent maintenant dans son nom accessible (WCAG 2.5.3 :
+« Copier sur tous les jours les horaires du lundi », « Placer sur le plan la table 3 », « Table 3, 4 places, à partir de
+2 », jours de la fiche lus « Auj. 21 nov, aujourd'hui, samedi 21 novembre ») et la galerie de photos se fait défiler au
+clavier.
+
 Aucune assertion des suites `tests/audit/` ni `tests/audit-auth/` n'a changé (runs 524, 527 : `cv11a-1` à `-5`,
 `cv10b-1` à `-3` verts).
 
@@ -182,15 +199,37 @@ Aucune assertion des suites `tests/audit/` ni `tests/audit-auth/` n'a changé (r
 | 534 | `1f0f05134` | rapide + contrôle responsive | tests verts ; responsive : 44 défauts (noms des zones sous les numéros des tables, bande des jours du planning) |
 | 538 | `3c9bba210` | rapide + contrôle responsive | 18 défauts restants (défilement horizontal du planning : texte sr-only du 14e jour) |
 | 539 | `69f8f02a1` | rapide + contrôle responsive | **vert : 0 défaut** sur 184 pages × thème (17 pages des tables comprises), 836 contrôles |
-| 541 | `f15e70d09` | **complet** | tests : 4 suites rouges sur le lot (audit `cvf2b-6` : deux écritures du stockage web non classées ; `f2acv-stockage-cite` : `venues.photos` non lue par la purge ; `l10b-routes` et `migration-d1d-vitrine-rejouable` à aligner) ; build, budgets JS, e2e, captures et contrôle responsive verts ; mesure mobile : seule Mes billets 89 (page non touchée, non bloquante) |
+| 541 | `f15e70d09` | **complet** | tests : 4 suites rouges sur le lot (audit `cvf2b-6` : deux écritures du stockage web non classées ; `f2acv-stockage-cite` : `venues.photos` non lue par la purge ; `l10b-routes` et `migration-d1d-vitrine-rejouable` à aligner) ; build, budgets JS et contrôle responsive verts ; **e2e rouge : phase « captures », 20 échecs** (les mêmes qu'au run 547, vus seulement à sa lecture : une première version de ce rapport disait à tort les captures vertes) ; mesure mobile : seule Mes billets 89 (page non touchée, non bloquante) |
 | 545 | `308864a6c` | rapide, 8 suites | **vert** : correctifs du run 541 (audit `cvf2b-6` 15/15, assertions inchangées) |
-| RUN_COMPLET |
+| 547 | `c344e287e` | **complet** | tests **566/566** (142 + 141 + 141 + 142), contrôle des lots, build, budgets JS, contrôle responsive (0 défaut) verts ; **e2e rouge : phase « captures », 20 échecs** = 5 écrans × téléphone et ordinateur × clair et sombre (`tables-fiche`, `tables-fiche-plan`, `org-tables-creation`, `org-tables-modification`, `org-tables-plan`), toutes les autres phases vertes. Cause : contrôles axe-core des captures, `label-content-name-mismatch` (7 à 22 nœuds : bande des jours de la fiche, « Copier sur tous les jours » des horaires, tables du plan) et `scrollable-region-focusable` (galerie de photos) ; mesure mobile : seule Mes billets 86 (non bloquante) |
+| 549 | `8e79b577f` | **complet** | tests, contrôle des lots, build, budgets JS, responsive verts ; e2e : fiche, création et modification corrigées ; **restent 8 échecs** (`tables-fiche-plan`, `org-tables-plan` × 4 vues, 8 nœuds = les 8 tables du plan) : axe-core assemble le texte visible des enfants sans séparateur, « 1 » et « 4 » donnaient « 14 », absent du nom « Table 1, 4 places » ; mesure mobile : seule la fiche événement « ce soir » à 89 (médiane [93 ; 93 ; 89 ; 89 ; 85], page non touchée par le lot, écart d'un point d'une mesure à l'autre) |
+| 551 | `89f9de75f` | **complet** | tests, contrôle des lots, build, budgets JS verts ; **captures vertes** (787 captures, 0 en échec ; les 19 écrans du lot dans les 4 vues) ; contrôle responsive 0 défaut (184 pages × thème) ; **mesure mobile verte** (« tous les seuils sont tenus ») ; e2e rouge sur une seule phase, « perf », test de l'accueil : le navigateur s'est fermé sous le test au 4e passage (« Target page, context or browser has been closed », 16 s), les 3 premiers passages normaux (FCP 1,64 s) ; page non touchée par le lot, phase verte aux runs 541, 547 et 549 ; les 3 autres pages de la phase vertes |
+| RUN_FINAL |
 
 Journaux bruts : branche `ci-results`, dossiers `runs/<numéro>-<identifiant>/`.
 
 ## Captures
 
-CAPTURES
+Branche `ci-results`, dossier `runs/551-44894506687/captures/`, fichiers `<écran>__<mobile|ordinateur>__<clair|sombre>.png`
+(chaque capture passe aussi les contrôles axe-core WCAG 2.2 AA). Le contrôle responsive (6 largeurs, clair et sombre)
+a ses propres captures dans `captures-responsive/`.
+
+| Espace | Écrans |
+|---|---|
+| Client | `tables-recherche` (recherche et pastilles), `tables-fiche` (pastilles du jour, devis à acompte), `tables-fiche-plan` (plan de salle au créneau choisi), `tables-confirmation`, `tables-mes-reservations`, `tables-ma-reservation`, `tables-ma-reservation-rappel` (« J'arrive » et « Annuler » mis en avant) |
+| Établissement | `org-tables-liste`, `org-tables-planning` (planning du jour, demande en tête avec « Répondez avant … »), `org-tables-demande`, `org-tables-detail`, `org-tables-creation`, `org-tables-modification`, `org-tables-plan` (plan de salle en édition), `org-tables-fermetures`, `org-tables-fermeture-apercu` (réservations touchées et montant rendu), `org-tables-recettes` |
+| Administration | `adm-etablissements-liste`, `adm-etablissements-fiche` (fiche de décision) |
+
+**Défaut de l'outillage e2e (hors lot) : les variantes « sombre » des pages connectées sortent en clair**, dans les
+captures comme dans le contrôle responsive, pour tous les lots. Cause : `e2e/auth.setup.ts:55` connecte les comptes
+en thème clair ; `ThemeProvider` recopie ce choix dans le cookie `ev-theme=light`, que `context.storageState` (ligne 67)
+enregistre avec la session ; ensuite le cookie l'emporte sur `localStorage['ev-theme']` posé par
+`e2e/support/fixtures.ts` (ordre de `THEME_BOOT_SCRIPT`, `lib/theme.ts`). Le défaut date du cookie de thème (design
+1a, `cebf1dd1f`, 17/11). Les pages sans compte (accueil, recherche anonyme) sortent bien en sombre. Non corrigé ici :
+le correctif (poser aussi le cookie dans `prepareContext`, ou le retirer de l'état de connexion) change toutes les
+captures et tous les contrôles des autres lots ; il revient à la session du design (couleurs). Les écrans de ce lot
+n'utilisent que les jetons du design (contrat Q vert), donc rien de propre au lot n'est attendu en sombre, mais ce
+n'est pas prouvé par une capture.
 
 ## Essais pour un non-développeur
 
