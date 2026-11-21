@@ -239,7 +239,7 @@ Un paiement de commande n'envoie plus l'avis générique « Paiement confirmé �
 
 | Fichier | Contenu |
 |---|---|
-| `…01_l12a_reglages` | 13 réglages `orders.*` (dont `orders.max_unpaid_portions`, contre-vérification T3) ; recopies de `finance_setting_set` et `fin_setting_valid` (20261126000002, lot 10b), `platform_settings_defaults` (20261123000101) |
+| `…01_l12a_reglages` | 14 réglages `orders.*` (dont `orders.max_unpaid_portions`, contre-vérification T3, et `orders.invites_per_day`, décision du 21/11) ; recopies de `finance_setting_set` et `fin_setting_valid` (20261126000002, lot 10b), `platform_settings_defaults` (20261123000101) |
 | `…02_l12a_catalogue` | réglages de vente des établissements, sorte BOUTIQUE ; produits : établissement, prix entier, réglementé et décision de l'administration ; options ; portions du plat du jour ; zones de livraison ; `order_venue_settings_set`, `order_daily_portions_set`, `order_product_regulation_decide`, `product_regulated` ; lecture, aucune écriture REST |
 | `…03_l12a_commandes_schema` | colonnes des commandes et des lignes, historique, livreurs, clé du code (schéma `private`), `order_code_hash`, état dérivé, garde, reprise des anciennes commandes de repas, lecture (client et administration) |
 | `…04_l12a_devis_commande` | verrous, données et envoi des avis, historique, stock rendu ; `order_quote_compute`, `order_quote`, `order_create` |
@@ -256,8 +256,7 @@ n'est lisible par aucun rôle de l'API. Plus la tâche planifiée `ev_orders`
 
 ## 9. Mise en service : contrôles avant et après (event-village-dev)
 
-Ordre : les migrations de main d'abord (dernière attendue `20261127000001`), puis celles des lots fusionnés avant celui-ci
-(11b : `20261129…`), puis `20261130000001` à `…08`, puis `schedule-crons.sql` (11 tâches) une fois les secrets Vault
+Ordre : les migrations de main d'abord (dernière attendue `20261129000010`, lot 11b appliqué le 21/11), puis `20261130000001` à `…08`, puis `schedule-crons.sql` (11 tâches) une fois les secrets Vault
 `ev_app_url` et `ev_cron_secret` créés.
 
 ```sql
@@ -283,7 +282,7 @@ select version from supabase_migrations.schema_migrations where version like '20
 -- B. Fonctions du lot réservées au rôle de service : anon false, authenticated false (au moins 28 lignes)
 select p.proname, has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute')
   from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'order\_%' order by 1;
--- C. 13 réglages orders.* (dont orders.max_unpaid_portions = 10)
+-- C. 14 réglages orders.* (dont orders.max_unpaid_portions = 10, orders.invites_per_day = 10)
 select key, value from public.platform_settings where key like 'orders.%' order by 1;
 -- D. Anciennes commandes de repas closes (aucune sans état), commandes de billets sans état (intactes)
 select order_state, count(*) from public.orders group by 1 order by 1;
@@ -467,7 +466,7 @@ Décisions du chef de projet du 21/11, appliquées dans le même passage :
   existants `ORDER_CANCELLED`, `ORDER_CANCELLED_PRO` et `ORDER_COURIER_CANCELLED` (aide interne `order_close_apply`,
   paramètre `p_notice`).
 - **Invitations de livreurs** : au plus 10 par partenaire et par jour, heure de Dakar (réglage
-  `orders.courier_invites_per_day`, 1 à 50, écran des réglages), comptées sous verrou de la partenaire ; au-delà, 429
+  `orders.invites_per_day`, 1 à 50, écran des réglages), comptées sous verrou de la partenaire ; au-delà, 429
   `TOO_MANY_INVITES` : « Vous avez déjà envoyé 10 invitations aujourd’hui : réessayez demain. »
 
 | Avis (origine `REGLEMENTE`) | Cloche, push, email | SMS (un segment GSM-7) |
@@ -486,7 +485,7 @@ Tests modifiés (signalés) :
 | `notif-migration` | Les points d'insertion `order_close_apply`, `order_set_en_route`, `order_handover_apply` sont cherchés dans `public` et `private` (paramètre `schemas` de l'aide de lecture) | T7 |
 | `l12a-commandes` | Stock rendu une seule fois : `private.order_release_stock` appelée en base (plus en RPC) ; réglage `orders.max_unpaid_portions` = 10 parmi les défauts ; nouveau cas : 10 portions tenues au plus, 99 par produit sur deux lignes | T7, T3 |
 | `partner-orders-m9` | `getProductById(produit, partenaire)` | T8 |
-| `l12a-commandes` (ajouts) | Refus « produit réglementé » à l'acceptation et à la remise par le livreur : tout rendu, avis aux trois destinataires sur les 4 canaux ; limite des invitations (réglage ramené à 2 le temps du test) ; défaut `orders.courier_invites_per_day` = 10 | décisions du 21/11 |
+| `l12a-commandes` (ajouts) | Refus « produit réglementé » à l'acceptation et à la remise par le livreur : tout rendu, avis aux trois destinataires sur les 4 canaux ; limite des invitations (réglage ramené à 2 le temps du test) ; défaut `orders.invites_per_day` = 10 | décisions du 21/11 |
 | `notif-modeles` | 3 textes SMS exacts ajoutés (origine `REGLEMENTE`) | décisions du 21/11 |
 
 Runs :

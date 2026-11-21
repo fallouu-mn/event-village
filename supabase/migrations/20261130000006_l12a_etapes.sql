@@ -703,7 +703,7 @@ AS $$
 DECLARE
     v_actor  uuid := public.try_uuid(p->>'actor_id');
     v_phone  text := regexp_replace(COALESCE(p->>'phone', ''), '[^0-9+]', '', 'g');
-    v_max    integer := public.fin_setting_num('orders.courier_invites_per_day')::int;
+    v_max    integer := public.fin_setting_num('orders.invites_per_day')::int;
     v_sent   integer;
     pa       record;
     u        record;
@@ -720,7 +720,7 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PHONE', 'message', 'Indiquez un numéro de mobile sénégalais (9 chiffres).');
     END IF;
     -- Invitations au plus par partenaire et par jour (heure de Dakar), sous verrou de la partenaire : réglage
-    -- orders.courier_invites_per_day (décision du chef de projet, 21/11)
+    -- orders.invites_per_day (décision du chef de projet, 21/11)
     PERFORM pg_advisory_xact_lock(hashtextextended('order_courier_invite:' || pa.id::text, 0));
     SELECT count(*) INTO v_sent FROM public.audit_logs l
      WHERE l.action = 'ORDER_COURIER_INVITED' AND l.user_id = v_actor

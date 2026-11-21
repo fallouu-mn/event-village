@@ -105,7 +105,7 @@ describe('A. Devis et commande : tout calculé en base', () => {
     test('réglages par défaut (décisions du client)', async () => {
         const expected: Record<string, unknown> = {
             'orders.service_fee_rate': 5, 'orders.commission_rate': 0, 'orders.deposit_default_percent': 30, 'orders.hold_minutes': 15,
-            'orders.response_minutes': 15, 'orders.max_unpaid_per_client': 3, 'orders.max_unpaid_portions': 10, 'orders.courier_invites_per_day': 10,
+            'orders.response_minutes': 15, 'orders.max_unpaid_per_client': 3, 'orders.max_unpaid_portions': 10, 'orders.invites_per_day': 10,
             'orders.pickup_grace_hours': 24, 'orders.pickup_warning_hours': 2,
             'orders.contact_retention_days': 7, 'orders.code_max_attempts': 5, 'orders.code_resend_max': 3, 'orders.prep_minutes_default': 30,
             'finance.aggregator_fee_rate.WAVE': 1.5, 'finance.payout_delay_hours': 48,
@@ -766,11 +766,11 @@ describe('D. Accès d’autrui', () => {
         assert.equal(((own.body.orders as Row[]) ?? []).some((o) => o.id === id), true, 'le livreur de l’équipe la voit');
     });
 
-    test('invitations de livreurs : au plus orders.courier_invites_per_day par partenaire et par jour (réglage), refus 429 au-delà', async () => {
+    test('invitations de livreurs : au plus orders.invites_per_day par partenaire et par jour (réglage), refus 429 au-delà', async () => {
         // Décision du chef de projet (21/11) : 10 par jour ; réglage ramené à 2 le temps du test
         const boss = await newPartner('l12a-invitations');
         const targets = [await newBuyer('l12a-invite-1'), await newBuyer('l12a-invite-2'), await newBuyer('l12a-invite-3')];
-        await setPlatformSetting('orders.courier_invites_per_day', 2, 'test du lot 12a');
+        await setPlatformSetting('orders.invites_per_day', 2, 'test du lot 12a');
         try {
             const replies: Array<[number, unknown]> = [];
             for (const t of targets) {
@@ -782,7 +782,7 @@ describe('D. Accès d’autrui', () => {
             const third = await couriersRoute(boss, targets[2].phone9);
             assert.equal(third.body.error, 'Vous avez déjà envoyé 2 invitations aujourd’hui : réessayez demain.');
         } finally {
-            await setPlatformSetting('orders.courier_invites_per_day', 10, 'test du lot 12a');
+            await setPlatformSetting('orders.invites_per_day', 10, 'test du lot 12a');
         }
     });
 
@@ -809,7 +809,7 @@ describe('D. Accès d’autrui', () => {
         // l'application) : vérifié pour les commandes
         const payer = await newBuyer('l12a-rest-paiements');
         try {
-            const dish = await newProduct(partner, shop, { price: 4_000 });
+            const dish = await newProduct(partner, shop, { price: 6_000 });
             const kept = await placed(payer, orderBody(shop, [{ productId: dish, quantity: 1 }], { mode: 'LIVRAISON', zoneId: zone, address: 'Villa 8, Fann', phone: payer.phone9 }));
             const keptPay = await payOrder(payer, kept);
             const refunded = await placed(payer, orderBody(shop, [{ productId: dish, quantity: 1 }]));
