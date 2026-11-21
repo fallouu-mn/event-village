@@ -1,9 +1,11 @@
 # Lot 11b — Tables : écrans, plan de salle, fermetures et absences
 
-Branche `lot11b/tables-ecrans`, partie de `main` à `2ec11bb66`. **Non fusionnée.** Migrations `20261129000001` à
-`…010` (dont `…006` à `…010` : correctifs de la contre-vérification), sans BEGIN ni COMMIT, rejouables, **non
-appliquées** sur event-village-dev. Le service reste fermé par son interrupteur (`features.tables_enabled`) ; les
-suites et l'e2e l'ouvrent le temps de leur passage.
+Branche `lot11b/tables-ecrans`, partie de `main` à `2ec11bb66`. **Fusionnée dans main** (`4198965e4`, 21/11 ; run
+complet de main 579 vert sur `30019290e`). Migrations `20261129000001` à `…010` (dont `…006` à `…010` : correctifs de
+la contre-vérification), sans BEGIN ni COMMIT, rejouables, **appliquées sur event-village-dev le 21/11** (dry-run
+exact, contrôles avant et après conformes, `03-verification` 20/20 : section « Application sur event-village-dev »).
+Event-village-dev ne doit plus tourner qu'avec le code de main ≥ `4198965e4`. Le service reste fermé par son
+interrupteur (`features.tables_enabled`) ; les suites et l'e2e l'ouvrent le temps de leur passage.
 
 ## À lire en premier
 
@@ -32,7 +34,12 @@ Aucun trou critique ni élevé ; tous corrigés, un commit chacun. **T8 vaut pou
 
 ### État des vérifications
 
-**Run complet final 556** (`7fb2253af`, état final de la branche) : tests **566/566**, contrôle des lots, build,
+**État final (21/11)** : correctifs de la contre-vérification compris et main (design 1e) fusionnée, run complet 577
+de la branche puis run complet 579 de main **entièrement verts** (578/578, e2e 787 captures, mesure mobile au seuil
+bloquant de 90 : 94, 93, 92, responsive 0 défaut) ; fusion dans main `4198965e4` ; migrations appliquées sur
+event-village-dev, `03-verification` 20/20 (section « Application sur event-village-dev »). Historique ci-dessous.
+
+**Run complet 556** (avant la contre-vérification) (`7fb2253af`, état final de la branche) : tests **566/566**, contrôle des lots, build,
 budgets JS, **les 12 phases de l'e2e** (captures 787, 0 en échec ; perf, fumée, recette…) et contrôle responsive (0
 défaut) **verts**. Seul rouge : la mesure mobile Lighthouse, sur deux pages que le lot ne touche pas : Mes billets 84
 (non bloquant par consigne) et la fiche événement « ce soir » 86 (passages [86 ; 94 ; 81 ; 89 ; 85], écart de 13
@@ -269,8 +276,81 @@ Aucune assertion des suites `tests/audit/` ni `tests/audit-auth/` n'a changé (r
 | 575 | `aba5994d6` | **complet**, après fusion de main (`4d1a221d6`, design 1e) à `e33c69bdb` | **rouge sur une seule suite** : tests 577/578 (145 + 143 + 144 + 145) ; build, budgets JS, contrôle responsive (0 défaut, 184 pages × thème), **e2e entièrement vert** (12 phases, 787 captures, 0 en échec) et **mesure mobile verte au seuil bloquant de 90** (médianes 93, 91, 90 ; « tous les seuils sont tenus »). Seule rouge : `tests/security/r31-tables-lecture` (lot 10b, `e74538000`), sous-tests 2 et 3 : ils exigent que la propriétaire lise par la REST ses établissements en attente ou refusés (`:104`) et les tables d'un établissement en attente (`:108`), exactement ce que le correctif T6 demandé interdit. Suite absente du run rapide 569 (oubli de ma part dans la ligne `ci-rapide`). Arrêt sans fusion, comme convenu |
 | 577 | `4da2112c1` | **complet**, après `r31-tables-lecture` aligné sur T6 (décision du chef de projet, `1677df2c7`) | **entièrement vert** : tests **578/578** (145 + 144 + 144 + 145), contrôle des lots, build, budgets JS, contrôle responsive (0 défaut, 184 pages × thème), e2e (12 phases, 787 captures, 0 en échec), **mesure mobile au seuil bloquant de 90 : 91, 93, 92** ; `r31-tables-lecture` 9/9. Fusion dans main : `4198965e4` (arbre identique à `4da2112c1`) |
 | 578 | `4198965e4` (main) | **complet de main** | tests 578/578, e2e (787 captures, 0 en échec) et contrôle responsive verts ; **mesure mobile rouge : 81, 84, 85**, sur le même code que le run 577. Cause : serveur de CI plus rapide (indice de calibration 3 400 à 3 700 au lieu de 2 200 à 2 500), donc ralentissement simulé de **×6,7 à ×7,4** au lieu de ×4,5 à ×4,9 ; au ralentissement brut ×4, scores de 95 à 98. Arrêt avant toute opération sur event-village-dev ; ce commit de rapport, poussé sur main sans ligne `ci-rapide`, relance un run complet de main |
+| 579 | `30019290e` (main) | **complet de main** (run frais) | **entièrement vert** : tests **578/578** (145 + 144 + 144 + 145), contrôle des lots, build, budgets JS, contrôle responsive (0 défaut, 184 pages × thème), e2e (12 phases, 787 captures, 0 en échec), **mesure mobile 94, 93, 92** (ralentissement ×3,6 à ×3,8, « tous les seuils sont tenus ») |
 
 Journaux bruts : branche `ci-results`, dossiers `runs/<numéro>-<identifiant>/`.
+
+## Application sur event-village-dev (21/11, après le run 579 vert)
+
+Depuis le worktree du lot, HEAD = main = `30019290e`, `npx -y supabase@2.122.0` (projet lié `rswkzklxrqswimcxghch`).
+
+**Dry-run** (`db push --linked --dry-run`) : exactement les 10 migrations du lot, rien d'autre.
+
+```
+Would push these migrations:
+ • 20261129000001_l11b_etablissements.sql
+ • 20261129000002_l11b_fermetures_disponibilites.sql
+ • 20261129000003_l11b_reservations.sql
+ • 20261129000004_l11b_avis.sql
+ • 20261129000005_l11b_photos_citees.sql
+ • 20261129000006_l11b_cv_fermeture_empreinte.sql
+ • 20261129000007_l11b_cv_absence_annulation.sql
+ • 20261129000008_l11b_cv_plan_tout_ou_rien.sql
+ • 20261129000009_l11b_cv_lectures_etablissements.sql
+ • 20261129000010_l11b_cv_paiements_lecture.sql
+```
+
+**Contrôles avant** (lecture seule, `db query --linked`) :
+
+```
+derniere_migration           20261127000001
+migrations_20261129          0
+fonctions_du_lot             0
+venue_closures               absente
+reminder_hours               {"value": 3}
+payments_read_proprio        true
+venues_read_proprio          true
+venues_anon_validated_by     true
+reservations_de_table        0
+etablissements               0
+superadmins_actifs           1
+```
+
+**db push** (`db push --linked --yes`) : les 10 migrations appliquées dans l'ordre, sans erreur (« Finished supabase db
+push »).
+
+**Contrôles après** :
+
+```
+migrations_20261129            20261129000001,…002,…003,…004,…005,…006,…007,…008,…009,…010
+fonctions_fermees_anon_auth    24 fonctions, 0 ouvertes
+venue_closures_rls_anon_auth   true false false
+short_code_null_sur_total      0 / 0
+avis_nuit                      TABLE_CLIENT_COMING=DEFER TABLE_NEW_RESERVATION=DEFER TABLE_REFUND_PAID=SEND TABLE_REMINDER=DEFER TABLE_REQUEST_SENT=SEND TABLE_RESERVATION_CONFIRMED=DEFER VENUE_VALIDATION_DECIDED=DEFER
+reminder_hours                 {"value": 2}
+citations_photos               true
+T1_expected_hash               true
+T2_no_show                     true
+T3_expected_refund             true
+T7_raise                       true
+T6_T8_regles_avec_proprio      0
+T6_T8_regles_presentes         6
+T6_colonnes                    false false true
+reservations_de_table          0
+etablissements                 0
+superadmins_actifs             1
+```
+
+Conformes : 24 fonctions du lot fermées à `anon` et `authenticated` ; `venue_closures` sous RLS et fermée à la REST ;
+nuit et rappel à 2 h appliqués ; T1, T2, T3, T7 en base ; les 6 règles de lecture de T6 et T8 présentes, aucune
+n'ouvre plus l'accès à la propriétaire (`is_partner_owner`) ; colonnes internes de `venues` fermées (`validated_by`,
+`validation_reason`), colonnes publiques ouvertes (`name`) ; aucune donnée touchée (0 établissement, 0 réservation de
+table, 1 Superadmin actif).
+
+**`03-verification.sql`** (`supabase/hotfix/2026-10-31-lot1a/03-verification.sql`) : **20/20 OK** (9 aides RLS,
+aucune fonction hors liste blanche ouverte à `anon` ou `authenticated`, toutes les tables de `public` sous RLS).
+
+Event-village-dev ne doit plus tourner qu'avec le code de main ≥ `4198965e4`.
 
 ## Captures
 
