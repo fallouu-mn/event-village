@@ -3,8 +3,9 @@
  * avec le jeton de chacun (clé anon + jeton de session), jamais la clé de service.
  *  - réservations : le client voit les siennes ; l'établissement celles de ses établissements ; un autre client, une
  *    autre partenaire, un visiteur et un administrateur sans le code administrateur ne voient rien ; avec le code, oui ;
- *  - établissements : un visiteur ne voit que les établissements actifs et validés ; la propriétaire voit les siens en
- *    attente ou refusés ; zones, tables et horaires d'un établissement non validé : invisibles du public ;
+ *  - établissements : un visiteur ne voit que les établissements actifs et validés ; zones, tables et horaires d'un
+ *    établissement non validé : invisibles du public. Décision du chef de projet, T6 de cv11b : la propriétaire aussi ne
+ *    lit par la REST que ses établissements validés et publics ; les autres, par les routes serveur seulement ;
  *  - aucune écriture REST sur venues, venue_opening_hours, restaurant_zones, restaurant_tables ni table_reservations.
  */
 import '../helpers/env';
@@ -14,6 +15,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { assertLot11aInvariants } from '../helpers/lot11a-invariants';
 import { newAdmin } from '../parcours/notif-helpers';
 import { service } from '../parcours/paiement-helpers';
+import { api, show } from '../audit/cvf1-helpers';
 import {
     dayFromNow, decideVenue, newBuyer, newPartner, newTable, newVenue, newZone, openTablesService, reserveRpc, type Buyer, type TestPartner,
 } from '../parcours/l11a-helpers';
@@ -100,14 +102,37 @@ describe('R31 — établissements, zones, tables, horaires : visibles du public 
         assert.deepEqual(await visible('venues', alice.accessToken, [validated, pending, refused]), [validated]);
         assert.deepEqual(await visible('venues', otherPartner.accessToken, [validated, pending, refused]), [validated]);
     });
-    test('la propriétaire voit aussi ses établissements en attente ou refusés', async () => {
-        assert.deepEqual(await visible('venues', owner.accessToken, [validated, pending, refused]), [validated, pending, refused].sort());
+    // Décision du chef de projet, T6 de cv11b (docs/audit-lot11b.md ; modification signalée au rapport du lot 11b) : la
+    // propriétaire ne lit par la REST que son établissement et ses tables validés et publics ; en attente ou refusés :
+    // 0 ligne. Elle voit toujours tout par les routes serveur (rôle de service), prouvé ci-dessous.
+    test('la propriétaire ne lit par la REST que son établissement validé ; en attente ou refusé : 0 ligne', async () => {
+        assert.deepEqual(await visible('venues', owner.accessToken, [validated, pending, refused]), [validated]);
+        assert.deepEqual(await visible('venues', owner.accessToken, [pending, refused]), []);
     });
-    test('tables, zones et horaires d’un établissement en attente : invisibles du public, visibles de la propriétaire', async () => {
+    test('tables, zones et horaires d’un établissement en attente : invisibles du public et de la propriétaire par la REST', async () => {
         assert.deepEqual(await visible('restaurant_tables', null, [validatedTable, pendingTable]), [validatedTable]);
-        assert.deepEqual(await visible('restaurant_tables', owner.accessToken, [validatedTable, pendingTable]), [pendingTable, validatedTable].sort());
+        assert.deepEqual(await visible('restaurant_tables', owner.accessToken, [validatedTable, pendingTable]), [validatedTable]);
         assert.deepEqual(await visible('restaurant_zones', null, [pendingZone]), []);
+        assert.deepEqual(await visible('restaurant_zones', owner.accessToken, [pendingZone]), []);
         assert.deepEqual(await visible('venue_opening_hours', null, [validated, pending], 'venue_id'), [validated]);
+        assert.deepEqual(await visible('venue_opening_hours', owner.accessToken, [validated, pending], 'venue_id'), [validated]);
+    });
+    test('par les routes serveur, la propriétaire voit toujours ses établissements en attente ou refusés, leurs tables et zones', async () => {
+        const list = await api('GET', 'partner/venues', { token: owner.accessToken });
+        assert.equal(list.status, 200, show(list));
+        const ids = ((list.body.venues as Array<Record<string, unknown>>) ?? []).map((v) => String(v.id));
+        for (const v of [validated, pending, refused]) assert.ok(ids.includes(v), `établissement ${v} absent de la liste de la propriétaire : ${show(list)}`);
+        const sheet = await api('GET', 'partner/venues/[id]', { token: owner.accessToken, params: { id: pending }, path: `/api/partner/venues/${pending}` });
+        assert.equal(sheet.status, 200, show(sheet));
+        const venue = sheet.body.venue as Record<string, unknown>;
+        assert.equal(venue.status, 'EN_ATTENTE_VALIDATION');
+        assert.ok(((venue.tables as Array<Record<string, unknown>>) ?? []).some((t) => t.id === pendingTable), `table de l’établissement en attente absente : ${show(sheet)}`);
+        assert.ok(((venue.zones as Array<Record<string, unknown>>) ?? []).some((z) => z.id === pendingZone), `zone de l’établissement en attente absente : ${show(sheet)}`);
+        const refusedSheet = await api('GET', 'partner/venues/[id]', { token: owner.accessToken, params: { id: refused }, path: `/api/partner/venues/${refused}` });
+        assert.equal(refusedSheet.status, 200, show(refusedSheet));
+        assert.equal((refusedSheet.body.venue as Record<string, unknown>).status, 'REFUSEE');
+        const stranger = await api('GET', 'partner/venues/[id]', { token: otherPartner.accessToken, params: { id: pending }, path: `/api/partner/venues/${pending}` });
+        assert.equal(stranger.status, 404, `établissement en attente servi à une autre partenaire : ${show(stranger)}`);
     });
 });
 
