@@ -17,6 +17,9 @@
  *  T7. Plan de salle refusé (une table d'un autre établissement dans la liste) mais à moitié enregistré : les tables
  *      placées avant la table refusée gardent leur nouvelle position (venue_plan_set : RETURN dans la boucle, sans
  *      annuler les UPDATE déjà faits).
+ *  T8. Paiements (et remboursements) d'une réservation de table lus par l'établissement par la REST, numéro du payeur et
+ *      compte du client compris, quel que soit l'état (attente de paiement, réservation close) : politique payments_read
+ *      de 0003_rls.sql « OR (partner_id IS NOT NULL AND is_partner_owner(partner_id)) » (refunds_read : même règle).
  *
  * Base LOCALE, faux SamirPay ; routes réelles (gestionnaires importés, session par jeton).
  */
@@ -27,8 +30,8 @@ import { assertFinanceInvariants } from '../helpers/finance-invariants';
 import { assertLot11aInvariants } from '../helpers/lot11a-invariants';
 import {
     cashoutsOf, closureCreate, closurePreview, dayFromNow, n, newBuyer, newPartner, newTable, newVenue, openTablesService,
-    paidOn, partnerPatch, platformSetting, reservation, reserveRpc, restAs, routeId, shiftReservation, show, sql,
-    trace, type Buyer, type Row, type TestPartner,
+    paidOn, partnerPatch, platformSetting, releasePending, reservation, reserveRpc, restAs, routeId, shiftReservation, show, sql,
+    started, trace, type Buyer, type Row, type TestPartner,
 } from './cv11b-helpers';
 
 let restore: () => Promise<void>;
@@ -185,5 +188,27 @@ describe('T7. Plan de salle refusé = rien d’enregistré', () => {
         assert.equal(res.status, 404, show(res));
         assert.equal(f.plan_x, null, 'table d’autrui jamais écrite');
         assert.deepEqual([t.plan_x, t.plan_shape, n(t.plan_rotation)], [null, 'CARREE', 0], `plan refusé mais position enregistrée : ${JSON.stringify(t)}`);
+    });
+});
+
+describe('T8. Paiements du client lus par l’établissement (REST)', () => {
+    test('attente de paiement (téléphone caché au planning) et réservation annulée : payments et refunds → aucune ligne pour l’établissement', async () => {
+        const fred = await newBuyer('cv11b-1-fred', { firstName: 'Fatou', lastName: 'Gueye' });
+        const venue = await newVenue(owner, { deposit_per_person: 5_000 });
+        const table = await newTable(owner, venue, 4, { number: 'PY1' });
+        const hold = String((await reserveRpc(fred, venue, { date: dayFromNow(44), time: '20:00', guests: 4, tableId: table })).reservation_id);
+        await started(fred, hold);
+        const closed = await paidOn(owner, venue, alice, 45, '20:00', 'PY');
+        assert.equal((await routeId('POST', 'tables/reservations/[id]/cancel', closed.id, alice.accessToken, {})).status, 200);
+        const rest = restAs(owner.accessToken);
+        const pays = await rest.from('payments').select('table_reservation_id, status, amount, payer_phone, client_id, operator').in('table_reservation_id', [hold, closed.id]);
+        const refunds = await rest.from('refunds').select('payment_id, amount, status');
+        const detail = await routeId('GET', 'partner/tables/reservations/[id]', hold, owner.accessToken);
+        trace('T8 REST de l’établissement sur les paiements de ses clients', {
+            paiements: pays.data ?? pays.error, remboursementsLisibles: (refunds.data ?? []).length,
+            telephoneAuDetailDeLAttente: ((detail.body.reservation as Row | undefined)?.client as Row | undefined)?.phone ?? null,
+        });
+        assert.equal((pays.data ?? []).length, 0, `paiements des clients lus par l’établissement : ${JSON.stringify(pays.data)}`);
+        await releasePending(fred.userId);
     });
 });

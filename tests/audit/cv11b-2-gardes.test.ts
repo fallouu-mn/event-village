@@ -161,8 +161,9 @@ describe('G3. REST : clé anon et jeton de l’attaquant', () => {
             saReservationClient: await rows(client.from('table_reservations').select('id, short_code').eq('id', r.id)),
         };
         trace('G3 lectures REST', out);
+        // Run 562 : paiementsProprio = 1 (politique payments_read) → trou T8 de la suite 1, retiré d'ici (tracé seulement)
         for (const k of ['nonPublicAnon', 'nonPublicTiers', 'tablesNonPublicTiers', 'fermeturesProprio', 'fermeturesAnon', 'reservationsProprio',
-            'reservationsTiers', 'reservationsAnon', 'paiementsProprio'] as const) {
+            'reservationsTiers', 'reservationsAnon'] as const) {
             assert.ok(out[k] === '0' || out[k].startsWith('erreur'), `${k} : ${out[k]}`);
         }
         assert.equal(out.saReservationClient, '1', 'le client lit sa réservation');
