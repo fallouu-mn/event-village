@@ -238,7 +238,7 @@ Un paiement de commande n'envoie plus l'avis générique « Paiement confirmé �
 
 Toutes les fonctions du lot sont réservées au rôle de service (`r3-fonctions-rpc`, `migration-lot12a-rejouable`) ;
 la clé du code n'est lisible par aucun rôle de l'API. Plus la tâche planifiée `ev_orders`
-(`supabase/ops/schedule-crons.sql`, minute 2, toutes les 5 minutes).
+(`supabase/ops/schedule-crons.sql`, minute 3, toutes les 5 minutes, comme `ev_tables`).
 
 ## 9. Mise en service : contrôles avant et après (event-village-dev)
 
@@ -296,7 +296,7 @@ Suites du lot :
 |---|---|
 | `tests/parcours/l12a-failles-existant` | F1 à F5 par les routes et la lecture REST, corps acceptés par l'ancien comme par le nouveau code (preuve des rouges) |
 | `tests/parcours/l12a-commandes` (37 cas) | A. devis et commande (exemples chiffrés, montants du navigateur ignorés, réglementés : case, décision de l'administration, insertion directe refusée ; produit d'autrui, quantités 0, -1, 2,5, 100 ; stock, portions, minimum, plafond de 3 sous verrou, modes et paiements refusés) ; B. paiement, double confirmation sans effet, frise des étapes et heures, heure estimée, code par SMS immédiat (jamais en base, en file ni dans une réponse ; envoi journalisé sans le code), codes devinés (5 essais, blocage, nouveau code), solde en ligne ou sur place, partenaire sans commande non payée, réponse tardive ; C. annulations et remboursements (11 288 rendus, Wave 169,32 à Event Village, vente reprise), parrainage annulé, tâche (attente échue, paiement arrivé trop tard remboursé, sans réponse, rappel puis non retirée, masquage à 7 jours, tâche sans secret refusée) ; D. accès d'autrui (autre partenaire, autre client, livreur d'une autre équipe, invité non d'accord, retiré ; REST ; garde même pour le rôle de service ; fiche SUSPENDU) ; E. concurrence (deux créations de paiement, deux confirmations, deux paiements encaissés, deux remises, deux annulations) |
-| `tests/schema/migration-lot12a-rejouable` | 8 migrations sans BEGIN ni COMMIT, appliquées deux fois de plus dans une transaction annulée ; 9 recopies sans ligne perdue ; fonctions réservées au rôle de service, clé du code et fonctions du code fermées même au rôle de service |
+| `tests/schema/migration-lot12a-rejouable` | 8 migrations sans BEGIN ni COMMIT, appliquées deux fois de plus dans une transaction annulée ; 9 recopies sans ligne perdue ; fonctions réservées au rôle de service (jamais anon ni authenticated) ; clé du code illisible même pour le rôle de service |
 | `tests/helpers/lot12a-invariants` | o1 à o7 (montants, encaissé, état et argent, vente au grand livre, portions et stock, code, aucun code en clair), appelés en fin de suite après les invariants de toutes les livraisons précédentes (financier compris) |
 
 Runs :
@@ -307,6 +307,8 @@ Runs :
 | 529 | `c42554db9` | rapide, 23 suites | 8 migrations appliquées sans erreur ; 19 suites vertes ; rouges : le code dans les données d'un avis refusé par la contrainte existante `notification_outbox_no_secret_chk` (étapes « prête » et « en route » en 500), textes exacts des SMS non déclarés (notif-modeles), minute 2 de `ev_orders` vérifiée par essai-cron-local, régularisation du parrainage mal vérifiée par mon test |
 | 532 | `b998f9868` | rapide, 12 suites | code par SMS immédiat : vert ; restent 2 erreurs de mon test (chiffres d'un retrait pris pour une livraison ; forme de la régularisation) et le compte des envois journalisés (notif-migration) |
 | 535 | `8c1529f4e` | rapide, 2 suites | **vert** : `l12a-commandes` 37/37, `notif-migration` 20/20 |
+| 536 | `c8f65de7f` | **complet** | construction, budgets JS (non relevés), e2e, mesure mobile, captures responsive : verts. Tests : 9 suites rouges, toutes des contrôles transverses que mes changements touchaient : recopie de `notif_cashouts_notify` avec une ligne d'origine réécrite (`f4-recopies`) ; `finance-moteur` citait `lib/orders/order.service.ts` (retiré) ; `textes-sms-9bis` : « .... » après un nom tronqué ; `fonctions-privileges` et `hotfix-scripts` : règle 1A.3 de `03-verification.sql` (toute fonction métier exécutable par le rôle de service) violée par `order_code_hash`, `order_issue_code`, `order_code_delivery` que j'avais fermées même au rôle de service ; `recette-matrice` : numéros de ligne cités par `docs/recette-billetterie.md` décalés ; `dette-suspendu-temps-reel` : sonde temps réel des commandes par la partenaire (qui ne lit plus) ; `migration-d1d-vitrine-rejouable` : « dernière migration » ; `design1b-mots` : données d'un code de remise. Aucune faille, aucune suite d'audit rouge |
+| 542 | `41d95ad8c` | rapide, 12 suites | **vert** : les 9 suites du run 536, les 3 suites du lot |
 
 Extrait brut du run 528 (`runs/528-44863009363/jobs/rapide/verify.log`, branche `ci-results`) :
 
@@ -336,9 +338,14 @@ Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'est changée.
 | `f2acv-ecritures-fiche` | les écritures des commandes et des produits ne sont plus « gardées » pour une fiche SUSPENDU : elles sont refusées (`partnerEventWrite`) | fiche SUSPENDU = lecture seule |
 | `r3-fonctions-rpc` | 28 fonctions du lot ajoutées (réservées au rôle de service) | couverture |
 | `notif-modeles`, `notif-outbox`, `notif-migration` | 17 types et l'envoi immédiat ajoutés (registre, textes exacts des SMS avec des valeurs courtes, émetteurs) ; `sendOrderCode` admise dans la liste des envois SMS immédiats (module `lib/orders/booking.ts`) | avis du lot |
-| `planification-crons`, `essai-cron-local` | tâche `ev_orders` (minute 2) | tâche planifiée |
+| `planification-crons`, `essai-cron-local` | tâche `ev_orders` (minute 3 ; la minute 2 est celle d'une autre tâche vérifiée par `essai-cron-local`) | tâche planifiée |
 | `tests/helpers/finance-invariants.ts` (règles d et e) | la commission et le paiement impossible à honorer (`refund_reason`) d'une commande sont traités comme ceux d'une salle ou d'une table | paiements de commande en base |
 | `docs/deploiement-projet-neuf.md` | tâche `ev_orders`, 11 tâches | tâche planifiée |
+| `finance-moteur` | entrée `lib/orders/order.service.ts` retirée de la liste des calculs de commission hors base | fichier retiré (commandes calculées en base) |
+| `dette-suspendu-temps-reel` | sonde `orders` de la partenaire retirée | la partenaire ne lit plus les commandes, active ou suspendue (F2) ; le client reste éprouvé par `dette-publication-reservations` |
+| `migration-d1d-vitrine-rejouable` | « aucune migration après 20261127000001 » limité aux migrations d'avant 20261130 | les migrations du lot 12a, non appliquées, viennent après |
+| `design1b-mots` | données d'exemple d'un code de remise (4 chiffres, numéro, étape) pour l'envoi immédiat `ORDER_HANDOVER_CODE` | le texte exige ces données |
+| `docs/recette-billetterie.md` | numéros de ligne cités recalés (`interrupteurs`, `pannes-absences`, `notif-modeles`) | lignes ajoutées par le lot dans ces tests |
 
 ## 12. Points à faire trancher par le client
 
