@@ -54,6 +54,7 @@
     --op-orange-money: 255 121 0;       /* #FF7900 : Orange Money */
     --on-op: 0 0 0;                     /* texte sur les deux opérateurs */
     --op-logo: 255 255 255;             /* #FFFFFF : pastille des logos des opérateurs (design 1c), mêmes valeurs en sombre */
+    --nav-bar: 255 255 255;             /* design 1e : barre du bas flottante, blanche en clair (noire en sombre) */
     --poster-fallback: 20 33 61;        /* #14213D : « bleu nuit » (design 1d), fond sans couleur d'affiche, texte blanc 15,9:1, mêmes valeurs en sombre */
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
     --shadow-md: 0 6px 16px -6px rgba(0, 0, 0, 0.14);
@@ -179,6 +180,7 @@
     --info-border: 12 74 110;           /* #0C4A6E */
     --on-op-wave: 0 0 0;                /* opérateurs : mêmes couleurs dans les deux thèmes (client-interface) */
     --on-op-orange-money: 0 0 0;
+    --nav-bar: 0 0 0;                   /* design 1e : barre du bas noire sur fond noir profond (bord --border) */
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 8px 18px -6px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 20px 44px -12px rgba(0, 0, 0, 0.75);
@@ -294,6 +296,148 @@
    navigation dans un navigateur qui l'ignore. */
 body[data-form-action-bar] nav[aria-label="Navigation rapide"] {
   display: none;
+}
+
+/* ==========================================================================
+   DESIGN 1e — NAVIGATION FLUIDE (coquille commune : barre du bas, menu, en-tête, barre latérale)
+   Animations de 150 à 300 ms, transform et opacity seulement, jamais en boucle ; « réduire les animations » les coupe
+   (règle prefers-reduced-motion plus bas : durées ramenées à 0,01 ms). Rien n'est mesuré au premier affichage.
+   ========================================================================== */
+/* Barre du bas flottante : marge de la zone sûre de l'iPhone (barre des gestes), 8 px au moins ailleurs */
+.ev-bottom-nav {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+}
+/* Pastille de l'onglet actif : glisse d'un onglet à l'autre (ressort léger, 250 ms) */
+.ev-nav-pill {
+  transition: transform 250ms cubic-bezier(0.34, 1.32, 0.64, 1), opacity 150ms var(--ease-out);
+  will-change: transform;
+}
+
+/* Menu (< 1024 px) : la page recule (réduite, coins arrondis, ombre) et glisse ; le menu orange est derrière.
+   .ev-push-fixed fige la page à sa position de défilement (posée juste avant l'animation, retirée après). */
+.ev-push-page {
+  transform-origin: left center;
+  transition: transform 280ms var(--ease-out);
+}
+.ev-push-fixed {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+.ev-push-page[data-menu='ouvert'] {
+  transform: translateX(min(68vw, 320px)) scale(0.86);
+  border-radius: 28px;
+  box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.45);
+}
+html.ev-menu-ouvert,
+html.ev-menu-ouvert body {
+  overflow: hidden;
+}
+.ev-push-menu {
+  opacity: 0;
+  transition: opacity 280ms var(--ease-out);
+}
+.ev-push-menu[data-open] {
+  opacity: 1;
+}
+.ev-push-menu__items > * {
+  transform: translateX(-16px);
+  transition: transform 280ms var(--ease-out);
+}
+.ev-push-menu[data-open] .ev-push-menu__items > * {
+  transform: none;
+}
+
+/* En-tête de l'ordinateur : trait orange sous la rubrique active, qui suit le survol (largeur par scaleX) */
+.ev-nav-underline {
+  transform-origin: left center;
+}
+.ev-nav-underline[data-ready] {
+  transition: transform 250ms var(--ease-out), opacity 150ms var(--ease-out);
+}
+/* Menu du compte : s'ouvre en glissant */
+.ev-account-menu {
+  transition: transform 200ms var(--ease-out), opacity 200ms var(--ease-out), visibility 0s linear 200ms;
+}
+.ev-account-menu[data-open] {
+  transition: transform 200ms var(--ease-out), opacity 200ms var(--ease-out), visibility 0s;
+}
+
+/* Barre latérale des espaces organisatrice et administration (≥ 1024 px), repliable en icônes. Choix gardé sur
+   l'appareil et posé sur <html data-sidebar="replie"> avant le premier affichage (script de app/layout.tsx) : aucun
+   saut au chargement. Repliée, la barre glisse vers la gauche (transform) et ne montre plus que sa bande d'icônes ;
+   les icônes glissent d'autant dans l'autre sens et restent en place ; les libellés s'effacent. */
+.ev-side {
+  --side-w: 16rem;
+  --side-mini: 4.5rem;
+  width: var(--side-w);
+  transition: transform 250ms var(--ease-out);
+}
+.ev-side-spacer {
+  width: 16rem;
+}
+@media (min-width: 1280px) {
+  .ev-side { --side-w: 18rem; }
+  .ev-side-spacer { width: 18rem; }
+}
+.ev-side-icon,
+.ev-side-hl {
+  transition: transform 250ms var(--ease-out);
+}
+.ev-side-label {
+  transition: opacity 150ms var(--ease-out);
+}
+html[data-sidebar='replie'] .ev-side {
+  transform: translateX(calc(var(--side-mini) - var(--side-w)));
+}
+html[data-sidebar='replie'] .ev-side-spacer {
+  width: 4.5rem;
+}
+html[data-sidebar='replie'] .ev-side-icon {
+  transform: translateX(calc(var(--side-w) - var(--side-mini)));
+}
+html[data-sidebar='replie'] .ev-side-label {
+  opacity: 0;
+  pointer-events: none;
+}
+html[data-sidebar='replie'] .ev-side-hide {
+  visibility: hidden;
+}
+/* Surlignage de la rubrique active : glisse de l'une à l'autre */
+.ev-side-hl[data-ready] {
+  transition: transform 250ms var(--ease-out), opacity 150ms var(--ease-out);
+}
+/* Info-bulle de la barre repliée */
+.ev-side-tip {
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+
+/* Survols doux (ordinateur) : cartes qui se soulèvent, boutons ; jamais sur écran tactile seul */
+@media (hover: hover) and (pointer: fine) {
+  .ev-lift {
+    transition: transform 200ms var(--ease-out);
+  }
+  .ev-lift:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* Compteur de la cloche : petite pulsation, une seule fois à chaque nouveau nombre */
+@keyframes ev-count-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.ev-count-pop {
+  animation: ev-count-pop 300ms var(--ease-out) 1;
+}
+/* Panneau des notifications : glisse depuis la droite (ordinateur, tablette) ou monte du bas, plein écran (téléphone) */
+.ev-notif-panel {
+  transition: transform 280ms var(--ease-out);
+}
+.ev-notif-scrim {
+  transition: opacity 280ms var(--ease-out);
 }
 
 /* ==========================================================================
@@ -788,4 +932,10 @@ img[data-ev-fade][data-ev-loaded] {
   box-shadow: 3px -3px 0 -1px rgb(var(--card)), 3px -3px 0 0 rgb(var(--border)), 6px -6px 0 -1px rgb(var(--card)), 6px -6px 0 0 rgb(var(--border));
   -webkit-mask: none;
           mask: none;
+}
+
+/* Design 1e : panneau des notifications ouvert : la page ne défile plus derrière */
+html.ev-notif-ouvert,
+html.ev-notif-ouvert body {
+  overflow: hidden;
 }

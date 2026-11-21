@@ -60,6 +60,8 @@ const config: Config = {
         input: tone('input'),
         ring: { DEFAULT: tone('ring'), halo: tone('ring-halo') },
         scrim: tone('scrim'),
+        // Design 1e : barre du bas flottante (blanche en clair, noire en sombre)
+        'nav-bar': tone('nav-bar'),
         primary: {
           DEFAULT: tone('primary'),
           hover: tone('primary-hover'),

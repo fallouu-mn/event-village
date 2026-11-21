@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { setUnreadCount as publishUnread } from '@/components/notifications/unread-store';
 import { IconButton } from '@/components/ui/IconButton';
 import { cn } from '@/components/ui/cn';
 import { TONE_ICON, type Tone } from '@/components/ui/tones';
@@ -115,6 +117,29 @@ function formatRelativeTime(kit: PanelKit, isoDate: string): string {
     return formatShortDate(date);
 }
 
+/** Jour civil à Dakar (AAAA-MM-JJ) d'un instant. */
+const DAKAR_DAY = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Africa/Dakar', year: 'numeric', month: '2-digit', day: '2-digit' });
+const DAKAR_LONG = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Africa/Dakar', weekday: 'long', day: 'numeric', month: 'long' });
+
+/**
+ * Design 1e — avis groupés par jour, dans l'ordre reçu du serveur : « Aujourd'hui », « Hier », puis « Lundi 18 novembre »
+ * (heure de Dakar). Date illisible : « Plus ancien ».
+ */
+export function groupByDay(items: InAppNotification[], now: Date = new Date()): Array<{ label: string; items: InAppNotification[] }> {
+    const today = DAKAR_DAY.format(now);
+    const yesterday = DAKAR_DAY.format(new Date(now.getTime() - 86_400_000));
+    const groups: Array<{ label: string; items: InAppNotification[] }> = [];
+    for (const n of items) {
+        const d = new Date(n.createdAt);
+        const day = Number.isNaN(d.getTime()) ? null : DAKAR_DAY.format(d);
+        const raw = day === null ? 'Plus ancien' : day === today ? 'Aujourd’hui' : day === yesterday ? 'Hier' : DAKAR_LONG.format(d);
+        const label = raw.charAt(0).toUpperCase() + raw.slice(1);
+        const existing = groups.find((g) => g.label === label);
+        if (existing) existing.items.push(n); else groups.push({ label, items: [n] });
+    }
+    return groups;
+}
+
 /** Lecture défensive d'une notification de l'API : le lien est revérifié (chemin interne seulement). */
 function toNotification(raw: unknown): InAppNotification | null {
     if (typeof raw !== 'object' || raw === null) return null;
@@ -163,6 +188,56 @@ export function NotificationBell() {
     const requestSeq = useRef(0);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const bellRef = useRef<HTMLButtonElement>(null);
+    // Design 1e : panneau qui glisse (ouverture animée, fermeture animée puis retrait), fermé en glissant vers le bas
+    const panelRef = useRef<HTMLElement>(null);
+    const closeRef = useRef<HTMLButtonElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    const [panelShown, setPanelShown] = useState(false);
+    const [dragY, setDragY] = useState(0);
+    const swipeRef = useRef<{ y: number; active: boolean } | null>(null);
+
+    const closePanel = useCallback(() => {
+        setPanelShown(false);
+        setDragY(0);
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.setTimeout(() => { setIsOpen(false); bellRef.current?.focus(); }, reduce ? 0 : 280);
+    }, []);
+
+    useEffect(() => {
+        if (!isOpen) return undefined;
+        document.documentElement.classList.add('ev-notif-ouvert');
+        let inner = 0;
+        const outer = window.requestAnimationFrame(() => { inner = window.requestAnimationFrame(() => { setPanelShown(true); closeRef.current?.focus({ preventScroll: true }); }); });
+        return () => { window.cancelAnimationFrame(outer); window.cancelAnimationFrame(inner); document.documentElement.classList.remove('ev-notif-ouvert'); };
+    }, [isOpen]);
+
+    /** Tab tourne dans le panneau (fenêtre modale). */
+    const trapFocus = (e: React.KeyboardEvent) => {
+        if (e.key !== 'Tab' || !panelRef.current) return;
+        const items = Array.from(panelRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')).filter((el) => el.offsetParent !== null);
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+
+    /** Téléphone : glisser vers le bas (liste en haut) referme le panneau ; en deçà de 110 px, il revient en place. */
+    const onSwipeStart = (e: React.TouchEvent) => {
+        if (window.matchMedia('(min-width: 640px)').matches) return;
+        swipeRef.current = { y: e.touches[0].clientY, active: (listRef.current?.scrollTop ?? 0) <= 0 };
+    };
+    const onSwipeMove = (e: React.TouchEvent) => {
+        const sw = swipeRef.current;
+        if (!sw?.active) return;
+        setDragY(Math.max(0, e.touches[0].clientY - sw.y));
+    };
+    const onSwipeEnd = () => {
+        const sw = swipeRef.current;
+        swipeRef.current = null;
+        if (!sw?.active) return;
+        if (dragY > 110) closePanel(); else setDragY(0);
+    };
 
     useEffect(() => {
         setMounted(true);
@@ -170,15 +245,11 @@ export function NotificationBell() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) {
-                setIsOpen(false);
-                bellRef.current?.focus();
-            }
+            if (e.key === 'Escape' && isOpen) closePanel();
         };
         const handleClickOutside = (e: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                setIsOpen(false);
-            }
+            const t = e.target as Node;
+            if (dropdownRef.current && !dropdownRef.current.contains(t) && !panelRef.current?.contains(t)) closePanel();
         };
         if (isOpen) {
             window.addEventListener('keydown', handleKeyDown);
@@ -188,9 +259,12 @@ export function NotificationBell() {
             window.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen]);
+    }, [isOpen, closePanel]);
 
     const isUserLoggedIn = mounted && (isAuthenticated || !!user);
+
+    // Design 1e (point 2) : le compteur est partagé avec le point de l'onglet « Notifications » de la barre du bas
+    useEffect(() => { publishUnread(isUserLoggedIn ? unreadCount : 0); }, [isUserLoggedIn, unreadCount]);
 
     /**
      * Liste (20 premières de l'onglet) et compteur des non lues relus par le serveur, sur le même ensemble.
@@ -302,7 +376,7 @@ export function NotificationBell() {
 
     const handleNotificationClick = async (notif: InAppNotification) => {
         const target = internalActionUrl(notif.actionUrl);
-        setIsOpen(false);
+        closePanel();
         if (target) router.push(target);
         await handleMarkAsRead(notif);
     };
@@ -331,11 +405,10 @@ export function NotificationBell() {
                         router.push('/login');
                         return;
                     }
-                    setIsOpen(!isOpen);
-                    if (!isOpen) {
-                        loadPanel();
-                        void fetchNotifications();
-                    }
+                    if (isOpen) { closePanel(); return; }
+                    setIsOpen(true);
+                    loadPanel();
+                    void fetchNotifications();
                 }}
                 onPointerEnter={isUserLoggedIn ? loadPanel : undefined}
                 onFocus={isUserLoggedIn ? loadPanel : undefined}
@@ -350,153 +423,183 @@ export function NotificationBell() {
             >
                 <Bell size={18} aria-hidden="true" />
                 {showBadge && (
-                    <small className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand px-1 text-caption font-bold tabular-nums leading-none text-on-brand ring-2 ring-surface">
+                    // Design 1e : le compteur s'anime une fois à chaque nouveau nombre (clé = nombre), jamais en boucle
+                    <small key={countText} className="ev-count-pop absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand px-1 text-caption font-bold tabular-nums leading-none text-on-brand ring-2 ring-surface">
                         {countText}
                     </small>
                 )}
             </button>
 
-            {isOpen && (
-                <section
-                    id={panelId}
-                    aria-labelledby={titleId}
-                    className="fixed inset-x-3 top-16 z-50 flex max-h-[80vh] flex-col overflow-hidden rounded-2xl border border-border bg-surface-raised text-fg shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96"
-                >
-                    <div className={cn('flex items-center justify-between gap-2 px-4 py-2', unreadCount > 0 ? 'pb-0' : 'border-b border-border')}>
-                        <h2 id={titleId} className="text-base font-semibold text-fg">Notifications</h2>
-                        <IconButton
-                            aria-label="Fermer les notifications"
-                            onClick={() => {
-                                setIsOpen(false);
-                                bellRef.current?.focus();
-                            }}
-                        >
-                            <X size={18} />
-                        </IconButton>
-                    </div>
-                    {/* Lot 7 (D68) : sur sa propre ligne, sous le titre ; à 390 px le libellé ne passe plus à la ligne. */}
-                    {unreadCount > 0 && (
-                        <div className="flex border-b border-border px-2 pb-1">
-                            <button
-                                type="button"
-                                onClick={handleMarkAllAsRead}
-                                disabled={isMarkingAll}
-                                aria-busy={isMarkingAll || undefined}
-                                className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            {isOpen && createPortal(
+                <>
+                    {/* Design 1e : voile (ordinateur et tablette) ; un clic le referme */}
+                    <div
+                        aria-hidden="true"
+                        onClick={closePanel}
+                        className={cn('ev-notif-scrim fixed inset-0 z-[60] hidden bg-scrim/50 sm:block', panelShown ? 'opacity-100' : 'opacity-0')}
+                    />
+                    <section
+                        ref={panelRef}
+                        id={panelId}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby={titleId}
+                        onKeyDown={trapFocus}
+                        onTouchStart={onSwipeStart}
+                        onTouchMove={onSwipeMove}
+                        onTouchEnd={onSwipeEnd}
+                        style={dragY > 0 ? { transform: `translateY(${dragY}px)`, transition: 'none' } : undefined}
+                        className={cn(
+                            // Design 1e : plein écran sur téléphone (monte du bas, fermé en glissant vers le bas) ; panneau de
+                            // droite sur tablette et ordinateur (glisse depuis la droite)
+                            'ev-notif-panel fixed inset-0 z-[61] flex flex-col bg-popover text-fg sm:left-auto sm:w-[26rem] sm:border-l sm:border-border sm:shadow-xl',
+                            panelShown ? 'translate-x-0 translate-y-0' : 'translate-y-full sm:translate-x-full sm:translate-y-0',
+                        )}
+                    >
+                        <div className="flex justify-center pt-2 sm:hidden" aria-hidden="true">
+                            <span className="h-1.5 w-10 rounded-full bg-border" />
+                        </div>
+                        <div className={cn('flex items-center justify-between gap-2 px-4 pb-2 pt-2 sm:pt-4', unreadCount > 0 ? 'pb-0' : 'border-b border-border')}>
+                            <h2 id={titleId} className="text-lg font-bold text-fg">Notifications</h2>
+                            <IconButton
+                                ref={closeRef}
+                                aria-label="Fermer les notifications"
+                                onClick={closePanel}
                             >
-                                <CheckCheck size={16} aria-hidden="true" />
-                                Tout marquer comme lu
+                                <X size={18} />
+                            </IconButton>
+                        </div>
+                        {/* Lot 7 (D68) : sur sa propre ligne, sous le titre ; à 390 px le libellé ne passe plus à la ligne. */}
+                        {unreadCount > 0 && (
+                            <div className="flex border-b border-border px-2 pb-1">
+                                <button
+                                    type="button"
+                                    onClick={handleMarkAllAsRead}
+                                    disabled={isMarkingAll}
+                                    aria-busy={isMarkingAll || undefined}
+                                    className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <CheckCheck size={16} aria-hidden="true" />
+                                    Tout marquer comme lu
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="flex gap-2 border-b border-border px-3 py-1.5" role="group" aria-label="Filtrer les notifications">
+                            <button type="button" aria-pressed={filter === 'ALL'} onClick={() => changeFilter('ALL')} className={filterClass(filter === 'ALL')}>
+                                Toutes
+                            </button>
+                            <button type="button" aria-pressed={filter === 'UNREAD'} onClick={() => changeFilter('UNREAD')} className={filterClass(filter === 'UNREAD')}>
+                                {`Non lues (${unreadCount})`}
                             </button>
                         </div>
-                    )}
 
-                    <div className="flex gap-2 border-b border-border px-3 py-1.5" role="group" aria-label="Filtrer les notifications">
-                        <button type="button" aria-pressed={filter === 'ALL'} onClick={() => changeFilter('ALL')} className={filterClass(filter === 'ALL')}>
-                            Toutes
-                        </button>
-                        <button type="button" aria-pressed={filter === 'UNREAD'} onClick={() => changeFilter('UNREAD')} className={filterClass(filter === 'UNREAD')}>
-                            {`Non lues (${unreadCount})`}
-                        </button>
-                    </div>
-
-                    <div className="max-h-80 overflow-y-auto overscroll-contain">
-                        {loadError && (
-                            <p role="status" className="border-b border-border bg-warning-bg px-4 py-2 text-sm text-warning-fg">
-                                Notifications non mises à jour : la liste affichée est celle du dernier chargement.
-                            </p>
-                        )}
-                        {notifications.length === 0 ? (
-                            <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
-                                <Bell size={24} className="text-fg-muted" aria-hidden="true" />
-                                <p className="text-sm font-semibold text-fg">
-                                    {filter === 'UNREAD' ? 'Aucune notification non lue' : 'Aucune notification'}
+                        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                            {loadError && (
+                                <p role="status" className="border-b border-border bg-warning-bg px-4 py-2 text-sm text-warning-fg">
+                                    Notifications non mises à jour : la liste affichée est celle du dernier chargement.
                                 </p>
-                                <p className="text-sm text-fg-muted">
-                                    Billets, rappels, remboursements et changements d’événement s’afficheront ici.
-                                </p>
-                            </div>
-                        ) : !kit ? (
-                            kitError ? (
-                                <div role="alert" className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                                    <p className="text-sm font-semibold text-fg">La liste des notifications ne peut pas s’afficher pour le moment.</p>
-                                    <p className="text-sm text-fg-muted">Vérifiez votre connexion, puis réessayez.</p>
-                                    <button type="button" onClick={loadPanel} className={filterClass(false)}>
-                                        Réessayer
-                                    </button>
+                            )}
+                            {notifications.length === 0 ? (
+                                <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                                    <Bell size={24} className="text-fg-muted" aria-hidden="true" />
+                                    <p className="text-sm font-semibold text-fg">
+                                        {filter === 'UNREAD' ? 'Aucune notification non lue' : 'Aucune notification'}
+                                    </p>
+                                    <p className="text-sm text-fg-muted">
+                                        Billets, rappels, remboursements et changements d’événement s’afficheront ici.
+                                    </p>
                                 </div>
+                            ) : !kit ? (
+                                kitError ? (
+                                    <div role="alert" className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                                        <p className="text-sm font-semibold text-fg">La liste des notifications ne peut pas s’afficher pour le moment.</p>
+                                        <p className="text-sm text-fg-muted">Vérifiez votre connexion, puis réessayez.</p>
+                                        <button type="button" onClick={loadPanel} className={filterClass(false)}>
+                                            Réessayer
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p role="status" className="px-4 py-10 text-center text-sm text-fg-muted">
+                                        Chargement des notifications…
+                                    </p>
+                                )
                             ) : (
-                                <p role="status" className="px-4 py-10 text-center text-sm text-fg-muted">
-                                    Chargement des notifications…
-                                </p>
-                            )
-                        ) : (
-                            <ul className="divide-y divide-border">
-                                {notifications.map((notif) => {
-                                    const meta = kit.notificationTypeMeta(notif.type);
-                                    const { icon: Icon, tone } = CATEGORY_ICON[meta.category];
-                                    const showTypeLabel = meta.label.trim().toLowerCase() !== notif.title.trim().toLowerCase();
-                                    return (
-                                        <li key={notif.id} className={cn('flex items-start gap-1 pr-2', !notif.isRead && 'bg-brand-bg')}>
-                                            <button
-                                                type="button"
-                                                onClick={() => void handleNotificationClick(notif)}
-                                                className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                                            >
-                                                <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', !notif.isRead && tone === 'brand' ? 'bg-surface text-brand-fg' : TONE_ICON[tone])} aria-hidden="true">
-                                                    <Icon size={16} />
-                                                </span>
-                                                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                                    <span className="flex items-start justify-between gap-2">
-                                                        <span className={cn('min-w-0 text-sm text-fg', notif.isRead ? 'font-medium' : 'font-semibold')}>
-                                                            {!notif.isRead && <span className="sr-only">Non lue : </span>}
-                                                            {notif.title}
-                                                        </span>
-                                                        <time dateTime={notif.createdAt} className="flex-shrink-0 whitespace-nowrap text-caption text-fg-muted">
-                                                            {formatRelativeTime(kit, notif.createdAt)}
-                                                        </time>
-                                                    </span>
-                                                    {showTypeLabel && (
-                                                        <span>
-                                                            <kit.Badge variant="neutral" size="sm">{meta.label}</kit.Badge>
-                                                        </span>
-                                                    )}
-                                                    {notif.content && notif.content !== notif.title && (
-                                                        <span className="line-clamp-3 text-sm text-fg-muted">{notif.content}</span>
-                                                    )}
-                                                    {notif.actionUrl && (
-                                                        <span className="inline-flex items-center gap-1 pt-1 text-sm font-semibold text-brand-fg">
-                                                            Consulter
-                                                            <ArrowRight size={14} aria-hidden="true" />
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            </button>
-                                            {!notif.isRead && (
-                                                <IconButton
-                                                    aria-label={`Marquer comme lue : ${notif.title}`}
-                                                    className="mt-1.5"
-                                                    onClick={() => void handleMarkAsRead(notif)}
-                                                >
-                                                    <Check size={18} />
-                                                </IconButton>
-                                            )}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        )}
-                    </div>
+                                // Design 1e : avis groupés par jour (« Aujourd'hui », « Hier », puis la date, heure de Dakar)
+                                groupByDay(notifications).map((group) => (
+                                    <section key={group.label} aria-label={group.label}>
+                                        <h3 className="sticky top-0 z-[1] border-b border-border bg-popover px-4 py-1.5 text-sm font-semibold text-fg-muted">{group.label}</h3>
+                                        <ul className="divide-y divide-border">
+                                            {group.items.map((notif) => {
+                                                const meta = kit.notificationTypeMeta(notif.type);
+                                                const { icon: Icon, tone } = CATEGORY_ICON[meta.category];
+                                                const showTypeLabel = meta.label.trim().toLowerCase() !== notif.title.trim().toLowerCase();
+                                                return (
+                                                    <li key={notif.id} className={cn('flex items-start gap-1 pr-2', !notif.isRead && 'bg-brand-bg')}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void handleNotificationClick(notif)}
+                                                            className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                                        >
+                                                            <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', !notif.isRead && tone === 'brand' ? 'bg-surface text-brand-fg' : TONE_ICON[tone])} aria-hidden="true">
+                                                                <Icon size={16} />
+                                                            </span>
+                                                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                                                <span className="flex items-start justify-between gap-2">
+                                                                    <span className={cn('min-w-0 text-sm text-fg', notif.isRead ? 'font-medium' : 'font-semibold')}>
+                                                                        {!notif.isRead && <span className="sr-only">Non lue : </span>}
+                                                                        {notif.title}
+                                                                    </span>
+                                                                    <time dateTime={notif.createdAt} className="flex-shrink-0 whitespace-nowrap text-caption text-fg-muted">
+                                                                        {formatRelativeTime(kit, notif.createdAt)}
+                                                                    </time>
+                                                                </span>
+                                                                {showTypeLabel && (
+                                                                    <span>
+                                                                        <kit.Badge variant="neutral" size="sm">{meta.label}</kit.Badge>
+                                                                    </span>
+                                                                )}
+                                                                {notif.content && notif.content !== notif.title && (
+                                                                    <span className="line-clamp-3 text-sm text-fg-muted">{notif.content}</span>
+                                                                )}
+                                                                {notif.actionUrl && (
+                                                                    <span className="inline-flex items-center gap-1 pt-1 text-sm font-semibold text-brand-fg">
+                                                                        Consulter
+                                                                        <ArrowRight size={14} aria-hidden="true" />
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        </button>
+                                                        {!notif.isRead && (
+                                                            <IconButton
+                                                                aria-label={`Marquer comme lue : ${notif.title}`}
+                                                                className="mt-1.5"
+                                                                onClick={() => void handleMarkAsRead(notif)}
+                                                            >
+                                                                <Check size={18} />
+                                                            </IconButton>
+                                                        )}
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </section>
+                                ))
+                            )}
+                        </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-1 border-t border-border p-2">
-                        <Link href="/notifications" onClick={() => setIsOpen(false)} className={footerLinkClass}>
-                            Voir toutes les notifications
-                        </Link>
-                        <Link href="/profile/notifications" onClick={() => setIsOpen(false)} className={footerLinkClass}>
-                            <Settings2 size={16} aria-hidden="true" />
-                            Préférences
-                        </Link>
-                    </div>
-                </section>
+                        <div className="flex flex-wrap items-center justify-between gap-1 border-t border-border p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                            <Link href="/notifications" onClick={closePanel} className={footerLinkClass}>
+                                Voir toutes les notifications
+                            </Link>
+                            <Link href="/profile/notifications" onClick={closePanel} className={footerLinkClass}>
+                                <Settings2 size={16} aria-hidden="true" />
+                                Préférences
+                            </Link>
+                        </div>
+                    </section>
+                </>,
+                document.body,
             )}
         </div>
     );
