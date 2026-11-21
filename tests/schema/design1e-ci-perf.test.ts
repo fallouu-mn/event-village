@@ -40,6 +40,15 @@ describe('design 1e — mesure mobile en mode rapide (ci-perf)', () => {
         assert.match(job, /timeout-minutes: 15\n/);
     });
 
+    test('profil processeur : diagnostic du job perf seulement, après la mesure, hors verdict', () => {
+        const i = job.indexOf('node scripts/e2e/perf-mobile.mjs');
+        const j = job.indexOf('node scripts/e2e/perf-profil.mjs');
+        assert.ok(i > 0 && j > i, 'profil lancé après la mesure');
+        assert.doesNotMatch(read('scripts/e2e/perf-profil.mjs'), /perf-mobile-seuils/, 'le profil ne touche ni aux seuils ni aux verdicts');
+        const e2eJob = yml.slice(yml.indexOf('\n  e2e:\n'), yml.indexOf('\n  responsive:\n'));
+        assert.doesNotMatch(e2eJob, /perf-profil/, 'jamais dans le job e2e du run complet');
+    });
+
     test('au run complet, la mesure reste dans le job e2e (étape bloquante inchangée)', () => {
         const e2eJob = yml.slice(yml.indexOf('\n  e2e:\n'), yml.indexOf('\n  responsive:\n'));
         assert.match(e2eJob, /- name: "E2E : performance mobile mesurée \(Lighthouse ≥ 90, LCP < 2,5 s, CLS < 0,1, toucher < 200 ms\)"/);

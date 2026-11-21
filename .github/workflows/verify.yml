@@ -797,6 +797,14 @@ jobs:
           set -o pipefail
           node scripts/e2e/perf-mobile.mjs 2>&1 | tee /tmp/perf-mobile.log
 
+      # Diagnostic seulement (aucun verdict) : profil processeur fonction par fonction des trois pages mesurées
+      - name: "Perf : profil processeur des pages mesurées (diagnostic, scripts/e2e/perf-profil.mjs)"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          . /tmp/etape.sh perf-profil
+          node scripts/e2e/perf-profil.mjs 2>&1 | tee -a /tmp/perf-mobile.log
+
       - *diagnostic
       - *annotations
 
@@ -808,7 +816,7 @@ jobs:
           if [ -f "$W/.verify/js-budget.tsv" ]; then cp "$W/.verify/js-budget.tsv" /tmp/sortie/js-budget.tsv; fi
           if [ -d "$W/.e2e-captures/perf" ]; then
             mkdir -p /tmp/sortie/perf
-            find "$W/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' -o -name 'lighthouse*.json' -o -name 'lighthouse*.json.gz' \) -exec cp {} /tmp/sortie/perf/ \;
+            find "$W/.e2e-captures/perf" -maxdepth 1 -type f \( -name '*.tsv' -o -name '*.txt' -o -name 'lighthouse*.json' -o -name 'lighthouse*.json.gz' -o -name 'profil-*.cpuprofile.gz' \) -exec cp {} /tmp/sortie/perf/ \;
           fi
 
       - *rassembler
