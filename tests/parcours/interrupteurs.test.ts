@@ -277,12 +277,16 @@ const NEVER_CUT_FILES = [
 
 /** Layouts de garde (contrat §7.1) et interrupteur(s) attendu(s). */
 const GUARD_LAYOUTS: Array<{ file: string; flags: FeatureFlag[] }> = [
-    { file: 'app/halls/layout.tsx', flags: ['halls'] },
+    // Lot 11b (décision du 20/11, modification signalée au rapport) : les gardes ne couvrent plus que le catalogue et
+    // l'édition ; « Mes réservations », le détail, la liste, la fiche, le planning et les recettes restent ouverts
+    { file: 'app/halls/(catalogue)/layout.tsx', flags: ['halls'] },
+    { file: 'app/tables/(catalogue)/layout.tsx', flags: ['tables'] },
     { file: 'app/restaurants/[id]/tables/layout.tsx', flags: ['tables'] },
     { file: 'app/restaurants/[id]/menu/layout.tsx', flags: ['orders'] },
     { file: 'app/orders/layout.tsx', flags: ['halls', 'tables', 'orders'] },
-    { file: 'app/partner/halls/layout.tsx', flags: ['halls'] },
-    { file: 'app/partner/tables/layout.tsx', flags: ['tables'] },
+    { file: 'app/partner/halls/new/layout.tsx', flags: ['halls'] },
+    { file: 'app/partner/halls/[id]/edit/layout.tsx', flags: ['halls'] },
+    { file: 'app/partner/tables/edition/layout.tsx', flags: ['tables'] },
     { file: 'app/partner/orders/layout.tsx', flags: ['orders'] },
     { file: 'app/partner/products/layout.tsx', flags: ['orders'] },
 ];
