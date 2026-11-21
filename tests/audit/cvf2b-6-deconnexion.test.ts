@@ -629,6 +629,9 @@ describe('13. inventaire des stockages du navigateur', () => {
             // Design 1d (points 6 et 9) : dernier opérateur et numéro de paiement, recherches récentes (localStorage,
             // « event-village:appareil: ») ; le numéro est une donnée du compte, tout est effacé à la déconnexion
             'lib/device/device-prefs.ts': { what: 'opérateur et numéro de paiement, recherches récentes de l’appareil (localStorage)', compte: true, purge: 'clearDevicePrefs' },
+            // Design 1e (point 3) : barre latérale des espaces pro repliée sur cet appareil, valeur fixe « replie », sans
+            // identifiant ni donnée du compte (comme le thème) ; classée ici à la relecture du run 526
+            'components/layout/ProSidebar.tsx': { what: 'barre latérale repliée sur cet appareil, valeur fixe sans donnée du compte (localStorage)', compte: false, purge: null },
         };
         const writers = [...src].filter(([, s]) => /\b(?:localStorage|sessionStorage)\b/.test(s) && /\.setItem\(/.test(s)).map(([f]) => f);
         const unknown = writers.filter((f) => !(f in known));

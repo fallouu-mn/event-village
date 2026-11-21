@@ -32,6 +32,8 @@ export const DEMO_IDS_VERSION = 6;
 export const DEMO_ACCOUNT_KEYS = [
     'organisateur', 'organisateur2', 'organisateur3', 'admin', 'client', 'controleur', 'controleur2', 'controleur3',
     'partenaireNeuf', 'controleurZones',
+    // Design 1e : client de la mesure mobile (10 billets à venir, 30 passés), jamais utilisé par l'e2e
+    'clientMesure',
 ] as const;
 export type DemoAccountKey = typeof DEMO_ACCOUNT_KEYS[number];
 

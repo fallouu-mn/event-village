@@ -1344,7 +1344,8 @@ export const SCREENS: readonly Screen[] = [
         id: 'cloche-ouverte', titre: 'Cloche ouverte (non lues d’abord, Tout marquer comme lu)', role: 'client', needsIds: true, path: () => '/tickets',
         actions: async ({ page }) => {
             await page.getByRole('button', { name: /^notifications/i }).filter({ visible: true }).first().click();
-            const panel = page.getByRole('region', { name: /^notifications$/i });
+            // Design 1e (modification signalée) : le panneau est une fenêtre modale qui glisse (rôle dialog), plus une région
+            const panel = page.getByRole('dialog', { name: /^notifications$/i });
             await expect(panel).toBeVisible();
             await expect(panel.getByRole('listitem').first()).toBeVisible();
         },

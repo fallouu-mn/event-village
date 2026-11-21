@@ -56,7 +56,10 @@ describe('b. barre du bas fixe « Précédent / Suivant »', () => {
         assert.match(form, /function QuickNavHidden\(\) \{\s*useLayoutEffect\(\(\) => \{\s*document\.body\.setAttribute\('data-form-action-bar', ''\);\s*return \(\) => document\.body\.removeAttribute\('data-form-action-bar'\);\s*\}, \[\]\);\s*return null;\s*\}/);
         assert.match(form, /<div className="form-action-bar [^"]*">\s*<QuickNavHidden \/>/, 'attribut posé tant que la barre est rendue');
         const layout = read('components/layout/AppLayout.tsx');
-        assert.match(layout, /<nav aria-label="Navigation rapide" className="safe-bottom fixed inset-x-0 bottom-0 z-40 /, 'libellé visé par la règle CSS');
+        // Design 1e : la barre du bas vit dans components/layout/BottomNav.tsx (rendue par AppLayout), même libellé, même
+        // classe de tête (test modifié, signalé au rapport du design 1e)
+        assert.match(layout, /<BottomNav items=\{mobileItems\}/, 'barre du bas rendue par AppLayout');
+        assert.match(read('components/layout/BottomNav.tsx'), /<nav aria-label="Navigation rapide" className="safe-bottom fixed inset-x-0 bottom-0 z-40 /, 'libellé visé par la règle CSS');
         // Run complet 275 : AppLayout est chargé par chaque page ; aucun code de la finition 2b n'y entre (budgets de
         // scripts/js-budget.json). Contrôle dans un vrai navigateur : captures partenaire-creation-* (e2e/support/screens.ts).
         assert.doesNotMatch(layout, /EVENT_FORM_ROUTE|form-action-bar/);

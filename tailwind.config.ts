@@ -60,10 +60,14 @@ const config: Config = {
         input: tone('input'),
         ring: { DEFAULT: tone('ring'), halo: tone('ring-halo') },
         scrim: tone('scrim'),
+        // Design 1e : barre du bas flottante (blanche en clair, noire en sombre)
+        'nav-bar': tone('nav-bar'),
         primary: {
           DEFAULT: tone('primary'),
           hover: tone('primary-hover'),
           foreground: tone('primary-foreground'),
+          // Design 1e : blanc du bouton principal en grande taille (gras de 19 px au moins, « grand texte »)
+          'foreground-large': tone('primary-foreground-large'),
           text: tone('primary-text'),
           soft: tone('primary-soft'),
         },

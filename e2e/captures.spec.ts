@@ -294,7 +294,13 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
                 const problem = await markAllOnOneLine(page);
                 if (problem) record.blocking.push(problem);
             }
+            // Design 1e (décision du 21/11, modification signalée) : contrôles toujours faits page en HAUT (position fixe) :
+            // selon le défilement laissé par l'écran, une cible pouvait se trouver à moitié sous l'en-tête collant et le
+            // verdict d'axe changeait d'un run à l'autre. Aucune règle d'axe changée ; la capture garde ensuite la position
+            // de l'écran (barre d'achat sur page défilée…).
+            const scrolledTo = await page.evaluate(() => { const y = window.scrollY; window.scrollTo({ top: 0, behavior: 'instant' }); return y; });
             const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true, references: screen.references });
+            if (scrolledTo > 0) await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'instant' }), scrolledTo);
             record.blocking.push(...checks.blocking);
             record.warnings.push(...checks.warnings);
             record.axeDetails = checks.axeDetails;

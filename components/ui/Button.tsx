@@ -15,10 +15,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 /**
  * Lot 5 (contrat Q) : cible d'au moins 44 px à toutes les tailles (min-h-11, icône 44 × 44).
- * Design 1a (direction.md, sections 2 et 5) : jetons de la charte. Principal plein `primary` : version B en clair
- * (#C2410C, texte blanc 5,18:1), version A en sombre (#FF8A3D, texte #1A1A1A 7,42:1). Grand bouton (`gradient`) : UN SEUL
- * par page, pour l'action qui fait avancer ; dégradé #EA580C → #DB2777, pilule de 56 px, texte blanc gras de 19 px
- * (« grand texte » du WCAG : 3,56:1 au pire point, jamais plus petit). Focus : anneau orange doublé d'un liseré sombre
+ * Design 1e (orange de marque #F05A1A, mêmes valeurs en clair et en sombre) : principal plein `primary` en orange ; texte
+ * #1A1A1A en petite et moyenne taille (5,12:1), blanc GRAS de 19 px en grande taille (PRIMARY_LARGE, « grand texte » du
+ * WCAG : 3,40:1). Secondaire : fond de carte, texte orange foncé (#C2410C en clair 5,18:1, #FA7036 en sombre). Grand
+ * bouton (`gradient`) : UN SEUL par écran ; dégradé signature tout orange #F05A1A → #D9480F, pilule de 56 px, texte blanc
+ * gras de 19 px (3,40:1 au pire point, jamais plus petit). Focus : anneau orange doublé d'un liseré sombre
  * (app/globals.css). Appui : léger enfoncement à 98 %, 150 ms, coupé si « réduire les animations ».
  */
 const baseStyles =
@@ -26,7 +27,7 @@ const baseStyles =
 
 const variants: Record<ButtonVariant, string> = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary-hover border border-transparent shadow-sm',
-  secondary: 'bg-card text-foreground-strong hover:bg-muted border border-border',
+  secondary: 'bg-card text-primary-text hover:bg-muted border border-border',
   glass: 'bg-card/85 text-foreground-strong backdrop-blur-md hover:bg-card border border-border',
   dark: 'bg-foreground-strong text-background hover:bg-foreground-strong/90 border border-transparent',
   outline: 'bg-transparent text-primary-text hover:bg-primary-soft border-2 border-primary-text',
@@ -43,6 +44,9 @@ const sizes: Record<ButtonSize, string> = {
   icon: 'min-h-11 min-w-11 h-11 w-11 p-0 rounded-xl',
 };
 
+/** Design 1e : bouton principal en grande taille, blanc gras de 19 px sur l'orange (« grand texte », ≥ 3:1). */
+const PRIMARY_LARGE = 'text-primary-foreground-large font-bold text-[1.1875rem] leading-tight';
+
 /** Taille du grand bouton, quelle que soit `size` : pilule de 56 px, texte de 19 px (jamais réduit). */
 const GRADIENT_SIZE = 'min-h-14 px-7 gap-2.5 rounded-full';
 
@@ -54,7 +58,13 @@ export function buttonClasses(options: {
   className?: string;
 } = {}): string {
   const { variant = 'primary', size = 'md', fullWidth = false, className } = options;
-  return cn(baseStyles, variant === 'gradient' ? GRADIENT_SIZE : sizes[size], variants[variant], fullWidth && 'w-full', className);
+  const classes = cn(baseStyles, variant === 'gradient' ? GRADIENT_SIZE : sizes[size], variants[variant], variant === 'primary' && size === 'lg' && PRIMARY_LARGE, fullWidth && 'w-full', className);
+  // Design 1e (run 537) : le blanc sur l'orange n'est permis qu'en grand texte (gras de 19 px) ; si la classe locale réduit
+  // le texte (boutons du scanner en 14 px), le texte repasse en #1A1A1A (5,12:1)
+  if (classes.includes('text-primary-foreground-large') && !/(^|\s)text-\[1\.1875rem\](\s|$)/.test(classes)) {
+    return classes.replace('text-primary-foreground-large', 'text-primary-foreground');
+  }
+  return classes;
 }
 
 export const Button: React.FC<ButtonProps> = ({

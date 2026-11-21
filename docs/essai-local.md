@@ -582,6 +582,21 @@ Ces essais se font sur un second événement du jour, pour ne pas dépendre de l
 3. Étape **Informations** : **Capacité totale (jauge)** à 19, enregistrez. Puis « VVIP » à 4, **Enregistrer la catégorie**.
 4. Sur la fiche ouverte dans un autre onglet, **sans recharger** : « VVIP » affiche « Plus que 2 places ».
 
+### 8.20 Couleur des affiches (design 1d, couleur vive depuis le design 1e)
+
+Les affiches déposées avant le design 1d n'ont pas encore de couleur : leur carte et leur fiche restent en « bleu nuit ».
+Le script des affiches existantes leur donne la couleur VIVE de l'affiche (celle d'une palette « vibrant », pas le fond
+clair). Il lit les clés de `.env.local` : lancez-le **avec** `--env-file=.env.local`, sinon il ne trouve pas le projet.
+
+1. À blanc (rien n'est écrit, la liste et la couleur prévue s'affichent) :
+   `npx tsx --env-file=.env.local scripts/poster-styles.ts`
+2. Pour de bon : `npx tsx --env-file=.env.local scripts/poster-styles.ts --appliquer`
+3. Relancez tant que la dernière ligne n'affiche pas « Restants pour un passage suivant : 0 » (100 affiches par passage).
+   Le script est rejouable : un passage de plus ne reprend que les affiches encore sans couleur.
+
+Résultat attendu : sur l'accueil, la carte de chaque événement à affiche prend une couleur tirée de l'affiche (jamais un
+gris si l'affiche est en couleurs) ; le texte blanc reste lisible.
+
 L'essai « une partenaire en attente tente de se valider elle-même » se fait par l'outil `npm run essai:fiche-partenaire` (section 3, étape 9).
 
 La liste complète des essais, avec leur case OK ou anomalie, est dans `docs/recette-billetterie.md`.

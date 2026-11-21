@@ -11,6 +11,16 @@ import { readLocalCity, writeLocalCity } from '@/lib/events/city-preference';
 import { useCatalogSignal } from './catalogSignal';
 
 /**
+ * Design 1e (vitesse) : un seul comparateur français pour trier les villes, créé au premier tri (la comparaison de textes
+ * avec la langue en argument en recréait un à chaque appel : 27 ms au téléphone de référence sur l'accueil). Même ordre.
+ */
+let collator: Intl.Collator | null = null;
+const cityCollator = (): Intl.Collator => {
+  if (!collator) collator = new Intl.Collator('fr-FR');
+  return collator;
+};
+
+/**
  * Accueil, « Près de chez vous » (lot 9, 9.1 ; contrat 4.2, 5.2 ; design 1b, point 3).
  *  - Événements de la ville choisie, jamais déduite de la position de l'appareil. Connecté : ville du profil, écrite par
  *    la route. Visiteur : ville gardée sur l'appareil. Îlot client chargé après la page : l'accueil est préparé par le
@@ -177,7 +187,7 @@ function NearbySection({ cities, liveTick }: { cities: string[]; liveTick: numbe
     if (selected) values.add(selected);
     const list = Array.from(values)
       .map((value) => ({ value, label: cityLabel(value) ?? value }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'fr-FR'));
+      .sort((a, b) => cityCollator().compare(a.label, b.label));
     return selected ? list : [{ value: '', label: 'Choisir une ville', disabled: true }, ...list];
   }, [cities, selected]);
 

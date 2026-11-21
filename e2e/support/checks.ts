@@ -220,6 +220,9 @@ function inspectDom(arg: { enums: string[]; captionSelector: string; references:
     ].join(', ');
     for (const el of Array.from(document.querySelectorAll(interactive))) {
         if (!isVisible(el)) continue;
+        // Design 1e (modification signalée) : la page reculée derrière le menu ouvert est inerte (attribut inert : ni clic,
+        // ni focus, ni lecteur d'écran) et réduite à 0,86 ; ses éléments ne sont pas des cibles tant que le menu est ouvert
+        if (el.closest('[inert]')) continue;
         const style = getComputedStyle(el);
         // Lien dans une phrase : exception admise par WCAG 2.5.8
         const parentText = (el.parentElement?.textContent ?? '').trim().length;

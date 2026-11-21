@@ -1,5 +1,5 @@
 import React from 'react';
-import Link from 'next/link';
+import Link from './IntentLink';
 import { buttonClasses, type ButtonSize, type ButtonVariant } from './Button';
 
 export interface LinkButtonProps extends Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> {
@@ -11,7 +11,11 @@ export interface LinkButtonProps extends Omit<React.AnchorHTMLAttributes<HTMLAnc
   rightIcon?: React.ReactNode;
   /** Ouvre dans un nouvel onglet (rel="noopener noreferrer" posé d'office). */
   external?: boolean;
-  /** Préchargement next/link (défaut de Next.js si omis). */
+  /**
+   * Design 1e (vitesse) : préchargement à l'INTENTION par défaut (survol, toucher, focus : IntentLink), plus à l'affichage
+   * (avant : défaut de next/link, qui préchargeait par exemple /explore pendant le chargement de chaque page) ; true :
+   * préchargement à l'affichage, comme next/link.
+   */
   prefetch?: boolean;
 }
 

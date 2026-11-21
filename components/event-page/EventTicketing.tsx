@@ -803,7 +803,7 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
         <div
           role="region"
           aria-label="Achat des billets"
-          className="fixed inset-x-0 bottom-[calc(3.3125rem+env(safe-area-inset-bottom))] z-30 border-t border-border bg-card px-4 py-2.5 shadow-lg lg:hidden"
+          className="fixed inset-x-0 bottom-[calc(3.5rem+max(0.5rem,env(safe-area-inset-bottom)))] z-30 border-t border-border bg-card px-4 py-2.5 shadow-lg lg:hidden"
         >
           {/* Design 1c (point 1) : sous 390 px, le grand bouton (19 px, gras : jamais plus petit) passe sous le montant */}
           <div className="mx-auto flex max-w-xl flex-col items-stretch gap-2 min-[390px]:flex-row min-[390px]:items-center min-[390px]:gap-3">

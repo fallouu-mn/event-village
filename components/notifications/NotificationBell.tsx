@@ -1,68 +1,34 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-    AlertTriangle,
-    ArrowRight,
-    Bell,
-    CalendarClock,
-    Check,
-    CheckCheck,
-    Info,
-    Settings2,
-    ShoppingBag,
-    Ticket,
-    UserRound,
-    Wallet,
-    X,
-} from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { IconButton } from '@/components/ui/IconButton';
+import { usePageSettled } from '@/hooks/usePageSettled';
+import { setUnreadCount as publishUnread } from '@/components/notifications/unread-store';
 import { cn } from '@/components/ui/cn';
-import { TONE_ICON, type Tone } from '@/components/ui/tones';
 import { internalActionUrl } from '@/lib/notifications/action-url';
-import type { NotificationCategory } from '@/lib/notifications/notification-types';
+import type { NotificationPanelProps } from '@/components/layout/NotificationPanel';
 
 /**
- * Lot 7 (7.5) — ce que seul le panneau utilise (libellés des types, pastille, dates) n'est plus dans le
- * JavaScript de chaque page : chargé au survol ou au focus de la cloche, et au plus tard à l'ouverture.
- * Le bouton, le compteur des non lues et le temps réel restent chargés avec la page.
+ * Lot 7 (7.5), design 1e — le panneau (liste groupée par jour, libellés des types, pastilles, dates) n'est pas dans le
+ * JavaScript de chaque page : components/layout/NotificationPanel.tsx, chargé au survol ou au focus de la cloche, et au plus
+ * tard à l'ouverture. Le bouton, le compteur des non lues et le temps réel restent chargés avec la page.
  */
-type NotificationTypesModule = typeof import('@/lib/notifications/notification-types');
-type BadgeModule = typeof import('@/components/ui/Badge');
-type FormatModule = typeof import('@/lib/format');
+type PanelComponent = React.ComponentType<NotificationPanelProps>;
+let panelModule: Promise<PanelComponent> | null = null;
 
-interface PanelKit {
-    notificationTypeMeta: NotificationTypesModule['notificationTypeMeta'];
-    Badge: BadgeModule['Badge'];
-    formatShortDate: FormatModule['formatShortDate'];
-    toDate: FormatModule['toDate'];
-}
-
-let panelKitModule: Promise<PanelKit> | null = null;
-
-function loadPanelKit(): Promise<PanelKit> {
-    if (!panelKitModule) {
-        panelKitModule = Promise.all([
-            import('@/lib/notifications/notification-types'),
-            import('@/components/ui/Badge'),
-            import('@/lib/format'),
-        ])
-            .then(([types, badge, format]) => ({
-                notificationTypeMeta: types.notificationTypeMeta,
-                Badge: badge.Badge,
-                formatShortDate: format.formatShortDate,
-                toDate: format.toDate,
-            }))
+function loadPanelModule(): Promise<PanelComponent> {
+    if (!panelModule) {
+        panelModule = import('@/components/layout/NotificationPanel')
+            .then((m) => m.default)
             .catch((err: unknown) => {
-                panelKitModule = null; // nouvel essai possible ; l'erreur remonte à l'appelant
+                panelModule = null; // nouvel essai possible ; l'erreur remonte à l'appelant
                 throw err;
             });
     }
-    return panelKitModule;
+    return panelModule;
 }
 
 /** Notification telle que la renvoie GET /api/notifications (lot 6, contrat N2). */
@@ -80,39 +46,11 @@ export interface InAppNotification {
     createdAt: string;
 }
 
-type BellFilter = 'ALL' | 'UNREAD';
-
-/** Icône et ton par catégorie (mêmes catégories que la page /notifications : notificationTypeMeta). */
-const CATEGORY_ICON: Record<NotificationCategory, { icon: React.ElementType; tone: Tone }> = {
-    event: { icon: CalendarClock, tone: 'info' },
-    ticket: { icon: Ticket, tone: 'brand' },
-    payment: { icon: Wallet, tone: 'success' },
-    order: { icon: ShoppingBag, tone: 'neutral' },
-    account: { icon: UserRound, tone: 'neutral' },
-    alert: { icon: AlertTriangle, tone: 'warning' },
-    info: { icon: Info, tone: 'neutral' },
-};
+export type BellFilter = 'ALL' | 'UNREAD';
 
 /** Compteur affiché sur la pastille (le même texte figure dans le nom accessible du bouton). */
 function badgeText(count: number): string {
     return count > 99 ? '99+' : String(count);
-}
-
-/** Date relative courte : « À l’instant », « Il y a 5 min », « Hier »… puis la date à Dakar. Date illisible : « — ». */
-function formatRelativeTime(kit: PanelKit, isoDate: string): string {
-    const { formatShortDate, toDate } = kit;
-    const date = toDate(isoDate);
-    if (!date) return formatShortDate(null);
-    const diffMs = Date.now() - date.getTime();
-    const diffMin = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    if (diffMin < 1) return 'À l’instant';
-    if (diffMin < 60) return `Il y a ${diffMin} min`;
-    if (diffHours < 24) return `Il y a ${diffHours} h`;
-    if (diffDays === 1) return 'Hier';
-    if (diffDays < 7) return `Il y a ${diffDays} j`;
-    return formatShortDate(date);
 }
 
 /** Lecture défensive d'une notification de l'API : le lien est revérifié (chemin interne seulement). */
@@ -135,17 +73,18 @@ function toNotification(raw: unknown): InAppNotification | null {
 }
 
 /**
- * Cloche des notifications de l'en-tête (lot 6, contrat N3) :
+ * Cloche des notifications de l'en-tête (lot 6, contrat N3 ; design 1e) :
  *  - liste et compteur portent sur le même ensemble (notifications de l'application du compte), servis par
  *    le serveur : « Toutes » par /api/notifications?limit=20, « Non lues » par ?limit=20&filter=unread
  *    (aucun filtrage dans le navigateur) ; non lues d'abord (tri du serveur) ;
- *  - libellés et icônes par notificationTypeMeta (comme la page /notifications), aucun code brut ;
+ *  - libellés et icônes par notificationTypeMeta dans le panneau (comme la page /notifications), aucun code brut ;
  *  - un clic n'ouvre que le lien interne renvoyé par le serveur (actionUrl), jamais une adresse externe ;
- *  - bouton de 44 × 44 px dont le nom accessible contient le compteur visible ; pastille sur le ton plein
- *    de la marque ; panneau sur les tokens ; filtres en boutons à bascule (aria-pressed) ;
- *  - pied : « Voir toutes les notifications » et « Préférences » ; temps réel par useRealtimeRefresh.
+ *  - bouton de 44 × 44 px dont le nom accessible contient le compteur visible ; pastille sur le ton plein de la marque,
+ *    qui s'anime une fois à chaque nouveau nombre ; compteur partagé avec le point de la barre du bas ;
+ *  - panneau qui glisse (components/layout/NotificationPanel.tsx) ; pied « Voir toutes les notifications » et
+ *    « Préférences » ; temps réel par useRealtimeRefresh, ouvert une fois la page chargée.
  */
-export function NotificationBell() {
+function NotificationBellView() {
     const router = useRouter();
     const { user, isAuthenticated } = useAuth();
     const panelId = useId();
@@ -154,43 +93,47 @@ export function NotificationBell() {
     const [notifications, setNotifications] = useState<InAppNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState<number>(0);
     const [isOpen, setIsOpen] = useState<boolean>(false);
+    const [panelShown, setPanelShown] = useState<boolean>(false);
     const [isMarkingAll, setIsMarkingAll] = useState<boolean>(false);
     const [filter, setFilter] = useState<BellFilter>('ALL');
     const [loadError, setLoadError] = useState<boolean>(false);
-    const [kit, setKit] = useState<PanelKit | null>(null);
-    const [kitError, setKitError] = useState<boolean>(false);
+    const [Panel, setPanel] = useState<PanelComponent | null>(null);
+    const [panelError, setPanelError] = useState<boolean>(false);
     const filterRef = useRef<BellFilter>('ALL');
     const requestSeq = useRef(0);
-    const dropdownRef = useRef<HTMLDivElement>(null);
     const bellRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) {
-                setIsOpen(false);
-                bellRef.current?.focus();
-            }
-        };
-        const handleClickOutside = (e: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        if (isOpen) {
-            window.addEventListener('keydown', handleKeyDown);
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [isOpen]);
-
     const isUserLoggedIn = mounted && (isAuthenticated || !!user);
+
+    // Design 1e (point 2) : le compteur est partagé avec le point de l'onglet « Notifications » de la barre du bas
+    useEffect(() => { publishUnread(isUserLoggedIn ? unreadCount : 0); }, [isUserLoggedIn, unreadCount]);
+
+    /** Fermeture animée (280 ms, aucune si « réduire les animations »), puis retrait du panneau et focus rendu à la cloche. */
+    const closePanel = useCallback(() => {
+        setPanelShown(false);
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.setTimeout(() => { setIsOpen(false); bellRef.current?.focus(); }, reduce ? 0 : 280);
+    }, []);
+
+    // Ouverture : la page ne défile plus derrière ; le panneau glisse vers sa place à l'image suivante ; Échap le referme
+    useEffect(() => {
+        if (!isOpen || !Panel) return undefined;
+        document.documentElement.classList.add('ev-notif-ouvert');
+        let inner = 0;
+        const outer = window.requestAnimationFrame(() => { inner = window.requestAnimationFrame(() => setPanelShown(true)); });
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closePanel(); };
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.cancelAnimationFrame(outer);
+            window.cancelAnimationFrame(inner);
+            window.removeEventListener('keydown', onKey);
+            document.documentElement.classList.remove('ev-notif-ouvert');
+        };
+    }, [isOpen, Panel, closePanel]);
 
     /**
      * Liste (20 premières de l'onglet) et compteur des non lues relus par le serveur, sur le même ensemble.
@@ -233,26 +176,29 @@ export function NotificationBell() {
 
     // Temps réel : une notification reçue ou lue ailleurs (INSERT, UPDATE) recharge la liste et le compteur ;
     // rechargement aussi à la connexion et à chaque reconnexion.
+    // Design 1e (vitesse) : abonnement ouvert une fois la page chargée et le téléphone libre, comme Mes billets (avant :
+    // pendant le chargement de chaque page) ; le compteur est lu tout de suite par le chargement initial ci-dessus.
+    const settled = usePageSettled();
     useRealtimeRefresh({
         channelKey: `notifications-bell-${user?.id ?? 'anonyme'}`,
         subscriptions: [{ table: 'notifications', filter: `user_id=eq.${user?.id ?? ''}` }],
         onSignal: fetchNotifications,
-        enabled: isUserLoggedIn && !!user?.id,
+        enabled: isUserLoggedIn && !!user?.id && settled,
     });
 
-    /** Lot 7 (7.5) : charge le contenu du panneau (survol, focus, ouverture) ; un échec est journalisé et affiché. */
+    /** Charge le panneau (survol, focus, ouverture) ; un échec est journalisé et affiché près de la cloche. */
     const loadPanel = useCallback(() => {
-        if (kit) return;
-        loadPanelKit()
-            .then((loaded) => {
-                setKit(loaded);
-                setKitError(false);
+        if (Panel) return;
+        loadPanelModule()
+            .then((component) => {
+                setPanel(() => component);
+                setPanelError(false);
             })
             .catch((err: unknown) => {
                 console.error('[NotificationBell] chargement du panneau des notifications impossible :', err instanceof Error ? err.message : String(err));
-                setKitError(true);
+                setPanelError(true);
             });
-    }, [kit]);
+    }, [Panel]);
 
     const changeFilter = (next: BellFilter) => {
         if (next === filterRef.current) return;
@@ -302,7 +248,7 @@ export function NotificationBell() {
 
     const handleNotificationClick = async (notif: InAppNotification) => {
         const target = internalActionUrl(notif.actionUrl);
-        setIsOpen(false);
+        closePanel();
         if (target) router.push(target);
         await handleMarkAsRead(notif);
     };
@@ -313,16 +259,8 @@ export function NotificationBell() {
         ? `Notifications, ${countText} non lue${unreadCount > 1 ? 's' : ''}`
         : 'Notifications';
 
-    const filterClass = (active: boolean) => cn(
-        'inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-medium transition-colors duration-150',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active ? 'bg-brand-bg font-semibold text-brand-fg' : 'text-fg-muted hover:bg-surface-sunken hover:text-fg',
-    );
-
-    const footerLinkClass = 'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-brand-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-
     return (
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative">
             <button
                 ref={bellRef}
                 type="button"
@@ -331,18 +269,17 @@ export function NotificationBell() {
                         router.push('/login');
                         return;
                     }
-                    setIsOpen(!isOpen);
-                    if (!isOpen) {
-                        loadPanel();
-                        void fetchNotifications();
-                    }
+                    if (isOpen) { closePanel(); return; }
+                    setIsOpen(true);
+                    loadPanel();
+                    void fetchNotifications();
                 }}
                 onPointerEnter={isUserLoggedIn ? loadPanel : undefined}
                 onFocus={isUserLoggedIn ? loadPanel : undefined}
                 className={cn(
-                    'relative inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-sunken text-fg',
-                    'transition-colors duration-200 hover:text-brand-fg',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+                    'relative inline-flex h-11 w-11 min-h-11 min-w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border bg-background text-foreground-strong',
+                    'transition-colors duration-200 hover:text-primary-text',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
                 )}
                 aria-label={bellLabel}
                 aria-expanded={isUserLoggedIn ? isOpen : undefined}
@@ -350,154 +287,47 @@ export function NotificationBell() {
             >
                 <Bell size={18} aria-hidden="true" />
                 {showBadge && (
-                    <small className="absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand px-1 text-caption font-bold tabular-nums leading-none text-on-brand ring-2 ring-surface">
+                    // Design 1e : le compteur s'anime une fois à chaque nouveau nombre (clé = nombre), jamais en boucle
+                    <small key={countText} className="ev-count-pop absolute -right-1.5 -top-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1 text-caption font-bold tabular-nums leading-none text-primary-foreground ring-2 ring-card">
                         {countText}
                     </small>
                 )}
             </button>
 
-            {isOpen && (
-                <section
-                    id={panelId}
-                    aria-labelledby={titleId}
-                    className="fixed inset-x-3 top-16 z-50 flex max-h-[80vh] flex-col overflow-hidden rounded-2xl border border-border bg-surface-raised text-fg shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96"
-                >
-                    <div className={cn('flex items-center justify-between gap-2 px-4 py-2', unreadCount > 0 ? 'pb-0' : 'border-b border-border')}>
-                        <h2 id={titleId} className="text-base font-semibold text-fg">Notifications</h2>
-                        <IconButton
-                            aria-label="Fermer les notifications"
-                            onClick={() => {
-                                setIsOpen(false);
-                                bellRef.current?.focus();
-                            }}
-                        >
-                            <X size={18} />
-                        </IconButton>
-                    </div>
-                    {/* Lot 7 (D68) : sur sa propre ligne, sous le titre ; à 390 px le libellé ne passe plus à la ligne. */}
-                    {unreadCount > 0 && (
-                        <div className="flex border-b border-border px-2 pb-1">
-                            <button
-                                type="button"
-                                onClick={handleMarkAllAsRead}
-                                disabled={isMarkingAll}
-                                aria-busy={isMarkingAll || undefined}
-                                className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                <CheckCheck size={16} aria-hidden="true" />
-                                Tout marquer comme lu
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="flex gap-2 border-b border-border px-3 py-1.5" role="group" aria-label="Filtrer les notifications">
-                        <button type="button" aria-pressed={filter === 'ALL'} onClick={() => changeFilter('ALL')} className={filterClass(filter === 'ALL')}>
-                            Toutes
-                        </button>
-                        <button type="button" aria-pressed={filter === 'UNREAD'} onClick={() => changeFilter('UNREAD')} className={filterClass(filter === 'UNREAD')}>
-                            {`Non lues (${unreadCount})`}
-                        </button>
-                    </div>
-
-                    <div className="max-h-80 overflow-y-auto overscroll-contain">
-                        {loadError && (
-                            <p role="status" className="border-b border-border bg-warning-bg px-4 py-2 text-sm text-warning-fg">
-                                Notifications non mises à jour : la liste affichée est celle du dernier chargement.
-                            </p>
-                        )}
-                        {notifications.length === 0 ? (
-                            <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
-                                <Bell size={24} className="text-fg-muted" aria-hidden="true" />
-                                <p className="text-sm font-semibold text-fg">
-                                    {filter === 'UNREAD' ? 'Aucune notification non lue' : 'Aucune notification'}
-                                </p>
-                                <p className="text-sm text-fg-muted">
-                                    Billets, rappels, remboursements et changements d’événement s’afficheront ici.
-                                </p>
+            {isOpen && Panel && (
+                <Panel
+                    panelId={panelId}
+                    titleId={titleId}
+                    shown={panelShown}
+                    onClose={closePanel}
+                    notifications={notifications}
+                    unreadCount={unreadCount}
+                    filter={filter}
+                    onFilter={changeFilter}
+                    loadError={loadError}
+                    isMarkingAll={isMarkingAll}
+                    onMarkAll={() => void handleMarkAllAsRead()}
+                    onOpenNotification={(n) => void handleNotificationClick(n)}
+                    onMarkRead={(n) => void handleMarkAsRead(n)}
+                />
+            )}
+            {isOpen && !Panel && (
+                <div role={panelError ? 'alert' : 'status'} className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-border bg-popover p-4 text-sm text-foreground-strong shadow-lg">
+                    {panelError ? (
+                        <div className="flex flex-col gap-2">
+                            <p className="font-semibold">La liste des notifications ne peut pas s’afficher pour le moment.</p>
+                            <p className="text-muted-foreground">Vérifiez votre connexion, puis réessayez.</p>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={loadPanel} className="inline-flex min-h-11 items-center rounded-xl px-3 font-semibold text-primary-text hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Réessayer</button>
+                                <button type="button" onClick={() => setIsOpen(false)} className="inline-flex min-h-11 items-center rounded-xl px-3 font-semibold text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Fermer</button>
                             </div>
-                        ) : !kit ? (
-                            kitError ? (
-                                <div role="alert" className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                                    <p className="text-sm font-semibold text-fg">La liste des notifications ne peut pas s’afficher pour le moment.</p>
-                                    <p className="text-sm text-fg-muted">Vérifiez votre connexion, puis réessayez.</p>
-                                    <button type="button" onClick={loadPanel} className={filterClass(false)}>
-                                        Réessayer
-                                    </button>
-                                </div>
-                            ) : (
-                                <p role="status" className="px-4 py-10 text-center text-sm text-fg-muted">
-                                    Chargement des notifications…
-                                </p>
-                            )
-                        ) : (
-                            <ul className="divide-y divide-border">
-                                {notifications.map((notif) => {
-                                    const meta = kit.notificationTypeMeta(notif.type);
-                                    const { icon: Icon, tone } = CATEGORY_ICON[meta.category];
-                                    const showTypeLabel = meta.label.trim().toLowerCase() !== notif.title.trim().toLowerCase();
-                                    return (
-                                        <li key={notif.id} className={cn('flex items-start gap-1 pr-2', !notif.isRead && 'bg-brand-bg')}>
-                                            <button
-                                                type="button"
-                                                onClick={() => void handleNotificationClick(notif)}
-                                                className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                                            >
-                                                <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', !notif.isRead && tone === 'brand' ? 'bg-surface text-brand-fg' : TONE_ICON[tone])} aria-hidden="true">
-                                                    <Icon size={16} />
-                                                </span>
-                                                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                                    <span className="flex items-start justify-between gap-2">
-                                                        <span className={cn('min-w-0 text-sm text-fg', notif.isRead ? 'font-medium' : 'font-semibold')}>
-                                                            {!notif.isRead && <span className="sr-only">Non lue : </span>}
-                                                            {notif.title}
-                                                        </span>
-                                                        <time dateTime={notif.createdAt} className="flex-shrink-0 whitespace-nowrap text-caption text-fg-muted">
-                                                            {formatRelativeTime(kit, notif.createdAt)}
-                                                        </time>
-                                                    </span>
-                                                    {showTypeLabel && (
-                                                        <span>
-                                                            <kit.Badge variant="neutral" size="sm">{meta.label}</kit.Badge>
-                                                        </span>
-                                                    )}
-                                                    {notif.content && notif.content !== notif.title && (
-                                                        <span className="line-clamp-3 text-sm text-fg-muted">{notif.content}</span>
-                                                    )}
-                                                    {notif.actionUrl && (
-                                                        <span className="inline-flex items-center gap-1 pt-1 text-sm font-semibold text-brand-fg">
-                                                            Consulter
-                                                            <ArrowRight size={14} aria-hidden="true" />
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            </button>
-                                            {!notif.isRead && (
-                                                <IconButton
-                                                    aria-label={`Marquer comme lue : ${notif.title}`}
-                                                    className="mt-1.5"
-                                                    onClick={() => void handleMarkAsRead(notif)}
-                                                >
-                                                    <Check size={18} />
-                                                </IconButton>
-                                            )}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-1 border-t border-border p-2">
-                        <Link href="/notifications" onClick={() => setIsOpen(false)} className={footerLinkClass}>
-                            Voir toutes les notifications
-                        </Link>
-                        <Link href="/profile/notifications" onClick={() => setIsOpen(false)} className={footerLinkClass}>
-                            <Settings2 size={16} aria-hidden="true" />
-                            Préférences
-                        </Link>
-                    </div>
-                </section>
+                        </div>
+                    ) : 'Chargement des notifications…'}
+                </div>
             )}
         </div>
     );
 }
+
+/** Design 1e (vitesse) : sans propriété, la cloche ne se redessine plus à chaque rendu de la coquille (seulement sur son état et la session). */
+export const NotificationBell = React.memo(NotificationBellView);

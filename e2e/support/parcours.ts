@@ -219,11 +219,11 @@ export function payloadFromLot(lot: StoredLot, at = Date.now()): { payload: stri
 
 export const OFFLINE_CACHE = 'ev-hors-ligne-lot7-1';
 
-/** Cloche ouverte sur « Mes billets » ; renvoie le panneau (région « Notifications »). */
+/** Cloche ouverte sur « Mes billets » ; renvoie le panneau (design 1e : fenêtre modale « Notifications », modification signalée). */
 export async function openBell(client: Page): Promise<Locator> {
     await client.goto('/tickets');
     await client.getByRole('button', { name: /^notifications/i }).filter({ visible: true }).first().click();
-    const panel = client.getByRole('region', { name: /^notifications$/i });
+    const panel = client.getByRole('dialog', { name: /^notifications$/i });
     await expect(panel).toBeVisible();
     return panel;
 }

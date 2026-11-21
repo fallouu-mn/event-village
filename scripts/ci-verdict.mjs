@@ -16,6 +16,7 @@
  *   test-logs/         journal brut de chaque suite (tous lots réunis, mêmes noms qu'en série)
  *   captures/, emails/, perf/, playwright/, js-budget.tsv, e2e*.log, fake-services.log, next-start.log : job e2e
  *   responsive.log, responsive.tsv|txt, captures-responsive/, playwright-responsive/ : job responsive (design 1c)
+ *   perf/, perf-mobile.log, build.log, js-budget.tsv, e2e.log : job perf (design 1e, mode rapide avec « ci-perf: oui »)
  *                      (design 1b, lot PERF : perf/lighthouse.tsv|txt, toucher.tsv, lighthouse-resume.json,
  *                      lighthouse-<page>.json.gz et perf-mobile.log, étape bloquante « performance mobile mesurée »)
  *   supabase-start.log, db-reset.log, seed.log, containers.log : ceux de chaque job, l'un après l'autre (en-tête)
@@ -49,7 +50,7 @@ const kv = (texte) => Object.fromEntries((texte || '').split(/\r?\n/).filter((l)
 const jobs = fs.existsSync(artefacts)
     ? fs.readdirSync(artefacts, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith('journaux-')).map((d) => ({ nom: d.name.slice('journaux-'.length), dir: path.join(artefacts, d.name) }))
     : [];
-const rangJob = (n) => (n === 'qualite' ? 0 : n.startsWith('tests-') ? 1 + Number(n.slice(6)) / 100 : n === 'e2e' ? 2 : n === 'responsive' ? 2.5 : 3);
+const rangJob = (n) => (n === 'qualite' ? 0 : n.startsWith('tests-') ? 1 + Number(n.slice(6)) / 100 : n === 'e2e' ? 2 : n === 'responsive' ? 2.5 : n === 'perf' ? 2.7 : 3);
 jobs.sort((a, b) => rangJob(a.nom) - rangJob(b.nom) || a.nom.localeCompare(b.nom));
 const job = (nom) => jobs.find((j) => j.nom === nom);
 const lots = jobs.filter((j) => j.nom.startsWith('tests-'));
@@ -82,6 +83,13 @@ if (responsive) {
     for (const f of ['responsive.tsv', 'responsive.txt']) copier(path.join(responsive.dir, f), path.join(runDir, f));
     copier(path.join(responsive.dir, 'captures-responsive'), path.join(runDir, 'captures-responsive'));
     copier(path.join(responsive.dir, 'playwright'), path.join(runDir, 'playwright-responsive'));
+}
+// Design 1e (vitesse) : mesure mobile seule en mode rapide (job « perf »), aux mêmes noms que celle du job e2e
+const perfJob = job('perf');
+if (perfJob) {
+    for (const nom of ['build', 'perf-mobile', 'e2e', 'next-start', 'e2e-seed']) copier(path.join(perfJob.dir, `${nom}.log`), path.join(runDir, `${nom}.log`));
+    copier(path.join(perfJob.dir, 'perf'), path.join(runDir, 'perf'));
+    copier(path.join(perfJob.dir, 'js-budget.tsv'), path.join(runDir, 'js-budget.tsv'));
 }
 // Journaux des suites : tous lots réunis (noms uniques par suite)
 for (const j of [...lots, job('rapide')].filter(Boolean)) copier(path.join(j.dir, 'test-logs'), path.join(runDir, 'test-logs'));
@@ -119,7 +127,9 @@ fs.writeFileSync(path.join(runDir, 'verify.log'), sections.join('\n'));
 // ── Verdict ───────────────────────────────────────────────────────────────────
 // Design 1c (point 1) : le job « responsive » est requis au run complet, et en mode rapide quand le commit le demande
 const avecResponsive = !rapide || needs.mode?.outputs?.responsive === '1';
-const requis = [...(rapide ? ['mode', 'rapide'] : ['mode', 'qualite', 'tests', 'e2e']), ...(avecResponsive ? ['responsive'] : [])];
+// Design 1e (vitesse) : le job « perf » n'existe qu'en mode rapide, requis quand le commit le demande (ligne ci-perf)
+const avecPerf = rapide && needs.mode?.outputs?.perf === '1';
+const requis = [...(rapide ? ['mode', 'rapide'] : ['mode', 'qualite', 'tests', 'e2e']), ...(avecResponsive ? ['responsive'] : []), ...(avecPerf ? ['perf'] : [])];
 const resultats = requis.map((n) => [n, needs[n]?.result ?? 'absent']);
 let verdict = 'success';
 if (resultats.some(([, r]) => r === 'failure') || (!rapide && controle !== 'ok')) verdict = 'failure';
@@ -145,6 +155,10 @@ if (!rapide) {
     if (graine) lignes.push(`graine=${graine}`);
 }
 if (avecResponsive) lignes.push(`responsive=${needs.responsive?.outputs?.responsive || 'skipped'}`);
+if (avecPerf) {
+    const o = needs.perf?.outputs ?? {};
+    lignes.push(`build=${o.build || 'skipped'}`, `js_budget=${o.js_budget || 'skipped'}`, `perf_mobile=${o.perf_mobile || 'skipped'}`);
+}
 if (rapide) lignes.push('mode=rapide', `suites=${needs.mode?.outputs?.suites ?? ''}`);
 else lignes.push('mode=complet');
 lignes.push(`url=${env.GITHUB_SERVER_URL ?? ''}/${env.GITHUB_REPOSITORY ?? ''}/actions/runs/${env.GITHUB_RUN_ID ?? ''}`);

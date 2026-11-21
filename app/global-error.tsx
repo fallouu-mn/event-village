@@ -15,12 +15,12 @@ h1{margin:0 0 12px;font-size:24px;line-height:1.25;font-weight:800;color:#1A1A1A
 p{margin:0 0 24px;font-size:16px;line-height:1.5;color:#666666}
 .actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
 button,a{min-height:44px;display:inline-flex;align-items:center;padding:0 18px;border-radius:12px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none}
-button{border:1px solid transparent;background:#C2410C;color:#FFFFFF}
+button{border:1px solid transparent;background:#F05A1A;color:#1A1A1A}
 a{border:1px solid #E6E6E6;background:#FFFFFF;color:#1A1A1A}
-:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px #FFFFFF,0 0 0 4px #FF8A3D,0 0 0 6px #1A1A1A}
+:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px #FFFFFF,0 0 0 4px #F05A1A,0 0 0 6px #1A1A1A}
 @media (prefers-color-scheme:dark){body{background:#121212;color:#F2F2F2}h1{color:#FFFFFF}p{color:#A6A6A6}
-button{background:#FF8A3D;color:#1A1A1A}a{background:#1A1A1A;border-color:#333333;color:#FFFFFF}
-:focus-visible{box-shadow:0 0 0 2px #121212,0 0 0 4px #FF8A3D,0 0 0 6px #121212}}
+button{background:#F05A1A;color:#1A1A1A}a{background:#1A1A1A;border-color:#333333;color:#FFFFFF}
+:focus-visible{box-shadow:0 0 0 2px #121212,0 0 0 4px #F05A1A,0 0 0 6px #121212}}
 `;
 
 export default function GlobalError({
