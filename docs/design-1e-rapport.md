@@ -5,9 +5,62 @@ des tests). **Non fusionnée** (consigne). **Aucune migration.** Le catalogue de
 des commandes ne sont pas touchés, sauf par les jetons de couleur et la coquille commune (en-tête, barre du bas, menu,
 barre latérale).
 
-## À lire en premier
+## À lire en premier — reprise du 21/11 (décisions de l'utilisateur)
 
-**État final : lot livré sur sa branche, run complet ROUGE sur deux points, documentés ci-dessous (trois tentatives
+**État final : NON FUSIONNÉ.** Feu vert de fusion donné sous condition « run complet entièrement vert avec Mes billets ≥ 90 ».
+Le run complet **561** (`aa877ec32`) n'est pas entièrement vert, sur **un seul test, qui n'est pas une lenteur** ; je me suis
+arrêté comme demandé (« si le run n'est pas vert, arrête-toi et fais ton rapport »). Worktree conservé.
+
+| Contrôle | Run complet 557 (`ad9ea6db7`) | Run complet 561 (`aa877ec32`) |
+|---|---|---|
+| Tests (4 lots, migrations depuis zéro, sécurité et audits compris) | 569/569 verts | **569/569 verts** |
+| Contrôle responsive | 0 défaut | **0 défaut** |
+| E2E captures (ordinateur compris), fumée, terrain, recette, emails, pwa, déconnexion | **verts** (point A réglé) | **verts** |
+| E2E phase « perf » (`e2e/perf.spec.ts`) | verte | **rouge : 1 test, défaut de l'outil de test** (ci-dessous) |
+| Mesure mobile (client de mesure fixe, seuils et calibration inchangés) | accueil 93, fiche 94, **Mes billets 91** | accueil 91, fiche 90, **Mes billets 92** (×4,6 à ×5,2) |
+| Poids JavaScript | rouge : `/billet/hors-ligne` +44 octets | **tenus, budgets non relevés** |
+
+- **Le seul rouge du run 561** : `e2e/perf.spec.ts:391`, « Accueil : premier affichage utile », s'arrête sur
+  `request.sizes: Target page, context or browser has been closed`. Un écouteur du test demande la taille d'un fichier
+  JavaScript après la fermeture de la page ; la promesse rejetée n'est pas rattrapée et casse le contexte du navigateur, et
+  la passe suivante ne peut plus en ouvrir (`browser.newContext : Failed to find browser context`). Ce n'est pas une mesure
+  hors seuil : les deux autres écrans de ce test (fiche, Mes billets) passent, et la mesure Lighthouse est verte.
+  **Première apparition sur les 40 derniers runs publiés**, toutes branches confondues. `e2e/perf.spec.ts` n'est pas modifié par
+  ce lot. **À décider par vous** : relancer le run complet tel quel, ou corriger d'abord le test (rattraper le rejet de
+  `req.sizes()` quand la page est déjà fermée, sans toucher aux seuils). Je n'ai fait ni l'un ni l'autre, conformément à la
+  consigne.
+- **Règle temporaire de Mes billets** : les deux runs complets avec le client de mesure fixe donnent Mes billets **≥ 90** (91
+  et 92). La condition de levée que vous avez posée sur la mesure est donc remplie, mais la levée était liée à un run 561
+  entièrement vert : **elle n'est pas inscrite comme acquise** tant que vous ne l'avez pas confirmée. Aucun code ne porte cette
+  règle (la mesure rend déjà le run rouge sous 90 pour toutes les pages) ; la lever revient à cesser d'accepter Mes billets
+  sous 90 lors d'une fusion, et à clore l'entrée « Mes billets au seuil » de `docs/apres-lancement.md`.
+- **93 reste un objectif** (décision du 21/11) : atteint au job « perf » (93 au run 533 ; 92 au run 552), pas aux runs complets.
+  Le profil processeur du run 559 ne montre plus de coût propre à l'application au-dessus de quelques millisecondes sur Mes
+  billets. Ce qui reste : le framework, le client Supabase (report refusé le 21/11) et le dessin du QR (≈ 28 ms ; report
+  refusé le 21/11, l'entrée passe avant le score).
+
+### Ce qui a été fait après les décisions du 21/11
+
+| Point | Changement | Commit |
+|---|---|---|
+| A | Espaces organisatrice et administration : bouton du compte réduit à l'avatar (44 × 44 px, nom accessible gardé) | `ce636ffeb` |
+| A | `scroll-padding-top` retiré ; `e2e/captures.spec.ts` fait ses contrôles page en haut (position fixe), puis la capture reprend sa position. **Aucune règle d'axe changée** (modification du test signalée) | `ce636ffeb` |
+| B | Premier affichage de Mes billets : billets **à venir** seulement (règle commune `lib/tickets/periode.ts`, `GET /api/tickets?periode=a-venir` : sous-ensemble du même compte, après les mêmes contrôles de session) ; « Tous mes billets » et « Historique » chargent la liste complète à leur ouverture | `ea7573c4a` |
+| B | Portefeuille affiché par 10, la suite au défilement (et par un bouton « Afficher les billets suivants » pour le clavier) | `ea7573c4a` |
+| B (sécurité, hors ligne) | Enregistrement hors ligne de **tous** les billets inchangé (synchronisation de fond, liste complète). La réconciliation de Mes billets, qui **efface** les billets absents de la liste, ne tourne plus qu'avec la liste **complète** : jamais avec les seuls billets à venir (sinon les billets passés enregistrés seraient effacés). Test : `tests/schema/design1e-mes-billets.test.ts` (rouge 0/5, puis vert) ; suites hors ligne, déconnexion et `tests/security` vertes | `ea7573c4a` |
+| B (mesure) | Client de mesure dédié **Awa Sow** (`clientMesure`), semé une fois par `seed:demo` : **10 billets à venir, 30 passés**, achetés par le paiement simulé ; connecté par la phase « connexion » (`.auth/mesure.json`) ; le même au job « perf » et au run complet ; aucune phase de l'e2e ne s'en sert. Seuils et calibration inchangés | `ea7573c4a` |
+| B | Dates de Dakar écrites sans `Intl` (35 ms au premier `Intl.DateTimeFormat`, profil du run 552), comparées à `Intl` sur 3 000 instants ; module compacté pour tenir le budget de `/billet/hors-ligne` | `ad9ea6db7`, `b9df49c17` |
+
+Tests modifiés en plus de la section 8 (signalés) : `tests/schema/design1b-billets.test.ts` (règle « à venir » lue dans
+`lib/tickets/periode.ts`), `tests/schema/design1b-chargement.test.ts` (portée de `readTicketsOnServer`), `e2e/captures.spec.ts`
+(contrôles page en haut).
+
+Section 9 (décisions prises seul) : **validée par l'utilisateur le 21/11.** Logo : inchangé (décision). Client Supabase à la
+demande : non (décision).
+
+## État au premier rapport (run complet 543, avant les décisions du 21/11)
+
+**Lot livré sur sa branche, run complet ROUGE sur deux points, documentés ci-dessous (trois tentatives
 chacun, règle du mode autonome). Non fusionné.** Dernier run complet **543** (`20885b296`), machine normale (×3,5 à
 ×4) :
 
