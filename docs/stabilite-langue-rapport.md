@@ -39,6 +39,14 @@ Les captures correspondantes sont dans `runs/513-44778802975/captures/` : `admin
 | 513 (complet) | d74d223e8 | Rouge, à cause de `installable.spec.ts` (voir plus haut). La preuve est faite. Mes billets à 89, sur une page non touchée. |
 | 514 (rapide) | 22bace61d | Vert |
 | 516 (complet, main d0bbe8caa fusionné) | 901aee675 | Rouge : seul le test PWA est en échec (délai dépassé). Mesure mobile verte, responsive vert, 707 captures vertes. |
-| Complet après le correctif `pwa` | (commit du correctif) | à venir |
+| 517 (complet, correctif `pwa`) | 8fa28063a | e2e verts (PWA compris), responsive vert. Mesure mobile rouge sur la seule page Mes billets : 88 (accueil 93, fiche 90). |
 
-Pour mémoire, le run 515 de main (d0bbe8caa, sans ce lot) a des e2e verts et une mesure mobile rouge : Mes billets à 89, une page que ce lot ne touche pas.
+## Décision : Mes billets à 88 accepté
+
+Le 21/11, l'utilisateur a accepté le 88 de Mes billets au run 517 (option 2). Ce lot ne touche aucun code de l'application. main a aussi Mes billets sous 90 sans ce lot : 89 au run 515 (d0bbe8caa, accepté dans le rapport du design 1d), 88 au run 518 (317785209).
+
+C'est une règle temporaire, jusqu'au Design 1e qui traite Mes billets : pour le run de main qui suit cette fusion, une note de Mes billets sous 90 ne bloque pas à elle seule. Le seuil de 90 lui-même ne change pas.
+
+## Fusion
+
+main 317785209 (rapport du design 1d, documentation seulement) a été fusionné dans la branche, puis la branche a été fusionnée dans main avec `--no-ff`. Le run de main qui suit cette fusion fait foi.
