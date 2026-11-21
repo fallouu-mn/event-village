@@ -23,41 +23,21 @@ function visibleSpaces(formatted: string): string {
 }
 
 /**
- * Design 1e (vitesse) : un formateur Intl n'est construit qu'à son premier usage, puis gardé. Avant, les cinq étaient
- * construits au chargement du module, sur chaque page qui l'importe (profil du run 526 : 52 ms au téléphone de référence
- * sur Mes billets, pour des formateurs souvent inutiles à l'affichage). Mêmes options, mêmes sorties.
+ * Design 1e (vitesse) : aucun formateur Intl construit au chargement du module (profil du run 526 : 52 ms au téléphone de
+ * référence sur Mes billets). Nombres : formateur fr-FR construit à son premier usage, puis gardé (0 ou 2 décimales).
+ * Dates de Dakar écrites sans Intl : Africa/Dakar = UTC+0 toute l'année, sans heure d'été (voir toDakarDateTimeLocal),
+ * donc jour, mois, année, heure et minute sont ceux de l'heure UTC, avec les abréviations d'Intl fr-FR (« sam. 14 nov.
+ * 2026 », « 14 nov. 2026 », « 08:05 ») ; comparé instant par instant à Intl par tests/schema/design1e-vitesse.test.ts (le
+ * premier Intl.DateTimeFormat coûtait 35 ms, profil du run 552). Écriture compacte : ce module est dans le JavaScript de
+ * chaque page (budget de /billet/hors-ligne, run 557).
  */
-function lazily<T>(make: () => T): () => T {
-    let value: T | undefined;
-    return () => {
-        if (value === undefined) value = make();
-        return value;
-    };
-}
-
-/**
- * Design 1e (vitesse) : dates de Dakar écrites sans Intl. Africa/Dakar = UTC+0 toute l'année, sans heure d'été (voir
- * toDakarDateTimeLocal) : jour, mois, année, heure et minute sont ceux de l'heure UTC. Mêmes abréviations qu'Intl fr-FR
- * (« sam. 14 nov. 2026 », « 14 nov. 2026 », « 08:05 ») : comparé instant par instant à Intl par
- * tests/schema/design1e-vitesse.test.ts. Le premier Intl.DateTimeFormat coûtait 35 ms au téléphone de référence (profil
- * du run 552, Mes billets).
- */
-const WEEKDAYS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
-const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-const pad2 = (n: number): string => String(n).padStart(2, '0');
-
-function dakarParts(d: Date): { weekday: string; day: number; month: string; year: number; time: string } {
-    return {
-        weekday: WEEKDAYS[d.getUTCDay()], day: d.getUTCDate(), month: MONTHS[d.getUTCMonth()], year: d.getUTCFullYear(),
-        time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`,
-    };
-}
-
-const DATE_FORMAT = (d: Date): string => { const p = dakarParts(d); return `${p.weekday} ${p.day} ${p.month} ${p.year}`; };
-const SHORT_DATE_FORMAT = (d: Date): string => { const p = dakarParts(d); return `${p.day} ${p.month} ${p.year}`; };
-const TIME_FORMAT = (d: Date): string => dakarParts(d).time;
-const INTEGER_FORMAT = lazily(() => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }));
-const PRECISE_FORMAT = lazily(() => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }));
+const numberFormats: Intl.NumberFormat[] = [];
+const numberFormat = (digits: 0 | 2): Intl.NumberFormat => (numberFormats[digits] ??= new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits }));
+const WEEKDAYS = 'dim. lun. mar. mer. jeu. ven. sam.'.split(' ');
+const MONTHS = 'janv. févr. mars avr. mai juin juil. août sept. oct. nov. déc.'.split(' ');
+const SHORT_DATE_FORMAT = (d: Date): string => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+const DATE_FORMAT = (d: Date): string => `${WEEKDAYS[d.getUTCDay()]} ${SHORT_DATE_FORMAT(d)}`;
+const TIME_FORMAT = (d: Date): string => d.toISOString().slice(11, 16);
 
 type DateInput = Date | string | number | null | undefined;
 
@@ -148,7 +128,7 @@ function groupDigits(rounded: number): string {
 export function formatInteger(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(value)) return MISSING_VALUE;
     const rounded = Math.round(value);
-    if (Math.abs(rounded) >= 1e21) return visibleSpaces(INTEGER_FORMAT().format(rounded));
+    if (Math.abs(rounded) >= 1e21) return visibleSpaces(numberFormat(0).format(rounded));
     return groupDigits(rounded);
 }
 
@@ -164,7 +144,7 @@ export function formatFcfa(amount: number | null | undefined): string {
  */
 export function formatFcfaPrecise(amount: number | null | undefined): string {
     if (amount === null || amount === undefined || !Number.isFinite(amount)) return MISSING_VALUE;
-    return `${visibleSpaces(PRECISE_FORMAT().format(amount))}${NBSP}F${NBSP}CFA`;
+    return `${visibleSpaces(numberFormat(2).format(amount))}${NBSP}F${NBSP}CFA`;
 }
 
 /**

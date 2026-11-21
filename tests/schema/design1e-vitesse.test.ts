@@ -48,7 +48,7 @@ describe('design 1e — vitesse : formateurs de lib/format.ts construits au prem
         const src = read('lib/format.ts');
         const topLevel = src.split('\n').filter((l) => /^(?:export )?const \w+ = new Intl\./.test(l));
         assert.deepEqual(topLevel, [], 'formateur construit au chargement du module');
-        assert.match(src, /function lazily<T>\(make: \(\) => T\): \(\) => T/);
+        assert.match(src, /numberFormats\[digits\] \?\?= new Intl\.NumberFormat\('fr-FR'/, 'construit au premier usage');
     });
     test('sorties inchangées (Dakar, insécables visibles)', async () => {
         const f = await import('../../lib/format');
@@ -100,7 +100,7 @@ describe('design 1e — vitesse : dates de Dakar sans Intl (profil du run 552 : 
     test('formatDate, formatShortDate, formatTime et formatDateTime n’appellent plus Intl.DateTimeFormat', () => {
         const src = read('lib/format.ts');
         assert.doesNotMatch(src, /new Intl\.DateTimeFormat/);
-        assert.match(src, /function dakarParts\(/);
+        assert.match(src, /const TIME_FORMAT = \(d: Date\): string => d\.toISOString\(\)\.slice\(11, 16\);/);
     });
     test('même texte qu’Intl fr-FR à Dakar, sur 3 000 instants de 1999 à 2061 (et bornes de mois, d’année, de minuit)', async () => {
         const f = await import('../../lib/format');
