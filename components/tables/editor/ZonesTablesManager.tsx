@@ -22,7 +22,8 @@ import { apiMessage, wholeNumber, type OwnVenueTable, type OwnVenueZone } from '
 
 const API = '/api/partner/tables';
 
-interface RowError { message: string; offerDeactivate: boolean }
+/** Erreur d'une ligne : texte de la route (déjà en français simple), proposition de désactiver si l'élément est réservé. */
+interface RowError { text: string; offerDeactivate: boolean }
 type Pending = { kind: 'zone' | 'table'; id: string; label: string } | null;
 
 function tableFields(number: string, capacity: string, min: string): { error: string | null; body: { table_number: string; capacity: number; min_capacity: number } | null } {
@@ -128,7 +129,7 @@ function TableRow({ table, zones, busy, error, onSave, onToggle, onDelete }: {
 function RowErrorText({ error, onDeactivate, busy }: { error: RowError; onDeactivate?: () => void; busy: boolean }) {
     return (
         <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-danger-border bg-danger-soft px-3 py-2">
-            <p className="min-w-0 flex-1 basis-48 break-words text-sm font-medium text-danger-text">{error.message}</p>
+            <p className="min-w-0 flex-1 basis-48 break-words text-sm font-medium text-danger-text">{error.text}</p>
             {error.offerDeactivate && onDeactivate && (
                 <Button type="button" variant="secondary" size="sm" leftIcon={<EyeOff size={16} />} onClick={onDeactivate} disabled={busy}>Désactiver</Button>
             )}
@@ -186,7 +187,7 @@ export function ZonesTablesManager({ venueId, zones, tables, onChanged }: {
             toast.success(ok);
             return true;
         } catch (err) {
-            setRowErrors((e) => ({ ...e, [key]: { message: apiMessage(err, fail), offerDeactivate } }));
+            setRowErrors((e) => ({ ...e, [key]: { text: apiMessage(err, fail), offerDeactivate } }));
             return false;
         } finally {
             setBusy(null);
