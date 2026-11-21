@@ -1,0 +1,100 @@
+TAP version 13
+[L11B] F1 routes : {"rename":"HTTP 200 {\"success\":true,\"venue\":{\"id\":\"2e75f407-2bbb-4d43-a143-93c6ec8f4ce7\",\"partner_id\":\"d26af172-f47b-4b5f-b904-62e7da5af8dc\",\"kind\":\"RESTAURANT\",\"name\":\"Renommé pendant la suspension\",\"description\":null,\"address\":\"Corniche Ouest\",\"city\":\"Dakar\",\"latitude\":null,\"longitude\":null,\"validation_status\":\"VALIDEE\",\"validation_reason\":null,\"validated_by\":\"b27f6a2d-52a7-4495-959a-29a727f5aee0\",\"validated_at\":\"2026-11-21T02:47:34.655803+00:00\",\"is_active\":true,\"slot_minutes\":null,\"deposit_per_person\":5000,\"con","create":"HTTP 201 {\"success\":true,\"table\":{\"id\":\"b057ea3d-8ea6-48b8-8062-07b2209d16aa\",\"partner_id\":\"d26af172-f47b-4b5f-b904-62e7da5af8dc\",\"zone_id\":null,\"table_number\":\"S9\",\"capacity\":4,\"min_capacity\":1,\"is_active\":true,\"created_at\":\"2026-11-21T02:47:34.846352+00:00\",\"updated_at\":\"2026-11-21T02:47:34.846352+00:00\",\"venue_id\":\"2e75f407-2bbb-4d43-a143-93c6ec8f4ce7\"}}","absent":"HTTP 200 {\"success\":true,\"state\":\"Absent\",\"refundAmount\":0}","cancel":"HTTP 200 {\"success\":true,\"state\":\"Annulée par l’établissement\",\"refundAmount\":21000}","venue":{"name":"Renommé pendant la suspension"},"tables":[2,3],"states":{"paid":"ABSENT","later":"ANNULEE_ETABLISSEMENT"}}
+# Subtest: F1. Fiche partenaire SUSPENDU : établissements, tables et réservations en lecture seule
+    # Subtest: routes : renommer l’établissement, créer une table, marquer absent, annuler → 403 PARTNER_SUSPENDED, rien d’écrit
+    not ok 1 - routes : renommer l’établissement, créer une table, marquer absent, annuler → 403 PARTNER_SUSPENDED, rien d’écrit
+      ---
+      duration_ms: 122.671111
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/l11b-securite.test.ts:2:2934'
+      failureType: 'testCodeFailure'
+      error: |-
+        rename par une fiche SUSPENDU : HTTP 200 {"success":true,"venue":{"id":"2e75f407-2bbb-4d43-a143-93c6ec8f4ce7","partner_id":"d26af172-f47b-4b5f-b904-62e7da5af8dc","kind":"RESTAURANT","name":"Renommé pendant la suspension","description":null,"address":"Corniche Ouest","city":"Dakar","latitude":null,"longitude":null,"validation_status":"VALIDEE","validation_reason":null,"validated_by":"b27f6a2d-52a7-4495-959a-29a727f5aee0","validated_at":"2026-11-21T02:47:34.655803+00:00","is_active":true,"slot_minutes":null,"deposit_per_person":5000,"con
+        
+        200 !== 403
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 403
+      actual: 200
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/l11b-securite.test.ts:74:24)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+[L11B] F1 base : {"absent":{"ok":false,"code":"NOT_CONFIRMED","message":"Seule une réservation confirmée peut être marquée ainsi."},"cancel":{"ok":false,"code":"NOT_CANCELLABLE","message":"Cette réservation est déjà annulée ou terminée."}}
+    # Subtest: base : présence et annulation par l’établissement refusées pour une fiche SUSPENDU (défense en profondeur)
+    not ok 2 - base : présence et annulation par l’établissement refusées pour une fiche SUSPENDU (défense en profondeur)
+      ---
+      duration_ms: 12.555234
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/l11b-securite.test.ts:2:5327'
+      failureType: 'testCodeFailure'
+      error: |-
+        présence : {"ok":false,"code":"NOT_CONFIRMED","message":"Seule une réservation confirmée peut être marquée ainsi."}
+        + actual - expected
+        
+        + 'NOT_CONFIRMED'
+        - 'PARTNER_SUSPENDED'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'PARTNER_SUSPENDED'
+      actual: 'NOT_CONFIRMED'
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/l11b-securite.test.ts:94:20)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: garde-fou : fiche VALIDE, mêmes actions acceptées (le refus vise bien la suspension)
+    not ok 3 - garde-fou : fiche VALIDE, mêmes actions acceptées (le refus vise bien la suspension)
+      ---
+      duration_ms: 12.636588
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/l11b-securite.test.ts:2:6722'
+      failureType: 'testCodeFailure'
+      error: |-
+        HTTP 409 {"error":"Seule une réservation confirmée peut être marquée ainsi.","code":"NOT_CONFIRMED"}
+        
+        409 !== 200
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 200
+      actual: 409
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/l11b-securite.test.ts:106:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 1 - F1. Fiche partenaire SUSPENDU : établissements, tables et réservations en lecture seule
+  ---
+  duration_ms: 638.042784
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/l11b-securite.test.ts:2:2807'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+[INVARIANT] l11b-securite — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] l11b-securite — purge des réservations échues : {"expired":0}
+[INVARIANT] l11b-securite — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] l11b-securite — (d)(e)(f) : 0 violation(s)
+1..1
+# tests 3
+# suites 1
+# pass 0
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 686.496691
