@@ -1417,7 +1417,7 @@ const CATALOG = {
         link: (d) => tableClientLink(d),
         inApp: (d) => ({
             title: 'Table réservée',
-            content: `Votre table chez ${venueName(d)} est réservée ${tablePeriod(d)} pour ${guestsText(d)}. Elle vous est gardée jusqu’à ${hm(text(d, 'held_until'))}.${num(d, 'paid_amount') > 0 ? ` Acompte payé : ${money(d, 'paid_amount')}.${optText(d, 'cancel_free_until') ? ` Annulation gratuite avant le ${dakarLocalText(text(d, 'cancel_free_until'))}.` : ''}` : ''} Un empêchement ? Annulez depuis votre réservation pour libérer la table.`,
+            content: `Votre table chez ${venueName(d)} est réservée ${tablePeriod(d)} pour ${guestsText(d)}. Elle vous est gardée jusqu’à ${hm(text(d, 'held_until'))}.${num(d, 'paid_amount') > 0 ? ` Acompte payé : ${money(d, 'paid_amount')}.${cancelFreeSentence(d)}` : ''} Un empêchement ? Annulez depuis votre réservation pour libérer la table.`,
         }),
         sms: (d, ctx) => `${SMS_PREFIX}table chez ${smsVar(text(d, 'venue_name'), 22)} ${smsTablePeriod(d)}, ${count(d, 'guests')} pers. Gardée jusqu'à ${hm(text(d, 'held_until'))}. ${tableSmsLink(d, ctx)}`,
         sample: { ...TABLE_SAMPLE_DATA, cancel_free_until: '2026-12-05T18:00' },
@@ -2651,10 +2651,14 @@ function dueText(value: string, now: Date = new Date(), short = false): string {
     return short ? `${smsDay(d)} ${t}` : `le ${smsDay(d)} à ${t}`;
 }
 
-/** Lot 11b : date et heure de Dakar « AAAA-MM-JJTHH:MM » (sans fuseau) → « 5 décembre 2026 à 18:00 ». */
-function dakarLocalText(value: string): string {
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) throw new TemplateDataError('cancel_free_until', 'n’est pas une date');
-    return formatDateTime(`${value}:00Z`);
+/**
+ * Lot 11b : fin de l'annulation gratuite (donnée facultative, date et heure de Dakar « AAAA-MM-JJTHH:MM ») :
+ * « Annulation gratuite avant le sam. 5 déc. 2026 à 18:00. », ou rien si elle manque ou est illisible.
+ */
+function cancelFreeSentence(d: object): string {
+    const value = optText(d, 'cancel_free_until');
+    if (!value || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return '';
+    return ` Annulation gratuite avant le ${formatDateTime(`${value}:00Z`)}.`;
 }
 
 /** Lot 11b : page de la réservation pour le client, pour l'établissement ; lien court des SMS (« /t/<code> »). */
