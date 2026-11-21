@@ -169,7 +169,12 @@ describe('3. Pastilles, recherche, fermetures exceptionnelles', () => {
         assert.deepEqual([changed.status, changed.body.code], [409, 'PREVIEW_CHANGED']);
         const intruder = await api('POST', 'partner/venues/[id]/closures', { token: stranger.accessToken, params: { id: venue }, body: { ...body, expected_count: 1 } });
         assert.equal(intruder.status, 404, show(intruder));
-        const created = await api('POST', 'partner/venues/[id]/closures', { token: owner.accessToken, params: { id: venue }, body: { ...body, expected_count: 1 } });
+        // Contre-vérification du lot 11b (T1, modification signalée au rapport) : la confirmation renvoie l'empreinte de
+        // la liste de l'aperçu ; sans elle, un aperçu non vide ne se confirme pas
+        assert.match(String(p.fingerprint), /^[0-9a-f]{32}$/, 'empreinte de la liste rendue avec l’aperçu');
+        const noHash = await api('POST', 'partner/venues/[id]/closures', { token: owner.accessToken, params: { id: venue }, body: { ...body, expected_count: 1 } });
+        assert.deepEqual([noHash.status, noHash.body.code], [400, 'PREVIEW_REQUIRED']);
+        const created = await api('POST', 'partner/venues/[id]/closures', { token: owner.accessToken, params: { id: venue }, body: { ...body, expected_count: 1, expected_hash: p.fingerprint } });
         assert.equal(created.status, 201, show(created));
         const row = await reservation(String(paid.reservation_id));
         assert.deepEqual([row.booking_state, n(row.refunded_amount), row.cancel_origin], ['ANNULEE_ETABLISSEMENT', 21_000, 'ETABLISSEMENT']);

@@ -10,11 +10,13 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/partner/venues/[id]/closures?preview=1 { start_date, end_date?, start_time?, end_time?, reason } — aperçu
  * d'une fermeture exceptionnelle : réservations touchées (heure, personnes, table, prénom du client) et montant rendu.
- * POST /api/partner/venues/[id]/closures { …, expected_count } — fermeture confirmée : l'établissement n'est plus
- * réservable sur la période ; chaque réservation touchée est annulée par l'établissement et remboursée en entier, le
- * client prévenu (motif « Fermeture exceptionnelle : … »).
+ * POST /api/partner/venues/[id]/closures { …, expected_count, expected_hash } — fermeture confirmée : l'établissement
+ * n'est plus réservable sur la période ; chaque réservation touchée est annulée par l'établissement et remboursée en
+ * entier, le client prévenu (motif « Fermeture exceptionnelle : … »).
  * Lot 11b (point 2) : venue_closure_preview, venue_closure_create en base (propriétaire, compte ACTIF, fiche VALIDE ;
- * sous le verrou de l'établissement, la liste doit être celle de l'aperçu, sinon refus PREVIEW_CHANGED). Les
+ * sous le verrou de l'établissement, la liste doit être celle de l'aperçu, sinon refus PREVIEW_CHANGED). Contre-
+ * vérification (T1) : l'aperçu rend l'empreinte de sa liste (fingerprint), la confirmation la renvoie (expected_hash) et
+ * la base la recalcule ; sans empreinte, seul un aperçu vide se confirme. Les
  * remboursements créés sont envoyés tout de suite (repris sinon par la tâche des versements). Service fermé : 404.
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +32,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (preview) {
             return NextResponse.json({
                 success: true,
-                preview: { startsAt: r.starts_at, endsAt: r.ends_at, reason: r.reason, count: Number(r.count ?? 0), refundTotal: Number(r.refund_total ?? 0), reservations: r.reservations ?? [] },
+                preview: { startsAt: r.starts_at, endsAt: r.ends_at, reason: r.reason, count: Number(r.count ?? 0), refundTotal: Number(r.refund_total ?? 0), reservations: r.reservations ?? [], fingerprint: r.fingerprint },
             });
         }
         await sendTableRefunds(r.cashout_ids);

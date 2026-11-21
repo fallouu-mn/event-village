@@ -116,6 +116,8 @@ export const ClosureSchema = z.object({
     end_time: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
     reason: z.string().trim().min(3, 'Indiquez le motif : il est envoyé aux clients.').max(200),
     expected_count: z.number().int().min(0).max(10_000).optional(),
+    // Contre-vérification du lot 11b (T1) : empreinte de la liste vue à l'aperçu (recalculée en base sous le verrou)
+    expected_hash: z.string().regex(/^[0-9a-f]{32}$/, 'Affichez de nouveau les réservations touchées, puis confirmez.').optional(),
 });
 
 export const ZoneInputSchema = z.object({

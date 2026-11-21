@@ -7,7 +7,8 @@
  *  - Nouvelle fermeture : un jour ou du … au …, toute la journée ou de … à … (au quart d'heure), motif envoyé aux
  *    clients → « Voir les réservations touchées » (POST …/closures?preview=1) → aperçu de la base (heure, personnes,
  *    table, prénom ; nombre et total rendu) → « Confirmer la fermeture » (POST …/closures avec expected_count = nombre de
- *    l'aperçu). Refus PREVIEW_CHANGED : l'aperçu est relu et réaffiché. Aucun montant calculé ici.
+ *    l'aperçu et expected_hash = son empreinte, contre-vérification T1 : la base n'annule que la liste montrée). Refus
+ *    PREVIEW_CHANGED : la nouvelle liste est relue et réaffichée avant une nouvelle confirmation. Aucun montant calculé ici.
  */
 import { useState } from 'react';
 import { ArrowLeft, CalendarOff, CalendarX2, CheckCircle2, Eye, Trash2, Users } from 'lucide-react';
@@ -40,7 +41,7 @@ interface TouchedReservation {
     refund_amount: number | string | null;
     client_name: string | null;
 }
-interface Preview { startsAt: string; endsAt: string; reason: string; count: number; refundTotal: number; reservations: TouchedReservation[] }
+interface Preview { startsAt: string; endsAt: string; reason: string; count: number; refundTotal: number; reservations: TouchedReservation[]; fingerprint: string }
 
 type Span = 'JOUR' | 'PERIODE';
 type FieldKey = 'startDate' | 'endDate' | 'startTime' | 'endTime' | 'reason';
@@ -141,7 +142,10 @@ export function ClosuresView({ venueId }: { venueId: string }) {
     const askPreview = async (): Promise<Preview | null> => {
         const body = await sendJson<{ preview: Preview }>(`${url}/closures?preview=1`, 'POST', payload());
         const p = body.preview;
-        return { ...p, count: Number(p.count) || 0, refundTotal: Number(p.refundTotal) || 0, reservations: Array.isArray(p.reservations) ? p.reservations : [] };
+        return {
+            ...p, count: Number(p.count) || 0, refundTotal: Number(p.refundTotal) || 0, reservations: Array.isArray(p.reservations) ? p.reservations : [],
+            fingerprint: typeof p.fingerprint === 'string' ? p.fingerprint : '',
+        };
     };
 
     const showPreview = async () => {
@@ -173,7 +177,9 @@ export function ClosuresView({ venueId }: { venueId: string }) {
         setBusy('confirm');
         setFormError(null);
         try {
-            const body = await sendJson<{ closure: { cancelled: number; refundTotal: number; startsAt: string; endsAt: string } }>(`${url}/closures`, 'POST', { ...payload(), expected_count: preview.count });
+            const body = await sendJson<{ closure: { cancelled: number; refundTotal: number; startsAt: string; endsAt: string } }>(`${url}/closures`, 'POST', {
+                ...payload(), expected_count: preview.count, ...(preview.fingerprint ? { expected_hash: preview.fingerprint } : {}),
+            });
             const c = body.closure;
             setDone({ period: closurePeriodText(c.startsAt ?? preview.startsAt, c.endsAt ?? preview.endsAt), cancelled: Number(c.cancelled) || 0, refundTotal: Number(c.refundTotal) || 0 });
             toast.success('Fermeture enregistrée.');
@@ -186,7 +192,7 @@ export function ClosuresView({ venueId }: { venueId: string }) {
             await reload();
             window.setTimeout(() => document.getElementById('fermeture-faite')?.focus(), 30);
         } catch (err) {
-            if (apiCode(err) === 'PREVIEW_CHANGED') {
+            if (apiCode(err) === 'PREVIEW_CHANGED' || apiCode(err) === 'PREVIEW_REQUIRED') {
                 try {
                     const p = await askPreview();
                     setPreview(p);
@@ -405,7 +411,7 @@ export function ClosuresView({ venueId }: { venueId: string }) {
 
                             {changedNotice && (
                                 <StatusBanner tone="warning" announce="alert" title="La liste a changé depuis l’aperçu">
-                                    Une réservation a été faite ou annulée entre-temps. Vérifiez la nouvelle liste, puis confirmez.
+                                    Une réservation a été faite, payée ou annulée entre-temps. Vérifiez la nouvelle liste et le montant rendu, puis confirmez.
                                 </StatusBanner>
                             )}
 

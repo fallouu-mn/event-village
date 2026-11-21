@@ -305,9 +305,13 @@ describe('G6. Argent des fermetures', () => {
         const venue = await newVenue(owner, { deposit_per_person: 5_000 });
         const r = await paidOn(owner, venue, alice, 66);
         const date = dayFromNow(66);
+        // Correctif T1 (modification signalée au rapport du correctif) : chaque confirmation renvoie l'empreinte de son aperçu
+        const one = { start_date: date, reason: 'Fermeture concurrente un' };
+        const two = { start_date: date, start_time: '19:00', end_time: '23:00', reason: 'Fermeture concurrente deux' };
+        const [p1, p2] = [(await closurePreview(owner, venue, one)).body.preview as Row, (await closurePreview(owner, venue, two)).body.preview as Row];
         const [c1, c2] = await Promise.all([
-            closureCreate(owner, venue, { start_date: date, reason: 'Fermeture concurrente un', expected_count: 1 }),
-            closureCreate(owner, venue, { start_date: date, start_time: '19:00', end_time: '23:00', reason: 'Fermeture concurrente deux', expected_count: 1 }),
+            closureCreate(owner, venue, { ...one, expected_count: 1, expected_hash: p1.fingerprint }),
+            closureCreate(owner, venue, { ...two, expected_count: 1, expected_hash: p2.fingerprint }),
         ]);
         const row = await reservation(r.id);
         const outs = await cashoutsOf(r.id);
@@ -320,8 +324,11 @@ describe('G6. Argent des fermetures', () => {
     test('fermeture et annulation du client en même temps : un seul remboursement', async () => {
         const venue = await newVenue(owner, { deposit_per_person: 5_000 });
         const r = await paidOn(owner, venue, bob, 67);
+        // Correctif T1 (modification signalée au rapport du correctif) : la confirmation renvoie l'empreinte de l'aperçu
+        const shut = { start_date: dayFromNow(67), reason: 'Fermeture pendant une annulation' };
+        const seen = (await closurePreview(owner, venue, shut)).body.preview as Row;
         const [closure, cancel] = await Promise.all([
-            closureCreate(owner, venue, { start_date: dayFromNow(67), reason: 'Fermeture pendant une annulation', expected_count: 1 }),
+            closureCreate(owner, venue, { ...shut, expected_count: 1, expected_hash: seen.fingerprint }),
             routeId('POST', 'tables/reservations/[id]/cancel', r.id, bob.accessToken, {}),
         ]);
         const row = await reservation(r.id);
@@ -338,7 +345,8 @@ describe('G6. Argent des fermetures', () => {
         const payment = await started(alice, id);
         const preview = await closurePreview(owner, venue, { start_date: dayFromNow(68), reason: 'Coupure de courant' });
         const p = preview.body.preview as Row;
-        const created = await closureCreate(owner, venue, { start_date: dayFromNow(68), reason: 'Coupure de courant', expected_count: n(p.count) });
+        // Correctif T1 (modification signalée au rapport du correctif) : empreinte de l'aperçu renvoyée
+        const created = await closureCreate(owner, venue, { start_date: dayFromNow(68), reason: 'Coupure de courant', expected_count: n(p.count), expected_hash: p.fingerprint });
         assert.equal(created.status, 201, show(created));
         await confirmByWebhook(payment);
         const row = await reservation(id);
