@@ -14,11 +14,14 @@ interrupteur (`features.tables_enabled`) ; les suites et l'e2e l'ouvrent le temp
 
 ### État des vérifications
 
-Run complet 551 (`89f9de75f`, code du lot complet) : tests, contrôle des lots, build, budgets JS, **captures (787, 0
-en échec)**, contrôle responsive (0 défaut) et mesure mobile verts. Un seul rouge : la phase « perf » de l'accueil, le
-navigateur fermé sous le test (page non touchée, verte aux trois runs complets précédents). Le run du commit de ce
-rapport (ligne RUN_FINAL du § Runs) la rejoue. Les runs 541 à 549 ont trouvé puis fait corriger des défauts
-d'accessibilité des écrans du lot (§ Runs).
+**Run complet final 556** (`7fb2253af`, état final de la branche) : tests **566/566**, contrôle des lots, build,
+budgets JS, **les 12 phases de l'e2e** (captures 787, 0 en échec ; perf, fumée, recette…) et contrôle responsive (0
+défaut) **verts**. Seul rouge : la mesure mobile Lighthouse, sur deux pages que le lot ne touche pas : Mes billets 84
+(non bloquant par consigne) et la fiche événement « ce soir » 86 (passages [86 ; 94 ; 81 ; 89 ; 85], écart de 13
+points d'un passage à l'autre). Au run 551, même code des écrans, **tous les seuils étaient tenus** ; au run 549, la
+même fiche était à 89. Écart de mesure du serveur de CI, pas du lot : à relancer (job « build · js-budget · e2e ») si
+une preuve verte est voulue. Les runs 541 à 551 ont trouvé puis fait corriger des défauts d'accessibilité des écrans du
+lot (§ Runs).
 
 ### À savoir avant tout
 
@@ -204,7 +207,7 @@ Aucune assertion des suites `tests/audit/` ni `tests/audit-auth/` n'a changé (r
 | 547 | `c344e287e` | **complet** | tests **566/566** (142 + 141 + 141 + 142), contrôle des lots, build, budgets JS, contrôle responsive (0 défaut) verts ; **e2e rouge : phase « captures », 20 échecs** = 5 écrans × téléphone et ordinateur × clair et sombre (`tables-fiche`, `tables-fiche-plan`, `org-tables-creation`, `org-tables-modification`, `org-tables-plan`), toutes les autres phases vertes. Cause : contrôles axe-core des captures, `label-content-name-mismatch` (7 à 22 nœuds : bande des jours de la fiche, « Copier sur tous les jours » des horaires, tables du plan) et `scrollable-region-focusable` (galerie de photos) ; mesure mobile : seule Mes billets 86 (non bloquante) |
 | 549 | `8e79b577f` | **complet** | tests, contrôle des lots, build, budgets JS, responsive verts ; e2e : fiche, création et modification corrigées ; **restent 8 échecs** (`tables-fiche-plan`, `org-tables-plan` × 4 vues, 8 nœuds = les 8 tables du plan) : axe-core assemble le texte visible des enfants sans séparateur, « 1 » et « 4 » donnaient « 14 », absent du nom « Table 1, 4 places » ; mesure mobile : seule la fiche événement « ce soir » à 89 (médiane [93 ; 93 ; 89 ; 89 ; 85], page non touchée par le lot, écart d'un point d'une mesure à l'autre) |
 | 551 | `89f9de75f` | **complet** | tests, contrôle des lots, build, budgets JS verts ; **captures vertes** (787 captures, 0 en échec ; les 19 écrans du lot dans les 4 vues) ; contrôle responsive 0 défaut (184 pages × thème) ; **mesure mobile verte** (« tous les seuils sont tenus ») ; e2e rouge sur une seule phase, « perf », test de l'accueil : le navigateur s'est fermé sous le test au 4e passage (« Target page, context or browser has been closed », 16 s), les 3 premiers passages normaux (FCP 1,64 s) ; page non touchée par le lot, phase verte aux runs 541, 547 et 549 ; les 3 autres pages de la phase vertes |
-| RUN_FINAL |
+| 556 | `7fb2253af` | **complet (final)** | tests **566/566** (142 + 141 + 141 + 142), contrôle des lots, build, budgets JS, contrôle responsive (0 défaut, 184 pages × thème) verts ; **e2e : les 12 phases vertes** (787 captures, 0 en échec ; perf de l'accueil de nouveau verte) ; mesure mobile hors seuil sur deux pages non touchées : Mes billets 84 (non bloquant) et fiche événement « ce soir » 86 [86 ; 94 ; 81 ; 89 ; 85] (verte au run 551 sur le même code des écrans) |
 
 Journaux bruts : branche `ci-results`, dossiers `runs/<numéro>-<identifiant>/`.
 
