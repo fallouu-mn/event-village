@@ -23,8 +23,20 @@ let restore: () => Promise<void>;
 let host: TestPartner;
 let client: Buyer;
 let venue = '';
-let paidRes = '';
-let laterRes = '';
+let day = 10;
+
+/** Réservation confirmée et payée (acompte), un jour différent à chaque appel ; `startedMinutesAgo` : déjà commencée. */
+async function paidReservation(startedMinutesAgo?: number): Promise<string> {
+    day += 1;
+    // Une table par réservation : déplacer le début d'une réservation ne la fait jamais chevaucher une autre
+    const tableId = await newTable(host, venue, 4, { number: `S${day}` });
+    const r = await reserveRpc(client, venue, { date: dayFromNow(day), time: '20:00', guests: 4, tableId });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const id = String(r.reservation_id);
+    await payConfirmed(client, id);
+    if (startedMinutesAgo !== undefined) await shiftReservation(id, { startMinutes: -startedMinutesAgo });
+    return id;
+}
 
 async function setFiche(partnerId: string, status: 'VALIDE' | 'SUSPENDU'): Promise<void> {
     const { error } = await service.from('partners').update({ status }).eq('id', partnerId);
@@ -36,18 +48,6 @@ before(async () => {
     host = await newPartner('l11b-suspendue');
     client = await newBuyer('l11b-client-suspendue', { firstName: 'Awa', lastName: 'Diop' });
     venue = await newVenue(host, { deposit_per_person: 5_000 });
-    await newTable(host, venue, 4, { number: 'S1' });
-    await newTable(host, venue, 4, { number: 'S2' });
-    const first = await reserveRpc(client, venue, { date: dayFromNow(10), time: '20:00', guests: 4 });
-    assert.equal(first.ok, true, JSON.stringify(first));
-    paidRes = String(first.reservation_id);
-    await payConfirmed(client, paidRes);
-    const second = await reserveRpc(client, venue, { date: dayFromNow(11), time: '20:00', guests: 4 });
-    assert.equal(second.ok, true, JSON.stringify(second));
-    laterRes = String(second.reservation_id);
-    await payConfirmed(client, laterRes);
-    // La première réservation a commencé il y a 10 minutes : « Client absent » serait possible pour une fiche VALIDE
-    await shiftReservation(paidRes, { startMinutes: -10 });
 });
 
 after(async () => {
@@ -60,6 +60,9 @@ describe('F1. Fiche partenaire SUSPENDU : établissements, tables et réservatio
     test('routes : renommer l’établissement, créer une table, marquer absent, annuler → 403 PARTNER_SUSPENDED, rien d’écrit', async () => {
         const { data: before0 } = await service.from('venues').select('name').eq('id', venue).single();
         const { count: tablesBefore } = await service.from('restaurant_tables').select('id', { count: 'exact', head: true }).eq('venue_id', venue);
+        // Commencée il y a 10 minutes : « Client absent » serait possible pour une fiche VALIDE
+        const paidRes = await paidReservation(10);
+        const laterRes = await paidReservation();
         await setFiche(host.partnerId, 'SUSPENDU');
         try {
             const rename = await routeId('PATCH', 'partner/venues/[id]', venue, host.accessToken, { name: 'Renommé pendant la suspension' });
@@ -83,6 +86,8 @@ describe('F1. Fiche partenaire SUSPENDU : établissements, tables et réservatio
     });
 
     test('base : présence et annulation par l’établissement refusées pour une fiche SUSPENDU (défense en profondeur)', async () => {
+        const paidRes = await paidReservation(10);
+        const laterRes = await paidReservation();
         await setFiche(host.partnerId, 'SUSPENDU');
         try {
             const { data: absent, error: e1 } = await service.rpc('table_reservation_presence', { p: { reservation_id: paidRes, actor_id: host.userId, action: 'ABSENT' } });
@@ -102,6 +107,7 @@ describe('F1. Fiche partenaire SUSPENDU : établissements, tables et réservatio
     });
 
     test('garde-fou : fiche VALIDE, mêmes actions acceptées (le refus vise bien la suspension)', async () => {
+        const paidRes = await paidReservation(10);
         const absent = await routeId('PATCH', 'partner/tables/reservations/[id]', paidRes, host.accessToken, { action: 'ABSENT' });
         assert.equal(absent.status, 200, show(absent));
         assert.equal((await reservation(paidRes)).booking_state, 'ABSENT');
