@@ -289,6 +289,25 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'TABLE_RESERVATION', ['/partner/tables'], 'Établissement refusé'),
     // Lot 10b (point 1, modification signalée) : droit halls.validate
     ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/services'], 'Établissement à valider', 'halls.validate'),
+    // Lot 12a (migration 20261130000007, ajout signalé au rapport) : étapes d'une commande, 4 canaux à chaque étape ; chaque avis mène à la commande
+    ess('ORDER_RECEIVED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande reçue'),
+    ess('ORDER_ACCEPTED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande acceptée'),
+    ess('ORDER_PREPARING', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande en préparation'),
+    ess('ORDER_READY', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande prête'),
+    ess('ORDER_ON_THE_WAY', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande en route'),
+    ess('ORDER_HANDED_OVER', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande livrée'),
+    ess('ORDER_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande annulée'),
+    ess('ORDER_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Paiement remboursé'),
+    ess('ORDER_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Remboursement versé'),
+    ess('ORDER_PICKUP_REMINDER', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande à retirer'),
+    ess('ORDER_NOT_COLLECTED', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande non retirée'),
+    ess('ORDER_CODE', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Nouveau code'),
+    ess('ORDER_NEW', [I, P, M, S], 'PARTNER', 'B', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Nouvelle commande'),
+    ess('ORDER_CANCELLED_PRO', [I, P, M, S], 'PARTNER', 'A', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande annulée'),
+    ess('ORDER_HANDED_OVER_PRO', [I, P, M, S], 'PARTNER', 'B', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande livrée'),
+    ess('ORDER_COURIER_ASSIGNED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/courier/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Livraison à faire'),
+    ess('ORDER_COURIER_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/courier/orders'], 'Livraison annulée'),
+    ess('ORDER_COURIER_INVITED', [I, P, M], 'CLIENT', 'B', 'ORDER', ['/courier/invitations/b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04'], 'Invitation à livrer'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)

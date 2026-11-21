@@ -462,6 +462,19 @@ const INVENTORY: Insertion[] = [
     { k1: 'lot 11a rappel', fn: 'table_reservations_tick', types: ['TABLE_REMINDER'] },
     { k1: 'lot 11a validation', fn: 'venue_validation_decide', types: ['VENUE_VALIDATION_DECIDED'] },
     { k1: 'lot 11a soumission', trigger: { name: 'trg_venues_submitted', table: 'public.venues' }, types: ['ADMIN_VENUE_SUBMITTED'] },
+    // Lot 12a (ajout signalé au rapport) : avis des étapes d'une commande, mis en file par les fonctions du parcours
+    // (order_notify) ; invitation d'un livreur ; remboursement versé par notif_cashouts_notify
+    { k1: 'lot 12a commander', fn: 'order_create', types: ['ORDER_RECEIVED', 'ORDER_NEW'] },
+    { k1: 'lot 12a payer', fn: 'order_payment_confirm', types: ['ORDER_RECEIVED', 'ORDER_NEW', 'ORDER_PAYMENT_REFUNDED'] },
+    { k1: 'lot 12a attente', fn: 'order_expire_hold', types: ['ORDER_CANCELLED'] },
+    { k1: 'lot 12a fin', fn: 'order_close_apply', types: ['ORDER_CANCELLED', 'ORDER_CANCELLED_PRO', 'ORDER_NOT_COLLECTED', 'ORDER_COURIER_CANCELLED'] },
+    { k1: 'lot 12a étapes', fn: 'order_partner_action', types: ['ORDER_ACCEPTED', 'ORDER_PREPARING', 'ORDER_READY', 'ORDER_COURIER_ASSIGNED', 'ORDER_COURIER_CANCELLED'] },
+    { k1: 'lot 12a en route', fn: 'order_set_en_route', types: ['ORDER_ON_THE_WAY'] },
+    { k1: 'lot 12a remise', fn: 'order_handover_apply', types: ['ORDER_HANDED_OVER', 'ORDER_HANDED_OVER_PRO'] },
+    { k1: 'lot 12a nouveau code', fn: 'order_code_resend', types: ['ORDER_CODE'] },
+    { k1: 'lot 12a retrait', fn: 'order_tick', types: ['ORDER_PICKUP_REMINDER'] },
+    { k1: 'lot 12a livreur', fn: 'order_courier_invite', types: ['ORDER_COURIER_INVITED'] },
+    { k1: 'lot 12a remboursement versé', fn: 'notif_cashouts_notify', types: ['ORDER_REFUND_PAID'] },
     { k1: 'sécurité', trigger: { name: 'on_auth_user_password_changed', table: 'auth.users' }, types: ['PASSWORD_CHANGED'] },
     { k1: 'essai push', fn: 'notification_test_push_enqueue', types: ['PUSH_TEST'] },
     // Point d'insertion réel : notif_failed_alert, appelée par notification_outbox_mark et par la reprise des SENDING

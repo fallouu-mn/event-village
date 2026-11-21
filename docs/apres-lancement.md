@@ -125,3 +125,15 @@ d'où elle vient et pourquoi elle attend.
 | Sujet | Pourquoi plus tard | Origine |
 |---|---|---|
 | « Mes réservations » (`/halls/reservations`) et le détail d’une réservation (`/halls/reservations/[id]`) restent ouverts quand le service des salles est fermé (`features.halls_enabled`), pour que le lien d’une notification de réservation ne mène plus à une page introuvable. | Décision du 20/11/2026 : à faire au lot 11b. Aujourd’hui, service fermé, ces pages répondent 404 (l’annulation, elle, reste possible). | Lot 10b, constat produit des correctifs de la contre-vérification |
+
+## Commandes : argent et sécurité (lot 12a)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Écrans des commandes : panier et devis, paiement, suivi en étapes animées (heure de chaque étape et heure estimée déjà servies par `GET /api/orders/[id]`), espace de la partenaire (liste, actions, livreurs, réglages de vente, catalogue avec options, plat du jour et case « réglementé »), espace du livreur (`/courier/orders`), validation des produits réglementés dans l'administration. | Lots 12b et suivants. Les avis mènent déjà à `/orders/<id>`, `/partner/orders/<id>`, `/courier/orders/<id>` et `/courier/invitations/<id>`, pages à créer en 12b (service fermé d'ici là). | Consigne du lot 12a |
+| L'ancienne page `/partner/orders` et le crochet `usePartnerOrders` lisent l'ancien format et s'abonnaient en temps réel aux commandes : la partenaire ne lit plus les commandes par REST, donc plus en temps réel. Suivi en direct à prévoir par la route serveur (relecture périodique) ou par un canal dédié. | Écrans du lot 12b ; service fermé. | Lot 12a (lecture REST retirée à la partenaire) |
+| Produits : création et modification par la partenaire avec l'établissement, les options et la case « réglementé » (la route existante ne connaît pas encore ces champs ; les tests écrivent avec le rôle de service). | Écrans du catalogue (12b). La base contrôle déjà : établissement de la même partenaire, prix entier, décision de l'administration non modifiable. | Lot 12a |
+| Zones de livraison sur une carte (point dans la zone, distance) : aujourd'hui le client choisit sa zone dans la liste de l'établissement. | Carte hors périmètre du lot. | Consigne du lot 12a |
+| Livraison ratée (client absent à l'adresse) : rien d'automatique ; la commande reste « en route » jusqu'à une remise, une annulation par la partenaire ou par Event Village. | Règle à faire trancher par le client (frais gardés ? nouvel essai ?). | Lot 12a |
+| Signalement d'un problème par le client après le début de la préparation (seule voie aujourd'hui : Event Village annule pour faute de la partenaire, avec la route d'administration). | Écran et circuit du support (12b ou plus tard). | Décision du client du 18/11 (annulation) |
+| Invitation d'un livreur : le numéro saisi par la partenaire dit si un compte existe (« Aucun compte actif avec ce numéro »). Limiter le nombre d'invitations par jour si l'abus apparaît. | Même comportement que l'invitation d'un contrôleur ; pas de SMS envoyé (cloche, push, email seulement). | Lot 12a |

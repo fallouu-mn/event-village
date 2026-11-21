@@ -157,6 +157,25 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('TABLE_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
     opt('TABLE_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT'),
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A'),
+    // Lot 12a (migration 20261130000007, ajout signalé au rapport) : étapes d'une commande
+    ess('ORDER_RECEIVED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_ACCEPTED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_PREPARING', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_READY', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_ON_THE_WAY', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_HANDED_OVER', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_CANCELLED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('ORDER_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('ORDER_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A'),
+    ess('ORDER_PICKUP_REMINDER', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_NOT_COLLECTED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('ORDER_CODE', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_NEW', [I, P, M, S], 'PARTNER', 'B'),
+    ess('ORDER_CANCELLED_PRO', [I, P, M, S], 'PARTNER', 'A'),
+    ess('ORDER_HANDED_OVER_PRO', [I, P, M, S], 'PARTNER', 'B'),
+    ess('ORDER_COURIER_ASSIGNED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_COURIER_CANCELLED', [I, P, M, S], 'CLIENT', 'A'),
+    ess('ORDER_COURIER_INVITED', [I, P, M], 'CLIENT', 'B'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B'), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49

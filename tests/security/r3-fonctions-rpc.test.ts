@@ -679,6 +679,55 @@ const LOT11A_RPCS: Array<[string, Record<string, unknown>]> = [
     ['table_reservations_tick', {}],
 ];
 
+// Lot 12a (ajout signalé au rapport) : fonctions des commandes, réservées au rôle de service
+const LOT12A_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['order_venue_settings_set', { p: {} }],
+    ['order_daily_portions_set', { p: {} }],
+    ['order_product_regulation_decide', { p: {} }],
+    ['product_regulated', { p_product_id: ZERO_UUID }],
+    ['order_code_hash', { p_order_id: ZERO_UUID, p_code: '0000' }],
+    ['order_quote', { p: {} }],
+    ['order_quote_compute', { p: {} }],
+    ['order_create', { p: {} }],
+    ['order_lock', { p_order_id: ZERO_UUID }],
+    ['order_notif_data', { p_order_id: ZERO_UUID }],
+    ['order_release_stock', { p_order_id: ZERO_UUID }],
+    ['order_payable_refusal', { p_order_id: ZERO_UUID }],
+    ['order_expire_hold', { p_order_id: ZERO_UUID }],
+    ['order_payment_create', { p: {} }],
+    ['order_payment_confirm', { p_payment_id: ZERO_UUID, p_source: 'TEST' }],
+    ['order_refund_payment', { p_payment_id: ZERO_UUID, p_percent: 100, p_reason: 'TEST' }],
+    ['order_cancel', { p: {} }],
+    ['order_issue_code', { p_order_id: ZERO_UUID }],
+    ['order_code_resend', { p: {} }],
+    ['order_partner_action', { p: {} }],
+    ['order_courier_action', { p: {} }],
+    ['order_courier_invite', { p: {} }],
+    ['order_courier_respond', { p: {} }],
+    ['order_courier_remove', { p: {} }],
+    ['order_view', { p: {} }],
+    ['order_partner_list', { p: {} }],
+    ['order_courier_list', { p: {} }],
+    ['order_tick', {}],
+];
+
+describe('R3 — lot 12a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261130000001… du lot 12a';
+    for (const [fn, args] of LOT12A_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
 describe('R3 — lot 11a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
     const MIGRATIONS = 'migrations 20261123000101… du lot 11a';
     for (const [fn, args] of LOT11A_RPCS) {
