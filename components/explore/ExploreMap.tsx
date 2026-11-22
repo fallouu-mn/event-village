@@ -367,7 +367,9 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     </p>
                 )}
 
-                <div className="relative">
+                {/* Contexte d'empilement propre : boutons et feuille de la carte (z-10) restent sous la barre des catégories
+                    collée en haut de la page (z-10 elle aussi, avant dans la page) quand la carte défile dessous (run 618) */}
+                <div className="relative isolate">
                     <div
                         ref={containerRef}
                         role="region"
