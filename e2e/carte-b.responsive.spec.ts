@@ -137,6 +137,16 @@ async function settle(page: Page): Promise<void> {
     await page.evaluate(() => new Promise<void>((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r())); }));
 }
 
+/** Fait défiler jusqu'à un élément, placé en haut de l'écran sous l'en-tête (captures parlantes : la vue, pas les filtres). */
+async function scrollToTop(page: Page, selector: string): Promise<void> {
+    await page.locator(selector).first().evaluate((el) => {
+        window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 72, behavior: 'instant' as ScrollBehavior });
+    });
+    await page.evaluate(() => new Promise<void>((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r())); }));
+}
+
+const VIEWS = '[role="tablist"][aria-label="Affichage des événements"]';
+
 async function shot(page: Page, name: string, width: number, theme: ThemeKey): Promise<void> {
     fs.mkdirSync(SHOTS, { recursive: true });
     await page.waitForTimeout(350); // fin des transitions (≤ 300 ms)
@@ -193,18 +203,25 @@ for (const theme of THEMES) {
             await page.getByRole('tab', { name: 'Carte' }).click();
             const map = page.getByRole('region', { name: 'Carte des événements' });
             await expect(map).toBeVisible({ timeout: 30_000 });
-            await expect(page.locator('.leaflet-marker-icon').first()).toBeVisible({ timeout: 30_000 });
+            // Le repère de Leaflet mesure 0 × 0 px : le billet visible est son enfant (.ev-repere), qui reçoit le toucher
+            await expect(page.locator('.leaflet-marker-icon .ev-repere').first()).toBeVisible({ timeout: 30_000 });
             await settle(page);
+            await scrollToTop(page, VIEWS);
             await shot(page, 'carte-senegal', 360, theme.key);
 
-            await page.getByLabel('Aller à').selectOption('almadies');
+            await page.getByLabel('Aller à').selectOption('dakar');
             await settle(page);
+            await scrollToTop(page, VIEWS);
             await shot(page, 'carte-zoomee', 360, theme.key);
 
+            // Saint-Louis : un seul événement publié dans le jeu de démonstration (repère simple)
+            await page.getByLabel('Aller à').selectOption('saint-louis');
+            await settle(page);
             const single = page.locator('.leaflet-marker-icon.leaflet-interactive[title]:not([title*="agrandir"])').first();
-            await expect(single).toBeVisible({ timeout: 15_000 });
-            await single.click();
+            await expect(single.locator('.ev-repere')).toBeVisible({ timeout: 15_000 });
+            await single.locator('.ev-repere').click();
             await expect(page.getByRole('dialog').getByRole('link', { name: /Voir l’événement/ })).toBeVisible();
+            await scrollToTop(page, '[role="region"][aria-label="Carte des événements"]');
             await shot(page, 'feuille-telephone', 360, theme.key);
             // Clavier : un repère prend le focus et s'ouvre avec Entrée
             await page.getByRole('dialog').getByRole('button', { name: 'Fermer' }).click();
@@ -220,8 +237,8 @@ for (const theme of THEMES) {
             await expect(page.getByRole('region', { name: 'Carte des événements' })).toBeVisible({ timeout: 30_000 });
             await expect(page.locator('#carte-liste-titre')).toContainText(/dans cette zone/, { timeout: 30_000 });
             const before = await page.locator('[id^="carte-vignette-"]').count();
-            // Almadies (zoom 14) : la liste suit la zone visible ; un seul événement du seed y est, seul dans sa case
-            await page.getByLabel('Aller à').selectOption('almadies');
+            // Saint-Louis (zoom 13) : la liste suit la zone visible ; un seul événement publié du jeu de démonstration y est
+            await page.getByLabel('Aller à').selectOption('saint-louis');
             await settle(page);
             const cards = page.locator('[id^="carte-vignette-"]');
             await expect.poll(async () => cards.count(), { timeout: 10_000, message: 'liste ramenée à la zone visible' }).toBeLessThan(before);
@@ -229,6 +246,8 @@ for (const theme of THEMES) {
             await expect(first).toBeVisible({ timeout: 15_000 });
             await first.hover();
             await expect(page.locator('.ev-repere--choisi'), 'survol : repère mis en évidence').toHaveCount(1, { timeout: 5_000 });
+            await scrollToTop(page, VIEWS);
+            await first.hover();
             await shot(page, 'liste-synchronisee', 1440, theme.key);
             await expect(page.getByRole('button', { name: 'Rechercher dans cette zone' })).toBeVisible();
         });
@@ -241,6 +260,7 @@ for (const theme of THEMES) {
                 const day = page.getByRole('button', { name: /^(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche) \d{1,2} \S+, \d+ événements?$/ }).first();
                 await expect(day).toBeVisible({ timeout: 30_000 });
                 await settle(page);
+                await scrollToTop(page, VIEWS);
                 await shot(page, 'calendrier', w, theme.key);
                 await day.click();
                 const sheet = page.getByRole('dialog');
@@ -261,9 +281,9 @@ for (const theme of THEMES) {
                 const heading = page.getByRole('heading', { name: 'Partout au Sénégal' });
                 await heading.scrollIntoViewIfNeeded({ timeout: 30_000 });
                 await expect(page.getByRole('region', { name: 'Aperçu de la carte des événements' })).toBeVisible({ timeout: 30_000 });
-                await page.locator('section[aria-labelledby="senegal-titre"]').scrollIntoViewIfNeeded();
                 await settle(page);
-                await page.locator('section[aria-labelledby="senegal-titre"]').screenshot({ path: path.join(SHOTS, `cb-accueil-apercu__${w}__${theme.key}.jpg`), type: 'jpeg', quality: 80, scale: 'css' });
+                await scrollToTop(page, 'section[aria-labelledby="senegal-titre"]');
+                await shot(page, 'accueil-apercu', w, theme.key);
                 await expect(page.getByRole('link', { name: 'Ouvrir la carte' })).toHaveAttribute('href', '/explore?vue=carte');
             }
         });
