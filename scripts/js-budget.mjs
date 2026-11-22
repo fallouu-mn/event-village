@@ -9,10 +9,11 @@
  * mesurée, la taille gzip (zlib, niveau 9) des fichiers .js DISTINCTS de `"/layout"` ∪ `"/template"` ∪
  * `"<route>/page"` (un fichier partagé n'est compté qu'une fois). Les feuilles de style ne sont pas comptées.
  *
- * Routes mesurées : /, /events/[id], /tickets, /controller/scanner, /billet/hors-ligne.
+ * Routes mesurées : /, /events/[id], /tickets, /controller/scanner, /billet/hors-ligne, /explore (lot Carte B : la carte et
+ * le calendrier ne pèsent rien au premier chargement d'Explorer).
  *
  * Budgets : `scripts/js-budget.json`, objet { "<route>": <octets gzip maximum> } (entier > 0 ; 1 Ko = 1 000
- * octets, comme le tableau de Next). Clés admises : les cinq routes ci-dessus, rien d'autre.
+ * octets, comme le tableau de Next). Clés admises : les six routes ci-dessus, rien d'autre.
  *  - fichier absent, ou objet vide : MESURE SEULE (aucun échec pour un dépassement) ; c'est la mesure
  *    « avant » du commit test(7.5) ;
  *  - route avec budget : échec si la mesure dépasse le budget, ou si la route est absente du build ;
@@ -47,6 +48,7 @@ const MEASURED_ROUTES = [
     ['/tickets', '/tickets/page', true],
     ['/controller/scanner', '/controller/scanner/page', true],
     ['/billet/hors-ligne', '/billet/hors-ligne/page', false],
+    ['/explore', '/explore/page', true],
 ];
 
 function configError(message) {
