@@ -125,7 +125,7 @@ describe('finition 5 — liens précis des avis : revue de TOUT le catalogue', (
 
     test('pages d’arrivée : session et propriété exigées, même page « Cet élément n’est plus disponible » sans indice', () => {
         // Une route pour le billet et les billets d'un événement ; page « plus disponible » rendue par la page (pas de fichier
-        // not-found) : chaque entrée de page alourdit le moteur de chargement commun à toutes les routes (budgets non relevés)
+        // not-found) : la même réponse dans tous les cas
         for (const page of ['app/tickets/[id]/page.tsx', 'app/partner/finance/retraits/[id]/page.tsx', 'app/wallet/retraits/[id]/page.tsx']) {
             assert.ok(fs.existsSync(path.join(ROOT, page)), `${page} présente`);
             assert.ok(!fs.existsSync(path.join(ROOT, page.replace('page.tsx', 'not-found.tsx'))), `${page} : aucun not-found séparé`);

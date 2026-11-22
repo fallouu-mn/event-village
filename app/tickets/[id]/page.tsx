@@ -10,11 +10,11 @@ import { readTicketsFocus } from '../focus-read';
  * Finition 5 (point 2) — page d'arrivée des avis sur un billet. `/tickets/<id>` ouvre :
  *  - le billet du compte qui porte cet identifiant (transfert reçu ou rendu, billet contrôlé, annulé, remboursé…) ;
  *  - sinon, les billets du compte pour l'événement qui porte cet identifiant (achat, invitation, rappel, annulation,
- *    remboursement : plusieurs billets possibles). Une seule route pour les deux (poids du moteur de chargement : chaque
- *    page ajoute une entrée commune à toutes les routes, budgets JS non relevés).
+ *    remboursement : plusieurs billets possibles). Une seule route pour les deux : un lien d'avis n'a pas à savoir s'il
+ *    porte un billet ou un événement.
  * Sans session : connexion puis retour ici. Rien du compte sous cet identifiant (billet d'autrui, deviné, transféré,
  * supprimé, identifiant mal formé) : page « Cet élément n'est plus disponible », la même dans tous les cas (aucun indice),
- * rendue ici plutôt que par un fichier not-found (même raison de poids).
+ * rendue par la page elle-même.
  */
 export const dynamic = 'force-dynamic';
 

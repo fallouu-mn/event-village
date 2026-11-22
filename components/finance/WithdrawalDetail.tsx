@@ -2,8 +2,7 @@
  * Finition 5 (point 2) — page d'arrivée d'un avis de retrait (WITHDRAWAL_PAID, _REJECTED, _UNCERTAIN, _DELAYED) : le
  * retrait précis, lu par le serveur avec la session de la requête (GET /api/finance/withdrawals/<envoi>, appelée
  * directement, modèle d'app/tickets/page.tsx). Sans session : connexion puis retour ; retrait inconnu, d'un autre compte
- * ou d'un autre espace (portefeuille / finances pro) : même page « Cet élément n'est plus disponible », rendue ici plutôt
- * que par un fichier not-found (chaque entrée de page alourdit le moteur de chargement commun à toutes les routes).
+ * ou d'un autre espace (portefeuille / finances pro) : même page « Cet élément n'est plus disponible », rendue ici.
  * Composant serveur : statut, montants, opérateur et ce qu'il reste à faire ; jetons du système de design seulement.
  */
 import { headers } from 'next/headers';
