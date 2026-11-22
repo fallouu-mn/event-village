@@ -159,13 +159,18 @@ function main() {
         const files = [...new Set([...shared, ...pageFiles])].filter((f) => f.endsWith('.js')).sort();
         let gzip = 0;
         let raw = 0;
+        const detail = [];
         for (const rel of files) {
             const abs = path.join(opts.nextDir, rel);
             if (!fs.existsSync(abs)) configError(`fichier du manifeste introuvable pour ${route} : ${rel}`);
             const buffer = fs.readFileSync(abs);
             raw += buffer.length;
-            gzip += gzipSize(buffer);
+            const g = gzipSize(buffer);
+            gzip += g;
+            detail.push(`${g}\t${rel.replace(/-[0-9a-f]{16}\.js$/, '.js')}`);
         }
+        // Lot Carte B : détail par fichier (octets gzip), pour savoir quel fichier grossit d'un run à l'autre
+        for (const line of detail) console.log(`${TAG}   ${route} · ${line}`);
         let status = 'MESURE';
         if (budget !== null) {
             status = gzip <= budget ? 'OK' : 'DEPASSE';
