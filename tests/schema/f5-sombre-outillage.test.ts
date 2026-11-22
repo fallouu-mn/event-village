@@ -14,6 +14,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { THEME_BOOT_SCRIPT } from '../../lib/theme';
 import { relativeLuminance, themeProblem, THEME_LUMINANCE } from '../../e2e/support/theme-check';
 
@@ -79,6 +80,10 @@ describe('finition 5 — thème sombre vraiment affiché dans les captures', () 
 
     test('ligne « ci-captures: oui » : captures SOMBRES dans le job responsive du mode rapide, résultats publiés', () => {
         const yml = read('.github/workflows/verify.yml');
+        // Run 590 : un « \n » devenu vrai retour à la ligne rendait le workflow illisible (aucun job lancé)
+        const { load } = createRequire(path.join(ROOT, 'package.json'))('js-yaml') as { load: (text: string) => unknown };
+        const doc = load(yml) as { jobs: { responsive: { steps: Array<{ id?: string; env?: Record<string, string> }> } } };
+        assert.equal(doc.jobs.responsive.steps.find((s) => s?.id === 'captures-sombres')?.env?.EV_CAPTURES_THEMES, 'sombre', 'verify.yml lisible (YAML)');
         assert.match(yml, /grep -qE '\^ci-captures:\[\[:space:\]\]\*oui\[\[:space:\]\]\*\$'/);
         assert.match(yml, /\n {6}captures: \$\{\{ steps\.mode\.outputs\.captures \}\}\n/);
         const job = yml.slice(yml.indexOf('\n  responsive:\n'), yml.indexOf('\n  verdict:\n'));
