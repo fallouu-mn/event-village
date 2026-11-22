@@ -12,7 +12,7 @@ export interface IconButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLBut
 }
 
 const variants: Record<IconButtonVariant, string> = {
-  ghost: 'bg-transparent text-muted-foreground hover:bg-background hover:text-foreground-strong',
+  ghost: 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground-strong',
   secondary: 'bg-background text-foreground-strong hover:bg-border border border-border',
   primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
   danger: 'bg-transparent text-danger-text hover:bg-danger-soft',
