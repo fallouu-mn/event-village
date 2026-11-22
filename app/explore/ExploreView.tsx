@@ -17,7 +17,6 @@ import { LinkButton } from '@/components/ui/LinkButton';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBanner } from '@/components/ui/StatusBanner';
-import { Tabs, tabId, tabPanelId } from '@/components/ui/Tabs';
 import { cn } from '@/components/ui/cn';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { addRecentSearch, clearRecentSearches, readRecentSearches } from '@/lib/device/device-prefs';
@@ -45,9 +44,11 @@ import { foldText } from '@/lib/text/fold';
  *  - « Voir plus » : page suivante (12 cartes de plus), lien utilisable sans JavaScript ; nombre affiché annoncé.
  *  - Temps réel : résumé public public_event_state ; chaque signal relit GET /api/events (sans cache) avec les filtres
  *    en cours, sans recharger la page. Aucune requête n'est annulée : un compteur de séquence écarte une réponse dépassée.
- *  - Lot Carte B (B2) : onglets Liste / Carte / Calendrier (indicateur orange qui glisse, components/ui/Tabs), mêmes filtres
- *    partagés, choix gardé dans l'adresse (`?vue=`, lib/events/explore-view.ts). La carte et le calendrier sont chargés à
- *    l'ouverture de leur onglet seulement (next/dynamic) : rien au premier chargement d'Explorer. Tuiles indisponibles :
+ *  - Lot Carte B (B2) : onglets Liste / Carte / Calendrier (indicateur orange qui glisse, ViewTabs ci-dessous : mêmes règles
+ *    que components/ui/Tabs, sans son module partagé, plus lourd pour le premier chargement), mêmes filtres partagés, choix
+ *    gardé dans l'adresse (`?vue=`, lib/events/explore-view.ts). La carte et le calendrier sont chargés à l'ouverture de
+ *    leur onglet seulement (next/dynamic, module unique components/explore/lazy.ts) : rien au premier chargement
+ *    d'Explorer. Tuiles indisponibles :
  *    retour à la Liste avec un message simple. Les signaux temps réel relisent aussi la carte et le calendrier ouverts (un
  *    événement suspendu ou annulé en disparaît).
  */
@@ -68,14 +69,83 @@ function ViewSkeleton({ label }: { label: string }) {
   );
 }
 
-const ExploreMap = dynamic(() => import('@/components/explore/ExploreMap'), {
+const ExploreMap = dynamic(() => import('@/components/explore/lazy').then((m) => m.ExploreMap), {
   ssr: false,
   loading: () => <ViewSkeleton label="Chargement de la carte…" />,
 });
-const ExploreCalendar = dynamic(() => import('@/components/explore/ExploreCalendar'), {
+const ExploreCalendar = dynamic(() => import('@/components/explore/lazy').then((m) => m.ExploreCalendar), {
   ssr: false,
   loading: () => <ViewSkeleton label="Chargement du calendrier…" />,
 });
+
+const tabId = (mode: ExploreMode): string => `${TABS_PREFIX}-onglet-${mode}`;
+const tabPanelId = (mode: ExploreMode): string => `${TABS_PREFIX}-panneau-${mode}`;
+
+/**
+ * Onglets des vues (contrat Q, comme components/ui/Tabs) : role tablist et tab, aria-selected, tabulation itinérante,
+ * flèches gauche et droite, Début et Fin ; cibles de 44 px ; indicateur orange qui glisse (translateX + scaleX d'une barre
+ * de 1 px, transform seulement, 250 ms, coupé si « réduire les animations ») ; avant la première mesure, la bordure de
+ * l'onglet choisi tient lieu d'indicateur (rendu du serveur, aucun saut).
+ */
+function ViewTabs({ value, onChange }: { value: ExploreMode; onChange: (mode: ExploreMode) => void }) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const index = Math.max(0, VIEW_TABS.findIndex((t) => t.id === value));
+  const [bar, setBar] = useState<{ x: number; w: number } | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      const el = refs.current[index];
+      if (el) setBar({ x: el.offsetLeft, w: el.offsetWidth });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [index]);
+  const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const n = VIEW_TABS.length;
+    const next = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i - 1 + n) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    onChange(VIEW_TABS[next].id);
+    refs.current[next]?.focus();
+  };
+  return (
+    <div role="tablist" aria-label="Affichage des événements" aria-orientation="horizontal" className="relative flex gap-1 border-b border-border">
+      {VIEW_TABS.map((t, i) => {
+        const selected = i === index;
+        return (
+          <button
+            key={t.id}
+            ref={(el) => { refs.current[i] = el; }}
+            type="button"
+            role="tab"
+            id={tabId(t.id)}
+            aria-selected={selected}
+            aria-controls={tabPanelId(t.id)}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onChange(t.id)}
+            onKeyDown={(e) => onKeyDown(e, i)}
+            className={cn(
+              'relative -mb-px inline-flex min-h-11 flex-shrink-0 items-center border-b-[3px] px-4 text-sm font-semibold transition-colors duration-fast',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              selected
+                ? cn('font-bold text-foreground-strong', bar ? 'border-transparent' : 'border-brand-vif')
+                : 'border-transparent text-muted-foreground hover:border-input hover:text-foreground-strong',
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+      {bar && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-[-1px] left-0 h-[3px] w-px origin-left bg-brand-vif motion-safe:transition-transform motion-safe:duration-slow motion-safe:ease-out"
+          style={{ transform: `translateX(${bar.x}px) scaleX(${bar.w})` }}
+        />
+      )}
+    </div>
+  );
+}
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -206,8 +276,7 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
     onSignal: onLiveSignal,
   });
 
-  const chooseMode = (next: string) => {
-    const m: ExploreMode = next === 'carte' || next === 'calendrier' ? next : 'liste';
+  const chooseMode = (m: ExploreMode) => {
     if (m !== 'liste') setMapFailed(false);
     setMode(m);
     modeRef.current = m;
@@ -341,7 +410,7 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
       <CategoryChipsBar selected={shown.categorie} onSelect={(categorie) => choose({ categorie })} />
 
       {/* Lot Carte B : trois vues, mêmes filtres ; indicateur orange qui glisse (Tabs) */}
-      <Tabs tabs={VIEW_TABS} value={mode} onChange={chooseMode} ariaLabel="Affichage des événements" idPrefix={TABS_PREFIX} />
+      <ViewTabs value={mode} onChange={chooseMode} />
 
       {mapFailed && mode === 'liste' && (
         <StatusBanner tone="warning" announce="alert" title="La carte ne peut pas s’afficher pour le moment">
@@ -350,13 +419,13 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
       )}
 
       {mode === 'carte' && (
-        <div role="tabpanel" id={tabPanelId(TABS_PREFIX, 'carte')} aria-labelledby={tabId(TABS_PREFIX, 'carte')}>
+        <div role="tabpanel" id={tabPanelId('carte')} aria-labelledby={tabId('carte')}>
           <ExploreMap filters={shown} onTilesFailed={onTilesFailed} refreshKey={liveTick} />
         </div>
       )}
 
       {mode === 'calendrier' && (
-        <div role="tabpanel" id={tabPanelId(TABS_PREFIX, 'calendrier')} aria-labelledby={tabId(TABS_PREFIX, 'calendrier')}>
+        <div role="tabpanel" id={tabPanelId('calendrier')} aria-labelledby={tabId('calendrier')}>
           <ExploreCalendar filters={shown} refreshKey={liveTick} />
         </div>
       )}
@@ -377,7 +446,7 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
       )}
 
       {mode === 'liste' && (
-        <section role="tabpanel" id={tabPanelId(TABS_PREFIX, 'liste')} aria-labelledby={tabId(TABS_PREFIX, 'liste')} className="space-y-4">
+        <section role="tabpanel" id={tabPanelId('liste')} aria-labelledby={tabId('liste')} className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="resultats-titre" className="text-base font-semibold text-foreground-strong tabular-nums" aria-live="polite">
               {failed ? 'Liste indisponible' : countLabel}

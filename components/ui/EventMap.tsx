@@ -19,6 +19,15 @@ interface EventMapProps {
 }
 
 
+/**
+ * Lot Carte B — Leaflet pour les cartes d'Explorer et l'aperçu de l'accueil : ils chargent CE module à la demande et
+ * prennent Leaflet (et sa feuille de style, importée ci-dessus) ici, sans ajouter de morceau de code à charger : la table
+ * des morceaux, chargée par toutes les pages, ne grossit pas (budgets JS de toutes les routes).
+ */
+export function loadLeaflet(): typeof import('leaflet') {
+    return require('leaflet') as typeof import('leaflet');
+}
+
 /** Nom affiché sur le repère : 28 caractères au plus (le nom entier reste dans le texte de remplacement). */
 export function markerName(name: string): string {
     const t = name.trim().replace(/\s+/g, ' ');

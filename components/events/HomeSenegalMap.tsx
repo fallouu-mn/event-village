@@ -13,7 +13,8 @@ import { exploreModeHref } from '@/lib/events/explore-view';
  * la vue Carte d'Explorer, avec ou sans aperçu.
  */
 
-const SenegalMapPreview = dynamic(() => import('@/components/explore/SenegalMapPreview'), { ssr: false });
+// Module unique de la carte, du calendrier et de l'aperçu (components/explore/lazy.ts)
+const SenegalMapPreview = dynamic(() => import('@/components/explore/lazy').then((m) => m.SenegalMapPreview), { ssr: false });
 
 export function HomeSenegalMap() {
     const box = useRef<HTMLDivElement>(null);

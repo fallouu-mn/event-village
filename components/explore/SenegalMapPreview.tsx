@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import 'leaflet/dist/leaflet.css';
 import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
 import { NO_FILTERS } from '@/lib/events/catalog-filters';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
@@ -33,53 +32,63 @@ export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount:
     useEffect(() => {
         const container = ref.current;
         if (!container) return undefined;
-        const L = require('leaflet') as LeafletModule;
-        const map = L.map(container, {
-            zoomControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
-            keyboard: false, zoomSnap: 0.25, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false,
-        });
-        map.fitBounds(SENEGAL_LATLNG, { animate: false, padding: [8, 8] });
-        const tiles = addThemedTiles(L, map, themeRef.current);
-        tilesRef.current = tiles;
-        let loaded = 0;
-        let failures = 0;
-        tiles.on('tileload', () => { loaded += 1; });
-        tiles.on('tileerror', () => {
-            failures += 1;
-            if (loaded === 0 && failures >= 4) cbs.current.onUnavailable();
-        });
         let alive = true;
-        void readMapEvents('accueil-carte', mapUrl(NO_FILTERS)).then((r) => {
-            if (!alive) return;
-            if (!r.ok) {
-                setError(true);
-                return;
-            }
-            cbs.current.onCount(r.data.total);
-            const z = map.getZoom();
-            const points = r.data.events.map((e) => {
-                const p = map.project([e.lat, e.lng], z);
-                return { item: e, x: p.x, y: p.y };
+        let created: import('leaflet').Map | null = null;
+        const build = (L: LeafletModule) => {
+            const map = L.map(container, {
+                zoomControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
+                keyboard: false, zoomSnap: 0.25, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false,
             });
-            // Points sans texte (aperçu décoratif : aucune étiquette coupée au bord de la carte) ; un groupe = point plus grand
-            for (const c of clusterPoints(points, (e) => e.id, 40)) {
-                const size = c.items.length > 1 ? Math.min(28, 14 + 3 * Math.round(Math.log2(c.items.length + 1))) : 14;
-                const featured = c.items.some((e) => e.highlight === 'A_LA_UNE');
-                L.marker(map.unproject([c.x, c.y], z), {
-                    icon: L.divIcon({
-                        className: featured ? 'ev-point ev-point--une' : 'ev-point',
-                        iconSize: [size, size],
-                        iconAnchor: [size / 2, size / 2],
-                    }),
-                    interactive: false,
-                    keyboard: false,
-                }).addTo(map);
-            }
-        });
+            created = map;
+            map.fitBounds(SENEGAL_LATLNG, { animate: false, padding: [8, 8] });
+            const tiles = addThemedTiles(L, map, themeRef.current);
+            tilesRef.current = tiles;
+            let loaded = 0;
+            let failures = 0;
+            tiles.on('tileload', () => { loaded += 1; });
+            tiles.on('tileerror', () => {
+                failures += 1;
+                if (loaded === 0 && failures === 4) cbs.current.onUnavailable();
+            });
+            void readMapEvents('accueil-carte', mapUrl(NO_FILTERS)).then((r) => {
+                if (!alive) return;
+                if (!r.ok) {
+                    setError(true);
+                    return;
+                }
+                cbs.current.onCount(r.data.total);
+                const z = map.getZoom();
+                const points = r.data.events.map((e) => {
+                    const p = map.project([e.lat, e.lng], z);
+                    return { item: e, x: p.x, y: p.y };
+                });
+                // Points sans texte (aperçu décoratif : aucune étiquette coupée au bord de la carte) ; un groupe = point plus grand
+                for (const c of clusterPoints(points, (e) => e.id, 40)) {
+                    const size = c.items.length > 1 ? Math.min(28, 14 + 3 * Math.round(Math.log2(c.items.length + 1))) : 14;
+                    const featured = c.items.some((e) => e.highlight === 'A_LA_UNE');
+                    L.marker(map.unproject([c.x, c.y], z), {
+                        icon: L.divIcon({
+                            className: featured ? 'ev-point ev-point--une' : 'ev-point',
+                            iconSize: [size, size],
+                            iconAnchor: [size / 2, size / 2],
+                        }),
+                        interactive: false,
+                        keyboard: false,
+                    }).addTo(map);
+                }
+            });
+        };
+        // Leaflet et sa feuille de style : pris dans le module de la carte de la fiche (aucun morceau de code de plus)
+        import('@/components/ui/EventMap')
+            .then(({ loadLeaflet }) => { if (alive) build(loadLeaflet()); })
+            .catch((err: unknown) => {
+                console.error('[accueil] aperçu de la carte impossible :', err instanceof Error ? err.message : String(err));
+                if (alive) cbs.current.onUnavailable();
+            });
         return () => {
             alive = false;
             tilesRef.current = null;
-            map.remove();
+            created?.remove();
         };
     }, []);
 

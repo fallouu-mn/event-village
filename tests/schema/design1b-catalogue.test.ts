@@ -364,8 +364,8 @@ describe('accueil et Explorer : rendu serveur, cache, rien de personnel', () => 
         const view = code('app/explore/ExploreView.tsx');
         assert.doesNotMatch(view, /SHOW_MAP_TOGGLE/);
         for (const label of ['Liste', 'Carte', 'Calendrier']) assert.match(view, new RegExp(`label: '${label}'`));
-        assert.match(view, /dynamic\(\(\) => import\('@\/components\/explore\/ExploreMap'\), \{\s*ssr: false/);
-        assert.match(view, /dynamic\(\(\) => import\('@\/components\/explore\/ExploreCalendar'\), \{\s*ssr: false/);
+        assert.match(view, /dynamic\(\(\) => import\('@\/components\/explore\/lazy'\)\.then\(\(m\) => m\.ExploreMap\), \{\s*ssr: false/);
+        assert.match(view, /dynamic\(\(\) => import\('@\/components\/explore\/lazy'\)\.then\(\(m\) => m\.ExploreCalendar\), \{\s*ssr: false/);
         assert.match(view, /<FilterChip\b/);
     });
 

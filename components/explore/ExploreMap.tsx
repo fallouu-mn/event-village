@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import 'leaflet/dist/leaflet.css';
 import { LocateFixed, RefreshCw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
@@ -18,7 +17,9 @@ import { clusterPoints } from '@/lib/map/cluster';
 /**
  * Lot Carte B (B2) — vue Carte d'Explorer, chargée à la demande (jamais au premier chargement d'Explorer) :
  *  - fond Stadia du thème (components/map/themedTiles.ts) ; aucune tuile avant l'ouverture de la vue ; si les tuiles ne
- *    viennent pas, `onTilesFailed` fait basculer Explorer sur la Liste avec un message simple ;
+ *    viennent pas (ou si Leaflet ne se charge pas), `onTilesFailed` fait basculer Explorer sur la Liste avec un message
+ *    simple ; Leaflet et sa feuille de style sont pris dans le module de la carte de la fiche (components/ui/EventMap.tsx,
+ *    loadLeaflet), chargé à l'ouverture de la vue : aucun morceau de code de plus pour l'application ;
  *  - points regroupés avec leur nombre (lib/map/cluster.ts), pastilles de prix (« Gratuit », « Dès 5 000 F »), « À la une »
  *    en orange ; repère touché ou survolé : forme « choisi » (orange, agrandi) ;
  *  - téléphone : feuille en bas de la carte avec l'événement touché et « Voir l'événement » ; ordinateur : liste à gauche
@@ -102,50 +103,61 @@ export default function ExploreMap({ filters, onTilesFailed, refreshKey = 0 }: {
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return undefined;
-        const L = require('leaflet') as LeafletModule;
-        leafletRef.current = L;
-        const still = reducedMotion();
-        const map = L.map(container, {
-            zoomControl: false,
-            keyboard: true,
-            minZoom: 6,
-            maxBounds: L.latLngBounds(SENEGAL_LATLNG).pad(0.5),
-            maxBoundsViscosity: 0.8,
-            zoomAnimation: !still,
-            fadeAnimation: !still,
-            markerZoomAnimation: !still,
-        });
-        map.fitBounds(SENEGAL_LATLNG, { animate: false });
-        L.control.zoom({ position: 'topright', zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière' }).addTo(map);
-        const tiles = addThemedTiles(L, map, themeRef.current);
-        tilesRef.current = tiles;
-        let loaded = 0;
-        let failures = 0;
-        let reported = false;
-        tiles.on('tileload', () => { loaded += 1; });
-        tiles.on('tileerror', () => {
-            failures += 1;
-            if (!reported && loaded === 0 && failures >= TILE_FAILURES_MAX) {
-                reported = true;
-                console.warn(`[carte] ${failures} tuiles en échec, aucune chargée : retour à la liste`);
-                failedRef.current();
-            }
-        });
-        layerRef.current = L.layerGroup().addTo(map);
-        const sync = () => {
-            setZoom(map.getZoom());
-            setVisibleZone(zoneOf(map));
+        let cancelled = false;
+        let created: LeafletMap | null = null;
+        const build = (L: LeafletModule) => {
+            leafletRef.current = L;
+            const still = reducedMotion();
+            const map = L.map(container, {
+                zoomControl: false,
+                keyboard: true,
+                minZoom: 6,
+                maxBounds: L.latLngBounds(SENEGAL_LATLNG).pad(0.5),
+                maxBoundsViscosity: 0.8,
+                zoomAnimation: !still,
+                fadeAnimation: !still,
+                markerZoomAnimation: !still,
+            });
+            created = map;
+            map.fitBounds(SENEGAL_LATLNG, { animate: false });
+            L.control.zoom({ position: 'topright', zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière' }).addTo(map);
+            const tiles = addThemedTiles(L, map, themeRef.current);
+            tilesRef.current = tiles;
+            let loaded = 0;
+            let failures = 0;
+            let reported = false;
+            tiles.on('tileload', () => { loaded += 1; });
+            tiles.on('tileerror', () => {
+                failures += 1;
+                if (!reported && loaded === 0 && failures >= TILE_FAILURES_MAX) {
+                    reported = true;
+                    console.warn(`[carte] ${failures} tuiles en échec, aucune chargée : retour à la liste`);
+                    failedRef.current();
+                }
+            });
+            layerRef.current = L.layerGroup().addTo(map);
+            const sync = () => {
+                setZoom(map.getZoom());
+                setVisibleZone(zoneOf(map));
+            };
+            map.on('zoomend moveend', sync);
+            // Déplacement voulu par la personne (glisser, zoom, clavier) : « Rechercher dans cette zone » proposé
+            map.on('dragend zoomend', () => setMoved(true));
+            map.on('click', () => { setSelectedId(null); setGroupIds(null); });
+            mapRef.current = map;
+            sync();
+            setMoved(false);
+            setReady(true);
         };
-        map.on('zoomend moveend', sync);
-        // Déplacement voulu par la personne (glisser, zoom, clavier) : « Rechercher dans cette zone » proposé
-        map.on('dragend zoomend', () => setMoved(true));
-        map.on('click', () => { setSelectedId(null); setGroupIds(null); });
-        mapRef.current = map;
-        sync();
-        setMoved(false);
-        setReady(true);
+        import('@/components/ui/EventMap')
+            .then(({ loadLeaflet }) => { if (!cancelled) build(loadLeaflet()); })
+            .catch((err: unknown) => {
+                console.error('[carte] chargement de la carte impossible :', err instanceof Error ? err.message : String(err));
+                if (!cancelled) failedRef.current();
+            });
         return () => {
-            map.remove();
+            cancelled = true;
+            created?.remove();
             mapRef.current = null;
             layerRef.current = null;
             tilesRef.current = null;
