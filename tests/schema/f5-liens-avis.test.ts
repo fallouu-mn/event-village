@@ -132,7 +132,7 @@ describe('finition 5 — liens précis des avis : revue de TOUT le catalogue', (
         }
         assert.ok(!fs.existsSync(path.join(ROOT, 'app/tickets/evenement')), 'aucune route séparée pour les billets d’un événement');
         assert.match(read('app/tickets/[id]/page.tsx'), /if \(read\.kind === 'not-found'\) return <UnavailableItem actionLabel="Voir mes billets" actionHref="\/tickets" \/>;/);
-        assert.match(read('components/ui/UnavailableItem.tsx'), /title="Cet élément n’est plus disponible"/);
+        assert.match(read('components/ui/UnavailableItem.tsx'), /<h1 [^>]*>Cet élément n’est plus disponible<\/h1>/, 'titre de la page (niveau 1)');
         const focus = read('app/tickets/focus-read.ts');
         assert.match(focus, /if \(res\.status === 401\) return \{ kind: 'login' \};/);
         assert.match(focus, /const ticket = ticketsInFocus\(list, \{ ticket: id \}\);/, 'le billet du compte d’abord');
