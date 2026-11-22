@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import { Button } from './Button';
 import { TextInput } from './Field';
 import { SENEGAL_BOUNDS, SENEGAL_VIEW, inSenegal, type GeoPoint } from '@/lib/events/senegal-cities';
+import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
 
 /** Lieu trouvé par la recherche (route serveur GET /api/partner/places/search). */
 export interface PlaceSearchResult {
@@ -32,12 +33,7 @@ interface MapPickerProps {
     onSearch?: (query: string) => Promise<PlaceSearchOutcome>;
 }
 
-/**
- * Tuiles de la carte : configurables (NEXT_PUBLIC_MAP_TILE_URL, NEXT_PUBLIC_MAP_TILE_ATTRIBUTION), par défaut
- * OpenStreetMap. La feuille de style et les icônes de Leaflet sont servies par l'application (plus d'unpkg).
- */
-const TILE_URL = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTRIBUTION = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy; contributeurs OpenStreetMap';
+/** Feuille de style et icônes de Leaflet servies par l'application (plus d'unpkg) ; fond de carte : lib/map/tiles.ts. */
 const OUTSIDE_TEXT = 'Le repère doit être placé au Sénégal : touchez la carte à l’emplacement du lieu.';
 const CITY_ZOOM = 13;
 const PLACE_ZOOM = 16;
@@ -93,6 +89,11 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
     const [searchMessage, setSearchMessage] = useState<string | null>(null);
     const [chosenLabel, setChosenLabel] = useState<string | null>(null);
 
+    const theme = useMapTheme();
+    const themeRef = useRef(theme);
+    themeRef.current = theme;
+    const tilesRef = useRef<import('leaflet').TileLayer | null>(null);
+
     useEffect(() => {
         const container = mapRef.current;
         if (!container) return;
@@ -124,12 +125,9 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
         setTouch(isTouch);
         // Boutons de zoom en français ; 44 px par la règle .leaflet-control-zoom de app/globals.css
         L.control.zoom({ zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière' }).addTo(map);
-        L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
-        // Lot 7 (D74) : mention légale des tuiles (12 px de Leaflet) marquée comme légende pour le contrôle des
-        // captures (e2e/support/checks.ts, CAPTION_SELECTOR) ; elle reste lisible et n'est pas un contenu.
-        // Finition 2b (A) : pied de carte réduit à la mention des fonds (« © contributeurs OpenStreetMap »), sans « Leaflet »
-        map.attributionControl?.setPrefix(false);
-        map.attributionControl?.getContainer()?.setAttribute('data-ev-caption', '');
+        // Lot 7 (D74) : mention légale des tuiles marquée comme légende pour le contrôle des captures ; finition 2b (A) : sans
+        // « Leaflet ». Lot Carte B : fond et mention de Stadia, du thème (addThemedTiles)
+        tilesRef.current = addThemedTiles(L, map, themeRef.current);
 
         // Repère créé au premier choix seulement ; déplaçable à la souris ou au doigt, sans action au clavier dans
         // Leaflet : il n'est pas focalisable (keyboard: false), l'alternative au clavier est la recherche ou la saisie
@@ -179,12 +177,18 @@ export const MapPicker: React.FC<MapPickerProps> = ({ latitude, longitude, onCha
 
         mapInstanceRef.current = map;
         return () => {
+            tilesRef.current = null;
             map.remove();
             mapInstanceRef.current = null;
             markerRef.current = null;
             placeMarkerRef.current = null;
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Lot Carte B (B1) : thème changé, même carte, fond du thème
+    useEffect(() => {
+        setTilesTheme(tilesRef.current, theme);
+    }, [theme]);
 
     // Position venue du formulaire (saisie, recherche, chargement d'un événement) : repère posé ou déplacé
     useEffect(() => {

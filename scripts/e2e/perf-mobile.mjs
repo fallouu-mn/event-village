@@ -72,7 +72,7 @@ const LIGHTHOUSE_TIMEOUT_MS = 150_000;
 const TOUCHERS_PAR_PAGE = 5;
 const HOST_RESOLVER = '--host-resolver-rules=MAP localhost 127.0.0.1';
 /** Hôtes externes bloqués, comme e2e/perf.spec.ts (tuiles de carte, photos de démonstration). */
-const BLOCKED_URLS = ['*tile.openstreetmap.org*', '*unsplash.com*'];
+const BLOCKED_URLS = ['*tile.openstreetmap.org*', '*tiles.stadiamaps.com*', '*unsplash.com*'];
 /** Vue mobile et 4G simulée : valeurs de e2e/support/devices.ts (MOBILE, NET_4G « Slow 4G » de DevTools). */
 const MOBILE = {
     viewport: { width: 390, height: 844 },

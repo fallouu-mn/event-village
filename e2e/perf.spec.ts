@@ -5,7 +5,7 @@
  *
  * Conditions : contexte NEUF par passage (cache vide), service workers bloqués, SANS context.route (le routage
  * de Playwright désactive le cache et passe par le domaine Fetch de CDP : la mesure serait faussée) ; hôtes
- * externes bloqués par CDP `Network.setBlockedURLs` (tuiles OpenStreetMap, images Unsplash) ; réseau
+ * externes bloqués par CDP `Network.setBlockedURLs` (tuiles OpenStreetMap et Stadia, images Unsplash) ; réseau
  * `Network.emulateNetworkConditions` 4G (D83) et `Emulation.setCPUThrottlingRate { rate: 4 }`. Aucune horloge.
  * Contrôle de cohérence BLOQUANT : le plus gros fichier /_next/static/ met au moins taille ÷ débit entre
  * requestStart et responseEnd, sinon « bridage non appliqué ».
@@ -44,7 +44,7 @@ import { readRequest, sumReads, type RequestRead } from './support/request-read'
 const PASSES = 5;
 const BUDGET_FILE = path.resolve(process.cwd(), 'scripts', 'js-budget.json');
 const BUDGET_TOLERANCE = 20_000; // octets (1 Ko = 1 000 octets, comme scripts/js-budget.mjs)
-const BLOCKED_URLS = ['*tile.openstreetmap.org*', '*unsplash.com*'];
+const BLOCKED_URLS = ['*tile.openstreetmap.org*', '*tiles.stadiamaps.com*', '*unsplash.com*'];
 
 interface Screen {
     id: string;

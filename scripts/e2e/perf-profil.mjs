@@ -144,7 +144,7 @@ async function main() {
                 const page = await context.newPage();
                 const cdp = await context.newCDPSession(page);
                 await cdp.send('Network.enable');
-                await cdp.send('Network.setBlockedURLs', { urls: ['*tile.openstreetmap.org*', '*unsplash.com*'] });
+                await cdp.send('Network.setBlockedURLs', { urls: ['*tile.openstreetmap.org*', '*tiles.stadiamaps.com*', '*unsplash.com*'] });
                 await cdp.send('Network.emulateNetworkConditions', NET_4G);
                 await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
                 await cdp.send('Profiler.enable');
