@@ -190,7 +190,11 @@ describe('B2 — calendrier', () => {
         assert.match(cal, /\+\{list\.length - 1\}/);
         assert.match(cal, /isToday \? 'bg-brand-vif text-brand-vif-foreground'/);
         assert.match(cal, /aria-current=\{isToday \? 'date' : undefined\}/);
-        assert.match(cal, /<Modal[\s\S]*sheetOnMobile/);
+        // Feuille d'un jour : <dialog> natif en fenêtre modale (focus gardé, Échap, fond), focus rendu au jour touché
+        assert.match(cal, /d\.showModal\(\)/);
+        assert.match(cal, /returnTo\.current\?\.focus\(\)/);
+        assert.match(cal, /<IconButton aria-label="Fermer"/);
+        assert.doesNotMatch(cal, /components\/ui\/Modal/, 'aucune dépendance au module partagé des fenêtres (poids)');
         assert.match(cal, /Ce week-end/);
         assert.match(cal, /Ce mois-ci/);
         const card = code('components/explore/MapEventCard.tsx');

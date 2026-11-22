@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { CalendarDays, RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
+import { IconButton } from '@/components/ui/IconButton';
 import { cn } from '@/components/ui/cn';
 import { MapEventCard, PosterDot } from '@/components/explore/MapEventCard';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
@@ -29,6 +29,60 @@ const WEEKDAYS = [
     { short: 'L', long: 'lundi' }, { short: 'M', long: 'mardi' }, { short: 'M', long: 'mercredi' }, { short: 'J', long: 'jeudi' },
     { short: 'V', long: 'vendredi' }, { short: 'S', long: 'samedi' }, { short: 'D', long: 'dimanche' },
 ];
+
+/**
+ * Feuille d'un jour : élément natif <dialog> ouvert en fenêtre modale (showModal : focus placé dedans et gardé, Échap
+ * ferme, fond assombri, reste de la page inerte), en bas de l'écran sur téléphone, centrée sur ordinateur ; à la
+ * fermeture, le focus revient au jour touché. Écrite ici plutôt qu'avec components/ui/Modal : ce module à la demande ne
+ * dépend ainsi d'aucun morceau de code d'autres pages (table des morceaux chargée par toutes les pages, budgets JS).
+ * Montée en 250 ms (translation et opacité), coupée si « réduire les animations ».
+ */
+function DaySheet({ open, title, subtitle, onClose, children }: {
+    open: boolean;
+    title: string;
+    subtitle?: string;
+    onClose: () => void;
+    children: React.ReactNode;
+}) {
+    const ref = useRef<HTMLDialogElement>(null);
+    const returnTo = useRef<HTMLElement | null>(null);
+    const titleId = useId();
+    const subtitleId = useId();
+    useEffect(() => {
+        const d = ref.current;
+        if (!d) return;
+        if (open && !d.open) {
+            returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            d.showModal();
+        } else if (!open && d.open) {
+            d.close();
+        }
+    }, [open]);
+    return (
+        <dialog
+            ref={ref}
+            aria-labelledby={titleId}
+            aria-describedby={subtitle ? subtitleId : undefined}
+            onClose={() => {
+                onClose();
+                returnTo.current?.focus();
+            }}
+            onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.close(); }}
+            className="ev-sheet-up mx-0 mb-0 mt-auto max-h-[85vh] w-full max-w-none overflow-y-auto rounded-t-2xl border border-border bg-popover p-0 text-foreground shadow-popover backdrop:bg-scrim/60 sm:m-auto sm:max-w-lg sm:rounded-2xl"
+        >
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-popover px-5 py-4">
+                <div className="min-w-0">
+                    <h2 id={titleId} className="text-lg font-bold text-foreground-strong first-letter:uppercase">{title}</h2>
+                    {subtitle && <p id={subtitleId} className="text-sm text-muted-foreground">{subtitle}</p>}
+                </div>
+                <IconButton aria-label="Fermer" variant="ghost" onClick={() => ref.current?.close()}>
+                    <X size={20} />
+                </IconButton>
+            </div>
+            <div className="px-5 py-4">{children}</div>
+        </dialog>
+    );
+}
 
 interface MonthState {
     key: string;
@@ -232,13 +286,11 @@ export default function ExploreCalendar({ filtersQuery, weekend, refreshKey = 0 
                 )}
             </div>
 
-            <Modal
-                isOpen={sheet !== null}
+            <DaySheet
+                open={sheet !== null}
                 onClose={() => setSheet(null)}
                 title={sheet?.title ?? ''}
                 subtitle={sheet?.subtitle}
-                sheetOnMobile
-                maxWidth="lg"
             >
                 {sheet?.error ? (
                     <p role="alert" className="text-base text-foreground">{sheet.error}</p>
@@ -253,7 +305,7 @@ export default function ExploreCalendar({ filtersQuery, weekend, refreshKey = 0 
                         ))}
                     </ul>
                 )}
-            </Modal>
+            </DaySheet>
         </div>
     );
 }
