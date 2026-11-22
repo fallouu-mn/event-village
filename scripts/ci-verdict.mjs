@@ -159,6 +159,19 @@ if (avecPerf) {
     const o = needs.perf?.outputs ?? {};
     lignes.push(`build=${o.build || 'skipped'}`, `js_budget=${o.js_budget || 'skipped'}`, `perf_mobile=${o.perf_mobile || 'skipped'}`);
 }
+// Finition 5 : état de la mesure mobile lu dans perf/lighthouse-resume.json (OK, HORS SEUIL ou FAUSSÉE = à relancer) et
+// nombre de tentatives Lighthouse (1 + reprises d'une mesure faussée)
+{
+    const resume = lire(path.join(runDir, 'perf', 'lighthouse-resume.json'));
+    if (resume !== null) {
+        let r = null;
+        try { r = JSON.parse(resume); } catch (err) { lignes.push(`perf_mobile_mesure=illisible (${err instanceof Error ? err.message : String(err)})`); }
+        if (r) {
+            const etat = r.verdict === 'FAUSSÉE' ? 'faussee-a-relancer' : r.verdict === 'OK' ? 'ok' : 'hors-seuil';
+            lignes.push(`perf_mobile_mesure=${etat}`, `perf_mobile_tentatives=${r.mesureFiable?.tentatives?.length ?? 1}`);
+        }
+    }
+}
 if (rapide) lignes.push('mode=rapide', `suites=${needs.mode?.outputs?.suites ?? ''}`);
 else lignes.push('mode=complet');
 lignes.push(`url=${env.GITHUB_SERVER_URL ?? ''}/${env.GITHUB_REPOSITORY ?? ''}/actions/runs/${env.GITHUB_RUN_ID ?? ''}`);

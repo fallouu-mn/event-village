@@ -195,6 +195,104 @@ export function verdictToucher(touches, fatals = []) {
     return { ok, maxEventTimingMs: maxEt, maxTemoinMs: maxTemoin, erreurs, textes };
 }
 
+// ── Finition 5 : mesure fiable (mesure « faussée », refaite dans le même job) ─────────────────────────────────
+
+/**
+ * Finition 5 (consigne du 22/11) : une tentative de mesure Lighthouse (5 tours, calibration à chaque tour) est FAUSSÉE
+ * quand un tour au moins sort de la plage du téléphone de référence :
+ *  - ralentissement calculé au-delà de ×6 (machine de CI trop rapide : runs 449, 455, 536, 544, 585, ×6,8 à ×7,4, pages
+ *    non touchées sous 90) ;
+ *  - indice de puissance hors de la plage habituelle [1 000 ; 3 000] (sous 1 000, Lighthouse avertit lui-même qu'il est
+ *    « environ deux fois plus faible que la cible » ; au-dessus de 3 000, le ralentissement dépasse ×6) ;
+ *  - indice illisible (calibration en erreur : ralentissement par défaut, non calibré).
+ * Une tentative faussée est refaite dans le même job, au plus `reprisesMax` fois. Seuils, calibration (×4 pour 2 000)
+ * et médiane de 5 inchangés : seule la décision de refaire et le texte du verdict sont ajoutés.
+ */
+export const MESURE_FIABLE = Object.freeze({ ralentissementMax: 6, indiceMin: 1_000, indiceMax: 3_000, reprisesMax: 2 });
+
+/**
+ * Causes de la mesure faussée pour une liste de tours de calibration (vide : tentative valide). `sens` : « rapide »
+ * (machine plus rapide que prévu : la mesure est PLUS sévère que la référence), « lent » ou « illisible » (mesure plus
+ * indulgente ou non calibrée : un résultat dans les seuils n'est pas fiable non plus).
+ * @param {Array<{ tour: number, benchmarkIndex: number|null, multiplier: number }>} calibrations
+ */
+export function causesMesureFaussee(calibrations) {
+    const causes = [];
+    for (const c of calibrations ?? []) {
+        const i = c?.benchmarkIndex;
+        const tour = `tour ${c?.tour ?? '?'}`;
+        if (!Number.isFinite(i) || i <= 0) {
+            causes.push({ tour: c?.tour ?? null, sens: 'illisible', texte: `${tour} : indice de puissance illisible (ralentissement non calibré ×${c?.multiplier ?? '?'})` });
+            continue;
+        }
+        const indice = String(Math.round(i));
+        const ralenti = `×${frNumber(c.multiplier, 2)}`;
+        if (c.multiplier > MESURE_FIABLE.ralentissementMax || i > MESURE_FIABLE.indiceMax) {
+            causes.push({ tour: c.tour, sens: 'rapide', texte: `${tour} : machine trop rapide, indice ${indice} → ralentissement ${ralenti} (plage habituelle : indice ${MESURE_FIABLE.indiceMin} à ${MESURE_FIABLE.indiceMax}, ralentissement ×${MESURE_FIABLE.ralentissementMax} au plus)` });
+        } else if (i < MESURE_FIABLE.indiceMin) {
+            causes.push({ tour: c.tour, sens: 'lent', texte: `${tour} : machine trop lente, indice ${indice} → ralentissement ${ralenti} (plage habituelle : indice ${MESURE_FIABLE.indiceMin} à ${MESURE_FIABLE.indiceMax})` });
+        }
+    }
+    return causes;
+}
+
+/**
+ * Les trois mesures Lighthouse d'une page (score, LCP, CLS), seules touchées par la calibration ; le CLS mesuré et le
+ * toucher tournent avec un ralentissement fixe ×4 et ne dépendent pas de la tentative.
+ */
+export function lighthouseOk(page) {
+    if (page?.fatal) return false;
+    return verdictPage({ ...page, reel: [] }).mesures.slice(0, 3).every((m) => m.ok);
+}
+
+/**
+ * Décision après une tentative : faussée ou non, et faut-il la refaire. Une tentative faussée dont TOUTES les causes
+ * sont « machine trop rapide » et dont toutes les pages tiennent les seuils n'est pas refaite (mesure plus sévère que
+ * la référence, seuils tenus quand même) ; toute autre tentative faussée est refaite tant qu'il reste des reprises.
+ * @param {{ numero: number, calibrations: Array<{ tour: number, benchmarkIndex: number|null, multiplier: number }>, pagesOk: boolean }} t
+ */
+export function decisionTentative({ numero, calibrations, pagesOk }) {
+    const causes = causesMesureFaussee(calibrations);
+    const faussee = causes.length > 0;
+    const acceptee = !faussee || (pagesOk && causes.every((c) => c.sens === 'rapide'));
+    const reste = MESURE_FIABLE.reprisesMax + 1 - numero;
+    return { numero, faussee, causes, acceptee, refaire: !acceptee && reste > 0 };
+}
+
+/**
+ * Verdict final de la mesure : « OK », « HORS SEUIL » ou « FAUSSÉE » (à relancer). FAUSSÉE seulement quand la dernière
+ * tentative reste faussée et non acceptée ET que rien d'autre ne fait échouer la mesure : un CLS mesuré, un toucher ou
+ * une erreur fatale hors seuil (indépendants de la calibration) reste un vrai HORS SEUIL.
+ * @param {{ pages: Array<ReturnType<typeof verdictPage>>, lighthousePages: boolean[], toucher: { ok: boolean }, derniere: ReturnType<typeof decisionTentative>|null }} p
+ */
+export function etatFinal({ pages, lighthousePages, toucher, derniere }) {
+    if (pages.every((p) => p.ok) && toucher.ok) return 'OK';
+    const horsCalibration = !toucher.ok || pages.some((p) => p.fatal || !p.mesures.slice(3).every((m) => m.ok));
+    if (!horsCalibration && derniere && derniere.faussee && !derniere.acceptee && lighthousePages.some((ok) => !ok)) return 'FAUSSÉE';
+    return 'HORS SEUIL';
+}
+
+export const TENTATIVES_TSV_HEADER = ['tentative', 'tour', 'indice_puissance', 'ralentissement_cpu', 'etat_tour', 'cause', 'scores', 'decision'].join('\t');
+
+/**
+ * Journal de toutes les tentatives (perf/tentatives.tsv) : une ligne par tour de calibration de chaque tentative, avec
+ * les scores Lighthouse des pages de ce tour et la décision prise à la fin de la tentative.
+ * @param {Array<{ decision: ReturnType<typeof decisionTentative>, calibrations: Array<{ tour: number, benchmarkIndex: number|null, multiplier: number }>, scores: Record<string, Array<number|null>> }>} tentatives
+ */
+export function tentativesRows(tentatives) {
+    const rows = [];
+    for (const t of tentatives ?? []) {
+        const d = t.decision;
+        const decision = !d.faussee ? 'valide' : d.acceptee ? 'faussée mais acceptée (machine trop rapide, seuils tenus)' : d.refaire ? 'faussée : refaite' : 'faussée : plus de reprise';
+        for (const c of t.calibrations) {
+            const cause = d.causes.find((x) => x.tour === c.tour);
+            const scores = Object.entries(t.scores ?? {}).map(([id, list]) => `${id} ${list[c.tour - 1] ?? '—'}`).join(' ; ');
+            rows.push([String(d.numero), String(c.tour), cell(c.benchmarkIndex), cell(c.multiplier, 2), cause ? 'faussé' : 'valide', clean(cause?.texte ?? ''), clean(scores), decision].join('\t'));
+        }
+    }
+    return rows;
+}
+
 // ── Sorties ───────────────────────────────────────────────────────────────────
 
 export const TSV_HEADER = [
@@ -240,19 +338,23 @@ export function toucherRows(touches) {
  * Rapport lisible (perf/lighthouse.txt).
  * @param {{ pages: Array<ReturnType<typeof verdictPage> & { details?: string[] }>, toucher: ReturnType<typeof verdictToucher>, entete?: string[], notes?: string[] }} p
  */
-export function texteRapport({ pages, toucher, entete = [], notes = [] }) {
+export function texteRapport({ pages, toucher, entete = [], notes = [], etat = null, tentatives = [] }) {
     const ok = pages.every((p) => p.ok) && toucher.ok;
+    // Finition 5 : état final fourni par etatFinal (OK, HORS SEUIL ou FAUSSÉE) ; sans lui, comportement d'origine
+    const final = etat ?? (ok ? 'OK' : 'HORS SEUIL');
     const lignes = [
         'Performance mobile mesurée (design 1b, lot PERF) — scripts/e2e/perf-mobile.mjs',
+        ...(final === 'FAUSSÉE' ? ['MESURE FAUSSÉE, À RELANCER — la machine de la CI est restée hors de la plage du téléphone de référence après toutes les reprises : les scores Lighthouse ci-dessous ne disent rien des pages.'] : []),
         ...entete,
         `Seuils : score ≥ ${SEUILS.score} ; LCP < ${fmtMs(SEUILS.lcpMs)} ; CLS < ${fmtCls(SEUILS.cls)} ; toucher < ${fmtMs(SEUILS.toucherMs)} `
             + `(médiane de ${PASSAGES} passages par page, au moins ${MIN_PASSAGES_VALIDES} valides ; toucher : la plus longue).`,
         '',
     ];
     for (const p of pages) {
-        lignes.push(`${p.ok ? 'OK' : 'HORS SEUIL'} — ${p.libelle}`);
+        // Mesure faussée : les mesures Lighthouse (3 premières) hors seuil sont écrites « FAUSSÉ », jamais « HORS SEUIL »
+        lignes.push(`${p.ok ? 'OK' : final === 'FAUSSÉE' ? 'MESURE FAUSSÉE' : 'HORS SEUIL'} — ${p.libelle}`);
         if (p.fatal) lignes.push(`  HORS SEUIL — ${p.fatal}`);
-        for (const m of p.mesures) lignes.push(`  ${m.texte}`);
+        p.mesures.forEach((m, i) => lignes.push(`  ${final === 'FAUSSÉE' && i < 3 ? m.texte.replace(/^HORS SEUIL/, 'FAUSSÉ (non concluant)') : m.texte}`));
         for (const d of p.details ?? []) lignes.push(`  · ${d}`);
         for (const e of p.erreurs) lignes.push(`  ! ${e}`);
         lignes.push('');
@@ -261,7 +363,18 @@ export function texteRapport({ pages, toucher, entete = [], notes = [] }) {
     for (const t of toucher.textes) lignes.push(`  ${t}`);
     for (const e of toucher.erreurs) lignes.push(`  ! ${e}`);
     lignes.push('');
+    if (tentatives.length > 0) {
+        lignes.push(`Tentatives de la mesure Lighthouse (finition 5 : faussée si un tour sort de la plage, refaite ${MESURE_FIABLE.reprisesMax} fois au plus ; journal perf/tentatives.tsv) :`);
+        for (const t of tentatives) {
+            const d = t.decision ?? t;
+            lignes.push(`  tentative ${d.numero} : ${!d.faussee ? 'valide' : d.acceptee ? 'faussée mais acceptée (machine trop rapide : mesure plus sévère que la référence, seuils tenus)' : d.refaire ? 'FAUSSÉE, refaite' : 'FAUSSÉE, plus de reprise'}`);
+            for (const c of d.causes) lignes.push(`    · ${c.texte}`);
+        }
+        lignes.push('');
+    }
     for (const n of notes) lignes.push(n);
-    lignes.push(`VERDICT : ${ok ? 'OK — tous les seuils sont tenus' : 'HORS SEUIL — au moins une mesure ne tient pas son seuil (le run est rouge)'}`);
-    return { ok, texte: `${lignes.join('\n')}\n` };
+    lignes.push(`VERDICT : ${final === 'OK' ? 'OK — tous les seuils sont tenus'
+        : final === 'FAUSSÉE' ? 'MESURE FAUSSÉE, À RELANCER — aucune conclusion sur les seuils (relancer le job ; ce n’est pas un défaut des pages)'
+            : 'HORS SEUIL — au moins une mesure ne tient pas son seuil (le run est rouge)'}`);
+    return { ok: final === 'OK', etat: final, texte: `${lignes.join('\n')}\n` };
 }
