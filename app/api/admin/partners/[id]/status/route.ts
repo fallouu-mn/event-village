@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { permissionMissingResponse, verifyAdminAuth } from '@/lib/admin/admin-auth';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,6 +113,12 @@ export async function PATCH(
 
         // Lot 9 bis (ex-10.0 c, B45) : le journal PARTNER_STATUS_SET est écrit par partner_status_set dans sa
         // transaction (M06) ; s'il ne peut pas l'être, la RPC échoue et rien n'a changé (500 ci-dessus).
+
+        // Lot Carte B (B0) : la cascade a suspendu ou rétabli des événements publiés : pages publiques (catalogue, accueil,
+        // fiches, carte) mises à jour tout de suite, sans attendre la fin du cache de 60 s
+        const changedEvents = (Array.isArray(reply.events_suspended) ? reply.events_suspended.length : 0)
+            + (Array.isArray(reply.events_restored) ? reply.events_restored.length : 0);
+        if (changedEvents > 0) invalidatePublicEvent(null, `statut de la partenaire ${newStatus}`);
 
         return NextResponse.json({
             success: true,

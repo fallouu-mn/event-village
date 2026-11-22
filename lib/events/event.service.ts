@@ -524,6 +524,8 @@ export class EventService {
             actor_id: actorId,
             category: parsed.data,
         } }));
+        // Lot Carte B (B0) : prix d'appel, « Gratuit » et « Complet » visibles tout de suite (catalogue, accueil, fiche, carte)
+        invalidatePublicEvent(eventId, 'catégorie ajoutée');
         return result.category;
     }
 
@@ -556,6 +558,8 @@ export class EventService {
             actor_id: actorId,
             patch: parsed.data,
         } }));
+        // Lot Carte B (B0) : arrêt de vente, prix, quota ou dates de vente visibles tout de suite sur les pages publiques
+        invalidatePublicEvent(eventId, 'catégorie modifiée');
         return {
             ...result.category,
             available_quantity: Math.max(0, Number(result.category.total_quantity) - Number(result.category.sold_quantity ?? 0) - Number(result.category.held_quantity ?? 0)),
@@ -571,6 +575,8 @@ export class EventService {
             category_id: categoryId,
             actor_id: actorId,
         } }));
+        // Lot Carte B (B0) : catégorie retirée, prix d'appel recalculé tout de suite sur les pages publiques
+        invalidatePublicEvent(eventId, 'catégorie supprimée');
         return { category_id: String(result.category_id) };
     }
 
