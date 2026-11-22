@@ -135,6 +135,9 @@ describe('B2 — Explorer : trois vues, rien de plus au premier chargement', () 
         assert.match(map, /Rechercher dans cette zone/);
         assert.match(map, /onHover=\{setHoverId\}/);
         assert.match(map, /keyboard: true/);
+        // Leaflet 1.9 : Entrée sur un repère n'ouvre qu'une bulle liée ; l'action du toucher est branchée sur la touche
+        assert.equal((map.match(/marker\.on\('keypress', /g) ?? []).length, 2, 'Entrée et Espace : repère et groupe');
+        assert.match(map, /e\.key === 'Enter' \|\| e\.key === ' '/);
         // Repère = bouton : nom complet (titre, date, prix), pas seulement le texte visible du billet
         assert.match(map, /marker\.getElement\(\)\?\.setAttribute\('aria-label', markerAlt\(e\)\)/);
         assert.match(map, /marker\.getElement\(\)\?\.setAttribute\('aria-label', `\$\{label\} : agrandir`\)/);

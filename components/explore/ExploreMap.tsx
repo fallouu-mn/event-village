@@ -51,6 +51,14 @@ function inZone(e: PublicMapEvent, z: MapZone | null): boolean {
     return !z || (e.lat >= z.south && e.lat <= z.north && e.lng >= z.west && e.lng <= z.east);
 }
 
+/**
+ * Touche qui active un repère (bouton) : Entrée ou Espace. Leaflet 1.9 rend les repères focalisables, mais Entrée n'y
+ * ouvre qu'une bulle liée (bindPopup), jamais l'action du toucher : sans ceci, un repère était inactif au clavier.
+ */
+function activates(e: KeyboardEvent): boolean {
+    return e.key === 'Enter' || e.key === ' ' || e.keyCode === 13 || e.keyCode === 32;
+}
+
 /** Texte du repère simple : « À la une », sinon le prix, sinon le jour (« sam. 13 déc. »). */
 function markerText(e: PublicMapEvent): string {
     if (e.highlight === 'A_LA_UNE') return 'À la une';
@@ -269,7 +277,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     alt: `${label} : agrandir`,
                     riseOnHover: true,
                 });
-                marker.on('click', () => {
+                const openGroup = () => {
                     const bounds = L.latLngBounds(c.items.map((e) => [e.lat, e.lng] as [number, number]));
                     const samePlace = bounds.getNorthEast().equals(bounds.getSouthWest(), 1e-5);
                     if (samePlace || map.getZoom() >= GROUP_ZOOM_LIMIT) {
@@ -278,7 +286,9 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                         return;
                     }
                     map.fitBounds(bounds.pad(0.3), { animate: !reducedMotion(), maxZoom: GROUP_ZOOM_LIMIT });
-                });
+                };
+                marker.on('click', openGroup);
+                marker.on('keypress', (ev: import('leaflet').LeafletKeyboardEvent) => { if (activates(ev.originalEvent)) { ev.originalEvent.preventDefault(); openGroup(); } });
                 layer.addLayer(marker);
                 // Bouton (role posé par Leaflet) : sans nom donné, il s'appellerait par son texte visible (« 8 ») ; le titre
                 // n'est qu'une info-bulle. Nom complet pour les lecteurs d'écran.
@@ -296,10 +306,12 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                 zIndexOffset: chosen ? 1000 : e.highlight ? 500 : 0,
                 riseOnHover: true,
             });
-            marker.on('click', () => {
+            const choose = () => {
                 setGroupIds(null);
                 setSelectedId(e.id);
-            });
+            };
+            marker.on('click', choose);
+            marker.on('keypress', (ev: import('leaflet').LeafletKeyboardEvent) => { if (activates(ev.originalEvent)) { ev.originalEvent.preventDefault(); choose(); } });
             layer.addLayer(marker);
             // Nom du bouton : titre, date, prix (sinon le lecteur d'écran ne lisait que le prix visible, « Dès 5 000 F »)
             marker.getElement()?.setAttribute('aria-label', markerAlt(e));
