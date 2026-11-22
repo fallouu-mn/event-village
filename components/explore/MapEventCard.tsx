@@ -77,13 +77,14 @@ export function MapEventCard({
                         </small>
                     )}
                     {price && (
-                        <span className="inline-flex items-center rounded-full bg-primary-soft px-2 text-sm font-semibold tabular-nums text-primary-text">{price}</span>
+                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-primary-soft px-2 text-sm font-semibold tabular-nums text-primary-text">{price}</span>
+                    )}
+                    {/* Action sous le texte (pas en colonne) : le titre garde toute la largeur à 360 px (capture du run 617) */}
+                    {action && (
+                        <span className="ml-auto text-sm font-semibold text-primary-text group-hover:underline">{action}</span>
                     )}
                 </span>
             </span>
-            {action && (
-                <span className="flex-shrink-0 rounded-lg px-2 text-sm font-semibold text-primary-text group-hover:underline">{action}</span>
-            )}
         </Link>
     );
 }

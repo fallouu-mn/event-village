@@ -380,7 +380,8 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     </p>
 
                     {moved && (
-                        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
+                        // Place laissée aux boutons de zoom (en haut à droite) : aucun chevauchement à 360 px (capture du run 617)
+                        <div className="pointer-events-none absolute left-2 right-16 top-3 z-10 flex justify-center sm:left-16">
                             <Button size="sm" variant="secondary" onClick={searchHere} leftIcon={<Search size={16} />} className="pointer-events-auto min-h-11 shadow-popover">
                                 Rechercher dans cette zone
                             </Button>
