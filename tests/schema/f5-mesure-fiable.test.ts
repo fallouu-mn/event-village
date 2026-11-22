@@ -153,6 +153,21 @@ describe('finition 5 — mesure mobile fiable (mesure faussée refaite)', () => 
         assert.match(verdict, /perf_mobile_tentatives=/);
     });
 
+    test('run 602 : reprise non lancée faute de temps dite telle quelle (jamais « refaite ») ; 2 min gardées pour la suite', () => {
+        const cal = tours(3600, 3600, 3600, 3600, 3600);
+        const t1 = { decision: decisionTentative({ numero: 1, calibrations: cal, pagesOk: false }), calibrations: cal, scores: { accueil: [85, 85, 85, 85, 85] } };
+        const t2decision = { ...decisionTentative({ numero: 2, calibrations: cal, pagesOk: false }), refaire: false, sansTemps: true };
+        const t2 = { decision: t2decision, calibrations: cal, scores: { accueil: [85, 85, 85, 85, 85] } };
+        const tentatives = [t1, t2];
+        const r = texteRapport({ pages: [verdictPage(page('accueil', [85, 85, 85, 85, 85]))], toucher: verdictToucher(touches), etat: 'FAUSSÉE', tentatives });
+        assert.match(r.texte, /tentative 1 : FAUSSÉE, refaite/);
+        assert.match(r.texte, /tentative 2 : FAUSSÉE, reprise non lancée \(temps insuffisant dans le délai de l’étape\)/);
+        assert.match(tentativesRows(tentatives).at(-1) ?? '', /faussée : reprise non lancée \(temps insuffisant\)$/);
+        const script = read('scripts/e2e/perf-mobile.mjs');
+        assert.match(script, /const RESERVE_SUITE_MS = 120_000;/);
+        assert.match(script, /last\.decision = \{ \.\.\.last\.decision, refaire: false, sansTemps: true \};/);
+    });
+
     test('interrupteur de preuve EV_PERF_PREUVE_FAUSSEE : décision de la tentative 1 seulement, jamais posé par la CI', () => {
         const script = read('scripts/e2e/perf-mobile.mjs');
         assert.match(script, /process\.env\.EV_PERF_PREUVE_FAUSSEE === '1' && numero === 1/);

@@ -283,7 +283,8 @@ export function tentativesRows(tentatives) {
     const rows = [];
     for (const t of tentatives ?? []) {
         const d = t.decision;
-        const decision = !d.faussee ? 'valide' : d.acceptee ? 'faussée mais acceptée (machine trop rapide, seuils tenus)' : d.refaire ? 'faussée : refaite' : 'faussée : plus de reprise';
+        const decision = !d.faussee ? 'valide' : d.acceptee ? 'faussée mais acceptée (machine trop rapide, seuils tenus)' : d.refaire ? 'faussée : refaite'
+            : d.sansTemps ? 'faussée : reprise non lancée (temps insuffisant)' : 'faussée : plus de reprise';
         for (const c of t.calibrations) {
             const cause = d.causes.find((x) => x.tour === c.tour);
             const scores = Object.entries(t.scores ?? {}).map(([id, list]) => `${id} ${list[c.tour - 1] ?? '—'}`).join(' ; ');
@@ -368,7 +369,8 @@ export function texteRapport({ pages, toucher, entete = [], notes = [], etat = n
         lignes.push(`Tentatives de la mesure Lighthouse (finition 5 : faussée si un tour sort de la plage, refaite ${MESURE_FIABLE.reprisesMax} fois au plus ; journal perf/tentatives.tsv) :`);
         for (const t of tentatives) {
             const d = t.decision ?? t;
-            lignes.push(`  tentative ${d.numero} : ${!d.faussee ? 'valide' : d.acceptee ? 'faussée mais acceptée (machine trop rapide : mesure plus sévère que la référence, seuils tenus)' : d.refaire ? 'FAUSSÉE, refaite' : 'FAUSSÉE, plus de reprise'}`);
+            lignes.push(`  tentative ${d.numero} : ${!d.faussee ? 'valide' : d.acceptee ? 'faussée mais acceptée (machine trop rapide : mesure plus sévère que la référence, seuils tenus)' : d.refaire ? 'FAUSSÉE, refaite'
+                : d.sansTemps ? 'FAUSSÉE, reprise non lancée (temps insuffisant dans le délai de l’étape)' : 'FAUSSÉE, plus de reprise'}`);
             for (const c of d.causes) lignes.push(`    · ${c.texte}`);
         }
         lignes.push('');

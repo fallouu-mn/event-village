@@ -71,11 +71,13 @@ const BUDGET_MS = 13 * 60_000;
 const WATCHDOG_MS = 14 * 60_000;
 const LIGHTHOUSE_TIMEOUT_MS = 150_000;
 /**
- * Finition 5 : temps gardé pour la suite de la mesure (chargements réels et touchers, environ 2 min au run 585) quand on
- * décide de refaire une tentative Lighthouse faussée : une reprise ne commence que si sa durée estimée (celle de la
- * tentative précédente, + 20 %) laisse encore ce temps. Sinon : « mesure faussée, à relancer ».
+ * Finition 5 : temps gardé pour la suite de la mesure (chargements réels et touchers : environ 1 min 45 aux runs 585 et
+ * 602 ; le rendu de « Mes billets », pour information, s'efface de lui-même s'il manque de temps) quand on décide de
+ * refaire une tentative Lighthouse faussée : une reprise ne commence que si sa durée estimée (celle de la tentative
+ * précédente, + 20 %) laisse encore ce temps. Sinon : « mesure faussée, à relancer ». Run 602 : 3 min gardées, la
+ * seconde reprise n'a pas été lancée (407 s restantes pour 430 s estimées) ; 2 min suffisent.
  */
-const RESERVE_SUITE_MS = 180_000;
+const RESERVE_SUITE_MS = 120_000;
 const TOUCHERS_PAR_PAGE = 5;
 const HOST_RESOLVER = '--host-resolver-rules=MAP localhost 127.0.0.1';
 /** Hôtes externes bloqués, comme e2e/perf.spec.ts (tuiles de carte, photos de démonstration). */
@@ -754,6 +756,9 @@ async function main() {
                 if (remaining() < besoin) {
                     notes.push(`! Mesure faussée : reprise ${numero - 1} non lancée, temps insuffisant (${Math.round(remaining() / 1000)} s restantes, ${Math.round(besoin / 1000)} s nécessaires).`);
                     log(`reprise ${numero - 1} non lancée : temps insuffisant (${Math.round(remaining() / 1000)} s restantes, ${Math.round(besoin / 1000)} s nécessaires)`);
+                    // La dernière tentative n'a pas été refaite : le journal et le rapport le disent (jamais « refaite »)
+                    const last = tentatives[tentatives.length - 1];
+                    last.decision = { ...last.decision, refaire: false, sansTemps: true };
                     break;
                 }
                 for (const r of pageResults) r.lighthouse = [];
