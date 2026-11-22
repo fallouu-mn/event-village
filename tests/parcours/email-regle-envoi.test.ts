@@ -377,7 +377,8 @@ describe('9b.51 G.51 — contenu des emails (rendu du catalogue, sans base)', ()
         const tpl = CATALOG.INVITATION_RECEIVED;
         assert.ok(tpl.channels.includes('EMAIL') && tpl.inApp && tpl.link, `INVITATION_RECEIVED : EMAIL, contenu in-app et lien attendus (aujourd’hui SMS seul, catalog.ts:565) [${tpl.channels.join(', ')}]`);
         // Finition 4 (E-42, modification signalée au rapport) : les billets d'une invitation sont dans « À venir »
-        assert.equal(tpl.link!(tpl.sample), '/tickets?tab=a-venir', 'bouton vers Mes billets, onglet À venir');
+        // Finition 5 (modification signalée) : billets de l'événement de l'invitation
+        assert.equal(tpl.link!(tpl.sample), `/tickets/${String(tpl.sample.event_id)}`, 'bouton vers les billets de l’événement');
         assert.match(plain(tpl.inApp!(tpl.sample).content), /^\d+ invitations? pour « .+ » le .+ : vos billets sont dans Mes billets\.$/, 'fond de l’email');
         assert.deepEqual(emailFaults('INVITATION_RECEIVED'), []);
     });

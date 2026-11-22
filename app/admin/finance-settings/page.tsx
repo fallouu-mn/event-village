@@ -433,7 +433,7 @@ export default function AdminFinanceSettingsPage() {
             <ul className="mt-2 flex flex-wrap gap-2">
               {SETTING_SECTIONS.filter((t) => data.settings.some((x) => x.key.startsWith(t.prefix))).map((t) => (
                 <li key={t.anchor}>
-                  <a href={`#${t.anchor}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-3 text-sm font-medium text-primary-text hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <a href={`#${t.anchor}`} className="inline-flex min-h-11 items-center rounded-xl border border-border px-3 text-sm font-medium text-primary-text hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {t.title}
                   </a>
                 </li>

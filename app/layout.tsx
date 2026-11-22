@@ -66,7 +66,7 @@ export const viewport: Viewport = {
   // Design 1a : barre du navigateur au fond de page de chaque thème
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#FFFFFF' },
-    { media: '(prefers-color-scheme: dark)', color: '#121212' },
+    { media: '(prefers-color-scheme: dark)', color: '#0A0A0A' }, // finition 5 : noir profond
   ],
   width: 'device-width',
   initialScale: 1,

@@ -461,7 +461,7 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
         assert.ok(mail.html.includes('&lt;script&gt;'), 'titre échappé dans le HTML');
         assert.ok(mail.html.includes('&amp; Cie'), '« & » échappé');
         assert.ok(mail.text && norm(mail.text).includes(hostile), 'version texte avec la valeur telle quelle');
-        assert.ok(mail.html.includes(`href="${APP_URL}/tickets?tab=a-venir"`), `bouton vers ${APP_URL}/tickets?tab=a-venir (design 1b : onglet du billet)`);
+        assert.ok(mail.html.includes(`href="${APP_URL}/tickets/${EVENT_ID}"`), `bouton vers ${APP_URL}/tickets/${EVENT_ID} (finition 5 : lien de l'objet exact (modification signalée))`);
         // Lot 7, tâche 7.9 (D93) : la confirmation d'achat mène à Mes billets par « Voir mes billets ».
         assert.ok(mail.html.includes('Voir mes billets'), 'libellé du bouton (« Voir mes billets », D93)');
         assert.equal(header(mail.headers, 'List-Unsubscribe'), undefined, 'pas de List-Unsubscribe sur un message indispensable');
@@ -538,12 +538,14 @@ async function subscriptionsOf(userId: string): Promise<SubscriptionRow[]> {
 }
 
 const SCANNED_TITLE = 'Gala Dakar';
-const SCANNED_MESSAGE = { title: 'Entrée validée', body: `Votre billet pour « ${SCANNED_TITLE} » a été contrôlé à l'entrée.`, url: '/tickets?tab=historique' };
+/** Finition 5 : billet fixe, pour le lien de l'objet exact (/tickets/<billet>) attendu dans le push (modification signalée). */
+const SCANNED_TICKET_ID = '0f5a1d2c-3b4e-4f60-8a71-92b3c4d5e6f7';
+const SCANNED_MESSAGE = { title: 'Entrée validée', body: `Votre billet pour « ${SCANNED_TITLE} » a été contrôlé à l'entrée.`, url: `/tickets/${SCANNED_TICKET_ID}` };
 
 async function scannedPushRow(userId: string): Promise<OutboxRow> {
     return dueRow({
         type: 'TICKET_SCANNED', family: 'ESSENTIAL', channel: 'PUSH', recipient_user_id: userId, group_key: `TICKET_SCANNED:${randomUUID()}`,
-        template_data: { ticket_id: randomUUID(), ...eventData(SCANNED_TITLE) },
+        template_data: { ticket_id: SCANNED_TICKET_ID, ...eventData(SCANNED_TITLE) },
     });
 }
 
@@ -724,7 +726,7 @@ describe('6.2 PUSH : envoi par l’envoyeur, faux adaptateur (contrat F4)', () =
         const got = pushTo(dev.sub.endpoint);
         assert.equal(got.length, 1);
         assert.equal(norm(got[0].message.title), 'Événement annulé');
-        assert.equal(got[0].message.url, '/tickets?tab=historique'); // design 1b (point 8) : onglet des billets annulés
+        assert.equal(got[0].message.url, `/tickets/${EVENT_ID}`); // design 1b (point 8) ; finition 5 : lien de l'objet exact (modification signalée) : billets de l'événement
         assert.equal(got[0].message.tag, row.group_key);
         assert.deepEqual(got[0].options, { ttlSeconds: 86_400, urgency: 'high' });
         assert.ok(got[0].message.body.length <= 160, 'corps ≤ 160 caractères');

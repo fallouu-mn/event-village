@@ -27,6 +27,7 @@ import {
 } from './support/responsive-pages';
 import { runResponsiveChecks } from './support/responsive-checks';
 import { keepHomeOutOfServicesWindow } from './support/services-switch';
+import { readTheme, themeProblem } from './support/theme-check';
 
 const RESULTS = path.join(E2E_OUTPUT_DIR, 'responsive');
 const SHOTS = path.join(E2E_OUTPUT_DIR, 'captures-responsive');
@@ -99,6 +100,9 @@ for (const theme of THEMES) {
                             await settle(page, record.notes, at);
                             const checks = await runResponsiveChecks(page, { width: size.width, phone: !size.paysage && size.width <= PHONE_MAX_WIDTH });
                             const blocking = checks.blocking.map((b) => (size.paysage ? b.replace(`${size.width} px`, at) : b));
+                            // Finition 5 (point 1) : thème demandé vraiment affiché (classe dark et fond lus sur la page), bloquant
+                            const themeIssue = themeProblem(await readTheme(page), theme.key, at);
+                            if (themeIssue) blocking.push(themeIssue);
                             let capture: string | null = null;
                             if (size.paysage || RESPONSIVE_CAPTURE_WIDTHS.includes(size.width)) {
                                 fs.mkdirSync(SHOTS, { recursive: true });

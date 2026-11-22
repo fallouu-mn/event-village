@@ -143,7 +143,7 @@ export default function NotificationPanel(p: NotificationPanelProps) {
     const filterClass = (active: boolean) => cn(
         'inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-medium transition-colors duration-150',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        active ? 'bg-primary-soft font-semibold text-primary-text' : 'text-muted-foreground hover:bg-background hover:text-foreground-strong',
+        active ? 'bg-primary-soft font-semibold text-primary-text' : 'text-muted-foreground hover:bg-muted hover:text-foreground-strong',
     );
     const footerLinkClass = 'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-primary-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
@@ -235,7 +235,7 @@ export default function NotificationPanel(p: NotificationPanelProps) {
                                                 <button
                                                     type="button"
                                                     onClick={() => p.onOpenNotification(notif)}
-                                                    className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                                    className="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                                 >
                                                     <span className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', !notif.isRead && tone === 'brand' ? 'bg-card text-primary-text' : TONE_ICON[tone])} aria-hidden="true">
                                                         <Icon size={16} />

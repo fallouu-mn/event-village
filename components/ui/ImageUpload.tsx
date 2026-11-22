@@ -155,7 +155,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
                         <div className="flex items-center gap-1">
                             <label
                                 htmlFor={inputId}
-                                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-semibold text-foreground-strong transition-colors duration-200 hover:bg-background"
+                                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-semibold text-foreground-strong transition-colors duration-200 hover:bg-muted"
                             >
                                 <RefreshCw size={16} aria-hidden="true" />
                                 Remplacer l’image

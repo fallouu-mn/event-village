@@ -561,7 +561,7 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
         const mark = smsMark(partner.phoneE164);
         const sent = await deliver(rows, new Date());
         assertSms(sent, partner.phoneE164, mark, `Event Village : votre retrait de ${fmt.smsAmount(Number(c.amount))} a été versé sur votre compte Wave.`);
-        await assertInApp(sent, { userId: partner.userId, title: 'Retrait versé', contains: ['Wave'], actionUrl: '/partner/finance' });
+        await assertInApp(sent, { userId: partner.userId, title: 'Retrait versé', contains: ['Wave'], actionUrl: `/partner/finance/retraits/${c.id}` }); // finition 5 : page du retrait (modification signalée)
     });
 
     test('retrait refusé par l’opérateur : WITHDRAWAL_REJECTED (quatre canaux), SMS exact', async () => {
@@ -579,7 +579,7 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
         const mark = smsMark(partner.phoneE164);
         const sent = await deliver(rows, new Date());
         assertSms(sent, partner.phoneE164, mark, `Event Village : votre retrait de ${fmt.smsAmount(Number(c.amount))} a été refusé par l'opérateur. Le montant est revenu sur votre solde.`);
-        await assertInApp(sent, { userId: partner.userId, title: 'Retrait refusé', contains: ['solde'], actionUrl: '/partner/finance' });
+        await assertInApp(sent, { userId: partner.userId, title: 'Retrait refusé', contains: ['solde'], actionUrl: `/partner/finance/retraits/${c.id}` }); // finition 5 : page du retrait (modification signalée)
     });
 
     test('retrait incertain : WITHDRAWAL_UNCERTAIN (in-app, SMS, push ; clé avec le nombre d’essais), SMS exact', async () => {
@@ -597,7 +597,7 @@ describe('6.6 Partenaire — argent (trg_cashouts_notify, contrat J2.2)', () => 
         const mark = smsMark(partner.phoneE164);
         const sent = await deliver(rows, new Date());
         assertSms(sent, partner.phoneE164, mark, `Event Village : votre retrait de ${fmt.smsAmount(Number(c.amount))} est en vérification auprès de l'opérateur. Aucune action de votre part.`);
-        await assertInApp(sent, { userId: partner.userId, title: 'Retrait en vérification', contains: ['vérification'], actionUrl: '/partner/finance' });
+        await assertInApp(sent, { userId: partner.userId, title: 'Retrait en vérification', contains: ['vérification'], actionUrl: `/partner/finance/retraits/${c.id}` }); // finition 5 : page du retrait (modification signalée)
     });
 
     test('remboursements d’une annulation tous versés : CANCEL_REFUNDS_DONE une seule fois (in-app, email, push) ; un REFUND_PAID par cashout', async () => {

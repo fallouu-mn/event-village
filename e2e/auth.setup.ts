@@ -64,6 +64,9 @@ for (const role of ROLES) {
         await expect.poll(() => new URL(page.url()).pathname, { message: `page d'arrivée de ${role.libelle}`, timeout: 15_000 }).toMatch(role.arrivee);
         if (role.arrivee.test('/admin')) await passAdminCode(page, email);
         fs.mkdirSync(AUTH_DIR, { recursive: true });
+        // Finition 5 (point 1) : le choix du thème n'est pas une donnée de session ; enregistré, le cookie `ev-theme=light` de
+        // cette connexion l'emportait sur le thème de chaque test (captures « sombre » des comptes connectés en clair)
+        await context.clearCookies({ name: 'ev-theme' });
         await context.storageState({ path: storageStatePath(role.key) });
     });
 }

@@ -50,7 +50,8 @@ import zlib from 'node:zlib';
 import { createRequire } from 'node:module';
 import { startH2Proxy } from './h2-proxy.mjs';
 import {
-    PASSAGES, REFERENCE_CPU, SEUILS, calibratedCpuMultiplier, renderWorkFromTrace, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, fmtBytes, fmtCls, fmtMs, median,
+    MESURE_FIABLE, PASSAGES, REFERENCE_CPU, SEUILS, TENTATIVES_TSV_HEADER, calibratedCpuMultiplier, decisionTentative, etatFinal, lighthouseOk, renderWorkFromTrace,
+    tentativesRows, TOUCHER_TSV_HEADER, TSV_HEADER, clsSessionWindows, finalPathMatches, fmtBytes, fmtCls, fmtMs, median,
     texteRapport, toucherRows, tsvRows, verdictPage, verdictToucher,
 } from './perf-mobile-seuils.mjs';
 
@@ -69,6 +70,14 @@ const BUDGET_MS = 13 * 60_000;
 /** Chien de garde : rapport partiel écrit et sortie 1, avant que la CI ne coupe l'étape. */
 const WATCHDOG_MS = 14 * 60_000;
 const LIGHTHOUSE_TIMEOUT_MS = 150_000;
+/**
+ * Finition 5 : temps gardé pour la suite de la mesure (chargements réels et touchers : environ 1 min 45 aux runs 585 et
+ * 602 ; le rendu de « Mes billets », pour information, s'efface de lui-même s'il manque de temps) quand on décide de
+ * refaire une tentative Lighthouse faussée : une reprise ne commence que si sa durée estimée (celle de la tentative
+ * précédente, + 20 %) laisse encore ce temps. Sinon : « mesure faussée, à relancer ». Run 602 : 3 min gardées, la
+ * seconde reprise n'a pas été lancée (407 s restantes pour 430 s estimées) ; 2 min suffisent.
+ */
+const RESERVE_SUITE_MS = 120_000;
 const TOUCHERS_PAR_PAGE = 5;
 const HOST_RESOLVER = '--host-resolver-rules=MAP localhost 127.0.0.1';
 /** Hôtes externes bloqués, comme e2e/perf.spec.ts (tuiles de carte, photos de démonstration). */
@@ -601,7 +610,7 @@ async function prepareSession(browser, base, def) {
 
 // ── Écriture des résultats ────────────────────────────────────────────────────
 
-function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz, calibrations = [], rendus = [] }) {
+function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz, calibrations = [], rendus = [], tentatives = [] }) {
     fs.mkdirSync(PERF_DIR, { recursive: true });
     // Décision du 18/11 : rendu de Mes billets avant / après (information, non bloquant)
     fs.writeFileSync(path.join(PERF_DIR, 'rendu-mes-billets.tsv'), `${['variante', 'passage', 'ralentissement_cpu', 'style_mise_en_page_ms', 'peinture_ms', 'erreur'].join('\t')}\n${rendus.map((r) => [r.variant, r.pass, r.cpu ?? '', r.styleMs ?? '', r.paintMs ?? '', String(r.error ?? '').replace(/[\t\r\n]+/g, ' ')].join('\t')).join('\n')}\n`, 'utf8');
@@ -611,9 +620,17 @@ function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz, ca
     }
     const verdicts = pageResults.map((p) => ({ ...verdictPage(p), details: p.details }));
     const toucher = verdictToucher(touches, touchFatals);
-    const rapport = texteRapport({ pages: verdicts, toucher, entete, notes });
+    // Finition 5 : état final (OK, HORS SEUIL ou FAUSSÉE) d'après la dernière tentative Lighthouse
+    const derniere = tentatives.length ? tentatives[tentatives.length - 1].decision : null;
+    const etat = etatFinal({ pages: verdicts, lighthousePages: pageResults.map(lighthouseOk), toucher, derniere });
+    const rapport = texteRapport({ pages: verdicts, toucher, entete, notes, etat, tentatives });
     const tsv = [TSV_HEADER, ...pageResults.flatMap((p) => tsvRows(p.id, p.lighthouse, p.reel))];
     fs.writeFileSync(path.join(PERF_DIR, 'lighthouse.tsv'), `${tsv.join('\n')}\n`, 'utf8');
+    // Finition 5 : journal de CHAQUE tentative (tours, indice, ralentissement, cause, scores, décision) et passages
+    // Lighthouse bruts de toutes les tentatives ; lighthouse.tsv et calibration.tsv gardent la tentative retenue (la dernière)
+    fs.writeFileSync(path.join(PERF_DIR, 'tentatives.tsv'), `${[TENTATIVES_TSV_HEADER, ...tentativesRows(tentatives)].join('\n')}\n`, 'utf8');
+    const brutes = tentatives.flatMap((t) => t.pages.flatMap((p) => tsvRows(p.id, p.lighthouse, []).map((r) => `${t.decision.numero}\t${r}`)));
+    fs.writeFileSync(path.join(PERF_DIR, 'lighthouse-tentatives.tsv'), `${[`tentative\t${TSV_HEADER}`, ...brutes].join('\n')}\n`, 'utf8');
     // Valeurs brutes de la calibration : un passage de l'accueil au préréglage (×4) par tour, indice mesuré, ralentissement retenu
     fs.writeFileSync(path.join(PERF_DIR, 'calibration.tsv'), `${['tour', 'indice_puissance', 'ralentissement_retenu', 'score_brut_x4', 'tbt_brut_x4_ms', 'lcp_brut_x4_ms', 'erreur'].join('\t')}\n${calibrations.map((c) => [c.tour, c.benchmarkIndex ?? '', c.multiplier, c.score ?? '', c.tbt === null || c.tbt === undefined ? '' : Math.round(c.tbt), c.lcp === null || c.lcp === undefined ? '' : Math.round(c.lcp), String(c.error ?? '').replace(/[\t\r\n]+/g, ' ')].join('\t')).join('\n')}\n`, 'utf8');
     fs.writeFileSync(path.join(PERF_DIR, 'toucher.tsv'), `${[TOUCHER_TSV_HEADER, ...toucherRows(touches)].join('\n')}\n`, 'utf8');
@@ -622,13 +639,14 @@ function writeOutputs({ pageResults, touches, touchFatals, entete, notes, gz, ca
         genere: new Date().toISOString(),
         seuils: SEUILS,
         calibration: { reference: REFERENCE_CPU, tours: calibrations },
+        mesureFiable: { regle: MESURE_FIABLE, tentatives: tentatives.map((t) => ({ ...t.decision, calibrations: t.calibrations, scores: t.scores })) },
         pages: pageResults.map((p) => ({ id: p.id, libelle: p.libelle, url: p.url, fatal: p.fatal ?? null, lighthouse: p.lighthouse, reel: p.reel })),
         touchers: touches,
-        verdict: rapport.ok ? 'OK' : 'HORS SEUIL',
+        verdict: rapport.etat,
     };
     fs.writeFileSync(path.join(PERF_DIR, 'lighthouse-resume.json'), `${JSON.stringify(resume, null, 1)}\n`, 'utf8');
     // Rapports complets compressés : 2 Mo au plus pour l'ensemble des sorties, sinon retirés
-    let total = ['lighthouse.tsv', 'toucher.tsv', 'lighthouse.txt', 'lighthouse-resume.json'].reduce((s, f) => s + fs.statSync(path.join(PERF_DIR, f)).size, 0);
+    let total = ['lighthouse.tsv', 'tentatives.tsv', 'lighthouse-tentatives.tsv', 'toucher.tsv', 'lighthouse.txt', 'lighthouse-resume.json'].reduce((s, f) => s + fs.statSync(path.join(PERF_DIR, f)).size, 0);
     for (const [id, buf] of gz) {
         if (total + buf.length > 2_000_000) {
             log(`rapport complet de ${id} non écrit (${fmtBytes(buf.length)}) : plafond de 2 Mo atteint`);
@@ -697,9 +715,11 @@ async function main() {
     const notes = [];
     const calibrations = [];
     const rendus = [];
+    /** Finition 5 : tentatives de la mesure Lighthouse (décision, tours de calibration, scores, passages bruts). */
+    const tentatives = [];
 
     const finish = () => writeOutputs({
-        pageResults, touches, touchFatals, gz, notes, calibrations, rendus,
+        pageResults, touches, touchFatals, gz, notes, calibrations, rendus, tentatives,
         entete: [
             `Lighthouse ${version} (préréglage mobile : throttling simulé « Slow 4G », écran mobile), Chromium complet de Playwright. Processeur : ralentissement calibré à chaque tour sur l'indice de puissance mesuré, pour le même téléphone de référence (×${REFERENCE_CPU.multiplier} pour un indice de ${REFERENCE_CPU.benchmarkIndex}) : ${calibrations.map((c) => `tour ${c.tour} indice ${c.benchmarkIndex ?? '?'} → ×${c.multiplier}`).join(' ; ') || 'aucun tour'} (valeurs brutes : perf/calibration.tsv).`,
             `Chargements réels et touchers : Playwright, vue mobile 390 × 844, 4G simulée par CDP (562,5 ms, 1,44 Mbit/s), processeur ×4. Application ${base}${proxy ? ' (HTTP/2, relais local devant next start, comme la production)' : ' (HTTP/1.1, next start direct)'}.`,
@@ -726,44 +746,84 @@ async function main() {
             log(`Mes billets : ${errText(err)}`);
         }
 
-        // 2. Lighthouse : passages entrelacés (page 1, 2, 3, puis passage suivant)
-        for (let pass = 1; pass <= PASSAGES; pass++) {
-            // Calibration du tour : un passage de l'accueil au préréglage (×4), non compté ; son indice de puissance fixe le
-            // ralentissement des trois pages de ce tour (valeurs brutes gardées : perf/calibration.tsv)
-            let cpuSlowdownMultiplier = REFERENCE_CPU.multiplier;
-            if (remaining() >= 60_000) {
-                try {
-                    const cal = summarize((await lighthouseRun({ lighthouse, exe, url: `${base}${pages[0].path}`, cookies: [] })).lhr);
-                    cpuSlowdownMultiplier = calibratedCpuMultiplier(cal.benchmarkIndex);
-                    calibrations.push({ tour: pass, benchmarkIndex: cal.benchmarkIndex, multiplier: cpuSlowdownMultiplier, score: cal.score, tbt: cal.tbt, lcp: cal.lcp, error: cal.error });
-                    log(`calibration du tour ${pass} : indice ${cal.benchmarkIndex ?? '?'} → ×${cpuSlowdownMultiplier} (brut ×4 : score ${cal.score}, TBT ${fmtMs(cal.tbt)})`);
-                } catch (err) {
-                    calibrations.push({ tour: pass, benchmarkIndex: null, multiplier: cpuSlowdownMultiplier, score: null, tbt: null, lcp: null, error: errText(err) });
-                    log(`calibration du tour ${pass} impossible (${errText(err)}) : ×${cpuSlowdownMultiplier}`);
+        // 2. Lighthouse : passages entrelacés (page 1, 2, 3, puis passage suivant). Finition 5 : une tentative entière
+        // (5 tours) est refaite, au plus MESURE_FIABLE.reprisesMax fois, quand sa calibration la déclare faussée
+        // (decisionTentative, perf-mobile-seuils.mjs) ; chaque tentative est gardée au journal (perf/tentatives.tsv).
+        let dureeTentative = 0;
+        for (let numero = 1; numero <= MESURE_FIABLE.reprisesMax + 1; numero++) {
+            if (numero > 1) {
+                const besoin = Math.round(dureeTentative * 1.2) + RESERVE_SUITE_MS;
+                if (remaining() < besoin) {
+                    notes.push(`! Mesure faussée : reprise ${numero - 1} non lancée, temps insuffisant (${Math.round(remaining() / 1000)} s restantes, ${Math.round(besoin / 1000)} s nécessaires).`);
+                    log(`reprise ${numero - 1} non lancée : temps insuffisant (${Math.round(remaining() / 1000)} s restantes, ${Math.round(besoin / 1000)} s nécessaires)`);
+                    // La dernière tentative n'a pas été refaite : le journal et le rapport le disent (jamais « refaite »)
+                    const last = tentatives[tentatives.length - 1];
+                    last.decision = { ...last.decision, refaire: false, sansTemps: true };
+                    break;
                 }
+                for (const r of pageResults) r.lighthouse = [];
+                for (const k of lhrs.keys()) lhrs.set(k, []);
+                calibrations.length = 0;
+                log(`── tentative ${numero} (reprise ${numero - 1} sur ${MESURE_FIABLE.reprisesMax}) ──`);
             }
-            for (const def of pages) {
-                const r = res(def.id);
-                if (r.fatal) continue;
-                if (remaining() < 30_000) { r.lighthouse.push({ error: 'temps imparti dépassé, passage non lancé' }); lhrs.get(def.id).push(null); continue; }
-                const started = Date.now();
-                try {
-                    const out = await lighthouseRun({ lighthouse, exe, url: `${base}${def.path}`, cookies: def.client ? session.state.cookies : [], cpuSlowdownMultiplier });
-                    if (def.client && out.cookies) session.state = { ...session.state, cookies: out.cookies };
-                    const s = summarize(out.lhr);
-                    if (!s.error && def.expectedPath && !finalPathMatches(s.finalUrl, def.expectedPath)) {
-                        s.error = `page finale ${s.finalUrl} au lieu de ${def.expectedPath}`;
-                        if (def.client) r.fatal = `Mes billets mesurée sur une autre page (${s.finalUrl}) : session perdue, mesure invalide`;
+            const debutTentative = Date.now();
+            for (let pass = 1; pass <= PASSAGES; pass++) {
+                // Calibration du tour : un passage de l'accueil au préréglage (×4), non compté ; son indice de puissance fixe le
+                // ralentissement des trois pages de ce tour (valeurs brutes gardées : perf/calibration.tsv)
+                let cpuSlowdownMultiplier = REFERENCE_CPU.multiplier;
+                if (remaining() >= 60_000) {
+                    try {
+                        const cal = summarize((await lighthouseRun({ lighthouse, exe, url: `${base}${pages[0].path}`, cookies: [] })).lhr);
+                        cpuSlowdownMultiplier = calibratedCpuMultiplier(cal.benchmarkIndex);
+                        calibrations.push({ tour: pass, benchmarkIndex: cal.benchmarkIndex, multiplier: cpuSlowdownMultiplier, score: cal.score, tbt: cal.tbt, lcp: cal.lcp, error: cal.error });
+                        log(`calibration du tour ${pass} : indice ${cal.benchmarkIndex ?? '?'} → ×${cpuSlowdownMultiplier} (brut ×4 : score ${cal.score}, TBT ${fmtMs(cal.tbt)})`);
+                    } catch (err) {
+                        calibrations.push({ tour: pass, benchmarkIndex: null, multiplier: cpuSlowdownMultiplier, score: null, tbt: null, lcp: null, error: errText(err) });
+                        log(`calibration du tour ${pass} impossible (${errText(err)}) : ×${cpuSlowdownMultiplier}`);
                     }
-                    r.lighthouse.push(s);
-                    lhrs.get(def.id).push(out.lhr);
-                    log(`${def.id} Lighthouse ${pass}/${PASSAGES} : ${s.error ? `ERREUR ${s.error}` : `score ${s.score}, LCP ${fmtMs(s.lcp)}, CLS ${fmtCls(s.cls)}, TBT ${fmtMs(s.tbt)}, FCP ${fmtMs(s.fcp)}, SI ${fmtMs(s.si)}, ${fmtBytes(s.bytes)}, indice ${s.benchmarkIndex ?? '?'}, processeur ×${s.cpu ?? '?'}`} (${Math.round((Date.now() - started) / 1000)} s)`);
-                } catch (err) {
-                    r.lighthouse.push({ error: errText(err) });
-                    lhrs.get(def.id).push(null);
-                    log(`${def.id} Lighthouse ${pass}/${PASSAGES} : ERREUR ${errText(err)}`);
+                }
+                for (const def of pages) {
+                    const r = res(def.id);
+                    if (r.fatal) continue;
+                    if (remaining() < 30_000) { r.lighthouse.push({ error: 'temps imparti dépassé, passage non lancé' }); lhrs.get(def.id).push(null); continue; }
+                    const started = Date.now();
+                    try {
+                        const out = await lighthouseRun({ lighthouse, exe, url: `${base}${def.path}`, cookies: def.client ? session.state.cookies : [], cpuSlowdownMultiplier });
+                        if (def.client && out.cookies) session.state = { ...session.state, cookies: out.cookies };
+                        const s = summarize(out.lhr);
+                        if (!s.error && def.expectedPath && !finalPathMatches(s.finalUrl, def.expectedPath)) {
+                            s.error = `page finale ${s.finalUrl} au lieu de ${def.expectedPath}`;
+                            if (def.client) r.fatal = `Mes billets mesurée sur une autre page (${s.finalUrl}) : session perdue, mesure invalide`;
+                        }
+                        r.lighthouse.push(s);
+                        lhrs.get(def.id).push(out.lhr);
+                        log(`${def.id} Lighthouse ${pass}/${PASSAGES} : ${s.error ? `ERREUR ${s.error}` : `score ${s.score}, LCP ${fmtMs(s.lcp)}, CLS ${fmtCls(s.cls)}, TBT ${fmtMs(s.tbt)}, FCP ${fmtMs(s.fcp)}, SI ${fmtMs(s.si)}, ${fmtBytes(s.bytes)}, indice ${s.benchmarkIndex ?? '?'}, processeur ×${s.cpu ?? '?'}`} (${Math.round((Date.now() - started) / 1000)} s)`);
+                    } catch (err) {
+                        r.lighthouse.push({ error: errText(err) });
+                        lhrs.get(def.id).push(null);
+                        log(`${def.id} Lighthouse ${pass}/${PASSAGES} : ERREUR ${errText(err)}`);
+                    }
                 }
             }
+            dureeTentative = Date.now() - debutTentative;
+            // Preuve du rapport de la finition 5 (branche jetable seulement, interdit dans verify.yml par
+            // tests/schema/f5-mesure-fiable.test.ts) : la DÉCISION de la tentative 1 lit un indice simulé de 3 600 (×7,2),
+            // pour montrer une reprise dans un vrai job ; le ralentissement réellement appliqué et les scores ne changent pas.
+            const preuve = process.env.EV_PERF_PREUVE_FAUSSEE === '1' && numero === 1;
+            if (preuve) notes.push('! PREUVE (EV_PERF_PREUVE_FAUSSEE=1) : la décision de la tentative 1 a lu un indice simulé de 3 600 (machine trop rapide) ; ralentissement appliqué et scores réels inchangés.');
+            const calsDecision = calibrations.map((c) => (preuve ? { ...c, benchmarkIndex: 3600, multiplier: calibratedCpuMultiplier(3600) } : { ...c }));
+            const decision = decisionTentative({ numero, calibrations: calsDecision, pagesOk: preuve ? false : pageResults.every(lighthouseOk) });
+            tentatives.push({
+                decision,
+                calibrations: calsDecision,
+                scores: Object.fromEntries(pageResults.map((r) => [r.id, r.lighthouse.map((p) => p.score ?? null)])),
+                pages: pageResults.map((r) => ({ id: r.id, lighthouse: r.lighthouse.map((p) => ({ ...p })) })),
+            });
+            log(`tentative ${numero} (${Math.round(dureeTentative / 1000)} s) : ${!decision.faussee ? 'valide' : decision.acceptee ? 'faussée mais acceptée (machine trop rapide, seuils tenus)' : decision.refaire ? 'FAUSSÉE, refaite' : 'FAUSSÉE, plus de reprise'}`);
+            for (const c of decision.causes) log(`  · ${c.texte}`);
+            // Annotation lisible sur la page du run (GitHub Actions lit « ::warning » sur la sortie standard)
+            if (decision.faussee && !decision.acceptee) console.log(`::warning title=Mesure mobile faussée (tentative ${numero})::${decision.causes.map((c) => c.texte).join(' ; ')}${decision.refaire ? ' — mesure refaite' : ''}`);
+            if (!decision.refaire) break;
         }
 
         // 3. Chargements réels (CLS mesuré)
@@ -785,7 +845,8 @@ async function main() {
             const cpuRate = calibrations.length ? calibrations[calibrations.length - 1].multiplier : REFERENCE_CPU.multiplier;
             for (let pass = 1; pass <= 3; pass++) {
                 for (const variant of ['avant', 'apres']) {
-                    if (remaining() < 60_000) { rendus.push({ variant, pass, error: 'temps imparti dépassé' }); continue; }
+                    // Finition 5 : information seulement ; laisse au moins 1 min aux touchers (bloquants) après d'éventuelles reprises
+                    if (remaining() < 120_000) { rendus.push({ variant, pass, error: 'temps imparti dépassé (temps gardé pour les touchers)' }); continue; }
                     const out = await renderWork(browser, base, pages[2], session, variant, cpuRate);
                     rendus.push({ variant, pass, cpu: cpuRate, ...out });
                     log(`Mes billets, rendu ${variant} ${pass}/3 : ${out.error ? `ERREUR ${out.error}` : `style et mise en page ${out.styleMs} ms, peinture ${out.paintMs} ms (10 s, processeur ×${cpuRate})`}`);
@@ -827,6 +888,7 @@ async function main() {
     clearTimeout(watchdog);
     const rapport = finish();
     process.stdout.write(`\n${rapport.texte}`);
+    if (rapport.etat === 'FAUSSÉE') console.log('::error title=Mesure mobile faussée, à relancer::la machine de la CI est restée hors de la plage du téléphone de référence après toutes les reprises ; aucune conclusion sur les seuils (perf/lighthouse.txt, perf/tentatives.tsv). Relancer le job.');
     process.exit(rapport.ok ? 0 : 1);
 }
 

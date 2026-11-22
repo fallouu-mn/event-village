@@ -64,6 +64,7 @@ jobs:
       lots: ${{ steps.mode.outputs.lots }}
       responsive: ${{ steps.mode.outputs.responsive }}
       perf: ${{ steps.mode.outputs.perf }}
+      captures: ${{ steps.mode.outputs.captures }}
     steps:
       - name: Horodatage du début du run
         id: t0
@@ -113,6 +114,14 @@ jobs:
             echo "Mesure mobile demandée"
           else
             echo "perf=0" >> "$GITHUB_OUTPUT"
+          fi
+          # Finition 5 : « ci-captures: oui » (avec « ci-responsive: oui ») lance aussi, dans le job responsive, les captures
+          # d'écran en thème SOMBRE (contrôles axe, contraste compris), pour vérifier le sombre pendant le travail d'un lot
+          if printf '%s\n' "$message" | grep -qE '^ci-captures:[[:space:]]*oui[[:space:]]*$'; then
+            echo "captures=1" >> "$GITHUB_OUTPUT"
+            echo "Captures sombres demandées (job responsive)"
+          else
+            echo "captures=0" >> "$GITHUB_OUTPUT"
           fi
 
   # ── Mode rapide : inchangé (typecheck, lint, suites citées), sur une base locale ──────────────────────────────────
@@ -677,7 +686,8 @@ jobs:
     needs: mode
     if: ${{ needs.mode.outputs.rapide == '0' || needs.mode.outputs.responsive == '1' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Finition 5 : 90 min (60 avant) pour les captures sombres du mode rapide (ligne ci-captures), ≈ 20 min de plus
+    timeout-minutes: 90
     outputs:
       responsive: ${{ steps.responsive.outcome }}
     steps:
@@ -710,6 +720,27 @@ jobs:
           set -o pipefail
           npm run e2e 2>&1 | tee /tmp/e2e.log
 
+      # Finition 5 : captures d'écran en thème sombre seulement (EV_CAPTURES_THEMES=sombre), en mode rapide, sur demande
+      # (ligne « ci-captures: oui »). Résultats du contrôle responsive mis de côté pendant la phase (run-e2e.mjs vide les
+      # dossiers de sortie au départ), puis remis. Jamais au run complet : les captures y sont dans le job e2e.
+      - name: "Captures sombres (mode rapide, ligne ci-captures : EV_E2E_PHASES=captures, EV_CAPTURES_THEMES=sombre)"
+        id: captures-sombres
+        if: ${{ !cancelled() && needs.mode.outputs.rapide == '1' && needs.mode.outputs.captures == '1' && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
+        timeout-minutes: 35
+        env:
+          EV_E2E_PHASES: captures
+          EV_CAPTURES_THEMES: sombre
+        run: |
+          . /tmp/etape.sh captures
+          set -o pipefail
+          W="$GITHUB_WORKSPACE/.e2e-captures"
+          mkdir -p /tmp/resp-bak
+          for d in responsive captures-responsive; do if [ -d "$W/$d" ]; then mv "$W/$d" "/tmp/resp-bak/$d"; fi; done
+          code=0
+          npm run e2e 2>&1 | tee /tmp/captures.log || code=$?
+          for d in responsive captures-responsive; do if [ -d "/tmp/resp-bak/$d" ]; then rm -rf "$W/$d"; mv "/tmp/resp-bak/$d" "$W/$d"; fi; done
+          exit $code
+
       - *diagnostic
       - *annotations
 
@@ -724,6 +755,12 @@ jobs:
           if [ -d "$W/.e2e-captures/captures-responsive" ]; then
             mkdir -p /tmp/sortie/captures-responsive && cp -r "$W/.e2e-captures/captures-responsive/." /tmp/sortie/captures-responsive/
             echo "captures responsive : $(find /tmp/sortie/captures-responsive -name '*.jpg' | wc -l) JPEG"
+          fi
+          # Finition 5 : captures sombres du mode rapide (ligne ci-captures) et leur journal
+          if [ -d "$W/.e2e-captures/captures" ] && [ -f /tmp/captures.log ]; then
+            mkdir -p /tmp/sortie/captures && cp -r "$W/.e2e-captures/captures/." /tmp/sortie/captures/
+            cp /tmp/captures.log /tmp/sortie/captures.log
+            echo "captures sombres : $(find /tmp/sortie/captures -name '*.png' | wc -l) PNG"
           fi
           if [ -d "$W/test-results" ]; then
             mkdir -p /tmp/sortie/playwright

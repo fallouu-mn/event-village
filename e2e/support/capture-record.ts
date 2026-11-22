@@ -25,6 +25,8 @@ export interface CaptureRecord {
     smallTextDetails?: string[];
     /** Lot 6 (A6) : nombres par règle (tableau « écran × règle »). Absent si les contrôles n'ont pas tourné. */
     metrics?: PageCheckMetrics;
+    /** Finition 5 (point 1) : thème lu sur la page capturée (classe dark de <html>, fond calculé de <body>, luminance). */
+    themeLu?: { darkClass: boolean; background: string; luminance: number | null; choice: string | null };
     notes: string[];
     error: string | null;
     durationMs: number;

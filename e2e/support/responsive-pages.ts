@@ -283,6 +283,12 @@ async function adminVenuesReady(page: Page): Promise<void> {
 
 const P = (p: Omit<ResponsivePage, 'groupe'>): Omit<ResponsivePage, 'groupe'> => p;
 
+/** Finition 5 (point 2) : identifiant qu'aucun objet ne porte, pour contrôler la page « Cet élément n'est plus disponible ». */
+const OBJET_ABSENT = '00000000-0000-4000-8000-000000000f05';
+const pagePlusDisponible = async (page: Page): Promise<void> => {
+    await expect(page.getByRole('heading', { level: 1, name: 'Cet élément n’est plus disponible' })).toBeVisible({ timeout: 30_000 });
+};
+
 const PUBLIQUES: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'accueil', titre: 'Accueil', role: 'anonyme', path: () => '/' }),
     P({ id: 'explorer', titre: 'Explorer', role: 'anonyme', path: () => '/explore' }),
@@ -301,6 +307,9 @@ const PUBLIQUES: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'mes-billets', titre: 'Mes billets', role: 'client', path: () => '/tickets?tab=a-venir' }),
     P({ id: 'billet-hors-ligne', titre: 'Billet hors ligne', role: 'client', needsIds: true, path: (i) => `/billet/hors-ligne?id=${encodeURIComponent(ids(i).tickets.clientVeille)}`, ready: async (page) => { await expect(page.locator('main').first()).toBeVisible(); } }),
     P({ id: 'paiement', titre: 'Suivi d’un paiement', role: 'client', needsIds: true, path: (i) => `/paiement/${ids(i).payments.pending}` }),
+    // Finition 5 (point 2) : pages d'arrivée des avis (un billet du compte ; objet absent, d'autrui ou deviné)
+    P({ id: 'billet-arrivee-avis', titre: 'Mon billet (arrivée d’un avis)', role: 'client', needsIds: true, path: (i) => `/tickets/${ids(i).tickets.clientValide}` }),
+    P({ id: 'retrait-plus-disponible', titre: 'Retrait plus disponible (portefeuille)', role: 'client', path: () => `/wallet/retraits/${OBJET_ABSENT}`, ready: pagePlusDisponible }),
     P({ id: 'profil', titre: 'Profil', role: 'client', path: () => '/profile' }),
     P({ id: 'profil-paiements', titre: 'Mes paiements', role: 'client', path: () => '/profile/payments' }),
     P({ id: 'profil-notifications', titre: 'Réglages des notifications', role: 'client', path: () => '/profile/notifications' }),
@@ -342,6 +351,7 @@ const ORGANISATRICE: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'org-caisse-evenement', titre: 'Caisse d’un événement', role: 'organisateur', needsIds: true, path: (i) => `/partner/events/${ids(i).events.ceSoir.id}/caisse` }),
     P({ id: 'org-equipe', titre: 'Mon équipe', role: 'organisateur', path: () => '/partner/team' }),
     P({ id: 'org-finance', titre: 'Finances', role: 'organisateur', path: () => '/partner/finance' }),
+    P({ id: 'org-retrait-plus-disponible', titre: 'Retrait plus disponible (finances, arrivée d’un avis)', role: 'organisateur', path: () => `/partner/finance/retraits/${OBJET_ABSENT}`, ready: pagePlusDisponible }),
     P({ id: 'org-portefeuille', titre: 'Portefeuille', role: 'organisateur', path: () => '/wallet' }),
     P({ id: 'org-statistiques', titre: 'Statistiques de ventes', role: 'organisateur', path: () => '/partner/stats' }),
     P({ id: 'org-calendrier', titre: 'Calendrier', role: 'organisateur', path: () => '/partner/calendar' }),
