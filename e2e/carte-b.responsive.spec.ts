@@ -217,7 +217,10 @@ for (const theme of THEMES) {
             // Saint-Louis : un seul événement publié dans le jeu de démonstration (repère simple)
             await page.getByLabel('Aller à').selectOption('saint-louis');
             await settle(page);
-            const single = page.locator('.leaflet-marker-icon.leaflet-interactive[title]:not([title*="agrandir"])').first();
+            // Repère visé par son nom accessible (titre de l'événement) : les repères hors de la partie visible restent dans la page
+            // (tout caractère autre qu'une lettre, un chiffre ou une espace devient un joker : aucune expression à échapper)
+            const stLouis = readDemoIds().events.publie.title.replace(/[^\p{L}\p{N} ]/gu, '.');
+            const single = page.getByRole('button', { name: new RegExp(`^${stLouis},`, 'u') });
             await expect(single.locator('.ev-repere')).toBeVisible({ timeout: 15_000 });
             await single.locator('.ev-repere').click();
             await expect(page.getByRole('dialog').getByRole('link', { name: /Voir l’événement/ })).toBeVisible();
