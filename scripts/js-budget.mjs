@@ -187,6 +187,30 @@ function main() {
             + (budget === null ? ' — sans budget' : ` — budget ${budget} octets (${formatKo(budget)}) : ${status === 'OK' ? 'OK' : 'DÉPASSÉ'}`));
     }
 
+    // Lot Carte B : relevé des morceaux chargeables à la demande (table de webpack.js) : identifiant, taille gzip du
+    // fichier, repères de son contenu (textes français, noms de modules connus), pour comparer deux constructions
+    const runtimeRel = [...new Set(Object.values(pages).flat())].find((f) => /\/webpack-[0-9a-f]+\.js$/.test(f));
+    if (runtimeRel) {
+        const runtimeSrc = fs.readFileSync(path.join(opts.nextDir, runtimeRel), 'utf8');
+        const chunkDir = path.join(opts.nextDir, 'static', 'chunks');
+        const all = fs.existsSync(chunkDir) ? fs.readdirSync(chunkDir) : [];
+        const marks = ['loadLeaflet', 'Partout au Sénégal', 'Rechercher dans cette zone', 'Afficher la carte', 'Aller à', 'Ce week-end',
+            'tiles.stadiamaps.com', 'leaflet-container', 'showModal', 'Fermer la bulle', 'Près de chez vous', 'ev-point', 'clusterPoints',
+            'Autour de moi', 'Vue Carte', 'Rechercher un lieu', 'Zoom avant'];
+        for (const m of runtimeSrc.matchAll(/(\d+):"([0-9a-f]{16})"/g)) {
+            const file = all.find((f) => f.startsWith(`${m[1]}.`) || f.startsWith(`${m[1]}-`));
+            if (!file) {
+                console.log(`${TAG} morceau ${m[1]} : fichier introuvable`);
+                continue;
+            }
+            const buf = fs.readFileSync(path.join(chunkDir, file));
+            const txt = buf.toString('utf8');
+            const found = marks.filter((k) => txt.includes(k));
+            const fr = /"([^"\n]{0,30}[éèàçêîô][^"\n]{2,30})"/.exec(txt)?.[1] ?? '';
+            console.log(`${TAG} morceau ${m[1]} : ${gzipSize(buf)} octets gzip${found.length ? ` [${found.join(', ')}]` : ''}${fr ? ` « ${fr} »` : ''}`);
+        }
+    }
+
     fs.mkdirSync(path.dirname(opts.out), { recursive: true });
     const tsv = ['route\tfichiers\toctets_gzip\toctets_bruts\tbudget\tstatut',
         ...rows.map((r) => [r.route, r.files, r.gzip, r.raw, r.budget, r.status].join('\t'))].join('\n') + '\n';
