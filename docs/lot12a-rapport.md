@@ -513,7 +513,41 @@ ok 12 - T7 — aides internes des commandes non appelables en RPC par la clé de
 [INVARIANT-LOT12A] cv12a-2-gardes — (o1)(o2)(o3)(o4)(o5)(o6)(o7) : 0 violation(s)
 ```
 
-À faire avant la fusion : le lot 11b fusionne d'abord ; il redéfinit aussi `notif_cashouts_notify` (la recopie du lot
-12a, `…06`, sera refaite à partir de sa version) et ferme la lecture REST des paiements et remboursements pour toutes les
-partenaires (un test du lot 12a vérifiera qu'aucune partenaire ne lit un paiement ni un remboursement de commande par la
-REST). Puis runs rapides et un run complet (résultat ci-dessous quand il existe).
+### Après la fusion du lot 11b dans main (22/11)
+
+`main` (`5fd300caf` : lot 11b et correctifs de sa contre-vérification, migrations `20261129000001` à `…010` appliquées sur
+event-village-dev) fusionnée dans la branche (`1d0716472`).
+
+- **Recopie de `notif_cashouts_notify` refaite** à partir de sa dernière définition, `20261129000004_l11b_avis.sql:116-457`
+  (fusion à trois voies depuis la version du lot 10b : l'avis de la table `TABLE_REFUND_PAID` et sa lecture gardés, puis
+  les ajouts du lot 12a) ; aucune ligne perdue (`migration-lot12a-rejouable`, `cv12a-3-statique` S1, `f4-recopies`). Aucune
+  autre fonction recopiée par le lot n'a été redéfinie par le lot 11b ; aucune politique en commun (lot 11b : `venues_read`,
+  tables, `payments_read`, `refunds_read` ; lot 12a : commandes, produits).
+- **Lecture REST des paiements (T8 du lot 11b)** : nouveau cas de `l12a-commandes` : ni la partenaire ni le livreur ne
+  lisent par la REST un paiement de commande (par la fiche, par identifiant, par commande) ni un remboursement (commande
+  annulée par la partenaire) ; le client lit les siens.
+- **Conflits résolus** : garde des fiches (`partnerEventWrite` : établissements et tables du lot 11b **et** commandes du
+  lot 12a) ; `f2acv-ecritures-fiche` (les deux lots retirent leurs écritures de la liste des écritures gardées) ;
+  `notif-migration` et `notif-modeles` (entrées des deux lots) ; `migration-d1d-vitrine-rejouable` (version de main, plus
+  précise : aucune migration postérieure ne redéfinit les fonctions de la vitrine) ; `docs/apres-lancement.md` (les deux) ;
+  `docs/recette-billetterie.md` (lignes citées recalées : `interrupteurs.test.ts:399`, `notif-modeles.test.ts:574`).
+- **Réglage renommé** `orders.invites_per_day` (au lieu de `orders.courier_invites_per_day`) : le mot « courier » de l'écran
+  des réglages était pris pour la police Courier par le contrôle des polices à chasse fixe (`design-systeme` 8.2 q).
+
+Tests modifiés à ce stade (signalés) :
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `tests/audit/cv11b-3-statique` (S2) | « main » = les définitions d'avant le lot 11b (`< 20261129`) au lieu de « tout fichier qui n'est pas du lot 11b » : la recopie du lot 12a (`20261130…`), postérieure, était prise pour sa référence. **Assertion inchangée.** | lot fusionné après le lot 11b |
+| `l12a-commandes` | Plat du jour « au plus tôt » entre 23 h 25 et minuit (Dakar) : la base refuse à bon droit (heure prévue le lendemain) ; les deux cas du plat du jour vérifient alors ce refus (aide `dailySpecialWindowClosed`) ; commande du test REST au-dessus du minimum de la zone | run 583, vers minuit |
+
+Fragilité connue (non corrigée, assertions d'audit) : `cv12a-2-gardes` G2 (dernière portion du plat du jour) échoue s'il
+tourne entre 23 h 30 et minuit, heure de Dakar, pour la même raison (règle « pour aujourd'hui seulement »).
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 582 | `1d0716472` | rapide, 357 suites (toutes celles qui citent orders, products, payments, refunds, venues ou notif) | **coupé à 60 min** (limite du job rapide) après 207 suites ; typecheck et lint verts ; 204 vertes, 3 rouges : `cv11b-3-statique` S2, `design-systeme` 8.2 q, `l12a-commandes` (test REST sous le minimum de la zone) |
+| 583 | `25786603a` | rapide, 155 suites (les 150 non passées au 582 et les 3 rouges) | 154/155 ; seule `l12a-commandes` rouge : plat du jour vers minuit (ci-dessus) |
+| 584 | `2280aff80` | rapide, `l12a-commandes` | **vert** |
+
+Au total, les 357 suites citées sont passées vertes sur les runs 582 à 584 (dernier état de chacune).
