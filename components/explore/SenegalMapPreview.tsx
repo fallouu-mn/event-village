@@ -8,7 +8,8 @@ import { clusterPoints } from '@/lib/map/cluster';
 
 /**
  * Lot Carte B (4) — aperçu de la carte sur l'accueil (« Partout au Sénégal »), chargé seulement quand la section devient
- * visible (components/events/HomeDiscovery.tsx). Carte immobile : ni glisser, ni zoom, ni clavier (le bouton « Ouvrir la
+ * visible (components/events/HomeSenegalMap.tsx), par le module de la carte de la fiche (components/ui/EventMap.tsx, qui
+ * le réexporte) : aucun morceau de code de plus pour l'application. Carte immobile : ni glisser, ni zoom, ni clavier (le bouton « Ouvrir la
  * carte » de la section mène à la vraie carte d'Explorer) ; repères non focalisables. Fond Stadia du thème, mention des
  * fonds visible ; événements en points orange sans texte (« À la une » cerclé), un groupe en point plus grand. Tuiles
  * indisponibles : l'aperçu est retiré, la section garde son bouton.
@@ -77,13 +78,8 @@ export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount:
                 }
             });
         };
-        // Leaflet et sa feuille de style : pris dans le module de la carte de la fiche (aucun morceau de code de plus)
-        import('@/components/ui/EventMap')
-            .then(({ loadLeaflet }) => { if (alive) build(loadLeaflet()); })
-            .catch((err: unknown) => {
-                console.error('[accueil] aperçu de la carte impossible :', err instanceof Error ? err.message : String(err));
-                if (alive) cbs.current.onUnavailable();
-            });
+        // Leaflet (et sa feuille de style, importée par components/ui/EventMap.tsx, qui sert ce module) : déjà dans ce morceau
+        build(require('leaflet') as LeafletModule);
         return () => {
             alive = false;
             tilesRef.current = null;

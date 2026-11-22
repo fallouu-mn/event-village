@@ -28,6 +28,13 @@ export function loadLeaflet(): typeof import('leaflet') {
     return require('leaflet') as typeof import('leaflet');
 }
 
+/**
+ * Lot Carte B — aperçu de la carte de l'accueil (« Partout au Sénégal ») servi par CE module : il est déjà chargeable à
+ * la demande (fiche, administration, pilotage) ; l'accueil le charge quand l'aperçu devient visible, sans morceau de code ni
+ * entrée de plus dans la table que toutes les pages chargent.
+ */
+export { default as SenegalMapPreview } from '@/components/explore/SenegalMapPreview';
+
 /** Nom affiché sur le repère : 28 caractères au plus (le nom entier reste dans le texte de remplacement). */
 export function markerName(name: string): string {
     const t = name.trim().replace(/\s+/g, ' ');

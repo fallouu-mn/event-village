@@ -12,8 +12,8 @@ import { LinkButton } from '@/components/ui/LinkButton';
  * la vue Carte d'Explorer, avec ou sans aperçu.
  */
 
-// Module unique de la carte, du calendrier et de l'aperçu (components/explore/lazy.ts)
-const SenegalMapPreview = dynamic(() => import('@/components/explore/lazy').then((m) => m.SenegalMapPreview), { ssr: false });
+// Servi par le module de la carte de la fiche, déjà chargeable (aucune entrée de plus dans la table des morceaux)
+const SenegalMapPreview = dynamic(() => import('@/components/ui/EventMap').then((m) => m.SenegalMapPreview), { ssr: false });
 
 /** Vue Carte d'Explorer (lib/events/explore-view.ts, exploreModeHref({}, 'carte')), écrite telle quelle : rien d'Explorer dans ce module. */
 const MAP_HREF = '/explore?vue=carte';

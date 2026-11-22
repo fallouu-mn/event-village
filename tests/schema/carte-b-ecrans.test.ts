@@ -224,25 +224,25 @@ describe('Accueil — « Partout au Sénégal »', () => {
         assert.match(code('components/events/HomeDiscovery.tsx'), /<HomeSenegalMap \/>/);
         const section = code('components/events/HomeSenegalMap.tsx');
         assert.match(section, /new IntersectionObserver/);
-        assert.match(section, /dynamic\(\(\) => import\('@\/components\/explore\/lazy'\)\.then\(\(m\) => m\.SenegalMapPreview\), \{ ssr: false \}\)/);
+        assert.match(section, /dynamic\(\(\) => import\('@\/components\/ui\/EventMap'\)\.then\(\(m\) => m\.SenegalMapPreview\), \{ ssr: false \}\)/);
+        assert.match(code('components/ui/EventMap.tsx'), /export \{ default as SenegalMapPreview \} from '@\/components\/explore\/SenegalMapPreview';/);
         assert.match(section, /\{visible && <SenegalMapPreview /);
         assert.match(section, /Ouvrir la carte/);
         assert.match(section, /const MAP_HREF = '\/explore\?vue=carte';/);
         assert.equal(exploreModeHref({}, 'carte'), '/explore?vue=carte', 'même adresse que la vue Carte');
     });
 
-    test('un seul module à la demande pour carte, calendrier et aperçu ; Leaflet pris dans le module de la fiche', () => {
+    test('un seul module à la demande pour carte et calendrier ; Leaflet pris dans le module de la fiche, qui sert aussi l’aperçu', () => {
         const lazy = code('components/explore/lazy.ts');
         assert.match(lazy, /export \{ default as ExploreMap \} from '\.\/ExploreMap'/);
         assert.match(lazy, /export \{ default as ExploreCalendar \} from '\.\/ExploreCalendar'/);
-        assert.match(lazy, /export \{ default as SenegalMapPreview \} from '\.\/SenegalMapPreview'/);
-        for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/SenegalMapPreview.tsx', 'components/explore/ExploreCalendar.tsx']) {
+        assert.doesNotMatch(lazy, /SenegalMapPreview/);
+        for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/ExploreCalendar.tsx']) {
             const src = code(rel);
             assert.doesNotMatch(src, /leaflet\.css|require\('leaflet'\)|from 'leaflet'/, `${rel} : ni Leaflet ni sa feuille de style en propre`);
         }
-        for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/SenegalMapPreview.tsx']) {
-            assert.match(code(rel), /import\('@\/components\/ui\/EventMap'\)\s*\.then\(\(\{ loadLeaflet \}\)/, rel);
-        }
+        assert.match(code('components/explore/ExploreMap.tsx'), /import\('@\/components\/ui\/EventMap'\)\s*\.then\(\(\{ loadLeaflet \}\)/);
+        assert.match(code('components/explore/SenegalMapPreview.tsx'), /build\(require\('leaflet'\) as LeafletModule\)/, 'aperçu : Leaflet du même module');
         assert.doesNotMatch(code('components/explore/ExploreCalendar.tsx'), /EventMap|loadLeaflet/, 'le calendrier ne charge pas Leaflet');
         assert.match(code('components/ui/EventMap.tsx'), /export function loadLeaflet\(\): typeof import\('leaflet'\)/);
     });
