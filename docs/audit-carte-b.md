@@ -1,13 +1,14 @@
 # Contre-vérification du lot Carte B (carte et calendrier d'Explorer)
 
 Branche auditée : `origin/carte-b/explorer` à `bf4298ac9d` (rapport `docs/carte-b-rapport.md`), lue sans la modifier.
-Tests de preuve : branche `carte-b/cv-rouges` (partie de `bf4298ac9d`, **jamais fusionnée**), commit de tests `211119c6e7`.
+Tests de preuve : branche `carte-b/cv-rouges` (partie de `bf4298ac9d`, **jamais fusionnée**), commits de tests `211119c6e7`, `83666c7f59` (G4) et `866585379f` (T5).
 Aucun build local, aucun appel au projet distant, aucune migration, `.env.local` non lu. Le rapport du lot n'a servi qu'à
 repérer ses affirmations ; chacune a été relue dans le code et éprouvée par un test (vert = attaque bloquée, rouge = trou).
 
 ## Verdict
 
-**Lot acceptable pour la fusion après correction de T1** (une fonction, deux lignes : § 1.1). Les autres trous sont
+**Lot acceptable pour la fusion après correction de T1** (une fonction, deux lignes : § 1.1) ; **T5**, antérieur au lot
+mais dans le périmètre du point 3, se corrige par une ligne du middleware (§ 1.5) et doit l'être avant la mise en ligne. Les autres trous sont
 faibles : des pages publiques gardent jusqu'à 60 s un état périmé (fiche d'un événement fini ou d'une partenaire
 renommée, « en vente » d'une catégorie qui vient d'être épuisée) ; aucun ne laisse acheter ce qui ne doit pas l'être
 (la base refuse) ni ne fait sortir une donnée non publique. Ce que le lot a livré tient : la lecture publique de la carte
@@ -21,19 +22,22 @@ n'ouvre rien d'autre ; toutes les cartes passent par l'aide commune avec la ment
 | T2 | Fin d'un événement par la tâche planifiée (`/api/cron/events-finish`) : **aucune invalidation** | Faible | `cvcb-1-trous` T2 ; e2e T2 | § 1.2 |
 | T3 | Nouveau nom commercial (ou logo) de la partenaire : **aucune invalidation** (antérieur au lot) | Faible | `cvcb-1-trous` T3 ; e2e T3 | § 1.3 |
 | T4 | Ventes (paiement confirmé, billets gratuits, guichet, réservations posées ou rendues) : **aucune invalidation** (« Complet », prix d'appel de la carte) | Faible | `cvcb-1-trous` T4 | § 1.4 |
+| T5 | Images de `public/images/` **refusées sans session** (redirection vers `/login`) : logos Wave et Orange Money de la fiche, affiche de repli, **image de partage** du site (antérieur au lot) | **Moyenne** | `cvcb-4-images` ; e2e `cvcb.responsive` G4 | § 1.5 |
 
-Aucun trou critique ni élevé. Lecture publique (point 1), CSP (point 3), middleware (point 4), cartes et mention (point 6)
-et poids (point 7) : garde-fous verts (§ 3). Deux écarts de rapport sans gravité (§ 4).
+Aucun trou critique ni élevé. Lecture publique (point 1), règle `img-src` elle-même (point 3), middleware `/leaflet/`
+(point 4), cartes et mention (point 6) et poids (point 7) : garde-fous verts (§ 3). Deux écarts de rapport sans gravité
+(§ 4).
 
 ## Runs
 
 | Run | Commit | Mode | Résultat |
 |---|---|---|---|
 | **624** | `211119c6e7` (tests seuls) | rapide (`cvcb-1`, `cvcb-2`, `cvcb-3`) + responsive | `cvcb-1-trous` **4/4 rouges** (bonne raison) ; `cvcb-2-gardes` 15/15 verts ; `cvcb-3-base` 5/5 verts ; e2e : 212 réussis dont G1, G2, G3, G5, G6 verts ; **T1, T2, T3 rouges** (bonne raison) ; G4 rouge pour un **défaut du test** (verrou réseau du contexte : `net::ERR_BLOCKED_BY_CLIENT at https://localhost:35143/`) |
-| 625 | `83666c7f59` (G4 corrigé) | rapide (`cvcb-2`) + responsive | Annulé par la poussée de ce rapport (même branche) ; repris par le run suivant |
-| suivant | commit de ce rapport | rapide (`cvcb-2`) + responsive | **En cours à la rédaction** : résultat de G4 à reporter |
+| 625 | `83666c7f59` (G4 corrigé) | rapide (`cvcb-2`) + responsive | Annulé par la poussée du premier état de ce rapport (même branche) |
+| **626** | `c47e3344a1` | rapide (`cvcb-2`) + responsive | `cvcb-2-gardes` vert ; e2e : 212 réussis ; T1 (6,8 m), T2 (52 025 ms), T3 (50 466 ms) rouges comme au run 624 ; G2 `{"position":14,"dates":13,"affiche":35,"titre":20,"annulation":18}` ms ; **G4 rouge pour la bonne raison** : violations `img-src` sur les logos de paiement de la fiche, d'où **T5** |
+| **627** | `866585379f` (T5) | rapide (`cvcb-4`, `cvcb-3`) | typecheck et lint OK ; `cvcb-4-images` **rouge** (bonne raison : 4 fichiers de `public/images/` redirigés, tous les autres de `public/` servis) ; `cvcb-3-base` 5/5 verts |
 
-Journaux bruts : branche `ci-results`, `runs/624-45046978376` (`jobs/rapide/verify.log`, `jobs/responsive/e2e.log`,
+Journaux bruts : branche `ci-results`, `runs/624-45046978376`, `runs/626-45066654312`, `runs/627-45070308183` (`jobs/rapide/verify.log`, `jobs/responsive/e2e.log`,
 `jobs/responsive/next-start.log`).
 
 ## 1. Trous
@@ -146,6 +150,47 @@ not ok 1 - confirmTicketPayment : invalidatePublicEvent après payment_confirm (
 la fait repartir de zéro (les RPC rendent déjà les catégories touchées) ; au besoin regrouper (une invalidation par
 événement toutes les 5 s au plus) pour ne pas vider le cache à chaque billet un soir d'affluence.
 
+### 1.5 T5 — images de `public/images/` refusées sans session (moyenne, antérieur au lot)
+
+**Affirmation à éprouver** (point 3 de la consigne) : les images de l'application s'affichent toujours. La règle `img-src`
+du lot est juste ; c'est le **middleware** qui bloque : `/images/` n'est pas dans `PUBLIC_PREFIXES` (`middleware.ts:6-35` ;
+`/branding/`, `/icons/`, `/leaflet/` y sont). Sans session, chaque fichier de `public/images/` reçoit une redirection
+vers `/login?redirect=…` (`middleware.ts:247-249`) :
+
+- `/images/paiement/wave.webp` et `om.webp` : logos « Payer avec » de la fiche et de l'écran de paiement
+  (`components/payment/OperatorLogo.tsx:14-15`, balise `<img>` directe, design 1c du 19/11) : **cassés pour tout visiteur
+  non connecté** ;
+- `/images/event-placeholder.svg` : affiche de repli des écrans publics, servie sans optimiseur
+  (`lib/events/event-image.ts:11`) ;
+- `/images/og-image.png` : **image de partage** du site (`app/layout.tsx:40`, `:42`, `lib/events/share-preview.server.ts:38`),
+  lue sans session par WhatsApp, Facebook ou X : l'aperçu d'un lien partagé n'a pas d'image quand cette image sert.
+
+Sous HTTP de même origine (CI), la redirection reste dans l'origine : l'image est cassée sans que la CSP le signale. Sous
+HTTPS derrière un relais (mesure mobile, G4), la redirection est construite à partir de `req.url` en `http://` : la CSP la
+signale avec l'adresse de départ — c'est l'origine des deux lignes `[CSP-REPORT] img-src …/images/paiement/…` du run 617.
+
+**Preuve** :
+
+```
+# e2e G4, vrai navigateur, https://localhost:44293 (run 626, jobs/responsive/e2e.log)
+[cvcb] CSP sous HTTPS (https://localhost:44293) : 5 violation(s) ["img-src https://localhost:44293/images/paiement/wave.webp report /events/67e2945b-1504-418f-a816-a052ef21f418","img-src https://localhost:44293/images/paiement/om.webp report /events/67e2945b-1504-418f-a816-a052ef21f418","script-src eval report /login","connect-src https://localhost:44293/tickets?_rsc=1CyHGnH5jT2WZH4K report /aide", …]
+  ✘   17 [responsive] › e2e/cvcb.responsive.spec.ts:372:9 › cvcb · CSP › G4 — aucune violation img-src sous HTTPS de même origine (accueil, Explorer, fiche, salles, tables, connexion, aide)
+
+# cvcb-4-images, middleware sans session (run 627)
+not ok 1 - chaque fichier de public/ est servi à un visiteur sans session (aucune redirection vers /login)
+  error: |-
+    images refusées sans session (logos de paiement, affiche de repli, image de partage) :
+    /images/event-placeholder.svg → HTTP 307 vers /login?redirect=%2Fimages%2Fevent-placeholder.svg
+    /images/og-image.png → HTTP 307 vers /login?redirect=%2Fimages%2Fog-image.png
+    /images/paiement/om.webp → HTTP 307 vers /login?redirect=%2Fimages%2Fpaiement%2Fom.webp
+    /images/paiement/wave.webp → HTTP 307 vers /login?redirect=%2Fimages%2Fpaiement%2Fwave.webp
+```
+
+**Correctif proposé** : ajouter `'/images/'` à `PUBLIC_PREFIXES` (fichiers statiques seulement : aucune page ni route
+sous `/images`). Le test `cvcb-4-images` passe alors au vert. Accessoirement, construire l'adresse de `/login` à partir de
+l'hôte et du protocole transmis par le relais (`x-forwarded-proto`) éviterait une redirection en `http://` derrière un
+relais qui ne les réécrit pas.
+
 ## 2. Écritures qui changent la carte, le catalogue, l'accueil ou la fiche
 
 | Écriture | Où | Invalidation | Preuve |
@@ -174,8 +219,8 @@ la fait repartir de zéro (les RPC rendent déjà les catégories touchées) ; a
 | 1 | e2e G5 (vrai serveur) | 19 adresses piégées : 200 ou 400, jamais 500, moins de 5 s, `no-store`, champs publics seulement ; `POST`, `PUT`, `PATCH`, `DELETE` → 405 | Vert (run 624) : `{"200":13,"400":6}`, aucun 500 |
 | 2 | e2e G2 (vrai serveur) | Position, dates, affiche, titre (`event_update`) et annulation visibles en moins de 5 s | Vert (run 624) : `{"position":15,"dates":13,"affiche":37,"titre":29,"annulation":22}` ms |
 | 3 | `cvcb-2-gardes` G3 | `img-src` exactement : `'self'`, `data:`, `blob:`, stockage Supabase, `images.unsplash.com`, `plus.unsplash.com`, hôte des tuiles ; aucune autre politique (middleware, pages, balises) ; concordance `next.config.mjs` ↔ `lib/map/tiles.ts` avec des adresses de tuiles réglées ; aucune image d'un autre hôte écrite dans le code | Vert (run 624) |
-| 3 | e2e G4 (HTTPS de même origine, relais HTTP/2 de la mesure) | Accueil, Explorer (liste et carte), fiche (logos de paiement, carte du lieu), salles, tables, connexion, aide : aucune violation `img-src` | **En attente** du run qui suit ce rapport (run 624 : défaut du test, non concluant) |
-| 3 | Run complet 617 (`next-start.log` des jobs e2e et responsive) | Sur tout l'e2e (783 cas) et le responsive : aucune violation `img-src` en HTTP ; seules deux lignes `img-src` (logos de paiement) sous le relais HTTPS de la mesure mobile | voir G4 |
+| 3 | e2e G4 (HTTPS de même origine, relais HTTP/2 de la mesure) | Accueil, Explorer (liste et carte), fiche (logos de paiement, carte du lieu), salles, tables, connexion, aide : aucune violation `img-src` **Rouge (run 626)** → T5 (§ 1.5) |
+| 3 | Run complet 617 (`next-start.log` des jobs e2e et responsive) | Sur tout l'e2e (783 cas) et le responsive : aucune violation `img-src` en HTTP (la redirection vers `/login` y reste de même origine, l'image cassée n'est donc pas signalée) ; deux lignes `img-src` (logos de paiement) sous le relais HTTPS de la mesure mobile, expliquées par T5 | voir T5 |
 | 4 | `cvcb-3-base` B2 (middleware) | Fichiers de `/leaflet/` servis sans session ; `../`, `%2e%2e`, `.%2e`, `x/../..`, majuscules, préfixe collé, requête ou ancre : jamais laissés passer vers une page ou une route protégée | Vert (run 624) |
 | 4 | e2e G3 (requêtes HTTP brutes, chemins non normalisés) | 135 chemins détournés (`..%2f`, `%2e%2e%2f`, `..%5c`, `..\`, `//`, `%252e`, `..;`, `%2f`…) vers 9 pages et routes protégées : aucune réponse 2xx hors de la page de connexion | Vert (run 624) : `{"401":12,"404":76,"307→200":20,"308→307→200":15,"308→401":12}` (les 2xx sont la page de connexion après redirection) |
 | 5 | e2e G1 ; `cvcb-2-gardes` G5 | « Autour de moi » seul : aucune requête hors tuiles, aucun stockage, aucun cookie ne porte la position ; rappel de `getCurrentPosition` sans envoi ni stockage ni journal | Vert (run 624) |
@@ -205,5 +250,7 @@ la fait repartir de zéro (les RPC rendent déjà les catégories touchées) ; a
 | Tuiles demandées à Stadia autour de la position après « Autour de moi » | Inhérent à toute carte centrée sur un lieu : au zoom 13, une tuile couvre environ 5 km ; c'est le même grain que choisir un quartier dans « Aller à ». Ni la position exacte ni un identifiant ne partent chez Stadia (G1 : aucune autre requête, aucun stockage, aucun cookie). À mentionner dans la politique de confidentialité (Stadia reçoit les tuiles vues). |
 | Formulaires de la partenaire et de l'administration (`MapPicker`, cartes des salles et établissements) : tuiles dès l'affichage | Écrans d'outils où la carte est l'objet de l'écran ; la règle « aucune tuile avant le geste » vise les écrans publics (Explorer, accueil, fiche : verts). |
 | Chemins `/leaflet/..%2fadmin` et voisins laissés passer par le middleware | Le préfixe les laisse passer (l'URL ne décode pas `%2f`), mais le routeur de Next ne les relie à aucune page : 404 sur le vrai serveur (G3). |
+| G4, `connect-src …/tickets?_rsc=…` depuis `/aide` | Préchargement par Next d'un lien vers une page protégée (`/tickets`) pour un visiteur sans session : redirection vers `/login` attendue ; signalée seulement parce que le relais de test la construit en `http://`. Aucune donnée, aucune image. |
+| `script-src eval` sur `/login` | Déjà relevé avant le lot (runs précédents) ; hors du périmètre images. |
 | Politique de sécurité du contenu en mode rapport seulement | Décision antérieure (lot 9 quater, AUD-11 : la politique bloquante est pour le lot de mise en ligne) ; la règle `img-src` resserrée par le lot est exacte (G3, G4). |
 | Événements publiés sans position absents de la carte et du calendrier | Choix documenté (rapport du lot, § 11 ; `docs/apres-lancement.md`). |
