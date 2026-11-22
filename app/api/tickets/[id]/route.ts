@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GET as listMyTickets } from '@/app/api/tickets/route';
+import { requireActiveSession } from '@/lib/auth/session';
 import { isObjectId, ticketsInFocus, UNAVAILABLE_BODY } from '@/lib/tickets/focus';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,10 @@ export const dynamic = 'force-dynamic';
  * même réponse 404 « Cet élément n'est plus disponible » (UNAVAILABLE_BODY), aucun indice. Sans session : 401 de la liste.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    // Statut du compte contrôlé ici aussi (règle de toutes les routes /api/tickets/*, tests/parcours/statut-compte.test.ts),
+    // avant toute lecture ; la liste le refait de son côté
+    const activeSession = await requireActiveSession(req);
+    if (activeSession.response) return activeSession.response;
     const { id } = await params;
     const notAvailable = () => NextResponse.json(UNAVAILABLE_BODY, { status: 404, headers: { 'Cache-Control': 'private, no-store' } });
     if (!isObjectId(id)) return notAvailable();

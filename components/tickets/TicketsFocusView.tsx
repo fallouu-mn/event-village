@@ -7,16 +7,16 @@
  * router.refresh() après un transfert ou un remboursement. « Mes billets » (page mesurée) n'est pas modifiée.
  */
 import React, { useCallback, useState, useTransition } from 'react';
-import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { TicketCard } from '@/components/tickets/TicketCard';
 import { useMinuteNow } from '@/components/tickets/TicketWallet';
-import type { TransferTicketData } from '@/components/tickets/TransferModal';
+import { TransferModal, type TransferTicketData } from '@/components/tickets/TransferModal';
+import { TransferExplainerModal } from '@/components/tickets/TransferExplainerModal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import type { MyTicket } from '@/app/tickets/TicketsView';
 
-const TransferModal = dynamic(() => import('@/components/tickets/TransferModal').then((m) => m.TransferModal), { ssr: false });
-const TransferExplainerModal = dynamic(() => import('@/components/tickets/TransferExplainerModal').then((m) => m.TransferExplainerModal), { ssr: false });
+// Modales importées directement (et non par next/dynamic comme dans « Mes billets ») : un import dynamique de plus ajoute
+// une entrée au moteur de chargement commun à TOUTES les routes (run 598 : fiche événement 12 octets au-dessus de son budget)
 
 export function TicketsFocusView({ tickets, title, description, serverNow }: { tickets: MyTicket[]; title: string; description: string; serverNow: number }) {
   const router = useRouter();
