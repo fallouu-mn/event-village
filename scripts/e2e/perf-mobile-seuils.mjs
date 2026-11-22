@@ -336,7 +336,8 @@ export function toucherRows(touches) {
 
 /**
  * Rapport lisible (perf/lighthouse.txt).
- * @param {{ pages: Array<ReturnType<typeof verdictPage> & { details?: string[] }>, toucher: ReturnType<typeof verdictToucher>, entete?: string[], notes?: string[] }} p
+ * Finition 5 : `etat` (etatFinal : OK, HORS SEUIL ou FAUSSÉE) et `tentatives` (journal des tentatives Lighthouse), facultatifs.
+ * @param {{ pages: Array<ReturnType<typeof verdictPage> & { details?: string[] }>, toucher: ReturnType<typeof verdictToucher>, entete?: string[], notes?: string[], etat?: 'OK'|'HORS SEUIL'|'FAUSSÉE'|null, tentatives?: Array<{ decision: ReturnType<typeof decisionTentative> }> }} p
  */
 export function texteRapport({ pages, toucher, entete = [], notes = [], etat = null, tentatives = [] }) {
     const ok = pages.every((p) => p.ok) && toucher.ok;
