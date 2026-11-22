@@ -165,3 +165,15 @@ d'où elle vient et pourquoi elle attend.
 | Délai de réponse de la partenaire (15 minutes, `orders.response_minutes`) | Gardé ; à confirmer par le client (décision du 21/11). | Lot 12a |
 | Signalement d'un problème par le client après le début de la préparation (seule voie aujourd'hui : Event Village annule pour faute de la partenaire, avec la route d'administration). | Écran et circuit du support (12b ou plus tard). | Décision du client du 18/11 (annulation) |
 | Invitation d'un livreur : le numéro saisi par la partenaire dit si un compte existe (« Aucun compte actif avec ce numéro »), sans prénom : nom masqué avant l'accord (contre-vérification T4) ; au plus 10 invitations par jour et par partenaire (réglage `orders.invites_per_day`, décision du 21/11). Limiter aussi les essais sur des numéros sans compte si l'abus apparaît. | Même comportement que l'invitation d'un contrôleur ; pas de SMS envoyé (cloche, push, email seulement). | Lot 12a |
+
+## Carte et calendrier d'Explorer (lot Carte B)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Salles et restaurants sur la carte, avec un bouton par type pour les afficher ou les masquer ; zone approximative de 300 m pour les particuliers. | Lot suivant (décision du client du 21/11 : événements d'abord). La lecture publique (`GET /api/events/carte`) ne rend que des événements. | Consigne du lot Carte B |
+| Événements publiés SANS position (créés avant la finition 2a, qui rend la position obligatoire à la soumission) : absents de la carte ET du calendrier (une seule lecture publique, « avec position »). Ils restent dans la Liste. | Rares (aucun depuis la finition 2a) ; les rattraper demande que la partenaire place le repère (étape Accès). | Lot Carte B |
+| Recherche d'adresse publique sur la carte (« aller à » une rue). | Refusée par le client (21/11) : choix rapide de ville ou de quartier seulement. | Décision du client |
+| Liste de l'ordinateur : au-delà de 300 événements dans la zone, message « rapprochez-vous » et « Rechercher dans cette zone ». Pagination ou liste virtuelle si le catalogue grossit beaucoup. | 300 suffit largement au catalogue actuel. | Lot Carte B |
+| Libellé « Sponsorisé » sur la carte : la mise en avant `SPONSORISE` est rendue par la lecture mais n'a pas de repère propre (seul « À la une » est orange). | L'étiquette n'est pas ouverte à la saisie (`LABEL_NOT_OPEN`) ; décision commerciale à prendre. | Lot Carte B |
+| Section « Partout au Sénégal » de l'accueil rendue par l'îlot client (comme « Près de chez vous ») : absente sans JavaScript. Le pied de page garde le lien « Explorer ». | Placer le titre dans le HTML du serveur ajouterait du code au premier chargement de l'accueil (poids inchangé exigé). | Lot Carte B |
+| Fond de carte : déclarer le domaine de production chez Stadia (authentification par domaine) avant la préproduction ; suivre le volume (offre gratuite limitée). | Action du client dans le tableau de bord de Stadia (docs/carte-b-rapport.md, § Stadia). | Lot Carte B |
