@@ -461,7 +461,7 @@ describe('6.2 EMAIL facultatif (contrat F3, E4)', () => {
         assert.ok(mail.html.includes('&lt;script&gt;'), 'titre échappé dans le HTML');
         assert.ok(mail.html.includes('&amp; Cie'), '« & » échappé');
         assert.ok(mail.text && norm(mail.text).includes(hostile), 'version texte avec la valeur telle quelle');
-        assert.ok(mail.html.includes(`href="${APP_URL}/tickets/evenement/${EVENT_ID}"`), `bouton vers ${APP_URL}/tickets/evenement/${EVENT_ID} (finition 5 : lien de l'objet exact (modification signalée))`);
+        assert.ok(mail.html.includes(`href="${APP_URL}/tickets/${EVENT_ID}"`), `bouton vers ${APP_URL}/tickets/${EVENT_ID} (finition 5 : lien de l'objet exact (modification signalée))`);
         // Lot 7, tâche 7.9 (D93) : la confirmation d'achat mène à Mes billets par « Voir mes billets ».
         assert.ok(mail.html.includes('Voir mes billets'), 'libellé du bouton (« Voir mes billets », D93)');
         assert.equal(header(mail.headers, 'List-Unsubscribe'), undefined, 'pas de List-Unsubscribe sur un message indispensable');
@@ -726,7 +726,7 @@ describe('6.2 PUSH : envoi par l’envoyeur, faux adaptateur (contrat F4)', () =
         const got = pushTo(dev.sub.endpoint);
         assert.equal(got.length, 1);
         assert.equal(norm(got[0].message.title), 'Événement annulé');
-        assert.equal(got[0].message.url, `/tickets/evenement/${EVENT_ID}`); // design 1b (point 8) ; finition 5 : lien de l'objet exact (modification signalée) : billets de l'événement
+        assert.equal(got[0].message.url, `/tickets/${EVENT_ID}`); // design 1b (point 8) ; finition 5 : lien de l'objet exact (modification signalée) : billets de l'événement
         assert.equal(got[0].message.tag, row.group_key);
         assert.deepEqual(got[0].options, { ttlSeconds: 86_400, urgency: 'high' });
         assert.ok(got[0].message.body.length <= 160, 'corps ≤ 160 caractères');

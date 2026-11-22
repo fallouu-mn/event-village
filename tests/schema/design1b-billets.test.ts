@@ -193,7 +193,7 @@ describe('d. carte à la couleur de la catégorie', () => {
 
 describe('e. liens des avis vers le bon onglet de Mes billets', () => {
     // Finition 5 (modification signalée) : les avis qui portent un billet ou un événement mènent désormais à l'objet exact
-    // (/tickets/<billet>, /tickets/evenement/<événement> : tests/schema/f5-liens-avis.test.ts) ; restent vers un onglet ceux
+    // (/tickets/<billet>, /tickets/<événement> : tests/schema/f5-liens-avis.test.ts) ; restent vers un onglet ceux
     // dont l'objet n'est plus au compte (transfert retiré, billet parti) et le transfert à accepter (ancre dans « Reçus »).
     const EXPECTED: Record<string, string> = {
         TRANSFER_CLAIMED_SENDER: 'a-venir', TRANSFER_OFFERED: 'recus', TRANSFER_CANCELLED: 'recus', TRANSFER_REVOKED: 'recus',

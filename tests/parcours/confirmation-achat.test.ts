@@ -532,7 +532,7 @@ async function checkRealPurchase(label: string, buyer: Buyer, items: Array<[stri
         categoryLines: categoriesOf(tickets).map((c) => [c.quantity, c.name] as [number, string]),
         numbers: expectedNumbers, absentNumbers: tickets.slice(10).map((t) => t.ticket_number), more: expectMore,
         amount: { total: Number(purchase.payment.amount), serviceFee: Number(data.service_fee) }, secrets: secretsOf(tickets), appUrl: APP_URL,
-        buttonPath: `/tickets/evenement/${String(data.event_id)}`, // finition 5 : lien de l'objet exact (modification signalée)
+        buttonPath: `/tickets/${String(data.event_id)}`, // finition 5 : lien de l'objet exact (modification signalée)
     });
     assert.deepEqual(issues, [], `${label} : email de confirmation :\n${issues.join('\n')}`);
     assert.equal(Number(data.total), Number(purchase.payment.amount), `${label} : template_data.total = montant du paiement`);
@@ -632,7 +632,7 @@ describe('7.9 — billets gratuits (FREE_TICKETS_CONFIRMED) : mêmes blocs, aucu
         const issues = confirmationIssues(delivered.email, {
             label: 'billets gratuits', title: freeEv.title, startAt: String(data.start_at), location: LOCATION, city: CITY,
             categoryLines: [[2, FREE_A], [1, FREE_B]], numbers: tickets.map((t) => t.ticket_number), more: null, amount: null,
-            secrets: secretsOf(tickets), appUrl: APP_URL, buttonPath: `/tickets/evenement/${freeEv.eventId}`, // finition 5 : lien de l'objet exact (modification signalée)
+            secrets: secretsOf(tickets), appUrl: APP_URL, buttonPath: `/tickets/${freeEv.eventId}`, // finition 5 : lien de l'objet exact (modification signalée)
         });
         assert.deepEqual(issues, [], `email des billets gratuits :\n${issues.join('\n')}`);
         assert.ok(delivered.inApp, 'notification dans l\'application');
@@ -699,7 +699,7 @@ describe('7.9 — rendus du catalogue : contenu, motifs interdits, phrases exact
         test(`${c.type} — ${c.exp.label} : blocs attendus, aucun QR, code, secret ni lien de réclamation`, async () => {
             const mail = await renderEmail(c.type, c.data);
             // Finition 5 : billet reçu → le billet ; achat et gratuits → billets de l'événement
-            const issues = confirmationIssues(mail, fullExpect(c.exp, c.type === 'TRANSFER_RECEIVED' ? `/tickets/${String(c.data.ticket_id)}` : `/tickets/evenement/${String(c.data.event_id)}`));
+            const issues = confirmationIssues(mail, fullExpect(c.exp, c.type === 'TRANSFER_RECEIVED' ? `/tickets/${String(c.data.ticket_id)}` : `/tickets/${String(c.data.event_id)}`));
             assert.deepEqual(issues, [], `${c.exp.label} :\n${issues.join('\n')}`);
         });
     }

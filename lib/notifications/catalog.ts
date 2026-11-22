@@ -431,9 +431,10 @@ const withdrawalPath = (d: object): string => {
 };
 /** Finition 5 : les billets du compte pour un événement (achat, invitation, rappel, annulation, remboursement) ; sans
  * événement dans les données (ligne ancienne), l'historique : un lien ne fait jamais échouer l'envoi d'un avis. */
-const eventTicketsPath = (d: object): string => (optText(d, 'event_id') ? `/tickets/evenement/${ident(d, 'event_id')}` : '/tickets?tab=historique');
+const eventTicketsPath = (d: object): string => (optText(d, 'event_id') ? `/tickets/${ident(d, 'event_id')}` : '/tickets?tab=historique');
 const eventTicketsOrHistory = eventTicketsPath;
-/** Finition 5 : un billet du compte (/tickets/<billet>, page app/tickets/[id]) ; sans billet dans les données, ceux de l'événement. */
+/** Finition 5 : un billet du compte (/tickets/<billet>, page app/tickets/[id], qui ouvre aussi les billets d'un événement) ;
+ * sans billet dans les données, ceux de l'événement. */
 const ticketPath = (d: object): string => (optText(d, 'ticket_id') ? `/tickets/${ident(d, 'ticket_id')}` : eventTicketsPath(d));
 /** Finition 5 : billet reçu à accepter, dans « Reçus » à l'endroit du transfert (ancre recu-<transfert>, IncomingTransfers). */
 const incomingTransferPath = (d: object): string => `/tickets?tab=recus#recu-${ident(d, 'transfer_id')}`;

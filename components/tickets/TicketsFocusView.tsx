@@ -2,7 +2,7 @@
 
 /**
  * Finition 5 (point 2) — page d'arrivée d'un avis sur un billet : le billet précis (/tickets/<billet>) ou les billets du
- * compte pour un événement (/tickets/evenement/<événement>). Mêmes cartes que « Mes billets » (TicketCard : QR, transfert,
+ * compte pour un événement (/tickets/<événement>). Mêmes cartes que « Mes billets » (TicketCard : QR, transfert,
  * remboursement, hors ligne), sans les onglets ; liste préparée par le serveur (app/tickets/focus-read.ts), relue par
  * router.refresh() après un transfert ou un remboursement. « Mes billets » (page mesurée) n'est pas modifiée.
  */

@@ -1,6 +1,6 @@
 /**
  * Finition 5 (point 2) — billets d'une page d'arrivée d'avis : un billet précis (`/tickets/<billet>`) ou les billets du
- * compte pour un événement (`/tickets/evenement/<événement>`). Module pur : la liste vient de GET /api/tickets (billets
+ * compte pour un événement (`/tickets/<événement>`). Module pur : la liste vient de GET /api/tickets (billets
  * du compte de la session, rien d'autre) ; un identifiant mal formé, inconnu ou d'un autre compte donne la même réponse
  * (null : 404 « Cet élément n'est plus disponible », sans indice).
  */

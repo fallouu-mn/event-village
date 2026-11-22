@@ -3,7 +3,7 @@ import { WithdrawalDetail } from '@/components/finance/WithdrawalDetail';
 
 /**
  * Finition 5 (point 2) — un retrait du compte (Mon portefeuille), page d'arrivée des avis WITHDRAWAL_* (identifiant de l'envoi,
- * cashout_id). Session et propriété exigées ; sinon même 404 « Cet élément n'est plus disponible » (./not-found.tsx).
+ * cashout_id). Session et propriété exigées ; sinon même page « Cet élément n'est plus disponible » (components/finance/WithdrawalDetail.tsx).
  */
 export const dynamic = 'force-dynamic';
 

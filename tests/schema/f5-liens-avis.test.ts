@@ -92,9 +92,9 @@ describe('finition 5 — liens précis des avis : revue de TOUT le catalogue', (
         const E = '7b0c6a52-3f1e-4d2a-9c11-5e8f2a4b6c01';
         const C = '3a7d9e2b-6c1f-4b8a-9d5e-1f3b7c9a2e64';
         assert.equal(link('TRANSFER_RECEIVED', { ticket_id: T }), `/tickets/${T}`);
-        assert.equal(link('PURCHASE_CONFIRMED', { event_id: E }), `/tickets/evenement/${E}`);
-        assert.equal(link('REMINDER_J1', { event_id: E }), `/tickets/evenement/${E}`);
-        assert.equal(link('TICKET_SCANNED', { ticket_id: T, ticket_count: 3, event_id: E }), `/tickets/evenement/${E}`, 'plusieurs billets contrôlés : ceux de l’événement');
+        assert.equal(link('PURCHASE_CONFIRMED', { event_id: E }), `/tickets/${E}`);
+        assert.equal(link('REMINDER_J1', { event_id: E }), `/tickets/${E}`);
+        assert.equal(link('TICKET_SCANNED', { ticket_id: T, ticket_count: 3, event_id: E }), `/tickets/${E}`, 'plusieurs billets contrôlés : ceux de l’événement');
         assert.equal(link('TICKET_SCANNED', { ticket_id: T, ticket_count: 1 }), `/tickets/${T}`);
         assert.equal(link('WITHDRAWAL_PAID', { cashout_id: C, account_kind: 'ORGANISATEUR' }), `/partner/finance/retraits/${C}`);
         assert.equal(link('WITHDRAWAL_PAID', { cashout_id: C, account_kind: 'PARRAINAGE' }), `/wallet/retraits/${C}`);
@@ -104,10 +104,10 @@ describe('finition 5 — liens précis des avis : revue de TOUT le catalogue', (
     test('données anciennes sans identifiant : le lien se replie, l’envoi n’échoue jamais', () => {
         const e = (t: string) => (NOTIFICATION_CATALOG as unknown as Record<string, Entry>)[t];
         const without = (t: string, keys: string[]) => Object.fromEntries(Object.entries(e(t).sample).filter(([k]) => !keys.includes(k)));
-        assert.equal(e('TICKET_CANCELLED').link!(without('TICKET_CANCELLED', ['ticket_id'])), `/tickets/evenement/${e('TICKET_CANCELLED').sample.event_id}`);
+        assert.equal(e('TICKET_CANCELLED').link!(without('TICKET_CANCELLED', ['ticket_id'])), `/tickets/${e('TICKET_CANCELLED').sample.event_id}`);
         assert.equal(e('REFUND_PAID').link!(without('REFUND_PAID', ['event_id'])), '/tickets?tab=historique');
         assert.equal(e('WITHDRAWAL_PAID').link!(without('WITHDRAWAL_PAID', ['cashout_id'])), '/partner/finance');
-        assert.equal(e('TICKET_SCANNED').link!(without('TICKET_SCANNED', ['ticket_id'])), `/tickets/evenement/${e('TICKET_SCANNED').sample.event_id}`);
+        assert.equal(e('TICKET_SCANNED').link!(without('TICKET_SCANNED', ['ticket_id'])), `/tickets/${e('TICKET_SCANNED').sample.event_id}`);
     });
 
     test('sélection des billets d’une page d’arrivée : billets du compte seulement, même réponse pour un identifiant deviné ou mal formé', () => {
@@ -123,20 +123,20 @@ describe('finition 5 — liens précis des avis : revue de TOUT le catalogue', (
         assert.deepEqual({ ...UNAVAILABLE_BODY }, { error: 'Cet élément n’est plus disponible.', code: 'NOT_AVAILABLE' });
     });
 
-    test('pages d’arrivée : session et propriété exigées, même 404 « Cet élément n’est plus disponible » sans indice', () => {
-        for (const [page, notFound] of [
-            ['app/tickets/[id]/page.tsx', 'app/tickets/[id]/not-found.tsx'],
-            ['app/tickets/evenement/[eventId]/page.tsx', 'app/tickets/evenement/[eventId]/not-found.tsx'],
-            ['app/partner/finance/retraits/[id]/page.tsx', 'app/partner/finance/retraits/[id]/not-found.tsx'],
-            ['app/wallet/retraits/[id]/page.tsx', 'app/wallet/retraits/[id]/not-found.tsx'],
-        ]) {
+    test('pages d’arrivée : session et propriété exigées, même page « Cet élément n’est plus disponible » sans indice', () => {
+        // Une route pour le billet et les billets d'un événement ; page « plus disponible » rendue par la page (pas de fichier
+        // not-found) : chaque entrée de page alourdit le moteur de chargement commun à toutes les routes (budgets non relevés)
+        for (const page of ['app/tickets/[id]/page.tsx', 'app/partner/finance/retraits/[id]/page.tsx', 'app/wallet/retraits/[id]/page.tsx']) {
             assert.ok(fs.existsSync(path.join(ROOT, page)), `${page} présente`);
-            assert.match(read(notFound), /<UnavailableItem actionLabel="[^"]+" actionHref="\/[^"]*" \/>/, `${notFound} : page commune, lien utile`);
+            assert.ok(!fs.existsSync(path.join(ROOT, page.replace('page.tsx', 'not-found.tsx'))), `${page} : aucun not-found séparé`);
         }
+        assert.ok(!fs.existsSync(path.join(ROOT, 'app/tickets/evenement')), 'aucune route séparée pour les billets d’un événement');
+        assert.match(read('app/tickets/[id]/page.tsx'), /if \(read\.kind === 'not-found'\) return <UnavailableItem actionLabel="Voir mes billets" actionHref="\/tickets" \/>;/);
         assert.match(read('components/ui/UnavailableItem.tsx'), /title="Cet élément n’est plus disponible"/);
         const focus = read('app/tickets/focus-read.ts');
         assert.match(focus, /if \(res\.status === 401\) return \{ kind: 'login' \};/);
-        assert.match(focus, /return found \? \{ kind: 'ok', tickets: found \} : \{ kind: 'not-found' \};/);
+        assert.match(focus, /const ticket = ticketsInFocus\(list, \{ ticket: id \}\);/, 'le billet du compte d’abord');
+        assert.match(focus, /return ofEvent \? \{ kind: 'ok', focus: 'event', tickets: ofEvent \} : \{ kind: 'not-found' \};/, 'puis les billets du compte pour l’événement, sinon introuvable');
         for (const route of ['app/api/tickets/[id]/route.ts', 'app/api/finance/withdrawals/[id]/route.ts']) {
             const src = read(route);
             assert.match(src, /NextResponse\.json\(UNAVAILABLE_BODY, \{ status: 404/, `${route} : réponse 404 unique`);
@@ -144,7 +144,8 @@ describe('finition 5 — liens précis des avis : revue de TOUT le catalogue', (
         }
         assert.match(read('lib/finance/ledger.ts'), /\.eq\('user_id', ownerId\)\n\s*\.eq\('cashout_id', cashoutId\)/, 'retrait lu pour le seul compte de la session');
         const detail = read('components/finance/WithdrawalDetail.tsx');
-        assert.match(detail, /if \(\(w\.account_kind === 'PARRAINAGE'\) !== \(space === 'portefeuille'\)\) notFound\(\);/, 'autre espace : même 404');
+        assert.match(detail, /if \(r\.kind === 'not-found'\) return unavailable;/);
+        assert.match(detail, /if \(\(w\.account_kind === 'PARRAINAGE'\) !== \(space === 'portefeuille'\)\) return unavailable;/, 'autre espace : même page');
     });
 
     test('retour après connexion : l’adresse complète (?tab=, ?rappel=1) revient, relue par safeInternalPath', () => {

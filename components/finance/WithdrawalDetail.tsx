@@ -2,17 +2,19 @@
  * Finition 5 (point 2) — page d'arrivée d'un avis de retrait (WITHDRAWAL_PAID, _REJECTED, _UNCERTAIN, _DELAYED) : le
  * retrait précis, lu par le serveur avec la session de la requête (GET /api/finance/withdrawals/<envoi>, appelée
  * directement, modèle d'app/tickets/page.tsx). Sans session : connexion puis retour ; retrait inconnu, d'un autre compte
- * ou d'un autre espace (portefeuille / finances pro) : même 404 « Cet élément n'est plus disponible ».
+ * ou d'un autre espace (portefeuille / finances pro) : même page « Cet élément n'est plus disponible », rendue ici plutôt
+ * que par un fichier not-found (chaque entrée de page alourdit le moteur de chargement commun à toutes les routes).
  * Composant serveur : statut, montants, opérateur et ce qu'il reste à faire ; jetons du système de design seulement.
  */
 import { headers } from 'next/headers';
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import { GET as readWithdrawal } from '@/app/api/finance/withdrawals/[id]/route';
 import { RetryError } from '@/components/halls/client/RetryError';
 import { Badge } from '@/components/ui/Badge';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { UnavailableItem } from '@/components/ui/UnavailableItem';
 import { formatDateTime, formatFcfa } from '@/lib/format';
 import { withdrawalAmountLine, withdrawalStatusView } from '@/lib/finance/withdrawal-text';
 import { maskPhone } from '@/lib/payments/payer-phone';
@@ -51,7 +53,8 @@ export async function WithdrawalDetail({ cashoutId, space }: { cashoutId: string
     const back = space === 'pro' ? { href: '/partner/finance', label: 'Mes finances' } : { href: '/wallet', label: 'Mon portefeuille' };
     const r = await read(cashoutId);
     if (r.kind === 'login') redirect(`/login?redirect=${encodeURIComponent(`${back.href}/retraits/${cashoutId}`)}`);
-    if (r.kind === 'not-found') notFound();
+    const unavailable = <UnavailableItem actionLabel={space === 'pro' ? 'Voir mes finances' : 'Voir mon portefeuille'} actionHref={back.href} />;
+    if (r.kind === 'not-found') return unavailable;
     if (r.kind === 'error') {
         return (
             <div className="space-y-2">
@@ -61,8 +64,8 @@ export async function WithdrawalDetail({ cashoutId, space }: { cashoutId: string
         );
     }
     const w = r.w;
-    // Un retrait du portefeuille ouvert depuis les finances pro (ou l'inverse) : même 404, aucun indice
-    if ((w.account_kind === 'PARRAINAGE') !== (space === 'portefeuille')) notFound();
+    // Un retrait du portefeuille ouvert depuis les finances pro (ou l'inverse) : même page, aucun indice
+    if ((w.account_kind === 'PARRAINAGE') !== (space === 'portefeuille')) return unavailable;
     const status = str(w.effective_status) ?? str(w.status) ?? 'PENDING';
     const delayed = w.delayed === true;
     const view = withdrawalStatusView({ status, delayed });
