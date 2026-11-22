@@ -3,17 +3,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
-import { mapMarkerHtml } from '@/components/ui/MapMarker';
 import { NO_FILTERS } from '@/lib/events/catalog-filters';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
-import { priceBadge, SENEGAL_BOUNDS } from '@/lib/events/map-shared';
+import { SENEGAL_BOUNDS } from '@/lib/events/map-shared';
 import { clusterPoints } from '@/lib/map/cluster';
 
 /**
  * Lot Carte B (4) — aperçu de la carte sur l'accueil (« Partout au Sénégal »), chargé seulement quand la section devient
  * visible (components/events/HomeDiscovery.tsx). Carte immobile : ni glisser, ni zoom, ni clavier (le bouton « Ouvrir la
  * carte » de la section mène à la vraie carte d'Explorer) ; repères non focalisables. Fond Stadia du thème, mention des
- * fonds visible. Tuiles indisponibles : l'aperçu est retiré, la section garde son bouton.
+ * fonds visible ; événements en points orange sans texte (« À la une » cerclé), un groupe en point plus grand. Tuiles
+ * indisponibles : l'aperçu est retiré, la section garde son bouton.
  */
 
 type LeafletModule = typeof import('leaflet');
@@ -61,13 +61,16 @@ export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount:
                 const p = map.project([e.lat, e.lng], z);
                 return { item: e, x: p.x, y: p.y };
             });
-            for (const c of clusterPoints(points, (e) => e.id, 72)) {
-                const first = c.items[0];
-                const html = c.items.length > 1
-                    ? mapMarkerHtml('pile', String(c.items.length))
-                    : mapMarkerHtml(first.highlight === 'A_LA_UNE' ? 'une' : 'prix', first.highlight === 'A_LA_UNE' ? 'À la une' : priceBadge(first.price) ?? 'Bientôt');
+            // Points sans texte (aperçu décoratif : aucune étiquette coupée au bord de la carte) ; un groupe = point plus grand
+            for (const c of clusterPoints(points, (e) => e.id, 40)) {
+                const size = c.items.length > 1 ? Math.min(28, 14 + 3 * Math.round(Math.log2(c.items.length + 1))) : 14;
+                const featured = c.items.some((e) => e.highlight === 'A_LA_UNE');
                 L.marker(map.unproject([c.x, c.y], z), {
-                    icon: L.divIcon({ className: 'ev-repere-ancre', html: `<span style="position:absolute;left:0;top:0;transform:translate(-50%,-100%)">${html}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] }),
+                    icon: L.divIcon({
+                        className: featured ? 'ev-point ev-point--une' : 'ev-point',
+                        iconSize: [size, size],
+                        iconAnchor: [size / 2, size / 2],
+                    }),
                     interactive: false,
                     keyboard: false,
                 }).addTo(map);

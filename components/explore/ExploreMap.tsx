@@ -121,10 +121,12 @@ export default function ExploreMap({ filters, onTilesFailed, refreshKey = 0 }: {
         tilesRef.current = tiles;
         let loaded = 0;
         let failures = 0;
+        let reported = false;
         tiles.on('tileload', () => { loaded += 1; });
         tiles.on('tileerror', () => {
             failures += 1;
-            if (loaded === 0 && failures >= TILE_FAILURES_MAX) {
+            if (!reported && loaded === 0 && failures >= TILE_FAILURES_MAX) {
+                reported = true;
                 console.warn(`[carte] ${failures} tuiles en échec, aucune chargée : retour à la liste`);
                 failedRef.current();
             }
@@ -359,13 +361,14 @@ export default function ExploreMap({ filters, onTilesFailed, refreshKey = 0 }: {
                         </div>
                     )}
 
-                    {/* Téléphone : feuille en bas de la carte, événement touché (ou groupe au même endroit) */}
+                    {/* Téléphone : feuille en bas de la carte, événement touché (ou groupe au même endroit) ; au-dessus de la
+                        mention des fonds (deux lignes à 360 px), qui reste visible */}
                     {(selected || group) && (
                         <div
                             role="dialog"
                             aria-modal="false"
                             aria-label={selected ? selected.title : `${group?.length ?? 0} événements à cet endroit`}
-                            className={cn('absolute inset-x-2 bottom-7 z-10 max-h-[55%] overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-popover', 'ev-sheet-up', !group && 'lg:hidden')}
+                            className={cn('absolute inset-x-2 bottom-11 z-10 max-h-[55%] overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-popover', 'ev-sheet-up', !group && 'lg:hidden')}
                         >
                             <div className="mb-2 flex items-center justify-between gap-2">
                                 <p className="text-sm font-semibold text-muted-foreground">
