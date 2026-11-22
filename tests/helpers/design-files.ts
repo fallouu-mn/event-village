@@ -473,4 +473,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/layout/NotificationPanel.tsx',
     'components/layout/ProSidebar.tsx',
     'components/layout/PushMenu.tsx',
+    // Lot Carte B : carte, calendrier et vignettes d'Explorer, aperçu de l'accueil
+    'components/explore/ExploreMap.tsx',
+    'components/explore/ExploreCalendar.tsx',
+    'components/explore/MapEventCard.tsx',
+    'components/explore/SenegalMapPreview.tsx',
+    'components/events/HomeSenegalMap.tsx',
 ];

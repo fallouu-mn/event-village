@@ -7,7 +7,7 @@
  *    gratuit, catégorie, ville, recherche, tri ; adresse (lecture et écriture) ; pagination « Voir plus » ;
  *  - sections de l'accueil (En ce moment, Cette semaine, Gratuits, Par catégorie) ;
  *  - lectures du code : accueil préparé par le serveur (revalidate 60, aucune lecture de session), un seul grand bouton en
- *    dégradé, rangée « À la une » en CSS seulement, taux de parrainage jamais écrits en dur, bouton Liste / Carte non rendu,
+ *    dégradé, rangée « À la une » en CSS seulement, taux de parrainage jamais écrits en dur, onglets Liste / Carte / Calendrier,
  *    transition de vue coupée si « réduire les animations ».
  * Fuseau Africa/Dakar = UTC+0 : les heures des cas sont en UTC.
  */
@@ -355,14 +355,18 @@ describe('accueil et Explorer : rendu serveur, cache, rien de personnel', () => 
         assert.match(src, /size=\{i === 0 \? 'feature' : 'default'\}/);
     });
 
-    test('Explorer : page serveur sur le catalogue en cache ; bouton Liste / Carte prévu mais non rendu', async () => {
+    // Lot Carte B : le bouton Liste / Carte prévu (SHOW_MAP_TOGGLE) devient trois onglets Liste / Carte / Calendrier, la carte
+    // et le calendrier chargés à l'ouverture de leur onglet ; attente modifiée, signalée au rapport du lot Carte B
+    test('Explorer : page serveur sur le catalogue en cache ; onglets Liste / Carte / Calendrier, carte et calendrier à la demande', () => {
         const page = code('app/explore/page.tsx');
         assert.doesNotMatch(page, /^\s*['"]use client['"]/m);
         assert.match(page, /cachedCatalogEvents\(/);
-        const view = await import('../../app/explore/ExploreView');
-        assert.equal(view.SHOW_MAP_TOGGLE, false);
-        assert.doesNotMatch(code('app/explore/ExploreView.tsx'), /SHOW_MAP_TOGGLE\s*&&|Carte<\/|>\s*Carte\s*</);
-        assert.match(code('app/explore/ExploreView.tsx'), /<FilterChip\b/);
+        const view = code('app/explore/ExploreView.tsx');
+        assert.doesNotMatch(view, /SHOW_MAP_TOGGLE/);
+        for (const label of ['Liste', 'Carte', 'Calendrier']) assert.match(view, new RegExp(`label: '${label}'`));
+        assert.match(view, /dynamic\(\(\) => import\('@\/components\/explore\/ExploreMap'\), \{\s*ssr: false/);
+        assert.match(view, /dynamic\(\(\) => import\('@\/components\/explore\/ExploreCalendar'\), \{\s*ssr: false/);
+        assert.match(view, /<FilterChip\b/);
     });
 
     test('transition carte → fiche : API du navigateur, sans bibliothèque, coupée si « réduire les animations »', () => {
