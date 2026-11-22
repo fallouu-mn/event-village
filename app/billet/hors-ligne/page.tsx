@@ -84,6 +84,7 @@ export default function OfflineTicketPage() {
         <header className="flex items-center justify-between gap-3">
           <Logo variant="full" linkToHome={false} />
           {online && (
+            // eslint-disable-next-line @next/next/no-html-link-for-pages -- navigation complète voulue : on quitte la page servie hors ligne par le service worker (règle déclenchée depuis les pages /tickets/[id] de la finition 5)
             <a href="/tickets" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
               <ArrowLeft size={16} aria-hidden="true" />
               Mes billets
