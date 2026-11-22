@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useTheme } from '@/components/providers/ThemeProvider';
-import type { MapTheme } from '@/lib/map/tiles';
+import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
+import { loadLeafletWithCss } from '@/lib/map/leaflet-assets';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
 import { SENEGAL_BOUNDS } from '@/lib/events/map-shared';
 import { clusterPoints } from '@/lib/map/cluster';
@@ -10,8 +10,8 @@ import { clusterPoints } from '@/lib/map/cluster';
 /**
  * Lot Carte B (4) — aperçu de la carte sur l'accueil (« Partout au Sénégal »), chargé seulement quand la section devient
  * visible (components/events/HomeSenegalMap.tsx) : son petit code est dans l'îlot déjà chargé après la page (« Près de chez
- * vous ») ; Leaflet, sa feuille de style et le fond de carte viennent du module de la carte de la fiche
- * (components/ui/EventMap.tsx), chargé quand l'aperçu s'affiche : aucun morceau de code de plus pour l'application. Carte immobile : ni glisser, ni zoom, ni clavier (le bouton « Ouvrir la
+ * vous ») ; Leaflet (morceau existant) et sa feuille de style (fichier statique) sont chargés quand l'aperçu s'affiche
+ * (lib/map/leaflet-assets.ts) : aucun morceau de code de plus pour l'application. Carte immobile : ni glisser, ni zoom, ni clavier (le bouton « Ouvrir la
  * carte » de la section mène à la vraie carte d'Explorer) ; repères non focalisables. Fond Stadia du thème, mention des
  * fonds visible ; événements en points orange sans texte (« À la une » cerclé), un groupe en point plus grand. Tuiles
  * indisponibles : l'aperçu est retiré, la section garde son bouton.
@@ -24,8 +24,7 @@ const SENEGAL_LATLNG: [[number, number], [number, number]] = [[SENEGAL_BOUNDS.so
 export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount: (n: number) => void; onUnavailable: () => void }) {
     const ref = useRef<HTMLDivElement>(null);
     const tilesRef = useRef<import('leaflet').TileLayer | null>(null);
-    const theme: MapTheme = useTheme().resolvedTheme === 'dark' ? 'dark' : 'light';
-    const setTilesThemeRef = useRef<((layer: import('leaflet').TileLayer | null, t: 'light' | 'dark') => void) | null>(null);
+    const theme = useMapTheme();
     const themeRef = useRef(theme);
     themeRef.current = theme;
     const cbs = useRef({ onCount, onUnavailable });
@@ -37,7 +36,7 @@ export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount:
         if (!container) return undefined;
         let alive = true;
         let created: import('leaflet').Map | null = null;
-        const build = (L: LeafletModule, addThemedTiles: typeof import('@/components/ui/EventMap').addThemedTiles) => {
+        const build = (L: LeafletModule) => {
             const map = L.map(container, {
                 zoomControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
                 keyboard: false, zoomSnap: 0.25, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false,
@@ -81,14 +80,9 @@ export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount:
                 }
             });
         };
-        // Leaflet, sa feuille de style et le fond de carte : pris dans le module de la carte de la fiche, déjà chargeable
-        // (aucun morceau de code ni entrée de plus), seulement maintenant que l'aperçu est affiché
-        import('@/components/ui/EventMap')
-            .then(({ loadLeaflet, addThemedTiles, setTilesTheme }) => {
-                if (!alive) return;
-                setTilesThemeRef.current = setTilesTheme;
-                build(loadLeaflet(), addThemedTiles);
-            })
+        // Leaflet (morceau existant) et sa feuille de style (fichier statique), seulement maintenant que l'aperçu est affiché
+        loadLeafletWithCss()
+            .then((L) => { if (alive) build(L); })
             .catch((err: unknown) => {
                 console.error('[accueil] aperçu de la carte impossible :', err instanceof Error ? err.message : String(err));
                 if (alive) cbs.current.onUnavailable();
@@ -101,7 +95,7 @@ export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount:
     }, []);
 
     useEffect(() => {
-        setTilesThemeRef.current?.(tilesRef.current, theme);
+        setTilesTheme(tilesRef.current, theme);
     }, [theme]);
 
     return (

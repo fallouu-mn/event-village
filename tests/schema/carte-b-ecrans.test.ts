@@ -59,15 +59,15 @@ describe('B1 — fond de carte Stadia', () => {
         for (const rel of ['components/ui/EventMap.tsx', 'components/ui/MapPicker.tsx', 'components/explore/ExploreMap.tsx', 'components/explore/SenegalMapPreview.tsx']) {
             const src = code(rel);
             assert.match(src, /addThemedTiles\(L, map, themeRef\.current\)/, `${rel} : addThemedTiles`);
-            assert.match(src, /setTilesTheme(Ref\.current\?\.)?\(tilesRef\.current, theme\)/, `${rel} : thème suivi`);
+            assert.match(src, /setTilesTheme\(tilesRef\.current, theme\)/, `${rel} : thème suivi`);
             assert.doesNotMatch(src, /L\.tileLayer\(|openstreetmap\.org\/\{z\}/, `${rel} : aucune autre couche`);
         }
-        // Explorer et l'aperçu prennent le fond dans le module de la fiche (aucune variante de son morceau de code)
-        assert.match(code('components/ui/EventMap.tsx'), /export \{ addThemedTiles, setTilesTheme \};/);
-        for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/SenegalMapPreview.tsx']) {
-            assert.doesNotMatch(code(rel), /from '@\/components\/map\/themedTiles'/, rel);
-            assert.match(code(rel), /\.then\(\(\{ loadLeaflet, addThemedTiles, setTilesTheme \}\) => \{/, rel);
+        // Run 613 : importer le module de la carte de la fiche depuis Explorer ou l'accueil en créait des variantes (une entrée
+        // de plus par variante dans la table des morceaux chargée par toutes les pages) : ils ne l'importent plus
+        for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/SenegalMapPreview.tsx', 'components/explore/ExploreCalendar.tsx', 'components/events/HomeSenegalMap.tsx']) {
+            assert.doesNotMatch(code(rel), /components\/ui\/EventMap/, rel);
         }
+        assert.doesNotMatch(code('components/ui/EventMap.tsx'), /loadLeaflet|export \{ addThemedTiles/, 'module de la fiche inchangé');
     });
 
     test('CSP : images limitées (plus de « https: » entier), hôte des tuiles choisi ajouté', async () => {
@@ -247,7 +247,7 @@ describe('Accueil — « Partout au Sénégal »', () => {
         assert.equal(exploreModeHref({}, 'carte'), '/explore?vue=carte', 'même adresse que la vue Carte');
     });
 
-    test('un seul module à la demande pour carte et calendrier ; Leaflet et fond pris dans le module de la fiche', () => {
+    test('un seul module à la demande pour carte et calendrier ; Leaflet (morceau existant) et feuille statique à l’ouverture', () => {
         const lazy = code('components/explore/lazy.ts');
         assert.match(lazy, /export \{ default as ExploreMap \} from '\.\/ExploreMap'/);
         assert.match(lazy, /export \{ default as ExploreCalendar \} from '\.\/ExploreCalendar'/);
@@ -257,11 +257,18 @@ describe('Accueil — « Partout au Sénégal »', () => {
             assert.doesNotMatch(src, /leaflet\.css|require\('leaflet'\)|from 'leaflet'/, `${rel} : ni Leaflet ni sa feuille de style en propre`);
         }
         for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/SenegalMapPreview.tsx']) {
-            assert.match(code(rel), /import\('@\/components\/ui\/EventMap'\)\s*\.then\(\(\{ loadLeaflet, addThemedTiles, setTilesTheme \}\)/, rel);
+            assert.match(code(rel), /loadLeafletWithCss\(\)\s*\.then\(\(L\) =>/, rel);
             assert.doesNotMatch(code(rel), /leaflet\.css|require\('leaflet'\)|from 'leaflet'/, rel);
         }
-        assert.doesNotMatch(code('components/explore/ExploreCalendar.tsx'), /EventMap|loadLeaflet/, 'le calendrier ne charge pas Leaflet');
-        assert.match(code('components/ui/EventMap.tsx'), /export function loadLeaflet\(\): typeof import\('leaflet'\)/);
+        const assets = code('lib/map/leaflet-assets.ts');
+        assert.match(assets, /import\('leaflet'\)/, 'Leaflet chargé à la demande (morceau existant)');
+        assert.match(assets, /'\/leaflet\/leaflet-1\.9\.4\.css'/);
+        // Copie exacte de la feuille de la bibliothèque installée (même version)
+        assert.equal(raw('public/leaflet/leaflet-1.9.4.css'), raw('node_modules/leaflet/dist/leaflet.css'), 'public/leaflet/leaflet-1.9.4.css = leaflet/dist/leaflet.css');
+        assert.equal(JSON.parse(raw('node_modules/leaflet/package.json')).version, '1.9.4', 'version de Leaflet du nom du fichier');
+        // Servie sans session (fichier statique public)
+        assert.match(raw('middleware.ts'), /\n\s*'\/leaflet\/',/);
+        assert.doesNotMatch(code('components/explore/ExploreCalendar.tsx'), /EventMap|loadLeaflet|leaflet/, 'le calendrier ne charge pas Leaflet');
     });
 
     test('l’accueil n’importe ni Leaflet ni la carte (poids initial inchangé)', () => {

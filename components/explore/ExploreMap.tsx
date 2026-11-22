@@ -5,8 +5,8 @@ import { ChevronDown, LocateFixed, RefreshCw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { clusterLabel, mapMarkerHtml, type MarkerKind } from '@/components/ui/MapMarker';
-import { useTheme } from '@/components/providers/ThemeProvider';
-import type { MapTheme } from '@/lib/map/tiles';
+import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
+import { loadLeafletWithCss } from '@/lib/map/leaflet-assets';
 import { MapEventCard, mapEventWhen } from '@/components/explore/MapEventCard';
 import { cn } from '@/components/ui/cn';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
@@ -17,8 +17,8 @@ import { clusterPoints } from '@/lib/map/cluster';
  * Lot Carte B (B2) — vue Carte d'Explorer, chargée à la demande (jamais au premier chargement d'Explorer) :
  *  - fond Stadia du thème (components/map/themedTiles.ts) ; aucune tuile avant l'ouverture de la vue ; si les tuiles ne
  *    viennent pas (ou si Leaflet ne se charge pas), `onTilesFailed` fait basculer Explorer sur la Liste avec un message
- *    simple ; Leaflet et sa feuille de style sont pris dans le module de la carte de la fiche (components/ui/EventMap.tsx,
- *    loadLeaflet), chargé à l'ouverture de la vue : aucun morceau de code de plus pour l'application ;
+ *    simple ; Leaflet (morceau existant) et sa feuille de style (fichier statique) chargés à l'ouverture de la vue
+ *    (lib/map/leaflet-assets.ts) : aucun morceau de code de plus pour l'application ;
  *  - points regroupés avec leur nombre (lib/map/cluster.ts), pastilles de prix (« Gratuit », « Dès 5 000 F »), « À la une »
  *    en orange ; repère touché ou survolé : forme « choisi » (orange, agrandi) ;
  *  - téléphone : feuille en bas de la carte avec l'événement touché et « Voir l'événement » ; ordinateur : liste à gauche
@@ -85,9 +85,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     const tilesRef = useRef<import('leaflet').TileLayer | null>(null);
     const failedRef = useRef(onTilesFailed);
     failedRef.current = onTilesFailed;
-    // Thème de la carte (même règle que useMapTheme) ; le fond est posé par le module de la fiche (components/ui/EventMap.tsx)
-    const theme: MapTheme = useTheme().resolvedTheme === 'dark' ? 'dark' : 'light';
-    const setTilesThemeRef = useRef<((layer: import('leaflet').TileLayer | null, t: 'light' | 'dark') => void) | null>(null);
+    const theme = useMapTheme();
     const themeRef = useRef(theme);
     themeRef.current = theme;
     const descId = useId();
@@ -116,7 +114,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
         if (!container) return undefined;
         let cancelled = false;
         let created: LeafletMap | null = null;
-        const build = (L: LeafletModule, addThemedTiles: typeof import('@/components/ui/EventMap').addThemedTiles) => {
+        const build = (L: LeafletModule) => {
             leafletRef.current = L;
             const still = reducedMotion();
             const map = L.map(container, {
@@ -160,12 +158,8 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
             setMoved(false);
             setReady(true);
         };
-        import('@/components/ui/EventMap')
-            .then(({ loadLeaflet, addThemedTiles, setTilesTheme }) => {
-                if (cancelled) return;
-                setTilesThemeRef.current = setTilesTheme;
-                build(loadLeaflet(), addThemedTiles);
-            })
+        loadLeafletWithCss()
+            .then((L) => { if (!cancelled) build(L); })
             .catch((err: unknown) => {
                 console.error('[carte] chargement de la carte impossible :', err instanceof Error ? err.message : String(err));
                 if (!cancelled) failedRef.current();
@@ -180,7 +174,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     }, []);
 
     useEffect(() => {
-        setTilesThemeRef.current?.(tilesRef.current, theme);
+        setTilesTheme(tilesRef.current, theme);
     }, [theme]);
 
     // 2. Lecture : filtres partagés, zone de la dernière recherche (tout le Sénégal au départ)

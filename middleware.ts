@@ -26,6 +26,9 @@ const PUBLIC_PREFIXES = [
     '/sw.js',
     // Lot 7 (7.0 e, D24) : icônes de l'application installable (maskable, apple-touch), servies sans session
     '/icons/',
+    // Lot Carte B : fichiers statiques de Leaflet (feuille de style 1.9.4 de la carte d'Explorer et de l'aperçu de
+    // l'accueil, icônes de repère), publics comme la page qui les affiche ; aucune donnée
+    '/leaflet/',
     // Lot 7 (7.1, D26) : coquille statique du billet hors ligne, sans donnée personnelle ni session (le
     // service worker la met en cache : elle ne doit jamais être une redirection d'authentification)
     '/billet/hors-ligne',

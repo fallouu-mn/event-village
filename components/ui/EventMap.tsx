@@ -19,22 +19,6 @@ interface EventMapProps {
 }
 
 
-/**
- * Lot Carte B — Leaflet pour les cartes d'Explorer et l'aperçu de l'accueil : ils chargent CE module à la demande et
- * prennent Leaflet (et sa feuille de style, importée ci-dessus) ici, sans ajouter de morceau de code à charger : la table
- * des morceaux, chargée par toutes les pages, ne grossit pas (budgets JS de toutes les routes).
- */
-export function loadLeaflet(): typeof import('leaflet') {
-    return require('leaflet') as typeof import('leaflet');
-}
-
-/**
- * Lot Carte B — fond de carte (Stadia, thème) servi aussi par CE module aux cartes d'Explorer et à l'aperçu de l'accueil :
- * ils le prennent ici avec Leaflet au lieu de l'embarquer. Sinon webpack fabrique, pour eux, une variante de ce morceau
- * sans le fond de carte : une entrée de plus dans la table que toutes les pages chargent (budgets JS de toutes les routes).
- */
-export { addThemedTiles, setTilesTheme };
-
 /** Nom affiché sur le repère : 28 caractères au plus (le nom entier reste dans le texte de remplacement). */
 export function markerName(name: string): string {
     const t = name.trim().replace(/\s+/g, ' ');
