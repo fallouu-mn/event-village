@@ -332,7 +332,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                                 onChange={(ev) => choosePlace(ev.target.value)}
                                 className="min-h-12 w-full cursor-pointer appearance-none rounded-xl border border-input bg-card px-3.5 py-2.5 pr-10 text-base text-foreground-strong transition-colors duration-fast focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                             >
-                                <option value="">Choisir une ville ou un quartier</option>
+                                <option value="">Ville ou quartier</option>
                                 {QUICK_PLACES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                             </select>
                             <ChevronDown size={18} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
