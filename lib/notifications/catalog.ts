@@ -1067,7 +1067,7 @@ const CATALOG = {
     EVENT_SUSPENDED: define('EVENT_SUSPENDED', {
         label: 'Événement suspendu', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'EVENT_STATUS',
         link: (d) => partnerEventPath(d),
-        inApp: (d) => ({ title: 'Événement suspendu', content: `${q(text(d, 'title'))} est suspendu par l'administration. Motif : ${sentence(text(d, 'reason'))}` }),
+        inApp: (d) => ({ title: 'Événement suspendu', content: `${q(text(d, 'title'))} est suspendu par l'administration. Motif : ${sentence(text(d, 'reason'))} Pour en parler, ouvrez la page Aide et joignez le support.` }), // finition 5 (point 4) : quoi faire ensuite
         sms: (d, ctx) => `${SMS_PREFIX}événement ${smsVar(text(d, 'title'), 25)} suspendu. Motif : ${endWithPeriod(smsClause(text(d, 'reason'), 40))} ${appLink(ctx, '/partner/events')}`,
         sample: { ...SAMPLE_EVENT, reason: 'Signalement en cours d’examen.' },
     }),
@@ -1192,7 +1192,7 @@ const CATALOG = {
     PARTNER_REGISTERED_ACK: define('PARTNER_REGISTERED_ACK', {
         label: 'Inscription partenaire reçue', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC',
         link: () => '/partner/dashboard',
-        inApp: (d) => ({ title: 'Inscription reçue', content: `Votre demande de compte partenaire ${q(text(d, 'company'))} est en cours d'examen.` }),
+        inApp: (d) => ({ title: 'Inscription reçue', content: `Votre demande de compte partenaire ${q(text(d, 'company'))} est en cours d'examen. Vous serez prévenu de la décision ici et par email.` }), // finition 5 (point 4)
         sms: (d) => `${SMS_PREFIX}votre demande de compte partenaire ${smsVar(text(d, 'company'), 40)} est enregistrée. Réponse sous 48 h.`,
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
     }),
@@ -1241,7 +1241,7 @@ const CATALOG = {
     TRIAL_STARTED: define('TRIAL_STARTED', {
         label: 'Période d’essai activée', channels: ['IN_APP', 'EMAIL', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'TRIAL',
         link: () => '/partner/dashboard',
-        inApp: (d) => ({ title: 'Période d\'essai activée', content: `Votre période d'essai de ${count(d, 'days')} jours commence aujourd'hui.` }),
+        inApp: (d) => ({ title: 'Période d\'essai activée', content: `Votre période d'essai de ${count(d, 'days')} jours commence aujourd'hui. Créez votre premier événement depuis votre tableau de bord.` }), // finition 5 (point 4)
         sample: { partner_id: SAMPLE_ID.partner, days: 60 },
     }),
     SUBSCRIPTION_ACTIVATED: define('SUBSCRIPTION_ACTIVATED', {
@@ -2065,7 +2065,7 @@ const CATALOG = {
     ADMIN_PARTNER_REGISTERED: define('ADMIN_PARTNER_REGISTERED', {
         label: 'Nouvelle candidature partenaire', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.read', inAppType: 'KYC',
         link: partnerDossierPath,
-        inApp: (d) => ({ title: 'Nouvelle candidature', content: `${text(d, 'company')} demande un compte partenaire.` }),
+        inApp: (d) => ({ title: 'Nouvelle candidature', content: `${text(d, 'company')} demande un compte partenaire. Examinez son dossier puis validez-le ou refusez-le.` }), // finition 5 (point 4)
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
     }),
     ADMIN_REFUND_TO_RETRY: define('ADMIN_REFUND_TO_RETRY', {
@@ -2078,7 +2078,7 @@ const CATALOG = {
             if (status === 'BLOQUE') state = reason ? `bloqué : ${sentence(blockedReasonLabel(reason))}` : 'bloqué.';
             else if (status === 'ECHOUE') state = 'refusé par l\'opérateur.';
             else throw new TemplateDataError('cashout_status', 'inconnu (BLOQUE ou ECHOUE attendu)');
-            return { title: 'Remboursement à reprendre', content: `Un remboursement de ${money(d, 'amount')} est ${state}` };
+            return { title: 'Remboursement à reprendre', content: `Un remboursement de ${money(d, 'amount')} est ${state} Reprenez-le depuis les finances.` }; // finition 5 (point 4)
         },
         sample: { cashout_id: SAMPLE_ID.cashout, amount: 5_000, cashout_status: 'BLOQUE', blocked_reason: 'OPERATOR_UNKNOWN' },
     }),
@@ -2127,7 +2127,7 @@ const CATALOG = {
             const attempts = optNum(d, 'attempts');
             return {
                 title: 'Envoi en échec',
-                content: `Une notification ${q(catalogTypeLabel(field(d, 'failed_type')))} ${channelPhrase(field(d, 'channel'))} a échoué${attempts !== null && attempts > 0 ? ` après ${plural(attempts, 'tentative', 'tentatives')}` : ''}.`,
+                content: `Une notification ${q(catalogTypeLabel(field(d, 'failed_type')))} ${channelPhrase(field(d, 'channel'))} a échoué${attempts !== null && attempts > 0 ? ` après ${plural(attempts, 'tentative', 'tentatives')}` : ''}. Ouvrez l'envoi pour en voir la cause.`, // finition 5 (point 4)
             };
         },
         sample: { outbox_id: SAMPLE_ID.outbox, failed_type: 'PURCHASE_CONFIRMED', channel: 'SMS', reason: 'SMS_REJECTED', attempts: 5 },
