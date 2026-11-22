@@ -18,9 +18,9 @@ button,a{min-height:44px;display:inline-flex;align-items:center;padding:0 18px;b
 button{border:1px solid transparent;background:#F05A1A;color:#1A1A1A}
 a{border:1px solid #E6E6E6;background:#FFFFFF;color:#1A1A1A}
 :focus-visible{outline:2px solid transparent;box-shadow:0 0 0 2px #FFFFFF,0 0 0 4px #F05A1A,0 0 0 6px #1A1A1A}
-@media (prefers-color-scheme:dark){body{background:#121212;color:#F2F2F2}h1{color:#FFFFFF}p{color:#A6A6A6}
+@media (prefers-color-scheme:dark){body{background:#0A0A0A;color:#F2F2F2}h1{color:#FFFFFF}p{color:#A6A6A6}
 button{background:#F05A1A;color:#1A1A1A}a{background:#1A1A1A;border-color:#333333;color:#FFFFFF}
-:focus-visible{box-shadow:0 0 0 2px #121212,0 0 0 4px #F05A1A,0 0 0 6px #121212}}
+:focus-visible{box-shadow:0 0 0 2px #0A0A0A,0 0 0 4px #F05A1A,0 0 0 6px #0A0A0A}}
 `;
 
 export default function GlobalError({
