@@ -1,15 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { LocateFixed, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronDown, LocateFixed, RefreshCw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { Select } from '@/components/ui/Field';
 import { clusterLabel, mapMarkerHtml, type MarkerKind } from '@/components/ui/MapMarker';
 import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
 import { MapEventCard, mapEventWhen } from '@/components/explore/MapEventCard';
 import { cn } from '@/components/ui/cn';
-import type { CatalogFilterState } from '@/lib/events/catalog-filters';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
 import { priceBadge, QUICK_PLACES, SENEGAL_BOUNDS, type MapZone, type PublicMapEvent } from '@/lib/events/map-shared';
 import { clusterPoints } from '@/lib/map/cluster';
@@ -64,8 +62,9 @@ function markerAlt(e: PublicMapEvent): string {
     return [e.highlight === 'A_LA_UNE' ? `À la une : ${e.title}` : e.title, mapEventWhen(e), price].filter(Boolean).join(', ');
 }
 
-export default function ExploreMap({ filters, onTilesFailed, refreshKey = 0 }: {
-    filters: CatalogFilterState;
+export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0 }: {
+    /** Filtres de l'Explorer déjà écrits en adresse par la page (catalogSearchParams). */
+    filtersQuery: string;
     onTilesFailed: () => void;
     /** Signal temps réel d'Explorer : relecture (un événement suspendu ou annulé disparaît). */
     refreshKey?: number;
@@ -81,6 +80,7 @@ export default function ExploreMap({ filters, onTilesFailed, refreshKey = 0 }: {
     const themeRef = useRef(theme);
     themeRef.current = theme;
     const descId = useId();
+    const placeId = useId();
 
     const [ready, setReady] = useState(false);
     const [zoom, setZoom] = useState(0);
@@ -169,7 +169,7 @@ export default function ExploreMap({ filters, onTilesFailed, refreshKey = 0 }: {
     }, [theme]);
 
     // 2. Lecture : filtres partagés, zone de la dernière recherche (tout le Sénégal au départ)
-    const url = useMemo(() => mapUrl(filters, { zone: searchZone }), [filters, searchZone]);
+    const url = useMemo(() => mapUrl(filtersQuery, { zone: searchZone }), [filtersQuery, searchZone]);
     const load = useCallback(async () => {
         const n = ++seq.current;
         setLoading(true);
@@ -321,13 +321,22 @@ export default function ExploreMap({ filters, onTilesFailed, refreshKey = 0 }: {
 
             <div className="space-y-3">
                 <div className="flex flex-wrap items-end gap-2">
-                    <div className="min-w-0 flex-1 sm:max-w-xs">
-                        <Select
-                            label="Aller à"
-                            value={place}
-                            onChange={(ev) => choosePlace(ev.target.value)}
-                            options={[{ value: '', label: 'Choisir une ville ou un quartier' }, ...QUICK_PLACES.map((p) => ({ value: p.id, label: p.label }))]}
-                        />
+                    {/* Champ de sélection écrit sur place (mêmes classes que components/ui/Field) : le module partagé des champs
+                        n'entre pas dans ce module à la demande (poids du premier chargement d'Explorer) */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-xs">
+                        <label htmlFor={placeId} className="text-sm font-semibold text-foreground-strong">Aller à</label>
+                        <div className="relative">
+                            <select
+                                id={placeId}
+                                value={place}
+                                onChange={(ev) => choosePlace(ev.target.value)}
+                                className="min-h-12 w-full cursor-pointer appearance-none rounded-xl border border-input bg-card px-3.5 py-2.5 pr-10 text-base text-foreground-strong transition-colors duration-fast focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                            >
+                                <option value="">Choisir une ville ou un quartier</option>
+                                {QUICK_PLACES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                            </select>
+                            <ChevronDown size={18} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                        </div>
                     </div>
                     <Button variant="secondary" onClick={aroundMe} leftIcon={<LocateFixed size={18} />} className="min-h-11">
                         Autour de moi

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { cardWhen } from '@/lib/events/catalog-display';
+import { shortWhen } from '@/lib/events/calendar-days';
 import { priceBadge, type PublicMapEvent } from '@/lib/events/map-shared';
 import { cn } from '@/components/ui/cn';
 
@@ -32,7 +32,7 @@ export function PosterDot({ event, size = 'md', className }: { event: Pick<Publi
 
 /** Date lisible d'un événement de la carte : « sam. 13 déc. · 20:00 » (Dakar = UTC). */
 export function mapEventWhen(e: Pick<PublicMapEvent, 'startsAt'>): string {
-    return cardWhen(e.startsAt, e.startsAt.slice(11, 16));
+    return shortWhen(e.startsAt);
 }
 
 export function MapEventCard({

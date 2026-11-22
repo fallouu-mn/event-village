@@ -6,10 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/components/ui/cn';
 import { MapEventCard, PosterDot } from '@/components/explore/MapEventCard';
-import { whenRange, type CatalogFilterState } from '@/lib/events/catalog-filters';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
 import type { PublicMapEvent } from '@/lib/events/map-shared';
-import { DAY_MS, dayAriaLabel, dayLabel, eventsByDay, iso, monthLabel, monthStart, nextMonth } from '@/lib/events/calendar-days';
+import { DAY_MS, dayAriaLabel, dayLabel, eventsByDay, iso, monthLabel, monthStart, nextMonth, type DayRange } from '@/lib/events/calendar-days';
 
 /**
  * Lot Carte B (B2) — vue Calendrier d'Explorer, chargée à la demande (jamais au premier chargement d'Explorer).
@@ -40,12 +39,15 @@ interface MonthState {
     error: string | null;
 }
 
-export default function ExploreCalendar({ filters, refreshKey = 0 }: {
-    filters: CatalogFilterState;
+export default function ExploreCalendar({ filtersQuery, weekend, refreshKey = 0 }: {
+    /** Filtres de l'Explorer déjà écrits en adresse par la page (catalogSearchParams). */
+    filtersQuery: string;
+    /** Plage du « week-end » (vendredi 18:00 → lundi 00:00), calculée par la page avec la règle du filtre (whenRange). */
+    weekend: DayRange;
     /** Signal temps réel d'Explorer : les mois affichés se relisent sur place. */
     refreshKey?: number;
 }) {
-    const filtersKey = useMemo(() => mapUrl(filters), [filters]);
+    const filtersKey = filtersQuery;
     const today = useMemo(() => Math.floor(Date.now() / DAY_MS) * DAY_MS, []);
     const [months, setMonths] = useState<MonthState[]>([]);
     const [sheet, setSheet] = useState<{ title: string; subtitle: string; events: PublicMapEvent[] | null; error: string | null } | null>(null);
@@ -53,9 +55,9 @@ export default function ExploreCalendar({ filters, refreshKey = 0 }: {
     const currentHeading = useRef<HTMLHeadingElement>(null);
     const loadSeq = useRef(0);
 
-    // Filtres lus par référence : un nouvel objet aux mêmes valeurs ne relance rien (seule l'adresse compte)
-    const filtersRef = useRef(filters);
-    filtersRef.current = filters;
+    // Filtres lus par référence : la lecture d'un mois suit toujours les derniers filtres
+    const filtersRef = useRef(filtersQuery);
+    filtersRef.current = filtersQuery;
     const loadMonth = useCallback(async (year: number, month: number, seq: number) => {
         const r = await readMapEvents('calendrier', mapUrl(filtersRef.current, { from: iso(monthStart(year, month)), to: iso(monthStart(year, month + 1)) }));
         if (seq !== loadSeq.current) return;
@@ -110,11 +112,11 @@ export default function ExploreCalendar({ filters, refreshKey = 0 }: {
     };
 
     const openWeekend = async () => {
-        const { from, to } = whenRange('weekend', new Date());
+        const { from, to } = weekend;
         setSheet({ title: 'Ce week-end', subtitle: 'Du vendredi soir au dimanche', events: null, error: null });
-        const startDay = Math.floor(from.getTime() / DAY_MS) * DAY_MS;
-        const r = await readMapEvents('calendrier', mapUrl(filters, { from: iso(startDay), to: iso(to.getTime()) }));
-        const inWeekend = r.ok ? r.data.events.filter((e) => Date.parse(e.startsAt) < to.getTime() && Date.parse(e.endsAt) > from.getTime()) : null;
+        const startDay = Math.floor(from / DAY_MS) * DAY_MS;
+        const r = await readMapEvents('calendrier', mapUrl(filtersQuery, { from: iso(startDay), to: iso(to) }));
+        const inWeekend = r.ok ? r.data.events.filter((e) => Date.parse(e.startsAt) < to && Date.parse(e.endsAt) > from) : null;
         setSheet((s) => (s && s.title === 'Ce week-end'
             ? { ...s, events: inWeekend, error: r.ok ? null : r.message, subtitle: inWeekend ? `${inWeekend.length} ${inWeekend.length > 1 ? 'événements' : 'événement'}, du vendredi soir au dimanche` : s.subtitle }
             : s));

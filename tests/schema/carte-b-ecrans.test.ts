@@ -22,7 +22,8 @@ import { clusterPoints } from '../../lib/map/cluster';
 import { dayAriaLabel, eventsByDay } from '../../lib/events/calendar-days';
 import { exploreModeHref, parseExploreMode } from '../../lib/events/explore-view';
 import { mapUrl } from '../../lib/events/map-client';
-import { NO_FILTERS } from '../../lib/events/catalog-filters';
+import { catalogSearchParams, NO_FILTERS } from '../../lib/events/catalog-filters';
+import { shortWhen } from '../../lib/events/calendar-days';
 import type { PublicMapEvent } from '../../lib/events/map-shared';
 
 const ROOT = process.cwd();
@@ -145,7 +146,8 @@ describe('B2 — Explorer : trois vues, rien de plus au premier chargement', () 
 
     test('choix rapide de ville ou de quartier (pas de recherche d’adresse publique)', () => {
         const map = code('components/explore/ExploreMap.tsx');
-        assert.match(map, /QUICK_PLACES\.map\(\(p\) => \(\{ value: p\.id, label: p\.label \}\)\)/);
+        assert.match(map, /QUICK_PLACES\.map\(\(p\) => <option key=\{p\.id\} value=\{p\.id\}>\{p\.label\}<\/option>\)/);
+        assert.match(map, /<label htmlFor=\{placeId\}[^>]*>Aller à<\/label>/, 'champ étiqueté');
         assert.doesNotMatch(map, /places\/search|nominatim/i);
     });
 
@@ -193,9 +195,27 @@ describe('B2 — calendrier', () => {
         assert.doesNotMatch(card, /imageUrl|next\/image/);
     });
 
-    test('lecture d’un mois : période passée à la route avec les filtres partagés', () => {
-        assert.equal(mapUrl({ ...NO_FILTERS, gratuit: true }, { from: '2026-12-01', to: '2027-01-01' }), '/api/events/carte?gratuit=1&du=2026-12-01&au=2027-01-01');
-        assert.equal(mapUrl(NO_FILTERS, { zone: { south: 14.6, west: -17.55, north: 14.8, east: -17.3 } }), '/api/events/carte?zone=14.6%2C-17.55%2C14.8%2C-17.3');
+    test('lecture d’un mois : période passée à la route avec les filtres partagés (écrits par la page)', () => {
+        const q = catalogSearchParams({ ...NO_FILTERS, gratuit: true, tri: 'prix', page: 3 }).toString();
+        assert.equal(mapUrl(q, { from: '2026-12-01', to: '2027-01-01' }), '/api/events/carte?gratuit=1&du=2026-12-01&au=2027-01-01', 'ni tri ni page');
+        assert.equal(mapUrl('', { zone: { south: 14.6, west: -17.55, north: 14.8, east: -17.3 } }), '/api/events/carte?zone=14.6%2C-17.55%2C14.8%2C-17.3');
+        assert.equal(mapUrl('vue=carte&categorie=FESTIVAL'), '/api/events/carte?categorie=FESTIVAL');
+    });
+
+    test('date courte des vignettes : même écriture que les cartes du catalogue', () => {
+        assert.equal(shortWhen('2026-11-21T20:00:00.000Z'), 'sam. 21 nov. · 20:00');
+        assert.equal(shortWhen('pas une date'), '');
+    });
+
+    test('module à la demande : rien du premier chargement d’Explorer (filtres, dates du catalogue, champs partagés)', () => {
+        // Run 601 : ces modules, partagés entre la page et le module à la demande, formaient un morceau commun de plus
+        for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/ExploreCalendar.tsx', 'components/explore/SenegalMapPreview.tsx',
+            'components/explore/MapEventCard.tsx', 'components/events/HomeSenegalMap.tsx', 'lib/events/map-client.ts', 'lib/events/calendar-days.ts']) {
+            assert.doesNotMatch(code(rel), /from '@\/(lib\/events\/catalog-filters|lib\/events\/catalog-display|components\/ui\/Field|lib\/events\/explore-view)'/, rel);
+        }
+        const view = code('app/explore/ExploreView.tsx');
+        assert.match(view, /catalogSearchParams\(\{ \.\.\.shown, tri: 'date', page: 1 \}\)\.toString\(\)/);
+        assert.match(view, /whenRange\('weekend', new Date\(\)\)/, 'week-end : même règle que le filtre');
     });
 });
 
@@ -207,7 +227,8 @@ describe('Accueil — « Partout au Sénégal »', () => {
         assert.match(section, /dynamic\(\(\) => import\('@\/components\/explore\/lazy'\)\.then\(\(m\) => m\.SenegalMapPreview\), \{ ssr: false \}\)/);
         assert.match(section, /\{visible && <SenegalMapPreview /);
         assert.match(section, /Ouvrir la carte/);
-        assert.match(section, /exploreModeHref\(\{\}, 'carte'\)/);
+        assert.match(section, /const MAP_HREF = '\/explore\?vue=carte';/);
+        assert.equal(exploreModeHref({}, 'carte'), '/explore?vue=carte', 'même adresse que la vue Carte');
     });
 
     test('un seul module à la demande pour carte, calendrier et aperçu ; Leaflet pris dans le module de la fiche', () => {

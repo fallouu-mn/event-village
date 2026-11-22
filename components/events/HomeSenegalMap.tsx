@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ArrowRight } from 'lucide-react';
 import { LinkButton } from '@/components/ui/LinkButton';
-import { exploreModeHref } from '@/lib/events/explore-view';
 
 /**
  * Lot Carte B (4) — section « Partout au Sénégal » de l'accueil, rendue avec « Près de chez vous » (îlot chargé après la
@@ -15,6 +14,9 @@ import { exploreModeHref } from '@/lib/events/explore-view';
 
 // Module unique de la carte, du calendrier et de l'aperçu (components/explore/lazy.ts)
 const SenegalMapPreview = dynamic(() => import('@/components/explore/lazy').then((m) => m.SenegalMapPreview), { ssr: false });
+
+/** Vue Carte d'Explorer (lib/events/explore-view.ts, exploreModeHref({}, 'carte')), écrite telle quelle : rien d'Explorer dans ce module. */
+const MAP_HREF = '/explore?vue=carte';
 
 export function HomeSenegalMap() {
     const box = useRef<HTMLDivElement>(null);
@@ -48,7 +50,7 @@ export function HomeSenegalMap() {
                     <h2 id="senegal-titre" className="text-xl font-bold tracking-tight text-foreground-strong sm:text-2xl">Partout au Sénégal</h2>
                     <p className="text-sm text-muted-foreground" aria-live="polite">{hint}</p>
                 </div>
-                <LinkButton href={exploreModeHref({}, 'carte')} variant="secondary" rightIcon={<ArrowRight size={16} />} className="flex-shrink-0">
+                <LinkButton href={MAP_HREF} variant="secondary" rightIcon={<ArrowRight size={16} />} className="flex-shrink-0">
                     Ouvrir la carte
                 </LinkButton>
             </div>

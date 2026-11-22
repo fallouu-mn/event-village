@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
-import { NO_FILTERS } from '@/lib/events/catalog-filters';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
 import { SENEGAL_BOUNDS } from '@/lib/events/map-shared';
 import { clusterPoints } from '@/lib/map/cluster';
@@ -50,7 +49,7 @@ export default function SenegalMapPreview({ onCount, onUnavailable }: { onCount:
                 failures += 1;
                 if (loaded === 0 && failures === 4) cbs.current.onUnavailable();
             });
-            void readMapEvents('accueil-carte', mapUrl(NO_FILTERS)).then((r) => {
+            void readMapEvents('accueil-carte', mapUrl('')).then((r) => {
                 if (!alive) return;
                 if (!r.ok) {
                     setError(true);

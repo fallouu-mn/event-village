@@ -7,6 +7,21 @@ import type { PublicMapEvent } from '@/lib/events/map-shared';
 
 export const DAY_MS = 86_400_000;
 
+const SHORT_DAYS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+const SHORT_MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+/** « sam. 13 déc. · 20:00 » (Dakar = UTC) ; même écriture que les cartes du catalogue (cardWhen), sans les importer. */
+export function shortWhen(startsAt: string): string {
+    const d = new Date(startsAt);
+    if (Number.isNaN(d.getTime())) return '';
+    const day = `${SHORT_DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${SHORT_MONTHS[d.getUTCMonth()]}`;
+    const clock = /T(\d{2}:\d{2})/.exec(startsAt)?.[1];
+    return clock ? `${day} · ${clock}` : day;
+}
+
+/** Plage [from, to[ en millisecondes. */
+export interface DayRange { from: number; to: number }
+
 export const iso = (t: number): string => new Date(t).toISOString().slice(0, 10);
 
 export function monthStart(year: number, month: number): number {

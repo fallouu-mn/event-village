@@ -28,6 +28,7 @@ import {
   EXPLORE_PAGE_SIZE,
   exploreHref,
   hasActiveFilters,
+  whenRange,
   type CatalogFilterState,
   type CatalogWhen,
 } from '@/lib/events/catalog-filters';
@@ -285,6 +286,11 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
     });
   };
 
+  // Lot Carte B : filtres écrits en adresse pour la carte et le calendrier (mêmes règles que la liste), plage du week-end
+  const mapQuery = useMemo(() => catalogSearchParams({ ...shown, tri: 'date', page: 1 }).toString(), [shown]);
+  const weekendRange = whenRange('weekend', new Date());
+  const weekend = { from: weekendRange.from.getTime(), to: weekendRange.to.getTime() };
+
   const onTilesFailed = useCallback(() => {
     setMapFailed(true);
     setMode('liste');
@@ -420,13 +426,13 @@ export function ExploreView({ filters, events: serverEvents, total: serverTotal,
 
       {mode === 'carte' && (
         <div role="tabpanel" id={tabPanelId('carte')} aria-labelledby={tabId('carte')}>
-          <ExploreMap filters={shown} onTilesFailed={onTilesFailed} refreshKey={liveTick} />
+          <ExploreMap filtersQuery={mapQuery} onTilesFailed={onTilesFailed} refreshKey={liveTick} />
         </div>
       )}
 
       {mode === 'calendrier' && (
         <div role="tabpanel" id={tabPanelId('calendrier')} aria-labelledby={tabId('calendrier')}>
-          <ExploreCalendar filters={shown} refreshKey={liveTick} />
+          <ExploreCalendar filtersQuery={mapQuery} weekend={weekend} refreshKey={liveTick} />
         </div>
       )}
 

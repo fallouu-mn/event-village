@@ -1,10 +1,11 @@
-import { catalogSearchParams, type CatalogFilterState } from '@/lib/events/catalog-filters';
 import type { MapResponse, MapZone, PublicMapEvent } from '@/lib/events/map-shared';
 
 /**
  * Lot Carte B — lecture de GET /api/events/carte par la carte, le calendrier et l'aperçu de l'accueil (navigateur).
- * Les filtres de l'Explorer sont envoyés tels quels (même adresse que la liste, sans la page ni le tri) ; la zone et la
- * période sont facultatives. Aucune donnée de l'appareil n'est envoyée (la position de « Autour de moi » ne sert qu'à
+ * Les filtres de l'Explorer arrivent déjà écrits en adresse par la page (`filtersQuery`, même écriture que la liste, sans la
+ * page ni le tri : catalogSearchParams) ; ce module n'importe pas les filtres du catalogue, pour ne rien partager avec le
+ * premier chargement d'Explorer (sinon webpack sort ces modules dans un morceau commun de plus). Zone et période
+ * facultatives. Aucune donnée de l'appareil n'est envoyée (la position de « Autour de moi » ne sert qu'à
  * centrer la carte, jamais transmise).
  */
 
@@ -15,8 +16,11 @@ const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis r�
 /** Arrondi à 4 décimales (une dizaine de mètres) : adresses stables d'un déplacement à l'autre. */
 const round = (n: number): string => (Math.round(n * 1e4) / 1e4).toString();
 
-export function mapUrl(filters: CatalogFilterState, opts: { zone?: MapZone | null; from?: string; to?: string } = {}): string {
-    const params = catalogSearchParams({ ...filters, tri: 'date', page: 1 });
+export function mapUrl(filtersQuery: string, opts: { zone?: MapZone | null; from?: string; to?: string } = {}): string {
+    const params = new URLSearchParams(filtersQuery);
+    params.delete('tri');
+    params.delete('page');
+    params.delete('vue');
     if (opts.zone) params.set('zone', [opts.zone.south, opts.zone.west, opts.zone.north, opts.zone.east].map(round).join(','));
     if (opts.from && opts.to) {
         params.set('du', opts.from);
