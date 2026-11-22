@@ -169,8 +169,14 @@ function main() {
             gzip += g;
             detail.push(`${g}\t${rel.replace(/-[0-9a-f]{16}\.js$/, '.js')}`);
         }
-        // Lot Carte B : détail par fichier (octets gzip), pour savoir quel fichier grossit d'un run à l'autre
+        // Lot Carte B : détail par fichier (octets gzip), pour savoir quel fichier grossit d'un run à l'autre ; table des
+        // morceaux chargeables à la demande (entrées « id: "empreinte" » de webpack.js) : une entrée par morceau
         for (const line of detail) console.log(`${TAG}   ${route} · ${line}`);
+        const runtime = files.find((f) => /\/webpack-[0-9a-f]+\.js$/.test(f));
+        if (runtime) {
+            const ids = [...fs.readFileSync(path.join(opts.nextDir, runtime), 'utf8').matchAll(/(\d+):"[0-9a-f]{16}"/g)].map((m) => Number(m[1]));
+            console.log(`${TAG}   ${route} · table des morceaux : ${ids.length} entrées`);
+        }
         let status = 'MESURE';
         if (budget !== null) {
             status = gzip <= budget ? 'OK' : 'DEPASSE';
