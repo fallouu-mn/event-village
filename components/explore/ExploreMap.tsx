@@ -5,7 +5,8 @@ import { ChevronDown, LocateFixed, RefreshCw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { clusterLabel, mapMarkerHtml, type MarkerKind } from '@/components/ui/MapMarker';
-import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
+import { useTheme } from '@/components/providers/ThemeProvider';
+import type { MapTheme } from '@/lib/map/tiles';
 import { MapEventCard, mapEventWhen } from '@/components/explore/MapEventCard';
 import { cn } from '@/components/ui/cn';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
@@ -76,7 +77,9 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     const tilesRef = useRef<import('leaflet').TileLayer | null>(null);
     const failedRef = useRef(onTilesFailed);
     failedRef.current = onTilesFailed;
-    const theme = useMapTheme();
+    // Thème de la carte (même règle que useMapTheme) ; le fond est posé par le module de la fiche (components/ui/EventMap.tsx)
+    const theme: MapTheme = useTheme().resolvedTheme === 'dark' ? 'dark' : 'light';
+    const setTilesThemeRef = useRef<((layer: import('leaflet').TileLayer | null, t: 'light' | 'dark') => void) | null>(null);
     const themeRef = useRef(theme);
     themeRef.current = theme;
     const descId = useId();
@@ -105,7 +108,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
         if (!container) return undefined;
         let cancelled = false;
         let created: LeafletMap | null = null;
-        const build = (L: LeafletModule) => {
+        const build = (L: LeafletModule, addThemedTiles: typeof import('@/components/ui/EventMap').addThemedTiles) => {
             leafletRef.current = L;
             const still = reducedMotion();
             const map = L.map(container, {
@@ -150,7 +153,11 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
             setReady(true);
         };
         import('@/components/ui/EventMap')
-            .then(({ loadLeaflet }) => { if (!cancelled) build(loadLeaflet()); })
+            .then(({ loadLeaflet, addThemedTiles, setTilesTheme }) => {
+                if (cancelled) return;
+                setTilesThemeRef.current = setTilesTheme;
+                build(loadLeaflet(), addThemedTiles);
+            })
             .catch((err: unknown) => {
                 console.error('[carte] chargement de la carte impossible :', err instanceof Error ? err.message : String(err));
                 if (!cancelled) failedRef.current();
@@ -165,7 +172,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     }, []);
 
     useEffect(() => {
-        setTilesTheme(tilesRef.current, theme);
+        setTilesThemeRef.current?.(tilesRef.current, theme);
     }, [theme]);
 
     // 2. Lecture : filtres partagés, zone de la dernière recherche (tout le Sénégal au départ)

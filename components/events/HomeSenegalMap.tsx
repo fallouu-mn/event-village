@@ -1,19 +1,18 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
 import { ArrowRight } from 'lucide-react';
 import { LinkButton } from '@/components/ui/LinkButton';
+import SenegalMapPreview from '@/components/explore/SenegalMapPreview';
 
 /**
  * Lot Carte B (4) — section « Partout au Sénégal » de l'accueil, rendue avec « Près de chez vous » (îlot chargé après la
- * page : rien au premier chargement de l'accueil). L'aperçu de la carte (Leaflet, tuiles) n'est chargé que lorsque sa
- * place devient visible à l'écran ; place réservée à sa hauteur (aucun saut de mise en page). « Ouvrir la carte » mène à
- * la vue Carte d'Explorer, avec ou sans aperçu.
+ * page : rien au premier chargement de l'accueil). L'aperçu de la carte n'est monté que lorsque sa place devient visible à
+ * l'écran : Leaflet, sa feuille de style, les tuiles et les événements ne sont demandés qu'alors (le petit code de l'aperçu
+ * voyage avec l'îlot, sans morceau de code de plus) ; place réservée à sa hauteur (aucun saut de mise en page).
+ * « Ouvrir la carte » mène à la vue Carte d'Explorer, avec ou sans aperçu.
  */
 
-// Servi par le module de la carte de la fiche, déjà chargeable (aucune entrée de plus dans la table des morceaux)
-const SenegalMapPreview = dynamic(() => import('@/components/ui/EventMap').then((m) => m.SenegalMapPreview), { ssr: false });
 
 /** Vue Carte d'Explorer (lib/events/explore-view.ts, exploreModeHref({}, 'carte')), écrite telle quelle : rien d'Explorer dans ce module. */
 const MAP_HREF = '/explore?vue=carte';

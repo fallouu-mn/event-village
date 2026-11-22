@@ -29,11 +29,11 @@ export function loadLeaflet(): typeof import('leaflet') {
 }
 
 /**
- * Lot Carte B — aperçu de la carte de l'accueil (« Partout au Sénégal ») servi par CE module : il est déjà chargeable à
- * la demande (fiche, administration, pilotage) ; l'accueil le charge quand l'aperçu devient visible, sans morceau de code ni
- * entrée de plus dans la table que toutes les pages chargent.
+ * Lot Carte B — fond de carte (Stadia, thème) servi aussi par CE module aux cartes d'Explorer et à l'aperçu de l'accueil :
+ * ils le prennent ici avec Leaflet au lieu de l'embarquer. Sinon webpack fabrique, pour eux, une variante de ce morceau
+ * sans le fond de carte : une entrée de plus dans la table que toutes les pages chargent (budgets JS de toutes les routes).
  */
-export { default as SenegalMapPreview } from '@/components/explore/SenegalMapPreview';
+export { addThemedTiles, setTilesTheme };
 
 /** Nom affiché sur le repère : 28 caractères au plus (le nom entier reste dans le texte de remplacement). */
 export function markerName(name: string): string {
