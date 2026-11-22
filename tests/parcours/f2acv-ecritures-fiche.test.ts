@@ -64,11 +64,8 @@ const PARTNER_KEPT: Readonly<Record<string, string>> = {
     'POST /api/partner/register': 'inscription d’une organisatrice (aucune fiche encore)',
     // Contre-vérification du lot 10b (T1, modification signalée au rapport) : les écritures des salles ne sont plus
     // gardées ; refusées à une fiche SUSPENDU (partnerEventWrite)
-    'PATCH /api/partner/orders/*': 'service des commandes fermé (interrupteur, 404) : à trancher à son ouverture',
-    'POST /api/partner/products': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
-    'PATCH /api/partner/products/*': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
-    'DELETE /api/partner/products/*': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
-    'POST /api/partner/products/*/status': 'service des produits fermé (interrupteur, 404) : à trancher à son ouverture',
+    // Lot 12a (modification signalée au rapport) : commandes, produits, livreurs et réglages de vente refusés à une fiche
+    // SUSPENDU (partnerEventWrite) ; plus aucune écriture du service des commandes n'est gardée
     // Lot 11b (F1, modification signalée au rapport) : les écritures des établissements et des tables
     // (/api/partner/venues*, /api/partner/tables*) ne sont plus gardées ; refusées à une fiche SUSPENDU (partnerEventWrite)
 };

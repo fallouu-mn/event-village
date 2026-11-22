@@ -27,6 +27,7 @@ import { assertFinanceInvariants } from '../helpers/finance-invariants';
 import { tableReservationFixture } from '../helpers/table-fixtures';
 import { getSetting, jsonRequest, newPartner, round2, superadminId, type TestPartner } from './finance-helpers';
 import { withFeatureFlags, type FeatureFlag } from './terrain-helpers';
+import { newProduct, newShop } from './l12a-helpers';
 import {
     cronRequest, deliverWebhook, importModule, initCalls, newBuyer, paymentById, providerSays, service,
     type Buyer, type PaymentRow,
@@ -60,31 +61,22 @@ after(async () => {
 
 // ── Création des cibles (service_role) ─────────────────────────────────────
 
+// Lot 12a (modification signalée au rapport) : une commande ne s'écrit plus directement (garde des commandes) ; elle se
+// crée par order_create dans un établissement validé qui vend (montants calculés en base) et se paie par
+// order_payment_create. Frais de service des commandes 5 % (orders.service_fee_rate), égaux à finance.service_fee_rate.
 async function createOrder(facial: number): Promise<string> {
-    const { data: product, error: prodErr } = await service.from('products').insert({
-        partner_id: partner.partnerId, name: `TEST Plat ${randomUUID().slice(0, 8)}`, price: facial, status: 'DISPONIBLE',
-    }).select('id, name').single();
-    assert.equal(prodErr, null, `produit : ${prodErr?.message}`);
-    const { data: order, error } = await service.from('orders').insert({
-        order_number: `CMD-TEST-${randomUUID()}`,
-        client_id: client.userId,
-        partner_id: partner.partnerId,
-        subtotal: facial,
-        total_amount: facial,
-        paid_amount: 0,
-        balance_amount: facial,
-        payment_type: 'INTEGRAL',
-        delivery_mode: 'RETRAIT',
-        order_status: 'EN_ATTENTE',
-        payment_status: 'PENDING',
-    }).select('id').single();
-    assert.equal(error, null, `commande : ${error?.message}`);
-    const { error: itemErr } = await service.from('order_items').insert({
-        order_id: order.id, product_id: product.id, product_name: product.name, quantity: 1, unit_price: facial, total_price: facial,
+    if (!orderShop) orderShop = await newShop(partner);
+    const product = await newProduct(partner, orderShop, { price: facial });
+    return withFeatureFlags({ orders: true }, async () => {
+        const { orderInput } = await import('../../lib/orders/booking');
+        const { data, error } = await service.rpc('order_create', { p: orderInput(client.userId, { venueId: orderShop, mode: 'RETRAIT', items: [{ productId: product, quantity: 1 }] }) });
+        assert.equal(error, null, `commande : ${error?.message}`);
+        const r = data as { ok?: boolean; order_id?: string };
+        assert.equal(r.ok, true, JSON.stringify(r));
+        return String(r.order_id);
     });
-    assert.equal(itemErr, null, `ligne de commande : ${itemErr?.message}`);
-    return order.id;
 }
+let orderShop: string | null = null;
 
 // Lot 10a (modification signalée au rapport) : une réservation de salle se crée par hall_reserve (montants calculés en base,
 // salle validée par l'administration, service ouvert) et se paie par une part (« INTEGRAL » ici) ; l'insertion directe
@@ -212,23 +204,30 @@ async function row(table: string, id: string, columns: string): Promise<Record<s
 // ── Parcours ───────────────────────────────────────────────────────────────
 
 describe('Commande (ORDER)', () => {
-    test('paiement en ligne : PENDING, montants du contrat, succès SamirPay → SUCCESS, commande confirmée', async () => {
+    // Lot 12a (modification signalée au rapport) : une commande payée est « reçue » (ancien statut EN_ATTENTE) jusqu'à
+    // la réponse de la partenaire ; avant, le chemin générique l'écrivait « confirmée » sans aucun contrôle.
+    test('paiement en ligne : PENDING, montants du contrat, succès SamirPay → SUCCESS, commande reçue', async () => {
         const orderId = await createOrder(10_000);
         const payment = await pay(client, 'ORDER', orderId);
         await assertMarketAmounts(payment, 10_000);
         await confirmBySamirPay(payment);
-        const order = await row('orders', orderId, 'payment_status, order_status');
+        const order = await row('orders', orderId, 'payment_status, order_status, order_state');
         assert.equal(order.payment_status, 'SUCCESS');
-        assert.equal(order.order_status, 'CONFIRMEE');
+        assert.equal(order.order_state, 'RECUE');
+        assert.equal(order.order_status, 'EN_ATTENTE');
     });
 
-    test('échec chez SamirPay, réconciliation → FAILED, commande annulée', async () => {
+    // Lot 12a (modification signalée au rapport) : un échec du paiement ne touche plus la commande (ses produits restent
+    // tenus jusqu'à la fin de l'attente de 15 minutes, le client peut réessayer) ; avant, elle était annulée par une
+    // écriture directe, sans rendre le stock.
+    test('échec chez SamirPay, réconciliation → FAILED, commande toujours en attente de paiement', async () => {
         const orderId = await createOrder(10_000);
         const payment = await pay(client, 'ORDER', orderId);
         await failBySamirPay(payment);
-        const order = await row('orders', orderId, 'payment_status, order_status');
-        assert.equal(order.payment_status, 'FAILED');
-        assert.equal(order.order_status, 'ANNULEE');
+        const order = await row('orders', orderId, 'payment_status, order_status, order_state');
+        assert.equal(order.payment_status, 'PENDING');
+        assert.equal(order.order_state, 'EN_ATTENTE_PAIEMENT');
+        assert.equal(order.order_status, 'EN_ATTENTE');
     });
 });
 

@@ -259,6 +259,12 @@ const PARTNER_HANDLERS: PartnerHandler[] = [
     { file: 'app/api/partner/products/[id]/route.ts', method: 'PATCH', flag: 'orders', path: '/api/partner/products/:id', withId: true },
     { file: 'app/api/partner/products/[id]/route.ts', method: 'DELETE', flag: 'orders', path: '/api/partner/products/:id', withId: true },
     { file: 'app/api/partner/products/[id]/status/route.ts', method: 'POST', flag: 'orders', path: '/api/partner/products/:id/status', withId: true },
+    // Lot 12a (modification signalée au rapport) : réglages de vente, portions du plat du jour, livreurs
+    { file: 'app/api/partner/venues/[id]/orders/route.ts', method: 'PATCH', flag: 'orders', path: '/api/partner/venues/:id/orders', withId: true },
+    { file: 'app/api/partner/products/[id]/portions/route.ts', method: 'POST', flag: 'orders', path: '/api/partner/products/:id/portions', withId: true },
+    { file: 'app/api/partner/couriers/route.ts', method: 'GET', flag: 'orders', path: '/api/partner/couriers', withId: false },
+    { file: 'app/api/partner/couriers/route.ts', method: 'POST', flag: 'orders', path: '/api/partner/couriers', withId: false },
+    { file: 'app/api/partner/couriers/[userId]/route.ts', method: 'DELETE', flag: 'orders', path: '/api/partner/couriers/:id', withId: true },
 ];
 
 /** Fichiers de routes qui doivent porter la garde (contrat §7.1). */
@@ -266,6 +272,8 @@ const GUARDED_ROUTE_FILES = [
     'app/api/halls/route.ts', 'app/api/halls/[id]/route.ts', 'app/api/halls/reserve/route.ts',
     'app/api/restaurants/[id]/tables/route.ts', 'app/api/restaurants/reserve-table/route.ts', 'app/api/restaurants/[id]/menu/route.ts',
     'app/api/orders/create/route.ts', 'app/api/orders/route.ts', 'app/api/payments/create/route.ts',
+    // Lot 12a (modification signalée au rapport) : devis, routes du livreur
+    'app/api/orders/quote/route.ts', 'app/api/courier/orders/route.ts', 'app/api/courier/orders/[id]/route.ts', 'app/api/courier/invitations/[id]/route.ts',
     ...Array.from(new Set(PARTNER_HANDLERS.map((h) => h.file))),
 ];
 

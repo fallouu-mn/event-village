@@ -19,7 +19,7 @@
  */
 
 import React, { useCallback, useEffect, useId, useState } from 'react';
-import { Bell, Building2, History, Pencil, RefreshCw, Save, ScanLine, ToggleRight, UtensilsCrossed, Wallet, X } from 'lucide-react';
+import { Bell, Building2, History, Pencil, RefreshCw, Save, ScanLine, ShoppingBag, ToggleRight, UtensilsCrossed, Wallet, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -135,6 +135,21 @@ const META: Record<string, SettingMeta> = {
   'tables.cancel_free_hours': { label: 'Acompte rendu si le client annule au moins', help: 'Heures avant l’heure de la réservation. Plus tard, l’acompte n’est pas rendu. Entier de 0 à 72.', kind: 'integer', unit: 'h' },
   'tables.max_pending_per_client': { label: 'Réservations non payées au plus par client', help: 'Réservations à venir sans acompte payé qu’un client peut tenir en même temps : attentes de paiement, demandes en attente de réponse et réservations gratuites confirmées. Une seule table par client et par créneau dans un établissement. Entier de 1 à 10.', kind: 'integer', unit: 'réservations' },
   'tables.reminder_hours': { label: 'Rappel au client avant l’heure', help: 'Heures avant l’heure de la réservation. Entier de 1 à 24.', kind: 'integer', unit: 'h' },
+  // Lot 12a : commandes (libellés identiques à lib/settings/catalog.ts)
+  'orders.service_fee_rate': { label: 'Frais de service des commandes', help: 'Payés par le client sur ce qu’il paie en ligne, arrondis au franc CFA supérieur. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'orders.commission_rate': { label: 'Commission sur les commandes', help: 'Part du prix gardée par Event Village. 0 % au lancement. De 0 à 50 %.', kind: 'percent', unit: '%' },
+  'orders.deposit_default_percent': { label: 'Acompte par défaut d’une commande', help: 'Part de la commande payée d’avance quand la partenaire accepte l’acompte. Chaque établissement peut choisir la sienne. Entier de 10 à 90.', kind: 'integer', unit: '%' },
+  'orders.hold_minutes': { label: 'Durée de garde d’une commande non payée', help: 'Temps pendant lequel les produits sont tenus pour le client qui paie. Ensuite, la commande est close. Entier de 5 à 60.', kind: 'integer', unit: 'min' },
+  'orders.response_minutes': { label: 'Délai de réponse de la partenaire à une commande', help: 'Sans réponse dans ce délai, la commande est annulée et le client remboursé. Entier de 5 à 120.', kind: 'integer', unit: 'min' },
+  'orders.max_unpaid_per_client': { label: 'Commandes non payées au plus par client', help: 'Au-delà, le client doit payer une commande ou attendre qu’elle se libère. Entier de 1 à 10.', kind: 'integer', unit: 'commandes' },
+  'orders.max_unpaid_portions': { label: 'Portions d’un plat du jour tenues sans paiement', help: 'Par client et par plat, toutes ses commandes non payées comprises. Au-delà, il doit payer ou attendre. Entier de 1 à 99.', kind: 'integer', unit: 'portions' },
+  'orders.invites_per_day': { label: 'Invitations de livreurs par jour', help: 'Par partenaire, à l’heure de Dakar. Au-delà, elle doit attendre le lendemain. Entier de 1 à 50.', kind: 'integer', unit: 'invitations' },
+  'orders.pickup_grace_hours': { label: 'Commande prête non retirée close après l’heure prévue', help: 'Heures après l’heure prévue. La commande est alors close sans remboursement. Entier de 2 à 168.', kind: 'integer', unit: 'h' },
+  'orders.pickup_warning_hours': { label: 'Client prévenu avant la clôture d’une commande non retirée', help: 'Heures avant la clôture. Entier de 1 à 24.', kind: 'integer', unit: 'h' },
+  'orders.contact_retention_days': { label: 'Adresse et téléphone du client masqués après la remise', help: 'Jours après la remise. Ensuite, ni la partenaire ni le livreur ne les voient. Entier de 1 à 90.', kind: 'integer', unit: 'jours' },
+  'orders.code_max_attempts': { label: 'Essais au plus du code de remise', help: 'Au-delà, la remise est bloquée et le client doit demander un nouveau code. Entier de 3 à 10.', kind: 'integer', unit: 'essais' },
+  'orders.code_resend_max': { label: 'Nouveaux codes de remise au plus par commande', help: 'Nombre de fois où le client peut demander un nouveau code. Entier de 1 à 10.', kind: 'integer', unit: 'codes' },
+  'orders.prep_minutes_default': { label: 'Préparation d’une commande par défaut', help: 'Sert à calculer l’heure estimée quand l’établissement n’a pas choisi la sienne. Entier de 10 à 240.', kind: 'integer', unit: 'min' },
   'features.orders_enabled': { label: 'Commandes de repas', help: 'Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés.', kind: 'boolean' },
 };
 
@@ -153,6 +168,8 @@ const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: Lucid
   { prefix: 'halls.', title: 'Salles de fête', help: 'Frais, acompte, délais de paiement, règles d’annulation et validation des salles.', icon: Building2 },
   // Lot 11a : réglages de la réservation de tables (service fermé tant que son interrupteur l'est)
   { prefix: 'tables.', title: 'Restaurants et tables', help: 'Frais, durée d’une réservation, délais d’attente et de réponse, absence, annulation et validation des établissements.', icon: UtensilsCrossed },
+  // Lot 12a : commandes
+  { prefix: 'orders.', title: 'Commandes', help: 'Frais, acompte, délais de paiement et de réponse, retrait, code de remise et masquage des coordonnées du client.', icon: ShoppingBag },
   { prefix: 'features.', title: 'Services en préparation', help: 'Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER.', icon: ToggleRight },
 ];
 

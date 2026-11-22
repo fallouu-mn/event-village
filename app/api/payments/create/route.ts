@@ -7,6 +7,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CreatePaymentSchema, type CreatePaymentInput } from '@/lib/validations/payment';
 import { startHallPayment } from '@/lib/halls/hall-payment.service';
 import { startTablePayment } from '@/lib/tables/table-payment.service';
+import { startOrderPayment } from '@/lib/orders/order-payment.service';
 import { guardFeature, type Feature } from '@/lib/features/flags';
 
 export const dynamic = 'force-dynamic';
@@ -79,6 +80,15 @@ export async function POST(req: NextRequest) {
         if (input.targetType === 'TABLE_RESERVATION') {
             const outcome = await startTablePayment({
                 userId: session.user.id, reservationId: input.targetId, operator: input.operator, payerPhone: input.payerPhone,
+            });
+            return NextResponse.json(outcome.body, { status: outcome.status });
+        }
+        // Lot 12a : commande, paiement créé en base (order_payment_create), montant relu sur la commande (part payée au
+        // départ, ou solde avec part: 'SOLDE')
+        if (input.targetType === 'ORDER') {
+            const outcome = await startOrderPayment({
+                userId: session.user.id, orderId: input.targetId, part: input.part === 'SOLDE' ? 'SOLDE' : 'PREMIER',
+                operator: input.operator, payerPhone: input.payerPhone,
             });
             return NextResponse.json(outcome.body, { status: outcome.status });
         }

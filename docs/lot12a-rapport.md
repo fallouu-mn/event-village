@@ -1,0 +1,553 @@
+# Lot 12a — Commandes : argent et sécurité
+
+Branche `lot12a/commandes-argent`, partie de `main` à `2ec11bb66`. Non fusionnée. Aucun écran : le service reste fermé par
+son interrupteur (`features.orders_enabled`), les tests l'ouvrent le temps de leur passage. Migrations `20261130000001` à
+`…08`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur event-village-dev. Une contre-vérification indépendante
+suit.
+
+## À lire en premier
+
+### Failles de l'ancien code des commandes (trouvées et corrigées)
+
+Aucun état des lieux du lot 12 n'existait dans `docs/` : relevé fait en lecture seule le 21/11 (§ 2). Chaque trou a un
+test rouge sur `main`, sur la branche de preuve `lot12a/rouges` (main + la seule suite `l12a-failles-existant`), puis vert
+sur la branche du lot.
+
+| # | Faille | Correctif | Test |
+|---|---|---|---|
+| F1 | La partenaire écrivait **n'importe quel statut** (`PATCH /api/partner/orders/[id] { order_status }`) : une commande jamais payée passait « livrée ». | Chaque étape par `order_partner_action` en base (verrou, état attendu, journal, historique) ; garde : plus aucune écriture d'une commande d'établissement hors des fonctions en base, même avec la clé de service. | `l12a-failles-existant` F1, `l12a-commandes` D |
+| F2 | La partenaire lisait **par REST** toutes ses commandes, avec l'adresse du client (`orders_read`), donc aussi en temps réel. | `orders_read` : le client et l'administration seulement ; la partenaire et le livreur lisent par les routes serveur (`order_view`, `order_partner_list`, `order_courier_list`). | F2, `l12a-commandes` D, `dette-publication-reservations` |
+| F3 | Une **quantité négative** faisait une remise : 10 000 F de produits pour 2 000 F (`POST /api/orders/create`, total calculé par la route). | Devis et commande en base (`order_quote_compute`, `order_create`) : quantités 1 à 99, prix et suppléments relus en base, montants envoyés par le navigateur ignorés. | F3, `l12a-commandes` A |
+| F4 | Un **produit d'une autre partenaire** était vendu sous le nom de la partenaire choisie (identifiant de partenaire pris dans le corps). | Produits de l'établissement choisi seulement (même partenaire, contrôle en base et déclencheur). | F4, `l12a-commandes` A |
+| F5 | La liste de la partenaire montrait les commandes **jamais payées**, avec le nom complet et le téléphone du client, sans limite de durée. | Liste par la base : seulement les commandes transmises (payées, ou payables à la remise ; contre-vérification T1) ; adresse et téléphone seulement pour la commande, masqués 7 jours après la remise (tâche `ev_orders`). | F5, `l12a-commandes` C |
+| F6 | La confirmation d'un paiement de commande écrivait la commande « payée, confirmée » par un chemin générique, sans verrou ni contrôle ; un échec de paiement l'annulait (sans rendre le stock). | `order_payment_confirm` en base (une seule fois, montant relu, commande encore payable, sinon remboursement en entier) ; l'échec d'un paiement ne touche plus la commande. | `finance-cibles`, `l12a-commandes` B, C, E |
+| F7 | Le montant d'un paiement de commande était lu sur la commande écrite par la route. | `order_payment_create` relit la part payée au départ (ou le solde) sur la commande figée en base. | `l12a-commandes` A, B |
+| F8 | Aucun produit réglementé, aucun stock tenu sous verrou, aucun plafond, aucune expiration. | Voir § 4 et § 5. | `l12a-commandes` A, C |
+
+Run complet final **544** (commit `d3f4cdfe7`) : les 566 suites vertes (4 tâches de tests, aucun « not ok »), e2e vert
+(707 cas et la fumée), budgets JS tenus sans relèvement, captures responsive vertes, accueil et fiche événement au-dessus
+de 90 sur mobile. Seul rouge : la note mobile de **Mes billets**, médiane 88 (page non touchée par le lot ; la règle
+temporaire de la consigne dit qu'elle ne bloque pas). Aucune suite de `tests/audit/` ni de `tests/audit-auth/` rouge, aucune
+de leurs assertions changée. Détail des runs : § 10.
+
+### Contre-vérification (21/11) : trous corrigés
+
+La contre-vérification indépendante (`docs/audit-lot12a.md`, branche `lot12a/cv-rouges`, `aa00aeb58`) a trouvé
+**aucun trou critique ni élevé, 2 moyens (T1, T2) et 7 faibles (T3 à T9)**. Ses trois suites (`tests/audit/cv12a-*`)
+sont récupérées sur la branche ; elles passent au vert sans changement de leurs assertions, sauf T6, adapté à la décision
+du chef de projet (§ 13). Run rapide 560 : 12/12 trous fermés, 7/7 garde-fous, 3/3 contrôles statiques, invariants à 0.
+Détail, migrations touchées et tests modifiés : § 13.
+
+### Ce qui change pour les autres lots
+
+- **Recopies de fonctions communes** (dernière définition, aucune ligne perdue : `migration-lot12a-rejouable`) :
+  `finance_setting_set`, `fin_setting_valid` (lot 10b), `platform_settings_defaults`, `fin_payout_available_at`,
+  `calculate_referral_commissions`, `finance_admin_earned`, `finance_admin_payments` (lot 11a), `notif_cashouts_notify`
+  (lot 10b), `notification_sync_log` (finition 3d). Si le lot 11b ou le design 1e changent l'une d'elles avant la fusion, la recopie du lot 12a est à refaire (le
+  test devient rouge).
+- La table `orders` porte aussi les **commandes de billets payés à l'entrée** (lot 4 : `tickets.order_id`,
+  `ticket_cash_checkin`) : sans établissement ni état détaillé, elles restent écrites comme avant. Rien ne change pour la
+  billetterie.
+- La partenaire ne reçoit plus les commandes **en temps réel** (conséquence de F2) : l'ancienne page `/partner/orders` et
+  `usePartnerOrders` sont à refaire au lot 12b (`docs/apres-lancement.md`).
+- **Garde des fiches** : une fiche SUSPENDU est en lecture seule aussi pour les commandes, les produits, les livreurs et
+  les réglages de vente (`partnerEventWrite`).
+
+## 2. Relevé de l'existant : réutilisé, remplacé, retiré
+
+| Élément | Décision |
+|---|---|
+| Tables `products`, `product_categories`, `orders`, `order_items`, types `order_status_enum`, `delivery_mode_enum`, `payment_type_enum` | **Réutilisés**, complétés (établissement, réglementé, état détaillé, montants figés, étapes, code, livreur). `order_status` reste lisible, dérivé de `order_state`. |
+| Établissements `venues` et horaires `venue_opening_hours` (lot 11a) | **Réutilisés** : un établissement vend (sorte BOUTIQUE ajoutée) ; heure « au plus tôt » et créneau contrôlés par `venue_open_covers` ; validation par l'administration (`venue_validation_decide`). |
+| Tables et zones du restaurant (lot 11a) | **Réutilisées** pour une commande sur place (table de l'établissement). |
+| Moteur financier (lot 3) : grand livre, `refund_request`, `fin_refund_apply`, versements | **Réutilisé** : vente au grand livre au succès, remboursement par la même mécanique que les tables. |
+| Boîte d'envoi, catalogue des avis, règle de nuit (lots 6, finition 4), envoi immédiat journalisé des codes (lot 6, contrat E7 : `renderSyncSms`, `notification_sync_log`) | **Réutilisés** : 17 types nouveaux en file, 1 envoi immédiat (`ORDER_HANDOVER_CODE`). |
+| `POST /api/orders/create` | **Remplacée** (même chemin) : `order_create`. |
+| `GET/PATCH /api/partner/orders[/id]` | **Remplacées** : lecture par la base, actions par `order_partner_action`. |
+| Paiement ORDER par le chemin générique (`PaymentService.createPayment`, `confirmOtherPayment`, `releaseOther`) | **Remplacé** : `startOrderPayment` / `order_payment_create`, `order_payment_confirm`. |
+| `lib/orders/order.service.ts` (total calculé par le serveur applicatif, statut écrit directement, stock rendu sans verrou) | **Retiré**. |
+| Politiques `orders_insert`, `order_items_insert`, branche partenaire de `orders_read` | **Retirées** (aucune écriture REST ; lecture REST : client et administration). |
+| Commandes de repas de l'ancien code (sans établissement, sans billet rattaché) | **Closes une fois** par la migration 03 (« Annulée par Event Village » si elles étaient en cours ; adresse effacée). Contrôle avant : § 9. |
+| `GET /api/restaurants/[id]/menu`, routes des produits de la partenaire | **Gardées** telles quelles (écrans 12b). |
+
+## 3. Schéma
+
+| Objet | Contenu (migration) |
+|---|---|
+| `venues` (02) | `orders_open`, `order_modes` (LIVRAISON, RETRAIT, SUR_PLACE), `order_deposit_allowed`, `order_deposit_percent` (10 à 90, vide = réglage), `order_pay_on_handover`, `order_prep_minutes` ; sorte BOUTIQUE. Écrits par `order_venue_settings_set`. |
+| `products` (02) | `venue_id` (même partenaire, jamais changé ensuite), `is_regulated` + `regulated_kind` (ALCOOL, TABAC : case de la partenaire), `regulated_admin` (décision de l'administration, écrite seulement par `order_product_regulation_decide`) ; prix en F CFA entiers (contrainte NOT VALID : anciennes lignes non réécrites). Réglementé = case de la partenaire OU décision de l'administration. |
+| `product_options` (02) | suppléments : nom, prix ajouté par unité (F CFA entiers). |
+| `product_daily_portions` (02) | portions du plat du jour par jour de Dakar : `portions`, `sold` (`sold ≤ portions`) ; écrites seulement par les fonctions en base. |
+| `order_delivery_zones` (02) | zones de livraison d'un établissement : frais fixes (0 à 100 000) et minimum de commande. |
+| `orders` (03) | `venue_id`, `order_state` (seule source ; `order_status` dérivé), `zone_id`, `onsite_table_id` / `onsite_label`, `asap`, `scheduled_for` (heure prévue), `estimated_at` (heure estimée), `prep_minutes` ; argent figé : `items_amount`, `delivery_fee`, `goods_total`, `deposit_percent`, `first_goods`, `first_fee`, `service_fee_rate`, `commission_rate` ; encaissé : `paid_goods`, `paid_fees`, `refunded_amount` ; `onsite_amount` (noté, jamais compté) ; `contact_phone`, `delivery_address`, `delivery_notes`, `contact_masked_at` ; `hold_expires_at`, `response_due_at`, `stock_taken`, `stock_released_at` ; `code_hash`, `code_issued_at`, `code_attempts`, `code_resends` ; `courier_user_id` ; heure de chaque étape : `received_at`, `accepted_at`, `preparing_at`, `ready_at`, `en_route_at`, `handed_over_at`, `pickup_warned_at`, `closed_at` ; `cancel_origin`, `cancel_reason`, `cancelled_by`, `partner_fault`, `refund_percent`. |
+| `order_items` (03) | `base_price`, `options` (copie : nom et prix), `unit_price` = prix + suppléments, `total_price` = unitaire × quantité (1 à 99), `portion_day`, `stock_managed`. Une ligne d'un produit réglementé est refusée par un déclencheur, même sous le drapeau des fonctions. |
+| `order_state_history` (03) | chaque changement d'état : de, vers, heure, auteur (CLIENT, PARTENAIRE, LIVREUR, ADMIN, SUPERADMIN, SYSTEM), note. |
+| `partner_couriers` (03) | livreurs d'une partenaire : PENDING (invité), ACTIVE (a accepté), DECLINED, REMOVED. Rôle de service seul. |
+| `private.order_code_key` (03) | 32 octets tirés une fois ; `order_code_hash` = HMAC-SHA256(commande:code, clé). La clé n'est lisible que par `private.order_code_hash` (aucun droit pour anon, authenticated ni le rôle de service) : une copie des tables publiques ne permet pas d'essayer les 10 000 codes hors de la base. Les fonctions du code (`order_code_hash`, `order_issue_code`, `order_code_delivery`) sont des aides internes du schéma `private`, exécutables par aucun rôle de l'API (contre-vérification T7). |
+
+Garde (`trg_0_orders_flow_guard`, `trg_0_order_items_flow_guard`, `trg_0_order_state_history_guard`) : toute insertion,
+suppression ou modification d'une commande d'établissement, de ses lignes ou de son historique est refusée hors des
+fonctions en base (drapeau de transaction `event_village.order_flow`). Lecture REST : le client (les siennes) et
+l'administration ; aucune écriture REST.
+
+## 4. Règles d'argent, avec exemples chiffrés
+
+Réglages (décisions du client) : frais de service 5 % payés par le client **sur ce qui est payé en ligne**, arrondis au
+franc supérieur ; commission 0 % au lancement ; acompte 30 % par défaut (réglable par établissement, 10 à 90 %) ; frais
+Wave 1,5 % à la charge d'Event Village ; recettes disponibles 48 h après l'heure prévue de la remise (délai existant).
+
+| Cas | Calcul | Exemple (vérifié par `l12a-commandes`) |
+|---|---|---|
+| Payé en entier, retrait | articles = Σ (prix + suppléments) × quantité ; frais = arrondi sup (articles × 5 %) | 2 × (3 500 + 500) + 2 750 = **10 750** ; frais 537,5 → **538** ; à payer **11 288** ; Wave 169,32 ; part de la partenaire 10 750 ; net Event Village 368,68 |
+| Acompte 30 %, livraison | total = articles + frais de zone ; acompte = arrondi sup (total × 30 %) ; frais sur l'acompte | 12 345 + zone 1 000 = **13 345** ; acompte 4 003,5 → **4 004** ; frais 200,2 → **201** ; maintenant **4 205** ; solde **9 341** |
+| Solde payé en ligne | solde + arrondi sup (solde × 5 %) | 9 341 + 467,05 → 468 = **9 809** |
+| Solde payé à la remise | noté sur la commande (`onsite_amount`), jamais une ligne de paiement ni une écriture au grand livre | 9 341 noté |
+| Payé à la remise (si l'établissement l'accepte), sur place | rien en ligne, aucuns frais | 6 000 notés à la remise |
+| Plat du jour | toujours payé en entier en ligne ; pour aujourd'hui seulement | acompte refusé |
+| Minimum de la zone | articles ≥ minimum de la zone (frais de zone non comptés) | zone 5 000 : 4 000 refusé |
+
+| Situation | Argent |
+|---|---|
+| Client annule avant le début de la préparation (en attente de paiement, reçue, acceptée) | tout rendu (articles et frais) |
+| Client, après le début de la préparation | refusé (« La préparation a commencé… ») ; seule voie : Event Village annule pour faute de la partenaire |
+| Partenaire annule ou refuse (motif) | tout rendu ; faute de la partenaire notée |
+| Event Village annule (droit des remboursements ; motif) | tout rendu ; faute de la partenaire notée (oui par défaut) |
+| Sans réponse de la partenaire sous 15 minutes | annulée, tout rendu |
+| Non payée à temps (15 minutes) | close, produits et portions rendus, rien à rendre |
+| Paiement arrivé après la clôture, ou second paiement de la même part | remboursé en entier (`metadata.refund_reason`), jamais compté |
+| Commande prête non retirée 24 h après l'heure prévue | close sans remboursement (client prévenu 2 h avant) ; produits non rendus au stock |
+
+Remboursement (`order_refund_payment`, même mécanique que les tables) : part de la partenaire (prix moins commission)
+reprise au grand livre, frais de service et commission rendus par Event Village, frais de l'opérateur (1,5 %) à la
+charge d'Event Village (`aggregator_fee_bearer = EVENT_VILLAGE`), commission de parrainage régularisée
+(`fin_refund_apply`) ; une fois par paiement (clé `REFUND-ORDER-<paiement>`). Exemple : 11 288 rendus = 10 750 (part de la
+partenaire) + 538 (frais) ; les 169,32 de frais Wave restent à Event Village. Aucun versement incertain n'est relancé
+automatiquement : l'envoi passe par `CashoutService.send` ; un échec est repris par la tâche des versements existante.
+
+Stock et portions : pris une seule fois à la création, sous le verrou de l'établissement puis du client, dans un ordre
+fixe (portions par produit et jour, puis produits par identifiant) ; rendus une seule fois (`stock_released_at`) à
+l'expiration, au refus, à l'annulation ; jamais après la remise ni pour une commande non retirée. Plafond : au plus 3
+commandes non payées par client (en attente de paiement, ou payables à la remise et pas encore remises), compté sous le
+verrou du client.
+
+## 5. États et règles
+
+| État (`order_state`) | Libellé | Heure gardée | Suivant |
+|---|---|---|---|
+| EN_ATTENTE_PAIEMENT | En attente de paiement | création | RECUE (paiement), EXPIREE (15 min), ANNULEE_* |
+| RECUE | Reçue | `received_at` | ACCEPTEE, REFUSEE, SANS_REPONSE (15 min), ANNULEE_* |
+| ACCEPTEE | Acceptée | `accepted_at` (+ heure estimée) | EN_PREPARATION, PRETE, ANNULEE_* |
+| EN_PREPARATION | En préparation | `preparing_at` | PRETE, ANNULEE_PARTENAIRE / _EV |
+| PRETE | Prête | `ready_at` | EN_ROUTE (livraison), REMISE (retrait contre code, sur place), NON_RETIREE |
+| EN_ROUTE | En route | `en_route_at` (+ heure estimée) | REMISE (contre code), ANNULEE_PARTENAIRE / _EV |
+| REMISE | Livrée / Retirée / Servie | `handed_over_at` | — |
+| NON_RETIREE, EXPIREE, REFUSEE, SANS_REPONSE, ANNULEE_CLIENT, ANNULEE_PARTENAIRE, ANNULEE_EV | Non retirée, Non payée à temps, Refusée, Sans réponse, Annulée | `closed_at` | — |
+
+- **Heure** : « au plus tôt » (l'établissement doit être ouvert pendant toute la préparation) ou créneau au quart d'heure,
+  dans les horaires, au moins après la préparation, 7 jours au plus. Heure estimée recalculée à l'acceptation (minutes de
+  préparation), à la préparation et au départ du livreur (minutes de trajet). `GET /api/orders/[id]` sert la frise des
+  étapes (libellé, heure ou rien) pour le suivi animé du lot 12b.
+- **Code de remise** (4 chiffres, tirage cryptographique) : retrait, envoyé quand la commande est prête ; livraison, au
+  départ du livreur ; sur place, aucun code. 5 essais ; ensuite la remise est bloquée jusqu'à un nouveau code demandé par
+  le client (3 au plus) ; chaque essai faux est journalisé. Le code n'est gardé qu'en empreinte. La fonction en base le
+  rend une seule fois à la route serveur, qui l'envoie aussitôt au client par **SMS immédiat** (`ORDER_HANDOVER_CODE`,
+  comme les codes à usage unique) puis le retire de la réponse : il n'est jamais renvoyé à la partenaire, au livreur ni au
+  navigateur, et n'entre jamais dans la boîte d'envoi (contrainte existante `notification_outbox_no_secret_chk`) ; l'envoi
+  est journalisé sans le code (`{ purpose: ORDER_HANDOVER }`). La cloche, le push et l'email disent « donnez le code reçu
+  par SMS ». Garde des SMS : indispensable, limites par destinataire seulement (un restaurant actif n'est jamais bloqué par
+  la limite par compte déclencheur).
+- **Livreurs** : membres de l'équipe de la partenaire, invités par leur numéro (compte actif existant), livreurs après leur
+  accord seulement ; retirés, ils ne voient plus rien et les commandes pas encore parties leur sont retirées.
+- **Produits réglementés** (alcool, tabac) : affichés avec leur prix ; refusés au devis, à la création (en base), à
+  l'insertion d'une ligne (déclencheur) et au paiement si l'administration les a marqués entre-temps (remboursement en
+  entier).
+- **Plat du jour** : portions par jour (jamais sous ce qui est vendu), payé en entier, pour aujourd'hui seulement ; il
+  s'arrête seul à la fin du jour.
+- **Coordonnées** : adresse, téléphone et consignes du client visibles par la partenaire et le livreur de la commande
+  seulement (le livreur, tant que la commande est ouverte), masqués 7 jours après la remise (ou la fin de la commande) par
+  la tâche `ev_orders`.
+- **Fiche SUSPENDU** : lecture seule (garde des fiches et refus en base).
+
+## 6. Routes serveur
+
+Chacune vérifie la session (compte actif), puis l'interrupteur, puis le droit ou la propriété en base ; un objet d'autrui
+répond « Commande introuvable » (404).
+
+| Route | Qui | Fonction en base |
+|---|---|---|
+| `POST /api/orders/quote` | client | `order_quote` (rien n'est tenu) |
+| `POST /api/orders/create` | client (numéro vérifié) | `order_create` |
+| `GET /api/orders/[id]` | client (sans interrupteur) | `order_view` : étapes et heures, heure estimée, lignes, montants, code envoyé ou non (jamais le code) |
+| `POST /api/orders/[id]/cancel` | client (sans interrupteur) | `order_cancel` origine CLIENT |
+| `POST /api/orders/[id]/code` | client | `order_code_resend` |
+| `POST /api/payments/create` (ORDER ; `part: SOLDE` pour le solde) | client | `order_payment_create` ; confirmation par le webhook et la réconciliation : `order_payment_confirm` |
+| `GET /api/partner/orders`, `GET /api/partner/orders/[id]` | partenaire | `order_partner_list`, `order_view` |
+| `PATCH /api/partner/orders/[id]` | partenaire | `order_partner_action` |
+| `PATCH /api/partner/venues/[id]/orders` | partenaire | `order_venue_settings_set` |
+| `POST /api/partner/products/[id]/portions` | partenaire | `order_daily_portions_set` |
+| `GET/POST /api/partner/couriers`, `DELETE /api/partner/couriers/[userId]` | partenaire | `order_courier_invite`, `order_courier_remove` |
+| `GET /api/courier/orders`, `GET/PATCH /api/courier/orders/[id]` | livreur ACTIF | `order_courier_list`, `order_view`, `order_courier_action` |
+| `POST /api/courier/invitations/[id]` | invité | `order_courier_respond` |
+| `POST /api/admin/orders/[id]/cancel` | admin `refunds.manage` | `order_cancel` origine EVENT_VILLAGE |
+| `POST /api/admin/products/[id]/regulation` | admin `partners.validate` | `order_product_regulation_decide` |
+| `PATCH /api/admin/services` (table orders) | admin `events.write` | `order_cancel` (commande jamais payée) |
+| `/api/cron/orders` (tâche `ev_orders`, 3-59/5, avec `ev_tables`) | tâche | `order_tick` |
+
+## 7. Avis : textes exacts
+
+17 types en file, tous sur la cloche, le push et l'email (même texte que la cloche, push tronqué à 160 caractères), et le
+SMS sauf l'invitation d'un livreur ; pour « en route » et « prête à retirer », le SMS de l'étape est le **code**, envoyé
+tout de suite (`ORDER_HANDOVER_CODE`, tableau ci-dessous) et jamais mis en file. Chaque avis mène à la commande : `/orders/<id>` (client), `/partner/orders/<id>` (partenaire),
+`/courier/orders/<id>` (livreur), `/courier/invitations/<id>` (invitation). Nuit (finition 4) : SEND = part tout de suite
+(le client attend sa commande en ce moment) ; DEFER = SMS et push reportés à la fin de la plage. Tous les SMS ci-dessous
+sont en GSM-7, **un segment** au pire cas (rendu réel du catalogue, nom d'établissement de 45 caractères, numéro de
+commande de 17 caractères ; mesuré avec `smsSegments`, 0 échec). Données d'exemple : commande CMD-261205-A1B2C3, « Chez
+Fatou, cuisine du Sénégal et grillades », code 4821.
+
+| Type (nuit) | Cloche (titre : texte) | SMS |
+|---|---|---|
+| ORDER_RECEIVED (SEND) | Commande reçue : Votre commande CMD-… est transmise à « Chez Fatou… ». L’établissement l’accepte au plus tard à 12:15 ; sans réponse, elle est annulée et vous êtes remboursé. Suivez chaque étape depuis la commande. | Event Village : commande CMD-261205-A1B2C3 transmise à Chez Fatou, cuisine du Sé.... Réponse avant 12:15, sinon remboursée. |
+| ORDER_ACCEPTED (SEND) | Commande acceptée : « Chez Fatou… » a accepté votre commande CMD-…, prévue vers 12:45. Au départ du livreur, vous recevrez le code à lui donner. Reste à payer à la remise : 875 000 F CFA. (retrait : « Quand elle sera prête, vous recevrez le code à donner au comptoir. » ; sur place : « Elle vous sera servie sur place. ») | Event Village : Chez Fatou, cuisine du Sé... a accepté la commande CMD-261205-A1B2C3. Prévue vers 12:45. |
+| ORDER_PREPARING (SEND) | Commande en préparation : Votre commande CMD-… est en préparation chez « Chez Fatou… », prévue vers 12:45. Elle ne peut plus être annulée. | Event Village : commande CMD-261205-A1B2C3 en préparation chez Chez Fatou, cuisine du Sé.... Prévue vers 12:45. |
+| ORDER_READY (SEND) | Commande prête — retrait : Votre commande CMD-… vous attend chez « Chez Fatou… ». Donnez au comptoir le code reçu par SMS. Reste à payer sur place : 875 000 F CFA. ; livraison : Votre commande CMD-… est prête chez « Chez Fatou… » : le livreur part bientôt. Vous recevrez alors le code à lui donner. ; sur place : Votre commande CMD-… est prête : elle vous est servie dans un instant. | retrait : le code (envoi immédiat, ci-dessous) ; livraison : Event Village : votre commande CMD-261205-A1B2C3 est terminée chez Chez Fatou, cuisine du Sé..., le livreur part dans un instant. ; sur place : Event Village : votre commande CMD-261205-A1B2C3 est terminée : elle vous est servie dans un instant. |
+| ORDER_ON_THE_WAY (SEND ; cloche, push, email) | Commande en route : Votre commande CMD-… est en route, arrivée prévue vers 12:45. À son arrivée, donnez au livreur le code reçu par SMS. Reste à payer au livreur : 875 000 F CFA. | le code (envoi immédiat, ci-dessous) |
+| ORDER_HANDED_OVER (SEND) | Commande livrée (retirée, servie) : Votre commande CMD-… de « Chez Fatou… » est livrée. Merci et à bientôt ! | Event Village : commande CMD-261205-A1B2C3 de Chez Fatou, cuisine du Séné... livrée. Merci et à la prochaine ! |
+| ORDER_CANCELLED (SEND) | Commande annulée : Votre commande CMD-… chez « Chez Fatou… » est annulée par l’établissement. Motif : Rupture de poisson frais ce midi. Vous êtes remboursé de 1 312 500 F CFA sur votre compte de paiement. (par Event Village, par vous ; refusée : « … ne peut pas préparer votre commande … » ; sans réponse : « … n’a pas répondu à temps : votre commande … est annulée. » ; non payée à temps : « Le paiement de la commande … n’est pas arrivé à temps : elle est annulée et rien ne vous est pris. Vous pouvez la refaire. ») | Event Village : commande CMD-261205-A1B2C3 annulée par Chez Fatou, cuisine du.... 1 312 500 F CFA remboursés. (autres origines : « annulée par notre équipe. », « annulée. », « … ne peut pas préparer la commande … », « … n'a pas répondu : commande … annulée. », « paiement non arrivé à temps : commande … annulée, rien ne vous est pris. ») |
+| ORDER_PAYMENT_REFUNDED (SEND) | Paiement remboursé : Votre paiement de 1 312 500 F CFA pour la commande CMD-… est arrivé alors qu’elle n’était plus possible (annulée, déjà payée ou établissement fermé). Il vous est remboursé sur votre compte Orange Money. | Event Village : votre paiement de 1 312 500 F CFA pour la commande CMD-261205-A1B2C3 n'a pas pu servir. Il vous est remboursé sur Orange Money. |
+| ORDER_REFUND_PAID (SEND) | Remboursement versé : 1 312 500 F CFA pour la commande CMD-… vous ont été versés sur votre compte Orange Money. | Event Village : 1 312 500 F CFA versés sur votre compte Orange Money : remboursement de la commande CMD-261205-A1B2C3. |
+| ORDER_PICKUP_REMINDER (SEND) | Commande à retirer : Votre commande CMD-… vous attend chez « Chez Fatou… ». Retirez-la avant le dim. 6 déc. 2026 à 12:45 : ensuite, elle est close sans remboursement. | Event Village : commande CMD-261205-A1B2C3 à retirer chez Chez Fatou, cuisine... avant le 6 déc. à 12:45, sinon close sans remboursement. |
+| ORDER_NOT_COLLECTED (SEND) | Commande non retirée : Votre commande CMD-… n’a pas été retirée à temps chez « Chez Fatou… » : elle est close, sans remboursement. | Event Village : commande CMD-261205-A1B2C3 non retirée à temps chez Chez Fatou, cuisine du Séné... : close, sans remboursement. |
+| ORDER_NEW (SEND, partenaire) | Nouvelle commande : Commande CMD-… chez « Chez Fatou… » : 12 articles, 1 250 000 F CFA. Livraison (zone Almadies et Ngor). À encaisser à la remise : 875 000 F CFA. Acceptez-la ou refusez-la avant 12:15 ; sans réponse, elle est annulée et le client remboursé. | Event Village : nouvelle commande CMD-261205-A1B2C3 : 12 articles, 1 250 000 F CFA. Répondez avant 12:15, sinon elle sera annulée. |
+| ORDER_CANCELLED_PRO (SEND, partenaire) | Commande annulée : La commande CMD-… est annulée par Event Village. Motif : … Ne la préparez pas. (par le client ; faute de réponse : « … le client est remboursé. Pensez à répondre plus vite aux prochaines. » ; non retirée : « Commande non retirée : … elle est close. Ce que le client a payé vous reste. ») | Event Village : commande CMD-261205-A1B2C3 annulée par Event Village. Ne la préparez pas. (et les variantes « par le client », « annulée faute de réponse. Le client est remboursé. », « non retirée à temps : elle est close. ») |
+| ORDER_HANDED_OVER_PRO (DEFER, partenaire) | Commande livrée : Votre livreur a remis la commande CMD-… au client. | Event Village : votre livreur a remis la commande CMD-261205-A1B2C3 au client. |
+| ORDER_COURIER_ASSIGNED (SEND, livreur) | Livraison à faire : Commande CMD-… à livrer pour « Chez Fatou… », zone Almadies et Ngor. Ouvrez-la pour l’adresse et le téléphone du client ; à la remise, demandez-lui son code. | Event Village : commande CMD-261205-A1B2C3 à livrer pour Chez Fatou, cuisine..., zone Almadies et Ngor. Adresse dans l'application. |
+| ORDER_COURIER_CANCELLED (SEND, livreur) | Livraison annulée : La livraison de la commande CMD-… est annulée ou confiée à quelqu’un d’autre : ne la livrez pas. | Event Village : livraison de la commande CMD-261205-A1B2C3 annulée ou confiée à un autre livreur : ne la livrez pas. |
+| ORDER_COURIER_INVITED (DEFER, invité ; pas de SMS) | Invitation à livrer : « Chez Fatou… » vous invite à livrer ses commandes avec Event Village. Acceptez ou refusez l’invitation ; vous verrez seulement les livraisons qui vous sont confiées. | — |
+
+Envoi immédiat du code (`ORDER_HANDOVER_CODE`, SMS seulement, journalisé sans le code, un segment GSM-7) :
+
+| Étape | SMS (code 4821, commande CMD-261205-A1B2C3) |
+|---|---|
+| Prête à retirer | Event Village : votre commande CMD-261205-A1B2C3 vous attend. Donnez le code 4821 au comptoir pour la retirer, à personne d'autre. (130 caractères) |
+| En route | Event Village : votre commande CMD-261205-A1B2C3 est en route. Donnez le code 4821 au livreur à son arrivée, pas avant. (119) |
+| Nouveau code demandé par le client | Event Village : nouveau code de la commande CMD-261205-A1B2C3 : 4821. L'ancien ne marche plus. Donnez-le seulement à la remise. (127) |
+
+Un paiement de commande n'envoie plus l'avis générique « Paiement confirmé » (`trg_payments_other_success`, ORDER exclu) ni
+« Remboursement lancé » (`notif_cashouts_notify`) : les avis de la commande les remplacent.
+
+## 8. Migrations
+
+| Fichier | Contenu |
+|---|---|
+| `…01_l12a_reglages` | 14 réglages `orders.*` (dont `orders.max_unpaid_portions`, contre-vérification T3, et `orders.invites_per_day`, décision du 21/11) ; recopies de `finance_setting_set` et `fin_setting_valid` (20261126000002, lot 10b), `platform_settings_defaults` (20261123000101) |
+| `…02_l12a_catalogue` | réglages de vente des établissements, sorte BOUTIQUE ; produits : établissement, prix entier, réglementé et décision de l'administration ; options ; portions du plat du jour ; zones de livraison ; `order_venue_settings_set`, `order_daily_portions_set`, `order_product_regulation_decide`, `product_regulated` ; lecture, aucune écriture REST |
+| `…03_l12a_commandes_schema` | colonnes des commandes et des lignes, historique, livreurs, clé du code (schéma `private`), `order_code_hash`, état dérivé, garde, reprise des anciennes commandes de repas, lecture (client et administration) |
+| `…04_l12a_devis_commande` | verrous, données et envoi des avis, historique, stock rendu ; `order_quote_compute`, `order_quote`, `order_create` |
+| `…05_l12a_paiement` | `order_payable_refusal`, `order_expire_hold`, `order_payment_create`, `order_payment_confirm` ; recopies de `fin_payout_available_at`, `calculate_referral_commissions` (20261123000105) |
+| `…06_l12a_etapes` | remboursement, clôture, annulation, code (émission, remise, nouveau code), actions de la partenaire et du livreur, livreurs, lectures serveur, `order_tick` ; recopie de `notif_cashouts_notify` (20261129000004, lot 11b : refaite après sa fusion, avis de la table gardé) |
+| `…07_l12a_avis` | 17 types d'avis (canaux, classement de nuit) et l'envoi immédiat `ORDER_HANDOVER_CODE` ; `trg_payments_other_success` (ORDER exclu) ; recopie de `notification_sync_log` (20261120000005, objet ORDER_HANDOVER) |
+| `…08_l12a_releves` | commission des commandes dans les relevés ; recopies de `finance_admin_earned`, `finance_admin_payments` (20261123000109) |
+
+Toutes les fonctions publiques du lot sont réservées au rôle de service (`r3-fonctions-rpc`, `migration-lot12a-rejouable`) ;
+les 10 aides internes (code, empreinte, clôture, remise, départ, stock, historique, remboursement, contrôle d'une commande
+en cours) sont dans le schéma `private`, exécutables par aucun rôle de l'API (contre-vérification T7) ; la clé du code
+n'est lisible par aucun rôle de l'API. Plus la tâche planifiée `ev_orders`
+(`supabase/ops/schedule-crons.sql`, minute 3, toutes les 5 minutes, comme `ev_tables`).
+
+## 9. Mise en service : contrôles avant et après (event-village-dev)
+
+Ordre : les migrations de main d'abord (dernière attendue `20261129000010`, lot 11b appliqué le 21/11), puis `20261130000001` à `…08`, puis `schedule-crons.sql` (11 tâches) une fois les secrets Vault
+`ev_app_url` et `ev_cron_secret` créés.
+
+```sql
+-- Avant
+-- A. Dernière migration appliquée (attendu : 20261127000001, ou 20261129… si le lot 11b est passé avant)
+select max(version) from supabase_migrations.schema_migrations;
+-- B. Rien du lot : 0, 0
+select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname like 'order\_%';
+select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'orders' and column_name = 'order_state';
+-- C. Anciennes commandes qui seront closes (repas, sans billet) et commandes de billets, intactes : à noter
+select (select count(*) from public.orders o where not exists (select 1 from public.tickets t where t.order_id = o.id)) as repas,
+       (select count(*) from public.orders o where not exists (select 1 from public.tickets t where t.order_id = o.id)
+           and o.order_status::text not in ('LIVREE', 'REJETEE', 'ANNULEE')) as repas_en_cours,
+       (select count(*) from public.orders o where exists (select 1 from public.tickets t where t.order_id = o.id)) as billets;
+-- D. Paiements de commande en attente ou payés non clos (seront remboursés s'ils arrivent : à noter)
+select status, count(*) from public.payments where payment_target::text = 'ORDER' group by 1;
+-- E. Produits à prix non entier (la contrainte NOT VALID les laisse, mais ils ne se commandent pas)
+select count(*) from public.products where price <> trunc(price);
+
+-- Après
+-- A. Huit versions 20261130000001 à …08
+select version from supabase_migrations.schema_migrations where version like '20261130%' order by 1;
+-- B. Fonctions du lot réservées au rôle de service : anon false, authenticated false (au moins 28 lignes)
+select p.proname, has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute')
+  from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'order\_%' order by 1;
+-- C. 14 réglages orders.* (dont orders.max_unpaid_portions = 10, orders.invites_per_day = 10)
+select key, value from public.platform_settings where key like 'orders.%' order by 1;
+-- D. Anciennes commandes de repas closes (aucune sans état), commandes de billets sans état (intactes)
+select order_state, count(*) from public.orders group by 1 order by 1;
+select count(*) from public.orders o where o.order_state is null and not exists (select 1 from public.tickets t where t.order_id = o.id);  -- 0
+-- E. Garde, clé du code, RLS : true, true, true, true, true
+select exists (select 1 from pg_trigger where tgname = 'trg_0_orders_flow_guard'),
+       exists (select 1 from pg_trigger where tgname = 'trg_b_order_items_regulated_guard'),
+       exists (select 1 from private.order_code_key),
+       (select relrowsecurity from pg_class where oid = 'public.order_state_history'::regclass),
+       (select relrowsecurity from pg_class where oid = 'public.partner_couriers'::regclass);
+-- F. orders_read sans la branche partenaire (la définition ne cite pas is_partner_owner)
+select pg_get_expr(polqual, polrelid) from pg_policy where polname = 'orders_read';
+-- G. 18 types ORDER_* (17 en file, ORDER_HANDOVER_CODE en envoi immédiat : sync_only true), nuit
+select type, channels, night_policy from public.notification_types where type like 'ORDER\_%' order by 1;
+-- H. Aides internes dans private (10 lignes, schéma private, toutes false) ; aucune dans public (0)
+select n.nspname, p.proname, has_function_privilege('service_role', p.oid, 'execute') as service
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where p.proname in ('order_issue_code', 'order_code_hash', 'order_code_delivery', 'order_close_apply', 'order_handover_apply',
+                     'order_set_en_route', 'order_release_stock', 'order_log_state', 'order_refund_payment', 'order_ongoing_refusal')
+ order by 1, 2;
+```
+
+Puis `03-verification.sql` (comme aux lots précédents) et `schedule-crons.sql` : 11 lignes actives dont `ev_orders`.
+
+## 10. Tests et preuves
+
+Suites du lot :
+
+| Suite | Contenu |
+|---|---|
+| `tests/parcours/l12a-failles-existant` | F1 à F5 par les routes et la lecture REST, corps acceptés par l'ancien comme par le nouveau code (preuve des rouges) |
+| `tests/parcours/l12a-commandes` (37 cas) | A. devis et commande (exemples chiffrés, montants du navigateur ignorés, réglementés : case, décision de l'administration, insertion directe refusée ; produit d'autrui, quantités 0, -1, 2,5, 100 ; stock, portions, minimum, plafond de 3 sous verrou, modes et paiements refusés) ; B. paiement, double confirmation sans effet, frise des étapes et heures, heure estimée, code par SMS immédiat (jamais en base, en file ni dans une réponse ; envoi journalisé sans le code), codes devinés (5 essais, blocage, nouveau code), solde en ligne ou sur place, partenaire sans commande non payée, réponse tardive ; C. annulations et remboursements (11 288 rendus, Wave 169,32 à Event Village, vente reprise), parrainage annulé, tâche (attente échue, paiement arrivé trop tard remboursé, sans réponse, rappel puis non retirée, masquage à 7 jours, tâche sans secret refusée) ; D. accès d'autrui (autre partenaire, autre client, livreur d'une autre équipe, invité non d'accord, retiré ; REST ; garde même pour le rôle de service ; fiche SUSPENDU) ; E. concurrence (deux créations de paiement, deux confirmations, deux paiements encaissés, deux remises, deux annulations) |
+| `tests/schema/migration-lot12a-rejouable` | 8 migrations sans BEGIN ni COMMIT, appliquées deux fois de plus dans une transaction annulée ; 9 recopies sans ligne perdue ; fonctions réservées au rôle de service (jamais anon ni authenticated) ; clé du code illisible même pour le rôle de service |
+| `tests/helpers/lot12a-invariants` | o1 à o7 (montants, encaissé, état et argent, vente au grand livre, portions et stock, code, aucun code en clair), appelés en fin de suite après les invariants de toutes les livraisons précédentes (financier compris) |
+
+Runs :
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 528 | `adb6f124d` (`lot12a/rouges` = main + la suite des trous) | rapide | **rouge voulu, 0/5**, chacun pour la bonne raison (extrait brut ci-dessous) ; typecheck et lint verts |
+| 529 | `c42554db9` | rapide, 23 suites | 8 migrations appliquées sans erreur ; 19 suites vertes ; rouges : le code dans les données d'un avis refusé par la contrainte existante `notification_outbox_no_secret_chk` (étapes « prête » et « en route » en 500), textes exacts des SMS non déclarés (notif-modeles), minute 2 de `ev_orders` vérifiée par essai-cron-local, régularisation du parrainage mal vérifiée par mon test |
+| 532 | `b998f9868` | rapide, 12 suites | code par SMS immédiat : vert ; restent 2 erreurs de mon test (chiffres d'un retrait pris pour une livraison ; forme de la régularisation) et le compte des envois journalisés (notif-migration) |
+| 535 | `8c1529f4e` | rapide, 2 suites | **vert** : `l12a-commandes` 37/37, `notif-migration` 20/20 |
+| 536 | `c8f65de7f` | **complet** | construction, budgets JS (non relevés), e2e, mesure mobile, captures responsive : verts. Tests : 9 suites rouges, toutes des contrôles transverses que mes changements touchaient : recopie de `notif_cashouts_notify` avec une ligne d'origine réécrite (`f4-recopies`) ; `finance-moteur` citait `lib/orders/order.service.ts` (retiré) ; `textes-sms-9bis` : « .... » après un nom tronqué ; `fonctions-privileges` et `hotfix-scripts` : règle 1A.3 de `03-verification.sql` (toute fonction métier exécutable par le rôle de service) violée par `order_code_hash`, `order_issue_code`, `order_code_delivery` que j'avais fermées même au rôle de service ; `recette-matrice` : numéros de ligne cités par `docs/recette-billetterie.md` décalés ; `dette-suspendu-temps-reel` : sonde temps réel des commandes par la partenaire (qui ne lit plus) ; `migration-d1d-vitrine-rejouable` : « dernière migration » ; `design1b-mots` : données d'un code de remise. Aucune faille, aucune suite d'audit rouge |
+| 542 | `41d95ad8c` | rapide, 12 suites | **vert** : les 9 suites du run 536, les 3 suites du lot |
+
+Extrait brut du run 528 (`runs/528-44863009363/jobs/rapide/verify.log`, branche `ci-results`) :
+
+```
+not ok 1 - F1 … error: 'commande jamais payée écrite « livrée » par la partenaire (HTTP 200)'
+not ok 2 - F2 … lecture REST de la commande et de l’adresse du client par la partenaire : [{"id":"ebb6cf3b-…","delivery_address":"Villa 3, Ouakam"}]
+not ok 3 - F3 … commande créée avec une quantité négative (HTTP 200) : {"success":true,"order":{…,"totalAmount":2000,"totalFormatted":"2 000 FCFA"}}
+not ok 4 - F4 … commande créée chez une partenaire avec le produit d’une autre (HTTP 200)
+not ok 5 - F5 … commande jamais payée listée à la partenaire (HTTP 200)
+# pass 0
+# fail 5
+```
+
+Run complet final : **544**, commit `d3f4cdfe7`, lancé à 06:51 (UTC) dès qu'un seul run complet tournait sur les autres
+branches (journaux : `runs/544-44877528079/`, branche `ci-results`).
+
+| Tâche | Résultat |
+|---|---|
+| typecheck · lint | vert |
+| tests 1/4 à 4/4 (Supabase local) | **verts** : 566 suites listées (`jobs/qualite/liste-suites.txt`), aucun « not ok » dans les 4 journaux ; suites du lot comprises |
+| construction, budgets JS | verts, budgets non relevés (`/` 223,5 Ko pour 226,3 ; `/tickets` 246,5 pour 250,4 ; `/events/[id]` 232,1 pour 233,3 ; `/controller/scanner` 233,4 pour 234,9 ; `/billet/hors-ligne` 223,6 pour 224,3) |
+| e2e | vert : 707 cas en 36,2 min, puis les passes de fumée (envoyeur des avis, captures, courriels) toutes vertes |
+| captures responsive (320 à 1 440 px) | vert |
+| mesure mobile | accueil médiane 94, fiche événement OK, réaction au toucher 96 ms : verts ; **Mes billets : médiane 88** sur 5 passages [88 ; 85 ; 94 ; 88 ; 91], seuil 90 |
+| verdict | rouge, du seul fait de Mes billets |
+
+Extrait brut (`jobs/e2e/perf-mobile.log`) :
+
+```
+HORS SEUIL — Mes billets (client connecté)
+  HORS SEUIL — score Lighthouse mobile : médiane 88 sur 5 passage(s) [88 ; 85 ; 94 ; 88 ; 91] (seuil ≥ 90)
+  OK — affichage principal (LCP, Lighthouse) : médiane 926 ms sur 5 passage(s) [941 ms ; 926 ms ; 916 ms ; 918 ms ; 938 ms] (seuil < 2,50 s)
+VERDICT : HORS SEUIL — au moins une mesure ne tient pas son seuil (le run est rouge)
+```
+
+Le lot ne touche pas Mes billets (seul écran modifié depuis `main` : `app/admin/finance-settings/page.tsx` ; budget JS de `/tickets` tenu) ; la règle temporaire de la consigne (« une note
+mobile de Mes billets sous 90 ne bloque pas ce lot ») s'applique. Le run complet n'a pas été relancé.
+
+## 11. Tests existants modifiés (signalés)
+
+Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'est changée.
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `partner-orders-m9` (tests 2 à 5) | passent par `order_create`, `order_partner_action`, `order_cancel` au lieu de `OrderService` (retiré) ; mêmes intentions et mêmes montants (13 000 + 1 000 → 14 000, frais 700) ; le test 3 suit les étapes jusqu'à la remise contre code ; le test 4 attend « n'est plus disponible » au lieu de « est suspendu » | ancien service retiré (F1, F3, F4) |
+| `finance-cibles` (commande) | commande créée par `order_create` ; payée : « reçue » (ancien statut EN_ATTENTE) au lieu de « confirmée » ; échec du paiement : la commande reste en attente de paiement (au lieu d'annulée) | F6 |
+| `pannes-absences` (commande) | commande créée par `order_create` (payable à la remise : reçue, visible de la partenaire) ; la panne vise l'appel `rpc/order_view` (la route ne lit plus la table par REST) | F2, F5 |
+| `dette-publication-reservations` | le témoin temps réel des commandes est le client (la partenaire ne lit plus par REST) ; la partenaire propriétaire rejoint les tiers qui ne reçoivent rien ; la sonde RLS attend la commande visible du client seulement ; le cas « suspendu » est éprouvé sur le client | F2 (consigne : aucune lecture REST des commandes par la partenaire) |
+| `interrupteurs` | routes nouvelles ajoutées aux listes (réglages de vente, portions, livreurs, devis, routes du livreur) | couverture |
+| `f2acv-ecritures-fiche` | les écritures des commandes et des produits ne sont plus « gardées » pour une fiche SUSPENDU : elles sont refusées (`partnerEventWrite`) | fiche SUSPENDU = lecture seule |
+| `r3-fonctions-rpc` | 28 fonctions du lot ajoutées (réservées au rôle de service) | couverture |
+| `notif-modeles`, `notif-outbox`, `notif-migration` | 17 types et l'envoi immédiat ajoutés (registre, textes exacts des SMS avec des valeurs courtes, émetteurs) ; `sendOrderCode` admise dans la liste des envois SMS immédiats (module `lib/orders/booking.ts`) | avis du lot |
+| `planification-crons`, `essai-cron-local` | tâche `ev_orders` (minute 3 ; la minute 2 est celle d'une autre tâche vérifiée par `essai-cron-local`) | tâche planifiée |
+| `tests/helpers/finance-invariants.ts` (règles d et e) | la commission et le paiement impossible à honorer (`refund_reason`) d'une commande sont traités comme ceux d'une salle ou d'une table | paiements de commande en base |
+| `docs/deploiement-projet-neuf.md` | tâche `ev_orders`, 11 tâches | tâche planifiée |
+| `finance-moteur` | entrée `lib/orders/order.service.ts` retirée de la liste des calculs de commission hors base | fichier retiré (commandes calculées en base) |
+| `dette-suspendu-temps-reel` | sonde `orders` de la partenaire retirée | la partenaire ne lit plus les commandes, active ou suspendue (F2) ; le client reste éprouvé par `dette-publication-reservations` |
+| `migration-d1d-vitrine-rejouable` | « aucune migration après 20261127000001 » limité aux migrations d'avant 20261130 | les migrations du lot 12a, non appliquées, viennent après |
+| `design1b-mots` | données d'exemple d'un code de remise (4 chiffres, numéro, étape) pour l'envoi immédiat `ORDER_HANDOVER_CODE` | le texte exige ces données |
+| `docs/recette-billetterie.md` | numéros de ligne cités recalés (`interrupteurs`, `pannes-absences`, `notif-modeles`) | lignes ajoutées par le lot dans ces tests |
+
+## 12. Points à faire trancher par le client
+
+Décisions reçues le 21/11 (après le run 544) :
+
+| # | Point | Décision |
+|---|---|---|
+| 1 | Code de remise par SMS immédiat seulement | **Validé.** Au lot 12b, le client verra aussi son code dans l'application, sur sa commande, compte connecté seulement : code gardé chiffré dans `private`, jamais lisible par la partenaire ni le livreur, jamais en file, push ni email. |
+| 2 | Frais de service sur ce qui est payé en ligne | **Validé.** |
+| 3 | Délai de réponse de la partenaire : 15 minutes | **Gardé**, à confirmer par le client. |
+| 4 | Commande prête non retirée ; livraison ratée | Retrait : tel quel. **Livraison ratée : question posée au client**, rien d'automatique d'ici là (comportement actuel). |
+| 5 | Recettes disponibles 48 h après l'heure prévue | **Validé.** |
+| 6 | Produit non vérifié par l'administration | **Changé, au lot 12b** : détection par mots-clés (bière, vin, whisky, liqueur, cigarette, chicha…) → produit « à vérifier », non vendable jusqu'à la décision de l'administration. Aujourd'hui (lot 12a) : commandable tant que ni la partenaire ni l'administration ne l'ont marqué réglementé. |
+| 7 | Plafond des non payées | **Validé.** |
+| 8 | Annulation gratuite après acceptation, avant préparation | **Validé.** |
+| 9 | Livreur invité par son numéro ; la partenaire peut livrer elle-même | **Validé.** |
+
+Texte des points tels que posés :
+
+1. **Code de remise** : envoyé par SMS seulement (envoi immédiat, comme un code de connexion) ; la cloche, le push et
+   l'email disent « donnez le code reçu par SMS ». La plateforme interdit déjà tout code dans la boîte d'envoi (lot 6) :
+   le mettre dans le push ou l'email demanderait d'assouplir cette règle. Exemple du 21/11 respecté dans le SMS : « Donnez
+   le code 4821 au livreur à son arrivée, pas avant. »
+2. **Frais de service sur ce qui est payé en ligne** : avec un acompte, 5 % sur l'acompte, puis 5 % sur le solde s'il est
+   payé en ligne ; rien sur un paiement à la remise (Event Village ne gagne rien sur ces commandes).
+3. **Délai de réponse de la partenaire : 15 minutes** (réglage `orders.response_minutes`), puis annulation et
+   remboursement. Proposition, non fixée par la décision du 18/11.
+4. **Commande prête non retirée** : seule la commande **à retirer** et **prête** est close à 24 h sans remboursement ; une
+   commande jamais marquée prête par la partenaire ne l'est pas. Une **livraison ratée** (client absent) n'a pas de règle
+   automatique (§ `apres-lancement`).
+5. **Recettes disponibles** 48 h après l'heure **prévue** de la remise (comme les billets après la fin de l'événement),
+   même si la remise n'est jamais confirmée ; Event Village peut annuler et rembourser pendant ce délai.
+6. **Produit non vérifié par l'administration** : commandable tant que ni la partenaire ni l'administration ne l'ont marqué
+   réglementé. Autre choix possible : tout produit d'une catégorie « boissons » vérifié avant d'être vendu.
+7. **Plafond des non payées** : les commandes payables à la remise et pas encore remises comptent (protection contre les
+   fausses commandes).
+8. **Annulation par le client après acceptation** (mais avant la préparation) : gratuite, comme décidé ; la partenaire qui
+   veut s'en protéger passe en préparation dès l'acceptation.
+9. **Livreur** : invité par son numéro, livreur après son accord ; la partenaire peut aussi livrer elle-même (étape « en
+   route » par la partenaire).
+
+## 13. Contre-vérification : correctifs
+
+Rapport de la contre-vérification : `docs/audit-lot12a.md` (branche `lot12a/cv-rouges` à `aa00aeb58`, partie de
+`14b7a718f`), récupéré en avance rapide avec ses trois suites : `tests/audit/cv12a-1-trous` (un test par trou),
+`cv12a-2-gardes` (garde-fous, invariants à la fin), `cv12a-3-statique` (recopies, SMS, codes). Les migrations du lot,
+jamais appliquées, sont corrigées **en place** (aucune nouvelle migration) : une recopie reste unique dans le lot (S1).
+
+| # | Trou (gravité) | Correctif | Où |
+|---|---|---|---|
+| T1 | Commande jamais payée (annulée avant le paiement, échue) listée et lisible par la partenaire, adresse et téléphone compris (moyenne) | La partenaire ne voit et n'agit que sur une commande **transmise** (`received_at` posé au paiement de la première part ou à la création d'une commande payable à la remise) : `order_view` (« PARTNER »), `order_partner_list`, `order_partner_action`, annulation par la partenaire. Coordonnées d'une commande close sans transmission masquées tout de suite (`order_expire_hold`, `order_close_apply`). | `…05`, `…06` |
+| T2 | Solde payé sans le contrôle d'une commande payable ; commande payable à la remise acceptée et remise avec un produit devenu réglementé (moyenne) | Nouvelle aide `private.order_ongoing_refusal` : fiche de la partenaire suspendue ou produit réglementé. Solde : création refusée, confirmation remboursée en entier (comme la première part). Acceptation et remise : produit réglementé → commande **refusée par Event Village**, tout rendu au client, sans faute de la partenaire, avis au client ; fiche suspendue → remise refusée. L'établissement fermé aux nouvelles commandes n'empêche pas de finir une commande déjà acceptée. | `…05`, `…06` |
+| T3 | Même produit sur plusieurs lignes : 297 portions tenues par une commande non payée (faible) | 99 au plus par produit sur **toute** la commande (`order_quote_compute`) ; plat du jour : **10 portions au plus tenues sans paiement par client et par plat**, toutes ses commandes non payées comprises (réglage `orders.max_unpaid_portions`, 1 à 99, écran des réglages, refus 429 `TOO_MANY_PORTIONS`). | `…01`, `…04`, réglages |
+| T4 | Prénom du titulaire de n'importe quel numéro rendu à la partenaire (faible) | Avant l'accord, comme pour les contrôleurs : le **numéro saisi et un nom masqué** (« Nd*** S*** », `team_mask_name`) dans la réponse de l'invitation et dans la liste ; le prénom seulement pour un livreur actif. | `…06`, `app/api/partner/couriers/route.ts` |
+| T5 | Commandes jamais payées au tableau de bord et aux métriques de la partenaire (faible) | Liste et comptes : une commande d'établissement n'apparaît qu'une fois transmise ; les commandes sans établissement (billets de l'ancien code) restent comptées comme avant. | `app/api/partner/metrics/route.ts`, `lib/partner/partner-dashboard.service.ts` |
+| T6 | Nouveau code envoyé service fermé (faible) | **Décision du chef de projet** (règle du 20/11 : ce qui est en cours reste ouvert) : un nouveau code reste possible pour une commande **en cours**, service fermé, plafond de 3 gardé ; refusé pour une commande close (c'était déjà le cas : `order_code_resend` n'accepte que « prête à retirer » ou « en route »). Aucun changement de code ; condition du test adaptée (ci-dessous). | test seulement |
+| T7 | 9 aides internes exécutables par le rôle de service, appelables en RPC sans contrôle d'acteur ni d'état (faible) | Les 9 aides (et la nouvelle `order_ongoing_refusal`) passent dans le schéma **`private`** (non exposé par l'API, hors de la règle 1A.3) : exécutables par aucun rôle de l'API, appelées seulement par les fonctions publiques ; anciennes versions publiques retirées (`DROP FUNCTION IF EXISTS`). | `…03`, `…04`, `…05`, `…06` |
+| T8 | `GET /api/partner/products/[id]` : produit non publié d'une autre partenaire lu (faible) | Produit de la partenaire de la session seulement (404 sinon). | `lib/products/product.service.ts`, route |
+| T9 | Nouveaux codes envoyés sans journal (faible) | Une référence par envoi (commande, étape, nouveaux codes déjà demandés) : une ligne de journal par SMS du code, toujours sans le code. | `…06`, `lib/orders/booking.ts` |
+
+Textes nouveaux (réponses des routes, en français simple) :
+
+| Code | Texte |
+|---|---|
+| `REGULATED_ORDER_REFUSED` (acceptation) | Un produit de cette commande est réglementé : elle ne peut pas être acceptée. Elle est annulée et le client remboursé. |
+| `REGULATED_ORDER_REFUSED` (remise) | Un produit de cette commande est réglementé : elle ne peut pas être remise. Elle est annulée et le client remboursé. |
+| `REGULATED_PRODUCT` (solde) | « Bière blonde » est un produit réglementé : il ne se commande pas en ligne. |
+| `VENUE_NOT_AVAILABLE` (solde, fiche suspendue) | Cet établissement ne prend plus de paiement pour le moment. |
+| `INVALID_QUANTITY` (somme par produit) | Au plus 99 « Bissap » par commande. |
+| `TOO_MANY_PORTIONS` | Vous tenez déjà 6 portions de « Thiéboudienne du jour » sans les avoir payées : 10 au plus. Payez votre commande en cours ou attendez qu’elle se termine. (ou, sans commande en cours : Au plus 10 portions de « … » par commande non payée.) |
+
+Décisions du chef de projet du 21/11, appliquées dans le même passage :
+
+- **Avis du refus « produit réglementé »** (acceptation ou remise) : le client, la partenaire et le livreur (s'il y en a
+  un) reçoivent chacun un avis sur les 4 canaux (cloche, push, email, SMS), avec une origine dédiée `REGLEMENTE` des avis
+  existants `ORDER_CANCELLED`, `ORDER_CANCELLED_PRO` et `ORDER_COURIER_CANCELLED` (aide interne `order_close_apply`,
+  paramètre `p_notice`).
+- **Invitations de livreurs** : au plus 10 par partenaire et par jour, heure de Dakar (réglage
+  `orders.invites_per_day`, 1 à 50, écran des réglages), comptées sous verrou de la partenaire ; au-delà, 429
+  `TOO_MANY_INVITES` : « Vous avez déjà envoyé 10 invitations aujourd’hui : réessayez demain. »
+
+| Avis (origine `REGLEMENTE`) | Cloche, push, email | SMS (un segment GSM-7) |
+|---|---|---|
+| Client (`ORDER_CANCELLED`) | Commande annulée : Votre commande CMD-… chez « Chez Fatou… » est annulée par Event Village : un de ses produits est réglementé (alcool, tabac) et ne se vend pas en ligne. Vous êtes remboursé de 5 250 F CFA sur votre compte de paiement. | Event Village : commande CMD-261205-A1B2 annulée : produit réglementé, non vendu en ligne. 5 250 F CFA remboursés. |
+| Partenaire (`ORDER_CANCELLED_PRO`) | Commande annulée : La commande CMD-… est annulée par Event Village : un de ses produits est réglementé (alcool, tabac) et ne se vend pas en ligne. Le client est remboursé. Ne la préparez pas et ne la remettez pas ; retirez ce produit de la vente en ligne. | Event Village : commande CMD-261205-A1B2 annulée : produit réglementé, non vendu en ligne. Client remboursé. Ne la remettez pas. |
+| Livreur (`ORDER_COURIER_CANCELLED`) | Livraison annulée : La commande CMD-… est annulée par Event Village : un de ses produits est réglementé et ne se vend pas en ligne. Ne la livrez pas ; rapportez-la à l’établissement. | Event Village : commande CMD-261205-A1B2 annulée (produit réglementé) : ne la livrez pas, rapportez-la à l'établissement. |
+
+Tests modifiés (signalés) :
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `tests/audit/cv12a-1-trous` T6 | La condition attendait 404 pour toute commande, service fermé ; elle attend maintenant, service fermé : 3 nouveaux codes pour une commande **en cours** puis 429 (plafond gardé), 3 SMS ; refus et **aucun SMS** pour une commande close. Commentaire « Décision du chef de projet ». Seule assertion de la contre-vérification changée. | décision du chef de projet du 21/11 |
+| `migration-lot12a-rejouable` | Les aides internes : dans `private`, exécutables par aucun rôle (au lieu de « exécutables par le rôle de service ») ; clé illisible | T7 |
+| `r3-fonctions-rpc` | 4 aides retirées de la liste des fonctions publiques | T7 |
+| `notif-migration` | Les points d'insertion `order_close_apply`, `order_set_en_route`, `order_handover_apply` sont cherchés dans `public` et `private` (paramètre `schemas` de l'aide de lecture) | T7 |
+| `l12a-commandes` | Stock rendu une seule fois : `private.order_release_stock` appelée en base (plus en RPC) ; réglage `orders.max_unpaid_portions` = 10 parmi les défauts ; nouveau cas : 10 portions tenues au plus, 99 par produit sur deux lignes | T7, T3 |
+| `partner-orders-m9` | `getProductById(produit, partenaire)` | T8 |
+| `l12a-commandes` (ajouts) | Refus « produit réglementé » à l'acceptation et à la remise par le livreur : tout rendu, avis aux trois destinataires sur les 4 canaux ; limite des invitations (réglage ramené à 2 le temps du test) ; défaut `orders.invites_per_day` = 10 | décisions du 21/11 |
+| `notif-modeles` | 3 textes SMS exacts ajoutés (origine `REGLEMENTE`) | décisions du 21/11 |
+
+Runs :
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 566 | `985abae95` | rapide, 13 suites | **vert**, 13/13, aucun « not ok » : avis du refus « réglementé » et limite des invitations (`l12a-commandes` 40/40), textes (`notif-modeles`, `textes-sms-9bis`, `f4-textes`, `design1b-mots`), réglages (`f3b-*`), suites de la contre-vérification |
+| 560 | `f55a08a85` | rapide, 20 suites | **vert**, 20/20 suites, aucun « not ok » : `cv12a-1-trous` 12/12 (T1 à T9, dont T2a à T2d), `cv12a-2-gardes` 7/7, `cv12a-3-statique` 3/3 ; suites du lot, `fonctions-privileges` et `hotfix-scripts` (règle 1A.3), réglages (`f3b-*`), interrupteurs, `notif-migration`, `r3-fonctions-rpc`, temps réel et pannes ; invariants de toutes les livraisons (jusqu'à o1-o7) : 0 violation |
+
+Extrait brut du run 560 (`runs/560-44913113802/jobs/rapide/verify.log`, branche `ci-results`) :
+
+```
+ok 1 - T1 — commande jamais payée (annulée avant paiement, puis échue) : ni listée ni lisible par la partenaire, ni son adresse ni son téléphone
+ok 2 - T2a — solde en ligne refusé quand un produit de la commande est devenu réglementé (décision de l’administration après l’acompte)
+ok 3 - T2b — solde en ligne refusé quand la fiche de la partenaire est suspendue (comme la première part)
+ok 4 - T2c — solde confirmé après que le produit est devenu réglementé : remboursé, jamais compté (comme la première part)
+ok 5 - T2d — commande payable à la remise dont un produit devient réglementé : la partenaire ne peut plus l’accepter ni la remettre
+ok 6 - T3 — même produit sur plusieurs lignes : plus de 99 unités refusées (pas 297 portions du plat du jour tenues sans payer)
+ok 7 - T4 — invitation d’un livreur : le prénom d’un compte quelconque n’est pas rendu à la partenaire à partir de son seul numéro
+ok 8 - T5 — tableau de bord et métriques de la partenaire : aucune commande jamais payée
+ok 9 - T6 — service des commandes fermé : nouveau code possible pour une commande en cours (plafond de 3 gardé), refusé pour une commande close, aucun SMS pour celle-ci
+ok 10 - T8 — GET /api/partner/products/[id] : le produit non publié d’une autre partenaire n’est pas lisible
+ok 11 - T9 — chaque SMS de code de remise est journalisé (code de retrait, puis nouveau code demandé par le client)
+ok 12 - T7 — aides internes des commandes non appelables en RPC par la clé de service (contrôle du catalogue)
+[INVARIANT-LOT12A] cv12a-2-gardes — (o1)(o2)(o3)(o4)(o5)(o6)(o7) : 0 violation(s)
+```
+
+### Après la fusion du lot 11b dans main (22/11)
+
+`main` (`5fd300caf` : lot 11b et correctifs de sa contre-vérification, migrations `20261129000001` à `…010` appliquées sur
+event-village-dev) fusionnée dans la branche (`1d0716472`).
+
+- **Recopie de `notif_cashouts_notify` refaite** à partir de sa dernière définition, `20261129000004_l11b_avis.sql:116-457`
+  (fusion à trois voies depuis la version du lot 10b : l'avis de la table `TABLE_REFUND_PAID` et sa lecture gardés, puis
+  les ajouts du lot 12a) ; aucune ligne perdue (`migration-lot12a-rejouable`, `cv12a-3-statique` S1, `f4-recopies`). Aucune
+  autre fonction recopiée par le lot n'a été redéfinie par le lot 11b ; aucune politique en commun (lot 11b : `venues_read`,
+  tables, `payments_read`, `refunds_read` ; lot 12a : commandes, produits).
+- **Lecture REST des paiements (T8 du lot 11b)** : nouveau cas de `l12a-commandes` : ni la partenaire ni le livreur ne
+  lisent par la REST un paiement de commande (par la fiche, par identifiant, par commande) ni un remboursement (commande
+  annulée par la partenaire) ; le client lit les siens.
+- **Conflits résolus** : garde des fiches (`partnerEventWrite` : établissements et tables du lot 11b **et** commandes du
+  lot 12a) ; `f2acv-ecritures-fiche` (les deux lots retirent leurs écritures de la liste des écritures gardées) ;
+  `notif-migration` et `notif-modeles` (entrées des deux lots) ; `migration-d1d-vitrine-rejouable` (version de main, plus
+  précise : aucune migration postérieure ne redéfinit les fonctions de la vitrine) ; `docs/apres-lancement.md` (les deux) ;
+  `docs/recette-billetterie.md` (lignes citées recalées : `interrupteurs.test.ts:399`, `notif-modeles.test.ts:574`).
+- **Réglage renommé** `orders.invites_per_day` (au lieu de `orders.courier_invites_per_day`) : le mot « courier » de l'écran
+  des réglages était pris pour la police Courier par le contrôle des polices à chasse fixe (`design-systeme` 8.2 q).
+
+Tests modifiés à ce stade (signalés) :
+
+| Test | Modification | Pourquoi |
+|---|---|---|
+| `tests/audit/cv11b-3-statique` (S2) | « main » = les définitions d'avant le lot 11b (`< 20261129`) au lieu de « tout fichier qui n'est pas du lot 11b » : la recopie du lot 12a (`20261130…`), postérieure, était prise pour sa référence. **Assertion inchangée.** | lot fusionné après le lot 11b |
+| `l12a-commandes` | Plat du jour « au plus tôt » entre 23 h 25 et minuit (Dakar) : la base refuse à bon droit (heure prévue le lendemain) ; les deux cas du plat du jour vérifient alors ce refus (aide `dailySpecialWindowClosed`) ; commande du test REST au-dessus du minimum de la zone | run 583, vers minuit |
+
+Fragilité connue (non corrigée, assertions d'audit) : `cv12a-2-gardes` G2 (dernière portion du plat du jour) échoue s'il
+tourne entre 23 h 30 et minuit, heure de Dakar, pour la même raison (règle « pour aujourd'hui seulement »).
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 582 | `1d0716472` | rapide, 357 suites (toutes celles qui citent orders, products, payments, refunds, venues ou notif) | **coupé à 60 min** (limite du job rapide) après 207 suites ; typecheck et lint verts ; 204 vertes, 3 rouges : `cv11b-3-statique` S2, `design-systeme` 8.2 q, `l12a-commandes` (test REST sous le minimum de la zone) |
+| 583 | `25786603a` | rapide, 155 suites (les 150 non passées au 582 et les 3 rouges) | 154/155 ; seule `l12a-commandes` rouge : plat du jour vers minuit (ci-dessus) |
+| 584 | `2280aff80` | rapide, `l12a-commandes` | **vert** |
+
+Au total, les 357 suites citées sont passées vertes sur les runs 582 à 584 (dernier état de chacune).

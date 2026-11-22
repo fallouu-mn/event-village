@@ -292,16 +292,15 @@ describe('6.0 d — publication supabase_realtime', () => {
         assert.ok(tables.includes('orders'), `orders retirée de la publication alors que deux écrans s'y abonnent (tables : ${tables.join(', ')})`);
     });
 
-    test('réservations de salle et de table : ni le client, ni le partenaire propriétaire, ni anon ne reçoivent une mise à jour (témoin : la commande, reçue par le partenaire)', async () => {
+    test('réservations de salle et de table : ni le client, ni le partenaire propriétaire, ni anon ne reçoivent une mise à jour (témoin : la commande, reçue par son client)', async () => {
         const owner = await signedInClient({ email: partnerA.email });
         const cust = await signedInClient({ email: clientA.email });
         const anon = anonClient();
         try {
             // Commande témoin et réservations sur des canaux SÉPARÉS : un abonnement à une table retirée de la
             // publication peut être refusé par Realtime, ce qui coupait le canal entier, témoin compris (run 61).
-            const ownerB = subscribeBundle(owner, 'partenaire propriétaire', {
-                orders: { table: 'orders', filter: `partner_id=eq.${partnerA.partnerId}` },
-            });
+            // Lot 12a (modification signalée au rapport) : la partenaire ne lit plus les commandes par REST, donc plus en temps
+            // réel ; le témoin de vivacité est la commande reçue par son client
             const ownerR = subscribeBundle(owner, 'partenaire propriétaire (réservations)', {
                 hallFiltered: { table: 'hall_reservations', filter: `partner_id=eq.${partnerA.partnerId}` },
                 hall: { table: 'hall_reservations' },
@@ -322,7 +321,7 @@ describe('6.0 d — publication supabase_realtime', () => {
                 hall: { table: 'hall_reservations' },
                 table: { table: 'table_reservations' },
             });
-            await Promise.all([ownerB.ready, custB.ready, anonB.ready]);
+            await Promise.all([custB.ready, anonB.ready]);
             // Réservations : abonnement accepté (aucun message ne doit arriver) ou refusé par Realtime (aucune
             // diffusion possible) ; tout autre état, dont le délai dépassé, fait échouer le test.
             for (const r of [ownerR, custR, anonR]) {
@@ -330,15 +329,12 @@ describe('6.0 d — publication supabase_realtime', () => {
                 console.log(`[TEMPS-REEL-6.0d] abonnement ${r.label} : ${o.status}${o.error ? ` (${o.error})` : ''}`);
                 assert.ok(o.status === 'SUBSCRIBED' || o.status === 'CHANNEL_ERROR', `abonnement ${r.label} : état inattendu ${o.status} ${o.error ?? ''}`);
             }
-            await produceUntilReceived(ownerB.feeds.orders, touchOrder, about('id', [orderId]), { what: 'vivacité : commande reçue par le partenaire propriétaire' });
             await produceUntilReceived(custB.feeds.orders, touchOrder, about('id', [orderId]), { what: 'vivacité : commande reçue par son client' });
             await proveLive(anonB.feeds.control);
 
             const hallMarker = await touchHallReservation();
             const tableMarker = await touchTableReservation();
             const sentinel = await touchOrder();
-            await waitForEvent(ownerB.feeds.orders, (e) => e.new.id === orderId && e.new.delivery_notes === sentinel, RECEIVE_TIMEOUT_MS,
-                'sentinelle : commande reçue par le partenaire propriétaire après les deux mises à jour');
             await waitForEvent(custB.feeds.orders, (e) => e.new.id === orderId && e.new.delivery_notes === sentinel, RECEIVE_TIMEOUT_MS,
                 'sentinelle : commande reçue par son client après les deux mises à jour');
             await sleep(SETTLE_MS);
@@ -359,32 +355,36 @@ describe('6.0 d — publication supabase_realtime', () => {
 
 // ── orders ─────────────────────────────────────────────────────────────────
 
-describe('6.0 d — orders : reçue par le partenaire propriétaire actif seulement', () => {
-    test('anon, client B et partenaire B (avec et sans filtre) ne reçoivent rien ; le partenaire propriétaire reçoit (couverture)', async () => {
-        const owner = await signedInClient({ email: partnerA.email });
+// Lot 12a (modification signalée au rapport) : consigne « aucune lecture REST des commandes par la partenaire ni par le
+// livreur » : orders_read ne garde que le client et l'administration ; la partenaire propriétaire rejoint les tiers qui ne
+// reçoivent rien, le témoin est le client de la commande.
+describe('6.0 d — orders : reçue par son client actif seulement', () => {
+    test('anon, client B, partenaire B et partenaire propriétaire (avec et sans filtre) ne reçoivent rien ; le client de la commande reçoit', async () => {
+        const owner = await signedInClient({ email: clientA.email });
+        const ownerPartner = await signedInClient({ email: partnerA.email });
         const b = await signedInClient({ email: partnerB.email });
         const c = await signedInClient({ email: clientB.email });
         const a = anonClient();
         try {
-            const witness = subscribeBundle(owner, 'partenaire propriétaire', { orders: { table: 'orders', filter: `partner_id=eq.${partnerA.partnerId}` } });
-            const spies = ([['partenaire B', b], ['client B', c], ['anon', a]] as Array<[string, SupabaseClient]>).map(([who, cl]) => subscribeBundle(cl, who, {
+            const witness = subscribeBundle(owner, 'client de la commande', { orders: { table: 'orders', filter: `client_id=eq.${clientA.userId}` } });
+            const spies = ([['partenaire B', b], ['client B', c], ['anon', a], ['partenaire propriétaire', ownerPartner]] as Array<[string, SupabaseClient]>).map(([who, cl]) => subscribeBundle(cl, who, {
                 control: controlTarget(),
                 filtered: { table: 'orders', filter: `partner_id=eq.${partnerA.partnerId}` },
                 all: { table: 'orders' },
             }));
             await Promise.all([witness.ready, ...spies.map((s) => s.ready)]);
-            await produceUntilReceived(witness.feeds.orders, touchOrder, about('id', [orderId]), { what: 'vivacité : commande reçue par le partenaire propriétaire' });
+            await produceUntilReceived(witness.feeds.orders, touchOrder, about('id', [orderId]), { what: 'vivacité : commande reçue par son client' });
             for (const s of spies) await proveLive(s.feeds.control);
 
             const target = await touchOrder();
-            await waitForEvent(witness.feeds.orders, (e) => e.new.id === orderId && e.new.delivery_notes === target, RECEIVE_TIMEOUT_MS, 'commande reçue par le partenaire propriétaire');
+            await waitForEvent(witness.feeds.orders, (e) => e.new.id === orderId && e.new.delivery_notes === target, RECEIVE_TIMEOUT_MS, 'commande reçue par son client');
             const sentinel = await touchOrder();
-            await waitForEvent(witness.feeds.orders, (e) => e.new.id === orderId && e.new.delivery_notes === sentinel, RECEIVE_TIMEOUT_MS, 'sentinelle reçue par le partenaire propriétaire');
+            await waitForEvent(witness.feeds.orders, (e) => e.new.id === orderId && e.new.delivery_notes === sentinel, RECEIVE_TIMEOUT_MS, 'sentinelle reçue par son client');
             await sleep(SETTLE_MS);
             const leaks = leaksOf(spies.flatMap((s) => [s.feeds.filtered, s.feeds.all]), about('id', [orderId]));
             assert.deepEqual(leaks, [], `commande diffusée à un tiers :\n${leaks.join('\n')}`);
         } finally {
-            await disposeClients(owner, b, c, a);
+            await disposeClients(owner, ownerPartner, b, c, a);
         }
     });
 });
@@ -431,7 +431,8 @@ function hidden(n: number | 'REFUS'): boolean {
 }
 
 describe('6.0 d — sonde RLS de orders_read sous le rôle et les claims de chaque abonné', () => {
-    test('la commande est visible du partenaire propriétaire et du client, d’aucun tiers (couverture)', async () => {
+    // Lot 12a (modification signalée au rapport) : la partenaire propriétaire ne lit plus la commande par REST
+    test('la commande est visible du client seulement, ni de la partenaire propriétaire ni d’aucun tiers', async () => {
         const v = viewers();
         const seen = await inspect(async (db) => {
             const out: Record<string, number | 'REFUS'> = {};
@@ -439,9 +440,8 @@ describe('6.0 d — sonde RLS de orders_read sous le rôle et les claims de chaq
             return out;
         });
         console.log(`[TEMPS-REEL-6.0d] orders_read : ${JSON.stringify(seen)}`);
-        assert.equal(seen[v.owner.label], 1, `partenaire propriétaire : ${JSON.stringify(seen)}`);
         assert.equal(seen[v.client.label], 1, `client de la commande : ${JSON.stringify(seen)}`);
-        for (const viewer of [v.partnerB, v.clientB, v.anon]) {
+        for (const viewer of [v.owner, v.partnerB, v.clientB, v.anon]) {
             assert.ok(hidden(seen[viewer.label]), `${viewer.label} voit la commande : ${JSON.stringify(seen)}`);
         }
     });
@@ -456,15 +456,16 @@ describe('6.0 d — sonde RLS de orders_read sous le rôle et les claims de chaq
         assert.equal(seen, 1, `la sonde ne relève pas la politique permissive fabriquée (client B : ${seen})`);
     });
 
-    test('partenaire propriétaire suspendu (users.status, transaction annulée) : aucune ligne (orders_read durcie, A1)', async () => {
+    // Lot 12a (modification signalée au rapport) : même règle, éprouvée sur le client (seul lecteur restant hors administration)
+    test('client de la commande suspendu (users.status, transaction annulée) : aucune ligne (orders_read durcie, A1)', async () => {
         const v = viewers();
         const seen = await inRolledBackTransaction(async (db) => {
-            const active = await visibleRows(db, v.owner, 'orders', orderId);
-            const upd = await db.query("UPDATE public.users SET status = 'SUSPENDU' WHERE id = $1", [partnerA.userId]);
-            assert.equal(upd.rowCount, 1, 'suspension du partenaire dans la transaction');
-            return { active, suspended: await visibleRows(db, v.owner, 'orders', orderId) };
+            const active = await visibleRows(db, v.client, 'orders', orderId);
+            const upd = await db.query("UPDATE public.users SET status = 'SUSPENDU' WHERE id = $1", [clientA.userId]);
+            assert.equal(upd.rowCount, 1, 'suspension du client dans la transaction');
+            return { active, suspended: await visibleRows(db, v.client, 'orders', orderId) };
         });
-        assert.equal(seen.active, 1, `précondition : le partenaire actif voit sa commande (${JSON.stringify(seen)})`);
-        assert.ok(hidden(seen.suspended), `partenaire suspendu : la commande reste lisible par la RLS (${JSON.stringify(seen)}) — orders_read ne lit pas users.status`);
+        assert.equal(seen.active, 1, `précondition : le client actif voit sa commande (${JSON.stringify(seen)})`);
+        assert.ok(hidden(seen.suspended), `client suspendu : la commande reste lisible par la RLS (${JSON.stringify(seen)}) — orders_read ne lit pas users.status`);
     });
 });

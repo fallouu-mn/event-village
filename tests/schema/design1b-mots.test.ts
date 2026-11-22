@@ -81,7 +81,10 @@ describe('a. modèles de messages : aucun mot technique', () => {
         for (const sync of syncTypes) {
             const tpl = (catalog.NOTIFICATION_CATALOG as Record<string, { channels: readonly string[] }>)[sync];
             if (!tpl.channels.includes('SMS')) continue; // emails synchrones : rendus plus bas (vérification, mot de passe)
-            visit(`sms-synchrone/${sync}`, catalog.renderSyncSms(sync as never, { code: '123456', firstName: 'Awa', setupLink: 'https://app.eventvillage.sn/activation?t=Abcdefghijklmnop1234' }));
+            // Lot 12a (modification signalée au rapport) : le code de remise d'une commande a 4 chiffres, un numéro de commande et une étape
+            const syncData = sync === 'ORDER_HANDOVER_CODE' ? { code: '4821', orderNumber: 'CMD-261205-A1B2C3', step: 'LIVRAISON' }
+                : { code: '123456', firstName: 'Awa', setupLink: 'https://app.eventvillage.sn/activation?t=Abcdefghijklmnop1234' };
+            visit(`sms-synchrone/${sync}`, catalog.renderSyncSms(sync as never, syncData as never));
             rendered += 1;
         }
         visit('email/verification', catalog.renderEmailVerification('AbcdefghijklmnopqrstuvwxyzABCDEFGHIJ0123456', ctx));

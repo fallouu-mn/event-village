@@ -196,6 +196,20 @@ export class MTargetService {
         return result;
     }
 
+    /**
+     * Lot 12a : code de remise d'une commande (texte du catalogue), au client de la commande, tout de suite ; journal sans
+     * le code (notification_sync_log, ORDER_HANDOVER_CODE). Le code n'est jamais stocké ni renvoyé à la partenaire.
+     */
+    async sendOrderCode(phone: string, code: string, orderNumber: string, step: 'RETRAIT' | 'LIVRAISON' | 'NOUVEAU', ctx: SyncSmsContext = {}): Promise<MTargetSendResult> {
+        const message = renderSyncSms('ORDER_HANDOVER_CODE', { code, orderNumber, step });
+        // Destinataire connu (le client de la commande) : indispensable, limites par destinataire seulement (finition 4,
+        // point 4 : la limite par compte déclencheur vise les numéros saisis à la main) ; un restaurant actif n'est jamais
+        // bloqué par le nombre de codes envoyés à ses clients
+        const result = (await demoRefusal(phone, ctx)) ?? await this.sendSms(phone, message, { category: 'TRANSACTIONAL', family: 'ESSENTIAL' });
+        if (ctx.log) await this.journal(ctx.log, phone, result);
+        return result;
+    }
+
     /** Lot 9 quinquies (A2 : AUTH-02) : lien d'activation d'un compte créé par un admin (texte du catalogue, jeton jamais journalisé). */
     async sendAccountActivation(phone: string, activationLink: string, ctx: SyncSmsContext = {}): Promise<MTargetSendResult> {
         const message = renderSyncSms('ACCOUNT_ACTIVATION', { setupLink: activationLink });

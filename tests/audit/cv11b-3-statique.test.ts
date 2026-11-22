@@ -122,7 +122,9 @@ describe('S2. Recopies : aucune ligne perdue par rapport à la dernière version
                 const b = bodyOf(f, fn);
                 if (!b) continue;
                 if (f.startsWith('20261129')) next = [f, b];
-                else prev = [f, b];
+                // Lot 12a (modification signalée à son rapport) : « main » = les définitions d'avant le lot 11b ; un lot
+                // fusionné après lui (20261130… : recopie de notif_cashouts_notify) n'est pas sa référence. Assertion inchangée.
+                else if (f < '20261129') prev = [f, b];
             }
             assert.ok(prev && next, `${fn} : définitions trouvées`);
             const left = new Map<string, number>();

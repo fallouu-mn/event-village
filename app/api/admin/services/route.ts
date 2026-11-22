@@ -170,6 +170,27 @@ export async function PATCH(req: NextRequest) {
             }
             return NextResponse.json({ success: true, updated: { id, status: 'ANNULEE' }, message: 'Réservation annulée.' });
         }
+        // Lot 12a : une commande d'établissement change seulement par les fonctions en base (garde des commandes) ; la
+        // modération annule une commande jamais payée au nom d'Event Village par order_cancel (verrou, stock rendu, journal)
+        if (table === 'orders') {
+            const { data: ord, error: ordErr } = await supabase.from('orders').select('venue_id, order_state, paid_goods').eq('id', id).maybeSingle();
+            if (ordErr) throw new Error(`lecture de orders ${id} : ${ordErr.message}`);
+            if (!ord) return NextResponse.json({ error: 'Élément introuvable.', code: 'NOT_FOUND' }, { status: 404 });
+            if (ord.venue_id) {
+                if (ord.order_state !== 'EN_ATTENTE_PAIEMENT' || Number(ord.paid_goods) > 0) {
+                    return NextResponse.json({ error: 'Seule une demande en attente et non payée peut être annulée ou refusée ici.', code: 'INVALID_SERVICE_TRANSITION' }, { status: 409 });
+                }
+                const { data: cancelled, error: cancelErr } = await supabase.rpc('order_cancel', {
+                    p: { order_id: id, actor_id: auth.user!.id, origin: 'EVENT_VILLAGE', reason: reason && reason.length >= 5 ? reason : 'Annulation par la modération', partner_fault: false },
+                });
+                if (cancelErr) throw new Error(`order_cancel ${id} : ${cancelErr.message}`);
+                const c = cancelled as { ok?: boolean; code?: string; message?: string };
+                if (c?.ok !== true) {
+                    return NextResponse.json({ error: c?.message ?? 'Annulation impossible.', code: 'INVALID_SERVICE_TRANSITION' }, { status: c?.code === 'ORDER_NOT_FOUND' ? 404 : 409 });
+                }
+                return NextResponse.json({ success: true, updated: { id, status: 'ANNULEE' }, message: 'Commande annulée.' });
+            }
+        }
         const { data: current, error: readErr } = await supabase.from(table as string).select(`id, ${rule.column}, payment_status`).eq('id', id).maybeSingle();
         if (readErr) throw new Error(`lecture de ${table} ${id} : ${readErr.message}`);
         if (!current) return NextResponse.json({ error: 'Élément introuvable.', code: 'NOT_FOUND' }, { status: 404 });

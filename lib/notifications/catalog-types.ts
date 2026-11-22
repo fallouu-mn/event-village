@@ -58,7 +58,9 @@ export type SyncType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OT
     /** Lot 9 quinquies : lien d'activation d'un compte créé par un admin (A2) ; code administrateur (A3). */
     | 'ACCOUNT_ACTIVATION' | 'OTP_ADMIN'
     /** Finition 3d (point 2a) : code au nouveau numéro d'un administrateur, à dicter au Superadmin. */
-    | 'OTP_ADMIN_PHONE';
+    | 'OTP_ADMIN_PHONE'
+    /** Lot 12a : code de remise d'une commande (retrait, livraison, nouveau code), envoyé tout de suite, jamais stocké. */
+    | 'ORDER_HANDOVER_CODE';
 
 /** Lot 9 bis (11.1 N26) : email synchrone, journal seulement ; le jeton du lien n'est jamais stocké. */
 export type EmailSyncType = 'EMAIL_VERIFICATION';
@@ -200,6 +202,25 @@ export interface TemplateData {
     TABLE_REFUND_PAID: TableReservationData & { cashout_id: string; amount: number; operator?: string | null; account_kind?: string | null };
     VENUE_VALIDATION_DECIDED: { venue_id: string; venue_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
     ADMIN_VENUE_SUBMITTED: { venue_id: string; venue_name: string; kind?: string; city?: string | null; resubmitted?: boolean };
+    // Lot 12a : données de order_notif_data (commande), plus les champs propres à chaque avis ; jamais le code de remise
+    // (envoyé à part, par SMS immédiat : ORDER_HANDOVER_CODE)
+    ORDER_RECEIVED: OrderNotifData;
+    ORDER_ACCEPTED: OrderNotifData;
+    ORDER_PREPARING: OrderNotifData;
+    ORDER_READY: OrderNotifData;
+    ORDER_ON_THE_WAY: OrderNotifData;
+    ORDER_HANDED_OVER: OrderNotifData;
+    ORDER_CANCELLED: OrderNotifData & OrderCancelData;
+    ORDER_PAYMENT_REFUNDED: OrderNotifData & { payment_id: string; amount: number; operator?: string | null };
+    ORDER_REFUND_PAID: OrderNotifData & { cashout_id: string; amount: number; operator?: string | null };
+    ORDER_PICKUP_REMINDER: OrderNotifData & { closes_at: string };
+    ORDER_NOT_COLLECTED: OrderNotifData & Partial<OrderCancelData>;
+    ORDER_NEW: OrderNotifData;
+    ORDER_CANCELLED_PRO: OrderNotifData & OrderCancelData;
+    ORDER_HANDED_OVER_PRO: OrderNotifData;
+    ORDER_COURIER_ASSIGNED: OrderNotifData;
+    ORDER_COURIER_CANCELLED: OrderNotifData;
+    ORDER_COURIER_INVITED: { invitation_id: string; partner_name?: string | null };
     PROMOTION_DECIDED: EventData & { promotion_id: string; status: 'APPROUVEE' | 'REFUSEE' | string; reason?: string | null };
     CONTROLLER_ASSIGNED: Partial<EventData> & { assignment_id?: string; entry_point: string | null; can_accept_cash: boolean; events?: ControllerEventRef[] };
     CONTROLLER_UNASSIGNED: Partial<EventData> & { assignment_id?: string; events?: ControllerEventRef[] };
@@ -233,6 +254,7 @@ export interface TemplateData {
     ACCOUNT_ACTIVATION: { purpose?: string };
     OTP_ADMIN: { purpose?: string };
     OTP_ADMIN_PHONE: { purpose?: string };
+    ORDER_HANDOVER_CODE: { purpose?: string };
 
     // ── Lot 9 bis (contrat 11.1, N1 à N26) ──
     REFUND_DELAYED: OptionalEventData & { cashout_id: string; amount: number };
@@ -358,6 +380,34 @@ export interface TableReservationData {
     held_until: string;
     hold_expires_at?: string | null;
     cancel_free_until?: string | null;
+}
+
+/** Lot 12a : données d'une commande (order_notif_data) ; montants en F CFA, heures en UTC (= Dakar). */
+export interface OrderNotifData {
+    order_id: string;
+    order_number: string;
+    venue_id?: string;
+    venue_name?: string | null;
+    mode: 'LIVRAISON' | 'RETRAIT' | 'SUR_PLACE' | string;
+    state?: string;
+    items_count: number;
+    goods_total: number;
+    paid_amount: number;
+    balance_due: number;
+    payment_type?: string;
+    scheduled_for?: string | null;
+    estimated_at?: string | null;
+    response_due_at?: string | null;
+    zone_name?: string | null;
+    onsite_label?: string | null;
+    recipient_role?: 'CLIENT' | 'OWNER' | 'COURIER' | string;
+}
+
+/** Lot 12a : fin d'une commande (order_close_apply, order_expire_hold). */
+export interface OrderCancelData {
+    origin: 'CLIENT' | 'PARTENAIRE' | 'EVENT_VILLAGE' | 'SANS_REPONSE' | 'REFUSEE' | 'EXPIREE' | 'NON_RETIREE' | string;
+    refund_amount: number;
+    reason?: string | null;
 }
 
 /** Lot 11a : fin d'une réservation de table (table_close_apply). */

@@ -165,7 +165,7 @@ const WHITELIST_FILES: ReadonlyArray<[string, string]> = [
  * par la nouvelle route app/api/auth/register/start (numéro d'abord) ; app/api/auth/register vérifie le code et
  * n'envoie plus de SMS (elle sort de la liste : tout appel à l'adaptateur y devient un motif interdit).
  */
-const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendControllerInvite'; why: string }>> = {
+const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendControllerInvite' | 'sendOrderCode'; why: string }>> = {
     'app/api/auth/register/start/route.ts': { method: 'sendOtp', why: "code d'inscription (démarrage, numéro d'abord)" },
     'app/api/auth/send-otp/route.ts': { method: 'sendOtp', why: 'code de connexion, inscription, réinitialisation' },
     'app/api/auth/sms-hook/route.ts': { method: 'sendOtp', why: 'hook « Send SMS » de Supabase Auth' },
@@ -178,6 +178,9 @@ const SYNC_ROUTES: Readonly<Record<string, { method: 'sendOtp' | 'sendController
     // Finition 3d (point 2 ; ajout signalé au rapport) : code au nouveau numéro d'un administrateur, envoyé par le module
     // commun des routes /api/admin/users/[id]/phone/start et /api/admin/security/phone/start (journal `log:` compris)
     'lib/admin/phone-change.ts': { method: 'sendOtp', why: "code au nouveau numéro d'un administrateur" },
+    // Lot 12a (ajout signalé au rapport) : code de remise d'une commande, envoyé tout de suite au client par le module commun
+    // des routes de la partenaire, du livreur et du client (journal ORDER_HANDOVER_CODE sans le code)
+    'lib/orders/booking.ts': { method: 'sendOrderCode', why: "code de remise d'une commande (jamais stocké en clair)" },
 };
 
 function fullyWhitelisted(file: string): boolean {
@@ -242,7 +245,8 @@ describe('6.7 K2 — aucun appel direct aux adaptateurs hors de l’envoyeur, de
         // Finition 3d (modification signalée) : app/ et les fichiers de la liste nominative hors de app/ (lib/admin/phone-change.ts)
         for (const file of sourceFiles().filter((f) => f.startsWith('app/') || f in SYNC_ROUTES)) {
             const src = source(file);
-            for (const m of Array.from(src.matchAll(/\.(sendOtp|sendControllerInvite)\s*\(/g))) {
+            // Lot 12a (modification signalée au rapport) : sendOrderCode, code de remise d'une commande, journalisé de même
+            for (const m of Array.from(src.matchAll(/\.(sendOtp|sendControllerInvite|sendOrderCode)\s*\(/g))) {
                 count++;
                 const open = (m.index ?? 0) + m[0].length - 1;
                 const args = callText(src, open);
@@ -298,11 +302,12 @@ describe('6.7 — envois TypeScript retirés', () => {
     });
 
     // Lot 9 quinquies (A2 ; ajout signalé au rapport) : sendAccountActivation, lien d'activation d'un compte créé par un admin
-    test('MTargetService : seules sendSms, sendNotification (alias), sendOtp, sendControllerInvite et sendAccountActivation restent', () => {
+    // Lot 12a (modification signalée au rapport) : sendOrderCode, code de remise d'une commande
+    test('MTargetService : seules sendSms, sendNotification (alias), sendOtp, sendControllerInvite, sendAccountActivation et sendOrderCode restent', () => {
         const file = 'lib/sms/mtarget.service.ts';
         assert.ok(exists(file), `${file} absent`);
         const methods = Array.from(source(file).matchAll(/^\s*(?:public\s+)?(?:async\s+)?(send\w*)\s*\(/gm)).map((m) => m[1]).sort();
-        assert.deepEqual(Array.from(new Set(methods)), ['sendAccountActivation', 'sendControllerInvite', 'sendNotification', 'sendOtp', 'sendSms'],
+        assert.deepEqual(Array.from(new Set(methods)), ['sendAccountActivation', 'sendControllerInvite', 'sendNotification', 'sendOrderCode', 'sendOtp', 'sendSms'],
             `méthodes send* de MTargetService : ${methods.join(', ')}`);
     });
 
@@ -328,12 +333,12 @@ describe('6.7 — envois TypeScript retirés', () => {
 
 interface FnDef { name: string; def: string }
 
-async function publicFunctions(db: Client, names?: string[]): Promise<FnDef[]> {
+async function publicFunctions(db: Client, names?: string[], schemas: string[] = ['public']): Promise<FnDef[]> {
     const { rows } = await db.query<{ name: string; def: string }>(
         `SELECT p.proname AS name, pg_get_functiondef(p.oid) AS def
            FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-          WHERE n.nspname = 'public' AND p.prokind = 'f' AND ($1::text[] IS NULL OR p.proname = ANY($1::text[]))
-          ORDER BY p.proname`, [names ?? null]);
+          WHERE n.nspname = ANY($2::text[]) AND p.prokind = 'f' AND ($1::text[] IS NULL OR p.proname = ANY($1::text[]))
+          ORDER BY p.proname`, [names ?? null, schemas]);
     return rows;
 }
 
@@ -462,6 +467,18 @@ const INVENTORY: Insertion[] = [
     { k1: 'lot 11a rappel', fn: 'table_reservations_tick', types: ['TABLE_REMINDER'] },
     { k1: 'lot 11a validation', fn: 'venue_validation_decide', types: ['VENUE_VALIDATION_DECIDED'] },
     { k1: 'lot 11a soumission', trigger: { name: 'trg_venues_submitted', table: 'public.venues' }, types: ['ADMIN_VENUE_SUBMITTED'] },
+    // Lot 12a (ajout signalé au rapport) : avis des étapes d'une commande, mis en file par les fonctions du parcours
+    // (order_notify) ; invitation d'un livreur ; remboursement versé par notif_cashouts_notify
+    { k1: 'lot 12a commander', fn: 'order_create', types: ['ORDER_RECEIVED', 'ORDER_NEW'] },
+    { k1: 'lot 12a payer', fn: 'order_payment_confirm', types: ['ORDER_RECEIVED', 'ORDER_NEW', 'ORDER_PAYMENT_REFUNDED'] },
+    { k1: 'lot 12a attente', fn: 'order_expire_hold', types: ['ORDER_CANCELLED'] },
+    { k1: 'lot 12a fin', fn: 'order_close_apply', types: ['ORDER_CANCELLED', 'ORDER_CANCELLED_PRO', 'ORDER_NOT_COLLECTED', 'ORDER_COURIER_CANCELLED'] },
+    { k1: 'lot 12a étapes', fn: 'order_partner_action', types: ['ORDER_ACCEPTED', 'ORDER_PREPARING', 'ORDER_READY', 'ORDER_COURIER_ASSIGNED', 'ORDER_COURIER_CANCELLED'] },
+    { k1: 'lot 12a en route', fn: 'order_set_en_route', types: ['ORDER_ON_THE_WAY'] },
+    { k1: 'lot 12a remise', fn: 'order_handover_apply', types: ['ORDER_HANDED_OVER', 'ORDER_HANDED_OVER_PRO'] },
+    { k1: 'lot 12a retrait', fn: 'order_tick', types: ['ORDER_PICKUP_REMINDER'] },
+    { k1: 'lot 12a livreur', fn: 'order_courier_invite', types: ['ORDER_COURIER_INVITED'] },
+    { k1: 'lot 12a remboursement versé', fn: 'notif_cashouts_notify', types: ['ORDER_REFUND_PAID'] },
     // Lot 11b (ajouts signalés au rapport) : « J'arrive » du client ; remboursement d'une table versé
     { k1: 'lot 11b j’arrive', fn: 'table_client_coming', types: ['TABLE_CLIENT_COMING'] },
     { k1: 'lot 11b remboursement versé', fn: 'notif_cashouts_notify', types: ['TABLE_REFUND_PAID'] },
@@ -520,7 +537,9 @@ describe('6.7 K1 — inventaire : chaque envoi migré a son type au registre et 
 
     test('RPC recopiées : chacune existe et nomme ses types', async () => {
         const fnNames = INVENTORY.filter((i) => i.fn).map((i) => i.fn!);
-        const defs = await inspect(async (db) => publicFunctions(db, fnNames));
+        // Lot 12a, contre-vérification T7 (modification signalée au rapport) : order_close_apply, order_set_en_route et
+        // order_handover_apply, aides internes, sont dans le schéma private (non exposé par l'API)
+        const defs = await inspect(async (db) => publicFunctions(db, fnNames, ['public', 'private']));
         const problems: string[] = [];
         for (const i of INVENTORY.filter((x) => x.fn)) {
             const def = defs.filter((d) => d.name === i.fn).map((d) => d.def).join('\n');

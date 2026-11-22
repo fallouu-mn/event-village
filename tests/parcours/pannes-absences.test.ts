@@ -29,6 +29,8 @@ import { newPartner, type TestPartner } from './finance-helpers';
 import { assertClean, during, reply, routeCtx, table, tableWhere, type Reply } from './panne-helpers';
 import { newBuyer, service, type Buyer, type SaleEvent } from './paiement-helpers';
 import { withFeatureFlags, type FeatureFlag } from './terrain-helpers';
+import { newProduct, newShop, orderBody, placed } from './l12a-helpers';
+import type { Target } from './panne-helpers';
 
 let partner: TestPartner;
 let otherPartner: TestPartner;
@@ -54,12 +56,13 @@ before(async () => {
     }).select('id').single();
     assert.equal(prodErr, null, `produit : ${prodErr?.message}`);
     productId = product.id;
-    const { data: order, error: orderErr } = await service.from('orders').insert({
-        order_number: `CMD-PAN-${randomUUID()}`, client_id: client.userId, partner_id: partner.partnerId, subtotal: 4_000, total_amount: 4_000,
-        paid_amount: 0, balance_amount: 4_000, payment_type: 'INTEGRAL', delivery_mode: 'RETRAIT', order_status: 'EN_ATTENTE', payment_status: 'PENDING',
-    }).select('id').single();
-    assert.equal(orderErr, null, `commande : ${orderErr?.message}`);
-    orderId = order.id;
+    // Lot 12a (modification signalée au rapport) : une commande ne s'écrit plus directement et la partenaire ne voit que
+    // les commandes de ses établissements, reçues : commande payable à la remise, reçue tout de suite (order_create)
+    orderId = await withFeatureFlags({ orders: true }, async () => {
+        const shop = await newShop(partner, { payOnHandover: true });
+        const dish = await newProduct(partner, shop, { price: 4_000 });
+        return placed(client, orderBody(shop, [{ productId: dish, quantity: 1 }], { payment: 'DIFFERE' }));
+    });
 });
 
 after(async () => {
@@ -79,6 +82,8 @@ interface Subject {
     existing: () => string;
     call: (user: Buyer, id: string) => Promise<Reply>;
     wrapped: (body: Record<string, unknown>) => string | undefined;
+    /** Lecture visée par la panne, si ce n'est pas un GET sur la table (lot 12a : fonction en base order_view). */
+    target?: Target;
 }
 
 const SUBJECTS: Subject[] = [
@@ -99,6 +104,9 @@ const SUBJECTS: Subject[] = [
     },
     {
         label: 'commande', table: 'orders', flag: 'orders', unavailable: 'ORDER_UNAVAILABLE', notFound: 'ORDER_NOT_FOUND', existing: () => orderId,
+        // Lot 12a (modification signalée au rapport) : la route lit la commande par la fonction en base order_view (aucune
+        // lecture REST des commandes par la partenaire) : la panne vise cet appel
+        target: (url, method) => method === 'POST' && url.pathname === '/rest/v1/rpc/order_view',
         call: async (user, id) => reply(await partnerOrder(authed(`/api/partner/orders/${id}`, 'GET', user), routeCtx({ id }))),
         wrapped: (body) => (body.order as { id?: string } | undefined)?.id,
     },
@@ -118,7 +126,7 @@ const assertNotFound = (r: Reply, s: Subject, what: string): void => {
 for (const s of SUBJECTS) {
     describe(`A32 — ${s.label}`, () => {
         test(`panne de ${s.table} : 500 ${s.unavailable}, journalisée, jamais 404`, async () => {
-            const { result, logged } = await withFlag(s, () => during(table(s.table), async () => s.call(partner, s.existing())));
+            const { result, logged } = await withFlag(s, () => during(s.target ?? table(s.table), async () => s.call(partner, s.existing())));
             assert.equal(result.status, 500, `panne présentée comme une absence : ${show(result)}`);
             assertClean(result, s.table);
             assert.equal(result.body.code, s.unavailable, show(result));

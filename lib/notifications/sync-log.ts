@@ -13,9 +13,11 @@ import { toSenegaleseE164 } from '@/lib/validations/auth';
 export type SyncSmsType = 'OTP_LOGIN' | 'OTP_REGISTER' | 'OTP_PASSWORD_RESET' | 'OTP_WITHDRAWAL' | 'OTP_PHONE_CHANGE' | 'OTP_AUTH_HOOK' | 'CONTROLLER_INVITE'
     | 'ACCOUNT_ACTIVATION' | 'OTP_ADMIN'
     /** Finition 3d (point 2a) : code au nouveau numéro d'un administrateur. */
-    | 'OTP_ADMIN_PHONE';
+    | 'OTP_ADMIN_PHONE'
+    /** Lot 12a : code de remise d'une commande. */
+    | 'ORDER_HANDOVER_CODE';
 
-export const SYNC_SMS_TYPES: readonly SyncSmsType[] = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_PHONE_CHANGE', 'OTP_AUTH_HOOK', 'CONTROLLER_INVITE', 'ACCOUNT_ACTIVATION', 'OTP_ADMIN', 'OTP_ADMIN_PHONE'];
+export const SYNC_SMS_TYPES: readonly SyncSmsType[] = ['OTP_LOGIN', 'OTP_REGISTER', 'OTP_PASSWORD_RESET', 'OTP_WITHDRAWAL', 'OTP_PHONE_CHANGE', 'OTP_AUTH_HOOK', 'CONTROLLER_INVITE', 'ACCOUNT_ACTIVATION', 'OTP_ADMIN', 'OTP_ADMIN_PHONE', 'ORDER_HANDOVER_CODE'];
 
 export type SyncSmsOutcome = 'SENT' | 'FAILED' | 'UNCERTAIN' | 'SKIPPED';
 

@@ -105,6 +105,7 @@ export function partnerFicheAllows(status: string | null, method: string, pathna
  * création, modification, envoi en validation, plan de salle, fermetures, zones, tables, réponse à une demande,
  * présence, annulation, paiement sur place ; la base refuse aussi la présence, l'annulation par l'établissement et les
  * écritures de l'établissement (venue_owner_refusal, migrations 20261129…).
+ * Lot 12a : aussi toute écriture des commandes, des produits, des livreurs et des réglages de vente d'un établissement.
  */
 export function partnerEventWrite(method: string, pathname: string): boolean {
     const m = method.toUpperCase();
@@ -117,7 +118,18 @@ export function partnerEventWrite(method: string, pathname: string): boolean {
         || path === '/api/partner/shifts' || path.startsWith('/api/partner/shifts/')
         || path === '/api/partner/halls' || path.startsWith('/api/partner/halls/')
         || path === '/api/partner/venues' || path.startsWith('/api/partner/venues/')
-        || path === '/api/partner/tables' || path.startsWith('/api/partner/tables/');
+        || path === '/api/partner/tables' || path.startsWith('/api/partner/tables/')
+        // Lot 12a : commandes, produits, livreurs et réglages de vente d'un établissement (fiche SUSPENDU = lecture seule ;
+        // les fonctions en base refusent aussi : order_partner_action, order_venue_settings_set, order_courier_*)
+        || isOrderServiceWrite(path);
+}
+
+/** Lot 12a : écritures du service des commandes d'une partenaire. */
+function isOrderServiceWrite(path: string): boolean {
+    return path === '/api/partner/orders' || path.startsWith('/api/partner/orders/')
+        || path === '/api/partner/products' || path.startsWith('/api/partner/products/')
+        || path === '/api/partner/couriers' || path.startsWith('/api/partner/couriers/')
+        || /^\/api\/partner\/venues\/[^/]+\/orders$/.test(path);
 }
 
 /** Réponse 403 PARTNER_SUSPENDED : texte de la base suivi du contact du support. */

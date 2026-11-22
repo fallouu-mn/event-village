@@ -179,16 +179,19 @@ export class ProductService {
         return data as Product[];
     }
 
-    static async getProductById(productId: string): Promise<Product> {
+    static async getProductById(productId: string, partnerUserId: string): Promise<Product> {
         // Lot 9 (A32) : absence ou uuid invalide : 404 (500 auparavant) ; panne : erreur, journal et 500.
         const notFound = () => new PublicError('Produit introuvable.', 'PRODUCT_NOT_FOUND', 404);
         if (!UUID_RE.test(productId)) throw notFound();
+        // Contre-vérification (T8) : un produit de la partenaire de la session seulement (celui d'une autre : 404)
+        const partnerId = await this.resolvePartnerId(partnerUserId);
 
         const supabase = getServiceRoleClient();
         const { data, error } = await supabase
             .from('products')
             .select('*')
             .eq('id', productId)
+            .eq('partner_id', partnerId)
             .maybeSingle();
 
         if (error) throw new Error(`produit ${productId} illisible : ${error.message}`);
