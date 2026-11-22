@@ -551,3 +551,43 @@ tourne entre 23 h 30 et minuit, heure de Dakar, pour la même raison (règle « 
 | 584 | `2280aff80` | rapide, `l12a-commandes` | **vert** |
 
 Au total, les 357 suites citées sont passées vertes sur les runs 582 à 584 (dernier état de chacune).
+
+## 14. Fusion et mise en service (22/11)
+
+**Run complet de la branche 585** (`1fa6013ae`) : 584 suites vertes (4 tâches de tests, aucun « not ok »), e2e vert (12 phases
+sur 12 : connexion, captures, courriels, fumée, terrain, pwa, déconnexion, fake-prod, perf, recette…), captures responsive
+et budgets JS verts, typecheck et lint verts. Seule la mesure mobile était rouge, **inexploitable** : serveur de CI
+ralenti (calibration ×6,8 à ×7,4 au lieu d'environ ×4 ; au ×4 brut, scores 93 à 98) ; pages mesurées non touchées par le
+lot. Fusion décidée par l'utilisateur.
+
+**Fusion** : `main` = `5a74fa6b9` (fusion sans avance rapide de `lot12a/commandes-argent`, arbre identique à `1fa6013ae`),
+poussée le 22/11 à 01 h 23 UTC.
+
+**Run complet de main 586** (`5a74fa6b9`) : **entièrement vert** : 584 suites, aucun « not ok » ; e2e 12/12 ; responsive ;
+budgets ; mesure mobile avec un ralentissement normal (calibration ×3,6 à ×4,0) : accueil médiane 94, fiche événement 92,
+Mes billets 92 (seuil 90), réaction au toucher OK.
+
+**Mise en service sur event-village-dev** (ref `rswk…`), depuis le worktree du lot sur `main` = `5a74fa6b9`, CLI
+`supabase@2.122.0` :
+
+1. `db push --linked --dry-run` : exactement les 8 migrations `20261130000001` à `…008`, rien d'autre.
+2. Contrôles avant (lecture seule) : dernière migration `20261129000010` ; aucune migration `20261130…` ; aucune fonction
+   `order_*`, pas de colonne `order_state`, aucun réglage `orders.*`, aucun type `ORDER_*` ; aucune commande (repas ni
+   billets), aucun paiement de commande, aucun produit, aucun établissement ; 1 Superadmin actif.
+3. `db push --linked --yes` à 02 h 23 UTC : les 8 migrations appliquées sans erreur.
+4. Contrôles après : 8 versions `20261130000001` à `…008`, dernière `20261130000008` ; 28 fonctions publiques `order_*`,
+   aucune ouverte à anon ni authenticated ; **14 réglages** `orders.*` aux valeurs décidées (frais 5 %, commission 0 %,
+   acompte 30 %, attente 15 min, réponse 15 min, 3 non payées, 10 portions tenues, 10 invitations par jour, retrait 24 h,
+   rappel 2 h, masquage 7 jours, 5 essais, 3 nouveaux codes, préparation 30 min) ; aucune commande sans état ; garde des
+   commandes, garde des réglementés, clé du code, RLS de l'historique et des livreurs : vrais ; `orders_read` sans branche
+   partenaire ; `payments_read` = client ou administration (lot 11b, inchangé) ; 18 types `ORDER_*` (canaux et nuit
+   conformes au § 7, `ORDER_HANDOVER_CODE` en envoi immédiat SMS) ; les 10 aides internes dans `private`, exécutables par
+   aucun rôle de l'API ; 1 Superadmin actif.
+5. `03-verification.sql` : **20/20 OK** (dont 1A.3 « RPC métier exécutables par service_role : toutes » et « toute SECURITY
+   DEFINER a un search_path »).
+
+Le service des commandes reste **fermé** (`features.orders_enabled`) : les écrans viennent au lot 12b. La tâche planifiée
+`ev_orders` sera créée avec les autres par `supabase/ops/schedule-crons.sql` quand les secrets Vault `ev_app_url` et
+`ev_cron_secret` existeront (décision en attente, comme aux lots précédents). Ce projet ne doit plus tourner qu'avec le code
+de `main` ≥ `5a74fa6b9`.
+
