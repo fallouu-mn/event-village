@@ -211,6 +211,16 @@ export async function outboxOf(userId: string, orderId: string): Promise<string[
     return (data ?? []).map((r) => `${String(r.type)}:${String(r.channel)}`).sort();
 }
 
+/**
+ * Plat du jour « au plus tôt » : pour aujourd'hui seulement (heure de Dakar). Entre minuit moins la durée de préparation
+ * et minuit, l'heure prévue tombe le lendemain et la base refuse (DAILY_SPECIAL_TODAY_ONLY) : vrai si l'on est dans cette
+ * fenêtre (préparation par défaut 30 min, marge de 5 min pour la durée du test).
+ */
+export function dailySpecialWindowClosed(prepMinutes = 30): boolean {
+    const dakarDay = (ms: number) => new Date(ms).toISOString().slice(0, 10); // Dakar = UTC, sans heure d'été
+    return dakarDay(Date.now()) !== dakarDay(Date.now() + (prepMinutes + 5) * 60_000);
+}
+
 export function allChannels(type: string): string[] {
     return ['EMAIL', 'IN_APP', 'PUSH', 'SMS'].map((c) => `${type}:${c}`);
 }

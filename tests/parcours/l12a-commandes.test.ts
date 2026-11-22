@@ -39,7 +39,7 @@ import { POST as couriersPost } from '../../app/api/partner/couriers/route';
 import {
     addCourier, allChannels, codeOf, courierAct, smsOfOrder, historyOf, itemsOf, ledgerOfPayment, n, newBuyer, newDeliveryZone, newOption, newPartner,
     newProduct, newShop, openOrdersService, order, orderBody, orderRoute, orderRpc, outboxOf, partnerAct, payOrder, placed, platformSetting,
-    refundsOfOrder, releaseUnpaid, setPlatformSetting, setPortions, shiftOrder, startOrderPay, superadminId, tick, toReady, userClient, type Buyer, type Row,
+    dailySpecialWindowClosed, refundsOfOrder, releaseUnpaid, setPlatformSetting, setPortions, shiftOrder, startOrderPay, superadminId, tick, toReady, userClient, type Buyer, type Row,
     type TestPartner,
 } from './l12a-helpers';
 
@@ -306,6 +306,15 @@ describe('A. Devis et commande : tout calculé en base', () => {
 
     test('plat du jour : 10 portions au plus tenues sans paiement par client et par plat (réglage), toutes commandes non payées comprises ; 99 au plus par produit sur toute la commande', async () => {
         // Contre-vérification T3
+        // Entre 23 h 25 et minuit (Dakar), « au plus tôt » tombe le lendemain : la base refuse le plat du jour, c'est la règle
+        // (run 583, vers minuit) ; le test vérifie alors ce refus, puis s'arrête
+        if (dailySpecialWindowClosed()) {
+            const late = await newProduct(partner, shop, { price: 1_000, daily: true, name: 'Plat du soir' });
+            assert.equal((await setPortions(partner, late, 5)).ok, true);
+            const r = await orderRpc(stranger, orderBody(shop, [{ productId: late, quantity: 1 }]));
+            assert.deepEqual([r.ok, r.code], [false, 'DAILY_SPECIAL_TODAY_ONLY'], JSON.stringify(r));
+            return;
+        }
         const hoarder = await newBuyer('l12a-portions');
         try {
             const dish = await newProduct(partner, shop, { price: 1_500, daily: true, name: 'Thiéboudienne du jour' });
@@ -331,6 +340,15 @@ describe('A. Devis et commande : tout calculé en base', () => {
     });
 
     test('plat du jour : 2 portions, 2 vendues, plus rien ; acompte refusé (payé en entier) ; demain refusé ; portions d’hier sans effet', async () => {
+        // Entre 23 h 25 et minuit (Dakar), « au plus tôt » tombe le lendemain : la base refuse le plat du jour, c'est la règle
+        // (run 583, vers minuit) ; le test vérifie alors ce refus, puis s'arrête
+        if (dailySpecialWindowClosed()) {
+            const late = await newProduct(partner, shop, { price: 1_000, daily: true, name: 'Plat du soir' });
+            assert.equal((await setPortions(partner, late, 5)).ok, true);
+            const r = await orderRpc(stranger, orderBody(shop, [{ productId: late, quantity: 1 }]));
+            assert.deepEqual([r.ok, r.code], [false, 'DAILY_SPECIAL_TODAY_ONLY'], JSON.stringify(r));
+            return;
+        }
         const dish = await newProduct(partner, shop, { price: 2_500, daily: true, name: 'Yassa du jour' });
         assert.equal((await setPortions(partner, dish, 2)).ok, true);
         const r = await orderRpc(client, orderBody(shop, [{ productId: dish, quantity: 2 }], { payment: 'ACOMPTE' }));
