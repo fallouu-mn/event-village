@@ -17,7 +17,21 @@ s'appuie sur les colonnes existantes : `events.latitude`, `longitude`, `poster_c
 Le commit « tests seuls » `de3fdd414` (aucun correctif) a été poussé d'abord : run **592** rouge (§ 6, sorties brutes).
 La lecture publique de la carte (B0) est neuve : elle ne rend que des champs listés et vérifiés champ par champ (§ 2).
 
-<!-- À COMPLÉTER : résultat du run complet final, budgets, mesure mobile -->
+### Résultat
+
+**Run complet 617** (commit `3c7c721e4b`) **entièrement vert** : 588 suites (4 tâches : 147, 147, 146, 148 ; 0 en échec,
+0 expirée), dont les 65 suites de `tests/audit/` et `tests/audit-auth/` (aucune assertion changée) ; construction ; budgets
+JS de toutes les routes tenus **sans relèvement** (`/explore` : budget créé) ; e2e complet vert (783 cas dans la phase
+principale, fumée, recette, terrain…) ; contrôle responsive **sans défaut** et e2e du lot 207/207 ; mesure mobile au-dessus
+de 90 partout (accueil 92, fiche 91, Mes billets 90 ; processeur ×3,6 à ×4,0). Preuves d'invalidation de bout en bout :
+suspension retirée de la carte en **27 ms**, arrêt de vente visible sur l'Explorer en **39 ms** et sur la carte en
+**54 ms** (seuil de la consigne : 5 s ; avant le lot : 59 305 ms).
+
+Après la relecture des captures du run 617, trois retouches visuelles de la carte d'Explorer (§ 5), dans le module
+chargé à la demande seulement : runs rapides **618** (écrans, design, responsive 207/207 sans défaut, budgets, mobile
+94/91/91) et **619** (empilement sous la barre des catégories ; responsive 207/207 sans défaut).
+
+Branche **non fusionnée**, **aucune migration**.
 
 ## 1. Ce qui a été livré
 
@@ -58,10 +72,14 @@ La lecture publique de la carte (B0) est neuve : elle ne rend que des champs lis
 
 ### B2 — Explorer : Liste / Carte / Calendrier
 
-- Onglets accessibles avec l'indicateur orange qui glisse (`components/ui/Tabs.tsx`, existant) ; mêmes filtres partagés
-  (recherche, date, catégorie, gratuit, ville) ; vue gardée dans l'adresse (`?vue=carte`, `?vue=calendrier` ;
-  `lib/events/explore-view.ts`). La carte et le calendrier sont des modules à part chargés à l'ouverture de leur onglet
-  (`next/dynamic`, sans rendu serveur) : **rien au premier chargement d'Explorer**.
+- Onglets accessibles avec l'indicateur orange qui glisse (mêmes règles que `components/ui/Tabs.tsx` : rôle tablist,
+  flèches, Début, Fin, 44 px, translation de 250 ms coupée si « réduire les animations » ; écrits dans
+  `app/explore/ExploreView.tsx` pour ne pas charger le module partagé des onglets) ; mêmes filtres partagés (recherche,
+  date, catégorie, gratuit, ville) ; vue gardée dans l'adresse (`?vue=carte`, `?vue=calendrier` ;
+  `lib/events/explore-view.ts`). La carte et le calendrier forment un seul module chargé à l'ouverture de leur onglet
+  (`components/explore/lazy.ts`, `next/dynamic` sans rendu serveur) : **rien au premier chargement d'Explorer**. Leaflet
+  est chargé par `import('leaflet')` (morceau existant) et sa feuille de style comme fichier statique
+  (`public/leaflet/leaflet-1.9.4.css`, copie exacte vérifiée ; préfixe `/leaflet/` servi sans session).
 - **Carte** (`components/explore/ExploreMap.tsx`) : points regroupés avec leur nombre (grille de 64 px, sans
   bibliothèque : `lib/map/cluster.ts`) ; pastilles « Gratuit », « Dès 5 000 F » ; « À la une » en orange ; repère touché
   ou survolé agrandi en orange. Téléphone : feuille en bas de la carte avec la vignette de l'événement et « Voir
@@ -69,20 +87,23 @@ La lecture publique de la carte (B0) est neuve : elle ne rend que des champs lis
   en évidence, repère touché = vignette ramenée dans la liste. « Rechercher dans cette zone » après un déplacement.
   « Autour de moi » : la position du téléphone sert **seulement** à centrer la carte (jamais envoyée ni enregistrée ; hors
   du Sénégal : message). Choix rapide : Tout le Sénégal, Dakar, Almadies, Plateau, Ngor, Ouakam, Mermoz, Sacré-Cœur, Saly,
-  Mbour, Thiès, Saint-Louis, Kaolack, Ziguinchor. Clavier : repères focalisables (Tabulation, Entrée), boutons de zoom,
-  anneau de focus ; la Liste reste l'alternative complète (annoncée aux lecteurs d'écran). « Réduire les animations » :
+  Mbour, Thiès, Saint-Louis, Kaolack, Ziguinchor. Clavier : repères focalisables (Tabulation, puis Entrée ou Espace) et
+  nommés pour les lecteurs d'écran (titre, date, prix ; « 8 événements : agrandir »), boutons de zoom, anneau de focus ;
+  la Liste reste l'alternative complète (annoncée aux lecteurs d'écran). « Réduire les animations » :
   zoom et déplacements sans animation. Temps réel : un signal du catalogue relit la carte ouverte.
 - **Calendrier** (`components/explore/ExploreCalendar.tsx`) : mois qui défilent (le mois en cours et le suivant, puis un
   de plus à l'approche du bas, douze au plus) ; vignette ronde de l'affiche par jour (image floutée et couleur déjà
   stockées : aucune grande image), vignettes empilées et « +n » ; aujourd'hui en orange, jours passés atténués ; toucher un
-  jour ouvre une feuille avec ses événements (« Acheter » mène à la fiche) ; « Ce week-end » (feuille du vendredi soir au
+  jour ouvre une feuille avec ses événements (« Acheter » mène à la fiche ; élément `<dialog>` natif en fenêtre modale :
+  focus gardé, Échap, focus rendu au jour touché) ; « Ce week-end » (feuille du vendredi soir au
   dimanche) et « Ce mois-ci » ; chaque jour qui a des événements se lit « samedi 13 décembre, 3 événements ».
 
 ### Accueil — « Partout au Sénégal »
 
 - Section rendue avec « Près de chez vous » dans l'îlot déjà chargé après la page (`components/events/HomeDiscovery.tsx`,
   `components/events/HomeSenegalMap.tsx`) : aucun code de plus au premier chargement de l'accueil. L'aperçu (carte immobile,
-  repères non focalisables) n'est chargé que lorsque sa place devient visible ; « Ouvrir la carte » mène à la vue Carte.
+  points orange sans texte, plus gros pour un groupe) n'est monté que lorsque sa place devient visible : Leaflet, sa feuille
+  de style, les tuiles et les événements ne sont demandés qu'alors. « Ouvrir la carte » mène à la vue Carte.
 
 ## 2. Tests de visibilité et d'invalidation
 
@@ -91,7 +112,7 @@ La lecture publique de la carte (B0) est neuve : elle ne rend que des champs lis
 | `tests/parcours/carte-b-visibilite.test.ts` (base locale, lecture réelle `readMapEntries` puis `selectMapEvents`) | Rendu : publié, à venir, avec position. **Jamais rendus** : brouillon, en attente, validé, suspendu, annulé, terminé (statut TERMINE, même encore dans ses heures), publié mais fini (fin passée avant le passage de la tâche planifiée), publié sans position (événement ancien), et les événements BROUILLON, TERMINE, ANNULE du seed de test. **Aucun champ en trop** : chaque événement a exactement `PUBLIC_MAP_FIELDS` ; ni nom de la partenaire (raison sociale, nom commercial), ni téléphone, ni adresse électronique, ni identifiant de partenaire ou de compte, ni lieu en clair, ni description dans la réponse. Suspension : retiré à la lecture suivante. Zone et période. |
 | `tests/schema/carte-b-donnees.test.ts` (sans base) | Mêmes règles sur des lignes fabriquées (tous les statuts, positions absentes, incomplètes, illisibles, hors du Sénégal, bornes comprises) ; prix d'appel sur les seules catégories achetables (vente arrêtée, guichet seul, complète, close) ; une entrée « polluée » de champs en trop n'en fait rien sortir ; zone ramenée au Sénégal ; filtres ; limite de 300 ; paramètres illisibles refusés ; requête PUBLIE et position non nulle, cache étiqueté `catalogue-public`, route sans session ni écriture. |
 | `tests/schema/carte-b-invalidation.test.ts` | Invalidation après l'ajout, la modification et la suppression d'une catégorie, et après la cascade de la suspension ou de la réactivation d'une partenaire (rouge sur `de3fdd414`, vert ensuite). |
-| `e2e/carte-b.responsive.spec.ts` | De bout en bout, serveur construit : **arrêt de vente** d'une catégorie visible sur l'Explorer ET sur la carte **en moins de 5 s** ; **suspension** par l'administration : l'événement quitte la carte **en moins de 5 s**, et la réponse n'a que les champs publics ; aucune tuile demandée avant la vue Carte (ni sur l'accueil avant que l'aperçu soit visible) ; mention Stadia visible ; tuiles refusées → retour à la Liste, message simple ; repère au clavier ; captures. |
+| `e2e/carte-b.responsive.spec.ts` | De bout en bout, serveur construit : **arrêt de vente** d'une catégorie visible sur l'Explorer ET sur la carte **en moins de 5 s** ; **suspension** par l'administration : l'événement quitte la carte **en moins de 5 s**, et la réponse n'a que les champs publics ; aucune tuile demandée avant la vue Carte (ni sur l'accueil avant que l'aperçu soit visible) ; mention Stadia visible ; tuiles refusées → retour à la Liste, message simple ; repère trouvé par son nom et ouvert au clavier (Entrée) ; liste de l'ordinateur ramenée à la zone visible et survol mis en évidence ; calendrier et feuille d'un jour ; aperçu de l'accueil ; captures. |
 | `tests/schema/carte-b-ecrans.test.ts` (sans base) | Fond Stadia clair et sombre, aucune clé, réglages, origines pour la CSP ; toutes les cartes par l'aide commune ; CSP limitée ; tuiles Stadia bloquées par la mesure ; vue gardée dans l'adresse ; carte et calendrier par `next/dynamic` (aucun import statique, ni Leaflet dans la page) ; tuiles en échec → Liste ; regroupement ; « Autour de moi » jamais envoyé ni gardé (ni stockage, ni cookie, ni lecture avec les coordonnées) ; libellés du calendrier ; accueil sans Leaflet. |
 
 ## 3. Tests existants modifiés (signalés)
@@ -101,6 +122,9 @@ La lecture publique de la carte (B0) est neuve : elle ne rend que des champs lis
 | `tests/schema/design1b-catalogue.test.ts` | « bouton Liste / Carte prévu mais non rendu » (`SHOW_MAP_TOGGLE === false`) devient « onglets Liste / Carte / Calendrier, carte et calendrier à la demande ». | Le lot rend la carte réelle : le drapeau `SHOW_MAP_TOGGLE` est retiré, les trois onglets le remplacent ; l'exigence de légèreté est gardée (chargement à la demande vérifié). |
 | `tests/parcours/f2b-pied-cartes.test.ts` | Préfixe « Leaflet » retiré et mention d'OpenStreetMap vérifiés dans l'aide commune (`components/map/themedTiles.ts`, `lib/map/tiles.ts`) au lieu des deux fichiers ; les deux cartes doivent passer par l'aide. | La pose du fond et de la mention est désormais à un seul endroit pour toutes les cartes ; la mention de Stadia garde « contributeurs OpenStreetMap ». |
 | `tests/parcours/perf-statique.test.ts` | `/explore` ajoutée aux routes mesurées et budgétées (fausse construction complétée de sa page). | Consigne : créer un budget pour `/explore`. |
+| `tests/helpers/design-files.ts` (liste, pas une assertion) | Les cinq écrans nouveaux du lot ajoutés : ils passent les règles du système de design et d'accessibilité de `design-systeme`. | Règle des lots : tout écran nouveau y figure. |
+| `e2e/perf.spec.ts`, `scripts/e2e/perf-mobile.mjs`, `scripts/e2e/perf-profil.mjs` | `*tiles.stadiamaps.com*` ajouté au blocage des tuiles. | Consigne. |
+| `scripts/js-budget.mjs` (outil, pas un test) | Détail par fichier, nombre d'entrées de la table des morceaux, relevé des morceaux chargeables. | Enquête du § 4 ; garde les prochaines enquêtes courtes. |
 
 Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'est modifiée.
 
@@ -110,26 +134,24 @@ Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'est modifiée.
 
 ### Poids du premier chargement (gzip, octets ; `scripts/js-budget.mjs`)
 
-| Route | Avant (run 589, code de `main`) | Après (run 615) | Budget | Écart |
+| Route | Avant (run 589, code de `main`) | Après (run complet 617) | Budget | Écart |
 |---|---|---|---|---|
-| `/` | 224 697 | 224 737 | 226 342 (inchangé) | +40 |
-| `/events/[id]` | 233 279 | 233 315 | 233 316 (inchangé) | +36 |
-| `/tickets` | 248 326 | 248 362 | 250 417 (inchangé) | +36 |
-| `/controller/scanner` | 234 636 | 234 672 | 234 911 (inchangé) | +36 |
-| `/billet/hors-ligne` | 223 731 | 223 767 | 224 268 (inchangé) | +36 |
-| `/explore` | 233 712 (mesurée, sans budget) | 234 855 | **235 712 (créé)** | +1 143 |
-
-<!-- À COMPLÉTER : colonne du run complet final -->
+| `/` | 224 697 | 224 719 | 226 342 (inchangé) | +22 |
+| `/events/[id]` | 233 279 | 233 302 | 233 316 (inchangé) | +23 |
+| `/tickets` | 248 326 | 248 349 | 250 417 (inchangé) | +23 |
+| `/controller/scanner` | 234 636 | 234 659 | 234 911 (inchangé) | +23 |
+| `/billet/hors-ligne` | 223 731 | 223 754 | 224 268 (inchangé) | +23 |
+| `/explore` | 233 712 (mesurée, sans budget) | 234 826 | **235 712 (créé)** | +1 114 |
 
 - **La carte et le calendrier ne pèsent rien au premier chargement** d'Explorer ni de l'accueil : un seul module chargé à
   l'ouverture de l'onglet (`components/explore/lazy.ts`) ; Leaflet par `import('leaflet')` (morceau déjà existant de la
   bibliothèque), sa feuille de style en fichier statique ; l'aperçu de l'accueil voyage avec l'îlot « Près de chez
   vous », déjà chargé après la page.
-- `/explore` +1 143 octets : les onglets (indicateur qui glisse, clavier), la vue dans l'adresse, les deux chargeurs à la
+- `/explore` +1 114 octets : les onglets (indicateur qui glisse, clavier), la vue dans l'adresse, les deux chargeurs à la
   demande et le passage des filtres. Budget **créé** à 235 712 (avant + 2 000), comme demandé ; aucun budget existant
   relevé.
-- Écart sur toutes les routes : la table des morceaux chargeables (`webpack.js`), qui gagne une entrée par morceau
-  nouveau. Voir l'enquête ci-dessous.
+- +22 à +23 octets sur toutes les routes : la table des morceaux chargeables (`webpack.js`, 3 365 → 3 387 octets), qui
+  gagne **une** entrée (le module de la carte et du calendrier). Voir l'enquête ci-dessous.
 
 ### Enquête sur le poids commun (runs 595 à 615)
 
@@ -145,7 +167,7 @@ branche de preuve (code de `main`) et sur le lot :
 | 608 | 1 module ; Explorer ne partage plus les filtres, les champs ni les dates avec la page | 51 | 3 402 |
 | 613 | fond de carte pris dans le module de la fiche, aperçu dans l'îlot de l'accueil | **52** : le module + deux **nouvelles variantes** du morceau de la fiche (webpack en fait une par point d'import dont les modules disponibles diffèrent) | 3 418 |
 | 615 | Explorer et l'aperçu n'importent plus le module de la fiche : `import('leaflet')`, feuille statique | 51 : le module + un morceau commun aux cartes (fond de carte et fournisseur du thème) | 3 401 |
-| <!-- run --> | fond de carte : thème lu sur la page | <!-- à compléter --> | <!-- --> |
+| 616, 617 | fond de carte : thème lu sur la page (plus de fournisseur du thème dans les morceaux des cartes) | **50** : le seul module de la carte et du calendrier | 3 387 |
 
 Leçon pour les lots suivants : chaque nouveau morceau chargé à la demande coûte ~18 octets à **toutes** les routes ;
 importer un module déjà chargeable depuis un nouvel endroit peut en créer une variante (même coût) ;
@@ -161,8 +183,10 @@ importer un module déjà chargeable depuis un nouvel endroit peut en créer une
 | 604 | ×3,5 à ×3,9 | 92 | 92 | 89 (page non touchée) |
 | 613 | ×4,7 à ×5,1 | 91 | 92 | 91 |
 | 615 | ×4,4 à ×4,9 | 93 | 92 | 91 |
+| 616 | ×4,5 à ×5,6 | 91 | 90 | 91 |
+| **617 (run complet)** | ×3,6 à ×4,0 | **92** | **91** | **90** |
 
-<!-- À COMPLÉTER : run complet final -->
+Réaction au toucher (run 617) : 104 ms au plus sur les puces d'Explorer (seuil 200 ms).
 
 ## 5. Défauts trouvés par les tests du lot et corrigés
 
@@ -172,6 +196,8 @@ importer un module déjà chargeable depuis un nouvel endroit peut en créer une
 | Repères de la carte : boutons nommés par leur seul texte visible (« Dès 7 500 F ») ; le titre de l'événement n'était qu'une info-bulle, jamais lu. | e2e, run 604 | `aria-label` complet (titre, date, prix ; « 8 événements : agrandir »). |
 | Repères focalisables mais **inactifs au clavier** : dans Leaflet 1.9, Entrée n'ouvre qu'une bulle liée, jamais l'action du toucher. | e2e, run 608 | Entrée et Espace branchés sur l'action du repère et du groupe. |
 | Feuille du téléphone posée sur la mention des fonds (deux lignes à 360 px) ; boutons de zoom de la fiche sur la mention. | Relecture des captures | Feuille et zoom relevés au-dessus de la mention. |
+| Feuille du téléphone à 360 px : titre coupé et pastille « Dès 7 500 F » sur trois lignes (lien « Voir l'événement » en colonne) ; « Rechercher dans cette zone » sur le bouton de zoom. | Relecture des captures du run complet 617 | Lien sous le texte, pastille sur une ligne ; bouton de zone à l'écart du zoom. |
+| Quand la carte défile sous la barre des catégories collée en haut, « Rechercher dans cette zone » passait par-dessus la barre. | Relecture des captures du run 618 | Zone de la carte isolée (contexte d'empilement propre). |
 
 ## 6. Runs
 
@@ -182,8 +208,10 @@ importer un module déjà chargeable depuis un nouvel endroit peut en créer une
 | 594 | `bb4c48225` (branche de preuve `carte-b/rouges`) | responsive | **Rouge voulu** : arrêt de vente visible sur l'Explorer après **59 305 ms** |
 | 595 à 613 | | rapide + responsive + mesure | Travail : montage des tests, captures, poids (§ 4), défauts du § 5 |
 | 615 | `af18bf96cc` | rapide (96 suites) + responsive + mesure | **Vert** : 207/207 e2e responsive, contrôle responsive sans défaut, budgets tenus, mobile 93/92/91 |
-| <!-- run --> | <!-- --> | | <!-- --> |
-| <!-- run complet --> | <!-- --> | complet | <!-- --> |
+| 616 | `2882665c54` | rapide (96 suites) + responsive + mesure | **Vert** : table des morceaux à 50 entrées, `/events/[id]` 233 302, mobile 91/90/91, 207/207 |
+| **617** | `3c7c721e4b` | **complet** | **Vert** : 588 suites, e2e complet, responsive, budgets, mobile 92/91/90 (§ À lire en premier) |
+| 618 | `9a69d05f63` | rapide (écrans, design, responsive, mesure) | **Vert** : 5 suites, 207/207, contrôle responsive sans défaut, budgets (`/events/[id]` 233 300), mobile 94/91/91 (×5,2 à ×5,7) |
+| 619 | `7afcfb14a9` | rapide (écrans, design, responsive) | **Vert** : 2 suites, 207/207, contrôle responsive sans défaut ; suspension 48 ms, arrêt de vente 49 ms (Explorer) et 73 ms (carte) |
 
 Sortie brute du run 592 (`runs/592-44981825312/test-logs/tests__schema__carte-b-invalidation.test.ts.log`, extrait) :
 
@@ -260,3 +288,58 @@ Sur un téléphone puis sur un ordinateur, en clair puis en sombre (bouton du th
    son prix change en quelques secondes. Côté administration, suspendre un événement : il disparaît de la carte en quelques
    secondes.
 10. Lecteur d'écran (VoiceOver ou TalkBack) sur le Calendrier : un jour se lit « samedi 13 décembre, 3 événements ».
+
+## 9. Captures
+
+Dossier `docs/carte-b-captures/` (job responsive du dernier run, 619, `e2e/carte-b.responsive.spec.ts` ; fichiers
+`cb-<écran>__<largeur>__<thème>.jpg`, thèmes `clair` et `sombre`) :
+
+| Écran | Fichiers |
+|---|---|
+| Explorer, Liste | `cb-explorer-liste__360__*.jpg` |
+| Carte au Sénégal | `cb-carte-senegal__360__*.jpg` |
+| Carte zoomée (Dakar) | `cb-carte-zoomee__360__*.jpg` |
+| Feuille du téléphone (repère touché) | `cb-feuille-telephone__360__*.jpg` |
+| Liste synchronisée et survol (ordinateur) | `cb-liste-synchronisee__1440__*.jpg` |
+| Calendrier | `cb-calendrier__360__*.jpg`, `cb-calendrier__1440__*.jpg` |
+| Feuille d'un jour | `cb-calendrier-jour__360__*.jpg`, `cb-calendrier-jour__1440__*.jpg` |
+| Aperçu de l'accueil | `cb-accueil-apercu__360__*.jpg`, `cb-accueil-apercu__1440__*.jpg` |
+
+En CI, aucune tuile ne vient d'Internet : le verrou réseau de l'e2e sert une tuile neutre (gris clair) à la place de toute
+image d'un autre hôte. Le fond des cartes est donc uni sur les captures, en clair comme en sombre ; repères, groupes,
+pastilles, mention des fonds, feuilles et listes sont les vrais. Le fond Stadia se voit en recette (localhost, sans clé) et
+en préproduction (domaine déclaré, § 7).
+
+## 10. Ce qui change pour les autres lots
+
+- **Fond de carte** : toutes les cartes Leaflet (fiche, administration, pilotage, étape Accès) passent sur Stadia, clair ou
+  sombre selon le thème, par `components/map/themedTiles.ts` (`addThemedTiles`, `setTilesTheme`, `useMapTheme`). Une
+  nouvelle carte doit passer par cette aide (test `f2b-pied-cartes`).
+- **Politique de sécurité du contenu** : `img-src` n'accepte plus « https: » entier. Une nouvelle source d'images
+  externe doit y être ajoutée (`next.config.mjs`), sinon elle sera signalée (rapport seulement aujourd'hui, bloquant au lot
+  de mise en ligne).
+- **Middleware** : `/leaflet/` public (fichiers de la bibliothèque : feuille de style 1.9.4, icônes de repère). Une montée
+  de version de Leaflet doit recopier `node_modules/leaflet/dist/leaflet.css` sous le nouveau nom (le test
+  `carte-b-ecrans` compare les deux et la version).
+- **Invalidation** : les écritures des catégories de billets et le statut d'une partenaire invalident désormais les pages
+  publiques (catalogue, accueil, fiche, carte). Une nouvelle écriture qui change ce qu'affiche le catalogue doit appeler
+  `invalidatePublicEvent` après son succès.
+- **Poids** : `/explore` a un budget (235 712). `scripts/js-budget.mjs` imprime le détail par fichier, le nombre
+  d'entrées de la table des morceaux et la liste des morceaux chargeables : un nouveau morceau chargé à la demande coûte
+  ~18 octets à toutes les routes (`/events/[id]` n'a plus que 14 octets de marge).
+- **Carte compacte** (`EventCard`) : un état de la vente long passe à la ligne (montants inchangés).
+- Rien de modifié dans le catalogue des avis ni dans l'outillage des captures (consigne : session de la finition 5 en
+  parallèle). Fichiers partagés touchés, à surveiller à la fusion : `app/globals.css` (règles des repères et de l'aperçu,
+  marge du zoom de la fiche), `components/events/EventCard.tsx`, `components/events/HomeDiscovery.tsx`, `next.config.mjs`,
+  `middleware.ts`, `e2e/perf.spec.ts` et `scripts/e2e/perf-mobile.mjs` / `perf-profil.mjs` (une adresse ajoutée au
+  blocage).
+
+## 11. Points ouverts
+
+Voir `docs/apres-lancement.md`, section « Carte et calendrier d'Explorer (lot Carte B) » : salles et restaurants sur la
+carte (lot suivant), événements publiés sans position (absents de la carte et du calendrier), recherche d'adresse
+refusée, liste de plus de 300 événements, libellé « Sponsorisé », titre de « Partout au Sénégal » rendu par l'îlot,
+déclaration du domaine chez Stadia.
+
+Branche **non fusionnée**, aucune migration. Branche de preuve `carte-b/rouges` (code de `main` + tests et relevés du
+lot) : ne pas fusionner.
