@@ -31,7 +31,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
-import { test, expect, openAnonymousContext } from './support/fixtures';
+import { test, expect, projectContextOptions } from './support/fixtures';
 import { readDemoIds } from './support/demo-ids';
 import { dakarDayFrom } from './support/parcours';
 import { createPublishedEvent, partnerPosterOf, serviceClient, userIdByEmail } from './support/service';
@@ -375,7 +375,9 @@ test.describe('cvcb · CSP', () => {
             startH2Proxy: (target: string, dir: string) => Promise<{ origin: string; port: number; close: () => Promise<void> }>;
         };
         const proxy = await mod.startH2Proxy(`http://127.0.0.1:${PORT}`, path.join(os.tmpdir(), 'cvcb-h2'));
-        const context = await openAnonymousContext(browser, testInfo, 'clair', { ignoreHTTPSErrors: true, baseURL: proxy.origin, viewport: { width: 390, height: 844 } });
+        // Contexte ouvert à la main : le verrou réseau doit admettre l'hôte du relais (openAnonymousContext pose le verrou
+        // par défaut, qui le refuse : run 624, ERR_BLOCKED_BY_CLIENT)
+        const context = await browser.newContext({ ...projectContextOptions(testInfo), colorScheme: 'light', ignoreHTTPSErrors: true, baseURL: proxy.origin, viewport: { width: 390, height: 844 } });
         try {
             await installNetworkGuard(context, new Set([...e2eConfig().allowedHosts, `localhost:${proxy.port}`]));
             await context.addInitScript(() => {
