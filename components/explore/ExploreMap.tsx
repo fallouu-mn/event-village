@@ -273,6 +273,9 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     map.fitBounds(bounds.pad(0.3), { animate: !reducedMotion(), maxZoom: GROUP_ZOOM_LIMIT });
                 });
                 layer.addLayer(marker);
+                // Bouton (role posé par Leaflet) : sans nom donné, il s'appellerait par son texte visible (« 8 ») ; le titre
+                // n'est qu'une info-bulle. Nom complet pour les lecteurs d'écran.
+                marker.getElement()?.setAttribute('aria-label', `${label} : agrandir`);
                 continue;
             }
             const e = c.items[0];
@@ -291,6 +294,8 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                 setSelectedId(e.id);
             });
             layer.addLayer(marker);
+            // Nom du bouton : titre, date, prix (sinon le lecteur d'écran ne lisait que le prix visible, « Dès 5 000 F »)
+            marker.getElement()?.setAttribute('aria-label', markerAlt(e));
         }
     }, [events, zoom, selectedId, hoverId, ready]);
 

@@ -129,6 +129,9 @@ describe('B2 — Explorer : trois vues, rien de plus au premier chargement', () 
         assert.match(map, /Rechercher dans cette zone/);
         assert.match(map, /onHover=\{setHoverId\}/);
         assert.match(map, /keyboard: true/);
+        // Repère = bouton : nom complet (titre, date, prix), pas seulement le texte visible du billet
+        assert.match(map, /marker\.getElement\(\)\?\.setAttribute\('aria-label', markerAlt\(e\)\)/);
+        assert.match(map, /marker\.getElement\(\)\?\.setAttribute\('aria-label', `\$\{label\} : agrandir`\)/);
         assert.match(map, /zoomAnimation: !still/, 'réduire les animations');
         assert.match(map, /La vue Liste présente les mêmes événements/);
     });
