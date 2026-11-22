@@ -1,0 +1,433 @@
+TAP version 13
+# Subtest: T1 — « Autour de moi » : la position ne quitte jamais le téléphone
+    # Subtest: la zone envoyée par « Rechercher dans cette zone » juste après « Autour de moi » ne permet pas de retrouver la position à 1 km près
+    not ok 1 - la zone envoyée par « Rechercher dans cette zone » juste après « Autour de moi » ne permet pas de retrouver la position à 1 km près
+      ---
+      duration_ms: 2.286839
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:1697'
+      failureType: 'testCodeFailure'
+      error: 'position retrouvée au centre de la zone envoyée : écart médian 2.5 m, maximal 4.9 m (exemple : /api/events/carte?zone=14.6702%2C-17.4935%2C14.7698%2C-17.4265)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:52:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    1..1
+not ok 1 - T1 — « Autour de moi » : la position ne quitte jamais le téléphone
+  ---
+  duration_ms: 2.869344
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:1580'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: T2 — fin d’événement par la tâche planifiée : pages publiques invalidées
+    # Subtest: GET /api/cron/events-finish : invalidatePublicEvent après events_finish_overdue quand des événements sont passés à TERMINE
+    not ok 1 - GET /api/cron/events-finish : invalidatePublicEvent après events_finish_overdue quand des événements sont passés à TERMINE
+      ---
+      duration_ms: 0.339737
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:2954'
+      failureType: 'testCodeFailure'
+      error: "app/api/cron/events-finish/route.ts : invalidatePublicEvent n'est pas importé (aucune invalidation après le passage à TERMINE)"
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        import { NextRequest, NextResponse } from 'next/server';
+        import { rpcWithRetry } from '@/lib/payments/rpc';
+        import { refuseUnlessCron } from '@/lib/security/cron-auth';
+        import { purgeOrphanPosters } from '@/lib/events/poster-storage';
+        
+        export const dynamic = 'force-dynamic';
+        
+        const BATCH = 200;
+        const MAX_ROUNDS = 10;
+        
+        /**
+         * Lot 5.4 (contrat D7) — passage automatique à TERMINE des événements PUBLIE dont la fin
+         * (event_end_at : fin saisie ; date de fin sans heure : ce jour à 23:59 ; sinon début + 6 h, heure de Dakar — finition 2a,
+         * E-01) est passée, par la transition
+         * interne (acteur SYSTEM, canal CRON, journalisée). RPC events_finish_overdue en lots de 200
+         * (FOR UPDATE SKIP LOCKED). Planification : toutes les 15 minutes (docs/deploiement-projet-neuf.md §7).
+         * Protégée par CRON_SECRET (Authorization: Bearer), sans repli.
+         */
+        async function run(req: NextRequest) {
+            const refused = refuseUnlessCron(req);
+            if (refused) return refused;
+            let finished = 0;
+            const ids: string[] = [];
+            for (let round = 1; round <= MAX_ROUNDS; round++) {
+                const { data, error } = await rpcWithRetry<{ ok?: boolean; finished?: number; ids?: string[] }>('events_finish_overdue', { p: { limit: BATCH } });
+                if (error || !data || data.ok !== true) {
+                    console.error('[cron events-finish] passage à TERMINE impossible :', error ? `${error.code} ${error.message}` : JSON.stringify(data));
+                    return NextResponse.json({ error: 'Passage des événements terminés impossible.', finished, ids }, { status: 500 });
+                }
+                const n = Number(data.finished ?? 0);
+                finished += n;
+                ids.push(...(data.ids ?? []).map(String));
+                if (n < BATCH) break;
+            }
+            // Finition 2a (1b) : affiches de plus de 7 jours qu'aucun événement n'utilise (brouillons abandonnés, affiches
+            // remplacées) ; jamais une affiche utilisée. Un échec est journalisé sans annuler le passage à TERMINE.
+            let posters: { scanned: number; deleted: number } | { error: string };
+            try {
+                posters = await purgeOrphanPosters(7);
+            } catch (err) {
+                console.error('[cron events-finish] purge des affiches orphelines impossible :', err instanceof Error ? err.message : String(err));
+                posters = { error: 'Purge des affiches momentanément impossible.' };
+            }
+            return NextResponse.json({ ok: true, finished, ids, posters });
+        }
+        
+        export const GET = run;
+        export const POST = run;
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:64:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    1..1
+not ok 2 - T2 — fin d’événement par la tâche planifiée : pages publiques invalidées
+  ---
+  duration_ms: 0.448934
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:2823'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: T3 — profil de la partenaire : pages publiques invalidées
+    # Subtest: PATCH /api/partner/profile : invalidatePublicEvent après partner_profile_update (nom commercial, raison sociale, logo affichés)
+    not ok 1 - PATCH /api/partner/profile : invalidatePublicEvent après partner_profile_update (nom commercial, raison sociale, logo affichés)
+      ---
+      duration_ms: 0.193931
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:3738'
+      failureType: 'testCodeFailure'
+      error: "app/api/partner/profile/route.ts : invalidatePublicEvent n'est pas importé (la fiche garde l'ancien nom et l'ancien logo, la recherche par nom l'ancien nom, jusqu'à 60 s)"
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        ﻿import { NextRequest, NextResponse } from 'next/server';
+        import { z } from 'zod';
+        import { zodTypeErrors } from '@/lib/validations/zod-messages';
+        import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
+        import { rpcWithRetry } from '@/lib/payments/rpc';
+        import { getServiceRoleClient } from '@/lib/supabase/server';
+        import { PartnerActivityTypes, toSenegaleseE164 } from '@/lib/validations/auth';
+        
+        export const dynamic = 'force-dynamic';
+        
+        /**
+         * Profil professionnel du partenaire connecté (page /partner/profile).
+         *  - GET : la fiche et ses activités, colonnes publiques seulement (les pièces déposées à l'inscription ne
+         *    sont pas renvoyées) ; rôle partenaire exigé.
+         *  - PATCH (lot 7, 7.0 f, D72) : corps validé par Zod avant toute écriture. Refus : 400
+         *    `{ error, code: 'INVALID_FIELD', field }`, message en français, jamais le texte de la base. Numéro
+         *    normalisé en E.164 sénégalais ; logo et couverture : adresse du stockage public du projet déposée pour ce
+         *    partenaire (ImageUpload), ou valeur déjà enregistrée ; activités dans la liste fermée, au moins une.
+         *    Lot 8 (8.2 l, contrat 8.4) : fiche et activités s'écrivent dans une seule transaction, par la RPC
+         *    partner_profile_update (20261106000006_lot8_profil.sql) : un échec n'écrit rien, 500 PROFILE_SAVE_FAILED.
+         *    La route garde toute la validation. Une clé absente de `fields` laisse la colonne inchangée, une clé à
+         *    null la vide ; `activities: null` laisse les activités inchangées. La lecture finale reste hors transaction.
+         */
+        
+        const NO_STORE = { 'Cache-Control': 'no-store' };
+        
+        const PUBLIC_COLUMNS = 'id, company_name, commercial_name, description, logo_url, cover_url, address, city, latitude, longitude, phone, email, status, partner_activities(activity_type, is_active)';
+        
+        const FIELD_LABELS: Record<string, string> = {
+            company_name: 'Le nom de l’entreprise',
+            commercial_name: 'Le nom commercial',
+            description: 'La description',
+            logo_url: 'Le logo',
+            cover_url: 'La photo de couverture',
+            address: 'L’adresse',
+            city: 'La ville',
+            latitude: 'La latitude',
+            longitude: 'La longitude',
+            phone: 'Le numéro de téléphone',
+            email: 'L’email professionnel',
+            activities: 'Les activités',
+        };
+        
+        /** Chaîne vide ou espaces → null (champ vidé). */
+        const blankToNull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
+        
+        /** Messages des refus : complément du libellé du champ (« Le nom commercial : 150 caractères au plus. »). */
+        const TYPE_ERROR = zodTypeErrors({ invalid: 'valeur de type inattendu.' });
+        
+        const text = (min: number, max: number) => z.string(TYPE_ERROR).trim()
+            .min(min, `${min} caractères au moins.`)
+            .max(max, `${max} caractères au plus.`);
+        const optionalText = (max: number) => z.preprocess(blankToNull, text(0, max).nullable());
+        const coordinate = (limit: number) => z.number(TYPE_ERROR).finite('nombre attendu.')
+            .min(-limit, `nombre compris entre -${limit} et ${limit} attendu.`)
+            .max(limit, `nombre compris entre -${limit} et ${limit} attendu.`)
+            .nullable();
+        
+        const ProfilePatchSchema = z.object({
+            company_name: text(2, 150),
+            commercial_name: optionalText(150),
+            description: optionalText(2000),
+            address: optionalText(200),
+            city: z.preprocess(blankToNull, text(2, 80).nullable()),
+            latitude: coordinate(90),
+            longitude: coordinate(180),
+            phone: z.preprocess(blankToNull, text(0, 20).nullable()),
+            // Design 1c (point 2) : email obligatoire, comme à l'inscription (confirmations et rapports) ; vidé = refusé
+            email: z.preprocess(blankToNull, z.string(zodTypeErrors({ invalid: 'obligatoire : vos confirmations et rapports y arrivent.' })).trim()
+                .max(200, '200 caractères au plus.').email('adresse invalide.')),
+            logo_url: z.preprocess(blankToNull, text(0, 600).nullable()),
+            cover_url: z.preprocess(blankToNull, text(0, 600).nullable()),
+            activities: z.array(z.enum(PartnerActivityTypes, { error: 'activité hors de la liste proposée.' }), TYPE_ERROR)
+                .min(1, 'choisissez au moins une activité.')
+                .max(PartnerActivityTypes.length, 'liste trop longue.'),
+        }).partial();
+        
+        type ProfilePatch = z.infer<typeof ProfilePatchSchema>;
+        
+        function invalidField(field: string, detail?: string): NextResponse {
+            const label = FIELD_LABELS[field] ?? 'Une valeur';
+            return NextResponse.json(
+                { error: `${label} : ${detail ?? 'valeur invalide.'}`, code: 'INVALID_FIELD', field },
+                { status: 400, headers: NO_STORE },
+            );
+        }
+        
+        function serverError(context: string, detail: string): NextResponse {
+            console.error(`[API /api/partner/profile] ${context} :`, detail);
+            return NextResponse.json(
+                { error: 'Le profil n’a pas pu être enregistré. Réessayez dans un instant.', code: 'PROFILE_SAVE_FAILED' },
+                { status: 500, headers: NO_STORE },
+            );
+        }
+        
+        /** Image du stockage public du projet, déposée pour ce partenaire (`public-images/<dossier>/<partner_id>/…`). */
+        function isPartnerImageUrl(url: string, partnerId: string): boolean {
+            const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/+$/, '');
+            if (!base) return false;
+            let parsed: URL;
+            try {
+                parsed = new URL(url);
+            } catch {
+                return false;
+            }
+            const baseUrl = new URL(base);
+            // https exigé, sauf si le projet lui-même est servi en http (base locale de développement et de test).
+            if (parsed.protocol !== 'https:' && !(baseUrl.protocol === 'http:' && parsed.protocol === 'http:')) return false;
+            if (parsed.origin !== baseUrl.origin) return false;
+            const prefix = '/storage/v1/object/public/public-images/';
+            if (!parsed.pathname.startsWith(prefix)) return false;
+            // Correctifs de la contre-vérification de la finition 2a (T6) : segments lus décodés (le stockage les décode), jamais le
+            // dossier des affiches events/ : une affiche citée par le profil serait effacée avec l'événement (remplacement, purge)
+            const segments = parsed.pathname.slice(prefix.length).split('/').map((s) => {
+                try {
+                    return decodeURIComponent(s);
+                } catch {
+                    return s;
+                }
+            });
+            return segments.length >= 3 && segments[0] !== 'events' && segments[1] === partnerId
+                && !segments.includes('..') && segments.every((s) => s.length > 0 && !s.includes('/') && !s.includes('\\'));
+        }
+        
+        /** GET — lot 9 bis (R7, B39) : ouvert aussi au compte EN_ATTENTE (dossier en cours de vérification). */
+        export async function GET(request: NextRequest) {
+            const activeSession = await requireActiveSession(request, { allowStatuses: ['ACTIF', 'EN_ATTENTE'] });
+            if (activeSession.response) return activeSession.response;
+            const user = activeSession.user;
+            if (!serverIsPartner(user)) {
+                return NextResponse.json({ error: 'Accès réservé aux partenaires.', code: 'FORBIDDEN' }, { status: 403, headers: NO_STORE });
+            }
+            const { data: partner, error } = await getServiceRoleClient()
+                .from('partners')
+                .select(PUBLIC_COLUMNS)
+                .eq('user_id', user.id)
+                .maybeSingle();
+            if (error) {
+                console.error('[API GET /api/partner/profile] lecture de la fiche :', error.message);
+                return NextResponse.json({ error: 'Profil momentanément indisponible. Réessayez.', code: 'PROFILE_UNAVAILABLE' }, { status: 500, headers: NO_STORE });
+            }
+            if (!partner) {
+                return NextResponse.json({ error: 'Profil partenaire introuvable.', code: 'PARTNER_NOT_FOUND' }, { status: 404, headers: NO_STORE });
+            }
+            return NextResponse.json({ success: true, partner }, { headers: NO_STORE });
+        }
+        
+        export async function PATCH(request: NextRequest) {
+            const activeSession = await requireActiveSession(request);
+            if (activeSession.response) return activeSession.response;
+            const user = activeSession.user;
+            if (!serverIsPartner(user)) {
+                return NextResponse.json({ error: 'Accès réservé aux partenaires.', code: 'FORBIDDEN' }, { status: 403, headers: NO_STORE });
+            }
+        
+            let raw: unknown;
+            try {
+                raw = await request.json();
+            } catch {
+                return NextResponse.json({ error: 'Demande illisible : corps JSON attendu.', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
+            }
+            if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+                return NextResponse.json({ error: 'Demande illisible : objet JSON attendu.', code: 'INVALID_BODY' }, { status: 400, headers: NO_STORE });
+            }
+        
+            const parsed = ProfilePatchSchema.safeParse(raw);
+            if (!parsed.success) {
+                const issue = parsed.error.issues[0];
+                const field = typeof issue?.path[0] === 'string' ? issue.path[0] : 'body';
+                return invalidField(field, issue?.message);
+            }
+            const input: ProfilePatch = parsed.data;
+        
+            const supabase = getServiceRoleClient();
+            const { data: existing, error: readErr } = await supabase
+                .from('partners')
+                .select('id, logo_url, cover_url')
+                .eq('user_id', user.id)
+                .maybeSingle();
+            if (readErr) return serverError('lecture de la fiche', readErr.message);
+            if (!existing) {
+                return NextResponse.json({ error: 'Profil partenaire introuvable.', code: 'PARTNER_NOT_FOUND' }, { status: 404, headers: NO_STORE });
+            }
+        
+            const update: Record<string, unknown> = {};
+            for (const key of ['company_name', 'commercial_name', 'description', 'address', 'city', 'latitude', 'longitude', 'email'] as const) {
+                if (input[key] !== undefined) update[key] = input[key];
+            }
+            if (input.phone !== undefined) {
+                if (input.phone === null) update.phone = null;
+                else {
+                    const e164 = toSenegaleseE164(input.phone);
+                    if (!e164) return invalidField('phone', 'numéro mobile sénégalais attendu (par exemple 77 123 45 67).');
+                    update.phone = e164;
+                }
+            }
+            for (const key of ['logo_url', 'cover_url'] as const) {
+                const value = input[key];
+                if (value === undefined) continue;
+                if (value !== null && value !== existing[key] && !isPartnerImageUrl(value, existing.id)) {
+                    return invalidField(key, 'déposez l’image depuis cette page (stockage Event Village).');
+                }
+                update[key] = value;
+            }
+        
+            // Corps vide : rien à écrire, la fiche est relue telle quelle (aucune entrée vide n'atteint la RPC).
+            if (Object.keys(update).length > 0 || input.activities !== undefined) {
+                const { data: saved, error: saveErr } = await rpcWithRetry('partner_profile_update', {
+                    p: {
+                        partner_id: existing.id,
+                        user_id: user.id,
+                        fields: update,
+                        activities: input.activities !== undefined ? Array.from(new Set(input.activities)) : null,
+                    },
+                });
+                if (saveErr) return serverError('enregistrement du profil', `${saveErr.code ?? ''} ${saveErr.message}`);
+                const outcome = saved as { ok?: unknown; code?: unknown } | null;
+                if (outcome?.ok !== true) {
+                    if (outcome?.code === 'PARTNER_NOT_FOUND') {
+                        return NextResponse.json({ error: 'Profil partenaire introuvable.', code: 'PARTNER_NOT_FOUND' }, { status: 404, headers: NO_STORE });
+                    }
+                    return serverError('enregistrement du profil', `réponse inattendue : ${JSON.stringify(saved)}`);
+                }
+            }
+        
+            const { data: partner, error: rereadErr } = await supabase.from('partners').select(PUBLIC_COLUMNS).eq('id', existing.id).single();
+            if (rereadErr || !partner) return serverError('relecture de la fiche', rereadErr?.message ?? 'réponse vide');
+            return NextResponse.json({ success: true, partner }, { headers: NO_STORE });
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:76:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    1..1
+not ok 3 - T3 — profil de la partenaire : pages publiques invalidées
+  ---
+  duration_ms: 0.300337
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:3639'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: T4 — vente confirmée : pages publiques invalidées
+    # Subtest: confirmTicketPayment : invalidatePublicEvent après payment_confirm (« Complet », prix d’appel de la carte, tranches de la fiche)
+    not ok 1 - confirmTicketPayment : invalidatePublicEvent après payment_confirm (« Complet », prix d’appel de la carte, tranches de la fiche)
+      ---
+      duration_ms: 0.204456
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:4557'
+      failureType: 'testCodeFailure'
+      error: "lib/payments/confirmation.service.ts : aucune invalidation après payment_confirm (une vente qui épuise une catégorie reste « en vente » jusqu'à 60 s sur le catalogue, l'accueil et la carte)"
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:93:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        node:internal/test_runner/test:1440:71
+        node:internal/per_context/primordials:466:82
+        new Promise (<anonymous>)
+        new SafePromise (node:internal/per_context/primordials:435:3)
+        node:internal/per_context/primordials:466:9
+        Array.map (<anonymous>)
+      ...
+    1..1
+not ok 4 - T4 — vente confirmée : pages publiques invalidées
+  ---
+  duration_ms: 0.258551
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/audit/cvcb-1-trous.test.ts:2:4463'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..4
+# tests 4
+# suites 4
+# pass 0
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 32.162663
