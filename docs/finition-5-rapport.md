@@ -1,8 +1,9 @@
 # Finition 5 — Mode sombre vérifié, liens précis des notifications, mesure fiable
 
-Branche `finition-5/sombre-liens-mesure`, partie de `main` à `75e20d52f`. **Non fusionnée.** **Aucune migration** : les
+Branche `finition-5/sombre-liens-mesure`, partie de `main` à `75e20d52f`. **Fusionnée dans `main` le 22/11 (`64089e9f1`),
+run complet de `main` 621 entièrement vert** (§ 11). **Aucune migration** : les
 liens des avis sont calculés côté application (catalogue `lib/notifications/catalog.ts`), aucune donnée nouvelle n'était
-nécessaire. Branche de preuve jetable `finition-5/preuve-faussee` (§ 6), à supprimer après lecture.
+nécessaire. Branche de preuve jetable `finition-5/preuve-faussee` (§ 6) supprimée après lecture (distante et locale).
 
 ## À lire en premier
 
@@ -455,6 +456,23 @@ Aucun budget relevé.
 
 ## 10. À faire de ton côté
 
-- Lire ce rapport, puis décider de la fusion (je ne fusionne pas sans feu vert).
-- Supprimer la branche jetable `finition-5/preuve-faussee` après lecture du § 6 (ou me le demander).
-- Aucune migration à appliquer.
+- Rien : fusion faite sur feu vert, aucune migration à appliquer, branche de preuve supprimée.
+
+## 11. Fusion dans main (22/11)
+
+Sur feu vert : branche jetable `finition-5/preuve-faussee` supprimée (distante et locale) ; aucun run en cours sur `main`
+avant la poussée ; `main` n'avait pas bougé depuis `75e20d52f` ; fusion `64089e9f1` (`--no-ff`, arbre identique à la tête
+de la branche `e4296771a`, run 611 de la branche vert), sans ligne `ci-rapide` : vérification complète.
+
+Run de `main` **621** (`64089e9f1`), `ci-results` `runs/621-45029570510/` : **vert**.
+
+| Contrôle | Résultat |
+|---|---|
+| Suites | **588 / 588** réussies ; contrôle des lots OK (588 attendues, 588 exécutées dans 4 lots) |
+| Typecheck, lint, build | verts |
+| Poids JavaScript (gzip ; budget) | `/` 224 700 (226 342), `/events/[id]` 233 282 (233 316), `/tickets` 250 348 (250 417), `/controller/scanner` 234 639 (234 911), `/billet/hors-ligne` 223 748 (224 268) : tous tenus, aucun relevé |
+| e2e | vert : 787 captures en clair et en sombre, **0 en échec** (preuve du thème comprise), fumée et autres phases vertes |
+| Contrôle responsive | 190 résultats (page × thème), **0 défaut** |
+| Mesure mobile | **OK**, tentative 1 valide (indices 1 568 à 2 041, ralentissement ×3,14 à ×4,08 : dans la plage) ; accueil 93, fiche 93, Mes billets 93 ; toucher OK ; `perf_mobile_mesure=ok`, `perf_mobile_tentatives=1` |
+
+Aucune migration : rien à appliquer sur event-village-dev. Worktree de la finition retiré.
