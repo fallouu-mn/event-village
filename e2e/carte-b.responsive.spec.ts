@@ -19,7 +19,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect, type ThemeKey } from './support/fixtures';
 import { readDemoIds, E2E_OUTPUT_DIR } from './support/demo-ids';
 import { dakarDayFrom } from './support/parcours';
-import { createPublishedEvent, eventImageUrl, serviceClient, userIdByEmail } from './support/service';
+import { createPublishedEvent, partnerPosterOf, serviceClient, userIdByEmail } from './support/service';
 import { FIXTURE_USERS } from '../tests/helpers/fixture-data';
 
 const STAMP = randomUUID().slice(0, 8);
@@ -31,8 +31,6 @@ const TILE_HOST = /(^|\.)tiles\.stadiamaps\.com$/;
 /** Événement publié de la partenaire de démonstration « organisateur », sur une position donnée. */
 async function publishDemoEvent(title: string, price: number, lat = 14.6928, lng = -17.4467): Promise<{ id: string; categoryId: string }> {
     const ids = readDemoIds();
-    const own = ids.allEvents.find((e) => e.organizer === 'organisateur' && e.status === 'PUBLIE');
-    if (!own) throw new Error('[e2e] aucun événement publié de la partenaire de démonstration (affiche à réutiliser)');
     const day = dakarDayFrom(new Date(), 6);
     const id = await createPublishedEvent({
         partnerUserId: ids.accounts.organisateur.userId,
@@ -41,7 +39,8 @@ async function publishDemoEvent(title: string, price: number, lat = 14.6928, lng
         description: 'Événement du lot Carte B (invalidation des pages publiques). Données fictives.',
         startDate: day, startTime: '20:00:00', endDate: day, endTime: '23:00:00',
         location: 'Esplanade de test', city: 'Dakar', capacity: 100,
-        imageUrl: await eventImageUrl(own.id),
+        // Affiche déposée comme par la route de dépôt (event_poster_path_ok n'accepte que ses noms de fichier)
+        imageUrl: await partnerPosterOf(ids.accounts.organisateur.userId),
         latitude: lat, longitude: lng,
         category: { name: 'Standard', price, total: 50 },
     });
