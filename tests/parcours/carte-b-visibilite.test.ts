@@ -59,8 +59,12 @@ before(async () => {
     }
     // Publié puis fini (fin passée) : la tâche planifiée ne l'a pas encore clos
     await shiftEventDates(ids.publieFini, { startsInHours: -6, durationHours: 1 });
-    // Publié sans position (événement ancien, d'avant la finition 2a : inséré sans latitude ni longitude)
+    // Publié sans position (événement ancien, d'avant la finition 2a, qui rend la position obligatoire à la soumission) :
+    // publié par les aides (qui posent une position pour soumettre), puis position retirée par le rôle de service, comme
+    // un événement publié avant la finition 2a (run 595 : l'aide pose la position, le montage doit la retirer)
     ids.sansPosition = (await createTimedEvent(P.partnerId, 'carteb-sans-position', CATS, { startsInHours: 48 })).eventId;
+    const { error: posErr } = await service.from('events').update({ latitude: null, longitude: null }).eq('id', ids.sansPosition);
+    assert.equal(posErr, null, `montage : position retirée (${posErr?.message})`);
     const { data, error } = await service.from('events').select('id, status, latitude, longitude').in('id', Object.values(ids));
     assert.equal(error, null, `relecture du montage : ${error?.message}`);
     const byId = new Map((data ?? []).map((r) => [r.id as string, r]));
