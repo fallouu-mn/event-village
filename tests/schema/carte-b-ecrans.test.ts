@@ -62,6 +62,10 @@ describe('B1 — fond de carte Stadia', () => {
             assert.match(src, /setTilesTheme\(tilesRef\.current, theme\)/, `${rel} : thème suivi`);
             assert.doesNotMatch(src, /L\.tileLayer\(|openstreetmap\.org\/\{z\}/, `${rel} : aucune autre couche`);
         }
+        // Run 615 : le fond de carte lit le thème sur la page (classe dark), sans tirer le fournisseur du thème dans les
+        // morceaux des cartes chargés à la demande
+        assert.doesNotMatch(code('components/map/themedTiles.ts'), /ThemeProvider/);
+        assert.match(code('components/map/themedTiles.ts'), /useSyncExternalStore\(subscribeTheme, readTheme, \(\) => 'light'\)/);
         // Run 613 : importer le module de la carte de la fiche depuis Explorer ou l'accueil en créait des variantes (une entrée
         // de plus par variante dans la table des morceaux chargée par toutes les pages) : ils ne l'importent plus
         for (const rel of ['components/explore/ExploreMap.tsx', 'components/explore/SenegalMapPreview.tsx', 'components/explore/ExploreCalendar.tsx', 'components/events/HomeSenegalMap.tsx']) {

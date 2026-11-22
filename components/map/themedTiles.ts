@@ -1,6 +1,6 @@
 'use client';
 
-import { useTheme } from '@/components/providers/ThemeProvider';
+import { useSyncExternalStore } from 'react';
 import { tileConfig, type MapTheme } from '@/lib/map/tiles';
 
 /**
@@ -15,10 +15,24 @@ type LeafletModule = typeof import('leaflet');
 type LeafletMap = import('leaflet').Map;
 type LeafletTileLayer = import('leaflet').TileLayer;
 
-/** Thème de la carte : celui de l'application (clair par défaut). */
+/**
+ * Thème de la carte : celui de la page (classe `dark` posée sur <html> par le script de démarrage du thème et par
+ * components/providers/ThemeProvider.tsx), suivi par un observateur. Lu sur la page plutôt que par le contexte du thème :
+ * ce module, partagé par les morceaux de code des cartes chargés à la demande, ne tire pas le fournisseur du thème avec
+ * lui (morceau commun de plus, entrée de plus dans la table des morceaux chargée par toutes les pages : run 615).
+ */
+function subscribeTheme(onChange: () => void): () => void {
+    const observer = new MutationObserver(onChange);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+}
+
+function readTheme(): MapTheme {
+    return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+}
+
 export function useMapTheme(): MapTheme {
-    const { resolvedTheme } = useTheme();
-    return resolvedTheme === 'dark' ? 'dark' : 'light';
+    return useSyncExternalStore(subscribeTheme, readTheme, () => 'light');
 }
 
 /** Ajoute la couche des tuiles du thème et la mention des fonds ; rend la couche (pour setUrl au changement de thème). */
