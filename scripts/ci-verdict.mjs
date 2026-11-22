@@ -83,6 +83,11 @@ if (responsive) {
     for (const f of ['responsive.tsv', 'responsive.txt']) copier(path.join(responsive.dir, f), path.join(runDir, f));
     copier(path.join(responsive.dir, 'captures-responsive'), path.join(runDir, 'captures-responsive'));
     copier(path.join(responsive.dir, 'playwright'), path.join(runDir, 'playwright-responsive'));
+    // Finition 5 : captures sombres du mode rapide (ligne ci-captures), aux mêmes noms que celles du job e2e (absent au run complet)
+    if (rapide) {
+        copier(path.join(responsive.dir, 'captures'), path.join(runDir, 'captures'));
+        copier(path.join(responsive.dir, 'captures.log'), path.join(runDir, 'captures.log'));
+    }
 }
 // Design 1e (vitesse) : mesure mobile seule en mode rapide (job « perf »), aux mêmes noms que celle du job e2e
 const perfJob = job('perf');
