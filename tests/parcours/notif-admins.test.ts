@@ -211,7 +211,7 @@ describe('6.6 Admin — événement soumis et partenaire inscrit', () => {
         const { data, error } = await service.from('partners').select('company_name').eq('id', owner.partnerId).single();
         assert.equal(error, null, `partenaire : ${error?.message}`);
         const sent = await deliverFor(rows, admins['partners.read']);
-        await assertInApp(sent, admins['partners.read'], 'Nouvelle candidature', [String(data.company_name)], '/admin/dashboard');
+        await assertInApp(sent, admins['partners.read'], 'Nouvelle candidature', [String(data.company_name)], `/admin/dashboard?partenaires=ALL&dossier=${owner.partnerId}`); // finition 5 : lien de l'objet exact (modification signalée)
     });
 });
 

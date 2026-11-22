@@ -421,7 +421,29 @@ const SAMPLE_MONEY = { cashout_id: SAMPLE_ID.cashout, amount: 25_000, operator: 
 
 const eventPath = (d: object): string => `/events/${ident(d, 'event_id')}`;
 const partnerEventPath = (d: object, tab?: string): string => `/partner/events/${ident(d, 'event_id')}${tab ? `?tab=${tab}` : ''}`;
-const withdrawalPath = (d: object): string => (optText(d, 'account_kind') === 'PARRAINAGE' ? '/wallet' : '/partner/finance');
+/**
+ * Finition 5 (point 2) : chaque avis mène à l'objet exact. Retrait : la page du retrait (identifiant de l'envoi,
+ * cashout_id), au portefeuille (parrainage) ou aux finances pro ; session et propriété exigées par la page.
+ */
+const withdrawalPath = (d: object): string => {
+    const space = optText(d, 'account_kind') === 'PARRAINAGE' ? '/wallet' : '/partner/finance';
+    return optText(d, 'cashout_id') ? `${space}/retraits/${ident(d, 'cashout_id')}` : space;
+};
+/** Finition 5 : les billets du compte pour un événement (achat, invitation, rappel, annulation, remboursement) ; sans
+ * événement dans les données (ligne ancienne), l'historique : un lien ne fait jamais échouer l'envoi d'un avis. */
+const eventTicketsPath = (d: object): string => (optText(d, 'event_id') ? `/tickets/evenement/${ident(d, 'event_id')}` : '/tickets?tab=historique');
+const eventTicketsOrHistory = eventTicketsPath;
+/** Finition 5 : un billet du compte (/tickets/<billet>, page app/tickets/[id]) ; sans billet dans les données, ceux de l'événement. */
+const ticketPath = (d: object): string => (optText(d, 'ticket_id') ? `/tickets/${ident(d, 'ticket_id')}` : eventTicketsPath(d));
+/** Finition 5 : billet reçu à accepter, dans « Reçus » à l'endroit du transfert (ancre recu-<transfert>, IncomingTransfers). */
+const incomingTransferPath = (d: object): string => `/tickets?tab=recus#recu-${ident(d, 'transfer_id')}`;
+/** Finition 5 : un billet contrôlé (le billet) ; plusieurs billets de la commande contrôlés : les billets de l'événement. */
+const scannedPath = (d: object): string => {
+    const count = field(d, 'ticket_count');
+    return optText(d, 'ticket_id') && (typeof count !== 'number' || count <= 1) ? ticketPath(d) : eventTicketsPath(d);
+};
+/** Finition 5 : fiche du dossier d'une partenaire, ouverte dans la file de validation (lien profond du tableau de bord). */
+const partnerDossierPath = (d: object): string => `/admin/dashboard?partenaires=ALL&dossier=${ident(d, 'partner_id')}`;
 /** Finition 4 : lien d'un avis de ventes, l'événement s'il n'y en a qu'un, sinon la liste. */
 const salesPath = (d: object): string => (optText(d, 'event_id') ? partnerEventPath(d, 'ventes') : '/partner/events');
 /** Finition 4 : entier pour un SMS, milliers séparés par une espace simple (GSM-7, jamais d'espace insécable). */
@@ -712,7 +734,7 @@ function confirmationBlocks(facts: EmailFact[], list?: EmailList): EmailBlocks {
 const CATALOG = {
     PURCHASE_CONFIRMED: define('PURCHASE_CONFIRMED', {
         label: 'Confirmation d’achat', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
-        link: () => '/tickets?tab=a-venir',
+        link: eventTicketsPath,
         inApp: (d) => ({
             title: 'Achat confirmé',
             content: `${plural(count(d, 'ticket_count'), 'billet', 'billets')} pour ${q(text(d, 'title'))} le ${formatDateTime(iso(d, 'start_at'))}. Total payé : ${money(d, 'total')}. Vos billets sont dans Mes billets.`,
@@ -734,7 +756,7 @@ const CATALOG = {
     }),
     FREE_TICKETS_CONFIRMED: define('FREE_TICKETS_CONFIRMED', {
         label: 'Billets gratuits confirmés', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
-        link: () => '/tickets?tab=a-venir',
+        link: eventTicketsPath,
         inApp: (d) => ({
             title: 'Billets confirmés',
             // Lot 7 (7.9, D94) : lien vers Mes billets ajouté au texte.
@@ -763,7 +785,7 @@ const CATALOG = {
     INVITATION_RECEIVED: define('INVITATION_RECEIVED', {
         label: 'Invitation reçue', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
         // Finition 4 (point 5, E-42) : les billets d'une invitation sont dans « À venir » (« Reçus » ne montre que les transferts)
-        link: () => '/tickets?tab=a-venir',
+        link: eventTicketsPath,
         inApp: (d) => ({
             title: 'Invitation reçue',
             content: `${plural(count(d, 'ticket_count'), 'invitation', 'invitations')} pour ${q(text(d, 'title'))} le ${formatDateTime(iso(d, 'start_at'))} : vos billets sont dans Mes billets.`,
@@ -773,7 +795,7 @@ const CATALOG = {
     }),
     TRANSFER_OFFERED: define('TRANSFER_OFFERED', {
         label: 'Billet transféré (offre)', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets?tab=recus',
+        link: incomingTransferPath,
         inApp: (d) => ({
             title: 'Un billet vous est transféré',
             content: `Un billet pour ${q(text(d, 'title'))} vous attend. Acceptez-le avant le ${formatDateTime(iso(d, 'expires_at'))}.`,
@@ -791,7 +813,7 @@ const CATALOG = {
     TRANSFER_EXPIRED: define('TRANSFER_EXPIRED', {
         label: 'Transfert expiré', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
         night: 'DEFER',
-        link: () => '/tickets?tab=a-venir',
+        link: ticketPath,
         inApp: (d) => ({ title: 'Transfert expiré', content: `Votre billet pour ${q(text(d, 'title'))} n'a pas été accepté à temps : il reste dans vos billets.` }),
         // Finition 4 (point 4) : billet revenu à l'expéditeur
         sms: (d, ctx) => `${SMS_PREFIX}votre billet ${smsVar(text(d, 'title'), 30)} n'a pas été accepté à temps : il vous revient. ${appLink(ctx, '/tickets')}`,
@@ -810,7 +832,7 @@ const CATALOG = {
     // lot 6. Aucun montant ni prix.
     TRANSFER_RECEIVED: define('TRANSFER_RECEIVED', {
         label: 'Billet reçu', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
-        link: () => '/tickets?tab=a-venir',
+        link: ticketPath,
         inApp: (d) => {
             const number = optText(d, 'ticket_number');
             return {
@@ -833,7 +855,7 @@ const CATALOG = {
     // Lot 9 bis (11.2 M4, R78) : avis regroupé par commande (ticket_count), + EMAIL (G.49).
     TICKET_SCANNED: define('TICKET_SCANNED', {
         label: 'Entrée validée', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_SCANNED',
-        link: () => '/tickets?tab=historique',
+        link: scannedPath,
         inApp: (d) => {
             const n = optNum(d, 'ticket_count') === null ? 1 : count(d, 'ticket_count');
             return {
@@ -847,7 +869,7 @@ const CATALOG = {
     }),
     EVENT_CANCELLED: define('EVENT_CANCELLED', {
         label: 'Annulation d’un événement', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
-        link: () => '/tickets?tab=historique',
+        link: (d) => (text(d, 'refund_mode') === 'TRANSFERRED' ? '/tickets?tab=historique' : eventTicketsPath(d)),
         inApp: (d) => {
             const mode = text(d, 'refund_mode');
             const notice = optText(d, 'public_notice');
@@ -903,7 +925,7 @@ const CATALOG = {
     }),
     REMINDER_J1: define('REMINDER_J1', {
         label: 'Rappel la veille', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'REMINDER', link: () => '/tickets?tab=a-venir',
+        inAppType: 'REMINDER', link: eventTicketsPath,
         inApp: (d) => ({
             title: 'Rappel : c\'est demain',
             content: `${q(text(d, 'title'))} demain à ${formatTime(iso(d, 'start_at'))}, ${text(d, 'location')}, ${text(d, 'city')}. Vos billets sont dans Mes billets.`,
@@ -913,7 +935,7 @@ const CATALOG = {
     }),
     REMINDER_H3: define('REMINDER_H3', {
         label: 'Rappel avant le début', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'REMINDER', link: () => '/tickets?tab=a-venir',
+        inAppType: 'REMINDER', link: eventTicketsPath,
         inApp: (d) => ({
             title: 'C\'est bientôt',
             // Lot 7 (D33) : le billet reste présentable sans réseau (7.1) ; lien et SMS inchangés.
@@ -924,7 +946,7 @@ const CATALOG = {
     }),
     REFUND_REQUESTED: define('REFUND_REQUESTED', {
         label: 'Remboursement demandé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_REQUESTED',
-        link: () => '/tickets?tab=historique',
+        link: eventTicketsPath,
         // Finition 4 (point 4, E-45) : qui a lancé le remboursement (by) ; SMS et push seulement quand ce n'est pas le client
         // (la mise en file restreint les canaux : le client et l'annulation n'ont ni SMS ni, pour l'annulation, de push)
         inApp: (d) => {
@@ -950,7 +972,7 @@ const CATALOG = {
     }),
     REFUND_PAID: define('REFUND_PAID', {
         label: 'Remboursement versé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROCESSED',
-        link: () => '/tickets?tab=historique',
+        link: eventTicketsOrHistory,
         inApp: (d) => {
             const title = optText(d, 'title');
             return {
@@ -1383,7 +1405,7 @@ const CATALOG = {
     }),
     HALL_EARNINGS_AVAILABLE: define('HALL_EARNINGS_AVAILABLE', {
         label: 'Recettes d’une réservation de salle disponibles', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'HALL_RESERVATION',
-        link: () => '/partner/halls/recettes',
+        link: (d) => hallPartnerLink(d),
         inApp: (d) => ({
             title: 'Recettes disponibles',
             content: `${money(d, 'earned')} de la réservation de ${hallName(d)} ${hallPeriod(d)} sont disponibles : vous pouvez les retirer depuis votre espace.`,
@@ -2042,7 +2064,7 @@ const CATALOG = {
     }),
     ADMIN_PARTNER_REGISTERED: define('ADMIN_PARTNER_REGISTERED', {
         label: 'Nouvelle candidature partenaire', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.read', inAppType: 'KYC',
-        link: () => '/admin/dashboard',
+        link: partnerDossierPath,
         inApp: (d) => ({ title: 'Nouvelle candidature', content: `${text(d, 'company')} demande un compte partenaire.` }),
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
     }),
@@ -2177,7 +2199,7 @@ const CATALOG = {
     // N1 (R30, H1, B11) : remboursement bloqué, refusé, incertain ou en retard de 30 min ; un avis par versement.
     REFUND_DELAYED: define('REFUND_DELAYED', {
         label: 'Remboursement retardé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROGRESS',
-        link: () => '/tickets?tab=historique',
+        link: eventTicketsOrHistory,
         inApp: (d) => {
             const title = optText(d, 'title');
             return {
@@ -2228,7 +2250,7 @@ const CATALOG = {
     // N4 (R30, H1) : paiement encaissé sans billet possible, ou paiement en double (duplicate_of), remboursé.
     PAYMENT_REFUND_STARTED: define('PAYMENT_REFUND_STARTED', {
         label: 'Remboursement d’un paiement', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'REFUND_PROGRESS',
-        link: () => '/tickets?tab=historique',
+        link: eventTicketsOrHistory,
         inApp: (d) => {
             const title = optText(d, 'title');
             const what = title ? ` pour ${q(title)}` : '';
@@ -2260,14 +2282,14 @@ const CATALOG = {
     // N5 (R54) : dossier refusé complété une fois, partners.read.
     ADMIN_PARTNER_RESUBMITTED: define('ADMIN_PARTNER_RESUBMITTED', {
         label: 'Dossier partenaire complété', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'partners.read', inAppType: 'ADMIN_REVIEW',
-        link: () => '/admin/dashboard',
+        link: partnerDossierPath,
         inApp: (d) => ({ title: 'Dossier complété', content: `${text(d, 'company')} a complété son dossier refusé : il attend un nouvel examen.` }),
         sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
     }),
     // N6 (R3, X10) : porteurs d'un événement suspendu puis clos par l'administration, sans motif.
     EVENT_CLOSED_HOLDER: define('EVENT_CLOSED_HOLDER', {
         label: 'Clôture d’un événement suspendu (porteurs)', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
-        link: () => '/tickets?tab=tous',
+        link: eventTicketsPath,
         inApp: (d) => ({
             title: 'Événement clos',
             content: `${q(text(d, 'title'))} est clos par l'équipe Event Village après sa suspension. Il n'est pas annulé : aucun remboursement automatique.`,
@@ -2318,7 +2340,7 @@ const CATALOG = {
     TRANSFER_DECLINED_SENDER: define('TRANSFER_DECLINED_SENDER', {
         label: 'Transfert refusé (expéditeur)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
         night: 'DEFER',
-        link: () => '/tickets?tab=a-venir',
+        link: ticketPath,
         inApp: (d) => ({ title: 'Billet refusé', content: `Le destinataire a refusé votre billet pour ${q(text(d, 'title'))} : il reste dans vos billets.` }),
         // Finition 4 (point 4, E-46) : billet revenu à l'expéditeur
         sms: (d, ctx) => `${SMS_PREFIX}le destinataire a refusé votre billet ${endWithPeriod(smsVar(text(d, 'title'), 30))} Il vous revient : ${appLink(ctx, '/tickets')}`,
@@ -2328,7 +2350,7 @@ const CATALOG = {
     TRANSFER_RECIPIENT_CHANGED: define('TRANSFER_RECIPIENT_CHANGED', {
         label: 'Transfert annulé (numéro du destinataire changé)', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET_TRANSFER',
         night: 'DEFER',
-        link: () => '/tickets?tab=a-venir',
+        link: ticketPath,
         // Finition 4 (point 4, E-46) : billet revenu à l'expéditeur
         sms: (d, ctx) => `${SMS_PREFIX}transfert du billet ${smsVar(text(d, 'title'), 25)} annulé, le destinataire a changé de numéro. Il vous revient : ${appLink(ctx, '/tickets')}`,
         inApp: (d) => ({
@@ -2340,7 +2362,7 @@ const CATALOG = {
     // N12 (R37) : invitation à contrôler, acceptée par le titulaire dans l'application (page /invitations).
     CONTROLLER_INVITATION: define('CONTROLLER_INVITATION', {
         label: 'Invitation à contrôler l’entrée', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER',
-        link: () => '/invitations',
+        link: (d) => `/invitations#invitation-${ident(d, 'invitation_id')}`,
         inApp: (d) => {
             const main = mainAssignment(d);
             const company = text(d, 'company');
@@ -2484,7 +2506,7 @@ const CATALOG = {
     // N18 (R22) : invitation, billet gratuit ou billet payé en espèces annulé hors annulation de l'événement.
     TICKET_CANCELLED: define('TICKET_CANCELLED', {
         label: 'Billet annulé', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
-        link: () => '/tickets?tab=historique',
+        link: ticketPath,
         inApp: (d) => {
             const kind = text(d, 'kind');
             const what = `${q(text(d, 'title'))} du ${formatDateTime(iso(d, 'start_at'))}`;
@@ -2581,7 +2603,7 @@ const CATALOG = {
     // N1 (9t.2, consigne 0.2) : détenteur actuel d'un billet transféré, remboursé hors annulation à l'acheteur d'origine.
     TICKET_REFUNDED_HOLDER: define('TICKET_REFUNDED_HOLDER', {
         label: 'Billet transféré annulé (détenteur)', channels: ['SMS', 'IN_APP', 'PUSH', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'TICKET',
-        link: () => '/tickets?tab=historique',
+        link: ticketPath,
         inApp: (d) => ({
             title: 'Billet annulé',
             content: `Votre billet ${text(d, 'category')} pour ${q(text(d, 'title'))} du ${formatDateTime(iso(d, 'start_at'))} a été annulé. Le remboursement est versé à l'acheteur d'origine.`,

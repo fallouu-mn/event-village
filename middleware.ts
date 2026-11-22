@@ -242,7 +242,9 @@ export async function middleware(req: NextRequest) {
         }
 
         const loginUrl = new URL('/login', req.url);
-        loginUrl.searchParams.set('redirect', pathname);
+        // Finition 5 (point 2) : l'adresse complète revient après la connexion (?tab= d'un avis du pilotage, ?rappel=1 d'une
+        // table) ; relue par safeInternalPath (chemin interne seulement, 2 048 caractères au plus, sinon l'espace du compte)
+        loginUrl.searchParams.set('redirect', `${pathname}${req.nextUrl.search}`);
         return redirect(loginUrl);
     }
 

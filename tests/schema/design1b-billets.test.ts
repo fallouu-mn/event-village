@@ -192,14 +192,11 @@ describe('d. carte à la couleur de la catégorie', () => {
 // ── e. Liens des avis ──────────────────────────────────────────────────────
 
 describe('e. liens des avis vers le bon onglet de Mes billets', () => {
+    // Finition 5 (modification signalée) : les avis qui portent un billet ou un événement mènent désormais à l'objet exact
+    // (/tickets/<billet>, /tickets/evenement/<événement> : tests/schema/f5-liens-avis.test.ts) ; restent vers un onglet ceux
+    // dont l'objet n'est plus au compte (transfert retiré, billet parti) et le transfert à accepter (ancre dans « Reçus »).
     const EXPECTED: Record<string, string> = {
-        PURCHASE_CONFIRMED: 'a-venir', FREE_TICKETS_CONFIRMED: 'a-venir', TRANSFER_RECEIVED: 'a-venir', TRANSFER_EXPIRED: 'a-venir',
-        TRANSFER_DECLINED_SENDER: 'a-venir', TRANSFER_RECIPIENT_CHANGED: 'a-venir', TRANSFER_CLAIMED_SENDER: 'a-venir',
-        REMINDER_J1: 'a-venir', REMINDER_H3: 'a-venir',
-        INVITATION_RECEIVED: 'a-venir' /* finition 4 (E-42, signalé) */, TRANSFER_OFFERED: 'recus', TRANSFER_CANCELLED: 'recus', TRANSFER_REVOKED: 'recus',
-        TICKET_SCANNED: 'historique', EVENT_CANCELLED: 'historique', REFUND_REQUESTED: 'historique', REFUND_PAID: 'historique',
-        REFUND_DELAYED: 'historique', PAYMENT_REFUND_STARTED: 'historique', TICKET_CANCELLED: 'historique', TICKET_REFUNDED_HOLDER: 'historique',
-        EVENT_CLOSED_HOLDER: 'tous',
+        TRANSFER_CLAIMED_SENDER: 'a-venir', TRANSFER_OFFERED: 'recus', TRANSFER_CANCELLED: 'recus', TRANSFER_REVOKED: 'recus',
     };
 
     test('chaque lien vers /tickets porte un onglet qui existe dans la page', () => {
@@ -229,7 +226,8 @@ describe('e. liens des avis vers le bon onglet de Mes billets', () => {
     test('onglet de chaque type : celui qui montre le billet concerné', () => {
         const catalog = NOTIFICATION_CATALOG as unknown as Record<string, { link: (d: unknown) => string; sample?: unknown }>;
         for (const [type, tab] of Object.entries(EXPECTED)) {
-            assert.equal(catalog[type].link(catalog[type].sample ?? {}), `/tickets?tab=${tab}`, type);
+            const link = catalog[type].link(catalog[type].sample ?? {});
+            assert.ok(link === `/tickets?tab=${tab}` || link.startsWith(`/tickets?tab=${tab}#`), `${type} : ${link}`); // finition 5 : ancre du transfert permise
         }
     });
 

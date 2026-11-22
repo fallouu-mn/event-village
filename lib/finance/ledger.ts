@@ -154,3 +154,32 @@ export async function withdrawalsOf(ownerId: string, kind: AccountKind, limit = 
         return { ...w, effective_status: effective, delayed: withdrawalDelayed(effective, cashout) };
     });
 }
+
+/**
+ * Finition 5 (point 2) — un retrait du compte, retrouvé par l'envoi (cashout) qu'il porte : identifiant que donnent les avis
+ * WITHDRAWAL_* (cashout_id). Lecture filtrée par le propriétaire (`user_id` = compte de la session) : un retrait d'un autre
+ * compte ou un envoi inconnu donne null (même 404 que la page d'arrivée, aucun indice). Statut affiché et retard décidés
+ * comme dans withdrawalsOf (effectiveWithdrawalStatus, withdrawalDelayed).
+ */
+export async function withdrawalOfCashout(ownerId: string, cashoutId: string): Promise<(Record<string, unknown> & { account_kind: AccountKind }) | null> {
+    const { data, error } = await getServiceRoleClient()
+        .from('withdrawals')
+        .select('id, gross_amount, fee_amount, net_amount, status, operator, phone_number, created_at, processed_at, rejection_reason, cashout_id, account_kind')
+        .eq('user_id', ownerId)
+        .eq('cashout_id', cashoutId)
+        .maybeSingle();
+    if (error) throw new Error(`Retrait de l'envoi ${cashoutId} indisponible : ${error.message}`);
+    if (!data) return null;
+    const { data: cashout, error: cErr } = await getServiceRoleClient().from('cashouts')
+        .select('id, status, blocked_reason, delay_flagged_at').eq('id', cashoutId).maybeSingle();
+    if (cErr) throw new Error(`Envoi ${cashoutId} indisponible : ${cErr.message}`);
+    const state: CashoutState | null = cashout ? {
+        status: String(cashout.status),
+        blocked_reason: cashout.blocked_reason === null || cashout.blocked_reason === undefined ? null : String(cashout.blocked_reason),
+        delay_flagged_at: cashout.delay_flagged_at === null || cashout.delay_flagged_at === undefined ? null : String(cashout.delay_flagged_at),
+    } : null;
+    const { cashout_id: _cashout, ...w } = data;
+    void _cashout;
+    const effective = effectiveWithdrawalStatus(String(w.status), state?.status ?? null);
+    return { ...w, account_kind: String(w.account_kind) as AccountKind, effective_status: effective, delayed: withdrawalDelayed(effective, state) };
+}

@@ -473,4 +473,16 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/layout/NotificationPanel.tsx',
     'components/layout/ProSidebar.tsx',
     'components/layout/PushMenu.tsx',
+    // Finition 5 (point 2) : pages d'arrivée des avis (billet, billets d'un événement, retrait) et page « plus disponible »
+    'components/ui/UnavailableItem.tsx',
+    'components/tickets/TicketsFocusView.tsx',
+    'components/finance/WithdrawalDetail.tsx',
+    'app/tickets/[id]/page.tsx',
+    'app/tickets/[id]/not-found.tsx',
+    'app/tickets/evenement/[eventId]/page.tsx',
+    'app/tickets/evenement/[eventId]/not-found.tsx',
+    'app/partner/finance/retraits/[id]/page.tsx',
+    'app/partner/finance/retraits/[id]/not-found.tsx',
+    'app/wallet/retraits/[id]/page.tsx',
+    'app/wallet/retraits/[id]/not-found.tsx',
 ];

@@ -203,25 +203,25 @@ function sync(type: string): ExpectedType {
 
 const PE = '/partner/events/:event';
 const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ...lot9quinquiesExpected(), ...finition4Expected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types ; lot 9 quinquies (D1)
-    ess('PURCHASE_CONFIRMED', [I, S, M, P], 'CLIENT', 'A', 'TICKET', ['/tickets?tab=a-venir'], 'Achat confirmé'), // design 1b (point 8) : onglet qui montre le billet
-    ess('FREE_TICKETS_CONFIRMED', [I, S, M, P], 'CLIENT', 'B', 'TICKET', ['/tickets?tab=a-venir'], 'Billets confirmés'),
+    ess('PURCHASE_CONFIRMED', [I, S, M, P], 'CLIENT', 'A', 'TICKET', ['/tickets/evenement/:event'], 'Achat confirmé'), // design 1b (point 8) : onglet qui montre le billet ; finition 5 : billets de l'événement (modification signalée)
+    ess('FREE_TICKETS_CONFIRMED', [I, S, M, P], 'CLIENT', 'B', 'TICKET', ['/tickets/evenement/:event'], 'Billets confirmés'), // finition 5 : lien de l'objet exact (modification signalée)
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A', null, null, null),
-    ess('INVITATION_RECEIVED', [S, I, P, M], 'ANY', 'A', 'TICKET', ['/tickets?tab=a-venir'], null), // lot 9 bis (R79, 11.2 M3) : + in-app, push, email au compte ; finition 4 (E-42) : onglet « À venir » (modification signalée)
-    ess('TRANSFER_OFFERED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus'], 'Un billet vous est transféré'), // G.49
+    ess('INVITATION_RECEIVED', [S, I, P, M], 'ANY', 'A', 'TICKET', ['/tickets/evenement/:event'], null), // finition 5 : billets de l'événement (modification signalée) ; lot 9 bis (R79, 11.2 M3) : + in-app, push, email au compte ; finition 4 (E-42) : onglet « À venir » (modification signalée)
+    ess('TRANSFER_OFFERED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus#recu-:transfer'], 'Un billet vous est transféré'), // G.49 ; finition 5 : le transfert dans Reçus (modification signalée)
     ess('TRANSFER_CANCELLED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=recus'], 'Transfert annulé'), // G.49 ; design 1b : destinataire, onglet Reçus
-    ess('TRANSFER_EXPIRED', [I, P, M, S], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Transfert expiré'), // G.49 ; design 1b : billet revenu
+    ess('TRANSFER_EXPIRED', [I, P, M, S], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets/:ticket'], 'Transfert expiré'), // G.49 ; design 1b : billet revenu ; finition 5 : le billet (modification signalée)
     ess('TRANSFER_CLAIMED_SENDER', [I, P, M, S], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Billet accepté'), // G.49 ; design 1b : le billet a quitté le compte (absent de l'historique) : billets restants
     // Lot 7, tâche 7.9 (D91) : TRANSFER_RECEIVED reçoit l'email (billet reçu par transfert, nouveau numéro).
-    ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets?tab=a-venir'], 'Billet reçu'),
-    ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B', 'TICKET_SCANNED', ['/tickets?tab=historique'], 'Entrée validée'), // 11.2 M4
-    ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', ['/tickets?tab=historique'], 'Événement annulé'), // design 1b : billets annulés ou en remboursement
+    ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets/:ticket'], 'Billet reçu'), // finition 5 : lien de l'objet exact (modification signalée)
+    ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B', 'TICKET_SCANNED', ['/tickets/:ticket', '/tickets/evenement/:event'], 'Entrée validée'), // 11.2 M4 ; finition 5 : le billet, ou ceux de l'événement si plusieurs (modification signalée)
+    ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', ['/tickets/evenement/:event'], 'Événement annulé'), // finition 5 : billets de l'événement (modification signalée) ; design 1b : billets annulés ou en remboursement
     opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement suspendu'), // G.50
     opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement de nouveau en ligne'), // G.50
     ess('EVENT_CHANGED', [I, P, S, M], 'CLIENT', 'B', 'EVENT_CHANGE', ['/events/:event'], 'Événement modifié'), // lot 9 bis (R14, 11.2 M1) : indispensable
-    opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets?tab=a-venir'], 'Rappel : c\'est demain'),
-    opt('REMINDER_H3', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets?tab=a-venir'], 'C\'est bientôt'), // G.50
-    ess('REFUND_REQUESTED', [I, S, M, P], 'CLIENT', 'A', 'REFUND_REQUESTED', ['/tickets?tab=historique'], /^(Remboursement en cours|Billet annulé par l'organisateur|Billet annulé par Event Village)$/), // G.49 ; finition 4 (E-45) : titre selon l'auteur (modification signalée)
-    ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROCESSED', ['/tickets?tab=historique'], 'Remboursement versé'),
+    opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets/evenement/:event'], 'Rappel : c\'est demain'), // finition 5 : lien de l'objet exact (modification signalée)
+    opt('REMINDER_H3', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets/evenement/:event'], 'C\'est bientôt'), // G.50 ; finition 5 : lien de l'objet exact (modification signalée)
+    ess('REFUND_REQUESTED', [I, S, M, P], 'CLIENT', 'A', 'REFUND_REQUESTED', ['/tickets/evenement/:event'], /^(Remboursement en cours|Billet annulé par l'organisateur|Billet annulé par Event Village)$/), // G.49 ; finition 4 (E-45) : titre selon l'auteur (modification signalée)
+    ess('REFUND_PAID', [I, S, M, P], 'CLIENT', 'A', 'REFUND_PROCESSED', ['/tickets/evenement/:event', '/tickets?tab=historique'], 'Remboursement versé'), // finition 5 : lien de l'objet exact (modification signalée)
     ess('PASSWORD_CHANGED', [I, S, M, P], 'ANY', 'B', 'SECURITY', ['/profile'], 'Mot de passe modifié'),
     ess('PHONE_CHANGED', [S, M], 'ANY', 'A', null, ['/profile'], null), // lot 9 : SMS à l'ancien numéro ; lot 9 bis (11.2 M22) : + EMAIL au compte
     // Lot 9 quater (A9 : AUD-34) : type ajouté (modification signalée au rapport)
@@ -237,9 +237,9 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     opt('CATEGORY_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER', 'CATEGORY_SOLD_OUT', [`${PE}?tab=ventes`], 'Catégorie complète'),
     opt('EVENT_SOLD_OUT', 'PRO_ACTIVITY', [I, P, S, M], 'PARTNER', 'EVENT_FULLY_SOLD_OUT', [`${PE}?tab=ventes`], 'Événement complet'),
     ess('SHIFT_DISCREPANCY', [I, S, P, M], 'PARTNER', 'A', 'ALERT', [`${PE}?tab=caisse`], 'Écart de caisse'), // G.49
-    ess('WITHDRAWAL_PAID', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_PAID', ['/partner/finance', '/wallet'], 'Retrait versé'),
-    ess('WITHDRAWAL_REJECTED', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_REJECTED', ['/partner/finance', '/wallet'], 'Retrait refusé'),
-    ess('WITHDRAWAL_UNCERTAIN', [I, S, P, M], 'ANY', 'A', 'WITHDRAWAL_PENDING_CHECK', ['/partner/finance', '/wallet'], 'Retrait en vérification'), // G.49
+    ess('WITHDRAWAL_PAID', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_PAID', ['/partner/finance/retraits/:cashout', '/wallet/retraits/:cashout'], 'Retrait versé'), // finition 5 : lien de l'objet exact (modification signalée)
+    ess('WITHDRAWAL_REJECTED', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_REJECTED', ['/partner/finance/retraits/:cashout', '/wallet/retraits/:cashout'], 'Retrait refusé'), // finition 5 : lien de l'objet exact (modification signalée)
+    ess('WITHDRAWAL_UNCERTAIN', [I, S, P, M], 'ANY', 'A', 'WITHDRAWAL_PENDING_CHECK', ['/partner/finance/retraits/:cashout', '/wallet/retraits/:cashout'], 'Retrait en vérification'), // G.49 ; finition 5 : lien de l'objet exact (modification signalée)
     ess('CANCEL_REFUNDS_DONE', [I, M, P, S], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements terminés'),
     ess('CANCEL_REFUNDS_BLOCKED', [I, M, P, S], 'PARTNER', 'A', 'REFUND_PROGRESS', [`${PE}?tab=cloture`], 'Remboursements en attente'),
     ess('PARTNER_REGISTERED_ACK', [I, S, M, P], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Inscription reçue'), // lot 9 quinquies (C3) : + SMS
@@ -266,7 +266,7 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('HALL_PAYMENT_REFUNDED', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Paiement remboursé'),
     ess('HALL_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Remboursement versé'),
     ess('HALL_EVE_REMINDER', [I, P, M, S], 'ANY', 'B', 'HALL_RESERVATION', ['/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59', '/partner/halls/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'C’est demain'),
-    ess('HALL_EARNINGS_AVAILABLE', [I, P, M, S], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls/recettes'], 'Recettes disponibles'),
+    ess('HALL_EARNINGS_AVAILABLE', [I, P, M, S], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls/reservations/:reservation'], 'Recettes disponibles'), // finition 5 : lien de l'objet exact (modification signalée)
     ess('HALL_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'HALL_RESERVATION', ['/partner/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle refusée'),
     ess('ADMIN_HALL_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle à valider', 'halls.validate'),
     ess('ADMIN_HALL_CHANGED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/halls/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Salle modifiée', 'halls.validate'),
@@ -318,7 +318,7 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('SHIFT_CLOSED_BY_OTHER', [I, P, M, S], 'CONTROLLER', 'A', 'ALERT', ['/controller/scanner'], 'Caisse fermée'), // G.49
     ess('CONTROLLER_ACTIVATED', [I, S, M, P], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Compte activé'), // G.49
     ess('ADMIN_EVENT_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement à valider', 'events.read'),
-    ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'KYC', ['/admin/dashboard'], 'Nouvelle candidature', 'partners.read'),
+    ess('ADMIN_PARTNER_REGISTERED', [I, P, M], 'ADMIN', 'B', 'KYC', ['/admin/dashboard?partenaires=ALL&dossier=:partner'], 'Nouvelle candidature', 'partners.read'), // finition 5 : lien de l'objet exact (modification signalée)
     ess('ADMIN_REFUND_TO_RETRY', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#versements-a-reprendre'], 'Remboursement à reprendre', 'refunds.manage'),
     // Lot 8, tâche 8.2 a (contrat 6.1, L32) : alerte du second paiement réussi d'un même panier.
     ess('ADMIN_DUPLICATE_PAYMENT', [I, P, M], 'ADMIN', 'B', 'CASHOUT_ALERT', ['/admin/finance#remboursements-a-verser'], 'Paiement en double remboursé', 'refunds.manage'),
@@ -609,7 +609,8 @@ describe('6.3 Catalogue : registre SQL = catalogue TS = table G2 (contrat C1, G1
                 issues.push(`${exp.type} : lien non interne ${JSON.stringify(link)}`);
                 continue;
             }
-            const allowed = exp.links.map((l) => l.replace(':event', String(e.sample.event_id)).replace(':outbox', String(e.sample.outbox_id)));
+            // Finition 5 : identifiants des liens d'objets (:ticket, :transfer, :cashout, :partner, :invitation, :reservation) pris dans le sample
+            const allowed = exp.links.map((l) => l.replace(/:(event|outbox|ticket|transfer|cashout|partner|invitation|reservation)\b/g, (_m, k: string) => String(e.sample[`${k}_id`])));
             if (!allowed.includes(link)) issues.push(`${exp.type} : lien ${link}, attendu ${allowed.join(' ou ')}`);
         }
         assert.deepEqual(issues, [], issues.join('\n'));
@@ -1291,7 +1292,7 @@ function lot9bisExpected(): ExpectedType[] {
         ess('TRANSFER_REVOKED', [S, I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', null, 'Transfert annulé'),
         ess('TRANSFER_DECLINED_SENDER', [I, P, M, S], /* finition 4 : + SMS (signalé) */ 'CLIENT', 'B', 'TICKET_TRANSFER', null, 'Billet refusé'),
         ess('TRANSFER_RECIPIENT_CHANGED', [I, P, M, S], 'CLIENT', 'B', 'TICKET_TRANSFER', null, 'Transfert annulé'),
-        ess('CONTROLLER_INVITATION', [S, I, P, M], 'CLIENT', 'B', 'CONTROLLER', ['/invitations'], /^Invitation de .+$/),
+        ess('CONTROLLER_INVITATION', [S, I, P, M], 'CLIENT', 'B', 'CONTROLLER', ['/invitations#invitation-:invitation'], /^Invitation de .+$/), // finition 5 : lien de l'objet exact (modification signalée)
         ess('EVENT_CANCELLED_BY_ADMIN', [I, S, M, P], 'PARTNER', 'A', 'EVENT_STATUS', null, 'Événement annulé par l\'administration'),
         ess('ADMIN_EVENT_CANCELLED', [I, M], 'ADMIN', 'B', 'EVENT_STATUS', null, 'Événement annulé par l\'organisateur', 'events.read'),
         ess('CONTROLLER_EVENT_CANCELLED', [I, S, M, P], 'CONTROLLER', 'B', 'CONTROLLER', null, 'Contrôle annulé'),
@@ -1471,7 +1472,7 @@ describe('Lot 9 bis (T51) : textes fixes des types nouveaux et modifiés (contra
  */
 function lot9terExpected(): ExpectedType[] {
     return [
-        ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A', 'TICKET', ['/tickets?tab=historique'], 'Billet annulé'), // design 1b : onglet du billet annulé
+        ess('TICKET_REFUNDED_HOLDER', [S, I, P, M], 'CLIENT', 'A', 'TICKET', ['/tickets/:ticket'], 'Billet annulé'), // design 1b : onglet du billet annulé ; finition 5 : le billet (modification signalée)
         ess('ADMIN_EVENT_PUBLISHED', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Événement publié par l\'organisateur', 'events.read'),
         ess('ADMIN_EVENT_WITHDRAWN', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Soumission retirée par l\'organisateur', 'events.read'),
         ess('SCAN_REFUSALS_ALERT', [I, P, M, S], 'PARTNER', 'B', 'ALERT', ['/partner/events/:event?tab=entrees'], 'Refus en série à une porte'),
@@ -1547,7 +1548,7 @@ describe('Lot 9 ter : textes exacts des types nouveaux et des parties nouvelles 
         assert.match(norm(r.content), fixedText('Votre billet VIP pour « Gala Dakar » du {date} a été annulé. Le remboursement est versé à l\'acheteur d\'origine.'),
             `contenu in-app (N1) : « ${norm(r.content)} »`);
         assert.ok(norm(r.content).startsWith('Votre billet VIP pour « Gala Dakar » du '), `catégorie et titre en clair : « ${norm(r.content)} »`);
-        assert.equal(e.link(d), '/tickets?tab=historique', 'lien N1 (design 1b : onglet Historique, où est le billet annulé)');
+        assert.equal(e.link(d), `/tickets/${LOT9TER_TICKET_ID}`, 'lien N1 (finition 5 : le billet annulé lui-même ; modification signalée)');
         const worst = dataFrom(e.sample, { title: LONG_GSM_TEXT, category: 'Carré VVIP « Prestige » {[~]} € tribune d’honneur' });
         const text = e.sms!(worst, CTX);
         const m = measureSms(text);
