@@ -277,6 +277,8 @@ interface ConfirmationExpect {
     /** Valeurs qui ne doivent jamais apparaître (qr_code, totp_secret des billets réels). */
     secrets?: string[];
     appUrl: string;
+    /** Finition 5 : chemin du bouton (billets de l'événement, ou le billet reçu), lien de l'objet exact. */
+    buttonPath: string;
 }
 
 function inOrder(haystack: string, needles: string[]): boolean {
@@ -326,9 +328,9 @@ function confirmationIssues(mail: { html: string; text: string }, exp: Confirmat
         for (const s of exp.secrets ?? []) if (s && v.includes(s)) issues.push(`${at} : valeur secrète d'un billet présente`);
         issues.push(...textDefects(at, where === 'texte' ? mail.text : visibleText(mail.html), { phrasesAllowed: true }));
     }
-    // Design 1b (point 8) : le bouton ouvre l'onglet « À venir », où sont les billets confirmés ou reçus.
-    if (!mail.html.includes(`href="${exp.appUrl}/tickets?tab=a-venir"`)) issues.push(`${exp.label} (HTML) : bouton sans lien ${exp.appUrl}/tickets?tab=a-venir`);
-    if (!mail.text.includes(`${exp.appUrl}/tickets?tab=a-venir`)) issues.push(`${exp.label} (texte) : lien ${exp.appUrl}/tickets?tab=a-venir absent`);
+    // Design 1b (point 8) : le bouton ouvre l'onglet « À venir » ; finition 5 : lien de l'objet exact (modification signalée) : billets de l'événement, ou le billet reçu.
+    if (!mail.html.includes(`href="${exp.appUrl}${exp.buttonPath}"`)) issues.push(`${exp.label} (HTML) : bouton sans lien ${exp.appUrl}${exp.buttonPath}`);
+    if (!mail.text.includes(`${exp.appUrl}${exp.buttonPath}`)) issues.push(`${exp.label} (texte) : lien ${exp.appUrl}${exp.buttonPath} absent`);
     for (const s of exp.secrets ?? []) if (s && mail.html.includes(s)) issues.push(`${exp.label} (HTML brut) : valeur secrète d'un billet présente`);
     issues.push(...htmlDefects(exp.label, mail.html, exp.appUrl));
     return issues;
@@ -352,7 +354,7 @@ function purchaseData(over: Row): Row {
     return { ...EVENT, payment_id: SAMPLE_PAYMENT, service_fee: 250, total: 5_250, ticket_count: 1, ...over };
 }
 
-const RENDER_CASES: Array<{ type: string; data: Row; exp: Omit<ConfirmationExpect, 'appUrl' | 'title' | 'startAt' | 'location' | 'city'> }> = [
+const RENDER_CASES: Array<{ type: string; data: Row; exp: Omit<ConfirmationExpect, 'appUrl' | 'title' | 'startAt' | 'location' | 'city' | 'buttonPath'> }> = [
     {
         type: 'PURCHASE_CONFIRMED',
         data: purchaseData({ ticket_count: 1, categories: [{ name: 'Standard', quantity: 1 }], ticket_numbers: [NUMBERS[0]] }),
@@ -388,8 +390,8 @@ const RENDER_CASES: Array<{ type: string; data: Row; exp: Omit<ConfirmationExpec
     },
 ];
 
-function fullExpect(exp: Omit<ConfirmationExpect, 'appUrl' | 'title' | 'startAt' | 'location' | 'city'>): ConfirmationExpect {
-    return { ...exp, title: String(EVENT.title), startAt: String(EVENT.start_at), location: String(EVENT.location), city: String(EVENT.city), appUrl: RENDER_URL };
+function fullExpect(exp: Omit<ConfirmationExpect, 'appUrl' | 'title' | 'startAt' | 'location' | 'city' | 'buttonPath'>, buttonPath: string): ConfirmationExpect {
+    return { ...exp, title: String(EVENT.title), startAt: String(EVENT.start_at), location: String(EVENT.location), city: String(EVENT.city), appUrl: RENDER_URL, buttonPath };
 }
 
 // ── Base locale : événements, achats, transferts ───────────────────────────
@@ -530,6 +532,7 @@ async function checkRealPurchase(label: string, buyer: Buyer, items: Array<[stri
         categoryLines: categoriesOf(tickets).map((c) => [c.quantity, c.name] as [number, string]),
         numbers: expectedNumbers, absentNumbers: tickets.slice(10).map((t) => t.ticket_number), more: expectMore,
         amount: { total: Number(purchase.payment.amount), serviceFee: Number(data.service_fee) }, secrets: secretsOf(tickets), appUrl: APP_URL,
+        buttonPath: `/tickets/${String(data.event_id)}`, // finition 5 : lien de l'objet exact (modification signalée)
     });
     assert.deepEqual(issues, [], `${label} : email de confirmation :\n${issues.join('\n')}`);
     assert.equal(Number(data.total), Number(purchase.payment.amount), `${label} : template_data.total = montant du paiement`);
@@ -629,7 +632,7 @@ describe('7.9 — billets gratuits (FREE_TICKETS_CONFIRMED) : mêmes blocs, aucu
         const issues = confirmationIssues(delivered.email, {
             label: 'billets gratuits', title: freeEv.title, startAt: String(data.start_at), location: LOCATION, city: CITY,
             categoryLines: [[2, FREE_A], [1, FREE_B]], numbers: tickets.map((t) => t.ticket_number), more: null, amount: null,
-            secrets: secretsOf(tickets), appUrl: APP_URL,
+            secrets: secretsOf(tickets), appUrl: APP_URL, buttonPath: `/tickets/${freeEv.eventId}`, // finition 5 : lien de l'objet exact (modification signalée)
         });
         assert.deepEqual(issues, [], `email des billets gratuits :\n${issues.join('\n')}`);
         assert.ok(delivered.inApp, 'notification dans l\'application');
@@ -677,7 +680,7 @@ describe('7.9 — billet reçu par transfert (TRANSFER_RECEIVED, D88, D91)', () 
             label: 'billet reçu', title: ev.title, startAt: String(data.start_at), location: LOCATION, city: CITY, category: VIP,
             numbers: [newNumber], absentNumbers: [String(before0.ticket_number)], more: null, amount: null,
             secrets: [afterT.qr_code, afterT.totp_secret, before0.qr_code, before0.totp_secret].filter((v): v is string => typeof v === 'string'),
-            appUrl: APP_URL,
+            appUrl: APP_URL, buttonPath: `/tickets/${ticketId}`, // finition 5 : lien de l'objet exact (modification signalée)
         });
         assert.deepEqual(issues, [], `email du billet reçu :\n${issues.join('\n')}`);
         assert.ok(!/prix|montant/i.test(flat(delivered.email.text)), `aucun montant ni prix (D91) : ${delivered.email.text}`);
@@ -695,7 +698,8 @@ describe('7.9 — rendus du catalogue : contenu, motifs interdits, phrases exact
     for (const c of RENDER_CASES) {
         test(`${c.type} — ${c.exp.label} : blocs attendus, aucun QR, code, secret ni lien de réclamation`, async () => {
             const mail = await renderEmail(c.type, c.data);
-            const issues = confirmationIssues(mail, fullExpect(c.exp));
+            // Finition 5 : billet reçu → le billet ; achat et gratuits → billets de l'événement
+            const issues = confirmationIssues(mail, fullExpect(c.exp, c.type === 'TRANSFER_RECEIVED' ? `/tickets/${String(c.data.ticket_id)}` : `/tickets/${String(c.data.event_id)}`));
             assert.deepEqual(issues, [], `${c.exp.label} :\n${issues.join('\n')}`);
         });
     }

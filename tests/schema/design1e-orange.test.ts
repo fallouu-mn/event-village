@@ -122,7 +122,8 @@ describe('design 1e — orange de marque : paires couleur / texte des jetons', (
         assert.deepEqual(rgb(LIGHT, 'ring'), brand, 'anneau de focus : orange de la marque');
         assert.deepEqual(rgb(LIGHT, 'primary-foreground'), [26, 26, 26], 'petits boutons : texte #1A1A1A');
         assert.deepEqual(rgb(LIGHT, 'primary-foreground-large'), [255, 255, 255], 'bouton principal : texte blanc');
-        assert.deepEqual(rgb(DARK, 'background'), [18, 18, 18], 'sombre : fond noir profond #121212');
+        // Finition 5 (consigne : « fond noir profond », modification signalée au rapport) : #121212 → #0A0A0A
+        assert.deepEqual(rgb(DARK, 'background'), [10, 10, 10], 'sombre : fond noir profond #0A0A0A');
         const text = hsl(rgb(LIGHT, 'primary-text'));
         assert.ok(text.h >= 12 && text.h <= 30, 'orange foncé en texte (≈ #C2410C)');
         assert.equal(hex(rgb(LIGHT, 'primary-text')), '#C2410C', 'orange foncé des petits textes en clair : #C2410C');

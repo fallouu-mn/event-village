@@ -479,4 +479,11 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/explore/MapEventCard.tsx',
     'components/explore/SenegalMapPreview.tsx',
     'components/events/HomeSenegalMap.tsx',
+    // Finition 5 (point 2) : pages d'arrivée des avis (billet, billets d'un événement, retrait) et page « plus disponible »
+    'components/ui/UnavailableItem.tsx',
+    'components/tickets/TicketsFocusView.tsx',
+    'components/finance/WithdrawalDetail.tsx',
+    'app/tickets/[id]/page.tsx',
+    'app/partner/finance/retraits/[id]/page.tsx',
+    'app/wallet/retraits/[id]/page.tsx',
 ];

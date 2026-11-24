@@ -217,7 +217,7 @@ describe('6.7 Transfert — initiation vers un numéro, sans jeton (B3, B4, amen
         const { data: n, error } = await service.from('notifications').select('title, metadata').eq('id', inApp.notification_id).single();
         assert.equal(error, null, `notification : ${error?.message}`);
         assert.equal(n.title, 'Un billet vous est transféré', 'titre (G4)');
-        assert.equal((n.metadata as Row).actionUrl, '/tickets?tab=recus', 'lien vers l’onglet Reçus');
+        assert.equal((n.metadata as Row).actionUrl, `/tickets?tab=recus#recu-${id}`, 'lien vers le transfert dans l’onglet Reçus (finition 5, modification signalée)');
     });
 
     test('numéro sans vérification : SMS au numéro seulement (aucune in-app à un compte non prouvé)', async () => {

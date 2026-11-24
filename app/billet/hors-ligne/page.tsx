@@ -79,11 +79,12 @@ export default function OfflineTicketPage() {
   const missingRequested = phase.kind === 'ready' && !shown && (phase.requestedId !== null || phase.lots.length === 0);
 
   return (
-    <main className="min-h-dvh bg-surface-sunken text-fg">
+    <main className="min-h-dvh bg-background text-foreground-strong">
       <div className="mx-auto flex w-full max-w-md flex-col gap-5 px-4 pb-12 pt-6">
         <header className="flex items-center justify-between gap-3">
           <Logo variant="full" linkToHome={false} />
           {online && (
+            // eslint-disable-next-line @next/next/no-html-link-for-pages -- navigation complète voulue : on quitte la page servie hors ligne par le service worker (règle déclenchée depuis les pages /tickets/[id] de la finition 5)
             <a href="/tickets" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
               <ArrowLeft size={16} aria-hidden="true" />
               Mes billets
@@ -92,8 +93,8 @@ export default function OfflineTicketPage() {
         </header>
 
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-fg">Billet hors ligne</h1>
-          <p className="text-sm text-fg-muted">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground-strong">Billet hors ligne</h1>
+          <p className="text-sm text-muted-foreground">
             {/* La page s'affiche aussi sans QR (aucun billet enregistré, codes pas encore ouverts) : « Présentez le QR au
                 contrôle » seul y était faux (relecture du run 77). */}
             Le billet enregistré sur ce téléphone s’affiche ici, même sans réseau. Présentez son QR au contrôle dès qu’il
@@ -102,9 +103,9 @@ export default function OfflineTicketPage() {
         </div>
 
         {phase.kind === 'loading' ? (
-          <div className="space-y-3 rounded-3xl border border-border bg-surface p-5" aria-busy="true">
-            <p role="status" className="text-sm text-fg-muted">Lecture du billet enregistré…</p>
-            <div className="mx-auto aspect-square w-full max-w-72 rounded-2xl bg-surface-sunken motion-safe:animate-pulse" aria-hidden="true" />
+          <div className="space-y-3 rounded-3xl border border-border bg-card p-5" aria-busy="true">
+            <p role="status" className="text-sm text-muted-foreground">Lecture du billet enregistré…</p>
+            <div className="mx-auto aspect-square w-full max-w-72 rounded-2xl bg-background motion-safe:animate-pulse" aria-hidden="true" />
           </div>
         ) : phase.kind === 'error' ? (
           <>
@@ -119,9 +120,9 @@ export default function OfflineTicketPage() {
             {shown ? <OfflineTicketView lot={shown} /> : null}
 
             {missingRequested && (
-              <section className="space-y-3 rounded-3xl border border-border bg-surface p-5">
+              <section className="space-y-3 rounded-3xl border border-border bg-card p-5">
                 <OfflineStatusBadge state="offline_missing" />
-                <p className="text-sm text-fg-muted">
+                <p className="text-sm text-muted-foreground">
                   Pour l’avoir sans réseau, ouvrez Mes billets avec du réseau avant d’arriver : le billet s’enregistre tout
                   seul sur ce téléphone, dès la veille de l’événement.
                 </p>
@@ -130,7 +131,7 @@ export default function OfflineTicketPage() {
 
             {others.length > 0 && (
               <nav aria-labelledby="autres-billets" className="space-y-3">
-                <h2 id="autres-billets" className="text-base font-semibold text-fg">
+                <h2 id="autres-billets" className="text-base font-semibold text-foreground-strong">
                   {shown ? 'Autres billets enregistrés sur ce téléphone' : 'Billets enregistrés sur ce téléphone'}
                 </h2>
                 <ul className="space-y-2">
@@ -138,12 +139,12 @@ export default function OfflineTicketPage() {
                     <li key={l.ticket_id}>
                       <a
                         href={ticketHref(l.ticket_id)}
-                        className="flex min-h-11 items-center gap-3 rounded-2xl border border-border bg-surface p-4 text-fg transition-colors duration-200 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex min-h-11 items-center gap-3 rounded-2xl border border-border bg-card p-4 text-foreground-strong transition-colors duration-200 hover:bg-popover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <Ticket size={20} aria-hidden="true" className="flex-shrink-0 text-brand-fg" />
+                        <Ticket size={20} aria-hidden="true" className="flex-shrink-0 text-primary-text" />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold">{l.ticket.event_title}</span>
-                          <span className="block text-sm text-fg-muted">
+                          <span className="block text-sm text-muted-foreground">
                             <time dateTime={l.ticket.event_start_at}>{formatDateTime(l.ticket.event_start_at)}</time>
                             {' · '}
                             <span className="whitespace-nowrap font-mono tabular-nums">{l.ticket.ticket_number}</span>

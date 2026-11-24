@@ -42,6 +42,7 @@ import { installFakePush, type FakePushSubscriptionJson } from './support/fake-p
 import type { PageGuard } from './support/network';
 import { SCREENS, type CaptureView, type Screen, type StubResponse } from './support/screens';
 import { keepHomeOutOfServicesWindow } from './support/services-switch';
+import { readTheme, themeProblem } from './support/theme-check';
 
 /** Abonné neuf du faux service push (clés P-256 réelles), pour l'état « activé » simulé. */
 async function fakePushSubscriber(): Promise<FakePushSubscriptionJson> {
@@ -61,10 +62,18 @@ async function fakePushSubscriber(): Promise<FakePushSubscriptionJson> {
     return { endpoint: body.endpoint, keys: { p256dh: body.keys.p256dh, auth: body.keys.auth } };
 }
 
-const THEMES: ReadonlyArray<{ key: ThemeKey; colorScheme: 'light' | 'dark' }> = [
+/**
+ * Finition 5 : EV_CAPTURES_THEMES (« sombre » ou « clair ») restreint les captures à un thème — job responsive du mode
+ * rapide, ligne « ci-captures: oui » de verify.yml ; sans la variable (job e2e du run complet), les deux thèmes.
+ */
+const ALL_THEMES: ReadonlyArray<{ key: ThemeKey; colorScheme: 'light' | 'dark' }> = [
     { key: 'clair', colorScheme: 'light' },
     { key: 'sombre', colorScheme: 'dark' },
 ];
+const WANTED_THEMES = (process.env.EV_CAPTURES_THEMES ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+const UNKNOWN_THEMES = WANTED_THEMES.filter((t) => !ALL_THEMES.some((x) => x.key === t));
+if (UNKNOWN_THEMES.length > 0) throw new Error(`[e2e] EV_CAPTURES_THEMES : thème(s) inconnu(s) ${UNKNOWN_THEMES.join(', ')} (connus : clair, sombre)`);
+const THEMES = WANTED_THEMES.length > 0 ? ALL_THEMES.filter((t) => WANTED_THEMES.includes(t.key)) : ALL_THEMES;
 /**
  * Lot 9 bis (7.3, B114) : fumee-superadmin porte admin-remboursements-a-reprendre (existante, passée de admin à ce rôle
  * par test(9b.e2e) 0d9cfb6b), admin-versements-marquer-verse et admin-fiche-partenaire-suspendre. Absent de cette
@@ -298,6 +307,11 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
             // selon le défilement laissé par l'écran, une cible pouvait se trouver à moitié sous l'en-tête collant et le
             // verdict d'axe changeait d'un run à l'autre. Aucune règle d'axe changée ; la capture garde ensuite la position
             // de l'écran (barre d'achat sur page défilée…).
+            // Finition 5 (point 1) : la page capturée est-elle vraiment dans le thème demandé ? (classe dark et fond lus sur la
+            // page ; bloquant : depuis le design 1a, les captures « sombre » des comptes connectés sortaient en clair)
+            record.themeLu = await readTheme(page);
+            const themeIssue = themeProblem(record.themeLu, theme.key);
+            if (themeIssue) record.blocking.push(themeIssue);
             const scrolledTo = await page.evaluate(() => { const y = window.scrollY; window.scrollTo({ top: 0, behavior: 'instant' }); return y; });
             const checks = await runPageChecks(page, { mobile: vue === 'mobile', axe: true, references: screen.references });
             if (scrolledTo > 0) await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'instant' }), scrolledTo);

@@ -35,7 +35,7 @@ export const ThemeToggle: React.FC<{ className?: string }> = ({ className }) => 
       )}
     >
       <span aria-hidden="true" className="inline-flex" suppressHydrationWarning>
-        {isDark ? <Sun size={18} className="text-warning-text" /> : <Moon size={18} />}
+        {isDark ? <Sun size={18} className="text-primary-text" /> : <Moon size={18} />}
       </span>
     </button>
   );

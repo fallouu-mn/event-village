@@ -28,14 +28,14 @@ Source unique : `docs/design/jetons.css`. Noms de la charte (classes sémantique
 
 | Jeton | Clair | Sombre | Usage |
 |---|---|---|---|
-| `background` | `#FFFFFF` | `#121212` | fond de page |
+| `background` | `#FFFFFF` | `#0A0A0A` | fond de page (finition 5 : noir profond) |
 | `foreground` | `#3A3A3A` | `#F2F2F2` | texte courant |
 | `foreground-strong` | `#1A1A1A` | `#FFFFFF` | titres, montants |
-| `card` | `#FFFFFF` | `#1A1A1A` | cartes, panneaux |
-| `popover` | `#FFFFFF` | `#222222` | fenêtres, toasts, feuille glissante (avec ombre) |
-| `muted` | `#F5F5F5` | `#262626` | puits, filtres, squelettes |
+| `card` | `#FFFFFF` | `#141414` | cartes, panneaux (en sombre, un cran au-dessus du fond) |
+| `popover` | `#FFFFFF` | `#1C1C1C` | fenêtres, toasts, feuille glissante (avec ombre) |
+| `muted` | `#F5F5F5` | `#1F1F1F` | puits, filtres, squelettes |
 | `muted-foreground` | `#666666` | `#A6A6A6` | texte secondaire |
-| `border` | `#E6E6E6` | `#333333` | séparations décoratives |
+| `border` | `#E6E6E6` | `#262626` | séparations décoratives (discrètes en sombre) |
 | `input` | `#858585` | `#7A7A7A` | bord des champs et des cases (≥ 3:1) |
 | `brand` | `#FF8A3D` | `#FF8A3D` | **orange vif, couleur de la marque** : accents, onglet actif, repères de carte, focus |
 | `brand-foreground` | `#1A1A1A` | `#1A1A1A` | texte sur l'orange vif (le blanc y est interdit : 2,35:1) |

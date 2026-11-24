@@ -65,7 +65,7 @@ export default function ControllerLayout({ children }: { children: React.ReactNo
                         href="/"
                         prefetch={false}
                         title="Basculer vers l’espace client (billetterie, réservations, commandes)"
-                        className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong transition-colors hover:bg-background hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-border px-3 text-sm font-semibold text-foreground-strong transition-colors hover:bg-muted hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                         <ArrowLeft size={16} aria-hidden="true" />
                         <span className="sr-only sm:not-sr-only">Mon espace client</span>

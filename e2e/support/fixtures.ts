@@ -32,11 +32,19 @@ function setThemeBeforeLoad(value: string): void {
     }
 }
 
+/**
+ * Finition 5 (point 1) : le thème demandé est AUSSI posé dans le cookie `ev-theme` (lib/theme.ts), que lit en premier le
+ * script anti-flash de <head>. Avant, seul localStorage était posé : le cookie `ev-theme=light` enregistré avec la session
+ * des comptes (auth.setup.ts) l'emportait, et toutes les captures « sombre » des pages connectées sortaient en clair
+ * depuis le design 1a. Le cookie ajouté ici remplace celui d'un état de connexion (même nom, même hôte, même chemin) ;
+ * auth.setup.ts ne l'enregistre d'ailleurs plus. Le choix fait à l'écran pendant un test (bouton du thème) reste libre.
+ */
 export async function prepareContext(context: BrowserContext, theme: ThemeKey): Promise<void> {
     await installNetworkGuard(context, e2eConfig().allowedHosts);
     // Aide __name (esbuild/tsx) disponible pour toute fonction sérialisée vers la page
     await context.addInitScript({ content: 'window.__name = window.__name || function (f) { return f; };' });
     await context.addInitScript(setThemeBeforeLoad, EV_THEME_VALUE[theme]);
+    await context.addCookies([{ name: 'ev-theme', value: EV_THEME_VALUE[theme], url: e2eConfig().appUrl, sameSite: 'Lax' }]);
 }
 
 interface Fixtures {
