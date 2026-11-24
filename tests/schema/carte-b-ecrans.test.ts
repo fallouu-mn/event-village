@@ -218,7 +218,9 @@ describe('B2 — calendrier', () => {
     test('lecture d’un mois : période passée à la route avec les filtres partagés (écrits par la page)', () => {
         const q = catalogSearchParams({ ...NO_FILTERS, gratuit: true, tri: 'prix', page: 3 }).toString();
         assert.equal(mapUrl(q, { from: '2026-12-01', to: '2027-01-01' }), '/api/events/carte?gratuit=1&du=2026-12-01&au=2027-01-01', 'ni tri ni page');
-        assert.equal(mapUrl('', { zone: { south: 14.6, west: -17.55, north: 14.8, east: -17.3 } }), '/api/events/carte?zone=14.6%2C-17.55%2C14.8%2C-17.3');
+        // Contre-vérification T1 : zone arrondie vers l'extérieur sur une grille de 0,05° (attente modifiée, signalée)
+        assert.equal(mapUrl('', { zone: { south: 14.6, west: -17.55, north: 14.8, east: -17.3 } }), '/api/events/carte?zone=14.60%2C-17.55%2C14.80%2C-17.30');
+        assert.equal(mapUrl('', { zone: { south: 14.6783, west: -17.4988, north: 14.7648, east: -17.4377 } }), '/api/events/carte?zone=14.65%2C-17.50%2C14.80%2C-17.40');
         assert.equal(mapUrl('vue=carte&categorie=FESTIVAL'), '/api/events/carte?categorie=FESTIVAL');
     });
 

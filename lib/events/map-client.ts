@@ -5,23 +5,33 @@ import type { MapResponse, MapZone, PublicMapEvent } from '@/lib/events/map-shar
  * Les filtres de l'Explorer arrivent déjà écrits en adresse par la page (`filtersQuery`, même écriture que la liste, sans la
  * page ni le tri : catalogSearchParams) ; ce module n'importe pas les filtres du catalogue, pour ne rien partager avec le
  * premier chargement d'Explorer (sinon webpack sort ces modules dans un morceau commun de plus). Zone et période
- * facultatives. Aucune donnée de l'appareil n'est envoyée (la position de « Autour de moi » ne sert qu'à
- * centrer la carte, jamais transmise).
+ * facultatives. Aucune donnée de l'appareil n'est envoyée : la position de « Autour de moi » ne sert qu'à centrer la
+ * carte ; la zone envoyée ensuite (« Rechercher dans cette zone ») est élargie sur une grille de 5,5 km (T1).
  */
 
 export type MapReadResult = { ok: true; data: MapResponse } | { ok: false; message: string };
 
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
 
-/** Arrondi à 4 décimales (une dizaine de mètres) : adresses stables d'un déplacement à l'autre. */
-const round = (n: number): string => (Math.round(n * 1e4) / 1e4).toString();
+/**
+ * Contre-vérification T1 : la zone envoyée au serveur est arrondie VERS L'EXTÉRIEUR sur une grille de 0,05° (≈ 5,5 km,
+ * le grain d'une tuile au zoom 13). Après « Autour de moi », le centre de la zone envoyée ne redonne donc plus la position
+ * du téléphone (au plus 4 décimales gardaient une dizaine de mètres). La zone ne peut que s'agrandir : aucun événement
+ * visible n'est perdu ; la liste de l'ordinateur reste filtrée sur la vue exacte dans le navigateur (ExploreMap).
+ */
+export const ZONE_GRID_DEG = 0.05;
+const gridDown = (n: number): string => (Math.floor(n / ZONE_GRID_DEG + 1e-9) * ZONE_GRID_DEG).toFixed(2);
+const gridUp = (n: number): string => (Math.ceil(n / ZONE_GRID_DEG - 1e-9) * ZONE_GRID_DEG).toFixed(2);
 
 export function mapUrl(filtersQuery: string, opts: { zone?: MapZone | null; from?: string; to?: string } = {}): string {
     const params = new URLSearchParams(filtersQuery);
     params.delete('tri');
     params.delete('page');
     params.delete('vue');
-    if (opts.zone) params.set('zone', [opts.zone.south, opts.zone.west, opts.zone.north, opts.zone.east].map(round).join(','));
+    if (opts.zone) {
+        const z = opts.zone;
+        params.set('zone', [gridDown(z.south), gridDown(z.west), gridUp(z.north), gridUp(z.east)].join(','));
+    }
     if (opts.from && opts.to) {
         params.set('du', opts.from);
         params.set('au', opts.to);
