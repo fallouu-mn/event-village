@@ -103,9 +103,12 @@ describe('a. propre au compte et à l’événement', () => {
     test('écrit pour (compte 1, événement 1) : repris par lui seul', async () => {
         const m = await mod();
         install();
-        assert.equal(m.writeDraft(U1, E1, { title: 'Nuit du Mbalax' }, new Date('2026-11-16T17:42:00Z')), true);
+        // Lot poids : écrit il y a une heure (avant : le 16/11/2026 en dur, devenu « plus de 7 jours » le 23/11 : rouge sur
+        // toutes les branches). Même vérification : date et contenu relus à l'identique.
+        const ecrit = new Date(Date.now() - 60 * 60 * 1000);
+        assert.equal(m.writeDraft(U1, E1, { title: 'Nuit du Mbalax' }, ecrit), true);
         const mine = m.readDraft(U1, E1, accept);
-        assert.deepEqual(mine, { savedAt: '2026-11-16T17:42:00.000Z', data: { title: 'Nuit du Mbalax' } });
+        assert.deepEqual(mine, { savedAt: ecrit.toISOString(), data: { title: 'Nuit du Mbalax' } });
         assert.equal(m.readDraft(U2, E1, accept), null, 'autre compte');
         assert.equal(m.readDraft(U1, E2, accept), null, 'autre événement');
         assert.equal(m.readDraft(U1, null, accept), null, 'création');
