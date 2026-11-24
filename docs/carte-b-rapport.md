@@ -85,8 +85,11 @@ Branche **non fusionnée**, **aucune migration**.
   ou survolé agrandi en orange. Téléphone : feuille en bas de la carte avec la vignette de l'événement et « Voir
   l'événement ». Ordinateur : liste à gauche synchronisée avec la zone visible, survol ou focus d'une vignette = repère mis
   en évidence, repère touché = vignette ramenée dans la liste. « Rechercher dans cette zone » après un déplacement.
-  « Autour de moi » : la position du téléphone sert **seulement** à centrer la carte (jamais envoyée ni enregistrée ; hors
-  du Sénégal : message). Choix rapide : Tout le Sénégal, Dakar, Almadies, Plateau, Ngor, Ouakam, Mermoz, Sacré-Cœur, Saly,
+  « Autour de moi » : la position du téléphone sert à centrer la carte ; elle n'est ni enregistrée ni envoyée telle quelle.
+  **Correction (contre-vérification, T1)** : la première version disait « jamais envoyée », ce qui était faux — après
+  « Autour de moi », « Rechercher dans cette zone » envoyait une zone centrée sur la position (à quelques mètres près). La
+  zone envoyée est désormais élargie sur une grille de 0,05° (≈ 5,5 km), ce qui ne permet plus de retrouver la position
+  (§ 12). Hors du Sénégal : message. Choix rapide : Tout le Sénégal, Dakar, Almadies, Plateau, Ngor, Ouakam, Mermoz, Sacré-Cœur, Saly,
   Mbour, Thiès, Saint-Louis, Kaolack, Ziguinchor. Clavier : repères focalisables (Tabulation, puis Entrée ou Espace) et
   nommés pour les lecteurs d'écran (titre, date, prix ; « 8 événements : agrandir »), boutons de zoom, anneau de focus ;
   la Liste reste l'alternative complète (annoncée aux lecteurs d'écran). « Réduire les animations » :
@@ -113,7 +116,7 @@ Branche **non fusionnée**, **aucune migration**.
 | `tests/schema/carte-b-donnees.test.ts` (sans base) | Mêmes règles sur des lignes fabriquées (tous les statuts, positions absentes, incomplètes, illisibles, hors du Sénégal, bornes comprises) ; prix d'appel sur les seules catégories achetables (vente arrêtée, guichet seul, complète, close) ; une entrée « polluée » de champs en trop n'en fait rien sortir ; zone ramenée au Sénégal ; filtres ; limite de 300 ; paramètres illisibles refusés ; requête PUBLIE et position non nulle, cache étiqueté `catalogue-public`, route sans session ni écriture. |
 | `tests/schema/carte-b-invalidation.test.ts` | Invalidation après l'ajout, la modification et la suppression d'une catégorie, et après la cascade de la suspension ou de la réactivation d'une partenaire (rouge sur `de3fdd414`, vert ensuite). |
 | `e2e/carte-b.responsive.spec.ts` | De bout en bout, serveur construit : **arrêt de vente** d'une catégorie visible sur l'Explorer ET sur la carte **en moins de 5 s** ; **suspension** par l'administration : l'événement quitte la carte **en moins de 5 s**, et la réponse n'a que les champs publics ; aucune tuile demandée avant la vue Carte (ni sur l'accueil avant que l'aperçu soit visible) ; mention Stadia visible ; tuiles refusées → retour à la Liste, message simple ; repère trouvé par son nom et ouvert au clavier (Entrée) ; liste de l'ordinateur ramenée à la zone visible et survol mis en évidence ; calendrier et feuille d'un jour ; aperçu de l'accueil ; captures. |
-| `tests/schema/carte-b-ecrans.test.ts` (sans base) | Fond Stadia clair et sombre, aucune clé, réglages, origines pour la CSP ; toutes les cartes par l'aide commune ; CSP limitée ; tuiles Stadia bloquées par la mesure ; vue gardée dans l'adresse ; carte et calendrier par `next/dynamic` (aucun import statique, ni Leaflet dans la page) ; tuiles en échec → Liste ; regroupement ; « Autour de moi » jamais envoyé ni gardé (ni stockage, ni cookie, ni lecture avec les coordonnées) ; libellés du calendrier ; accueil sans Leaflet. |
+| `tests/schema/carte-b-ecrans.test.ts` (sans base) | Fond Stadia clair et sombre, aucune clé, réglages, origines pour la CSP ; toutes les cartes par l'aide commune ; CSP limitée ; tuiles Stadia bloquées par la mesure ; vue gardée dans l'adresse ; carte et calendrier par `next/dynamic` (aucun import statique, ni Leaflet dans la page) ; tuiles en échec → Liste ; regroupement ; « Autour de moi » : position ni gardée (ni stockage, ni cookie) ni envoyée telle quelle (zone élargie sur une grille de 0,05° : T1, § 12) ; libellés du calendrier ; accueil sans Leaflet. |
 
 ## 3. Tests existants modifiés (signalés)
 
