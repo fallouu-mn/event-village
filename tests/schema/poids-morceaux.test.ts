@@ -30,7 +30,8 @@ describe('lot poids — empreintes courtes dans la table des morceaux', () => {
         const chunks = path.join(dir, 'static', 'chunks');
         fs.mkdirSync(path.join(chunks, 'app'), { recursive: true });
         const runtime = 'static/chunks/webpack-0123456789abcdef.js';
-        fs.writeFileSync(path.join(dir, runtime), 'u=e=>"static/chunks/"+e+"."+{123:"0a1b2c3d",4567:"89abcdef",89:"fedcba98"}[e]+".js"');
+        // Table du JavaScript, puis table des feuilles de style (le morceau 123 a aussi une feuille : compté une fois)
+        fs.writeFileSync(path.join(dir, runtime), 'u=e=>"static/chunks/"+e+"."+{123:"0a1b2c3d",4567:"89abcdef",89:"fedcba98"}[e]+".js";k=e=>"static/css/"+{123:"cafebabe"}[e]+".css"');
         for (const [id, h] of [['123', '0a1b2c3d'], ['4567', '89abcdef'], ['89', 'fedcba98']]) fs.writeFileSync(path.join(chunks, `${id}.${h}.js`), `/* ${id} */`);
         const pages: Record<string, string[]> = { '/layout': [runtime] };
         for (const p of ['/page', '/events/[id]/page', '/tickets/page', '/controller/scanner/page', '/billet/hors-ligne/page', '/explore/page']) {
@@ -64,6 +65,13 @@ describe('lot poids — empreintes courtes dans la table des morceaux', () => {
             'components/partner/pilotage/InfosTab.tsx', 'components/event-page/VenueMap.tsx']) {
             assert.match(read(f), /dynamic\(\s*\(\) => loadEventMap\(\)\.then\(\(m\) => \(\{ default: m\.EventMap \}\)\),\s*\{\s*ssr: false,/, `${f} : chargeur unique, sans rendu serveur`);
         }
+    });
+
+    test('gabarit (app/template.tsx) : composant client, même balisage (son morceau n\'est plus fusionné avec les morceaux vides)', () => {
+        const src = read('app/template.tsx');
+        assert.match(src, /^'use client';\n/);
+        assert.match(src, /export default function Template\(\{ children \}: \{ children: React\.ReactNode \}\) \{\n\s+return <div className="ev-page-enter">\{children\}<\/div>;\n\}/);
+        assert.doesNotMatch(src, /use(State|Effect|Ref|Context)|import /, 'aucun état, aucun import : rien de plus que l\'enveloppe');
     });
 
     test('service worker : ressources repérées sans longueur d\'empreinte', () => {
