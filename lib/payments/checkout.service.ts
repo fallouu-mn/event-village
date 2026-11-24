@@ -20,6 +20,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
+import { stockCrossedZero, stockSnapshot } from '@/lib/events/stock-watch.server';
 import { getServerEnv } from '@/lib/env';
 import { cashinReturnUrls, initCashinOnce, initFailureOf, recordAdoptedInit } from './cashin-init';
 import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/types';
@@ -228,6 +230,9 @@ export async function startTicketCheckout(params: {
     const priceOf = new Map(cats.map((c) => [c.id as string, Number(c.price)]));
     const priced = items.map((i) => ({ ...i, unit_price: priceOf.get(i.category_id) ?? 0 }));
     const payable = priced.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+    // Contre-vérification T4 : places restantes lues avant les billets gratuits ou la réservation du panier
+    const stockScope = { eventIds: [input.eventId] };
+    const stockBefore = await stockSnapshot(stockScope);
 
     // 4. Panier entièrement gratuit
     if (payable === 0) {
@@ -238,6 +243,7 @@ export async function startTicketCheckout(params: {
             return { status: 409, body: { error: free.message ?? 'Billets gratuits refusés.', code: free.code } };
         }
         // Lot 6 (J1.2, J1.5) : confirmation et épuisement mis en file par free_tickets_claim et ses triggers.
+        for (const eventId of await stockCrossedZero(stockBefore, stockScope)) invalidatePublicEvent(eventId, 'stock : billets gratuits');
         return { status: 200, body: { free: true, status: 'SUCCESS', ticket_ids: free.ticket_ids ?? [] } };
     }
 
@@ -302,6 +308,8 @@ export async function startTicketCheckout(params: {
         return problemsOutcome(created.problems);
     }
     const paymentId = created.payment_id!;
+    // Contre-vérification T4 : la réservation du panier peut épuiser une catégorie (« Complet », prix d'appel)
+    for (const eventId of await stockCrossedZero(stockBefore, stockScope)) invalidatePublicEvent(eventId, 'stock : places réservées');
     const amount = Number(created.amount);
     if (!Number.isFinite(amount) || amount <= 0) throw new Error(`Montant du paiement ${paymentId} invalide : ${created.amount}`);
 

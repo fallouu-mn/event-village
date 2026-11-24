@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
+import { stockCrossedZero, stockSnapshot } from '@/lib/events/stock-watch.server';
 import { z } from 'zod';
 import { requireActiveSession, requireVerifiedPhone } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
@@ -45,6 +47,9 @@ export async function POST(req: NextRequest) {
         const { data: cat, error: catErr } = await getServiceRoleClient().from('ticket_categories').select('id, event_id').eq('id', categoryId).maybeSingle();
         if (catErr) throw new Error(`lecture de la catégorie : ${catErr.message}`);
         if (!cat) return NextResponse.json({ error: 'Catégorie introuvable.' }, { status: 404 });
+        // Contre-vérification T4 : places restantes lues avant l'émission (une catégorie peut s'épuiser)
+        const stockScope = { eventIds: [String(cat.event_id)] };
+        const stockBefore = await stockSnapshot(stockScope);
 
         const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; problems?: Array<{ code: string; message: string }>; ticket_ids?: string[] }>('free_tickets_claim', {
             p_user_id: userId, p_event_id: cat.event_id, p_items: [{ category_id: categoryId, quantity }],
@@ -57,6 +62,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: (data.problems ?? []).map((p) => p.message).join(' '), code: onlyStock ? 'INSUFFICIENT_STOCK' : 'SALE_CHECK_FAILED', problems: data.problems }, { status: onlyStock ? 409 : 400 });
         }
         const ticketIds = data.ticket_ids ?? [];
+        for (const eventId of await stockCrossedZero(stockBefore, stockScope)) invalidatePublicEvent(eventId, 'stock : billets gratuits');
         const { data: tickets, error: tErr } = await getServiceRoleClient().from('tickets').select('id, ticket_number').in('id', ticketIds);
         if (tErr) console.error('[claim-free] lecture des billets émis impossible :', tErr.message);
         // Lot 6 (J1.2, J1.5) : confirmation (SMS compté sur le compte qui réclame) et épuisement de la
