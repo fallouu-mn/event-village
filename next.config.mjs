@@ -79,7 +79,14 @@ const nextConfig = {
   compress: true,
   // Lot poids : relevé des modules de chaque morceau du navigateur, seulement si EV_ANALYSE_POIDS=1 (job « perf » de la
   // CI). Lecture seule du graphe après l'écriture : aucun fichier servi n'est ajouté ni modifié (scripts/poids-modules.mjs).
+  // Lot poids : la table des classes de la fusion (components/ui/cn.ts) est calculée au build à partir des sources, pour
+  // TOUTES les constructions (navigateur, serveur, développement : même table, aucun écart à l'hydratation).
   webpack(config, { isServer, dev }) {
+    config.module.rules.push({
+      test: /[\\/]components[\\/]ui[\\/]cn-classes\.ts$/,
+      enforce: 'pre',
+      use: [{ loader: path.resolve(process.cwd(), 'scripts/cn-classes-loader.cjs') }],
+    });
     if (process.env.EV_ANALYSE_POIDS === '1' && !isServer && !dev) {
       config.plugins.push(new PoidsModulesPlugin(path.resolve(process.cwd(), '.verify/poids-modules.tsv')));
     }
