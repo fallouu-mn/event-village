@@ -782,6 +782,9 @@ jobs:
     if: ${{ needs.mode.outputs.rapide == '1' && needs.mode.outputs.perf == '1' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # Lot poids : relevé des modules de chaque morceau du navigateur (scripts/poids-modules.mjs), lecture seule du graphe
+    env:
+      EV_ANALYSE_POIDS: '1'
     outputs:
       build: ${{ steps.build.outcome }}
       js_budget: ${{ steps.js-budget-perf.outcome }}
@@ -810,6 +813,25 @@ jobs:
           . /tmp/etape.sh js-budget
           set -o pipefail
           node scripts/verify.mjs --etapes js-budget 2>&1 | tee -a /tmp/build.log
+
+      # Lot poids (diagnostic, aucun verdict) : modules par paquet et par fichier du premier chargement, puis artefact
+      # « poids-analyse » (relevé, morceaux et manifeste) hors journaux-* : il n'est pas publié sur ci-results
+      - name: "Perf : relevé des modules (scripts/poids-rapport.mjs, diagnostic)"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          mkdir -p /tmp/poids
+          node scripts/poids-rapport.mjs --top 80 2>&1 | tee /tmp/poids/poids-rapport.txt || true
+          cp .verify/poids-modules.tsv /tmp/poids/ 2>/dev/null || true
+          cp .verify/js-budget.tsv /tmp/poids/ 2>/dev/null || true
+          tar czf /tmp/poids/morceaux.tgz .next/app-build-manifest.json .next/build-manifest.json .next/static/chunks 2>/dev/null || true
+      - name: "Perf : déposer le relevé des modules (artefact poids-analyse)"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: poids-analyse
+          path: /tmp/poids/
+          if-no-files-found: warn
+          retention-days: 14
 
       - *e2e-seed
       - *e2e-start

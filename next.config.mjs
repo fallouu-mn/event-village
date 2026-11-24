@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
+import { PoidsModulesPlugin } from './scripts/poids-modules.mjs';
 
 /**
  * Lot 5 (tâches 5.3 et 5.6) — hôte des images optimisées par next/image : le stockage public du projet
@@ -75,6 +77,14 @@ const nextConfig = {
   // pages en streaming (loading.tsx) ne sont pas attendus par React à l'hydratation. Les deux feuilles de style restent.
   poweredByHeader: false,
   compress: true,
+  // Lot poids : relevé des modules de chaque morceau du navigateur, seulement si EV_ANALYSE_POIDS=1 (job « perf » de la
+  // CI). Lecture seule du graphe après l'écriture : aucun fichier servi n'est ajouté ni modifié (scripts/poids-modules.mjs).
+  webpack(config, { isServer, dev }) {
+    if (process.env.EV_ANALYSE_POIDS === '1' && !isServer && !dev) {
+      config.plugins.push(new PoidsModulesPlugin(path.resolve(process.cwd(), '.verify/poids-modules.tsv')));
+    }
+    return config;
+  },
   images: {
     remotePatterns: [
       ...supabaseStoragePatterns(),
