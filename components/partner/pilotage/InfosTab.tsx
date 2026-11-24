@@ -2,6 +2,7 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
+import { loadEventMap } from '@/components/ui/event-map-load';
 import { CalendarDays, Clock, ExternalLink, MapPin, Navigation } from 'lucide-react';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -13,7 +14,7 @@ import { retainedEnd } from '@/lib/events/event-end';
 import { directionsUrl } from '@/lib/events/directions';
 
 // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
-const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
+const EventMap = dynamic(() => loadEventMap().then((m) => ({ default: m.EventMap })), {
     ssr: false,
     loading: () => <div className="h-48 w-full rounded-xl bg-muted motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
 });

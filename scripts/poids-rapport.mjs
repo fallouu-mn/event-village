@@ -113,6 +113,30 @@ for (const [route, entree] of ROUTES) {
     analyser(`part propre de ${route} (hors code commun)`, pages[entree].filter((f) => !communSet.has(f)));
 }
 
+// Doublons : modules présents dans plusieurs fichiers du premier chargement d'une même route (comptés plusieurs fois)
+console.log('\n[POIDS] ══ modules en double dans le premier chargement d\'une route (estimation gzip de chaque copie en trop) ══');
+for (const [route, entree] of ROUTES) {
+    if (!Array.isArray(pages[entree])) continue;
+    const js = [...new Set([...commun, ...pages[entree]])].filter((f) => f.endsWith('.js'));
+    const ou = new Map();
+    for (const f of js) {
+        const mods = parFichier.get(f) ?? [];
+        const src = mods.reduce((s, m) => s + m.octets, 0);
+        for (const m of mods) {
+            if (!ou.has(m.module)) ou.set(m.module, []);
+            ou.get(m.module).push({ fichier: f.replace(/-[0-9a-f]{16}\.js$/, '.js'), est: src > 0 ? (gz(f) * m.octets) / src : 0 });
+        }
+    }
+    const doubles = [...ou].filter(([, l]) => l.length > 1)
+        .map(([module, l]) => ({ module, l, trop: l.slice(1).reduce((s, x) => s + x.est, 0) }))
+        .sort((a, b) => b.trop - a.trop);
+    const total = doubles.reduce((s, d) => s + d.trop, 0);
+    console.log(`[POIDS]   ${route} : ${doubles.length} module(s) en double, ~${Math.round(total)} octets gzip en trop`);
+    for (const d of doubles.slice(0, 40)) {
+        console.log(`[POIDS]     ${String(Math.round(d.trop)).padStart(6)}  ${d.module}  [${d.l.map((x) => x.fichier).join(' ; ')}]`);
+    }
+}
+
 // Morceaux chargeables à la demande : modules de chacun (repérer doublons et variantes)
 console.log('\n[POIDS] ══ morceaux hors premier chargement des routes mesurées : modules les plus lourds de chacun ══');
 const premier = new Set([...commun, ...ROUTES.flatMap(([, e]) => pages[e] ?? [])]);

@@ -87,6 +87,12 @@ const nextConfig = {
       enforce: 'pre',
       use: [{ loader: path.resolve(process.cwd(), 'scripts/cn-classes-loader.cjs') }],
     });
+    // Lot poids (piste 4) : table des morceaux chargeables du navigateur. webpack.js, chargé par TOUTES les pages, garde pour
+    // chaque morceau son empreinte : 8 caractères au lieu de 16 (hashDigestLength de Next). Les noms restent uniques (numéro
+    // du morceau + empreinte de son contenu) et changent toujours avec le contenu : rien ne change pour l'utilisateur.
+    if (!isServer && !dev) {
+      config.output.chunkFilename = 'static/chunks/[name].[contenthash:8].js';
+    }
     if (process.env.EV_ANALYSE_POIDS === '1' && !isServer && !dev) {
       config.plugins.push(new PoidsModulesPlugin(path.resolve(process.cwd(), '.verify/poids-modules.tsv')));
     }

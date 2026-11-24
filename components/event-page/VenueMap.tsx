@@ -5,13 +5,12 @@ import dynamic from 'next/dynamic';
 import { Map as MapIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { mapMarkerHtml } from '@/components/ui/MapMarker';
-
-const loadEventMap = () => import('@/components/ui/EventMap');
+import { loadEventMap } from '@/components/ui/event-map-load';
 
 // Leaflet et ses tuiles : jamais au premier affichage. Le module est seulement préchargé quand la zone approche de
 // l'écran (IntersectionObserver) ; le fond de carte n'est demandé qu'au toucher de « Afficher la carte ».
 const EventMap = dynamic(
-  () => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })),
+  () => loadEventMap().then((m) => ({ default: m.EventMap })),
   { ssr: false, loading: () => <div className="h-full w-full bg-muted motion-safe:animate-pulse" aria-hidden="true" /> },
 );
 
