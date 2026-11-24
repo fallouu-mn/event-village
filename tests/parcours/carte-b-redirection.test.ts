@@ -31,18 +31,23 @@ describe('T5 — redirection vers /login derrière un relais', () => {
         assert.equal(to.searchParams.get('redirect'), '/tickets');
     });
 
-    test('relais en chaîne : première valeur ; sans en-têtes : adresse de la requête (inchangée)', async () => {
+    test('relais en chaîne : première valeur, port par défaut du protocole ; sans en-têtes : adresse de la requête (inchangée)', async () => {
         const chain = new URL(String((await anonymous('/tickets', { host: 'eventvillage.sn', 'x-forwarded-proto': 'https, http', 'x-forwarded-host': 'eventvillage.sn, interne:3000' })).location));
-        assert.equal(chain.origin, 'https://eventvillage.sn');
+        assert.equal(chain.origin, 'https://eventvillage.sn', 'aucun port de la requête gardé (run 630 : https://eventvillage.sn:3000)');
+        // Sans relais : l'adresse de la requête telle que Next la donne (127.0.0.1 y devient localhost)
         const direct = new URL(String((await anonymous('/tickets')).location));
-        assert.equal(direct.origin, 'http://127.0.0.1:3000');
+        assert.equal(direct.protocol, 'http:');
+        assert.equal(direct.port, '3000');
+        assert.equal(direct.pathname, '/login');
     });
 
     test('valeurs douteuses ignorées : jamais un autre schéma, jamais un autre site', async () => {
+        const base = new URL(String((await anonymous('/tickets', { host: '127.0.0.1:3000' })).location));
         for (const [proto, host] of [['javascript', 'evil.example'], ['ftp', 'evil.example/@x'], ['https', 'a@evil.example'], ['https', 'evil.example/login'], ['https', 'x y'], ['https', 'evil.example']] as const) {
             const to = new URL(String((await anonymous('/tickets', { host: '127.0.0.1:3000', 'x-forwarded-proto': proto, 'x-forwarded-host': host })).location));
             assert.ok(to.protocol === 'http:' || to.protocol === 'https:', `${proto} ${host} → ${to.href}`);
-            assert.equal(to.host, '127.0.0.1:3000', `${proto} ${host} → ${to.href} (hôte de la requête gardé)`);
+            assert.equal(to.host, base.host, `${proto} ${host} → ${to.href} (hôte de la requête gardé)`);
+            assert.ok(!to.hostname.includes('evil'), `${proto} ${host} → ${to.href}`);
             assert.equal(to.pathname, '/login');
         }
     });

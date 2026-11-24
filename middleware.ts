@@ -142,7 +142,12 @@ function redirectUrl(path: string, req: NextRequest): URL {
     const proto = firstHeaderValue(req.headers.get('x-forwarded-proto'))?.toLowerCase();
     if (proto === 'https' || proto === 'http') url.protocol = `${proto}:`;
     const host = firstHeaderValue(req.headers.get('x-forwarded-host'));
-    if (host && FORWARDED_HOST_RE.test(host) && trustedHost(host, req)) url.host = host;
+    if (host && FORWARDED_HOST_RE.test(host) && trustedHost(host, req)) {
+        // Nom et port posés ensemble : affecter `host` sans port gardait le port de `req.url` (run 630 : …sn:3000)
+        const [name, port] = host.split(':');
+        url.hostname = name;
+        url.port = port ?? '';
+    }
     return url;
 }
 

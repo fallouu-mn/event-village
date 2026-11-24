@@ -43,7 +43,7 @@ const SUPABASE_WS = SUPABASE_ORIGIN.replace(/^http/, 'ws');
 
 /**
  * Lot Carte B (B1) — origines des tuiles de carte (mêmes règles que tileOrigins de lib/map/tiles.ts, recopiées ici : ce
- * fichier n'importe pas de TypeScript ; tests/schema/carte-b-fond.test.ts vérifie qu'elles concordent). Stadia Maps par
+ * fichier n'importe pas de TypeScript ; tests/schema/carte-b-origines-tuiles.test.ts vérifie qu'elles concordent). Stadia Maps par
  * défaut (tiles.stadiamaps.com), sinon l'hôte de NEXT_PUBLIC_MAP_TILE_URL et NEXT_PUBLIC_MAP_TILE_URL_DARK.
  */
 const STADIA_TILE_URLS = [
