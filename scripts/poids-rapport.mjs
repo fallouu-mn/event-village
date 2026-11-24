@@ -113,6 +113,17 @@ for (const [route, entree] of ROUTES) {
     analyser(`part propre de ${route} (hors code commun)`, pages[entree].filter((f) => !communSet.has(f)));
 }
 
+// Fichiers du code commun dont le poids ne s'explique pas par leurs modules (ex. app/template.js) : début du contenu
+for (const f of commun.filter((x) => x.endsWith('.js'))) {
+    const mods = parFichier.get(f) ?? [];
+    const src = mods.reduce((s, m) => s + m.octets, 0);
+    if (gz(f) > 500 && src < 200) {
+        const txt = fs.readFileSync(path.join(nextDir, f), 'utf8');
+        console.log(`\n[POIDS] ══ ${f} : ${gz(f)} octets gzip pour ${src} octets de source ; ${txt.length} caractères ; début : ══`);
+        console.log(txt.slice(0, 1500).replace(/\n/g, ' '));
+    }
+}
+
 // Doublons : modules présents dans plusieurs fichiers du premier chargement d'une même route (comptés plusieurs fois)
 console.log('\n[POIDS] ══ modules en double dans le premier chargement d\'une route (estimation gzip de chaque copie en trop) ══');
 for (const [route, entree] of ROUTES) {

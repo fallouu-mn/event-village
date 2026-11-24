@@ -93,6 +93,19 @@ const nextConfig = {
     if (!isServer && !dev) {
       config.output.chunkFilename = 'static/chunks/[name].[contenthash:8].js';
     }
+    // Lot poids (piste 3) : Next fournit `Buffer` à tout module du navigateur qui le cite (ProvidePlugin), ce qui fait entrer
+    // son polyfill (next/dist/compiled/buffer, ~2 100 octets gzip) dans TOUTES les pages. Le seul module du navigateur qui le
+    // cite est @supabase/storage-js (toBase64 : `typeof Buffer !== "undefined" ? Buffer… : btoa(…)`, métadonnées d'un
+    // téléversement), que le navigateur n'emploie jamais ici : sans `Buffer`, la bibliothèque prend sa voie navigateur.
+    // Serveur et Edge inchangés. Toute nouvelle référence à `Buffer` côté navigateur est refusée par
+    // tests/schema/poids-buffer.test.ts.
+    if (!isServer) {
+      for (const plugin of config.plugins) {
+        if (plugin?.constructor?.name === 'ProvidePlugin' && plugin.definitions && 'Buffer' in plugin.definitions) {
+          delete plugin.definitions.Buffer;
+        }
+      }
+    }
     if (process.env.EV_ANALYSE_POIDS === '1' && !isServer && !dev) {
       config.plugins.push(new PoidsModulesPlugin(path.resolve(process.cwd(), '.verify/poids-modules.tsv')));
     }
