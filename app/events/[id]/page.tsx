@@ -32,6 +32,8 @@ import { shareImagesFor } from '@/lib/events/share-preview.server';
 import type { BannerKind, PublicEventDetail } from '@/lib/events/event-detail';
 import { eventImageSrc, isProjectStorageImage } from '@/lib/events/event-image';
 import { formatDate, formatDateTime } from '@/lib/format';
+import { SpecialPage } from '@/components/ui/SpecialPage';
+import { UNAVAILABLE_EVENT_MESSAGE, UNAVAILABLE_EVENT_TITLE } from '@/lib/events/unavailable-event';
 
 /**
  * Page publique d'un événement — design 1b (points 1, 6, 10, 11).
@@ -90,6 +92,8 @@ export async function generateMetadata(props: { params: Promise<{ id: string }> 
   const { id } = await props.params;
   const read = await readPublicSheet(id);
   if (read.kind !== 'public') return { title: 'Événement — Event Village' };
+  // Carte B3 (décision du client du 25/11) : événement suspendu, rien qui le nomme (ni titre, ni lieu, ni date, ni aperçu)
+  if (read.event.status === 'SUSPENDU') return { title: 'Événement indisponible — Event Village', robots: { index: false } };
   const event = read.event;
   const description = `${capitalize(event.dateFormatted)} à ${event.time} · ${[event.venue, event.city].filter(Boolean).join(', ')}`;
   return {
@@ -145,11 +149,29 @@ function PracticalRow({ icon, label, children }: { icon: ReactNode; label: strin
 export default async function EventDetailPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
   const event = await sheetOf(id);
+  // Carte B3 (décision du client du 25/11 ; contrat E du lot 5 changé) : événement suspendu = page neutre, sans titre, ni
+  // lieu, ni date ; les porteurs retrouvent leurs billets dans « Mes billets »
+  if (event.status === 'SUSPENDU') {
+    return (
+      <SpecialPage
+        tone="neutral"
+        title={UNAVAILABLE_EVENT_TITLE}
+        message={UNAVAILABLE_EVENT_MESSAGE}
+        actions={(
+          <>
+            <LinkButton href="/tickets" leftIcon={<Ticket size={18} />}>Mes billets</LinkButton>
+            <LinkButton href="/explore" variant="secondary">Explorer les événements</LinkButton>
+          </>
+        )}
+      />
+    );
+  }
 
   const info = event.practicalInfo;
   const program = event.program.filter((item) => item && item.title);
   const hasCoordinates = typeof event.latitude === 'number' && typeof event.longitude === 'number';
-  const liveEnabled = event.status === 'PUBLIE' || event.status === 'SUSPENDU';
+  // Carte B3 (décision du client du 25/11) : un événement suspendu n'a plus que la page neutre (rendue plus haut)
+  const liveEnabled = event.status === 'PUBLIE';
   const placeLine = [info.address, event.city].filter(Boolean).join(' · ');
   // Moyens de paiement en ligne : événement publié avec au moins une catégorie vendue en ligne et des places. Design 1c bis
   // (erreur 418) : sans l'heure (la page est en cache) ; l'ouverture de la vente est dite par la billetterie, à l'heure du

@@ -59,7 +59,9 @@ const coordinate = (limit: number) => z.number(TYPE_ERROR).finite('nombre attend
 
 const ProfilePatchSchema = z.object({
     company_name: text(2, 150),
-    commercial_name: optionalText(150),
+    // Carte B3 (décision du client du 25/11) : nom commercial obligatoire (seul nom montré au public) ; vidé = refusé
+    commercial_name: z.preprocess(blankToNull, z.string(zodTypeErrors({ invalid: 'obligatoire : c’est le seul nom que voit le public.' })).trim()
+        .min(2, '2 caractères au moins.').max(150, '150 caractères au plus.')),
     description: optionalText(2000),
     address: optionalText(200),
     city: z.preprocess(blankToNull, text(2, 80).nullable()),

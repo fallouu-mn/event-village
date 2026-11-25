@@ -345,7 +345,7 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         // Finition 4 (contre-vérification, T2 ; modification signalée au rapport) : envoyés maintenant, pendant la suspension ;
         // par défaut l'outil envoie demain à midi, après la fin de cet événement (début dans 3 h, 4 h) : l'avis serait annulé
         const hs = await deliver(holderRows, new Date());
-        await assertInApp(hs.filter((r) => r.recipient_user_id === holder.userId), { userId: holder.userId, title: 'Événement suspendu', contains: [ev.title], actionUrl: `/events/${ev.eventId}` });
+        await assertInApp(hs.filter((r) => r.recipient_user_id === holder.userId), { userId: holder.userId, title: 'Événement suspendu', contains: [ev.title], actionUrl: `/tickets/${ev.eventId}` }); // carte B3 (25/11) : « Mes billets » (modification signalée)
 
         await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: p.userId });
         const hRea = await historyId(ev.eventId, 'SUSPENDU', 'PUBLIE');
@@ -653,7 +653,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const phone = randomSenegalPhone('76');
         const email = randomEmail('pros-inscription');
         const reg = await registerPartnerTwoStep({ // lot 9 bis (R53, T38) : deux appels de la même route, code lu dans le faux SMS
-            companyName: 'Inscription Test SARL', description: 'Organisateur fictif créé par les tests du lot 6.', address: '12 rue des Tests',
+            companyName: 'Inscription Test SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */, description: 'Organisateur fictif créé par les tests du lot 6.', address: '12 rue des Tests',
             city: 'Dakar', activities: ['ORGANISATEUR'], firstName: 'Fatou', lastName: 'Inscrite', phone, email,
             password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD, ...(await uploadRegistrationDocuments()),
         }, { headers: { 'x-forwarded-for': `${freshIp()}, 10.0.0.1` } });

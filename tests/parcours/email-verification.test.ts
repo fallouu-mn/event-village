@@ -473,7 +473,7 @@ describe('9b.48 R87 — inscription : l’adresse saisie attend sa vérification
         const phone = randomSenegalPhone('78');
         const since = mailsTo(address).length;
         const reg = await registerPartnerTwoStep({
-            companyName: 'Verification Lien SARL', description: 'Partenaire fictif dont l’adresse attend sa vérification.', address: '2 rue du Lien',
+            companyName: 'Verification Lien SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */, description: 'Partenaire fictif dont l’adresse attend sa vérification.', address: '2 rue du Lien',
             city: 'Dakar', activities: ['ORGANISATEUR'], firstName: 'Ndeye', lastName: 'Verifiee', phone, email: address,
             password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD, ...(await uploadRegistrationDocuments()),
         }, { headers: freshIp() });

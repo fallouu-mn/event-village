@@ -3,7 +3,9 @@
  * avec le jeton de chacun (clé anon + jeton de session), jamais la clé de service.
  *  - réservations : le client voit les siennes ; l'établissement celles de ses établissements ; un autre client, une
  *    autre partenaire, un visiteur et un administrateur sans le code administrateur ne voient rien ; avec le code, oui ;
- *  - établissements : un visiteur ne voit que les établissements actifs et validés ; zones, tables et horaires d'un
+ *  - établissements : plus aucune lecture REST pour un visiteur, un client ou une autre partenaire (contre-vérification
+ *    de la carte B3, T1 : docs/audit-carte-b3.md ; modification signalée au rapport du lot Carte B3 ; avant : les
+ *    établissements actifs et validés) ; zones, tables et horaires d'un
  *    établissement non validé : invisibles du public. Décision du chef de projet, T6 de cv11b : la propriétaire aussi ne
  *    lit par la REST que ses établissements validés et publics ; les autres, par les routes serveur seulement ;
  *  - aucune écriture REST sur venues, venue_opening_hours, restaurant_zones, restaurant_tables ni table_reservations.
@@ -97,10 +99,12 @@ describe('R31 — réservations de table : chacun ne lit que ce qui le regarde',
 });
 
 describe('R31 — établissements, zones, tables, horaires : visibles du public seulement validés', () => {
-    test('un visiteur et un client ne voient que l’établissement validé', async () => {
-        assert.deepEqual(await visible('venues', null, [validated, pending, refused]), [validated]);
-        assert.deepEqual(await visible('venues', alice.accessToken, [validated, pending, refused]), [validated]);
-        assert.deepEqual(await visible('venues', otherPartner.accessToken, [validated, pending, refused]), [validated]);
+    // Contre-vérification de la carte B3 (T1, modification signalée au rapport du lot Carte B3) : la REST de venues est
+    // fermée aux rôles publics ; seule la propriétaire lit encore l'identifiant de son établissement public (ci-dessous).
+    test('un visiteur, un client et une autre partenaire ne voient aucun établissement, même validé', async () => {
+        assert.deepEqual(await visible('venues', null, [validated, pending, refused]), []);
+        assert.deepEqual(await visible('venues', alice.accessToken, [validated, pending, refused]), []);
+        assert.deepEqual(await visible('venues', otherPartner.accessToken, [validated, pending, refused]), []);
     });
     // Décision du chef de projet, T6 de cv11b (docs/audit-lot11b.md ; modification signalée au rapport du lot 11b) : la
     // propriétaire ne lit par la REST que son établissement et ses tables validés et publics ; en attente ou refusés :

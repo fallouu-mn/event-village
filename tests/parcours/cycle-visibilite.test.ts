@@ -3,7 +3,7 @@
  * client-ux-4). Contrat : section E (et D7 pour la fin d'un événement).
  *  - GET /api/events/[id] : BROUILLON, EN_ATTENTE et VALIDE → 404 pour tous ; PUBLIE, SUSPENDU, ANNULE et
  *    TERMINE → 200 avec `purchasable` (PUBLIE et vente ouverte) et `banner` (null, ou { kind, title,
- *    message } pour SUSPENDU, ANNULE, TERMINE) ; pour ANNULE, `cancellation: { publicNotice, cancelledAt,
+ *    message } pour ANNULE, TERMINE ; SUSPENDU : fiche neutre, carte B3, 25/11) ; pour ANNULE, `cancellation: { publicNotice, cancelledAt,
  *    refundInfo }` sans le motif interne ; catégories limitées à is_active AND is_visible ;
  *  - GET /api/events (catalogue, accueil) : PUBLIE dont la fin (event_end_at) est à venir seulement ; prix
  *    « à partir de » sur les catégories actives ET visibles ; sans catégorie achetable : sans prix,
@@ -165,11 +165,11 @@ describe('5.3 Fiche publique GET /api/events/[id]', () => {
         assert.equal(e.banner, null, `PUBLIE : banner null, reçu ${JSON.stringify(e.banner)}`);
     });
 
-    test('SUSPENDU : 200 avec bandeau, purchasable false', async () => {
+    test('SUSPENDU : 200, fiche neutre (carte B3, décision du 25/11 : contrat E changé, signalé au rapport du lot)', async () => {
         const ev = await eventIn('suspendu', 'SUSPENDU', { suspendReason: 'Vérification des autorisations' });
         const e = await publicSheet(ev.eventId, 'SUSPENDU');
-        assertBanner(e, 'SUSPENDU', 'SUSPENDU');
-        assert.equal(e.purchasable, false, `SUSPENDU : purchasable false, reçu ${JSON.stringify(e.purchasable)}`);
+        assert.deepEqual(Object.keys(e).sort(), ['id', 'message', 'purchasable', 'status', 'unavailable'], JSON.stringify(e)); // ni titre, ni lieu, ni date
+        assert.deepEqual([e.id, e.status, e.purchasable, e.unavailable, e.message], [ev.eventId, 'SUSPENDU', false, true, 'Cet événement n’est plus disponible']);
     });
 
     test('ANNULE : 200 avec bandeau, avis public, date et information de remboursement, sans motif interne, purchasable false', async () => {

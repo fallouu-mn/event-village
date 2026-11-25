@@ -44,7 +44,7 @@ function sameQuotes(v: unknown): string {
 
 async function body(label: string, extra: Row = {}): Promise<Row> {
     return {
-        companyName: `Dossier ${label} ${randomUUID().slice(0, 8)} SARL`,
+        companyName: `Dossier ${label} ${randomUUID().slice(0, 8)} SARL`, commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
         description: 'Organisateur fictif pour les tests du dossier partenaire (lot 9 bis).',
         address: '3 rue du Dossier',
         city: 'Dakar',

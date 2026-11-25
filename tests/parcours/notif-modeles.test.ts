@@ -215,7 +215,7 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('TRANSFER_RECEIVED', [I, P, M], 'CLIENT', 'B', 'TICKET_TRANSFER', ['/tickets/:ticket'], 'Billet reçu'), // finition 5 : lien de l'objet exact (modification signalée)
     ess('TICKET_SCANNED', [I, P, M], 'CLIENT', 'B', 'TICKET_SCANNED', ['/tickets/:ticket', '/tickets/:event'], 'Entrée validée'), // 11.2 M4 ; finition 5 : le billet, ou ceux de l'événement si plusieurs (modification signalée)
     ess('EVENT_CANCELLED', [I, S, M, P], 'CLIENT', 'A', 'EVENT_STATUS', ['/tickets/:event'], 'Événement annulé'), // finition 5 : billets de l'événement (modification signalée) ; design 1b : billets annulés ou en remboursement
-    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement suspendu'), // G.50
+    opt('EVENT_SUSPENDED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT', 'EVENT_STATUS', ['/tickets/:event'], 'Événement suspendu'), // G.50 ; carte B3 (25/11) : « Mes billets » (modification signalée)
     opt('EVENT_REACTIVATED_HOLDER', 'EVENT_UPDATES', [I, P, M, S], 'CLIENT', 'EVENT_STATUS', ['/events/:event'], 'Événement de nouveau en ligne'), // G.50
     ess('EVENT_CHANGED', [I, P, S, M], 'CLIENT', 'B', 'EVENT_CHANGE', ['/events/:event'], 'Événement modifié'), // lot 9 bis (R14, 11.2 M1) : indispensable
     opt('REMINDER_J1', 'REMINDERS', [I, P, S, M], 'CLIENT', 'REMINDER', ['/tickets/:event'], 'Rappel : c\'est demain'), // finition 5 : lien de l'objet exact (modification signalée)

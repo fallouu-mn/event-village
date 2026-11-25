@@ -89,6 +89,7 @@ describe('A. Droit unique « Valider les salles et les établissements »', () =
     test('établissement : même droit (fonction) ; partners.validate seul refusé', async () => {
         const { data: v, error } = await service.from('venues').insert({
             partner_id: owner.partnerId, name: `TEST Établissement 10b ${Date.now()}`, kind: 'RESTAURANT', city: 'Dakar', is_active: true,
+            /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467,
         }).select('id, validation_status').single();
         assert.equal(error, null, error?.message);
         const call = (actor: string) => service.rpc('venue_validation_decide', { p: { actor_id: actor, venue_id: v!.id, decision: 'VALIDER' } });
@@ -117,7 +118,8 @@ describe('B. Validation : envoi, refus, renvoi, salle validée modifiée', () =>
     test('création par la route = envoi en validation ; avis ADMIN_HALL_SUBMITTED (cloche, push, email) et SMS groupé', async () => {
         const post = await api('POST', 'partner/halls', {
             token: owner.accessToken,
-            body: { name: 'Salle des Almadies 10b', capacity: 150, price_per_day: 150_000, city: 'Dakar', address: 'Route des Almadies' },
+            // Lot Carte B3 (décision du client du 25/11, modification signalée au rapport) : position obligatoire à la création
+            body: { name: 'Salle des Almadies 10b', capacity: 150, price_per_day: 150_000, city: 'Dakar', address: 'Route des Almadies', latitude: 14.745, longitude: -17.51 },
         });
         assert.equal(post.status, 201, show(post));
         const hall = post.body.hall as Row;
@@ -143,6 +145,10 @@ describe('B. Validation : envoi, refus, renvoi, salle validée modifiée', () =>
     });
 
     test('renvoi : incomplet refusé (400, en mots) ; autre partenaire, client : 404/403 ; complet → en attente', async () => {
+        // Lot Carte B3 (modification signalée au rapport) : la route ne retire plus une position ; une salle d'avant la
+        // décision du 25/11 peut en manquer (retirée ici par la clé de service)
+        const { error: noPos } = await service.from('halls').update({ latitude: null, longitude: null }).eq('id', hallId);
+        assert.equal(noPos, null, noPos?.message);
         const incomplete = await routeId('POST', 'partner/halls/[id]/submit', hallId, owner.accessToken, {});
         assert.equal(incomplete.status, 400, show(incomplete));
         assert.match(String(incomplete.body.error), /ajoutez .*une photo au moins.*la position sur la carte/);
@@ -195,7 +201,8 @@ describe('C. Photos : réencodées, du dossier de la partenaire seulement', () =
         }
         const { count } = await service.from('halls').select('id', { count: 'exact', head: true }).eq('name', name);
         assert.equal(count ?? 0, 0);
-        const good = await api('POST', 'partner/halls', { token: owner.accessToken, body: { name, capacity: 50, price_per_day: 50_000, images: [photoOf(owner.partnerId)] } });
+        // Lot Carte B3 (modification signalée au rapport) : position obligatoire à la création
+        const good = await api('POST', 'partner/halls', { token: owner.accessToken, body: { name, capacity: 50, price_per_day: 50_000, images: [photoOf(owner.partnerId)], latitude: 14.745, longitude: -17.51 } });
         assert.equal(good.status, 201, show(good));
     });
 });

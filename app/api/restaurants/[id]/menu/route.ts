@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { partnerPublicName } from '@/lib/partner/public-name';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { guardFeature } from '@/lib/features/flags';
 
@@ -24,12 +25,12 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
         // limitée à une ligne : « rest-e » désignait la première partenaire venue dont le nom contient « e »).
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedId);
 
-        let partner: { id: string; company_name: string; commercial_name?: string | null } | null = null;
+        let partner: { id: string; commercial_name?: string | null } | null = null;
 
         if (isUuid) {
             const { data, error: partnerError } = await supabase
                 .from('partners')
-                .select('id, company_name, commercial_name')
+                .select('id, commercial_name')
                 .eq('id', requestedId)
                 .eq('status', 'VALIDE')
                 .maybeSingle();
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
 
         return NextResponse.json({
             partnerId,
-            partnerName: partner?.commercial_name || partner?.company_name || 'Restaurant & Traiteur',
+            partnerName: partnerPublicName(partner),
             menuItems: formatted,
         });
     } catch (err: unknown) {

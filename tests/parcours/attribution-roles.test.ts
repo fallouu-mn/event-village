@@ -47,7 +47,7 @@ describe('Attribution des rôles par les routes serveur', () => {
         const email = randomEmail('partenaire');
         const phone = randomSenegalPhone('77');
         const reg = await registerPartnerTwoStep({
-            companyName: 'Parcours Test SARL',
+            companyName: 'Parcours Test SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
             description: 'Organisateur fictif créé par la suite de tests.',
             address: '12 rue des Tests',
             city: 'Dakar',

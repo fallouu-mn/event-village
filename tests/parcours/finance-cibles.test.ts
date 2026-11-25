@@ -85,6 +85,7 @@ async function createHallReservation(facial: number): Promise<string> {
     const { data: hall, error: hallErr } = await service.from('halls').insert({
         partner_id: partner.partnerId, name: `TEST Salle ${randomUUID().slice(0, 8)}`, capacity: 100,
         price_per_day: facial, deposit_value: 100, city: 'Dakar', is_active: true,
+        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467,
     }).select('id').single();
     assert.equal(hallErr, null, `salle : ${hallErr?.message}`);
     const { data: decided, error: decErr } = await service.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: hall.id, decision: 'VALIDER' } });

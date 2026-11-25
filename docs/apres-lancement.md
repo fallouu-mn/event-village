@@ -170,7 +170,7 @@ d'où elle vient et pourquoi elle attend.
 
 | Sujet | Pourquoi plus tard | Origine |
 |---|---|---|
-| Salles et restaurants sur la carte, avec un bouton par type pour les afficher ou les masquer ; zone approximative de 300 m pour les particuliers. | Lot suivant (décision du client du 21/11 : événements d'abord). La lecture publique (`GET /api/events/carte`) ne rend que des événements. | Consigne du lot Carte B |
+| Salles et restaurants sur la carte, avec un bouton par type pour les afficher ou les masquer ; zone approximative de 300 m pour les particuliers. | Fait au lot Carte B3 (`GET /api/lieux/carte`, docs/carte-b3-rapport.md). La zone de 300 m des particuliers est abandonnée : décision du client du 25/11, l'application est entièrement publique (position exacte, adresse et itinéraire pour tous). | Consigne du lot Carte B |
 | Événements publiés SANS position (créés avant la finition 2a, qui rend la position obligatoire à la soumission) : absents de la carte ET du calendrier (une seule lecture publique, « avec position »). Ils restent dans la Liste. | Rares (aucun depuis la finition 2a) ; les rattraper demande que la partenaire place le repère (étape Accès). | Lot Carte B |
 | Recherche d'adresse publique sur la carte (« aller à » une rue). | Refusée par le client (21/11) : choix rapide de ville ou de quartier seulement. | Décision du client |
 | Liste de l'ordinateur : au-delà de 300 événements dans la zone, message « rapprochez-vous » et « Rechercher dans cette zone ». Pagination ou liste virtuelle si le catalogue grossit beaucoup. | 300 suffit largement au catalogue actuel. | Lot Carte B |
@@ -190,6 +190,17 @@ d'où elle vient et pourquoi elle attend.
 | Pages d'arrivée des avis (`/tickets/<id>`, `/partner/finance/retraits/<envoi>`, `/wallet/retraits/<envoi>`) : la page « Cet élément n'est plus disponible » est rendue par la page elle-même, avec le statut 200 (la même réponse pour un objet d'autrui, deviné ou supprimé : aucun indice) ; les routes qu'elles lisent répondent un vrai 404. Un statut 404 demanderait un fichier `not-found` par route (sous `/tickets`, le squelette de chargement le ferait de toute façon répondre 200). | Confort pour les robots d'indexation (pages déjà marquées « noindex » pour le billet) ; aucun effet pour la personne. | Finition 5, point 2 |
 | Code sans usage : `components/events/EventCancellationBanner.tsx` (palette rouge et ardoise en dur, texte qui promet un remboursement intégral quel que soit le mode) et la variante « verre » de `components/ui/Input.tsx` (blanc en dur). Aucun écran ne les affiche. | Suppression à faire dans un lot de nettoyage. | Finition 5, point 1 (couleurs en dur) |
 
+
+## Salles et restaurants sur la carte (lot Carte B3)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Carte déjà ouverte : un lieu suspendu ou retiré disparaît à la lecture suivante (déplacement, « Rechercher dans cette zone », filtre, retour sur l'onglet), pas en direct comme un événement (signal temps réel `public_event_state`). La lecture publique, elle, ne le rend plus dès l'écriture (moins de 5 s, prouvé). | Il faudrait une table de signal publique des lieux et ses déclencheurs (migration) ; aucun intérêt avant que les services soient ouverts. | Lot Carte B3 |
+| Filtres des couches (date, invités ; date, heure, personnes) non gardés dans l'adresse (seules les couches le sont). | Confort ; les couches suffisent pour partager une carte. | Lot Carte B3 |
+| Disponibilité des lieux sur la carte : la recherche des lots 10b et 11b est lue page par page (48 lieux), jusqu'à 7 pages pour 300 lieux, à chaque changement de filtre. Une fonction dédiée en base (identifiants seuls) serait plus légère quand les services auront beaucoup de lieux. | Volume actuel très faible (services fermés). | Lot Carte B3 |
+| Événements, salles et établissements déjà publiés SANS position (avant la décision du 25/11) : restent en ligne, absents de la carte ; la partenaire voit « Ajoutez la position… » sur son pilotage ou sa fiche. Aucun rappel automatique (message, avis). | Décision du client : ce qui est publié reste en ligne ; rappel par message à décider si leur nombre le justifie. | Lot Carte B3 (décision du 25/11) |
+| Salle insérée directement en base sans position (hors de la route de la partenaire, qui la refuse) : acceptée, mais jamais validée d'office ; l'administration ne peut pas la valider. Un refus à l'insertion casserait des suites d'audit qui insèrent des salles sans position. | Aucun écran n'insère ainsi ; la création d'un établissement, elle, passe par une fonction et refuse en base. | Lot Carte B3 (décision du 25/11) |
+| Partenaires inscrites avant l'obligation du nom commercial : l'ancienne inscription recopiait la raison sociale dans le nom commercial quand l'enseigne était vide ; elles sont donc montrées au public sous leur raison sociale. Comptage, en lecture seule : `SELECT status, count(*) FROM public.partners WHERE btrim(commercial_name) = btrim(company_name) GROUP BY status;` | Rien à faire : la production part d'une base neuve et le nom commercial est désormais obligatoire à l'inscription et dans le profil (décision du client du 25/11). | Lot Carte B3, contre-vérification (T2) |
 
 ## Tables d'un événement : argent et sécurité (lot 11c-a)
 

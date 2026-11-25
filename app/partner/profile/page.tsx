@@ -34,6 +34,7 @@ const ACTIVITY_VALUES = Object.keys(PARTNER_ACTIVITY_LABELS);
 
 /** Design 1c : l'email de la partenaire est obligatoire (confirmations et rapports). */
 const EMAIL_REQUIRED_MESSAGE = 'Indiquez l’email où arrivent vos confirmations et rapports.';
+const COMMERCIAL_NAME_REQUIRED = 'Indiquez votre nom commercial : c’est le seul nom que voit le public.';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -129,6 +130,11 @@ export default function PartnerProfilePage() {
       setFieldError({ field: 'company_name', message: 'Indiquez le nom de l’entreprise (2 caractères au moins).' });
       return;
     }
+    // Carte B3 (décision du client du 25/11) : nom commercial obligatoire, seul nom montré au public
+    if (form.commercial_name.trim().length < 2) {
+      setFieldError({ field: 'commercial_name', message: COMMERCIAL_NAME_REQUIRED });
+      return;
+    }
     if (form.email.trim() === '') {
       setFieldError({ field: 'email', message: EMAIL_REQUIRED_MESSAGE });
       return;
@@ -218,6 +224,8 @@ export default function PartnerProfilePage() {
             />
             <TextInput
               label="Nom commercial (enseigne)"
+              required
+              hint="C’est le seul nom que voit le public. La raison sociale n’est jamais affichée."
               maxLength={150}
               placeholder="Prestige Events"
               value={form.commercial_name}

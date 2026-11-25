@@ -5,6 +5,8 @@ import { assertNoPosterFolder } from '@/lib/images/image-address';
 import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { tableStateLabel } from './booking';
 import { okOrRefuse } from './queries';
+import { invalidatePublicPlaces } from '@/lib/lieux/cache-lieux.server';
+import { PLACE_POSITION_KEPT } from '@/lib/places/place-texts';
 
 /**
  * Lot 11a — service des tables côté partenaire : établissements (restaurant, bar, espace), horaires, zones et tables.
@@ -183,6 +185,7 @@ export class TableService {
         const r = okOrRefuse((data ?? {}) as Record<string, unknown>);
         const { data: venue, error: readErr } = await getServiceRoleClient().from('venues').select('*').eq('id', String(r.venue_id)).single();
         if (readErr || !venue) throw new Error(`établissement créé illisible : ${readErr?.message ?? 'absent'}`);
+        invalidatePublicPlaces('établissement créé');
         return venue;
     }
 
@@ -190,7 +193,9 @@ export class TableService {
     public static async submitVenue(partnerUserId: string, venueId: string) {
         const { data, error } = await getServiceRoleClient().rpc('venue_submit', { p: { actor_id: partnerUserId, venue_id: venueId } });
         if (error) throw new Error(`venue_submit : ${error.message}`);
-        return okOrRefuse((data ?? {}) as Record<string, unknown>);
+        const submitted = okOrRefuse((data ?? {}) as Record<string, unknown>);
+        invalidatePublicPlaces('établissement renvoyé en validation');
+        return submitted;
     }
 
     /** Lot 11b : plan de salle (venue_plan_set) : positions des tables et des zones, plan montré ou non. */
@@ -224,6 +229,8 @@ export class TableService {
         if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
         const { hours, photos, ...fields } = parsed.data;
         const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Lot Carte B3 (décision du client du 25/11) : position obligatoire, jamais retirée
+        if (fields.latitude === null || fields.longitude === null) throw new PublicError(PLACE_POSITION_KEPT, 'POSITION_REQUIRED', 400);
         // Lot 11b : photos réencodées de la route de dépôt, ou déjà sur l'établissement ; au moins une
         let checkedPhotos: string[] | undefined;
         if (photos !== undefined) {
@@ -233,13 +240,25 @@ export class TableService {
             checkedPhotos = venuePhotos(photos, partnerId, Array.isArray(current.photos) ? (current.photos as string[]) : []);
             if (checkedPhotos.length === 0) throw new PublicError('Gardez au moins une photo de l’établissement.', 'INVALID_FIELD', 400);
         }
-        const { data, error } = await getServiceRoleClient().from('venues')
-            .update({ ...fields, ...(checkedPhotos ? { photos: checkedPhotos } : {}), updated_at: new Date().toISOString() })
-            .eq('id', venueId).eq('partner_id', partnerId).select('*').maybeSingle();
-        if (error) throw dbRefusal(error, 'modification de l’établissement');
-        if (!data) throw new PublicError('Établissement introuvable.');
-        if (hours) await this.setHours(partnerUserId, venueId, hours);
-        return data;
+        // Contre-vérification de la carte B3 (T4) : horaires contrôlés et écrits AVANT la fiche (refusés : rien n'est écrit,
+        // ni nom, ni position, ni photos) ; dès qu'une écriture a réussi, la carte est vidée, même si la suite échoue.
+        let wrote = false;
+        try {
+            if (hours) {
+                await this.setHours(partnerUserId, venueId, hours);
+                wrote = true;
+            }
+            const { data, error } = await getServiceRoleClient().from('venues')
+                .update({ ...fields, ...(checkedPhotos ? { photos: checkedPhotos } : {}), updated_at: new Date().toISOString() })
+                .eq('id', venueId).eq('partner_id', partnerId).select('*').maybeSingle();
+            if (error) throw dbRefusal(error, 'modification de l’établissement');
+            if (!data) throw new PublicError('Établissement introuvable.');
+            wrote = true;
+            return data;
+        } finally {
+            // Lot Carte B3 : nom, acompte, photos, position, horaires, retrait : carte à jour
+            if (wrote) invalidatePublicPlaces('établissement modifié');
+        }
     }
 
     /** Horaires par la fonction en base (partenaire propriétaire seulement, plages vérifiées, journal). */
@@ -310,6 +329,7 @@ export class TableService {
             capacity: t.capacity, min_capacity: t.min_capacity ?? 1, is_active: true,
         }).select('*').single();
         if (error || !data) throw dbRefusal(error, 'création de la table');
+        invalidatePublicPlaces('table ajoutée');
         return data;
     }
 
@@ -321,6 +341,7 @@ export class TableService {
             .update({ ...parsed.data, updated_at: new Date().toISOString() }).eq('id', tableId).eq('partner_id', partnerId).select('*').maybeSingle();
         if (error) throw dbRefusal(error, 'modification de la table');
         if (!data) throw new PublicError('Table introuvable.');
+        invalidatePublicPlaces('table modifiée');
         return data;
     }
 
@@ -330,6 +351,7 @@ export class TableService {
         if (error) throw dbRefusal(error, 'suppression de la table');
         // Contre-vérification de la 11a (constat) : table d'une autre partenaire ou inconnue, rien supprimé → 404, jamais un faux succès
         if (!data || data.length === 0) throw new PublicError('Table introuvable.', 'TABLE_NOT_FOUND', 404);
+        invalidatePublicPlaces('table supprimée');
         return { success: true };
     }
 

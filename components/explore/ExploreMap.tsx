@@ -1,16 +1,24 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ChevronDown, LocateFixed, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronDown, LocateFixed, RefreshCw, Search, SlidersHorizontal, X, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { clusterLabel, mapMarkerHtml, type MarkerKind } from '@/components/ui/MapMarker';
 import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
 import { loadLeafletWithCss } from '@/lib/map/leaflet-assets';
 import { MapEventCard, mapEventWhen } from '@/components/explore/MapEventCard';
+import { MapPlaceCard, PlaceSheetCard } from '@/components/explore/MapPlaceCard';
+import { HallFilters, LayerPills, readLayersParam, VenueFilters, writeLayersParam, type MapLayer } from '@/components/explore/MapLayers';
+import { placeMarkerHtml } from '@/components/explore/place-markers';
 import { cn } from '@/components/ui/cn';
+import { useFeatureFlags } from '@/lib/features/client';
 import { mapUrl, readMapEvents } from '@/lib/events/map-client';
 import { priceBadge, QUICK_PLACES, SENEGAL_BOUNDS, type MapZone, type PublicMapEvent } from '@/lib/events/map-shared';
+import { placeAccessibleName, type PublicMapPlace } from '@/lib/lieux/carte-lieux';
+import {
+    EMPTY_HALL_FILTERS, EMPTY_VENUE_FILTERS, placesUrl, readPlaces, type HallLayerFilters, type VenueLayerFilters,
+} from '@/lib/lieux/carte-lieux-client';
 import { clusterPoints } from '@/lib/map/cluster';
 
 /**
@@ -21,22 +29,36 @@ import { clusterPoints } from '@/lib/map/cluster';
  *    (lib/map/leaflet-assets.ts) : aucun morceau de code de plus pour l'application ;
  *  - points regroupés avec leur nombre (lib/map/cluster.ts), pastilles de prix (« Gratuit », « Dès 5 000 F »), « À la une »
  *    en orange ; repère touché ou survolé : forme « choisi » (orange, agrandi) ;
- *  - téléphone : feuille en bas de la carte avec l'événement touché et « Voir l'événement » ; ordinateur : liste à gauche
- *    synchronisée avec la zone visible, survol ou focus d'une vignette = repère mis en évidence ;
+ *  - téléphone : feuille en bas de la carte avec l'élément touché ; ordinateur : liste à gauche synchronisée avec la zone
+ *    visible, survol ou focus d'une vignette = repère mis en évidence ;
  *  - « Rechercher dans cette zone » après un déplacement ; « Autour de moi » (position de l'appareil utilisée pour centrer
  *    la carte, jamais envoyée ni gardée) ; choix rapide de ville ou de quartier ;
  *  - clavier : repères focalisables (Entrée = toucher), boutons de zoom ; la vue Liste reste l'alternative complète ;
  *  - « réduire les animations » : zoom et déplacements sans animation.
+ *
+ * Lot Carte B3 — couches Événements, Salles, Restaurants (components/explore/MapLayers.tsx), chacune affichée ou masquée,
+ * gardées dans l'adresse (`couches=`) ; une couche dont le service est fermé n'est pas proposée ; filtres propres aux
+ * salles (date, invités) et aux restaurants (date, heure, personnes) ; repères distincts par leur forme
+ * (components/explore/place-markers.ts), chaque lieu à sa position exacte (décision du client du 25/11) ; feuille du téléphone avec
+ * les photos qui glissent ; état vide illustré avec « Élargir la zone ». Mêmes règles que pour les événements : la zone
+ * envoyée est élargie sur la grille T1 (lib/lieux/carte-lieux-client.ts).
  */
 
 type LeafletModule = typeof import('leaflet');
 type LeafletMap = import('leaflet').Map;
+
+/** Élément de la carte : un événement ou un lieu ; identifiant « e:<id> » ou « p:<id> ». */
+type Item =
+    | { id: string; kind: 'event'; layer: 'evenements'; lat: number; lng: number; e: PublicMapEvent }
+    | { id: string; kind: 'place'; layer: 'salles' | 'restaurants'; lat: number; lng: number; p: PublicMapPlace };
 
 const SENEGAL_LATLNG: [[number, number], [number, number]] = [[SENEGAL_BOUNDS.south, SENEGAL_BOUNDS.west], [SENEGAL_BOUNDS.north, SENEGAL_BOUNDS.east]];
 /** Tuiles en échec sans aucune réussie : au-delà, la carte est déclarée indisponible. */
 const TILE_FAILURES_MAX = 4;
 /** Zoom au-delà duquel un groupe ne s'ouvre plus en zoomant (points au même endroit) : la liste du groupe s'affiche. */
 const GROUP_ZOOM_LIMIT = 16;
+/** Délai de frappe des filtres des couches avant la lecture. */
+const FILTER_DEBOUNCE_MS = 400;
 
 function reducedMotion(): boolean {
     return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -47,8 +69,8 @@ function zoneOf(map: LeafletMap): MapZone {
     return { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() };
 }
 
-function inZone(e: PublicMapEvent, z: MapZone | null): boolean {
-    return !z || (e.lat >= z.south && e.lat <= z.north && e.lng >= z.west && e.lng <= z.east);
+function inZone(p: { lat: number; lng: number }, z: MapZone | null): boolean {
+    return !z || (p.lat >= z.south && p.lat <= z.north && p.lng >= z.west && p.lng <= z.east);
 }
 
 /**
@@ -71,6 +93,52 @@ function markerAlt(e: PublicMapEvent): string {
     return [e.highlight === 'A_LA_UNE' ? `À la une : ${e.title}` : e.title, mapEventWhen(e), price].filter(Boolean).join(', ');
 }
 
+function plural(n: number, one: string, many: string): string {
+    return `${n} ${n > 1 ? many : one}`;
+}
+
+/** Nom d'un regroupement : « 3 événements », « 2 salles », « 4 lieux », « 5 événements et lieux ». */
+function groupLabel(items: Item[]): string {
+    const layers = new Set(items.map((i) => i.layer));
+    if (layers.size === 1 && layers.has('evenements')) return clusterLabel(items.length);
+    if (layers.size === 1 && layers.has('salles')) return plural(items.length, 'salle', 'salles');
+    if (layers.size === 1 && layers.has('restaurants')) return plural(items.length, 'restaurant', 'restaurants');
+    if (!layers.has('evenements')) return plural(items.length, 'lieu', 'lieux');
+    return `${items.length} événements et lieux`;
+}
+
+/** Texte du nombre dans la zone : « 3 événements, 2 salles dans cette zone ». */
+function zoneCountText(counts: Record<MapLayer, number>, active: ReadonlySet<MapLayer>): string {
+    const parts: string[] = [];
+    if (active.has('evenements')) parts.push(plural(counts.evenements, 'événement', 'événements'));
+    if (active.has('salles')) parts.push(plural(counts.salles, 'salle', 'salles'));
+    if (active.has('restaurants')) parts.push(plural(counts.restaurants, 'restaurant', 'restaurants'));
+    const total = counts.evenements + counts.salles + counts.restaurants;
+    if (parts.length === 0) return 'Choisissez ce que la carte affiche';
+    if (total === 0) return active.size === 1 && active.has('evenements') ? 'Aucun événement dans cette zone' : 'Rien à afficher dans cette zone';
+    return `${parts.join(', ')} dans cette zone`;
+}
+
+function useDebounced<T>(value: T, ms: number): T {
+    const [out, setOut] = useState(value);
+    useEffect(() => {
+        const t = window.setTimeout(() => setOut(value), ms);
+        return () => window.clearTimeout(t);
+    }, [value, ms]);
+    return out;
+}
+
+/** Illustration de l'état vide : repère au centre d'une zone en pointillé (décorative). */
+function EmptyIllustration() {
+    return (
+        <svg aria-hidden="true" viewBox="0 0 120 80" className="h-16 w-24 text-primary-text">
+            <circle cx="60" cy="44" r="30" className="fill-brand-vif/10" stroke="currentColor" strokeWidth="2" strokeDasharray="5 5" />
+            <path d="M60 22c-7 0-12 5-12 12 0 9 12 20 12 20s12-11 12-20c0-7-5-12-12-12z" className="fill-card" stroke="currentColor" strokeWidth="2.5" />
+            <circle cx="60" cy="34" r="4" fill="currentColor" />
+        </svg>
+    );
+}
+
 export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0 }: {
     /** Filtres de l'Explorer déjà écrits en adresse par la page (catalogSearchParams). */
     filtersQuery: string;
@@ -91,6 +159,32 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     const descId = useId();
     const placeId = useId();
 
+    // Couches proposées : Événements toujours ; Salles et Restaurants si leur service est ouvert
+    const flags = useFeatureFlags();
+    const available = useMemo<MapLayer[]>(() => ['evenements', ...(flags?.halls ? ['salles' as const] : []), ...(flags?.tables ? ['restaurants' as const] : [])], [flags]);
+    /** Couches choisies par la personne (adresse ou boutons) ; null : toutes les couches proposées. */
+    const [chosen, setChosen] = useState<Set<MapLayer> | null>(() => (
+        typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('couches') ? readLayersParam(['evenements', 'salles', 'restaurants']) : null
+    ));
+    const active = useMemo(() => new Set<MapLayer>(available.filter((l) => (chosen ? chosen.has(l) : true))), [available, chosen]);
+    const toggleLayer = (layer: MapLayer) => {
+        const next = new Set(active);
+        if (next.has(layer)) next.delete(layer); else next.add(layer);
+        setChosen(next);
+        writeLayersParam(next);
+    };
+    // Un filtre d'Explorer change l'adresse sans `couches=` : la carte reste montée et remet les couches choisies (ce code
+    // vit dans ce module chargé à la demande : les couches ne pèsent rien au premier chargement d'Explorer)
+    useEffect(() => {
+        if (chosen && !new URLSearchParams(window.location.search).has('couches')) writeLayersParam(chosen);
+    }, [filtersQuery, chosen]);
+
+    const [hallFilters, setHallFilters] = useState<HallLayerFilters>(EMPTY_HALL_FILTERS);
+    const [venueFilters, setVenueFilters] = useState<VenueLayerFilters>(EMPTY_VENUE_FILTERS);
+    /** Filtres des couches remplis (nombre affiché sur le bouton « Filtrer »). */
+    const activeFilters = [hallFilters.date, hallFilters.guests, venueFilters.date, venueFilters.time, venueFilters.guests].filter(Boolean).length;
+    const layerFilters = useDebounced(useMemo(() => ({ halls: hallFilters, venues: venueFilters }), [hallFilters, venueFilters]), FILTER_DEBOUNCE_MS);
+
     const [ready, setReady] = useState(false);
     const [zoom, setZoom] = useState(0);
     const [visibleZone, setVisibleZone] = useState<MapZone | null>(null);
@@ -98,12 +192,14 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     const [searchZone, setSearchZone] = useState<MapZone | null>(null);
     const [moved, setMoved] = useState(false);
     const [events, setEvents] = useState<PublicMapEvent[]>([]);
+    const [halls, setHalls] = useState<PublicMapPlace[]>([]);
+    const [venues, setVenues] = useState<PublicMapPlace[]>([]);
     const [truncated, setTruncated] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [hoverId, setHoverId] = useState<string | null>(null);
-    const [groupIds, setGroupIds] = useState<string[] | null>(null);
+    const [selectedKey, setSelectedKey] = useState<string | null>(null);
+    const [hoverKey, setHoverKey] = useState<string | null>(null);
+    const [groupKeys, setGroupKeys] = useState<string[] | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [place, setPlace] = useState('');
     const seq = useRef(0);
@@ -152,7 +248,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
             map.on('zoomend moveend', sync);
             // Déplacement voulu par la personne (glisser, zoom, clavier) : « Rechercher dans cette zone » proposé
             map.on('dragend zoomend', () => setMoved(true));
-            map.on('click', () => { setSelectedId(null); setGroupIds(null); });
+            map.on('click', () => { setSelectedKey(null); setGroupKeys(null); });
             mapRef.current = map;
             sync();
             setMoved(false);
@@ -177,24 +273,52 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
         setTilesTheme(tilesRef.current, theme);
     }, [theme]);
 
-    // 2. Lecture : filtres partagés, zone de la dernière recherche (tout le Sénégal au départ)
-    const url = useMemo(() => mapUrl(filtersQuery, { zone: searchZone }), [filtersQuery, searchZone]);
+    // 2. Lecture : filtres partagés des événements, filtres des couches, zone de la dernière recherche (tout le Sénégal
+    // au départ) ; une couche masquée n'est pas lue
+    const wantEvents = active.has('evenements');
+    const wantHalls = active.has('salles');
+    const wantVenues = active.has('restaurants');
+    const eventsUrl = useMemo(() => mapUrl(filtersQuery, { zone: searchZone }), [filtersQuery, searchZone]);
+    const hallsUrl = useMemo(() => placesUrl('salles', searchZone, layerFilters), [searchZone, layerFilters]);
+    const venuesUrl = useMemo(() => placesUrl('restaurants', searchZone, layerFilters), [searchZone, layerFilters]);
     const load = useCallback(async () => {
         const n = ++seq.current;
         setLoading(true);
-        const r = await readMapEvents('carte', url);
+        const [ev, ha, ve] = await Promise.all([
+            wantEvents ? readMapEvents('carte', eventsUrl) : Promise.resolve(null),
+            wantHalls ? readPlaces(hallsUrl) : Promise.resolve(null),
+            wantVenues ? readPlaces(venuesUrl) : Promise.resolve(null),
+        ]);
         if (n !== seq.current) return;
         setLoading(false);
-        if (!r.ok) {
-            setError(r.message);
-            return;
-        }
-        setError(null);
-        setEvents(r.data.events);
-        setTruncated(r.data.truncated);
-        setSelectedId((id) => (id && r.data.events.some((e) => e.id === id) ? id : null));
-    }, [url]);
+        const failed = [ev, ha, ve].find((r) => r && !r.ok);
+        setError(failed && !failed.ok ? failed.message : null);
+        const nextEvents = ev && ev.ok ? ev.data.events : ev ? events : [];
+        const nextHalls = ha && ha.ok ? ha.data.places : ha ? halls : [];
+        const nextVenues = ve && ve.ok ? ve.data.places : ve ? venues : [];
+        setEvents(nextEvents);
+        setHalls(nextHalls);
+        setVenues(nextVenues);
+        setTruncated(Boolean((ev && ev.ok && ev.data.truncated) || (ha && ha.ok && ha.data.truncated) || (ve && ve.ok && ve.data.truncated)));
+        const keys = new Set([...nextEvents.map((e) => `e:${e.id}`), ...nextHalls.map((p) => `p:${p.id}`), ...nextVenues.map((p) => `p:${p.id}`)]);
+        setSelectedKey((k) => (k && keys.has(k) ? k : null));
+        setGroupKeys((g) => (g ? g.filter((k) => keys.has(k)) : g));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- les listes précédentes ne servent qu'en cas d'échec
+    }, [eventsUrl, hallsUrl, venuesUrl, wantEvents, wantHalls, wantVenues]);
     useEffect(() => { void load(); }, [load, refreshKey]);
+
+    // Retour sur l'onglet : relecture (un lieu suspendu entre-temps disparaît)
+    useEffect(() => {
+        const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, [load]);
+
+    const items = useMemo<Item[]>(() => [
+        ...(wantEvents ? events.map((e): Item => ({ id: `e:${e.id}`, kind: 'event', layer: 'evenements', lat: e.lat, lng: e.lng, e })) : []),
+        ...(wantHalls ? halls.map((p): Item => ({ id: `p:${p.id}`, kind: 'place', layer: 'salles', lat: p.lat, lng: p.lng, p })) : []),
+        ...(wantVenues ? venues.map((p): Item => ({ id: `p:${p.id}`, kind: 'place', layer: 'restaurants', lat: p.lat, lng: p.lng, p })) : []),
+    ], [events, halls, venues, wantEvents, wantHalls, wantVenues]);
 
     const searchHere = () => {
         const map = mapRef.current;
@@ -219,6 +343,24 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
             return;
         }
         goTo(p.lat, p.lng, p.zoom);
+    };
+
+    // « Élargir la zone » : deux crans de zoom en arrière, puis lecture de la nouvelle zone (tout le Sénégal au plus loin)
+    const widen = () => {
+        const map = mapRef.current;
+        if (!map) return;
+        setPlace('');
+        if (map.getZoom() <= 8 || searchZone === null) {
+            map.fitBounds(SENEGAL_LATLNG, { animate: !reducedMotion() });
+            setSearchZone(null);
+            setMoved(false);
+            return;
+        }
+        map.once('zoomend', () => {
+            setSearchZone(zoneOf(map));
+            setMoved(false);
+        });
+        map.setZoom(map.getZoom() - 2, { animate: !reducedMotion() });
     };
 
     // « Autour de moi » : la position sert seulement à centrer la carte (jamais envoyée ni enregistrée)
@@ -256,27 +398,26 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
         if (!L || !map || !layer || !ready) return;
         layer.clearLayers();
         const z = map.getZoom();
-        const points = events.map((e) => {
-            const p = map.project([e.lat, e.lng], z);
-            return { item: e, x: p.x, y: p.y };
+        const anchor = (html: string) => L.divIcon({ className: 'ev-repere-ancre', html: `<span style="position:absolute;left:0;top:0;transform:translate(-50%,-100%)">${html}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] });
+        const points = items.map((it) => {
+            const p = map.project([it.lat, it.lng], z);
+            return { item: it, x: p.x, y: p.y };
         });
         for (const c of clusterPoints(points, (e) => e.id)) {
             const at = map.unproject([c.x, c.y], z);
             if (c.items.length > 1) {
-                const label = clusterLabel(c.items.length);
-                const marker = L.marker(at, {
-                    icon: L.divIcon({ className: 'ev-repere-ancre', html: `<span style="position:absolute;left:0;top:0;transform:translate(-50%,-100%)">${mapMarkerHtml('pile', String(c.items.length))}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] }),
-                    keyboard: true,
-                    title: `${label} : agrandir`,
-                    alt: `${label} : agrandir`,
-                    riseOnHover: true,
-                });
+                const label = groupLabel(c.items);
+                // Élément choisi ou survolé (liste de l'ordinateur) caché dans ce regroupement : le regroupement s'allume
+                // (run 658 : survol d'un lieu regroupé sans aucun repère mis en avant)
+                const hot = c.items.some((x) => x.id === selectedKey || x.id === hoverKey);
+                const pile = mapMarkerHtml('pile', String(c.items.length));
+                const marker = L.marker(at, { icon: anchor(hot ? pile.replace('ev-repere--pile', 'ev-repere--pile ev-repere--choisi') : pile), keyboard: true, title: `${label} : agrandir`, alt: `${label} : agrandir`, zIndexOffset: hot ? 1000 : 0, riseOnHover: true });
                 const openGroup = () => {
-                    const bounds = L.latLngBounds(c.items.map((e) => [e.lat, e.lng] as [number, number]));
+                    const bounds = L.latLngBounds(c.items.map((it) => [it.lat, it.lng] as [number, number]));
                     const samePlace = bounds.getNorthEast().equals(bounds.getSouthWest(), 1e-5);
                     if (samePlace || map.getZoom() >= GROUP_ZOOM_LIMIT) {
-                        setGroupIds(c.items.map((e) => e.id));
-                        setSelectedId(null);
+                        setGroupKeys(c.items.map((x) => x.id));
+                        setSelectedKey(null);
                         return;
                     }
                     map.fitBounds(bounds.pad(0.3), { animate: !reducedMotion(), maxZoom: GROUP_ZOOM_LIMIT });
@@ -284,60 +425,114 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                 marker.on('click', openGroup);
                 marker.on('keypress', (ev: import('leaflet').LeafletKeyboardEvent) => { if (activates(ev.originalEvent)) { ev.originalEvent.preventDefault(); openGroup(); } });
                 layer.addLayer(marker);
-                // Bouton (role posé par Leaflet) : sans nom donné, il s'appellerait par son texte visible (« 8 ») ; le titre
-                // n'est qu'une info-bulle. Nom complet pour les lecteurs d'écran.
+                // Bouton (role posé par Leaflet) : nom complet pour les lecteurs d'écran (sinon « 8 »)
                 marker.getElement()?.setAttribute('aria-label', `${label} : agrandir`);
                 continue;
             }
-            const e = c.items[0];
-            const chosen = e.id === selectedId || e.id === hoverId;
-            const kind: MarkerKind = chosen ? 'choisi' : e.highlight === 'A_LA_UNE' ? 'une' : 'prix';
-            const marker = L.marker([e.lat, e.lng], {
-                icon: L.divIcon({ className: 'ev-repere-ancre', html: `<span style="position:absolute;left:0;top:0;transform:translate(-50%,-100%)">${mapMarkerHtml(kind, markerText(e))}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] }),
-                keyboard: true,
-                title: markerAlt(e),
-                alt: markerAlt(e),
-                zIndexOffset: chosen ? 1000 : e.highlight ? 500 : 0,
-                riseOnHover: true,
-            });
+            const it = c.items[0];
+            const chosen = it.id === selectedKey || it.id === hoverKey;
             const choose = () => {
-                setGroupIds(null);
-                setSelectedId(e.id);
+                setGroupKeys(null);
+                setSelectedKey(it.id);
             };
-            marker.on('click', choose);
-            marker.on('keypress', (ev: import('leaflet').LeafletKeyboardEvent) => { if (activates(ev.originalEvent)) { ev.originalEvent.preventDefault(); choose(); } });
-            layer.addLayer(marker);
-            // Nom du bouton : titre, date, prix (sinon le lecteur d'écran ne lisait que le prix visible, « Dès 5 000 F »)
-            marker.getElement()?.setAttribute('aria-label', markerAlt(e));
+            if (it.kind === 'event') {
+                const e = it.e;
+                const kind: MarkerKind = chosen ? 'choisi' : e.highlight === 'A_LA_UNE' ? 'une' : 'prix';
+                const marker = L.marker([e.lat, e.lng], { icon: anchor(mapMarkerHtml(kind, markerText(e))), keyboard: true, title: markerAlt(e), alt: markerAlt(e), zIndexOffset: chosen ? 1000 : e.highlight ? 500 : 0, riseOnHover: true });
+                marker.on('click', choose);
+                marker.on('keypress', (ev: import('leaflet').LeafletKeyboardEvent) => { if (activates(ev.originalEvent)) { ev.originalEvent.preventDefault(); choose(); } });
+                layer.addLayer(marker);
+                // Nom du bouton : titre, date, prix (sinon le lecteur d'écran ne lisait que le prix visible, « Dès 5 000 F »)
+                marker.getElement()?.setAttribute('aria-label', markerAlt(e));
+                continue;
+            }
+            // Lieu : repère de sa forme (bâtiment, couverts), même clavier que les événements
+            const name = placeAccessibleName(it.p);
+            const placeMarker = L.marker([it.lat, it.lng], { icon: anchor(placeMarkerHtml(it.p, chosen)), keyboard: true, title: name, alt: name, zIndexOffset: chosen ? 1000 : 0, riseOnHover: true });
+            placeMarker.on('click', choose);
+            placeMarker.on('keypress', (ev: import('leaflet').LeafletKeyboardEvent) => { if (activates(ev.originalEvent)) { ev.originalEvent.preventDefault(); choose(); } });
+            layer.addLayer(placeMarker);
+            placeMarker.getElement()?.setAttribute('aria-label', name);
         }
-    }, [events, zoom, selectedId, hoverId, ready]);
+    }, [items, zoom, selectedKey, hoverKey, ready]);
 
     // Vignette choisie gardée visible dans la liste de l'ordinateur
     useEffect(() => {
-        if (!selectedId) return;
-        document.getElementById(`carte-vignette-${selectedId}`)?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
-    }, [selectedId]);
+        if (!selectedKey) return;
+        document.getElementById(`carte-vignette-${selectedKey.replace(':', '-')}`)?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+    }, [selectedKey]);
 
-    const visible = useMemo(() => events.filter((e) => inZone(e, visibleZone)), [events, visibleZone]);
-    const selected = selectedId ? events.find((e) => e.id === selectedId) ?? null : null;
-    const group = groupIds ? events.filter((e) => groupIds.includes(e.id)) : null;
-    const countText = loading ? 'Chargement…' : visible.length === 0 ? 'Aucun événement dans cette zone' : visible.length === 1 ? '1 événement dans cette zone' : `${visible.length} événements dans cette zone`;
+    const visible = useMemo(() => items.filter((it) => inZone(it, visibleZone)), [items, visibleZone]);
+    const counts = useMemo(() => ({
+        evenements: visible.filter((i) => i.layer === 'evenements').length,
+        salles: visible.filter((i) => i.layer === 'salles').length,
+        restaurants: visible.filter((i) => i.layer === 'restaurants').length,
+    }), [visible]);
+    const selected = selectedKey ? items.find((it) => it.id === selectedKey) ?? null : null;
+    const group = groupKeys ? items.filter((it) => groupKeys.includes(it.id)) : null;
+    const countText = loading ? 'Chargement…' : zoneCountText(counts, active);
+    const showLayers = available.length > 1;
+    const empty = ready && !loading && !error && active.size > 0 && visible.length === 0;
+    /** Survol d'une vignette de la liste : repère mis en évidence (événement, puis lieu). */
+    const setHoverId = (id: string | null) => setHoverKey(id ? `e:${id}` : null);
+    const setHoverPlace = (id: string | null) => setHoverKey(id ? `p:${id}` : null);
+
+    const card = (it: Item, opts: { action?: string; list?: boolean } = {}) => (
+        it.kind === 'event'
+            ? (opts.list
+                ? <MapEventCard event={it.e} highlighted={it.id === selectedKey || it.id === hoverKey} onHover={setHoverId} />
+                : <MapEventCard event={it.e} action={opts.action} />)
+            : <MapPlaceCard place={it.p} highlighted={opts.list && (it.id === selectedKey || it.id === hoverKey)} onHover={opts.list ? setHoverPlace : undefined} action={opts.action} />
+    );
+
+    const sections: Array<{ layer: MapLayer; title: string; list: Item[] }> = [
+        { layer: 'evenements', title: 'Événements', list: visible.filter((i) => i.layer === 'evenements') },
+        { layer: 'salles', title: 'Salles', list: visible.filter((i) => i.layer === 'salles') },
+        { layer: 'restaurants', title: 'Restaurants', list: visible.filter((i) => i.layer === 'restaurants') },
+    ].filter((s) => active.has(s.layer as MapLayer) && s.list.length > 0) as Array<{ layer: MapLayer; title: string; list: Item[] }>;
 
     return (
         <div className="lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:gap-5">
             {/* Ordinateur : liste synchronisée avec la zone visible */}
             <section aria-labelledby="carte-liste-titre" className="hidden min-h-0 lg:flex lg:flex-col">
                 <h2 id="carte-liste-titre" className="text-base font-semibold text-foreground-strong tabular-nums" aria-live="polite">{countText}</h2>
-                <ul className="mt-3 max-h-[70vh] min-h-[20rem] space-y-2 overflow-y-auto pr-1">
-                    {visible.map((e) => (
-                        <li key={e.id} id={`carte-vignette-${e.id}`}>
-                            <MapEventCard event={e} highlighted={e.id === selectedId || e.id === hoverId} onHover={setHoverId} />
-                        </li>
+                <div className="mt-3 max-h-[70vh] min-h-[20rem] space-y-4 overflow-y-auto pr-1">
+                    {sections.map((s) => (
+                        <div key={s.layer}>
+                            {(sections.length > 1 || s.layer !== 'evenements') && (
+                                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{`${s.title} · ${s.list.length}`}</h3>
+                            )}
+                            <ul className="space-y-2">
+                                {s.list.map((it) => (
+                                    <li key={it.id} id={`carte-vignette-${it.id.replace(':', '-')}`}>{card(it, { list: true })}</li>
+                                ))}
+                            </ul>
+                        </div>
                     ))}
-                </ul>
+                </div>
             </section>
 
             <div className="space-y-3">
+                {showLayers && (
+                    <LayerPills available={available} active={active} counts={loading ? {} : counts} onToggle={toggleLayer} />
+                )}
+                {(wantHalls || wantVenues) && (
+                    // Filtres des couches repliés (bouton natif « Filtrer ») : sur un téléphone, la carte reste à l'écran
+                    <details className="group rounded-xl border border-border bg-card">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 text-sm font-semibold text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                            <SlidersHorizontal size={16} aria-hidden="true" />
+                            <span>{wantHalls && wantVenues ? 'Filtrer les salles et les restaurants' : wantHalls ? 'Filtrer les salles' : 'Filtrer les restaurants'}</span>
+                            {activeFilters > 0 && (
+                                <span className="rounded-full bg-primary-soft px-2 tabular-nums text-primary-text">{activeFilters}</span>
+                            )}
+                            <ChevronDown size={16} aria-hidden="true" className="ml-auto text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180" />
+                        </summary>
+                        <div className="flex flex-col gap-3 border-t border-border p-3 sm:flex-row sm:flex-wrap sm:gap-6">
+                            {wantHalls && <HallFilters value={hallFilters} onChange={setHallFilters} />}
+                            {wantVenues && <VenueFilters value={venueFilters} onChange={setVenueFilters} />}
+                        </div>
+                    </details>
+                )}
                 <div className="flex flex-wrap items-end gap-2">
                     {/* Champ de sélection écrit sur place (mêmes classes que components/ui/Field) : le module partagé des champs
                         n'entre pas dans ce module à la demande (poids du premier chargement d'Explorer) */}
@@ -363,7 +558,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                 {notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
                 {truncated && !loading && (
                     <p role="status" className="text-sm text-muted-foreground">
-                        Beaucoup d’événements ici : rapprochez-vous, puis touchez « Rechercher dans cette zone ».
+                        {showLayers ? 'Beaucoup de résultats ici' : 'Beaucoup d’événements ici'} : rapprochez-vous, puis touchez « Rechercher dans cette zone ».
                     </p>
                 )}
 
@@ -373,7 +568,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     <div
                         ref={containerRef}
                         role="region"
-                        aria-label="Carte des événements"
+                        aria-label={showLayers ? 'Carte des événements et des lieux' : 'Carte des événements'}
                         aria-describedby={descId}
                         className="isolate h-[62vh] min-h-[20rem] w-full overflow-hidden rounded-xl border border-border bg-muted lg:h-[70vh]"
                     />
@@ -398,35 +593,53 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                                         <span>{error}</span>
                                         <Button size="sm" variant="ghost" onClick={() => void load()} leftIcon={<RefreshCw size={16} />}>Réessayer</Button>
                                     </>
-                                ) : 'Chargement des événements…'}
+                                ) : active.size === 1 && wantEvents ? 'Chargement des événements…' : 'Chargement de la carte…'}
                             </div>
                         </div>
                     )}
 
-                    {/* Téléphone : feuille en bas de la carte, événement touché (ou groupe au même endroit) ; au-dessus de la
+                    {empty && !selected && !group && (
+                        // État vide : illustration, phrase, « Élargir la zone » (au-dessus de la mention des fonds)
+                        <div className="pointer-events-none absolute inset-x-0 bottom-12 z-10 flex justify-center px-3">
+                            <div role="status" className="ev-sheet-up pointer-events-auto flex max-w-sm flex-col items-center gap-2 rounded-2xl border border-border bg-popover px-5 py-4 text-center shadow-popover">
+                                <EmptyIllustration />
+                                <p className="text-base font-semibold text-foreground-strong">
+                                    {active.size === 1 && wantEvents ? 'Aucun événement dans cette zone' : 'Rien à afficher dans cette zone'}
+                                </p>
+                                <p className="text-sm text-muted-foreground">Élargissez la zone, ou changez la date et le nombre de personnes.</p>
+                                <Button size="sm" variant="secondary" onClick={widen} leftIcon={<ZoomOut size={16} />} className="min-h-11">
+                                    Élargir la zone
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Téléphone : feuille en bas de la carte, élément touché (ou groupe au même endroit) ; au-dessus de la
                         mention des fonds (deux lignes à 360 px), qui reste visible */}
                     {(selected || group) && (
                         <div
                             role="dialog"
                             aria-modal="false"
-                            aria-label={selected ? selected.title : `${group?.length ?? 0} événements à cet endroit`}
-                            className={cn('absolute inset-x-2 bottom-11 z-10 max-h-[55%] overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-popover', 'ev-sheet-up', !group && 'lg:hidden')}
+                            aria-label={selected ? (selected.kind === 'event' ? selected.e.title : selected.p.name) : group ? groupLabel(group) : ''}
+                            className={cn('absolute inset-x-2 bottom-11 z-10 max-h-[70%] overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-popover', 'ev-sheet-up', !group && 'lg:hidden')}
                         >
                             <div className="mb-2 flex items-center justify-between gap-2">
                                 <p className="text-sm font-semibold text-muted-foreground">
-                                    {group ? `${group.length} événements à cet endroit` : 'Événement choisi'}
+                                    {group ? `${groupLabel(group)} à cet endroit` : selected?.kind === 'event' ? 'Événement choisi' : selected?.layer === 'salles' ? 'Salle choisie' : 'Restaurant choisi'}
                                 </p>
-                                <IconButton aria-label="Fermer" variant="ghost" onClick={() => { setSelectedId(null); setGroupIds(null); }}>
+                                <IconButton aria-label="Fermer" variant="ghost" onClick={() => { setSelectedKey(null); setGroupKeys(null); }}>
                                     <X size={18} />
                                 </IconButton>
                             </div>
-                            <ul className="space-y-2">
-                                {(group ?? (selected ? [selected] : [])).map((e) => (
-                                    <li key={e.id}>
-                                        <MapEventCard event={e} action="Voir l’événement" />
-                                    </li>
-                                ))}
-                            </ul>
+                            {selected && selected.kind === 'place' ? (
+                                <PlaceSheetCard place={selected.p} />
+                            ) : (
+                                <ul className="space-y-2">
+                                    {(group ?? (selected ? [selected] : [])).map((it) => (
+                                        <li key={it.id}>{card(it, { action: it.kind === 'event' ? 'Voir l’événement' : it.layer === 'salles' ? 'Voir la salle' : 'Voir l’établissement' })}</li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                     )}
                 </div>

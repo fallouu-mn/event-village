@@ -3,6 +3,8 @@ import { PublicError } from '@/lib/api/public-error';
 import { assertNoPosterFolder } from '@/lib/images/image-address';
 import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { sendHallRefunds } from './refunds';
+import { invalidatePublicPlaces } from '@/lib/lieux/cache-lieux.server';
+import { PLACE_POSITION_KEPT, PLACE_POSITION_REQUIRED } from '@/lib/places/place-texts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -173,6 +175,9 @@ function hallRules(input: Partial<CreateHallInput>, creating: boolean): Record<s
                 throw new PublicError('Le repère doit être placé au Sénégal : touchez la carte à l’emplacement de la salle.');
             }
         }
+        // Lot Carte B3 (décision du client du 25/11) : position obligatoire, jamais retirée d'une salle existante
+        // (à la création, l'absence est refusée par createHall, après les photos)
+        if (lat === null && !creating) throw new PublicError(PLACE_POSITION_KEPT, 'POSITION_REQUIRED', 400);
         out.latitude = lat === null ? null : Number(lat);
         out.longitude = lng === null ? null : Number(lng);
     }
@@ -218,6 +223,8 @@ export class HallService {
         // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/) ;
         // lot 10b : seulement des photos déposées (réencodées) dans le dossier des salles de la partenaire
         const images = hallPhotos(input.images ?? [], partnerId);
+        // Lot Carte B3 (décision du client du 25/11) : la création est l'envoi en validation ; jamais sans position
+        if (rules.latitude === undefined || rules.latitude === null) throw new PublicError(PLACE_POSITION_REQUIRED, 'POSITION_REQUIRED', 400);
 
         // Lot 10a : statut de validation posé par la base (trg_halls_validation_guard, réglage halls.validation_required)
         const { data: hall, error } = await supabase
@@ -240,6 +247,8 @@ export class HallService {
         if (error || !hall) {
             throw new Error(`Échec création de salle: ${error?.message}`);
         }
+        // Lot Carte B3 : sans validation exigée, la salle est publique dès sa création
+        invalidatePublicPlaces('salle créée');
 
         return hall as unknown as Record<string, any>;
     }
@@ -348,6 +357,8 @@ export class HallService {
         if (error || !updated) {
             throw new Error(`Échec modification salle: ${error?.message}`);
         }
+        // Lot Carte B3 : nom, prix, photos, position, retrait : carte à jour aussitôt
+        invalidatePublicPlaces('salle modifiée');
 
         return updated as unknown as Record<string, any>;
     }
@@ -392,6 +403,7 @@ export class HallService {
         if (error) {
             throw new Error(`Échec suppression salle: ${error.message}`);
         }
+        invalidatePublicPlaces('salle supprimée');
 
         return { success: true };
     }
@@ -407,9 +419,10 @@ export class HallService {
         const r = (data ?? {}) as Record<string, unknown>;
         if (r.ok !== true) {
             const code = String(r.code ?? 'REFUSED');
-            const status = code === 'HALL_NOT_FOUND' ? 404 : code === 'ACCOUNT_NOT_ACTIVE' || code === 'PARTNER_NOT_VALIDATED' ? 403 : code === 'HALL_INCOMPLETE' ? 400 : 409;
+            const status = code === 'HALL_NOT_FOUND' ? 404 : code === 'ACCOUNT_NOT_ACTIVE' || code === 'PARTNER_NOT_VALIDATED' ? 403 : code === 'HALL_INCOMPLETE' || code === 'POSITION_REQUIRED' ? 400 : 409;
             return { status, body: { success: false, error: r.message ?? 'Envoi impossible.', code } };
         }
+        invalidatePublicPlaces('salle renvoyée en validation');
         return { status: 200, body: { success: true, hall: { id: hallId, status: r.validation_status } } };
     }
 

@@ -219,7 +219,7 @@ async function candidate(label: string): Promise<Candidate> {
 
 async function register(c: Candidate): Promise<Reply> {
     const reg = await registerPartnerTwoStep({
-        companyName: c.company,
+        companyName: c.company, commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
         description: 'Organisateur fictif de la suite ecritures-ignorees.',
         address: '5 rue du Lot 9',
         city: 'Dakar',

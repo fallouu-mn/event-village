@@ -372,7 +372,7 @@ test('acte 2 [partenaire] [admin] : inscription avec pièces, validation, E1 et 
 
     await test.step('inscription du partenaire : formulaire, 2 pièces, code SMS', async () => {
         await partner.goto('/partner/register');
-        await partner.locator('#partenaire-raison-sociale').fill(r.p1.company);
+        await partner.locator('#partenaire-raison-sociale').fill(r.p1.company); await partner.locator('#partenaire-enseigne').fill(`${r.p1.company} (enseigne)`); // carte B3 : nom commercial obligatoire
         await partner.locator('#partenaire-description').fill('Organisateur de la recette de la billetterie. Données fictives.');
         await partner.locator('#partenaire-adresse').fill('12, route de la Corniche, Ngor');
         await partner.locator('#partenaire-ville').fill('Dakar');
@@ -1146,7 +1146,7 @@ test('acte 8 [admin] : supervision et relance d’une notification, remboursemen
         expect(String(data.status), 'E1 suspendu').toBe('SUSPENDU');
         const visitor = known('visiteur');
         await visitor.goto(`/events/${r.e1.id}`);
-        await expect(visitor.getByText(/suspendu/i).first(), 'bandeau de la page publique').toBeVisible();
+        await expect(visitor.getByText(/n’est plus disponible/i).first(), 'page neutre (carte B3, décision du client du 25/11)').toBeVisible();
         await expect(visitor.getByRole('button', { name: /ajouter un billet/i }), 'plus aucune vente').toHaveCount(0);
     });
 

@@ -3,8 +3,9 @@
  * jeton de chacun (clé anon + jeton de session), jamais la clé de service.
  *  - réservations : le client voit les siennes ; la salle celles de ses salles ; un autre client, une autre salle,
  *    un visiteur et un administrateur sans le code administrateur ne voient rien ; un administrateur avec le code voit ;
- *  - salles : un visiteur ne voit que les salles actives, validées, d'une partenaire validée ; la propriétaire voit les
- *    siennes en attente ;
+ *  - salles : plus aucune lecture REST, pour personne (contre-vérification de la carte B3, T1 : docs/audit-carte-b3.md ;
+ *    modification signalée au rapport du lot Carte B3) ; avant : un visiteur voyait les salles validées, la propriétaire
+ *    les siennes en attente ;
  *  - aucune écriture REST (insertion, mise à jour) sur halls ni hall_reservations.
  */
 import '../helpers/env';
@@ -92,13 +93,15 @@ describe('R30 — réservations de salle : chacun ne lit que ce qui le regarde',
     });
 });
 
-describe('R30 — salles : visibles du public seulement validées', () => {
-    test('un visiteur et un client ne voient que la salle validée', async () => {
-        assert.deepEqual(await visibleHalls(null, [validated, pending, refused]), [validated]);
-        assert.deepEqual(await visibleHalls(alice.accessToken, [validated, pending, refused]), [validated]);
+// Contre-vérification de la carte B3 (T1, modification signalée au rapport du lot Carte B3) : la REST de halls est fermée
+// aux rôles publics (validated_by, partner_id y étaient lisibles) ; les écrans passent par les routes du serveur.
+describe('R30 — salles : plus aucune lecture REST (contre-vérification de la carte B3, T1)', () => {
+    test('un visiteur et un client ne voient aucune salle, même validée', async () => {
+        assert.deepEqual(await visibleHalls(null, [validated, pending, refused]), []);
+        assert.deepEqual(await visibleHalls(alice.accessToken, [validated, pending, refused]), []);
     });
-    test('la propriétaire voit aussi ses salles en attente ou refusées', async () => {
-        assert.deepEqual(await visibleHalls(owner.accessToken, [validated, pending, refused]), [validated, pending, refused].sort());
+    test('la propriétaire ne voit aucune de ses salles par la REST (les routes du serveur les lui donnent)', async () => {
+        assert.deepEqual(await visibleHalls(owner.accessToken, [validated, pending, refused]), []);
     });
 });
 

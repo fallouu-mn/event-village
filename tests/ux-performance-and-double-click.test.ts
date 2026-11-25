@@ -123,7 +123,8 @@ test('2. PROTECTION ANTI-DOUBLE CLIC CONCURRENT : 2 clics simultanés sur une r�
     if (!partner?.id) throw new Error('Création partenaire échouée');
 
     const { data: hall } = await adminClient.from('halls').insert({
-        partner_id: partner.id, name: 'Salle Anti-Double Clic', capacity: 150, price_per_day: 100000, deposit_percentage: 30.0
+        partner_id: partner.id, name: 'Salle Anti-Double Clic', capacity: 150, price_per_day: 100000, deposit_percentage: 30.0,
+        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
     await validateHall(adminClient, hall.id);

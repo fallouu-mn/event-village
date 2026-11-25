@@ -95,7 +95,8 @@ export const EVENT_RULE_CODES = {
 export const POSITION_TEXTS = {
     incomplete: 'La position du lieu est incomplète : touchez la carte pour placer le repère.',
     outOfBounds: 'Le repère doit être placé au Sénégal : touchez la carte à l’emplacement du lieu.',
-    requiredToSubmit: 'Placez le repère du lieu sur la carte (étape Accès).',
+    // Lot Carte B3 (décision du client du 25/11) : phrase simple, la même en base (event_transition)
+    requiredToSubmit: 'Placez votre lieu sur la carte avant d’envoyer.',
     requiredAfterValidation: 'Le repère du lieu ne peut plus être retiré après la validation : déplacez-le si le lieu change.',
 } as const;
 

@@ -31,7 +31,12 @@ export interface VenueSpec {
     hours?: Array<{ weekday: number; opens_at: string; closes_at: string }>;
     validate?: boolean;
     is_active?: boolean;
+    /** Lot Carte B3 (position obligatoire pour valider) : Dakar par défaut ; null = sans position. */
+    position?: { latitude: number; longitude: number } | null;
 }
+
+/** Position par défaut des établissements de test (Dakar, Corniche Ouest). */
+export const TEST_VENUE_POSITION = { latitude: 14.6937, longitude: -17.4720 } as const;
 
 export const ALWAYS_OPEN = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, opens_at: '00:00', closes_at: '24:00' }));
 
@@ -47,6 +52,8 @@ export async function newVenue(partner: TestPartner, spec: VenueSpec = {}): Prom
         confirmation_mode: spec.confirmation_mode ?? 'AUTO',
         slot_minutes: spec.slot_minutes ?? null,
         is_active: spec.is_active ?? true,
+        latitude: spec.position === null ? null : (spec.position ?? TEST_VENUE_POSITION).latitude,
+        longitude: spec.position === null ? null : (spec.position ?? TEST_VENUE_POSITION).longitude,
     }).select('id').single();
     assert.equal(error, null, `établissement : ${error?.message}`);
     const venueId = String(data!.id);
