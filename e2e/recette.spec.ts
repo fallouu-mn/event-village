@@ -1146,7 +1146,7 @@ test('acte 8 [admin] : supervision et relance d’une notification, remboursemen
         expect(String(data.status), 'E1 suspendu').toBe('SUSPENDU');
         const visitor = known('visiteur');
         await visitor.goto(`/events/${r.e1.id}`);
-        await expect(visitor.getByText(/suspendu/i).first(), 'bandeau de la page publique').toBeVisible();
+        await expect(visitor.getByText(/n’est plus disponible/i).first(), 'page neutre (carte B3, décision du client du 25/11)').toBeVisible();
         await expect(visitor.getByRole('button', { name: /ajouter un billet/i }), 'plus aucune vente').toHaveCount(0);
     });
 

@@ -242,3 +242,18 @@ describe('décision du client du 25/11 : position obligatoire, phrase et bandeau
         assert.match(venue, /title=\{MISSING_VENUE_POSITION_TEXT\}/);
     });
 });
+
+describe('décision du client du 25/11 : événement suspendu = page neutre (contrat E du lot 5 changé)', () => {
+    test('fiche de la route : statut et « non achetable » seulement ; page : texte neutre, « Mes billets », métadonnées sans le nom', () => {
+        const route = code('app/api/events/[id]/route.ts');
+        assert.match(route, /event\.status === 'SUSPENDU' \? unavailableEventView\(event\.id\) : event/);
+        const page = code('app/events/[id]/page.tsx');
+        assert.match(page, /if \(read\.event\.status === 'SUSPENDU'\) return \{ title: 'Événement indisponible — Event Village', robots: \{ index: false \} \};/);
+        const neutral = page.slice(page.indexOf("if (event.status === 'SUSPENDU') {"), page.indexOf("if (event.status === 'SUSPENDU') {") + 600);
+        assert.ok(neutral.length > 0, 'page neutre absente');
+        assert.match(neutral, /title=\{UNAVAILABLE_EVENT_TITLE\}/);
+        assert.match(neutral, /href="\/tickets"/);
+        assert.doesNotMatch(neutral, /event\.(title|venue|city|date|time|startsAt)/, 'la page neutre cite l’événement');
+        assert.match(code('components/event-page/EventTicketing.tsx'), /isUnavailableEventBody\(body\)\) \{\s*setGone\(true\);\s*router\.refresh\(\);/);
+    });
+});
