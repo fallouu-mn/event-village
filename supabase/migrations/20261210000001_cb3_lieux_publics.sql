@@ -19,7 +19,8 @@
 --     phrase) ; une salle ou un établissement inséré sans position n'est jamais validé d'office (halls_validation_guard,
 --     venues_validation_guard : il attend en validation) ;
 --  3. validation par l'administration refusée sans position (POSITION_REQUIRED) : hall_validation_decide et
---     venue_validation_decide (VALIDER ; REACTIVER garde ce qui était déjà publié), event_transition (EN_ATTENTE → VALIDE).
+--     venue_validation_decide (VALIDER ; REACTIVER garde ce qui était déjà publié), event_transition (EN_ATTENTE → VALIDE ;
+--     contre-vérification, T3 : VALIDE → PUBLIE aussi, la réactivation SUSPENDU → PUBLIE restant libre).
 --  10. raison sociale jamais publique (contre-vérification, T2 ; décision du client du 25/11) : nom commercial, sinon
 --     « Partenaire Event Village », dans hall_search, venue_search, notif_tickets_scanned et la vue public_partners
 --     (colonne public_name à la place de company_name).
@@ -729,6 +730,11 @@ BEGIN
     IF e.status = 'EN_ATTENTE' AND v_to = 'VALIDE' AND (e.latitude IS NULL OR e.longitude IS NULL) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'POSITION_REQUIRED',
                                   'message', 'L’événement n’a pas de position sur la carte : l’organisatrice doit la placer avant la validation.');
+    END IF;
+    -- Contre-vérification de la carte B3 (T3) : un événement validé sans position (validé avant l'obligation, ou donnée
+    -- reprise) n'est pas publié ; la réactivation SUSPENDU → PUBLIE reste libre (ce qui était publié reste en ligne)
+    IF e.status = 'VALIDE' AND v_to = 'PUBLIE' AND (e.latitude IS NULL OR e.longitude IS NULL) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'POSITION_REQUIRED', 'message', 'Placez votre lieu sur la carte avant de publier.');
     END IF;
     IF v_to = 'PUBLIE' AND public.event_end_at(v_event) <= now() THEN
         RETURN jsonb_build_object('ok', false, 'code', 'EVENT_ENDED', 'message', 'La fin de cet événement est passée : il ne peut plus être publié.');

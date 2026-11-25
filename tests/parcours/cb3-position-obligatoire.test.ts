@@ -212,6 +212,29 @@ describe('C — l’administration ne valide jamais un dossier sans position', (
         await setRow('events', d.eventId, DAKAR);
         assert.equal((await rpcTransition(d.eventId, admin, 'VALIDE')).data?.ok, true);
     });
+
+    // Contre-vérification de la carte B3 (T3) : VALIDE → PUBLIE contrôlé aussi ; la réactivation reste libre
+    test('événement validé sans position : publication refusée (partenaire et administration), acceptée une fois placé ; réactivation libre', async () => {
+        const d = await createDraftEvent(owner, 'cb3-publication', [{ name: 'Standard', price: 0, total: 10 }], { startsInHours: 72 });
+        const admin = await superadminId();
+        assert.equal((await rpcTransition(d.eventId, owner.userId, 'EN_ATTENTE')).data?.ok, true);
+        assert.equal((await rpcTransition(d.eventId, admin, 'VALIDE')).data?.ok, true);
+        await setRow('events', d.eventId, NO_POSITION); // validé avant l'obligation, ou donnée reprise
+        for (const actor of [owner.userId, admin]) {
+            const refused = await rpcTransition(d.eventId, actor, 'PUBLIE');
+            assert.deepEqual([refused.data?.ok, refused.data?.code], [false, 'POSITION_REQUIRED'], JSON.stringify(refused.data));
+            assert.equal(String(refused.data?.message ?? ''), 'Placez votre lieu sur la carte avant de publier.');
+        }
+        assert.equal(await eventStatus(d.eventId), 'VALIDE');
+        await setRow('events', d.eventId, DAKAR);
+        assert.equal((await rpcTransition(d.eventId, owner.userId, 'PUBLIE')).data?.ok, true);
+        // Publié puis sans position (déjà en ligne) : suspension et réactivation acceptées
+        await setRow('events', d.eventId, NO_POSITION);
+        assert.equal((await rpcTransition(d.eventId, admin, 'SUSPENDU', 'contrôle carte B3')).data?.ok, true);
+        const back = await rpcTransition(d.eventId, admin, 'PUBLIE', 'réactivation contrôle carte B3');
+        assert.equal(back.data?.ok, true, `réactivation refusée : ${JSON.stringify(back.data)}`);
+        assert.equal(await eventStatus(d.eventId), 'PUBLIE');
+    });
 });
 
 describe('D — une position ne se retire pas par les routes de la partenaire', () => {
