@@ -200,6 +200,11 @@ export interface TemplateData {
     TABLE_REMINDER: TableReservationData;
     TABLE_CLIENT_COMING: TableReservationData;
     TABLE_REFUND_PAID: TableReservationData & { cashout_id: string; amount: number; operator?: string | null; account_kind?: string | null };
+    // Lot 11c-a : tables d'un événement (event_table_sold_notify, event_table_seats_reminders, notif_event_tables_admin_alert)
+    EVENT_TABLE_CONFIRMED: EventData & { booking_id: string; table_number: number; seats: number; table_type: string; zone?: string | null; payment_id: string; total: number; service_fee: number };
+    EVENT_TABLE_SOLD: EventData & { table_count: number; seat_count: number; total: number; since?: string };
+    EVENT_TABLE_SEATS_REMINDER: EventData & { booking_id: string; table_number: number; seats_left: number };
+    ADMIN_EVENT_TABLES_CHANGED: EventData & { company?: string | null };
     VENUE_VALIDATION_DECIDED: { venue_id: string; venue_name?: string | null; decision: 'VALIDER' | 'REFUSER' | 'SUSPENDRE' | 'REACTIVER' | string; reason?: string | null };
     ADMIN_VENUE_SUBMITTED: { venue_id: string; venue_name: string; kind?: string; city?: string | null; resubmitted?: boolean };
     // Lot 12a : données de order_notif_data (commande), plus les champs propres à chaque avis ; jamais le code de remise
