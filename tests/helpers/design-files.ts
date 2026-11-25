@@ -478,6 +478,10 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/explore/ExploreCalendar.tsx',
     'components/explore/MapEventCard.tsx',
     'components/explore/SenegalMapPreview.tsx',
+    // Lot Carte B3 : couches et vignettes des lieux de la carte, petite carte des fiches des salles et des établissements
+    'components/explore/MapLayers.tsx',
+    'components/explore/MapPlaceCard.tsx',
+    'components/lieux/PlaceMap.tsx',
     'components/events/HomeSenegalMap.tsx',
     // Finition 5 (point 2) : pages d'arrivée des avis (billet, billets d'un événement, retrait) et page « plus disponible »
     'components/ui/UnavailableItem.tsx',

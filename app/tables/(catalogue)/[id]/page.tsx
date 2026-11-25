@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, CalendarOff, Clock, ExternalLink, Hourglass, MapPin, Navigation, ShieldCheck, Timer, Users, Wallet, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { LinkButton } from '@/components/ui/LinkButton';
-import { VenueMap } from '@/components/event-page/VenueMap';
+import { PlaceMap } from '@/components/lieux/PlaceMap';
 import { RetryError } from '@/components/halls/client/RetryError';
 import { BookingPanel } from '@/components/tables/client/BookingPanel';
 import { VenueGallery } from '@/components/tables/client/VenueGallery';
@@ -22,6 +22,9 @@ import { WEEKDAYS, dakarToday, fcfaText } from '@/lib/tables/views';
  * « Établissement introuvable ». Lecture impossible : « Réessayer ». Service fermé : 404 par la garde du groupe.
  */
 export const dynamic = 'force-dynamic';
+
+/** Lot Carte B3 : phrase de la fiche d'un établissement de particulier. */
+const VENUE_ZONE_PROMISE = 'Chez un particulier : l’adresse exacte vous est donnée dès que votre réservation est confirmée.';
 
 const readVenue = cache(async (id: string): Promise<PublicVenue | null | 'error'> => {
     try {
@@ -193,20 +196,24 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
                     </Section>
 
                     {(place || hasPosition) && (
-                        <Section title="Adresse" id="etab-adresse">
+                        <Section title={venue.exact ? 'Adresse' : 'Quartier'} id="etab-adresse">
                             {place && <p className="text-base font-semibold text-foreground-strong">{place}</p>}
+                            {!venue.exact && <p className="text-base text-muted-foreground">{VENUE_ZONE_PROMISE}</p>}
                             {hasPosition && (
                                 <>
-                                    <VenueMap latitude={venue.latitude as number} longitude={venue.longitude as number} venueName={place || venue.name} eventName={venue.name} />
-                                    <LinkButton
-                                        href={`https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
-                                        external
-                                        variant="secondary"
-                                        leftIcon={<Navigation size={18} />}
-                                        rightIcon={<ExternalLink size={16} />}
-                                    >
-                                        Voir l’itinéraire
-                                    </LinkButton>
+                                    <PlaceMap latitude={venue.latitude as number} longitude={venue.longitude as number} name={venue.name} area={venue.city} exact={venue.exact} />
+                                    {/* Lot Carte B3 : itinéraire seulement vers le point exact d'un lieu professionnel */}
+                                    {venue.exact && (
+                                        <LinkButton
+                                            href={`https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
+                                            external
+                                            variant="secondary"
+                                            leftIcon={<Navigation size={18} />}
+                                            rightIcon={<ExternalLink size={16} />}
+                                        >
+                                            Voir l’itinéraire
+                                        </LinkButton>
+                                    )}
                                 </>
                             )}
                         </Section>

@@ -12,11 +12,14 @@
  * Envoi : création POST /api/partner/venues (fiche, photos, horaires, zones, tables en une fois, envoyée en validation) ;
  * modification PATCH /api/partner/venues/[id] (fiche, photos, horaires, réglages ; zones et tables : ZonesTablesManager) ;
  * établissement refusé : « Enregistrer et renvoyer en validation » (PATCH puis POST …/submit).
+ * Lot Carte B3 : question « Qui accueille ? » (chez un particulier, présélectionné à la création, ou lieu professionnel)
+ * près de l'adresse, envoyée en `host_kind` à la création et à la modification et gardée dans le brouillon ; chez un
+ * particulier, l'aide de l'adresse rappelle qu'elle reste cachée jusqu'à une réservation confirmée.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { CalendarCheck, Clock, Hand, History, Save, Send, Store, Wine, Trees } from 'lucide-react';
+import { Building2, CalendarCheck, Clock, Hand, History, House, Lock, Save, Send, Store, Wine, Trees } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -30,6 +33,7 @@ import { useHallDraft } from '@/components/halls/partner/useHallDraft';
 import { formatDateTime } from '@/lib/format';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, canonicalCity, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
 import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
+import { HOST_KINDS, HOST_KIND_TEXT, hostKindOf, type HostKind } from '@/lib/lieux/position-publique';
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { HoursEditor, defaultWeek, parseWeek, rowsFromWeek, validateWeek, weekFromRows, type WeekHours } from './HoursEditor';
 import { MAX_PHOTOS, PhotosEditor } from './PhotosEditor';
@@ -49,11 +53,14 @@ const LIMITS = { name: 120, description: 2000, address: 300, city: 120, depositM
 const P = 'etab';
 const MAP_PREFIX = 'etab-carte';
 const KIND_ICON: Record<VenueKind, React.ReactNode> = { RESTAURANT: <Store size={18} />, BAR: <Wine size={18} />, ESPACE: <Trees size={18} /> };
+const HOST_ICON: Record<HostKind, React.ReactNode> = { PARTICULIER: <House size={18} />, PROFESSIONNEL: <Building2 size={18} /> };
 
 interface VenueValues {
     kind: VenueKind;
     name: string;
     description: string;
+    /** Lot Carte B3 : chez un particulier (adresse cachée au public) ou lieu professionnel. */
+    hostKind: HostKind;
     address: string;
     city: string;
     latitude: number | null;
@@ -91,6 +98,8 @@ function initialValues(venue: OwnVenue | null | undefined): VenueValues {
         kind: venue?.kind === 'BAR' || venue?.kind === 'ESPACE' ? venue.kind : 'RESTAURANT',
         name: venue?.name ?? '',
         description: venue?.description ?? '',
+        // Création : particulier (protection par défaut) ; modification : la valeur enregistrée
+        hostKind: hostKindOf(venue?.hostKind),
         address: venue?.address ?? '',
         city: venue?.city ?? '',
         latitude: typeof venue?.latitude === 'number' ? venue.latitude : null,
@@ -136,6 +145,7 @@ function fichePayload(v: VenueValues) {
         kind: v.kind,
         name: v.name.trim(),
         description: v.description.trim() || null,
+        host_kind: v.hostKind,
         address: v.address.trim(),
         city: canonicalCity(v.city),
         latitude: v.latitude,
@@ -188,6 +198,8 @@ function parseDraft(raw: unknown): DraftData | null {
     const coord = (c: unknown, lim: number): number | null | undefined => (c === null ? null : typeof c === 'number' && Number.isFinite(c) && Math.abs(c) <= lim ? c : undefined);
     const kind = v.kind === 'RESTAURANT' || v.kind === 'BAR' || v.kind === 'ESPACE' ? v.kind : null;
     const confirmation = v.confirmation === 'AUTO' || v.confirmation === 'MANUELLE' ? v.confirmation : null;
+    // Brouillon d'avant le lot Carte B3 (sans ce champ) ou valeur illisible : particulier, le choix protecteur
+    const hostKind = hostKindOf(v.hostKind);
     const name = s(v.name, LIMITS.name * 2);
     const description = s(v.description, LIMITS.description * 2);
     const address = s(v.address, LIMITS.address * 2);
@@ -202,7 +214,7 @@ function parseDraft(raw: unknown): DraftData | null {
     if (!kind || !confirmation || name === null || description === null || address === null || city === null || deposit === null || slot === null
         || latitude === undefined || longitude === undefined || !photos || !hours || !zt) return null;
     return {
-        values: { kind, name, description, address, city, latitude, longitude, photos, hours, confirmation, deposit, slot, zones: zt.zones, tables: zt.tables },
+        values: { kind, name, description, hostKind, address, city, latitude, longitude, photos, hours, confirmation, deposit, slot, zones: zt.zones, tables: zt.tables },
         cityOther: r?.cityOther === true,
     };
 }
@@ -497,6 +509,24 @@ export function VenueForm({ mode, venue, defaults, onSaved }: VenueFormProps) {
                 {/* 2. Adresse et position */}
                 <section aria-labelledby={`${P}-s2`} className={SECTION_CARD}>
                     <SectionTitle n={2} id={`${P}-s2`} title="Adresse et position" text="Pour que les clients vous trouvent." />
+                    <fieldset className="flex flex-col gap-3">
+                        <legend className="mb-1 text-sm font-semibold text-foreground-strong">Qui accueille ?</legend>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            {HOST_KINDS.map((k) => (
+                                <RadioCard
+                                    key={k}
+                                    name={`${P}-accueil`}
+                                    id={`${P}-accueil-${k.toLowerCase()}`}
+                                    value={k}
+                                    checked={values.hostKind === k}
+                                    onChange={() => set('hostKind', k)}
+                                    title={HOST_KIND_TEXT[k].label}
+                                    text={HOST_KIND_TEXT[k].hint}
+                                    icon={HOST_ICON[k]}
+                                />
+                            ))}
+                        </div>
+                    </fieldset>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <TextInput
                             id={`${P}-adresse`}
@@ -506,6 +536,12 @@ export function VenueForm({ mode, venue, defaults, onSaved }: VenueFormProps) {
                             value={values.address}
                             onChange={(e) => set('address', e.target.value)}
                             placeholder="Rue, quartier, point de repère"
+                            hint={values.hostKind === 'PARTICULIER' ? (
+                                <span className="inline-flex items-start gap-1.5">
+                                    <Lock size={14} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
+                                    <span>Votre adresse reste cachée : le public voit seulement le quartier. Elle est donnée à la cliente une fois sa réservation confirmée.</span>
+                                </span>
+                            ) : undefined}
                             error={errors.address}
                             autoComplete="street-address"
                             fieldClassName="sm:col-span-2"

@@ -11,7 +11,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PublicError } from '@/lib/api/public-error';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { tableStateIsLive, tableStateView, venueStatusView, VENUE_KIND_VIEW, type Tone } from './views';
-import { POSITION_COLUMNS, publicAddress, publicPosition } from '@/lib/lieux/position-publique';
+import { POSITION_COLUMNS, hostKindOf, publicAddress, publicPosition } from '@/lib/lieux/position-publique';
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -455,7 +455,7 @@ export async function ownVenue(userId: string, venueId: string): Promise<Row | n
     if (!partner) return null;
     const supabase = getServiceRoleClient();
     const { data, error } = await supabase.from('venues')
-        .select('id, kind, name, description, address, city, latitude, longitude, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, is_active, validation_status, validation_reason, submitted_at, created_at, updated_at')
+        .select('id, kind, name, description, host_kind, address, city, latitude, longitude, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, is_active, validation_status, validation_reason, submitted_at, created_at, updated_at')
         .eq('id', venueId).eq('partner_id', partner.id).maybeSingle();
     if (error) throw new Error(`établissement : ${error.message}`);
     if (!data) return null;
@@ -473,6 +473,8 @@ export async function ownVenue(userId: string, venueId: string): Promise<Row | n
     const s = venueStatusView(v.validation_status);
     return {
         id: v.id, kind: v.kind, kindLabel: VENUE_KIND_VIEW[String(v.kind)] ?? 'Établissement', name: v.name, description: v.description,
+        // Lot Carte B3 : chez un particulier ou lieu professionnel (vu de la partenaire et de l'administration)
+        hostKind: hostKindOf(v.host_kind),
         address: v.address, city: v.city, latitude: v.latitude, longitude: v.longitude, photos: strings(v.photos),
         slotMinutes: v.slot_minutes === null ? null : num(v.slot_minutes), depositPerPerson: v.deposit_per_person === null ? null : num(v.deposit_per_person),
         confirmation: v.confirmation_mode, floorPlan: v.floor_plan_enabled === true, isActive: v.is_active === true,
@@ -665,7 +667,7 @@ export async function adminVenue(id: string, opts: { contacts: boolean }): Promi
     if (!UUID_RE.test(id)) return null;
     const supabase = getServiceRoleClient();
     const { data, error } = await supabase.from('venues')
-        .select('id, kind, name, description, address, city, latitude, longitude, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, is_active, validation_status, validation_reason, validated_at, submitted_at, created_at, updated_at, partners!inner(id, company_name, commercial_name, status, phone, email, city)')
+        .select('id, kind, name, description, host_kind, address, city, latitude, longitude, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, is_active, validation_status, validation_reason, validated_at, submitted_at, created_at, updated_at, partners!inner(id, company_name, commercial_name, status, phone, email, city)')
         .eq('id', id).maybeSingle();
     if (error) throw new Error(`lecture de l’établissement : ${error.message}`);
     if (!data) return null;
@@ -683,6 +685,8 @@ export async function adminVenue(id: string, opts: { contacts: boolean }): Promi
     const p = v.partners;
     return {
         id: v.id, kind: v.kind, kindLabel: VENUE_KIND_VIEW[String(v.kind)] ?? 'Établissement', name: v.name, description: v.description,
+        // Lot Carte B3 : chez un particulier ou lieu professionnel (vu de la partenaire et de l'administration)
+        hostKind: hostKindOf(v.host_kind),
         address: v.address, city: v.city, latitude: v.latitude, longitude: v.longitude, photos: strings(v.photos),
         slotMinutes: v.slot_minutes === null ? null : num(v.slot_minutes), depositPerPerson: v.deposit_per_person === null ? null : num(v.deposit_per_person),
         confirmation: v.confirmation_mode, floorPlan: v.floor_plan_enabled === true, isActive: v.is_active === true,

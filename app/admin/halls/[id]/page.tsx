@@ -19,6 +19,7 @@ import dynamic from 'next/dynamic';
 import { loadEventMap } from '@/components/ui/event-map-load';
 import {
   Building2,
+  House,
   CalendarCheck,
   CalendarClock,
   Clock,
@@ -46,6 +47,7 @@ import {
   readError,
   type AdminHallSheet,
 } from '@/components/halls/admin/types';
+import { HOST_KIND_TEXT, hostKindOf } from '@/lib/lieux/position-publique';
 import { formatDateTime, formatFcfa, formatInteger, toDakarDateTimeLocal } from '@/lib/format';
 
 // Carte du lieu, chargée à la demande (Leaflet lit window) ; place réservée fixe, sans animation.
@@ -211,6 +213,8 @@ export default function AdminHallSheetPage() {
   const hasPosition = latitude !== null && longitude !== null;
   const amenities = hall.amenities.filter((a): a is string => typeof a === 'string' && a.trim() !== '');
   const address = [hall.address, hall.city].filter(Boolean).join(', ');
+  // Lot Carte B3 : chez un particulier (adresse cachée au public) ou lieu professionnel
+  const hostKind = hostKindOf(hall.hostKind);
   const isPending = hall.status === DEFAULT_HALL_STATUS;
   const partnerName = hall.partner.name ?? 'Partenaire inconnue';
   const submittedAt = hall.submittedAt ?? null;
@@ -333,6 +337,9 @@ export default function AdminHallSheetPage() {
               <InfoRow icon={<MapPin size={18} />} label="Adresse">
                 {address || 'Non renseignée'}
                 {!hasPosition && <span className="block text-sm font-normal text-muted-foreground">Aucun repère sur la carte.</span>}
+              </InfoRow>
+              <InfoRow icon={hostKind === 'PROFESSIONNEL' ? <Building2 size={18} /> : <House size={18} />} label="Accueil">
+                {HOST_KIND_TEXT[hostKind].label}
               </InfoRow>
             </dl>
             {hasPosition && (

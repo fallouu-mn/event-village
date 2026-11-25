@@ -74,6 +74,11 @@ async function mapEvents(request: APIRequestContext, title: string): Promise<Arr
     return body.events;
 }
 
+// Lot Carte B3 : la carte d'Explorer montre aussi les salles et les restaurants quand leurs services sont ouverts ; ces
+// tests tournent interrupteurs à leur valeur d'origine (groupe « autres » du verrou des services, comme les pages qui ne
+// sont pas des services), jamais pendant les tests des services
+test.beforeEach(async ({ servicesLock }) => { await servicesLock.enter('autres'); });
+
 test.describe('carte B · invalidation', () => {
     test.use({ evRole: 'organisateur' });
 

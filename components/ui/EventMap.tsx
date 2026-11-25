@@ -15,6 +15,11 @@ interface EventMapProps {
      * marque, texte #1A1A1A). Sans lui : épingle classique et bulle du lieu ouverte (fiche admin, pilotage).
      */
     eventName?: string;
+    /**
+     * Lot Carte B3 : lieu d'un particulier : (latitude, longitude) est le centre de sa zone, jamais le vrai point. La carte
+     * dessine le cercle (rayon en mètres, bord en pointillé, classe .ev-zone de app/globals.css), sans repère ni bulle.
+     */
+    zoneRadiusM?: number;
     className?: string;
 }
 
@@ -36,7 +41,7 @@ export function markerName(name: string): string {
  *  - bulle du lieu (run 52) : bouton de fermeture « Fermer la bulle », 44 × 44 px, texte à 14 px et
  *    couleurs des jetons dans les deux thèmes (règles .leaflet-popup-* de app/globals.css).
  */
-export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueName, eventName, className }) => {
+export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueName, eventName, zoneRadiusM, className }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     // Lot Carte B (B1) : fond Stadia du thème (lib/map/tiles.ts), changé sans recréer la carte
     const theme = useMapTheme();
@@ -84,6 +89,17 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
         // « Leaflet ». Lot Carte B : fond et mention de Stadia (addThemedTiles).
         tilesRef.current = addThemedTiles(L, map, themeRef.current);
 
+        // Lot Carte B3 : zone d'un particulier : cercle seul, cadré avec une marge ; aucun repère au centre (il laisserait
+        // croire que le lieu est là)
+        if (zoneRadiusM) {
+            const circle = L.circle([latitude, longitude], { radius: zoneRadiusM, className: 'ev-zone', interactive: false }).addTo(map);
+            map.fitBounds(circle.getBounds(), { padding: [16, 16], animate: false });
+            return () => {
+                tilesRef.current = null;
+                map.remove();
+            };
+        }
+
         const alt = eventName
             ? `${eventName}${venueName ? `, ${venueName}` : ''}`
             : venueName ? `Emplacement : ${venueName}` : 'Emplacement du lieu';
@@ -107,7 +123,7 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
             tilesRef.current = null;
             map.remove();
         };
-    }, [latitude, longitude, venueName, eventName]);
+    }, [latitude, longitude, venueName, eventName, zoneRadiusM]);
 
     useEffect(() => {
         setTilesTheme(tilesRef.current, theme);

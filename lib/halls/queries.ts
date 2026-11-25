@@ -12,7 +12,7 @@ import { PublicError } from '@/lib/api/public-error';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { cancellationText, type CancellationTerms } from './booking';
 import { bookingIsLive, bookingView, hallStatusView } from './views';
-import { POSITION_COLUMNS, publicAddress, publicPosition } from '@/lib/lieux/position-publique';
+import { POSITION_COLUMNS, hostKindOf, publicAddress, publicPosition } from '@/lib/lieux/position-publique';
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -593,7 +593,7 @@ export async function adminHall(id: string, opts: { contacts: boolean }): Promis
     if (!UUID_RE.test(id)) return null;
     const supabase = getServiceRoleClient();
     const { data, error } = await supabase.from('halls')
-        .select('id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, validated_at, submitted_at, created_at, updated_at, partners!inner(id, company_name, commercial_name, status, phone, email, city)')
+        .select('id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, cancellation_policy, host_kind, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, validated_at, submitted_at, created_at, updated_at, partners!inner(id, company_name, commercial_name, status, phone, email, city)')
         .eq('id', id).maybeSingle();
     if (error) throw new Error(`lecture de la salle : ${error.message}`);
     if (!data) return null;
@@ -615,6 +615,8 @@ export async function adminHall(id: string, opts: { contacts: boolean }): Promis
         pricePerHour: h.price_per_hour === null ? null : num(h.price_per_hour),
         depositMode: h.deposit_mode, depositValue: h.deposit_value === null ? null : num(h.deposit_value),
         cancellation: cancellationText(terms as unknown as CancellationTerms),
+        // Lot Carte B3 : chez un particulier ou lieu professionnel (l'administration le voit toujours)
+        hostKind: hostKindOf(h.host_kind),
         latitude: h.latitude, longitude: h.longitude, address: h.address, city: h.city,
         amenities: Array.isArray(h.amenities) ? h.amenities : [], photos: strings(h.images),
         isActive: h.is_active === true,

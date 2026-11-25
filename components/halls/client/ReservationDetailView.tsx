@@ -9,16 +9,19 @@
  *    solde » → PaymentModal (chargée à la demande, `part` ; le serveur relit le montant sur la réservation).
  *  - Annulation seulement si `canCancel` : aperçu d'abord (GET …/cancel : montant rendu calculé en base), puis
  *    confirmation qui montre ce montant AVANT de confirmer, puis POST …/cancel, message de la route et rafraîchissement.
+ * Lot Carte B3 : l'adresse exacte n'est donnée par la route qu'une fois la réservation confirmée (acompte payé ou tout
+ * payé) ; avant, la ville seule et « L’adresse exacte vous sera donnée… » ; avec l'adresse, « Voir l’itinéraire ».
  */
 import React, { useState, useTransition } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlarmClock, CalendarDays, MapPin, ShieldCheck, Undo2, Wallet } from 'lucide-react';
+import { AlarmClock, CalendarDays, ExternalLink, Lock, MapPin, Navigation, ShieldCheck, Undo2, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useToast } from '@/components/ui/Toast';
@@ -70,6 +73,59 @@ function Block({ title, icon, children }: { title: string; icon: React.ReactNode
     );
 }
 
+/** Lien « Voir l’itinéraire » : recherche de l'adresse exacte (adresse et ville) dans Google Maps. */
+function directionsSearchUrl(address: string, city: string | null): string {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([address, city].filter(Boolean).join(', '))}`;
+}
+
+/**
+ * Lot Carte B3 : lieu de la salle vu par le client. Adresse exacte (lisible, avec l'itinéraire) seulement quand la route la
+ * donne (réservation confirmée) ; sinon la ville seule, et pour une réservation encore en cours une phrase qui dit quand
+ * l'adresse sera donnée. Annulée, expirée ou refusée : ni adresse ni phrase.
+ */
+function PlaceAddress({ address, city, pending }: { address: string | null; city: string | null; pending: boolean }) {
+    if (address) {
+        return (
+            <div className="flex items-start gap-2 border-t border-border pt-3">
+                <MapPin size={18} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div className="min-w-0 flex-1 space-y-2">
+                    <p className="break-words text-base font-semibold text-foreground-strong">
+                        {address}
+                        {city && <span className="block text-sm font-normal text-muted-foreground">{city}</span>}
+                    </p>
+                    <LinkButton
+                        href={directionsSearchUrl(address, city)}
+                        external
+                        variant="secondary"
+                        leftIcon={<Navigation size={18} aria-hidden="true" />}
+                        rightIcon={<ExternalLink size={16} aria-hidden="true" />}
+                    >
+                        Voir l’itinéraire
+                        <span className="sr-only"> (nouvel onglet)</span>
+                    </LinkButton>
+                </div>
+            </div>
+        );
+    }
+    if (!city && !pending) return null;
+    return (
+        <div className="space-y-2 border-t border-border pt-3">
+            {city && (
+                <p className="flex items-start gap-2 break-words text-base text-foreground">
+                    <MapPin size={18} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0">{city}</span>
+                </p>
+            )}
+            {pending && (
+                <p className="flex items-start gap-2 rounded-xl bg-primary-soft px-3 py-2.5 text-sm leading-relaxed text-foreground-strong">
+                    <Lock size={16} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
+                    <span className="min-w-0">L’adresse exacte vous sera donnée dès que votre réservation sera confirmée.</span>
+                </p>
+            )}
+        </div>
+    );
+}
+
 export function ReservationDetailView({ reservation: r }: { reservation: ClientReservationDetail }) {
     const router = useRouter();
     const toast = useToast();
@@ -80,10 +136,11 @@ export function ReservationDetailView({ reservation: r }: { reservation: ClientR
     const [cancelling, setCancelling] = useState(false);
 
     const period = capitalize(periodText({ start_date: r.startDate, end_date: r.endDate, start_time: r.startTime, end_time: r.endTime }));
-    const place = [r.hallAddress, r.hallCity].filter(Boolean).join(', ');
     const parts = (r.canPay?.parts ?? []).filter((p): p is Part => p === 'ACOMPTE' || p === 'SOLDE' || p === 'INTEGRAL');
     const amountOf = (p: Part): number | undefined => r.canPay?.amounts?.[p];
     const waiting = r.state === 'EN_ATTENTE_PAIEMENT';
+    // Réservation encore en cours (pas annulée, délai de paiement pas dépassé) : l'adresse viendra à la confirmation
+    const addressPending = r.live && !r.cancelledAt && !(waiting && !r.canPay);
 
     const openCancel = async () => {
         setPreviewLoading(true);
@@ -151,7 +208,6 @@ export function ReservationDetailView({ reservation: r }: { reservation: ClientR
                             </div>
                             <div className="min-w-0 space-y-1">
                                 <p className="break-words text-base font-semibold text-foreground-strong">{r.hallName}</p>
-                                {place && <p className="break-words text-sm text-muted-foreground">{place}</p>}
                                 <Link
                                     href={`/halls/${r.hallId}`}
                                     className="inline-flex min-h-11 items-center text-sm font-semibold text-primary-text underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -160,6 +216,7 @@ export function ReservationDetailView({ reservation: r }: { reservation: ClientR
                                 </Link>
                             </div>
                         </div>
+                        <PlaceAddress address={r.hallAddress} city={r.hallCity} pending={addressPending} />
                         <p className="flex items-start gap-2 border-t border-border pt-3 text-base text-foreground">
                             <CalendarDays size={18} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
                             <span>

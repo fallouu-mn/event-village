@@ -21,11 +21,14 @@
  *    de la route ;
  *  - point 3 : vraies valeurs (hallDefaults, lues par la page serveur) : pourcentage de l'acompte par défaut, durée de
  *    garde d'une date et échéance du solde rappelées dans l'aide de l'acompte.
+ * Lot Carte B3 : question « Qui accueille ? » (chez un particulier, présélectionné à la création, ou lieu professionnel)
+ * près de l'adresse, envoyée en `host_kind` à la création et à la modification et gardée dans le brouillon ; chez un
+ * particulier, l'aide de l'adresse rappelle qu'elle reste cachée jusqu'à une réservation confirmée.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, History, Plus, Save, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, History, Lock, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { FilterChip } from '@/components/ui/FilterChip';
@@ -43,6 +46,7 @@ import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { AMENITY_SUGGESTIONS, POLICY_LABELS } from '@/lib/halls/views';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, canonicalCity, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
 import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
+import { HOST_KINDS, HOST_KIND_TEXT, hostKindOf, type HostKind } from '@/lib/lieux/position-publique';
 // Types seulement : la carte reste chargée à la demande
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { POLICY_KEYS, daysText, minutesText, percentText, putJson, type HallDefaults, type OwnHall, type PolicyKey } from './hall-api';
@@ -68,6 +72,8 @@ interface HallValues {
     depositChoice: DepositChoice;
     depositValue: string;
     policy: PolicyKey;
+    /** Lot Carte B3 : chez un particulier (adresse cachée au public) ou lieu professionnel. */
+    hostKind: HostKind;
     address: string;
     city: string;
     latitude: number | null;
@@ -170,6 +176,8 @@ function initialValues(hall: OwnHall | null | undefined): HallValues {
         depositChoice: mode === 'MONTANT_FIXE' ? 'MONTANT_FIXE' : hasValue ? 'POURCENTAGE' : 'DEFAUT',
         depositValue: hasValue ? String(hall?.deposit_value) : '',
         policy,
+        // Création : particulier (protection par défaut) ; modification : la valeur enregistrée
+        hostKind: hostKindOf(hall?.host_kind),
         address: hall?.address ?? '',
         city: hall?.city ?? '',
         latitude: typeof hall?.latitude === 'number' ? hall.latitude : null,
@@ -237,6 +245,7 @@ function payloadOf(v: HallValues) {
         deposit_mode: v.depositChoice === 'MONTANT_FIXE' ? 'MONTANT_FIXE' : 'POURCENTAGE',
         deposit_value: deposit,
         cancellation_policy: v.policy,
+        host_kind: v.hostKind,
         latitude: v.latitude,
         longitude: v.longitude,
         address: v.address.trim(),
@@ -292,6 +301,8 @@ function parseDraft(raw: unknown): HallDraftData | null {
     const city = str(v.city, LIMITS.city * 2);
     const depositChoice = v.depositChoice === 'DEFAUT' || v.depositChoice === 'POURCENTAGE' || v.depositChoice === 'MONTANT_FIXE' ? v.depositChoice : null;
     const policy = POLICY_KEYS.find((k) => k === v.policy) ?? null;
+    // Brouillon d'avant le lot Carte B3 (sans ce champ) ou valeur illisible : particulier, le choix protecteur
+    const hostKind = hostKindOf(v.hostKind);
     const latitude = coord(v.latitude, 90);
     const longitude = coord(v.longitude, 180);
     const amenities = Array.isArray(v.amenities)
@@ -304,7 +315,7 @@ function parseDraft(raw: unknown): HallDraftData | null {
         || address === null || city === null || depositChoice === null || policy === null || latitude === undefined || longitude === undefined
         || amenities === null || images === null) return null;
     return {
-        values: { name, description, capacity, pricePerDay, pricePerHour, depositChoice, depositValue, policy, address, city, latitude, longitude, amenities, images },
+        values: { name, description, capacity, pricePerDay, pricePerHour, depositChoice, depositValue, policy, hostKind, address, city, latitude, longitude, amenities, images },
         cityOther: r.cityOther === true,
     };
 }
@@ -343,6 +354,16 @@ function RadioCard({ name, id, value, checked, onChange, title, text }: {
                 <span className="mt-0.5 block text-sm leading-relaxed text-muted-foreground">{text}</span>
             </span>
         </label>
+    );
+}
+
+/** Lot Carte B3 : rappel sous l'adresse d'une salle chez un particulier (aide du champ, lue avec lui). */
+function PrivateAddressHint() {
+    return (
+        <span className="inline-flex items-start gap-1.5">
+            <Lock size={14} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
+            <span>Votre adresse reste cachée : le public voit seulement le quartier. Elle est donnée à la cliente une fois sa réservation confirmée.</span>
+        </span>
     );
 }
 
@@ -793,6 +814,23 @@ export function HallForm({ mode, hall, policyTexts, defaults }: HallFormProps) {
                 {/* 4. Adresse et position */}
                 <section aria-labelledby="hall-s4" className={cn('rounded-xl border border-border bg-card shadow-sm', cardClass)}>
                     <SectionTitle n={4} id="hall-s4" title="Adresse et position" text="Pour que les clients trouvent la salle." />
+                    <fieldset className="flex flex-col gap-3">
+                        <legend className="mb-1 text-sm font-semibold text-foreground-strong">Qui accueille ?</legend>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            {HOST_KINDS.map((k) => (
+                                <RadioCard
+                                    key={k}
+                                    name="hall-accueil"
+                                    id={`hall-accueil-${k.toLowerCase()}`}
+                                    value={k}
+                                    checked={values.hostKind === k}
+                                    onChange={() => set('hostKind', k)}
+                                    title={HOST_KIND_TEXT[k].label}
+                                    text={HOST_KIND_TEXT[k].hint}
+                                />
+                            ))}
+                        </div>
+                    </fieldset>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <TextInput
                             id="hall-address"
@@ -802,6 +840,7 @@ export function HallForm({ mode, hall, policyTexts, defaults }: HallFormProps) {
                             value={values.address}
                             onChange={(e) => set('address', e.target.value)}
                             placeholder="Rue, quartier, point de repère"
+                            hint={values.hostKind === 'PARTICULIER' ? <PrivateAddressHint /> : undefined}
                             error={errors.address}
                             autoComplete="street-address"
                             fieldClassName="sm:col-span-2"

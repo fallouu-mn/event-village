@@ -23,14 +23,18 @@ export const ZONE_GRID_DEG = 0.05;
 const gridDown = (n: number): string => (Math.floor(n / ZONE_GRID_DEG + 1e-9) * ZONE_GRID_DEG).toFixed(2);
 const gridUp = (n: number): string => (Math.ceil(n / ZONE_GRID_DEG - 1e-9) * ZONE_GRID_DEG).toFixed(2);
 
+/** Zone écrite pour le serveur, élargie sur la grille (T1) ; aussi pour les lieux (lot Carte B3). */
+export function zoneQueryValue(z: MapZone): string {
+    return [gridDown(z.south), gridDown(z.west), gridUp(z.north), gridUp(z.east)].join(',');
+}
+
 export function mapUrl(filtersQuery: string, opts: { zone?: MapZone | null; from?: string; to?: string } = {}): string {
     const params = new URLSearchParams(filtersQuery);
     params.delete('tri');
     params.delete('page');
     params.delete('vue');
     if (opts.zone) {
-        const z = opts.zone;
-        params.set('zone', [gridDown(z.south), gridDown(z.west), gridUp(z.north), gridUp(z.east)].join(','));
+        params.set('zone', zoneQueryValue(opts.zone));
     }
     if (opts.from && opts.to) {
         params.set('du', opts.from);

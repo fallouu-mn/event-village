@@ -10,12 +10,14 @@
  *    20 h · gardée jusqu'à 20 h 30 » avec « J'arrive » (POST …/coming, l'établissement est prévenu) et « Annuler ».
  *  - « Payer l'acompte » seulement si `canPay` (fenêtre de paiement existante, cible TABLE_RESERVATION).
  *  - « Annuler » seulement si `canCancel` : aperçu de la base d'abord, puis confirmation (useTableCancel).
+ * Lot Carte B3 : l'adresse exacte n'est donnée par la route qu'une fois la réservation confirmée (ou le client arrivé) ;
+ * avant, la ville seule et « L’adresse exacte vous sera donnée… » ; avec l'adresse, « Voir l’itinéraire ».
  */
 import React, { useEffect, useRef, useState, useTransition } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BellRing, CalendarDays, Check, Clock, MapPin, MessageSquareText, Undo2, Users, Wallet } from 'lucide-react';
+import { BellRing, CalendarDays, Check, Clock, ExternalLink, Lock, MapPin, MessageSquareText, Navigation, Undo2, Users, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -62,6 +64,59 @@ function Fact({ icon, children }: { icon: React.ReactNode; children: React.React
     );
 }
 
+/** Lien « Voir l’itinéraire » : recherche de l'adresse exacte (adresse et ville) dans Google Maps. */
+function directionsSearchUrl(address: string, city: string | null): string {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([address, city].filter(Boolean).join(', '))}`;
+}
+
+/**
+ * Lot Carte B3 : lieu de l'établissement vu par le client. Adresse exacte (lisible, avec l'itinéraire) seulement quand la route la
+ * donne (réservation confirmée) ; sinon la ville seule, et pour une réservation encore en cours une phrase qui dit quand
+ * l'adresse sera donnée. Annulée, expirée ou refusée : ni adresse ni phrase.
+ */
+function PlaceAddress({ address, city, pending }: { address: string | null; city: string | null; pending: boolean }) {
+    if (address) {
+        return (
+            <div className="flex items-start gap-2 border-t border-border pt-3">
+                <MapPin size={18} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div className="min-w-0 flex-1 space-y-2">
+                    <p className="break-words text-base font-semibold text-foreground-strong">
+                        {address}
+                        {city && <span className="block text-sm font-normal text-muted-foreground">{city}</span>}
+                    </p>
+                    <LinkButton
+                        href={directionsSearchUrl(address, city)}
+                        external
+                        variant="secondary"
+                        leftIcon={<Navigation size={18} aria-hidden="true" />}
+                        rightIcon={<ExternalLink size={16} aria-hidden="true" />}
+                    >
+                        Voir l’itinéraire
+                        <span className="sr-only"> (nouvel onglet)</span>
+                    </LinkButton>
+                </div>
+            </div>
+        );
+    }
+    if (!city && !pending) return null;
+    return (
+        <div className="space-y-2 border-t border-border pt-3">
+            {city && (
+                <p className="flex items-start gap-2 break-words text-base text-foreground">
+                    <MapPin size={18} className="mt-0.5 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0">{city}</span>
+                </p>
+            )}
+            {pending && (
+                <p className="flex items-start gap-2 rounded-xl bg-primary-soft px-3 py-2.5 text-sm leading-relaxed text-foreground-strong">
+                    <Lock size={16} className="mt-0.5 flex-shrink-0 text-primary-text" aria-hidden="true" />
+                    <span className="min-w-0">L’adresse exacte vous sera donnée dès que votre réservation sera confirmée.</span>
+                </p>
+            )}
+        </div>
+    );
+}
+
 const CANCELLED = new Set(['ANNULEE_CLIENT', 'ANNULEE_ETABLISSEMENT', 'ANNULEE_EV', 'REFUSEE', 'SANS_REPONSE', 'EXPIREE']);
 
 export function ReservationDetail({ reservation: r, reminder }: { reservation: ClientTableReservationDetail; reminder: boolean }) {
@@ -73,10 +128,12 @@ export function ReservationDetail({ reservation: r, reminder }: { reservation: C
     const now = useNow(r.state === 'EN_ATTENTE_PAIEMENT' ? 1000 : 30_000);
     const reminderRef = useRef<HTMLElement | null>(null);
 
-    const place = [r.venueAddress, r.venueCity].filter(Boolean).join(', ');
     // Jusqu'à la fin de la garde de la table (canSayComing), ou avant l'heure si l'on vient du rappel
     const showReminder = r.state === 'CONFIRMEE' && (r.canSayComing || ((reminder || r.clientComing) && r.upcoming));
     const ended = CANCELLED.has(r.state);
+    // Réservation encore en cours (pas finie, délai de paiement pas dépassé) : l'adresse viendra à la confirmation
+    const holdOver = r.state === 'EN_ATTENTE_PAIEMENT' && !!r.holdExpiresAt && now !== null && Date.parse(r.holdExpiresAt) <= now;
+    const addressPending = r.live && !ended && !holdOver;
 
     // Lien du rappel : la carte « Votre table vous attend » est mise en vue et annoncée
     useEffect(() => {
@@ -200,7 +257,6 @@ export function ReservationDetail({ reservation: r, reminder }: { reservation: C
                             </div>
                             <div className="min-w-0 space-y-1">
                                 <p className="break-words text-base font-semibold text-foreground-strong">{r.venueName}</p>
-                                {place && <p className="break-words text-sm text-muted-foreground">{place}</p>}
                                 <Link
                                     href={`/tables/${r.venueId}`}
                                     className="inline-flex min-h-11 items-center text-sm font-semibold text-primary-text underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -209,6 +265,7 @@ export function ReservationDetail({ reservation: r, reminder }: { reservation: C
                                 </Link>
                             </div>
                         </div>
+                        <PlaceAddress address={r.venueAddress} city={r.venueCity} pending={addressPending} />
                     </Block>
 
                     {(r.depositAmount > 0 || r.paidAmount > 0) && (
