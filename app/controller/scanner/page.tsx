@@ -65,7 +65,7 @@ import { useRouter } from 'next/navigation';
 import { Calendar, Camera, Keyboard, Loader2, LogOut, Settings2, Users } from 'lucide-react';
 import { getBrowserClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonClasses } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/EmptyState';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
@@ -156,6 +156,8 @@ interface Assignment {
     gate: { id: string; name: string; zone: { name: string; kind: 'ENTREE' | 'CONTROLE' } } | null;
     zones_configured: boolean;
     gate_change_allowed: boolean;
+    /** Lot 11c-c : tables vendues de l'événement (lien vers la liste de la porte des tables s'il y en a). */
+    tables_sold: number;
     events: EventInfo;
 }
 
@@ -433,6 +435,7 @@ export default function ControllerScannerPage() {
                 gate: a.gate && typeof a.gate === 'object' ? a.gate as Assignment['gate'] : null,
                 zones_configured: a.zones_configured === true,
                 gate_change_allowed: a.gate_change_allowed === true,
+                tables_sold: Number.isInteger(a.tables_sold) ? Number(a.tables_sold) : 0,
                 events: (a.events ?? {}) as EventInfo,
             }));
             if (list.some((a) => a.scan === null)) console.warn('[scanner] état du contrôle absent d’une affectation : contrôle tenu pour fermé');
@@ -1129,6 +1132,11 @@ export default function ControllerScannerPage() {
                             {!online && <p className="text-sm text-muted-foreground">Hors ligne : la liste des invités reprendra au retour du réseau.</p>}
                         </div>
                     )}
+                    {selected.tables_sold > 0 && (
+                        <a href={`/controller/porte/${encodeURIComponent(selected.events.id)}`} className={buttonClasses({ variant: 'secondary', size: 'lg', fullWidth: true })}>
+                            Liste des tables
+                        </a>
+                    )}
                 </>
             )}
 
@@ -1262,6 +1270,7 @@ export default function ControllerScannerPage() {
                     checkedInGate={outcome.ticket?.checked_in_gate}
                     gateProblem={outcome.failure === 'gate' && isGateProblemCode(outcome.code) ? outcome.code : null}
                     onConfirmRepeat={outcome.result === 'zone_already_passed' ? confirmZoneRepeat : undefined}
+                    table={outcome.table ?? null}
                 />
             )}
 
