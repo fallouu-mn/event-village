@@ -1,10 +1,18 @@
 # Lot 11c-a — Tables d'un événement : argent et sécurité
 
-Branche `lot11c/tables-argent`, partie de `main` à `71a42f01a7` (lot poids fusionné). **Non fusionnée.** Aucun écran :
+**Fusionné dans main le 25/11/2026** : commit de fusion `56edfd20e4` (`--no-ff`). Run complet de la branche **673**
+entièrement vert, puis run complet de main **676** entièrement vert : 607 suites, 842 tests e2e, responsive 190/0,
+budgets JS, mesure mobile 94 / 92 / 94 et toucher 104 ms. **Migrations `20261201000001` à `…007` appliquées sur
+event-village-dev** le 25/11 vers 20 h 48 UTC, après un dry-run exact (ces 7 seules) ; contrôles « avant » et « après »
+conformes ; `03-verification.sql` 20/20. Requête de lecture lancée avant l'application : **aucune ligne** (aucune
+catégorie arrêtée avec des ventes, aucune place vendue au-delà de la capacité). La base compte alors 2 événements,
+aucun avec une capacité, 4 catégories, aucune arrêtée, et 1 billet. event-village-dev ne doit plus tourner qu'avec
+main ≥ `56edfd20e4`.
+
+Branche `lot11c/tables-argent`, partie de `main` à `71a42f01a7` (lot poids fusionné). Aucun écran :
 le service reste fermé par son interrupteur propre (`features.event_tables_enabled`) ; les suites l'ouvrent le temps de
-leur passage. Migrations `20261201000001` à `…007`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur
-event-village-dev. Contre-vérification faite (`docs/audit-lot11c-a.md`, branche `lot11c/cv-rouges`, `fc1f9ed5ff`) :
-ses trois trous moyens sont corrigés (section suivante). Fusion seulement sur feu vert.
+leur passage. Migrations `20261201000001` à `…007`, sans BEGIN ni COMMIT, rejouables. Contre-vérification faite (`docs/audit-lot11c-a.md`, branche `lot11c/cv-rouges`, `fc1f9ed5ff`) :
+ses trois trous moyens sont corrigés (section suivante).
 
 ## À lire en premier
 
@@ -477,5 +485,38 @@ migrations `20261201000001` à `…006` attendent la contre-vérification.
 | 666 | rapide, 32 suites | f989107cab | **32/32**, typecheck et lint OK ; `cv11c-1` 4/4, `cv11c-2` 9/9, `cv11c-3` 7/7 ; invariant (x6) du lot 9 ter à 0 violation après `cv11c-1` |
 | 668 | **complet** | 23ac5ec520 (main fusionnée) | rouge : `migration-lot8-rejouable` (EVT11 sur des types de tables d'autres suites, selon l'ordre) et recette e2e acte 10 (texte exact du refus de jauge reformulé) ; tests 603/604, responsive, poids et mesure mobile verts. Corrigés : drapeau dans la transaction du test, message d'origine gardé |
 | 671 | rapide, 10 suites | 4afed6ea5d | **10/10** ; `migration-lot8-rejouable` passée **après** `l11c-tables`, `cv11c-1` et `cv11c-2`, qui laissent des types de tables en base |
+| 673 | **complet**, branche | 16436ae006 | **entièrement vert** : 607 suites (152 + 152 + 152 + 151), e2e, responsive, poids, mesure mobile |
+| 676 | **complet**, main après la fusion | 56edfd20e4 | **entièrement vert** : 607 suites, 842 tests e2e, responsive 190 résultats / 0 défaut, budgets JS, mesure mobile 94 / 92 / 94 (toucher 104 ms), une seule tentative |
 
-<!-- RUN-COMPLET-CV -->
+**Sorties vertes de la contre-vérification** (run rapide 666, identiques aux runs complets 673 et 676) :
+
+```
+    ok 1 - T1 — capacité baissée sous les places d’un type de table arrêté déjà vendu : refusée (sinon billets vendus au-delà de la jauge)
+    ok 2 - T2a (antérieur au lot) — catégorie de billets vendue puis arrêtée : une nouvelle catégorie ne reprend pas ses places
+    ok 3 - T2b — même point dans le code du lot (event_seats_refusal) : un type de table créé sur les places d’une catégorie de billets arrêtée est refusé
+    ok 4 - T3 — table remboursée au report : l’invité qui avait accepté sa place est prévenu que sa place est annulée
+[INVARIANT-LOT11C] cv11c-1-trous — (a)(b)(c)(d)(e) : 0 violation(s)
+    ok 1 - G1 — corps du navigateur : prix, montant, places, garde ou partenaire refusés (400, aucun paiement) ; type ou table d’ailleurs refusés ; montant lu en base
+    ok 2 - G2 — webhook rejoué deux fois et relève en même temps : une seule vente, 6 billets, type +1, un avis par canal
+    ok 3 - G3 — limite par compte : 3 achats simultanés → 1 seul ; 2 tables (2 types) puis 3e refusée, même avec un autre numéro payeur
+    ok 4 - G4 — paiement arrivé après l’annulation de l’événement, webhook rejoué : remboursé en entier une fois, aucune vente ni billet
+    ok 5 - G5 — cloisonnement : autre organisatrice, types et tables d’un autre événement, invité, porte, données réduites, REST et schéma private
+    ok 6 - G6 — prix et places figés dès la première attente (route, clé de service) ; table en attente jamais retirée
+    ok 7 - G7 — ADMIN_EVENT_TABLES_CHANGED : une alerte par enregistrement (par administrateur et canal), retrait signalé, jamais ADMIN_EVENT_CHANGED
+    ok 8 - G8 — interrupteur fermé : devis, achat, création, modification et plan refusés (404) ; offre vide
+    ok 9 - G9 — deux tables du même type par le même compte (maximum 2) : la 2e est vendue, pas remboursée comme un paiement en double
+[INVARIANT-LOT11C] cv11c-2-gardes — (a)(b)(c)(d)(e) : 0 violation(s)
+```
+
+### Application sur event-village-dev (25/11, vers 20 h 48 UTC)
+
+```
+Dry-run : Would push these migrations: 20261201000001_l11c_reglages … 20261201000007_l11c_cv_correctifs (7, rien d'autre)
+Avant   : derniere_migration 20261130000008 ; event_tables null ; event_table_bookings null ; colonne kind 0 ; versions du lot 0
+Après   : versions 20261201000001 … 20261201000007 ; réglages event_tables.max_per_account {"value": 2}, features.event_tables_enabled {"value": false}
+          genres TICKET:4 ; event_tables, event_table_plans, event_table_bookings : RLS true, anon false, authenticated false
+          14 fonctions publiques, 0 droit faux ; 14 aides dans private ; private fermé au rôle de service ; 9 déclencheurs
+          trg_event_tables_admin_alert … UPDATE OF number, category_id, zone_id …
+          4 avis sur 4 canaux : EVENT_TABLE_CONFIRMED SEND, les 3 autres DEFER
+03-verification.sql : 20 lignes, 20 OK
+```
