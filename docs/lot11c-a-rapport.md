@@ -2,10 +2,88 @@
 
 Branche `lot11c/tables-argent`, partie de `main` à `71a42f01a7` (lot poids fusionné). **Non fusionnée.** Aucun écran :
 le service reste fermé par son interrupteur propre (`features.event_tables_enabled`) ; les suites l'ouvrent le temps de
-leur passage. Migrations `20261201000001` à `…006`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur
-event-village-dev. Contre-vérification indépendante à venir avant toute fusion.
+leur passage. Migrations `20261201000001` à `…007`, sans BEGIN ni COMMIT, rejouables, **non appliquées** sur
+event-village-dev. Contre-vérification faite (`docs/audit-lot11c-a.md`, branche `lot11c/cv-rouges`, `fc1f9ed5ff`) :
+ses trois trous moyens sont corrigés (section suivante). Fusion seulement sur feu vert.
 
 ## À lire en premier
+
+### Correctifs de la contre-vérification (25/11)
+
+La contre-vérification a trouvé trois trous moyens, aucun critique ni élevé : « l'argent tient, la jauge non ». Ses
+suites `tests/audit/cv11c-1-trous`, `cv11c-2-gardes` et `cv11c-3-statique` (et `cv11c-helpers`) sont reprises dans
+la branche **sans aucun changement** (fichiers identiques à `origin/lot11c/cv-rouges`). Elles sont toutes vertes.
+Les correctifs sont dans une migration nouvelle, `20261201000007_l11c_cv_correctifs.sql`. Ses recopies partent des
+versions du lot, et la migration 03, que lit `cv11c-3-statique`, ne change pas.
+
+| # | Trou (gravité) | Correctif | Preuve |
+|---|---|---|---|
+| T1 | La capacité se baissait sous les places d'un type de table arrêté déjà vendu : 12 places vendues pour 6 (moyenne) | Une seule aide de jauge, `private.event_seats_gauge` : Σ (catégorie active ? `total_quantity` : `sold_quantity + held_quantity`) × `seats_per_unit`, billets et tables. `event_update` refuse une capacité sous cette jauge (`CAPACITY_BELOW_QUOTAS`) | `cv11c-1` T1 vert |
+| T2a | Antérieur au lot, aussi sur main : arrêter une catégorie de **billets** vendue libérait ses places, d'où une survente réelle de 11 billets pour 10 (moyenne) | La même aide dans `ticket_category_create` et `ticket_category_update` : une catégorie arrêtée garde dans la jauge ses places vendues ou en paiement | `cv11c-1` T2a vert |
+| T2b | Même point dans le code du lot (`event_seats_refusal`) : un type de table créé sur ces places, 14 places pour 10 (moyenne) | `event_seats_refusal` appelle la même aide | `cv11c-1` T2b vert |
+| T3 | Table remboursée au report : l'invité qui avait accepté sa place la perdait sans aucun avis (moyenne) | `event_table_postponement_refund`, avant `refund_request` : `TICKET_REFUNDED_HOLDER` à chaque place `VALIDE` tenue par un autre que le titulaire (même bloc, même clé que `ticket_refund_request`, migration 05, lignes 248-255) | `cv11c-1` T3 vert ; invariant (x6) du lot 9 ter étendu |
+| Zone | Remarque : l'alerte aux administrateurs ne partait pas au changement de zone d'une table | `trg_event_tables_admin_alert` : aussi sur `UPDATE OF zone_id` (une alerte par enregistrement, comme avant) | `cv11c-2` G7 vert |
+| Écart | Paiement tardif dont l'attente a échu sans être encore balayée | **Comportement gardé** (décision du 25/11) : la vente est honorée. Personne n'a pu prendre la table entre-temps, car toute nouvelle attente balaie d'abord les attentes échues, sous le verrou du type : aucune double vente possible. Le texte des décisions et de R1 est corrigé | `cv11c-2` G2, test du lot C |
+
+La même aide sert aussi au plancher que le formulaire de l'événement montre (`event_edit_locks`, recopiée) : le
+formulaire et le serveur disent la même chose. Les valeurs déjà testées ne changent pas (sans catégorie arrêtée ni
+table, la jauge vaut la somme des quotas actifs).
+
+**Conséquence pour les organisatrices.** Sur un événement où une catégorie arrêtée a des ventes, toute nouvelle hausse
+(catégorie, quota, type de table) est refusée tant que la capacité ne couvre pas aussi ces places vendues. C'est voulu.
+Le refus le dit en clair : « Les places mises en vente, avec celles déjà vendues des catégories arrêtées,
+totaliseraient N places. Augmentez d'abord la capacité totale de l'événement (actuellement M). »
+
+**Suites existantes dont une assertion change.** Une seule, plus mon test de rejeu ; rien n'est affaibli.
+- `tests/helpers/lot9ter-invariants.ts` (x6) : l'ensemble des places « concernées » gagne les places d'une table
+  remboursée au report, tenues par un invité (transfert accepté) qui n'est pas le titulaire. Pour elles aussi,
+  l'avis `TICKET_REFUNDED_HOLDER` est **exigé**, et ne part qu'au porteur actuel. C'est une exigence en plus. Sans elle,
+  l'avis de T3 aurait été compté comme envoyé à tort.
+- `tests/schema/migration-lot11c-rejouable.test.ts` (test du lot) : la migration 07, ses six recopies avec leurs lignes
+  remplacées (les seuls calculs de jauge et leurs messages), et l'aide `private.event_seats_gauge`, fermée à tous les
+  rôles de l'API.
+
+Aucune autre suite n'a vu une assertion changer : run rapide 666 (32 suites choisies parmi celles qui touchent la
+jauge, la capacité, les catégories et l'avis au porteur), puis run complet (section Runs).
+
+**Requête en lecture seule à lancer sur event-village-dev AVANT d'appliquer les migrations.** Elle liste les
+événements dont une catégorie arrêtée a des ventes, et ceux dont les places vendues dépassent déjà la capacité.
+Essayée sur une base minimale : elle ressort le cas T2a, 11 vendus pour une capacité de 10 et une jauge corrigée à 14.
+
+```sql
+-- Lecture seule, à lancer sur event-village-dev AVANT d'appliquer les migrations 20261201000001 à …007.
+-- Avant ces migrations, la colonne seats_per_unit n'existe pas : toutes les catégories sont des billets d'une place.
+BEGIN TRANSACTION READ ONLY;
+
+-- 1. Événements dont une catégorie arrêtée a des ventes ou des paiements en cours
+SELECT e.id AS event_id, e.title, e.status::text AS statut, e.start_date, e.capacity,
+       c.id AS category_id, c.name AS categorie, c.sold_quantity AS vendus, c.held_quantity AS en_paiement
+  FROM public.ticket_categories c
+  JOIN public.events e ON e.id = c.event_id
+ WHERE NOT c.is_active AND c.sold_quantity + c.held_quantity > 0
+ ORDER BY e.start_date, e.title, c.name;
+
+-- 2. Événements dont les places vendues dépassent déjà la capacité (compteurs des catégories et billets réels),
+--    avec la jauge telle que la comptera le correctif (au-delà de la capacité : toute hausse sera refusée)
+SELECT e.id AS event_id, e.title, e.status::text AS statut, e.start_date, e.capacity,
+       sum(c.sold_quantity + c.held_quantity)::int AS vendus_ou_en_paiement,
+       (SELECT count(*) FROM public.tickets t
+         WHERE t.event_id = e.id AND t.status::text IN ('VALIDE', 'UTILISE'))::int AS billets_valides_ou_entres,
+       sum(CASE WHEN c.is_active THEN c.total_quantity ELSE c.sold_quantity + c.held_quantity END)::int AS jauge_apres_correctif
+  FROM public.events e
+  JOIN public.ticket_categories c ON c.event_id = e.id
+ WHERE e.capacity IS NOT NULL
+ GROUP BY e.id
+HAVING sum(c.sold_quantity + c.held_quantity) > e.capacity
+    OR (SELECT count(*) FROM public.tickets t WHERE t.event_id = e.id AND t.status::text IN ('VALIDE', 'UTILISE')) > e.capacity
+ ORDER BY e.start_date, e.title;
+
+ROLLBACK;
+```
+
+Si la 2e requête rend des lignes, il y a déjà survente sur dev (T2a, antérieur au lot) : à régler avec l'organisatrice
+avant toute hausse. Si seule la 1re en rend, ces événements refuseront toute nouvelle mise en vente tant que leur
+capacité ne couvre pas les places vendues des catégories arrêtées.
 
 ### Défauts trouvés et corrigés
 
@@ -51,9 +129,8 @@ Deux autres changements de conception ont été faits pendant le lot.
 - **`finance_setting_set` non recopié.** La suite d'audit `cv12a-3` (S1) exige une seule recopie après main, et ses
   assertions ne changent pas : les réglages du lot ont leurs propres fonctions.
 
-Point connu, antérieur au lot et non corrigé : pour les **billets**, arrêter une catégorie déjà vendue libère encore
-ses places dans la jauge. D8 ne corrige que les types de tables ; la règle des billets est inchangée (noté dans
-`docs/apres-lancement.md`).
+Point antérieur au lot, d'abord laissé de côté : pour les **billets**, arrêter une catégorie déjà vendue libérait ses
+places dans la jauge (D8 ne corrigeait que les types de tables). Il est **corrigé** avec la contre-vérification (T2a).
 
 ### Le modèle (décisions du client du 25/11)
 
@@ -78,9 +155,11 @@ ses places dans la jauge. D8 ne corrige que les types de tables ; la règle des 
 
 ### Ce qui change pour les lots existants
 
-- **Jauge en places** : Σ quotas des billets + Σ tables × places ≤ capacité, à la création et à la modification d'une
-  catégorie, d'un type, des tables et de la capacité (`ticket_category_create`, `ticket_category_update`,
-  `event_update` recopiées) ; capacité obligatoire dès qu'un type de table existe.
+- **Jauge en places** : Σ (catégorie active ? quantité mise en vente : vendus + en paiement) × places par unité
+  ≤ capacité, billets et tables, par une seule aide (`private.event_seats_gauge`). Elle s'applique à la création et à
+  la modification d'une catégorie, d'un type, des tables et de la capacité (`ticket_category_create`,
+  `ticket_category_update`, `event_update` recopiées), et au plancher du formulaire (`event_edit_locks`). Capacité
+  obligatoire dès qu'un type de table existe. Une catégorie de billets arrêtée garde aussi ses places vendues (T2a).
 - **Réglages** : `finance_setting_set` n'est **pas** recopié. La suite d'audit `cv12a-3` (S1) n'admet qu'une recopie
   de cette fonction après main. Une fonction propre, `event_tables_setting_set`, règle les deux clés du lot. La route
   des réglages du super-administrateur l'appelle pour ces clés, et la page des réglages affiche leurs libellés.
@@ -103,7 +182,7 @@ ses places dans la jauge. D8 ne corrige que les types de tables ; la règle des 
 | Configuration | Refusée si fiche ou compte suspendu, événement en attente de validation, suspendu, terminé ou annulé (`ticket_category_guard` + événement suspendu) | Mêmes règles que la billetterie, plus la suspension |
 | Achat | Un paiement = une table, payée en entier ; mêmes règles que les billets : un paiement en attente par compte et par événement, 3 par numéro payeur et par heure, garde `finance.payment_hold_minutes` | Un seul chemin d'argent |
 | Tables par compte | 2 au plus par compte et par événement (`event_tables.max_per_account`) | Éviter l'accaparement ; réglable |
-| Paiement tardif | Attente de table échue = paiement **remboursé en entier**, même si la table est encore libre | Consigne (« paiement tardif → remboursement entier ») ; plus simple à vérifier |
+| Paiement tardif | Attente **close** (balayée parce qu'échue, ou annulée), table retirée ou déjà vendue = paiement **remboursé en entier**. Attente échue mais pas encore balayée : la vente est **honorée** | Décision du 25/11, après la contre-vérification : favorable au client, sans risque. Toute nouvelle attente balaie d'abord les attentes échues sous le verrou du type : personne n'a pu prendre la table entre-temps |
 | Report | Remboursement de la table entière à la demande du titulaire, jusqu'au nouveau début ; refusé si une place a servi ; transferts en attente annulés ; la table revient en vente | Décision 5 du client |
 | Signalement à l'administration | `ADMIN_EVENT_TABLES_CHANGED` (4 canaux) pour tout type ou table ajouté, modifié ou supprimé après validation, une fois par enregistrement ; l'alerte des catégories de billets ne part plus pour un type de table | Décision 8, sans double alerte |
 | Rappel des places | La veille de l'événement (jour de Dakar), à partir de 10 h, au titulaire qui garde au moins une place à envoyer en plus de la sienne ; facultatif (Rappels) | Pas d'avis inutile |
@@ -118,6 +197,7 @@ ses places dans la jauge. D8 ne corrige que les types de tables ; la règle des 
 | `…04_l11c_vente` | `event_table_offer`, `event_table_quote`, `event_table_config`, `event_table_checkout`, `event_table_issue`, `event_table_sold_notify`, « Ma table », porte, badge ; recopies `checkout_create_payment`, `payment_confirm` |
 | `…05_l11c_remboursement` | recopies `ticket_refund_request` (place seule refusée), `ticket_postponement_refund_open` ; `event_table_postponement_window`, `event_table_postponement_refund` ; annulation de l'événement : ventes closes (`trg_events_tables_cancelled`) |
 | `…06_l11c_avis` | 4 types d'avis ; `event_table_seats_reminders` |
+| `…07_l11c_cv_correctifs` | Contre-vérification : `private.event_seats_gauge` ; recopies `event_seats_refusal`, `ticket_category_create`, `ticket_category_update`, `event_update` (depuis la 03), `event_edit_locks` (lot 9 ter), `event_table_postponement_refund` (depuis la 05, avis à l'invité) ; alerte aux administrateurs aussi sur la zone |
 
 Chaque recopie part de la **dernière** définition (fichier et lignes cités en tête de migration). Le test
 `migration-lot11c-rejouable` vérifie trois choses :
@@ -128,6 +208,8 @@ Chaque recopie part de la **dernière** définition (fichier et lignes cités en
 
 ### Contrôles prévus sur event-village-dev (avant / après)
 
+Avant tout : la requête en lecture seule de la section « Correctifs de la contre-vérification ».
+
 ```sql
 -- Avant : dernière migration de main ; rien du lot
 select max(version) from supabase_migrations.schema_migrations;                                  -- 20261130000008 (ou plus récent de main)
@@ -135,7 +217,7 @@ select to_regclass('public.event_tables'), to_regclass('public.event_table_booki
 select count(*) from information_schema.columns where table_name = 'ticket_categories' and column_name = 'kind'; -- 0
 
 -- Après
-select version from supabase_migrations.schema_migrations where version like '20261201%' order by 1; -- 6 versions
+select version from supabase_migrations.schema_migrations where version like '20261201%' order by 1; -- 7 versions
 select key, value from public.platform_settings where key in ('features.event_tables_enabled', 'event_tables.max_per_account');
                                                                                                   -- false, 2
 select kind, count(*) from public.ticket_categories group by 1;                                   -- TICKET seulement
@@ -146,7 +228,8 @@ select p.proname, has_function_privilege('anon', p.oid, 'execute') a, has_functi
   from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'event_table%'
    and p.prorettype <> 'trigger'::regtype order by 1;                                             -- 14 lignes : false, false, true
 select count(*) from pg_proc where pronamespace = 'private'::regnamespace
-   and (proname like 'event_table%' or proname = 'event_seats_refusal');                          -- 13
+   and (proname like 'event_table%' or proname in ('event_seats_refusal', 'event_seats_gauge'));   -- 14
+select pg_get_triggerdef(oid) from pg_trigger where tgname = 'trg_event_tables_admin_alert';       -- … UPDATE OF number, category_id, zone_id …
 select has_schema_privilege('service_role', 'private', 'usage');                                  -- false
 select tgname from pg_trigger where tgname in ('trg_0_event_tables_guard', 'trg_0_event_table_plans_guard', 'trg_0_event_table_bookings_guard',
        'trg_0_ticket_categories_table_guard', 'trg_0_tickets_event_table_guard', 'trg_0_stock_reservations_table_guard',
@@ -200,7 +283,7 @@ Numérotation de l'état des lieux (`docs/lot11c-etat-des-lieux.md` § 3 d).
 
 | # | Risque | Garde-fou | Preuve (suite) |
 |---|---|---|---|
-| R1 | Double vente d'une même table | Type puis tables verrouillés (`FOR UPDATE`) à l'attente ; index uniques partiels : une seule attente active et une seule vente active par table ; tables relues sous verrou par `payment_confirm`, table déjà vendue ou attente échue = remboursement entier | `l11c-tables` C (deux achats simultanés de la même table : un seul gagnant, 409 TABLE_TAKEN), invariant (b) |
+| R1 | Double vente d'une même table | Type puis tables verrouillés (`FOR UPDATE`) à l'attente ; index uniques partiels : une seule attente active et une seule vente active par table ; tables relues sous verrou par `payment_confirm`, table déjà vendue ou attente close = remboursement entier (attente échue mais pas encore balayée : vente honorée, la table n'a pu être prise par personne) | `l11c-tables` C (deux achats simultanés de la même table : un seul gagnant, 409 TABLE_TAKEN), invariant (b) |
 | R2 | Montant calculé hors de la base | `finance_compute` sur le prix du type lu sous verrou ; la route n'envoie qu'identifiants, opérateur et numéro ; prix et frais des N billets répartis en base | `l11c-tables` C (devis, répartition au franc près de 100 001 F sur 6 places), invariant (c) |
 | R3 | Remboursement en double | Un paiement = une table ; remboursement de la table = `refund_request(paiement)` (clé `REFUND-<paiement>`, plafond au reste) ; une place ne se rembourse jamais seule (`TABLE_SEAT_NOT_ALONE`) ; vente passée REFUNDED sous verrou (2ᵉ demande : `ALREADY_REFUNDED`) | `l11c-tables` D (place seule refusée à l’organisatrice, à la titulaire, au super-administrateur et par la route), E (2ᵉ demande 409), invariant (d) |
 | R4 | Invités : données | Aucune lecture REST (RLS sans politique) ; « Ma table » au seul titulaire (404 sinon) ; prénom et initiale seulement, numéro d'un transfert en attente réduit à ses 2 derniers chiffres ; porte : qui peut scanner l'événement | `l11c-tables` F (« Ma table » d’un autre compte : 404 ; numéro jamais en entier ; porte : « Awa A. », 403 pour un client), `migration-lot11c-rejouable` (RLS, droits) |
@@ -229,7 +312,9 @@ Invariants (`tests/helpers/lot11c-invariants.ts`, appelés à la fin de chaque s
   puis les invariants communs (avis, cycle, contrôle d'accès, finances, paiements) ;
 - `tests/parcours/l11c-helpers.ts` ;
 - `tests/helpers/lot11c-invariants.ts` : invariants (a) à (e) ;
-- `tests/schema/migration-lot11c-rejouable.test.ts` : rejeu, recopies, droits, RLS.
+- `tests/schema/migration-lot11c-rejouable.test.ts` : rejeu, recopies, droits, RLS ;
+- `tests/audit/cv11c-1-trous`, `cv11c-2-gardes`, `cv11c-3-statique`, `cv11c-helpers` : suites de la
+  contre-vérification, reprises sans changement.
 
 Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'a changé.
 
@@ -245,6 +330,7 @@ Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'a changé.
 | `tests/parcours/notif-outbox.test.ts` | 4 types au registre | Avis du lot |
 | `tests/parcours/notif-migration.test.ts` | 3 émetteurs à l'inventaire : `event_table_sold_notify`, `event_table_seats_reminders`, `trg_event_tables_admin_alert` | Avis du lot |
 | `tests/security/r3-fonctions-rpc.test.ts` | Bloc du lot 11c-a : 14 fonctions publiques refusées à `anon` et `authenticated` (42501) | Fonctions nouvelles |
+| `tests/helpers/lot9ter-invariants.ts` (x6) | Places d'une table remboursée au report, tenues par un invité : avis `TICKET_REFUNDED_HOLDER` exigé, au porteur actuel seul | Contre-vérification T3 ; exigence en plus |
 | `tests/schema/zones-schema.test.ts` | Liste exacte des colonnes de `event_zones` : + `plan_x`, `plan_y`, `plan_w`, `plan_h` (numeric, facultatives) | Rectangle d'une zone sur le plan des tables (`20261201000002_l11c_schema.sql:89-92`) ; rouge au run complet 651 |
 
 Autres fichiers existants modifiés :
@@ -375,3 +461,11 @@ VERDICT : OK — tous les seuils sont tenus
 **Bilan :** tests 604/604 (run 656), responsive 0 défaut, budgets JS jamais relevés (marge minimale 9 746 octets),
 e2e vert, mesure mobile ≥ 90 partout (run 659). Rien n'est fusionné et aucune migration n'est appliquée : les 6
 migrations `20261201000001` à `…006` attendent la contre-vérification.
+
+### Runs après la contre-vérification
+
+| Run | Mode | Commit | Résultat |
+|---|---|---|---|
+| 666 | rapide, 32 suites | f989107cab | **32/32**, typecheck et lint OK ; `cv11c-1` 4/4, `cv11c-2` 9/9, `cv11c-3` 7/7 ; invariant (x6) du lot 9 ter à 0 violation après `cv11c-1` |
+
+<!-- RUN-COMPLET-CV -->
