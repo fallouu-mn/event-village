@@ -267,6 +267,7 @@ DECLARE
     v_table   uuid := public.try_uuid(p->>'table_id');
     v_op      text := NULLIF(p->>'operator', '');
     v_refusal jsonb;
+    v_table_j jsonb;
     c         record;
     t         record;
 BEGIN
@@ -283,12 +284,13 @@ BEGIN
         IF NOT FOUND THEN
             RETURN jsonb_build_object('ok', false, 'code', 'TABLE_NOT_FOUND', 'message', 'Cette table n’existe pas pour cet événement.');
         END IF;
+        -- Construit ici : sans table choisie, t n'est jamais rempli et PL/pgSQL refuse de lire ses champs
+        v_table_j := jsonb_build_object('id', t.id, 'number', t.number,
+                                        'state', CASE WHEN private.event_table_state(t.id) = 'LIBRE' THEN 'LIBRE' ELSE 'PRISE' END);
     END IF;
     RETURN jsonb_build_object('ok', true, 'event_id', v_event, 'type_id', c.id, 'name', c.name,
                               'included_text', c.included_text, 'onsite_note', c.onsite_note,
-                              'table', CASE WHEN v_table IS NULL THEN NULL ELSE jsonb_build_object(
-                                  'id', t.id, 'number', t.number,
-                                  'state', CASE WHEN private.event_table_state(t.id) = 'LIBRE' THEN 'LIBRE' ELSE 'PRISE' END) END)
+                              'table', v_table_j)
            || private.event_table_prices(c.id, v_op);
 END;
 $$;

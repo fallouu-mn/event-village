@@ -22,6 +22,7 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { checkLot11cInvariants } from '../helpers/lot11c-invariants';
+import { assertNotificationInvariants } from '../helpers/notification-invariants';
 import { randomSenegalPhone, routeContext } from './helpers';
 import { cart, checkout, newBuyer, paymentById, service, type Buyer } from './paiement-helpers';
 import { buyConfirmed, getSetting, jsonRequest, newPartner, superadminId, type TestPartner } from './finance-helpers';
@@ -60,6 +61,8 @@ before(async () => {
 after(async () => {
     if (restore) await restore();
     await checkLot11cInvariants('l11c-tables');
+    // Invariants communs (avis, cycle, contrôle d'accès, finances, paiements) : la suite ne laisse rien de faux derrière elle
+    await assertNotificationInvariants('l11c-tables');
 });
 
 /** Prix attendus des N billets d'une table : division entière, les premiers portent le reste (triés). */
@@ -340,7 +343,7 @@ describe('C. Devis et achat d’une table', () => {
         assert.equal(free.status, 200, `une autre table reste libre : ${show(free)}`);
     });
 
-    test('paiement tardif : attente échue, table vendue à un autre, puis succès chez SamirPay → REFUND_PENDING, aucune vente, remboursement entier', async () => {
+    test('paiement tardif : attente échue, table vendue à un autre, puis succès chez SamirPay → remboursement (REFUND_PENDING ou REFUNDED), aucune vente, remboursement entier', async () => {
         const ev = await vipEvent('tardif', 1);
         const late = await newBuyer('l11c-tardif');
         const started = await tableCheckout(late, ev.eventId, ev.typeId);
@@ -354,7 +357,8 @@ describe('C. Devis et achat d’une table', () => {
         assert.equal(rival.booking.event_table_id, ev.tables[0].id, 'la table libérée est revendue');
 
         const paid = await confirmByWebhook(started.payment!);
-        assert.equal(paid.status, 'REFUND_PENDING', `paiement tardif : ${paid.status} ${JSON.stringify(paid.metadata)}`);
+        // Même attente que paiement-confirmation : le versement simulé peut déjà être fait
+        assert.ok(['REFUND_PENDING', 'REFUNDED'].includes(String(paid.status)), `paiement tardif : ${paid.status} ${JSON.stringify(paid.metadata)}`);
         assert.match(String((paid.metadata as Row).refund_reason), /table/, JSON.stringify(paid.metadata));
         assert.equal(await bookingOfPayment(paid.id), null, 'aucune vente pour le paiement tardif');
         const { data: tk } = await service.from('tickets').select('id').eq('payment_id', paid.id);
@@ -575,6 +579,9 @@ describe('E. Annulation et report', () => {
         const seatUsed = await tableRefund(used, String(c.booking.id));
         assert.deepEqual([seatUsed.status, seatUsed.body.code], [409, 'TABLE_SEAT_USED'], show(seatUsed));
         assert.deepEqual(await platformRefunds(c.payment.id), [], 'aucun remboursement pour une table entrée');
+        // Place remise en VALIDE : un billet UTILISE sans scan accepté viole l'invariant (g) du contrôle d'accès
+        const { error: backErr } = await service.from('tickets').update({ status: 'VALIDE' }).eq('id', String(c.tickets[0].id));
+        assert.equal(backErr, null, backErr?.message);
 
         assert.equal(n((await categoryRow(ev.typeId)).sold_quantity), 2, 'deux tables vendues avant le remboursement');
         const ok = await tableRefund(holder, String(a.booking.id));
