@@ -1,10 +1,29 @@
 # Lot Carte B — Données sûres, fond de carte Stadia, Explorer Liste / Carte / Calendrier
 
-Branche `carte-b/explorer`, partie de `main` à `75e20d52f`. Non fusionnée. **Aucune migration** (la lecture publique
-s'appuie sur les colonnes existantes : `events.latitude`, `longitude`, `poster_color`, `poster_blur`, et sur
-`home_featured_public`). Une contre-vérification indépendante suit.
+Branche `carte-b/explorer`, partie de `main` à `75e20d52f`. **Fusionnée dans `main` le 25/11 (`c3a5f0adaa`)**, après
+les correctifs de la contre-vérification (§ 12). **Aucune migration** (la lecture publique s'appuie sur les colonnes
+existantes : `events.latitude`, `longitude`, `poster_color`, `poster_blur`, et sur `home_featured_public`).
 
 ## À lire en premier
+
+### Contre-vérification : correctifs et fusion (§ 12)
+
+La contre-vérification indépendante (`docs/audit-carte-b.md`) n'a trouvé **aucun trou critique ni élevé** ; deux trous
+moyens et trois faibles, tous corrigés, et toutes ses suites passent au vert **sans qu'une assertion ait changé** :
+
+- **T5 (moyen, sécurité et confidentialité des visiteurs, antérieur au lot)** : les images de `public/images/` (logos
+  Wave et Orange Money de la fiche et du paiement, affiche de repli, image de partage) étaient **redirigées vers
+  `/login`** pour un visiteur sans session, et la redirection repartait en `http://` derrière un relais HTTPS. Corrigé :
+  `/images/` servi sans session (fichiers statiques seulement) ; redirections construites avec le protocole et l'hôte
+  transmis par le relais, contrôlés (jamais un autre schéma, jamais un autre site). G4 : plus aucune violation `img-src`.
+- **T1 (moyen, vie privée)** : « Rechercher dans cette zone » après « Autour de moi » envoyait une zone centrée sur la
+  position du téléphone. Corrigé : zone arrondie vers l'extérieur sur une grille de 0,05° (≈ 5,5 km) ; centre de la
+  zone à 2 009 m de la position au lieu de 6,8 m.
+- **T2 à T4 (faibles)** : pages publiques à jour en moins de 0,1 s après la fin planifiée, un changement de nom ou de
+  logo de la partenaire, et quand une vente épuise une catégorie (ou qu'une réservation rendue la fait repartir).
+
+Run complet de la branche **637** entièrement vert, puis fusion dans `main` (`c3a5f0adaa`) et run complet de `main`
+**640** entièrement vert (599 suites, e2e, responsive sans défaut, budgets, mesure mobile 90/93/92).
 
 ### Sécurité : trous trouvés et corrigés
 
@@ -31,7 +50,7 @@ Après la relecture des captures du run 617, trois retouches visuelles de la car
 chargé à la demande seulement : runs rapides **618** (écrans, design, responsive 207/207 sans défaut, budgets, mobile
 94/91/91) et **619** (empilement sous la barre des catégories ; responsive 207/207 sans défaut).
 
-Branche **non fusionnée**, **aucune migration**.
+**Aucune migration.** Fusion dans `main` après les correctifs de la contre-vérification (§ 12).
 
 ## 1. Ce qui a été livré
 
@@ -344,5 +363,53 @@ carte (lot suivant), événements publiés sans position (absents de la carte et
 refusée, liste de plus de 300 événements, libellé « Sponsorisé », titre de « Partout au Sénégal » rendu par l'îlot,
 déclaration du domaine chez Stadia.
 
-Branche **non fusionnée**, aucune migration. Branche de preuve `carte-b/rouges` (code de `main` + tests et relevés du
-lot) : ne pas fusionner.
+Aucune migration. Branche de preuve `carte-b/rouges` (code de `main` + tests et relevés du lot) : ne pas fusionner.
+Le surcoût de l'îlot « Près de chez vous » (3 047 octets, écart 1 de la contre-vérification) est confié au lot poids.
+
+## 12. Correctifs de la contre-vérification (24/11)
+
+Contre-vérification indépendante : `docs/audit-carte-b.md` (branche `carte-b/cv-rouges`, récupérée ici en avance rapide :
+son rapport et ses suites `tests/audit/cvcb-1-trous`, `cvcb-2-gardes`, `cvcb-3-base`, `cvcb-4-images` et
+`e2e/cvcb.responsive.spec.ts` sont dans la branche). Verdict : aucun trou critique ni élevé ; T1 et T5 moyens, T2 à T4
+faibles. **Toutes ses suites passent au vert sans qu'une seule de leurs assertions ait changé.**
+
+| # | Trou | Correctif | Preuve (vert) |
+|---|---|---|---|
+| T1 | Après « Autour de moi », « Rechercher dans cette zone » envoyait une zone **centrée sur la position du téléphone** (à quelques mètres près). | Zone arrondie **vers l'extérieur** sur une grille de 0,05° (≈ 5,5 km) avant d'aller dans l'adresse (`lib/events/map-client.ts`) ; elle ne peut que s'agrandir ; la liste de l'ordinateur reste filtrée sur la vue exacte dans le navigateur. Texte du rapport corrigé (§ 1, B2). | `cvcb-1` T1 (40 positions : écart médian ≥ 1 km) ; e2e T1 : centre de la zone à **2 009 m** de la position (avant : 6,8 m) |
+| T2 | Fin par la tâche planifiée (`/api/cron/events-finish`) : aucune invalidation ; la fiche gardait « publié » jusqu'à 60 s. | Invalidation des pages publiques et de la fiche de chaque événement passé à TERMINE (50 fiches une à une, les suivantes par l'étiquette `fiche-publique`), aussi quand une ronde suivante échoue. | `cvcb-1` T2 ; e2e T2 : « Événement terminé » sur la fiche en **73 ms** (avant : 51 891 ms) |
+| T3 | Nouveau nom commercial, raison sociale ou logo de la partenaire : aucune invalidation. | Invalidation quand l'un de ces trois champs fait partie de la modification (`app/api/partner/profile/route.ts`). | `cvcb-1` T3 ; e2e T3 : fiche à jour en **50 ms** (avant : 50 082 ms) |
+| T4 | Ventes et réservations : aucune invalidation (« Complet », prix d'appel de la carte jusqu'à 60 s). | `lib/events/stock-watch.server.ts` : places restantes lues avant et après chaque écriture du stock (réservation du panier, billets gratuits par le panier et par la route, guichet, confirmation, remise en stock d'un paiement, réservations échues des deux tâches planifiées) ; invalidation quand une catégorie passe à zéro ou repart de zéro, **au plus une fois par événement toutes les 5 s** ; une lecture impossible est journalisée et ne bloque jamais la vente. | `cvcb-1` T4 ; `tests/schema/carte-b-stock.test.ts` (règle, regroupement, les six points d'appel) |
+| T5 | Images de `public/images/` **redirigées vers `/login` sans session** : logos Wave et Orange Money de la fiche et du paiement, affiche de repli, image de partage du site (antérieur au lot). | `'/images/'` ajouté aux chemins publics du middleware (fichiers statiques seulement). **Et** toutes les redirections du middleware construites avec le protocole et l'hôte transmis par le relais (`x-forwarded-proto` : `http` ou `https` seulement ; `x-forwarded-host` : nom et port seulement, et seulement s'il est l'hôte de la requête ou de l'application ; nom et port posés ensemble) : plus aucune redirection en `http://` derrière un relais HTTPS, jamais vers un autre site. | `cvcb-4` (chaque fichier de `public/` servi sans session) ; e2e G4 : **aucune violation `img-src`** sous HTTPS (restent deux `script-src eval`, connues, hors images) ; `tests/parcours/carte-b-redirection.test.ts` |
+| Écart 2 | `next.config.mjs` citait un test de concordance qui n'existait pas. | Test créé : `tests/schema/carte-b-origines-tuiles.test.ts` (six réglages : défaut, clair, clair et sombre, sous-domaines, sombre seul, adresse illisible ; configuration chargée dans un processus à part) ; référence de `next.config.mjs` corrigée. Il ne porte pas le nom d'abord cité (`carte-b-fond`), car `cvcb-2` G3 exige l'absence de ce fichier (« si ce test existe désormais, retirer cette remarque ») : son assertion est gardée telle quelle. | `carte-b-origines-tuiles` 7/7 ; `cvcb-2` vert |
+| Écart 1 | Îlot « Près de chez vous » plus lourd de 3 047 octets (aperçu de la carte). | **Non traité ici** : confié au lot poids (consigne). | — |
+
+**G4, résultat final** : sous HTTPS de même origine (relais de la mesure), sur l'accueil, Explorer (liste et carte), la
+fiche (logos de paiement, carte du lieu), les salles, les tables, la connexion et l'aide : 0 violation `img-src`
+(run 630 : `["script-src eval report /login","script-src eval report /aide"]`, déjà relevées avant le lot, hors images).
+La violation qui touchait les visiteurs (logos de paiement redirigés vers `/login`) est corrigée par T5.
+
+Tests modifiés (signalés) : `tests/schema/carte-b-ecrans.test.ts` (format de la zone envoyée, T1) ;
+`tests/parcours/f2b-brouillon-local.test.ts` (finition 2b, hors du lot) : date fixe du 16/11 remplacée par « il y a une
+heure » — un brouillon de plus de 7 jours est effacé (cvf2b 5d), le test était devenu rouge avec le calendrier le 23/11,
+sur `main` comme ici ; même vérification. Nouveaux : `carte-b-stock`, `carte-b-redirection`, `carte-b-origines-tuiles`.
+
+Fusion de `main` (finition 5) dans la branche : `8b765a71e2` ; conflits résolus dans `middleware.ts` (redirection
+derrière relais de T5 avec l'adresse complète de la finition 5), `tests/helpers/design-files.ts` et
+`docs/apres-lancement.md` (sections gardées des deux côtés).
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 630 | `8b765a71e2` (correctifs + `main`) | rapide (112 suites) + responsive + mesure | e2e responsive **222/222** (T1, T2, T3, G4 verts) ; contrôle responsive sans défaut ; budgets tenus ; 2 suites rouges (`cvcb-2` : test de concordance sous le nom interdit ; `carte-b-redirection` : port gardé, vrai défaut) ; Mes billets 89 (page non touchée, processeur ×5,2 à ×5,5) |
+| 632 | `db53a651d1` | rapide (11 suites : `cvcb-1` à `4`, redirection, concordance, middleware) | **Vert** |
+| 633 | `731c8302da` | **complet** | Tout vert (588 suites sur 589, e2e complet 783 cas, responsive, budgets) **sauf** `f2b-brouillon-local` (test daté : brouillon écrit au 16/11, effacé au-delà de 7 jours, rouge depuis le 23/11 à 17 h 42, sur `main` aussi) et Mes billets 89 (page non touchée ; mêmes 250 365 octets que `main` à 17 près ; scores 88 à 94) |
+| 636 | `14a90a9fa0` | **complet** | Tout vert (mesure mobile 91/92/92, e2e, responsive, budgets) **sauf** `l12a-commandes` (lot 12a) : « plat du jour de demain refusé » vérifié à cheval sur minuit à Dakar (run lancé à 23 h 19) — fragilité connue de ce test autour de minuit, sans lien avec le lot |
+| **637** | `2d9c869831` (relance, commit vide) | **complet** | **Entièrement vert** : 599 suites (4 tâches, 0 en échec), dont les 69 de `tests/audit/` et `tests/audit-auth/` ; e2e complet (783 cas dans la phase principale) ; contrôle responsive 190 résultats sans défaut ; budgets tenus sans relèvement (`/events/[id]` 233 299 pour 233 316, `/explore` 234 823 pour 235 712, `/tickets` 250 365 pour 250 417) ; mesure mobile 95/92/92 dès la tentative 1 (processeur ×3,5 à ×3,9) |
+| **640** | `c3a5f0adaa` (fusion dans `main`) | **complet, `main`** | **Entièrement vert** : 599 suites (0 en échec), dont les 69 de `tests/audit/` et `tests/audit-auth/` ; e2e complet (783 cas dans la phase principale, 783 captures, 0 en échec) ; contrôle responsive 190 résultats sans défaut ; budgets identiques au run 637 ; mesure mobile accueil 90, fiche 93, Mes billets 92 dès la tentative 1 (accueil au seuil exact : passages 90, 96, 92, 85, 88) |
+
+Fusion : `carte-b/explorer` dans `main` en `--no-ff` le 25/11 (`c3a5f0adaa`, arbre identique à celui du run 637),
+poussée alors qu'aucun run ne tournait. Aucune migration. Worktree `event-village-carteb` retiré après le rapport
+(jonction de `node_modules` retirée d'abord). Branches `carte-b/rouges` et `carte-b/cv-rouges` : preuves, à ne pas
+fusionner.
+
+À surveiller : l'accueil a fait 90 au run de `main` (médiane au seuil ; 95 au run 637 sur le même code). Le code est
+le même dans les deux runs (écart de mesure) ; le surcoût de « Près de chez vous » est entre les mains du lot poids.
