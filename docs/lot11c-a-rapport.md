@@ -257,8 +257,8 @@ Autres fichiers existants modifiés :
 - `app/api/controller/scan/route.ts` : badge de table.
 - `app/api/cron/reminders/route.ts` : rappel des places à envoyer.
 - `lib/notifications/*` : 4 avis.
-- `docs/recette-billetterie.md` (§34) : lignes citées de `edition-services` recalées (+5 et +17, après le test ajouté) ;
-  `recette-matrice` les vérifie.
+- `docs/recette-billetterie.md` : lignes citées de `edition-services` (§34) et de `notif-modeles` recalées après les
+  tests ajoutés ; `recette-matrice` les vérifie.
 
 ## Ce que la base donne déjà aux écrans, et idées pour 11c-b et 11c-c
 
