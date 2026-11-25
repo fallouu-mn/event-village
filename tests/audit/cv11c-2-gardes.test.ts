@@ -15,6 +15,9 @@
  *  G7 ADMIN_EVENT_TABLES_CHANGED : une alerte par enregistrement et par administrateur et canal (création de 3 tables,
  *     plan de 3 changements, retrait d'un type), jamais ADMIN_EVENT_CHANGED.
  *  G8 Interrupteur fermé : devis, achat, création, modification et plan refusés ; offre vide.
+ *  G9 Deux tables du même type achetées l'une après l'autre par le même compte : toutes deux vendues (aucune fausse
+ *     alerte de paiement en double : payment_duplicate_of n'attrape que deux paiements ouverts en même temps). Piste T1
+ *     écrite d'abord dans cv11c-1-trous, verte au run 662 : déplacée ici.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -71,8 +74,10 @@ describe('Garde-fous du lot 11c-a', () => {
         assert.deepEqual(await paymentsOf(buyer.userId, ev.eventId), [], 'aucun paiement né d’un corps refusé');
         const otherType = await tableCheckout(buyer, ev.eventId, foreign.typeId);
         assert.deepEqual([otherType.status, otherType.body.code], [404, 'TABLE_TYPE_NOT_FOUND'], `type d’un autre événement : ${show(otherType)}`);
-        const quoteOther = await tableQuote(ev.eventId, { type_id: foreign.typeId });
-        assert.ok(quoteOther.status >= 400, `devis d’un type d’un autre événement : ${show(quoteOther)}`);
+        const quoteOther = await tableQuote(ev.eventId, { typeId: foreign.typeId });
+        assert.deepEqual([quoteOther.status, quoteOther.body.code], [404, 'TABLE_TYPE_NOT_FOUND'], `devis d’un type d’un autre événement : ${show(quoteOther)}`);
+        const quoteExtra = await tableQuote(ev.eventId, { typeId: t.typeId, price: 1 });
+        assert.deepEqual([quoteExtra.status, quoteExtra.body.code], [400, 'INVALID_INPUT'], `devis avec un prix venu du navigateur : ${show(quoteExtra)}`);
         await showPlan(partner, ev.eventId);
         const otherTable = await tableCheckout(buyer, ev.eventId, t.typeId, { tableId: foreign.tables[0].id });
         assert.deepEqual([otherTable.status, otherTable.body.code], [404, 'TABLE_NOT_FOUND'], `table d’un autre événement : ${show(otherTable)}`);
@@ -316,7 +321,7 @@ describe('Garde-fous du lot 11c-a', () => {
         const buyer = await newBuyer('cv11c-g8');
         await setEventTablesSetting('features.event_tables_enabled', false, 'cv11c G8');
         try {
-            const quote = await tableQuote(ev.eventId, { type_id: t.typeId });
+            const quote = await tableQuote(ev.eventId, { typeId: t.typeId });
             const buy = await tableCheckout(buyer, ev.eventId, t.typeId);
             const add = await createTableType(partner, ev.eventId, vipType(), 1);
             const patch = await patchTableType(partner, ev.eventId, t.typeId, { name: 'Fermé' });
@@ -331,5 +336,25 @@ describe('Garde-fous du lot 11c-a', () => {
         } finally {
             await setEventTablesSetting('features.event_tables_enabled', true, 'cv11c G8 : réouverture');
         }
+    });
+
+    test('G9 — deux tables du même type par le même compte (maximum 2) : la 2e est vendue, pas remboursée comme un paiement en double', async () => {
+        const ev = await newTablesEvent(partner, 'cv-g9');
+        const t = await createdTableType(partner, ev.eventId, vipType(), 3);
+        const buyer = await newBuyer('cv11c-g9');
+        await withEventTablesSetting('event_tables.max_per_account', 2, async () => {
+            const first = await buyTable(buyer, ev.eventId, t.typeId);
+            const started = await tableCheckout(buyer, ev.eventId, t.typeId);
+            assert.equal(started.status, 200, `2e table acceptée à l’achat (limite 2) : ${show(started)}`);
+            const second = await confirmByWebhook(started.payment!);
+            const { data: booking } = await service.from('event_table_bookings').select('id, status').eq('payment_id', second.id).maybeSingle();
+            const { data: alerts } = await service.from('notification_outbox').select('id').eq('type', 'ADMIN_DUPLICATE_PAYMENT')
+                .contains('template_data', { payment_id: second.id });
+            assert.deepEqual(
+                { status: second.status, booking: booking?.status ?? null, duplicate_of: (second.metadata as Row).duplicate_of ?? null, admin_alerts: (alerts ?? []).length },
+                { status: 'SUCCESS', booking: 'ACTIVE', duplicate_of: null, admin_alerts: 0 },
+                `2e table du même type : paiement ${second.status} (1re table : paiement ${first.payment.id})`,
+            );
+        });
     });
 });

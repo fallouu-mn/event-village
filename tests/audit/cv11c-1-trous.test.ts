@@ -3,14 +3,12 @@
  * ROUGE sur la branche du lot = trou présent ; VERT = attaque bloquée. Base LOCALE, faux SamirPay ; aucune correction.
  * Chaque preuve de jauge est nettoyée (événement annulé) pour laisser les invariants justes après la suite.
  *
- *  T1 Deux tables du même type achetées par le même compte (2 autorisées par event_tables.max_per_account) : la 2e est
- *     prise pour un « paiement en double du panier » (payment_duplicate_of compare type:quantité) et remboursée.
- *  T2 Capacité baissée par event_update sous les places d'un type de table arrêté déjà vendu (v_quota ne compte que les
+ *  T1 Capacité baissée par event_update sous les places d'un type de table arrêté déjà vendu (v_quota ne compte que les
  *     catégories actives) : billets vendus au-delà de la jauge.
- *  T3 Point connu « une catégorie de billets arrêtée libère ses places » :
- *     T3a (antérieur au lot) : nouvelle catégorie de billets, survente réelle mesurée ;
- *     T3b (code du lot, event_seats_refusal) : nouveau type de table créé sur ces places, table vendue au-delà de la jauge.
- *  T4 Remboursement de la table au report : l'invité qui a accepté sa place la perd sans aucun avis.
+ *  T2 Point connu « une catégorie de billets arrêtée libère ses places » :
+ *     T2a (antérieur au lot) : nouvelle catégorie de billets, survente réelle mesurée ;
+ *     T2b (code du lot, event_seats_refusal) : nouveau type de table créé sur ces places, table vendue au-delà de la jauge.
+ *  T3 Remboursement de la table au report : l'invité qui a accepté sa place la perd sans aucun avis.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -20,8 +18,8 @@ import { assertNotificationInvariants } from '../helpers/notification-invariants
 import { newBuyer, service } from '../parcours/paiement-helpers';
 import { newPartner, type TestPartner } from '../parcours/finance-helpers';
 import {
-    buyTable, confirmByWebhook, createTableType, createdTableType, newTablesEvent, patchTableType, postpone, show, switchEventTablesService,
-    tableCheckout, tableRefund, ticketById, transferSeat, updateCapacity, vipType, withEventTablesSetting, type Row,
+    buyTable, createTableType, createdTableType, newTablesEvent, patchTableType, postpone, show, switchEventTablesService,
+    tableRefund, ticketById, transferSeat, updateCapacity, vipType, type Row,
 } from '../parcours/l11c-helpers';
 import { buyTickets, cancelEvent, n, outboxOf, seatsTaken } from './cv11c-helpers';
 
@@ -40,28 +38,7 @@ after(async () => {
 });
 
 describe('Trous du lot 11c-a', () => {
-    test('T1 — un compte achète 2 tables du même type (maximum 2 par compte) : la 2e est vendue, pas remboursée comme un paiement en double', async () => {
-        const ev = await newTablesEvent(partner, 'cv-t1');
-        const t = await createdTableType(partner, ev.eventId, vipType(), 3);
-        const buyer = await newBuyer('cv11c-t1');
-        await withEventTablesSetting('event_tables.max_per_account', 2, async () => {
-            const first = await buyTable(buyer, ev.eventId, t.typeId);
-            const started = await tableCheckout(buyer, ev.eventId, t.typeId);
-            assert.equal(started.status, 200, `2e table acceptée à l’achat (limite 2) : ${show(started)}`);
-            const second = await confirmByWebhook(started.payment!);
-            const { data: booking } = await service.from('event_table_bookings').select('id, status').eq('payment_id', second.id).maybeSingle();
-            const { data: alerts } = await service.from('notification_outbox').select('id').eq('type', 'ADMIN_DUPLICATE_PAYMENT')
-                .contains('template_data', { payment_id: second.id });
-            assert.deepEqual(
-                { status: second.status, booking: booking?.status ?? null, duplicate_of: (second.metadata as Row).duplicate_of ?? null, admin_alerts: (alerts ?? []).length },
-                { status: 'SUCCESS', booking: 'ACTIVE', duplicate_of: null, admin_alerts: 0 },
-                `2e table du même type : paiement ${second.status}, motif « ${String((second.metadata as Row).refund_reason ?? '')} », `
-                + `duplicate_of = ${String((second.metadata as Row).duplicate_of ?? '')} (1re table : paiement ${first.payment.id})`,
-            );
-        });
-    });
-
-    test('T2 — capacité baissée sous les places d’un type de table arrêté déjà vendu : refusée (sinon billets vendus au-delà de la jauge)', async () => {
+    test('T1 — capacité baissée sous les places d’un type de table arrêté déjà vendu : refusée (sinon billets vendus au-delà de la jauge)', async () => {
         // Capacité 12 : 6 billets « Entrée » + 1 table de 6 places vendue puis type arrêté = 12 places engagées
         const ev = await newTablesEvent(partner, 'cv-t2', { capacity: 12, tickets: 6 });
         const t = await createdTableType(partner, ev.eventId, vipType({ seats: 6 }), 1);
@@ -80,7 +57,7 @@ describe('Trous du lot 11c-a', () => {
         assert.notEqual(lowered.ok, true, `event_update accepte la capacité 6 : ${JSON.stringify(lowered).slice(0, 200)} — ${measured}`);
     });
 
-    test('T3a (antérieur au lot) — catégorie de billets vendue puis arrêtée : une nouvelle catégorie ne reprend pas ses places', async () => {
+    test('T2a (antérieur au lot) — catégorie de billets vendue puis arrêtée : une nouvelle catégorie ne reprend pas ses places', async () => {
         const ev = await newTablesEvent(partner, 'cv-t3a', { capacity: 10, tickets: 10 });
         await buyTickets(await newBuyer('cv11c-t3a-a'), ev.eventId, { id: ev.ticketCategoryId, price: 5_000, total: 10 }, 4);
         const { data: stop, error: sErr } = await service.rpc('ticket_category_update', { p: {
@@ -104,7 +81,7 @@ describe('Trous du lot 11c-a', () => {
         assert.equal((created as Row).code, 'QUOTA_ABOVE_CAPACITY', `nouvelle catégorie de 10 places acceptée sur une capacité de 10 dont 4 vendues : ${JSON.stringify(created).slice(0, 160)} — ${measured}`);
     });
 
-    test('T3b — même point dans le code du lot (event_seats_refusal) : un type de table créé sur les places d’une catégorie de billets arrêtée est refusé', async () => {
+    test('T2b — même point dans le code du lot (event_seats_refusal) : un type de table créé sur les places d’une catégorie de billets arrêtée est refusé', async () => {
         const ev = await newTablesEvent(partner, 'cv-t3b', { capacity: 10, tickets: 10 });
         await buyTickets(await newBuyer('cv11c-t3b-a'), ev.eventId, { id: ev.ticketCategoryId, price: 5_000, total: 10 }, 4);
         const { data: stop, error: sErr } = await service.rpc('ticket_category_update', { p: {
@@ -123,7 +100,7 @@ describe('Trous du lot 11c-a', () => {
         assert.deepEqual([r.status, r.body.code], [409, 'QUOTA_ABOVE_CAPACITY'], `type de 10 places sur une capacité de 10 dont 4 vendues : ${show(r).slice(0, 200)} — ${measured}`);
     });
 
-    test('T4 — table remboursée au report : l’invité qui avait accepté sa place est prévenu que sa place est annulée', async () => {
+    test('T3 — table remboursée au report : l’invité qui avait accepté sa place est prévenu que sa place est annulée', async () => {
         const ev = await newTablesEvent(partner, 'cv-t4');
         const t = await createdTableType(partner, ev.eventId, vipType(), 1);
         const holder = await newBuyer('cv11c-t4-titulaire');
