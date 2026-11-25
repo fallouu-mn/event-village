@@ -32,6 +32,8 @@ export const LOT11C_MIGRATIONS = [
     '20261201000005_l11c_remboursement.sql',
     // Avis (4 canaux, nuit) et rappel des places à envoyer
     '20261201000006_l11c_avis.sql',
+    // Correctifs de la contre-vérification : une seule aide de jauge (T1, T2), avis à l'invité (T3), alerte de zone
+    '20261201000007_l11c_cv_correctifs.sql',
 ] as const;
 
 /** Recopies : fonction, migration de la recopie, lignes de la définition précédente qu'elle remplace. */
@@ -53,6 +55,43 @@ const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
     { fn: 'payment_confirm', file: LOT11C_MIGRATIONS[3], replaced: [] },
     { fn: 'ticket_refund_request', file: LOT11C_MIGRATIONS[4], replaced: [] },
     { fn: 'ticket_postponement_refund_open', file: LOT11C_MIGRATIONS[4], replaced: [] },
+    // Contre-vérification (T1, T2) : la jauge par private.event_seats_gauge ; seuls les calculs de jauge et leurs messages
+    { fn: 'private.event_seats_refusal', file: LOT11C_MIGRATIONS[6], replaced: [
+        "-- Un type de table arrêté garde ses tables vendues ou en paiement dans la jauge (sinon l'organisatrice pourrait",
+        '-- remettre ces places en vente en billets)',
+        "SELECT COALESCE(sum(CASE WHEN c.is_active THEN c.total_quantity WHEN c.kind = 'TABLE' THEN c.sold_quantity + c.held_quantity ELSE 0 END",
+        '* c.seats_per_unit), 0)::int,',
+        'COALESCE(sum(CASE WHEN c.is_active THEN c.total_quantity ELSE c.sold_quantity + c.held_quantity END * c.seats_per_unit)',
+        "FILTER (WHERE c.kind = 'TABLE'), 0)::int",
+        'INTO v_seats, v_table_seats',
+        'FROM public.ticket_categories c WHERE c.event_id = p_event;',
+    ] },
+    { fn: 'ticket_category_create', file: LOT11C_MIGRATIONS[6], replaced: [
+        '-- Lot 11c-a : jauge en places (une table compte ses places ; un type de table arrêté garde ses tables vendues)',
+        "SELECT COALESCE(sum(CASE WHEN c.is_active THEN c.total_quantity WHEN c.kind = 'TABLE' THEN c.sold_quantity + c.held_quantity ELSE 0 END",
+        '* c.seats_per_unit), 0)::int INTO v_sum',
+        "FROM public.ticket_categories c WHERE c.event_id = v_event AND (c.is_active OR c.kind = 'TABLE');",
+        "format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',",
+    ] },
+    { fn: 'ticket_category_update', file: LOT11C_MIGRATIONS[6], replaced: [
+        '-- Lot 11c-a : jauge en places (une table compte ses places ; un type de table arrêté garde ses tables vendues)',
+        "SELECT COALESCE(sum(CASE WHEN o.is_active THEN o.total_quantity WHEN o.kind = 'TABLE' THEN o.sold_quantity + o.held_quantity ELSE 0 END",
+        '* o.seats_per_unit), 0)::int INTO v_sum',
+        "FROM public.ticket_categories o WHERE o.event_id = v_event AND (o.is_active OR o.kind = 'TABLE') AND o.id <> c.id;",
+        "format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',",
+    ] },
+    { fn: 'event_update', file: LOT11C_MIGRATIONS[6], replaced: [
+        'SELECT COALESCE(sum((c.sold_quantity + c.held_quantity) * c.seats_per_unit), 0)::int,',
+        'COALESCE(sum(c.total_quantity * c.seats_per_unit) FILTER (WHERE c.is_active), 0)::int',
+        'INTO v_engaged, v_quota',
+        "format('La jauge ne peut pas descendre sous la somme des quotas des catégories actives (%s) : baissez d''abord les quotas.', v_quota), 'capacity');",
+    ] },
+    { fn: 'event_edit_locks', file: LOT11C_MIGRATIONS[6], replaced: [
+        'COALESCE(sum(c.sold_quantity + c.held_quantity), 0)::int AS engaged,',
+        'COALESCE(sum(c.total_quantity) FILTER (WHERE c.is_active), 0)::int AS active_quota',
+    ] },
+    // Contre-vérification (T3) : avis à l'invité, ajout seul
+    { fn: 'event_table_postponement_refund', file: LOT11C_MIGRATIONS[6], replaced: [] },
 ];
 
 /** Fonctions publiques du lot (appelées par les routes du serveur) : rôle de service seulement. */
@@ -69,12 +108,13 @@ const PRIVATE_FUNCTIONS = [
     'event_table_text_ok(text, integer, integer)', 'event_table_person(uuid)', 'event_table_state(uuid)',
     'event_table_sale_refusal(uuid, uuid)', 'event_table_prices(uuid, text)', 'event_table_checkout(jsonb)',
     'event_table_issue(uuid, uuid, uuid)', 'event_table_sold_notify(uuid)', 'event_table_seats(uuid)',
-    'event_table_postponement_window(uuid)',
+    'event_table_postponement_window(uuid)', 'event_seats_gauge(uuid, uuid, text)',
 ];
 
-/** Texte de la dernière définition de public.<nom> dans les fichiers donnés (du CREATE au second $$). */
+/** Texte de la dernière définition de public.<nom> (ou de schéma.<nom>) dans les fichiers donnés (du CREATE au second $$). */
 function lastDefinition(name: string, files: readonly string[]): string | null {
-    const head = new RegExp(`^CREATE (OR REPLACE )?FUNCTION public\\.${name}\\s*\\(`, 'i');
+    const qualified = name.includes('.') ? name.replace('.', '\\.') : `public\\.${name}`;
+    const head = new RegExp(`^CREATE (OR REPLACE )?FUNCTION ${qualified}\\s*\\(`, 'i');
     let found: string | null = null;
     for (const f of files) {
         const lines = fs.readFileSync(path.join(DIR, f), 'utf8').replace(/\r\n/g, '\n').split('\n');
