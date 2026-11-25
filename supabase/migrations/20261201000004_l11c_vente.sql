@@ -5,7 +5,8 @@
 -- montants de finance_compute (prix de la table + frais de service finance.service_fee_rate, comme les billets ; aucune
 -- commission), grand livre, parrainage, annulation de l'événement, suspension de l'organisatrice : inchangés.
 --  1. Lectures pour les écrans (serveur seulement) : event_table_offer (types, tables et zones du plan, état LIBRE ou
---     PRISE, tables restantes, prix par personne, frais et total), event_table_quote (devis d'un type ou d'une table).
+--     PRISE, tables restantes, prix par personne, frais et total), event_table_quote (devis d'un type ou d'une table),
+--     event_table_config (organisatrice : tous les types et toutes les tables avec leur état, zones, jauge, ventes).
 --  2. event_table_checkout : attente d'une table PRÉCISE (choisie sur le plan, ou la plus petite libre du type sans
 --     plan) ; mêmes règles que les billets (clé d'idempotence, un paiement en attente par compte et par événement, 3
 --     paiements en attente par numéro payeur et par heure) ; tables au plus par compte et par événement (réglage
@@ -191,6 +192,64 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'open', v_refusal IS NULL, 'refusal', v_refusal, 'plan_enabled', v_plan,
                               'types', v_types, 'tables', v_tables, 'zones', v_zones,
                               'hold_minutes', public.fin_setting_num('finance.payment_hold_minutes'), 'read_at', now());
+END;
+$$;
+
+-- Configuration vue par l'organisatrice (ou l'administration) : p { event_id, actor_id }. Tous les types (en vente ou
+-- non), toutes les tables avec leur état (VENDUE, EN_ATTENTE, LIBRE), les zones d'accès et leur rectangle, la jauge en
+-- places et les ventes (tables et places vendues, recette des tables hors frais).
+CREATE OR REPLACE FUNCTION public.event_table_config(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_event uuid := public.try_uuid(p->>'event_id');
+    v_actor uuid := public.try_uuid(p->>'actor_id');
+    a       record;
+    v_cap   integer;
+    v_seats integer;
+    v_tseat integer;
+BEGIN
+    IF v_event IS NULL OR v_actor IS NULL OR NOT EXISTS (SELECT 1 FROM public.events e WHERE e.id = v_event) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+    SELECT * INTO a FROM public.event_actor_profile(v_event, v_actor);
+    IF NOT COALESCE(a.is_owner, FALSE) AND NOT COALESCE(a.is_staff, FALSE) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+    END IF;
+    SELECT capacity INTO v_cap FROM public.events WHERE id = v_event;
+    SELECT COALESCE(sum(c.total_quantity * c.seats_per_unit) FILTER (WHERE c.is_active), 0)::int,
+           COALESCE(sum(c.total_quantity * c.seats_per_unit) FILTER (WHERE c.is_active AND c.kind = 'TABLE'), 0)::int
+      INTO v_seats, v_tseat
+      FROM public.ticket_categories c WHERE c.event_id = v_event;
+    RETURN jsonb_build_object(
+        'ok', true, 'event_id', v_event, 'service_open', public.fin_setting_bool('features.event_tables_enabled'),
+        'plan_enabled', COALESCE((SELECT pl.plan_enabled FROM public.event_table_plans pl WHERE pl.event_id = v_event), FALSE),
+        'capacity', v_cap, 'seats_on_sale', v_seats, 'table_seats_on_sale', v_tseat,
+        'types', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                      'id', c.id, 'name', c.name, 'seats', c.seats_per_unit, 'price', c.price, 'included_text', c.included_text,
+                      'onsite_note', c.onsite_note, 'payment_mode', c.payment_mode, 'is_active', c.is_active,
+                      'sale_start', c.sale_start, 'sale_end', c.sale_end, 'scan_color', c.scan_color, 'entry_instruction', c.entry_instruction,
+                      'total_tables', c.total_quantity, 'sold_tables', c.sold_quantity, 'held_tables', c.held_quantity,
+                      'locked', c.sold_quantity > 0 OR c.held_quantity > 0) || private.event_table_prices(c.id, NULL)
+                    ORDER BY c.created_at, c.id), '[]'::jsonb)
+                    FROM public.ticket_categories c WHERE c.event_id = v_event AND c.kind = 'TABLE'),
+        'tables', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                       'id', t.id, 'number', t.number, 'type_id', t.category_id, 'zone_id', t.zone_id, 'x', t.plan_x, 'y', t.plan_y,
+                       'shape', t.plan_shape, 'rotation', t.plan_rotation, 'state', private.event_table_state(t.id))
+                     ORDER BY t.number), '[]'::jsonb)
+                     FROM public.event_tables t WHERE t.event_id = v_event),
+        'zones', (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', z.id, 'name', z.name, 'x', z.plan_x, 'y', z.plan_y, 'w', z.plan_w, 'h', z.plan_h)
+                    ORDER BY z.name), '[]'::jsonb)
+                    FROM public.event_zones z WHERE z.event_id = v_event),
+        'sales', (SELECT jsonb_build_object('tables', count(*), 'seats', COALESCE(sum(b.seats), 0),
+                                            'revenue', COALESCE(sum(pay.facial_amount), 0))
+                    FROM public.event_table_bookings b JOIN public.payments pay ON pay.id = b.payment_id
+                   WHERE b.event_id = v_event AND b.status = 'ACTIVE'),
+        'read_at', now());
 END;
 $$;
 
@@ -1011,6 +1070,8 @@ REVOKE ALL ON FUNCTION private.event_table_sale_refusal(uuid, uuid) FROM PUBLIC,
 REVOKE ALL ON FUNCTION private.event_table_prices(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.event_table_offer(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_table_offer(jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.event_table_config(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.event_table_config(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.event_table_quote(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_table_quote(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION private.event_table_checkout(jsonb) FROM PUBLIC, anon, authenticated, service_role;
