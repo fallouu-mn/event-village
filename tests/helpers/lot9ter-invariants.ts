@@ -124,6 +124,17 @@ x6_concerned AS (
           AND a.metadata->>'context' <> 'CANCELLATION' AND a.metadata->>'mode' IN ('CASHOUT', 'ORGANISATEUR')
           AND t.user_id IS NOT NULL AND t.user_id IS DISTINCT FROM pay.client_id
           AND EXISTS (SELECT 1 FROM public.ticket_transfers x
+                       WHERE x.ticket_id = t.id AND x.status::text = 'CLAIMED' AND x.from_user_id IS NOT NULL)
+       -- Lot 11c-a (contre-vérification T3) : place d'une table remboursée au report, tenue par un invité (transfert
+       -- accepté), qui n'est pas le titulaire payeur : même avis exigé, au porteur actuel seul
+       UNION
+       SELECT t.id AS ticket_id, t.user_id
+         FROM public.event_table_bookings b
+         JOIN public.payments pay ON pay.id = b.payment_id
+         JOIN public.tickets t ON t.event_table_booking_id = b.id
+        WHERE b.status = 'REFUNDED' AND b.refund_origin = 'POSTPONEMENT'
+          AND t.user_id IS NOT NULL AND t.user_id IS DISTINCT FROM pay.client_id
+          AND EXISTS (SELECT 1 FROM public.ticket_transfers x
                        WHERE x.ticket_id = t.id AND x.status::text = 'CLAIMED' AND x.from_user_id IS NOT NULL)),
 x6 AS (SELECT 'x6', c.ticket_id::text, 'remboursement d''un billet transféré sans TICKET_REFUNDED_HOLDER au porteur actuel'
          FROM x6_concerned c

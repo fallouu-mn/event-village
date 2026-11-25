@@ -709,6 +709,42 @@ const LOT12A_RPCS: Array<[string, Record<string, unknown>]> = [
     ['order_tick', {}],
 ];
 
+// Lot 11c-a (ajout signalé au rapport) : fonctions publiques des tables d'un événement, réservées au rôle de service ;
+// les aides internes sont dans le schéma private (hors de l'API : migration-lot11c-rejouable le vérifie)
+const LOT11C_RPCS: Array<[string, Record<string, unknown>]> = [
+    ['event_tables_setting_set', { p_key: 'features.event_tables_enabled', p_value: { value: true }, p_actor: ZERO_UUID, p_reason: 'test' }],
+    ['event_tables_setting_valid', { p_key: 'event_tables.max_per_account', v: 2 }],
+    ['event_tables_settings_defaults', {}],
+    ['event_table_type_save', { p: {} }],
+    ['event_table_type_delete', { p: {} }],
+    ['event_tables_save', { p: {} }],
+    ['event_table_config', { p: {} }],
+    ['event_table_offer', { p: {} }],
+    ['event_table_quote', { p: {} }],
+    ['event_table_mine', { p: {} }],
+    ['event_table_door_list', { p: {} }],
+    ['event_table_badge', { p_ticket: ZERO_UUID }],
+    ['event_table_postponement_refund', { p: {} }],
+    ['event_table_seats_reminders', { p: {} }],
+];
+
+describe('R3 — lot 11c-a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
+    const MIGRATIONS = 'migrations 20261201000001… du lot 11c-a';
+    for (const [fn, args] of LOT11C_RPCS) {
+        test(`anon et authenticated (compte CLIENT) : rpc(${fn}) existe et est refusée`, async () => {
+            const anon = await anonClient().rpc(fn, args);
+            assert.ok(anon.error, `anon rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(anon.error.code === '42501' || /permission denied/i.test(anon.error.message ?? ''),
+                `anon rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${anon.error.code} ${anon.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+            const { client } = await signInFixture('CLIENT_BIS');
+            const auth = await client.rpc(fn, args);
+            assert.ok(auth.error, `authenticated rpc(${fn}) : appel accepté, la fonction doit être réservée au rôle de service`);
+            assert.ok(auth.error.code === '42501' || /permission denied/i.test(auth.error.message ?? ''),
+                `authenticated rpc(${fn}) : refus attendu par le privilège EXECUTE (42501), obtenu ${auth.error.code} ${auth.error.message} — PGRST202 : fonction absente (${MIGRATIONS}) ou signature différente`);
+        });
+    }
+});
+
 describe('R3 — lot 12a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
     const MIGRATIONS = 'migrations 20261130000001… du lot 12a';
     for (const [fn, args] of LOT12A_RPCS) {

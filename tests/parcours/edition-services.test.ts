@@ -9,6 +9,11 @@
  *  - l'interface ne propose plus que la billetterie : l'étape « Services » est retirée du formulaire partagé
  *    (components/events/EventForm.tsx) et des pages de création et d'édition ; rien des tables, de la
  *    communication ni de la promotion côté public ni côté partenaire.
+ * Lot 11c-a (modification signalée au rapport) : les tables d'un événement existent désormais (une table = un lot de
+ * billets), configurées par l'organisatrice hors du formulaire de l'événement. events.services reste forcé, et les mots
+ * « Tables VIP » et « Réservation de tables » restent interdits dans le formulaire, ses pages, la fiche, la carte et le
+ * pilotage : le nom d'un type de table vient de la base. Nouveau test : la fiche ne reçoit des tables que quand
+ * l'organisatrice en a créé (GET /api/events/[id]/tables : open faux et listes vides sans type de table).
  * Contrôles statiques : sources lues avec fs, commentaires retirés (blocs, JSX, lignes), expressions précises
  * (identifiants tableBooking, setServices, services.<clé> ; libellés « Services associés », « Tables VIP »,
  * « Réservation de tables », « Pack Communication », « Newsletter » ; route /promotion ; mise en avant
@@ -248,6 +253,18 @@ describe('5.9 — promotion indisponible : POST /api/partner/events/[id]/promoti
 });
 
 // ── Interface ──────────────────────────────────────────────────────────────
+
+describe('Lot 11c-a — tables d’un événement : rien à montrer sans type de table', () => {
+    // L'interrupteur n'est pas basculé ici (d'autres suites l'ouvrent pendant leur passage) : la règle vaut dans les deux cas
+    test('GET /api/events/[id]/tables : open faux, aucun type ni table quand l’organisatrice n’en a pas créé', async () => {
+        const ev = await createEventInStatus(partner, 'tables-absentes', STANDARD, 'PUBLIE');
+        const offer = await handlerOf('../../app/api/events/[id]/tables/route', 'GET');
+        const r = await invoke(offer, jsonRequest(`/api/events/${ev.eventId}/tables`, 'GET', null), routeContext({ id: ev.eventId }));
+        assert.equal(r.status, 200, `offre : ${JSON.stringify(r.body)}`);
+        assert.deepEqual({ open: r.body.open, types: r.body.types, tables: r.body.tables }, { open: false, types: [], tables: [] },
+            'aucune table montrée sans type de table');
+    });
+});
 
 describe('5.9 — interface : billetterie seule (contrôles statiques, commentaires exclus)', () => {
     test('plus d’étape « Services » ni de tables, communication ou promotion dans EventForm et les pages de création et d’édition', () => {

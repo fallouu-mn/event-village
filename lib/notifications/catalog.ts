@@ -1613,6 +1613,60 @@ const CATALOG = {
         sms: (d, ctx) => `${SMS_PREFIX}remboursement de ${smsAmount(num(d, 'amount'))} versé sur ${operatorLabel(field(d, 'operator'))} pour la table chez ${dot(smsVar(text(d, 'venue_name'), 18))} ${tableSmsLink(d, ctx)}`,
         sample: { ...TABLE_SAMPLE_DATA, cashout_id: SAMPLE_ID.cashout, amount: 21_000, operator: 'ORANGE_MONEY' },
     }),
+    // Lot 11c-a : tables d'un événement (une table = un lot de N billets, migration 20261201000006)
+    EVENT_TABLE_CONFIRMED: define('EVENT_TABLE_CONFIRMED', {
+        label: 'Table d’un événement réservée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
+        link: eventTicketsPath,
+        inApp: (d) => ({
+            title: 'Table réservée',
+            content: `Votre table ${count(d, 'table_number')} (${text(d, 'table_type')}, ${plural(count(d, 'seats'), 'place', 'places')}) pour ${q(text(d, 'title'))} est réservée. Total payé : ${money(d, 'total')}. Envoyez les places à vos invités depuis Mes billets : chacun aura son billet.`,
+        }),
+        sms: (d, ctx) => `${SMS_PREFIX}table ${count(d, 'table_number')} réservée pour ${smsVar(text(d, 'title'), 30)}, ${count(d, 'seats')} places. Envoyez-les à vos invités : ${appLink(ctx, '/tickets')}`,
+        sample: { ...SAMPLE_EVENT, booking_id: '6d2f8a14-3c7e-4b9a-8e51-2a4c6e8b1d37', table_number: 12, seats: 6, table_type: 'Table VIP', zone: 'Carré VIP', payment_id: SAMPLE_ID.payment, total: 157_500, service_fee: 7_500 },
+    }),
+    EVENT_TABLE_SOLD: define('EVENT_TABLE_SOLD', {
+        label: 'Table d’un événement vendue', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', night: 'DEFER', inAppType: 'SALES',
+        link: (d) => partnerEventPath(d, 'ventes'),
+        // Groupé (notif_enqueue_grouped, série de 30 minutes) : table_count tables et seat_count places depuis since
+        inApp: (d) => {
+            const tables = optNum(d, 'table_count') === null ? 1 : count(d, 'table_count');
+            if (tables > 1) {
+                return {
+                    title: 'Tables vendues',
+                    content: `${tables} tables vendues pour ${q(text(d, 'title'))}${optText(d, 'since') ? ` depuis ${formatTime(iso(d, 'since'))}` : ''} : ${plural(count(d, 'seat_count'), 'place', 'places')}, +${money(d, 'total')}.`,
+                };
+            }
+            return { title: 'Table vendue', content: `Une table vendue pour ${q(text(d, 'title'))} : ${plural(count(d, 'seat_count'), 'place', 'places')}, +${money(d, 'total')}.` };
+        },
+        sms: (d, ctx) => {
+            const tables = optNum(d, 'table_count') === null ? 1 : count(d, 'table_count');
+            return `${SMS_PREFIX}${tables > 1 ? `${tables} tables vendues` : 'une table vendue'} pour ${smsVar(text(d, 'title'), 30)} (${count(d, 'seat_count')} places). ${appLink(ctx, '/partner/events')}`;
+        },
+        sample: { ...SAMPLE_EVENT, table_count: 1, seat_count: 6, total: 150_000 },
+    }),
+    EVENT_TABLE_SEATS_REMINDER: define('EVENT_TABLE_SEATS_REMINDER', {
+        label: 'Places de table à envoyer', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
+        inAppType: 'REMINDER', link: eventTicketsPath,
+        inApp: (d) => ({
+            title: 'Vos invités attendent leurs places',
+            content: `Il vous reste ${plural(count(d, 'seats_left'), 'place', 'places')} à envoyer pour votre table ${count(d, 'table_number')} à ${q(text(d, 'title'))}, demain à ${formatTime(iso(d, 'start_at'))}. Envoyez-les depuis Mes billets : chaque invité aura son billet.`,
+        }),
+        sms: (d, ctx) => `${SMS_PREFIX}il vous reste ${plural(count(d, 'seats_left'), 'place', 'places')} à envoyer pour la table ${count(d, 'table_number')}, ${smsVar(text(d, 'title'), 30)} demain. ${appLink(ctx, '/tickets')}`,
+        sample: { ...SAMPLE_EVENT, booking_id: '6d2f8a14-3c7e-4b9a-8e51-2a4c6e8b1d37', table_number: 12, seats_left: 4 },
+    }),
+    ADMIN_EVENT_TABLES_CHANGED: define('ADMIN_EVENT_TABLES_CHANGED', {
+        label: 'Tables modifiées après validation', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'events.read', inAppType: 'ADMIN_REVIEW',
+        link: (d) => `/admin/events/${ident(d, 'event_id')}`,
+        inApp: (d) => {
+            const company = optText(d, 'company');
+            return {
+                title: 'Tables modifiées après validation',
+                content: `${q(text(d, 'title'))}${company ? ` de ${company}` : ''} : tables ou types de tables ajoutés, modifiés ou retirés après validation. Vérifiez la fiche.`,
+            };
+        },
+        sms: (d, ctx) => `${SMS_PREFIX}tables modifiées après validation pour ${dot(smsVar(text(d, 'title'), 30))} Vérifiez la fiche : ${appLink(ctx, '/admin/events')}`,
+        sample: { ...SAMPLE_EVENT, company: 'Sabar Events' },
+    }),
     VENUE_VALIDATION_DECIDED: define('VENUE_VALIDATION_DECIDED', {
         label: 'Décision sur un établissement', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'TABLE_RESERVATION',
         link: (d) => `/partner/tables/${ident(d, 'venue_id')}`,

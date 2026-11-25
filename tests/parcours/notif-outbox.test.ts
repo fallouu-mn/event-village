@@ -159,6 +159,11 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     // Lot 11b (ajouts signalés au rapport) : le client arrive (« J'arrive »), remboursement d'une table versé
     ess('TABLE_CLIENT_COMING', [I, P, M, S], 'PARTNER', 'B'),
     ess('TABLE_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A'),
+    // Lot 11c-a (ajout signalé au rapport) : tables d'un événement
+    ess('EVENT_TABLE_CONFIRMED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('EVENT_TABLE_SOLD', [I, P, M, S], 'PARTNER', 'B'),
+    opt('EVENT_TABLE_SEATS_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT'),
+    ess('ADMIN_EVENT_TABLES_CHANGED', [I, P, M, S], 'ADMIN', 'B', 'events.read'),
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A'),
     // Lot 12a (migration 20261130000007, ajout signalé au rapport) : étapes d'une commande
     ess('ORDER_RECEIVED', [I, P, M, S], 'CLIENT', 'B'),

@@ -22,9 +22,11 @@
 --  4. lecture : établissements actifs et validés pour tous (sinon la partenaire propriétaire ou un admin avec le
 --     code) ; horaires, zones et tables lisibles quand leur établissement l'est ; aucune écriture REST (aucune
 --     politique d'écriture, droits d'écriture retirés à anon et authenticated).
--- Modèle prévu pour les tables d'un événement (lot 11c) : une zone ou une table portera alors event_id, exclusif de
--- venue_id (CHECK num_nonnulls(venue_id, event_id) = 1), et un prix par table ; la réservation garde table_id et son
--- créneau, et la même contrainte d'exclusion.
+-- Tables d'un événement (lot 11c-a, 25/11) : le modèle d'abord prévu ici (event_id sur les zones et les tables des
+-- établissements, même réservation) est ABANDONNÉ : l'annulation d'un événement, le remboursement au report et la
+-- suspension de l'organisatrice ne traitent que les paiements de billets (payment_target TICKET), une table payée en
+-- TABLE_RESERVATION n'aurait donc pas été remboursée. Une table d'un événement est un lot de N billets (migrations
+-- 20261201000001 à …06, docs/lot11c-etat-des-lieux.md § 2.3). Commentaire seul : aucune instruction ne change.
 -- Rejouable : CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, DROP … IF EXISTS puis ADD, CREATE OR REPLACE.
 -- ============================================================================
 
