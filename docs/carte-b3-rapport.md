@@ -418,3 +418,50 @@ Superadmin (Administration › Réglages › Services).
   message (`docs/apres-lancement.md`).
 - Refus de validation sans position : rendu en 422 par la route des transitions d'un événement (code déjà connu de la
   finition 2a) ; en 409 par la route de décision d'une salle ou d'un établissement, comme les autres refus de décision.
+
+## 10. Correctifs de la contre-vérification (`docs/audit-carte-b3.md`) et décisions du client du 25/11 (2e série)
+
+Branche `carte-b3/lieux`, après la fusion en avance rapide de `carte-b3/cv-rouges` (`1663d65b44` : suites
+`tests/audit/cvcb3-1-trous`, `cvcb3-2-gardes`, `cvcb3-3-statique`, **non modifiées**). Les correctifs vont dans la
+migration du lot (`20261210000001`, appliquée nulle part) : une migration plus récente qui redéfinirait les fonctions
+recopiées serait refusée par `cvcb3-3-statique` (S1).
+
+### 10.1 Décisions du client du 25/11
+
+1. **La raison sociale n'est jamais affichée en public.** Le nom commercial devient obligatoire à l'inscription et dans le
+   profil ; pour les partenaires existantes sans nom commercial : « Partenaire Event Village ».
+2. **La fiche publique d'un événement suspendu n'est plus qu'une page neutre** « Cet événement n'est plus disponible »
+   (ni titre, ni lieu, ni date) ; les porteurs retrouvent leurs billets dans « Mes billets ». **Contrat E du lot 5
+   changé** (avant : fiche complète avec le bandeau « suspendu », `lib/events/public-status.ts:9-11`).
+
+### 10.2 Correctifs, dans l'ordre demandé
+
+| Trou | Correctif | Commits |
+|---|---|---|
+| T1 (moyenne) — REST de `halls` et `venues` | **D'abord** les règles qui lisaient `venues` avec les droits de l'appelant : `restaurant_zones_read`, `restaurant_tables_read`, `venue_opening_hours_read` (reprises de `20261129000009:28-48`) et `order_delivery_zones_read` (`20261130000002:432-433`) passent par une aide `listed_venue(uuid)` (booléen, `SECURITY DEFINER`, établissement actif, validé, partenaire VALIDE : mêmes conditions qu'avant). **Puis** la REST : `halls` n'est plus lisible par `anon` ni `authenticated` ; `venues` ne l'est plus par `anon` ; `authenticated` garde la seule colonne `id`, seulement pour **son** établissement public (précondition « la propriétaire lit son établissement » de `tests/audit/cv11a-4-droits.test.ts:88-91`, inchangée) : un tiers, une cliente ou une autre partenaire ne lisent aucune ligne. L'aide s'appelle `listed_venue` (et non `venue_listed`, nom proposé par l'audit) : `cv11a-4-droits` interdit toute fonction `venue_*` exécutable par les rôles publics, et l'invariant q6 du lot 9 quater exige qu'une telle aide lise le statut (elle lit `partners.status` elle-même ; run 677). | `5045dee726`, `2977ab71b2`, `f42f24b6c1` |
+| T2 (moyenne) — raison sociale publique | Nom montré au public et aux clientes : **le nom commercial, sinon « Partenaire Event Village »** (`lib/partner/public-name.ts`). En base (section 10 de la migration) : `hall_search` et `venue_search` (nom rendu et texte tapé), `notif_tickets_scanned` (bienvenue et merci du porteur), vue `public_partners` (colonne `public_name` à la place de `company_name`). Serveur : recherches et fiches des salles et établissements, liste d'Explorer et de l'accueil, carte des événements (sous-titre et filtre « q »), fiche d'un événement, billets et PDF, commandes de la cliente, menu d'un restaurant : la raison sociale n'est plus **lue**. Inscription (schéma partagé, écran, route) et profil (écran, route) : nom commercial obligatoire, avec l'aide « C'est le seul nom que voit le public. La raison sociale n'est jamais affichée. » ; la route d'inscription ne recopie plus la raison sociale dans le nom commercial. L'administration et l'espace de la partenaire (et de son équipe : contrôleurs) gardent la raison sociale. | `40b22b271c` |
+| T3 (faible) — VALIDE → PUBLIE sans position | **Comptage d'abord, en lecture seule, sur event-village-dev : 0 événement VALIDE sans position** (fait par l'utilisateur le 25/11 : la CLI de ce poste est connectée à un autre compte Supabase, refus 403, non contourné ; requête fournie). Aucun message aux organisatrices. `event_transition` (recopie du lot) : VALIDE → PUBLIE refusé sans position (`POSITION_REQUIRED`, « Placez votre lieu sur la carte avant de publier. »), pour la partenaire comme pour l'administration ; la réactivation SUSPENDU → PUBLIE reste libre (ce qui était publié reste en ligne). La partenaire peut toujours placer la position d'un événement validé (`event_update` ne refuse que son retrait). | `de2887b5f5` |
+| T4 (faible) — modification d'un établissement | `TableService.updateVenue` : horaires contrôlés et écrits **avant** la fiche ; refusés, rien n'est écrit (ni nom, ni position, ni photos) ; dès qu'une écriture a réussi, `invalidatePublicPlaces` est appelé dans un `finally`, même si la suite échoue. | `33e24e53e7` |
+| Décision 2 — événement suspendu | `GET /api/events/[id]` : 200 `{ event: { id, status, purchasable: false, unavailable: true, message } }`, ni titre, ni lieu, ni date, ni catégories (`lib/events/unavailable-event.ts`) ; la page rend une page neutre (gabarit `SpecialPage` des pages spéciales ; skill `ui-ux-pro-max` invoqué : un message et l'action suivante) avec « Mes billets » et « Explorer les événements », métadonnées « Événement indisponible — Event Village » non indexées ; la billetterie d'une page ouverte relit la page quand l'événement devient indisponible. Le garde-fou G5 de `cvcb3-2-gardes` (`status` et `purchasable`) reste vrai sans modification. | `d0f1ae9cfc` |
+
+Nouveaux tests du lot : `tests/parcours/cb3-nom-commercial.test.ts` (repli, obligation à l'inscription et au profil) ;
+`cb3-position-obligatoire` groupes C (publication refusée sans position, réactivation libre) et F (T4, tout ou rien) ;
+`migration-carte-b3-rejouable` (trois recopies de plus) ; `carte-b3-ecrans` (page neutre).
+
+### 10.3 Tests modifiés (aucune assertion d'audit changée ; chaque modification signalée)
+
+| Fichier | Modification | Raison |
+|---|---|---|
+| `tests/security/r30-salles-lecture.test.ts` (lot 10a) | visiteur, cliente et propriétaire ne lisent plus aucune salle par la REST (avant : la salle validée ; la propriétaire, les siennes) | T1 : REST de `halls` fermée |
+| `tests/security/r31-tables-lecture.test.ts` (lot 11a) | visiteur, cliente et autre partenaire ne lisent plus aucun établissement (avant : l'établissement validé) ; la propriétaire lit toujours l'identifiant du sien ; tables, zones et horaires inchangés | T1 : REST de `venues` fermée |
+| `tests/schema/fonctions-privileges.test.ts`, `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` | 10e aide des règles de lecture, `listed_venue` (03-verification attend 10 aides : à lancer **après** la migration du lot) | T1 |
+| `tests/security/r18-partenaires-public.test.ts` (lot 5, contrat A2) | la vue `public_partners` rend `public_name` (nom commercial), plus `company_name` ; colonnes exactes et absence de la raison sociale vérifiées (ligne 61, citée par la matrice, inchangée) | décision 1 (T2) |
+| `tests/parcours/partenaire-profil-rpc.test.ts` | le nom commercial ne se vide plus : il rejoint le test du refus de l'email vidé (lignes 219 et 240, citées, inchangées) | décision 1 (T2) |
+| `tests/parcours/f4-recopies.test.ts` | ligne remplacée de `notif_tickets_scanned` déclarée (raison sociale → nom commercial) | T2 |
+| 12 suites qui inscrivent une partenaire par la route (`acces-limiteurs`, `attribution-roles`, `documents-inscription`, `dossier-partenaire-9bis`, `ecritures-ignorees`, `email-optionnel`, `email-verification`, `lot9quinquies-messages`, `lot9quinquies-sms-admins`, `notif-pros`, `otp-serveur`, `partenaire-en-attente`) | `commercialName: 'Enseigne de test'` ajouté sur la ligne de `companyName` (aucune ligne décalée) | décision 1 : nom commercial obligatoire à l'inscription |
+| `e2e/recette.spec.ts` | ligne 375 : le champ « Nom commercial » est rempli (même ligne) ; ligne 1149 : la page publique de l'événement suspendu attend « n'est plus disponible » (avant : « suspendu ») | décisions 1 et 2 |
+| `e2e/support/screens.ts` | capture `evenement-suspendu` : attend la page neutre | décision 2 |
+| `tests/parcours/cycle-visibilite.test.ts` (lot 5, contrat E) | SUSPENDU : fiche neutre (clés exactes `id`, `message`, `purchasable`, `status`, `unavailable`) au lieu du bandeau ; même nombre de lignes (141 et 216, citées, inchangées) | décision 2 |
+| `tests/schema/carte-b-donnees.test.ts`, `tests/schema/design1b-catalogue.test.ts` | conversion de type sur la ligne qui construit `partners` (`company_name` n'est plus dans le type lu) ; valeurs et assertions inchangées | T2 |
+
+<!-- CV_RUNS -->
