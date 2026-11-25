@@ -315,6 +315,7 @@ Journaux publiés sur la branche `ci-results`, dossier `runs/<n>-<id>/`. Sorties
 | 651 | **complet** | d3d5472112 | tests 600/604, mesure mobile hors seuil | `design1b-fiche`, `f3b-ecrans`, `zones-schema`, `recette-matrice` ; Mes billets 89 |
 | 655 | rapide, 10 suites | b9f9669918 | 9/10 | `recette-matrice` : une ligne citée de `notif-modeles` encore décalée ; recalée |
 | 656 | **complet** | 57f3b29498 | tests 604/604, responsive 0 défaut, poids OK, e2e OK ; mesure mobile hors seuil (Mes billets 87) | voir ci-dessous |
+| 659 | mesure mobile seule (`ci-perf: oui`) | df672cfbb7 | **vert** : 93 / 90 / 91, toucher 120 ms | — |
 
 Le premier run complet (651) étant rouge, un second a été nécessaire (656), contrairement au « run complet unique »
 prévu.
@@ -356,4 +357,21 @@ les runs précédents : 89 (630, 633), 90 (631, 646), 91 à 94 ailleurs. Comme l
 une page non touchée : relance de la mesure, rien d'autre), la mesure est relancée seule (`ci-perf: oui`) sans
 changer le code.
 
-<!-- PERF -->
+**Mesure relancée seule, run 659** (`runs/659-45627349020`, commit df672cfbb7, documentation seule) :
+
+```
+OK — Accueil
+  OK — score Lighthouse mobile : médiane 93 sur 5 passage(s) [90 ; 92 ; 93 ; 96 ; 94] (seuil ≥ 90)
+OK — Fiche événement (« ce soir »)
+  OK — score Lighthouse mobile : médiane 90 sur 5 passage(s) [89 ; 91 ; 90 ; 94 ; 90] (seuil ≥ 90)
+OK — Mes billets (client connecté)
+  OK — score Lighthouse mobile : médiane 91 sur 5 passage(s) [91 ; 88 ; 92 ; 93 ; 91] (seuil ≥ 90)
+  · poids transféré (médiane) : 403,4 Ko ; TBT 375 ms ; FCP 938 ms ; Speed Index 1,16 s
+OK — Réaction au toucher
+  OK — réaction au toucher (Event Timing, la plus longue sur 10 toucher(s)) : 120 ms (seuil < 200 ms)
+VERDICT : OK — tous les seuils sont tenus
+```
+
+**Bilan :** tests 604/604 (run 656), responsive 0 défaut, budgets JS jamais relevés (marge minimale 9 746 octets),
+e2e vert, mesure mobile ≥ 90 partout (run 659). Rien n'est fusionné et aucune migration n'est appliquée : les 6
+migrations `20261201000001` à `…006` attendent la contre-vérification.
