@@ -26,6 +26,12 @@ const PUBLIC_PREFIXES = [
     '/sw.js',
     // Lot 7 (7.0 e, D24) : icônes de l'application installable (maskable, apple-touch), servies sans session
     '/icons/',
+    // Lot Carte B : fichiers statiques de Leaflet (feuille de style 1.9.4 de la carte d'Explorer et de l'aperçu de
+    // l'accueil, icônes de repère), publics comme la page qui les affiche ; aucune donnée
+    '/leaflet/',
+    // Contre-vérification Carte B (T5) : images statiques de public/images (logos « Payer avec » de la fiche et du
+    // paiement, affiche de repli, image de partage lue sans session par les messageries) ; aucune page ni route dessous
+    '/images/',
     // Lot 7 (7.1, D26) : coquille statique du billet hors ligne, sans donnée personnelle ni session (le
     // service worker la met en cache : elle ne doit jamais être une redirection d'authentification)
     '/billet/hors-ligne',
@@ -117,6 +123,45 @@ const DEV_ROUTE = /^\/(?:api\/)?dev(?:\/|$)/;
  * La lecture n'a lieu que sur les zones protégées et les pages d'authentification.
  * En cas d'échec de lecture : accès refusé et journalisé, jamais de repli sur le jeton.
  */
+/**
+ * Contre-vérification Carte B (T5) — adresse absolue d'une redirection, avec le protocole et l'hôte transmis par le relais
+ * (x-forwarded-proto, x-forwarded-host) : derrière un relais HTTPS, `req.url` est en http:// et la redirection vers
+ * /login repartait en http://. Valeurs contrôlées : protocole http ou https seulement ; hôte réduit à un nom (ou une
+ * adresse) et un port, et égal à l'hôte de la requête ou de l'application ; sinon l'adresse de la requête est gardée.
+ * Première valeur d'une liste (relais en chaîne).
+ */
+const FORWARDED_HOST_RE = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::\d{1,5})?$/i;
+
+function firstHeaderValue(value: string | null): string | null {
+    const first = value?.split(',')[0]?.trim();
+    return first ? first : null;
+}
+
+function redirectUrl(path: string, req: NextRequest): URL {
+    const url = new URL(path, req.url);
+    const proto = firstHeaderValue(req.headers.get('x-forwarded-proto'))?.toLowerCase();
+    if (proto === 'https' || proto === 'http') url.protocol = `${proto}:`;
+    const host = firstHeaderValue(req.headers.get('x-forwarded-host'));
+    if (host && FORWARDED_HOST_RE.test(host) && trustedHost(host, req)) {
+        // Nom et port posés ensemble : affecter `host` sans port gardait le port de `req.url` (run 630 : …sn:3000)
+        const [name, port] = host.split(':');
+        url.hostname = name;
+        url.port = port ?? '';
+    }
+    return url;
+}
+
+/** Hôte transmis admis seulement s'il est celui de la requête (en-tête Host) ou celui de l'application : jamais un autre site. */
+function trustedHost(host: string, req: NextRequest): boolean {
+    const wanted = host.toLowerCase();
+    if (wanted === (req.headers.get('host') ?? '').toLowerCase()) return true;
+    try {
+        return wanted === new URL(process.env.NEXT_PUBLIC_APP_URL ?? '').host.toLowerCase();
+    } catch {
+        return false;
+    }
+}
+
 export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl;
 
@@ -226,7 +271,7 @@ export async function middleware(req: NextRequest) {
         if (pathname.startsWith('/api/')) {
             return NextResponse.json({ error: apiMessage }, { status });
         }
-        return redirect(new URL(pageUrl, req.url));
+        return redirect(redirectUrl(pageUrl, req));
     }
 
     if (!user) {
@@ -241,7 +286,7 @@ export async function middleware(req: NextRequest) {
             );
         }
 
-        const loginUrl = new URL('/login', req.url);
+        const loginUrl = redirectUrl('/login', req);
         // Finition 5 (point 2) : l'adresse complète revient après la connexion (?tab= d'un avis du pilotage, ?rappel=1 d'une
         // table) ; relue par safeInternalPath (chemin interne seulement, 2 048 caractères au plus, sinon l'espace du compte)
         loginUrl.searchParams.set('redirect', `${pathname}${req.nextUrl.search}`);
@@ -261,7 +306,7 @@ export async function middleware(req: NextRequest) {
     if (rolesError) {
         console.error(`[middleware] lecture des rôles impossible pour ${user.id} sur ${pathname} :`, rolesError.code, rolesError.message);
         if (isAuthPage) {
-            return redirect(new URL('/', req.url));
+            return redirect(redirectUrl('/', req));
         }
         return deny('Vérification des droits impossible. Réessayez.', '/?error=roles_unavailable', 503);
     }
@@ -270,15 +315,15 @@ export async function middleware(req: NextRequest) {
     // Utilisateur connecté sur une page d'auth → rediriger selon les rôles
     if (isAuthPage) {
         if (hasAnyRole(roles, ['ADMIN', 'SUPERADMIN'])) {
-            return redirect(new URL('/admin/dashboard', req.url));
+            return redirect(redirectUrl('/admin/dashboard', req));
         }
         if (hasRole(roles, 'PARTENAIRE')) {
-            return redirect(new URL('/partner/dashboard', req.url));
+            return redirect(redirectUrl('/partner/dashboard', req));
         }
         if (hasRole(roles, 'CONTROLEUR')) {
-            return redirect(new URL('/controller/scanner', req.url));
+            return redirect(redirectUrl('/controller/scanner', req));
         }
-        return redirect(new URL('/', req.url));
+        return redirect(redirectUrl('/', req));
     }
 
     // ── RBAC MULTI-RÔLE ──────────────────────────────────────────────────
@@ -294,7 +339,7 @@ export async function middleware(req: NextRequest) {
     // /scan → CONTROLEUR, ADMIN, SUPERADMIN, PARTENAIRE
     if (isScanArea) {
         if (!hasAnyRole(roles, ['CONTROLEUR', 'ADMIN', 'SUPERADMIN', 'PARTENAIRE'])) {
-            return redirect(new URL('/?error=unauthorized_scanner', req.url));
+            return redirect(redirectUrl('/?error=unauthorized_scanner', req));
         }
         return supabaseResponse;
     }

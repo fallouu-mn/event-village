@@ -1,4 +1,5 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
 import { z } from 'zod';
 import { zodTypeErrors } from '@/lib/validations/zod-messages';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
@@ -183,6 +184,8 @@ export async function PATCH(request: NextRequest) {
     }
 
     const update: Record<string, unknown> = {};
+    /** Champs du profil affichés ou cherchés par les pages publiques (contre-vérification T3). */
+    const PUBLIC_PROFILE_FIELDS = ['company_name', 'commercial_name', 'logo_url'] as const;
     for (const key of ['company_name', 'commercial_name', 'description', 'address', 'city', 'latitude', 'longitude', 'email'] as const) {
         if (input[key] !== undefined) update[key] = input[key];
     }
@@ -221,6 +224,9 @@ export async function PATCH(request: NextRequest) {
             }
             return serverError('enregistrement du profil', `réponse inattendue : ${JSON.stringify(saved)}`);
         }
+        // Contre-vérification T3 : raison sociale, nom commercial et logo sont affichés par les fiches (organisateur) et
+        // cherchés par le texte d'Explorer et de la carte : pages publiques mises à jour sans attendre le cache de 60 s
+        if (PUBLIC_PROFILE_FIELDS.some((key) => key in update)) invalidatePublicEvent(null, 'profil de la partenaire');
     }
 
     const { data: partner, error: rereadErr } = await supabase.from('partners').select(PUBLIC_COLUMNS).eq('id', existing.id).single();

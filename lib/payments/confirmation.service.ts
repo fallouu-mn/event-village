@@ -17,6 +17,8 @@ import { isSamirPayError } from '@/lib/samirpay/types';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { CashoutService } from './cashout.service';
 import { rpcWithRetry } from './rpc';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
+import { stockCrossedZero, stockSnapshot } from '@/lib/events/stock-watch.server';
 
 /** Lot 7 (D4, contrat 3.5) : CLIENT_CANCEL = vérification chez SamirPay avant une annulation par le client. */
 export type ConfirmSource = 'WEBHOOK' | 'STATUS_POLL' | 'RECONCILIATION' | 'CLIENT_CANCEL';
@@ -66,8 +68,16 @@ export async function confirmTicketPayment(
     paymentId: string, source: ConfirmSource,
     rpc: 'payment_confirm' | 'hall_payment_confirm' | 'table_payment_confirm' | 'order_payment_confirm' = 'payment_confirm',
 ): Promise<{ result: string; cashout_id?: string; ticket_ids?: string[] }> {
+    // Contre-vérification T4 : places restantes de l'événement lues avant la confirmation d'un billet (une confirmation
+    // tardive, réservation déjà rendue, peut épuiser une catégorie)
+    const scope = rpc === 'payment_confirm' ? await ticketPaymentScope(paymentId) : null;
+    const before = scope ? await stockSnapshot(scope) : null;
     const { data, error } = await rpcWithRetry<{ result: string; cashout_id?: string; ticket_ids?: string[]; reason?: string }>(rpc, { p_payment_id: paymentId, p_source: source });
     if (error || !data) throw new Error(`Confirmation du paiement ${paymentId} impossible : ${error?.message}`);
+    if (scope) {
+        // « Complet » et prix d'appel du catalogue, de l'accueil et de la carte : au plus une invalidation par événement / 5 s
+        for (const eventId of await stockCrossedZero(before, scope)) invalidatePublicEvent(eventId, 'stock : vente confirmée');
+    }
     if (data.result === 'REFUND_REQUIRED' && data.cashout_id) {
         console.warn(`[confirmation] paiement ${paymentId} encaissé mais non honorable (${data.reason}) : remboursement`);
         try {
@@ -143,10 +153,26 @@ async function releaseOther(payment: PaymentRecord, status: 'FAILED' | 'CANCELLE
     void status;
 }
 
+/** Événement d'un paiement de billets (périmètre de la surveillance du stock, contre-vérification T4), ou null. */
+async function ticketPaymentScope(paymentId: string): Promise<{ eventIds: string[] } | null> {
+    const { data, error } = await getServiceRoleClient().from('payments').select('event_id, payment_target').eq('id', paymentId).maybeSingle();
+    if (error) {
+        console.error(`[confirmation] événement du paiement ${paymentId} illisible (aucune invalidation du stock, cache de 60 s) :`, error.message);
+        return null;
+    }
+    return data?.event_id && data.payment_target === 'TICKET' ? { eventIds: [String(data.event_id)] } : null;
+}
+
 /** Passage en échec, annulation ou expiration (réservations rendues). */
 export async function releasePayment(payment: PaymentRecord, status: 'FAILED' | 'CANCELLED' | 'EXPIRED', reason: string): Promise<boolean> {
+    // Contre-vérification T4 : une réservation rendue peut faire repartir une catégorie de zéro place
+    const scope = payment.payment_target === 'TICKET' && payment.event_id ? { eventIds: [payment.event_id] } : null;
+    const before = scope ? await stockSnapshot(scope) : null;
     const { data, error } = await rpcWithRetry<{ changed: boolean; status: string | null }>('payment_release', { p_payment_id: payment.id, p_status: status, p_reason: reason });
     if (error) throw new Error(`Libération du paiement ${payment.id} impossible : ${error.message}`);
+    if (scope && data?.changed) {
+        for (const eventId of await stockCrossedZero(before, scope)) invalidatePublicEvent(eventId, 'stock : réservation rendue');
+    }
     if (data?.changed && payment.payment_target !== 'TICKET') await releaseOther(payment, status);
     return Boolean(data?.changed);
 }

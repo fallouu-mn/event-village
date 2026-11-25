@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
+import { expiringReservationsScope, stockCrossedZero, stockSnapshot } from '@/lib/events/stock-watch.server';
 import { logAdminAlert } from '@/lib/admin/alerts';
 import { getServerEnv } from '@/lib/env';
 import { CashoutService } from '@/lib/payments/cashout.service';
@@ -35,8 +37,14 @@ async function run(req: NextRequest) {
     const count = (k: string) => { summary[k] = (summary[k] ?? 0) + 1; };
 
     try {
+        // Contre-vérification T4 : une réservation rendue peut faire repartir une catégorie de zéro place
+        const stockScope = await expiringReservationsScope();
+        const stockBefore = stockScope ? await stockSnapshot(stockScope) : null;
         const { data: purged, error: purgeErr } = await rpcWithRetry<{ expired: number }>('stock_reservations_expire', {});
         if (purgeErr) throw new Error(`purge des réservations : ${purgeErr.message}`);
+        if (stockScope) {
+            for (const eventId of await stockCrossedZero(stockBefore, stockScope)) invalidatePublicEvent(eventId, 'stock : réservations échues');
+        }
         summary.reservations_expired = purged?.expired ?? 0;
 
         const minAge = new Date(now - env.PAYMENT_RECONCILE_MIN_AGE_MINUTES * 60_000).toISOString();

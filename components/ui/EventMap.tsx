@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
+import { addThemedTiles, setTilesTheme, useMapTheme } from '@/components/map/themedTiles';
 import { mapMarkerHtml } from './MapMarker';
 import { cn } from './cn';
 
@@ -17,9 +18,6 @@ interface EventMapProps {
     className?: string;
 }
 
-/** Tuiles configurables comme dans MapPicker (NEXT_PUBLIC_MAP_TILE_URL, NEXT_PUBLIC_MAP_TILE_ATTRIBUTION), OpenStreetMap par défaut. */
-const TILE_URL = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTRIBUTION = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy; contributeurs OpenStreetMap';
 
 /** Nom affiché sur le repère : 28 caractères au plus (le nom entier reste dans le texte de remplacement). */
 export function markerName(name: string): string {
@@ -40,6 +38,11 @@ export function markerName(name: string): string {
  */
 export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueName, eventName, className }) => {
     const mapRef = useRef<HTMLDivElement>(null);
+    // Lot Carte B (B1) : fond Stadia du thème (lib/map/tiles.ts), changé sans recréer la carte
+    const theme = useMapTheme();
+    const themeRef = useRef(theme);
+    themeRef.current = theme;
+    const tilesRef = useRef<import('leaflet').TileLayer | null>(null);
 
     useEffect(() => {
         const container = mapRef.current;
@@ -77,12 +80,9 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
         // En bas à gauche : en haut, il recouvrait le début de la bulle du lieu, ouverte d'office (run 98).
         L.control.zoom({ position: 'bottomleft', zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière' }).addTo(map);
 
-        L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
-        // Lot 7 (D74) : mention légale des tuiles (12 px de Leaflet) marquée comme légende pour le contrôle des
-        // captures (e2e/support/checks.ts, CAPTION_SELECTOR) ; elle reste lisible et n'est pas un contenu.
-        // Finition 2b (A) : pied de carte réduit à la mention des fonds (« © contributeurs OpenStreetMap »), sans « Leaflet »
-        map.attributionControl?.setPrefix(false);
-        map.attributionControl?.getContainer()?.setAttribute('data-ev-caption', '');
+        // Lot 7 (D74) : mention légale des tuiles marquée comme légende pour le contrôle des captures ; finition 2b (A) : sans
+        // « Leaflet ». Lot Carte B : fond et mention de Stadia (addThemedTiles).
+        tilesRef.current = addThemedTiles(L, map, themeRef.current);
 
         const alt = eventName
             ? `${eventName}${venueName ? `, ${venueName}` : ''}`
@@ -104,9 +104,14 @@ export const EventMap: React.FC<EventMapProps> = ({ latitude, longitude, venueNa
         }
 
         return () => {
+            tilesRef.current = null;
             map.remove();
         };
     }, [latitude, longitude, venueName, eventName]);
+
+    useEffect(() => {
+        setTilesTheme(tilesRef.current, theme);
+    }, [theme]);
 
     return (
         <div

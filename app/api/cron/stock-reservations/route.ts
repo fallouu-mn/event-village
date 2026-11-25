@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
+import { expiringReservationsScope, stockCrossedZero, stockSnapshot } from '@/lib/events/stock-watch.server';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { refuseUnlessCron } from '@/lib/security/cron-auth';
 import { purgeUnclaimedUploads } from '@/lib/partners/documents';
@@ -13,10 +15,16 @@ export const dynamic = 'force-dynamic';
 async function run(req: NextRequest) {
     const refused = refuseUnlessCron(req);
     if (refused) return refused;
+    // Contre-vérification T4 : une réservation rendue peut faire repartir une catégorie de zéro place
+    const stockScope = await expiringReservationsScope();
+    const stockBefore = stockScope ? await stockSnapshot(stockScope) : null;
     const { data, error } = await rpcWithRetry<{ expired: number }>('stock_reservations_expire', {});
     if (error) {
         console.error('[cron stock-reservations] purge impossible :', error.message);
         return NextResponse.json({ error: 'Purge impossible.' }, { status: 500 });
+    }
+    if (stockScope) {
+        for (const eventId of await stockCrossedZero(stockBefore, stockScope)) invalidatePublicEvent(eventId, 'stock : réservations échues');
     }
     // Lot 9 quater (F2 : AUD-25) : pièces d'inscription déposées et jamais rattachées depuis plus de 24 h
     let uploadsPurged: number;

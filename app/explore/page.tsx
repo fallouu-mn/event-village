@@ -3,6 +3,7 @@ import { ExploreView } from './ExploreView';
 import { cachedCatalogEvents } from '@/lib/events/catalog-cache.server';
 import { catalogCities, type CatalogEventDto } from '@/lib/events/catalog.server';
 import { applyCatalogFilters, paginate, parseCatalogParams } from '@/lib/events/catalog-filters';
+import { parseExploreMode } from '@/lib/events/explore-view';
 
 /**
  * Catalogue public, Explorer (lot 5, tâches 5.3 et 5.13 ; contrats E, O3, O5 ; design 1b, points 1 et 5).
@@ -13,6 +14,8 @@ import { applyCatalogFilters, paginate, parseCatalogParams } from '@/lib/events/
  *  - L'écran (ExploreView, îlot client) applique un filtre aussitôt choisi pendant que le serveur répond, puis affiche
  *    la réponse du serveur ; temps réel sur le résumé public public_event_state (relecture par GET /api/events, sans cache).
  *  - Pagination : « Voir plus » (lien vers la page suivante, utilisable sans JavaScript) ajoute 12 cartes.
+ *  - Lot Carte B : vue Liste, Carte ou Calendrier gardée dans l'adresse (`?vue=carte|calendrier`) ; la carte et le calendrier
+ *    sont chargés par l'écran à l'ouverture de leur vue (rien au premier chargement), la liste reste préparée ici.
  */
 export const metadata: Metadata = {
   title: 'Explorer les événements — Event Village',
@@ -22,7 +25,9 @@ export const metadata: Metadata = {
 type SearchParams = Record<string, string | string[] | undefined>;
 
 export default async function ExplorePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const filters = parseCatalogParams(await searchParams);
+  const params = await searchParams;
+  const filters = parseCatalogParams(params);
+  const mode = parseExploreMode(params);
   let catalog: CatalogEventDto[] | null = null;
   try {
     catalog = await cachedCatalogEvents();
@@ -40,6 +45,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
       hasMore={hasMore}
       cities={catalog ? catalogCities(catalog) : []}
       failed={catalog === null}
+      mode={mode}
     />
   );
 }

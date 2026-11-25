@@ -177,7 +177,9 @@ export const EventCard: React.FC<EventCardProps> = ({
             )}
           >
             {priceLine.lead && <span className="font-semibold">{priceLine.lead}</span>}
-            <span className={cn('whitespace-nowrap', priceLine.amount && 'tabular-nums')}>{priceLine.value}</span>
+            {/* Lot Carte B (run 594, 320 px) : un montant reste sur une ligne ; un état de la vente (« Bientôt en vente », « Vente
+                sur place uniquement ») passe à la ligne au lieu de dépasser de la carte compacte */}
+            <span className={cn(priceLine.amount ? 'whitespace-nowrap tabular-nums' : 'min-w-0 break-words')}>{priceLine.value}</span>
           </span>
         </p>
       </div>

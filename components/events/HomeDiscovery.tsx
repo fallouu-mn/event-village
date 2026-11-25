@@ -9,6 +9,7 @@ import { Select, type SelectOption } from '@/components/ui/Field';
 import { readCatalog, type CatalogEvent } from '@/lib/events/catalog-client';
 import { readLocalCity, writeLocalCity } from '@/lib/events/city-preference';
 import { useCatalogSignal } from './catalogSignal';
+import { HomeSenegalMap } from './HomeSenegalMap';
 
 /**
  * Design 1e (vitesse) : un seul comparateur français pour trier les villes, créé au premier tri (la comparaison de textes
@@ -267,10 +268,16 @@ function NearbySection({ cities, liveTick }: { cities: string[]; liveTick: numbe
 }
 
 /**
- * « Près de chez vous », sous les sections du catalogue de l'accueil.
+ * « Près de chez vous », sous les sections du catalogue de l'accueil, puis (lot Carte B) « Partout au Sénégal », dont
+ * l'aperçu de carte se charge quand il devient visible.
  * `cities` : villes du catalogue, données par la page serveur (publiques, les mêmes pour tous).
  */
 export function HomeDiscovery({ cities }: { cities: string[] }) {
   const liveTick = useCatalogSignal();
-  return <NearbySection cities={cities} liveTick={liveTick} />;
+  return (
+    <>
+      <NearbySection cities={cities} liveTick={liveTick} />
+      <HomeSenegalMap />
+    </>
+  );
 }

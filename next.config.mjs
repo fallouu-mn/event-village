@@ -42,11 +42,44 @@ const SUPABASE_ORIGIN = (() => {
   }
 })();
 const SUPABASE_WS = SUPABASE_ORIGIN.replace(/^http/, 'ws');
+
+/**
+ * Lot Carte B (B1) — origines des tuiles de carte (mêmes règles que tileOrigins de lib/map/tiles.ts, recopiées ici : ce
+ * fichier n'importe pas de TypeScript ; tests/schema/carte-b-origines-tuiles.test.ts vérifie qu'elles concordent). Stadia Maps par
+ * défaut (tiles.stadiamaps.com), sinon l'hôte de NEXT_PUBLIC_MAP_TILE_URL et NEXT_PUBLIC_MAP_TILE_URL_DARK.
+ */
+const STADIA_TILE_URLS = [
+  'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png',
+  'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png',
+];
+function mapTileOrigins(env = { light: process.env.NEXT_PUBLIC_MAP_TILE_URL, dark: process.env.NEXT_PUBLIC_MAP_TILE_URL_DARK }) {
+  const light = (env.light ?? '').trim();
+  const dark = (env.dark ?? '').trim();
+  const urls = [light || STADIA_TILE_URLS[0], dark || light || STADIA_TILE_URLS[1]];
+  const out = new Set();
+  for (const u of urls) {
+    for (const sub of u.includes('{s}') ? ['a', 'b', 'c'] : ['']) {
+      try {
+        out.add(new URL(u.replace(/\{s\}/g, sub).replace(/\{[a-z]+\}/g, '0')).origin);
+      } catch (err) {
+        console.warn(`[next.config] adresse des tuiles illisible, aucune origine autorisée : ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+  return Array.from(out);
+}
+
+/**
+ * Lot Carte B : images limitées au site, au stockage Supabase du projet, aux photos de démonstration déjà admises par
+ * next/image (images.unsplash.com, plus.unsplash.com) et à l'hôte des tuiles choisi (au lieu de « https: » entier).
+ */
+const IMG_SOURCES = ["'self'", 'data:', 'blob:', SUPABASE_ORIGIN, 'https://images.unsplash.com', 'https://plus.unsplash.com', ...mapTileOrigins()]
+  .filter(Boolean);
 const CSP_REPORT_ONLY = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  `img-src ${IMG_SOURCES.join(' ')}`,
   "font-src 'self' data:",
   `connect-src 'self' ${SUPABASE_ORIGIN} ${SUPABASE_WS}`.trim(),
   "worker-src 'self'",

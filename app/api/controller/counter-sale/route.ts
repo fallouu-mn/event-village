@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
+import { stockCrossedZero, stockSnapshot } from '@/lib/events/stock-watch.server';
 import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { ownEventFicheRefusal } from '@/lib/auth/partner-fiche-guard';
@@ -177,6 +179,9 @@ export async function POST(req: NextRequest) {
         }
     }
 
+    // Contre-vérification T4 : places restantes lues avant la vente au guichet (une catégorie peut s'épuiser)
+    const stockScope = { eventIds: [parsed.data.eventId] };
+    const stockBefore = await stockSnapshot(stockScope);
     let sale: SaleReply;
     try {
         const { data, error } = await rpcWithRetry<SaleReply>('counter_sale', {
@@ -198,6 +203,8 @@ export async function POST(req: NextRequest) {
         const code = String(sale.code ?? 'COUNTER_SALE_REFUSED');
         return NextResponse.json({ ...sale, error: String(sale.message ?? 'Vente refusée.'), code }, { status: REFUSAL_STATUS[code] ?? 400 });
     }
+
+    for (const eventId of await stockCrossedZero(stockBefore, stockScope)) invalidatePublicEvent(eventId, 'stock : vente au guichet');
 
     // La vente est acquise : un état du reçu illisible est journalisé et signalé, jamais une erreur (un
     // vendeur qui croirait la vente perdue la referait).
