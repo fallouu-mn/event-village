@@ -238,7 +238,7 @@ describe('6.2 IN_APP : la cloche est écrite par le marquage de l\'envoyeur (con
         assert.equal(again.length, 1, 'second passage : aucune seconde notification');
     });
 
-    test('type lié à un événement (optionnel) : metadata = données du modèle + actionUrl /events/<id> + outbox_id ; préférence dans l’instantané', async () => {
+    test('type lié à un événement (optionnel) : metadata = données du modèle + actionUrl /tickets/<id> (carte B3, 25/11) + outbox_id ; préférence dans l’instantané', async () => {
         const buyer = await newBuyer('canaux-inapp-ev');
         const title = 'Gala de la Teranga';
         const row = await dueRow({
@@ -254,7 +254,7 @@ describe('6.2 IN_APP : la cloche est écrite par le marquage de l\'envoyeur (con
         assert.equal(norm(n.title), 'Événement suspendu');
         assert.equal(norm(n.content), `« ${title} » est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.`);
         assert.equal(n.channel, 'IN_APP');
-        assert.equal(n.metadata?.actionUrl, `/events/${EVENT_ID}`, 'lien vers l’événement');
+        assert.equal(n.metadata?.actionUrl, `/tickets/${EVENT_ID}`, 'lien vers « Mes billets » (carte B3, 25/11 : fiche suspendue neutre ; modification signalée)');
         assert.equal(n.metadata?.event_id, EVENT_ID, 'metadata reprend template_data (event_id)');
         assert.equal(n.metadata?.title, title, 'metadata reprend template_data (title)');
         assert.equal(n.metadata?.outbox_id, row.id);
