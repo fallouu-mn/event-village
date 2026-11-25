@@ -27,6 +27,7 @@
 --     relié à une vente du même type ; le type, les places et le lien d'un billet à sa table ne changent plus.
 --     Suppression en cascade d'un événement (brouillon supprimé) : admise.
 --  6. Lecture : RLS active, aucune politique, aucun droit pour anon ni authenticated (tout passe par le serveur).
+--  Aides internes du lot dans le schéma private (aucun rôle de l'API ne les exécute, clé de service comprise).
 -- Rejouable : ADD COLUMN IF NOT EXISTS, DROP CONSTRAINT IF EXISTS puis ADD, CREATE TABLE IF NOT EXISTS, CREATE INDEX IF
 -- NOT EXISTS, DROP TRIGGER IF EXISTS puis CREATE, CREATE OR REPLACE.
 -- ============================================================================
@@ -146,8 +147,14 @@ CREATE INDEX IF NOT EXISTS tickets_event_table_booking_idx ON public.tickets (ev
 -- ----------------------------------------------------------------------------
 -- 5. Gardes d'écriture
 -- ----------------------------------------------------------------------------
+-- Aides internes du lot : schéma private, exécutables par aucun rôle de l'API, clé de service comprise (leçon T7 de la
+-- contre-vérification du lot 12a) ; seules les fonctions appelées par les routes restent dans public.
+CREATE SCHEMA IF NOT EXISTS private;
+REVOKE ALL ON SCHEMA private FROM PUBLIC;
+REVOKE ALL ON SCHEMA private FROM anon, authenticated, service_role;
+
 -- Drapeau des fonctions du lot (transaction locale)
-CREATE OR REPLACE FUNCTION public.event_tables_writing()
+CREATE OR REPLACE FUNCTION private.event_tables_writing()
 RETURNS boolean
 LANGUAGE sql
 STABLE
@@ -166,7 +173,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    IF public.event_tables_writing() THEN
+    IF private.event_tables_writing() THEN
         RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END IF;
     IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM public.events e WHERE e.id = OLD.event_id) THEN
@@ -207,13 +214,13 @@ SET search_path = public
 AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        IF NEW.kind = 'TABLE' AND NOT public.event_tables_writing() THEN
+        IF NEW.kind = 'TABLE' AND NOT private.event_tables_writing() THEN
             RAISE EXCEPTION USING ERRCODE = 'EVT11', MESSAGE = 'ticket_categories : un type de table se crée par les fonctions des tables d''un événement.';
         END IF;
         RETURN NEW;
     END IF;
     IF TG_OP = 'DELETE' THEN
-        IF OLD.kind = 'TABLE' AND NOT public.event_tables_writing()
+        IF OLD.kind = 'TABLE' AND NOT private.event_tables_writing()
            AND EXISTS (SELECT 1 FROM public.events e WHERE e.id = OLD.event_id) THEN
             RAISE EXCEPTION USING ERRCODE = 'EVT11', MESSAGE = 'ticket_categories : un type de table se supprime par les fonctions des tables d''un événement.';
         END IF;
@@ -227,7 +234,7 @@ BEGIN
            AND (OLD.sold_quantity > 0 OR OLD.held_quantity > 0) THEN
             RAISE EXCEPTION USING ERRCODE = 'EVT12', MESSAGE = 'ticket_categories : prix et places d''un type de table figés dès la première vente.';
         END IF;
-        IF NOT public.event_tables_writing()
+        IF NOT private.event_tables_writing()
            AND (ROW(NEW.name, NEW.description, NEW.price, NEW.total_quantity, NEW.max_per_order, NEW.sale_start, NEW.sale_end,
                     NEW.sale_online, NEW.sale_counter, NEW.is_active, NEW.scan_color, NEW.entry_instruction, NEW.seats_per_unit,
                     NEW.included_text, NEW.onsite_note, NEW.payment_mode, NEW.event_id)
@@ -310,7 +317,7 @@ BEGIN
     END IF;
     SELECT c.kind INTO v_kind FROM public.ticket_categories c WHERE c.id = NEW.category_id;
     IF (v_kind = 'TABLE') <> (NEW.event_table_id IS NOT NULL)
-       OR (NEW.event_table_id IS NOT NULL AND (NOT public.event_tables_writing() OR NEW.quantity <> 1
+       OR (NEW.event_table_id IS NOT NULL AND (NOT private.event_tables_writing() OR NEW.quantity <> 1
             OR NOT EXISTS (SELECT 1 FROM public.event_tables t WHERE t.id = NEW.event_table_id AND t.category_id = NEW.category_id))) THEN
         RAISE EXCEPTION USING ERRCODE = 'EVT11', MESSAGE = 'stock_reservations : une table s''attend par les fonctions des tables d''un événement, une à la fois.';
     END IF;
@@ -332,8 +339,7 @@ ALTER TABLE public.event_table_bookings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.event_tables, public.event_table_plans, public.event_table_bookings FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.event_tables, public.event_table_plans, public.event_table_bookings TO service_role;
 
-REVOKE ALL ON FUNCTION public.event_tables_writing() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_tables_writing() TO service_role;
+REVOKE ALL ON FUNCTION private.event_tables_writing() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.event_tables_write_guard() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.ticket_categories_table_guard() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.tickets_event_table_guard() FROM PUBLIC, anon, authenticated;

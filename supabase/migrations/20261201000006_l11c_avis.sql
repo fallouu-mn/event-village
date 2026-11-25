@@ -56,7 +56,7 @@ BEGIN
            AND (public.event_start_at(bk.event_id) AT TIME ZONE 'Africa/Dakar')::date = (v_now AT TIME ZONE 'Africa/Dakar')::date + 1
          ORDER BY bk.id
     LOOP
-        SELECT count(*) INTO v_left FROM jsonb_array_elements(public.event_table_seats(b.id)) s WHERE s->>'state' = 'A_ENVOYER';
+        SELECT count(*) INTO v_left FROM jsonb_array_elements(private.event_table_seats(b.id)) s WHERE s->>'state' = 'A_ENVOYER';
         IF v_left >= 2 THEN
             v_created := v_created + public.notif_enqueue(jsonb_build_object(
                 'type', 'EVENT_TABLE_SEATS_REMINDER', 'key', 'EVENT_TABLE_SEATS_REMINDER:' || b.id::text,

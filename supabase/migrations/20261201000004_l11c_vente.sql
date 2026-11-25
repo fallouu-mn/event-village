@@ -29,7 +29,7 @@
 -- 0. Aides
 -- ----------------------------------------------------------------------------
 -- Nom affiché d'une personne : prénom et initiale du nom (« Awa D. »)
-CREATE OR REPLACE FUNCTION public.event_table_person(p_user uuid)
+CREATE OR REPLACE FUNCTION private.event_table_person(p_user uuid)
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -42,7 +42,7 @@ AS $$
 $$;
 
 -- État d'une table : VENDUE (vente active), EN_ATTENTE (attente de paiement non échue) ou LIBRE
-CREATE OR REPLACE FUNCTION public.event_table_state(p_table uuid)
+CREATE OR REPLACE FUNCTION private.event_table_state(p_table uuid)
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -57,7 +57,7 @@ AS $$
 $$;
 
 -- Refus de vente communs (service, événement, type) ; NULL si la vente est possible. p_type : type de table.
-CREATE OR REPLACE FUNCTION public.event_table_sale_refusal(p_event uuid, p_type uuid)
+CREATE OR REPLACE FUNCTION private.event_table_sale_refusal(p_event uuid, p_type uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -112,7 +112,7 @@ END;
 $$;
 
 -- Prix lisibles d'un type : prix de la table, prix par personne (arrondi au franc), frais et total (moteur unique)
-CREATE OR REPLACE FUNCTION public.event_table_prices(p_type uuid, p_operator text)
+CREATE OR REPLACE FUNCTION private.event_table_prices(p_type uuid, p_operator text)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -163,15 +163,15 @@ BEGIN
        OR NOT EXISTS (SELECT 1 FROM public.ticket_categories c WHERE c.event_id = v_event AND c.kind = 'TABLE' AND c.is_active) THEN
         RETURN jsonb_build_object('ok', true, 'open', false, 'types', '[]'::jsonb, 'tables', '[]'::jsonb, 'zones', '[]'::jsonb, 'plan_enabled', false);
     END IF;
-    v_refusal := public.event_table_sale_refusal(v_event, NULL);
+    v_refusal := private.event_table_sale_refusal(v_event, NULL);
     SELECT COALESCE((SELECT pl.plan_enabled FROM public.event_table_plans pl WHERE pl.event_id = v_event), FALSE) INTO v_plan;
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
                'id', c.id, 'name', c.name, 'included_text', c.included_text, 'onsite_note', c.onsite_note,
                'payment_mode', c.payment_mode, 'sale_start', c.sale_start, 'sale_end', c.sale_end,
                'scan_color', c.scan_color,
                'total_tables', c.total_quantity,
-               'remaining_tables', (SELECT count(*) FROM public.event_tables t WHERE t.category_id = c.id AND public.event_table_state(t.id) = 'LIBRE'),
-               'refusal', public.event_table_sale_refusal(v_event, c.id)) || public.event_table_prices(c.id, NULL)
+               'remaining_tables', (SELECT count(*) FROM public.event_tables t WHERE t.category_id = c.id AND private.event_table_state(t.id) = 'LIBRE'),
+               'refusal', private.event_table_sale_refusal(v_event, c.id)) || private.event_table_prices(c.id, NULL)
              ORDER BY c.price DESC, c.name), '[]'::jsonb)
       INTO v_types
       FROM public.ticket_categories c WHERE c.event_id = v_event AND c.kind = 'TABLE' AND c.is_active;
@@ -179,7 +179,7 @@ BEGIN
         SELECT COALESCE(jsonb_agg(jsonb_build_object(
                    'id', t.id, 'number', t.number, 'type_id', t.category_id, 'zone_id', t.zone_id, 'x', t.plan_x, 'y', t.plan_y,
                    'shape', t.plan_shape, 'rotation', t.plan_rotation,
-                   'state', CASE WHEN public.event_table_state(t.id) = 'LIBRE' THEN 'LIBRE' ELSE 'PRISE' END) ORDER BY t.number), '[]'::jsonb)
+                   'state', CASE WHEN private.event_table_state(t.id) = 'LIBRE' THEN 'LIBRE' ELSE 'PRISE' END) ORDER BY t.number), '[]'::jsonb)
           INTO v_tables
           FROM public.event_tables t JOIN public.ticket_categories c ON c.id = t.category_id
          WHERE t.event_id = v_event AND c.is_active;
@@ -214,7 +214,7 @@ BEGIN
     IF v_op IS NOT NULL AND v_op NOT IN ('WAVE', 'ORANGE_MONEY') THEN
         RETURN jsonb_build_object('ok', false, 'code', 'OPERATOR_REQUIRED', 'message', 'Choisissez Wave ou Orange Money.');
     END IF;
-    v_refusal := public.event_table_sale_refusal(v_event, v_type);
+    v_refusal := private.event_table_sale_refusal(v_event, v_type);
     IF v_refusal IS NOT NULL THEN
         RETURN v_refusal;
     END IF;
@@ -229,8 +229,8 @@ BEGIN
                               'included_text', c.included_text, 'onsite_note', c.onsite_note,
                               'table', CASE WHEN v_table IS NULL THEN NULL ELSE jsonb_build_object(
                                   'id', t.id, 'number', t.number,
-                                  'state', CASE WHEN public.event_table_state(t.id) = 'LIBRE' THEN 'LIBRE' ELSE 'PRISE' END) END)
-           || public.event_table_prices(c.id, v_op);
+                                  'state', CASE WHEN private.event_table_state(t.id) = 'LIBRE' THEN 'LIBRE' ELSE 'PRISE' END) END)
+           || private.event_table_prices(c.id, v_op);
 END;
 $$;
 
@@ -239,7 +239,7 @@ $$;
 -- ----------------------------------------------------------------------------
 -- p : champs de checkout_create_payment (client_id, event_id, partner_id, operator, payer_phone, callback_token_hash,
 -- client_idempotency_key, transaction_id, external_order_id, hold_minutes, metadata) + table { type_id, table_id }.
-CREATE OR REPLACE FUNCTION public.event_table_checkout(p jsonb)
+CREATE OR REPLACE FUNCTION private.event_table_checkout(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -312,7 +312,7 @@ BEGIN
     END IF;
 
     -- 5. Service, événement en vente, type en vente
-    v_refusal := public.event_table_sale_refusal(v_event, v_type);
+    v_refusal := private.event_table_sale_refusal(v_event, v_type);
     IF v_refusal IS NOT NULL THEN
         RETURN v_refusal;
     END IF;
@@ -337,12 +337,12 @@ BEGIN
         IF NOT FOUND THEN
             RETURN jsonb_build_object('ok', false, 'code', 'TABLE_NOT_FOUND', 'message', 'Cette table n’existe pas pour cet événement.');
         END IF;
-        IF public.event_table_state(v_table.id) <> 'LIBRE' THEN
+        IF private.event_table_state(v_table.id) <> 'LIBRE' THEN
             RETURN jsonb_build_object('ok', false, 'code', 'TABLE_TAKEN', 'message', 'Cette table vient d’être prise, choisissez-en une autre.');
         END IF;
     ELSE
         SELECT t.id, t.number INTO v_table FROM public.event_tables t
-         WHERE t.category_id = v_type AND t.event_id = v_event AND public.event_table_state(t.id) = 'LIBRE'
+         WHERE t.category_id = v_type AND t.event_id = v_event AND private.event_table_state(t.id) = 'LIBRE'
          ORDER BY t.number LIMIT 1;
         IF NOT FOUND THEN
             RETURN jsonb_build_object('ok', false, 'code', 'TABLES_SOLD_OUT', 'message', format('Toutes les tables « %s » sont prises.', c.name));
@@ -423,7 +423,7 @@ DECLARE
 BEGIN
     -- Lot 11c-a : achat d'une table d'un événement (une table par paiement), mêmes règles de compte et de payeur
     IF p ? 'table' THEN
-        RETURN public.event_table_checkout(p);
+        RETURN private.event_table_checkout(p);
     END IF;
     -- 1. Verrou des catégories du panier, par identifiant croissant
     PERFORM 1 FROM public.ticket_categories
@@ -550,7 +550,7 @@ $$;
 
 -- Vente : une ligne event_table_bookings et N billets reliés (appelée par payment_confirm, sous ses verrous).
 -- Prix et frais de la table répartis au franc près : les premiers billets portent le reste de la division.
-CREATE OR REPLACE FUNCTION public.event_table_issue(p_payment uuid, p_reservation uuid, p_holder uuid)
+CREATE OR REPLACE FUNCTION private.event_table_issue(p_payment uuid, p_reservation uuid, p_holder uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -597,7 +597,7 @@ END;
 $$;
 
 -- Avis d'une vente : titulaire (tout de suite) et organisatrice (groupé : une cloche et un SMS par série de 30 minutes)
-CREATE OR REPLACE FUNCTION public.event_table_sold_notify(p_booking uuid)
+CREATE OR REPLACE FUNCTION private.event_table_sold_notify(p_booking uuid)
 RETURNS void
 LANGUAGE plpgsql
 VOLATILE
@@ -796,7 +796,7 @@ BEGIN
         SELECT event_id INTO v_cat FROM public.ticket_categories WHERE id = v_res.category_id;
         -- Lot 11c-a : une table vendue = une vente et ses N billets reliés
         IF v_res.event_table_id IS NOT NULL THEN
-            v_issue := public.event_table_issue(p_payment_id, v_res.id, v_pay.client_id);
+            v_issue := private.event_table_issue(p_payment_id, v_res.id, v_pay.client_id);
             v_table_booking := (v_issue->>'booking_id')::uuid;
             SELECT array_agg(x::uuid) INTO v_new FROM jsonb_array_elements_text(v_issue->'ticket_ids') AS x;
         ELSE
@@ -824,7 +824,7 @@ BEGIN
 
     -- Lot 11c-a : table vendue : avis de la table (titulaire tout de suite, organisatrice groupée) au lieu des avis des billets
     IF v_table_booking IS NOT NULL THEN
-        PERFORM public.event_table_sold_notify(v_table_booking);
+        PERFORM private.event_table_sold_notify(v_table_booking);
         RETURN jsonb_build_object('result', 'CONFIRMED', 'ticket_ids', to_jsonb(v_ticket_ids),
                                   'ticket_count', COALESCE(array_length(v_ticket_ids, 1), 0), 'event_table_booking_id', v_table_booking);
     END IF;
@@ -865,7 +865,7 @@ $$;
 -- 3. « Ma table », liste de la porte, badge du scanner
 -- ----------------------------------------------------------------------------
 -- Places d'une vente : état de chaque billet pour le titulaire
-CREATE OR REPLACE FUNCTION public.event_table_seats(p_booking uuid)
+CREATE OR REPLACE FUNCTION private.event_table_seats(p_booking uuid)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
@@ -884,7 +884,7 @@ AS $$
                         WHEN tr.id IS NOT NULL THEN 'EN_ATTENTE'
                         ELSE 'A_ENVOYER' END,
                    'mine', tk.user_id IS NOT DISTINCT FROM b.holder_id,
-                   'guest', CASE WHEN tk.user_id IS DISTINCT FROM b.holder_id THEN public.event_table_person(tk.user_id) END,
+                   'guest', CASE WHEN tk.user_id IS DISTINCT FROM b.holder_id THEN private.event_table_person(tk.user_id) END,
                    'pending_to', CASE WHEN tr.id IS NOT NULL AND tk.user_id IS NOT DISTINCT FROM b.holder_id
                                       THEN '•• ' || right(regexp_replace(tr.to_phone_or_email, '[^0-9]', '', 'g'), 2) END,
                    'pending_until', CASE WHEN tr.id IS NOT NULL THEN tr.expires_at END)) AS seat
@@ -926,9 +926,9 @@ BEGIN
                                   'pending', count(*) FILTER (WHERE s->>'state' = 'EN_ATTENTE'),
                                   'to_send', count(*) FILTER (WHERE s->>'state' = 'A_ENVOYER'),
                                   'entered', count(*) FILTER (WHERE s->>'state' = 'ENTREE'))
-                                FROM jsonb_array_elements(public.event_table_seats(b.id)) s),
-                   'seats_detail', public.event_table_seats(b.id),
-                   'refund', public.event_table_postponement_window(b.id),
+                                FROM jsonb_array_elements(private.event_table_seats(b.id)) s),
+                   'seats_detail', private.event_table_seats(b.id),
+                   'refund', private.event_table_postponement_window(b.id),
                    'share_path', '/events/' || e.id::text) AS item
           FROM public.event_table_bookings b
           JOIN public.ticket_categories c ON c.id = b.category_id
@@ -965,9 +965,9 @@ BEGIN
     END IF;
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
                'table_number', b.table_number, 'type_name', c.name, 'zone', z.name, 'seats', b.seats,
-               'holder', public.event_table_person(b.holder_id),
+               'holder', private.event_table_person(b.holder_id),
                'entered', (SELECT count(*) FROM public.tickets tk WHERE tk.event_table_booking_id = b.id AND tk.status::text = 'UTILISE'),
-               'guests', (SELECT COALESCE(jsonb_agg(DISTINCT public.event_table_person(tk.user_id)) FILTER (WHERE public.event_table_person(tk.user_id) IS NOT NULL), '[]'::jsonb)
+               'guests', (SELECT COALESCE(jsonb_agg(DISTINCT private.event_table_person(tk.user_id)) FILTER (WHERE private.event_table_person(tk.user_id) IS NOT NULL), '[]'::jsonb)
                             FROM public.tickets tk
                            WHERE tk.event_table_booking_id = b.id AND tk.user_id IS DISTINCT FROM b.holder_id
                              AND tk.status::text IN ('VALIDE', 'UTILISE')))
@@ -1005,26 +1005,18 @@ $$;
 -- ----------------------------------------------------------------------------
 -- Droits : fonctions nouvelles réservées au rôle de service (recopies : droits conservés)
 -- ----------------------------------------------------------------------------
-REVOKE ALL ON FUNCTION public.event_table_person(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_person(uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_state(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_state(uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_sale_refusal(uuid, uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_sale_refusal(uuid, uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_prices(uuid, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_prices(uuid, text) TO service_role;
+REVOKE ALL ON FUNCTION private.event_table_person(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_table_state(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_table_sale_refusal(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_table_prices(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.event_table_offer(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_table_offer(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.event_table_quote(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_table_quote(jsonb) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_checkout(jsonb) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_checkout(jsonb) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_issue(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_issue(uuid, uuid, uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_sold_notify(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_sold_notify(uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_seats(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_seats(uuid) TO service_role;
+REVOKE ALL ON FUNCTION private.event_table_checkout(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_table_issue(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_table_sold_notify(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_table_seats(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.event_table_mine(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_table_mine(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.event_table_door_list(jsonb) FROM PUBLIC, anon, authenticated;

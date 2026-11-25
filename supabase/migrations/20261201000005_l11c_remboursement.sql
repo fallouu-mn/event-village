@@ -346,7 +346,7 @@ END;
 $$;
 
 -- Fenêtre de remboursement d'une table après un report : { open, until } (until : nouveau début de l'événement)
-CREATE OR REPLACE FUNCTION public.event_table_postponement_window(p_booking uuid)
+CREATE OR REPLACE FUNCTION private.event_table_postponement_window(p_booking uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -423,7 +423,7 @@ BEGIN
     IF b.status <> 'ACTIVE' THEN
         RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_REFUNDED', 'message', 'Cette table est déjà remboursée.');
     END IF;
-    v_window := public.event_table_postponement_window(b.id);
+    v_window := private.event_table_postponement_window(b.id);
     IF NOT COALESCE((v_window->>'open')::boolean, FALSE) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'POSTPONEMENT_REFUND_CLOSED',
             'message', 'Le remboursement n’est possible que si l’événement a été reporté de plus de 24 h après votre achat, jusqu’au nouveau début.');
@@ -458,7 +458,6 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.event_table_postponement_window(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_postponement_window(uuid) TO service_role;
+REVOKE ALL ON FUNCTION private.event_table_postponement_window(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.event_table_postponement_refund(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_table_postponement_refund(jsonb) TO service_role;

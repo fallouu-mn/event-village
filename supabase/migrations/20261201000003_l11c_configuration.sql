@@ -25,7 +25,7 @@
 -- ----------------------------------------------------------------------------
 -- 1. Gardes communes
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.event_table_refusal(p_event uuid, p_actor uuid)
+CREATE OR REPLACE FUNCTION private.event_table_refusal(p_event uuid, p_actor uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -52,7 +52,7 @@ END;
 $$;
 
 -- Jauge en places, sur l'état en base (appelée après les écritures, dans le bloc annulé au moindre refus)
-CREATE OR REPLACE FUNCTION public.event_seats_refusal(p_event uuid, p_field text)
+CREATE OR REPLACE FUNCTION private.event_seats_refusal(p_event uuid, p_field text)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -87,7 +87,7 @@ $$;
 
 -- Texte court reçu : sans caractère de contrôle ni contrôle de sens d'écriture (règle de la consigne d'entrée) ;
 -- retours à la ligne admis seulement si p_lines > 1 (au plus p_lines lignes).
-CREATE OR REPLACE FUNCTION public.event_table_text_ok(p_text text, p_max integer, p_lines integer)
+CREATE OR REPLACE FUNCTION private.event_table_text_ok(p_text text, p_max integer, p_lines integer)
 RETURNS boolean
 LANGUAGE sql
 IMMUTABLE
@@ -142,7 +142,7 @@ BEGIN
     IF v_in IS NULL OR jsonb_typeof(v_in) <> 'object' THEN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'Le type de table est illisible : rechargez la page et réessayez.');
     END IF;
-    v_refusal := public.event_table_refusal(v_event, v_actor);
+    v_refusal := private.event_table_refusal(v_event, v_actor);
     IF v_refusal IS NOT NULL THEN
         RETURN v_refusal;
     END IF;
@@ -180,7 +180,7 @@ BEGIN
     EXCEPTION WHEN invalid_text_representation OR invalid_datetime_format OR datetime_field_overflow OR numeric_value_out_of_range THEN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'Une valeur du type de table est illisible.');
     END;
-    IF n_name IS NULL OR char_length(n_name) < 1 OR char_length(n_name) > 60 OR NOT public.event_table_text_ok(n_name, 60, 1) THEN
+    IF n_name IS NULL OR char_length(n_name) < 1 OR char_length(n_name) > 60 OR NOT private.event_table_text_ok(n_name, 60, 1) THEN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'Le nom du type de table compte de 1 à 60 caractères, sans caractère invisible.', 'name');
     END IF;
     IF n_seats IS NULL OR n_seats < 2 OR n_seats > 20 THEN
@@ -191,10 +191,10 @@ BEGIN
         RETURN public.event_edit_refusal('INVALID_INPUT',
             format('Le prix de la table est un montant entier de %s à 10 000 000 F CFA.', v_min::bigint), 'price');
     END IF;
-    IF NOT public.event_table_text_ok(n_incl, 200, 3) THEN
+    IF NOT private.event_table_text_ok(n_incl, 200, 3) THEN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'Ce qui est compris tient en 3 lignes et 200 caractères, sans caractère invisible.', 'included_text');
     END IF;
-    IF NOT public.event_table_text_ok(n_note, 120, 1) THEN
+    IF NOT private.event_table_text_ok(n_note, 120, 1) THEN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'Le minimum sur place tient en une ligne de 120 caractères, sans caractère invisible.', 'onsite_note');
     END IF;
     IF n_mode IS DISTINCT FROM 'FULL' THEN
@@ -206,7 +206,7 @@ BEGIN
     IF n_color IS NOT NULL AND n_color NOT IN ('BLANC', 'ARGENT', 'ROSE', 'TURQUOISE', 'BLEU', 'VIOLET', 'NOIR') THEN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'Choisissez une couleur dans la liste.', 'scan_color');
     END IF;
-    IF NOT public.event_table_text_ok(n_instr, 60, 1) THEN
+    IF NOT private.event_table_text_ok(n_instr, 60, 1) THEN
         RETURN public.event_edit_refusal('INVALID_INPUT', 'La consigne d’entrée ne dépasse pas 60 caractères, sans caractère invisible.', 'entry_instruction');
     END IF;
     IF n_start IS NOT NULL AND n_end IS NOT NULL AND n_start >= n_end THEN
@@ -259,7 +259,7 @@ BEGIN
                    entry_instruction = n_instr, updated_at = now()
              WHERE id = c.id;
         END IF;
-        v_fail := public.event_seats_refusal(v_event, CASE WHEN v_create THEN 'count' ELSE 'seats' END);
+        v_fail := private.event_seats_refusal(v_event, CASE WHEN v_create THEN 'count' ELSE 'seats' END);
         IF v_fail IS NOT NULL THEN
             RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'event_table_type_save : refus';
         END IF;
@@ -303,7 +303,7 @@ DECLARE
     v_refusal jsonb;
     c         public.ticket_categories%ROWTYPE;
 BEGIN
-    v_refusal := public.event_table_refusal(v_event, v_actor);
+    v_refusal := private.event_table_refusal(v_event, v_actor);
     IF v_refusal IS NOT NULL THEN
         RETURN v_refusal;
     END IF;
@@ -366,7 +366,7 @@ BEGIN
     EXCEPTION WHEN invalid_text_representation THEN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PLAN', 'message', 'Plan illisible : rechargez la page et réessayez.');
     END;
-    v_refusal := public.event_table_refusal(v_event, v_actor);
+    v_refusal := private.event_table_refusal(v_event, v_actor);
     IF v_refusal IS NOT NULL THEN
         RETURN v_refusal;
     END IF;
@@ -466,7 +466,7 @@ BEGIN
         VALUES (v_event, v_enabled, now())
         ON CONFLICT (event_id) DO UPDATE SET plan_enabled = EXCLUDED.plan_enabled, updated_at = now();
         SET CONSTRAINTS public.event_tables_event_number_key IMMEDIATE;
-        v_fail := public.event_seats_refusal(v_event, 'tables');
+        v_fail := private.event_seats_refusal(v_event, 'tables');
         IF v_fail IS NOT NULL THEN
             RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'event_tables_save : refus';
         END IF;
@@ -1315,12 +1315,9 @@ CREATE TRIGGER trg_ticket_categories_admin_update_alert
 -- ----------------------------------------------------------------------------
 -- Droits
 -- ----------------------------------------------------------------------------
-REVOKE ALL ON FUNCTION public.event_table_refusal(uuid, uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_refusal(uuid, uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.event_seats_refusal(uuid, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_seats_refusal(uuid, text) TO service_role;
-REVOKE ALL ON FUNCTION public.event_table_text_ok(text, integer, integer) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.event_table_text_ok(text, integer, integer) TO service_role;
+REVOKE ALL ON FUNCTION private.event_table_refusal(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_seats_refusal(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.event_table_text_ok(text, integer, integer) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.event_table_type_save(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.event_table_type_save(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.event_table_type_delete(jsonb) FROM PUBLIC, anon, authenticated;
