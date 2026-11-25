@@ -174,7 +174,8 @@ async function seed(superadmin: string): Promise<Seeded> {
         { event_id: eventId, user_id: controller.userId, can_accept_cash: false, created_by: owner.userId, entry_point: 'Entrée principale' },
         { onConflict: 'event_id,user_id' });
     if (aErr) throw new Error(`[l11cc] affectation du contrôleur : ${aErr.message}`);
-    for (const seat of seats.slice(0, 2)) {
+    // La place envoyée (seats[0]) est réémise au nom de l’invitée : les entrées portent sur deux places restées au titulaire
+    for (const seat of seats.slice(1, 3)) {
         const number = String(seat.ticket_number);
         const { data, error: scanErr } = await service.rpc('ticket_scan', { p: {
             scanner_id: controller.userId, event_id: eventId, method: 'MANUAL', ticket_number: number, identity_verified: true,

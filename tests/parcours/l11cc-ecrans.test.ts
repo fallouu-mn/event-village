@@ -94,7 +94,8 @@ before(async () => {
     const created = await newTablesEvent(owner, 'ecrans', { capacity: 100 });
     const t = await createdTableType(owner, created.eventId, vipType({ name: 'Carré VIP écrans' }), 3);
     ev = { eventId: created.eventId, typeId: t.typeId, tables: t.tables };
-    const sold = await buyTable(holder, ev.eventId, ev.typeId, ev.tables[0].id);
+    // Plan non montré : le client choisit un type et reçoit la plus petite table libre (ev.tables[0])
+    const sold = await buyTable(holder, ev.eventId, ev.typeId);
     const seat = String(sold.tickets[0].id);
     const transferId = await transferSeat(seat, holder, guest.phoneE164);
     const { data: acc, error: accErr } = await service.rpc('ticket_transfer_accept', { p: { transfer_id: transferId, actor_id: guest.userId } });
