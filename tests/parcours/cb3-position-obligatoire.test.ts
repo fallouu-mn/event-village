@@ -8,7 +8,9 @@
  *  C. l'administration ne valide jamais un dossier sans position (salle, établissement, événement) ; une RÉACTIVATION de
  *     ce qui était déjà publié reste possible (ce qui est en ligne sans position y reste) ;
  *  D. une position ne se retire pas par les routes de la partenaire (salle, établissement) ;
- *  E. pilotage d'un événement : `has_position` dit si le bandeau « Ajoutez la position… » doit s'afficher.
+ *  E. pilotage d'un événement : `has_position` dit si le bandeau « Ajoutez la position… » doit s'afficher ;
+ *  F. contre-vérification de la carte B3 (T4) : modification d'un établissement avec des horaires refusés : rien d'écrit
+ *     (ni nom, ni position) ; avec des horaires valables : tout est écrit.
  */
 import '../helpers/env';
 import { after, before, describe, test } from 'node:test';
@@ -261,5 +263,25 @@ describe('E — pilotage : bandeau de la position manquante', () => {
         await setRow('events', ev.eventId, DAKAR);
         const withPos = await read();
         assert.equal(withPos.body.has_position, true, show(withPos));
+    });
+});
+
+describe('F — modification d’un établissement : tout ou rien (contre-vérification, T4)', () => {
+    test('nom, position et horaires refusés : rien d’écrit ; horaires valables : tout est écrit', async () => {
+        const venueId = await newVenue(owner);
+        const renamed = `TEST Renommé ${randomBytes(3).toString('hex')}`;
+        const patch = (body: Row) => api('PATCH', 'partner/venues/[id]', { token: owner.accessToken, params: { id: venueId }, path: `/api/partner/venues/${venueId}`, body });
+        const { data: before0 } = await service.from('venues').select('name, latitude').eq('id', venueId).single();
+        const moved = { latitude: 14.7001, longitude: -17.4702 };
+        const refused = await patch({ name: renamed, ...moved, hours: [{ weekday: 1, opens_at: '12:00', closes_at: '12:00' }] });
+        assert.ok(refused.status >= 400 && refused.status < 500, `horaires invalides acceptés : ${show(refused)}`);
+        const { data: after0 } = await service.from('venues').select('name, latitude').eq('id', venueId).single();
+        assert.deepEqual([after0?.name, Number(after0?.latitude)], [before0?.name, Number(before0?.latitude)], 'fiche écrite malgré les horaires refusés');
+        const accepted = await patch({ name: renamed, ...moved, hours: [{ weekday: 1, opens_at: '12:00', closes_at: '15:00' }] });
+        assert.equal(accepted.status, 200, show(accepted));
+        const { data: after1 } = await service.from('venues').select('name, latitude').eq('id', venueId).single();
+        assert.deepEqual([after1?.name, Number(after1?.latitude)], [renamed, moved.latitude]);
+        const { data: hours } = await service.from('venue_opening_hours').select('weekday, opens_at, closes_at').eq('venue_id', venueId);
+        assert.deepEqual((hours ?? []).map((h) => [h.weekday, String(h.opens_at).slice(0, 5), String(h.closes_at).slice(0, 5)]), [[1, '12:00', '15:00']]);
     });
 });

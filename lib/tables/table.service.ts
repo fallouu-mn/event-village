@@ -240,15 +240,25 @@ export class TableService {
             checkedPhotos = venuePhotos(photos, partnerId, Array.isArray(current.photos) ? (current.photos as string[]) : []);
             if (checkedPhotos.length === 0) throw new PublicError('Gardez au moins une photo de l’établissement.', 'INVALID_FIELD', 400);
         }
-        const { data, error } = await getServiceRoleClient().from('venues')
-            .update({ ...fields, ...(checkedPhotos ? { photos: checkedPhotos } : {}), updated_at: new Date().toISOString() })
-            .eq('id', venueId).eq('partner_id', partnerId).select('*').maybeSingle();
-        if (error) throw dbRefusal(error, 'modification de l’établissement');
-        if (!data) throw new PublicError('Établissement introuvable.');
-        if (hours) await this.setHours(partnerUserId, venueId, hours);
-        // Lot Carte B3 : nom, acompte, photos, position, horaires, retrait : carte à jour
-        invalidatePublicPlaces('établissement modifié');
-        return data;
+        // Contre-vérification de la carte B3 (T4) : horaires contrôlés et écrits AVANT la fiche (refusés : rien n'est écrit,
+        // ni nom, ni position, ni photos) ; dès qu'une écriture a réussi, la carte est vidée, même si la suite échoue.
+        let wrote = false;
+        try {
+            if (hours) {
+                await this.setHours(partnerUserId, venueId, hours);
+                wrote = true;
+            }
+            const { data, error } = await getServiceRoleClient().from('venues')
+                .update({ ...fields, ...(checkedPhotos ? { photos: checkedPhotos } : {}), updated_at: new Date().toISOString() })
+                .eq('id', venueId).eq('partner_id', partnerId).select('*').maybeSingle();
+            if (error) throw dbRefusal(error, 'modification de l’établissement');
+            if (!data) throw new PublicError('Établissement introuvable.');
+            wrote = true;
+            return data;
+        } finally {
+            // Lot Carte B3 : nom, acompte, photos, position, horaires, retrait : carte à jour
+            if (wrote) invalidatePublicPlaces('établissement modifié');
+        }
     }
 
     /** Horaires par la fonction en base (partenaire propriétaire seulement, plages vérifiées, journal). */
