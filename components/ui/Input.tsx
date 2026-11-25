@@ -1,6 +1,5 @@
 import React from 'react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { cn } from './cn';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -27,16 +26,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           )}
           <input
             ref={ref}
-            className={twMerge(
-              clsx(
-                'w-full h-11 px-4 text-sm rounded-2xl outline-none transition-all placeholder:text-white/40 text-white',
-                variant === 'glass' && 'bg-white/15 backdrop-blur-md border border-white/25 focus:border-white/60 focus:bg-white/20',
-                variant === 'dark' && 'bg-[#1e1e24] border border-[#2e2e38] focus:border-[#D4E157] focus:bg-[#25252d]',
-                leftIcon && 'pl-10',
-                rightIcon && 'pr-10',
-                error && 'border-red-400 focus:border-red-500',
-                className
-              )
+            className={cn(
+              'w-full h-11 px-4 text-sm rounded-2xl outline-none transition-all placeholder:text-white/40 text-white',
+              variant === 'glass' && 'bg-white/15 backdrop-blur-md border border-white/25 focus:border-white/60 focus:bg-white/20',
+              variant === 'dark' && 'bg-[#1e1e24] border border-[#2e2e38] focus:border-[#D4E157] focus:bg-[#25252d]',
+              leftIcon && 'pl-10',
+              rightIcon && 'pr-10',
+              error && 'border-red-400 focus:border-red-500',
+              className
             )}
             {...props}
           />

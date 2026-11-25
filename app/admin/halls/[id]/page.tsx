@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { loadEventMap } from '@/components/ui/event-map-load';
 import {
   Building2,
   CalendarCheck,
@@ -48,7 +49,7 @@ import {
 import { formatDateTime, formatFcfa, formatInteger, toDakarDateTimeLocal } from '@/lib/format';
 
 // Carte du lieu, chargée à la demande (Leaflet lit window) ; place réservée fixe, sans animation.
-const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
+const EventMap = dynamic(() => loadEventMap().then((m) => ({ default: m.EventMap })), {
   ssr: false,
   loading: () => <div className="h-48 w-full rounded-xl bg-muted sm:h-56" aria-hidden="true" />,
 });

@@ -381,7 +381,10 @@ describe('7.3 — page événement : paiement en attente, chargements différés
 
     test('EventMap en next/dynamic (garde-fou) et carte chargée à la visibilité', () => {
         const page = eventPageCode();
-        assert.match(page, /\bdynamic\s*\(\s*\(\s*\)\s*=>\s*import\(\s*["']@\/components\/ui\/EventMap["']\s*\)/, 'EventMap non chargée par next/dynamic');
+        // Lot poids : la carte passe par le chargeur unique components/ui/event-map-load.ts (un seul import() de la carte dans
+        // tout le code : plus de variante du morceau) ; toujours next/dynamic, toujours à la demande
+        assert.match(page, /\bdynamic\s*\(\s*\(\s*\)\s*=>\s*(?:import\(\s*["']@\/components\/ui\/EventMap["']\s*\)|loadEventMap\(\))/, 'EventMap non chargée par next/dynamic');
+        assert.match(fs.readFileSync(abs('components/ui/event-map-load.ts'), 'utf8'), /export const loadEventMap = \(\) => import\('\.\/EventMap'\);/, 'chargeur unique : import() de la carte');
         for (const file of EVENT_PAGE_FILES) {
             assert.deepEqual(staticValueImports(sourceFile(file), /components\/ui\/EventMap$/), [], `${file} : import statique d'EventMap`);
         }

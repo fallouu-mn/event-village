@@ -174,8 +174,10 @@ function main() {
         for (const line of detail) console.log(`${TAG}   ${route} · ${line}`);
         const runtime = files.find((f) => /\/webpack-[0-9a-f]+\.js$/.test(f));
         if (runtime) {
-            const ids = [...fs.readFileSync(path.join(opts.nextDir, runtime), 'utf8').matchAll(/(\d+):"[0-9a-f]{16}"/g)].map((m) => Number(m[1]));
-            console.log(`${TAG}   ${route} · table des morceaux : ${ids.length} entrées`);
+            // Lot poids : empreintes de 8 caractères ; numéros distincts (un morceau qui a aussi une feuille de style figure
+            // dans la table des feuilles, dont les empreintes ont désormais la même forme)
+            const ids = new Set([...fs.readFileSync(path.join(opts.nextDir, runtime), 'utf8').matchAll(/(\d+):"[0-9a-f]{8,16}"/g)].map((m) => Number(m[1])));
+            console.log(`${TAG}   ${route} · table des morceaux : ${ids.size} entrées`);
         }
         let status = 'MESURE';
         if (budget !== null) {
@@ -197,7 +199,10 @@ function main() {
         const marks = ['loadLeaflet', 'Partout au Sénégal', 'Rechercher dans cette zone', 'Afficher la carte', 'Aller à', 'Ce week-end',
             'tiles.stadiamaps.com', 'leaflet-container', 'showModal', 'Fermer la bulle', 'Près de chez vous', 'ev-point', 'clusterPoints',
             'Autour de moi', 'Vue Carte', 'Rechercher un lieu', 'Zoom avant'];
-        for (const m of runtimeSrc.matchAll(/(\d+):"([0-9a-f]{16})"/g)) {
+        const deja = new Set();
+        for (const m of runtimeSrc.matchAll(/(\d+):"([0-9a-f]{8,16})"/g)) {
+            if (deja.has(m[1])) continue;
+            deja.add(m[1]);
             const file = all.find((f) => f.startsWith(`${m[1]}.`) || f.startsWith(`${m[1]}-`));
             if (!file) {
                 console.log(`${TAG} morceau ${m[1]} : fichier introuvable`);

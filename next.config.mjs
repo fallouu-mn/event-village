@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
+import { PoidsModulesPlugin } from './scripts/poids-modules.mjs';
 
 /**
  * Lot 5 (tâches 5.3 et 5.6) — hôte des images optimisées par next/image : le stockage public du projet
@@ -108,6 +110,40 @@ const nextConfig = {
   // pages en streaming (loading.tsx) ne sont pas attendus par React à l'hydratation. Les deux feuilles de style restent.
   poweredByHeader: false,
   compress: true,
+  // Lot poids : relevé des modules de chaque morceau du navigateur, seulement si EV_ANALYSE_POIDS=1 (job « perf » de la
+  // CI). Lecture seule du graphe après l'écriture : aucun fichier servi n'est ajouté ni modifié (scripts/poids-modules.mjs).
+  // Lot poids : la table des classes de la fusion (components/ui/cn.ts) est calculée au build à partir des sources, pour
+  // TOUTES les constructions (navigateur, serveur, développement : même table, aucun écart à l'hydratation).
+  webpack(config, { isServer, dev }) {
+    config.module.rules.push({
+      test: /[\\/]components[\\/]ui[\\/]cn-classes\.ts$/,
+      enforce: 'pre',
+      use: [{ loader: path.resolve(process.cwd(), 'scripts/cn-classes-loader.cjs') }],
+    });
+    // Lot poids (piste 4) : table des morceaux chargeables du navigateur. webpack.js, chargé par TOUTES les pages, garde pour
+    // chaque morceau son empreinte : 8 caractères au lieu de 16 (hashDigestLength de Next). Les noms restent uniques (numéro
+    // du morceau + empreinte de son contenu) et changent toujours avec le contenu : rien ne change pour l'utilisateur.
+    if (!isServer && !dev) {
+      config.output.chunkFilename = 'static/chunks/[name].[contenthash:8].js';
+    }
+    // Lot poids (piste 3) : Next fournit `Buffer` à tout module du navigateur qui le cite (ProvidePlugin), ce qui fait entrer
+    // son polyfill (next/dist/compiled/buffer, ~2 100 octets gzip) dans TOUTES les pages. Le seul module du navigateur qui le
+    // cite est @supabase/storage-js (toBase64 : `typeof Buffer !== "undefined" ? Buffer… : btoa(…)`, métadonnées d'un
+    // téléversement), que le navigateur n'emploie jamais ici : sans `Buffer`, la bibliothèque prend sa voie navigateur.
+    // Serveur et Edge inchangés. Toute nouvelle référence à `Buffer` côté navigateur est refusée par
+    // tests/schema/poids-buffer.test.ts.
+    if (!isServer) {
+      for (const plugin of config.plugins) {
+        if (plugin?.constructor?.name === 'ProvidePlugin' && plugin.definitions && 'Buffer' in plugin.definitions) {
+          delete plugin.definitions.Buffer;
+        }
+      }
+    }
+    if (process.env.EV_ANALYSE_POIDS === '1' && !isServer && !dev) {
+      config.plugins.push(new PoidsModulesPlugin(path.resolve(process.cwd(), '.verify/poids-modules.tsv')));
+    }
+    return config;
+  },
   images: {
     remotePatterns: [
       ...supabaseStoragePatterns(),

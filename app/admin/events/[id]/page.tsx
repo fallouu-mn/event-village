@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { loadEventMap } from '@/components/ui/event-map-load';
 import {
   Building2,
   CalendarDays,
@@ -44,7 +45,7 @@ import { SINGLE_ENTRANCE_TEXT } from '@/components/events/ZoneListEditor';
 import { noticesText } from '@/lib/admin/confirmations';
 
 // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
-const EventMap = dynamic(() => import('@/components/ui/EventMap').then((m) => ({ default: m.EventMap })), {
+const EventMap = dynamic(() => loadEventMap().then((m) => ({ default: m.EventMap })), {
   ssr: false,
   loading: () => <div className="h-48 w-full rounded-xl bg-background motion-safe:animate-pulse sm:h-56" aria-hidden="true" />,
 });
