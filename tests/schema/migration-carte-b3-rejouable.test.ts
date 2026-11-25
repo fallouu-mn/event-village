@@ -1,9 +1,10 @@
 /**
- * Lot Carte B3 — la migration 20261210… (lieux de particuliers : zone, droits REST, recherches) se rejoue sans erreur :
- * appliquée deux fois de plus dans une transaction annulée, elle ne casse rien ; elle ne gère pas elle-même sa
- * transaction ; elle passe après celles des lots précédents (la session 11c-a prend des horodatages plus petits).
- * Chaque recopie de fonction part de la DERNIÈRE définition d'avant sa migration (fichier et lignes cités en tête) :
- * chaque ligne de cette définition se retrouve dans la recopie, sauf les lignes remplacées, listées ici.
+ * Lot Carte B3 — la migration 20261210… (lieux publics : colonnes REST, position obligatoire ; décisions du client du
+ * 25/11) se rejoue sans erreur : appliquée deux fois de plus dans une transaction annulée, elle ne casse rien ; elle ne
+ * gère pas elle-même sa transaction ; elle passe après celles des lots précédents (la session 11c-a prend des horodatages
+ * plus petits). Chaque recopie de fonction part de la DERNIÈRE définition d'avant sa migration (fichier et lignes cités
+ * en tête) : chaque ligne de cette définition se retrouve dans la recopie, sauf les lignes remplacées, listées ici.
+ * La 11c-a recopie event_update, ticket_category_create et ticket_category_update : aucune des trois n'est recopiée ici.
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -15,25 +16,35 @@ import { inRolledBackTransaction } from '../helpers/db';
 const DIR = path.resolve(process.cwd(), 'supabase/migrations');
 
 export const CARTE_B3_MIGRATIONS = [
-    // Particulier ou professionnel, zone stockée, colonnes REST, recherches sans l'adresse d'un particulier
-    '20261210000001_cb3_lieux_particuliers.sql',
+    // Colonnes REST des salles et des établissements, position obligatoire à l'envoi et à la validation
+    '20261210000001_cb3_lieux_publics.sql',
 ] as const;
 
 /** Recopies : fonction, migration de la recopie, lignes de la définition précédente qu'elle remplace. */
 const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
-    { fn: 'hall_search', file: CARTE_B3_MIGRATIONS[0], replaced: [
-        // Texte cherché comparé à l'adresse d'un professionnel seulement
-        "WHERE (v_like IS NULL OR v.name ILIKE v_like OR v.city ILIKE v_like OR v.address ILIKE v_like OR v.partner_name ILIKE v_like)",
-        // Adresse et point d'un particulier jamais rendus (zone à la place), champ « exact »
-        "'id', m.id, 'name', m.name, 'city', m.city, 'address', m.address, 'capacity', m.capacity,",
-        "'latitude', m.latitude, 'longitude', m.longitude, 'partner_name', m.partner_name,",
+    { fn: 'halls_validation_guard', file: CARTE_B3_MIGRATIONS[0], replaced: [
+        // Salle insérée sans position : jamais validée d'office (même ligne, condition de position ajoutée)
+        "NEW.validation_status := CASE WHEN public.fin_setting_bool('halls.validation_required')",
     ] },
-    { fn: 'venue_search', file: CARTE_B3_MIGRATIONS[0], replaced: [
-        "WHERE (v_like IS NULL OR vi.name ILIKE v_like OR vi.city ILIKE v_like OR vi.address ILIKE v_like OR vi.partner_name ILIKE v_like)",
-        "'id', f.id, 'name', f.name, 'kind', f.kind, 'city', f.city, 'address', f.address,",
-        "'photo', f.photos[1], 'photo_count', cardinality(f.photos), 'latitude', f.latitude, 'longitude', f.longitude,",
+    { fn: 'hall_submit', file: CARTE_B3_MIGRATIONS[0], replaced: [] },
+    { fn: 'venues_validation_guard', file: CARTE_B3_MIGRATIONS[0], replaced: [
+        "NEW.validation_status := CASE WHEN public.fin_setting_bool('tables.validation_required')",
+    ] },
+    { fn: 'venue_create', file: CARTE_B3_MIGRATIONS[0], replaced: [] },
+    { fn: 'venue_submit', file: CARTE_B3_MIGRATIONS[0], replaced: [] },
+    { fn: 'hall_validation_decide', file: CARTE_B3_MIGRATIONS[0], replaced: [] },
+    { fn: 'venue_validation_decide', file: CARTE_B3_MIGRATIONS[0], replaced: [] },
+    { fn: 'event_transition', file: CARTE_B3_MIGRATIONS[0], replaced: [
+        // Phrase du client (25/11) à la place de « Placez le repère du lieu sur la carte (étape Accès). »
+        "v_missing := v_missing || jsonb_build_object('field', 'latitude', 'message', 'Placez le repère du lieu sur la carte (étape Accès).');",
+        // Position seule manquante : la phrase seule, sans « L’événement est incomplet : » (même texte dans le ELSE)
+        "'message', 'L’événement est incomplet : '",
+        "|| (SELECT string_agg(m->>'message', ' ' ORDER BY o) FROM jsonb_array_elements(v_missing) WITH ORDINALITY AS x(m, o)));",
     ] },
 ];
+
+/** Fonctions recopiées par la session 11c-a : jamais recopiées par ce lot (consigne du 25/11). */
+const NOT_MINE = ['event_update', 'ticket_category_create', 'ticket_category_update'] as const;
 
 /** Texte de la dernière définition de public.<nom> dans les fichiers donnés (du CREATE au second $$). */
 function lastDefinition(name: string, files: readonly string[]): string | null {
@@ -66,6 +77,13 @@ describe('Lot Carte B3 — migration 20261210… rejouable, recopies complètes'
         assert.ok(CARTE_B3_MIGRATIONS[0].startsWith('20261210'), 'horodatage 20261210… (consigne du lot)');
         const earlier = all.filter((f) => f < CARTE_B3_MIGRATIONS[0]);
         assert.ok(earlier.length > 0, 'les migrations des lots précédents passent avant');
+    });
+
+    test('aucune recopie des fonctions de la session 11c-a (event_update, ticket_category_create, ticket_category_update)', () => {
+        for (const name of CARTE_B3_MIGRATIONS) {
+            const sql = fs.readFileSync(path.join(DIR, name), 'utf8');
+            for (const fn of NOT_MINE) assert.doesNotMatch(sql, new RegExp(`FUNCTION public\\.${fn}\\s*\\(`, 'i'), `${name} recopie ${fn}`);
+        }
     });
 
     for (const name of CARTE_B3_MIGRATIONS) {

@@ -15,13 +15,9 @@ export function parseExploreMode(params: RawParams): ExploreMode {
     return value === 'carte' || value === 'calendrier' ? value : 'liste';
 }
 
-/**
- * Adresse de l'Explorer pour ces filtres et cette vue. Lot Carte B3 : sur la carte, les couches choisies (`couches=`,
- * écrites par la carte elle-même) sont gardées quand un filtre change.
- */
+/** Adresse de l'Explorer pour ces filtres et cette vue. */
 export function exploreModeHref(f: Partial<CatalogFilterState>, mode: ExploreMode): string {
     const base = exploreHref(f);
     if (mode === 'liste') return base;
-    const layers = mode === 'carte' && typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('couches') : null;
-    return `${base}${base.includes('?') ? '&' : '?'}vue=${mode}${layers !== null ? `&couches=${encodeURIComponent(layers)}` : ''}`;
+    return `${base}${base.includes('?') ? '&' : '?'}vue=${mode}`;
 }

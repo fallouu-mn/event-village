@@ -6,6 +6,7 @@ import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { tableStateLabel } from './booking';
 import { okOrRefuse } from './queries';
 import { invalidatePublicPlaces } from '@/lib/lieux/cache-lieux.server';
+import { PLACE_POSITION_KEPT } from '@/lib/places/place-texts';
 
 /**
  * Lot 11a — service des tables côté partenaire : établissements (restaurant, bar, espace), horaires, zones et tables.
@@ -74,8 +75,6 @@ export const VenueInputSchema = z.object({
     confirmation_mode: z.enum(['AUTO', 'MANUELLE']).default('AUTO'),
     is_active: z.boolean().optional(),
     hours: z.array(z.object({ weekday: z.number().int().min(1).max(7), opens_at: time, closes_at: time })).max(28).optional(),
-    // Lot Carte B3 : chez un particulier (défaut : zone de 300 m en public, adresse après réservation) ou professionnel
-    host_kind: z.enum(['PARTICULIER', 'PROFESSIONNEL'], { message: 'Indiquez si l’établissement est chez un particulier ou dans un lieu professionnel.' }).optional(),
 });
 export type VenueInput = z.infer<typeof VenueInputSchema>;
 
@@ -184,13 +183,6 @@ export class TableService {
         const { data, error } = await getServiceRoleClient().rpc('venue_create', { p: { ...parsed.data, photos, actor_id: partnerUserId } });
         if (error) throw rpcRaise(error);
         const r = okOrRefuse((data ?? {}) as Record<string, unknown>);
-        // Lot Carte B3 : venue_create crée un établissement de particulier (défaut sûr) ; un lieu professionnel déclaré
-        // est écrit ensuite (une panne laisse le défaut : adresse cachée, jamais l'inverse)
-        if (parsed.data.host_kind === 'PROFESSIONNEL') {
-            const { error: kindErr } = await getServiceRoleClient().from('venues').update({ host_kind: 'PROFESSIONNEL' })
-                .eq('id', String(r.venue_id)).eq('partner_id', partnerId);
-            if (kindErr) throw new Error(`établissement créé, lieu professionnel non enregistré : ${kindErr.message}`);
-        }
         const { data: venue, error: readErr } = await getServiceRoleClient().from('venues').select('*').eq('id', String(r.venue_id)).single();
         if (readErr || !venue) throw new Error(`établissement créé illisible : ${readErr?.message ?? 'absent'}`);
         invalidatePublicPlaces('établissement créé');
@@ -237,6 +229,8 @@ export class TableService {
         if (!parsed.success) throw new PublicError(firstIssue(parsed.error));
         const { hours, photos, ...fields } = parsed.data;
         const partnerId = await this.resolvePartnerId(partnerUserId);
+        // Lot Carte B3 (décision du client du 25/11) : position obligatoire, jamais retirée
+        if (fields.latitude === null || fields.longitude === null) throw new PublicError(PLACE_POSITION_KEPT, 'POSITION_REQUIRED', 400);
         // Lot 11b : photos réencodées de la route de dépôt, ou déjà sur l'établissement ; au moins une
         let checkedPhotos: string[] | undefined;
         if (photos !== undefined) {
@@ -252,7 +246,7 @@ export class TableService {
         if (error) throw dbRefusal(error, 'modification de l’établissement');
         if (!data) throw new PublicError('Établissement introuvable.');
         if (hours) await this.setHours(partnerUserId, venueId, hours);
-        // Lot Carte B3 : nom, acompte, photos, position, horaires, retrait, particulier ou professionnel : carte à jour
+        // Lot Carte B3 : nom, acompte, photos, position, horaires, retrait : carte à jour
         invalidatePublicPlaces('établissement modifié');
         return data;
     }

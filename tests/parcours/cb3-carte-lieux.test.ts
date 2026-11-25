@@ -5,10 +5,10 @@
  *     suspendu, retiré (inactif), partenaire suspendue, sans position ; une suspension, un retrait ou une suspension de
  *     la partenaire les retirent à la lecture suivante (le passage à travers le cache, en moins de 5 s, est prouvé de
  *     bout en bout par e2e/carte-b3.responsive.spec.ts) ;
- *  B. aucun champ en trop (PUBLIC_PLACE_FIELDS) ; ni adresse, ni nom, téléphone ou adresse électronique de la partenaire ;
- *  C. zone d'un particulier : même centre d'une lecture à l'autre ; écart au vrai point jamais nul, toujours sous 300 m
- *     (80 à 220 m) ; le vrai point n'apparaît nulle part ; une écriture directe de la zone est ignorée ; une nouvelle
- *     position tire une nouvelle zone autour d'elle ; un lieu professionnel montre son point exact ;
+ *  B. aucun champ en trop (PUBLIC_PLACE_FIELDS) ; ni nom légal, ni téléphone, ni adresse électronique de la partenaire ;
+ *  C. décision du client du 25/11 (modification signalée au rapport : remplace les tests de la zone de 300 m) : chaque
+ *     lieu à sa position exacte, la même à chaque lecture ; une position déplacée est rendue telle quelle ; une salle
+ *     sans position (d'avant la décision) n'est pas sur la carte ;
  *  D. route : couche d'un service fermé = 404 ; paramètres illisibles = 400 ;
  *  E. disponibilité : salle réservée à une date absente de la couche filtrée sur cette date.
  */
@@ -29,14 +29,8 @@ import { GET as placesRoute } from '../../app/api/lieux/carte/route';
 
 const TOKEN = `cb3c${randomBytes(3).toString('hex')}`;
 const POINT = { latitude: 14.70123, longitude: -17.45678 };
-const PRO_POINT = { latitude: 14.69321, longitude: -17.44123 };
+const OTHER_POINT = { latitude: 14.69321, longitude: -17.44123 };
 const VENUE_POINT = { latitude: 14.73456, longitude: -17.49876 };
-
-function metres(a: { lat: number; lng: number }, b: { latitude: number; longitude: number }): number {
-    const dy = (a.lat - b.latitude) * 111_320;
-    const dx = (a.lng - b.longitude) * 111_320 * Math.cos((b.latitude * Math.PI) / 180);
-    return Math.hypot(dx, dy);
-}
 
 async function layer(name: 'salles' | 'restaurants', extra = ''): Promise<PublicMapPlace[]> {
     const q = parsePlacesQuery(new URLSearchParams(`couche=${name}${extra}`));
@@ -71,20 +65,21 @@ before(async () => {
     owner = await newPartner('cb3-carte');
     other = await newPartner('cb3-autre');
     alice = await newBuyer('cb3-carte-alice');
-    for (const key of ['particulier', 'pro', 'attente', 'suspendue', 'inactive', 'sansPosition', 'autrePartenaire']) {
-        const id = await newHall(key === 'autrePartenaire' ? other : owner, { validate: false });
+    for (const key of ['une', 'deux', 'attente', 'suspendue', 'inactive', 'sansPosition', 'autrePartenaire']) {
+        const id = await newHall(key === 'autrePartenaire' ? other : owner, { validate: false, position: key === 'deux' ? OTHER_POINT : POINT });
         H[key] = id;
-        const point = key === 'pro' ? PRO_POINT : key === 'sansPosition' ? { latitude: null, longitude: null } : POINT;
-        await setPlace('halls', id, { ...point, name: `Salle ${TOKEN} ${key}`, address: `Adresse secrète ${TOKEN} ${key}`, ...(key === 'pro' ? { host_kind: 'PROFESSIONNEL' } : {}) });
+        await setPlace('halls', id, { name: `Salle ${TOKEN} ${key}`, address: `Adresse ${TOKEN} ${key}` });
         if (key !== 'attente') {
             const d = await decideHall(id, 'VALIDER');
             assert.equal(d.ok, true, JSON.stringify(d));
         }
     }
+    // Salle validée avant la décision du 25/11, sans position (retirée par la clé de service) : hors de la carte
+    await setPlace('halls', H.sansPosition, { latitude: null, longitude: null });
     assert.equal((await decideHall(H.suspendue, 'SUSPENDRE', 'Contrôle de la carte B3.')).ok, true);
     await setPlace('halls', H.inactive, { is_active: false });
-    venueId = await newVenue(owner, { deposit_per_person: 2_000 });
-    await setPlace('venues', venueId, { ...VENUE_POINT, name: `Restaurant ${TOKEN}`, address: `Adresse secrète ${TOKEN} restaurant` });
+    venueId = await newVenue(owner, { deposit_per_person: 2_000, position: VENUE_POINT });
+    await setPlace('venues', venueId, { name: `Restaurant ${TOKEN}`, address: `Adresse ${TOKEN} restaurant` });
     await newTable(owner, venueId, 4);
     await newTable(owner, venueId, 6);
     refusedVenue = await newVenue(owner, { validate: false });
@@ -100,8 +95,8 @@ after(async () => {
 describe('A — seuls les lieux publics sont sur la carte', () => {
     test('salles : validées avec position seulement', async () => {
         const got = ids(await layer('salles'));
-        assert.ok(got.has(H.particulier), 'salle de particulier validée absente');
-        assert.ok(got.has(H.pro), 'salle professionnelle validée absente');
+        assert.ok(got.has(H.une), 'salle validée absente');
+        assert.ok(got.has(H.deux), 'deuxième salle validée absente');
         assert.ok(got.has(H.autrePartenaire), 'salle d’une autre partenaire validée absente');
         for (const k of ['attente', 'suspendue', 'inactive', 'sansPosition']) assert.ok(!got.has(H[k]), `salle ${k} rendue`);
     });
@@ -129,16 +124,16 @@ describe('A — seuls les lieux publics sont sur la carte', () => {
     });
 });
 
-describe('B — aucun champ en trop, rien de la partenaire, jamais d’adresse', () => {
+describe('B — aucun champ en trop, rien de la partenaire', () => {
     test('chaque lieu n’a que PUBLIC_PLACE_FIELDS', async () => {
         for (const p of [...await layer('salles'), ...await layer('restaurants')]) {
             assert.deepEqual(Object.keys(p).sort(), [...PUBLIC_PLACE_FIELDS].sort(), `champs du lieu ${p.id}`);
         }
     });
-    test('ni adresse ni coordonnées de la partenaire dans la réponse', async () => {
+    test('ni nom légal, ni téléphone, ni adresse électronique de la partenaire dans la réponse', async () => {
         const { data: pa } = await service.from('partners').select('company_name, phone, email').eq('id', owner.partnerId).single();
         const text = JSON.stringify([...await layer('salles'), ...await layer('restaurants')]);
-        for (const secret of [`Adresse secrète ${TOKEN}`, String(pa!.company_name), String(pa!.phone), String(pa!.email)]) {
+        for (const secret of [String(pa!.company_name), String(pa!.phone), String(pa!.email)]) {
             assert.ok(!text.includes(secret), `« ${secret} » dans la réponse`);
         }
     });
@@ -151,52 +146,25 @@ describe('B — aucun champ en trop, rien de la partenaire, jamais d’adresse',
     });
 });
 
-describe('C — zone d’un particulier : fixe, autour du vrai point, jamais lui', () => {
-    test('même centre à chaque lecture ; écart entre 0 et 300 m (80 à 220 m) ; vrai point absent', async () => {
-        const reads = await Promise.all([1, 2, 3, 4, 5].map(async () => (await layer('salles')).find((p) => p.id === H.particulier)!));
-        const centres = new Set(reads.map((p) => `${p.lat},${p.lng}`));
-        assert.equal(centres.size, 1, `centre différent d’une lecture à l’autre : ${[...centres].join(' | ')}`);
-        const p = reads[0];
-        assert.equal(p.exact, false);
-        const d = metres(p, POINT);
-        assert.ok(d > 0 && d < 300, `écart au vrai point : ${d.toFixed(1)} m`);
-        assert.ok(d >= 79 && d <= 221, `écart hors de 80 à 220 m : ${d.toFixed(1)} m`);
-        const text = JSON.stringify(await layer('salles'));
-        assert.ok(!text.includes(String(POINT.latitude)) && !text.includes(String(POINT.longitude)), 'vrai point dans la réponse');
+describe('C — position exacte pour tous (décision du client du 25/11)', () => {
+    test('salle : son point exact, le même à chaque lecture', async () => {
+        const reads = await Promise.all([1, 2, 3].map(async () => (await layer('salles')).find((p) => p.id === H.une)!));
+        for (const p of reads) assert.deepEqual({ lat: p.lat, lng: p.lng }, { lat: POINT.latitude, lng: POINT.longitude });
+        const two = (await layer('salles')).find((p) => p.id === H.deux)!;
+        assert.deepEqual({ lat: two.lat, lng: two.lng }, { lat: OTHER_POINT.latitude, lng: OTHER_POINT.longitude });
     });
-    test('établissement de particulier : zone aussi', async () => {
+    test('établissement : son point exact', async () => {
         const v = (await layer('restaurants')).find((p) => p.id === venueId)!;
-        assert.equal(v.exact, false);
-        const d = metres(v, VENUE_POINT);
-        assert.ok(d >= 79 && d <= 221, `écart : ${d.toFixed(1)} m`);
+        assert.deepEqual({ lat: v.lat, lng: v.lng }, { lat: VENUE_POINT.latitude, lng: VENUE_POINT.longitude });
     });
-    test('lieu professionnel : point exact', async () => {
-        const p = (await layer('salles')).find((x) => x.id === H.pro)!;
-        assert.equal(p.exact, true);
-        assert.deepEqual({ lat: p.lat, lng: p.lng }, { lat: PRO_POINT.latitude, lng: PRO_POINT.longitude });
-    });
-    test('écriture directe de la zone ignorée ; autre champ modifié : même zone', async () => {
-        const before0 = (await service.from('halls').select('zone_latitude, zone_longitude').eq('id', H.particulier).single()).data!;
-        await setPlace('halls', H.particulier, { zone_latitude: POINT.latitude, zone_longitude: POINT.longitude, capacity: 321 });
-        const after0 = (await service.from('halls').select('zone_latitude, zone_longitude, capacity').eq('id', H.particulier).single()).data!;
-        assert.equal(after0.capacity, 321);
-        assert.deepEqual({ a: after0.zone_latitude, b: after0.zone_longitude }, { a: before0.zone_latitude, b: before0.zone_longitude }, 'zone réécrite');
-    });
-    test('nouvelle position : nouvelle zone autour d’elle', async () => {
+    test('position déplacée : rendue telle quelle à la lecture suivante', async () => {
         const moved = { latitude: 14.75111, longitude: -17.40222 };
-        await setPlace('halls', H.particulier, moved);
-        const p = (await layer('salles')).find((x) => x.id === H.particulier)!;
-        const d = metres(p, moved);
-        assert.ok(d >= 79 && d <= 221, `écart à la nouvelle position : ${d.toFixed(1)} m`);
-        await setPlace('halls', H.particulier, POINT);
-    });
-    test('les 200 tirages de la base restent entre 80 et 220 m', async () => {
-        for (let i = 0; i < 200; i += 1) {
-            const { data, error } = await service.rpc('place_zone_center', { p_lat: POINT.latitude, p_lng: POINT.longitude });
-            assert.equal(error, null, error?.message);
-            const [lat, lng] = data as number[];
-            const d = metres({ lat, lng }, POINT);
-            assert.ok(d >= 79 && d <= 221, `tirage ${i} : ${d.toFixed(1)} m`);
+        await setPlace('halls', H.une, moved);
+        try {
+            const p = (await layer('salles')).find((x) => x.id === H.une)!;
+            assert.deepEqual({ lat: p.lat, lng: p.lng }, { lat: moved.latitude, lng: moved.longitude });
+        } finally {
+            await setPlace('halls', H.une, POINT);
         }
     });
 });
@@ -223,12 +191,12 @@ describe('D — route publique', () => {
 describe('E — disponibilité', () => {
     test('salle réservée ce jour-là : absente de la couche filtrée sur la date, présente un autre jour', async () => {
         const date = new Date(Date.now() + 80 * 86_400_000).toISOString().slice(0, 10);
-        const res = await reserveHall(alice, H.pro, { startDate: date });
+        const res = await reserveHall(alice, H.deux, { startDate: date });
         assert.equal(res.ok, true, JSON.stringify(res));
         const q = parsePlacesQuery(new URLSearchParams(`couche=salles&date=${date}`));
         assert.ok(q.ok);
         const free = await availablePlaceIds(q.query);
-        assert.ok(!free.has(H.pro), 'salle prise rendue disponible');
-        assert.ok(free.has(H.particulier), 'salle libre absente');
+        assert.ok(!free.has(H.deux), 'salle prise rendue disponible');
+        assert.ok(free.has(H.une), 'salle libre absente');
     });
 });

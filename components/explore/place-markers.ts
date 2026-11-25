@@ -6,8 +6,7 @@
  * Formes distinctes, pas seulement des couleurs (WCAG 1.4.1) :
  *  - événement : billet à encoches, talon orange (MapMarker.ts) ;
  *  - salle : bâtiment (toit en pointe, angles droits) avec « Dès 150 000 F/jour » ;
- *  - restaurant : pastille ronde avec des couverts et le nom ;
- *  - lieu d'un particulier : même forme, bord en pointillé (position approximative).
+ *  - restaurant : pastille ronde avec des couverts et le nom.
  * Icônes dessinées en SVG (aucune police d'icônes), cachées aux lecteurs d'écran : le nom complet du repère est son
  * `aria-label` (placeAccessibleName).
  */
@@ -36,9 +35,9 @@ function hallPrice(price: number | null): string {
 }
 
 /** HTML du repère d'un lieu ; `chosen` : touché, survolé ou focalisé (orange de la marque, agrandi). */
-export function placeMarkerHtml(p: Pick<PublicMapPlace, 'type' | 'name' | 'price' | 'exact'>, chosen: boolean): string {
+export function placeMarkerHtml(p: Pick<PublicMapPlace, 'type' | 'name' | 'price'>, chosen: boolean): string {
     const kind = p.type === 'salle' ? 'salle' : 'resto';
-    const classes = ['ev-repere', `ev-repere--${kind}`, !p.exact ? 'ev-repere--approx' : '', chosen ? 'ev-repere--choisi' : ''].filter(Boolean).join(' ');
+    const classes = ['ev-repere', `ev-repere--${kind}`, chosen ? 'ev-repere--choisi' : ''].filter(Boolean).join(' ');
     const icon = p.type === 'salle' ? HALL_ICON_SVG : RESTO_ICON_SVG;
     const text = escapeHtml(p.type === 'salle' ? hallPrice(p.price) : shortName(p.name));
     return `<span class="${classes}"><span class="ev-repere__billet"><span class="ev-repere__icone">${icon}</span>${text}</span></span>`;

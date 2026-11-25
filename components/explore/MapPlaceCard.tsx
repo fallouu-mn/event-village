@@ -3,18 +3,16 @@
 import React, { useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, ShieldCheck, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { eventImageSrc } from '@/lib/events/event-image';
 import { openingState, placePriceBadge, type PublicMapPlace } from '@/lib/lieux/carte-lieux';
-import { ZONE_SENTENCE } from '@/lib/lieux/position-publique';
 import { HALL_ICON_SVG, RESTO_ICON_SVG } from './place-markers';
 
 /**
  * Lot Carte B3 — vignette d'une salle ou d'un restaurant de la carte (liste de l'ordinateur, feuille du téléphone).
  * Seules les données publiques de la carte (lib/lieux/carte-lieux.ts) : photos, nom, quartier, prix d'appel, capacité,
- * « Ouvert maintenant » ou « Fermé · ouvre à 19 h » (horaires du lot 11b, heure de Dakar), et pour un particulier
- * « Adresse exacte après réservation ». La vignette mène à la fiche (la réservation se fait là, jamais depuis la carte).
+ * « Ouvert maintenant » ou « Fermé · ouvre à 19 h » (horaires du lot 11b, heure de Dakar). La vignette mène à la fiche (la réservation se fait là, jamais depuis la carte).
  */
 
 export function placeHref(p: Pick<PublicMapPlace, 'type' | 'id'>): string {
@@ -51,12 +49,6 @@ function Facts({ place, now }: { place: PublicMapPlace; now: Date }) {
                     </span>
                 )}
             </span>
-            {!place.exact && (
-                <span className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <ShieldCheck size={14} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
-                    {ZONE_SENTENCE}
-                </span>
-            )}
         </>
     );
 }

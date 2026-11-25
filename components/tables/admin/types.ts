@@ -95,8 +95,6 @@ export interface AdminVenueSheet {
   kindLabel: string;
   name: string | null;
   description: string | null;
-  /** Lot Carte B3 : 'PARTICULIER' ou 'PROFESSIONNEL' (absent : lu comme particulier) ; jamais affiché tel quel. */
-  hostKind?: string | null;
   address: string | null;
   city: string | null;
   latitude: number | string | null;

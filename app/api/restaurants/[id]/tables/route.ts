@@ -3,7 +3,6 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { guardFeature } from '@/lib/features/flags';
 import { VENUE_KIND_LABELS } from '@/lib/tables/booking';
-import { POSITION_COLUMNS, publicAddress, publicPosition } from '@/lib/lieux/position-publique';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +13,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * Lot 11a : [id] est l'identifiant de l'établissement ; seul un établissement actif, validé par l'administration et
  * d'une partenaire VALIDE est montré (404 sinon). Avant, la route cherchait la partenaire par son nom, prenait la
  * première partenaire venue à défaut et inventait des zones d'exemple. Aucune réservation, aucune donnée personnelle.
- * Lot Carte B3 : lieu d'un particulier = ni adresse ni point exact (centre de sa zone de 300 m, `exact: false`).
  */
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
     try {
@@ -28,7 +26,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 
         const { data: venue, error } = await supabase
             .from('venues')
-            .select(`id, kind, name, description, address, city, ${POSITION_COLUMNS}, slot_minutes, deposit_per_person, confirmation_mode, partners!inner(status)`)
+            .select('id, kind, name, description, address, city, latitude, longitude, slot_minutes, deposit_per_person, confirmation_mode, partners!inner(status)')
             .eq('id', id)
             .eq('is_active', true)
             .eq('validation_status', 'VALIDEE')
@@ -45,18 +43,16 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
         ]);
         for (const r of [hours, zones, tables]) if (r.error) throw new Error(`établissement ${id} : ${r.error.message}`);
 
-        const position = publicPosition(venue);
         return NextResponse.json({
             venue: {
                 id: venue.id,
                 kind: VENUE_KIND_LABELS[String(venue.kind)] ?? 'Établissement',
                 name: venue.name,
                 description: venue.description,
-                address: publicAddress(venue),
+                address: venue.address,
                 city: venue.city,
-                latitude: position?.lat ?? null,
-                longitude: position?.lng ?? null,
-                exact: position?.exact ?? false,
+                latitude: venue.latitude,
+                longitude: venue.longitude,
                 slotMinutes: venue.slot_minutes ?? Number((slot.data?.value as { value?: unknown } | null)?.value ?? 120),
                 depositPerPerson: venue.deposit_per_person === null ? 0 : Number(venue.deposit_per_person),
                 confirmation: venue.confirmation_mode === 'MANUELLE' ? 'Sur acceptation de l’établissement' : 'Confirmation immédiate',

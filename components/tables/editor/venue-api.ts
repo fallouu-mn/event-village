@@ -48,8 +48,6 @@ export interface OwnVenue {
     kindLabel: string;
     name: string;
     description: string | null;
-    /** Lot Carte B3 : 'PARTICULIER' ou 'PROFESSIONNEL' ; absent sur une ancienne réponse (lu comme particulier). */
-    hostKind?: string | null;
     address: string | null;
     city: string | null;
     latitude: number | null;

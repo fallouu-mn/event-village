@@ -32,7 +32,7 @@ function isPlace(raw: unknown): raw is PublicMapPlace {
     if (typeof raw !== 'object' || raw === null) return false;
     const r = raw as Record<string, unknown>;
     return typeof r.id === 'string' && (r.type === 'salle' || r.type === 'restaurant') && typeof r.name === 'string'
-        && typeof r.lat === 'number' && typeof r.lng === 'number' && typeof r.exact === 'boolean' && Array.isArray(r.photos)
+        && typeof r.lat === 'number' && typeof r.lng === 'number' && Array.isArray(r.photos)
         && (r.price === null || typeof r.price === 'number') && (r.capacity === null || typeof r.capacity === 'number');
 }
 

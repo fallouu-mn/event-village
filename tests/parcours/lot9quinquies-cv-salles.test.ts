@@ -49,6 +49,7 @@ after(async () => {
 async function newHall(round: number): Promise<string> {
     const { data, error } = await service.from('halls').insert({
         partner_id: partner.partnerId, name: `Salle contre-vérification ${round} ${Date.now()}`, capacity: 100, price_per_day: 100_000, deposit_percentage: 30,
+        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467,
     }).select('id').single();
     assert.equal(error, null, error?.message);
     const { data: decided, error: decErr } = await service.rpc('hall_validation_decide', { p: { actor_id: await superadminId(), hall_id: data!.id, decision: 'VALIDER' } });

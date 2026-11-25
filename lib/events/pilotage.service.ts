@@ -132,6 +132,14 @@ export async function readPilotageTab(tab: PilotageTab, eventId: string, actorId
     return callLot5Rpc(TAB_RPC[tab], { event_id: eventId, actor_id: actorId }, `Lecture de ${TAB_LABEL[tab]} impossible pour le moment.`);
 }
 
+/** Lot Carte B3 : l'événement a-t-il une position sur la carte (latitude et longitude) ? Lève en cas de panne. */
+async function eventHasPosition(eventId: string): Promise<boolean> {
+    const { data, error } = await getServiceRoleClient().from('events').select('latitude, longitude').eq('id', eventId).maybeSingle();
+    if (error) throw new Error(`position de l'événement ${eventId} illisible : ${error.message}`);
+    const row = data as { latitude: number | null; longitude: number | null } | null;
+    return row !== null && row.latitude !== null && row.longitude !== null;
+}
+
 /**
  * Réponse GET d'un onglet, après la session ACTIVE vérifiée par la route (requireActiveSession) :
  * identifiant d'événement valide (404), puis la RPC, qui refuse en 404 le partenaire B, un client ou un
@@ -144,6 +152,9 @@ export async function pilotageTabResponse(tab: PilotageTab, ctx: RouteParams<{ i
     }
     try {
         const body = await readPilotageTab(tab, eventId, actorId);
+        // Lot Carte B3 (décision du client du 25/11 : position obligatoire) : la vue d'ensemble dit si l'événement a une
+        // position, lue APRÈS la RPC (qui a déjà refusé en 404 tout autre que la propriétaire ou l'administration)
+        if (tab === 'overview') return NextResponse.json({ ...body, has_position: await eventHasPosition(eventId) }, { headers: { 'Cache-Control': 'no-store' } });
         return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
         return errorResponse(err, `GET /api/partner/events/[id]/pilotage/${tab}`,

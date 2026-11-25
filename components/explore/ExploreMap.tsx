@@ -19,7 +19,6 @@ import { placeAccessibleName, type PublicMapPlace } from '@/lib/lieux/carte-lieu
 import {
     EMPTY_HALL_FILTERS, EMPTY_VENUE_FILTERS, placesUrl, readPlaces, type HallLayerFilters, type VenueLayerFilters,
 } from '@/lib/lieux/carte-lieux-client';
-import { ZONE_RADIUS_M } from '@/lib/lieux/position-publique';
 import { clusterPoints } from '@/lib/map/cluster';
 
 /**
@@ -40,8 +39,7 @@ import { clusterPoints } from '@/lib/map/cluster';
  * Lot Carte B3 — couches Événements, Salles, Restaurants (components/explore/MapLayers.tsx), chacune affichée ou masquée,
  * gardées dans l'adresse (`couches=`) ; une couche dont le service est fermé n'est pas proposée ; filtres propres aux
  * salles (date, invités) et aux restaurants (date, heure, personnes) ; repères distincts par leur forme
- * (components/explore/place-markers.ts) ; lieu d'un particulier : repère en pointillé au centre de sa zone et cercle de
- * 300 m dès que la carte est assez proche (jamais le point exact : le serveur ne le donne pas) ; feuille du téléphone avec
+ * (components/explore/place-markers.ts), chaque lieu à sa position exacte (décision du client du 25/11) ; feuille du téléphone avec
  * les photos qui glissent ; état vide illustré avec « Élargir la zone ». Mêmes règles que pour les événements : la zone
  * envoyée est élargie sur la grille T1 (lib/lieux/carte-lieux-client.ts).
  */
@@ -59,8 +57,6 @@ const SENEGAL_LATLNG: [[number, number], [number, number]] = [[SENEGAL_BOUNDS.so
 const TILE_FAILURES_MAX = 4;
 /** Zoom au-delà duquel un groupe ne s'ouvre plus en zoomant (points au même endroit) : la liste du groupe s'affiche. */
 const GROUP_ZOOM_LIMIT = 16;
-/** Zoom à partir duquel la zone de 300 m d'un particulier est dessinée (assez grande pour se lire). */
-const ZONE_MIN_ZOOM = 13;
 /** Délai de frappe des filtres des couches avant la lecture. */
 const FILTER_DEBOUNCE_MS = 400;
 
@@ -154,7 +150,6 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     const mapRef = useRef<LeafletMap | null>(null);
     const leafletRef = useRef<LeafletModule | null>(null);
     const layerRef = useRef<import('leaflet').LayerGroup | null>(null);
-    const zonesRef = useRef<import('leaflet').LayerGroup | null>(null);
     const tilesRef = useRef<import('leaflet').TileLayer | null>(null);
     const failedRef = useRef(onTilesFailed);
     failedRef.current = onTilesFailed;
@@ -178,6 +173,11 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
         setChosen(next);
         writeLayersParam(next);
     };
+    // Un filtre d'Explorer change l'adresse sans `couches=` : la carte reste montée et remet les couches choisies (ce code
+    // vit dans ce module chargé à la demande : les couches ne pèsent rien au premier chargement d'Explorer)
+    useEffect(() => {
+        if (chosen && !new URLSearchParams(window.location.search).has('couches')) writeLayersParam(chosen);
+    }, [filtersQuery, chosen]);
 
     const [hallFilters, setHallFilters] = useState<HallLayerFilters>(EMPTY_HALL_FILTERS);
     const [venueFilters, setVenueFilters] = useState<VenueLayerFilters>(EMPTY_VENUE_FILTERS);
@@ -240,8 +240,6 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     failedRef.current();
                 }
             });
-            // Zones sous les repères (ajoutées avant : tracés SVG, non cliquables)
-            zonesRef.current = L.layerGroup().addTo(map);
             layerRef.current = L.layerGroup().addTo(map);
             const sync = () => {
                 setZoom(map.getZoom());
@@ -267,7 +265,6 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
             created?.remove();
             mapRef.current = null;
             layerRef.current = null;
-            zonesRef.current = null;
             tilesRef.current = null;
         };
     }, []);
@@ -393,24 +390,15 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
         );
     };
 
-    // 3. Repères : regroupés au zoom courant ; repère choisi ou survolé mis en évidence ; zones des particuliers
+    // 3. Repères : regroupés au zoom courant ; repère choisi ou survolé mis en évidence
     useEffect(() => {
         const L = leafletRef.current;
         const map = mapRef.current;
         const layer = layerRef.current;
-        const zones = zonesRef.current;
-        if (!L || !map || !layer || !zones || !ready) return;
+        if (!L || !map || !layer || !ready) return;
         layer.clearLayers();
-        zones.clearLayers();
         const z = map.getZoom();
         const anchor = (html: string) => L.divIcon({ className: 'ev-repere-ancre', html: `<span style="position:absolute;left:0;top:0;transform:translate(-50%,-100%)">${html}</span>`, iconSize: [0, 0], iconAnchor: [0, 0] });
-        if (z >= ZONE_MIN_ZOOM) {
-            for (const it of items) {
-                if (it.kind !== 'place' || it.p.exact) continue;
-                const chosen = it.id === selectedKey || it.id === hoverKey;
-                zones.addLayer(L.circle([it.lat, it.lng], { radius: ZONE_RADIUS_M, interactive: false, className: chosen ? 'ev-zone ev-zone--choisie' : 'ev-zone' }));
-            }
-        }
         const points = items.map((it) => {
             const p = map.project([it.lat, it.lng], z);
             return { item: it, x: p.x, y: p.y };
@@ -458,7 +446,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                 marker.getElement()?.setAttribute('aria-label', markerAlt(e));
                 continue;
             }
-            // Lieu : repère de sa forme (bâtiment, couverts ; pointillé pour un particulier), même clavier que les événements
+            // Lieu : repère de sa forme (bâtiment, couverts), même clavier que les événements
             const name = placeAccessibleName(it.p);
             const placeMarker = L.marker([it.lat, it.lng], { icon: anchor(placeMarkerHtml(it.p, chosen)), keyboard: true, title: name, alt: name, zIndexOffset: chosen ? 1000 : 0, riseOnHover: true });
             placeMarker.on('click', choose);
@@ -586,7 +574,6 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     />
                     <p id={descId} className="sr-only">
                         Les repères sont accessibles avec la touche Tabulation, puis Entrée. La vue Liste présente les mêmes événements.
-                        Un lieu tenu par un particulier est placé au centre d’une zone d’environ 300 mètres : son adresse exacte est donnée après la réservation.
                     </p>
 
                     {moved && (

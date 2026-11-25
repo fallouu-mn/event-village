@@ -144,7 +144,8 @@ test('2. DISPONIBILITÉ & CONCURRENCE RÉELLE (§43-§44) : Deux réservations s
     if (!partner?.id) throw new Error('Création partenaire échouée');
 
     const { data: hall } = await adminClient.from('halls').insert({
-        partner_id: partner.id, name: 'Salle Renaissance Concurrency', capacity: 200, price_per_day: 150000, deposit_percentage: 30.0
+        partner_id: partner.id, name: 'Salle Renaissance Concurrency', capacity: 200, price_per_day: 150000, deposit_percentage: 30.0,
+        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
     await validateHall(adminClient, hall.id);
@@ -245,7 +246,8 @@ test('3. INVARIANT FINANCIER ACOMPTE + SOLDE = TOTAL (§45-§47) & MORATOIRE', a
 
     // Salle à 120 000 FCFA/jour avec acompte de 35.0%
     const { data: hall } = await adminClient.from('halls').insert({
-        partner_id: partner.id, name: 'Salle Les Palmiers', capacity: 150, price_per_day: 120000, deposit_value: 35.0
+        partner_id: partner.id, name: 'Salle Les Palmiers', capacity: 150, price_per_day: 120000, deposit_value: 35.0,
+        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
     await validateHall(adminClient, hall.id);
@@ -329,7 +331,8 @@ test('4. CYCLE DE STATUT RÉSERVATION (§47-§48) : EN_ATTENTE -> confirmation s
     if (!partner?.id) throw new Error('Création partenaire échouée');
 
     const { data: hall } = await adminClient.from('halls').insert({
-        partner_id: partner.id, name: 'Salle Océane', capacity: 100, price_per_day: 80000, deposit_percentage: 30.0
+        partner_id: partner.id, name: 'Salle Océane', capacity: 100, price_per_day: 80000, deposit_percentage: 30.0,
+        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467
     }).select('id').single();
     if (!hall?.id) throw new Error('Création salle échouée');
     await validateHall(adminClient, hall.id);

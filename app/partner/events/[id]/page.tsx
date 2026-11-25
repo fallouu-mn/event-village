@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StatusBanner } from '@/components/ui/StatusBanner';
+import { MISSING_POSITION_TEXT } from '@/lib/places/place-texts';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
 import { KpiCardSkeleton } from '@/components/ui/KpiCard';
@@ -266,6 +267,21 @@ export default function PartnerEventPilotagePage() {
                             Le <time dateTime={reason.at}>{formatDateTime(reason.at)}</time>
                         </p>
                     )}
+                </StatusBanner>
+            )}
+
+            {/* Lot Carte B3 (décision du client du 25/11) : événement envoyé ou publié sans position, absent de la carte */}
+            {ov.has_position === false && !['BROUILLON', 'ANNULE', 'TERMINE'].includes(ov.status) && (
+                <StatusBanner
+                    tone="warning"
+                    title={MISSING_POSITION_TEXT}
+                    action={ov.can_edit ? (
+                        <LinkButton href={`/partner/events/${eventId}/edit?etape=acces`} variant="secondary" size="sm" leftIcon={<MapPin size={16} />}>
+                            Placer sur la carte
+                        </LinkButton>
+                    ) : undefined}
+                >
+                    <p>Il reste visible dans la liste d’Explorer et par son lien.</p>
                 </StatusBanner>
             )}
 

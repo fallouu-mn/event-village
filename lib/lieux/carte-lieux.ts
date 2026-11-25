@@ -4,9 +4,9 @@
  *
  * Contrat de sortie (PublicMapPlace) : UNIQUEMENT identifiant, type (salle ou restaurant), nom, ville ou quartier,
  * photos (4 au plus, la première sert de vignette), prix d'appel (salle : par jour ; restaurant : acompte par personne,
- * null = réservation gratuite), capacité, position, précision de la position, horaires (restaurants). Rien de la
- * partenaire (ni nom, ni téléphone, ni adresse électronique) ; jamais d'adresse ; pour un lieu de particulier, la
- * position est le centre de sa zone de 300 m (`exact: false`), jamais le vrai point (lib/lieux/position-publique.ts).
+ * null = réservation gratuite), capacité, position exacte, horaires (restaurants). Rien de la partenaire (ni nom, ni
+ * téléphone, ni adresse électronique). Décision du client du 25/11 : application entièrement publique, chaque lieu à sa
+ * position exacte (l'adresse est sur la fiche, pas dans cette lecture : la carte n'en a pas besoin).
  */
 
 export type PlaceLayer = 'salles' | 'restaurants';
@@ -37,14 +37,12 @@ export interface PublicMapPlace {
     capacity: number | null;
     lat: number;
     lng: number;
-    /** true : point exact (lieu professionnel) ; false : centre de la zone de 300 m (particulier). */
-    exact: boolean;
     /** Restaurants : horaires d'ouverture ; salles : null. */
     hours: OpeningRange[] | null;
 }
 
 /** Liste exhaustive des champs rendus (contrôlée par les tests : aucun champ en trop). */
-export const PUBLIC_PLACE_FIELDS = ['id', 'type', 'name', 'area', 'photos', 'price', 'capacity', 'lat', 'lng', 'exact', 'hours'] as const;
+export const PUBLIC_PLACE_FIELDS = ['id', 'type', 'name', 'area', 'photos', 'price', 'capacity', 'lat', 'lng', 'hours'] as const;
 
 export interface PlacesResponse {
     places: PublicMapPlace[];
@@ -56,7 +54,7 @@ export interface PlacesResponse {
 export function publicPlaceOnly(p: PublicMapPlace): PublicMapPlace {
     return {
         id: p.id, type: p.type, name: p.name, area: p.area, photos: p.photos.slice(0, PLACE_PHOTOS_MAX), price: p.price,
-        capacity: p.capacity, lat: p.lat, lng: p.lng, exact: p.exact, hours: p.hours ? p.hours.map(([d, o, c]) => [d, o, c]) : null,
+        capacity: p.capacity, lat: p.lat, lng: p.lng, hours: p.hours ? p.hours.map(([d, o, c]) => [d, o, c]) : null,
     };
 }
 
@@ -170,8 +168,8 @@ export function placePriceBadge(p: Pick<PublicMapPlace, 'type' | 'price'>): stri
     return p.price !== null ? `Acompte ${f(p.price)}` : 'Réservation gratuite';
 }
 
-/** Nom accessible complet : « Salle Teranga, jusqu'à 300 personnes, dès 150 000 F par jour, quartier seulement ». */
-export function placeAccessibleName(p: Pick<PublicMapPlace, 'type' | 'name' | 'capacity' | 'price' | 'exact' | 'area'>): string {
+/** Nom accessible complet : « Salle Teranga, jusqu'à 300 personnes, dès 150 000 F par jour ». */
+export function placeAccessibleName(p: Pick<PublicMapPlace, 'type' | 'name' | 'capacity' | 'price'>): string {
     const f = (n: number) => `${Math.round(n).toLocaleString('fr-FR')} F`;
     const parts: string[] = [p.name];
     if (p.type === 'salle') {
@@ -180,7 +178,6 @@ export function placeAccessibleName(p: Pick<PublicMapPlace, 'type' | 'name' | 'c
     } else {
         parts.push(p.price !== null ? `acompte de ${f(p.price)} par personne` : 'réservation gratuite');
     }
-    if (!p.exact) parts.push(p.area ? `zone approximative, ${p.area}` : 'zone approximative');
     return parts.join(', ');
 }
 

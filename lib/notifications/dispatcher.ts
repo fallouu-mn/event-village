@@ -30,7 +30,6 @@ import { EmailService } from '@/lib/email/email.service';
 import { getPushAdapter } from '@/lib/integrations/registry';
 import type { PushMessage, PushSendOptions, PushSendResult, PushTarget } from '@/lib/integrations/types';
 import { NOTIFICATION_CATALOG, renderNotification, TemplateDataError } from '@/lib/notifications/catalog';
-import { carriesPlaceAddress, confirmedPlaceAddress } from '@/lib/lieux/adresse-confirmee.server';
 import { emailChannelAvailable, TECHNICAL_EMAIL_RE } from '@/lib/notifications/channels';
 import { smsSegments } from '@/lib/notifications/sms-format';
 import { rpcWithRetry } from '@/lib/payments/rpc';
@@ -502,24 +501,8 @@ async function deliverPush(item: ClaimedItem, data: Record<string, unknown>, ctx
     return failed(item, 'PUSH_REJECTED', 'Notification refusée par le service push.', delivery);
 }
 
-/**
- * Lot Carte B3 : avis de confirmation d'une réservation de salle ou de table : adresse exacte du lieu ajoutée au moment
- * de l'envoi (lib/lieux/adresse-confirmee.server.ts : réservation encore confirmée, cliente destinataire). Lecture
- * impossible : erreur journalisée, avis envoyé sans l'adresse (elle reste sur l'écran de la réservation).
- */
-async function withPlaceAddress(item: ClaimedItem, data: Record<string, unknown>): Promise<Record<string, unknown>> {
-    if (!carriesPlaceAddress(item.type, item.channel)) return data;
-    try {
-        const address = await confirmedPlaceAddress(item.type, data.reservation_id, item.recipient?.user_id ?? null);
-        return address ? { ...data, place_address: address } : data;
-    } catch (err) {
-        console.error(`[notifications] ${item.type}/${item.channel} (ligne ${item.id}) : adresse du lieu illisible, avis envoyé sans elle :`, errorText(err));
-        return data;
-    }
-}
-
 async function deliver(item: ClaimedItem, ctx: RenderCtx, now: Date): Promise<MarkResult> {
-    const data = await withPlaceAddress(item, renderData(item));
+    const data = renderData(item);
     try {
         switch (item.channel) {
             case 'IN_APP': return deliverInApp(item, data, ctx);

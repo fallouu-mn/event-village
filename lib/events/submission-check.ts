@@ -51,7 +51,7 @@ export function submissionMissing(input: SubmissionInput): MissingItem[] {
         out.push({ field: 'image_url', step: 'infos', message: 'Ajoutez une affiche à l\'événement.' });
     }
     if (input.latitude === null || input.longitude === null) {
-        out.push({ field: 'latitude', step: 'acces', message: 'Placez le repère du lieu sur la carte (étape Accès).' });
+        out.push({ field: 'latitude', step: 'acces', message: 'Placez votre lieu sur la carte avant d’envoyer.' }); // Lot Carte B3 : phrase du client (25/11)
     }
     const active = input.categories.filter((c) => c.is_active);
     if (active.length === 0) {

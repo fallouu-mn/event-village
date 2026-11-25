@@ -43,8 +43,6 @@ export interface OwnHall {
     deposit_mode: string | null;
     deposit_value: number | null;
     cancellation_policy: string | null;
-    /** Lot Carte B3 : 'PARTICULIER' ou 'PROFESSIONNEL' ; absent sur une ancienne réponse (lu comme particulier). */
-    host_kind?: string | null;
     latitude: number | null;
     longitude: number | null;
     address: string | null;

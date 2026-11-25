@@ -43,6 +43,9 @@ export interface OwnVenue {
     name: string;
     address: string | null;
     city: string | null;
+    /** Lot Carte B3 : position sur la carte (null : absente, établissement hors de la carte). */
+    latitude?: number | null;
+    longitude?: number | null;
     photos: string[];
     slotMinutes: number | null;
     depositPerPerson: number | null;

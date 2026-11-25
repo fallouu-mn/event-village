@@ -4,7 +4,7 @@ import { cache } from 'react';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, Check, ExternalLink, MapPin, Navigation, Users, Wallet } from 'lucide-react';
 import { LinkButton } from '@/components/ui/LinkButton';
-import { PlaceMap } from '@/components/lieux/PlaceMap';
+import { VenueMap } from '@/components/event-page/VenueMap';
 import { HallBookingPanel } from '@/components/halls/client/HallBookingPanel';
 import { HallCalendar } from '@/components/halls/client/HallCalendar';
 import { HallGallery } from '@/components/halls/client/HallGallery';
@@ -18,16 +18,11 @@ import { fcfaText } from '@/lib/halls/views';
  * Galerie, capacité, équipements, description, adresse et carte (chargée au toucher, seulement si la position existe),
  * acompte, échéance du solde, règle d'annulation, calendrier des disponibilités ; panneau de réservation (devis du
  * serveur avant de payer, réservation, paiement). Salle absente, inactive ou non validée : 404 « Salle introuvable ».
- * Lot Carte B3 : salle d'un particulier : ni adresse ni point exact (quartier, zone de 300 m, aucun itinéraire) ;
- * l'adresse est donnée sur l'écran de la réservation une fois celle-ci confirmée.
  * Lecture impossible : « Réessayer ». Service fermé : 404 par app/halls/layout.tsx.
  * Correctifs du lot 10b : durée réelle pendant laquelle la date est gardée pour payer (hall.holdMinutes, réglage du
  * serveur), dite dans « Paiement et annulation » et passée au panneau de réservation.
  */
 export const dynamic = 'force-dynamic';
-
-/** Lot Carte B3 : phrase de la fiche d'une salle de particulier. */
-const ZONE_PROMISE = 'Salle chez un particulier : l’adresse exacte vous est donnée dès que votre réservation est confirmée.';
 
 const readHall = cache(async (id: string): Promise<PublicHall | null | 'error'> => {
     try {
@@ -147,24 +142,20 @@ export default async function HallPage({ params }: { params: Promise<{ id: strin
                     )}
 
                     {(place || hasPosition) && (
-                        <Section title={hall.exact ? 'Adresse' : 'Quartier'} id="salle-adresse">
+                        <Section title="Adresse" id="salle-adresse">
                             {place && <p className="text-base font-semibold text-foreground-strong">{place}</p>}
-                            {!hall.exact && <p className="text-base text-muted-foreground">{ZONE_PROMISE}</p>}
                             {hasPosition && (
                                 <>
-                                    <PlaceMap latitude={hall.latitude as number} longitude={hall.longitude as number} name={hall.name} area={hall.city} exact={hall.exact} />
-                                    {/* Lot Carte B3 : itinéraire seulement vers le point exact d'un lieu professionnel */}
-                                    {hall.exact && (
-                                        <LinkButton
-                                            href={`https://www.google.com/maps/dir/?api=1&destination=${hall.latitude},${hall.longitude}`}
-                                            external
-                                            variant="secondary"
-                                            leftIcon={<Navigation size={18} />}
-                                            rightIcon={<ExternalLink size={16} />}
-                                        >
-                                            Voir l’itinéraire
-                                        </LinkButton>
-                                    )}
+                                    <VenueMap latitude={hall.latitude as number} longitude={hall.longitude as number} venueName={place || hall.name} eventName={hall.name} />
+                                    <LinkButton
+                                        href={`https://www.google.com/maps/dir/?api=1&destination=${hall.latitude},${hall.longitude}`}
+                                        external
+                                        variant="secondary"
+                                        leftIcon={<Navigation size={18} />}
+                                        rightIcon={<ExternalLink size={16} />}
+                                    >
+                                        Voir l’itinéraire
+                                    </LinkButton>
                                 </>
                             )}
                         </Section>

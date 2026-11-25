@@ -18,7 +18,6 @@ import dynamic from 'next/dynamic';
 import { loadEventMap } from '@/components/ui/event-map-load';
 import {
   Building2,
-  House,
   CalendarClock,
   Clock,
   Hourglass,
@@ -53,7 +52,6 @@ import {
   venueName,
   type AdminVenueSheet,
 } from '@/components/tables/admin/types';
-import { HOST_KIND_TEXT, hostKindOf } from '@/lib/lieux/position-publique';
 import { formatDateTime, toDakarDateTimeLocal } from '@/lib/format';
 
 // Carte du lieu, chargée à la demande (Leaflet lit window) ; place réservée fixe, sans animation.
@@ -214,8 +212,6 @@ export default function AdminVenueSheetPage() {
   const longitude = finiteOrNull(venue.longitude);
   const hasPosition = latitude !== null && longitude !== null;
   const address = [venue.address, venue.city].filter(Boolean).join(', ');
-  // Lot Carte B3 : chez un particulier (adresse cachée au public) ou lieu professionnel
-  const hostKind = hostKindOf(venue.hostKind);
   const isPending = venue.status === DEFAULT_VENUE_STATUS;
   const partnerName = venue.partner.name ?? 'Partenaire inconnue';
   const submittedAt = venue.submittedAt ?? null;
@@ -334,9 +330,6 @@ export default function AdminVenueSheetPage() {
               <InfoRow icon={<MapPin size={18} />} label="Adresse">
                 {address || 'Non renseignée'}
                 {!hasPosition && <span className="block text-sm font-normal text-muted-foreground">Aucun repère sur la carte.</span>}
-              </InfoRow>
-              <InfoRow icon={hostKind === 'PROFESSIONNEL' ? <Building2 size={18} /> : <House size={18} />} label="Accueil">
-                {HOST_KIND_TEXT[hostKind].label}
               </InfoRow>
             </dl>
             {hasPosition && (

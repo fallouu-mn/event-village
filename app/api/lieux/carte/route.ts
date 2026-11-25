@@ -18,8 +18,8 @@ export const dynamic = 'force-dynamic';
  * 404, comme les autres lectures publiques des services (interrupteur d'abord).
  *
  * Rend `{ places, total, truncated }` : lieux actifs, validés, d'une partenaire VALIDE, avec une position ; seulement
- * les champs de PUBLIC_PLACE_FIELDS ; pour un particulier, centre de sa zone de 300 m (`exact: false`), jamais le vrai
- * point ni l'adresse. 300 au plus. Données sous cache de 60 s (étiquette `lieux-publics`, vidée à chaque changement) ;
+ * les champs de PUBLIC_PLACE_FIELDS, position exacte (décision du client du 25/11 : application entièrement publique).
+ * 300 au plus. Données sous cache de 60 s (étiquette `lieux-publics`, vidée à chaque changement) ;
  * réponse sans cache (no-store) pour qu'aucun intermédiaire ne garde un lieu retiré.
  */
 export async function GET(req: NextRequest) {

@@ -79,8 +79,6 @@ export interface AdminHallSheet {
   cancellation: string | null;
   latitude: number | string | null;
   longitude: number | string | null;
-  /** Lot Carte B3 : 'PARTICULIER' ou 'PROFESSIONNEL' (absent : lu comme particulier) ; jamais affiché tel quel. */
-  hostKind?: string | null;
   address: string | null;
   city: string | null;
   amenities: unknown[];

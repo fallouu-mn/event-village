@@ -4,16 +4,15 @@
  * features.halls_enabled et features.tables_enabled ouverts le temps de ces tests seulement) :
  *  - invalidation : une salle validée par l'administration (POST /api/admin/halls/[id]/validation) arrive sur la carte en
  *    moins de 5 s ; suspendue, elle en disparaît en moins de 5 s ;
- *  - vie privée : une salle de particulier n'est montrée que par sa zone (centre décalé de 80 à 220 m, jamais le point) ;
- *    ni la fiche publique (page servie, données de la page), ni la recherche, ni la fiche de l'API, ni la carte ne
- *    contiennent son adresse, son point exact ou un lien d'itinéraire ;
+ *  - décision du client du 25/11 (application entièrement publique ; modification signalée au rapport, elle remplace les
+ *    preuves de la zone de 300 m) : la carte montre le point exact ; la fiche publique, la recherche et la fiche de l'API
+ *    donnent l'adresse et le point, avec « Voir l'itinéraire » ; rien de la partenaire ; champs publics seulement ;
  *  - couches gardées dans l'adresse (`couches=`), repère masqué avec sa couche ;
- *  - captures du rapport, clair et sombre : couches, repères des trois types, zone d'un particulier, feuille du téléphone,
- *    liste de l'ordinateur, fiches (zone d'un particulier, point d'un lieu professionnel) :
+ *  - captures du rapport, clair et sombre : couches, repères des trois types, feuille du téléphone, liste de
+ *    l'ordinateur, fiches d'une salle et d'un restaurant :
  *    .e2e-captures/captures-responsive/cb3-<écran>__<largeur>__<thème>.jpg (publiées sur ci-results).
  * En CI, aucune tuile ne vient d'Internet (verrou réseau : tuile neutre locale). Données : lieux neufs de la partenaire de
- * démonstration « organisateur » (noms uniques), retirés à la fin ; les lieux du seed (salles et établissements de
- * démonstration, particuliers par défaut) servent aux captures.
+ * démonstration « organisateur » (noms uniques), retirés à la fin ; les lieux du seed servent aux captures.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,12 +38,12 @@ async function demoPartnerId(): Promise<string> {
 }
 
 /** Salle neuve de la partenaire de démonstration, en attente de validation (ou validée par la base si `validate`). */
-async function newHall(spec: { name: string; address: string; lat: number; lng: number; city?: string; pro?: boolean; validate?: boolean }): Promise<string> {
+async function newHall(spec: { name: string; address: string; lat: number; lng: number; city?: string; validate?: boolean }): Promise<string> {
     const svc = serviceClient();
     const { data, error } = await svc.from('halls').insert({
         partner_id: await demoPartnerId(), name: spec.name, capacity: 250, price_per_day: 150_000, city: spec.city ?? 'Dakar',
         address: spec.address, latitude: spec.lat, longitude: spec.lng, is_active: true,
-        description: 'Salle du lot Carte B3 (données fictives).', host_kind: spec.pro ? 'PROFESSIONNEL' : 'PARTICULIER',
+        description: 'Salle du lot Carte B3 (données fictives).',
     }).select('id').single();
     if (error || !data) throw new Error(`[e2e] salle : ${error?.message ?? 'absente'}`);
     const id = String(data.id);
@@ -75,17 +74,11 @@ async function hallsOnMap(request: APIRequestContext): Promise<Array<Record<stri
     return ((await res.json()) as { places: Array<Record<string, unknown>> }).places;
 }
 
-function metres(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-    const dy = (a.lat - b.lat) * 111_320;
-    const dx = (a.lng - b.lng) * 111_320 * Math.cos((b.lat * Math.PI) / 180);
-    return Math.hypot(dx, dy);
-}
-
-test.describe('carte B3 · validation, vie privée, suspension', () => {
+test.describe('carte B3 · validation, lieu public, suspension', () => {
     test.use({ evRole: 'fumee-superadmin' });
     test.beforeEach(async ({ servicesLock }) => { await servicesLock.enter('services'); });
 
-    test('salle de particulier validée : sur la carte en moins de 5 s, zone et jamais le point ; suspendue : retirée en moins de 5 s', async ({ page, playwright, baseURL }) => {
+    test('salle validée : sur la carte en moins de 5 s à son point exact, adresse et itinéraire publics ; suspendue : retirée en moins de 5 s', async ({ page, playwright, baseURL }) => {
         test.setTimeout(180_000);
         const point = { lat: 14.70417, lng: -17.45333 };
         const address = `Villa ${STAMP}, rue des Cocotiers`;
@@ -100,31 +93,28 @@ test.describe('carte B3 · validation, vie privée, suspension', () => {
 
             const places = await hallsOnMap(page.request);
             const shown = places.find((p) => p.id === id)!;
-            expect(Object.keys(shown).sort(), 'champs publics seulement').toEqual(['area', 'capacity', 'exact', 'hours', 'id', 'lat', 'lng', 'name', 'photos', 'price', 'type']);
-            expect(shown.exact, 'particulier : zone').toBe(false);
-            const d = metres({ lat: Number(shown.lat), lng: Number(shown.lng) }, point);
-            console.log(`[carte-b3] centre de la zone à ${d.toFixed(1)} m du vrai point`);
-            expect(d, 'écart au vrai point').toBeGreaterThan(79);
-            expect(d, 'écart au vrai point').toBeLessThan(221);
-            // Même centre d'une lecture à l'autre
-            const again = (await hallsOnMap(page.request)).find((p) => p.id === id)!;
-            expect({ lat: again.lat, lng: again.lng }).toEqual({ lat: shown.lat, lng: shown.lng });
+            expect(Object.keys(shown).sort(), 'champs publics seulement').toEqual(['area', 'capacity', 'hours', 'id', 'lat', 'lng', 'name', 'photos', 'price', 'type']);
+            expect({ lat: shown.lat, lng: shown.lng }, 'point exact (décision du 25/11)').toEqual(point);
 
-            // Nulle part : adresse, point exact, lien d'itinéraire (fiche servie, recherche, fiche de l'API, carte)
-            const forbidden = [address, STAMP + ', rue', String(point.lat), String(point.lng), 'maps/dir'];
-            // Visiteur sans session (aucun cookie)
+            // Visiteur sans session (aucun cookie) : adresse, point et itinéraire publics ; rien de la partenaire
             const visitor = await playwright.request.newContext({ baseURL });
-            const sources: Array<[string, string]> = [
-                ['fiche publique', await (await visitor.get(`/halls/${id}`)).text()],
-                ['recherche', await (await visitor.get(`/api/halls?q=${encodeURIComponent(name)}`)).text()],
-                ['fiche de l’API', await (await visitor.get(`/api/halls/${id}`)).text()],
-                ['carte', JSON.stringify(places)],
-            ];
+            const page0 = await (await visitor.get(`/halls/${id}`)).text();
+            const search = await (await visitor.get(`/api/halls?q=${encodeURIComponent(STAMP)}`)).text();
+            const apiOne = await (await visitor.get(`/api/halls/${id}`)).text();
             await visitor.dispose();
-            for (const [label, text] of sources) {
-                for (const f of forbidden) expect(text.includes(f), `${label} : « ${f} »`).toBe(false);
+            expect(page0, 'fiche : adresse').toContain(address);
+            expect(page0, 'fiche : itinéraire vers le point exact').toContain(`maps/dir/?api=1&amp;destination=${point.lat},${point.lng}`);
+            expect(search, 'recherche par un mot de l’adresse').toContain(id);
+            for (const [label, text] of [['recherche', search], ['fiche de l’API', apiOne]] as const) {
+                expect(text, `${label} : adresse`).toContain(address);
+                expect(text, `${label} : point`).toContain(String(point.lat));
             }
-            expect(sources[0][1], 'fiche : phrase de la zone').toContain('Adresse exacte après réservation');
+            const { data: pa } = await serviceClient().from('partners').select('company_name, phone, email').eq('id', await demoPartnerId()).single();
+            for (const secret of [pa?.phone, pa?.email].filter((x): x is string => typeof x === 'string' && x.length > 0)) {
+                for (const [label, text] of [['fiche', page0], ['recherche', search], ['fiche de l’API', apiOne], ['carte', JSON.stringify(places)]] as const) {
+                    expect(text.includes(secret), `${label} : coordonnée de la partenaire`).toBe(false);
+                }
+            }
 
             const suspend = await page.request.post(`/api/admin/halls/${id}/validation`, { data: { decision: 'SUSPENDRE', reason: `Contrôle du lot Carte B3 ${STAMP}` } });
             expect(suspend.status(), `suspension : ${await suspend.text()}`).toBe(200);
@@ -159,15 +149,15 @@ async function shot(page: Page, name: string, width: number, theme: ThemeKey): P
 
 const LAYERS = '[role="group"][aria-label="Afficher sur la carte"]';
 
-/** Salles des captures, à Thiès (« Aller à » Thiès, zoom 13) : une de particulier, une professionnelle. */
+/** Salles des captures, à Thiès (« Aller à » Thiès, zoom 13), assez éloignées pour ne pas être regroupées. */
 const THIES = {
-    particulier: { name: `Salle Teranga ${STAMP}`, address: `Villa ${STAMP}, quartier Randoulène`, lat: 14.799, lng: -16.92, city: 'Thiès' },
-    pro: { name: `Salle Les Rails ${STAMP}`, address: `Avenue de la Gare ${STAMP}, Thiès`, lat: 14.783, lng: -16.957, city: 'Thiès', pro: true },
+    teranga: { name: `Salle Teranga ${STAMP}`, address: `Villa ${STAMP}, quartier Randoulène`, lat: 14.799, lng: -16.92, city: 'Thiès' },
+    rails: { name: `Salle Les Rails ${STAMP}`, address: `Avenue de la Gare ${STAMP}, Thiès`, lat: 14.783, lng: -16.957, city: 'Thiès' },
 } as const;
 const thiesIds: string[] = [];
 
 test.beforeAll(async () => {
-    for (const spec of [THIES.particulier, THIES.pro]) thiesIds.push(await newHall({ ...spec, validate: true }));
+    for (const spec of [THIES.teranga, THIES.rails]) thiesIds.push(await newHall({ ...spec, validate: true }));
 });
 test.afterAll(async () => {
     for (const id of thiesIds) await retire(id);
@@ -187,7 +177,7 @@ for (const theme of THEMES) {
             await context.addInitScript((value: string) => { document.cookie = `ev-theme=${value}; path=/`; }, theme.colorScheme);
         });
 
-        test('couches, repères des trois types, zone d’un particulier, feuille du téléphone (360 px)', async ({ page }) => {
+        test('couches, repères des trois types, feuille du téléphone (360 px)', async ({ page }) => {
             test.setTimeout(240_000);
             await page.setViewportSize({ width: 360, height: 780 });
             // Salles de Thiès créées sans passer par l'administration : cache de la carte (60 s au plus) attendu ici
@@ -200,12 +190,11 @@ for (const theme of THEMES) {
             await expect(layers.getByRole('button', { name: /Salles/ })).toBeVisible({ timeout: 30_000 });
             await expect(layers.getByRole('button', { name: /Restaurants/ })).toHaveAttribute('aria-pressed', 'true');
 
-            // Thiès : un événement (billet), une salle de particulier (pointillé, zone), une salle professionnelle
+            // Thiès : un événement (billet), deux salles (bâtiment)
             await page.getByLabel('Aller à').selectOption('thies');
-            const particulier = page.getByRole('button', { name: new RegExp(`^Salle Teranga ${STAMP},`) });
-            await expect(particulier.locator('.ev-repere--approx')).toBeVisible({ timeout: 30_000 });
+            const teranga = page.getByRole('button', { name: new RegExp(`^Salle Teranga ${STAMP},`) });
+            await expect(teranga.locator('.ev-repere--salle')).toBeVisible({ timeout: 30_000 });
             await expect(page.getByRole('button', { name: new RegExp(`^Salle Les Rails ${STAMP},`) }).locator('.ev-repere--salle')).toBeVisible();
-            await expect(page.locator('path.ev-zone').first()).toBeVisible({ timeout: 15_000 });
             await settle(page);
             await scrollToTop(page, LAYERS);
             await shot(page, 'couches-reperes', 360, theme.key);
@@ -216,19 +205,17 @@ for (const theme of THEMES) {
             await expect(page).toHaveURL(/couches=evenements(%2C|,)restaurants/);
             await expect(page.locator('.leaflet-marker-icon .ev-repere--salle')).toHaveCount(0);
             await layers.getByRole('button', { name: /Salles/ }).click();
-            await expect(particulier.locator('.ev-repere--approx')).toBeVisible({ timeout: 15_000 });
+            await expect(teranga.locator('.ev-repere--salle')).toBeVisible({ timeout: 15_000 });
 
-            // Feuille du téléphone : photos, faits, « Adresse exacte après réservation », lien vers la fiche
-            await particulier.locator('.ev-repere').click();
+            // Feuille du téléphone : photos, faits, lien vers la fiche (la réservation se fait là)
+            await teranga.locator('.ev-repere').click();
             const sheet = page.getByRole('dialog');
             await expect(sheet.getByRole('link', { name: 'Voir la salle' })).toBeVisible();
-            await expect(sheet).toContainText('Adresse exacte après réservation');
-            await expect(sheet).not.toContainText(THIES.particulier.address);
             await scrollToTop(page, MAP);
             await shot(page, 'feuille-lieu', 360, theme.key);
             await sheet.getByRole('button', { name: 'Fermer' }).click();
 
-            // Restaurants du seed (Sacré-Cœur : « Le Petit Jardin », particulier) : couverts en pointillé et zone
+            // Restaurants du seed (Sacré-Cœur) : couverts
             await page.getByLabel('Aller à').selectOption('sacre-coeur');
             await expect(page.locator('.leaflet-marker-icon .ev-repere--resto').first()).toBeVisible({ timeout: 30_000 });
             await settle(page);
@@ -245,6 +232,7 @@ for (const theme of THEMES) {
             const place = page.locator('[id^="carte-vignette-p-"] a').first();
             await expect(place).toBeVisible({ timeout: 30_000 });
             await place.hover();
+            // Run 658 : le lieu survolé peut être caché dans un regroupement, qui s'allume alors à sa place
             await expect(page.locator('.ev-repere--choisi'), 'survol : repère du lieu mis en évidence').toHaveCount(1, { timeout: 5_000 });
             await settle(page);
             await scrollToTop(page, LAYERS);
@@ -252,32 +240,23 @@ for (const theme of THEMES) {
             await shot(page, 'liste-ordinateur', 1440, theme.key);
         });
 
-        test('fiches : zone d’un particulier, point d’un lieu professionnel (360 et 1 440 px)', async ({ page }) => {
+        test('fiches : adresse, carte au point exact, « Voir l’itinéraire » (360 et 1 440 px)', async ({ page }) => {
             test.setTimeout(180_000);
             const ids = readDemoIds();
-            const pro = thiesIds[1];
-            {
-                for (const w of [360, 1440] as const) {
-                    await page.setViewportSize({ width: w, height: w === 360 ? 780 : 900 });
-                    for (const [name, href] of [['fiche-salle-particulier', `/halls/${ids.halls.validee.id}`], ['fiche-restaurant-particulier', `/tables/${ids.tables.restaurant.id}`], ['fiche-salle-pro', `/halls/${pro}`]] as const) {
-                        await page.goto(href, { waitUntil: 'load' });
-                        // Page entièrement chargée d'abord (la fiche se redessine après l'arrivée du code : run 654) ; le
-                        // clic attend le bouton et le fait défiler lui-même
-                        await settle(page);
-                        const section = page.locator('section[aria-labelledby="salle-adresse"], section[aria-labelledby="etab-adresse"]');
-                        await section.getByRole('button', { name: 'Afficher la carte' }).click({ timeout: 30_000 });
-                        await expect(section.locator('.leaflet-container')).toBeVisible({ timeout: 30_000 });
-                        if (name === 'fiche-salle-pro') {
-                            await expect(section.getByRole('link', { name: /Voir l’itinéraire/ })).toBeVisible();
-                        } else {
-                            await expect(section.locator('path.ev-zone')).toHaveCount(1, { timeout: 15_000 });
-                            await expect(section).toContainText('Adresse exacte après réservation');
-                            await expect(section.getByRole('link', { name: /Voir l’itinéraire/ })).toHaveCount(0);
-                        }
-                        await settle(page);
-                        await scrollToTop(page, 'section[aria-labelledby="salle-adresse"], section[aria-labelledby="etab-adresse"]');
-                        await shot(page, name, w, theme.key);
-                    }
+            for (const w of [360, 1440] as const) {
+                await page.setViewportSize({ width: w, height: w === 360 ? 780 : 900 });
+                for (const [name, href] of [['fiche-salle', `/halls/${ids.halls.validee.id}`], ['fiche-restaurant', `/tables/${ids.tables.restaurant.id}`]] as const) {
+                    await page.goto(href, { waitUntil: 'load' });
+                    // Page entièrement chargée d'abord (la fiche se redessine après l'arrivée du code : run 654) ; le clic
+                    // attend le bouton et le fait défiler lui-même
+                    await settle(page);
+                    const section = page.locator('section[aria-labelledby="salle-adresse"], section[aria-labelledby="etab-adresse"]');
+                    await section.getByRole('button', { name: 'Afficher la carte' }).click({ timeout: 30_000 });
+                    await expect(section.locator('.leaflet-container')).toBeVisible({ timeout: 30_000 });
+                    await expect(section.getByRole('link', { name: /Voir l’itinéraire/ })).toBeVisible();
+                    await settle(page);
+                    await scrollToTop(page, 'section[aria-labelledby="salle-adresse"], section[aria-labelledby="etab-adresse"]');
+                    await shot(page, name, w, theme.key);
                 }
             }
         });

@@ -4,7 +4,7 @@ import { assertNoPosterFolder } from '@/lib/images/image-address';
 import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { sendHallRefunds } from './refunds';
 import { invalidatePublicPlaces } from '@/lib/lieux/cache-lieux.server';
-import { HOST_KINDS, type HostKind } from '@/lib/lieux/position-publique';
+import { PLACE_POSITION_KEPT, PLACE_POSITION_REQUIRED } from '@/lib/places/place-texts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,8 +33,6 @@ export interface CreateHallInput {
     city?: string;
     amenities?: string[];
     images?: string[];
-    /** Lot Carte B3 : salle chez un particulier (défaut : zone de 300 m en public) ou lieu professionnel. */
-    host_kind?: HostKind;
 }
 
 export interface UpdateHallInput extends Partial<CreateHallInput> {
@@ -60,16 +58,7 @@ const POLICIES: readonly CancellationPolicy[] = ['SOUPLE', 'MODEREE', 'STRICTE']
  * (écran de modification). Jamais les réservations, ni le téléphone ou le compte de la partenaire.
  */
 const OWN_HALL_COLUMNS = 'id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, deposit_percentage, '
-    + 'cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, created_at, updated_at, '
-    + 'host_kind';
-
-/** Lot Carte B3 : particulier ou professionnel (toute autre valeur refusée). */
-function hostKindInput(v: unknown): HostKind {
-    if (typeof v !== 'string' || !HOST_KINDS.includes(v as HostKind)) {
-        throw new PublicError('Indiquez si la salle est chez un particulier ou dans un lieu professionnel.', 'INVALID_FIELD', 400);
-    }
-    return v as HostKind;
-}
+    + 'cancellation_policy, latitude, longitude, address, city, amenities, images, is_active, validation_status, validation_reason, created_at, updated_at';
 
 /** Préfixe des photos des salles de la partenaire : `${SUPABASE_URL}/storage/v1/object/public/public-images/halls/<partner_id>/`. */
 export function hallPhotoPrefix(partnerId: string): string | null {
@@ -186,6 +175,9 @@ function hallRules(input: Partial<CreateHallInput>, creating: boolean): Record<s
                 throw new PublicError('Le repère doit être placé au Sénégal : touchez la carte à l’emplacement de la salle.');
             }
         }
+        // Lot Carte B3 (décision du client du 25/11) : position obligatoire, jamais retirée d'une salle existante
+        // (à la création, l'absence est refusée par createHall, après les photos)
+        if (lat === null && !creating) throw new PublicError(PLACE_POSITION_KEPT, 'POSITION_REQUIRED', 400);
         out.latitude = lat === null ? null : Number(lat);
         out.longitude = lng === null ? null : Number(lng);
     }
@@ -231,6 +223,8 @@ export class HallService {
         // Correctifs de la contre-vérification de la finition 2a (T6) : jamais une image du dossier des affiches (events/) ;
         // lot 10b : seulement des photos déposées (réencodées) dans le dossier des salles de la partenaire
         const images = hallPhotos(input.images ?? [], partnerId);
+        // Lot Carte B3 (décision du client du 25/11) : la création est l'envoi en validation ; jamais sans position
+        if (rules.latitude === undefined || rules.latitude === null) throw new PublicError(PLACE_POSITION_REQUIRED, 'POSITION_REQUIRED', 400);
 
         // Lot 10a : statut de validation posé par la base (trg_halls_validation_guard, réglage halls.validation_required)
         const { data: hall, error } = await supabase
@@ -246,8 +240,6 @@ export class HallService {
                 amenities: cleanAmenities(input.amenities ?? []),
                 images,
                 is_active: true,
-                // Lot Carte B3 : sans choix, salle de particulier (adresse cachée jusqu'à la réservation confirmée)
-                host_kind: input.host_kind === undefined ? 'PARTICULIER' : hostKindInput(input.host_kind),
             })
             .select(OWN_HALL_COLUMNS)
             .single();
@@ -353,7 +345,6 @@ export class HallService {
             if (typeof input.is_active !== 'boolean') throw new PublicError('Choisissez si la salle est proposée ou non.', 'INVALID_FIELD', 400);
             updateData.is_active = input.is_active;
         }
-        if (input.host_kind !== undefined) updateData.host_kind = hostKindInput(input.host_kind);
 
         const { data: updated, error } = await supabase
             .from('halls')
@@ -366,7 +357,7 @@ export class HallService {
         if (error || !updated) {
             throw new Error(`Échec modification salle: ${error?.message}`);
         }
-        // Lot Carte B3 : nom, prix, photos, position, retrait, particulier ou professionnel : carte à jour aussitôt
+        // Lot Carte B3 : nom, prix, photos, position, retrait : carte à jour aussitôt
         invalidatePublicPlaces('salle modifiée');
 
         return updated as unknown as Record<string, any>;
@@ -428,7 +419,7 @@ export class HallService {
         const r = (data ?? {}) as Record<string, unknown>;
         if (r.ok !== true) {
             const code = String(r.code ?? 'REFUSED');
-            const status = code === 'HALL_NOT_FOUND' ? 404 : code === 'ACCOUNT_NOT_ACTIVE' || code === 'PARTNER_NOT_VALIDATED' ? 403 : code === 'HALL_INCOMPLETE' ? 400 : 409;
+            const status = code === 'HALL_NOT_FOUND' ? 404 : code === 'ACCOUNT_NOT_ACTIVE' || code === 'PARTNER_NOT_VALIDATED' ? 403 : code === 'HALL_INCOMPLETE' || code === 'POSITION_REQUIRED' ? 400 : 409;
             return { status, body: { success: false, error: r.message ?? 'Envoi impossible.', code } };
         }
         invalidatePublicPlaces('salle renvoyée en validation');
