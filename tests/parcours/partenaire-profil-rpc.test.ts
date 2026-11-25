@@ -187,8 +187,8 @@ describe('8.2 l — chaque colonne de la liste fermée', () => {
         });
     }
 
-    // Design 1c (décision signalée au rapport) : l'email est obligatoire, comme à l'inscription : il ne se vide plus
-    for (const [column] of VALUES.filter(([c]) => c !== 'company_name' && c !== 'email')) {
+    // Design 1c, puis carte B3 (décision du client du 25/11, signalée au rapport) : email et nom commercial obligatoires
+    for (const [column] of VALUES.filter(([c]) => c !== 'company_name' && c !== 'email' && c !== 'commercial_name')) {
         test(`${column} : vidée, NULL ; les autres inchangées`, async () => {
             const start = await fieldsOf(p.partnerId);
             assertSaved(await patchProfile(p, { [column]: null }), `${column} vidée`);
@@ -198,14 +198,14 @@ describe('8.2 l — chaque colonne de la liste fermée', () => {
         });
     }
 
-    test('email vidé (null ou chaîne vide) : refusé, rien n’est écrit (design 1c)', async () => {
+    test('email et nom commercial vidés (null ou chaîne vide) : refusés, rien n’est écrit (design 1c ; carte B3, 25/11)', async () => {
         const start = await fieldsOf(p.partnerId);
-        for (const empty of [null, '', '   ']) {
-            const r = await patchProfile(p, { email: empty });
-            assert.equal(r.status, 400, `email ${JSON.stringify(empty)} : ${r.status} ${r.text.slice(0, 300)}`);
-            assert.match(r.text, /obligatoire/, `email ${JSON.stringify(empty)} : motif du refus`);
+        for (const empty of [null, '', '   ']) for (const field of ['email', 'commercial_name']) {
+            const r = await patchProfile(p, { [field]: empty });
+            assert.equal(r.status, 400, `${field} ${JSON.stringify(empty)} : ${r.status} ${r.text.slice(0, 300)}`);
+            assert.match(r.text, /obligatoire/, `${field} ${JSON.stringify(empty)} : motif du refus`);
         }
-        assert.deepEqual(await fieldsOf(p.partnerId), start, 'email vidé : rien n’a changé');
+        assert.deepEqual(await fieldsOf(p.partnerId), start, 'email ou nom commercial vidé : rien n’a changé');
     });
 
     test('champ absent : inchangé, chaîne vide : NULL', async () => {

@@ -22,6 +22,7 @@ import { PARTNER_FALLBACK_NAME, partnerPublicName } from '../../lib/partner/publ
 import { publicHall } from '../../lib/halls/queries';
 import { publicVenue } from '../../lib/tables/queries';
 import { RegisterPartnerFieldsSchema } from '../../lib/validations/auth';
+import { TEST_PASSWORD } from '../helpers/fixture-data';
 
 const TOKEN = `cb3nc${randomBytes(4).toString('hex')}`;
 const LEGAL = `Raison Legale ${TOKEN} SARL`;
@@ -92,8 +93,8 @@ describe('B — nom commercial obligatoire (inscription et profil)', () => {
     const valid = {
         companyName: 'Traiteur Royal Dakar SARL', commercialName: 'Royal Buffet', description: 'Service traiteur pour les tests du lot.',
         address: 'Almadies Zone 4', city: 'Dakar', activities: ['TRAITEUR'], firstName: 'Aminata', lastName: 'Diallo', phone: '77 456 78 90',
-        email: 'aminata@exemple.sn', password: 'MotDePasse!2026', confirmPassword: 'MotDePasse!2026',
-        idCardUploadToken: 'jeton-fictif-piece-identite', businessDocUploadToken: 'jeton-fictif-document-entreprise',
+        email: 'aminata@exemple.sn', password: TEST_PASSWORD, confirmPassword: TEST_PASSWORD,
+        idCardUploadToken: 'jeton-de-depot-fictif-piece-identite-0001', businessDocUploadToken: 'jeton-de-depot-fictif-document-entreprise-0001',
     };
 
     test('inscription : sans nom commercial, ou vide, refusée avec le message du champ ; avec, acceptée', () => {
