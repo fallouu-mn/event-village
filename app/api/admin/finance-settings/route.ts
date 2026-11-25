@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 /** Préfixes des réglages exposés par cette route (validation des valeurs : finance_setting_set). */
 // Lot 9 quinquies (B1) : + support.* (contact du support)
-const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%,key.like.halls.%,key.like.tables.%,key.like.orders.%';
+const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%,key.like.halls.%,key.like.tables.%,key.like.orders.%,key.like.event_tables.%';
 
 /**
  * Lot 3 — réglages financiers (clés finance.*), lot 4 — réglages du contrôle d'accès (clés access.*),
@@ -26,15 +26,17 @@ export async function GET(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'settings.read' });
     if (!auth.authorized) return auth.errorResponse!;
     const supabase = getServiceRoleClient();
-    const [{ data: settings, error }, { data: history, error: histErr }, { data: defaults, error: defErr }] = await Promise.all([
+    const [{ data: settings, error }, { data: history, error: histErr }, { data: defaults, error: defErr }, { data: tableDefaults, error: tdErr }] = await Promise.all([
         supabase.from('platform_settings').select('key, value, description, updated_by, updated_at').or(SETTING_KEYS_FILTER).order('key'),
         supabase.from('platform_settings_history').select('key, old_value, new_value, changed_by, reason, changed_at')
             .or(SETTING_KEYS_FILTER).order('changed_at', { ascending: false }).limit(100),
         // Finition 3b (E-35) : valeur d'origine de chaque réglage (premier état de l'historique)
         supabase.rpc('platform_settings_defaults'),
+        // Lot 11c-a : valeurs d'origine des réglages event_tables.* (platform_settings_defaults n'est pas recopié)
+        supabase.rpc('event_tables_settings_defaults'),
     ]);
-    if (error || histErr || defErr) {
-        console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message ?? defErr?.message);
+    if (error || histErr || defErr || tdErr) {
+        console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message ?? defErr?.message ?? tdErr?.message);
         return NextResponse.json({ error: 'Réglages indisponibles.' }, { status: 500 });
     }
     // Finition 3b (E-35) : l'historique dit qui a changé quoi ; un changement sans compte (migration, automate) est « Automatique ».
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
             ...h,
             author: h.changed_by ? (names.get(String(h.changed_by)) ?? 'Compte supprimé') : 'Automatique',
         })),
-        defaults: (defaults ?? {}) as Record<string, unknown>,
+        defaults: { ...((defaults ?? {}) as Record<string, unknown>), ...((tableDefaults ?? {}) as Record<string, unknown>) },
         observed_cashout_fee_rate: observed.rate,
         observed_cashout_fee_max: observed.max,
     });
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
 // lecture et la page ; la validation reste celle de la base (finance_setting_set → fin_setting_valid). Lot 12a : réglages
 // des commandes (orders.*) acceptés de même
 const PutSchema = z.object({
-    key: z.string().regex(/^(finance|access|notif|features|support|halls|tables|orders)\.[A-Za-z0-9_.]+$/),
+    key: z.string().regex(/^(finance|access|notif|features|support|halls|tables|orders|event_tables)\.[A-Za-z0-9_.]+$/),
     value: z.union([z.number(), z.boolean(), z.string().max(254)]),
     reason: z.string().trim().min(3).max(300),
 });
@@ -90,7 +92,10 @@ export async function PUT(req: NextRequest) {
     if (!parsed.success) {
         return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.*, notif.*, features.*, support.*, halls.*, tables.* ou orders.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
     }
-    const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>('finance_setting_set', {
+    // Lot 11c-a : les deux réglages des tables d'un événement passent par event_tables_setting_set (mêmes règles ; la suite
+    // d'audit cv12a-3 interdit une nouvelle recopie de finance_setting_set)
+    const setter = parsed.data.key === 'features.event_tables_enabled' || parsed.data.key.startsWith('event_tables.') ? 'event_tables_setting_set' : 'finance_setting_set';
+    const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>(setter, {
         p_key: parsed.data.key,
         p_value: { value: parsed.data.value },
         p_actor: auth.user!.id,

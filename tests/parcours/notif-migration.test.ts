@@ -482,6 +482,10 @@ const INVENTORY: Insertion[] = [
     // Lot 11b (ajouts signalés au rapport) : « J'arrive » du client ; remboursement d'une table versé
     { k1: 'lot 11b j’arrive', fn: 'table_client_coming', types: ['TABLE_CLIENT_COMING'] },
     { k1: 'lot 11b remboursement versé', fn: 'notif_cashouts_notify', types: ['TABLE_REFUND_PAID'] },
+    // Lot 11c-a (ajouts signalés au rapport) : tables d'un événement (vente, places à envoyer la veille, administration)
+    { k1: 'lot 11c-a vente', fn: 'event_table_sold_notify', types: ['EVENT_TABLE_CONFIRMED', 'EVENT_TABLE_SOLD'] },
+    { k1: 'lot 11c-a places', fn: 'event_table_seats_reminders', types: ['EVENT_TABLE_SEATS_REMINDER'] },
+    { k1: 'lot 11c-a administration', trigger: { name: 'trg_event_tables_admin_alert', table: 'public.event_tables' }, types: ['ADMIN_EVENT_TABLES_CHANGED'] },
     { k1: 'sécurité', trigger: { name: 'on_auth_user_password_changed', table: 'auth.users' }, types: ['PASSWORD_CHANGED'] },
     { k1: 'essai push', fn: 'notification_test_push_enqueue', types: ['PUSH_TEST'] },
     // Point d'insertion réel : notif_failed_alert, appelée par notification_outbox_mark et par la reprise des SENDING

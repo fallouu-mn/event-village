@@ -65,6 +65,22 @@ function zoneAlreadyPassedMessage(data: Rpc): string {
 }
 
 /**
+ * Lot 11c-a : badge d'une place de table d'un événement (event_table_badge) ; null pour un billet ordinaire. Le badge
+ * n'est qu'une aide à la porte : une panne de sa lecture est journalisée et le verdict du scan est rendu sans lui.
+ */
+async function tableBadge(data: Rpc): Promise<Record<string, unknown> | null> {
+    const ticket = data.ticket;
+    const id = ticket && typeof ticket === 'object' ? (ticket as { id?: unknown }).id : undefined;
+    if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+    const { data: badge, error } = await rpcWithRetry<Record<string, unknown> | null>('event_table_badge', { p_ticket: id });
+    if (error) {
+        console.error('[scan] badge de table illisible :', error.message);
+        return null;
+    }
+    return badge && typeof badge === 'object' ? badge : null;
+}
+
+/**
  * Réponse d'un résultat de scan (HTTP 200) : résultat de l'union partagée, jamais d'erreur technique déguisée.
  * `replayed` est toujours un booléen (vrai seulement pour le rejeu d'une clé déjà traitée, D40).
  */
@@ -245,7 +261,9 @@ export async function POST(req: NextRequest) {
         }
         // Lot 6 (J1.4) : l'avis « entrée validée » au porteur est mis en file par le trigger
         // trg_tickets_scanned_notify, dans la transaction du compostage.
-        return scanResponse(data);
+        // Lot 11c-a : place d'une table d'un événement : badge « Table 12 · Carré VIP » et places déjà entrées
+        const table = await tableBadge(data);
+        return scanResponse(table ? { ...data, table } : data);
     } catch (err) {
         console.error('[API /api/controller/scan] erreur :', err instanceof Error ? err.message : String(err));
         return serverError(user.id, typeof p.event_id === 'string' ? p.event_id : null, 'Erreur serveur pendant le contrôle.');

@@ -92,6 +92,9 @@ t1 AS (
     SELECT 't', t.id::text, 'billet ' || t.sale_channel || ' d''une catégorie non vendue en ligne au moment de l''achat'
       FROM t WHERE t.sale_channel IN ('ONLINE', 'FREE') AND t.sale_decision->>'source' <> 'REPRISE'
        AND COALESCE((t.sale_decision->>'sale_online')::boolean, FALSE) IS NOT TRUE
+       -- Lot 11c-a (modification signalée au rapport) : une place de table d'un événement est vendue avec sa table (type
+       -- jamais vendu comme billet, sale_online faux par contrainte) ; lot11c-invariants (e) vérifie qu'elle a sa vente
+       AND t.event_table_booking_id IS NULL
 ),
 t2 AS (
     SELECT 't', t.id::text, 'billet COUNTER d''une catégorie non vendue au guichet au moment de la vente'

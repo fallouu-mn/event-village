@@ -570,6 +570,15 @@ export class EventService {
     public static async deleteTicketCategory(actorId: string, eventId: string, categoryId: string): Promise<{ category_id: string }> {
         await this.loadEditableEvent(eventId, actorId, 'categories');
         if (!UUID_RE.test(categoryId)) throw new EventServiceError(404, 'CATEGORY_NOT_FOUND', 'Catégorie de billets introuvable pour cet événement.');
+        // Lot 11c-a : un type de table se supprime avec ses tables (event_table_type_delete) ; la base refuse aussi
+        // (trg_0_ticket_categories_table_guard) : ce refus en clair évite une erreur 500
+        const { data: kindRow, error: kindErr } = await getServiceRoleClient()
+            .from('ticket_categories').select('kind').eq('id', categoryId).eq('event_id', eventId).maybeSingle();
+        if (kindErr) {
+            console.error(`[EventService] catégorie ${categoryId} illisible : ${kindErr.message}`);
+            throw new EventServiceError(500, 'EDITION_UNAVAILABLE', UNAVAILABLE_MESSAGE);
+        }
+        if (kindRow?.kind === 'TABLE') throw new EventServiceError(409, 'TABLE_TYPE', 'Ce type de table se supprime depuis les tables de l’événement.');
         const result = await editionResult<{ ok: true; category_id: string }>('ticket_category_delete', rpcWithRetry('ticket_category_delete', { p: {
             event_id: eventId,
             category_id: categoryId,

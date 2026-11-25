@@ -80,7 +80,7 @@ Remboursement versé : avis existant « Remboursement versé ». Règles existan
 
 ## Modèle pour les tables d'un événement (lot 11c)
 
-Une zone ou une table portera `event_id`, exclusif de `venue_id`, et un prix par table. La réservation garde sa table, son créneau et la même contrainte d'exclusion : rien à refaire dans les fonctions d'argent.
+**Modèle abandonné (lot 11c-a, 25/11).** Le modèle prévu ici (`event_id` sur les zones et tables des établissements, même réservation, « rien à refaire dans les fonctions d'argent ») était faux : l'annulation d'un événement (`event_cancel`), le remboursement au report et la suspension de l'organisatrice ne traitent que les paiements de billets (`payment_target = 'TICKET'`) ; une table payée en `TABLE_RESERVATION` n'aurait pas été remboursée à l'annulation. Modèle retenu : une table d'un événement est un lot de N billets vendu par le moteur des billets (`docs/lot11c-etat-des-lieux.md` § 2.3, `docs/lot11c-a-rapport.md`).
 
 ## Migrations
 

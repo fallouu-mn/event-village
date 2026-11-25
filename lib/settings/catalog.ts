@@ -21,6 +21,8 @@ export const SETTING_SECTIONS: ReadonlyArray<{ prefix: string; anchor: string; t
     { prefix: 'tables.', anchor: 'tables', title: 'Restaurants et tables' },
     // Lot 12a : commandes (frais, acompte, délais, retrait, code de remise, masquage des coordonnées)
     { prefix: 'orders.', anchor: 'commandes', title: 'Commandes' },
+    // Lot 11c-a : tables d'un événement (tables au plus par compte et par événement)
+    { prefix: 'event_tables.', anchor: 'tables-evenement', title: 'Tables des événements' },
 ];
 
 export interface SettingBounds {
@@ -86,6 +88,8 @@ export const SETTING_BOUNDS: Readonly<Record<string, SettingBounds>> = {
     'tables.max_pending_per_client': int(1, 10, 'Réservations non payées au plus par client', 'réservations'),
     'tables.reminder_hours': int(1, 24, 'Rappel au client avant l’heure', 'h'),
     // Lot 12a : commandes (bornes identiques à fin_setting_valid, migration 20261130000001)
+    // Lot 11c-a : tables d'un événement (bornes identiques à event_tables_setting_set, migration 20261201000001)
+    'event_tables.max_per_account': int(1, 10, 'Tables au plus par compte et par événement', 'tables'),
     'orders.service_fee_rate': rate(0, 50, 'Frais de service des commandes'),
     'orders.commission_rate': rate(0, 50, 'Commission sur les commandes'),
     'orders.deposit_default_percent': int(10, 90, 'Acompte par défaut d’une commande', '%'),
@@ -190,6 +194,7 @@ export function settingRisk(key: string, value: unknown, all: Readonly<Record<st
         case 'features.halls_enabled':
         case 'features.tables_enabled':
         case 'features.orders_enabled':
+        case 'features.event_tables_enabled':
             return value === true ? 'Pas prêt pour la mise en ligne : ne l’activez pas sans l’accord de l’équipe technique.' : null;
         default:
             return null;

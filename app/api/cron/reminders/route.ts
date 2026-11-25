@@ -22,13 +22,26 @@ async function expireControllerInvitations(): Promise<number> {
     return Number(reply.expired ?? 0);
 }
 
+/**
+ * Lot 11c-a : rappel la veille au titulaire d'une table d'un événement qui a encore des places à envoyer
+ * (event_table_seats_reminders : une fois par table, à partir de 10 h, avis facultatif EVENT_TABLE_SEATS_REMINDER).
+ */
+async function remindTableSeats(): Promise<number> {
+    const { data, error } = await getServiceRoleClient().rpc('event_table_seats_reminders', { p: {} });
+    if (error) throw new Error(`event_table_seats_reminders : ${error.code ?? ''} ${error.message}`);
+    const reply = data as { ok?: boolean; created?: number } | null;
+    if (!reply || reply.ok !== true) throw new Error(`event_table_seats_reminders : réponse inattendue ${JSON.stringify(data)}`);
+    return Number(reply.created ?? 0);
+}
+
 async function run(req: NextRequest) {
     const refused = refuseUnlessCron(req);
     if (refused) return refused;
     try {
         const report = await scheduleReminders();
         const invitationsExpired = await expireControllerInvitations();
-        return NextResponse.json({ ok: true, created: report.created, events: report.events, invitations_expired: invitationsExpired });
+        const tableSeatReminders = await remindTableSeats();
+        return NextResponse.json({ ok: true, created: report.created, events: report.events, invitations_expired: invitationsExpired, table_seat_reminders: tableSeatReminders });
     } catch (err) {
         console.error('[cron reminders] planification des rappels impossible :', err instanceof Error ? err.message : String(err));
         return NextResponse.json({ error: 'Planification des rappels momentanément impossible.', code: 'REMINDERS_FAILED' }, { status: 500 });
