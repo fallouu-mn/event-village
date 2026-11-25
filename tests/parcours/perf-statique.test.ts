@@ -17,7 +17,7 @@
  *    mesure le gzip des fichiers .js distincts de "/layout" ∪ "/template" ∪ "<route>/page", mesure seule
  *    sans budget, échoue au-dessus d'un budget, refuse une route inconnue, échoue sur une route budgétée
  *    absente ;
- *  - scripts/js-budget.json fixe un budget bloquant pour chacune des cinq routes mesurées (fix(7.5), D76) ;
+ *  - scripts/js-budget.json fixe un budget bloquant pour chacune des routes mesurées (fix(7.5), D76 ; /explore : lot Carte B) ;
  *  - `.ev-page-enter` (app/template.tsx) n'anime plus l'opacité depuis 0 (D78).
  *
  * Rouge aujourd'hui (6fff1bf) : sharp absent de package.json, du lockfile et de node_modules ;
@@ -57,7 +57,8 @@ const SOURCE_DIRS = ['app', 'components', 'lib', 'hooks'];
 const SOURCE_EXT = /\.(tsx?|jsx?|mjs|cjs)$/;
 const FORBIDDEN_PACKAGES = ['framer-motion', 'liquid-glass-react', 'react-leaflet'];
 const SERVER_ONLY_MODULES = ['lib/supabase/server', 'lib/shifts/shift.service'];
-const MEASURED_ROUTES = ['/', '/events/[id]', '/tickets', '/controller/scanner', '/billet/hors-ligne'];
+// Lot Carte B : /explore mesurée et budgétée (attente ajoutée, signalée au rapport du lot Carte B)
+const MEASURED_ROUTES = ['/', '/events/[id]', '/tickets', '/controller/scanner', '/billet/hors-ligne', '/explore'];
 
 // ── Lecture des sources ────────────────────────────────────────────────────
 
@@ -312,6 +313,7 @@ function fakeBuild(): { dir: string; pages: Record<string, string[]>; files: Rec
         'static/chunks/app/tickets/page-gggg.js': chunk('tickets', 8_000),
         'static/chunks/shared-hhhh.js': chunk('shared', 4_000),
         'static/chunks/app/controller/scanner/page-iiii.js': chunk('scanner', 7_000),
+        'static/chunks/app/explore/page-kkkk.js': chunk('explore', 6_000),
         'static/css/app/layout-jjjj.css': chunk('css', 50_000),
     };
     for (const [rel, buf] of Object.entries(files)) {
@@ -326,6 +328,7 @@ function fakeBuild(): { dir: string; pages: Record<string, string[]>; files: Rec
         '/events/[id]/page': [...common, 'static/chunks/shared-hhhh.js', 'static/chunks/app/events/[id]/page-ffff.js'],
         '/tickets/page': [...common, 'static/chunks/shared-hhhh.js', 'static/chunks/app/tickets/page-gggg.js'],
         '/controller/scanner/page': [...common, 'static/chunks/app/controller/scanner/page-iiii.js'],
+        '/explore/page': [...common, 'static/chunks/app/explore/page-kkkk.js'],
         '/admin/audit/page': [...common, 'static/chunks/app/page-eeee.js'],
     };
     fs.writeFileSync(path.join(dir, 'app-build-manifest.json'), JSON.stringify({ pages }, null, 2));
@@ -390,7 +393,8 @@ describe('7.5 budget de poids JavaScript (D76)', () => {
             assert.equal(by['/tickets'].fichiers, '6', '/tickets : webpack, main-app, layout, template, shared, page (CSS exclue)');
             assert.equal(Number(by['/controller/scanner'].octets_gzip), expectedGzip(build, '/controller/scanner/page'), '/controller/scanner : somme gzip');
             assert.deepEqual([by['/billet/hors-ligne'].statut, by['/billet/hors-ligne'].octets_gzip], ['ABSENTE', ''], '/billet/hors-ligne absente du build, sans budget : signalée, pas d\'échec');
-            for (const route of ['/', '/events/[id]', '/tickets', '/controller/scanner']) assert.equal(by[route].statut, 'MESURE', `${route} : statut`);
+            assert.equal(Number(by['/explore'].octets_gzip), expectedGzip(build, '/explore/page'), '/explore : somme gzip');
+            for (const route of ['/', '/events/[id]', '/tickets', '/controller/scanner', '/explore']) assert.equal(by[route].statut, 'MESURE', `${route} : statut`);
             assert.match(r.stdout, /\[JS-BUDGET\] \/tickets : \d+ octets gzip/, 'ligne [JS-BUDGET] imprimée pour /tickets');
         }
     });
@@ -439,7 +443,7 @@ describe('7.5 budget de poids JavaScript (D76)', () => {
         assert.match(noBuild.stderr, /app-build-manifest\.json introuvable/);
     });
 
-    test('scripts/js-budget.json fixe un budget bloquant (octets gzip) pour chacune des cinq routes mesurées', () => {
+    test('scripts/js-budget.json fixe un budget bloquant (octets gzip) pour chacune des six routes mesurées', () => {
         const file = path.join(ROOT, 'scripts/js-budget.json');
         assert.ok(fs.existsSync(file), 'scripts/js-budget.json absent : le poids JavaScript n\'est que mesuré, aucun budget ne bloque (fix(7.5), D76)');
         const budgets = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;

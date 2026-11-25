@@ -9,10 +9,11 @@
  * mesurée, la taille gzip (zlib, niveau 9) des fichiers .js DISTINCTS de `"/layout"` ∪ `"/template"` ∪
  * `"<route>/page"` (un fichier partagé n'est compté qu'une fois). Les feuilles de style ne sont pas comptées.
  *
- * Routes mesurées : /, /events/[id], /tickets, /controller/scanner, /billet/hors-ligne.
+ * Routes mesurées : /, /events/[id], /tickets, /controller/scanner, /billet/hors-ligne, /explore (lot Carte B : la carte et
+ * le calendrier ne pèsent rien au premier chargement d'Explorer).
  *
  * Budgets : `scripts/js-budget.json`, objet { "<route>": <octets gzip maximum> } (entier > 0 ; 1 Ko = 1 000
- * octets, comme le tableau de Next). Clés admises : les cinq routes ci-dessus, rien d'autre.
+ * octets, comme le tableau de Next). Clés admises : les six routes ci-dessus, rien d'autre.
  *  - fichier absent, ou objet vide : MESURE SEULE (aucun échec pour un dépassement) ; c'est la mesure
  *    « avant » du commit test(7.5) ;
  *  - route avec budget : échec si la mesure dépasse le budget, ou si la route est absente du build ;
@@ -47,6 +48,7 @@ const MEASURED_ROUTES = [
     ['/tickets', '/tickets/page', true],
     ['/controller/scanner', '/controller/scanner/page', true],
     ['/billet/hors-ligne', '/billet/hors-ligne/page', false],
+    ['/explore', '/explore/page', true],
 ];
 
 function configError(message) {
@@ -157,12 +159,23 @@ function main() {
         const files = [...new Set([...shared, ...pageFiles])].filter((f) => f.endsWith('.js')).sort();
         let gzip = 0;
         let raw = 0;
+        const detail = [];
         for (const rel of files) {
             const abs = path.join(opts.nextDir, rel);
             if (!fs.existsSync(abs)) configError(`fichier du manifeste introuvable pour ${route} : ${rel}`);
             const buffer = fs.readFileSync(abs);
             raw += buffer.length;
-            gzip += gzipSize(buffer);
+            const g = gzipSize(buffer);
+            gzip += g;
+            detail.push(`${g}\t${rel.replace(/-[0-9a-f]{16}\.js$/, '.js')}`);
+        }
+        // Lot Carte B : détail par fichier (octets gzip), pour savoir quel fichier grossit d'un run à l'autre ; table des
+        // morceaux chargeables à la demande (entrées « id: "empreinte" » de webpack.js) : une entrée par morceau
+        for (const line of detail) console.log(`${TAG}   ${route} · ${line}`);
+        const runtime = files.find((f) => /\/webpack-[0-9a-f]+\.js$/.test(f));
+        if (runtime) {
+            const ids = [...fs.readFileSync(path.join(opts.nextDir, runtime), 'utf8').matchAll(/(\d+):"[0-9a-f]{16}"/g)].map((m) => Number(m[1]));
+            console.log(`${TAG}   ${route} · table des morceaux : ${ids.length} entrées`);
         }
         let status = 'MESURE';
         if (budget !== null) {
@@ -172,6 +185,30 @@ function main() {
         rows.push({ route, files: files.length, gzip, raw, budget: budget ?? '', status });
         console.log(`${TAG} ${route} : ${gzip} octets gzip (${formatKo(gzip)}), ${files.length} fichier(s) JS, ${raw} octets bruts`
             + (budget === null ? ' — sans budget' : ` — budget ${budget} octets (${formatKo(budget)}) : ${status === 'OK' ? 'OK' : 'DÉPASSÉ'}`));
+    }
+
+    // Lot Carte B : relevé des morceaux chargeables à la demande (table de webpack.js) : identifiant, taille gzip du
+    // fichier, repères de son contenu (textes français, noms de modules connus), pour comparer deux constructions
+    const runtimeRel = [...new Set(Object.values(pages).flat())].find((f) => /\/webpack-[0-9a-f]+\.js$/.test(f));
+    if (runtimeRel) {
+        const runtimeSrc = fs.readFileSync(path.join(opts.nextDir, runtimeRel), 'utf8');
+        const chunkDir = path.join(opts.nextDir, 'static', 'chunks');
+        const all = fs.existsSync(chunkDir) ? fs.readdirSync(chunkDir) : [];
+        const marks = ['loadLeaflet', 'Partout au Sénégal', 'Rechercher dans cette zone', 'Afficher la carte', 'Aller à', 'Ce week-end',
+            'tiles.stadiamaps.com', 'leaflet-container', 'showModal', 'Fermer la bulle', 'Près de chez vous', 'ev-point', 'clusterPoints',
+            'Autour de moi', 'Vue Carte', 'Rechercher un lieu', 'Zoom avant'];
+        for (const m of runtimeSrc.matchAll(/(\d+):"([0-9a-f]{16})"/g)) {
+            const file = all.find((f) => f.startsWith(`${m[1]}.`) || f.startsWith(`${m[1]}-`));
+            if (!file) {
+                console.log(`${TAG} morceau ${m[1]} : fichier introuvable`);
+                continue;
+            }
+            const buf = fs.readFileSync(path.join(chunkDir, file));
+            const txt = buf.toString('utf8');
+            const found = marks.filter((k) => txt.includes(k));
+            const fr = /"([^"\n]{0,30}[éèàçêîô][^"\n]{2,30})"/.exec(txt)?.[1] ?? '';
+            console.log(`${TAG} morceau ${m[1]} : ${gzipSize(buf)} octets gzip${found.length ? ` [${found.join(', ')}]` : ''}${fr ? ` « ${fr} »` : ''}`);
+        }
     }
 
     fs.mkdirSync(path.dirname(opts.out), { recursive: true });

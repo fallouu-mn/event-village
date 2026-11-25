@@ -103,9 +103,12 @@ describe('a. propre au compte et à l’événement', () => {
     test('écrit pour (compte 1, événement 1) : repris par lui seul', async () => {
         const m = await mod();
         install();
-        assert.equal(m.writeDraft(U1, E1, { title: 'Nuit du Mbalax' }, new Date('2026-11-16T17:42:00Z')), true);
+        // Lot Carte B (run complet 633) : date fixe du 16/11 remplacée par « il y a une heure » : un brouillon de plus de
+        // 7 jours est effacé (cvf2b 5d), le test était rouge depuis le 23/11 à 17 h 42 ; même vérification (signalé)
+        const saved = new Date(Date.now() - 3_600_000);
+        assert.equal(m.writeDraft(U1, E1, { title: 'Nuit du Mbalax' }, saved), true);
         const mine = m.readDraft(U1, E1, accept);
-        assert.deepEqual(mine, { savedAt: '2026-11-16T17:42:00.000Z', data: { title: 'Nuit du Mbalax' } });
+        assert.deepEqual(mine, { savedAt: saved.toISOString(), data: { title: 'Nuit du Mbalax' } });
         assert.equal(m.readDraft(U2, E1, accept), null, 'autre compte');
         assert.equal(m.readDraft(U1, E2, accept), null, 'autre événement');
         assert.equal(m.readDraft(U1, null, accept), null, 'création');
