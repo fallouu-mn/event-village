@@ -345,7 +345,7 @@ describe('6.6 Partenaire — cycle de l’événement (trg_event_status_notify, 
         // Finition 4 (contre-vérification, T2 ; modification signalée au rapport) : envoyés maintenant, pendant la suspension ;
         // par défaut l'outil envoie demain à midi, après la fin de cet événement (début dans 3 h, 4 h) : l'avis serait annulé
         const hs = await deliver(holderRows, new Date());
-        await assertInApp(hs.filter((r) => r.recipient_user_id === holder.userId), { userId: holder.userId, title: 'Événement suspendu', contains: [ev.title], actionUrl: `/events/${ev.eventId}` });
+        await assertInApp(hs.filter((r) => r.recipient_user_id === holder.userId), { userId: holder.userId, title: 'Événement suspendu', contains: [ev.title], actionUrl: `/tickets/${ev.eventId}` }); // carte B3 (25/11) : « Mes billets » (modification signalée)
 
         await advanceEventTo(ev.eventId, 'PUBLIE', { partnerUserId: p.userId });
         const hRea = await historyId(ev.eventId, 'SUSPENDU', 'PUBLIE');

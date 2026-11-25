@@ -7,7 +7,8 @@
  * par la billetterie du navigateur).
  */
 export const UNAVAILABLE_EVENT_TITLE = 'Cet événement n’est plus disponible';
-export const UNAVAILABLE_EVENT_MESSAGE = 'Vous avez un billet ? Retrouvez-le dans « Mes billets ».';
+// Espaces insécables avant « ? » et autour de « Mes billets » : jamais coupés en fin de ligne (carte B3, 25/11)
+export const UNAVAILABLE_EVENT_MESSAGE = 'Vous avez un billet ? Retrouvez-le dans « Mes billets ».';
 
 export interface UnavailableEventView {
     id: string;
