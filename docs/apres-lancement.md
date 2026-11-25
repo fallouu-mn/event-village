@@ -190,3 +190,15 @@ d'où elle vient et pourquoi elle attend.
 | Pages d'arrivée des avis (`/tickets/<id>`, `/partner/finance/retraits/<envoi>`, `/wallet/retraits/<envoi>`) : la page « Cet élément n'est plus disponible » est rendue par la page elle-même, avec le statut 200 (la même réponse pour un objet d'autrui, deviné ou supprimé : aucun indice) ; les routes qu'elles lisent répondent un vrai 404. Un statut 404 demanderait un fichier `not-found` par route (sous `/tickets`, le squelette de chargement le ferait de toute façon répondre 200). | Confort pour les robots d'indexation (pages déjà marquées « noindex » pour le billet) ; aucun effet pour la personne. | Finition 5, point 2 |
 | Code sans usage : `components/events/EventCancellationBanner.tsx` (palette rouge et ardoise en dur, texte qui promet un remboursement intégral quel que soit le mode) et la variante « verre » de `components/ui/Input.tsx` (blanc en dur). Aucun écran ne les affiche. | Suppression à faire dans un lot de nettoyage. | Finition 5, point 1 (couleurs en dur) |
 
+
+## Tables d'un événement : argent et sécurité (lot 11c-a)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Acompte et « aucun paiement immédiat » pour un type de table (CDC §54). | Hors périmètre du lot (décision 3 du client) ; la colonne `ticket_categories.payment_mode` (FULL, DEPOSIT, NONE) et son contrôle sont posés, seules les fonctions refusent DEPOSIT et NONE. | Consigne du lot 11c-a |
+| Panier mixte billets + table, commission sur les tables, paiement sur place d'une table. | Hors périmètre (consigne) ; une table se paie seule, en ligne, sans commission. | Consigne du lot 11c-a |
+| Avis aux invités quand le titulaire se fait rembourser la table après un report (leurs places passent « en remboursement »). | Aucun type d'avis prévu par la consigne ; le titulaire est prévenu par les avis de remboursement existants. | Lot 11c-a |
+| Catégorie de **billets** arrêtée après des ventes : ses places vendues sortent de la jauge (antérieur au lot). | Le lot ne corrige la règle que pour les types de tables (D8) ; l'étendre aux billets change des suites existantes. | Lot 11c-a (D8) |
+| Ventes de tables closes par un autre chemin de remboursement du paiement entier (aujourd'hui : aucun dans l'application, hors annulation et report). | `refund_request` direct n'est appelé par aucune route ; si l'administration rembourse un jour un paiement entier, clore la vente au même endroit. | Lot 11c-a (D6) |
+| Réglages des tables d'un événement : `finance_setting_set` et `platform_settings_defaults` non recopiés (suite d'audit `cv12a-3`, S1). | Fonctions propres `event_tables_setting_set`, `_valid`, `_defaults` ; à regrouper dans un lot de réglages qui recopie ces fonctions une fois. | Lot 11c-a |
+| Écrans : fiche (tables, plan au toucher), « Ma table », éditeur des types et du plan, tableau des ventes, liste de la porte, badge au scanner, administration. | Lots 11c-b (client) et 11c-c (organisatrice, porte, administration). | Consigne du lot 11c-a |
