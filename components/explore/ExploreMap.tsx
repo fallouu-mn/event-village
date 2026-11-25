@@ -419,7 +419,11 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
             const at = map.unproject([c.x, c.y], z);
             if (c.items.length > 1) {
                 const label = groupLabel(c.items);
-                const marker = L.marker(at, { icon: anchor(mapMarkerHtml('pile', String(c.items.length))), keyboard: true, title: `${label} : agrandir`, alt: `${label} : agrandir`, riseOnHover: true });
+                // Élément choisi ou survolé (liste de l'ordinateur) caché dans ce regroupement : le regroupement s'allume
+                // (run 658 : survol d'un lieu regroupé sans aucun repère mis en avant)
+                const hot = c.items.some((x) => x.id === selectedKey || x.id === hoverKey);
+                const pile = mapMarkerHtml('pile', String(c.items.length));
+                const marker = L.marker(at, { icon: anchor(hot ? pile.replace('ev-repere--pile', 'ev-repere--pile ev-repere--choisi') : pile), keyboard: true, title: `${label} : agrandir`, alt: `${label} : agrandir`, zIndexOffset: hot ? 1000 : 0, riseOnHover: true });
                 const openGroup = () => {
                     const bounds = L.latLngBounds(c.items.map((it) => [it.lat, it.lng] as [number, number]));
                     const samePlace = bounds.getNorthEast().equals(bounds.getSouthWest(), 1e-5);
