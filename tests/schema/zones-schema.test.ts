@@ -100,6 +100,8 @@ describe('9t.15 Schéma des zones : tables, colonnes, clés, RLS, droits', () =>
                 event_zones: {
                     id: ['uuid', 'NO'], event_id: ['uuid', 'NO'], name: ['text', 'NO'], kind: ['text', 'NO'], position: ['smallint', 'NO'],
                     created_at: ['timestamp with time zone', 'NO'], updated_at: ['timestamp with time zone', 'NO'],
+                    // Lot 11c-a (20261201000002_l11c_schema.sql:89-92) : rectangle de la zone sur le plan des tables, facultatif
+                    plan_x: ['numeric', 'YES'], plan_y: ['numeric', 'YES'], plan_w: ['numeric', 'YES'], plan_h: ['numeric', 'YES'],
                 },
                 zone_categories: { event_id: ['uuid', 'NO'], zone_id: ['uuid', 'NO'], category_id: ['uuid', 'NO'] },
                 event_gates: {

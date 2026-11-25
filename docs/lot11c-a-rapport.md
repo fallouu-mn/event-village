@@ -245,6 +245,7 @@ Aucune assertion de `tests/audit/` ni de `tests/audit-auth/` n'a changé.
 | `tests/parcours/notif-outbox.test.ts` | 4 types au registre | Avis du lot |
 | `tests/parcours/notif-migration.test.ts` | 3 émetteurs à l'inventaire : `event_table_sold_notify`, `event_table_seats_reminders`, `trg_event_tables_admin_alert` | Avis du lot |
 | `tests/security/r3-fonctions-rpc.test.ts` | Bloc du lot 11c-a : 14 fonctions publiques refusées à `anon` et `authenticated` (42501) | Fonctions nouvelles |
+| `tests/schema/zones-schema.test.ts` | Liste exacte des colonnes de `event_zones` : + `plan_x`, `plan_y`, `plan_w`, `plan_h` (numeric, facultatives) | Rectangle d'une zone sur le plan des tables (`20261201000002_l11c_schema.sql:89-92`) ; rouge au run complet 651 |
 
 Autres fichiers existants modifiés :
 - `docs/lot11a-rapport.md` (§ Modèle) et commentaire d'en-tête de `20261123000102_l11a_etablissements.sql` : modèle
@@ -256,6 +257,8 @@ Autres fichiers existants modifiés :
 - `app/api/controller/scan/route.ts` : badge de table.
 - `app/api/cron/reminders/route.ts` : rappel des places à envoyer.
 - `lib/notifications/*` : 4 avis.
+- `docs/recette-billetterie.md` (§34) : lignes citées de `edition-services` recalées (+5 et +17, après le test ajouté) ;
+  `recette-matrice` les vérifie.
 
 ## Ce que la base donne déjà aux écrans, et idées pour 11c-b et 11c-c
 

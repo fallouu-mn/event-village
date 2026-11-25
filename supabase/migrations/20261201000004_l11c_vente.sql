@@ -355,8 +355,10 @@ BEGIN
 
     -- 4. Même règle que les billets : un seul paiement en attente par compte et par événement (même verrou consultatif)
     PERFORM pg_advisory_xact_lock(hashtext('checkout:' || v_client::text || ':' || v_event::text));
+    -- Mêmes termes que la garde de checkout_create_payment (lus par design1b-fiche, bandeau de paiement en attente)
     SELECT id INTO v_pending FROM public.payments
-     WHERE client_id = v_client AND event_id = v_event AND payment_target::text = 'TICKET' AND status::text = 'PENDING'
+     WHERE client_id = (p->>'client_id')::uuid AND event_id = (p->>'event_id')::uuid
+       AND payment_target::text = 'TICKET' AND status::text = 'PENDING'
      ORDER BY created_at DESC LIMIT 1;
     IF FOUND THEN
         RETURN jsonb_build_object('ok', false, 'code', 'PAYMENT_PENDING', 'payment_id', v_pending,
