@@ -30,6 +30,8 @@ const REFUSALS: Record<string, { status: number; message?: string }> = {
     TICKET_NOT_REFUNDABLE: { status: 409, message: 'Ce billet ne peut plus être remboursé.' },
     PAYMENT_NOT_REFUNDABLE: { status: 409 },
     ALREADY_REFUNDED: { status: 409 },
+    // Lot 11c-a : une place d'une table ne se rembourse pas seule (table entière : POST /api/event-tables/[bookingId]/refund)
+    TABLE_SEAT_NOT_ALONE: { status: 409 },
 };
 
 /**

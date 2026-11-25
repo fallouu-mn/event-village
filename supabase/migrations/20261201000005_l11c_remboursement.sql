@@ -9,7 +9,9 @@
 --     se rembourse jamais seule (organisatrice, administration, porteur) : TABLE_SEAT_NOT_ALONE.
 --  2. ticket_postponement_refund_open : recopie de 20261109000006_lot9bis_argent.sql:515-555 ; changement : faux pour
 --     une place d'une table (« Mes billets » ne propose pas de rembourser une place seule).
---  3. event_table_postponement_window (règle du report, même calcul que ticket_postponement_refund_open, pour la vente
+--  3. trg_events_tables_cancelled : annulation de l'événement → ventes de tables closes (REFUNDED, EVENT_CANCELLED), le
+--     remboursement restant celui d'event_cancel ;
+--  4. event_table_postponement_window (règle du report, même calcul que ticket_postponement_refund_open, pour la vente
 --     entière) et event_table_postponement_refund (demande du titulaire).
 -- Réservées au rôle de service. Aucun BEGIN ni COMMIT ; rejouable.
 -- ============================================================================
@@ -457,6 +459,33 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'booking_id', b.id, 'cashout_id', v_cashout, 'amount', v_amount, 'to_original_buyer', true);
 END;
 $$;
+
+-- Annulation de l'événement : event_cancel (inchangée) rembourse chaque paiement de table ; la vente est close dans la même
+-- transaction (« Ma table » la montre remboursée, la porte ne la liste plus).
+CREATE OR REPLACE FUNCTION public.event_tables_on_event_cancelled()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    PERFORM set_config('event_village.event_tables', 'on', true);
+    UPDATE public.event_table_bookings
+       SET status = 'REFUNDED', refunded_at = now(), refund_origin = 'EVENT_CANCELLED'
+     WHERE event_id = NEW.id AND status = 'ACTIVE';
+    PERFORM set_config('event_village.event_tables', 'off', true);
+    RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.event_tables_on_event_cancelled() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_events_tables_cancelled ON public.events;
+CREATE TRIGGER trg_events_tables_cancelled
+    AFTER UPDATE OF status ON public.events
+    FOR EACH ROW
+    WHEN (NEW.status::text = 'ANNULE' AND OLD.status::text IS DISTINCT FROM 'ANNULE')
+    EXECUTE FUNCTION public.event_tables_on_event_cancelled();
 
 REVOKE ALL ON FUNCTION private.event_table_postponement_window(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.event_table_postponement_refund(jsonb) FROM PUBLIC, anon, authenticated;

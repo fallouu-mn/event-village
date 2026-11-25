@@ -106,7 +106,9 @@ CREATE TABLE IF NOT EXISTS public.event_table_plans (
 -- ----------------------------------------------------------------------------
 -- 3. Attente de paiement d'une table précise
 -- ----------------------------------------------------------------------------
-ALTER TABLE public.stock_reservations ADD COLUMN IF NOT EXISTS event_table_id uuid REFERENCES public.event_tables(id) ON DELETE RESTRICT;
+-- Une table retirée par l'organisatrice ne garde que des attentes closes (une attente active l'empêche d'être retirée) :
+-- elles perdent leur table (ON DELETE SET NULL), un paiement arrivé ensuite est remboursé (payment_confirm)
+ALTER TABLE public.stock_reservations ADD COLUMN IF NOT EXISTS event_table_id uuid REFERENCES public.event_tables(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS stock_reservations_one_active_table
     ON public.stock_reservations (event_table_id) WHERE status = 'ACTIVE' AND event_table_id IS NOT NULL;
 
@@ -274,6 +276,11 @@ BEGIN
                     OR NEW.payment_id IS DISTINCT FROM OLD.payment_id)) THEN
             RAISE EXCEPTION USING ERRCODE = 'EVT11', MESSAGE = 'tickets : le lien d''un billet à sa table ne change pas.';
         END IF;
+        -- Un billet ordinaire ne devient jamais une place de table (catégorie changée vers un type de table)
+        IF NEW.event_table_booking_id IS NULL AND NEW.category_id IS DISTINCT FROM OLD.category_id
+           AND EXISTS (SELECT 1 FROM public.ticket_categories c WHERE c.id = NEW.category_id AND c.kind = 'TABLE') THEN
+            RAISE EXCEPTION USING ERRCODE = 'EVT11', MESSAGE = 'tickets : une place d''une table ne s''émet qu''avec la vente de sa table.';
+        END IF;
         RETURN NEW;
     END IF;
     SELECT c.kind INTO v_kind FROM public.ticket_categories c WHERE c.id = NEW.category_id;
@@ -310,6 +317,11 @@ DECLARE
     v_kind text;
 BEGIN
     IF TG_OP = 'UPDATE' THEN
+        -- Table retirée (ON DELETE SET NULL) : seule une attente close perd sa table
+        IF NEW.event_table_id IS NULL AND OLD.event_table_id IS NOT NULL AND OLD.status::text <> 'ACTIVE'
+           AND NEW.category_id IS NOT DISTINCT FROM OLD.category_id THEN
+            RETURN NEW;
+        END IF;
         IF NEW.event_table_id IS DISTINCT FROM OLD.event_table_id OR NEW.category_id IS DISTINCT FROM OLD.category_id THEN
             RAISE EXCEPTION USING ERRCODE = 'EVT11', MESSAGE = 'stock_reservations : la table d''une attente ne change pas.';
         END IF;

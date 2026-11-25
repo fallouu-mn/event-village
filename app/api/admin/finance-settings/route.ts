@@ -26,15 +26,17 @@ export async function GET(req: NextRequest) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'settings.read' });
     if (!auth.authorized) return auth.errorResponse!;
     const supabase = getServiceRoleClient();
-    const [{ data: settings, error }, { data: history, error: histErr }, { data: defaults, error: defErr }] = await Promise.all([
+    const [{ data: settings, error }, { data: history, error: histErr }, { data: defaults, error: defErr }, { data: tableDefaults, error: tdErr }] = await Promise.all([
         supabase.from('platform_settings').select('key, value, description, updated_by, updated_at').or(SETTING_KEYS_FILTER).order('key'),
         supabase.from('platform_settings_history').select('key, old_value, new_value, changed_by, reason, changed_at')
             .or(SETTING_KEYS_FILTER).order('changed_at', { ascending: false }).limit(100),
         // Finition 3b (E-35) : valeur d'origine de chaque réglage (premier état de l'historique)
         supabase.rpc('platform_settings_defaults'),
+        // Lot 11c-a : valeurs d'origine des réglages event_tables.* (platform_settings_defaults n'est pas recopié)
+        supabase.rpc('event_tables_settings_defaults'),
     ]);
-    if (error || histErr || defErr) {
-        console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message ?? defErr?.message);
+    if (error || histErr || defErr || tdErr) {
+        console.error('[API /api/admin/finance-settings] lecture impossible :', error?.message ?? histErr?.message ?? defErr?.message ?? tdErr?.message);
         return NextResponse.json({ error: 'Réglages indisponibles.' }, { status: 500 });
     }
     // Finition 3b (E-35) : l'historique dit qui a changé quoi ; un changement sans compte (migration, automate) est « Automatique ».
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
             ...h,
             author: h.changed_by ? (names.get(String(h.changed_by)) ?? 'Compte supprimé') : 'Automatique',
         })),
-        defaults: (defaults ?? {}) as Record<string, unknown>,
+        defaults: { ...((defaults ?? {}) as Record<string, unknown>), ...((tableDefaults ?? {}) as Record<string, unknown>) },
         observed_cashout_fee_rate: observed.rate,
         observed_cashout_fee_max: observed.max,
     });

@@ -784,7 +784,11 @@ BEGIN
             v_blocking := format('événement suspendu (%s)', v_res.name);
         ELSIF v_res.event_status = 'TERMINE' THEN
             v_blocking := format('événement terminé (%s)', v_res.name);
-        -- Lot 11c-a : table précise : attente échue = paiement tardif (remboursé en entier) ; table déjà vendue
+        -- Lot 11c-a : table précise : attente échue = paiement tardif (remboursé en entier) ; table déjà vendue ;
+        -- table retirée par l'organisatrice (attente close, table perdue)
+        ELSIF v_res.event_table_id IS NULL AND EXISTS (SELECT 1 FROM public.ticket_categories k
+                                                        WHERE k.id = v_res.category_id AND k.kind = 'TABLE') THEN
+            v_blocking := format('table retirée (%s)', v_res.name);
         ELSIF v_res.event_table_id IS NOT NULL AND v_res.status <> 'ACTIVE' THEN
             v_blocking := format('attente de la table échue (%s)', v_res.name);
         ELSIF v_res.event_table_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.event_table_bookings b

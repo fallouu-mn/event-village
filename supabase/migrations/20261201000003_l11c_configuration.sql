@@ -65,8 +65,12 @@ DECLARE
     v_table_seats integer;
 BEGIN
     SELECT capacity INTO v_capacity FROM public.events WHERE id = p_event;
-    SELECT COALESCE(sum(c.total_quantity * c.seats_per_unit) FILTER (WHERE c.is_active), 0)::int,
-           COALESCE(sum(c.total_quantity * c.seats_per_unit) FILTER (WHERE c.is_active AND c.kind = 'TABLE'), 0)::int
+    -- Un type de table arrêté garde ses tables vendues ou en paiement dans la jauge (sinon l'organisatrice pourrait
+    -- remettre ces places en vente en billets)
+    SELECT COALESCE(sum(CASE WHEN c.is_active THEN c.total_quantity WHEN c.kind = 'TABLE' THEN c.sold_quantity + c.held_quantity ELSE 0 END
+                        * c.seats_per_unit), 0)::int,
+           COALESCE(sum(CASE WHEN c.is_active THEN c.total_quantity ELSE c.sold_quantity + c.held_quantity END * c.seats_per_unit)
+                    FILTER (WHERE c.kind = 'TABLE'), 0)::int
       INTO v_seats, v_table_seats
       FROM public.ticket_categories c WHERE c.event_id = p_event;
     IF v_capacity IS NULL THEN
@@ -315,7 +319,7 @@ BEGIN
        OR EXISTS (SELECT 1 FROM public.event_table_bookings b WHERE b.category_id = c.id)
        OR EXISTS (SELECT 1 FROM public.stock_reservations r WHERE r.category_id = c.id) THEN
         RETURN public.event_edit_refusal('CATEGORY_HAS_SALES',
-            'Des tables de ce type ont été vendues ou sont en cours de paiement : arrêtez plutôt leur vente.');
+            'Des tables de ce type ont déjà été vendues ou mises en paiement : ce type ne se supprime plus, arrêtez plutôt sa vente.');
     END IF;
     PERFORM set_config('event_village.event_tables', 'on', true);
     DELETE FROM public.event_tables WHERE category_id = c.id;
@@ -423,6 +427,18 @@ BEGIN
                 format('La table %s est vendue ou en cours de paiement : son numéro et son type ne changent plus.', r.number));
         END IF;
     END LOOP;
+    -- Table déjà vendue une fois (vente remboursée comprise) : gardée (historique de la vente et de ses billets)
+    SELECT x.number INTO v_count
+      FROM public.event_tables x
+     WHERE x.event_id = v_event
+       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_tables) e WHERE public.try_uuid(e->>'id') = x.id)
+       AND EXISTS (SELECT 1 FROM public.event_table_bookings b WHERE b.event_table_id = x.id)
+     ORDER BY x.number LIMIT 1;
+    IF v_count IS NOT NULL THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'TABLE_SOLD', 'message',
+            format('La table %s a déjà été vendue : elle ne peut pas être retirée du plan.', v_count));
+    END IF;
+    v_count := NULL;
     IF v_enabled AND (jsonb_array_length(v_tables) = 0
                       OR EXISTS (SELECT 1 FROM jsonb_array_elements(v_tables) e WHERE e->'x' IS NULL OR e->'x' = 'null'::jsonb)) THEN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PLAN', 'message', 'Placez toutes les tables sur le plan avant de le montrer aux clients.');
@@ -475,6 +491,9 @@ BEGIN
         WHEN check_violation OR invalid_text_representation OR numeric_value_out_of_range THEN
             PERFORM set_config('event_village.event_tables', 'off', true);
             RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PLAN', 'message', 'Une position du plan est hors du cadre : replacez la table ou la zone dans le plan.');
+        WHEN foreign_key_violation OR unique_violation THEN
+            PERFORM set_config('event_village.event_tables', 'off', true);
+            RETURN jsonb_build_object('ok', false, 'code', 'TABLE_SOLD', 'message', 'Une table déjà vendue ou un numéro déjà pris empêche cet enregistrement : rechargez le plan.');
         WHEN raise_exception THEN
             PERFORM set_config('event_village.event_tables', 'off', true);
             IF v_fail IS NULL THEN
@@ -533,9 +552,10 @@ BEGIN
             format('Une catégorie « %s » existe déjà pour cet événement : choisissez un autre nom.', v_norm->>'name'), 'name');
     END IF;
     IF v_capacity IS NOT NULL AND (v_norm->>'is_active')::boolean THEN
-        -- Lot 11c-a : jauge en places (une table compte ses places)
-        SELECT COALESCE(sum(c.total_quantity * c.seats_per_unit), 0)::int INTO v_sum
-          FROM public.ticket_categories c WHERE c.event_id = v_event AND c.is_active;
+        -- Lot 11c-a : jauge en places (une table compte ses places ; un type de table arrêté garde ses tables vendues)
+        SELECT COALESCE(sum(CASE WHEN c.is_active THEN c.total_quantity WHEN c.kind = 'TABLE' THEN c.sold_quantity + c.held_quantity ELSE 0 END
+                            * c.seats_per_unit), 0)::int INTO v_sum
+          FROM public.ticket_categories c WHERE c.event_id = v_event AND (c.is_active OR c.kind = 'TABLE');
         IF v_sum + (v_norm->>'total_quantity')::int > v_capacity THEN
             RETURN public.event_edit_refusal('QUOTA_ABOVE_CAPACITY',
                 format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
@@ -700,9 +720,10 @@ BEGIN
     -- Somme des quotas des catégories actives ≤ jauge (contrôlée quand le quota monte ou que la catégorie est activée)
     SELECT capacity INTO v_capacity FROM public.events WHERE id = v_event;
     IF v_capacity IS NOT NULL AND n_active AND (n_total > c.total_quantity OR NOT c.is_active) THEN
-        -- Lot 11c-a : jauge en places (une table compte ses places)
-        SELECT COALESCE(sum(o.total_quantity * o.seats_per_unit), 0)::int INTO v_sum
-          FROM public.ticket_categories o WHERE o.event_id = v_event AND o.is_active AND o.id <> c.id;
+        -- Lot 11c-a : jauge en places (une table compte ses places ; un type de table arrêté garde ses tables vendues)
+        SELECT COALESCE(sum(CASE WHEN o.is_active THEN o.total_quantity WHEN o.kind = 'TABLE' THEN o.sold_quantity + o.held_quantity ELSE 0 END
+                            * o.seats_per_unit), 0)::int INTO v_sum
+          FROM public.ticket_categories o WHERE o.event_id = v_event AND (o.is_active OR o.kind = 'TABLE') AND o.id <> c.id;
         IF v_sum + n_total > v_capacity THEN
             RETURN public.event_edit_refusal('QUOTA_ABOVE_CAPACITY',
                 format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
