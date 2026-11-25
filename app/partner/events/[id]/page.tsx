@@ -11,7 +11,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { LiveIndicator } from '@/components/ui/LiveIndicator';
 import { TabPanel, useTabParam, type TabItem } from '@/components/ui/Tabs';
 import { KpiCardSkeleton } from '@/components/ui/KpiCard';
-import { ErrorState } from '@/components/ui/EmptyState';
+import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { ReasonDialog } from '@/components/ui/ReasonDialog';
 import { useToast } from '@/components/ui/Toast';
@@ -33,6 +33,16 @@ import { ClosingTab } from '@/components/partner/pilotage/ClosingTab';
 import { CashRefundsList } from '@/components/partner/pilotage/CashRefundsList';
 import { ScrollableTabs } from '@/components/ui/ScrollableTabs';
 import type { EventAction, PilotageOverview } from '@/components/partner/pilotage/types';
+import dynamic from 'next/dynamic';
+import { loadEventTables } from '@/components/event-tables/load';
+import { useTablesReport } from '@/components/event-tables/useTablesReport';
+import { tablesTabVisible } from '@/components/event-tables/types';
+
+/** Lot 11c-c : onglet « Tables », chargé à son ouverture par le chargeur unique des écrans des tables. */
+const TablesPilotage = dynamic(() => loadEventTables().then((m) => ({ default: m.TablesPilotage })), {
+    ssr: false,
+    loading: () => <div className="h-64 w-full rounded-2xl bg-muted motion-safe:animate-pulse" role="status" aria-label="Chargement des tables" />,
+});
 
 /**
  * Lot 5, tâche 5.10 (contrat I) — page de pilotage d'un événement par son organisateur.
@@ -47,9 +57,11 @@ import type { EventAction, PilotageOverview } from '@/components/partner/pilotag
  *    (CashRefundsList : ventes au guichet, case « Remboursé » pour la propriétaire, lecture seule pour l'admin).
  *  - Lot 9 bis (R105) : RefundProgress reçoit le vrai rôle du lecteur (ADMIN ou SUPERADMIN), et non plus false en dur ;
  *    la route ne sert « à reprendre » qu'aux admins, le rôle ne fait que choisir l'affichage.
+ *  - Lot 11c-c : onglet « Tables » ajouté en dernier (plan coloré par état, liste triable, recette des tables), proposé si
+ *    le service des tables est ouvert ou si l'événement a déjà des tables ; relu au même signal que le reste.
  */
 
-const TAB_IDS = ['apercu', 'infos', 'ventes', 'invitations', 'entrees', 'equipe', 'caisse', 'cloture'] as const;
+const TAB_IDS = ['apercu', 'infos', 'ventes', 'invitations', 'entrees', 'equipe', 'caisse', 'cloture', 'tables'] as const;
 type PilotageTabId = (typeof TAB_IDS)[number];
 const TABS: TabItem[] = [
     { id: 'apercu', label: 'Aperçu' },
@@ -61,6 +73,7 @@ const TABS: TabItem[] = [
     { id: 'caisse', label: 'Caisse' },
     { id: 'cloture', label: 'Clôture' },
 ];
+const TABLES_TAB: TabItem = { id: 'tables', label: 'Tables' };
 const TABS_PREFIX = 'pilotage';
 
 /** Événement clos : « En direct » à côté du statut se lirait comme un second statut. */
@@ -84,6 +97,9 @@ export default function PartnerEventPilotagePage() {
 
     const overview = useServerData<PilotageOverview>(eventId ? `/api/partner/events/${eventId}/pilotage/overview` : null, signal);
     const ov = overview.data;
+    // Lot 11c-c : tables de l'événement (onglet proposé, puis données de l'onglet), relues au même signal
+    const tables = useTablesReport(eventId || null, signal);
+    const showTables = tablesTabVisible(tables.data);
 
     const onSignal = useCallback(() => {
         setSignal((n) => n + 1);
@@ -273,7 +289,7 @@ export default function PartnerEventPilotagePage() {
             {ov.status === 'ANNULE' && <CashRefundsList eventId={eventId} signal={signal} />}
 
             <div className="flex flex-col gap-5">
-                <ScrollableTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as PilotageTabId)} ariaLabel="Rubriques du pilotage" idPrefix={TABS_PREFIX} />
+                <ScrollableTabs tabs={showTables ? [...TABS, TABLES_TAB] : TABS} value={activeTab} onChange={(id) => setActiveTab(id as PilotageTabId)} ariaLabel="Rubriques du pilotage" idPrefix={TABS_PREFIX} />
                 <TabPanel idPrefix={TABS_PREFIX} tabIdValue={activeTab}>
                     {activeTab === 'apercu' && <OverviewTab data={ov} saleStopped={ov.status === 'ANNULE'} />}
                     {activeTab === 'infos' && <InfosTab eventId={eventId} />}
@@ -283,6 +299,13 @@ export default function PartnerEventPilotagePage() {
                     {activeTab === 'equipe' && <TeamTab eventId={eventId} eventStatus={ov.status} signal={signal} onOpenTab={(tab) => setActiveTab(tab)} />}
                     {activeTab === 'caisse' && <CashTab eventId={eventId} signal={signal} />}
                     {activeTab === 'cloture' && <ClosingTab eventId={eventId} signal={signal} />}
+                    {activeTab === 'tables' && (showTables && tables.data
+                        ? <TablesPilotage eventId={eventId} report={tables.data} doorHref={`/partner/events/${eventId}/porte`} />
+                        : tables.error
+                            ? <ErrorState title="Les tables n’ont pas pu être chargées" description={tables.error} onRetry={() => void tables.reload()} isRetrying={tables.refreshing} />
+                            : tables.loading
+                                ? <div className="h-64 w-full rounded-2xl bg-muted motion-safe:animate-pulse" role="status" aria-label="Chargement des tables" />
+                                : <EmptyState title="Aucune table pour cet événement" description="La vente de tables n’est pas ouverte pour cet événement." />)}
                 </TabPanel>
             </div>
 
