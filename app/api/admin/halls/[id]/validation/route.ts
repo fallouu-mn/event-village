@@ -3,6 +3,7 @@ import { apiFailure } from '@/lib/api/public-error';
 import { verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { HALL_VALIDATION_LABELS, refusalStatus } from '@/lib/halls/booking';
+import { invalidatePublicPlaces } from '@/lib/lieux/cache-lieux.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: r?.message ?? 'Décision impossible.', code: r?.code }, { status: refusalStatus(r?.code) });
         }
         const status = String(r.validation_status);
+        // Lot Carte B3 : validée, refusée, suspendue ou réactivée : la carte le montre (ou le retire) dès la lecture suivante
+        invalidatePublicPlaces(`salle : décision ${body.decision}`);
         return NextResponse.json({ success: true, hall: { id, status: HALL_VALIDATION_LABELS[status] ?? status } });
     } catch (err: unknown) {
         return apiFailure('POST /api/admin/halls/[id]/validation', err, { message: 'Décision non enregistrée. Réessayez.', code: 'HALL_VALIDATION_FAILED' });

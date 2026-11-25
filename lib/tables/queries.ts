@@ -11,6 +11,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PublicError } from '@/lib/api/public-error';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { tableStateIsLive, tableStateView, venueStatusView, VENUE_KIND_VIEW, type Tone } from './views';
+import { POSITION_COLUMNS, publicAddress, publicPosition } from '@/lib/lieux/position-publique';
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -69,8 +70,11 @@ export interface VenueCard {
     slotMinutes: number;
     partnerName: string | null;
     floorPlan: boolean;
+    /** Lot Carte B3 : point exact (lieu professionnel) ou centre de la zone de 300 m (particulier). */
     latitude: number | null;
     longitude: number | null;
+    /** Lot Carte B3 : true = point exact ; false = zone (particulier : ni adresse ni point exact). */
+    exact: boolean;
     slots: SlotView[];
     hasFree: boolean;
 }
@@ -105,11 +109,13 @@ export async function searchVenues(f: VenueSearchFilters): Promise<{ total: numb
         const v = x as Row;
         return {
             id: String(v.id), name: String(v.name), kind: String(v.kind), kindLabel: VENUE_KIND_VIEW[String(v.kind)] ?? 'Établissement',
-            city: str(v.city), address: str(v.address), photo: str(v.photo), photoCount: num(v.photo_count),
+            // Lot Carte B3 : la recherche rend déjà, pour un particulier, ni adresse ni point exact (centre de la zone)
+            city: str(v.city), address: v.exact === true ? str(v.address) : null, photo: str(v.photo), photoCount: num(v.photo_count),
             depositPerPerson: num(v.deposit_per_person), confirmation: v.confirmation_mode === 'MANUELLE' ? 'MANUELLE' as const : 'AUTO' as const,
             slotMinutes: num(v.slot_minutes), partnerName: str(v.partner_name), floorPlan: v.floor_plan === true,
             latitude: v.latitude === null || v.latitude === undefined ? null : num(v.latitude),
             longitude: v.longitude === null || v.longitude === undefined ? null : num(v.longitude),
+            exact: v.exact === true,
             slots: slotsOf(v.slots), hasFree: v.has_free === true,
         };
     });
@@ -127,8 +133,10 @@ export interface PublicVenue {
     description: string | null;
     address: string | null;
     city: string | null;
+    /** Lot Carte B3 : point exact (professionnel) ou centre de la zone de 300 m (particulier). */
     latitude: number | null;
     longitude: number | null;
+    exact: boolean;
     photos: string[];
     partnerName: string | null;
     hours: Array<{ weekday: number; opensAt: string; closesAt: string }>;
@@ -148,7 +156,7 @@ export async function publicVenue(id: string): Promise<PublicVenue | null> {
     if (!UUID_RE.test(id)) return null;
     const supabase = getServiceRoleClient();
     const { data, error } = await supabase.from('venues')
-        .select('id, kind, name, description, address, city, latitude, longitude, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, partners!inner(status, company_name, commercial_name)')
+        .select(`id, kind, name, description, address, city, ${POSITION_COLUMNS}, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, partners!inner(status, company_name, commercial_name)`)
         .eq('id', id).eq('is_active', true).eq('validation_status', 'VALIDEE').eq('partners.status', 'VALIDE').maybeSingle();
     if (error) throw new Error(`établissement ${id} : ${error.message}`);
     if (!data) return null;
@@ -164,10 +172,12 @@ export async function publicVenue(id: string): Promise<PublicVenue | null> {
     // Règles de la base (réglages tables.*) par le devis d'une table de 2 : aucune valeur écrite en dur à l'écran
     const quote = okOrRefuse(await rpc('table_quote', { p: { venue_id: id, guests: 2 } }));
     const caps = (tables.data ?? []) as Row[];
+    // Lot Carte B3 : particulier = ni adresse ni point exact (centre de sa zone) ; le vrai point ne sort pas d'ici
+    const position = publicPosition(v);
     return {
         id: String(v.id), name: String(v.name), kind: String(v.kind), kindLabel: VENUE_KIND_VIEW[String(v.kind)] ?? 'Établissement',
-        description: str(v.description), address: str(v.address), city: str(v.city),
-        latitude: v.latitude === null ? null : num(v.latitude), longitude: v.longitude === null ? null : num(v.longitude),
+        description: str(v.description), address: publicAddress(v), city: str(v.city),
+        latitude: position?.lat ?? null, longitude: position?.lng ?? null, exact: position?.exact ?? false,
         photos: strings(v.photos), partnerName: str(v.partners?.commercial_name) ?? str(v.partners?.company_name),
         hours: ((hours.data ?? []) as Row[]).map((h) => ({ weekday: num(h.weekday), opensAt: clock(h.opens_at), closesAt: clock(h.closes_at) })),
         zones: ((zones.data ?? []) as Row[]).map((z) => ({ id: String(z.id), name: String(z.name) })),
@@ -294,6 +304,9 @@ function addMinutes(date: string, time: string, minutes: number): { date: string
     return { date: e.toISOString().slice(0, 10), time: e.toISOString().slice(11, 16) };
 }
 
+/** Lot Carte B3 : états d'une réservation de table confirmée, où le client reçoit l'adresse exacte. */
+export const TABLE_ADDRESS_STATES: ReadonlySet<string> = new Set(['CONFIRMEE', 'ARRIVEE']);
+
 function reservationView(r: Row, venue: Row | undefined, table: Row | undefined, zone: Row | undefined, who: 'client' | 'partner', grace: number, now: number): TableReservationView {
     const time = clock(r.reservation_time);
     const date = String(r.reservation_date);
@@ -302,7 +315,9 @@ function reservationView(r: Row, venue: Row | undefined, table: Row | undefined,
     const startMs = Date.parse(`${date}T${time}:00Z`);
     return {
         id: String(r.id), venueId: String(r.venue_id), venueName: str(venue?.name) ?? 'Établissement', venuePhoto: strings(venue?.photos)[0] ?? null,
-        venueCity: str(venue?.city), venueAddress: str(venue?.address),
+        // Lot Carte B3 : adresse exacte donnée au client seulement quand sa réservation est confirmée ; retirée si elle
+        // est en attente, refusée ou annulée. L'établissement la voit toujours.
+        venueCity: str(venue?.city), venueAddress: who === 'partner' || TABLE_ADDRESS_STATES.has(String(r.booking_state)) ? str(venue?.address) : null,
         date, time, endTime: end.time, guests: num(r.guest_count), tableNumber: str(table?.table_number), zoneName: str(zone?.name),
         state: String(r.booking_state), stateLabel: view.label, tone: view.tone, live: tableStateIsLive(r.booking_state),
         upcoming: startMs > now,

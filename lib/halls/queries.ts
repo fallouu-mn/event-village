@@ -12,6 +12,7 @@ import { PublicError } from '@/lib/api/public-error';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { cancellationText, type CancellationTerms } from './booking';
 import { bookingIsLive, bookingView, hallStatusView } from './views';
+import { POSITION_COLUMNS, publicAddress, publicPosition } from '@/lib/lieux/position-publique';
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -72,8 +73,11 @@ export interface HallCard {
     pricePerHour: number | null;
     photo: string | null;
     photoCount: number;
+    /** Lot Carte B3 : point exact (lieu professionnel) ou centre de la zone de 300 m (particulier). */
     latitude: number | null;
     longitude: number | null;
+    /** Lot Carte B3 : true = point exact ; false = zone (particulier : ni adresse ni point exact). */
+    exact: boolean;
     partnerName: string | null;
     amenities: string[];
 }
@@ -95,7 +99,8 @@ export async function searchHalls(f: HallSearchFilters): Promise<{ total: number
             id: String(h.id),
             name: String(h.name),
             city: str(h.city),
-            address: str(h.address),
+            // Lot Carte B3 : la recherche rend déjà, pour un particulier, ni adresse ni point exact (centre de la zone)
+            address: h.exact === true ? str(h.address) : null,
             capacity: num(h.capacity),
             pricePerDay: num(h.price_per_day),
             pricePerHour: h.price_per_hour === null || h.price_per_hour === undefined ? null : num(h.price_per_hour),
@@ -103,6 +108,7 @@ export async function searchHalls(f: HallSearchFilters): Promise<{ total: number
             photoCount: num(h.photo_count),
             latitude: h.latitude === null || h.latitude === undefined ? null : Number(h.latitude),
             longitude: h.longitude === null || h.longitude === undefined ? null : Number(h.longitude),
+            exact: h.exact === true,
             partnerName: str(h.partner_name),
             amenities: strings(h.amenities).slice(0, 12),
         })),
@@ -129,7 +135,7 @@ export async function publicHall(id: string): Promise<PublicHall | null> {
     const { data, error } = await supabase
         .from('halls')
         .select('id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, cancellation_policy, '
-            + 'latitude, longitude, address, city, amenities, images, partners!inner(commercial_name, company_name, status)')
+            + `address, city, amenities, images, ${POSITION_COLUMNS}, partners!inner(commercial_name, company_name, status)`)
         .eq('id', id)
         .eq('is_active', true)
         .eq('validation_status', 'VALIDEE')
@@ -150,20 +156,23 @@ export async function publicHall(id: string): Promise<PublicHall | null> {
     const pct = mode === 'POURCENTAGE' ? (depositValue ?? setting('halls.deposit_default_percent')) : null;
     const photos = strings(h.images);
     const partner = h.partners;
+    // Lot Carte B3 : particulier = ni adresse ni point exact (centre de sa zone) ; le vrai point ne sort pas d'ici
+    const position = publicPosition(h);
     return {
         id: String(h.id),
         name: String(h.name),
         description: str(h.description),
         city: str(h.city),
-        address: str(h.address),
+        address: publicAddress(h),
         capacity: num(h.capacity),
         pricePerDay: num(h.price_per_day),
         pricePerHour: h.price_per_hour === null || h.price_per_hour === undefined ? null : num(h.price_per_hour),
         photo: photos[0] ?? null,
         photos,
         photoCount: photos.length,
-        latitude: h.latitude === null || h.latitude === undefined ? null : Number(h.latitude),
-        longitude: h.longitude === null || h.longitude === undefined ? null : Number(h.longitude),
+        latitude: position?.lat ?? null,
+        longitude: position?.lng ?? null,
+        exact: position?.exact ?? false,
         partnerName: str(partner?.commercial_name) ?? str(partner?.company_name),
         amenities: (Array.isArray(h.amenities) ? h.amenities : []).filter((a): a is string => typeof a === 'string').slice(0, 30),
         deposit: { mode, value: depositValue },
@@ -276,6 +285,9 @@ export interface ReservationView {
     upcoming: boolean;
 }
 
+/** Lot Carte B3 : états d'une réservation de salle confirmée, où le client reçoit l'adresse exacte. */
+export const HALL_ADDRESS_STATES: ReadonlySet<string> = new Set(['ACOMPTE_PAYE', 'PAYEE']);
+
 function reservationView(r: Row, hall: Row | undefined, who: 'client' | 'partner', now: number): ReservationView {
     const state = String(r.booking_state);
     const view = bookingView(state, who);
@@ -286,7 +298,9 @@ function reservationView(r: Row, hall: Row | undefined, who: 'client' | 'partner
         hallId: String(r.hall_id),
         hallName: String(hall?.name ?? 'Salle'),
         hallCity: str(hall?.city),
-        hallAddress: str(hall?.address),
+        // Lot Carte B3 : adresse exacte donnée au client seulement quand sa réservation est confirmée (acompte ou tout
+        // payé) ; retirée si elle est annulée ou non payée. La salle et l'administration la voient toujours.
+        hallAddress: who === 'partner' || HALL_ADDRESS_STATES.has(state) ? str(hall?.address) : null,
         hallPhoto: photos[0] ?? null,
         startDate: String(r.start_date),
         endDate: String(r.end_date),

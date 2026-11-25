@@ -1286,9 +1286,9 @@ const CATALOG = {
         link: (d) => hallClientLink(d),
         inApp: (d) => ({
             title: 'Réservation confirmée',
-            content: optNum(d, 'balance_amount') !== null
+            content: (optNum(d, 'balance_amount') !== null
                 ? `Votre réservation de ${hallName(d)} ${hallPeriod(d)} est confirmée. Il reste ${money(d, 'balance_amount')} à payer au plus tard le ${formatDate(iso(d, 'balance_due_at'))}, sinon elle sera annulée.`
-                : `Votre réservation de ${hallName(d)} ${hallPeriod(d)} est confirmée et entièrement payée.`,
+                : `Votre réservation de ${hallName(d)} ${hallPeriod(d)} est confirmée et entièrement payée.`) + placeAddressSentence(d),
         }),
         sms: (d) => optNum(d, 'balance_amount') !== null
             ? `${SMS_PREFIX}réservation confirmée : ${smsVar(text(d, 'hall_name'), 25)}, ${dot(smsHallPeriod(d))} Reste ${smsAmount(num(d, 'balance_amount'))} à payer avant le ${dot(smsDay(iso(d, 'balance_due_at')))}`
@@ -1449,7 +1449,7 @@ const CATALOG = {
         link: (d) => tableClientLink(d),
         inApp: (d) => ({
             title: 'Table réservée',
-            content: `Votre table chez ${venueName(d)} est réservée ${tablePeriod(d)} pour ${guestsText(d)}. Elle vous est gardée jusqu’à ${hm(text(d, 'held_until'))}.${num(d, 'paid_amount') > 0 ? ` Acompte payé : ${money(d, 'paid_amount')}.${cancelFreeSentence(d)}` : ''} Un empêchement ? Annulez depuis votre réservation pour libérer la table.`,
+            content: `Votre table chez ${venueName(d)} est réservée ${tablePeriod(d)} pour ${guestsText(d)}.${placeAddressSentence(d)} Elle vous est gardée jusqu’à ${hm(text(d, 'held_until'))}.${num(d, 'paid_amount') > 0 ? ` Acompte payé : ${money(d, 'paid_amount')}.${cancelFreeSentence(d)}` : ''} Un empêchement ? Annulez depuis votre réservation pour libérer la table.`,
         }),
         sms: (d, ctx) => `${SMS_PREFIX}table chez ${smsVar(text(d, 'venue_name'), 22)} ${smsTablePeriod(d)}, ${count(d, 'guests')} pers. Gardée jusqu'à ${hm(text(d, 'held_until'))}. ${tableSmsLink(d, ctx)}`,
         sample: { ...TABLE_SAMPLE_DATA, cancel_free_until: '2026-12-05T18:00' },
@@ -3016,6 +3016,15 @@ function partnerOrderLink(d: object): string {
 
 function courierOrderLink(d: object): string {
     return `/courier/orders/${ident(d, 'order_id')}`;
+}
+
+/**
+ * Lot Carte B3 : adresse exacte du lieu, ajoutée par l'envoi aux seuls avis de confirmation encore valables
+ * (lib/lieux/adresse-confirmee.server.ts) ; rien sans elle.
+ */
+function placeAddressSentence(d: object): string {
+    const address = (d as { place_address?: unknown }).place_address;
+    return typeof address === 'string' && address.trim().length > 0 ? ` Adresse : ${address.trim().replace(/\.+$/, '')}.` : '';
 }
 
 function hallName(d: object, capital = false): string {

@@ -5,6 +5,7 @@ import { assertNoPosterFolder } from '@/lib/images/image-address';
 import { STORED_IMAGE_NAME_RE } from '@/lib/images/stored-name';
 import { tableStateLabel } from './booking';
 import { okOrRefuse } from './queries';
+import { invalidatePublicPlaces } from '@/lib/lieux/cache-lieux.server';
 
 /**
  * Lot 11a — service des tables côté partenaire : établissements (restaurant, bar, espace), horaires, zones et tables.
@@ -73,6 +74,8 @@ export const VenueInputSchema = z.object({
     confirmation_mode: z.enum(['AUTO', 'MANUELLE']).default('AUTO'),
     is_active: z.boolean().optional(),
     hours: z.array(z.object({ weekday: z.number().int().min(1).max(7), opens_at: time, closes_at: time })).max(28).optional(),
+    // Lot Carte B3 : chez un particulier (défaut : zone de 300 m en public, adresse après réservation) ou professionnel
+    host_kind: z.enum(['PARTICULIER', 'PROFESSIONNEL'], { message: 'Indiquez si l’établissement est chez un particulier ou dans un lieu professionnel.' }).optional(),
 });
 export type VenueInput = z.infer<typeof VenueInputSchema>;
 
@@ -181,8 +184,16 @@ export class TableService {
         const { data, error } = await getServiceRoleClient().rpc('venue_create', { p: { ...parsed.data, photos, actor_id: partnerUserId } });
         if (error) throw rpcRaise(error);
         const r = okOrRefuse((data ?? {}) as Record<string, unknown>);
+        // Lot Carte B3 : venue_create crée un établissement de particulier (défaut sûr) ; un lieu professionnel déclaré
+        // est écrit ensuite (une panne laisse le défaut : adresse cachée, jamais l'inverse)
+        if (parsed.data.host_kind === 'PROFESSIONNEL') {
+            const { error: kindErr } = await getServiceRoleClient().from('venues').update({ host_kind: 'PROFESSIONNEL' })
+                .eq('id', String(r.venue_id)).eq('partner_id', partnerId);
+            if (kindErr) throw new Error(`établissement créé, lieu professionnel non enregistré : ${kindErr.message}`);
+        }
         const { data: venue, error: readErr } = await getServiceRoleClient().from('venues').select('*').eq('id', String(r.venue_id)).single();
         if (readErr || !venue) throw new Error(`établissement créé illisible : ${readErr?.message ?? 'absent'}`);
+        invalidatePublicPlaces('établissement créé');
         return venue;
     }
 
@@ -190,7 +201,9 @@ export class TableService {
     public static async submitVenue(partnerUserId: string, venueId: string) {
         const { data, error } = await getServiceRoleClient().rpc('venue_submit', { p: { actor_id: partnerUserId, venue_id: venueId } });
         if (error) throw new Error(`venue_submit : ${error.message}`);
-        return okOrRefuse((data ?? {}) as Record<string, unknown>);
+        const submitted = okOrRefuse((data ?? {}) as Record<string, unknown>);
+        invalidatePublicPlaces('établissement renvoyé en validation');
+        return submitted;
     }
 
     /** Lot 11b : plan de salle (venue_plan_set) : positions des tables et des zones, plan montré ou non. */
@@ -239,6 +252,8 @@ export class TableService {
         if (error) throw dbRefusal(error, 'modification de l’établissement');
         if (!data) throw new PublicError('Établissement introuvable.');
         if (hours) await this.setHours(partnerUserId, venueId, hours);
+        // Lot Carte B3 : nom, acompte, photos, position, horaires, retrait, particulier ou professionnel : carte à jour
+        invalidatePublicPlaces('établissement modifié');
         return data;
     }
 
@@ -310,6 +325,7 @@ export class TableService {
             capacity: t.capacity, min_capacity: t.min_capacity ?? 1, is_active: true,
         }).select('*').single();
         if (error || !data) throw dbRefusal(error, 'création de la table');
+        invalidatePublicPlaces('table ajoutée');
         return data;
     }
 
@@ -321,6 +337,7 @@ export class TableService {
             .update({ ...parsed.data, updated_at: new Date().toISOString() }).eq('id', tableId).eq('partner_id', partnerId).select('*').maybeSingle();
         if (error) throw dbRefusal(error, 'modification de la table');
         if (!data) throw new PublicError('Table introuvable.');
+        invalidatePublicPlaces('table modifiée');
         return data;
     }
 
@@ -330,6 +347,7 @@ export class TableService {
         if (error) throw dbRefusal(error, 'suppression de la table');
         // Contre-vérification de la 11a (constat) : table d'une autre partenaire ou inconnue, rien supprimé → 404, jamais un faux succès
         if (!data || data.length === 0) throw new PublicError('Table introuvable.', 'TABLE_NOT_FOUND', 404);
+        invalidatePublicPlaces('table supprimée');
         return { success: true };
     }
 

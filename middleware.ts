@@ -45,6 +45,8 @@ const PUBLIC_API_EXACT = [
     '/api/halls',
     // Lot 11b : recherche publique des établissements (la route contrôle l'interrupteur des tables)
     '/api/tables',
+    // Lot Carte B3 : salles et établissements de la carte d'Explorer (la route contrôle l'interrupteur de chaque couche)
+    '/api/lieux/carte',
     // Lot 8 (A41) : devis d'un panier, sans session. Sans cette ligne, un visiteur lisait « Total indisponible » sur
     // la fiche et ne pouvait pas commencer un achat. POST /api/checkout reste protégé.
     '/api/checkout/quote',

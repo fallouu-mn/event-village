@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { permissionMissingResponse, verifyAdminAuth } from '@/lib/admin/admin-auth';
 import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
+import { invalidatePublicPlaces } from '@/lib/lieux/cache-lieux.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +120,9 @@ export async function PATCH(
         const changedEvents = (Array.isArray(reply.events_suspended) ? reply.events_suspended.length : 0)
             + (Array.isArray(reply.events_restored) ? reply.events_restored.length : 0);
         if (changedEvents > 0) invalidatePublicEvent(null, `statut de la partenaire ${newStatus}`);
+        // Lot Carte B3 : salles et établissements d'une partenaire non VALIDE ne sont plus publics (et reviennent à la
+        // réactivation) : carte mise à jour dès la lecture suivante
+        invalidatePublicPlaces(`statut de la partenaire ${newStatus}`);
 
         return NextResponse.json({
             success: true,
