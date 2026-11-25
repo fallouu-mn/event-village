@@ -1,7 +1,17 @@
 # Lot poids — retrouver une vraie marge de JavaScript avant les écrans des commandes
 
 Branche `lot-poids/marge`, partie de `main` à `dfac0c9ad`, `main` refusionnée après le lot Carte B (`c3a5f0ada`, puis
-`64a261116`). **Non fusionnée** (feu vert attendu). **Aucune migration.** Aucun budget relevé ; seuils, calibration et
+`64a261116`). **Fusionnée dans `main` le 25/11/2026** (feu vert de l'utilisateur), en `--no-ff` : commit de fusion
+**`71a42f01a`**, sur `main` à `64a261116` (inchangé depuis la carte B). **Run complet de `main` 646 entièrement vert** :
+- 602 suites (151 + 150 + 150 + 151) ;
+- e2e : 787 captures, 0 en échec ; fumée, terrain, recette, déconnexion et connexion-course OK ;
+- contrôle responsive : 190 résultats, 0 défaut ;
+- budgets : mêmes octets qu'au run 643 sur les six routes ;
+- mesure mobile 92 / 91 / 90, valide dès la tentative 1. Mes billets est au seuil, médiane de
+  [90 ; 89 ; 93 ; 89 ; 93]. Au run 643, la mesure était 94 / 95 / 94, avec exactement le même JavaScript (code
+  identique, mêmes octets) : l'écart vient de la variation d'une mesure à l'autre.
+
+**Aucune migration.** Aucun budget relevé ; seuils, calibration et
 médiane de la mesure mobile inchangés. Déconnexion, client Supabase de la session et dessin du QR : non touchés.
 
 ## À lire en premier
@@ -273,6 +283,8 @@ Aucun journal ne contient `Buffer is not defined`. Le polyfill n'avait pas à ê
 | 638, 639 | branche jetable | aperçu, montages A et B | verts (rapide + mesure + responsive pour 638) |
 | 641 | `ba50ffac5` | run complet après fusion de `main` (carte B) | rouge : `design1e-orange` seul (§ 2.1) ; e2e, mesure, responsive, budgets verts |
 | **643** | `33c74dbad` | **run complet final** | **entièrement vert** : 602 suites, e2e 783 captures, responsive 190 / 0, budgets, mesure 94 / 95 / 94 |
+| 645 | `f7ccf916e` | test « npm run dev » (§ 2.1) | vert (rapide) |
+| **646** | `71a42f01a` | **fusion dans `main`, run complet de `main`** | **entièrement vert** : 602 suites, e2e 787 captures, responsive 190 / 0, budgets (octets identiques au 643), mesure 92 / 91 / 90 (tentative 1) |
 
 ## 7. Conseils pour les lots suivants
 
