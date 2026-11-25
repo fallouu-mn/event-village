@@ -118,9 +118,16 @@ BEGIN
     IF v_capacity IS NOT NULL AND (v_norm->>'is_active')::boolean THEN
         -- CV 11c-a (T2a) : jauge en places ; une catégorie arrêtée garde ses places vendues ou en paiement
         v_sum := private.event_seats_gauge(v_event);
+        -- Refus précis quand des places vendues de catégories arrêtées comptent (sinon le refus d'origine ci-dessous)
+        IF v_sum + (v_norm->>'total_quantity')::int > v_capacity
+           AND EXISTS (SELECT 1 FROM public.ticket_categories x WHERE x.event_id = v_event AND NOT x.is_active AND x.sold_quantity + x.held_quantity > 0) THEN
+            RETURN public.event_edit_refusal('QUOTA_ABOVE_CAPACITY',
+                format('Les places mises en vente, avec celles déjà vendues ou en paiement des catégories arrêtées, totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
+                       v_sum + (v_norm->>'total_quantity')::int, v_capacity), 'total_quantity');
+        END IF;
         IF v_sum + (v_norm->>'total_quantity')::int > v_capacity THEN
             RETURN public.event_edit_refusal('QUOTA_ABOVE_CAPACITY',
-                format('Les places mises en vente, avec celles déjà vendues des catégories arrêtées, totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
+                format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
                        v_sum + (v_norm->>'total_quantity')::int, v_capacity), 'total_quantity');
         END IF;
     END IF;
@@ -286,9 +293,17 @@ BEGIN
     IF v_capacity IS NOT NULL AND n_active AND (n_total > c.total_quantity OR NOT c.is_active) THEN
         -- CV 11c-a (T2a) : jauge en places des autres catégories ; une catégorie arrêtée garde ses places vendues ou en paiement
         v_sum := private.event_seats_gauge(v_event, c.id);
+        -- Refus précis quand des places vendues de catégories arrêtées comptent (sinon le refus d'origine ci-dessous)
+        IF v_sum + n_total > v_capacity
+           AND EXISTS (SELECT 1 FROM public.ticket_categories x WHERE x.event_id = v_event AND NOT x.is_active AND x.sold_quantity + x.held_quantity > 0 AND x.id <> c.id) THEN
+            RETURN public.event_edit_refusal('QUOTA_ABOVE_CAPACITY',
+                format('Les places mises en vente, avec celles déjà vendues ou en paiement des catégories arrêtées, totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
+                       v_sum + n_total, v_capacity),
+                'total_quantity');
+        END IF;
         IF v_sum + n_total > v_capacity THEN
             RETURN public.event_edit_refusal('QUOTA_ABOVE_CAPACITY',
-                format('Les places mises en vente, avec celles déjà vendues des catégories arrêtées, totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
+                format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',
                        v_sum + n_total, v_capacity),
                 'total_quantity');
         END IF;
@@ -622,9 +637,15 @@ BEGIN
             RETURN public.event_edit_refusal('LOCKED_AFTER_SALES',
                 format('La jauge ne peut pas descendre sous %s : billets vendus et paiements en cours compris.', v_engaged), 'capacity');
         END IF;
+        -- Refus précis quand des places vendues de catégories arrêtées comptent (sinon le refus d'origine ci-dessous)
+        IF n_capacity IS NOT NULL AND n_capacity < v_quota
+           AND EXISTS (SELECT 1 FROM public.ticket_categories x WHERE x.event_id = v_event AND NOT x.is_active AND x.sold_quantity + x.held_quantity > 0) THEN
+            RETURN public.event_edit_refusal('CAPACITY_BELOW_QUOTAS',
+                format('La jauge ne peut pas descendre sous %s places : quantités des catégories actives et places déjà vendues ou en paiement des catégories arrêtées. Baissez d''abord les quotas.', v_quota), 'capacity');
+        END IF;
         IF n_capacity IS NOT NULL AND n_capacity < v_quota THEN
             RETURN public.event_edit_refusal('CAPACITY_BELOW_QUOTAS',
-                format('La jauge ne peut pas descendre sous %s places : quantités des catégories actives et places déjà vendues des catégories arrêtées. Baissez d''abord les quotas.', v_quota), 'capacity');
+                format('La jauge ne peut pas descendre sous la somme des quotas des catégories actives (%s) : baissez d''abord les quotas.', v_quota), 'capacity');
         END IF;
     END IF;
 

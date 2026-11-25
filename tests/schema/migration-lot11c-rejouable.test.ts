@@ -71,20 +71,17 @@ const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
         "SELECT COALESCE(sum(CASE WHEN c.is_active THEN c.total_quantity WHEN c.kind = 'TABLE' THEN c.sold_quantity + c.held_quantity ELSE 0 END",
         '* c.seats_per_unit), 0)::int INTO v_sum',
         "FROM public.ticket_categories c WHERE c.event_id = v_event AND (c.is_active OR c.kind = 'TABLE');",
-        "format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',",
     ] },
     { fn: 'ticket_category_update', file: LOT11C_MIGRATIONS[6], replaced: [
         '-- Lot 11c-a : jauge en places (une table compte ses places ; un type de table arrêté garde ses tables vendues)',
         "SELECT COALESCE(sum(CASE WHEN o.is_active THEN o.total_quantity WHEN o.kind = 'TABLE' THEN o.sold_quantity + o.held_quantity ELSE 0 END",
         '* o.seats_per_unit), 0)::int INTO v_sum',
         "FROM public.ticket_categories o WHERE o.event_id = v_event AND (o.is_active OR o.kind = 'TABLE') AND o.id <> c.id;",
-        "format('Les quantités mises en vente des catégories actives totaliseraient %s places. Augmentez d’abord la capacité totale de l’événement (actuellement %s).',",
     ] },
     { fn: 'event_update', file: LOT11C_MIGRATIONS[6], replaced: [
         'SELECT COALESCE(sum((c.sold_quantity + c.held_quantity) * c.seats_per_unit), 0)::int,',
         'COALESCE(sum(c.total_quantity * c.seats_per_unit) FILTER (WHERE c.is_active), 0)::int',
         'INTO v_engaged, v_quota',
-        "format('La jauge ne peut pas descendre sous la somme des quotas des catégories actives (%s) : baissez d''abord les quotas.', v_quota), 'capacity');",
     ] },
     { fn: 'event_edit_locks', file: LOT11C_MIGRATIONS[6], replaced: [
         'COALESCE(sum(c.sold_quantity + c.held_quantity), 0)::int AS engaged,',

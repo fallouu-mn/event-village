@@ -31,19 +31,27 @@ table, la jauge vaut la somme des quotas actifs).
 
 **Conséquence pour les organisatrices.** Sur un événement où une catégorie arrêtée a des ventes, toute nouvelle hausse
 (catégorie, quota, type de table) est refusée tant que la capacité ne couvre pas aussi ces places vendues. C'est voulu.
-Le refus le dit en clair : « Les places mises en vente, avec celles déjà vendues des catégories arrêtées,
-totaliseraient N places. Augmentez d'abord la capacité totale de l'événement (actuellement M). »
+Le refus le dit en clair, dans ce cas seulement : « Les places mises en vente, avec celles déjà vendues ou en paiement
+des catégories arrêtées, totaliseraient N places. Augmentez d'abord la capacité totale de l'événement (actuellement
+M). » Sans catégorie arrêtée vendue, le refus garde son texte d'origine, mot pour mot. La recette e2e (acte 10) le
+vérifie : le run complet 668 l'a vue rouge quand j'avais reformulé ce texte, et il est donc gardé intact.
 
-**Suites existantes dont une assertion change.** Une seule, plus mon test de rejeu ; rien n'est affaibli.
+**Suites existantes modifiées.** Une seule assertion change, plus mon test de rejeu ; rien n'est affaibli.
 - `tests/helpers/lot9ter-invariants.ts` (x6) : l'ensemble des places « concernées » gagne les places d'une table
   remboursée au report, tenues par un invité (transfert accepté) qui n'est pas le titulaire. Pour elles aussi,
   l'avis `TICKET_REFUNDED_HOLDER` est **exigé**, et ne part qu'au porteur actuel. C'est une exigence en plus. Sans elle,
   l'avis de T3 aurait été compté comme envoyé à tort.
 - `tests/schema/migration-lot11c-rejouable.test.ts` (test du lot) : la migration 07, ses six recopies avec leurs lignes
-  remplacées (les seuls calculs de jauge et leurs messages), et l'aide `private.event_seats_gauge`, fermée à tous les
-  rôles de l'API.
+  remplacées (les seuls calculs de jauge), et l'aide `private.event_seats_gauge`, fermée à tous les rôles de l'API.
+- `tests/schema/migration-lot8-rejouable.test.ts` : **mise en place seulement, aucune assertion changée**. Ce test rejoue
+  dans une transaction annulée la reprise du lot 8, qui réécrit `sale_online` et `sale_counter` sur toutes les
+  catégories. Au run complet 668, des types de tables laissés en base par les suites passées avant lui ont été refusés
+  par la garde d'écriture du lot (`EVT11`, « un type de table se modifie par les fonctions des tables d'un
+  événement »). L'échec dépend de l'ordre : l'ajout des suites cv11c avait déplacé ce test d'une part de tests à une
+  autre. Le test ouvre désormais le drapeau d'écriture des tables dans sa transaction annulée, juste avant la reprise.
+  En base réelle, la reprise du lot 8 est appliquée depuis le 07/11 et ne se rejoue jamais.
 
-Aucune autre suite n'a vu une assertion changer : run rapide 666 (32 suites choisies parmi celles qui touchent la
+Aucune autre suite n'a été modifiée : run rapide 666 (32 suites choisies parmi celles qui touchent la
 jauge, la capacité, les catégories et l'avis au porteur), puis run complet (section Runs).
 
 **Requête en lecture seule à lancer sur event-village-dev AVANT d'appliquer les migrations.** Elle liste les
@@ -467,5 +475,6 @@ migrations `20261201000001` à `…006` attendent la contre-vérification.
 | Run | Mode | Commit | Résultat |
 |---|---|---|---|
 | 666 | rapide, 32 suites | f989107cab | **32/32**, typecheck et lint OK ; `cv11c-1` 4/4, `cv11c-2` 9/9, `cv11c-3` 7/7 ; invariant (x6) du lot 9 ter à 0 violation après `cv11c-1` |
+| 668 | **complet** | 23ac5ec520 (main fusionnée) | rouge : `migration-lot8-rejouable` (EVT11 sur des types de tables d'autres suites, selon l'ordre) et recette e2e acte 10 (texte exact du refus de jauge reformulé) ; tests 603/604, responsive, poids et mesure mobile verts. Corrigés : drapeau dans la transaction du test, message d'origine gardé |
 
 <!-- RUN-COMPLET-CV -->

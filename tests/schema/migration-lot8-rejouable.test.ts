@@ -180,7 +180,10 @@ describe('Lot 8 — reprise de la tâche 8.0 sans changement de comportement (tr
             await db.query('ALTER TABLE public.tickets DROP COLUMN sale_decision CASCADE');
             await db.query('ALTER TABLE public.stock_reservations DROP COLUMN sale_online_at_checkout CASCADE');
 
-            // d. Passage réel de la migration.
+            // d. Passage réel de la migration. Lot 11c-a : la reprise réécrit toutes les catégories, y compris les types de
+            // tables laissés en base par les suites passées avant (garde d'écriture EVT11 d'un lot postérieur) ; le drapeau
+            // d'écriture des tables est ouvert dans cette transaction annulée seulement. Aucune assertion ne change.
+            await db.query("SELECT set_config('event_village.event_tables', 'on', true)");
             await db.query(m1);
 
             // e. Aucun changement de comportement.
