@@ -95,8 +95,7 @@ before(async () => {
     assert.equal(susErr, null, `compte suspendu : ${susErr?.message}`);
     const { data: hall, error: hallErr } = await service.from('halls').insert({
         partner_id: partner.partnerId, name: `TEST Salle interrupteur ${randomUUID().slice(0, 8)}`, capacity: 120,
-        price_per_day: 50_000, deposit_percentage: 30, city: 'Dakar', is_active: true,
-        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467,
+        price_per_day: 50_000, deposit_percentage: 30, city: 'Dakar', is_active: true, latitude: 14.6928, longitude: -17.4467, // Carte B3 : position obligatoire
     }).select('id').single();
     assert.equal(hallErr, null, `salle : ${hallErr?.message}`);
     hallId = hall.id;
@@ -107,8 +106,7 @@ before(async () => {
     // Lot 11a (modification signalée au rapport) : une table appartient à un établissement validé par l'administration
     venueName = `TEST Restaurant interrupteur ${randomUUID().slice(0, 8)}`;
     const { data: venue, error: venueErr } = await service.from('venues').insert({
-        partner_id: partner.partnerId, name: venueName, city: 'Dakar',
-        /* lot Carte B3 : position obligatoire pour valider */ latitude: 14.6928, longitude: -17.4467,
+        partner_id: partner.partnerId, name: venueName, city: 'Dakar', latitude: 14.6928, longitude: -17.4467, // Carte B3 : position obligatoire
     }).select('id').single();
     assert.equal(venueErr, null, `établissement : ${venueErr?.message}`);
     venueId = venue.id;

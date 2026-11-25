@@ -77,7 +77,7 @@ test('1. CONFIGURATION SALLE (§42/§45) : Création avec acompte personnalisé 
             price_per_hour: 35000,
             deposit_percentage: 40.0, // Taux configurable
             address: 'Almadies Zone 2',
-            city: 'Dakar',
+            city: 'Dakar', latitude: 14.6928, longitude: -17.4467, // Carte B3 : position obligatoire (décision du client du 25/11)
             amenities: ['Climatisation', 'Wifi', 'Scène', 'Parking VIP', 'Groupe Électrogène'],
         });
 

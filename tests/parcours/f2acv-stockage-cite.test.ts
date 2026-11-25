@@ -142,13 +142,13 @@ describe('d. salles et produits : image du dossier events/ refusée', () => {
                 return (err as { code?: string }).code ?? (err instanceof Error ? err.message : String(err));
             }
         };
-        const hall = await codeOf(() => HallService.createHall(P.userId, { name, capacity: 50, price_per_day: 100_000, images: [hallImage, poster] }));
+        const hall = await codeOf(() => HallService.createHall(P.userId, { name, capacity: 50, price_per_day: 100_000, images: [hallImage, poster], latitude: 14.6928, longitude: -17.4467 }));
         const product = await codeOf(() => ProductService.createProduct(P.userId, { name: `Produit f2acv ${Date.now()}`, price: 1000, images: [poster] }));
         console.log(`[F2ACV-T6] salle avec une affiche → ${hall} ; produit avec une affiche → ${product}`);
         assert.deepEqual([hall, product], ['IMAGE_FOLDER_INVALID', 'IMAGE_FOLDER_INVALID']);
         const { count } = await service.from('halls').select('id', { count: 'exact', head: true }).eq('name', name);
         assert.equal(count ?? 0, 0, 'salle écrite malgré le refus');
-        const witness = await codeOf(() => HallService.createHall(P.userId, { name: `${name} témoin`, capacity: 50, price_per_day: 100_000, images: [hallImage] }));
+        const witness = await codeOf(() => HallService.createHall(P.userId, { name: `${name} témoin`, capacity: 50, price_per_day: 100_000, images: [hallImage], latitude: 14.6928, longitude: -17.4467 }));
         assert.equal(witness, 'accepté', 'témoin : image du dossier de la salle');
     });
 });
