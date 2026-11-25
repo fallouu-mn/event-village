@@ -25,7 +25,11 @@ réponses publiques » est gardée et testée sur toutes les lectures publiques 
 F3 (adresse et point sur les routes publiques) et F4 (adresse sur l'écran de réservation) **ne sont plus des failles**
 (décision du 25/11) : leurs tests vérifient maintenant que ces données sont rendues (§ 3).
 
-<!-- VERDICT -->
+**Verdict.** Run complet 665 (`31e8cec880`) : build, budgets, e2e (787 captures, 0 en échec), responsive (190
+résultats, 0 défaut ; tests du lot verts) et mesure mobile **valide** (93 / 94 / 93, 1re tentative) ; tests : 3 suites
+anciennes rouges (une dans chacun des lots 1, 2 et 4 ; lot 3 vert), toutes dues à la position obligatoire (§ 4). Corrigées sans changer une assertion, puis run
+rapide 669 (`660d741d78`) **vert** : les 3 suites, `messages-bruts` et les 5 suites du lot, typecheck et lint. Aucun
+fichier de `tests/audit/` ni de `tests/audit-auth/` modifié. Branche non fusionnée, migration non appliquée.
 
 ## 1. Étape 0 (avant de coder) et ce qu'elle devient
 
@@ -146,7 +150,103 @@ données). Les éléments sans position n'existent que dans les tests qui en cr�
 | `tests/schema/carte-b3-ecrans.test.ts` | contrat public, « Ouvert maintenant », grille T1, colonnes lues par la carte ; **aucune trace** de zone ou de particulier dans `app/`, `components/`, `lib/` ; fiches avec carte au point exact et itinéraire ; textes du client mot pour mot ; phrase des trois formulaires ; position exigée ; services ; bandeaux. Poste : 23/23. |
 | `e2e/carte-b3.responsive.spec.ts` | **invalidation gardée** : salle validée sur la carte en moins de 5 s, suspendue retirée en moins de 5 s ; point exact sur la carte ; fiche servie à un visiteur sans cookie : adresse et itinéraire vers le point exact ; recherche par un mot de l'adresse ; rien de la partenaire ; couches dans l'adresse ; survol d'un lieu regroupé ; captures. |
 
-<!-- SORTIES -->
+**Sorties brutes du run rapide 669** (`runs/669-45675171702/verify.log`) :
+
+```
+tests/schema/recette-matrice.test.ts               PASS     552ms     0
+tests/parcours/interrupteurs.test.ts               PASS     4.2s      0
+tests/parcours/f2acv-stockage-cite.test.ts         PASS     2.5s      0
+tests/partner-halls-m7.test.ts                     PASS     1.8s      0
+tests/parcours/messages-bruts.test.ts              PASS     2.8s      0
+tests/parcours/cb3-position-obligatoire.test.ts    PASS     1.7s      0
+tests/security/cb3-lieux-publics.test.ts           PASS     1.7s      0
+tests/parcours/cb3-carte-lieux.test.ts             PASS     1.7s      0
+tests/schema/migration-carte-b3-rejouable.test.ts  PASS     791ms     0
+tests/schema/carte-b3-ecrans.test.ts               PASS     561ms     0
+TOTAL : 10 suite(s) — 10 réussie(s), 0 en échec, 0 expirée(s)
+typecheck  OK     code 0   44 s
+lint       OK     code 0   14 s
+```
+
+```
+== cb3-position-obligatoire
+    ok 1 - salle créée par la route : refusée sans position, rien créé ; acceptée avec
+    ok 2 - établissement créé par la route (venue_create) : refusé sans position, rien créé ; accepté avec
+    ok 3 - renvoi d’une salle refusée (hall_submit) : position seule manquante = refus simple ; placée = en attente
+    ok 4 - renvoi d’un établissement refusé (venue_submit) : position seule manquante = refus simple ; avec d’autres manques, elle est nommée
+    ok 5 - événement : soumission sans position refusée avec la phrase seule ; placée = en attente
+ok 1 - A — envoi en validation sans position refusé (phrase du client)
+    ok 1 - halls : validation non exigée, insertion sans position → en attente ; avec position → validé
+    ok 2 - venues : validation non exigée, insertion sans position → en attente ; avec position → validé
+ok 2 - B — inséré sans position : jamais validé d’office
+    ok 1 - salle : VALIDER refusé, puis accepté une fois placée ; route de l’administration aussi
+    ok 2 - établissement : VALIDER refusé, puis accepté une fois placé
+    ok 3 - déjà publié sans position : suspension puis RÉACTIVATION acceptées (reste en ligne)
+    ok 4 - événement : EN_ATTENTE → VALIDE refusé sans position, accepté une fois placé
+ok 3 - C — l’administration ne valide jamais un dossier sans position
+    ok 1 - salle (PUT) et établissement (PATCH) : 400 POSITION_REQUIRED, position gardée
+ok 4 - D — une position ne se retire pas par les routes de la partenaire
+    ok 1 - événement publié sans position : has_position false ; placé : true
+ok 5 - E — pilotage : bandeau de la position manquante
+== cb3-lieux-publics
+    ok 1 - halls : visiteur et cliente connectée ne lisent ni l’adresse ni la position par la REST
+    ok 2 - venues : visiteur et cliente connectée ne lisent ni l’adresse ni la position par la REST
+ok 1 - F1 (gardée) — REST : adresse et position jamais lisibles directement
+    ok 1 - « adresse » : salle et établissement retrouvés
+    ok 2 - « quartier » : salle et établissement retrouvés
+ok 2 - P1 — recherche publique : par l’adresse et par le quartier (décision du 25/11)
+    ok 1 - GET /api/halls/[id] et la recherche des salles
+    ok 2 - GET /api/tables/[id], /api/restaurants/[id]/tables et la recherche des établissements
+    ok 3 - carte d’Explorer : point exact
+ok 3 - P2 — routes publiques : adresse et point exacts pour tout le monde
+    ok 1 - salle : en attente de paiement = adresse ; autre cliente = rien
+    ok 2 - table : acompte à payer = adresse ; autre cliente = rien
+ok 4 - P3 — écran de réservation : l’adresse dès la réservation ; une autre cliente ne lit rien
+    ok 1 - recherches, fiches, tables, carte : ni nom légal, ni téléphone, ni adresse électronique, ni pièces
+ok 5 - R (gardée) — rien de la partenaire dans les réponses publiques
+== migration-carte-b3-rejouable
+    ok 1 - les migrations du lot sont exactement celles-ci, après celles des lots précédents
+    ok 2 - aucune recopie des fonctions de la session 11c-a (event_update, ticket_category_create, ticket_category_update)
+    ok 3 - 20261210000001_cb3_lieux_publics.sql : sans BEGIN ni COMMIT, appliquée deux fois de plus sans erreur
+    ok 4 - recopie de halls_validation_guard (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 5 - recopie de hall_submit (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 6 - recopie de venues_validation_guard (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 7 - recopie de venue_create (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 8 - recopie de venue_submit (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 9 - recopie de hall_validation_decide (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 10 - recopie de venue_validation_decide (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 11 - recopie de event_transition (20261210000001) : aucune ligne de la dernière définition précédente perdue
+    ok 12 - la tête de la migration cite le fichier et les lignes de chaque recopie
+    ok 13 - les lignes citées sont bien la dernière définition précédente
+```
+
+`cb3-carte-lieux` (A à E, 12 sous-tests) et `carte-b3-ecrans` (7 blocs, 23 sous-tests) : tous `ok` (même journal).
+
+**Responsive (run complet 665, `responsive.log`)** :
+
+```
+[carte-b3] salle validée visible sur la carte après 18 ms
+[carte-b3] salle suspendue retirée de la carte après 13 ms
+  ✓   12 [responsive] › e2e/carte-b3.responsive.spec.ts:81:9 › carte B3 · validation, lieu public, suspension › salle validée : sur la carte en moins de 5 s à son point exact, adresse et itinéraire publics ; suspendue : retirée en moins de 5 s (3.1s)
+  ✓   15 [responsive] › … › carte B3 · captures · clair › couches, repères des trois types, feuille du téléphone (360 px) (5.1s)
+  ✓   18 [responsive] › … › carte B3 · captures · clair › liste de l’ordinateur et survol d’un lieu (1 440 px) (3.1s)
+  ✓   21 [responsive] › … › carte B3 · captures · clair › fiches : adresse, carte au point exact, « Voir l’itinéraire » (360 et 1 440 px) (8.3s)
+  ✓   24 [responsive] › … › carte B3 · captures · sombre › couches, repères des trois types, feuille du téléphone (360 px) (19.9s)
+  ✓   27 [responsive] › … › carte B3 · captures · sombre › liste de l’ordinateur et survol d’un lieu (1 440 px) (4.6s)
+  ✓   30 [responsive] › … › carte B3 · captures · sombre › fiches : adresse, carte au point exact, « Voir l’itinéraire » (360 et 1 440 px) (8.4s)
+Contrôle responsive : 190 résultat(s) (page × thème), 0 défaut(s) bloquant(s).
+```
+
+**Tests du run complet 665** (fin de chaque `jobs/tests-<n>/verify.log`) :
+
+```
+lot 1 : TOTAL : 152 suite(s) — 151 réussie(s), 1 en échec, 0 expirée(s)   (recette-matrice)
+lot 2 : TOTAL : 152 suite(s) — 151 réussie(s), 1 en échec, 0 expirée(s)   (f2acv-stockage-cite)
+lot 3 : vert (job_tests-3=resultat:success)
+lot 4 : TOTAL : 151 suite(s) — 150 réussie(s), 1 en échec, 0 expirée(s)   (partner-halls-m7)
+e2e : connexion OK · captures OK · emails OK · dev-page OK · fumee OK · terrain OK · pwa OK · deconnexion OK · connexion-course OK · fake-prod OK · perf OK · recette OK
+[e2e] index des captures : .e2e-captures/captures/index.txt (787 entrée(s), 0 en échec)
+```
 
 ## 4. Runs
 
@@ -158,15 +258,104 @@ données). Les éléments sans position n'existent que dans les tests qui en cr�
 | 657 | `1a06bac145` | rapide (7 suites) + responsive | entièrement vert |
 | 658 | `e4ddfcc601` | **complet** (décision du 21/11) | tests 4 lots, build, budgets, e2e complet verts ; responsive 0 défaut mais 1 test rouge (survol d'un lieu caché dans un regroupement, sombre) ; mesure mobile **faussée** (machine trop rapide aux 3 tentatives) |
 | 661 | `e0cf98af8b` | **complet** (décision du 21/11 + regroupement allumé) | **entièrement vert** : tests, build, budgets, e2e, responsive 229/229 et 0 défaut ; mesure mobile **valide** dès la 1re tentative : accueil 95, fiche 95, Mes billets 96 |
-<!-- RUN_COMPLET -->
+| 665 | `31e8cec880` | **complet** (version finale : décisions du 25/11, poids corrigé) | build, budgets, e2e (787 captures, 0 en échec), responsive 190 résultats / 0 défaut (tests du lot verts), mesure **valide** dès la 1re tentative (93 / 94 / 93) ; tests : lot 3 vert, lots 1, 2 et 4 : **1 suite rouge chacun** (`recette-matrice`, `f2acv-stockage-cite`, `partner-halls-m7`), voir ci-dessous |
+| 669 | `660d741d78` | rapide (10 suites) | **vert** : les 3 suites corrigées, `messages-bruts`, les 5 suites du lot, typecheck, lint |
+
+**Les trois suites rouges du run 665**, toutes dues à la position obligatoire (décision du client du 25/11) :
+
+- `tests/partner-halls-m7.test.ts` (lot 4) et `tests/parcours/f2acv-stockage-cite.test.ts` (lot 2) créent une salle par
+  `HallService.createHall` sans position : `POSITION_REQUIRED` (« Placez votre lieu sur la carte avant d’envoyer. »).
+  Correction : position ajoutée à l'appel ; assertions inchangées.
+- `tests/schema/recette-matrice.test.ts` (lot 1) : « la ligne n'ouvre pas un test : tests/parcours/interrupteurs.test.ts:399 ».
+  `docs/recette-billetterie.md` cite cette ligne ; les deux lignes ajoutées pour la position dans `interrupteurs` l'avaient
+  décalée. Correction : la position est posée sur les lignes existantes (aucun décalage) ; le document n'est pas modifié.
 
 ## 5. Poids JS et mesure mobile
 
-<!-- POIDS -->
+**Écart constaté au run 658 (budgets tous tenus)** : accueil +419, Explorer +86, fiche d'un événement +1 182 octets gzip
+par rapport à `main` (run 646). Mesuré ici en local, module par module (`EV_ANALYSE_POIDS=1`, `scripts/poids-rapport.mjs`,
+`main` 76e09fb733 et la branche construits sur le poste avec la même version de Next 15.5.28).
+
+**Cause : aucun code nouveau au premier chargement, mais un regroupement de webpack qui a basculé.**
+- `components/ui/cn-classes.ts` (table des classes de la fusion `cn`, chargée par toutes les pages) est calculée au
+  build à partir de **toutes** les sources du projet. Les classes nouvelles des écrans du lot (pastilles des couches,
+  vignette d'un lieu, dessin de l'état vide, icônes SVG) l'ont fait passer de 13 868 à 14 089 octets de source (+221).
+- Dans `main`, webpack formait un morceau partagé `Button.tsx` (5 224) + `cn.ts` (5 924) + `cn-classes.ts` (13 868),
+  chargé par toutes les pages. Avec +221, `cn.ts` et la table atteignent **seuls** 20 013 octets, au-delà du seuil de
+  20 000 octets de webpack (`minSize`) : ils ont formé leur propre morceau, et `Button.tsx`, trop petit seul, a été
+  **recopié dans chaque page** (doublon visible dans le relevé : `components/ui/Button.tsx [66269.js ; app/page.js]`).
+- S'y ajoutait, pour Explorer, le petit code qui gardait `couches=` dans l'adresse quand un filtre change
+  (`lib/events/explore-view.ts`, +350 octets de source).
+
+**Corrections.**
+1. `next.config.mjs` : règle de découpage `ui-base` (navigateur, construction seulement) qui garde `Button`, `cn` et la
+   table dans UN morceau partagé, comme avant, quel que soit le seuil.
+2. `couches=` : `lib/events/explore-view.ts` revient à `main` ; la carte (module chargé à l'ouverture de la vue Carte)
+   remet les couches choisies dans l'adresse quand un filtre la change. **Les couches ne pèsent rien au premier
+   chargement d'Explorer.**
+
+| Route (octets gzip, poste) | `main` | branche avant | branche après | écart final |
+|---|---|---|---|---|
+| `/` (accueil) | 215 044 | 215 461 | 215 113 | +69 |
+| `/events/[id]` (fiche) | 223 597 | 223 963 | 223 667 | +70 |
+| `/tickets` (Mes billets) | 239 906 | 241 050 | 239 972 | +66 |
+| `/controller/scanner` | 224 892 | 225 395 | 224 960 | +68 |
+| `/billet/hors-ligne` | 214 052 | 214 557 | 214 115 | +63 |
+| `/explore` | 225 565 | 225 659 | 225 630 | +65 |
+
+Part propre de chaque route (hors code commun) après correction : identique à `main` à ±4 octets (Explorer : −1).
+**Reste +63 à +70 octets gzip, tous dans le code commun : la table des classes** (+221 octets de source), qui grandit
+avec toute classe Tailwind nouvelle du projet, chargée ou non. Ce n'est pas du code des couches ; le retirer demanderait
+de réécrire les écrans du lot avec des classes déjà présentes ailleurs (19 classes : `aspect-[2/1]`, `bg-card/90`,
+`scale-x-0`, `origin-center`, `fill-brand-vif/10`, `min-w-[8.5rem]`, …). Budgets (mesure du poste) : marge ≥ 9 649 octets sur chaque route (la plus juste : fiche d'un événement).
+
+**Mesure CI (run complet 665, `31e8cec880`).** Budgets du build de la CI (`js-budget.tsv`, sortie brute) :
+
+```
+route	fichiers	octets_gzip	octets_bruts	budget	statut
+/	17	215068	728629	226342	OK
+/events/[id]	17	223645	757182	233316	OK
+/tickets	20	239990	808320	250417	OK
+/controller/scanner	16	224947	763783	234911	OK
+/billet/hors-ligne	15	214066	730110	224268	OK
+/explore	18	225578	758427	235712	OK
+```
+
+Écart avec `main` 76e09fb733 construit sur le poste (même commande, tableau ci-dessus) : +24 / +48 / +84 / +55 / +14 / +13 octets gzip ; les écarts annoncés au
+départ (accueil +419, Explorer +86, fiche +1 182) ont disparu. Marge la plus juste : 9 671 octets (fiche d'un événement).
+
+**Mesure mobile : valide, pas « faussée ».** Run 661 (version précédente) : valide dès la 1re tentative (95 / 95 / 96).
+Run 665 (version finale), sortie brute de `perf-mobile.log` :
+
+```
+[perf-mobile] tentative 1 (208 s) : valide
+  OK — score Lighthouse mobile : médiane 93 sur 5 passage(s) [95 ; 93 ; 93 ; 93 ; 95] (seuil ≥ 90)
+  OK — score Lighthouse mobile : médiane 94 sur 5 passage(s) [96 ; 96 ; 94 ; 94 ; 93] (seuil ≥ 90)
+  OK — score Lighthouse mobile : médiane 93 sur 5 passage(s) [95 ; 92 ; 93 ; 93 ; 93] (seuil ≥ 90)
+  OK — réaction au toucher (mesure témoin : de l'appui à l'image qui suit le clic) : 90 ms (seuil < 200 ms)
+Tentatives de la mesure Lighthouse (finition 5 : faussée si un tour sort de la plage, refaite 2 fois au plus ; journal perf/tentatives.tsv) :
+  tentative 1 : valide
+```
+
+Accueil 93, fiche 94, Mes billets 93 (seuil 90), toucher 90 ms. La mesure « faussée » du run 658 (machine trop rapide
+aux trois tentatives) ne s'est pas reproduite.
 
 ## 6. Captures (clair et sombre)
 
-<!-- CAPTURES -->
+Run complet 665, `ci-results` : `runs/665-45654126829/captures-responsive/cb3-<écran>__<largeur>__<thème>.jpg`,
+16 fichiers (8 écrans × clair et sombre) :
+
+| Écran | Fichiers | Ce qu'on y voit |
+|---|---|---|
+| `couches-reperes` | 360 px | boutons « Événements · n », « Salles · n », « Restaurants · n » ; repères des salles (bâtiment, « Dès … F/jour ») à Thiès |
+| `feuille-lieu` | 360 px | feuille du téléphone d'une salle : photo (ou dessin neutre), nom, « Salle · Thiès », prix, capacité, « Voir la salle » |
+| `repere-restaurant` | 360 px | repère d'un établissement (couverts) |
+| `liste-ordinateur` | 1 440 px | liste à côté de la carte, survol d'un lieu |
+| `fiche-salle` | 360 et 1 440 px | « Adresse » en clair, petite carte avec le repère au point exact, « Voir l'itinéraire » |
+| `fiche-restaurant` | 360 et 1 440 px | même chose pour un établissement, à côté du bloc « Réserver une table » |
+
+Relues sur le poste (6 captures, clair et sombre) : aucune zone, aucun texte de zone, adresse et itinéraire visibles. Le
+fond de carte est gris dans la CI (tuiles non chargées, comme aux lots Carte B et B2).
 
 ## 7. Tests modifiés (décision du client du 25/11 : lieux publics, position obligatoire)
 
@@ -179,6 +368,7 @@ données). Les éléments sans position n'existent que dans les tests qui en cr�
 | `tests/parcours/l10a-helpers.ts` (`newHall`), `tests/parcours/l11a-helpers.ts` (`newVenue`), `tests/helpers/table-fixtures.ts` | position par défaut (Dakar) ; `position: null` pour un lieu sans position | décision du 25/11 : l'administration ne valide plus un lieu sans position ; ces aides valident leurs lieux (elles servent aussi aux suites d'audit, qui ne sont pas modifiées) |
 | `tests/parcours/finance-cibles`, `interrupteurs`, `l10b-salles` (établissement), `lot9quinquies-cv-salles`, `tests/partner-halls-m7`, `tests/ux-performance-and-double-click` | position ajoutée aux lieux insérés puis validés ; **aucune assertion changée** | même raison |
 | `tests/parcours/l10b-salles.test.ts` (salles créées par la route) | position dans le corps des créations ; avant le test du renvoi incomplet, la position est retirée par la clé de service (salle d'avant la décision) : l'assertion « une photo au moins… la position sur la carte » est inchangée | décision du 25/11 : la route refuse une salle sans position et ne retire plus une position |
+| `tests/parcours/f2acv-stockage-cite.test.ts`, `tests/partner-halls-m7.test.ts` (salles créées par `HallService.createHall`) | position dans l'appel (même ligne) ; aucune assertion changée (run 665) | décision du 25/11 : création d'une salle sans position refusée |
 | `tests/parcours/l11b-tables.test.ts` (création par la route) | position dans le corps ; aucune assertion changée | décision du 25/11 : `venue_create` refuse sans position |
 | `tests/helpers/design-files.ts` | `components/lieux/PlaceMap.tsx` retiré de la liste (fichier supprimé) | décision du 25/11 : plus de petite carte de zone |
 
