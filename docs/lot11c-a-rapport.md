@@ -476,5 +476,6 @@ migrations `20261201000001` à `…006` attendent la contre-vérification.
 |---|---|---|---|
 | 666 | rapide, 32 suites | f989107cab | **32/32**, typecheck et lint OK ; `cv11c-1` 4/4, `cv11c-2` 9/9, `cv11c-3` 7/7 ; invariant (x6) du lot 9 ter à 0 violation après `cv11c-1` |
 | 668 | **complet** | 23ac5ec520 (main fusionnée) | rouge : `migration-lot8-rejouable` (EVT11 sur des types de tables d'autres suites, selon l'ordre) et recette e2e acte 10 (texte exact du refus de jauge reformulé) ; tests 603/604, responsive, poids et mesure mobile verts. Corrigés : drapeau dans la transaction du test, message d'origine gardé |
+| 671 | rapide, 10 suites | 4afed6ea5d | **10/10** ; `migration-lot8-rejouable` passée **après** `l11c-tables`, `cv11c-1` et `cv11c-2`, qui laissent des types de tables en base |
 
 <!-- RUN-COMPLET-CV -->
