@@ -1486,7 +1486,7 @@ export function EventForm(props: EventFormProps) {
                         {/* Correctifs de la contre-vérification de la finition 2a (T3, T4) : dit avant d'enregistrer */}
                         <li>Déplacer le repère de plus de 200 m prévient les détenteurs de billets par SMS.</li>
                         <li>Un seul SMS par heure : les changements faits dans l’heure partent ensemble. À moins d’une heure du début, l’avis part tout de suite.</li>
-                        <li>Type d’événement : verrouillé dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.</li>
+                        <li>Type d’événement : verrouillé dès qu’un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous les places mises en vente, billets et tables compris.</li>
                     </ul>
                 </StatusBanner>
             )}
@@ -1714,8 +1714,8 @@ export function EventForm(props: EventFormProps) {
                             hint={salesStarted
                                 ? `Des billets sont vendus ou réservés : la jauge ne peut plus être retirée ni descendre sous ${formatInteger(editLocks?.capacity_floor ?? 0)} places.`
                                 : editLocks && editLocks.active_quota > 0
-                                    ? `Facultative. Elle ne descend pas sous la somme des quantités des catégories actives : ${formatInteger(editLocks.active_quota)} places.`
-                                    : 'Facultative. La somme des quantités des catégories actives ne peut pas la dépasser.'}
+                                    ? `Facultative sans table. Elle ne descend pas sous les places mises en vente, billets et tables compris : ${formatInteger(editLocks.active_quota)} places.`
+                                    : 'Facultative sans table. Les places mises en vente, billets et tables compris, ne peuvent pas la dépasser.'}
                             error={errors.capacity}
                             fieldClassName="sm:max-w-xs"
                         />
