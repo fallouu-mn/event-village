@@ -1,5 +1,5 @@
 import { clsx, type ClassValue } from 'clsx';
-import { CALCULEE, CLASSES, CONFLITS, CONFLITS_SUFFIXE } from './cn-classes';
+import { CLASSES, CONFLITS, CONFLITS_SUFFIXE } from './cn-classes';
 
 /**
  * Fusion de classes Tailwind (clsx, puis la dernière classe d'un groupe l'emporte) qui connaît les utilitaires du système de
@@ -8,7 +8,7 @@ import { CALCULEE, CLASSES, CONFLITS, CONFLITS_SUFFIXE } from './cn-classes';
  * Lot poids : même résultat qu'avant (tailwind-merge 2.6.1, extendTailwindMerge avec text-caption dans font-size) pour toute
  * classe écrite dans le code, sans la configuration complète de tailwind-merge dans chaque page. L'algorithme ci-dessous est
  * celui de tailwind-merge (mergeClassList, parseClassName, sortModifiers), pas à pas ; le groupe de chaque classe et les
- * groupes en conflit viennent de la table calculée au build (components/ui/cn-classes.ts, scripts/cn-classes.mjs). Une
+ * groupes en conflit viennent de la table calculée au build (components/ui/cn-classes.ts, scripts/cn-classes.cjs). Une
  * classe absente des sources n'a pas de CSS : elle est gardée telle quelle. Équivalence vérifiée par
  * tests/schema/poids-cn.test.ts (toutes les paires de classes du code, et des suites tirées au hasard avec modificateurs,
  * « ! », valeurs négatives et suffixes).
@@ -19,8 +19,9 @@ let groupes: Map<string, number> | null = null;
 /** Groupe d'une classe sans modificateur : numéro de la table, « arbitrary..<propriété> » pour [propriété:valeur]. */
 function groupe(base: string): number | string | undefined {
     if (!groupes) {
-        if (!CALCULEE && process.env.NODE_ENV === 'production') {
-            throw new Error('[cn] table des classes absente : components/ui/cn-classes.ts doit être calculé au build (scripts/cn-classes-loader.cjs, next.config.mjs).');
+        // Table vide : la fusion ne ferait plus rien en silence ; refus, partout (construction : chargeur ; Node : calcul)
+        if (!CLASSES) {
+            throw new Error('[cn] table des classes vide : components/ui/cn-classes.ts doit être calculé (scripts/cn-classes-loader.cjs au build, scripts/cn-classes.cjs hors construction).');
         }
         const table = new Map<string, number>();
         CLASSES.split('|').forEach((ligne, i) => ligne.split(' ').forEach((c) => { if (c) table.set(c, i); }));

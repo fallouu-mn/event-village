@@ -2,7 +2,7 @@
  * Lot poids — fusion des classes (components/ui/cn.ts) sans la configuration complète de tailwind-merge.
  *
  * Avant : cn = extendTailwindMerge({ extend: { classGroups: { 'font-size': [{ text: ['caption'] }] } } }) appliqué à clsx.
- * Après : même algorithme, sur la table des classes du projet calculée au build (scripts/cn-classes.mjs, chargeur
+ * Après : même algorithme, sur la table des classes du projet calculée au build (scripts/cn-classes.cjs, chargeur
  * scripts/cn-classes-loader.cjs). Ce test compare le NOUVEAU cn.ts (avec la table calculée) à l'ANCIEN (tailwind-merge 2.6.1,
  * même extension), sur :
  *  - toutes les paires de classes du code (chaque classe de la table devant chaque autre) ;
@@ -10,7 +10,7 @@
  *    valeurs négatives, suffixes « /… » écrits dans le code, propriétés arbitraires, mots hors Tailwind, blancs multiples ;
  *  - chaque mot des sources classé par tailwind-merge, seul puis précédé d'un autre au hasard.
  * Puis : le chargeur rend exactement la table calculée, il est branché pour toutes les constructions, le fichier du dépôt
- * reste vide (CALCULEE faux : cn refuse de servir en production sans la table), et plus aucun code de l'application
+ * calcule la même table hors webpack (tests sous Node), cn refuse une table vide, et plus aucun code de l'application
  * n'importe tailwind-merge.
  */
 import { describe, test, before } from 'node:test';
@@ -38,8 +38,8 @@ let classes: string[];
 let motsClasses: string[];
 
 before(async () => {
-    gen = await import(pathToFileURL(path.join(ROOT, 'scripts/cn-classes.mjs')).href) as Generateur;
     const require = createRequire(path.join(ROOT, 'package.json'));
+    gen = require(path.join(ROOT, 'scripts/cn-classes.cjs')) as Generateur;
     const { extendTailwindMerge } = require('tailwind-merge') as { extendTailwindMerge: (e: unknown) => (s: string) => string };
     ancien = extendTailwindMerge(gen.EXTENSION);
     // Nouveau cn.ts tel quel, à côté de la table calculée (dossier ignoré par git, dans le dépôt pour résoudre clsx)
@@ -143,15 +143,9 @@ describe('lot poids — fusion des classes identique à tailwind-merge pour les 
 describe('lot poids — table calculée au build, jamais dans le dépôt', () => {
     test('le chargeur rend exactement la table calculée et suit les dossiers des sources', async () => {
         const require = createRequire(path.join(ROOT, 'package.json'));
-        const loader = require(path.join(ROOT, 'scripts/cn-classes-loader.cjs')) as (this: unknown) => void;
+        const loader = require(path.join(ROOT, 'scripts/cn-classes-loader.cjs')) as (this: unknown) => string;
         const dossiers: string[] = [];
-        const rendu = await new Promise<string>((resolve, reject) => {
-            loader.call({
-                rootContext: ROOT,
-                async: () => (err: Error | null, src?: string) => (err ? reject(err) : resolve(src ?? '')),
-                addContextDependency: (d: string) => dossiers.push(d),
-            });
-        });
+        const rendu = loader.call({ rootContext: ROOT, addContextDependency: (d: string) => dossiers.push(d) });
         assert.equal(rendu, gen.sourceModule(ROOT));
         assert.deepEqual(dossiers.map((d) => path.relative(ROOT, d)).sort(), ['app', 'components', 'hooks', 'lib']);
     });
@@ -166,12 +160,20 @@ describe('lot poids — table calculée au build, jamais dans le dépôt', () =>
         assert.ok(corps.indexOf('config.module.rules.push') < corps.indexOf('if ('), 'règle ajoutée sans condition (navigateur, serveur, développement)');
     });
 
-    test('fichier du dépôt vide (CALCULEE faux) ; cn refuse de servir en production sans la table', () => {
-        const vide = read('components/ui/cn-classes.ts');
-        assert.match(vide, /export const CALCULEE: boolean = false;/);
-        assert.match(vide, /export const CLASSES = '';/);
+    test('fichier du dépôt (CALCULEE faux) : hors webpack, même table calculée au chargement ; cn refuse une table vide', async () => {
+        const depot = read('components/ui/cn-classes.ts');
+        assert.match(depot, /export const CALCULEE: boolean = false;/);
+        assert.match(depot, /createRequire\(join\(racine, 'package\.json'\)\)\(join\(racine, 'scripts', 'cn-classes\.cjs'\)\)/);
+        // Run complet 641 : design1e-orange appelle cn sous Node ; le fichier du dépôt, importé tel quel, donne la même table
+        const tel = await import(pathToFileURL(path.join(ROOT, 'components/ui/cn-classes.ts')).href) as { CLASSES: string; CONFLITS: unknown; CONFLITS_SUFFIXE: unknown };
+        const calc = gen.genererTable(ROOT) as unknown as { CLASSES: string; CONFLITS: unknown; CONFLITS_SUFFIXE: unknown };
+        assert.equal(tel.CLASSES, calc.CLASSES);
+        assert.deepEqual([tel.CONFLITS, tel.CONFLITS_SUFFIXE], [calc.CONFLITS, calc.CONFLITS_SUFFIXE]);
+        const cnDepot = await import(pathToFileURL(path.join(ROOT, 'components/ui/cn.ts')).href) as { cn: (...c: string[]) => string };
+        const s = 'min-h-12 px-6 text-base bg-primary text-primary-foreground-large font-bold text-[1.1875rem] leading-tight text-sm';
+        assert.equal(cnDepot.cn(s), ancien(s), 'cn du dépôt sous Node = tailwind-merge');
         const cn = read('components/ui/cn.ts');
-        assert.match(cn, /if \(!CALCULEE && process\.env\.NODE_ENV === 'production'\) \{\n\s+throw new Error/);
+        assert.match(cn, /if \(!CLASSES\) \{\n\s+throw new Error/);
     });
 
     test('plus aucun code de l\'application n\'importe tailwind-merge (seuls le calcul de la table et ce test)', () => {

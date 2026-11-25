@@ -15,24 +15,24 @@
  * Utilisé au build (scripts/cn-classes-loader.cjs remplace components/ui/cn-classes.ts par la table calculée : jamais
  * périmée, en développement comme en production) et par le test d'équivalence.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { createRequire } from 'node:module';
+const fs = require('node:fs');
+const path = require('node:path');
+const { createRequire } = require('node:module');
 
-export const DOSSIERS = ['app', 'components', 'lib', 'hooks'];
+const DOSSIERS = ['app', 'components', 'lib', 'hooks'];
 const EXTENSIONS = /\.(tsx?|jsx?|mjs|css)$/;
 /** Le fichier remplacé au build ne compte pas dans l'univers (il ne contient aucune classe). */
 const EXCLUS = new Set([path.join('components', 'ui', 'cn-classes.ts')]);
 
 /** Version vérifiée : la table dépend de fonctions internes de tailwind-merge (lues dans son module, sans le modifier). */
-export const VERSION_TAILWIND_MERGE = '2.6.1';
+const VERSION_TAILWIND_MERGE = '2.6.1';
 
 /** Configuration d'avant le lot (components/ui/cn.ts) : groupes par défaut, et text-caption est une taille de texte. */
-export const EXTENSION = { extend: { classGroups: { 'font-size': [{ text: ['caption'] }] } } };
+const EXTENSION = { extend: { classGroups: { 'font-size': [{ text: ['caption'] }] } } };
 
 let interne = null;
 /** Fonctions de tailwind-merge, internes comprises (createClassGroupUtils, createParseClassName). */
-export function tailwindMerge(root = process.cwd()) {
+function tailwindMerge(root = process.cwd()) {
     if (interne) return interne;
     const require = createRequire(path.join(root, 'package.json'));
     // Point d'entrée CommonJS (dist/bundle-cjs.js) : le paquet n'exporte pas son package.json, lu à côté de dist/
@@ -51,7 +51,7 @@ export function tailwindMerge(root = process.cwd()) {
 }
 
 /** Fichiers sources de l'univers (chemins absolus, ordre stable). */
-export function fichiersSources(root = process.cwd()) {
+function fichiersSources(root = process.cwd()) {
     const out = [];
     const walk = (d) => {
         for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -68,13 +68,13 @@ export function fichiersSources(root = process.cwd()) {
 }
 
 /** Clé de la table : sans le « - » d'une valeur négative (tailwind-merge l'ignore aussi). */
-export const cle = (b) => (b[0] === '-' && b.length > 1 ? b.slice(1) : b);
+const cle = (b) => (b[0] === '-' && b.length > 1 ? b.slice(1) : b);
 
 /**
  * Données de la fusion : CLASSES (groupes séparés par « | », classes d'un groupe séparées par une espace ; numéro du groupe
  * = rang), CONFLITS et CONFLITS_SUFFIXE (numéros), plus le détail pour les tests.
  */
-export function genererTable(root = process.cwd()) {
+function genererTable(root = process.cwd()) {
     const tm = tailwindMerge(root);
     const config = tm.mergeConfigs(tm.getDefaultConfig(), EXTENSION);
     const { getClassGroupId } = tm.createClassGroupUtils(config);
@@ -121,10 +121,10 @@ export function genererTable(root = process.cwd()) {
 }
 
 /** Source du module components/ui/cn-classes.ts calculé au build. */
-export function sourceModule(root = process.cwd()) {
+function sourceModule(root = process.cwd()) {
     const { CLASSES, CONFLITS, CONFLITS_SUFFIXE } = genererTable(root);
     return [
-        '// Calculé au build par scripts/cn-classes-loader.cjs (scripts/cn-classes.mjs) : ne pas modifier.',
+        '// Calculé au build par scripts/cn-classes-loader.cjs (scripts/cn-classes.cjs) : ne pas modifier.',
         'export const CALCULEE: boolean = true;',
         `export const CLASSES = ${JSON.stringify(CLASSES)};`,
         `export const CONFLITS: Record<number, number[]> = ${JSON.stringify(CONFLITS)};`,
@@ -132,3 +132,5 @@ export function sourceModule(root = process.cwd()) {
         '',
     ].join('\n');
 }
+
+module.exports = { DOSSIERS, VERSION_TAILWIND_MERGE, EXTENSION, tailwindMerge, fichiersSources, cle, genererTable, sourceModule };
