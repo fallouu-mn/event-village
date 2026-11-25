@@ -57,7 +57,7 @@ function ctx(params: Record<string, string>): { params: Promise<Record<string, s
 async function registerPending(): Promise<PendingPartner> {
     const phone = randomSenegalPhone('77');
     const reg = await registerPartnerTwoStep({
-        companyName: `Attente ${randomUUID().slice(0, 6)} SARL`,
+        companyName: `Attente ${randomUUID().slice(0, 6)} SARL`, commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
         description: 'Organisateur fictif en cours de vérification (lot 9 bis, R7).',
         address: '9 rue de l’Attente',
         city: 'Dakar',

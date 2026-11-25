@@ -32,7 +32,7 @@ export const MAP_SELECT = `
     longitude,
     poster_color,
     poster_blur,
-    partners(company_name, commercial_name),
+    partners(commercial_name),
     ticket_categories(price, is_active, sale_online, sale_counter, total_quantity, sold_quantity, held_quantity, sale_start, sale_end)
 `;
 

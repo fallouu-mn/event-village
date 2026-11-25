@@ -185,7 +185,7 @@ export default function PartnerRegisterPage() {
 
     const values = {
       companyName: companyName.trim(),
-      commercialName: commercialName.trim() || undefined,
+      commercialName: commercialName.trim(),
       description: description.trim(),
       address: address.trim(),
       city: city.trim(),
@@ -507,7 +507,8 @@ export default function PartnerRegisterPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <TextInput id={FIELD_IDS.companyName} label="Raison sociale" required autoComplete="organization" placeholder="Nom légal de la société"
                 value={companyName} onChange={(e) => { setCompanyName(e.target.value); clearError('companyName'); }} error={fieldErrors.companyName} />
-              <TextInput id={FIELD_IDS.commercialName} label="Nom commercial (enseigne)" placeholder="Nom connu du public"
+              <TextInput id={FIELD_IDS.commercialName} label="Nom commercial (enseigne)" required placeholder="Nom connu du public"
+                hint="C’est le seul nom que voit le public. La raison sociale n’est jamais affichée."
                 value={commercialName} onChange={(e) => { setCommercialName(e.target.value); clearError('commercialName'); }} error={fieldErrors.commercialName} />
             </div>
 

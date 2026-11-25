@@ -150,6 +150,12 @@ const REPLACED_IN_F4: Record<string, Record<string, string[]>> = {
     notification_outbox_claim: {
         'IF v_in_quiet THEN': ['IF v_in_quiet AND public.notif_event_soon(r.event_id, r.template_data, v_now) THEN', 'ELSIF v_in_quiet THEN'],
     },
+    // Carte B3 (contre-vérification, T2 ; décision du client du 25/11 ; modification signalée au rapport du lot Carte B3) :
+    // la recopie de 20261210000001 nomme l'organisatrice par son nom commercial, jamais par sa raison sociale
+    notif_tickets_scanned: {
+        "SELECT COALESCE(NULLIF(btrim(pa.company_name), ''), 'l''organisateur'), public.event_start_at(e.id), public.event_end_at(e.id)":
+            ["SELECT COALESCE(NULLIF(btrim(pa.commercial_name), ''), 'Partenaire Event Village'), public.event_start_at(e.id), public.event_end_at(e.id)"],
+    },
 };
 
 describe('1 bis. recopies successives de la branche : la dernière garde tout de la précédente', () => {

@@ -72,7 +72,7 @@ describe('C3 — accusé de réception de la partenaire par SMS', () => {
         const company = `Ndaje ${randomUUID().slice(0, 6)} SARL`;
         const phone = randomSenegalPhone('77');
         const reg = await registerPartnerTwoStep({
-            companyName: company, description: 'Organisateur fictif (lot 9 quinquies, C3).', address: '3 rue de l’Accusé', city: 'Dakar',
+            companyName: company, commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */, description: 'Organisateur fictif (lot 9 quinquies, C3).', address: '3 rue de l’Accusé', city: 'Dakar',
             activities: ['ORGANISATEUR'], firstName: 'Khady', lastName: 'Accuse', phone, email: randomEmail('c3-partenaire'),
             password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD, ...(await uploadRegistrationDocuments()),
         });

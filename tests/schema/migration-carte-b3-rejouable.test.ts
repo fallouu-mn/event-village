@@ -41,6 +41,17 @@ const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
         "'message', 'L’événement est incomplet : '",
         "|| (SELECT string_agg(m->>'message', ' ' ORDER BY o) FROM jsonb_array_elements(v_missing) WITH ORDINALITY AS x(m, o)));",
     ] },
+    // Contre-vérification (T2 ; décision du client du 25/11) : nom commercial, sinon « Partenaire Event Village », jamais la
+    // raison sociale
+    { fn: 'hall_search', file: CARTE_B3_MIGRATIONS[0], replaced: [
+        "COALESCE(NULLIF(btrim(pa.commercial_name), ''), pa.company_name) AS partner_name",
+    ] },
+    { fn: 'venue_search', file: CARTE_B3_MIGRATIONS[0], replaced: [
+        "COALESCE(NULLIF(btrim(pa.commercial_name), ''), pa.company_name) AS partner_name",
+    ] },
+    { fn: 'notif_tickets_scanned', file: CARTE_B3_MIGRATIONS[0], replaced: [
+        "SELECT COALESCE(NULLIF(btrim(pa.company_name), ''), 'l''organisateur'), public.event_start_at(e.id), public.event_end_at(e.id)",
+    ] },
 ];
 
 /** Fonctions recopiées par la session 11c-a : jamais recopiées par ce lot (consigne du 25/11). */

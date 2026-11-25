@@ -32,7 +32,7 @@ function row(extra: Partial<MapRow> = {}): MapRow {
         id: '11111111-1111-4111-8111-111111111111', title: 'Concert', status: 'PUBLIE', category: 'CONCERT', location: 'Corniche',
         city: 'Dakar', start_date: '2026-11-28', start_time: '20:00:00', end_date: '2026-11-28', end_time: '23:00:00',
         latitude: 14.69, longitude: -17.45, poster_color: '#14213d', poster_blur: BLUR,
-        partners: { company_name: 'Société Secrète SARL', commercial_name: 'Secret Prod' }, ticket_categories: [cat(5000)], ...extra,
+        partners: { company_name: 'Société Secrète SARL', commercial_name: 'Secret Prod' } as { commercial_name: string | null }, /* carte B3 (T2) : raison sociale gardée pour le contrôle de fuite, plus lue */ ticket_categories: [cat(5000)], ...extra,
     };
 }
 

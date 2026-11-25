@@ -20,6 +20,9 @@
 --     venues_validation_guard : il attend en validation) ;
 --  3. validation par l'administration refusée sans position (POSITION_REQUIRED) : hall_validation_decide et
 --     venue_validation_decide (VALIDER ; REACTIVER garde ce qui était déjà publié), event_transition (EN_ATTENTE → VALIDE).
+--  10. raison sociale jamais publique (contre-vérification, T2 ; décision du client du 25/11) : nom commercial, sinon
+--     « Partenaire Event Village », dans hall_search, venue_search, notif_tickets_scanned et la vue public_partners
+--     (colonne public_name à la place de company_name).
 -- Recopies (chaque fois la DERNIÈRE définition d'avant cette migration ; aucune ligne perdue :
 -- tests/schema/migration-carte-b3-rejouable.test.ts) :
 --   halls_validation_guard : recopie de 20261126000006_l10b_cv_envoi.sql:20-51
@@ -30,6 +33,9 @@
 --   hall_validation_decide : recopie de 20261126000001_l10b_droit_validation.sql:20-93
 --   venue_validation_decide : recopie de 20261126000001_l10b_droit_validation.sql:99-168
 --   event_transition : recopie de 20261116000003_f2a_carte.sql:826-983
+--   hall_search : recopie de 20261126000002_l10b_salles.sql:312-400
+--   venue_search : recopie de 20261129000002_l11b_fermetures_disponibilites.sql:470-576
+--   notif_tickets_scanned : recopie de 20261125000004_f4_spectateur.sql:19-82
 -- La session 11c-a (migrations 20261201…) recopie event_update, ticket_category_create et ticket_category_update :
 -- aucune des trois n'est recopiée ici, et aucune des fonctions ci-dessus n'est touchée par la 11c-a.
 -- Aucun BEGIN ni COMMIT ; rejouable (REVOKE puis GRANT, CREATE OR REPLACE ; droits des fonctions gardés).
@@ -748,3 +754,293 @@ BEGIN
                               'title', e.title, 'partner_user_id', v_owner);
 END;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- 10. Raison sociale jamais publique (contre-vérification, T2 ; décision du client du 25/11)
+-- ----------------------------------------------------------------------------
+-- Le nom montré au public est le nom commercial ; sans nom commercial (partenaires d'avant l'obligation) :
+-- « Partenaire Event Village ». La raison sociale (nom légal) ne sort plus vers un visiteur ni une cliente : ni dans les
+-- recherches (rendue et comparée au texte tapé), ni dans l'avis de bienvenue du porteur, ni dans la vue public_partners.
+
+-- hall_search : la ligne « partner_name » retombe sur « Partenaire Event Village » au lieu de la raison sociale (le texte
+-- tapé est comparé à ce même nom affiché)
+CREATE OR REPLACE FUNCTION public.hall_search(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_q      text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'q', ''), '[[:cntrl:]]', ' ', 'g')), 80), '');
+    v_city   text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'city', ''), '[[:cntrl:]]', ' ', 'g')), 80), '');
+    v_date   date;
+    v_days   integer;
+    v_cap    integer;
+    v_price  numeric;
+    v_limit  integer;
+    v_offset integer;
+    v_slot   tsrange;
+    v_like   text;
+    v_total  integer;
+    v_rows   jsonb;
+    v_cities jsonb;
+    v_sort   text := CASE WHEN p->>'sort' = 'price' THEN 'price' ELSE 'recent' END;
+BEGIN
+    BEGIN
+        v_date := NULLIF(p->>'date', '')::date;
+        v_days := COALESCE(NULLIF(p->>'days', '')::int, 1);
+        v_cap := NULLIF(p->>'capacity', '')::int;
+        v_price := NULLIF(p->>'price_max', '')::numeric;
+        v_limit := COALESCE(NULLIF(p->>'limit', '')::int, 24);
+        v_offset := COALESCE(NULLIF(p->>'offset', '')::int, 0);
+    EXCEPTION WHEN others THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'Un des filtres n’est pas valable : vérifiez la date, le nombre d’invités et le prix.');
+    END;
+    IF v_days < 1 OR v_days > 30 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'La durée va de 1 à 30 jours.');
+    END IF;
+    IF v_cap IS NOT NULL AND (v_cap < 1 OR v_cap > 100000) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'Indiquez un nombre d’invités entre 1 et 100 000.');
+    END IF;
+    IF v_price IS NOT NULL AND (v_price < 1 OR v_price > 1000000000) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'Indiquez un prix maximum d’au moins 1 F CFA.');
+    END IF;
+    v_limit := LEAST(GREATEST(v_limit, 1), 48);
+    v_offset := LEAST(GREATEST(v_offset, 0), 10000);
+    IF v_date IS NOT NULL THEN
+        IF v_date < public.hall_dakar_now()::date THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'DATE_PASSED', 'message', 'Choisissez une date à venir.');
+        END IF;
+        IF v_date > public.hall_dakar_now()::date + 548 THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'DATE_TOO_FAR', 'message', 'La date doit être dans les 18 mois à venir.');
+        END IF;
+        v_slot := public.hall_slot(v_date, v_date + (v_days - 1), NULL, NULL);
+    END IF;
+    v_like := CASE WHEN v_q IS NULL THEN NULL
+                   ELSE '%' || replace(replace(replace(v_q, '\', '\\'), '%', '\%'), '_', '\_') || '%' END;
+
+    WITH visible AS (
+        SELECT hl.id, hl.name, hl.city, hl.address, hl.capacity, hl.price_per_day, hl.price_per_hour, hl.images,
+               hl.latitude, hl.longitude, hl.amenities, hl.created_at,
+               COALESCE(NULLIF(btrim(pa.commercial_name), ''), 'Partenaire Event Village') AS partner_name
+          FROM public.halls hl JOIN public.partners pa ON pa.id = hl.partner_id
+         WHERE hl.is_active AND hl.validation_status = 'VALIDEE' AND pa.status::text = 'VALIDE'
+           AND hl.price_per_day IS NOT NULL AND hl.price_per_day >= 1
+    ), matching AS (
+        SELECT v.* FROM visible v
+         WHERE (v_like IS NULL OR v.name ILIKE v_like OR v.city ILIKE v_like OR v.address ILIKE v_like OR v.partner_name ILIKE v_like)
+           AND (v_city IS NULL OR lower(btrim(v.city)) = lower(v_city))
+           AND (v_cap IS NULL OR v.capacity >= v_cap)
+           AND (v_price IS NULL OR v.price_per_day <= v_price)
+           AND (v_slot IS NULL OR NOT EXISTS (
+                   SELECT 1 FROM public.hall_reservations r
+                    WHERE r.hall_id = v.id AND r.status IN ('EN_ATTENTE', 'CONFIRMEE') AND r.slot && v_slot))
+    )
+    SELECT (SELECT count(*) FROM matching),
+           COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'id', m.id, 'name', m.name, 'city', m.city, 'address', m.address, 'capacity', m.capacity,
+                        'price_per_day', m.price_per_day, 'price_per_hour', m.price_per_hour,
+                        'photo', m.images[1], 'photo_count', COALESCE(cardinality(m.images), 0),
+                        'latitude', m.latitude, 'longitude', m.longitude, 'partner_name', m.partner_name,
+                        'amenities', COALESCE(m.amenities, '[]'::jsonb)) ORDER BY m.rank)
+                      FROM (SELECT x.*, row_number() OVER (ORDER BY CASE WHEN v_sort = 'price' THEN x.price_per_day END, x.created_at DESC, x.id) AS rank
+                              FROM matching x ORDER BY rank LIMIT v_limit OFFSET v_offset) m), '[]'::jsonb),
+           COALESCE((SELECT jsonb_agg(c ORDER BY c) FROM (SELECT DISTINCT btrim(city) AS c FROM visible
+                                                          WHERE NULLIF(btrim(city), '') IS NOT NULL) x), '[]'::jsonb)
+      INTO v_total, v_rows, v_cities;
+    RETURN jsonb_build_object('ok', true, 'total', v_total, 'halls', v_rows, 'cities', v_cities,
+                              'limit', v_limit, 'offset', v_offset, 'sort', v_sort);
+END;
+$$;
+
+-- venue_search : même changement
+CREATE OR REPLACE FUNCTION public.venue_search(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_q      text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'q', ''), '[[:cntrl:]]', ' ', 'g')), 80), '');
+    v_city   text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'city', ''), '[[:cntrl:]]', ' ', 'g')), 80), '');
+    v_kind   text := NULLIF(upper(COALESCE(p->>'kind', '')), '');
+    v_date   date;
+    v_time   time;
+    v_guests integer;
+    v_avail  boolean := COALESCE((p->>'available')::boolean, FALSE);
+    v_limit  integer;
+    v_offset integer;
+    v_like   text;
+    v_now    timestamp := public.hall_dakar_now();
+    v_times  time[];
+    v_total  integer;
+    v_rows   jsonb;
+    v_cities jsonb;
+BEGIN
+    BEGIN
+        v_date := NULLIF(p->>'date', '')::date;
+        v_time := NULLIF(p->>'time', '')::time;
+        v_guests := COALESCE(NULLIF(p->>'guests', '')::int, 2);
+        v_limit := COALESCE(NULLIF(p->>'limit', '')::int, 24);
+        v_offset := COALESCE(NULLIF(p->>'offset', '')::int, 0);
+    EXCEPTION WHEN others THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'Un des filtres n’est pas valable : vérifiez la date, l’heure et le nombre de personnes.');
+    END;
+    IF v_guests < 1 OR v_guests > 50 THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'Indiquez un nombre de personnes entre 1 et 50.');
+    END IF;
+    IF v_kind IS NOT NULL AND v_kind NOT IN ('RESTAURANT', 'BAR', 'ESPACE') THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'Choisissez restaurant, bar ou espace.');
+    END IF;
+    IF v_time IS NOT NULL AND (EXTRACT(MINUTE FROM v_time)::int % 15 <> 0 OR EXTRACT(SECOND FROM v_time) <> 0) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FILTER', 'message', 'Choisissez une heure au quart d’heure près.');
+    END IF;
+    IF v_date IS NOT NULL THEN
+        IF v_date < v_now::date THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'DATE_PASSED', 'message', 'Choisissez une date à venir.');
+        END IF;
+        IF v_date > v_now::date + 90 THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'DATE_TOO_FAR', 'message', 'La date doit être dans les 90 jours à venir.');
+        END IF;
+        v_times := CASE WHEN v_time IS NULL
+                        THEN ARRAY(SELECT gs::time FROM generate_series(timestamp '2001-01-01 12:00', timestamp '2001-01-01 22:00', interval '30 minutes') gs)
+                        ELSE ARRAY(SELECT (timestamp '2001-01-01' + v_time + d * interval '30 minutes')::time
+                                     FROM generate_series(-2, 2) d
+                                    WHERE timestamp '2001-01-01' + v_time + d * interval '30 minutes' >= timestamp '2001-01-01'
+                                      AND timestamp '2001-01-01' + v_time + d * interval '30 minutes' < timestamp '2001-01-02') END;
+    END IF;
+    v_limit := LEAST(GREATEST(v_limit, 1), 48);
+    v_offset := LEAST(GREATEST(v_offset, 0), 10000);
+    v_like := CASE WHEN v_q IS NULL THEN NULL
+                   ELSE '%' || replace(replace(replace(v_q, '\', '\\'), '%', '\%'), '_', '\_') || '%' END;
+
+    WITH visible AS (
+        SELECT ve.id, ve.name, ve.kind, ve.city, ve.address, ve.photos, ve.latitude, ve.longitude, ve.deposit_per_person,
+               ve.confirmation_mode, ve.created_at, ve.floor_plan_enabled,
+               COALESCE(ve.slot_minutes, public.fin_setting_num('tables.slot_minutes')::int) AS slot_min,
+               COALESCE(NULLIF(btrim(pa.commercial_name), ''), 'Partenaire Event Village') AS partner_name
+          FROM public.venues ve JOIN public.partners pa ON pa.id = ve.partner_id
+         WHERE ve.is_active AND ve.validation_status = 'VALIDEE' AND pa.status::text = 'VALIDE'
+    ), matching AS (
+        SELECT vi.* FROM visible vi
+         WHERE (v_like IS NULL OR vi.name ILIKE v_like OR vi.city ILIKE v_like OR vi.address ILIKE v_like OR vi.partner_name ILIKE v_like)
+           AND (v_city IS NULL OR lower(btrim(vi.city)) = lower(v_city))
+           AND (v_kind IS NULL OR vi.kind = v_kind)
+           AND EXISTS (SELECT 1 FROM public.restaurant_tables c WHERE c.venue_id = vi.id AND c.is_active
+                          AND v_guests BETWEEN c.min_capacity AND c.capacity)
+    ), slotted AS (
+        SELECT m.*,
+               CASE WHEN v_date IS NULL THEN '[]'::jsonb ELSE COALESCE((
+                   SELECT jsonb_agg(jsonb_build_object('time', to_char(t, 'HH24:MI'),
+                                                       'state', CASE WHEN v_date + t <= v_now THEN 'PASSE'
+                                                                     WHEN public.table_free_count(m.id, tsrange(v_date + t, v_date + t + m.slot_min * interval '1 minute', '[)'), v_guests, NULL) > 0
+                                                                     THEN 'LIBRE' ELSE 'COMPLET' END) ORDER BY t)
+                     FROM unnest(v_times) AS t
+                    WHERE public.venue_open_covers(m.id, tsrange(v_date + t, v_date + t + m.slot_min * interval '1 minute', '[)'))
+                      AND NOT public.venue_closed_during(m.id, tsrange(v_date + t, v_date + t + m.slot_min * interval '1 minute', '[)'))), '[]'::jsonb) END AS slots
+          FROM matching m
+    ), filtered AS (
+        SELECT s.*, EXISTS (SELECT 1 FROM jsonb_array_elements(s.slots) e WHERE e->>'state' = 'LIBRE') AS has_free
+          FROM slotted s
+         WHERE NOT v_avail OR v_date IS NULL OR EXISTS (SELECT 1 FROM jsonb_array_elements(s.slots) e WHERE e->>'state' = 'LIBRE')
+    )
+    SELECT (SELECT count(*) FROM filtered),
+           COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'id', f.id, 'name', f.name, 'kind', f.kind, 'city', f.city, 'address', f.address,
+                        'photo', f.photos[1], 'photo_count', cardinality(f.photos), 'latitude', f.latitude, 'longitude', f.longitude,
+                        'deposit_per_person', f.deposit_per_person, 'confirmation_mode', f.confirmation_mode,
+                        'slot_minutes', f.slot_min, 'partner_name', f.partner_name, 'floor_plan', f.floor_plan_enabled,
+                        'slots', f.slots, 'has_free', f.has_free) ORDER BY f.rank)
+                      FROM (SELECT x.*, row_number() OVER (ORDER BY x.has_free DESC, x.created_at DESC, x.id) AS rank
+                              FROM filtered x ORDER BY rank LIMIT v_limit OFFSET v_offset) f), '[]'::jsonb),
+           COALESCE((SELECT jsonb_agg(c ORDER BY c) FROM (SELECT DISTINCT btrim(city) AS c FROM visible
+                                                          WHERE NULLIF(btrim(city), '') IS NOT NULL) y), '[]'::jsonb)
+      INTO v_total, v_rows, v_cities;
+    RETURN jsonb_build_object('ok', true, 'total', v_total, 'venues', v_rows, 'cities', v_cities, 'limit', v_limit, 'offset', v_offset,
+                              'date', v_date, 'time', to_char(v_time, 'HH24:MI'), 'guests', v_guests);
+END;
+$$;
+
+-- notif_tickets_scanned : l'organisatrice de l'avis de bienvenue et du merci du lendemain est le nom commercial (avant :
+-- la raison sociale, sinon « l'organisateur »)
+CREATE OR REPLACE FUNCTION public.notif_tickets_scanned()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_group text;
+    v_count integer;
+    -- Finition 4 (point 3) : bienvenue et merci du lendemain
+    v_welcome  integer;
+    v_org      text;
+    v_start    timestamptz;
+    v_end      timestamptz;
+    v_thanks   timestamptz;
+BEGIN
+    -- Finition 4 (point 3) : premier passage du porteur à cet événement → bienvenue (une seule fois, clé unique par canal)
+    SELECT COALESCE(NULLIF(btrim(pa.commercial_name), ''), 'Partenaire Event Village'), public.event_start_at(e.id), public.event_end_at(e.id)
+      INTO v_org, v_start, v_end
+      FROM public.events e LEFT JOIN public.partners pa ON pa.id = e.partner_id
+     WHERE e.id = NEW.event_id;
+    v_welcome := public.notif_enqueue(jsonb_build_object(
+        'type', 'ENTRY_WELCOME', 'key', 'ENTRY_WELCOME:' || NEW.user_id::text || ':' || NEW.event_id::text,
+        'user_id', NEW.user_id, 'event_id', NEW.event_id,
+        'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb)
+                || jsonb_build_object('organizer', v_org, 'ticket_id', NEW.id, 'entered_at', now())));
+    IF v_welcome > 0 THEN
+        v_thanks := ((((v_start AT TIME ZONE 'Africa/Dakar')::date + 1) + time '11:00') AT TIME ZONE 'Africa/Dakar');
+        IF v_end IS NOT NULL AND v_thanks < v_end + interval '1 hour' THEN
+            v_thanks := ((((v_end AT TIME ZONE 'Africa/Dakar')::date + 1) + time '11:00') AT TIME ZONE 'Africa/Dakar');
+        END IF;
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'ENTRY_THANKS', 'key', 'ENTRY_THANKS:' || NEW.user_id::text || ':' || NEW.event_id::text,
+            'user_id', NEW.user_id, 'event_id', NEW.event_id, 'due_at', GREATEST(v_thanks, now()),
+            'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb) || jsonb_build_object('organizer', v_org)));
+        -- la bienvenue tient lieu d'« Entrée validée » pour ce billet
+        RETURN NULL;
+    END IF;
+
+    SELECT o.group_key,
+           CASE WHEN o.template_data->>'ticket_count' ~ '^[0-9]{1,6}$' THEN (o.template_data->>'ticket_count')::integer ELSE 1 END
+      INTO v_group, v_count
+      FROM public.notification_outbox o
+     WHERE o.type = 'TICKET_SCANNED' AND o.channel = 'IN_APP' AND o.status = 'PENDING'
+       AND o.recipient_user_id = NEW.user_id AND o.event_id = NEW.event_id
+       AND (o.template_data->>'payment_id') IS NOT DISTINCT FROM NEW.payment_id::text
+     ORDER BY o.created_at, o.id
+     LIMIT 1
+       FOR UPDATE;
+    IF v_group IS NOT NULL THEN
+        UPDATE public.notification_outbox
+           SET template_data = jsonb_set(template_data, '{ticket_count}', to_jsonb(v_count + 1))
+         WHERE group_key = v_group AND type = 'TICKET_SCANNED' AND status = 'PENDING';
+        RETURN NULL;
+    END IF;
+    PERFORM public.notif_enqueue(jsonb_build_object(
+        'type', 'TICKET_SCANNED', 'key', 'TICKET_SCANNED:' || NEW.id::text,
+        'user_id', NEW.user_id, 'event_id', NEW.event_id, 'due_at', now() + interval '2 minutes',
+        'data', COALESCE(public.notif_event_data(NEW.event_id), '{}'::jsonb)
+                || jsonb_strip_nulls(jsonb_build_object('ticket_id', NEW.id, 'payment_id', NEW.payment_id, 'ticket_count', 1))));
+    RETURN NULL;
+END;
+$$;
+
+-- public_partners (20261102000001_lot5_securite.sql:35-44) : la colonne company_name devient public_name (nom commercial,
+-- sinon « Partenaire Event Village ») ; aucun écran ne lit cette vue (seul tests/security/r18-partenaires-public.test.ts).
+-- Une colonne ne se renomme pas par CREATE OR REPLACE VIEW : la vue est recréée.
+DROP VIEW IF EXISTS public.public_partners;
+CREATE VIEW public.public_partners
+WITH (security_barrier = true) AS
+SELECT p.id, COALESCE(NULLIF(btrim(p.commercial_name), ''), 'Partenaire Event Village') AS public_name, p.logo_url, p.city, p.description, p.status
+  FROM public.partners p
+ WHERE p.status = 'VALIDE';
+COMMENT ON VIEW public.public_partners IS
+    'Lot 5 (A2) ; carte B3 (T2) : fiche publique des partenaires VALIDE (id, nom commercial ou « Partenaire Event Village », logo, ville, description, statut), sans raison sociale ni donnée administrative.';
+REVOKE ALL ON public.public_partners FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.public_partners TO anon, authenticated;
+GRANT ALL ON public.public_partners TO service_role;

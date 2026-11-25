@@ -134,7 +134,7 @@ function row(cats: CatalogCategoryRow[], extra: Partial<CatalogRow> = {}): Catal
     return {
         id: '11111111-1111-4111-8111-111111111111', slug: null, title: 'Concert', category: 'CONCERT', location: 'Grand Théâtre',
         city: 'Dakar', start_date: '2026-11-21', start_time: '22:00:00', end_date: null, end_time: null, image_url: null,
-        status: 'PUBLIE', partners: { company_name: 'Org', commercial_name: null }, ticket_categories: cats, ...extra,
+        status: 'PUBLIE', partners: { company_name: 'Org', commercial_name: null } as { commercial_name: string | null }, /* carte B3 (T2) : raison sociale plus lue */ ticket_categories: cats, ...extra,
     };
 }
 

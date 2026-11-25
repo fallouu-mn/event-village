@@ -653,7 +653,7 @@ describe('6.6 Partenaire — compte (trg_partners_notify, partner_status_set, J2
         const phone = randomSenegalPhone('76');
         const email = randomEmail('pros-inscription');
         const reg = await registerPartnerTwoStep({ // lot 9 bis (R53, T38) : deux appels de la même route, code lu dans le faux SMS
-            companyName: 'Inscription Test SARL', description: 'Organisateur fictif créé par les tests du lot 6.', address: '12 rue des Tests',
+            companyName: 'Inscription Test SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */, description: 'Organisateur fictif créé par les tests du lot 6.', address: '12 rue des Tests',
             city: 'Dakar', activities: ['ORGANISATEUR'], firstName: 'Fatou', lastName: 'Inscrite', phone, email,
             password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD, ...(await uploadRegistrationDocuments()),
         }, { headers: { 'x-forwarded-for': `${freshIp()}, 10.0.0.1` } });

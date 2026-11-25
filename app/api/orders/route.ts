@@ -3,6 +3,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
 import { featureNotFound, featuresUnavailable, getFeatureFlags, type FeatureFlags } from '@/lib/features/flags';
 import { formatFcfa } from '@/lib/format';
+import { partnerPublicName } from '@/lib/partner/public-name';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
                 payment_status,
                 created_at,
                 partner_id,
-                partners(company_name, commercial_name),
+                partners(commercial_name),
                 order_items(id, product_name, quantity, total_price)
             `)
             .eq('client_id', effectiveUserId)
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
                 hall_id,
                 halls(name, images),
                 partner_id,
-                partners(company_name, commercial_name)
+                partners(commercial_name)
             `)
             .eq('client_id', effectiveUserId)
             .order('created_at', { ascending: false });
@@ -83,7 +84,7 @@ export async function GET(req: NextRequest) {
                 payment_status,
                 created_at,
                 partner_id,
-                partners(company_name, commercial_name)
+                partners(commercial_name)
             `)
             .eq('client_id', effectiveUserId)
             .order('created_at', { ascending: false });
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest) {
                 id: o.id,
                 orderNumber: o.order_number,
                 type: 'FOOD_ORDER',
-                title: `Commande Traiteur — ${o.partners?.commercial_name || o.partners?.company_name || 'Restaurant'} (${(o.order_items || []).length} article${(o.order_items || []).length > 1 ? 's' : ''})`,
+                title: `Commande Traiteur — ${partnerPublicName(o.partners)} (${(o.order_items || []).length} article${(o.order_items || []).length > 1 ? 's' : ''})`,
                 itemCount: (o.order_items || []).length,
                 totalAmountFormatted: formatFcfa(total),
                 status: o.order_status,
@@ -146,7 +147,7 @@ export async function GET(req: NextRequest) {
                 id: t.id,
                 orderNumber: `TAB-${t.id.substring(0, 8).toUpperCase()}`,
                 type: 'TABLE_RESERVATION',
-                title: `Table ${t.partners?.commercial_name || t.partners?.company_name || 'Restaurant'} (${t.guest_count} pers. - ${t.reservation_time})`,
+                title: `Table ${partnerPublicName(t.partners)} (${t.guest_count} pers. - ${t.reservation_time})`,
                 itemCount: t.guest_count,
                 totalAmountFormatted: deposit > 0 ? formatFcfa(deposit) : 'Sur place',
                 status: t.status,
