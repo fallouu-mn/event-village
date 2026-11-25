@@ -1,7 +1,8 @@
 /**
  * Lot 2 — invariant global de la chaîne paiement → billet, vérifié à la fin de chaque suite de
  * paiement par une requête SQL sur la base LOCALE (lecture seule, sauf la purge des réservations échues) :
- *  (a) aucun paiement SUCCESS (ou PARTIAL, lot 3) de billetterie sans ses billets (nombre exact = quantités réservées) ;
+ *  (a) aucun paiement SUCCESS (ou PARTIAL, lot 3) de billetterie sans ses billets (nombre exact = quantités réservées ;
+ *      lot 11c-a : une table réservée compte ses places) ;
  *  (b) aucun billet payant VALIDE ou UTILISE sans paiement SUCCESS ou PARTIAL (remboursement partiel, lot 3),
  *      hors billet VALIDE « à régler sur place » d'une commande impayée (encaissement au contrôle, lot 4) ;
  *  (c) pour chaque catégorie : sold + held ≤ total, et held = somme des réservations non expirées.
@@ -17,7 +18,10 @@ import { inspect, writeLocal } from './db';
 
 export const INVARIANT_SQL = `
 WITH reserved AS (
-    SELECT payment_id, sum(quantity)::int AS qty FROM public.stock_reservations GROUP BY payment_id
+    -- Lot 11c-a (modification signalée au rapport) : une table d'un événement est une unité de réservation qui émet
+    -- autant de billets que de places (seats_per_unit, 1 pour une catégorie de billets)
+    SELECT r.payment_id, sum(r.quantity * c.seats_per_unit)::int AS qty
+      FROM public.stock_reservations r JOIN public.ticket_categories c ON c.id = r.category_id GROUP BY r.payment_id
 ), issued AS (
     SELECT payment_id, count(*)::int AS n FROM public.tickets WHERE payment_id IS NOT NULL GROUP BY payment_id
 ), active AS (

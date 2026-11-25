@@ -713,6 +713,8 @@ const LOT12A_RPCS: Array<[string, Record<string, unknown>]> = [
 // les aides internes sont dans le schéma private (hors de l'API : migration-lot11c-rejouable le vérifie)
 const LOT11C_RPCS: Array<[string, Record<string, unknown>]> = [
     ['event_tables_setting_set', { p_key: 'features.event_tables_enabled', p_value: { value: true }, p_actor: ZERO_UUID, p_reason: 'test' }],
+    ['event_tables_setting_valid', { p_key: 'event_tables.max_per_account', v: 2 }],
+    ['event_tables_settings_defaults', {}],
     ['event_table_type_save', { p: {} }],
     ['event_table_type_delete', { p: {} }],
     ['event_tables_save', { p: {} }],

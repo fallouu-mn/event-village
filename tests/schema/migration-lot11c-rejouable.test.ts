@@ -36,12 +36,14 @@ export const LOT11C_MIGRATIONS = [
 
 /** Recopies : fonction, migration de la recopie, lignes de la définition précédente qu'elle remplace. */
 const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
-    // Jauge en places : quotas × places par unité
+    // Jauge en places : quotas × places par unité ; un type de table arrêté garde ses tables vendues ou en paiement
     { fn: 'ticket_category_create', file: LOT11C_MIGRATIONS[2], replaced: [
         'SELECT COALESCE(sum(c.total_quantity), 0)::int INTO v_sum',
+        'FROM public.ticket_categories c WHERE c.event_id = v_event AND c.is_active;',
     ] },
     { fn: 'ticket_category_update', file: LOT11C_MIGRATIONS[2], replaced: [
         'SELECT COALESCE(sum(o.total_quantity), 0)::int INTO v_sum',
+        'FROM public.ticket_categories o WHERE o.event_id = v_event AND o.is_active AND o.id <> c.id;',
     ] },
     { fn: 'event_update', file: LOT11C_MIGRATIONS[2], replaced: [
         'SELECT COALESCE(sum(c.sold_quantity + c.held_quantity), 0)::int,',
@@ -55,7 +57,7 @@ const RECOPIES: Array<{ fn: string; file: string; replaced: string[] }> = [
 
 /** Fonctions publiques du lot (appelées par les routes du serveur) : rôle de service seulement. */
 const PUBLIC_FUNCTIONS = [
-    'event_tables_setting_set(text, jsonb, uuid, text)',
+    'event_tables_setting_set(text, jsonb, uuid, text)', 'event_tables_setting_valid(text, jsonb)', 'event_tables_settings_defaults()',
     'event_table_type_save(jsonb)', 'event_table_type_delete(jsonb)', 'event_tables_save(jsonb)', 'event_table_config(jsonb)',
     'event_table_offer(jsonb)', 'event_table_quote(jsonb)', 'event_table_mine(jsonb)', 'event_table_door_list(jsonb)',
     'event_table_badge(uuid)', 'event_table_postponement_refund(jsonb)', 'event_table_seats_reminders(jsonb)',

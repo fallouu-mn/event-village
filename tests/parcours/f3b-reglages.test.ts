@@ -63,8 +63,12 @@ describe('bornes : le catalogue de l’écran et la base disent la même chose',
         const { SETTING_BOUNDS } = (await importModule('../../lib/settings/catalog')) as { SETTING_BOUNDS: Record<string, Bounds> };
         const faults: string[] = [];
         await inspect(async (c) => {
-            const valid = async (key: string, v: number): Promise<boolean> =>
-                (await c.query<{ ok: boolean }>('SELECT public.fin_setting_valid($1, to_jsonb($2::numeric)) AS ok', [key, v])).rows[0].ok;
+            // Lot 11c-a (modification signalée au rapport) : les clés event_tables.* sont validées par event_tables_setting_valid
+            // (fin_setting_valid n'est pas recopié : la suite d'audit cv12a-3, S1, n'en admet qu'une recopie après main)
+            const valid = async (key: string, v: number): Promise<boolean> => (await c.query<{ ok: boolean }>(
+                key.startsWith('event_tables.')
+                    ? 'SELECT public.event_tables_setting_valid($1, to_jsonb($2::numeric)) AS ok'
+                    : 'SELECT public.fin_setting_valid($1, to_jsonb($2::numeric)) AS ok', [key, v])).rows[0].ok;
             for (const [key, b] of Object.entries(SETTING_BOUNDS)) {
                 if (!(await valid(key, b.min))) faults.push(`${key} : min ${b.min} refusé par la base`);
                 if (!(await valid(key, b.max))) faults.push(`${key} : max ${b.max} refusé par la base`);
