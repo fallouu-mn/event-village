@@ -303,4 +303,57 @@ Autres fichiers existants modifiés :
 - Page des réglages : les deux réglages du lot sont libellés (section « Tables des événements ») ; à reprendre dans la
   maquette de la page si elle change.
 
-<!-- RUNS -->
+## Runs
+
+Journaux publiés sur la branche `ci-results`, dossier `runs/<n>-<id>/`. Sorties brutes recopiées telles quelles.
+
+| Run | Mode | Commit | Résultat | Cause et suite donnée |
+|---|---|---|---|---|
+| 648 | rapide, 15 suites | 87af542117 | 14/15 | `notif-modeles` : textes SMS exacts des 4 avis absents ; ajoutés |
+| 649 | rapide, 31 suites | a9622a7b73 | 12/31 | D9 (devis en 500), place `UTILISE` sans scan laissée par le test (17 suites rouges sur l'invariant (g)), paiement tardif déjà `REFUNDED` ; corrigés |
+| 650 | rapide, 31 suites | a1cd3fb98a | 31/31 | — |
+| 651 | **complet** | d3d5472112 | tests 600/604, mesure mobile hors seuil | `design1b-fiche`, `f3b-ecrans`, `zones-schema`, `recette-matrice` ; Mes billets 89 |
+| 655 | rapide, 10 suites | b9f9669918 | 9/10 | `recette-matrice` : une ligne citée de `notif-modeles` encore décalée ; recalée |
+| 656 | **complet** | 57f3b29498 | tests 604/604, responsive 0 défaut, poids OK, e2e OK ; mesure mobile hors seuil (Mes billets 87) | voir ci-dessous |
+
+Le premier run complet (651) étant rouge, un second a été nécessaire (656), contrairement au « run complet unique »
+prévu.
+
+**Run complet 656** (`runs/656-45616804309`) :
+
+```
+job_tests-1=resultat:success   TOTAL : 151 suite(s) — 151 réussie(s), 0 en échec, 0 expirée(s)
+job_tests-2=resultat:success   TOTAL : 151 suite(s) — 151 réussie(s), 0 en échec, 0 expirée(s)
+job_tests-3=resultat:success   TOTAL : 150 suite(s) — 150 réussie(s), 0 en échec, 0 expirée(s)
+job_tests-4=resultat:success   TOTAL : 152 suite(s) — 152 réussie(s), 0 en échec, 0 expirée(s)
+job_qualite=resultat:success   (typecheck · lint)
+build=success
+js_budget=success              marge minimale 9 746 octets gzip (/events/[id]) ; js-budget.tsv identique à celui de main (run 646)
+e2e=success
+responsive=success             Contrôle responsive : 190 résultat(s) (page × thème), 0 défaut(s) bloquant(s).
+perf_mobile=failure            perf_mobile_mesure=hors-seuil
+```
+
+Mesure mobile du run 656 :
+
+```
+OK — Accueil
+  OK — score Lighthouse mobile : médiane 92 sur 5 passage(s) [92 ; 90 ; 95 ; 92 ; 95] (seuil ≥ 90)
+OK — Fiche événement (« ce soir »)
+  OK — score Lighthouse mobile : médiane 92 sur 5 passage(s) [91 ; 90 ; 92 ; 94 ; 92] (seuil ≥ 90)
+HORS SEUIL — Mes billets (client connecté)
+  HORS SEUIL — score Lighthouse mobile : médiane 87 sur 5 passage(s) [92 ; 87 ; 91 ; 86 ; 84] (seuil ≥ 90)
+  · poids transféré (médiane) : 403,3 Ko ; TBT 485 ms ; FCP 936 ms ; Speed Index 1,01 s
+OK — Réaction au toucher
+  OK — réaction au toucher (Event Timing, la plus longue sur 10 toucher(s)) : 104 ms (seuil < 200 ms)
+VERDICT : HORS SEUIL — au moins une mesure ne tient pas son seuil (le run est rouge)
+```
+
+« Mes billets » n'est pas touchée par ce lot. Son JS est identique, octet pour octet, à celui de main (`js-budget.tsv`
+de 646 et de 656 identiques), et le poids transféré aussi (403,3 Ko aux runs 643, 646 et 656). Seul le temps de
+blocage varie d'un run à l'autre, déjà sur main (TBT 287 ms au run 643, 423 ms au run 646). Médianes de la page sur
+les runs précédents : 89 (630, 633), 90 (631, 646), 91 à 94 ailleurs. Comme le veut la règle (un point de moins sur
+une page non touchée : relance de la mesure, rien d'autre), la mesure est relancée seule (`ci-perf: oui`) sans
+changer le code.
+
+<!-- PERF -->
