@@ -1,7 +1,8 @@
 # Lot Carte B3 — salles et restaurants sur la carte, lieux publics, position obligatoire
 
 Branche `carte-b3/lieux` (depuis `main` 76e09fb733), worktree `event-village-carteb3`. Non fusionnée ; migration
-`20261210000001` **non appliquée** : une contre-vérification indépendante suit.
+`20261210000001` **non appliquée**. Contre-vérification faite (`docs/audit-carte-b3.md`, T1-T4) : **corrigée** (§ 10),
+run complet 679 entièrement vert. Fusion : seulement avec le feu vert de l'utilisateur, après la fusion du lot 11c-a.
 
 ## À lire en premier
 
@@ -25,7 +26,12 @@ réponses publiques » est gardée et testée sur toutes les lectures publiques 
 F3 (adresse et point sur les routes publiques) et F4 (adresse sur l'écran de réservation) **ne sont plus des failles**
 (décision du 25/11) : leurs tests vérifient maintenant que ces données sont rendues (§ 3).
 
-**Verdict.** Run complet 665 (`31e8cec880`) : build, budgets, e2e (787 captures, 0 en échec), responsive (190
+**Verdict des correctifs de la contre-vérification (§ 10).** T1 à T4 corrigés, décisions du 25/11 (raison sociale
+jamais publique, nom commercial obligatoire ; événement suspendu = page neutre) appliquées ; run complet 679
+(`a3ddb11d7a`) **entièrement vert** : 611/611 suites, build, budgets, e2e, responsive 0 défaut, mesure valide
+(92 / 92 / 95, 1re tentative) ; suites d'audit non modifiées.
+
+**Verdict du lot avant la contre-vérification.** Run complet 665 (`31e8cec880`) : build, budgets, e2e (787 captures, 0 en échec), responsive (190
 résultats, 0 défaut ; tests du lot verts) et mesure mobile **valide** (93 / 94 / 93, 1re tentative) ; tests : 3 suites
 anciennes rouges (une dans chacun des lots 1, 2 et 4 ; lot 3 vert), toutes dues à la position obligatoire (§ 4). Corrigées sans changer une assertion, puis run
 rapide 669 (`660d741d78`) **vert** : les 3 suites, `messages-bruts` et les 5 suites du lot, typecheck et lint. Aucun
@@ -464,4 +470,91 @@ Nouveaux tests du lot : `tests/parcours/cb3-nom-commercial.test.ts` (repli, obli
 | `tests/parcours/cycle-visibilite.test.ts` (lot 5, contrat E) | SUSPENDU : fiche neutre (clés exactes `id`, `message`, `purchasable`, `status`, `unavailable`) au lieu du bandeau ; même nombre de lignes (141 et 216, citées, inchangées) | décision 2 |
 | `tests/schema/carte-b-donnees.test.ts`, `tests/schema/design1b-catalogue.test.ts` | conversion de type sur la ligne qui construit `partners` (`company_name` n'est plus dans le type lu) ; valeurs et assertions inchangées | T2 |
 
-<!-- CV_RUNS -->
+### 10.4 Runs et sorties brutes
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 677 | `b17da5e6bf` | rapide (96 suites : lot, audits de la carte B3 et des lots 10a, 10b, 11a, 11b, toutes les suites qui citent les tables, fonctions et routes touchées) | 73/96 ; typecheck et lint OK ; 23 rouges : 19 par l'invariant q6 du lot 9 quater et `cv11a-4-droits` (aide nommée `venue_listed`, qui ne lisait pas le statut elle-même), `partenaire-profil-rpc` (nom commercial vidé), `recette-matrice` (`cycle-visibilite.test.ts:141` et `:216` décalées), `cb3-nom-commercial` (donnée de départ invalide) ; **`cvcb3-1-trous`, `cvcb3-2-gardes`, `cvcb3-3-statique` verts** |
+| 678 | `f42f24b6c1` | rapide (les 23 suites rouges) | **23/23 vert**, typecheck OK (40 s), lint OK (12 s) |
+| 679 | `a3ddb11d7a` | **complet** | **entièrement vert** : 4 lots 153 + 153 + 153 + 152 = 611 suites, 0 en échec ; build, budgets, e2e (787 captures, 0 en échec), responsive 190 résultats / 0 défaut ; mesure mobile **valide dès la 1re tentative** (pas « faussée ») : accueil 92, fiche 92, Mes billets 95, toucher 80 ms |
+
+Sorties brutes du run complet 679 (`ci-results`, `runs/679-45692884511/`) :
+
+```
+job_status=success
+build=success
+js_budget=success
+e2e=success
+controle_lots=ok
+responsive=success
+perf_mobile_mesure=ok
+perf_mobile_tentatives=1
+TOTAL : 153 suite(s) — 153 réussie(s), 0 en échec, 0 expirée(s)
+TOTAL : 153 suite(s) — 153 réussie(s), 0 en échec, 0 expirée(s)
+TOTAL : 153 suite(s) — 153 réussie(s), 0 en échec, 0 expirée(s)
+TOTAL : 152 suite(s) — 152 réussie(s), 0 en échec, 0 expirée(s)
+```
+
+```
+route	fichiers	octets_gzip	octets_bruts	budget	statut
+/	17	215068	728629	226342	OK
+/events/[id]	17	223745	757296	233316	OK
+/tickets	20	239990	808320	250417	OK
+/controller/scanner	16	224947	763783	234911	OK
+/billet/hors-ligne	15	214066	730110	224268	OK
+/explore	18	225578	758427	235712	OK
+```
+
+Fiche d'un événement : +100 octets gzip depuis le run 665 (page neutre, `lib/events/unavailable-event.ts` lu par la
+billetterie) ; marge 9 571 octets.
+
+```
+[perf-mobile] tentative 1 (135 s) : valide
+  OK — score Lighthouse mobile : médiane 92 sur 5 passage(s) [92 ; 90 ; 90 ; 94 ; 92] (seuil ≥ 90)
+  OK — score Lighthouse mobile : médiane 92 sur 5 passage(s) [92 ; 94 ; 89 ; 95 ; 92] (seuil ≥ 90)
+  OK — score Lighthouse mobile : médiane 95 sur 5 passage(s) [95 ; 93 ; 95 ; 93 ; 96] (seuil ≥ 90)
+  OK — réaction au toucher (Event Timing, la plus longue sur 10 toucher(s)) : 80 ms (seuil < 200 ms)
+  tentative 1 : valide
+[carte-b3] salle validée visible sur la carte après 15 ms
+[carte-b3] salle suspendue retirée de la carte après 14 ms
+Contrôle responsive : 190 résultat(s) (page × thème), 0 défaut(s) bloquant(s).
+[e2e] index des captures : .e2e-captures/captures/index.txt (787 entrée(s), 0 en échec)
+[e2e] résumé :connexion OK · captures OK · emails OK · dev-page OK · fumee OK · terrain OK · pwa OK · deconnexion OK · connexion-course OK · fake-prod OK · perf OK · recette OK
+  ✓   16 [mobile] › e2e/captures.spec.ts:202:9 › clair · anonyme › evenement-suspendu — Page publique — événement suspendu (page neutre, carte B3) (1.5s)
+```
+
+Trous de la contre-vérification, run 679 (`jobs/tests-1/verify.log`), **suite d'audit non modifiée** :
+
+```
+    ok 1 - halls : aucune ligne pour la clé anon ni pour le jeton d’un attaquant
+    ok 2 - venues : aucune ligne pour la clé anon ni pour le jeton d’un attaquant
+    ok 3 - halls.validated_by : l’identifiant du compte de l’administratrice n’est jamais rendu
+ok 1 - T1 — REST : salles et établissements encore lisibles par les rôles publics
+    ok 1 - recherches, fiches et tables des lieux : la raison sociale n’est jamais rendue
+    ok 2 - recherche : la raison sociale tapée ne retrouve pas les lieux (oracle)
+    ok 3 - vue public_partners : la raison sociale n’est pas lisible par la clé anon (partner_id des lieux y mène)
+    ok 4 - événement publié : carte et fiche ne rendent pas la raison sociale
+ok 2 - T2 — raison sociale de la partenaire dans les réponses publiques
+    ok 1 - VALIDE → PUBLIE refusé en base sans position (événement validé avant l’obligation)
+ok 3 - T3 — publication sans position
+    ok 1 - témoin : un changement de nom accepté vide la carte
+    ok 2 - nom changé + horaires refusés : rien d’écrit, ou la carte est vidée
+ok 4 - T4 — modification d’un établissement : écriture partielle, carte non vidée
+```
+
+Captures de la page neutre : `runs/679-45692884511/captures/evenement-suspendu__{mobile,ordinateur}__{clair,sombre}.png`
+(relues sur le poste : aucun titre, lieu ni date ; « Mes billets » et « Explorer les événements »).
+
+### 10.5 Points ouverts
+
+- **Fusion** : seulement avec le feu vert de l'utilisateur, **après la fusion du lot 11c-a** (consigne du 25/11).
+- **Migration** `20261210000001` non appliquée ; `03-verification.sql` attend désormais 10 aides : à lancer après elle.
+- **Partenaires inscrites par l'ancienne route** : leur nom commercial est souvent la raison sociale recopiée
+  (l'inscription recopiait `companyName` quand l'enseigne était vide) ; elles restent affichées sous ce nom. Les
+  compter et les inviter à choisir un nom commercial est à décider (lecture seule :
+  `SELECT status, count(*) FROM public.partners WHERE btrim(commercial_name) = btrim(company_name) GROUP BY status;`).
+- **Avis « Événement suspendu » au porteur** : son lien mène toujours à la fiche, désormais la page neutre qui renvoie à
+  « Mes billets » ; le faire pointer directement vers « Mes billets » est à décider.
+- **Page neutre** : au téléphone, « Mes billets » se coupe après le guillemet ouvrant (espaces insécables à mettre
+  autour du nom).
+- **Observations O1, O3, O4** de la contre-vérification : non traitées.

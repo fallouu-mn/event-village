@@ -254,3 +254,26 @@ la position refusé par les routes (`tests/parcours/cb3-position-obligatoire.tes
 | `tests/audit/cvcb3-1-trous.test.ts` | T1 à T4 (et un témoin pour T4) | rouge tant que les trous existent (le témoin est vert) |
 | `tests/audit/cvcb3-2-gardes.test.ts` | G1 à G5 | vert |
 | `tests/audit/cvcb3-3-statique.test.ts` | S1 à S3 (sans base) | vert (17/17 en local) |
+
+## 8. Correctifs (branche `carte-b3/lieux`, 25/11)
+
+Les suites de cette contre-vérification ont été fusionnées en avance rapide dans `carte-b3/lieux` et **ne sont pas
+modifiées**. Détail, tests modifiés et sorties brutes : `docs/carte-b3-rapport.md`, section 10.
+
+| Trou | État | Correctif | Commits |
+|---|---|---|---|
+| T1 | corrigé | règles des zones, tables, horaires et zones de livraison d'abord passées par l'aide `listed_venue(uuid)` (le nom `venue_listed` proposé au § 3 est refusé par `cv11a-4-droits`, qui interdit toute fonction `venue_*` exécutable par les rôles publics) ; puis REST de `halls` fermée à `anon` et `authenticated`, REST de `venues` fermée à `anon`, `authenticated` réduit à la colonne `id` de **son** établissement public (précondition de `cv11a-4-droits:88-91`) | `5045dee726`, `2977ab71b2`, `f42f24b6c1` |
+| T2 | corrigé (décision du client du 25/11) | raison sociale jamais publique ; nom commercial obligatoire à l'inscription et dans le profil ; sans nom commercial : « Partenaire Event Village » ; vue `public_partners` : `public_name` à la place de `company_name` ; r18 adaptée (signalé) | `40b22b271c` |
+| T3 | corrigé | comptage en lecture seule sur event-village-dev : **0 événement VALIDE sans position** (aucun message) ; `event_transition` refuse VALIDE → PUBLIE sans position, la réactivation reste libre | `de2887b5f5` |
+| T4 | corrigé | horaires écrits avant la fiche ; carte vidée dans un `finally` dès qu'une écriture a réussi | `33e24e53e7` |
+
+Observations :
+- **O2** : tranché par le client le 25/11 : la fiche d'un événement suspendu est une page neutre « Cet événement n'est
+  plus disponible » (ni titre, ni lieu, ni date), API réduite à `id`, `status`, `purchasable`, `unavailable`, `message`
+  (`d0f1ae9cfc`) ; G5 reste vrai sans modification.
+- **O1**, **O3**, **O4** : non traitées (hors de la consigne des correctifs).
+
+Runs : rapides 677 (23 rouges, causes au § 10.4 du rapport du lot) et 678 (23/23) ; **run complet 679 (`a3ddb11d7a`)
+entièrement vert** : 611/611 suites, dont `cvcb3-1-trous` (T1 à T4 : tous `ok`), `cvcb3-2-gardes` et
+`cvcb3-3-statique` ; build, budgets, e2e, responsive 0 défaut, mesure mobile valide. Fusion : seulement avec le feu
+vert de l'utilisateur, après la fusion du lot 11c-a.
