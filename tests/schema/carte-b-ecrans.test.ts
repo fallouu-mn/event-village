@@ -246,8 +246,11 @@ describe('Accueil — « Partout au Sénégal »', () => {
         assert.match(code('components/events/HomeDiscovery.tsx'), /<HomeSenegalMap \/>/);
         const section = code('components/events/HomeSenegalMap.tsx');
         assert.match(section, /new IntersectionObserver/);
-        assert.match(section, /import SenegalMapPreview from '@\/components\/explore\/SenegalMapPreview';/);
-        assert.match(section, /\{visible && <SenegalMapPreview /);
+        // Lot poids : le code de l'aperçu n'est plus dans l'îlot ; son propre morceau, demandé à l'apparition de sa place
+        // (le module d'Explorer, essayé, faisait télécharger 10,8 Ko au lieu de 3,4 Ko, pour la même entrée de table)
+        assert.doesNotMatch(section, /from '@\/components\/explore\/SenegalMapPreview'/, 'aperçu hors de l\'îlot');
+        assert.match(section, /if \(!visible \|\| Preview\) return undefined;[\s\S]*?import\('@\/components\/explore\/SenegalMapPreview'\)\s*\.then\(\(m\) => \{ if \(alive\) setPreview\(\(\) => m\.default\); \}\)/);
+        assert.match(section, /\{visible && Preview && <Preview /);
         assert.match(section, /Ouvrir la carte/);
         assert.match(section, /const MAP_HREF = '\/explore\?vue=carte';/);
         assert.equal(exploreModeHref({}, 'carte'), '/explore?vue=carte', 'même adresse que la vue Carte');
