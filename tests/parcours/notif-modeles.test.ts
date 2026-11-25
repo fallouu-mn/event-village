@@ -290,6 +290,11 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     opt('TABLE_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT', 'REMINDER', ['/tables/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59?rappel=1'], 'Votre table vous attend'),
     ess('TABLE_CLIENT_COMING', [I, P, M, S], 'PARTNER', 'B', 'TABLE_RESERVATION', ['/partner/tables/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Le client arrive'),
     ess('TABLE_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/tables/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Remboursement versé'),
+    // Lot 11c-a (ajout signalé au rapport) : tables d'un événement (migration 20261201000006)
+    ess('EVENT_TABLE_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'TICKET', ['/tickets/:event'], 'Table réservée'),
+    ess('EVENT_TABLE_SOLD', [I, P, M, S], 'PARTNER', 'B', 'SALES', [`${PE}?tab=ventes`], /^Tables? vendues?$/),
+    opt('EVENT_TABLE_SEATS_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT', 'REMINDER', ['/tickets/:event'], 'Vos invités attendent leurs places'),
+    ess('ADMIN_EVENT_TABLES_CHANGED', [I, P, M, S], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Tables modifiées après validation', 'events.read'),
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'TABLE_RESERVATION', ['/partner/tables/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Établissement refusé'),
     // Lot 10b (point 1, modification signalée) : droit halls.validate
     ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/venues/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Établissement à valider', 'halls.validate'),
