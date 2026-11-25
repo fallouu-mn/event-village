@@ -9,9 +9,10 @@
 --  b. la position exacte est OBLIGATOIRE pour ce qui est publié : événement, salle, établissement. Ce qui est déjà
 --     publié sans position reste en ligne (une réactivation n'est pas bloquée).
 -- Contenu :
---  1. REST (faille F1 du lot, gardée) : address, latitude, longitude retirées des colonnes lisibles par anon et
---     authenticated, sur halls et venues ; tout passe par les routes du serveur, colonne par colonne (aucun écran ne lit
---     ces tables par le navigateur) ;
+--  1. REST (faille F1 du lot ; contre-vérification docs/audit-carte-b3.md, T1) : plus aucune lecture REST de halls ni
+--     de venues par les rôles publics (pour venues, la propriétaire lit seulement l'identifiant de SON établissement
+--     public) ; les règles des zones, tables, horaires et zones de livraison lisent venues par venue_listed ; tout passe
+--     par les routes du serveur, colonne par colonne (aucun écran ne lit ces tables par le navigateur) ;
 --  2. envoi en validation refusé sans position, avec « Placez votre lieu sur la carte avant d’envoyer. » : hall_submit et venue_submit (position seule
 --     manquante : POSITION_REQUIRED ; sinon la liste des manques), venue_create (la création est l'envoi),
 --     event_transition (brouillon → en attente : le refus de la finition 2a garde son code POSITION_REQUIRED, avec cette
@@ -35,21 +36,65 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 1. REST : ni adresse ni position lisibles directement (le serveur choisit ce qui sort)
+-- 1. REST fermée sur halls et venues (contre-vérification, T1) : tout passe par les routes du serveur
 -- ----------------------------------------------------------------------------
+-- 1a. D'abord les règles qui lisaient venues avec les droits de l'appelant (zones, tables, horaires, zones de livraison) :
+--     elles passent par venue_listed (booléen seul, droits du propriétaire), sur le modèle de partner_listed
+--     (20261126000004_l10b_cv_correctifs.sql:23-34). Conditions inchangées : établissement actif, validé, partenaire
+--     VALIDE (règle venues_read de 20261129000009_l11b_cv_lectures_etablissements.sql:22-26, que suivaient ces
+--     sous-requêtes), ou administration.
+CREATE OR REPLACE FUNCTION public.venue_listed(p_venue_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (SELECT 1 FROM public.venues v
+                   WHERE v.id = p_venue_id AND v.is_active AND v.validation_status = 'VALIDEE' AND public.partner_listed(v.partner_id));
+$$;
+REVOKE ALL ON FUNCTION public.venue_listed(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.venue_listed(uuid) TO anon, authenticated, service_role;
+
+-- Reprises de 20261129000009_l11b_cv_lectures_etablissements.sql:28-48 : la sous-requête sur venues devient venue_listed
+DROP POLICY IF EXISTS "restaurant_zones_read" ON public.restaurant_zones;
+CREATE POLICY "restaurant_zones_read" ON public.restaurant_zones
+    FOR SELECT USING (
+        (is_active = TRUE AND venue_id IS NOT NULL AND public.venue_listed(venue_id))
+        OR public.is_admin());
+
+DROP POLICY IF EXISTS "restaurant_tables_read" ON public.restaurant_tables;
+CREATE POLICY "restaurant_tables_read" ON public.restaurant_tables
+    FOR SELECT USING (
+        (is_active = TRUE AND venue_id IS NOT NULL AND public.venue_listed(venue_id))
+        OR public.is_admin());
+
+DROP POLICY IF EXISTS "venue_opening_hours_read" ON public.venue_opening_hours;
+CREATE POLICY "venue_opening_hours_read" ON public.venue_opening_hours
+    FOR SELECT USING (public.venue_listed(venue_id) OR public.is_admin());
+
+-- Reprise de 20261130000002_l12a_catalogue.sql:432-433 (« EXISTS (SELECT 1 FROM venues v WHERE v.id = venue_id) », soit la
+-- règle venues_read : public ou administration)
+DROP POLICY IF EXISTS "order_delivery_zones_read" ON public.order_delivery_zones;
+CREATE POLICY "order_delivery_zones_read" ON public.order_delivery_zones
+    FOR SELECT USING (public.venue_listed(venue_id) OR public.is_admin());
+
+-- 1b. Puis la REST elle-même. halls : plus aucune colonne lisible par anon ni authenticated (validated_by, partner_id…).
 REVOKE SELECT ON public.halls FROM anon, authenticated;
-GRANT SELECT (id, partner_id, name, description, capacity, price_per_day, price_per_hour, deposit_percentage, city,
-              amenities, images, is_active, created_at, updated_at, validation_status, validation_reason, validated_by,
-              validated_at, deposit_mode, deposit_value, cancellation_policy, submitted_at)
-    ON public.halls TO anon, authenticated;
 GRANT ALL ON public.halls TO service_role;
 
--- Reprise de 20261129000009_l11b_cv_lectures_etablissements.sql:54-58 sans address, latitude, longitude
+-- venues : plus rien pour anon ; pour authenticated, la seule colonne id, et seulement de SON établissement public
+-- (précondition « la propriétaire lit son établissement » de tests/audit/cv11a-4-droits.test.ts:88-91, inchangée) :
+-- un tiers, une cliente ou une autre partenaire ne lisent aucune ligne. Reprise de venues_read
+-- (20261129000009_l11b_cv_lectures_etablissements.sql:22-26) restreinte à la propriétaire.
 REVOKE SELECT ON public.venues FROM anon, authenticated;
-GRANT SELECT (id, partner_id, kind, name, description, city, photos, slot_minutes, deposit_per_person, confirmation_mode,
-              floor_plan_enabled, is_active, validation_status)
-    ON public.venues TO anon, authenticated;
+GRANT SELECT (id) ON public.venues TO authenticated;
 GRANT ALL ON public.venues TO service_role;
+DROP POLICY IF EXISTS "venues_read" ON public.venues;
+CREATE POLICY "venues_read" ON public.venues
+    FOR SELECT USING (
+        (public.is_partner_owner(partner_id) AND is_active = TRUE AND validation_status = 'VALIDEE' AND public.partner_listed(partner_id))
+        OR public.is_admin());
 
 -- ----------------------------------------------------------------------------
 -- 2. Salle insérée sans position : jamais validée d’office
