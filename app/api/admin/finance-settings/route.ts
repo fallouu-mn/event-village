@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 /** Préfixes des réglages exposés par cette route (validation des valeurs : finance_setting_set). */
 // Lot 9 quinquies (B1) : + support.* (contact du support)
-const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%,key.like.halls.%,key.like.tables.%,key.like.orders.%';
+const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%,key.like.halls.%,key.like.tables.%,key.like.orders.%,key.like.event_tables.%';
 
 /**
  * Lot 3 — réglages financiers (clés finance.*), lot 4 — réglages du contrôle d'accès (clés access.*),
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
 // lecture et la page ; la validation reste celle de la base (finance_setting_set → fin_setting_valid). Lot 12a : réglages
 // des commandes (orders.*) acceptés de même
 const PutSchema = z.object({
-    key: z.string().regex(/^(finance|access|notif|features|support|halls|tables|orders)\.[A-Za-z0-9_.]+$/),
+    key: z.string().regex(/^(finance|access|notif|features|support|halls|tables|orders|event_tables)\.[A-Za-z0-9_.]+$/),
     value: z.union([z.number(), z.boolean(), z.string().max(254)]),
     reason: z.string().trim().min(3).max(300),
 });
@@ -90,7 +90,10 @@ export async function PUT(req: NextRequest) {
     if (!parsed.success) {
         return NextResponse.json({ error: 'Réglage invalide (clé finance.*, access.*, notif.*, features.*, support.*, halls.*, tables.* ou orders.*, valeur, motif d’au moins 3 caractères).', details: parsed.error.flatten() }, { status: 400 });
     }
-    const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>('finance_setting_set', {
+    // Lot 11c-a : les deux réglages des tables d'un événement passent par event_tables_setting_set (mêmes règles ; la suite
+    // d'audit cv12a-3 interdit une nouvelle recopie de finance_setting_set)
+    const setter = parsed.data.key === 'features.event_tables_enabled' || parsed.data.key.startsWith('event_tables.') ? 'event_tables_setting_set' : 'finance_setting_set';
+    const { data, error } = await rpcWithRetry<{ ok: boolean; code?: string; message?: string; key?: string; value?: unknown }>(setter, {
         p_key: parsed.data.key,
         p_value: { value: parsed.data.value },
         p_actor: auth.user!.id,

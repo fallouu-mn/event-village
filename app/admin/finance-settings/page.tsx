@@ -150,6 +150,8 @@ const META: Record<string, SettingMeta> = {
   'orders.code_max_attempts': { label: 'Essais au plus du code de remise', help: 'Au-delà, la remise est bloquée et le client doit demander un nouveau code. Entier de 3 à 10.', kind: 'integer', unit: 'essais' },
   'orders.code_resend_max': { label: 'Nouveaux codes de remise au plus par commande', help: 'Nombre de fois où le client peut demander un nouveau code. Entier de 1 à 10.', kind: 'integer', unit: 'codes' },
   'orders.prep_minutes_default': { label: 'Préparation d’une commande par défaut', help: 'Sert à calculer l’heure estimée quand l’établissement n’a pas choisi la sienne. Entier de 10 à 240.', kind: 'integer', unit: 'min' },
+  'features.event_tables_enabled': { label: 'Tables des événements', help: 'Vente de tables (par exemple une table VIP de 6 places) sur la fiche d’un événement, à côté des billets. Désactivé : aucune table n’est proposée ni modifiable ; les tables déjà vendues restent valables à l’entrée.', kind: 'boolean' },
+  'event_tables.max_per_account': { label: 'Tables au plus par compte et par événement', help: 'Au-delà, un même compte ne peut plus réserver de table pour cet événement. Entier de 1 à 10.', kind: 'integer', unit: 'tables' },
   'features.orders_enabled': { label: 'Commandes de repas', help: 'Menus, produits et commandes de repas. Désactivé : les pages répondent « page introuvable » et les entrées de menu disparaissent. Les achats de billets ne sont pas concernés.', kind: 'boolean' },
 };
 
@@ -169,6 +171,7 @@ const SECTIONS: Array<{ prefix: string; title: string; help: string; icon: Lucid
   // Lot 11a : réglages de la réservation de tables (service fermé tant que son interrupteur l'est)
   { prefix: 'tables.', title: 'Restaurants et tables', help: 'Frais, durée d’une réservation, délais d’attente et de réponse, absence, annulation et validation des établissements.', icon: UtensilsCrossed },
   // Lot 12a : commandes
+  { prefix: 'event_tables.', title: 'Tables des événements', help: 'Tables vendues par les organisatrices sur la fiche de leurs événements (une table = un lot de billets).', icon: UtensilsCrossed },
   { prefix: 'orders.', title: 'Commandes', help: 'Frais, acompte, délais de paiement et de réponse, retrait, code de remise et masquage des coordonnées du client.', icon: ShoppingBag },
   { prefix: 'features.', title: 'Services en préparation', help: 'Pas prêt pour le public : ces services ne sont pas encore vérifiés pour les paiements. Un service désactivé n’est ni visible ni utilisable par les clients et les partenaires. Pour en activer un, tapez ACTIVER.', icon: ToggleRight },
 ];
