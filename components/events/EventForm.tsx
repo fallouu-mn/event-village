@@ -16,7 +16,11 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { Select, TextInput, Textarea } from '@/components/ui/Field';
 import { useToast } from '@/components/ui/Toast';
+import { Tabs, TabPanel } from '@/components/ui/Tabs';
 import { cn } from '@/components/ui/cn';
+import { loadEventTables } from '@/components/event-tables/load';
+import { useTablesReport } from '@/components/event-tables/useTablesReport';
+import { tablesTabVisible } from '@/components/event-tables/types';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
 import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
@@ -81,6 +85,18 @@ import {
  *  - garde avant de quitter (useUnsavedGuard) : informations de l'événement et catégories non enregistrées ;
  *  - ville dans la liste SENEGAL_CITIES ou « Autre ville » ; téléphone de contact sénégalais (normalisé par le schéma).
  */
+
+/**
+ * Lot 11c-c : onglet « Tables » de l'étape Billets (modification), chargé à son ouverture par le chargeur unique des écrans
+ * des tables (components/event-tables/load.ts).
+ */
+const TablesEditor = dynamic(() => loadEventTables().then((m) => ({ default: m.TablesEditor })), {
+    ssr: false,
+    loading: () => <div className="h-64 w-full rounded-2xl bg-muted motion-safe:animate-pulse" role="status" aria-label="Chargement des tables" />,
+});
+
+/** Lot 11c-c : un type de table (catégorie kind TABLE) se gère dans l'onglet « Tables », jamais comme catégorie de billets. */
+const isTicketCategory = (c: Row): boolean => c.kind !== 'TABLE';
 
 const MapPicker = dynamic(() => import('@/components/ui/MapPicker').then((m) => m.MapPicker), {
     ssr: false,
@@ -757,6 +773,11 @@ export function EventForm(props: EventFormProps) {
     const [editLocks, setEditLocks] = useState<EditLocks | null>(null);
     /** Catégories modifiées et non enregistrées (édition, EventTicketingManager). */
     const [ticketingDirty, setTicketingDirty] = useState<string[]>([]);
+    /** Lot 11c-c : tables et plan modifiés et non enregistrés (onglet « Tables »). */
+    const [tablesDirty, setTablesDirty] = useState<string[]>([]);
+    /** Lot 11c-c : onglet de l'étape Billets (Billets ou Tables) ; lecture des tables demandée à la première visite de l'étape. */
+    const [ticketsTab, setTicketsTab] = useState<'billets' | 'tables'>('billets');
+    const [tablesWanted, setTablesWanted] = useState(false);
     /** « Autre ville » choisie : la ville est saisie dans « Précisez la ville ». */
     const [cityOther, setCityOther] = useState(false);
     /** Brouillon créé : la page part vers la liste, la garde de sortie est levée. */
@@ -791,7 +812,7 @@ export function EventForm(props: EventFormProps) {
     const [initialLocks, setInitialLocks] = useState<EditLocks | null>(null);
     const eventCategories = useMemo<Row[]>(
         () => (event && Array.isArray(event.ticket_categories)
-            ? (event.ticket_categories as Row[]).map((c) => ({ ...c, has_sales: typeof c.id === 'string' && initialLocks?.categories[c.id] === true }))
+            ? (event.ticket_categories as Row[]).filter(isTicketCategory).map((c) => ({ ...c, has_sales: typeof c.id === 'string' && initialLocks?.categories[c.id] === true }))
             : []),
         [event, initialLocks],
     );
@@ -834,6 +855,14 @@ export function EventForm(props: EventFormProps) {
     useEffect(() => {
         void loadEvent();
     }, [loadEvent]);
+
+    // Lot 11c-c : tables lues à la première visite de l'étape Billets (onglet proposé si le service est ouvert ou si des
+    // tables existent déjà)
+    useEffect(() => {
+        if (isEdit && step === 'billetterie') setTablesWanted(true);
+    }, [isEdit, step]);
+    const tablesReport = useTablesReport(isEdit && eventId && tablesWanted ? eventId : null);
+    const showTablesTab = isEdit && tablesTabVisible(tablesReport.data);
 
     // Finition 2b (B) : « Modifier les portes et les couleurs » (page Équipe) ouvre l'étape « Contrôle à l'entrée » ;
     // (C) un envoi refusé après la création ouvre l'écran « Vérifier »
@@ -890,10 +919,10 @@ export function EventForm(props: EventFormProps) {
     // Sortie de page avec des modifications non enregistrées (garde : fermeture, rechargement, liens internes)
     const current = useMemo(() => eventPayload(values), [values]);
     const fieldsDirty = isEdit ? Object.keys(diffPayload(current.payload, baseline)).length > 0 : JSON.stringify(current.payload) !== JSON.stringify(baseline);
-    const dirty = !leaving && (fieldsDirty || (isEdit ? ticketingDirty.length > 0 : categories.length > 0 || zones !== null));
+    const dirty = !leaving && (fieldsDirty || (isEdit ? ticketingDirty.length > 0 || tablesDirty.length > 0 : categories.length > 0 || zones !== null));
     const describeUnsaved = (): string[] => {
         const list: string[] = fieldsDirty ? ['Informations de l’événement'] : [];
-        if (isEdit) return [...list, ...ticketingDirty];
+        if (isEdit) return [...list, ...ticketingDirty, ...tablesDirty];
         return [
             ...list,
             ...categories.map((c) => (c.name.trim() ? `Nouvelle catégorie « ${c.name.trim()} »` : 'Nouvelle catégorie')),
@@ -973,7 +1002,7 @@ export function EventForm(props: EventFormProps) {
                 if (cancelled) return;
                 const ev = evRes.ok && evBody.event && typeof evBody.event === 'object' ? (evBody.event as Row) : null;
                 setReviewSnapshot({
-                    categories: ev && Array.isArray(ev.ticket_categories) ? (ev.ticket_categories as Row[]) : eventCategories,
+                    categories: ev && Array.isArray(ev.ticket_categories) ? (ev.ticket_categories as Row[]).filter(isTicketCategory) : eventCategories,
                     zones: zRes.ok ? (zBody as Row) : null,
                 });
             } catch (err) {
@@ -1803,8 +1832,20 @@ export function EventForm(props: EventFormProps) {
                     </div>
                 )}
 
+                {isEdit && eventId && step === 'billetterie' && showTablesTab && (
+                    <Tabs
+                        tabs={[{ id: 'billets', label: 'Billets' }, { id: 'tables', label: 'Tables' }]}
+                        value={ticketsTab}
+                        onChange={(id) => setTicketsTab(id === 'tables' ? 'tables' : 'billets')}
+                        ariaLabel="Billets ou tables"
+                        idPrefix="billetterie"
+                        className="mb-4"
+                    />
+                )}
+
                 {isEdit && eventId && (
-                    <div hidden={step !== 'billetterie'}>
+                    <div hidden={step !== 'billetterie' || (showTablesTab && ticketsTab !== 'billets')}
+                        {...(showTablesTab ? { role: 'tabpanel', id: 'billetterie-panneau-billets', 'aria-labelledby': 'billetterie-onglet-billets' } : {})}>
                         <EventTicketingManager
                             key={loadVersion}
                             eventId={eventId}
@@ -1813,9 +1854,20 @@ export function EventForm(props: EventFormProps) {
                             minPaidPrice={minPaidPrice}
                             externalColors={savedColors}
                             onDirtyChange={setTicketingDirty}
-                            onSaved={() => void refreshLocks()}
+                            onSaved={() => { void refreshLocks(); void tablesReport.reload(); }}
                         />
                     </div>
+                )}
+
+                {isEdit && eventId && step === 'billetterie' && showTablesTab && ticketsTab === 'tables' && tablesReport.data && (
+                    <TabPanel idPrefix="billetterie" tabIdValue="tables">
+                        <TablesEditor
+                            eventId={eventId}
+                            report={tablesReport.data}
+                            reload={async () => { await tablesReport.reload(); void refreshLocks(); }}
+                            onDirtyChange={setTablesDirty}
+                        />
+                    </TabPanel>
                 )}
 
                 {step === 'billetterie' && !isEdit && (
