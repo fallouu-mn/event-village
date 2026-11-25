@@ -160,6 +160,28 @@ describe('lot poids — table calculée au build, jamais dans le dépôt', () =>
         assert.ok(corps.indexOf('config.module.rules.push') < corps.indexOf('if ('), 'règle ajoutée sans condition (navigateur, serveur, développement)');
     });
 
+    test('npm run dev (next dev, webpack) : la vraie configuration branche le chargeur, navigateur et serveur ; table calculée', async () => {
+        // package.json : « dev » lance next dev sans Turbopack (Turbopack ignorerait la fonction webpack de next.config.mjs)
+        const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+        assert.equal(pkg.scripts.dev, 'next dev');
+        assert.doesNotMatch(Object.values(pkg.scripts).join('\n'), /--turbo/);
+        const { PHASE_DEVELOPMENT_SERVER } = createRequire(path.join(ROOT, 'package.json'))('next/constants') as { PHASE_DEVELOPMENT_SERVER: string };
+        const mod = await import(pathToFileURL(path.join(ROOT, 'next.config.mjs')).href) as { default: (phase: string) => { webpack: (c: unknown, o: unknown) => { module: { rules: Array<{ test: RegExp; enforce?: string; use: Array<{ loader: string }> }> } } } };
+        const conf = mod.default(PHASE_DEVELOPMENT_SERVER);
+        const require = createRequire(path.join(ROOT, 'package.json'));
+        for (const isServer of [false, true]) {
+            const rendu = conf.webpack({ module: { rules: [] }, plugins: [], output: {} }, { isServer, dev: true });
+            const regles = rendu.module.rules.filter((r) => r.test.test(path.join(ROOT, 'components', 'ui', 'cn-classes.ts'))
+                && r.test.test(`${ROOT.replace(/\\/g, '/')}/components/ui/cn-classes.ts`));
+            assert.equal(regles.length, 1, `dev, ${isServer ? 'serveur' : 'navigateur'} : une règle pour cn-classes.ts`);
+            assert.equal(regles[0].enforce, 'pre');
+            const loader = require(regles[0].use[0].loader) as (this: unknown) => string;
+            const source = loader.call({ rootContext: ROOT, addContextDependency: () => {} });
+            assert.equal(source, gen.sourceModule(ROOT));
+            assert.match(source, /export const CALCULEE: boolean = true;/);
+        }
+    });
+
     test('fichier du dépôt (CALCULEE faux) : hors webpack, même table calculée au chargement ; cn refuse une table vide', async () => {
         const depot = read('components/ui/cn-classes.ts');
         assert.match(depot, /export const CALCULEE: boolean = false;/);

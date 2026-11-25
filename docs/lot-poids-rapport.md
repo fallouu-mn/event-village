@@ -82,6 +82,14 @@ compris), pour les seules classes écrites dans le code (976 classes, 139 groupe
 - hors construction (tests sous Node, scripts), `components/ui/cn-classes.ts` calcule la même table au chargement avec le
   même générateur (ajouté après le run 641, voir plus bas).
 
+**En développement (`npm run dev`, recette locale), la fusion marche aussi** : `npm run dev` lance `next dev` avec webpack
+(sans Turbopack), donc le chargeur remplace `cn-classes.ts` comme au build, côté navigateur et côté serveur. Ce n'est pas
+le calcul hors construction qui sert ici : celui-ci ne concerne que les tests et scripts sous Node. Preuve : le test
+« npm run dev » de `tests/schema/poids-cn.test.ts`, ajouté à la fusion. Il exécute la vraie fonction `webpack` de
+`next.config.mjs` en phase `next dev` (`dev: true`, navigateur et serveur) et vérifie que la règle s'applique au fichier.
+Il vérifie aussi que le chargeur rend la table calculée, et qu'aucun script ne passe par Turbopack, qui ignorerait cette
+règle.
+
 `cn.ts` reprend pas à pas l'algorithme de tailwind-merge 2.6.1 (`mergeClassList`, `parseClassName`, `sortModifiers`).
 Garde-fou : `cn` refuse une table vide (la fusion ne doit jamais cesser en silence) ; le générateur refuse une autre version
 de tailwind-merge tant que l'algorithme n'a pas été revérifié.
@@ -298,7 +306,8 @@ Aucun journal ne contient `Buffer is not defined`. Le polyfill n'avait pas à ê
 
 **Ajoutés**
 - `tests/schema/poids-cn.test.ts` : fusion des classes identique à tailwind-merge (paires, suites au hasard, mots des
-  sources), chargeur, table hors construction, refus d'une table vide, plus d'import de tailwind-merge dans l'application.
+  sources), chargeur, branchement en `next dev` (navigateur et serveur, sans Turbopack), table hors construction, refus
+  d'une table vide, plus d'import de tailwind-merge dans l'application.
 - `tests/schema/poids-buffer.test.ts` : `Buffer` absent du navigateur (dépendances et code chargé), pas de `supabase.storage`
   côté navigateur.
 - `tests/schema/poids-morceaux.test.ts` : empreintes de 8 caractères (navigateur, production), lecture de la table par
