@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ChevronDown, LocateFixed, RefreshCw, Search, X, ZoomOut } from 'lucide-react';
+import { ChevronDown, LocateFixed, RefreshCw, Search, SlidersHorizontal, X, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { clusterLabel, mapMarkerHtml, type MarkerKind } from '@/components/ui/MapMarker';
@@ -181,6 +181,8 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
 
     const [hallFilters, setHallFilters] = useState<HallLayerFilters>(EMPTY_HALL_FILTERS);
     const [venueFilters, setVenueFilters] = useState<VenueLayerFilters>(EMPTY_VENUE_FILTERS);
+    /** Filtres des couches remplis (nombre affiché sur le bouton « Filtrer »). */
+    const activeFilters = [hallFilters.date, hallFilters.guests, venueFilters.date, venueFilters.time, venueFilters.guests].filter(Boolean).length;
     const layerFilters = useDebounced(useMemo(() => ({ halls: hallFilters, venues: venueFilters }), [hallFilters, venueFilters]), FILTER_DEBOUNCE_MS);
 
     const [ready, setReady] = useState(false);
@@ -523,10 +525,21 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                     <LayerPills available={available} active={active} counts={loading ? {} : counts} onToggle={toggleLayer} />
                 )}
                 {(wantHalls || wantVenues) && (
-                    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 sm:flex-row sm:flex-wrap sm:gap-6">
-                        {wantHalls && <HallFilters value={hallFilters} onChange={setHallFilters} />}
-                        {wantVenues && <VenueFilters value={venueFilters} onChange={setVenueFilters} />}
-                    </div>
+                    // Filtres des couches repliés (bouton natif « Filtrer ») : sur un téléphone, la carte reste à l'écran
+                    <details className="group rounded-xl border border-border bg-card">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 text-sm font-semibold text-foreground-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                            <SlidersHorizontal size={16} aria-hidden="true" />
+                            <span>{wantHalls && wantVenues ? 'Filtrer les salles et les restaurants' : wantHalls ? 'Filtrer les salles' : 'Filtrer les restaurants'}</span>
+                            {activeFilters > 0 && (
+                                <span className="rounded-full bg-primary-soft px-2 tabular-nums text-primary-text">{activeFilters}</span>
+                            )}
+                            <ChevronDown size={16} aria-hidden="true" className="ml-auto text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180" />
+                        </summary>
+                        <div className="flex flex-col gap-3 border-t border-border p-3 sm:flex-row sm:flex-wrap sm:gap-6">
+                            {wantHalls && <HallFilters value={hallFilters} onChange={setHallFilters} />}
+                            {wantVenues && <VenueFilters value={venueFilters} onChange={setVenueFilters} />}
+                        </div>
+                    </details>
                 )}
                 <div className="flex flex-wrap items-end gap-2">
                     {/* Champ de sélection écrit sur place (mêmes classes que components/ui/Field) : le module partagé des champs
@@ -617,7 +630,7 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                             role="dialog"
                             aria-modal="false"
                             aria-label={selected ? (selected.kind === 'event' ? selected.e.title : selected.p.name) : group ? groupLabel(group) : ''}
-                            className={cn('absolute inset-x-2 bottom-11 z-10 max-h-[60%] overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-popover', 'ev-sheet-up', !group && 'lg:hidden')}
+                            className={cn('absolute inset-x-2 bottom-11 z-10 max-h-[70%] overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-popover', 'ev-sheet-up', !group && 'lg:hidden')}
                         >
                             <div className="mb-2 flex items-center justify-between gap-2">
                                 <p className="text-sm font-semibold text-muted-foreground">

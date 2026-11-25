@@ -39,10 +39,10 @@ async function demoPartnerId(): Promise<string> {
 }
 
 /** Salle neuve de la partenaire de démonstration, en attente de validation (ou validée par la base si `validate`). */
-async function newHall(spec: { name: string; address: string; lat: number; lng: number; pro?: boolean; validate?: boolean }): Promise<string> {
+async function newHall(spec: { name: string; address: string; lat: number; lng: number; city?: string; pro?: boolean; validate?: boolean }): Promise<string> {
     const svc = serviceClient();
     const { data, error } = await svc.from('halls').insert({
-        partner_id: await demoPartnerId(), name: spec.name, capacity: 250, price_per_day: 150_000, city: 'Dakar',
+        partner_id: await demoPartnerId(), name: spec.name, capacity: 250, price_per_day: 150_000, city: spec.city ?? 'Dakar',
         address: spec.address, latitude: spec.lat, longitude: spec.lng, is_active: true,
         description: 'Salle du lot Carte B3 (données fictives).', host_kind: spec.pro ? 'PROFESSIONNEL' : 'PARTICULIER',
     }).select('id').single();
@@ -143,9 +143,10 @@ async function settle(page: Page): Promise<void> {
     await page.evaluate(() => new Promise<void>((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r())); }));
 }
 
+/** Fait défiler jusqu'à un élément, placé sous l'en-tête et la barre collante des catégories d'Explorer (≈ 130 px). */
 async function scrollToTop(page: Page, selector: string): Promise<void> {
     await page.locator(selector).first().evaluate((el) => {
-        window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 72, behavior: 'instant' as ScrollBehavior });
+        window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 132, behavior: 'instant' as ScrollBehavior });
     });
     await page.evaluate(() => new Promise<void>((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r())); }));
 }
@@ -160,8 +161,8 @@ const LAYERS = '[role="group"][aria-label="Afficher sur la carte"]';
 
 /** Salles des captures, à Thiès (« Aller à » Thiès, zoom 13) : une de particulier, une professionnelle. */
 const THIES = {
-    particulier: { name: `Salle Teranga ${STAMP}`, address: `Villa ${STAMP}, quartier Randoulène`, lat: 14.799, lng: -16.92 },
-    pro: { name: `Salle Les Rails ${STAMP}`, address: `Avenue de la Gare ${STAMP}, Thiès`, lat: 14.783, lng: -16.957, pro: true },
+    particulier: { name: `Salle Teranga ${STAMP}`, address: `Villa ${STAMP}, quartier Randoulène`, lat: 14.799, lng: -16.92, city: 'Thiès' },
+    pro: { name: `Salle Les Rails ${STAMP}`, address: `Avenue de la Gare ${STAMP}, Thiès`, lat: 14.783, lng: -16.957, city: 'Thiès', pro: true },
 } as const;
 const thiesIds: string[] = [];
 
@@ -260,9 +261,11 @@ for (const theme of THEMES) {
                     await page.setViewportSize({ width: w, height: w === 360 ? 780 : 900 });
                     for (const [name, href] of [['fiche-salle-particulier', `/halls/${ids.halls.validee.id}`], ['fiche-restaurant-particulier', `/tables/${ids.tables.restaurant.id}`], ['fiche-salle-pro', `/halls/${pro}`]] as const) {
                         await page.goto(href, { waitUntil: 'load' });
+                        // Page entièrement chargée d'abord (la fiche se redessine après l'arrivée du code : run 654) ; le
+                        // clic attend le bouton et le fait défiler lui-même
+                        await settle(page);
                         const section = page.locator('section[aria-labelledby="salle-adresse"], section[aria-labelledby="etab-adresse"]');
-                        await section.scrollIntoViewIfNeeded({ timeout: 30_000 });
-                        await section.getByRole('button', { name: 'Afficher la carte' }).click();
+                        await section.getByRole('button', { name: 'Afficher la carte' }).click({ timeout: 30_000 });
                         await expect(section.locator('.leaflet-container')).toBeVisible({ timeout: 30_000 });
                         if (name === 'fiche-salle-pro') {
                             await expect(section.getByRole('link', { name: /Voir l’itinéraire/ })).toBeVisible();

@@ -127,7 +127,7 @@ export function PlaceSheetCard({ place }: { place: PublicMapPlace }) {
                     ref={stripRef}
                     onScroll={onScroll}
                     aria-label={`Photos de ${place.name}`}
-                    className="flex aspect-[16/9] snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    className="flex aspect-[2/1] snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                     {photos.map((src, i) => (
                         <li key={`${src ?? 'aucune'}-${i}`} className="relative h-full w-full flex-shrink-0 snap-center" aria-label={`Photo ${i + 1} sur ${photos.length}`}>

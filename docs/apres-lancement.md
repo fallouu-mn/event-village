@@ -170,7 +170,7 @@ d'où elle vient et pourquoi elle attend.
 
 | Sujet | Pourquoi plus tard | Origine |
 |---|---|---|
-| Salles et restaurants sur la carte, avec un bouton par type pour les afficher ou les masquer ; zone approximative de 300 m pour les particuliers. | Lot suivant (décision du client du 21/11 : événements d'abord). La lecture publique (`GET /api/events/carte`) ne rend que des événements. | Consigne du lot Carte B |
+| Salles et restaurants sur la carte, avec un bouton par type pour les afficher ou les masquer ; zone approximative de 300 m pour les particuliers. | Fait au lot Carte B3 (`GET /api/lieux/carte`, docs/carte-b3-rapport.md). | Consigne du lot Carte B |
 | Événements publiés SANS position (créés avant la finition 2a, qui rend la position obligatoire à la soumission) : absents de la carte ET du calendrier (une seule lecture publique, « avec position »). Ils restent dans la Liste. | Rares (aucun depuis la finition 2a) ; les rattraper demande que la partenaire place le repère (étape Accès). | Lot Carte B |
 | Recherche d'adresse publique sur la carte (« aller à » une rue). | Refusée par le client (21/11) : choix rapide de ville ou de quartier seulement. | Décision du client |
 | Liste de l'ordinateur : au-delà de 300 événements dans la zone, message « rapprochez-vous » et « Rechercher dans cette zone ». Pagination ou liste virtuelle si le catalogue grossit beaucoup. | 300 suffit largement au catalogue actuel. | Lot Carte B |
@@ -190,3 +190,14 @@ d'où elle vient et pourquoi elle attend.
 | Pages d'arrivée des avis (`/tickets/<id>`, `/partner/finance/retraits/<envoi>`, `/wallet/retraits/<envoi>`) : la page « Cet élément n'est plus disponible » est rendue par la page elle-même, avec le statut 200 (la même réponse pour un objet d'autrui, deviné ou supprimé : aucun indice) ; les routes qu'elles lisent répondent un vrai 404. Un statut 404 demanderait un fichier `not-found` par route (sous `/tickets`, le squelette de chargement le ferait de toute façon répondre 200). | Confort pour les robots d'indexation (pages déjà marquées « noindex » pour le billet) ; aucun effet pour la personne. | Finition 5, point 2 |
 | Code sans usage : `components/events/EventCancellationBanner.tsx` (palette rouge et ardoise en dur, texte qui promet un remboursement intégral quel que soit le mode) et la variante « verre » de `components/ui/Input.tsx` (blanc en dur). Aucun écran ne les affiche. | Suppression à faire dans un lot de nettoyage. | Finition 5, point 1 (couleurs en dur) |
 
+
+## Salles et restaurants sur la carte (lot Carte B3)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Carte déjà ouverte : un lieu suspendu ou retiré disparaît à la lecture suivante (déplacement, « Rechercher dans cette zone », filtre, retour sur l'onglet), pas en direct comme un événement (signal temps réel `public_event_state`). La lecture publique, elle, ne le rend plus dès l'écriture (moins de 5 s, prouvé). | Il faudrait une table de signal publique des lieux et ses déclencheurs (migration) ; aucun intérêt avant que les services soient ouverts. | Lot Carte B3 |
+| Texte libre d'un particulier (description, nom, photos) pouvant contenir son adresse : rien ne l'empêche de l'écrire lui-même. | Relecture par l'administration à la validation (elle voit « Accueil : chez un particulier ») ; un contrôle automatique serait peu fiable. | Lot Carte B3 |
+| Adresse gardée dans l'avis de confirmation déjà reçu (application, email) même si la réservation est annulée ensuite ; l'écran de la réservation, lui, ne la montre plus. Le SMS de confirmation ne porte pas l'adresse (contrat des SMS : un segment) mais le lien vers la réservation. | Un message envoyé ne se reprend pas ; retirer l'avis de l'application demanderait de réécrire l'historique des notifications. | Lot Carte B3 |
+| Filtres des couches (date, invités ; date, heure, personnes) non gardés dans l'adresse (seules les couches le sont). | Confort ; les couches suffisent pour partager une carte. | Lot Carte B3 |
+| Disponibilité des lieux sur la carte : la recherche des lots 10b et 11b est lue page par page (48 lieux), jusqu'à 7 pages pour 300 lieux, à chaque changement de filtre. Une fonction dédiée en base (identifiants seuls) serait plus légère quand les services auront beaucoup de lieux. | Volume actuel très faible (services fermés). | Lot Carte B3 |
+| Lieux déjà enregistrés avant ce lot : tous considérés « chez un particulier » (protection par défaut). Les établissements professionnels doivent le déclarer (« Qui accueille ? ») pour montrer leur adresse et leur point exact. | Choix de prudence ; à rappeler aux partenaires à l'ouverture des services. | Lot Carte B3 |
