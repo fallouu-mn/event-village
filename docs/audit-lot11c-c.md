@@ -297,3 +297,127 @@ Aucun run complet : la branche ne porte que des tests et ne sera jamais fusionn�
 4. Trancher **T4** : aligner les textes, ou bien les garder et le dire dans le rapport du lot.
 5. Pour chaque correctif, faire passer au vert le test rouge correspondant de `cv11cc-1-trous` sans le modifier, sauf T4
    si les textes propres aux tables sont gardés.
+
+## 8. Corrections
+
+Correctifs sur `lot11c/tables-organisatrice` (consigne du 26/11), décrits en détail dans `docs/lot11c-c-rapport.md`,
+§ « Correctifs après contre-vérification ». Migration `20261215000002_l11cc_cv_correctifs.sql`, non appliquée. Les tests de
+cette contre-vérification ont été repris dans la branche du lot par avance rapide.
+
+**Run complet 718** (`8cf082fefd`, `run_id` 45856038044) : entièrement vert, 625 suites, e2e, responsive, budgets, mesure.
+
+### Chaque test de l'audit au run 718
+
+| Suite | Test | Run 718 |
+|---|---|---|
+| `cv11cc-1-trous` | T1 — contrôle pas encore ouvert : aucune liste | vert |
+| `cv11cc-1-trous` | T1 — événement suspendu : aucune liste | vert |
+| `cv11cc-1-trous` | T2 — copie refusée : rien ne reste, aucun avis, aucun changement dans l'historique | vert |
+| `cv11cc-1-trous` | T3 — jamais deux réponses 200, jamais un type sans table | vert |
+| `cv11cc-1-trous` | T4 — EVENT_LOCKED (terminé, annulé) et ADMIN_CANNOT_EDIT : même code et même texte | vert |
+| `cv11cc-1-trous` | T5 — « Supprimer » proposé si et seulement si la suppression passe | vert |
+| `cv11cc-2-gardes` | G0 — `03-verification.sql` : tous les points OK | vert |
+| `cv11cc-2-gardes` | G0 — rejouée deux fois de plus, droits | vert |
+| `cv11cc-2-gardes` | G1 — lecture : identité en adresse et en en-têtes ignorée | vert |
+| `cv11cc-2-gardes` | G1 — copie : identité ajoutée au corps ignorée | vert |
+| `cv11cc-2-gardes` | G2 — lecture : accès | vert |
+| `cv11cc-2-gardes` | G2 — porte : accès | vert |
+| `cv11cc-2-gardes` | G2 — aperçu, copie, affectations : accès | vert |
+| `cv11cc-2-gardes` | G3 — données personnelles et identifiants | vert |
+| `cv11cc-2-gardes` | G4 — copie refusée sur une cible non modifiable | vert |
+| `cv11cc-2-gardes` | G5 — copie après validation : avis et historique | vert |
+| `cv11cc-2-gardes` | G6 — copie refusée au 2ᵉ type (brouillon) | vert |
+| `cv11cc-2-gardes` | G7 — deux copies de la même source, entrelacées | vert |
+| `cv11cc-2-gardes` | G8 — formulaire et requêtes fabriquées | vert |
+| `cv11cc-2-gardes` | G9 — refus lu = refus écrit (codes), tous les états | vert |
+| `cv11cc-2-gardes` | G10 — badge du scanner | vert |
+| `cv11cc-3-statique` | S1 — deux fonctions nouvelles | vert |
+| `cv11cc-3-statique` | S1 — aucune autre instruction hors des corps | vert |
+| `cv11cc-3-statique` | S1 — `search_path`, `SECURITY DEFINER`, droits | vert |
+| `cv11cc-3-statique` | S2 — ordre des refus | vert |
+| `cv11cc-3-statique` | S3 — aucun chemin d'import du scanner vers les écrans des tables | vert |
+| `cv11cc-3-statique` | S3 — badge venu du seul champ `table` du serveur | vert |
+| `cv11cc-3-statique` | S4 — chaque lecture de `ticket_categories` filtrée par `isTicketCategory` | vert |
+
+Comptes bruts du run 718 : `cv11cc-1-trous` `# pass 6` `# fail 0` ; `cv11cc-2-gardes` `# pass 15` `# fail 0` ;
+`cv11cc-3-statique` `# pass 7` `# fail 0`. Les tests rouges T1 à T5 passent au vert grâce au code.
+
+### Trous et correctifs
+
+| Trou | Correctif | Commits |
+|---|---|---|
+| T1 | `event_table_door_list` : hors de la plage, `CONTROL_CLOSED` sans donnée pour un contrôleur et pour un administrateur qui n'a que le droit de scanner ; la propriétaire et l'administration munie de `events.read` gardent la liste ; route 409 avec le message du scanner ; la page n'affiche plus rien ; le lien du scanner ne s'affiche que contrôle ouvert. | `b9f92dbe86`, `87f722a458` |
+| T2, T3 | `public.event_table_copy` : une fonction, une transaction, verrou de la cible, cible vide vérifiée sous le verrou, tout ou rien ; un avis et une ligne « Plan copié depuis … » en cas de succès après validation ; plus de retrait côté serveur Next. | `b9f92dbe86`, `21f9f8201d` |
+| T4 | Textes en un seul endroit (`private.event_table_refusal_message`) ; `event_table_edit_refusal`, règle unique de la lecture et de l'écriture ; même contact du support pour une fiche suspendue. Textes gardés : ceux de l'écriture. | `b9f92dbe86`, `e7bf94fb84` |
+| T5 | Règle unique de la suppression (`private.event_table_type_delete_refusal`), lue par l'écran : `deletable`, `delete_refusal` ; « Retirer » ne dépend que de `deletable`. | `b9f92dbe86`, `257d858365` |
+
+Les points du § 5 sont réglés aussi : la course pendant une copie sur un événement publié disparaît avec la transaction
+unique, et l'état de vente de la source est gardé (décision).
+
+### Passages modifiés dans les tests de cette contre-vérification
+
+Cinq passages, chacun autorisé par l'utilisateur. Aucune assertion n'a changé.
+
+1. `cv11cc-1-trous.test.ts`, T3 : la copie n'appelle plus `event_table_type_save`. L'entrelacement est donc accroché à
+   l'appel unique.
+   - Avant : `beforeRpc('event_table_type_save', [target.eventId, 'Carre T3 A'], async () => {`
+   - Après : `beforeRpc('event_table_copy', [target.eventId, sourceA], async () => {`
+2. `cv11cc-2-gardes.test.ts`, G7 : même raison.
+   - Avant : `beforeRpc('event_table_type_save', [target.eventId, 'Carre G7'], async () => { second = await copy(owner, target.eventId, source); });`
+   - Après : `beforeRpc('event_table_copy', [target.eventId, source], async () => { second = await copy(owner, target.eventId, source); });`
+3. `cv11cc-2-gardes.test.ts`, G3 : la porte est lue par la propriétaire. Un contrôleur affecté hors de la plage ne reçoit
+   plus de liste : c'est le correctif de T1, que G3 contredisait.
+   - Avant : `['porte', (await doorList(controller, ev.eventId)).body],`
+   - Après : `['porte', (await doorList(owner, ev.eventId)).body],`
+
+   Le même contrôle, avec un contrôleur affecté **pendant** la plage, est fait dans `tests/parcours/l11cc-cv-correctifs.test.ts`
+   (vert au run 718).
+4. `cv11cc-2-gardes.test.ts`, G4 : la fiche suspendue est remise à VALIDE dans un `finally`. Elle laissait un événement
+   publié d'une fiche suspendue, ce qui violait l'invariant w5 des autres suites de la même base (run complet 715 :
+   44 suites rouges dans le lot 2).
+   - Avant :
+
+     ```ts
+     const r = await copy(suspendedPartner, tgt.eventId, src);
+     // Run 709 : refus 403 PARTNER_SUSPENDED avant la base (session de la partenaire suspendue) ; 409 accepté aussi
+     assert.ok([403, 409].includes(r.status) && r.body.code === 'PARTNER_SUSPENDED', show(r));
+     assert.equal((await tablesState(tgt.eventId)).types.length, 0, 'fiche suspendue : rien écrit');
+     ```
+
+   - Après :
+
+     ```ts
+     try {
+         const r = await copy(suspendedPartner, tgt.eventId, src);
+         // Run 709 : refus 403 PARTNER_SUSPENDED avant la base (session de la partenaire suspendue) ; 409 accepté aussi
+         assert.ok([403, 409].includes(r.status) && r.body.code === 'PARTNER_SUSPENDED', show(r));
+         assert.equal((await tablesState(tgt.eventId)).types.length, 0, 'fiche suspendue : rien écrit');
+     } finally {
+         const { error: back } = await service.from('partners').update({ status: 'VALIDE' }).eq('id', suspendedPartner.partnerId);
+         assert.equal(back, null, back?.message);
+     }
+     ```
+
+5. `cv11cc-2-gardes.test.ts`, G9 : même défaut, même correctif (run complet 717 : 44 suites rouges, invariant w5).
+   - Avant : `await compare('fiche suspendue', sp, spEv.eventId);`
+   - Après :
+
+     ```ts
+     try {
+         await compare('fiche suspendue', sp, spEv.eventId);
+     } finally {
+         const { error: back } = await service.from('partners').update({ status: 'VALIDE' }).eq('id', sp.partnerId);
+         assert.equal(back, null, back?.message);
+     }
+     ```
+
+`cv11cc-1-trous` et `cv11cc-3-statique` ne suspendent aucune fiche (vérifié avant le run 718).
+
+### Runs des corrections
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 713 | `03938d6daa` | rapide | T1, T2, T4, T5 verts ; T3, G7 (accroche disparue) et G3 (contredit par T1) rouges. |
+| 715 | `7b8672acf6` | complet | Les tests de l'audit verts ; 65 suites d'autres lots rouges sur l'invariant w5 (G4 et un test du lot). |
+| 717 | `4081936fee` | complet | 44 suites du lot 2 rouges sur w5 (G9). |
+| 718 | `8cf082fefd` | complet | **Entièrement vert.** |
