@@ -104,6 +104,37 @@ relevé.
 | Fiche | 91 (TBT 330 ms) | 92 (TBT 322 ms) | 94 (TBT 263 ms) |
 | Mes billets | 91 (TBT **376 ms**) | 93 (TBT **316 ms**) | 94 (TBT **295 ms** ; passages 263, 346, 286, 295, 371) |
 
+### Fusion de main (lot 11c-c) : assertion d'audit modifiée avec accord
+
+Fusion de `origin/main` (`953914229a`, lot 11c-c fusionné en `7d45274fb6`) dans la branche : `01d883cf98`. Un seul conflit,
+`tests/helpers/design-files.ts` (deux listes d'écrans ajoutées au même endroit) : les deux gardées. `FloorPlan.tsx` et
+`docs/apres-lancement.md` : fusion automatique, les deux lots gardés (prop `labels` identique).
+
+Après cette fusion, la garde « aucune migration » voyait les deux migrations du 11c-c (`20261215000001_l11cc_lectures_tables.sql`,
+`20261215000002_l11cc_cv_correctifs.sql`), qui ne sont pas du lot 11c-b. **Avec l'accord de l'utilisateur et dans la forme qu'il a
+donnée** (`c22c25e33c`), même changement dans `tests/audit/cv11cb-3-statique.test.ts` (G-S, lignes 128-129) et dans
+`tests/schema/l11cb-cv-correctifs.test.ts` (ligne 52, message « aucune migration ») ; les vérifications suivantes du test
+(abonnement unique, aucune lecture directe) sont inchangées.
+
+Avant :
+
+```ts
+const migrations = fs.readdirSync(path.join(ROOT, 'supabase', 'migrations')).filter((f) => f > '20261210000001_cb3_lieux_publics.sql');
+assert.deepEqual(migrations, [], 'migration ajoutée par le lot');
+```
+
+Après :
+
+```ts
+const toutes = fs.readdirSync(path.join(ROOT, 'supabase', 'migrations')).filter((f) => f > '20261210000001_cb3_lieux_publics.sql');
+// Jusqu'à la fusion du 11c-b : seules les deux migrations du 11c-c (fusionné en 7d45274fb6) ; les lots suivants commencent à 20261216.
+assert.deepEqual(toutes.filter((f) => f < '20261216'), ['20261215000001_l11cc_lectures_tables.sql', '20261215000002_l11cc_cv_correctifs.sql'], 'migration ajoutée par le lot');
+assert.deepEqual(toutes.filter((f) => /l11cb/i.test(f)), [], 'migration ajoutée par le lot');
+```
+
+Avant le changement, après la fusion : `cv11cb-3` 6/7 et `l11cb-cv-correctifs` (statique) 8/9, seule cette assertion rouge ;
+après : 7/7 et 9/9.
+
 ## Décisions prises
 
 | Sujet | Décision | Pourquoi |
