@@ -438,8 +438,12 @@ export const RESPONSIVE_EXCLUSIONS: Readonly<Record<string, string>> = {
     '/partner/products': 'produits : service fermé, écrans du lot 10b',
     '/partner/products/new': 'produits : service fermé, écrans du lot 10b',
     '/partner/orders': 'commandes : service fermé, écrans du lot 10b',
-    '/orders': 'commandes : service fermé, écrans du lot 10b',
-    '/restaurants/[id]/menu': 'menus : service fermé, écrans du lot 10b',
+    // Lot 12b : écrans du client derrière l'interrupteur des commandes, contrôlés (390 et 1 440 px, 0 défaut bloquant) et
+    // capturés en clair et en sombre par e2e/lot12b.responsive.spec.ts, avec ses propres données (établissement, carte,
+    // commandes à chaque étape), service ouvert le temps du spec
+    '/orders': 'Mes commandes : contrôlées et capturées par e2e/lot12b.responsive.spec.ts (service des commandes ouvert le temps du spec)',
+    '/orders/[id]': 'suivi d’une commande (paiement, compte à rebours, chaque étape, code, annulation) : contrôlé et capturé par e2e/lot12b.responsive.spec.ts',
+    '/restaurants/[id]/menu': 'carte des plats, plat du jour, produit non commandable, panier et devis, heure, sur place : contrôlés et capturés par e2e/lot12b.responsive.spec.ts',
     '/restaurants/[id]/tables': 'tables : redirection vers la fiche de l’établissement (/tables/<id>) ou la recherche (/tables), lot 11b',
     '/t/[code]': 'tables : lien court des SMS, redirection vers la réservation (client ou établissement), lot 11b',
 };
