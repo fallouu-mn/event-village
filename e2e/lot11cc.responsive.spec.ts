@@ -217,7 +217,7 @@ for (const theme of THEMES) {
             await page.setViewportSize({ width: w.width, height: w.height });
             await page.goto(`/partner/events/${data.eventId}/edit`, { waitUntil: 'load' });
             await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({ timeout: 30_000 });
-            await page.getByRole('button', { name: /^Billets$/ }).click();
+            await page.getByRole('button', { name: /^Étape 4 : Billetterie$/ }).click();
             await page.getByRole('tab', { name: 'Tables' }).click();
             const editor = page.locator('[data-tables-editeur]');
             await expect(editor).toBeVisible({ timeout: 30_000 });
