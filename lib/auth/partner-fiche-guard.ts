@@ -132,10 +132,16 @@ function isOrderServiceWrite(path: string): boolean {
         || /^\/api\/partner\/venues\/[^/]+\/orders$/.test(path);
 }
 
+/** Texte du refus PARTNER_SUSPENDED : texte de la base suivi du contact du support (contre-vérification 11c-c, T4 : l'écran
+ * des tables l'affiche à l'identique). */
+export async function partnerSuspendedMessage(text: string = PARTNER_SUSPENDED_TEXT): Promise<string> {
+    const support = await supportSentenceOrHelp('fiche suspendue');
+    return `${text} ${support}`;
+}
+
 /** Réponse 403 PARTNER_SUSPENDED : texte de la base suivi du contact du support. */
 export async function partnerSuspendedResponse(text: string = PARTNER_SUSPENDED_TEXT): Promise<NextResponse> {
-    const support = await supportSentenceOrHelp('fiche suspendue');
-    return NextResponse.json({ error: `${text} ${support}`, code: 'PARTNER_SUSPENDED' }, { status: 403 });
+    return NextResponse.json({ error: await partnerSuspendedMessage(text), code: 'PARTNER_SUSPENDED' }, { status: 403 });
 }
 
 /**
