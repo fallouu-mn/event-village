@@ -291,9 +291,9 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('TABLE_CLIENT_COMING', [I, P, M, S], 'PARTNER', 'B', 'TABLE_RESERVATION', ['/partner/tables/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Le client arrive'),
     ess('TABLE_REFUND_PAID', [I, P, M, S], 'CLIENT', 'A', 'TABLE_RESERVATION', ['/tables/reservations/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Remboursement versé'),
     // Lot 11c-a (ajout signalé au rapport) : tables d'un événement (migration 20261201000006)
-    ess('EVENT_TABLE_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'TICKET', ['/tickets/:event'], 'Table réservée'),
+    ess('EVENT_TABLE_CONFIRMED', [I, P, M, S], 'CLIENT', 'B', 'TICKET', ['/tickets?tab=tables#table-:booking'], 'Table réservée'), // lot 11c-b : « Ma table » (modification signalée)
     ess('EVENT_TABLE_SOLD', [I, P, M, S], 'PARTNER', 'B', 'SALES', [`${PE}?tab=ventes`], /^Tables? vendues?$/),
-    opt('EVENT_TABLE_SEATS_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT', 'REMINDER', ['/tickets/:event'], 'Vos invités attendent leurs places'),
+    opt('EVENT_TABLE_SEATS_REMINDER', 'REMINDERS', [I, P, M, S], 'CLIENT', 'REMINDER', ['/tickets?tab=tables#table-:booking'], 'Vos invités attendent leurs places'), // lot 11c-b : « Ma table » (modification signalée)
     ess('ADMIN_EVENT_TABLES_CHANGED', [I, P, M, S], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/events/:event'], 'Tables modifiées après validation', 'events.read'),
     ess('VENUE_VALIDATION_DECIDED', [I, P, M, S], 'PARTNER', 'A', 'TABLE_RESERVATION', ['/partner/tables/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Établissement refusé'),
     // Lot 10b (point 1, modification signalée) : droit halls.validate
@@ -615,7 +615,7 @@ describe('6.3 Catalogue : registre SQL = catalogue TS = table G2 (contrat C1, G1
                 continue;
             }
             // Finition 5 : identifiants des liens d'objets (:ticket, :transfer, :cashout, :partner, :invitation, :reservation) pris dans le sample
-            const allowed = exp.links.map((l) => l.replace(/:(event|outbox|ticket|transfer|cashout|partner|invitation|reservation)\b/g, (_m, k: string) => String(e.sample[`${k}_id`])));
+            const allowed = exp.links.map((l) => l.replace(/:(event|outbox|ticket|transfer|cashout|partner|invitation|reservation|booking)\b/g, (_m, k: string) => String(e.sample[`${k}_id`])));
             if (!allowed.includes(link)) issues.push(`${exp.type} : lien ${link}, attendu ${allowed.join(' ou ')}`);
         }
         assert.deepEqual(issues, [], issues.join('\n'));

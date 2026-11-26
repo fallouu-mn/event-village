@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
-import { callTables, isUuid, outcomeOf, whatsappShareUrl } from '@/lib/event-tables/event-tables.server';
+import { callTables, isUuid, outcomeOf } from '@/lib/event-tables/event-tables.server';
+import { withScreenFields } from '@/lib/event-tables/my-table.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const outcome = outcomeOf(reply);
         if (outcome.status === 200 && Array.isArray(reply.items)) {
             const item = (reply.items as Array<Record<string, unknown>>)[0];
-            outcome.body = { success: true, table: { ...item, whatsapp_url: whatsappShareUrl(getServerEnv().NEXT_PUBLIC_APP_URL, item) } };
+            outcome.body = { success: true, table: withScreenFields(getServerEnv().NEXT_PUBLIC_APP_URL, item) };
         }
         return NextResponse.json(outcome.body, { status: outcome.status, headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {

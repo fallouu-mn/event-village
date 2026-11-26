@@ -435,6 +435,9 @@ const eventTicketsPath = (d: object): string => (optText(d, 'event_id') ? `/tick
 const eventTicketsOrHistory = eventTicketsPath;
 /** Finition 5 : un billet du compte (/tickets/<billet>, page app/tickets/[id], qui ouvre aussi les billets d'un événement) ;
  * sans billet dans les données, ceux de l'événement. */
+/** Lot 11c-b : « Ma table » du titulaire dans Mes billets (onglet « Tables », table mise en avant) ; sans vente connue,
+ *  les billets de l'événement comme avant. */
+const myTablePath = (d: object): string => (optText(d, 'booking_id') ? `/tickets?tab=tables#table-${ident(d, 'booking_id')}` : eventTicketsPath(d));
 const ticketPath = (d: object): string => (optText(d, 'ticket_id') ? `/tickets/${ident(d, 'ticket_id')}` : eventTicketsPath(d));
 /** Finition 5 : billet reçu à accepter, dans « Reçus » à l'endroit du transfert (ancre recu-<transfert>, IncomingTransfers). */
 const incomingTransferPath = (d: object): string => `/tickets?tab=recus#recu-${ident(d, 'transfer_id')}`;
@@ -1616,7 +1619,7 @@ const CATALOG = {
     // Lot 11c-a : tables d'un événement (une table = un lot de N billets, migration 20261201000006)
     EVENT_TABLE_CONFIRMED: define('EVENT_TABLE_CONFIRMED', {
         label: 'Table d’un événement réservée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
-        link: eventTicketsPath,
+        link: myTablePath,
         inApp: (d) => ({
             title: 'Table réservée',
             content: `Votre table ${count(d, 'table_number')} (${text(d, 'table_type')}, ${plural(count(d, 'seats'), 'place', 'places')}) pour ${q(text(d, 'title'))} est réservée. Total payé : ${money(d, 'total')}. Envoyez les places à vos invités depuis Mes billets : chacun aura son billet.`,
@@ -1646,7 +1649,7 @@ const CATALOG = {
     }),
     EVENT_TABLE_SEATS_REMINDER: define('EVENT_TABLE_SEATS_REMINDER', {
         label: 'Places de table à envoyer', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'REMINDER', link: eventTicketsPath,
+        inAppType: 'REMINDER', link: myTablePath,
         inApp: (d) => ({
             title: 'Vos invités attendent leurs places',
             content: `Il vous reste ${plural(count(d, 'seats_left'), 'place', 'places')} à envoyer pour votre table ${count(d, 'table_number')} à ${q(text(d, 'title'))}, demain à ${formatTime(iso(d, 'start_at'))}. Envoyez-les depuis Mes billets : chaque invité aura son billet.`,
