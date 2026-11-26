@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ShoppingBag, Users } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { eventImageSrc } from '@/lib/events/event-image';
 import { openingState, placePriceBadge, type PublicMapPlace } from '@/lib/lieux/carte-lieux';
@@ -18,6 +18,14 @@ import { HALL_ICON_SVG, RESTO_ICON_SVG } from './place-markers';
 export function placeHref(p: Pick<PublicMapPlace, 'type' | 'id'>): string {
     return p.type === 'salle' ? `/halls/${p.id}` : `/tables/${p.id}`;
 }
+
+/** Lot 12b : carte des plats d'un établissement qui prend des commandes en ligne, sinon null. */
+export function placeOrderHref(p: Pick<PublicMapPlace, 'type' | 'id' | 'orders'>): string | null {
+    return p.type === 'restaurant' && p.orders === true ? `/restaurants/${p.id}/menu` : null;
+}
+
+const ORDER_LINK_CLASS = 'ev-press flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-base font-semibold text-primary-text '
+    + 'transition-colors duration-fast hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 function TypeIcon({ type, className }: { type: PublicMapPlace['type']; className?: string }) {
     // SVG de place-markers.ts (mêmes dessins que les repères), décoratif
@@ -61,7 +69,8 @@ export function MapPlaceCard({ place, highlighted = false, onHover, action, clas
     action?: string;
     className?: string;
 }) {
-    return (
+    const orderHref = placeOrderHref(place);
+    const card = (
         <Link
             href={placeHref(place)}
             prefetch={false}
@@ -73,7 +82,7 @@ export function MapPlaceCard({ place, highlighted = false, onHover, action, clas
                 'ev-press group flex min-h-16 items-center gap-3 rounded-xl border bg-card p-3 transition-colors duration-fast',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 highlighted ? 'border-brand-vif' : 'border-border hover:bg-muted',
-                className,
+                !orderHref && className,
             )}
         >
             <span className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-muted" aria-hidden="true">
@@ -85,6 +94,17 @@ export function MapPlaceCard({ place, highlighted = false, onHover, action, clas
                 {action && <span className="mt-1 block text-sm font-semibold text-primary-text group-hover:underline">{action}</span>}
             </span>
         </Link>
+    );
+    if (!orderHref) return card;
+    // Lot 12b : établissement qui prend des commandes en ligne : « Commander » à côté de la vignette (jamais un lien dans un lien)
+    return (
+        <div className={cn('flex flex-col gap-1.5', className)}>
+            {card}
+            <Link href={orderHref} prefetch={false} className={ORDER_LINK_CLASS} aria-label={`Commander chez ${place.name}`}>
+                <ShoppingBag size={18} aria-hidden="true" />
+                Commander
+            </Link>
+        </div>
     );
 }
 
@@ -154,6 +174,12 @@ export function PlaceSheetCard({ place }: { place: PublicMapPlace }) {
             >
                 {`Voir ${kind}`}
             </Link>
+            {placeOrderHref(place) && (
+                <Link href={placeOrderHref(place) as string} prefetch={false} className={cn(ORDER_LINK_CLASS, 'mt-2 w-full')}>
+                    <ShoppingBag size={18} aria-hidden="true" />
+                    Commander
+                </Link>
+            )}
         </div>
     );
 }

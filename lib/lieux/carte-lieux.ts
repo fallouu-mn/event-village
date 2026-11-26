@@ -39,10 +39,15 @@ export interface PublicMapPlace {
     lng: number;
     /** Restaurants : horaires d'ouverture ; salles : null. */
     hours: OpeningRange[] | null;
+    /**
+     * Lot 12b : l'établissement prend des commandes en ligne (vente ouverte par la partenaire, service des commandes
+     * ouvert) : lien « Commander » vers sa carte des plats. Salles : toujours faux. Absent : faux.
+     */
+    orders?: boolean;
 }
 
 /** Liste exhaustive des champs rendus (contrôlée par les tests : aucun champ en trop). */
-export const PUBLIC_PLACE_FIELDS = ['id', 'type', 'name', 'area', 'photos', 'price', 'capacity', 'lat', 'lng', 'hours'] as const;
+export const PUBLIC_PLACE_FIELDS = ['id', 'type', 'name', 'area', 'photos', 'price', 'capacity', 'lat', 'lng', 'hours', 'orders'] as const;
 
 export interface PlacesResponse {
     places: PublicMapPlace[];
@@ -55,6 +60,7 @@ export function publicPlaceOnly(p: PublicMapPlace): PublicMapPlace {
     return {
         id: p.id, type: p.type, name: p.name, area: p.area, photos: p.photos.slice(0, PLACE_PHOTOS_MAX), price: p.price,
         capacity: p.capacity, lat: p.lat, lng: p.lng, hours: p.hours ? p.hours.map(([d, o, c]) => [d, o, c]) : null,
+        orders: p.type === 'restaurant' && p.orders === true,
     };
 }
 
