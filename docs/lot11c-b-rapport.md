@@ -136,6 +136,21 @@ assert.deepEqual(toutes.filter((f) => /l11cb/i.test(f)), [], 'migration ajoutée
 Avant le changement, après la fusion : `cv11cb-3` 6/7 et `l11cb-cv-correctifs` (statique) 8/9, seule cette assertion rouge ;
 après : 7/7 et 9/9.
 
+Premier run complet des deux lots ensemble (**722**, `ef2bb5bd75`) : suites 4/4 lots verts ; e2e 783 verts mais mesure mobile
+**faussée** (machine trop rapide aux 3 tentatives, aucune conclusion) ; responsive à 0 défaut mais 3 tests rouges :
+- spec 11c-b, « Ma table » : connexion refusée (`LOGIN_RATE_LIMITED`, 30 connexions par IP et par heure, partagées par la
+  phase de connexion, `cvcb`, 11c-b et 11c-c) ;
+- spec 11c-c : bouton « Modifier » introuvable : le spec 11c-b, arrêté, avait refermé le service des tables dans son
+  `afterAll` pendant que le spec 11c-c tournait ;
+- `cvcb` G6 (bouton « Afficher la carte » détaché) : vert au run suivant sans changement, sans lien établi avec le lot.
+
+Correctif e2e (`4b47cf1361`) : `e2e/support/tables-service.ts`, compteur commun (fichier + verrou) ; le premier spec inscrit
+note l'état d'origine du service, le dernier le remet. Le spec 11c-c l'utilise à la place de son ouverture et de sa remise
+(aucun autre changement) ; le spec 11c-b connecte le titulaire et l'invitée une seule fois (cookies repris) : 12 → 6
+connexions. Run complet **723** (`4b47cf1361`) : **entièrement vert** (632/632 suites, e2e 783, responsive 243 tests et
+0 défaut, budgets « OK », mesure **93 / 93 / 91**, fiche TBT 279 ms). Fusion `774e19a34a` ; run complet de main **724**
+vert (632/632, e2e 783, responsive 243 et 0 défaut, budgets « OK », mesure **92 / 95 / 92**, fiche TBT 250 ms).
+
 ## Décisions prises
 
 | Sujet | Décision | Pourquoi |
