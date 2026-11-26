@@ -34,6 +34,11 @@ export interface ModalProps {
   closeOnOverlayClick?: boolean;
   /** Design 1d (point 6) : sur téléphone, la fenêtre monte du bas de l'écran (translation seule, 260 ms). */
   sheetOnMobile?: boolean;
+  /**
+   * Lot 11c-b : fenêtre plein écran (plan de salle d'un événement : plan et feuille du devis). Corps sans marge ni
+   * défilement propre : le contenu gère sa mise en page. Mêmes règles de focus, d'Échap et de défilement figé.
+   */
+  fullScreen?: boolean;
 }
 
 const FOCUSABLE = [
@@ -116,6 +121,7 @@ export const Modal: React.FC<ModalProps> = ({
   closeOnOverlayClick = true,
   scrollRegionLabel,
   sheetOnMobile = false,
+  fullScreen = false,
 }) => {
   const uid = useId();
   const titleId = `${uid}-titre`;
@@ -191,7 +197,7 @@ export const Modal: React.FC<ModalProps> = ({
   if (!isOpen || !isClient) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4 md:p-6">
+    <div className={cn('fixed inset-0 z-50 flex items-end justify-center', !fullScreen && 'sm:items-center sm:p-4 md:p-6')}>
       <div
         className="absolute inset-0 bg-scrim/60 backdrop-blur-sm animate-in fade-in"
         aria-hidden="true"
@@ -212,7 +218,7 @@ export const Modal: React.FC<ModalProps> = ({
           'animate-in fade-in zoom-in-95',
           sheetOnMobile && 'ev-sheet-mobile',
           variant === 'glass' && 'bg-popover/95 backdrop-blur-xl',
-          MAX_WIDTH[maxWidth],
+          fullScreen ? 'h-[100dvh] max-h-none rounded-none border-0 sm:max-h-none sm:rounded-none' : MAX_WIDTH[maxWidth],
         )}
       >
         <div className="flex flex-shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
@@ -243,7 +249,9 @@ export const Modal: React.FC<ModalProps> = ({
         </div>
 
         <div
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-6"
+          className={fullScreen
+            ? 'relative min-h-0 flex-1 overflow-hidden'
+            : 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-6'}
           {...(scrollRegionLabel ? { tabIndex: 0, role: 'group', 'aria-label': scrollRegionLabel } : {})}
         >
           {children}

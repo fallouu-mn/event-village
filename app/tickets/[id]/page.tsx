@@ -24,6 +24,8 @@ export default async function MyTicketPage({ params }: { params: Promise<{ id: s
     const { id } = await params;
     const read = await readTicketsFocus(id);
     if (read.kind === 'login') redirect(`/login?redirect=${encodeURIComponent(`/tickets/${id}`)}`);
+    // Contre-vérification du lot 11c-b (T2) : table du compte pour cet événement → « Ma table »
+    if (read.kind === 'table') redirect(`/tickets?tab=tables#table-${read.bookingId}`);
     if (read.kind === 'not-found') return <UnavailableItem actionLabel="Voir mes billets" actionHref="/tickets" />;
     if (read.kind === 'error') {
         return (

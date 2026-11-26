@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui/Badge';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { StatusBanner, type StatusBannerTone } from '@/components/ui/StatusBanner';
 import { EventTicketing } from '@/components/event-page/EventTicketing';
+import { TicketingSwitch } from '@/components/event-page/TicketingSwitch';
+import { readTablesSummary } from '@/lib/event-tables/offer-summary.server';
 import { LiveOnPoster } from '@/components/event-page/LiveOnPoster';
 import { PendingPaymentSlot } from '@/components/event-page/PendingPaymentSlot';
 import { ShareButton } from '@/components/event-page/ShareButton';
@@ -180,6 +182,9 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
   const hasPractical = Boolean(info.accessNotes || info.parking || info.contactPhone || info.rules) || showPayment;
 
   const heroStyle = { '--poster': event.posterColor } as CSSProperties;
+  // Lot 11c-b : bascule « Billets | Tables » seulement si le service est ouvert et qu'un type de table est en vente (lu
+  // par le serveur avec la page ; l'onglet « Tables » se charge à la demande)
+  const tables = event.status === 'PUBLIE' ? await readTablesSummary(event.id) : null;
 
   return (
     <div>
@@ -400,7 +405,16 @@ export default async function EventDetailPage(props: { params: Promise<{ id: str
           aria-labelledby="billetterie-titre"
           className="min-w-0 rounded-xl border border-border bg-card p-5 shadow-sm sm:p-6 lg:sticky lg:top-20"
         >
-          <EventTicketing initial={event} />
+          {tables ? (
+            <TicketingSwitch
+              event={{ id: event.id, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, location: [event.venue, event.city].filter(Boolean).join(', ') || null }}
+              fromPrice={tables.fromPrice}
+            >
+              <EventTicketing initial={event} />
+            </TicketingSwitch>
+          ) : (
+            <EventTicketing initial={event} />
+          )}
         </aside>
       </div>
       </div>

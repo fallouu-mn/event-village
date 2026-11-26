@@ -20,6 +20,7 @@ import { SAMIRPAY_OPERATORS, type SamirPayOperatorName } from '@/lib/samirpay/ty
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { cashinReturnUrls, initCashinOnce, initFailureOf, recordAdoptedInit } from '@/lib/payments/cashin-init';
 import { normalizePayerPhone } from '@/lib/payments/payer-phone';
+import { formatFcfa } from '@/lib/format';
 import { hashCallbackToken, PAYER_PENDING_MESSAGE, paymentView, pendingPaymentRefusal, readHoldMinutes } from '@/lib/payments/checkout.service';
 
 export interface DbReply { ok?: boolean; code?: string; message?: string; field?: string; [key: string]: unknown }
@@ -136,7 +137,21 @@ const CheckoutSchema = z.object({
     tableId: z.string().uuid().nullable().optional(),
     operator: z.string().optional(),
     payerPhone: z.string().optional(),
+    /**
+     * Contre-vérification du lot 11c-b (observation « prix changé ») : total du devis AFFICHÉ par l'écran. Il ne sert qu'à
+     * une comparaison : le montant du paiement vient toujours de la base ; s'il diffère, l'achat est refusé et rien n'est
+     * demandé au client. Facultatif (absent : aucune comparaison, comportement d'avant).
+     */
+    expectedTotal: z.number().nonnegative().max(100_000_000).optional(),
 }).strict();
+
+/** Refus « prix changé » : nouveau total, en mots simples, prêt à afficher. */
+function priceChanged(total: number): RouteOutcome {
+    return {
+        status: 409,
+        body: { success: false, error: `Le prix de cette table a changé : ${formatFcfa(total)}. Vérifiez avant de payer.`, code: 'TABLE_PRICE_CHANGED', total },
+    };
+}
 
 function newIdentifiers() {
     const ms = Date.now();
@@ -194,6 +209,12 @@ export async function startTableCheckout(params: { userId: string; eventId: stri
         return { status: 503, body: { success: false, error: 'Achat momentanément indisponible.', code: 'CHECKOUT_GUARD_UNAVAILABLE' } };
     }
 
+    // Prix changé depuis le devis affiché : refus avant toute attente ni paiement (devis de la base, même opérateur)
+    if (input.expectedTotal !== undefined) {
+        const quote = await callTables('event_table_quote', { event_id: params.eventId, type_id: input.typeId, table_id: input.tableId ?? null, operator });
+        if (quote.ok === true && Number(quote.total) !== input.expectedTotal) return priceChanged(Number(quote.total));
+    }
+
     const supabase = getServiceRoleClient();
     const { data: event, error: evErr } = await supabase.from('events').select('id, title, partner_id').eq('id', params.eventId).maybeSingle();
     if (evErr) throw new Error(`Lecture de l'événement impossible : ${evErr.message}`);
@@ -230,8 +251,18 @@ export async function startTableCheckout(params: { userId: string; eventId: stri
     const paymentId = String(created.payment_id);
     const amount = Number(created.amount);
     if (!Number.isFinite(amount) || amount <= 0) throw new Error(`Montant du paiement ${paymentId} invalide : ${String(created.amount)}`);
+    // Prix changé entre la comparaison ci-dessus et la création (course) : paiement annulé avant toute demande à l'opérateur,
+    // table rendue ; le client voit le nouveau total et n'a rien payé
+    if (input.expectedTotal !== undefined && amount !== input.expectedTotal) {
+        const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: paymentId, p_status: 'CANCELLED', p_reason: 'PRICE_CHANGED' });
+        if (relErr) throw new Error(`libération du paiement ${paymentId} (prix changé) : ${relErr.message}`);
+        invalidatePublicEvent(params.eventId, 'table rendue (prix changé)');
+        await signalTablesChanged(params.eventId, 'table rendue (prix changé)');
+        return priceChanged(amount);
+    }
     // La table attendue se grise sur le plan des autres visiteurs (stock du type : signal temps réel existant)
     invalidatePublicEvent(params.eventId, 'table en attente de paiement');
+    await signalTablesChanged(params.eventId, 'table en attente de paiement');
 
     const callBackUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/samirpay?t=${token}`;
     try {
@@ -264,10 +295,30 @@ export async function startTableCheckout(params: { userId: string; eventId: stri
         const { error: relErr } = await rpcWithRetry('payment_release', { p_payment_id: paymentId, p_status: 'FAILED', p_reason: reason });
         if (relErr) console.error(`[tables d’un événement] libération de l'attente du paiement ${paymentId} impossible :`, relErr.message);
         invalidatePublicEvent(params.eventId, 'table rendue');
+        await signalTablesChanged(params.eventId, 'table rendue');
         console.error(`[tables d’un événement] cashin refusé pour le paiement ${paymentId} (${reason}) :`, err instanceof Error ? err.message : String(err));
         if (!failure) throw err;
         return { status: 502, body: { success: false, error: failure.message, code: failure.code, payment_id: paymentId } };
     }
+}
+
+// ── Signal « une table a changé » ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Contre-vérification du lot 11c-b (T1) : l'onglet « Tables » ouvert relit l'offre au message temps réel des tranches
+ * publiques de l'événement (public_category_stock, filtre event_id, déjà ouvert à tous). Un type de table n'a pas de
+ * tranche (il n'est jamais vendu en ligne comme billet) : une table tenue ou rendue ne produisait aucun message. Ce signal
+ * réécrit seulement l'heure (updated_at) des tranches DÉJÀ publiques de l'événement : aucune ligne, aucune valeur, aucun
+ * stock nouveau (les règles des billets ne changent pas), aucune donnée d'un client. Un événement sans tranche publique
+ * (aucune catégorie de billets en ligne) n'a pas de message : l'onglet relit alors l'offre toutes les 15 s tant que le plan
+ * est ouvert et visible. Un échec est journalisé et ne défait rien (la table est tenue ou rendue en base).
+ */
+export async function signalTablesChanged(eventId: string, why: string): Promise<void> {
+    const { error } = await getServiceRoleClient()
+        .from('public_category_stock')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('event_id', eventId);
+    if (error) console.error(`[tables d’un événement] signal temps réel non envoyé (${why}) :`, error.message);
 }
 
 // ── Partage d'une table ──────────────────────────────────────────────────────────────────────────────────────────

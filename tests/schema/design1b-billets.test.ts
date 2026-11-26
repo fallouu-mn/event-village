@@ -197,6 +197,7 @@ describe('e. liens des avis vers le bon onglet de Mes billets', () => {
     // dont l'objet n'est plus au compte (transfert retiré, billet parti) et le transfert à accepter (ancre dans « Reçus »).
     const EXPECTED: Record<string, string> = {
         TRANSFER_CLAIMED_SENDER: 'a-venir', TRANSFER_OFFERED: 'recus', TRANSFER_CANCELLED: 'recus', TRANSFER_REVOKED: 'recus',
+        EVENT_TABLE_CONFIRMED: 'tables', EVENT_TABLE_SEATS_REMINDER: 'tables', // lot 11c-b : « Ma table » (modification signalée)
     };
 
     test('chaque lien vers /tickets porte un onglet qui existe dans la page', () => {

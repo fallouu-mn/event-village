@@ -438,22 +438,30 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                         const spoken = [`Table ${t.number}`, spokenCapacity(t), state ? (labels?.[state]?.spoken ?? STATE_VIEW[state].spoken) : null, edit ? `forme ${SHAPE_LABEL[t.shape]}` : null, t.hint ?? null]
                             .filter(Boolean).join(', ');
                         const radius = t.shape === 'RONDE' ? 'rounded-full' : 'rounded-lg';
+                        // Lot 11c-b : au choix d'une table, une table prise se lit sans la couleur (hachures et mot « Prise »)
+                        const takenToChoose = mode === 'select' && state === 'PRISE';
                         const face = (
                             <>
                                 <span
                                     aria-hidden="true"
-                                    className={cn('absolute inset-0 border-2 transition-[background-color,border-color,box-shadow] duration-fast', radius, view.shapeCls, isSel && 'border-primary shadow-lg', dragging && 'shadow-lg')}
+                                    className={cn('absolute inset-0 border-2 transition-[background-color,border-color,box-shadow] duration-fast', radius, view.shapeCls, takenToChoose && '[background-image:repeating-linear-gradient(135deg,currentColor_0_1px,transparent_1px_6px)]', isSel && 'border-primary shadow-lg', dragging && 'shadow-lg')}
                                     style={{ transform: t.rotation ? `rotate(${t.rotation}deg)` : undefined }}
                                 />
                                 <span aria-hidden="true" className="relative flex flex-col items-center gap-0.5 leading-none">
-                                    <span className={cn('break-all text-sm font-bold tabular-nums', state === 'HORS_CAPACITE' && 'line-through')}>{t.number}</span>
+                                    <span className={cn('break-all text-sm font-bold tabular-nums', state === 'HORS_CAPACITE' && 'line-through', takenToChoose && 'rounded bg-muted px-1')}>{t.number}</span>
                                     {/* Espace entre numéro et capacité : sans lui, axe-core lit « 14 » pour la table 1 à 4 places (textes collés) et
                                         ne le retrouve pas dans « Table 1, 4 places » (label-content-name-mismatch). Invisible dans un conteneur flex. */}
                                     {' '}
-                                    <small className="inline-flex items-center gap-0.5 text-caption tabular-nums">
-                                        <Users size={11} strokeWidth={2.5} />
-                                        {t.capacity}
-                                    </small>
+                                    {takenToChoose ? (
+                                        // Mot « Prise » en contenu décoratif (::after) : le nom lu de la table le dit déjà (« …, prise ») ; écrit
+                                        // dans le texte, il ne figurait pas tel quel dans ce nom (axe label-content-name-mismatch, run 702)
+                                        <small data-mot={labels?.PRISE?.legend ?? 'Prise'} className="rounded bg-muted px-1 text-caption font-semibold after:content-[attr(data-mot)]" />
+                                    ) : (
+                                        <small className="inline-flex items-center gap-0.5 text-caption tabular-nums">
+                                            <Users size={11} strokeWidth={2.5} />
+                                            {t.capacity}
+                                        </small>
+                                    )}
                                 </span>
                                 <StateMark state={state} />
                             </>
@@ -491,6 +499,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                                     key={`table:${t.id}`}
                                     type="button"
                                     ref={setItemRef(`table:${t.id}`)}
+                                    data-table-id={t.id}
                                     aria-label={spoken}
                                     aria-pressed={state === 'CHOISIE'}
                                     aria-disabled={!choosable || undefined}

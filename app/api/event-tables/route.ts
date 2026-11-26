@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireActiveSession } from '@/lib/auth/session';
 import { getServerEnv } from '@/lib/env';
-import { callTables, outcomeOf, whatsappShareUrl } from '@/lib/event-tables/event-tables.server';
+import { callTables, outcomeOf } from '@/lib/event-tables/event-tables.server';
+import { withScreenFields } from '@/lib/event-tables/my-table.server';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/event-tables — lot 11c-a : « Mes tables » du compte connecté (titulaire) : par table, l'événement, le type,
  * la zone, les places (envoyées, en attente, à envoyer, entrées, prénoms des invités), la fenêtre de remboursement en
- * cas de report, et un lien de partage WhatsApp sans aucun jeton (event_table_mine).
+ * cas de report, et un lien de partage WhatsApp sans aucun jeton (event_table_mine) ; lot 11c-b : places encore à inviter (invite_left).
  */
 export async function GET(request: NextRequest) {
     const session = await requireActiveSession(request);
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
         const outcome = outcomeOf(reply);
         if (outcome.status === 200 && Array.isArray(reply.items)) {
             const appUrl = getServerEnv().NEXT_PUBLIC_APP_URL;
-            outcome.body.items = (reply.items as Array<Record<string, unknown>>).map((item) => ({ ...item, whatsapp_url: whatsappShareUrl(appUrl, item) }));
+            outcome.body.items = (reply.items as Array<Record<string, unknown>>).map((item) => withScreenFields(appUrl, item));
         }
         return NextResponse.json(outcome.body, { status: outcome.status, headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
