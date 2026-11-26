@@ -1,7 +1,8 @@
 # Lot 11c-b — Tables d'un événement : écrans du client
 
 Branche `lot11c/tables-client`, partie de `main` à `1c131b1830` (lot 11c-a et carte B3 fusionnés), worktree
-`event-village-lot11cb`. **Non fusionnée.** Aucune migration. Le service reste fermé par `features.event_tables_enabled` ;
+`event-village-lot11cb`. **Fusionné dans main (`774e19a34a`), run complet de main 724 vert** (branche : run complet 723
+vert). Aucune migration. Le service reste fermé par `features.event_tables_enabled` ;
 les suites et le spec e2e l'ouvrent le temps de leur passage.
 
 ## À lire en premier
