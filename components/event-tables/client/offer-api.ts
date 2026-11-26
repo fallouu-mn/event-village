@@ -184,38 +184,9 @@ export function remainingText(remaining: number): { text: string; tone: 'success
     return { text: `${remaining} tables disponibles`, tone: 'success' };
 }
 
-/** Garde de la sélection le temps d'une connexion (30 minutes au plus), comme le panier des billets. */
-const CHOICE_KEY = 'ev-table:';
-const CHOICE_TTL_MS = 30 * 60 * 1000;
-
-export interface SavedChoice { typeId: string; tableId: string | null }
-
-export function saveChoice(eventId: string, choice: SavedChoice): void {
-    try {
-        sessionStorage.setItem(`${CHOICE_KEY}${eventId}`, JSON.stringify({ at: Date.now(), ...choice }));
-    } catch (err) {
-        console.warn('[tables] choix non gardé (stockage du navigateur indisponible) :', err instanceof Error ? err.message : String(err));
-    }
-}
-
-export function takeChoice(eventId: string): SavedChoice | null {
-    let raw: string | null;
-    try {
-        raw = sessionStorage.getItem(`${CHOICE_KEY}${eventId}`);
-        if (raw !== null) sessionStorage.removeItem(`${CHOICE_KEY}${eventId}`);
-    } catch (err) {
-        console.warn('[tables] choix gardé illisible (stockage du navigateur indisponible) :', err instanceof Error ? err.message : String(err));
-        return null;
-    }
-    if (!raw) return null;
-    try {
-        const saved: unknown = JSON.parse(raw);
-        if (!isRecord(saved) || typeof saved.at !== 'number' || Date.now() - saved.at > CHOICE_TTL_MS) return null;
-        const typeId = nonEmptyString(saved.typeId);
-        if (!typeId) return null;
-        return { typeId, tableId: nonEmptyString(saved.tableId) };
-    } catch (err) {
-        console.warn('[tables] choix gardé illisible :', err instanceof Error ? err.message : String(err));
-        return null;
-    }
-}
+/**
+ * Garde de la sélection le temps d'une connexion (30 minutes au plus), comme le panier des billets : dans les préférences
+ * de l’appareil (lib/device/table-prefs.ts, écrit par lib/device/device-prefs.ts), écrivain du stockage déjà classé par l'audit de la déconnexion et effacé à
+ * « Se déconnecter ».
+ */
+export { saveTableChoice as saveChoice, takeTableChoice as takeChoice, type TableChoice as SavedChoice } from '@/lib/device/table-prefs';

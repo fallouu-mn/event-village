@@ -138,29 +138,16 @@ export function saveTableSignal(on: boolean): boolean {
     return writeJson(TABLE_SIGNAL_KEY, on ? 'on' : 'off');
 }
 
-// ── Lot 11c-b : prénoms des invités d'une table, gardés sur ce téléphone seulement ────────────────────────────────────
-// Le transfert d'une place ne porte que le numéro du destinataire ; le prénom saisi (ou lu dans le carnet du téléphone)
-// sert à l'avatar de la place EN ATTENTE sur l'écran du titulaire, jusqu'à l'acceptation (le serveur donne alors le prénom
-// du compte de l'invité). Rien n'est envoyé au serveur ; effacé à la déconnexion avec les autres préférences.
-export const INVITE_NAMES_KEY = `${DEVICE_PREFS_PREFIX}invites`;
-export const INVITE_NAME_MAX = 40;
-const INVITE_NAMES_MAX = 200;
+// ── Lot 11c-b : accès pour lib/device/table-prefs.ts (prénoms des invités d'une table, table choisie avant connexion) ──
+// Ce module-ci est chargé dès le premier affichage de plusieurs pages (achat rapide, recherches) : les préférences des
+// tables vivent dans lib/device/table-prefs.ts, chargé seulement avec les écrans des tables, et passent par ces trois
+// accès. L'écriture reste faite ici ; clés sous DEVICE_PREFS_PREFIX : effacées à la déconnexion.
+export { readJson as readDevicePref, writeJson as writeDevicePref };
 
-export function readInviteNames(): Record<string, string> {
-    const v = readJson(INVITE_NAMES_KEY);
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
-    const out: Record<string, string> = {};
-    for (const [k, name] of Object.entries(v as Record<string, unknown>)) {
-        if (typeof name === 'string' && name.trim()) out[k] = name.trim().slice(0, INVITE_NAME_MAX);
+export function removeDevicePref(key: string): void {
+    try {
+        storage()?.removeItem(key);
+    } catch (err) {
+        console.warn('[appareil] préférence non effacée (stockage refusé) :', err instanceof Error ? err.message : String(err));
     }
-    return out;
-}
-
-export function saveInviteName(ticketId: string, name: string): boolean {
-    const clean = name.trim().replace(/\s+/g, ' ').slice(0, INVITE_NAME_MAX);
-    const names = readInviteNames();
-    if (clean) names[ticketId] = clean;
-    else delete names[ticketId];
-    const entries = Object.entries(names).slice(-INVITE_NAMES_MAX);
-    return writeJson(INVITE_NAMES_KEY, Object.fromEntries(entries));
 }

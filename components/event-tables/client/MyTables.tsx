@@ -13,7 +13,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { TransferModal, type TransferTicketData } from '@/components/tickets/TransferModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formatDateTime, formatFcfa } from '@/lib/format';
-import { readInviteNames, saveInviteName } from '@/lib/device/device-prefs';
+import { readInviteNames, saveInviteName } from '@/lib/device/table-prefs';
 import { isRecord, nonEmptyString, readAmount, readJsonBody, serverErrorMessage } from '@/lib/payments/payment-client';
 
 /**

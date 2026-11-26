@@ -70,6 +70,9 @@ describe('1. Poids : rien des tables au premier chargement, un seul chargeur par
         assert.match(summary, /callTables\('event_table_offer'/);
         assert.match(summary, /offer\.open !== true/);
         assert.match(summary, /console\.error\(/, 'panne journalisée');
+        // Run 694 : une lecture sans cache dans la page préparée la rendait dynamique (erreur 500 de la fiche)
+        assert.match(summary, /const cachedSummary = unstable_cache\(readSummary, \['fiche-tables-v1'\], \{ revalidate: 60, tags: \['fiche-publique'\] \}\);/, 'même cache de données que la fiche');
+        assert.match(summary, /return await cachedSummary\(eventId\);/);
     });
 });
 
