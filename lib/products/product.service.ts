@@ -31,6 +31,16 @@ export interface Product {
     images: string[];
     created_at: string;
     updated_at: string;
+    /** Lot 12a : établissement (choisi à la création, jamais changé), case « réglementé » et sorte, décision de l'administration. */
+    venue_id?: string | null;
+    is_regulated?: boolean;
+    regulated_kind?: 'ALCOOL' | 'TABAC' | null;
+    regulated_admin?: boolean | null;
+    /** Lot 12c : « à vérifier » (mots trouvés) tant que l'administration n'a pas décidé ; archivé (retiré de la carte). */
+    review_state?: 'A_VERIFIER' | null;
+    review_words?: string[] | null;
+    review_requested_at?: string | null;
+    archived_at?: string | null;
 }
 
 export interface CreateProductInput {
@@ -138,15 +148,24 @@ export class ProductService {
         assertNoPosterFolder(fields.images);
         const partnerId = await this.resolvePartnerId(partnerUserId);
         await this.assertOwnCategory(partnerId, fields.category_id as string | null | undefined);
-        const supabase = getServiceRoleClient();
-        const { data, error } = await supabase
-            .from('products')
-            .insert([{ ...fields, partner_id: partnerId }])
-            .select()
-            .single();
+        // Lot 12c : enregistré par order_product_save (fiche VALIDE, établissement de la partenaire, prix entier borné,
+        // « à vérifier » posé par la base) ; la partenaire est celle de la session, jamais prise du corps
+        return this.saveProduct(partnerUserId, null, fields);
+    }
 
-        if (error) throw new Error(error.message);
-        return data as Product;
+    /**
+     * Lot 12c : écriture d'un produit par la fonction en base order_product_save, seul chemin d'écriture de la partenaire
+     * (la garde products_order_guard refuse qu'une autre écriture pose ou efface l'état « à vérifier » ou l'archivage).
+     */
+    private static async saveProduct(partnerUserId: string, productId: string | null, fields: Record<string, unknown>): Promise<Product> {
+        if (productId !== null && !UUID_RE.test(productId)) throw new PublicError('Produit introuvable.', 'PRODUCT_NOT_FOUND', 404);
+        const { data, error } = await getServiceRoleClient().rpc('order_product_save', {
+            p: { actor_id: partnerUserId, product_id: productId, fields },
+        });
+        if (error) throw new Error(`order_product_save : ${error.message}`);
+        const r = (data ?? {}) as Record<string, unknown>;
+        if (r.ok !== true) throw catalogRefusal(r, 'Produit non enregistré.');
+        return r.product as Product;
     }
 
     /** R2 : une catégorie donnée appartient à la partenaire de la session (sinon 400). */
@@ -162,7 +181,8 @@ export class ProductService {
         const partnerId = await this.resolvePartnerId(partnerUserId);
         const supabase = getServiceRoleClient();
         
-        let query = supabase.from('products').select('*').eq('partner_id', partnerId);
+        // Lot 12c : un produit archivé n'est plus dans les listes (il reste dans l'historique des commandes)
+        let query = supabase.from('products').select('*').eq('partner_id', partnerId).is('archived_at', null);
         
         if (filters?.status) {
             query = query.eq('status', filters.status);
@@ -206,7 +226,7 @@ export class ProductService {
         assertNoPosterFolder(fields.images);
         const partnerId = await this.resolvePartnerId(partnerUserId);
         await this.assertOwnCategory(partnerId, fields.category_id as string | null | undefined);
-        return this.writeProduct(productId, partnerId, fields);
+        return this.saveProduct(partnerUserId, productId, fields);
     }
 
     private static async writeProduct(productId: string, partnerId: string, fields: Record<string, unknown>): Promise<Product> {
@@ -225,22 +245,23 @@ export class ProductService {
         return data as Product;
     }
 
-    static async deleteProduct(productId: string, partnerUserId: string): Promise<{ success: boolean }> {
-        const partnerId = await this.resolvePartnerId(partnerUserId);
-        const supabase = getServiceRoleClient();
-        const { error } = await supabase
-            .from('products')
-            .delete()
-            .eq('id', productId)
-            .eq('partner_id', partnerId);
-
-        if (error) throw new Error(error.message);
-        return { success: true };
+    /**
+     * Lot 12c : retrait d'un produit par order_product_remove — supprimé s'il n'a jamais été vendu, archivé sinon (avant :
+     * erreur 500 de clé étrangère pour un produit vendu). Rend l'issue et le message à afficher.
+     */
+    static async deleteProduct(productId: string, partnerUserId: string): Promise<{ success: boolean; outcome: 'DELETED' | 'ARCHIVED'; message: string }> {
+        if (!UUID_RE.test(productId)) throw new PublicError('Produit introuvable.', 'PRODUCT_NOT_FOUND', 404);
+        const { data, error } = await getServiceRoleClient().rpc('order_product_remove', { p: { actor_id: partnerUserId, product_id: productId } });
+        if (error) throw new Error(`order_product_remove : ${error.message}`);
+        const r = (data ?? {}) as Record<string, unknown>;
+        if (r.ok !== true) throw catalogRefusal(r, 'Produit non retiré.');
+        return { success: true, outcome: r.outcome === 'ARCHIVED' ? 'ARCHIVED' : 'DELETED', message: String(r.message ?? 'Produit retiré.') };
     }
 
     /** Statut d'un produit (route POST /api/partner/products/[id]/status) : seul chemin qui le change (R2). */
     static async setProductStatus(productId: string, partnerUserId: string, status: unknown): Promise<Product> {
-        if (status !== 'DISPONIBLE' && status !== 'INDISPONIBLE' && status !== 'SUSPENDU') {
+        // Lot 12c : « épuisé » se choisit aussi à la main (CDC § 61 : disponible, indisponible, épuisé, suspendu)
+        if (status !== 'DISPONIBLE' && status !== 'INDISPONIBLE' && status !== 'EPUISE' && status !== 'SUSPENDU') {
             throw new PublicError('Statut de produit invalide.', 'INVALID_STATUS', 400);
         }
         const partnerId = await this.resolvePartnerId(partnerUserId);
@@ -256,20 +277,28 @@ const productFieldsSchema = z.object({
     category_id: z.string().regex(UUID_RE, 'Catégorie invalide.').nullable().optional(),
     name: z.string().trim().min(1, 'Le nom du produit est obligatoire.').max(200, 'Le nom compte au plus 200 caractères.'),
     description: z.string().trim().max(2000, 'La description compte au plus 2 000 caractères.').nullable().optional(),
-    price: z.number().finite().min(0, 'Le prix ne peut pas être négatif.').max(100_000_000, 'Prix trop élevé.'),
+    // Lot 12c : F CFA entiers, comme la base (products_price_franc_chk, order_product_save)
+    price: z.number().int('Le prix est un nombre entier de F CFA.').min(0, 'Le prix ne peut pas être négatif.').max(10_000_000, 'Le prix compte au plus 10 000 000 F CFA.'),
     is_daily_special: z.boolean().optional(),
     daily_special_date: z.string().regex(DATE_RE, 'Date invalide (format AAAA-MM-JJ).').nullable().optional(),
     stock_quantity: z.number().int('Le stock est un nombre entier.').min(0, 'Le stock ne peut pas être négatif.').max(1_000_000).nullable().optional(),
     is_stock_managed: z.boolean().optional(),
     images: z.array(z.string().max(600, 'Adresse d’image trop longue.')).max(10, '10 images au plus.').optional(),
+    // Lot 12c : établissement (à la création seulement : il ne change jamais ensuite), case « réglementé » et sorte
+    venue_id: z.string().regex(UUID_RE, 'Établissement invalide.').optional(),
+    is_regulated: z.boolean().optional(),
+    regulated_kind: z.enum(['ALCOOL', 'TABAC'], { message: 'Choisissez alcool ou tabac.' }).nullable().optional(),
 }).strict();
+
+/** Lot 12c : à la modification, l'établissement ne se change pas (refus FIELD_NOT_EDITABLE, comme les autres champs fermés). */
+const productUpdateSchema = productFieldsSchema.omit({ venue_id: true }).partial().strict();
 
 /** Champs d'un produit lus du corps : liste blanche (strict), tous facultatifs à la modification. */
 function parseProductFields(input: unknown, mode: 'create' | 'update'): Record<string, unknown> {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
         throw new PublicError('Données du produit illisibles.', 'INVALID_INPUT', 400);
     }
-    const schema = mode === 'create' ? productFieldsSchema : productFieldsSchema.partial().strict();
+    const schema = mode === 'create' ? productFieldsSchema : productUpdateSchema;
     const parsed = schema.safeParse(input);
     if (!parsed.success) {
         const unknownKey = parsed.error.issues.find((i) => i.code === 'unrecognized_keys') as { keys?: string[] } | undefined;
@@ -282,4 +311,14 @@ function parseProductFields(input: unknown, mode: 'create' | 'update'): Record<s
         throw new PublicError('Aucune modification à enregistrer.', 'INVALID_INPUT', 400);
     }
     return parsed.data as Record<string, unknown>;
+}
+
+/** Lot 12c : refus d'une fonction du catalogue (message déjà en français simple), avec le statut HTTP de son code. */
+export function catalogRefusal(r: Record<string, unknown>, fallback: string): PublicError {
+    const code = typeof r.code === 'string' ? r.code : 'CATALOG_REFUSED';
+    const status = code.endsWith('_NOT_FOUND') ? 404
+        : code === 'FORBIDDEN' || code === 'PARTNER_SUSPENDED' || code === 'PARTNER_NOT_VALIDATED' ? 403
+            : code.startsWith('TOO_MANY') ? 429
+                : code === 'PRODUCT_ARCHIVED' || code === 'ZONE_EXISTS' || code === 'INVALID_ORDER' ? 409 : 400;
+    return new PublicError(typeof r.message === 'string' && r.message ? r.message : fallback, code, status);
 }

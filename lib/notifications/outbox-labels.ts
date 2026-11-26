@@ -218,6 +218,9 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ORDER_COURIER_ASSIGNED: 'Livraison confiée',
     ORDER_COURIER_CANCELLED: 'Livraison annulée',
     ORDER_COURIER_INVITED: 'Invitation à livrer',
+    // Lot 12c : vérification des produits
+    ADMIN_PRODUCT_REVIEW: 'Produit à vérifier',
+    PRODUCT_REVIEW_DECIDED: 'Produit vérifié',
     ADMIN_PARTNER_REGISTERED: 'Nouvelle candidature partenaire',
     ADMIN_REFUND_TO_RETRY: 'Remboursement à reprendre',
     ADMIN_DUPLICATE_PAYMENT: 'Paiement en double remboursé',

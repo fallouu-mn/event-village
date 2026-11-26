@@ -226,6 +226,9 @@ export interface TemplateData {
     ORDER_COURIER_ASSIGNED: OrderNotifData;
     ORDER_COURIER_CANCELLED: OrderNotifData;
     ORDER_COURIER_INVITED: { invitation_id: string; partner_name?: string | null };
+    // Lot 12c : produit « à vérifier » (order_product_save, product_option_set) et décision (order_product_regulation_decide)
+    ADMIN_PRODUCT_REVIEW: { product_id: string; product_name: string; venue_name?: string | null; company?: string | null; words: string[] };
+    PRODUCT_REVIEW_DECIDED: { product_id: string; product_name: string; decision: 'AUTORISE' | 'REFUSE' | string; reason?: string | null; partner_box?: boolean };
     PROMOTION_DECIDED: EventData & { promotion_id: string; status: 'APPROUVEE' | 'REFUSEE' | string; reason?: string | null };
     CONTROLLER_ASSIGNED: Partial<EventData> & { assignment_id?: string; entry_point: string | null; can_accept_cash: boolean; events?: ControllerEventRef[] };
     CONTROLLER_UNASSIGNED: Partial<EventData> & { assignment_id?: string; events?: ControllerEventRef[] };

@@ -3,7 +3,7 @@ import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { guardFeature } from '@/lib/features/flags';
-import { orderResponse } from '@/lib/orders/booking';
+import { partnerOrderView } from '@/lib/orders/booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
         const { data, error } = await getServiceRoleClient().rpc('order_partner_list', { p: { actor_id: user.id, filter } });
         if (error) throw new Error(`order_partner_list : ${error.message}`);
         const list = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : [];
-        return NextResponse.json({ success: true, orders: list.map(orderResponse) }, { headers: { 'Cache-Control': 'no-store' } });
+        // Lot 12c : coordonnées du client seulement pendant la commande ouverte (partnerOrderView)
+        return NextResponse.json({ success: true, orders: list.map(partnerOrderView) }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error: unknown) {
         return apiFailure('GET /api/partner/orders', error, { message: 'Commandes momentanément indisponibles.', code: 'ORDERS_UNAVAILABLE', status: 500 });
     }

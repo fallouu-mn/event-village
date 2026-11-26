@@ -2060,6 +2060,37 @@ const CATALOG = {
         },
         sample: { invitation_id: SAMPLE_ID.invitation, partner_name: 'Chez Fatou, cuisine du Sénégal et grillades' },
     }),
+    // Lot 12c : produit « à vérifier » (un mot de la liste dans son nom, sa description ou un supplément) : administrateurs
+    // qui ont partners.validate, cloche et email ; décision envoyée à la partenaire (cloche, notification du téléphone, email)
+    ADMIN_PRODUCT_REVIEW: define('ADMIN_PRODUCT_REVIEW', {
+        label: 'Produit à vérifier', channels: ['IN_APP', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', night: 'DEFER', adminPermission: 'partners.validate', inAppType: 'ADMIN_REVIEW',
+        link: (d) => `/admin/products?produit=${ident(d, 'product_id')}`,
+        inApp: (d) => {
+            const words = Array.isArray(field(d, 'words')) ? (field(d, 'words') as unknown[]).filter((w): w is string => typeof w === 'string') : [];
+            const venue = optText(d, 'venue_name');
+            const company = optText(d, 'company');
+            return {
+                title: 'Produit à vérifier',
+                content: `${q(text(d, 'product_name'))}${venue ? ` chez ${venue}` : company ? ` de ${company}` : ''} contient ${words.length > 1 ? 'les mots' : 'le mot'} ${words.map(q).join(', ') || 'de la liste'}. Il ne se vend pas en ligne tant que vous ne l’avez pas autorisé ou refusé.`,
+            };
+        },
+        sample: { product_id: SAMPLE_ID.reservation, product_name: 'Bissap maison et bière locale en bouteille de 65 cl', venue_name: 'Le Grand Bleu', company: 'Sabar Events', words: ['bière'] },
+    }),
+    PRODUCT_REVIEW_DECIDED: define('PRODUCT_REVIEW_DECIDED', {
+        label: 'Produit vérifié', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'PARTNER', suspendedPolicy: 'ALLOW', night: 'DEFER', inAppType: 'ORDER',
+        link: (d) => `/partner/products/${ident(d, 'product_id')}`,
+        inApp: (d) => {
+            const name = q(text(d, 'product_name'));
+            const reason = optText(d, 'reason');
+            if (text(d, 'decision') === 'AUTORISE') {
+                return field(d, 'partner_box') === true
+                    ? { title: 'Produit vérifié', content: `${name} est vérifié par Event Village. Vous l’avez marqué « réglementé » : il reste affiché avec son prix, sans vente en ligne, tant que la case est cochée.` }
+                    : { title: 'Produit autorisé à la vente', content: `${name} est vérifié par Event Village : il peut être commandé en ligne.` };
+            }
+            return { title: 'Produit non vendu en ligne', content: `${name} n’est pas autorisé à la vente en ligne.${reason ? ` Motif : ${sentence(reason)}` : ''} Il reste affiché avec son prix sur votre carte : vos clients l’achètent sur place.` };
+        },
+        sample: { product_id: SAMPLE_ID.reservation, product_name: 'Bissap maison et bière locale en bouteille de 65 cl', decision: 'REFUSE', reason: 'Boisson alcoolisée : vente en ligne interdite.', partner_box: false },
+    }),
     ADMIN_VENUE_SUBMITTED: define('ADMIN_VENUE_SUBMITTED', {
         label: 'Établissement à valider', channels: ['IN_APP', 'PUSH', 'EMAIL'], audience: 'ADMIN', suspendedPolicy: 'BLOCK', adminPermission: 'halls.validate', inAppType: 'ADMIN_REVIEW',
         link: (d) => `/admin/venues/${ident(d, 'venue_id')}`,
