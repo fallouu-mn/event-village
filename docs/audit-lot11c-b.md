@@ -220,3 +220,25 @@ Tous verts au run 706 (`cv11cb-2-gardes`, base locale ; `cv11cb-3-statique`, san
 - **SMS de la confirmation (point 8).** L'écart est justifié : 157 caractères au pire cas avec l'onglet.
 - **Clé d'idempotence côté écran (point 1).** Une clé par corps (`useIdempotencyKey().keyFor`), gardée tant que l'issue est
   incertaine, remise à zéro après un refus net : conforme au chemin des billets.
+
+## Corrections
+
+Correctifs sur `lot11c/tables-client` (détail : `docs/lot11c-b-rapport.md`, section « Correctifs après
+contre-vérification »). Les trois suites de cet audit y sont reprises **sans changer une assertion** (`009e51331c`).
+Aucune migration. Run complet **714** (`a5f4db242b`, branche à jour avec `origin/main` `1c131b1830`), entièrement vert :
+623/623 suites, 783 e2e, responsive 0 défaut, mesure 94 / 94 / 94. Journaux : `ci-results`, `runs/714-45830220739/`.
+
+| Test de l'audit | Avant (run 706) | Après (run 714) | Correctif |
+|---|---|---|---|
+| `cv11cb-1` T1 — table tenue : message sur `public_category_stock` | rouge (0 message) | **vert** (« messages reçus … : 1 ») | heure des tranches publiques existantes réécrite par le serveur à chaque table tenue, rendue ou remboursée ; relecture de l'offre toutes les 15 s quand le plan est ouvert (`ba7e360709`) |
+| `cv11cb-1` T2 — titulaire sans billet : « Ma table » atteignable | rouge | **vert** (« onglet lié aux billets seulement : false ») | onglet d'après les ventes (`GET /api/tickets`), bandeau du remboursement, avis du report vers `/tickets/<événement>` puis « Ma table » (`7366d1f4cf`, `5e057d8243`, `a5f4db242b`) |
+| `cv11cb-2` G1 à G4 (7 tests) | vert | **vert** (7/7) | — (garde G1 « prix changé sans total affiché » inchangée ; le refus « prix changé » ne joue qu'avec le total affiché) |
+| `cv11cb-3` T3 — prénoms effacés sans session | rouge | **vert** (« après [table-choisie…] » : prénoms effacés ; « accès générique réexporté : false ») | portée « données du compte » de la purge, écritures nommées dans `device-prefs.ts` (`6a4f90b8de`) |
+| `cv11cb-3` T4 — SMS du rappel vers l'onglet | rouge | **vert** (GSM-7, 154 caractères) | `/tickets?tab=tables` (`5e057d8243`) |
+| `cv11cb-3` G-S (5 tests) | vert | **vert** | aucune migration, un seul abonnement (`public_category_stock`) |
+| Observation O1 (cache) | — | corrigée | `features.event_tables_enabled` invalide `fiche-publique` (`8a5561d260`) |
+| Observation O2 (prix changé) | — | corrigée | total affiché comparé au prix de la base avant et après la création ; refus `TABLE_PRICE_CHANGED`, aucun paiement (`ba7e360709`, suite `l11cb-cv-correctifs`) |
+| Observation O3 (rejeu d'une clé) | — | inchangée | sans effet (une clé par corps), comme les billets |
+
+`cvf2b-6-deconnexion` : verte (15/15), non modifiée ; son classement de `device-prefs.ts` n'a pas été touché, le contrôle
+des écritures des tables est dans un test nouveau (`tests/schema/l11cb-cv-correctifs.test.ts`).

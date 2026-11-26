@@ -55,6 +55,55 @@ blocage de Mes billets : **376 ms avant, 316 ms après** (médianes ; détail pl
   - `tests/schema/design1b-billets.test.ts` : les deux types ajoutés à la liste des avis qui mènent à Mes billets, avec
     leur onglet `tables` (une ligne ajoutée).
 
+## Correctifs après contre-vérification
+
+Contre-vérification : `docs/audit-lot11c-b.md` (branche `lot11c/cv-rouges-b`, `1a124f8ad6`). Ses trois suites
+`tests/audit/cv11cb-1-trous`, `cv11cb-2-gardes`, `cv11cb-3-statique` sont reprises **sans changer une assertion**
+(`009e51331c`). **Aucune migration** (la suite statique de l'audit l'exige d'ailleurs). Run complet **714**
+(`a5f4db242b`, branche à jour avec `origin/main` `1c131b1830`) : **entièrement vert**.
+
+| Trou | Correctif | Commit | Preuve (run 714) |
+|---|---|---|---|
+| T1 (moyen) — « La table 7 vient d'être prise » n'arrivait jamais | Le serveur réécrit **l'heure seule** (`updated_at`) des tranches **déjà publiques** de l'événement (`public_category_stock`, canal déjà écouté par l'onglet) quand une table est mise en attente, rendue (échec du paiement, prix changé) ou remboursée : aucune ligne, aucune valeur, aucun stock nouveau, aucune donnée d'un client ; les règles des billets ne changent pas. Filet : l'onglet relit l'offre toutes les 15 s tant que le plan est ouvert et l'écran visible (événement sans billet en ligne, donc sans tranche). La table que l'on paie n'est jamais annoncée « prise » (inchangé) | `ba7e360709` | `cv11cb-1` T1 **vert** : « messages reçus après la mise en attente de la table 1 : 1 » ; `l11cb-cv-correctifs` (statique) |
+| T2 (moyen) — titulaire qui a envoyé toutes ses places : « Ma table » introuvable | `GET /api/tickets` sert `tables` d'après les **ventes** du compte (`event_table_bookings` actives, après le contrôle de session) : onglet « Tables » affiché tant qu'il est titulaire ; bandeau « Soirée reportée : votre table peut être remboursée » (montant de la base) avec « Voir ma table » dans Mes billets ; l'avis du report qui ouvre le remboursement (`EVENT_CHANGED`, `refund_open`) mène aux billets de l'événement (`/tickets/<événement>`), qui renvoie le titulaire vers « Ma table » (remboursement ouvert, ou plus aucun billet) | `7366d1f4cf`, `5e057d8243`, `a5f4db242b` | `cv11cb-1` T2 **vert** (« onglet lié aux billets seulement : false ») ; `l11cb-cv-correctifs` (base) : `holder` vrai sans billet, remboursement de 157 500 F annoncé, rien pour un autre compte |
+| T3 (faible) — prénoms des invités gardés après une session close ailleurs | Clé des prénoms ajoutée à la portée « données du compte » de `clearDevicePrefs` (chemin « page chargée sans session », cvf2b 6.5) ; écritures **nommées** dans `lib/device/device-prefs.ts` (écrivain classé de cvf2b-6), plus d'accès générique réexporté ; `table-prefs.ts` ne touche plus au stockage. Le classement de cvf2b-6 n'est pas modifié : l'ajout au détecteur est dans un test nouveau (`tests/schema/l11cb-cv-correctifs.test.ts`) | `6a4f90b8de` | `cv11cb-3` T3 **vert** ; `cvf2b-6` vert (15/15) ; test nouveau : prénoms effacés sans session, recherches gardées, tout effacé au bouton |
+| T4 (faible) — SMS du rappel vers `/tickets` | `EVENT_TABLE_SEATS_REMINDER` : `/tickets?tab=tables` ; la confirmation garde `/tickets` (157 caractères avec l'onglet). `docs/apres-lancement.md` corrigé | `5e057d8243` | `cv11cb-3` T4 **vert** ; pire cas : **GSM-7, 154 caractères, 1 segment** |
+| Observation — prix changé | L'écran envoie le total **affiché** (`expectedTotal`) ; le serveur le compare au devis de la base **avant** toute attente, puis au montant **réellement créé** (course : paiement annulé avant toute demande à l'opérateur, table rendue). Refus 409 `TABLE_PRICE_CHANGED` : « Le prix de cette table a changé : 210 000 F CFA. Vérifiez avant de payer. » ; l'écran relit le devis et le bouton montre le nouveau total. Le montant du navigateur ne sert qu'à la comparaison ; sans lui, comportement d'avant (garde G1 de l'audit) | `ba7e360709` | `l11cb-cv-correctifs` (base) : refus, **aucun paiement** créé, puis paiement de 210 000 F avec le total à jour ; total forgé à 1 F : refus |
+| Observation — cache | `PUT /api/admin/finance-settings` : écrire `features.event_tables_enabled` invalide aussitôt l'étiquette `fiche-publique` (page et résumé de la fiche) | `8a5561d260` | statique (`l11cb-cv-correctifs`) |
+
+**Tests existants modifiés** (signalés) :
+- `tests/parcours/notif-modeles.test.ts`, lignes 980 et 982 : texte attendu du SMS du rappel, lien `/tickets?tab=tables`
+  (mêmes lignes ; conséquence directe de T4).
+- Aucun autre. `tests/audit/`, `tests/audit-auth/` et `tests/schema/f5-liens-avis.test.ts` : inchangés (la lecture de
+  `/tickets/<id>` a été écrite pour garder telle quelle la ligne que `f5-liens-avis` fige ; rouge au run 712, verte ensuite).
+
+**Runs** : 712 (rapide, 78 suites + responsive + mesure) : 77/78, seul `f5-liens-avis` rouge (corrigé dans le code, voir
+ci-dessus) ; responsive : seul le spec `carte-b3` à 360 px sombre (sans lien avec le lot, déjà rouge une fois au run 696,
+vert aux runs 697 à 704 et 714). **714 (complet)** : **623/623 suites**, e2e **783** tests, responsive **237** tests et
+190 pages × thèmes à **0 défaut**, budgets « OK », mesure **94 / 94 / 94**, toucher 80 ms, verdict vert.
+
+**Poids et mesure, avant et après les correctifs** (avant = run complet 703 du lot ; main = run 686) :
+
+| Route | main (686) | Lot (703) | Correctifs (714) | Écart 714 − 703 | Marge (714) |
+|---|---:|---:|---:|---:|---:|
+| `/` | 215 068 | 215 565 | 215 595 | +30 | 10 747 |
+| `/events/[id]` | 223 745 | 224 522 | 224 552 | +30 | 8 764 |
+| `/tickets` | 239 990 | 240 493 | 240 825 | +332 | 9 592 |
+| `/controller/scanner` | 224 947 | 225 075 | 225 105 | +30 | 9 806 |
+| `/billet/hors-ligne` | 214 066 | 214 189 | 214 219 | +30 | 10 049 |
+| `/explore` | 225 578 | 226 158 | 226 441 | +283 | 9 271 |
+
++30 o partout : les deux clés des tables dans le module de purge (chargé par chaque page). Mes billets : l'indicateur des
+tables et le bandeau du remboursement. Explorer : les fonctions nommées des préférences des tables, dans le module des
+préférences de l'appareil (chargé par la recherche) — c'est le prix de T3 (écriture visible par l'audit). Aucun budget
+relevé.
+
+| Mesure mobile (médiane de 5) | main (691) | Lot (703) | Correctifs (714) |
+|---|---|---|---|
+| Accueil | 91 (TBT 361 ms) | 95 (TBT 255 ms) | 94 (TBT 288 ms) |
+| Fiche | 91 (TBT 330 ms) | 92 (TBT 322 ms) | 94 (TBT 263 ms) |
+| Mes billets | 91 (TBT **376 ms**) | 93 (TBT **316 ms**) | 94 (TBT **295 ms** ; passages 263, 346, 286, 295, 371) |
+
 ## Décisions prises
 
 | Sujet | Décision | Pourquoi |
