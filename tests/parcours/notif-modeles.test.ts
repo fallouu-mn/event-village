@@ -977,9 +977,9 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
             ['EVENT_TABLE_SOLD', { table_count: 3, seat_count: 18 }, [],
                 `Event Village : 3 tables vendues pour Gala de la Teranga (18 places). ${U}/partner/events`],
             ['EVENT_TABLE_SEATS_REMINDER', {}, [],
-                `Event Village : il vous reste 4 places à envoyer pour la table 12, Gala de la Teranga demain. ${U}/tickets`],
+                `Event Village : il vous reste 4 places à envoyer pour la table 12, Gala de la Teranga demain. ${U}/tickets?tab=tables`], // CV 11c-b (T4) : onglet « Tables » (modification signalée)
             ['EVENT_TABLE_SEATS_REMINDER', { seats_left: 1 }, [],
-                `Event Village : il vous reste 1 place à envoyer pour la table 12, Gala de la Teranga demain. ${U}/tickets`],
+                `Event Village : il vous reste 1 place à envoyer pour la table 12, Gala de la Teranga demain. ${U}/tickets?tab=tables`],
             ['ADMIN_EVENT_TABLES_CHANGED', {}, [],
                 `Event Village : tables modifiées après validation pour Gala de la Teranga. Vérifiez la fiche : ${U}/admin/events`],
             ['VENUE_VALIDATION_DECIDED', {}, [],
