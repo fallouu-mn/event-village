@@ -123,7 +123,7 @@ describe('T3. Deux copies simultanées depuis deux événements différents', ()
 
         // La copie A a passé ses lectures (cible vide) ; juste avant son 1er enregistrement, la copie B s'exécute en entier
         let second: { status: number; body: Row } | null = null;
-        beforeRpc('event_table_type_save', [target.eventId, 'Carre T3 A'], async () => {
+        beforeRpc('event_table_copy', [target.eventId, sourceA], async () => {
             second = await copy(owner, target.eventId, sourceB);
         });
         const first = await copy(owner, target.eventId, sourceA);

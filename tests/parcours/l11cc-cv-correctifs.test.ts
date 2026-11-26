@@ -3,7 +3,8 @@
  * faux SamirPay. Chaque correctif est éprouvé au-delà du test rouge de l'audit qui le visait.
  *
  *  T1. Liste de la porte et plage du contrôle : contrôleur affecté DANS la plage (début dans 2 h) : 200, titulaire et
- *      invitée en prénom et initiale ; contrôle pas encore ouvert : 409 CONTROL_CLOSED « Le contrôle ouvre le … », aucune
+ *      invitée en prénom et initiale, sans téléphone, courriel, nom complet ni identifiant de vente, de paiement ou de
+ *      billet (demande de l'utilisateur, G3 de l'audit lisant désormais la porte par la propriétaire) ; contrôle pas encore ouvert : 409 CONTROL_CLOSED « Le contrôle ouvre le … », aucune
  *      donnée ; événement suspendu, annulé : 409 avec le message du scanner ; la propriétaire et l'administration munie
  *      de events.read (et du droit de scanner) gardent la liste ; un administrateur qui n'a que le droit de scanner est
  *      traité comme un contrôleur (décision) ; events.read seul : 403 (inchangé).
@@ -133,6 +134,29 @@ describe('T1. Liste de la porte et plage du contrôle', () => {
         assert.ok(item, show(r));
         assert.equal(item.holder, 'Awa D.');
         assert.deepEqual(item.guests, ['Mariama S.']);
+    });
+
+    test('contrôleur affecté pendant la plage : prénom et initiale seulement, ni téléphone, ni courriel, ni nom complet, ni identifiant', async () => {
+        const ev = await newTablesEvent(owner, 'cv-t1-donnees', { capacity: 100, startsInHours: 2 });
+        const t = await createdTableType(owner, ev.eventId, vipType({ name: 'Carre cv donnees' }), 2);
+        const sold = await buyTable(holder, ev.eventId, t.typeId);
+        const transferId = await transferSeat(String(sold.tickets[0].id), holder, guest.phoneE164);
+        const { data: acc, error: accErr } = await service.rpc('ticket_transfer_accept', { p: { transfer_id: transferId, actor_id: guest.userId } });
+        assert.equal(accErr, null, accErr?.message);
+        assert.equal((acc as Row | null)?.ok, true, JSON.stringify(acc));
+        const ctl = await newController('l11cc-cv-donnees', ev.eventId, owner.userId);
+        const r = await doorList(ctl, ev.eventId);
+        assert.equal(r.status, 200, show(r));
+        const text = JSON.stringify(r.body);
+        assert.ok(text.includes('Awa D.') && text.includes('Mariama S.'), `prénom et initiale : ${text}`);
+        const secrets = [holder.phoneE164, holder.phone9, holder.email, holder.lastName, holder.userId,
+            guest.phoneE164, guest.phone9, guest.email, guest.lastName, guest.userId,
+            String(sold.booking.id), String(sold.payment.id), ...sold.tickets.map((x) => String(x.id)), ...sold.tickets.map((x) => String(x.ticket_number ?? ''))]
+            .filter((s) => s.length > 0);
+        for (const s of secrets) assert.equal(text.includes(s), false, `la porte contient « ${s} »`);
+        for (const item of rows(r.body.items)) {
+            assert.deepEqual(Object.keys(item).sort(), ['entered', 'guests', 'holder', 'seats', 'table_number', 'type_name', 'zone'], JSON.stringify(item));
+        }
     });
 
     test('contrôle pas encore ouvert : contrôleur et administrateur qui n’a que le droit de scanner 409 sans donnée ; propriétaire et administration events.read gardent la liste', async () => {

@@ -214,7 +214,7 @@ describe('G3. Données personnelles et identifiants', () => {
         const bodies: Array<[string, Row]> = [
             ['lecture', (await report(owner, ev.eventId)).body],
             ['administration', (await adminTables(reader, ev.eventId)).body],
-            ['porte', (await doorList(controller, ev.eventId)).body],
+            ['porte', (await doorList(owner, ev.eventId)).body],
         ];
         const secrets = [holder.phoneE164, holder.phone9, holder.email, holder.lastName, holder.userId, guest.phoneE164, guest.phone9, guest.email,
             guest.lastName, guest.userId, ev.paymentId];
@@ -293,7 +293,7 @@ describe('G5–G7. Copie : alerte après validation, refus en cours, copies entr
         const source = await sourceWithTables(owner, 'g7-source', [{ name: 'Carre G7', seats: 4, count: 3 }]);
         const target = await newTablesEvent(owner, 'g7-cible', { capacity: 80 });
         let second: { status: number; body: Row } | null = null;
-        beforeRpc('event_table_type_save', [target.eventId, 'Carre G7'], async () => { second = await copy(owner, target.eventId, source); });
+        beforeRpc('event_table_copy', [target.eventId, source], async () => { second = await copy(owner, target.eventId, source); });
         const first = await copy(owner, target.eventId, source);
         assert.equal(hookPending(), false, 'entrelacement joué');
         const b = second as unknown as { status: number; body: Row };
