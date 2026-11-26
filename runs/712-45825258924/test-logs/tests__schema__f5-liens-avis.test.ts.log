@@ -1,0 +1,141 @@
+[F5-LIENS] 163 types à lien passés en revue, 31 sans objet propre (raison écrite)
+TAP version 13
+# Subtest: finition 5 — liens précis des avis : revue de TOUT le catalogue
+    # Subtest: chaque type à lien : chemin interne, et l’objet exact dès que l’avis en porte un (sinon raison écrite)
+    ok 1 - chaque type à lien : chemin interne, et l’objet exact dès que l’avis en porte un (sinon raison écrite)
+      ---
+      duration_ms: 7.659034
+      type: 'test'
+      ...
+    # Subtest: billet, billets d’un événement, retrait : chemins des pages d’arrivée
+    ok 2 - billet, billets d’un événement, retrait : chemins des pages d’arrivée
+      ---
+      duration_ms: 0.288218
+      type: 'test'
+      ...
+    # Subtest: données anciennes sans identifiant : le lien se replie, l’envoi n’échoue jamais
+    ok 3 - données anciennes sans identifiant : le lien se replie, l’envoi n’échoue jamais
+      ---
+      duration_ms: 0.317082
+      type: 'test'
+      ...
+    # Subtest: sélection des billets d’une page d’arrivée : billets du compte seulement, même réponse pour un identifiant deviné ou mal formé
+    ok 4 - sélection des billets d’une page d’arrivée : billets du compte seulement, même réponse pour un identifiant deviné ou mal formé
+      ---
+      duration_ms: 0.401589
+      type: 'test'
+      ...
+    # Subtest: pages d’arrivée : session et propriété exigées, même page « Cet élément n’est plus disponible » sans indice
+    not ok 5 - pages d’arrivée : session et propriété exigées, même page « Cet élément n’est plus disponible » sans indice
+      ---
+      duration_ms: 3.043356
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/schema/f5-liens-avis.test.ts:2:9641'
+      failureType: 'testCodeFailure'
+      error: 'puis les billets du compte pour l’événement, sinon introuvable'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        /**
+         * Finition 5 (point 2) — lecture par le serveur des billets d'une page d'arrivée d'avis (`/tickets/<id>` : un billet, ou
+         * les billets du compte pour un événement). Modèle d'app/tickets/page.tsx : la page appelle GET /api/tickets elle-même avec
+         * les cookies et en-têtes de la requête reçue (mêmes règles de session, même lecture). Sans session : connexion puis retour ;
+         * rien du compte sous cet identifiant : introuvable (même réponse pour un identifiant deviné ou d'un autre compte) ;
+         * panne : message simple.
+         */
+        import { headers } from 'next/headers';
+        import { NextRequest } from 'next/server';
+        import { GET as listMyTickets } from '@/app/api/tickets/route';
+        import { isObjectId, ticketsInFocus } from '@/lib/tickets/focus';
+        import type { MyTicket } from './TicketsView';
+        
+        export type FocusRead =
+            | { kind: 'ok'; focus: 'ticket' | 'event'; tickets: MyTicket[] }
+            /** CV 11c-b (T2) : table du compte pour cet événement (remboursement ouvert, ou plus aucun billet) : « Ma table ». */
+            | { kind: 'table'; bookingId: string }
+            | { kind: 'login' }
+            | { kind: 'not-found' }
+            | { kind: 'error'; message: string };
+        
+        const GENERIC = 'Vos billets n’ont pas pu être chargés. Vérifiez votre connexion, puis réessayez.';
+        
+        /** Billet du compte qui porte `id`, sinon billets du compte pour l'événement `id`, sinon introuvable. */
+        export async function readTicketsFocus(id: string): Promise<FocusRead> {
+            if (!isObjectId(id)) return { kind: 'not-found' };
+            try {
+                const h = await headers();
+                if (!h.get('cookie')) return { kind: 'login' };
+                const host = h.get('x-forwarded-host') ?? h.get('host');
+                if (!host) return { kind: 'error', message: GENERIC };
+                const proto = h.get('x-forwarded-proto') ?? 'http';
+                const res = await listMyTickets(new NextRequest(`${proto}://${host}/api/tickets`, { headers: new Headers(h) }));
+                if (res.status === 401) return { kind: 'login' };
+                const body = (await res.json().catch(() => null)) as { tickets?: unknown; tables?: unknown; error?: unknown } | null;
+                if (!res.ok || !body || !Array.isArray(body.tickets)) {
+                    return { kind: 'error', message: typeof body?.error === 'string' && body.error.trim() ? body.error : GENERIC };
+                }
+                const list = body.tickets as MyTicket[];
+                const ticket = ticketsInFocus(list, { ticket: id });
+                if (ticket) return { kind: 'ok', focus: 'ticket', tickets: ticket };
+                // Contre-vérification du lot 11c-b (T2) : tables du compte pour cet événement, d'après les ventes (GET /api/tickets).
+                // Report qui ouvre le remboursement (lien de l'avis du report) : « Ma table », où il se demande ; titulaire qui a
+                // envoyé toutes ses places (aucun billet de l'événement) : « Ma table » aussi, plutôt que « introuvable ».
+                const tables = (body.tables ?? null) as { held?: Array<{ bookingId?: unknown; eventId?: unknown }>; refundOpen?: Array<{ bookingId?: unknown; eventId?: unknown }> } | null;
+                const tableOf = (rows: Array<{ bookingId?: unknown; eventId?: unknown }> | undefined): string | null => {
+                    const row = (rows ?? []).find((r) => r.eventId === id && typeof r.bookingId === 'string' && isObjectId(r.bookingId));
+                    return row ? String(row.bookingId) : null;
+                };
+                const refundTable = tableOf(tables?.refundOpen);
+                if (refundTable) return { kind: 'table', bookingId: refundTable };
+                const ofEvent = ticketsInFocus(list, { event: id });
+                if (ofEvent) return { kind: 'ok', focus: 'event', tickets: ofEvent };
+                const heldTable = tableOf(tables?.held);
+                return heldTable ? { kind: 'table', bookingId: heldTable } : { kind: 'not-found' };
+            } catch (err) {
+                console.error('[Page d’arrivée des billets] lecture impossible :', err instanceof Error ? err.message : String(err));
+                return { kind: 'error', message: GENERIC };
+            }
+        }
+        
+      operator: 'match'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/schema/f5-liens-avis.test.ts:139:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: retour après connexion : l’adresse complète (?tab=, ?rappel=1) revient, relue par safeInternalPath
+    ok 6 - retour après connexion : l’adresse complète (?tab=, ?rappel=1) revient, relue par safeInternalPath
+      ---
+      duration_ms: 0.332911
+      type: 'test'
+      ...
+    # Subtest: ancres des objets dans une liste : transfert reçu (recu-<id>) et invitation de contrôleur (invitation-<id>) existent
+    ok 7 - ancres des objets dans une liste : transfert reçu (recu-<id>) et invitation de contrôleur (invitation-<id>) existent
+      ---
+      duration_ms: 0.474084
+      type: 'test'
+      ...
+    1..7
+not ok 1 - finition 5 — liens précis des avis : revue de TOUT le catalogue
+  ---
+  duration_ms: 13.702976
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/schema/f5-liens-avis.test.ts:2:4860'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 7
+# suites 1
+# pass 6
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 53.868271
