@@ -489,4 +489,13 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/tickets/[id]/page.tsx',
     'app/partner/finance/retraits/[id]/page.tsx',
     'app/wallet/retraits/[id]/page.tsx',
+    // Lot 11c-b : tables d'un événement, écrans du client (fiche, plan, devis, paiement, confirmation, Ma table)
+    'components/event-page/TicketingSwitch.tsx',
+    'components/event-tables/client/TablesOffer.tsx',
+    'components/event-tables/client/PlanView.tsx',
+    'components/event-tables/client/PlanDialog.tsx',
+    'components/event-tables/client/PayStep.tsx',
+    'components/event-tables/client/HoldCountdown.tsx',
+    'components/event-tables/client/TableConfirmed.tsx',
+    'components/event-tables/client/MyTables.tsx',
 ];

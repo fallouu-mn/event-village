@@ -28,12 +28,18 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { usePageSettled } from '@/hooks/usePageSettled';
 import type { OfflineAvailability } from '@/lib/tickets/offline-clock';
 import { isActiveUpcoming, TICKETS_UPCOMING_PARAM } from '@/lib/tickets/periode';
+import { loadMyTables } from '@/components/event-tables/client/load';
 
 // Lot 7 (7.5) : les modales ne sont chargées qu'à leur ouverture (poids JS de /tickets).
 const TransferModal = dynamic(() => import('@/components/tickets/TransferModal').then((m) => m.TransferModal), { ssr: false });
 const TransferExplainerModal = dynamic(() => import('@/components/tickets/TransferExplainerModal').then((m) => m.TransferExplainerModal), { ssr: false });
 // Design 1b (point 8) : petite fête après l'achat, chargée seulement avec ?fete=1 (contrat avec le lot FICHE).
 const PurchaseCelebration = dynamic(() => import('@/components/tickets/PurchaseCelebration').then((m) => m.PurchaseCelebration), { ssr: false });
+// Lot 11c-b : « Ma table » chargée seulement à l'ouverture de l'onglet « Tables » (chargeur unique du module)
+const MyTables = dynamic(() => loadMyTables().then((m) => m.MyTables), {
+  ssr: false,
+  loading: () => <div className="h-48 rounded-2xl bg-muted" aria-busy="true"><span className="sr-only">Chargement de vos tables…</span></div>,
+});
 
 /**
  * Mes billets (lot 5, tâche 5.13 ; contrats O3, O5, Q).
@@ -96,9 +102,11 @@ export interface MyTicket {
   startsAt?: string | null;
   endsAt?: string | null;
   categoryColor?: string | null;
+  /** Lot 11c-b : place d'une table d'événement (« Table 12 · Carré VIP ») ; bookingId pour le titulaire, invitedBy pour un invité. */
+  table?: { label: string; bookingId: string | null; invitedBy: string | null } | null;
 }
 
-type TicketTabKey = Exclude<TabKey, 'recus'>;
+type TicketTabKey = Exclude<TabKey, 'recus' | 'tables'>;
 
 const EMPTY_COPY: Record<TicketTabKey, { title: string; description: string }> = {
   'a-venir': {
@@ -290,7 +298,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   const [fullAttempt, setFullAttempt] = useState(0);
   useEffect(() => {
     if (tab === 'a-venir' || complete) return undefined;
-    if (tab === 'recus' || phase !== 'ready') return undefined;
+    if (tab === 'recus' || tab === 'tables' || phase !== 'ready') return undefined;
     let alive = true;
     setFullError(null);
     void readTickets('tout').then((result) => {
@@ -397,12 +405,24 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
     return tickets;
   }, [tickets, tab]);
 
+  // Lot 11c-b : onglet « Tables » seulement pour le titulaire d'une table (ou demandé dans l'adresse : lien des avis)
+  const hasTables = useMemo(() => tickets.some((t) => Boolean(t.table?.bookingId)), [tickets]);
+  const [tableFocus, setTableFocus] = useState<string | null>(null);
+  // Table visée par l'adresse (/tickets?tab=tables#table-<vente> : avis, paiement confirmé), comme l'ancre des billets reçus
+  useEffect(() => { setTableFocus(/^#table-([0-9a-f-]{36})$/i.exec(window.location.hash)?.[1] ?? null); }, []);
+  const ticketInfo = useCallback((ticketId: string) => {
+    const t = tickets.find((x) => x.id === ticketId);
+    return t ? { ticketNumber: t.ticketNumber, seat: t.seat, dateFormatted: t.dateFormatted, timeFormatted: t.timeFormatted, venue: t.venue } : null;
+  }, [tickets]);
+  const openTable = useCallback((bookingId: string) => { setTableFocus(bookingId); setTab('tables'); }, [setTab]);
+
   const tabItems = useMemo(() => [
     { id: 'a-venir', label: 'À venir' },
     { id: 'tous', label: 'Tous mes billets' },
     { id: 'historique', label: 'Historique' },
     { id: 'recus', label: 'Reçus', ...(incomingPhase === 'ready' && incoming.items.length > 0 ? { count: incoming.items.length } : {}) },
-  ], [incomingPhase, incoming.items.length]);
+    ...(hasTables || tab === 'tables' ? [{ id: 'tables', label: 'Tables' }] : []),
+  ], [incomingPhase, incoming.items.length, hasTables, tab]);
 
   if (!isAuthLoading && !isAuthenticated) {
     return (
@@ -418,7 +438,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
     );
   }
 
-  const empty = tab === 'recus' ? null : EMPTY_COPY[tab];
+  const empty = tab === 'recus' || tab === 'tables' ? null : EMPTY_COPY[tab];
 
   return (
     <div className="space-y-6 pb-24 lg:pb-12">
@@ -461,6 +481,8 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
             phone={profile?.phone ?? null}
             onChanged={() => void refreshAll()}
           />
+        ) : tab === 'tables' ? (
+          <MyTables focusId={tableFocus} ticketInfo={ticketInfo} refreshKey={tickets} onChanged={() => void refreshAll()} />
         ) : (
         <>
         {refreshError && phase === 'ready' && (
@@ -547,6 +569,9 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
                   refundDelayed={ticket.refundDelayed === true}
                   postponementRefund={ticket.postponementRefund ?? null}
                   categoryColor={ticket.categoryColor ?? null}
+                  tableInvitedBy={ticket.table?.invitedBy ?? null}
+                  tableBookingId={ticket.table?.bookingId ?? null}
+                  onOpenTable={openTable}
                   startsAt={ticket.startsAt ?? null}
                   endsAt={ticket.endsAt ?? null}
                   now={now}
