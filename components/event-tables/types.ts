@@ -40,7 +40,12 @@ export interface TableTypeRow {
     type_seats: number;
     /** Prix et places figés (une vente ou une attente). */
     locked: boolean;
+    /** Déjà vendu ou mis en paiement, paiement échoué compris (contre-vérification 11c-c, T5). */
     ever_sold: boolean;
+    /** Le type se supprime : même règle que la suppression en base (private.event_table_type_delete_refusal). */
+    deletable: boolean;
+    /** Sinon, le refus que la suppression rendrait, texte tel quel. */
+    delete_refusal: EditRefusal | null;
 }
 
 export interface EventTableRow {
@@ -108,7 +113,8 @@ export interface TablesReport {
     totals: TablesTotals;
     edit_refusal: EditRefusal | null;
     copy_sources?: CopySource[];
-    changes?: Array<{ at: string }>;
+    /** Une ligne par enregistrement signalé ; label : « Plan copié depuis … » pour une copie (contre-vérification 11c-c, T2). */
+    changes?: Array<{ at: string; label: string | null }>;
     read_at: string;
 }
 

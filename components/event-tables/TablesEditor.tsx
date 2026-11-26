@@ -258,10 +258,13 @@ export function TablesEditor({ eventId, report, reload, onDirtyChange }: TablesE
                                         <Button size="sm" variant="ghost" onClick={() => void toggleSale(t)} isLoading={busy === `vente-${t.id}`}>
                                             {t.is_active ? 'Arrêter la vente' : 'Remettre en vente'}
                                         </Button>
-                                        {!t.ever_sold && !t.locked && (
+                                        {t.deletable && (
                                             <Button size="sm" variant="ghost" className="text-danger-text" leftIcon={<Trash2 size={16} />} onClick={() => setToDelete(t)}>Retirer</Button>
                                         )}
                                     </div>
+                                )}
+                                {!readOnly && !t.deletable && t.is_active && t.delete_refusal && (
+                                    <p className="text-sm text-muted-foreground" data-delete-refusal="">{t.delete_refusal.message}</p>
                                 )}
                             </li>
                         ))}
