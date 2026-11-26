@@ -28,6 +28,7 @@ import { GET as courierOrdersGet } from '../../app/api/courier/orders/route';
 import {
     addCourier, codeOf, n, newBuyer, newDeliveryZone, newOption, newPartner, newProduct, newShop, openOrdersService, order, orderBody,
     orderRoute, partnerAct, payOrder, placed, refundsOfOrder, releaseUnpaid, service, setPortions, startOrderPay, tick, userClient,
+    dailySpecialWindowClosed,
     type Buyer, type Row, type TestPartner,
 } from '../parcours/l12a-helpers';
 
@@ -92,6 +93,13 @@ describe('cv12a — garde-fous', () => {
     test('G2 — dernière portion : deux clients en même temps, une seule commande ; rendue une seule fois à l’expiration', async () => {
         const dish = await newProduct(partner, shop, { price: 2_000, daily: true, name: 'Mafé du jour' });
         assert.equal((await setPortions(partner, dish, 1)).ok, true);
+        // Entre minuit moins la préparation et minuit (Dakar), « au plus tôt » tombe le lendemain : la base refuse le plat du
+        // jour (règle du lot 12a, même garde que l12a-commandes) ; le test vérifie ce refus, puis s'arrête (run 686, 23 h 42)
+        if (dailySpecialWindowClosed()) {
+            const late = await orderRoute(await buyer('portion-soir'), orderBody(shop, [{ productId: dish, quantity: 1 }]));
+            assert.deepEqual([late.status, late.body.code], [409, 'DAILY_SPECIAL_TODAY_ONLY'], JSON.stringify(late.body));
+            return;
+        }
         const [a, b] = [await buyer('portion-a'), await buyer('portion-b')];
         const rs = await Promise.all([a, b].map((x) => orderRoute(x, orderBody(shop, [{ productId: dish, quantity: 1 }]))));
         assert.deepEqual(rs.map((r) => r.status).sort(), [201, 409], JSON.stringify(rs.map((r) => [r.status, r.body.code])));
@@ -155,8 +163,11 @@ describe('cv12a — garde-fous', () => {
         const courier = await buyer('rest-livreur');
         const stranger = await buyer('rest-tiers');
         await addCourier(partner, courier);
-        const dish = await newProduct(partner, shop, { price: 6_000, daily: true });
-        assert.equal((await setPortions(partner, dish, 10)).ok, true);
+        // Fenêtre de fin de soirée (dailySpecialWindowClosed) : un produit ordinaire, le plat du jour serait refusé (run 686) ;
+        // les contrôles REST du test portent sur la commande, pas sur le plat du jour
+        const lateEvening = dailySpecialWindowClosed();
+        const dish = await newProduct(partner, shop, { price: 6_000, daily: !lateEvening });
+        if (!lateEvening) assert.equal((await setPortions(partner, dish, 10)).ok, true);
         const id = await placed(c, orderBody(shop, [{ productId: dish, quantity: 1 }],
             { mode: 'LIVRAISON', zoneId: zone, address: 'Villa 3, Ouakam', phone: c.phone9 }));
         await payOrder(c, id);

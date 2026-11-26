@@ -558,3 +558,39 @@ Captures de la page neutre : `runs/679-45692884511/captures/evenement-suspendu__
 - **Page neutre** : au téléphone, « Mes billets » se coupe après le guillemet ouvrant (espaces insécables à mettre
   autour du nom).
 - **Observations O1, O3, O4** de la contre-vérification : non traitées.
+
+### 10.6 Fusion dans main (feu vert du 25/11) et suite d'audit qui dépend de l'heure
+
+- Avant la fusion : avis « Événement suspendu » du porteur vers « Mes billets » (`/tickets/<événement>`), espaces
+  insécables de la page neutre, requête des anciennes partenaires notée dans `docs/apres-lancement.md` (`61447971ea`) ;
+  `main` du 11c-a (`f0054b4893`) fusionné dans la branche (`3f72a4a578` : conflit dans `docs/apres-lancement.md`, les
+  deux sections gardées ; aucune fonction recopiée par le lot redéfinie par le 11c-a ; S1 de `cvcb3-3-statique` vert).
+- Run complet 683 de la branche : tout vert sauf `notif-canaux` (lien de l'avis, oubli corrigé en `dc4817393e`, mêmes
+  lignes) et la mesure « faussée » (machine trop rapide aux deux tentatives) ; run 685 (rapide, 9 suites de l'avis,
+  mesure seule) : vert, mesure valide 94 / 91 / 92.
+- Fusion dans `main` en `--no-ff` : **`d5d66fb627`** (parents `f0054b4893` et `dc4817393e`, arbre identique à la
+  branche), aucun run en cours sur `main` et `main` inchangé avant la poussée.
+- Run complet 686 de `main` : build, budgets, e2e, responsive, lots 1, 3 et 4 verts, mesure valide à la 1re tentative ;
+  lot 2 : **une suite rouge, `tests/audit/cv12a-2-gardes.test.ts`** (lot 12a), G2 et G5 :
+  `[[409,"DAILY_SPECIAL_TODAY_ONLY"],[409,"DAILY_SPECIAL_TODAY_ONLY"]]`. Cause : l'heure. Une commande « au plus tôt »
+  est prévue à maintenant + préparation (30 min) + 1 min ; le lot 2 a tourné de 23 h 42 à 23 h 51 (Dakar = UTC) : le
+  plat du jour tombait le lendemain et la base l'a refusé, comme le veut la règle du lot 12a. Sans rapport avec la carte B3.
+
+**Modification signalée de `tests/audit/cv12a-2-gardes.test.ts`** (consigne de l'utilisateur du 26/11 : utiliser l'aide
+`dailySpecialWindowClosed` du lot 12a, comme `tests/parcours/l12a-commandes.test.ts:311`) ; **aucune assertion existante
+changée** :
+- ligne 31 : import de `dailySpecialWindowClosed` (`tests/parcours/l12a-helpers.ts:219`) ;
+- lignes 96-102 (G2) : dans la fenêtre « minuit moins la préparation → minuit », le test vérifie le refus
+  `409 DAILY_SPECIAL_TODAY_ONLY`, puis s'arrête (même garde que `l12a-commandes`) ; hors de la fenêtre, inchangé ;
+- lignes 166-170 (G5) : dans la fenêtre, le produit commandé est un produit ordinaire (les contrôles REST portent sur
+  la commande, pas sur le plat du jour) et ses portions ne sont pas posées ; hors de la fenêtre, inchangé.
+
+Relance complète du run 686 par l'utilisateur après minuit (2e tentative) : **les 4 lots verts** (dont `cv12a-2-gardes`,
+hors de la fenêtre), build, budgets, e2e, responsive verts ; mesure mobile **hors seuil d'un point** sur la fiche
+d'un événement (médiane 89 [89 ; 91 ; 95 ; 89 ; 87], seuil 90 ; accueil 92, Mes billets 91, toucher 80 ms ; calibration
+×4,7 à ×5,2), la même fiche donnant 92 à 96 aux runs 679, 683, 685 et 686 (1re tentative) : mesure relancée seule
+avec le run rapide des suites concernées (`cv12a-2-gardes`, `cv12a-1-trous`, `cv12a-3-statique`, `l12a-commandes`,
+`recette-matrice`), commit suivant sur `main` (`ci-rapide`, `ci-perf: oui`).
+
+Contrôles « avant » et « après » de la migration sur event-village-dev : `supabase/ops/carte-b3-controles.sql`
+(lecture seule ; valeurs attendues en tête du fichier).
