@@ -239,7 +239,8 @@ for (const theme of THEMES) {
                 const openPlan = page.getByRole('button', { name: 'Voir le plan et choisir ma table' });
                 await expect(openPlan).toBeVisible();
                 await expect(page.getByRole('heading', { name: 'Carré VIP', exact: true })).toBeVisible();
-                await expect(page.getByText(/^(Plus que \d+ tables|Plus qu’une table)$/).first()).toBeVisible();
+                // Tables restantes vraies (le Carré VIP se remplit d'un parcours à l'autre, jusqu'à « Complet »)
+                await expect(page.getByText(/^(Plus que \d+ tables|Plus qu’une table|Complet|\d+ tables disponibles)$/).first()).toBeVisible();
                 await settle(page);
                 await checkLayout(page, w.width, w.phone, 'fiche avec plan');
                 await shot(page, 'fiche-plan', w.width, theme.key);
