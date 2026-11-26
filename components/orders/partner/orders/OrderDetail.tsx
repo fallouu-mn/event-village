@@ -27,7 +27,7 @@ import { Switch } from '@/components/ui/Switch';
 import { UnavailableItem } from '@/components/ui/UnavailableItem';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/components/ui/cn';
-import { ApiError, fetchJson, sendJson } from '@/components/partner/fetch-json';
+import { ApiError, errorMessage, fetchJson, sendJson } from '@/components/partner/fetch-json';
 import { formatDateTime, formatFcfa, formatTime } from '@/lib/format';
 import { ORDER_MODE_LABELS, PAYMENT_TYPE_LABELS } from '@/lib/orders/partner-ui';
 import { PARTNER_COURIERS_URL } from '@/lib/orders/partner-endpoints';
@@ -133,7 +133,7 @@ export function OrderDetail({ orderId }: { orderId: string }) {
     }
     if (!order) {
         return polled.error ? (
-            <div className="pb-24 pt-2"><ErrorState title="Commande indisponible" description={polled.error.message} onRetry={() => void polled.reload()} /></div>
+            <div className="pb-24 pt-2"><ErrorState title="Commande indisponible" description={errorMessage(polled.error)} onRetry={() => void polled.reload()} /></div>
         ) : (
             <div className="space-y-4 pb-24" role="status" aria-busy="true">
                 <span className="sr-only">Chargement de la commande…</span>
@@ -160,7 +160,7 @@ export function OrderDetail({ orderId }: { orderId: string }) {
             />
 
             {polled.error && (
-                <StatusBanner tone="warning" title="Mise à jour impossible pour le moment">{polled.error.message}</StatusBanner>
+                <StatusBanner tone="warning" title="Mise à jour impossible pour le moment">{errorMessage(polled.error)}</StatusBanner>
             )}
 
             {handedOver && order.state === 'REMISE' && (

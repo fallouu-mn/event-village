@@ -202,7 +202,7 @@ export function OrdersBoard() {
             <DaySummary day={day.data?.day ?? null} loading={day.loading} />
 
             {open.error && open.data && (
-                <StatusBanner tone="warning" title="Mise à jour impossible pour le moment">{open.error.message}</StatusBanner>
+                <StatusBanner tone="warning" title="Mise à jour impossible pour le moment">{errorMessage(open.error)}</StatusBanner>
             )}
 
             <Tabs
@@ -223,7 +223,7 @@ export function OrdersBoard() {
                         {BOARD_COLUMNS.map((c) => <div key={c.id} className="h-48 rounded-2xl bg-muted motion-safe:animate-pulse" />)}
                     </div>
                 ) : open.error && !open.data ? (
-                    <ErrorState title="Commandes indisponibles" description={open.error.message} onRetry={() => void open.reload()} />
+                    <ErrorState title="Commandes indisponibles" description={errorMessage(open.error)} onRetry={() => void open.reload()} />
                 ) : orders.length === 0 ? (
                     <EmptyState
                         illustrated
@@ -271,7 +271,7 @@ export function OrdersBoard() {
                         <span className="sr-only">Chargement des commandes terminées…</span>
                     </div>
                 ) : closed.error && !closed.data ? (
-                    <ErrorState title="Commandes terminées indisponibles" description={closed.error.message} onRetry={() => void closed.reload()} />
+                    <ErrorState title="Commandes terminées indisponibles" description={errorMessage(closed.error)} onRetry={() => void closed.reload()} />
                 ) : (closed.data?.orders ?? []).length === 0 ? (
                     <EmptyState icon={<ClipboardList size={28} />} title="Aucune commande terminée" description="Les commandes remises, refusées ou annulées s’afficheront ici." />
                 ) : (

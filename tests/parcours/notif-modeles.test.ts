@@ -316,6 +316,9 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('ORDER_COURIER_ASSIGNED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/courier/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Livraison à faire'),
     ess('ORDER_COURIER_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/courier/orders'], 'Livraison annulée'),
     ess('ORDER_COURIER_INVITED', [I, P, M], 'CLIENT', 'B', 'ORDER', ['/courier/invitations/b2d4f6a8-0c1e-4b3d-9f5a-7c9e1b3d5f04'], 'Invitation à livrer'),
+    // Lot 12c (migration 20261224000001, ajout signalé au rapport) : produit « à vérifier » (administration) et décision (partenaire)
+    ess('ADMIN_PRODUCT_REVIEW', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products?produit=a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Produit à vérifier', 'partners.validate'),
+    ess('PRODUCT_REVIEW_DECIDED', [I, P, M], 'PARTNER', 'A', 'ORDER', ['/partner/products/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], /^Produit (autorisé à la vente|vérifié|non vendu en ligne)$/),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)
