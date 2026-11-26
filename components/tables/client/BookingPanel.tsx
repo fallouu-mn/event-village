@@ -26,6 +26,7 @@ import { StatusBanner } from '@/components/ui/StatusBanner';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { ApiError, errorMessage, fetchJson } from '@/components/partner/fetch-json';
 import type { FloorPlanTable, FloorPlanZone } from '@/components/tables/plan/FloorPlan';
+import { loadFloorPlan } from '@/components/tables/plan/load';
 import { dayText, fcfaText, guestsText, hmText } from '@/lib/tables/views';
 import type { ClientTableReservationDetail, FloorTable, FloorZone, QuoteView } from '@/lib/tables/queries';
 import { BookingConfirmation, type CreatedReservation } from './BookingConfirmation';
@@ -36,7 +37,8 @@ import { NOTES_MAX, clearNotes, loginHref, readChoice, readNotes, writeChoice, w
 import { capitalize, durationText, minutesText } from './format';
 
 // Plan de salle chargé seulement si l'établissement le montre et qu'un créneau est choisi (poids de la fiche)
-const FloorPlan = dynamic(() => import('@/components/tables/plan/FloorPlan').then((m) => ({ default: m.FloorPlan })), {
+// Lot 11c-b : par le chargeur unique du plan (components/tables/plan/load.ts), partagé avec le choix d'une table d'un événement
+const FloorPlan = dynamic(() => loadFloorPlan().then((m) => ({ default: m.FloorPlan })), {
     ssr: false,
     loading: () => <Skeleton className="aspect-[4/3] w-full rounded-xl" />,
 });

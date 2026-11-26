@@ -13,6 +13,8 @@ import type { MyTicket } from './TicketsView';
 
 export type FocusRead =
     | { kind: 'ok'; focus: 'ticket' | 'event'; tickets: MyTicket[] }
+    /** CV 11c-b (T2) : table du compte pour cet événement (remboursement ouvert, ou plus aucun billet) : « Ma table ». */
+    | { kind: 'table'; bookingId: string }
     | { kind: 'login' }
     | { kind: 'not-found' }
     | { kind: 'error'; message: string };
@@ -30,14 +32,26 @@ export async function readTicketsFocus(id: string): Promise<FocusRead> {
         const proto = h.get('x-forwarded-proto') ?? 'http';
         const res = await listMyTickets(new NextRequest(`${proto}://${host}/api/tickets`, { headers: new Headers(h) }));
         if (res.status === 401) return { kind: 'login' };
-        const body = (await res.json().catch(() => null)) as { tickets?: unknown; error?: unknown } | null;
+        const body = (await res.json().catch(() => null)) as { tickets?: unknown; tables?: unknown; error?: unknown } | null;
         if (!res.ok || !body || !Array.isArray(body.tickets)) {
             return { kind: 'error', message: typeof body?.error === 'string' && body.error.trim() ? body.error : GENERIC };
         }
         const list = body.tickets as MyTicket[];
         const ticket = ticketsInFocus(list, { ticket: id });
         if (ticket) return { kind: 'ok', focus: 'ticket', tickets: ticket };
+        // Contre-vérification du lot 11c-b (T2) : tables du compte pour cet événement, d'après les ventes (GET /api/tickets).
+        // Report qui ouvre le remboursement (lien de l'avis du report) : « Ma table », où il se demande ; titulaire qui a
+        // envoyé toutes ses places (aucun billet de l'événement) : « Ma table » aussi, plutôt que « introuvable ».
+        const tables = (body.tables ?? null) as { held?: Array<{ bookingId?: unknown; eventId?: unknown }>; refundOpen?: Array<{ bookingId?: unknown; eventId?: unknown }> } | null;
+        const tableOf = (rows: Array<{ bookingId?: unknown; eventId?: unknown }> | undefined): string | null => {
+            const row = (rows ?? []).find((r) => r.eventId === id && typeof r.bookingId === 'string' && isObjectId(r.bookingId));
+            return row ? String(row.bookingId) : null;
+        };
+        const refundTable = tableOf(tables?.refundOpen);
+        if (refundTable) return { kind: 'table', bookingId: refundTable };
         const ofEvent = ticketsInFocus(list, { event: id });
+        const heldTable = tableOf(tables?.held);
+        if (!ofEvent && heldTable) return { kind: 'table', bookingId: heldTable };
         return ofEvent ? { kind: 'ok', focus: 'event', tickets: ofEvent } : { kind: 'not-found' };
     } catch (err) {
         console.error('[Page d’arrivée des billets] lecture impossible :', err instanceof Error ? err.message : String(err));

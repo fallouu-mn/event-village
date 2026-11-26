@@ -202,6 +202,20 @@ d'où elle vient et pourquoi elle attend.
 | Salle insérée directement en base sans position (hors de la route de la partenaire, qui la refuse) : acceptée, mais jamais validée d'office ; l'administration ne peut pas la valider. Un refus à l'insertion casserait des suites d'audit qui insèrent des salles sans position. | Aucun écran n'insère ainsi ; la création d'un établissement, elle, passe par une fonction et refuse en base. | Lot Carte B3 (décision du 25/11) |
 | Partenaires inscrites avant l'obligation du nom commercial : l'ancienne inscription recopiait la raison sociale dans le nom commercial quand l'enseigne était vide ; elles sont donc montrées au public sous leur raison sociale. Comptage, en lecture seule : `SELECT status, count(*) FROM public.partners WHERE btrim(commercial_name) = btrim(company_name) GROUP BY status;` | Rien à faire : la production part d'une base neuve et le nom commercial est désormais obligatoire à l'inscription et dans le profil (décision du client du 25/11). | Lot Carte B3, contre-vérification (T2) |
 
+## Tables d'un événement : écrans du client (lot 11c-b)
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| Acompte, « aucun paiement immédiat », panier mixte billets + table. | Hors périmètre de la consigne (déjà notés au lot 11c-a) ; l'écran ne propose qu'une table payée en entier, seule. | Consigne du lot 11c-b |
+| Prénom de l'invité gardé côté serveur : aujourd'hui, le prénom saisi (ou lu dans le carnet du téléphone) à l'envoi d'une place n'est gardé que sur le téléphone du titulaire, pour l'avatar de la place en attente ; après l'acceptation, le prénom vient du compte de l'invité. | Le transfert ne porte que le numéro ; garder le prénom demande une colonne et une recopie de `ticket_transfer_initiate` (migration), hors du « aucune migration prévue ». | Lot 11c-b |
+| SMS de l'avis « Table réservée » : lien court `/tickets` (onglet « À venir »), pas l'onglet « Tables ». La cloche, la notification du téléphone et l'email mènent à « Ma table » ; le SMS du rappel « Vos invités attendent leurs places », lui, ouvre `/tickets?tab=tables` (154 caractères GSM-7 au pire cas, un segment : contre-vérification du lot 11c-b, T4). | Avec l'onglet, le pire cas de la confirmation passerait à 157 caractères, au-delà de la marge de 155 ; à revoir avec un lien court dédié. | Lot 11c-b |
+| Compte à rebours « Table gardée » à l'heure du téléphone (fin servie par le serveur, `expires_at`) : un téléphone mal réglé décale l'affichage, jamais la garde réelle. | Recaler sur l'heure du serveur (`read_at` de l'offre) ; écart sans effet sur l'argent (la base décide). | Lot 11c-b |
+| Paiement sur ordinateur : le QR code de l'opérateur reste sur la page de suivi du paiement (« Suivre le paiement sur sa page »), pas dans le panneau de la fiche. | Confort ; le paiement sur téléphone (cas principal) ouvre directement l'application de l'opérateur. | Lot 11c-b |
+| « Ma table » en direct : une place acceptée s'affiche au signal des avis du titulaire (transfert accepté) ou à la relecture de Mes billets ; aucun signal temps réel propre aux ventes de tables. | Une table de signal publique des ventes demanderait une migration ; le signal existant suffit. | Lot 11c-b |
+| Légende du plan : la pastille « Prise » n'est pas hachurée (seules les tables le sont). | Ligne voisine d'un changement du lot 11c-c dans `FloorPlan` : laissée telle quelle pour que les deux lots se fusionnent sans conflit ; à reprendre après les deux fusions. | Lot 11c-b |
+| Carnet du téléphone (Contact Picker) : seulement sur Chrome pour Android ; ailleurs, saisie du numéro. | Limite du navigateur. | Lot 11c-b |
+| Deux spec e2e (11c-b et 11c-c) ouvrent puis referment le service des tables et peuvent tourner en même temps (2 processus) : le spec du 11c-b le rouvre avant chaque écran. | Un verrou commun (ou un service ouvert pour tout le job responsive) rendrait les deux indépendants ; à faire après les deux fusions. | Lot 11c-b |
+
 ## Tables d'un événement : argent et sécurité (lot 11c-a)
 
 | Sujet | Pourquoi plus tard | Origine |

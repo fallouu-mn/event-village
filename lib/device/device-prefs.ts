@@ -7,7 +7,7 @@
  *  - Recherche : 6 recherches récentes au plus, 60 caractères chacune, « Effacer » les retire.
  * Tout est effacé à la déconnexion (lib/device/device-prefs-purge.ts, AuthProvider).
  */
-import { DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX, DEVICE_TABLE_NOTES_PREFIX } from './device-prefs-purge';
+import { DEVICE_INVITE_NAMES_KEY, DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX, DEVICE_TABLE_CHOICE_PREFIX, DEVICE_TABLE_NOTES_PREFIX } from './device-prefs-purge';
 
 export type DeviceOperator = 'WAVE' | 'ORANGE_MONEY';
 
@@ -136,6 +136,62 @@ export function readTableSignal(): boolean {
 
 export function saveTableSignal(on: boolean): boolean {
     return writeJson(TABLE_SIGNAL_KEY, on ? 'on' : 'off');
+}
+
+// ── Lot 11c-b : préférences des tables d'un événement (écrites ici, par des fonctions nommées) ──────────────────────
+// Contre-vérification du lot 11c-b (T3) : plus d'accès générique réexporté ; chaque écriture du stockage reste dans ce
+// fichier, classé par l'audit de la déconnexion. Les écrans des tables les importent par lib/device/table-prefs.ts.
+//  - Prénoms des invités : le transfert d'une place ne porte que le numéro ; le prénom saisi (ou lu dans le carnet du
+//    téléphone) sert à l'avatar de la place EN ATTENTE sur l'écran du titulaire, jusqu'à l'acceptation. Rien n'est envoyé
+//    au serveur. Donnée du compte : effacée au bouton « Se déconnecter », sur SIGNED_OUT ET à une page chargée sans
+//    session (portée « paiement » de clearDevicePrefs).
+//  - Table choisie avant la connexion : type et table (identifiants publics), repris une fois au retour sur la fiche
+//    (30 minutes au plus), puis effacés ; effacés aussi au bouton « Se déconnecter ».
+export const INVITE_NAMES_KEY = DEVICE_INVITE_NAMES_KEY;
+export const INVITE_NAME_MAX = 40;
+const INVITE_NAMES_MAX = 200;
+
+export function readInviteNames(): Record<string, string> {
+    const v = readJson(INVITE_NAMES_KEY);
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, name] of Object.entries(v as Record<string, unknown>)) {
+        if (typeof name === 'string' && name.trim()) out[k] = name.trim().slice(0, INVITE_NAME_MAX);
+    }
+    return out;
+}
+
+export function saveInviteName(ticketId: string, name: string): boolean {
+    const clean = name.trim().replace(/\s+/g, ' ').slice(0, INVITE_NAME_MAX);
+    const names = readInviteNames();
+    if (clean) names[ticketId] = clean;
+    else delete names[ticketId];
+    return writeJson(INVITE_NAMES_KEY, Object.fromEntries(Object.entries(names).slice(-INVITE_NAMES_MAX)));
+}
+
+export const TABLE_CHOICE_PREFIX = DEVICE_TABLE_CHOICE_PREFIX;
+const TABLE_CHOICE_TTL_MS = 30 * 60 * 1000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface TableChoice { typeId: string; tableId: string | null }
+
+export function saveTableChoice(eventId: string, choice: TableChoice): boolean {
+    return writeJson(`${TABLE_CHOICE_PREFIX}${eventId}`, { at: Date.now(), typeId: choice.typeId, tableId: choice.tableId });
+}
+
+/** Choix gardé (moins de 30 minutes) pour cet événement, effacé à sa lecture ; null sinon. */
+export function takeTableChoice(eventId: string): TableChoice | null {
+    const key = `${TABLE_CHOICE_PREFIX}${eventId}`;
+    const v = readJson(key) as { at?: unknown; typeId?: unknown; tableId?: unknown } | null;
+    try {
+        storage()?.removeItem(key);
+    } catch (err) {
+        console.warn('[appareil] table choisie non effacée (stockage refusé) :', err instanceof Error ? err.message : String(err));
+    }
+    if (!v || typeof v !== 'object' || typeof v.at !== 'number' || Date.now() - v.at > TABLE_CHOICE_TTL_MS) return null;
+    if (typeof v.typeId !== 'string' || !UUID_RE.test(v.typeId)) return null;
+    const tableId = typeof v.tableId === 'string' && UUID_RE.test(v.tableId) ? v.tableId : null;
+    return { typeId: v.typeId, tableId };
 }
 
 // ── Lot 12c : commandes ──────────────────────────────────────────────────────────────────────────────────────

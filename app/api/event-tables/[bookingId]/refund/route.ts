@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireActiveSession } from '@/lib/auth/session';
 import { CashoutService } from '@/lib/payments/cashout.service';
 import { getServiceRoleClient } from '@/lib/supabase/server';
-import { callTables, isUuid, outcomeOf } from '@/lib/event-tables/event-tables.server';
+import { callTables, isUuid, outcomeOf, signalTablesChanged } from '@/lib/event-tables/event-tables.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +40,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                 .from('cashouts').select('id, status, blocked_reason').eq('id', reply.cashout_id).maybeSingle();
             if (error) throw new Error(`lecture du versement ${reply.cashout_id} : ${error.message}`);
             if (cashout && cashout.status === 'A_ENVOYER' && !cashout.blocked_reason) await CashoutService.send(String(cashout.id));
+        }
+        // Contre-vérification du lot 11c-b (T1) : la table revient en vente ; le plan ouvert par les autres visiteurs la relit
+        if (outcome.status === 200) {
+            const { data: booking, error: bErr } = await getServiceRoleClient().from('event_table_bookings').select('event_id').eq('id', bookingId).maybeSingle();
+            if (bErr) console.error('[API event-tables refund] événement de la table illisible (signal non envoyé) :', bErr.message);
+            else if (booking) await signalTablesChanged(String(booking.event_id), 'table remboursée, de nouveau en vente');
         }
         return NextResponse.json(outcome.body, { status: outcome.status });
     } catch (err) {

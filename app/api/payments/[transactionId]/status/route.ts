@@ -75,6 +75,22 @@ async function itemsOf(payment: PaymentRecord): Promise<StatusItem[]> {
     return lines.map((l) => ({ category_id: l.category_id, category_name: nameOf.get(l.category_id) ?? null, quantity: l.quantity }));
 }
 
+/**
+ * Lot 11c-b : achat d'une table d'un événement (paiement de cible TICKET qui tient une table précise) : vente créée à la
+ * confirmation (event_table_bookings.payment_id), attente avant (stock_reservations.event_table_id). null pour un achat de
+ * billets. Une erreur de lecture est levée.
+ */
+async function tableOf(payment: PaymentRecord): Promise<{ bookingId: string | null } | null> {
+    if (payment.payment_target !== 'TICKET') return null;
+    const supabase = getServiceRoleClient();
+    const { data: booking, error } = await supabase.from('event_table_bookings').select('id').eq('payment_id', payment.id).maybeSingle();
+    if (error) throw new Error(`lecture de la table du paiement : ${error.message}`);
+    if (booking) return { bookingId: String(booking.id) };
+    const { data: held, error: heldErr } = await supabase.from('stock_reservations').select('id').eq('payment_id', payment.id).not('event_table_id', 'is', null).limit(1);
+    if (heldErr) throw new Error(`lecture de l'attente de table du paiement : ${heldErr.message}`);
+    return (held ?? []).length > 0 ? { bookingId: null } : null;
+}
+
 /** Événement d'un achat de billets (titre, début à l'heure de Dakar), null pour une autre cible. */
 async function eventOf(payment: PaymentRecord): Promise<{ id: string; title: string; start_at: string | null } | null> {
     if (payment.payment_target !== 'TICKET' || !payment.event_id) return null;
@@ -141,11 +157,12 @@ export async function GET(req: NextRequest, context: { params: Promise<{ transac
         }
         const { data: tickets, error } = await getServiceRoleClient().from('tickets').select('id').eq('payment_id', id);
         if (error) throw new Error(`lecture des billets : ${error.message}`);
-        const [items, event, channels, refundDelayed] = await Promise.all([
+        const [items, event, channels, refundDelayed, table] = await Promise.all([
             itemsOf(payment),
             eventOf(payment),
             receiptChannels(payment, session.user.email, session.user.phone),
             refundDelayedOf(payment.id),
+            tableOf(payment),
         ]);
         const ticketIds = (tickets ?? []).map((t) => t.id);
         const view = payment as unknown as Record<string, unknown>;
@@ -172,8 +189,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ transac
             items,
             payer_phone_masked: payment.payer_phone ? maskPhone(payment.payer_phone) : null,
             receipt_channels: channels,
-            success_url: successUrl(payment.payment_target),
-            retry_url: retryUrl(payment),
+            // Lot 11c-b : une table payée mène à « Ma table » ; « Réessayer » rouvre l'onglet « Tables » de la fiche
+            success_url: table?.bookingId ? `/tickets?tab=tables#table-${table.bookingId}` : successUrl(payment.payment_target),
+            retry_url: table && payment.event_id ? `/events/${payment.event_id}?tables=1` : retryUrl(payment),
+            table_booking_id: table?.bookingId ?? null,
         }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
         console.error(`[API /api/payments/${id}/status] erreur interne :`, err instanceof Error ? err.message : String(err));

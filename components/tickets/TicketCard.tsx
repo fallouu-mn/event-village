@@ -176,6 +176,10 @@ export interface TicketCardProps {
   /** Design 1b (point 8) : couleur de la catégorie au contrôle (scan_color), début et fin retenue (ISO), heure du
    *  téléphone à la minute (une seule minuterie pour toute la page). */
   categoryColor?: string | null;
+  /** Lot 11c-b : place d'une table reçue d'un titulaire (« Invité par Awa D. ») ; table du compte (« Gérer ma table »). */
+  tableInvitedBy?: string | null;
+  tableBookingId?: string | null;
+  onOpenTable?: (bookingId: string) => void;
   startsAt?: string | null;
   endsAt?: string | null;
   now?: number;
@@ -236,6 +240,9 @@ const TicketCardView: React.FC<TicketCardProps> = ({
   refundDelayed = false,
   postponementRefund = null,
   categoryColor = null,
+  tableInvitedBy = null,
+  tableBookingId = null,
+  onOpenTable,
   startsAt = null,
   endsAt = null,
   now,
@@ -602,6 +609,16 @@ const TicketCardView: React.FC<TicketCardProps> = ({
               </p>
               <h2 className="mt-0.5 break-words text-lg font-bold leading-snug">{eventTitle}</h2>
               {eventSubtitle && <p className="mt-0.5 break-words text-sm font-medium">{eventSubtitle}</p>}
+              {tableInvitedBy && <p className="mt-1 break-words text-sm font-semibold">Invité par {tableInvitedBy}</p>}
+              {tableBookingId && onOpenTable && (
+                <button
+                  type="button"
+                  onClick={() => onOpenTable(tableBookingId)}
+                  className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Gérer ma table et mes invités
+                </button>
+              )}
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">

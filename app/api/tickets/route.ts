@@ -7,6 +7,7 @@ import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
 import { partnerPublicName } from '@/lib/partner/public-name';
 import { upcomingOnly } from '@/lib/tickets/periode';
+import { holderTablesOf, ticketTablesOf } from '@/lib/event-tables/ticket-tables.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +83,7 @@ export async function GET(req: NextRequest) {
                 event_id,
                 events(id, title, location, city, start_date, start_time, end_date, end_time, image_url, partners(commercial_name)),
                 category_id,
+                event_table_booking_id,
                 ticket_categories(id, name, price, scan_color)
             `)
             .eq('user_id', effectiveUserId)
@@ -196,6 +198,10 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        // Lot 11c-b : place d'une table d'événement (« Table 12 · Carré VIP ») ; « Ma table » pour le titulaire, « Invité par
+        // Awa D. » pour un invité (lib/event-tables/ticket-tables.server.ts : rien d'autre du titulaire n'est lu).
+        const tableMap = await ticketTablesOf(effectiveUserId, (tickets || []) as Array<{ id: string; event_table_booking_id?: string | null }>);
+
         const formatted = (tickets || []).map((t: any) => {
             const cardState = cardMap.get(t.id);
             if (!cardState) throw new Error(`ticket_card_states : billet ${t.id} absent de la réponse`);
@@ -232,7 +238,8 @@ export async function GET(req: NextRequest) {
                 endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt.toISOString() : null,
                 categoryColor: isScanCategoryColor(scanColor) ? scanColor : null,
                 venue: t.events?.location || 'Dakar, Sénégal',
-                seat: t.ticket_categories?.name || 'Catégorie inconnue',
+                seat: tableMap.get(t.id)?.label || t.ticket_categories?.name || 'Catégorie inconnue',
+                table: tableMap.get(t.id) ?? null,
                 status: t.status,
                 usedAt: t.checked_in_at,
                 isUpcoming,
@@ -256,8 +263,11 @@ export async function GET(req: NextRequest) {
         // contrôles de session ci-dessus) : premier affichage et relectures de Mes billets tant que l'onglet des billets
         // passés n'a pas été ouvert. Sans le paramètre : la liste complète, inchangée (synchronisation hors ligne comprise).
         const list = new URL(req.url).searchParams.get('periode') === 'a-venir' ? upcomingOnly(formatted) : formatted;
+        // Contre-vérification du lot 11c-b (T2) : tables dont le compte est titulaire, d'après les ventes (pas d'après ses
+        // billets : il peut avoir envoyé toutes ses places), et remboursements ouverts par un report
+        const tables = await holderTablesOf(effectiveUserId);
         // Design 1b (point 8) : réponse personnelle, jamais mise en cache (navigateur, mandataire ou CDN).
-        return NextResponse.json({ tickets: list }, { headers: { 'Cache-Control': 'private, no-store' } });
+        return NextResponse.json({ tickets: list, tables }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (err: unknown) {
         return apiFailure('GET /api/tickets', err, { message: 'Impossible de charger vos billets.', code: 'TICKETS_UNAVAILABLE' });
     }

@@ -6,6 +6,7 @@ import { apiFailure } from '@/lib/api/public-error';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { rpcWithRetry } from '@/lib/payments/rpc';
 import { settingRefusal } from '@/lib/settings/catalog';
+import { invalidatePublicEvent } from '@/lib/events/public-cache.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,5 +121,8 @@ export async function PUT(req: NextRequest) {
             : data.message;
         return NextResponse.json({ error: message, code: data.code }, { status });
     }
+    // Contre-vérification du lot 11c-b (O1) : ouvrir ou fermer le service des tables d'un événement change la bascule
+    // « Billets | Tables » des fiches en cache (page et résumé, étiquette fiche-publique) : invalidées tout de suite
+    if (parsed.data.key === 'features.event_tables_enabled') invalidatePublicEvent(null, 'service des tables ouvert ou fermé');
     return NextResponse.json({ ok: true, key: data.key, value: data.value });
 }

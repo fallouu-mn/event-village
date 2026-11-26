@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET as listMyTickets } from '@/app/api/tickets/route';
 import { TicketsView, type MyTicket, type TicketList } from './TicketsView';
 import { upcomingOnly } from '@/lib/tickets/periode';
+import { readTablesInfo } from '@/lib/tickets/tables-info';
 import { TABS, type TabKey } from './tabs';
 
 /**
@@ -28,10 +29,10 @@ async function readTicketsOnServer(upcoming: boolean): Promise<TicketList | null
         const proto = h.get('x-forwarded-proto') ?? 'http';
         const res = await listMyTickets(new NextRequest(`${proto}://${host}/api/tickets`, { headers: new Headers(h) }));
         if (!res.ok) return null;
-        const body = (await res.json()) as { tickets?: unknown };
+        const body = (await res.json()) as { tickets?: unknown; tables?: unknown };
         if (!Array.isArray(body.tickets)) return null;
         const list = body.tickets as MyTicket[];
-        return { tickets: upcoming ? upcomingOnly(list) : list, complete: !upcoming };
+        return { tickets: upcoming ? upcomingOnly(list) : list, complete: !upcoming, tables: readTablesInfo(body.tables) };
     } catch (err) {
         console.error('[Mes billets] liste non préparée par le serveur (lue dans le navigateur) :', err instanceof Error ? err.message : String(err));
         return null;

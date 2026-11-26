@@ -435,6 +435,9 @@ const eventTicketsPath = (d: object): string => (optText(d, 'event_id') ? `/tick
 const eventTicketsOrHistory = eventTicketsPath;
 /** Finition 5 : un billet du compte (/tickets/<billet>, page app/tickets/[id], qui ouvre aussi les billets d'un événement) ;
  * sans billet dans les données, ceux de l'événement. */
+/** Lot 11c-b : « Ma table » du titulaire dans Mes billets (onglet « Tables », table mise en avant) ; sans vente connue,
+ *  les billets de l'événement comme avant. */
+const myTablePath = (d: object): string => (optText(d, 'booking_id') ? `/tickets?tab=tables#table-${ident(d, 'booking_id')}` : eventTicketsPath(d));
 const ticketPath = (d: object): string => (optText(d, 'ticket_id') ? `/tickets/${ident(d, 'ticket_id')}` : eventTicketsPath(d));
 /** Finition 5 : billet reçu à accepter, dans « Reçus » à l'endroit du transfert (ancre recu-<transfert>, IncomingTransfers). */
 const incomingTransferPath = (d: object): string => `/tickets?tab=recus#recu-${ident(d, 'transfer_id')}`;
@@ -919,7 +922,9 @@ const CATALOG = {
     // Lot 9 bis (11.2 M1, R14) : indispensable, sans sujet, + EMAIL ; variantes report (R32) et adresse retirée (R80).
     EVENT_CHANGED: define('EVENT_CHANGED', {
         label: 'Changement d’un événement', channels: ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'EVENT_CHANGE', link: eventPath,
+        // Contre-vérification du lot 11c-b (T2) : report qui ouvre le remboursement → les billets du compte pour cet
+        // événement (/tickets/<événement>, où sont « Me faire rembourser » et, pour le titulaire d'une table, « Ma table »)
+        inAppType: 'EVENT_CHANGE', link: (d) => (refundOpen(d) ? eventTicketsPath(d) : eventPath(d)),
         inApp: eventChangedInApp,
         sms: eventChangedSms,
         sample: { ...SAMPLE_EVENT, changed_fields: ['start_date', 'start_time'], new_start_at: '2026-11-21T21:00:00.000Z' },
@@ -1616,7 +1621,7 @@ const CATALOG = {
     // Lot 11c-a : tables d'un événement (une table = un lot de N billets, migration 20261201000006)
     EVENT_TABLE_CONFIRMED: define('EVENT_TABLE_CONFIRMED', {
         label: 'Table d’un événement réservée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'TICKET',
-        link: eventTicketsPath,
+        link: myTablePath,
         inApp: (d) => ({
             title: 'Table réservée',
             content: `Votre table ${count(d, 'table_number')} (${text(d, 'table_type')}, ${plural(count(d, 'seats'), 'place', 'places')}) pour ${q(text(d, 'title'))} est réservée. Total payé : ${money(d, 'total')}. Envoyez les places à vos invités depuis Mes billets : chacun aura son billet.`,
@@ -1646,12 +1651,13 @@ const CATALOG = {
     }),
     EVENT_TABLE_SEATS_REMINDER: define('EVENT_TABLE_SEATS_REMINDER', {
         label: 'Places de table à envoyer', family: 'OPTIONAL', topic: 'REMINDERS', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'REMINDER', link: eventTicketsPath,
+        inAppType: 'REMINDER', link: myTablePath,
         inApp: (d) => ({
             title: 'Vos invités attendent leurs places',
             content: `Il vous reste ${plural(count(d, 'seats_left'), 'place', 'places')} à envoyer pour votre table ${count(d, 'table_number')} à ${q(text(d, 'title'))}, demain à ${formatTime(iso(d, 'start_at'))}. Envoyez-les depuis Mes billets : chaque invité aura son billet.`,
         }),
-        sms: (d, ctx) => `${SMS_PREFIX}il vous reste ${plural(count(d, 'seats_left'), 'place', 'places')} à envoyer pour la table ${count(d, 'table_number')}, ${smsVar(text(d, 'title'), 30)} demain. ${appLink(ctx, '/tickets')}`,
+        // Contre-vérification du lot 11c-b (T4) : l'onglet « Tables » tient dans un segment GSM-7 (154 caractères au pire cas)
+        sms: (d, ctx) => `${SMS_PREFIX}il vous reste ${plural(count(d, 'seats_left'), 'place', 'places')} à envoyer pour la table ${count(d, 'table_number')}, ${smsVar(text(d, 'title'), 30)} demain. ${appLink(ctx, '/tickets?tab=tables')}`,
         sample: { ...SAMPLE_EVENT, booking_id: '6d2f8a14-3c7e-4b9a-8e51-2a4c6e8b1d37', table_number: 12, seats_left: 4 },
     }),
     ADMIN_EVENT_TABLES_CHANGED: define('ADMIN_EVENT_TABLES_CHANGED', {

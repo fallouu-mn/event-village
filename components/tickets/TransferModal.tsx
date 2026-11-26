@@ -55,6 +55,13 @@ interface TransferModalProps {
   ticket: TransferTicketData | null;
   onTransferSuccess: (ticketId: string) => void;
   onOpenExplainer?: () => void;
+  /** Lot 11c-b : numéro prérempli (carnet du téléphone, place d'une table). */
+  initialRecipient?: string;
+  /**
+   * Lot 11c-b : place d'une table : champ « Prénom de l'invité » (facultatif), gardé sur ce téléphone seulement par
+   * l'écran appelant après un envoi réussi (le serveur ne reçoit que le numéro).
+   */
+  guestName?: { initial?: string; onSent: (name: string) => void };
 }
 
 interface TransferSuccess {
@@ -73,10 +80,11 @@ function looksLikePhone(value: string): boolean {
   return /^\+?\d{8,15}$/.test(value.replace(/[\s\-().]/g, ''));
 }
 
-export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, ticket, onTransferSuccess, onOpenExplainer }) => {
+export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, ticket, onTransferSuccess, onOpenExplainer, initialRecipient, guestName }) => {
   const { session } = useAuth();
   const toast = useToast();
-  const [recipient, setRecipient] = useState('');
+  const [recipient, setRecipient] = useState(initialRecipient ?? '');
+  const [guest, setGuest] = useState(guestName?.initial ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -176,6 +184,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
         expiresAt: typeof data.transfer.expires_at === 'string' ? data.transfer.expires_at : '',
       };
       setSuccess(result);
+      guestName?.onSent(guest);
       toast.success(`Transfert lancé vers ${result.recipient}.`);
       // Lot 7 (7.1, contrat 5.2) : le billet n'est plus présentable par ce téléphone, son lot hors ligne est supprimé.
       deleteOfflineLots(ticket.id).catch((err: unknown) => {
@@ -291,6 +300,18 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose, t
             {ticket.venue && <p className="mt-1 text-muted-foreground">{ticket.venue}</p>}
             <p className="mt-2 font-semibold text-success-text">Transfert gratuit</p>
           </div>
+
+          {guestName && (
+            <TextInput
+              label="Prénom de l’invité (facultatif)"
+              autoComplete="off"
+              maxLength={40}
+              value={guest}
+              onChange={(e) => setGuest(e.target.value)}
+              disabled={isSubmitting}
+              hint="Gardé sur ce téléphone seulement, pour reconnaître la place en attente."
+            />
+          )}
 
           <TextInput
             label="Numéro de téléphone du destinataire"
