@@ -249,7 +249,7 @@ for (const theme of THEMES) {
                 // Titre de la fenêtre : « Choisissez votre table », puis « Table réservée » à la confirmation
                 const dialog = page.getByRole('dialog');
                 await expect(page.getByRole('dialog', { name: 'Choisissez votre table' })).toBeVisible();
-                await expect(dialog.getByRole('button', { name: /Table \d+, 6 places, prise/ })).toBeVisible();
+                await expect(dialog.getByRole('button', { name: /Table \d+, 6 places, prise/ }).first()).toBeVisible();
                 await dialog.locator(`[data-table-id="${table.id}"]`).click();
                 const reserve = dialog.getByRole('button', { name: `Réserver la table ${table.number}` });
                 await expect(reserve).toBeEnabled();
