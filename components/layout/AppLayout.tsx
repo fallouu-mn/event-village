@@ -181,7 +181,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   // Navigation Services
   const serviceItems = visibleItems([
     { name: 'Salles de fête', href: '/halls', icon: Building2, feature: 'halls' },
-    { name: 'Restaurants et tables', href: '/restaurants/rest-terrou-bi/tables', icon: Utensils, feature: 'tables' },
+    { name: 'Restaurants et tables', href: '/tables', icon: Utensils, feature: 'tables' },
   ]);
 
   // Navigation Partenaire complète
