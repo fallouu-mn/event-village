@@ -148,7 +148,7 @@ describe('T4. Le texte du refus lu par l’écran est celui de l’écriture', (
         for (const status of ['TERMINE', 'ANNULE'] as const) {
             const ev = await newTablesEvent(owner, `t4-${status.toLowerCase()}`, { capacity: 80 });
             await createdTableType(owner, ev.eventId, vipType(), 1);
-            await advanceEventTo(ev.eventId, status, { partnerUserId: owner.userId });
+            await advanceEventTo(ev.eventId, status, { partnerUserId: owner.userId, ...(status === 'TERMINE' ? { finishShift: { startsInHours: -3 } } : {}) });
             const read = await report(owner, ev.eventId);
             assert.equal(read.status, 200, show(read));
             const write = await createTableType(owner, ev.eventId, vipType(), 1);

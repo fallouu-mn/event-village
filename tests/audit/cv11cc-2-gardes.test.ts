@@ -240,7 +240,7 @@ describe('G4. Copie refusée sur une cible non modifiable', () => {
         const cases: Array<[string, string, () => Promise<string>]> = [
             ['EN_ATTENTE', 'WITHDRAW_TO_EDIT', async () => (await newTablesEvent(owner, 'g4-attente', { capacity: 80, status: 'EN_ATTENTE' })).eventId],
             ['SUSPENDU', 'EVENT_SUSPENDED', async () => { const e = await newTablesEvent(owner, 'g4-susp', { capacity: 80 }); await advanceEventTo(e.eventId, 'SUSPENDU', { partnerUserId: owner.userId }); return e.eventId; }],
-            ['TERMINE', 'EVENT_LOCKED', async () => { const e = await newTablesEvent(owner, 'g4-fin', { capacity: 80 }); await advanceEventTo(e.eventId, 'TERMINE', { partnerUserId: owner.userId }); return e.eventId; }],
+            ['TERMINE', 'EVENT_LOCKED', async () => { const e = await newTablesEvent(owner, 'g4-fin', { capacity: 80 }); await advanceEventTo(e.eventId, 'TERMINE', { partnerUserId: owner.userId, finishShift: { startsInHours: -3 } }); return e.eventId; }],
             ['ANNULE', 'EVENT_LOCKED', async () => { const e = await newTablesEvent(owner, 'g4-annule', { capacity: 80 }); await advanceEventTo(e.eventId, 'ANNULE', { partnerUserId: owner.userId }); return e.eventId; }],
         ];
         for (const [label, code, make] of cases) {
@@ -356,7 +356,7 @@ describe('G9. Refus lu par l’écran = code de l’écriture', () => {
         await compare('validation', owner, (await newTablesEvent(owner, 'g9-attente', { capacity: 80, status: 'EN_ATTENTE' })).eventId);
         for (const status of ['SUSPENDU', 'TERMINE', 'ANNULE'] as const) {
             const e = await newTablesEvent(owner, `g9-${status.toLowerCase()}`, { capacity: 80 });
-            await advanceEventTo(e.eventId, status, { partnerUserId: owner.userId });
+            await advanceEventTo(e.eventId, status, { partnerUserId: owner.userId, ...(status === 'TERMINE' ? { finishShift: { startsInHours: -3 } } : {}) });
             await compare(status, owner, e.eventId);
         }
         const open = await newTablesEvent(owner, 'g9-ferme', { capacity: 80 });
