@@ -129,4 +129,9 @@ export function tablesTabVisible(report: TablesReport | null): boolean {
     return !!report && (report.service_open || report.types.length > 0);
 }
 
+/** Accord d'un nom ou d'un participe avec un nombre lu sur la réponse du serveur (« 1 vendue », « 2 vendues »). */
+export function plural(n: number, one: string, many: string): string {
+    return Math.abs(n) >= 2 ? many : one;
+}
+
 export const STATE_LABEL: Readonly<Record<TableState, string>> = { LIBRE: 'Libre', EN_ATTENTE: 'En paiement', VENDUE: 'Vendue' };

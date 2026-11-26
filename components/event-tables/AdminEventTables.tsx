@@ -1,12 +1,12 @@
 'use client';
 
-import { History, Lock } from 'lucide-react';
+import { History, Map as MapIcon } from 'lucide-react';
 import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { Badge } from '@/components/ui/Badge';
 import { formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
 import { SeatsGauge } from './SeatsGauge';
 import { useTablesReport } from './useTablesReport';
-import type { TableBookingRow, TableTypeRow } from './types';
+import { plural, type TableBookingRow, type TableTypeRow } from './types';
 
 /**
  * Lot 11c-c — tables d'un événement sur la fiche de l'administration (GET /api/admin/events/[id]/tables, events.read) :
@@ -26,7 +26,7 @@ const typeColumns: DataColumn<TableTypeRow>[] = [
     { key: 'seats', header: 'Places', align: 'right', render: (t) => formatInteger(t.seats) },
     { key: 'price', header: 'Prix de la table', align: 'right', render: (t) => formatFcfa(t.price) },
     { key: 'per', header: 'Par personne', align: 'right', render: (t) => formatFcfa(t.price_per_person) },
-    { key: 'tables', header: 'Tables', align: 'right', render: (t) => `${formatInteger(t.sold_tables)} vendues / ${formatInteger(t.total_tables)}` },
+    { key: 'tables', header: 'Tables', align: 'right', render: (t) => `${formatInteger(t.sold_tables)} ${plural(t.sold_tables, 'vendue', 'vendues')} / ${formatInteger(t.total_tables)}` },
     { key: 'state', header: 'Vente', render: (t) => (t.is_active ? 'En vente' : 'Arrêtée') },
 ];
 
@@ -72,7 +72,7 @@ export function AdminEventTables({ eventId }: { eventId: string }) {
                 ))}
             </dl>
             <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Lock size={16} aria-hidden="true" /> Plan {data.plan_enabled ? 'montré aux clients' : 'non montré : le client reçoit la plus petite table libre du type choisi'}.
+                <MapIcon size={16} aria-hidden="true" /> Plan {data.plan_enabled ? 'montré aux clients' : 'non montré : le client reçoit la plus petite table libre du type choisi'}.
             </p>
 
             <DataList items={data.types} columns={typeColumns} getKey={(x) => x.id} caption="Types de tables" cardTitle={(x) => x.name} breakpoint="xl" />

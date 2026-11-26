@@ -17,7 +17,7 @@ import { SeatsGauge } from './SeatsGauge';
 import { TableTypeDialog } from './TableTypeDialog';
 import { PlanWorkbench, type DraftTable, type DraftZone } from './PlanWorkbench';
 import { nextFreeNumber, renumber } from './plan-templates';
-import { STATE_LABEL, type TableTypeRow, type TablesReport } from './types';
+import { plural, STATE_LABEL, type TableTypeRow, type TablesReport } from './types';
 
 /**
  * Lot 11c-c — onglet « Tables » de la billetterie (organisatrice) : types de tables, tables numérotées, zones d'accès,
@@ -247,7 +247,7 @@ export function TablesEditor({ eventId, report, reload, onDirtyChange }: TablesE
                                     </dl>
                                 )}
                                 <p className="text-sm tabular-nums text-foreground">
-                                    {formatInteger(t.sold_tables)} vendues · {formatInteger(t.held_tables)} en paiement · {formatInteger(t.free_tables)} libres
+                                    {formatInteger(t.sold_tables)} {plural(t.sold_tables, 'vendue', 'vendues')} · {formatInteger(t.held_tables)} en paiement · {formatInteger(t.free_tables)} {plural(t.free_tables, 'libre', 'libres')}
                                 </p>
                                 {t.locked && (
                                     <p className="inline-flex items-start gap-1.5 text-sm text-muted-foreground"><Lock size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />Prix et places figés : une table est vendue ou en cours de paiement.</p>

@@ -10,7 +10,7 @@ import { DataList, type DataColumn } from '@/components/ui/DataList';
 import { cn } from '@/components/ui/cn';
 import { formatFcfa, formatInteger, formatTime } from '@/lib/format';
 import { SeatsGauge } from './SeatsGauge';
-import { STATE_LABEL, type TableBookingRow, type TableState, type TablesReport } from './types';
+import { plural, STATE_LABEL, type TableBookingRow, type TableState, type TablesReport } from './types';
 
 /**
  * Lot 11c-c — onglet « Tables » du pilotage : plan coloré par état (libre, en paiement, vendue, invités arrivés), avec
@@ -169,7 +169,7 @@ export function TablesPilotage({ eventId, report, doorHref }: { eventId: string;
                         <p className="text-base font-bold text-foreground-strong">Table {sel.number} · {sel.zone ?? sel.typeName}</p>
                         {sel.booking ? (
                             <p className="mt-1 text-sm tabular-nums text-foreground">
-                                {sel.booking.holder ?? 'Titulaire'} · {formatInteger(sel.booking.counts.given)} place(s) envoyée(s)
+                                {sel.booking.holder ?? 'Titulaire'} · {formatInteger(sel.booking.counts.given)} {plural(sel.booking.counts.given, 'place envoyée', 'places envoyées')}
                                 {sel.booking.counts.pending > 0 ? `, ${formatInteger(sel.booking.counts.pending)} en attente` : ''} · {formatInteger(sel.booking.counts.entered)}/{formatInteger(sel.booking.seats)} entrés
                             </p>
                         ) : (
