@@ -261,10 +261,15 @@ describe('G4. Copie refusée sur une cible non modifiable', () => {
         const tgt = await newTablesEvent(suspendedPartner, 'g4-fiche-cible', { capacity: 80 });
         const { error } = await service.from('partners').update({ status: 'SUSPENDU' }).eq('id', suspendedPartner.partnerId);
         assert.equal(error, null, error?.message);
-        const r = await copy(suspendedPartner, tgt.eventId, src);
-        // Run 709 : refus 403 PARTNER_SUSPENDED avant la base (session de la partenaire suspendue) ; 409 accepté aussi
-        assert.ok([403, 409].includes(r.status) && r.body.code === 'PARTNER_SUSPENDED', show(r));
-        assert.equal((await tablesState(tgt.eventId)).types.length, 0, 'fiche suspendue : rien écrit');
+        try {
+            const r = await copy(suspendedPartner, tgt.eventId, src);
+            // Run 709 : refus 403 PARTNER_SUSPENDED avant la base (session de la partenaire suspendue) ; 409 accepté aussi
+            assert.ok([403, 409].includes(r.status) && r.body.code === 'PARTNER_SUSPENDED', show(r));
+            assert.equal((await tablesState(tgt.eventId)).types.length, 0, 'fiche suspendue : rien écrit');
+        } finally {
+            const { error: back } = await service.from('partners').update({ status: 'VALIDE' }).eq('id', suspendedPartner.partnerId);
+            assert.equal(back, null, back?.message);
+        }
     });
 });
 
