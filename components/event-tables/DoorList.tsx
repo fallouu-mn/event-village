@@ -1,12 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Maximize2, Minimize2, Printer, RefreshCw, Search, Users } from 'lucide-react';
+import { ChevronDown, Clock, Maximize2, Minimize2, Printer, RefreshCw, Search, Users } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/Field';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { cn } from '@/components/ui/cn';
-import { fetchJson } from '@/components/partner/fetch-json';
+import { ApiError, fetchJson } from '@/components/partner/fetch-json';
 import { formatDateTime, formatInteger, formatTime } from '@/lib/format';
 import type { DoorItem, DoorList as DoorListData } from './types';
 
@@ -17,6 +17,8 @@ import type { DoorItem, DoorList as DoorListData } from './types';
  * écran à fort contraste (thème sombre forcé, caractères agrandis). Version imprimable (feuille d'impression propre à la
  * page : seule la liste est imprimée, en noir sur blanc, avec une case par place) pour une porte sans réseau ;
  * `?imprimer=1` ouvre l'impression dès la liste lue. Chaque nombre vient du serveur.
+ * Contre-vérification 11c-c (T1) : hors de la plage du contrôle, un contrôleur reçoit 409 CONTROL_CLOSED ; la page dit
+ * simplement quand le contrôle ouvre (ou qu'il est fermé), sans garder aucune liste lue auparavant.
  */
 
 const PRINT_CSS = `
@@ -40,6 +42,7 @@ export interface DoorListProps {
 export function DoorList({ eventId, title }: DoorListProps) {
     const [data, setData] = useState<DoorListData | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [closed, setClosed] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
     const [open, setOpen] = useState<number | null>(null);
@@ -53,7 +56,15 @@ export function DoorList({ eventId, title }: DoorListProps) {
             const body = await fetchJson<DoorListData>(`/api/events/${eventId}/tables/door`);
             setData(body);
             setError(null);
+            setClosed(null);
         } catch (err) {
+            if (err instanceof ApiError && err.code === 'CONTROL_CLOSED') {
+                // Contrôle fermé : plus aucune donnée à l'écran, même lue plus tôt
+                setData(null);
+                setError(null);
+                setClosed(err.message);
+                return;
+            }
             setError(err instanceof Error && err.message ? err.message : 'La liste des tables ne peut pas être affichée pour le moment.');
         } finally {
             setLoading(false);
@@ -107,6 +118,18 @@ export function DoorList({ eventId, title }: DoorListProps) {
 
     if (loading && !data) {
         return <div className="h-64 w-full rounded-2xl bg-muted motion-safe:animate-pulse" role="status" aria-label="Chargement de la liste de la porte" />;
+    }
+    if (closed !== null) {
+        return (
+            <EmptyState
+                icon={<Clock size={28} />}
+                title="Liste fermée pour le moment"
+                description={closed}
+                actionLabel="Actualiser"
+                onAction={() => void load()}
+                className="my-0"
+            />
+        );
     }
     if (!data) {
         return <ErrorState title="La liste de la porte n’a pas pu être chargée" description={error ?? undefined} onRetry={() => void load()} isRetrying={loading} />;

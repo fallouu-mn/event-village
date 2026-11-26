@@ -1132,7 +1132,8 @@ export default function ControllerScannerPage() {
                             {!online && <p className="text-sm text-muted-foreground">Hors ligne : la liste des invités reprendra au retour du réseau.</p>}
                         </div>
                     )}
-                    {selected.tables_sold > 0 && (
+                    {/* Contre-vérification 11c-c (T1) : la liste des tables suit la plage du contrôle, comme la liste des invités */}
+                    {selected.tables_sold > 0 && selected.scan?.open === true && (
                         <a href={`/controller/porte/${encodeURIComponent(selected.events.id)}`} className={buttonClasses({ variant: 'secondary', size: 'lg', fullWidth: true })}>
                             Liste des tables
                         </a>
