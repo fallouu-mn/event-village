@@ -77,7 +77,9 @@ describe('T2 — « Ma table » d’après les ventes', () => {
         assert.equal(e.link!(sample as never), `/events/${String(sample.event_id)}`, 'autre changement : la fiche, comme avant');
         const focus = strip(read('app/tickets/focus-read.ts'));
         assert.match(focus, /const refundTable = tableOf\(tables\?\.refundOpen\);\s*if \(refundTable\) return \{ kind: 'table', bookingId: refundTable \};/);
-        assert.match(focus, /const heldTable = tableOf\(tables\?\.held\);/);
+        assert.match(focus, /const heldTable = tableOf\(tables\?\.held\);\s*if \(!ofEvent && heldTable\) return \{ kind: 'table', bookingId: heldTable \};/);
+        // Ligne figée par f5-liens-avis (finition 5), gardée telle quelle
+        assert.match(focus, /return ofEvent \? \{ kind: 'ok', focus: 'event', tickets: ofEvent \} : \{ kind: 'not-found' \};/);
         assert.match(strip(read('app/tickets/[id]/page.tsx')), /if \(read\.kind === 'table'\) redirect\(`\/tickets\?tab=tables#table-\$\{read\.bookingId\}`\);/);
     });
 });

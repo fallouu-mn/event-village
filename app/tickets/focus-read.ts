@@ -50,9 +50,9 @@ export async function readTicketsFocus(id: string): Promise<FocusRead> {
         const refundTable = tableOf(tables?.refundOpen);
         if (refundTable) return { kind: 'table', bookingId: refundTable };
         const ofEvent = ticketsInFocus(list, { event: id });
-        if (ofEvent) return { kind: 'ok', focus: 'event', tickets: ofEvent };
         const heldTable = tableOf(tables?.held);
-        return heldTable ? { kind: 'table', bookingId: heldTable } : { kind: 'not-found' };
+        if (!ofEvent && heldTable) return { kind: 'table', bookingId: heldTable };
+        return ofEvent ? { kind: 'ok', focus: 'event', tickets: ofEvent } : { kind: 'not-found' };
     } catch (err) {
         console.error('[Page d’arrivée des billets] lecture impossible :', err instanceof Error ? err.message : String(err));
         return { kind: 'error', message: GENERIC };
