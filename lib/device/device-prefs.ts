@@ -193,3 +193,66 @@ export function takeTableChoice(eventId: string): TableChoice | null {
     const tableId = typeof v.tableId === 'string' && UUID_RE.test(v.tableId) ? v.tableId : null;
     return { typeId: v.typeId, tableId };
 }
+
+// ── Lot 12b : panier d'une commande (ajout du 26/11) ─────────────────────────────────────────────────────────────
+// Panier gardé sur l'appareil si le client quitte en route (une clé par établissement, 24 heures au plus) : produits,
+// quantités, suppléments, note par plat et mode de remise choisi. JAMAIS un prix ni un total : à la reprise, le devis est
+// relu par la base (POST /api/orders/quote) et un produit devenu indisponible est signalé, jamais gardé en silence.
+// Ni adresse, ni téléphone, ni code de remise. Effacé au bouton « Se déconnecter » et sur SIGNED_OUT (portée « tout » de
+// clearDevicePrefs) ; gardé pour un visiteur qui se connecte pour commander (comme la table choisie avant la connexion).
+export const ORDER_CART_PREFIX = `${DEVICE_PREFS_PREFIX}panier:`;
+const ORDER_CART_TTL_MS = 24 * 60 * 60 * 1000;
+const ORDER_CART_LINES_MAX = 30;
+const ORDER_CART_NOTE_MAX = 200;
+
+export interface SavedCartLine {
+    productId: string;
+    quantity: number;
+    optionIds: string[];
+    notes: string;
+}
+
+export interface SavedCart {
+    lines: SavedCartLine[];
+    mode: 'LIVRAISON' | 'RETRAIT' | 'SUR_PLACE' | null;
+}
+
+function cleanCartLine(raw: unknown): SavedCartLine | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const l = raw as Record<string, unknown>;
+    if (typeof l.productId !== 'string' || !UUID_RE.test(l.productId)) return null;
+    const q = Number(l.quantity);
+    if (!Number.isInteger(q) || q < 1 || q > 99) return null;
+    const optionIds = Array.isArray(l.optionIds) ? l.optionIds.filter((x): x is string => typeof x === 'string' && UUID_RE.test(x)).slice(0, 10) : [];
+    const notes = typeof l.notes === 'string' ? l.notes.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, ORDER_CART_NOTE_MAX) : '';
+    return { productId: l.productId, quantity: q, optionIds, notes };
+}
+
+/** Panier gardé (moins de 24 heures) pour cet établissement, ou null. Aucun prix : à relire par le devis de la base. */
+export function readSavedCart(venueId: string): SavedCart | null {
+    if (!UUID_RE.test(venueId)) return null;
+    const v = readJson(`${ORDER_CART_PREFIX}${venueId}`) as { at?: unknown; lines?: unknown; mode?: unknown } | null;
+    if (!v || typeof v !== 'object' || typeof v.at !== 'number' || Date.now() - v.at > ORDER_CART_TTL_MS) return null;
+    const lines = (Array.isArray(v.lines) ? v.lines : []).map(cleanCartLine).filter((x): x is SavedCartLine => x !== null).slice(0, ORDER_CART_LINES_MAX);
+    if (lines.length === 0) return null;
+    const mode = v.mode === 'LIVRAISON' || v.mode === 'RETRAIT' || v.mode === 'SUR_PLACE' ? v.mode : null;
+    return { lines, mode };
+}
+
+/** Garde le panier de cet établissement (vide : retiré). Aucun prix n'est accepté ni écrit. */
+export function saveSavedCart(venueId: string, cart: SavedCart): boolean {
+    if (!UUID_RE.test(venueId)) return false;
+    const lines = cart.lines.map(cleanCartLine).filter((x): x is SavedCartLine => x !== null).slice(0, ORDER_CART_LINES_MAX);
+    if (lines.length === 0) return clearSavedCart(venueId);
+    return writeJson(`${ORDER_CART_PREFIX}${venueId}`, { at: Date.now(), lines, mode: cart.mode });
+}
+
+/** Retire le panier gardé de cet établissement (commande passée, panier vidé). */
+export function clearSavedCart(venueId: string): boolean {
+    try {
+        storage()?.removeItem(`${ORDER_CART_PREFIX}${venueId}`);
+        return true;
+    } catch {
+        return false; // stockage refusé : rien à retirer
+    }
+}

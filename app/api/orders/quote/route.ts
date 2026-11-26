@@ -41,6 +41,10 @@ export async function POST(req: NextRequest) {
                 goodsTotal: Number(r.goods_total),
                 depositPercent: r.deposit_percent ?? null,
                 serviceFee: Number(r.first_fee),
+                // Lot 12b : total affiché par le panier (commande + frais de service de la part payée maintenant), calculé
+                // ici à partir des montants de la base : l'écran n'additionne rien ; renvoyé tel quel à la création
+                // (expectedTotal) pour la garde « prix changé »
+                total: Number(r.goods_total) + Number(r.first_fee),
                 toPayNow: Number(r.to_pay_now),
                 balanceDue: Number(r.balance_due),
                 scheduledFor: r.scheduled_for,

@@ -84,11 +84,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(outcome.body, { status: outcome.status });
         }
         // Lot 12a : commande, paiement créé en base (order_payment_create), montant relu sur la commande (part payée au
-        // départ, ou solde avec part: 'SOLDE')
+        // départ, ou solde avec part: 'SOLDE'). Lot 12b : clé d'idempotence (en-tête Idempotency-Key) et montant affiché
+        // comparé en base (order_payment_start)
         if (input.targetType === 'ORDER') {
             const outcome = await startOrderPayment({
                 userId: session.user.id, orderId: input.targetId, part: input.part === 'SOLDE' ? 'SOLDE' : 'PREMIER',
                 operator: input.operator, payerPhone: input.payerPhone,
+                idempotencyKey: req.headers.get('idempotency-key'), expectedAmount: input.expectedAmount ?? null,
             });
             return NextResponse.json(outcome.body, { status: outcome.status });
         }

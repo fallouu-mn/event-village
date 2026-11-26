@@ -190,8 +190,11 @@ export async function GET(req: NextRequest, context: { params: Promise<{ transac
             payer_phone_masked: payment.payer_phone ? maskPhone(payment.payer_phone) : null,
             receipt_channels: channels,
             // Lot 11c-b : une table payée mène à « Ma table » ; « Réessayer » rouvre l'onglet « Tables » de la fiche
-            success_url: table?.bookingId ? `/tickets?tab=tables#table-${table.bookingId}` : successUrl(payment.payment_target),
-            retry_url: table && payment.event_id ? `/events/${payment.event_id}?tables=1` : retryUrl(payment),
+            // Lot 12b : une commande payée (ou à repayer) mène à son suivi
+            success_url: table?.bookingId ? `/tickets?tab=tables#table-${table.bookingId}`
+                : payment.payment_target === 'ORDER' && payment.order_id ? `/orders/${payment.order_id}` : successUrl(payment.payment_target),
+            retry_url: table && payment.event_id ? `/events/${payment.event_id}?tables=1`
+                : payment.payment_target === 'ORDER' && payment.order_id ? `/orders/${payment.order_id}` : retryUrl(payment),
             table_booking_id: table?.bookingId ?? null,
         }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (err) {
