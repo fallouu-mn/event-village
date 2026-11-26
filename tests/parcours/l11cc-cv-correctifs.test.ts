@@ -299,7 +299,14 @@ describe('T4. Refus lu = refus écrit, code et texte, dans tous les états', () 
         const ficheEvent = await newTablesEvent(suspendedPartner, 'cv-t4-fiche', { capacity: 80 });
         const { error } = await service.from('partners').update({ status: 'SUSPENDU' }).eq('id', suspendedPartner.partnerId);
         assert.equal(error, null, error?.message);
-        await compare('fiche suspendue', suspendedPartner, ficheEvent.eventId);
+        try {
+            await compare('fiche suspendue', suspendedPartner, ficheEvent.eventId);
+        } finally {
+            // Fiche remise à VALIDE : un événement publié d'une fiche suspendue viole l'invariant w5 des autres suites
+            // de la même base (run complet 715)
+            const { error: back } = await service.from('partners').update({ status: 'VALIDE' }).eq('id', suspendedPartner.partnerId);
+            assert.equal(back, null, back?.message);
+        }
 
         // Administration : la lecture de l'administration et l'écriture en base (les routes de l'organisatrice refusent un
         // compte qui n'est pas organisateur avant la base)
