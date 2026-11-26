@@ -1,7 +1,12 @@
 # Lot 11c-c — Tables d'un événement : écrans de l'organisatrice, de la porte et de l'administration
 
-Branche `lot11c/tables-organisatrice`, partie de `main` à `f0054b4893` (lot 11c-a fusionné). Worktree
-`event-village-lot11cc`, `node_modules` en jonction vers la recette. Rien n'est fusionné, aucune migration n'est appliquée.
+**Fusionné dans main (`7d45274fb6`), run complet de main 720 vert** : 625 suites, e2e 787 captures sans échec,
+responsive 194 résultats sans défaut, budgets respectés, mesure mobile 94 / 90 / 95. Les migrations
+`20261215000001_l11cc_lectures_tables.sql` et `20261215000002_l11cc_cv_correctifs.sql` ne sont pas encore appliquées sur
+event-village-dev ; Fallou les applique depuis son terminal.
+
+Branche `lot11c/tables-organisatrice`, partie de `main` à `f0054b4893` (lot 11c-a fusionné), gardée. Le worktree
+`event-village-lot11cc` est retiré.
 
 ## À lire en premier
 
