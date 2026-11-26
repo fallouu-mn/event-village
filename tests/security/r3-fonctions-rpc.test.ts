@@ -728,6 +728,8 @@ const LOT11C_RPCS: Array<[string, Record<string, unknown>]> = [
     ['event_table_seats_reminders', { p: {} }],
     // Lot 11c-c (ajout signalé au rapport) : lecture des écrans de l'organisatrice, du pilotage et de l'administration
     ['event_table_report', { p: {} }],
+    // Contre-vérification du lot 11c-c (ajout signalé au rapport) : copie des tables en une fonction
+    ['event_table_copy', { p: {} }],
 ];
 
 describe('R3 — lot 11c-a : chaque fonction du lot existe et reste réservée au rôle de service (42501)', () => {
