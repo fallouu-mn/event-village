@@ -10,8 +10,10 @@
  *  - Bandeaux du compte : en attente, refusé (avec le motif servi), suspendu (avec le motif servi). Lot 9 bis (R5, B16,
  *    contrat 5.2) : le bandeau de la suspension dit ce qui se passe vraiment (événements en ligne suspendus par la
  *    cascade, fonds gelés jusqu'à la réactivation) ; l'ancien texte, faux, est retiré.
- *  - Bloc « Commandes en direct » affiché seulement si features.orders_enabled est ouvert (useFeatureFlags) ;
- *    usePartnerOrders reste importé (SCENARIO 15) mais ne s'abonne que si le service est ouvert.
+ *  - Bloc « Commandes » affiché seulement si features.orders_enabled est ouvert (useFeatureFlags). Lot 12c : lu par les
+ *    routes serveur GET /api/partner/orders/day (« Ma journée », calculée en base) et GET /api/partner/orders, relues
+ *    toutes les 30 s tant que la page est visible ; plus d'abonnement temps réel à la table des commandes (la partenaire
+ *    ne la lit plus par la REST depuis le lot 12a : l'ancien crochet usePartnerOrders ne rendait plus rien).
  *  - Le rapport de clôture est une modale chargée à la demande (next/dynamic).
  */
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -33,7 +35,6 @@ import {
     TrendingUp,
     Wallet,
 } from 'lucide-react';
-import { usePartnerOrders } from '@/hooks/usePartnerOrders';
 import { useFeatureFlags } from '@/lib/features/client';
 import { useServerData } from '@/components/partner/useServerData';
 import { FirstEventSteps, type FirstEventOnboarding } from '@/components/partner/onboarding/FirstEventSteps';
@@ -52,7 +53,8 @@ import { Modal } from '@/components/ui/Modal';
 import { TextInput } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
 import { ApiError, errorMessage, sendJson } from '@/components/partner/fetch-json';
-import { formatDate, formatDateTime, formatFcfa, formatInteger } from '@/lib/format';
+import { formatDate, formatDateTime, formatFcfa, formatInteger, formatTime } from '@/lib/format';
+import { ORDER_MODE_LABELS } from '@/lib/orders/partner-ui';
 import type { PartnerActivityItem, PartnerDashboardData, PartnerEventBreakdown } from '@/lib/partner/partner-dashboard.service';
 import Link from 'next/link';
 
@@ -70,22 +72,25 @@ interface DashboardResponse {
     support_email?: string;
 }
 
-const ORDER_STATUS_LABELS: Record<string, { label: string; variant: BadgeVariant }> = {
-    EN_ATTENTE: { label: 'En attente', variant: 'warning' },
-    CONFIRMEE: { label: 'Confirmée', variant: 'info' },
-    EN_PREPARATION: { label: 'En préparation', variant: 'warning' },
-    PRETE: { label: 'Prête', variant: 'info' },
-    EN_LIVRAISON: { label: 'En livraison', variant: 'info' },
-    LIVREE: { label: 'Livrée', variant: 'success' },
-    ANNULEE: { label: 'Annulée', variant: 'danger' },
-    REJETEE: { label: 'Refusée', variant: 'danger' },
+/** Lot 12c : ton de la pastille d'une commande selon son état servi (le libellé est servi : stateLabel). */
+const ORDER_STATE_BADGES: Record<string, BadgeVariant> = {
+    RECUE: 'warning',
+    ACCEPTEE: 'info',
+    EN_PREPARATION: 'brand',
+    PRETE: 'success',
+    EN_ROUTE: 'info',
 };
 
-const DELIVERY_MODE_LABELS: Record<string, string> = {
-    LIVRAISON: 'Livraison',
-    RETRAIT: 'Retrait sur place',
-    SUR_PLACE: 'Sur place',
-};
+/** Lot 12c : réponses des routes serveur des commandes (montants et compteurs servis, rien de calculé ici). */
+interface OrdersDayResponse {
+    day?: { receivedToday: number; openNow: number; toAccept: number; revenueToday: number };
+}
+interface OpenOrdersResponse {
+    orders?: Array<{ id: string; order_number: string; state: string; stateLabel: string; mode: string; created_at: string; amounts?: { goods_total?: number } }>;
+}
+
+/** Lot 12c : relecture des commandes toutes les 30 s tant que la page est visible (plus de temps réel par la base). */
+const ORDERS_REFRESH_MS = 30_000;
 
 const ACTIVITY_ICONS: Record<PartnerActivityItem['type'], { icon: React.ElementType; className: string }> = {
     SALE: { icon: Ticket, className: 'bg-info-soft text-info-text' },
@@ -269,9 +274,20 @@ export default function PartnerDashboardPage() {
     const onboarding = (dashboard?.onboarding ?? null) as FirstEventOnboarding | null;
     const supportEmail = typeof body?.support_email === 'string' && body.support_email.includes('@') ? body.support_email : null;
 
-    // Commandes en direct : abonnement seulement si le service des commandes est ouvert (D69).
+    // Commandes : lues seulement si le service des commandes est ouvert (D69), par les routes serveur (lot 12c)
     const ordersOpen = flags?.orders === true;
-    const { orders: liveOrders, connected } = usePartnerOrders(ordersOpen && partner ? partner.id : null);
+    const [ordersTick, setOrdersTick] = React.useState(0);
+    useEffect(() => {
+        if (!ordersOpen) return undefined;
+        const id = setInterval(() => {
+            if (document.visibilityState === 'visible') setOrdersTick((n) => n + 1);
+        }, ORDERS_REFRESH_MS);
+        return () => clearInterval(id);
+    }, [ordersOpen]);
+    const ordersDay = useServerData<OrdersDayResponse>(ordersOpen && partner ? '/api/partner/orders/day' : null, ordersTick);
+    const openOrders = useServerData<OpenOrdersResponse>(ordersOpen && partner ? '/api/partner/orders?filter=open' : null, ordersTick);
+    const liveOrders = openOrders.data?.orders ?? [];
+    const today = ordersDay.data?.day ?? null;
 
     const [closing, setClosing] = React.useState<{ id: string; title: string } | null>(null);
     const [isDossierOpen, setIsDossierOpen] = React.useState(false);
@@ -643,11 +659,22 @@ export default function PartnerDashboardPage() {
                                 <div className="flex items-center justify-between gap-2">
                                     <h2 id="commandes-titre" className="flex items-center gap-2 text-lg font-bold text-foreground-strong">
                                         <ShoppingBag size={20} className="text-primary-text" aria-hidden="true" />
-                                        Commandes en direct
+                                        Commandes
                                     </h2>
-                                    <span className="text-sm text-muted-foreground" role="status">{connected ? 'En direct' : 'Connexion…'}</span>
+                                    <span className="text-sm text-muted-foreground" role="status">
+                                        {openOrders.updatedAt ? <>Mis à jour à <span className="tabular-nums">{formatTime(openOrders.updatedAt)}</span></> : 'Chargement…'}
+                                    </span>
                                 </div>
-                                {liveOrders.length === 0 ? (
+                                {today && (
+                                    <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                                        <span>À accepter : <span className="font-bold tabular-nums text-foreground-strong">{formatInteger(today.toAccept)}</span></span>
+                                        <span>En cours : <span className="font-bold tabular-nums text-foreground-strong">{formatInteger(today.openNow)}</span></span>
+                                        <span>Recette du jour : <span className="font-bold tabular-nums text-foreground-strong">{formatFcfa(today.revenueToday)}</span></span>
+                                    </p>
+                                )}
+                                {openOrders.error && !openOrders.data ? (
+                                    <ErrorState title="Commandes indisponibles" description={openOrders.error} onRetry={() => void openOrders.reload()} />
+                                ) : liveOrders.length === 0 ? (
                                     <EmptyState
                                         title="Aucune commande en cours"
                                         description="Les commandes de vos clients s’afficheront ici dès leur paiement."
@@ -655,24 +682,23 @@ export default function PartnerDashboardPage() {
                                     />
                                 ) : (
                                     <ul className="divide-y divide-border rounded-xl border border-border bg-card">
-                                        {liveOrders.slice(0, 6).map((order) => {
-                                            const st = ORDER_STATUS_LABELS[order.order_status] ?? { label: 'Statut inconnu', variant: 'neutral' as BadgeVariant };
-                                            return (
-                                                <li key={order.id} className="flex items-center justify-between gap-3 p-4">
-                                                    <div className="min-w-0">
-                                                        <div className="flex flex-wrap items-center gap-2">
-                                                            <span className="text-sm font-semibold text-foreground-strong">{order.order_number}</span>
-                                                            <Badge variant={st.variant} size="sm">{st.label}</Badge>
-                                                        </div>
-                                                        <p className="text-sm text-muted-foreground">
-                                                            {DELIVERY_MODE_LABELS[order.delivery_mode] ?? 'Commande'} ·{' '}
-                                                            <time dateTime={order.created_at} className="text-sm">{formatDateTime(order.created_at)}</time>
-                                                        </p>
+                                        {liveOrders.slice(0, 6).map((order) => (
+                                            <li key={order.id} className="flex items-center justify-between gap-3 p-4">
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <Link href={`/partner/orders/${order.id}`} className="inline-flex min-h-11 items-center text-sm font-semibold tabular-nums text-foreground-strong underline-offset-2 hover:underline">
+                                                            {order.order_number}
+                                                        </Link>
+                                                        <Badge variant={ORDER_STATE_BADGES[order.state] ?? 'neutral'} size="sm">{order.stateLabel}</Badge>
                                                     </div>
-                                                    <span className="flex-shrink-0 text-sm font-bold tabular-nums text-foreground-strong">{formatFcfa(order.total_amount)}</span>
-                                                </li>
-                                            );
-                                        })}
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {ORDER_MODE_LABELS[order.mode] ?? 'Commande'} ·{' '}
+                                                        <time dateTime={order.created_at} className="text-sm">{formatDateTime(order.created_at)}</time>
+                                                    </p>
+                                                </div>
+                                                <span className="flex-shrink-0 text-sm font-bold tabular-nums text-foreground-strong">{formatFcfa(order.amounts?.goods_total)}</span>
+                                            </li>
+                                        ))}
                                     </ul>
                                 )}
                                 <LinkButton href="/partner/orders" variant="ghost" size="sm">Toutes les commandes</LinkButton>

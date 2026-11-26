@@ -22,8 +22,10 @@
  *  6. dans les 4 pages (tableau de bord, finances, équipe, abonnement) et FirstEventSteps : aucun reduce,
  *     filter(…).length, new Set(…).size, Math.round/ceil/floor, `? 90 : 60` ni repli `|| 60`, aucune
  *     lecture directe de table ni RPC, aucun `.length` affiché ; ErrorState (avec onRetry) et état vide ;
- *     contenus propres à chaque page (section 8) ; usePartnerOrders toujours importé (SCENARIO 15) et
- *     finance-moteur.test.ts:273 respecté (garde-fous verts).
+ *     contenus propres à chaque page (section 8) ; finance-moteur.test.ts:273 respecté (garde-fou vert). Lot 12c
+ *     (modification signalée au rapport) : le garde-fou « usePartnerOrders toujours importé (SCENARIO 15) » devient
+ *     « commandes lues par les routes serveur, sans hooks/usePartnerOrders » (crochet retiré : la REST des commandes est
+ *     fermée à la partenaire depuis le lot 12a).
  *
  * Rouge avant correctif (fix(7.4)) :
  *  - aucune des routes ne sert `onboarding`, `trial`, `trial_percent_used`, `members_count`,
@@ -37,8 +39,7 @@
  *    (team:888,1039), éligibilité décidée dans le navigateur (team:17) ; `Math.round` (subscription:113),
  *    PLAN_HIGHLIGHTS (subscription:38-62), `billing_period` brut ; isFuture / Date.now (finance:231-235),
  *    formatFcfa importé de PaymentModal, pas d'OtpInput ; components/partner/onboarding/FirstEventSteps.tsx absent.
- * Garde-fous verts sur le code actuel (signalés) : usePartnerOrders importé par le tableau de bord ;
- * finances sans `* 0.01` ni « 1.5 % ».
+ * Garde-fous verts sur le code actuel (signalés) : finances sans `* 0.01` ni « 1.5 % ».
  *
  * Lot 8, tâche 8.2 p, T13 (contrat 10.4, L60) : commissionAmount, commissionRate et evCommission retirés, car
  * ces zéros en dur ne sont servis à aucun écran : le modèle ne prélève rien sur l'organisateur. Rouge jusqu'à
@@ -780,8 +781,12 @@ describe('7.4 Écrans partenaire : chiffres servis par le serveur, états, conte
         assert.ok(importsFrom(files, 'useFeatureFlags', /lib\/features\/client$/) && calls(files, 'useFeatureFlags'), 'bloc « Commandes » non masqué par features.orders_enabled (useFeatureFlags, D69)');
     });
 
-    test('tableau de bord : usePartnerOrders toujours importé (SCENARIO 15) — garde-fou', () => {
-        assert.ok(bindingsOf(DASHBOARD_PAGE).some((b) => b.imported === 'usePartnerOrders' && /hooks\/usePartnerOrders$/.test(b.spec)), 'usePartnerOrders n’est plus importé par le tableau de bord (D69 : bloc masqué, import gardé)');
+    // Lot 12c (modification signalée au rapport) : avant, « usePartnerOrders toujours importé (SCENARIO 15) ». La partenaire ne
+    // lit plus les commandes par la REST depuis le lot 12a (le crochet ne rendait plus rien) : la carte lit les routes serveur.
+    test('tableau de bord : commandes lues par les routes serveur (/api/partner/orders/day, /api/partner/orders), plus de usePartnerOrders — garde-fou', () => {
+        assert.ok(!bindingsOf(DASHBOARD_PAGE).some((b) => /hooks\/usePartnerOrders$/.test(b.spec)), 'le tableau de bord importe encore hooks/usePartnerOrders (lecture REST fermée depuis le lot 12a)');
+        const code = codeOf(DASHBOARD_PAGE);
+        assert.ok(code.includes('/api/partner/orders/day') && code.includes('/api/partner/orders?filter=open'), 'la carte « Commandes » ne lit pas les routes serveur des commandes');
     });
 
     test(`finances (${FINANCE_PAGE}) : statuts et attente servis, aucun calcul à l’horloge du téléphone, « 50 dernières écritures », formatFcfa de lib/format`, () => {
@@ -923,9 +928,10 @@ describe('8.2 p — commissionAmount retiré, jamais un 0 en dur (contrat 10.4, 
 
 describe('A21 — port du SCENARIO 15, sans rien de plus', () => {
     // L'original ne prouve que la présence d'un mot dans la source de la page : ni l'abonnement, ni le rendu de l'état.
-    // Le mot présent aujourd'hui est `connected` (lu de usePartnerOrders) ; l'import du hook est gardé par le test « garde-fou » de 7.4.
-    test(`tableau de bord (${DASHBOARD_PAGE}) : le code mentionne toujours Realtime ou connected`, () => {
+    // Lot 12c (modification signalée au rapport) : avant, « le code mentionne toujours Realtime ou connected » (mot lu de
+    // usePartnerOrders). Plus de temps réel pour les commandes de la partenaire : la page dit l'heure de la dernière lecture.
+    test(`tableau de bord (${DASHBOARD_PAGE}) : la carte des commandes dit l’heure de sa dernière mise à jour`, () => {
         const code = codeOf(DASHBOARD_PAGE);
-        assert.ok(code.includes('Realtime') || code.includes('connected'), `${DASHBOARD_PAGE} ne mentionne plus l’état de la connexion aux commandes en direct`);
+        assert.ok(code.includes('openOrders.updatedAt') && /formatTime\(\s*openOrders\.updatedAt\s*\)/.test(code), `${DASHBOARD_PAGE} ne dit plus quand les commandes ont été relues`);
     });
 });

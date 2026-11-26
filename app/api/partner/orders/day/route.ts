@@ -21,8 +21,13 @@ export async function GET(request: NextRequest) {
         const r = (data ?? {}) as Record<string, unknown>;
         if (r.ok !== true) return orderRefusal(r, 'Journée momentanément indisponible.');
         const low = Array.isArray(r.low) ? (r.low as Array<Record<string, unknown>>) : [];
+        // Lot 12c : état de la fiche, pour le bandeau de lecture seule d'une fiche suspendue (les actions sont refusées en base)
+        const { data: fiche, error: ficheErr } = await getServiceRoleClient().from('partners').select('status').eq('user_id', ctx.user.id)
+            .order('created_at').limit(1).maybeSingle();
+        if (ficheErr) throw new Error(`fiche partenaire : ${ficheErr.message}`);
         return NextResponse.json({
             success: true,
+            partnerStatus: (fiche?.status as string | undefined) ?? null,
             day: {
                 date: r.day,
                 receivedToday: Number(r.received_today),
