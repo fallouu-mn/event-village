@@ -68,7 +68,15 @@ async function checkLayout(page: Page, width: number, phone: boolean, label: str
     expect(r.blocking, `${label} (${width} px) : défauts bloquants\n${r.blocking.join('\n')}`).toEqual([]);
 }
 
-async function themedContext(browser: Browser, testInfo: TestInfo, scheme: 'light' | 'dark', storageState?: string): Promise<BrowserContext> {
+type SessionState = Awaited<ReturnType<BrowserContext['storageState']>>;
+
+/**
+ * Session de la partenaire, ouverte UNE fois pour tout le spec (run 726 : la seconde connexion, au thème sombre, tombait
+ * sur la limite des connexions par adresse de la phase responsive, 429 LOGIN_RATE_LIMITED) ; reprise par le thème suivant.
+ */
+let partnerSession: SessionState | null = null;
+
+async function themedContext(browser: Browser, testInfo: TestInfo, scheme: 'light' | 'dark', storageState?: string | SessionState): Promise<BrowserContext> {
     const context = await browser.newContext({ ...projectContextOptions(testInfo), colorScheme: scheme, ...(storageState ? { storageState } : {}) });
     await context.addInitScript((value: string) => {
         try { window.localStorage.setItem('ev-theme', value); } catch { /* document opaque */ }
@@ -198,8 +206,16 @@ for (const theme of THEMES) {
             const data = seeded;
             const owner = readDemoIds().accounts.organisateur2;
 
-            const org = await themedContext(browser, testInfo, theme.scheme);
-            await login(org, owner.email);
+            const org = await themedContext(browser, testInfo, theme.scheme, partnerSession ?? undefined);
+            if (!partnerSession) {
+                await login(org, owner.email);
+                // Session seulement : le thème est posé par chaque contexte (cookie et stockage), jamais repris d'un autre
+                const state = await org.storageState();
+                partnerSession = {
+                    cookies: state.cookies.filter((c) => c.name !== 'ev-theme'),
+                    origins: state.origins.map((o) => ({ ...o, localStorage: o.localStorage.filter((l) => l.name !== 'ev-theme') })),
+                };
+            }
             const page = await org.newPage();
             for (const w of WIDTHS) {
                 await page.setViewportSize({ width: w.width, height: w.height });

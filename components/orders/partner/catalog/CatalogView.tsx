@@ -262,11 +262,11 @@ function CardActions({ product, readOnly, busy, onStatus, onRemove }: CardProps)
         return <LinkButton href={`/partner/products/${product.id}`} variant="secondary" size="sm" fullWidth>Voir le produit</LinkButton>;
     }
     return (
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
             <Select
                 label={`Disponibilité de ${product.name}`}
                 hideLabel
-                fieldClassName="min-w-0 flex-1"
+                fieldClassName="min-w-36 flex-1"
                 value={product.status}
                 onChange={(e) => onStatus(e.target.value)}
                 disabled={busy}

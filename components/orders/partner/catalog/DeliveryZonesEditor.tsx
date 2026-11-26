@@ -215,7 +215,7 @@ export function DeliveryZonesEditor({ venueId, zones, readOnly, onChanged }: {
                                         </p>
                                         <p className="text-sm text-muted-foreground">
                                             Livraison <span className="tabular-nums">{z.fee > 0 ? formatFcfa(z.fee) : 'offerte'}</span>
-                                            {' · '}minimum <span className="tabular-nums">{z.minOrder > 0 ? formatFcfa(z.minOrder) : 'aucun'}</span>
+                                            {' · '}{z.minOrder > 0 ? <>minimum <span className="tabular-nums">{formatFcfa(z.minOrder)}</span></> : 'sans minimum'}
                                         </p>
                                     </div>
                                     {!readOnly && (

@@ -35,7 +35,7 @@ export function DaySummary({ day, loading }: { day: DayReply['day'] | null; load
                 <KpiCard
                     label="Recette du jour"
                     value={day ? formatFcfa(day.revenueToday) : '—'}
-                    hint={day ? `${formatInteger(day.handedToday)} remises · en ligne ${formatFcfa(day.paidOnlineToday)} · sur place ${formatFcfa(day.onsiteToday)}` : undefined}
+                    hint={day ? `${formatInteger(day.handedToday)} ${day.handedToday > 1 ? 'remises' : 'remise'} · en ligne ${formatFcfa(day.paidOnlineToday)} · sur place ${formatFcfa(day.onsiteToday)}` : undefined}
                     icon={<Wallet size={18} />}
                     tone="success"
                     loading={loading && !day}

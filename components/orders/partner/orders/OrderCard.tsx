@@ -134,7 +134,7 @@ export function OrderCard({
                 )}
             </div>
 
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-4 flex flex-col gap-2">
                 {quick && !readOnly && (
                     <Button
                         variant="primary"
