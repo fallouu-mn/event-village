@@ -12,6 +12,9 @@
  * Lot 9 ter (9t.16, contrat C.2.4) : orientation (mauvaise zone, pas encore entré) en ton d'avertissement avec l'icône
  * Signpost ; lignes « Zone », « Présentez-vous à » et « Déjà utilisé à {HH:MM}, {porte} » ; badge d'origine (Invitation,
  * Gratuit) ; consigne d'entrée de la catégorie sur une entrée validée.
+ * Lot 11c-c : place d'une table d'un événement — badge « Table 12 · Carré VIP » et « 3/6 entrés » en très gros, noir sur
+ * blanc en clair et blanc sur noir en sombre, épais liseré (lisible en plein soleil) ; rien ne change pour un billet
+ * ordinaire. Jetons repeints aux noms de la charte (alias exacts : rendu identique).
  */
 import {
     AlertTriangle, Banknote, CheckCircle2, Clock, Keyboard, ScanLine, ServerCrash, ShieldAlert, ShieldCheck, Signpost, WifiOff,
@@ -24,10 +27,10 @@ import { isTechnicalOutcome, titleFor, toneFor, type ScanOutcome, type ScanTone 
 
 /** Tons du résultat sur les tokens sémantiques (contrat Q) : fond doux, bordure et titre du ton, texte courant. */
 const TONE_CLASSES: Record<ScanTone, { box: string; title: string; body: string; icon: string }> = {
-    success: { box: 'bg-success-bg border-success-border', title: 'text-success-fg', body: 'text-fg', icon: 'text-success-fg' },
-    danger: { box: 'bg-danger-bg border-danger-border', title: 'text-danger-fg', body: 'text-fg', icon: 'text-danger-fg' },
-    warning: { box: 'bg-warning-bg border-warning-border', title: 'text-warning-fg', body: 'text-fg', icon: 'text-warning-fg' },
-    neutral: { box: 'bg-surface-sunken border-border-strong', title: 'text-fg', body: 'text-fg', icon: 'text-fg-muted' },
+    success: { box: 'bg-success-soft border-success-border', title: 'text-success-text', body: 'text-foreground-strong', icon: 'text-success-text' },
+    danger: { box: 'bg-danger-soft border-danger-border', title: 'text-danger-text', body: 'text-foreground-strong', icon: 'text-danger-text' },
+    warning: { box: 'bg-warning-soft border-warning-border', title: 'text-warning-text', body: 'text-foreground-strong', icon: 'text-warning-text' },
+    neutral: { box: 'bg-background border-input', title: 'text-foreground-strong', body: 'text-foreground-strong', icon: 'text-muted-foreground' },
 };
 
 function iconFor(outcome: ScanOutcome): LucideIcon {
@@ -105,6 +108,12 @@ export function ScanResultPanel({ outcome, title, recoveredAt }: ScanResultPanel
                         <p className={cn('text-sm', classes.body)}>
                             Incident technique : le billet n’est pas en cause. Ne refusez pas le spectateur pour ce motif, réessayez.
                         </p>
+                    )}
+                    {outcome.table && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 self-stretch rounded-xl border-4 border-foreground-strong bg-card px-3 py-2 text-foreground-strong" data-scan-table="">
+                            <p className="min-w-0 break-words text-2xl font-extrabold leading-tight">{outcome.table.label}</p>
+                            <p className="text-2xl font-extrabold tabular-nums leading-tight">{outcome.table.entered}/{outcome.table.seats} entrés</p>
+                        </div>
                     )}
                     {outcome.result === 'valid' && ticket?.entry_instruction && (
                         <p className={cn('text-base font-bold', classes.body)}>{ticket.entry_instruction}</p>

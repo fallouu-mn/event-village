@@ -32,7 +32,7 @@ export class AdminEventsService {
         if (!event) throw new PilotageError(404, 'EVENT_NOT_FOUND', 'Événement introuvable.');
 
         const [cats, partner, history, cancellation, actions, zoneRows, admissions, gateRows] = await Promise.all([
-            supabase.from('ticket_categories').select('*').eq('event_id', eventId).order('created_at', { ascending: true }),
+            supabase.from('ticket_categories').select('*').eq('event_id', eventId).neq('kind', 'TABLE').order('created_at', { ascending: true }),
             supabase.from('partners').select('id, user_id, company_name, commercial_name, phone, email, city, status').eq('id', event.partner_id).maybeSingle(),
             supabase.from('event_status_history').select('id, old_status, new_status, actor_id, actor_role, reason, channel, created_at')
                 .eq('event_id', eventId).order('created_at', { ascending: true }).order('txid', { ascending: true }).order('id', { ascending: true }),

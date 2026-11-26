@@ -498,4 +498,15 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/event-tables/client/HoldCountdown.tsx',
     'components/event-tables/client/TableConfirmed.tsx',
     'components/event-tables/client/MyTables.tsx',
+    // Lot 11c-c : tables d'un événement (éditeur, plan, pilotage, porte, scanner, administration)
+    'components/event-tables/SeatsGauge.tsx',
+    'components/event-tables/EventTablesScreens.tsx',
+    'components/event-tables/TableTypeDialog.tsx',
+    'components/event-tables/PlanWorkbench.tsx',
+    'components/event-tables/TablesEditor.tsx',
+    'components/event-tables/TablesPilotage.tsx',
+    'components/event-tables/DoorList.tsx',
+    'components/event-tables/AdminEventTables.tsx',
+    'app/partner/events/[id]/porte/page.tsx',
+    'app/controller/porte/[id]/page.tsx',
 ];

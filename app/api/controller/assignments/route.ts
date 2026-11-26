@@ -58,6 +58,20 @@ async function readOpenShifts(userId: string, eventIds: string[]): Promise<Map<s
     return shifts;
 }
 
+/** Lot 11c-c : tables vendues (ventes actives) par événement affecté. */
+async function readTablesSold(eventIds: string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (eventIds.length === 0) return out;
+    const { data, error } = await getServiceRoleClient()
+        .from('event_table_bookings')
+        .select('event_id')
+        .in('event_id', Array.from(new Set(eventIds)))
+        .eq('status', 'ACTIVE');
+    if (error) throw new Error(`tables vendues des événements affectés : ${error.message}`);
+    for (const row of data ?? []) out.set(String(row.event_id), (out.get(String(row.event_id)) ?? 0) + 1);
+    return out;
+}
+
 /**
  * GET /api/controller/assignments — événements auxquels le contrôleur connecté est affecté, avec leurs
  * compteurs. Lot 7 (D42, D53, contrat 3.3) : chaque affectation porte son point d'entrée (`entry_point`) et
@@ -67,6 +81,8 @@ async function readOpenShifts(userId: string, eventIds: string[]): Promise<Map<s
  * closes_at }` par affectation ; le scanner décide par `scan.open`. Lot 9 bis (R17, contrat 4.3) : `open_shift`
  * (identifiant de la caisse ouverte du compte, ou null) par affectation. Lot 9 ter (9t.15, contrat 4.3) : `gate`
  * (`{ id, name, zone: { id, name, kind } }` ou null), `zones_configured` et `gate_change_allowed` par affectation.
+ * Lot 11c-c : `tables_sold` (nombre de tables vendues de l'événement, ventes actives) : le scanner ne propose la liste de
+ * la porte des tables que s'il y en a.
  */
 export async function GET(req: NextRequest) {
     try {
@@ -114,6 +130,7 @@ export async function GET(req: NextRequest) {
         const scanStates = await readScanStates(eventIds);
         const openShifts = await readOpenShifts(user.id, eventIds);
         const eventGates = await readEventGates(eventIds);
+        const tablesSold = await readTablesSold(eventIds);
 
         // Compteurs de chaque événement affecté (lus par le serveur, toute la durée de l'événement)
         const enriched = await Promise.all(
@@ -133,6 +150,7 @@ export async function GET(req: NextRequest) {
                     gate: gateOut(eventGates, a.gate_id),
                     zones_configured: eventId ? eventGates.configured.has(eventId) : false,
                     gate_change_allowed: a.gate_change_allowed === true,
+                    tables_sold: eventId ? tablesSold.get(eventId) ?? 0 : 0,
                     events: formattedEvent,
                 };
 

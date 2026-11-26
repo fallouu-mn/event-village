@@ -196,10 +196,13 @@ describe('9t.9 (R93) : écrans de modification', () => {
         for (const t of [
             // Finition 2b (A, E-66 ; modification signalée au rapport) : « Type d'événement : verrouillé » (avant : « Catégorie
             // d'événement : verrouillée »), même règle
-            'Type d\'événement : verrouillé dès qu\'un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous la somme des quantités des catégories actives.',
+            // Lot 11c-c (modification signalée au rapport) : la jauge compte aussi les places des tables (règle unique
+            // private.event_seats_gauge du lot 11c-a) ; « la somme des quantités des catégories actives » devient « les places
+            // mises en vente, billets et tables compris », même plancher servi par le serveur
+            'Type d\'événement : verrouillé dès qu\'un billet est vendu, réservé ou offert. Jauge : elle ne peut alors plus être retirée ni descendre sous les billets vendus et en cours de paiement, et jamais sous les places mises en vente, billets et tables compris.',
             'Des billets sont vendus ou réservés : la jauge ne peut plus être retirée ni descendre sous',
-            'Facultative. Elle ne descend pas sous la somme des quantités des catégories actives :',
-            'Facultative. La somme des quantités des catégories actives ne peut pas la dépasser.',
+            'Facultative sans table. Elle ne descend pas sous les places mises en vente, billets et tables compris :',
+            'Facultative sans table. Les places mises en vente, billets et tables compris, ne peuvent pas la dépasser.',
         ]) assert.ok(form.includes(t), `${FORM} : texte de B.5 absent : « ${t} »`);
         assert.ok(!form.includes('peut seulement augmenter'), `${FORM} : « la jauge peut seulement augmenter » retiré`);
 

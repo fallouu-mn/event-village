@@ -358,6 +358,9 @@ const ORGANISATRICE: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'org-profil', titre: 'Profil de l’organisatrice', role: 'organisateur', path: () => '/partner/profile' }),
     P({ id: 'org-abonnement', titre: 'Abonnement', role: 'organisateur', path: () => '/partner/subscription' }),
     P({ id: 'org-scan', titre: 'Scanner de l’organisatrice', role: 'organisateur', path: () => '/partner/scan' }),
+    // Lot 11c-c : liste de la porte des tables (« ce soir » n'a pas de table : état vide ; l'état rempli est contrôlé et
+    // capturé par e2e/lot11cc.responsive.spec.ts)
+    P({ id: 'org-porte-tables', titre: 'Liste de la porte des tables', role: 'organisateur', needsIds: true, path: (i) => `/partner/events/${ids(i).events.ceSoir.id}/porte` }),
     // Lot 10b : salles de fête de l'organisatrice (interrupteur ouvert le temps du test)
     P({ id: 'org-salles', titre: 'Mes salles (validée, en attente, refusée)', role: 'organisateur', services: true, path: () => '/partner/halls', ready: partnerHallsReady }),
     P({ id: 'org-salle-ajout', titre: 'Ajout d’une salle', role: 'organisateur', services: true, path: () => '/partner/halls/new', ready: (p) => titled(p, /^ajouter une salle$/i) }),
@@ -406,6 +409,8 @@ const SCANNER: Array<Omit<ResponsivePage, 'groupe'>> = [
     P({ id: 'scan-depart', titre: 'Scanner — départ du contrôle', role: 'controleur', needsIds: true, path: () => '/controller/scanner', ready: scannerStart, paysage: true }),
     P({ id: 'scan-camera', titre: 'Scanner — caméra en marche', role: 'controleur', needsIds: true, path: () => '/controller/scanner', ready: scannerStarted, fakeCamera: true, paysage: true }),
     P({ id: 'scan-profil', titre: 'Profil du contrôleur', role: 'controleur', path: () => '/controller/profile' }),
+    // Lot 11c-c : liste de la porte des tables, pour un contrôleur affecté (« ce soir » : état vide)
+    P({ id: 'scan-porte-tables', titre: 'Liste de la porte des tables (contrôleur)', role: 'controleur', needsIds: true, path: (i) => `/controller/porte/${ids(i).events.ceSoir.id}` }),
     P({ id: 'scan-activation', titre: 'Activation du contrôleur', role: 'anonyme', path: () => '/controller/setup?phone=%2B221700000199' }),
 ];
 
