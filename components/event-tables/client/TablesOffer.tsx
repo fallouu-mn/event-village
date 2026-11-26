@@ -126,6 +126,8 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
     const [failedPayment, setFailedPayment] = useState<string | null>(null);
     const [verifyRetry, setVerifyRetry] = useState<(() => void) | null>(null);
     const [details, setDetails] = useState(false);
+    /** Relecture forcée du devis (prix changé, refus du serveur au moment de payer). */
+    const [quoteNonce, setQuoteNonce] = useState(0);
 
     const offerRef = useRef<Offer | null>(null);
     const stepRef = useRef<Step>('choose');
@@ -195,6 +197,15 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
         enabled: active && phase === 'ready' && step !== 'done',
     });
 
+    // Contre-vérification du lot 11c-b (T1) : le serveur signale chaque table tenue ou rendue par les tranches publiques de
+    // l'événement ; un événement sans tranche publique (aucun billet en ligne) n'a pas ce message : tant que le plan est
+    // ouvert et l'onglet visible, l'offre est aussi relue toutes les 15 s
+    useEffect(() => {
+        if (!planOpen || step === 'done') return undefined;
+        const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 15_000);
+        return () => window.clearInterval(timer);
+    }, [planOpen, step, refresh]);
+
     // Retour de la connexion : choix gardé repris s'il est encore possible (une seule fois)
     const restoredRef = useRef(false);
     useEffect(() => {
@@ -250,7 +261,7 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
             }
         }, 150);
         return () => { window.clearTimeout(timer); controller.abort(); };
-    }, [quoteKey, typeId, tableId, operator, eventId, step, say, refresh]);
+    }, [quoteKey, typeId, tableId, operator, eventId, step, say, refresh, quoteNonce]);
 
     const quote = quoteState && quoteState.key === quoteKey ? quoteState.quote : null;
     const quoteError = quoteState && quoteState.key === quoteKey ? quoteState.error : null;
@@ -441,6 +452,7 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
                         onBack={() => setStep('choose')}
                         onPhoneNotVerified={(retry) => setVerifyRetry(() => retry)}
                         onTableGone={onTableGone}
+                        onPriceChanged={() => { setQuoteState(null); setQuoteNonce((n) => n + 1); }}
                     />
                 </>
             ) : selectedType ? (

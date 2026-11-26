@@ -74,6 +74,7 @@ export function PayStep({
     onBack,
     onPhoneNotVerified,
     onTableGone,
+    onPriceChanged,
 }: {
     eventId: string;
     typeId: string;
@@ -88,6 +89,8 @@ export function PayStep({
     onPhoneNotVerified: (retry: () => void) => void;
     /** La table vient d'être prise (refus TABLE_TAKEN ou TABLES_SOLD_OUT) : l'offre est relue. */
     onTableGone: (message: string) => void;
+    /** Prix changé depuis le devis affiché (refus du serveur) : l'écran relit le devis ; rien n'a été demandé au client. */
+    onPriceChanged: () => void;
 }) {
     const uid = useId();
     const { profile } = useAuth();
@@ -127,7 +130,8 @@ export function PayStep({
         setTouched(true);
         if (!operator) { setOperatorMissing(true); return; }
         if (!payerPhone || rejected) { phoneRef.current?.focus(); return; }
-        const body = { typeId, tableId, operator, payerPhone };
+        // Total affiché envoyé pour comparaison seulement : le serveur refuse s'il ne correspond plus au prix de la base
+        const body = { typeId, tableId, operator, payerPhone, ...(total !== null ? { expectedTotal: total } : {}) };
         const key = attempt.keyFor(JSON.stringify(body));
         setBusy(true);
         setFailure(null);
@@ -153,6 +157,7 @@ export function PayStep({
             if (error.code === 'INVALID_PAYER_PHONE') setRejected(error.message);
             if (error.code === 'OPERATOR_REQUIRED') setOperatorMissing(true);
             if (error.code === 'TABLE_TAKEN' || error.code === 'TABLES_SOLD_OUT') { onTableGone(error.message); return; }
+            if (error.code === 'TABLE_PRICE_CHANGED') onPriceChanged();
             setFailure(error);
             return;
         }
@@ -197,7 +202,7 @@ export function PayStep({
             </Button>
 
             {failure && (
-                <StatusBanner tone="danger" announce="alert" title={failure.code === 'PAYMENT_PENDING' ? 'Un paiement est déjà en attente' : 'Paiement non lancé'}>
+                <StatusBanner tone="danger" announce="alert" title={failure.code === 'PAYMENT_PENDING' ? 'Un paiement est déjà en attente' : failure.code === 'TABLE_PRICE_CHANGED' ? 'Le prix a changé' : 'Paiement non lancé'}>
                     <p>{failure.message}</p>
                     {failure.pendingStatusPath && (
                         <LinkButton href={failure.pendingStatusPath} variant="secondary" size="sm" className="mt-2" leftIcon={<Clock size={16} />}>
