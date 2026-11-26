@@ -116,6 +116,16 @@ describe('3. Poids : un seul chargeur, rien de lourd au premier chargement', () 
         assert.deepEqual(bad, []);
     });
 
+    test('liste de la porte : un seul import(), dans components/event-tables/load-door.ts, utilisé par les deux pages', () => {
+        const dyn = files.filter((f) => /import\(\s*['"][^'"]*\/DoorList['"]\s*\)/.test(read(f)));
+        assert.deepEqual(dyn, ['components/event-tables/load-door.ts']);
+        for (const f of ['app/partner/events/[id]/porte/page.tsx', 'app/controller/porte/[id]/page.tsx']) {
+            const src = read(f);
+            assert.match(src, /dynamic\(\(\) => loadDoorList\(\)\.then/, f);
+            assert.doesNotMatch(src, /from '@\/components\/event-tables\/DoorList'/, `${f} : aucun import statique de la liste`);
+        }
+    });
+
     test('les pages qui proposent l’onglet passent par loadEventTables()', () => {
         for (const f of ['components/events/EventForm.tsx', 'app/partner/events/[id]/page.tsx']) {
             assert.match(read(f), /dynamic\(\(\) => loadEventTables\(\)\.then/, `${f} : chargement à l'ouverture par le chargeur unique`);

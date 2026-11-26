@@ -4,8 +4,15 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { useServerData } from '@/components/partner/useServerData';
-import { DoorList } from '@/components/event-tables/DoorList';
+import dynamic from 'next/dynamic';
+import { loadDoorList } from '@/components/event-tables/load-door';
 import type { PilotageOverview } from '@/components/partner/pilotage/types';
+
+/** Liste chargée par le chargeur unique de la porte (rien de la liste dans le morceau de la page). */
+const DoorList = dynamic(() => loadDoorList().then((m) => ({ default: m.DoorList })), {
+    ssr: false,
+    loading: () => <div className="h-64 w-full rounded-2xl bg-muted motion-safe:animate-pulse" role="status" aria-label="Chargement de la liste de la porte" />,
+});
 
 /**
  * Lot 11c-c — liste de la porte des tables, pour l'organisatrice (et l'administration habilitée, qui ouvre aussi le
