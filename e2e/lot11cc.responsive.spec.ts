@@ -6,7 +6,7 @@
  * démonstration « organisateur3 » (aucun autre spec ne lit ses chiffres), deux types de tables placées sur le plan
  * (« Carré VIP » 4 × 6 places, « Table ronde » 6 × 8 places), deux tables vendues par le vrai achat (route du serveur, faux
  * SamirPay, vrai webhook), une troisième en paiement, une place envoyée et acceptée par une invitée, deux places entrées
- * (scan manuel du contrôleur affecté). Service des tables ouvert le temps du spec, remis ensuite (spec en série).
+ * (scan manuel du contrôleur affecté). Service des tables ouvert le temps du spec par le compteur partagé avec le spec du 11c-b (e2e/support/tables-service).
  *
  * Pour chaque thème (clair, sombre) et chaque largeur (390 et 1440 px) : contrôle responsive (0 défaut bloquant) et
  * capture de l'éditeur, du plan en édition, de la jauge, de la vue client, d'un type figé, du pilotage, de la porte (table
@@ -22,6 +22,7 @@ import { E2E_OUTPUT_DIR, readDemoIds } from './support/demo-ids';
 import { createClientAccount, createControllerAccount, createPublishedEvent, partnerPosterOf, rpcOk, serviceClient, userIdByEmail, type ControllerAccount } from './support/service';
 import { fakeServices } from './support/parcours';
 import { runResponsiveChecks } from './support/responsive-checks';
+import { openTablesService, releaseTablesService } from './support/tables-service';
 import { installFakeCamera } from './support/fake-camera';
 import { requireStorageState, TEST_PASSWORD } from './support/accounts';
 import { APP_URL } from './support/env';
@@ -110,11 +111,6 @@ async function buyTable(eventId: string, buyer: ControllerAccount, typeId: strin
     }
 }
 
-async function setTablesService(open: boolean, actor: string): Promise<void> {
-    const { data, error } = await serviceClient().rpc('event_tables_setting_set', { p_key: 'features.event_tables_enabled', p_value: { value: open }, p_actor: actor, p_reason: 'Captures du lot 11c-c' });
-    if (error || (data as { ok?: boolean } | null)?.ok !== true) throw new Error(`[l11cc] interrupteur des tables : ${error?.message ?? JSON.stringify(data)}`);
-}
-
 async function seed(superadmin: string): Promise<Seeded> {
     const owner = readDemoIds().accounts.organisateur3;
     const service = serviceClient();
@@ -188,19 +184,19 @@ async function seed(superadmin: string): Promise<Seeded> {
 
 let seeded: Seeded | null = null;
 let superadmin = '';
-let previous: boolean | null = null;
+// Fusion du lot 11c-b : compteur partagé avec le spec du 11c-b, qui tourne en même temps (run 722 : service refermé par
+// le premier spec fini) ; le dernier des deux remet l'état d'origine.
+const SERVICE_USER = 'du lot 11c-c';
 
 test.beforeAll(async () => {
     test.setTimeout(240_000);
     superadmin = await userIdByEmail(FIXTURE_USERS.SUPERADMIN.email);
-    const { data } = await serviceClient().from('platform_settings').select('value').eq('key', 'features.event_tables_enabled').maybeSingle();
-    previous = (data?.value as { value?: boolean } | null)?.value === true;
-    await setTablesService(true, superadmin);
+    await openTablesService(SERVICE_USER, superadmin);
     seeded = await seed(superadmin);
 });
 
 test.afterAll(async () => {
-    if (superadmin) await setTablesService(previous === true, superadmin);
+    if (superadmin) await releaseTablesService(SERVICE_USER, superadmin);
 });
 
 for (const theme of THEMES) {

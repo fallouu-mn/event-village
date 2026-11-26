@@ -9,7 +9,8 @@
  *    place envoyée et acceptée par un invité, une autre envoyée et en attente ; une table ronde vendue à une autre cliente
  *    (prise sur le plan) ;
  *  - « Brunch des tables » sans plan : « Table famille » (3 × 4 places, 60 000 F).
- * Service des tables ouvert le temps du spec (rouvert avant chaque écran : un autre spec peut le refermer), remis ensuite.
+ * Service des tables ouvert le temps du spec par le compteur partagé avec le spec du lot 11c-c (e2e/support/tables-service) :
+ * le dernier des deux à finir remet l'état d'origine.
  *
  * Pour chaque thème (clair, sombre) et chaque largeur (390 et 1440 px), un nouveau client fait le vrai parcours à l'écran :
  * fiche avec l'onglet « Tables », plan et feuille de devis, « Réserver la table N », paiement Wave, « Table gardée » (compte à
@@ -26,6 +27,7 @@ import { E2E_OUTPUT_DIR, readDemoIds } from './support/demo-ids';
 import { createClientAccount, createPublishedEvent, partnerPosterOf, rpcOk, serviceClient, userIdByEmail, type ControllerAccount } from './support/service';
 import { fakeServices } from './support/parcours';
 import { runResponsiveChecks } from './support/responsive-checks';
+import { openTablesService, releaseTablesService } from './support/tables-service';
 import { TEST_PASSWORD } from './support/accounts';
 import { APP_URL } from './support/env';
 import { FIXTURE_USERS } from '../tests/helpers/fixture-data';
@@ -126,11 +128,6 @@ async function buyTable(eventId: string, buyer: ControllerAccount, typeId: strin
     }
 }
 
-async function setTablesService(open: boolean, actor: string): Promise<void> {
-    const { data, error } = await serviceClient().rpc('event_tables_setting_set', { p_key: 'features.event_tables_enabled', p_value: { value: open }, p_actor: actor, p_reason: 'Captures du lot 11c-b' });
-    if (error || (data as { ok?: boolean } | null)?.ok !== true) throw new Error(`[l11cb] interrupteur des tables : ${error?.message ?? JSON.stringify(data)}`);
-}
-
 async function seed(superadmin: string): Promise<Seeded> {
     const owner = readDemoIds().accounts.organisateur2;
     const service = serviceClient();
@@ -200,20 +197,35 @@ async function seed(superadmin: string): Promise<Seeded> {
 
 let seeded: Seeded | null = null;
 let superadmin = '';
-let previous = false;
+const SERVICE_USER = 'du lot 11c-b';
 
 test.beforeAll(async () => {
     test.setTimeout(240_000);
     superadmin = await userIdByEmail(FIXTURE_USERS.SUPERADMIN.email);
-    const { data } = await serviceClient().from('platform_settings').select('value').eq('key', 'features.event_tables_enabled').maybeSingle();
-    previous = (data?.value as { value?: boolean } | null)?.value === true;
-    await setTablesService(true, superadmin);
+    await openTablesService(SERVICE_USER, superadmin);
     seeded = await seed(superadmin);
 });
 
 test.afterAll(async () => {
-    if (superadmin) await setTablesService(previous, superadmin);
+    if (superadmin) await releaseTablesService(SERVICE_USER, superadmin);
 });
+
+/**
+ * Titulaire et invitée : une seule connexion chacun pour les 4 écrans (thèmes × largeurs), cookies repris ensuite. La
+ * route de connexion compte les essais par adresse IP (30 par heure) et le job responsive les partage avec la phase de
+ * connexion et les specs cvcb et 11c-c (run 722 : refus LOGIN_RATE_LIMITED).
+ */
+const sessions = new Map<string, Awaited<ReturnType<BrowserContext['cookies']>>>();
+
+async function loginOnce(context: BrowserContext, identifier: string): Promise<void> {
+    const saved = sessions.get(identifier);
+    if (saved) {
+        await context.addCookies(saved);
+        return;
+    }
+    await login(context, identifier);
+    sessions.set(identifier, await context.cookies());
+}
 
 let round = 0;
 
@@ -223,7 +235,6 @@ for (const theme of THEMES) {
             test.setTimeout(240_000);
             const data = seeded!;
             const table = data.free[round++];
-            await setTablesService(true, superadmin);
             const buyer = await createClientAccount(`l11cb-c${round}-${STAMP}`);
             const context = await themedContext(browser, testInfo, theme.scheme);
             try {
@@ -293,10 +304,9 @@ for (const theme of THEMES) {
         test(`Ma table et billet de l’invité, ${w.width} px, ${theme.key}`, async ({ browser }, testInfo) => {
             test.setTimeout(120_000);
             const data = seeded!;
-            await setTablesService(true, superadmin);
             const holderCtx = await themedContext(browser, testInfo, theme.scheme);
             try {
-                await login(holderCtx, data.holder.email);
+                await loginOnce(holderCtx, data.holder.email);
                 const page = await holderCtx.newPage();
                 await page.setViewportSize({ width: w.width, height: w.height });
                 await page.goto(`/tickets?tab=tables#table-${data.bookingId}`);
@@ -311,7 +321,7 @@ for (const theme of THEMES) {
             }
             const guestCtx = await themedContext(browser, testInfo, theme.scheme);
             try {
-                await login(guestCtx, data.guest.email);
+                await loginOnce(guestCtx, data.guest.email);
                 const page = await guestCtx.newPage();
                 await page.setViewportSize({ width: w.width, height: w.height });
                 await page.goto('/tickets');
