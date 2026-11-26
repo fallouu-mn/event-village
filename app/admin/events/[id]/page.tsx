@@ -43,6 +43,7 @@ import { isScanCategoryColor, SCAN_CATEGORY_COLOR_LABELS, ZONE_KIND_LABELS } fro
 import { ScanColorDot } from '@/components/events/ScanColorPicker';
 import { SINGLE_ENTRANCE_TEXT } from '@/components/events/ZoneListEditor';
 import { noticesText } from '@/lib/admin/confirmations';
+import { AdminEventTables } from '@/components/event-tables/AdminEventTables';
 
 // Finition 2a (3) : petite carte du lieu, chargée à la demande (Leaflet lit window)
 const EventMap = dynamic(() => loadEventMap().then((m) => ({ default: m.EventMap })), {
@@ -739,6 +740,9 @@ export default function AdminEventSheetPage() {
               empty={<p className="text-sm text-muted-foreground">Aucune catégorie de billet : l’événement ne peut pas être vendu.</p>}
             />
           </Section>
+
+          {/* Lot 11c-c : tables de l'événement (types, jauge en places, vendues et remboursées, changements après validation) */}
+          <AdminEventTables eventId={event.id} />
 
           {/* Finition 2b (D, E-25) : portes et zones réglées par l'organisateur */}
           <Section id="fiche-controle" title="Contrôle à l’entrée">

@@ -49,6 +49,11 @@ export interface FloorPlanProps {
     onSelect?: (tableId: string) => void;
     onChange?: (tables: FloorPlanTable[], zones: FloorPlanZone[]) => void;
     ariaLabel: string;
+    /**
+     * Lot 11c-c (facultatif, sans effet sur les écrans du lot 11b) : libellés de légende et mots lus d'un état, pour un
+     * autre sens du même état (pilotage des tables d'un événement : PRISE = « Vendue », ATTENDUE = « En paiement »).
+     */
+    labels?: Partial<Record<StateKey, { legend: string; spoken: string }>>;
 }
 
 type StateKey = Exclude<FloorTableState, null>;
@@ -110,7 +115,7 @@ const placed = (t: FloorPlanTable): t is FloorPlanTable & { x: number; y: number
 const zonePlaced = (z: FloorPlanZone): z is FloorPlanZone & { x: number; y: number; w: number; h: number } =>
     z.x !== null && z.y !== null && z.w !== null && z.h !== null;
 
-export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, onChange, ariaLabel }: FloorPlanProps) {
+export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, onChange, ariaLabel, labels }: FloorPlanProps) {
     const uid = useId();
     const gridId = `${uid}-grille`;
     const hintId = `${uid}-aide`;
@@ -430,7 +435,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                             width: `max(${minPx}px, ${tableWidthPct(t.capacity, t.shape)}%)`,
                             aspectRatio: String(tableAspect(t.shape)),
                         };
-                        const spoken = [`Table ${t.number}`, spokenCapacity(t), state ? STATE_VIEW[state].spoken : null, edit ? `forme ${SHAPE_LABEL[t.shape]}` : null, t.hint ?? null]
+                        const spoken = [`Table ${t.number}`, spokenCapacity(t), state ? (labels?.[state]?.spoken ?? STATE_VIEW[state].spoken) : null, edit ? `forme ${SHAPE_LABEL[t.shape]}` : null, t.hint ?? null]
                             .filter(Boolean).join(', ');
                         const radius = t.shape === 'RONDE' ? 'rounded-full' : 'rounded-lg';
                         const face = (
@@ -541,7 +546,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                     {legend.map((k) => (
                         <li key={k} className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                             <span aria-hidden="true" className={cn('h-4 w-4 flex-shrink-0 rounded border-2', STATE_VIEW[k].shapeCls)} />
-                            <span className={cn(k === 'HORS_CAPACITE' && 'line-through decoration-1')}>{STATE_VIEW[k].legend}</span>
+                            <span className={cn(k === 'HORS_CAPACITE' && 'line-through decoration-1')}>{labels?.[k]?.legend ?? STATE_VIEW[k].legend}</span>
                         </li>
                     ))}
                 </ul>

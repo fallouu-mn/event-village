@@ -80,6 +80,21 @@ export interface ScanOutcome {
     gate?: { name?: string } | null;
     /** Zones où se présenter (wrong_zone, not_entered). */
     redirectZones?: string[];
+    /** Lot 11c-c : place d'une table d'un événement (badge « Table 12 · Carré VIP », places entrées sur places). */
+    table?: ScanTableBadge;
+}
+
+/** Lot 11c-c : badge d'une place de table, tel que rendu par le serveur (event_table_badge). */
+export interface ScanTableBadge { label: string; entered: number; seats: number }
+
+function tableOf(v: unknown): ScanTableBadge | undefined {
+    if (!v || typeof v !== 'object') return undefined;
+    const t = v as Record<string, unknown>;
+    const label = text(t.label);
+    const entered = Number(t.entered);
+    const seats = Number(t.seats);
+    if (!label || !Number.isInteger(entered) || !Number.isInteger(seats) || seats < 1) return undefined;
+    return { label, entered, seats };
 }
 
 export type ScanRequest = (
@@ -175,6 +190,7 @@ export async function readScanResponse(res: Response): Promise<ScanOutcome> {
             zone: body.zone && typeof body.zone === 'object' ? { ...(body.zone as ScanZone), implicit: (body.zone as ScanZone).implicit !== false } : undefined,
             gate: body.gate && typeof body.gate === 'object' ? body.gate as { name?: string } : null,
             redirectZones: namesOf(body.redirect_zones),
+            table: tableOf(body.table),
         };
     }
     // 400 ou réponse hors contrat : incident technique, jamais un verdict sur le billet

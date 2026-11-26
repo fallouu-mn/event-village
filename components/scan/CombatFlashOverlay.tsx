@@ -89,6 +89,11 @@ export interface CombatFlashOverlayProps {
     checkedInGate?: string | null;
     /** Incident de porte (409 GATE_*) : consigne propre à la place de « Le billet n'est pas en cause… ». */
     gateProblem?: GateProblemCode | null;
+    /**
+     * Lot 11c-c : place d'une table d'un événement, badge du serveur (« Table 12 · Carré VIP », places entrées sur places) ;
+     * absent pour un billet ordinaire (rien ne change).
+     */
+    table?: { label: string; entered: number; seats: number } | null;
 }
 
 /** Bande de la catégorie (classes écrites en entier : Tailwind ne lit que des noms complets). */
@@ -176,6 +181,7 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
     checkedInGate,
     gateProblem,
     onConfirmRepeat,
+    table,
 }) => {
     const effectiveDuration = status === 'zone_already_passed' && onConfirmRepeat ? 0
         : durationMs ?? (status === 'valid' || status === 'zone_ok' ? 1500 : 3000);
@@ -255,6 +261,13 @@ export const CombatFlashOverlay: React.FC<CombatFlashOverlayProps> = ({
             <p data-scan-contrast className="max-w-3xl text-balance text-4xl font-black leading-tight tracking-tight sm:text-5xl">
                 {heading}
             </p>
+
+            {table && (
+                <div data-scan-table="" className="flex max-w-4xl flex-wrap items-center justify-center gap-x-5 gap-y-1 rounded-2xl border-4 border-current px-5 py-2">
+                    <p data-scan-contrast className="break-words text-3xl font-black leading-tight sm:text-4xl">{table.label}</p>
+                    <p data-scan-contrast className="text-3xl font-black tabular-nums leading-tight sm:text-4xl">{table.entered}/{table.seats} entrés</p>
+                </div>
+            )}
 
             {recoveredAt ? (
                 <p className="max-w-2xl text-xl font-bold leading-snug tabular-nums sm:text-2xl">

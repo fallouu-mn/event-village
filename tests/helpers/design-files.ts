@@ -489,4 +489,15 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'app/tickets/[id]/page.tsx',
     'app/partner/finance/retraits/[id]/page.tsx',
     'app/wallet/retraits/[id]/page.tsx',
+    // Lot 11c-c : tables d'un événement (éditeur, plan, pilotage, porte, scanner, administration)
+    'components/event-tables/SeatsGauge.tsx',
+    'components/event-tables/EventTablesScreens.tsx',
+    'components/event-tables/TableTypeDialog.tsx',
+    'components/event-tables/PlanWorkbench.tsx',
+    'components/event-tables/TablesEditor.tsx',
+    'components/event-tables/TablesPilotage.tsx',
+    'components/event-tables/DoorList.tsx',
+    'components/event-tables/AdminEventTables.tsx',
+    'app/partner/events/[id]/porte/page.tsx',
+    'app/controller/porte/[id]/page.tsx',
 ];

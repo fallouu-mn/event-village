@@ -2650,7 +2650,12 @@ export const SCREENS: readonly Screen[] = [
         id: 'admin-cloture-motif', titre: 'Administration — clôture d’un événement suspendu : champ « Motif de la clôture » (fiche imposée, rien n’est envoyé)',
         allowFailures: [fakeEventPrefetch('00000000-0000-4000-8000-000000000931')],
         role: 'fumee-superadmin', needsIds: true, path: (i) => `/admin/events/${ids(i).events.termine.id}`,
-        stubResponses: [{ url: new RegExp(`/api/admin/events/${UUID}$`), method: 'GET', status: 200, body: CLOSING_SHEET }],
+        // Lot 11c-c (ajout signalé au rapport) : la fiche lit aussi les tables de l'événement ; événement imposé, inconnu de
+        // la base : sa lecture des tables est imposée elle aussi (aucune table, section absente)
+        stubResponses: [
+            { url: new RegExp(`/api/admin/events/${UUID}$`), method: 'GET', status: 200, body: CLOSING_SHEET },
+            { url: new RegExp(`/api/admin/events/${UUID}/tables$`), method: 'GET', status: 200, body: { success: true, ok: true, types: [], bookings: [] } },
+        ],
         ready: async ({ page }) => { await expectHeading(page, /^festival des lumières de saint-louis$/i); },
         actions: async ({ page }) => {
             await page.getByRole('button', { name: /^clore l.événement$/i }).click();
