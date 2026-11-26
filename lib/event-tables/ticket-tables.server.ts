@@ -12,6 +12,7 @@
  * après le contrôle de session de la route ; une erreur de lecture est levée (la route répond 500).
  */
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { callTables } from './event-tables.server';
 
 export interface TicketTableInfo {
     label: string;
@@ -72,4 +73,42 @@ export async function ticketTablesOf(
         });
     }
     return out;
+}
+
+/**
+ * Contre-vérification du lot 11c-b (T2) — tables dont le compte est TITULAIRE, d'après les ventes (event_table_bookings
+ * actives), même s'il a envoyé toutes ses places et n'a plus aucun billet de la table : Mes billets garde alors l'onglet
+ * « Tables », et le remboursement ouvert par un report de plus de 24 h (fenêtre et montant de la base, event_table_mine)
+ * reste annoncé. Rien d'autre n'est lu ; le compte est celui de la session de la route.
+ */
+export interface HolderTables {
+    holder: boolean;
+    held: Array<{ bookingId: string; eventId: string }>;
+    refundOpen: Array<{ bookingId: string; eventId: string; eventTitle: string; amount: number; until: string | null }>;
+}
+
+export async function holderTablesOf(userId: string): Promise<HolderTables> {
+    const { data, error } = await getServiceRoleClient()
+        .from('event_table_bookings')
+        .select('id, event_id')
+        .eq('holder_id', userId)
+        .eq('status', 'ACTIVE')
+        .limit(200);
+    if (error) throw new Error(`tables du titulaire : ${error.message}`);
+    const held = (data ?? []).map((b) => ({ bookingId: String(b.id), eventId: String(b.event_id) }));
+    if (held.length === 0) return { holder: false, held, refundOpen: [] };
+    const mine = await callTables('event_table_mine', { actor_id: userId });
+    if (mine.ok !== true || !Array.isArray(mine.items)) throw new Error(`event_table_mine : réponse inattendue ${JSON.stringify(mine).slice(0, 200)}`);
+    const refundOpen = (mine.items as Array<Record<string, unknown>>).flatMap((item) => {
+        const refund = (item.refund ?? null) as { open?: unknown; amount?: unknown; until?: unknown } | null;
+        const event = (item.event ?? null) as { id?: unknown; title?: unknown } | null;
+        if (item.status !== 'ACTIVE' || refund?.open !== true || !event) return [];
+        const amount = Number(refund.amount);
+        if (!Number.isFinite(amount)) return [];
+        return [{
+            bookingId: String(item.booking_id), eventId: String(event.id), eventTitle: String(event.title ?? ''), amount,
+            until: typeof refund.until === 'string' ? refund.until : null,
+        }];
+    });
+    return { holder: true, held, refundOpen };
 }

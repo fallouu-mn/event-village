@@ -29,6 +29,8 @@ import { usePageSettled } from '@/hooks/usePageSettled';
 import type { OfflineAvailability } from '@/lib/tickets/offline-clock';
 import { isActiveUpcoming, TICKETS_UPCOMING_PARAM } from '@/lib/tickets/periode';
 import { loadMyTables } from '@/components/event-tables/client/load';
+import { formatFcfa } from '@/lib/format';
+import { readTablesInfo, type MyTablesInfo } from '@/lib/tickets/tables-info';
 
 // Lot 7 (7.5) : les modales ne sont chargées qu'à leur ouverture (poids JS de /tickets).
 const TransferModal = dynamic(() => import('@/components/tickets/TransferModal').then((m) => m.TransferModal), { ssr: false });
@@ -126,9 +128,9 @@ const EMPTY_COPY: Record<TicketTabKey, { title: string; description: string }> =
 const NETWORK_MESSAGE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.';
 
 /** Design 1e (point B) : liste reçue et si elle est COMPLÈTE (tous les billets) ou limitée aux billets à venir. */
-export interface TicketList { tickets: MyTicket[]; complete: boolean }
+export interface TicketList { tickets: MyTicket[]; complete: boolean; tables?: MyTablesInfo | null }
 
-type LoadResult = { ok: true; tickets: MyTicket[]; complete: boolean } | { ok: false; message: string };
+type LoadResult = { ok: true; tickets: MyTicket[]; complete: boolean; tables: MyTablesInfo | null } | { ok: false; message: string };
 
 /** Portefeuille affiché par 10 billets ; la suite au défilement (ou par le bouton). */
 const WALLET_PAGE = 10;
@@ -150,7 +152,7 @@ async function readTickets(scope: Scope): Promise<LoadResult> {
     console.error(`[Mes billets] réponse illisible (HTTP ${res.status}) :`, err instanceof Error ? err.message : String(err));
     return { ok: false, message: `Réponse inattendue du serveur (erreur ${res.status}).` };
   }
-  const payload = (typeof body === 'object' && body !== null ? body : {}) as { tickets?: unknown; error?: unknown };
+  const payload = (typeof body === 'object' && body !== null ? body : {}) as { tickets?: unknown; tables?: unknown; error?: unknown };
   if (!res.ok) {
     const message = typeof payload.error === 'string' && payload.error ? payload.error : `Vos billets n’ont pas pu être chargés (erreur ${res.status}).`;
     return { ok: false, message };
@@ -159,7 +161,7 @@ async function readTickets(scope: Scope): Promise<LoadResult> {
     console.error('[Mes billets] réponse sans liste de billets :', body);
     return { ok: false, message: 'Réponse inattendue du serveur.' };
   }
-  return { ok: true, tickets: payload.tickets as MyTicket[], complete: scope === 'tout' };
+  return { ok: true, tickets: payload.tickets as MyTicket[], complete: scope === 'tout', tables: readTablesInfo(payload.tables) };
 }
 
 /** Squelette à la forme de la carte Wallet (talon, informations, QR de 216 px, encadré), aucun saut à l'arrivée. */
@@ -249,7 +251,17 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   // Design 1e (point B) : liste complète reçue (sinon : billets à venir seulement). Une liste complète ne redevient jamais partielle.
   const [complete, setComplete] = useState(false);
   const completeRef = useRef(false);
-  const applyList = useCallback((list: MyTicket[], isComplete: boolean) => {
+  const [tablesInfo, setTablesInfo] = useState<MyTablesInfo | null>(null);
+  const tablesJsonRef = useRef<string | null>(null);
+  const applyList = useCallback((list: MyTicket[], isComplete: boolean, tables?: MyTablesInfo | null) => {
+    // CV 11c-b (T2) : tables du titulaire, remplacées seulement si elles changent
+    if (tables !== undefined) {
+      const tj = JSON.stringify(tables);
+      if (tj !== tablesJsonRef.current) {
+        tablesJsonRef.current = tj;
+        setTablesInfo(tables);
+      }
+    }
     if (completeRef.current && !isComplete) return; // relecture partielle arrivée après la liste complète : ignorée
     const json = JSON.stringify(list);
     if (json !== ticketsJsonRef.current) {
@@ -269,7 +281,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
     // Design 1e : relecture à la même portée (à venir tant que la liste complète n'a pas été demandée)
     const result = anticipated?.ok ? anticipated : await readTickets(completeRef.current ? 'tout' : 'a-venir');
     if (result.ok) {
-      applyList(result.tickets, result.complete);
+      applyList(result.tickets, result.complete, result.tables);
       setLoadError(null);
       setRefreshError(null);
       setPhase('ready');
@@ -303,7 +315,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
     setFullError(null);
     void readTickets('tout').then((result) => {
       if (!alive) return;
-      if (result.ok) applyList(result.tickets, true);
+      if (result.ok) applyList(result.tickets, true, result.tables);
       else setFullError(result.message);
     });
     return () => { alive = false; };
@@ -361,7 +373,7 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
     ticketsPromise.then((list) => {
       if (!alive) return;
       if (!list) { void load('initial'); return; }
-      applyList(list.tickets, list.complete);
+      applyList(list.tickets, list.complete, list.tables);
       setLoadError(null);
       setPhase('ready');
     }, () => { if (alive) void load('initial'); });
@@ -406,7 +418,9 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
   }, [tickets, tab]);
 
   // Lot 11c-b : onglet « Tables » seulement pour le titulaire d'une table (ou demandé dans l'adresse : lien des avis)
-  const hasTables = useMemo(() => tickets.some((t) => Boolean(t.table?.bookingId)), [tickets]);
+  // CV 11c-b (T2) : d'après les ventes de tables du compte (serveur), pas seulement d'après ses billets
+  const hasTables = useMemo(() => Boolean(tablesInfo?.holder) || tickets.some((t) => Boolean(t.table?.bookingId)), [tablesInfo, tickets]);
+  const refundTable = tablesInfo?.refundOpen[0] ?? null;
   const [tableFocus, setTableFocus] = useState<string | null>(null);
   // Table visée par l'adresse (/tickets?tab=tables#table-<vente> : avis, paiement confirmé), comme l'ancre des billets reçus
   useEffect(() => { setTableFocus(/^#table-([0-9a-f-]{36})$/i.exec(window.location.hash)?.[1] ?? null); }, []);
@@ -469,6 +483,22 @@ export function TicketsView({ ticketsPromise, initialTab, serverNow }: { tickets
         ariaLabel="Filtrer mes billets"
         idPrefix="mes-billets"
       />
+
+      {/* CV 11c-b (T2) : remboursement d'une table après un report, atteignable depuis Mes billets même sans aucun billet */}
+      {refundTable && tab !== 'tables' && (
+        <StatusBanner
+          tone="info"
+          title="Soirée reportée : votre table peut être remboursée"
+          action={(
+            <Button variant="secondary" size="sm" onClick={() => openTable(refundTable.bookingId)}>
+              Voir ma table
+            </Button>
+          )}
+        >
+          « {refundTable.eventTitle} » est reportée de plus de 24 h. Vous pouvez demander le remboursement de toute la table
+          (<span className="tabular-nums">{formatFcfa(refundTable.amount)}</span>) depuis « Ma table ».
+        </StatusBanner>
+      )}
 
       <TabPanel idPrefix="mes-billets" tabIdValue={tab} className="space-y-4">
         {tab === 'recus' ? (
