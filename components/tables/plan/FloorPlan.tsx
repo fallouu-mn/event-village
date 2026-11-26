@@ -49,6 +49,11 @@ export interface FloorPlanProps {
     onSelect?: (tableId: string) => void;
     onChange?: (tables: FloorPlanTable[], zones: FloorPlanZone[]) => void;
     ariaLabel: string;
+    /**
+     * Lot 11c-c (facultatif, sans effet sur les écrans du lot 11b) : libellés de légende et mots lus d'un état, pour un
+     * autre sens du même état (pilotage des tables d'un événement : PRISE = « Vendue », ATTENDUE = « En paiement »).
+     */
+    labels?: Partial<Record<StateKey, { legend: string; spoken: string }>>;
 }
 
 type StateKey = Exclude<FloorTableState, null>;
@@ -110,7 +115,7 @@ const placed = (t: FloorPlanTable): t is FloorPlanTable & { x: number; y: number
 const zonePlaced = (z: FloorPlanZone): z is FloorPlanZone & { x: number; y: number; w: number; h: number } =>
     z.x !== null && z.y !== null && z.w !== null && z.h !== null;
 
-export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, onChange, ariaLabel }: FloorPlanProps) {
+export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, onChange, ariaLabel, labels }: FloorPlanProps) {
     const uid = useId();
     const gridId = `${uid}-grille`;
     const hintId = `${uid}-aide`;
@@ -430,25 +435,31 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                             width: `max(${minPx}px, ${tableWidthPct(t.capacity, t.shape)}%)`,
                             aspectRatio: String(tableAspect(t.shape)),
                         };
-                        const spoken = [`Table ${t.number}`, spokenCapacity(t), state ? STATE_VIEW[state].spoken : null, edit ? `forme ${SHAPE_LABEL[t.shape]}` : null, t.hint ?? null]
+                        const spoken = [`Table ${t.number}`, spokenCapacity(t), state ? (labels?.[state]?.spoken ?? STATE_VIEW[state].spoken) : null, edit ? `forme ${SHAPE_LABEL[t.shape]}` : null, t.hint ?? null]
                             .filter(Boolean).join(', ');
                         const radius = t.shape === 'RONDE' ? 'rounded-full' : 'rounded-lg';
+                        // Lot 11c-b : au choix d'une table, une table prise se lit sans la couleur (hachures et mot « Prise »)
+                        const takenToChoose = mode === 'select' && state === 'PRISE';
                         const face = (
                             <>
                                 <span
                                     aria-hidden="true"
-                                    className={cn('absolute inset-0 border-2 transition-[background-color,border-color,box-shadow] duration-fast', radius, view.shapeCls, isSel && 'border-primary shadow-lg', dragging && 'shadow-lg')}
+                                    className={cn('absolute inset-0 border-2 transition-[background-color,border-color,box-shadow] duration-fast', radius, view.shapeCls, takenToChoose && '[background-image:repeating-linear-gradient(135deg,currentColor_0_1px,transparent_1px_6px)]', isSel && 'border-primary shadow-lg', dragging && 'shadow-lg')}
                                     style={{ transform: t.rotation ? `rotate(${t.rotation}deg)` : undefined }}
                                 />
                                 <span aria-hidden="true" className="relative flex flex-col items-center gap-0.5 leading-none">
-                                    <span className={cn('break-all text-sm font-bold tabular-nums', state === 'HORS_CAPACITE' && 'line-through')}>{t.number}</span>
+                                    <span className={cn('break-all text-sm font-bold tabular-nums', state === 'HORS_CAPACITE' && 'line-through', takenToChoose && 'rounded bg-muted px-1')}>{t.number}</span>
                                     {/* Espace entre numéro et capacité : sans lui, axe-core lit « 14 » pour la table 1 à 4 places (textes collés) et
                                         ne le retrouve pas dans « Table 1, 4 places » (label-content-name-mismatch). Invisible dans un conteneur flex. */}
                                     {' '}
-                                    <small className="inline-flex items-center gap-0.5 text-caption tabular-nums">
-                                        <Users size={11} strokeWidth={2.5} />
-                                        {t.capacity}
-                                    </small>
+                                    {takenToChoose ? (
+                                        <small className="rounded bg-muted px-1 text-caption font-semibold">{labels?.PRISE?.legend ?? 'Prise'}</small>
+                                    ) : (
+                                        <small className="inline-flex items-center gap-0.5 text-caption tabular-nums">
+                                            <Users size={11} strokeWidth={2.5} />
+                                            {t.capacity}
+                                        </small>
+                                    )}
                                 </span>
                                 <StateMark state={state} />
                             </>
@@ -486,6 +497,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                                     key={`table:${t.id}`}
                                     type="button"
                                     ref={setItemRef(`table:${t.id}`)}
+                                    data-table-id={t.id}
                                     aria-label={spoken}
                                     aria-pressed={state === 'CHOISIE'}
                                     aria-disabled={!choosable || undefined}
@@ -541,7 +553,7 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                     {legend.map((k) => (
                         <li key={k} className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                             <span aria-hidden="true" className={cn('h-4 w-4 flex-shrink-0 rounded border-2', STATE_VIEW[k].shapeCls)} />
-                            <span className={cn(k === 'HORS_CAPACITE' && 'line-through decoration-1')}>{STATE_VIEW[k].legend}</span>
+                            <span className={cn(k === 'HORS_CAPACITE' && 'line-through decoration-1')}>{labels?.[k]?.legend ?? STATE_VIEW[k].legend}</span>
                         </li>
                     ))}
                 </ul>
