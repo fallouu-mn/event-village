@@ -43,6 +43,7 @@ import { GET as partnerOrderGet } from '../../app/api/partner/orders/[id]/route'
 import { POST as regulationPost } from '../../app/api/admin/products/[id]/regulation/route';
 import { GET as reviewGet } from '../../app/api/admin/products/review/route';
 import { PUT as keywordsPut } from '../../app/api/admin/products/keywords/route';
+import { GET as settingsGet } from '../../app/api/admin/finance-settings/route';
 import {
     addCourier, codeOf, itemsOf, n, newBuyer, newPartner, newProduct, newShop, openOrdersService, order, orderBody, orderRpc, outboxOf,
     partnerAct, payOrder, placed, releaseUnpaid, service, setPortions, startOrderPay, superadminId, toReady, userClient, type Buyer, type Row,
@@ -497,6 +498,10 @@ describe('K. liste des mots', () => {
         const { data: before } = await service.from('platform_settings').select('value').eq('key', 'orders.review_keywords').single();
         const original = (before!.value as { value: string[] }).value;
         try {
+            const sa = await newAdmin('l12c-super', [], { role: 'SUPERADMIN' });
+            const generic = await reply(await settingsGet(req('/api/admin/finance-settings', 'GET', sa.accessToken)));
+            assert.equal(generic.status, 200, JSON.stringify(generic.body).slice(0, 300));
+            assert.ok(!(generic.body.settings as Row[]).some((s) => s.key === 'orders.review_keywords'), 'liste des mots sur la page générique des réglages');
             const notSuper = await reply(await keywordsPut(req('/api/admin/products/keywords', 'PUT', reviewer.accessToken, { keywords: ['bière'], reason: 'Essai' })));
             assert.equal(notSuper.status, 403, JSON.stringify(notSuper.body));
             const set = async (value: unknown, actor = superadmin, reason = 'Essai du lot 12c'): Promise<Row> => {
