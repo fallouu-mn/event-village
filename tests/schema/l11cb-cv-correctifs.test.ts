@@ -49,7 +49,10 @@ describe('T1 — signal des tables sur la tranche publique existante, relecture 
         assert.match(server, /await signalTablesChanged\(params\.eventId, 'table en attente de paiement'\);/);
         assert.match(server, /await signalTablesChanged\(params\.eventId, 'table rendue'\);/);
         assert.match(strip(read('app/api/event-tables/[bookingId]/refund/route.ts')), /await signalTablesChanged\(String\(booking\.event_id\), 'table remboursée, de nouveau en vente'\)/);
-        assert.deepEqual(fs.readdirSync(path.join(ROOT, 'supabase', 'migrations')).filter((f) => f > '20261210000001_cb3_lieux_publics.sql'), [], 'aucune migration');
+        const toutes = fs.readdirSync(path.join(ROOT, 'supabase', 'migrations')).filter((f) => f > '20261210000001_cb3_lieux_publics.sql');
+        // Jusqu'à la fusion du 11c-b : seules les deux migrations du 11c-c (fusionné en 7d45274fb6) ; les lots suivants commencent à 20261216.
+        assert.deepEqual(toutes.filter((f) => f < '20261216'), ['20261215000001_l11cc_lectures_tables.sql', '20261215000002_l11cc_cv_correctifs.sql'], 'aucune migration');
+        assert.deepEqual(toutes.filter((f) => /l11cb/i.test(f)), [], 'aucune migration');
     });
 
     test('plan ouvert et visible : offre relue toutes les 15 s ; un seul abonnement, la tranche publique', () => {

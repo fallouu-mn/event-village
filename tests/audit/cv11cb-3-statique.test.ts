@@ -125,8 +125,10 @@ describe('G-S — garde-fous sans base', () => {
     });
 
     test('aucune migration du lot ; un seul abonnement temps réel, sur la tranche publique existante', () => {
-        const migrations = fs.readdirSync(path.join(ROOT, 'supabase', 'migrations')).filter((f) => f > '20261210000001_cb3_lieux_publics.sql');
-        assert.deepEqual(migrations, [], 'migration ajoutée par le lot');
+        const toutes = fs.readdirSync(path.join(ROOT, 'supabase', 'migrations')).filter((f) => f > '20261210000001_cb3_lieux_publics.sql');
+        // Jusqu'à la fusion du 11c-b : seules les deux migrations du 11c-c (fusionné en 7d45274fb6) ; les lots suivants commencent à 20261216.
+        assert.deepEqual(toutes.filter((f) => f < '20261216'), ['20261215000001_l11cc_lectures_tables.sql', '20261215000002_l11cc_cv_correctifs.sql'], 'migration ajoutée par le lot');
+        assert.deepEqual(toutes.filter((f) => /l11cb/i.test(f)), [], 'migration ajoutée par le lot');
         const files = ['components/event-tables/client', 'components/event-page/TicketingSwitch.tsx', 'lib/event-tables'].flatMap((p) => {
             const full = path.join(ROOT, p);
             return fs.statSync(full).isDirectory() ? fs.readdirSync(full).map((f) => path.join(p, f)) : [p];
