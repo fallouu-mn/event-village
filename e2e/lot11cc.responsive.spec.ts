@@ -251,7 +251,7 @@ for (const theme of THEMES) {
             await page.goto(`/partner/events/${data.eventId}?tab=tables`, { waitUntil: 'load' });
             const pil = page.locator('[data-tables-pilotage]');
             await expect(pil).toBeVisible({ timeout: 30_000 });
-            await expect(pil.getByText('Awa S.').first()).toBeVisible();
+            await expect(pil.locator('text="Awa S." >> visible=true').first()).toBeVisible();
             await settle(page);
             await checkLayout(page, w.width, w.phone, 'pilotage des tables');
             await shot(page, 'pilotage', w.width, theme.key);
@@ -328,7 +328,7 @@ for (const theme of THEMES) {
             await apage.goto(`/admin/events/${data.eventId}`, { waitUntil: 'load' });
             const section = apage.locator('[data-admin-tables]');
             await expect(section).toBeVisible({ timeout: 30_000 });
-            await expect(section.getByText('Carré VIP').first()).toBeVisible();
+            await expect(section.locator('text="Carré VIP" >> visible=true').first()).toBeVisible();
             await section.scrollIntoViewIfNeeded();
             await settle(apage);
             await checkLayout(apage, w.width, w.phone, 'fiche de l’administration');
