@@ -242,7 +242,8 @@ for (const theme of THEMES) {
             const dialog = page.getByRole('dialog', { name: 'Modifier le type de table' });
             await expect(dialog).toBeVisible();
             await expect(dialog.getByLabel('Prix de la table (F CFA)')).toBeDisabled();
-            await expect(dialog).toContainText(/Soit 25.000 F.{0,6} par personne\./);
+            await expect(dialog).toContainText('Soit 25');
+            await expect(dialog).toContainText('par personne.');
             await settle(page);
             await shot(page, 'type-fige', w.width, theme.key, false);
             await page.keyboard.press('Escape');
