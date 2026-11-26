@@ -1,0 +1,734 @@
+===== supabase_db_event-village =====
+	     WHERE x.status::text = 'PENDING' AND x.ticket_id IN (SELECT tk.id FROM public.tickets tk WHERE tk.event_table_booking_id = b.id)
+	     ORDER BY x.id
+	       FOR UPDATE OF x;
+	    PERFORM 1 FROM public.tickets WHERE event_table_booking_id = b.id ORDER BY id FOR UPDATE;
+	
+	    IF b.status <> 'ACTIVE' THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_REFUNDED', 'message', 'Cette table est déjà remboursée.');
+	    END IF;
+	    v_window := private.event_table_postponement_window(b.id);
+	    IF NOT COALESCE((v_window->>'open')::boolean, FALSE) THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'POSTPONEMENT_REFUND_CLOSED',
+	            'message', 'Le remboursement n’est possible que si l’événement a été reporté de plus de 24 h après votre achat, jusqu’au nouveau début.');
+	    END IF;
+	    IF EXISTS (SELECT 1 FROM public.tickets tk WHERE tk.event_table_booking_id = b.id AND tk.status::text = 'UTILISE')
+	       OR EXISTS (SELECT 1 FROM public.ticket_scans s JOIN public.tickets tk ON tk.id = s.ticket_id
+	                   WHERE tk.event_table_booking_id = b.id AND s.result = 'valid') THEN
+	        RETURN jsonb_build_object('ok', false, 'code', 'TABLE_SEAT_USED',
+	            'message', 'Une place de cette table a déjà servi à l’entrée : la table ne peut plus être remboursée.');
+	    END IF;
+	
+	    -- Transferts en attente annulés (la place revient au titulaire avant d'être remboursée)
+	    UPDATE public.ticket_transfers SET status = 'CANCELLED', cancelled_at = now()
+	     WHERE status::text = 'PENDING' AND ticket_id IN (SELECT tk.id FROM public.tickets tk WHERE tk.event_table_booking_id = b.id);
+	    UPDATE public.tickets SET transfer_locked = FALSE WHERE event_table_booking_id = b.id AND transfer_locked;
+	
+	    -- CV 11c-a (T3) : l'invité qui tient une place (transfert accepté) est prévenu que sa place est annulée, comme le
+	    -- porteur d'un billet transféré remboursé (ticket_refund_request, 20261201000005_l11c_remboursement.sql:248-255) :
+	    -- même type, même clé unique par billet et par canal ; le titulaire, qui a payé, est servi par REFUND_REQUESTED.
+	    FOR v_seat IN
+	        SELECT tk.id, tk.user_id, tk.event_id, c.name AS category
+	          FROM public.tickets tk JOIN public.ticket_categories c ON c.id = tk.category_id
+	         WHERE tk.event_table_booking_id = b.id AND tk.status::text = 'VALIDE'
+	           AND tk.user_id IS NOT NULL AND tk.user_id IS DISTINCT FROM b.holder_id
+	         ORDER BY tk.id
+	    LOOP
+	        PERFORM public.notif_enqueue(jsonb_build_object(
+	            'type', 'TICKET_REFUNDED_HOLDER', 'key', 'TICKET_REFUNDED_HOLDER:' || v_seat.id::text,
+	            'user_id', v_seat.user_id, 'actor_id', v_actor, 'event_id', v_seat.event_id,
+	            'data', COALESCE(public.notif_event_data(v_seat.event_id), '{}'::jsonb)
+	                    || jsonb_build_object('ticket_id', v_seat.id, 'category', v_seat.category)));
+	    END LOOP;
+	
+	    -- Paiement entier remboursé au compte qui a payé ; billets non utilisés passés en remboursement (refund_request)
+	    v_cashout := public.refund_request(b.payment_id, 'Report de l’événement : table remboursée à la demande du titulaire', 'REFUND');
+	    SELECT amount INTO v_amount FROM public.refunds WHERE refund_transaction_id = 'REFUND-' || b.payment_id::text;
+	
+	    -- La vente est close, la table de nouveau en vente
+	    PERFORM set_config('event_village.event_tables', 'on', true);
+	    UPDATE public.event_table_bookings SET status = 'REFUNDED', refunded_at = now(), refund_origin = 'POSTPONEMENT' WHERE id = b.id;
+	    PERFORM set_config('event_village.event_tables', 'off', true);
+	    UPDATE public.ticket_categories SET sold_quantity = GREATEST(sold_quantity - 1, 0), updated_at = now() WHERE id = b.category_id;
+	
+	    INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+	    VALUES (v_actor, 'CLIENT', 'EVENT_TABLE_POSTPONEMENT_REFUND', 'EVENT_TABLE_BOOKING', b.id,
+	            jsonb_build_object('event_id', b.event_id, 'payment_id', b.payment_id, 'table_number', b.table_number,
+	                               'cashout_id', v_cashout, 'amount', v_amount));
+	    RETURN jsonb_build_object('ok', true, 'booking_id', b.id, 'cashout_id', v_cashout, 'amount', v_amount, 'to_original_buyer', true);
+	END;
+	$$
+172.18.0.1 2026-11-25 23:50:07.131 UTC [245] postgres@postgres LOG:  execute <unnamed>: -- ----------------------------------------------------------------------------
+	-- 8. Alerte aux administrateurs (20261201000003_l11c_configuration.sql:1312-1315) : aussi quand la zone d'une table change
+	--    après validation (event_tables_save réécrit numéro, type et zone de chaque table : une alerte par enregistrement)
+	-- ----------------------------------------------------------------------------
+	DROP TRIGGER IF EXISTS trg_event_tables_admin_alert ON public.event_tables
+172.18.0.1 2026-11-25 23:50:07.131 UTC [245] postgres@postgres LOG:  execute <unnamed>: CREATE TRIGGER trg_event_tables_admin_alert
+	    AFTER INSERT OR DELETE OR UPDATE OF number, category_id, zone_id ON public.event_tables
+	    FOR EACH ROW EXECUTE FUNCTION public.notif_event_tables_admin_alert()
+172.18.0.1 2026-11-25 23:50:07.134 UTC [245] postgres@postgres LOG:  execute <unnamed>: -- ============================================================================
+	-- Lot 11c-c — tables d'un événement : lecture des écrans de l'organisatrice, du pilotage et de l'administration
+	-- ============================================================================
+	-- Aucune donnée existante ne disait, par table vendue, qui en est titulaire, combien de places sont envoyées et entrées,
+	-- ni quelles tables ont été remboursées, ni quand des changements ont été signalés après validation. Cette migration
+	-- AJOUTE deux fonctions de lecture ; elle ne recopie et ne modifie aucune fonction, table, politique ni donnée.
+	--
+	--   private.event_table_edit_refusal(p_event, p_actor) : pourquoi l'organisatrice ne peut pas modifier ses tables
+	--     maintenant (NULL si elle le peut). Mêmes refus, mêmes codes et même ordre que private.event_table_refusal
+	--     (20261201000003_l11c_configuration.sql) et public.ticket_category_guard (20261116000001_f2a_fiche_suspendue.sql),
+	--     sans aucun verrou (lecture). Seul le texte d'un événement en attente de validation est propre à l'écran des tables.
+	--   public.event_table_report(p jsonb) : { event_id, actor_id }. Accès du pilotage (pilotage_access : propriétaire, ou
+	--     administration avec events.read ; un tiers reçoit EVENT_NOT_FOUND). Rend l'état de l'événement, la jauge en places
+	--     (private.event_seats_gauge, la règle unique de la base), les types (prix par personne et frais par
+	--     private.event_table_prices), les tables et leur état, les zones, chaque vente (titulaire en prénom et initiale,
+	--     places envoyées, en attente, à envoyer, entrées, par private.event_table_seats), les totaux, et :
+	--       - pour la propriétaire : edit_refusal et les événements précédents copiables (copy_sources) ;
+	--       - pour l'administration : l'historique des signalements ADMIN_EVENT_TABLES_CHANGED (boîte d'envoi).
+	--     Jamais de téléphone, de courriel ni de nom complet.
+	--
+	-- Réservées au rôle de service (l'aide dans le schéma private, hors de l'API). Rejouable, sans BEGIN ni COMMIT.
+	
+	-- ----------------------------------------------------------------------------
+	-- 1. Refus d'écriture des tables, sans verrou
+	-- ----------------------------------------------------------------------------
+	CREATE OR REPLACE FUNCTION private.event_table_edit_refusal(p_event uuid, p_actor uuid)
+	RETURNS jsonb
+	LANGUAGE plpgsql
+	STABLE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	DECLARE
+	    v_status text;
+	    a record;
+	BEGIN
+	    IF NOT public.fin_setting_bool('features.event_tables_enabled') THEN
+	        RETURN jsonb_build_object('code', 'SERVICE_UNAVAILABLE', 'message', 'La vente de tables n’est pas encore ouverte sur Event Village.');
+	    END IF;
+	    IF public.partner_owner_suspended(p_event, p_actor) THEN
+	        RETURN jsonb_build_object('code', 'PARTNER_SUSPENDED', 'message', 'Votre compte organisateur est suspendu : vos événements ne sont plus modifiables. Contactez le support.');
+	    END IF;
+	    SELECT e.status::text INTO v_status FROM public.events e WHERE e.id = p_event;
+	    IF NOT FOUND THEN
+	        RETURN jsonb_build_object('code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+	    END IF;
+	    SELECT * INTO a FROM public.event_actor_profile(p_event, p_actor);
+	    IF NOT COALESCE(a.is_owner, FALSE) THEN
+	        IF COALESCE(a.is_staff, FALSE) THEN
+	            RETURN jsonb_build_object('code', 'ADMIN_CANNOT_EDIT', 'message', 'Seul l’organisateur modifie les tables de son événement.');
+	        END IF;
+	        RETURN jsonb_build_object('code', 'EVENT_NOT_FOUND', 'message', 'Événement introuvable.');
+	    END IF;
+	    IF NOT COALESCE(a.is_active, FALSE) THEN
+	        RETURN jsonb_build_object('code', 'ACCOUNT_NOT_ACTIVE', 'message', 'Votre compte n’est pas actif.');
+	    END IF;
+	    IF v_status IN ('TERMINE', 'ANNULE') THEN
+	        RETURN jsonb_build_object('code', 'EVENT_LOCKED', 'message', 'Un événement terminé ou annulé ne se modifie plus : ses tables restent en lecture.');
+	    END IF;
+	    IF v_status = 'EN_ATTENTE' THEN
+	        RETURN jsonb_build_object('code', 'WITHDRAW_TO_EDIT', 'message', 'Retirez l’événement de la validation pour modifier ses tables.');
+	    END IF;
+	    IF v_status = 'SUSPENDU' THEN
+	        RETURN jsonb_build_object('code', 'EVENT_SUSPENDED', 'message', 'Cet événement est suspendu : ses tables ne se modifient plus. Contactez le support.');
+	    END IF;
+	    RETURN NULL;
+	END;
+	$$
+172.18.0.1 2026-11-25 23:50:07.135 UTC [245] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION private.event_table_edit_refusal(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role
+172.18.0.1 2026-11-25 23:50:07.135 UTC [245] postgres@postgres LOG:  execute <unnamed>: -- ----------------------------------------------------------------------------
+	-- 2. Lecture des écrans (éditeur, pilotage, administration)
+	-- ----------------------------------------------------------------------------
+	CREATE OR REPLACE FUNCTION public.event_table_report(p jsonb)
+	RETURNS jsonb
+	LANGUAGE plpgsql
+	STABLE
+	SECURITY DEFINER
+	SET search_path = public
+	AS $$
+	DECLARE
+	    v_event    uuid := public.try_uuid(p->>'event_id');
+	    v_actor    uuid := public.try_uuid(p->>'actor_id');
+	    v_code     text;
+	    v_owner    boolean;
+	    v_status   text;
+	    v_capacity integer;
+	    v_partner  uuid;
+	    v_seats    integer;
+	    v_tables   integer;
+	    v_tickets  integer;
+	    v_bookings jsonb;
+	    v_out      jsonb;
+	BEGIN
+	    v_code := public.pilotage_access(v_event, v_actor);
+	    IF v_code IS NOT NULL THEN
+	        RETURN public.pilotage_refusal(v_code);
+	    END IF;
+	    SELECT e.status::text, e.capacity, e.partner_id INTO v_status, v_capacity, v_partner FROM public.events e WHERE e.id = v_event;
+	    SELECT COALESCE(f.is_owner, FALSE) INTO v_owner FROM public.event_actor_profile_perm(v_event, v_actor, 'events.read') f;
+	    v_seats := private.event_seats_gauge(v_event);
+	    v_tables := private.event_seats_gauge(v_event, NULL, 'TABLE');
+	    v_tickets := private.event_seats_gauge(v_event, NULL, 'TICKET');
+	
+	    SELECT COALESCE(jsonb_agg(x.item ORDER BY x.table_number, x.created_at), '[]'::jsonb) INTO v_bookings
+	      FROM (
+	        SELECT b.table_number, b.created_at, jsonb_build_object(
+	                   'table_number', b.table_number, 'table_id', b.event_table_id, 'type_id', b.category_id, 'type_name', c.name,
+	                   'zone', z.name, 'seats', b.seats, 'status', b.status, 'refund_origin', b.refund_origin,
+	                   'sold_at', b.created_at, 'refunded_at', b.refunded_at,
+	                   'holder', private.event_table_person(b.holder_id),
+	                   'price', pay.facial_amount,
+	                   'counts', (SELECT jsonb_build_object(
+	                                  'sent', count(*) FILTER (WHERE s->>'state' = 'ENVOYEE'),
+	                                  'pending', count(*) FILTER (WHERE s->>'state' = 'EN_ATTENTE'),
+	                                  'to_send', count(*) FILTER (WHERE s->>'state' = 'A_ENVOYER'),
+	                                  'entered', count(*) FILTER (WHERE s->>'state' = 'ENTREE'),
+	                                  'given', count(*) FILTER (WHERE s->>'state' = 'ENVOYEE' OR (s->>'state' = 'ENTREE' AND (s->>'mine')::boolean IS NOT TRUE)))
+	                                FROM jsonb_array_elements(private.event_table_seats(b.id)) s)) AS item
+	          FROM public.event_table_bookings b
+	          JOIN public.ticket_categories c ON c.id = b.category_id
+	          JOIN public.payments pay ON pay.id = b.payment_id
+	          JOIN public.event_tables t ON t.id = b.event_table_id
+	          LEFT JOIN public.event_zones z ON z.id = t.zone_id
+	         WHERE b.event_id = v_event
+	      ) x;
+	
+	    v_out := jsonb_build_object(
+	        'ok', true, 'event_id', v_event, 'event_status', v_status, 'viewer', CASE WHEN v_owner THEN 'OWNER' ELSE 'STAFF' END,
+	        'service_open', public.fin_setting_bool('features.event_tables_enabled'),
+	        'plan_enabled', COALESCE((SELECT pl.plan_enabled FROM public.event_table_plans pl WHERE pl.event_id = v_event), FALSE),
+	        'gauge', jsonb_build_object('capacity', v_capacity, 'seats', v_seats, 'table_seats', v_tables, 'ticket_seats', v_tickets,
+	                                    'free', CASE WHEN v_capacity IS NULL THEN NULL ELSE GREATEST(v_capacity - v_seats, 0) END),
+	        'types', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+	                      'id', c.id, 'name', c.name, 'included_text', c.included_text, 'onsite_note', c.onsite_note,
+	                      'payment_mode', c.payment_mode, 'is_active', c.is_active, 'sale_start', c.sale_start, 'sale_end', c.sale_end,
+	                      'scan_color', c.scan_color, 'entry_instruction', c.entry_instruction,
+	                      'total_tables', c.total_quantity, 'sold_tables', c.sold_quantity, 'held_tables', c.held_quantity,
+	                      'free_tables', (SELECT count(*) FROM public.event_tables t WHERE t.category_id = c.id AND private.event_table_state(t.id) = 'LIBRE'),
+	                      'type_seats', c.total_quantity * c.seats_per_unit,
+	                      'locked', c.sold_quantity > 0 OR c.held_quantity > 0,
+	                      'ever_sold', EXISTS (SELECT 1 FROM public.event_table_bookings b WHERE b.category_id = c.id)) || private.event_table_prices(c.id, NULL)
+	                    ORDER BY c.created_at, c.id), '[]'::jsonb)
+	                    FROM public.ticket_categories c WHERE c.event_id = v_event AND c.kind = 'TABLE'),
+	        'tables', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+	                       'id', t.id, 'number', t.number, 'type_id', t.category_id, 'zone_id', t.zone_id, 'x', t.plan_x, 'y', t.plan_y,
+	                       'shape', t.plan_shape, 'rotation', t.plan_rotation, 'state', private.event_table_state(t.id),
+	                       'ever_sold', EXISTS (SELECT 1 FROM public.event_table_bookings b WHERE b.event_table_id = t.id))
+	                     ORDER BY t.number), '[]'::jsonb)
+	                     FROM public.event_tables t WHERE t.event_id = v_event),
+	        'zones', (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', z.id, 'name', z.name, 'x', z.plan_x, 'y', z.plan_y, 'w', z.plan_w, 'h', z.plan_h)
+	                    ORDER BY z.name), '[]'::jsonb)
+	                    FROM public.event_zones z WHERE z.event_id = v_event),
+	        'bookings', v_bookings,
+	        'totals', jsonb_build_object(
+	            'tables', (SELECT count(*) FROM public.event_tables t WHERE t.event_id = v_event),
+	            'placed', (SELECT count(*) FROM public.event_tables t WHERE t.event_id = v_event AND t.plan_x IS NOT NULL),
+	            'unplaced', (SELECT count(*) FROM public.event_tables t WHERE t.event_id = v_event AND t.plan_x IS NULL),
+	            'free', (SELECT count(*) FROM public.event_tables t WHERE t.event_id = v_event AND private.event_table_state(t.id) = 'LIBRE'),
+	            'held', (SELECT count(*) FROM public.event_tables t WHERE t.event_id = v_event AND private.event_table_state(t.id) = 'EN_ATTENTE'),
+	            'sold', (SELECT count(*) FROM public.event_table_bookings b WHERE b.event_id = v_event AND b.status = 'ACTIVE'),
+	            'sold_seats', (SELECT COALESCE(sum(b.seats), 0) FROM public.event_table_bookings b WHERE b.event_id = v_event AND b.status = 'ACTIVE'),
+	            'entered_seats', (SELECT count(*) FROM public.tickets tk JOIN public.event_table_bookings b ON b.id = tk.event_table_booking_id
+	                               WHERE b.event_id = v_event AND b.status = 'ACTIVE' AND tk.status::text = 'UTILISE'),
+	            'revenue', (SELECT COALESCE(sum(pay.facial_amount), 0) FROM public.event_table_bookings b JOIN public.payments pay ON pay.id = b.payment_id
+	                         WHERE b.event_id = v_event AND b.status = 'ACTIVE'),
+	            'refunded', (SELECT count(*) FROM public.event_table_bookings b WHERE b.event_id = v_event AND b.status = 'REFUNDED'),
+	            'refunded_amount', (SELECT COALESCE(sum(pay.facial_amount), 0) FROM public.event_table_bookings b JOIN public.payments pay ON pay.id = b.payment_id
+	                                 WHERE b.event_id = v_event AND b.status = 'REFUNDED')),
+	        'read_at', now());
+	
+	    IF v_owner THEN
+	        v_out := v_out || jsonb_build_object(
+	            'edit_refusal', private.event_table_edit_refusal(v_event, v_actor),
+	            'copy_sources', (SELECT COALESCE(jsonb_agg(s.item ORDER BY s.start_at DESC NULLS LAST), '[]'::jsonb)
+	                               FROM (SELECT public.event_start_at(e.id) AS start_at,
+	                                            jsonb_build_object('event_id', e.id, 'title', e.title, 'start_at', public.event_start_at(e.id),
+	                                                               'types', (SELECT count(*) FROM public.ticket_categories c WHERE c.event_id = e.id AND c.kind = 'TABLE'),
+	                                                               'tables', (SELECT count(*) FROM public.event_tables t WHERE t.event_id = e.id)) AS item
+	                                       FROM public.events e
+	                                      WHERE e.partner_id = v_partner AND e.id <> v_event
+	                                        AND EXISTS (SELECT 1 FROM public.event_tables t WHERE t.event_id = e.id)
+	                                      ORDER BY public.event_start_at(e.id) DESC NULLS LAST
+	                                      LIMIT 10) s));
+	    ELSE
+	        v_out := v_out || jsonb_build_object(
+	            'edit_refusal', jsonb_build_object('code', 'ADMIN_CANNOT_EDIT', 'message', 'Seul l’organisateur modifie les tables de son événement.'),
+	            'changes', (SELECT COALESCE(jsonb_agg(jsonb_build_object('at', g.at) ORDER BY g.at DESC), '[]'::jsonb)
+	                          FROM (SELECT min(o.created_at) AS at
+	                                  FROM public.notification_outbox o
+	                                 WHERE o.type = 'ADMIN_EVENT_TABLES_CHANGED' AND o.event_id = v_event
+	                                 GROUP BY substring(o.idempotency_key FROM ':tx([0-9]+)')
+	                                 ORDER BY 1 DESC
+	                                 LIMIT 50) g));
+	    END IF;
+	    RETURN v_out;
+	END;
+	$$
+172.18.0.1 2026-11-25 23:50:07.135 UTC [245] postgres@postgres LOG:  execute <unnamed>: REVOKE ALL ON FUNCTION public.event_table_report(jsonb) FROM PUBLIC, anon, authenticated
+172.18.0.1 2026-11-25 23:50:07.135 UTC [245] postgres@postgres LOG:  execute <unnamed>: GRANT EXECUTE ON FUNCTION public.event_table_report(jsonb) TO service_role
+172.18.0.1 2026-11-25 23:50:07.136 UTC [245] postgres@postgres LOG:  execute <unnamed>: COMMENT ON FUNCTION public.event_table_report(jsonb) IS
+	    'Lot 11c-c : lecture des tables d''un événement pour l''éditeur, le pilotage et l''administration (pilotage_access). Titulaires en prénom et initiale seulement.'
+172.18.0.1 2026-11-25 23:50:07.138 UTC [245] postgres@postgres ERROR:  relation "supabase_migrations.seed_files" does not exist at character 24
+172.18.0.1 2026-11-25 23:50:07.138 UTC [245] postgres@postgres STATEMENT:  SELECT path, hash FROM supabase_migrations.seed_files
+172.18.0.1 2026-11-25 23:50:07.141 UTC [245] postgres@postgres LOG:  statement: CREATE SCHEMA IF NOT EXISTS supabase_migrations
+172.18.0.1 2026-11-25 23:50:07.141 UTC [245] postgres@postgres LOG:  statement: CREATE TABLE IF NOT EXISTS supabase_migrations.seed_files (path text NOT NULL PRIMARY KEY, hash text NOT NULL)
+172.18.0.2 2026-11-25 23:51:31.936 UTC [437] supabase_admin@postgres LOG:  logical decoding found consistent point at 0/4183300
+172.18.0.2 2026-11-25 23:51:31.936 UTC [437] supabase_admin@postgres DETAIL:  There are no running transactions.
+172.18.0.2 2026-11-25 23:51:31.936 UTC [437] supabase_admin@postgres STATEMENT:  select
+	        case when not exists (
+	          select 1
+	          from pg_replication_slots
+	          where slot_name = $1
+	        )
+	        then (
+	          select 1 from pg_create_logical_replication_slot(slot_name => $1, plugin => 'wal2json', temporary => true)
+	        )
+	        else 1
+	        end;
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres LOG:  logical decoding found consistent point at 0/4183338
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres DETAIL:  There are no running transactions.
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres STATEMENT:  CREATE_REPLICATION_SLOT supabase_realtime_messages_replication_slot_ TEMPORARY LOGICAL pgoutput NOEXPORT_SNAPSHOT
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres LOG:  starting logical decoding for slot "supabase_realtime_messages_replication_slot_"
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres DETAIL:  Streaming transactions committing after 0/4183370, reading WAL from 0/4183338.
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres STATEMENT:  START_REPLICATION SLOT supabase_realtime_messages_replication_slot_ LOGICAL 0/0 (proto_version '2', publication_names 'supabase_realtime_messages_publication', binary 'true')
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres LOG:  logical decoding found consistent point at 0/4183338
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres DETAIL:  There are no running transactions.
+172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres STATEMENT:  START_REPLICATION SLOT supabase_realtime_messages_replication_slot_ LOGICAL 0/0 (proto_version '2', publication_names 'supabase_realtime_messages_publication', binary 'true')
+ 2026-11-25 23:54:51.021 UTC [203] LOG:  checkpoint starting: time
+ 2026-11-25 23:57:21.075 UTC [203] LOG:  checkpoint complete: wrote 3843 buffers (23.5%); 0 WAL file(s) added, 0 removed, 3 recycled; write=150.040 s, sync=0.009 s, total=150.054 s; sync files=1232, longest=0.003 s, average=0.001 s; distance=41186 kB, estimate=41186 kB; lsn=0/43F3618, redo lsn=0/4321B38
+ 2026-11-25 23:59:51.168 UTC [203] LOG:  checkpoint starting: time
+ 2026-11-26 00:00:00.593 UTC [203] LOG:  checkpoint complete: wrote 96 buffers (0.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=9.423 s, sync=0.001 s, total=9.426 s; sync files=27, longest=0.001 s, average=0.001 s; distance=1170 kB, estimate=37184 kB; lsn=0/4461900, redo lsn=0/44466F8
+ 2026-11-26 00:04:51.683 UTC [203] LOG:  checkpoint starting: time
+ 2026-11-26 00:05:05.817 UTC [203] LOG:  checkpoint complete: wrote 143 buffers (0.9%); 0 WAL file(s) added, 0 removed, 0 recycled; write=14.133 s, sync=0.001 s, total=14.135 s; sync files=61, longest=0.001 s, average=0.001 s; distance=1027 kB, estimate=33569 kB; lsn=0/455DCC8, redo lsn=0/45474A8
+===== supabase_auth_event-village =====
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4568000,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"64f84454-5a7e-4b80-9ed2-4a168a184a3d","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1456770,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"2777ed6d-7ff3-49db-9f15-e2f7ea67dc1a","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1759165,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"70f15d5b-f146-4810-b0ba-b7f62691786d","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1895837,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"af94d320-8ebf-4647-af3f-d299fe8c4aef","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3512044,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"52614a16-4380-4ef6-83f4-139b6cd0c3dc","status":200,"time":"2026-11-26T00:09:21Z"}
+{"component":"api","duration":2836675,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"01b4739c-2ae7-43fe-87c9-d6f79d7faa48","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4305357,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"aa57eac1-d1b0-498b-ac0c-3f9985fc9000","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1363625,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"54dbed2f-1674-48f3-8f0c-457e06419fc5","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1347890,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"4f053e70-a4e5-45db-be22-6bb7cc7b8a1f","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1426029,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"5debc114-6617-4c36-ac6f-f587a6e0b3a3","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1285910,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"cd941904-d7b1-421c-a736-4e3bef0c84ac","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1689122,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"8ecb2400-fca5-4ba1-8e4a-2a0b9b2e8dd5","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2332396,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"14e86cc2-c045-488b-be9e-0d85868cc27c","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1709361,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"6c604381-4e9c-4acd-8954-2c4545e440e6","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:21Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1523320,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d619bcfe-85b9-49b4-ab69-afef179563b0","status":200,"time":"2026-11-26T00:09:21Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1488477,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"3b1e763c-34aa-4458-aded-e155d1628be8","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4338055,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"129b0d56-28cb-4092-9404-82294465b0a4","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2346545,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"03344dba-81fa-458d-8182-71250bf2ed71","status":200,"time":"2026-11-26T00:09:24Z"}
+{"component":"api","duration":3000288,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"fe8eed97-3ca3-4277-93ee-f791d9b3b2d1","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1504423,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d0548513-fb7d-4972-8024-21fb6239bedf","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1477338,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"1594d4dd-1d60-465a-89e6-ea6d2915395e","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1494088,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"2a0bc80d-26bc-4333-be44-e68e930f2f4b","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1376841,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"dd0e0b94-fd32-45f4-97f0-2b60008c5e8f","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1464933,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"53131bfa-d5ec-40f9-b267-e8c386592ef6","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1757309,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"a9e1d0a7-9bc5-4486-940e-743f807370f3","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1629641,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"a571b0f0-a786-41a9-b289-6b9fa08c6aa3","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":5215371,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"0285b5c3-a993-431a-81b9-83ebf68ed100","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1760047,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"529a8cf4-d5da-4148-9376-9790d1f7c922","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2138379,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"0751677f-3ce6-481a-bfdd-0a252c0a58c3","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1522294,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"166d2bbd-fc40-4ff3-986e-1c1822827920","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1672581,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"f713cb7a-f6c8-44f9-969d-46508933209c","status":200,"time":"2026-11-26T00:09:24Z"}
+{"component":"api","duration":2161903,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"87247d51-23df-42ff-b1fd-7b3b39f4695d","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1251980,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"f1c19e12-f905-4165-90b7-74cfa7a03ebe","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1636695,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"cb0f150f-8173-47c1-b7a0-d35d9f66871c","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1594593,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"9c79bb83-794c-4995-8372-b403909c014c","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1661509,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"78a64c66-fd35-4e5e-aee3-0fb453e91b07","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2013789,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"e1dfabff-1faf-45a3-a6f4-57a040e7f3eb","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1727476,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"16c350f4-05ce-4978-a0cf-a0a4180b4296","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2026864,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"43ba50d7-efe5-4470-bd7b-00e74e67d5bc","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1518208,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"73fd4e91-df0c-4083-851b-2b6f772dc599","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1715185,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"05a46f38-aa48-44a1-a5c9-65c19314a638","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1572171,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"fefd9010-3128-4847-a0ba-5de097dca9ba","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2703295,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"e094ca6e-cb0d-4cce-9b52-c0ac263d917a","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1524653,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"48821ed8-b50c-468c-93ca-a9141ec76a9f","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2376638,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"637ea8ec-be5a-4a05-ac91-5ffb73301a8f","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2420529,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"575148c7-60f0-46fa-bc8e-4890f06cc4b9","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1818827,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"4919e5bb-b790-4eb2-b308-2ab26a5e7bdb","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3099100,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"5deac022-91b7-4103-8de6-a15e1825dc68","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1552902,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"fb010b1d-7105-4f64-afb8-2590c374bb44","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1756809,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"7cc3f235-c5a5-4be9-9b99-1621e988cebb","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1545741,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"f41f4026-e552-4ab4-92db-aa8cf3cd4029","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1160165,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"cc0eee8b-e8bf-45f1-bd94-c79d61bb89f9","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:24Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1280707,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"924f4c32-3cf7-497a-a4d3-8a57a0cf8fc3","status":200,"time":"2026-11-26T00:09:24Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1509640,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"f1be6e65-056e-499b-881b-263a822e7e5c","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1824637,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"026e8576-e003-4c2f-9ce8-a7fa0a94e2ea","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3795016,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"412a060f-2397-416d-b576-0915e507f5f9","status":200,"time":"2026-11-26T00:09:27Z"}
+{"component":"api","duration":2122444,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"87ed3875-969a-430e-8771-aeb82facb4ab","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1580969,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"08728f6c-7cfa-44b4-83bb-1d02f5db04d0","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1755392,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"1d33a6ee-b338-4efa-b45f-29c06880b00e","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":9667974,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"ff0bd086-35df-4c00-9a6f-c828ebf37fda","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1713419,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"1c2e0b93-e0ef-46a9-92e4-e3873e2f4856","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2094622,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"cd8dc534-a58a-4e14-a618-89fc3477cc9d","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1518688,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"0dc560de-1e40-42f2-bdb5-bcd3422ac0c2","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1488723,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"4b634542-4c22-4322-ae10-62d04ee4d45a","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:27Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1128534,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"74cc6177-8695-489d-947b-daba164aff3a","status":200,"time":"2026-11-26T00:09:27Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1781071,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"8dc31e59-5b86-490d-b26e-a0e6335fea80","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3978824,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"9c0f1afa-d0a6-456e-b524-dccf6a2a5cd8","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1430198,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"4296e465-5aef-4857-9025-3431d65e0dcf","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2351936,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"35aa0f90-0c4e-43ed-9d32-6102e9756e2d","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1879545,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"f143191c-b5bb-41c6-944f-f807fb037f75","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1808272,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"67a6e1f6-5bea-48bf-ac9b-a51197cc2fff","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4370382,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"6c13cd49-da39-4ed7-88bf-7d3121525806","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4497167,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"26476565-c441-41fa-bb19-aea630383469","status":200,"time":"2026-11-26T00:09:28Z"}
+{"component":"api","duration":3722622,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"0a37a6e4-72f0-4a72-8fb8-2b8b5fb08529","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1999566,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"db3bb745-2525-4c9b-b2a0-030e14e3e978","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3084437,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"452a13e0-d91c-4554-8649-f26e8b229807","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1861663,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"3d78ff98-8556-4342-8ec8-1d9e19ef22b7","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1957493,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"35cb5e7a-dcd7-4dcb-8983-d49135389277","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2286905,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"e501ca87-5430-4573-a3cf-86645f965773","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1497928,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"0f8f295b-ebb8-41db-ae51-dd365369ec3a","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1687046,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"fd9a0035-4256-49ce-a23c-5af865ac80ef","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2431947,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"875c30f5-9888-4471-8fc1-f176717322fa","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1945811,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d4bad13b-9439-401a-a461-557f7fca1ce3","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1752555,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"4f5ad94a-5abd-40b6-a9f7-941139a2dfb9","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2511720,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"65b4333b-a515-476c-83f7-d932397e6edc","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1731661,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"e259eaee-ddb0-47a1-8327-fdb57cf48454","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1660586,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"6a4e6d49-4341-4e0c-b1d1-ee76bc63b271","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1580414,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"b26f3c4c-7996-49a7-9399-3f3fbb51cff6","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1697136,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"c4a63e2b-fd4e-4122-a609-5918795868c6","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1549752,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"eecdf882-0d4e-458f-9c7a-a7e910478b34","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:28Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":976430,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"9b0f91e0-7778-48ce-ba35-d22d06ac55f6","status":200,"time":"2026-11-26T00:09:28Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:30Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1833479,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"39f83465-307e-4ffd-a563-f1273a2dc471","status":200,"time":"2026-11-26T00:09:30Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4833763,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"085c365a-5ca1-4048-96ac-0c1e9f5205da","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1769511,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d255597d-fe60-4bf5-bcf2-ce8058af6af5","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2493536,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"4f016c53-0a44-4df6-8acc-4a4d01394add","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2457093,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"b2f95942-c36a-42a7-8819-22e10d2861a9","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2446934,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"36e75a88-40bd-490d-b7f8-e5a6ebdb251f","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1676776,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"49fa182d-a7c8-4139-a903-315375027375","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":5771982,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"fa87468d-000b-4ae8-8138-4d524ba7d2f4","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1320955,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"937abf48-7de5-4a2c-a94d-e6122222a7a9","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1200927,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d0433b02-bcf8-4ae0-adc7-a4ff6ab5ce64","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1019456,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d45450f1-65e7-4a7c-9a98-d4b9b0d116ed","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1942282,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"34845be8-962f-4858-933d-d792fa7280e1","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2937869,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"6bb0adb1-d1ef-4a79-8ffa-95582a992a50","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2567974,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"a1e08a94-8a8e-48ca-9df0-0c7e58369568","status":200,"time":"2026-11-26T00:09:31Z"}
+{"component":"api","duration":2985385,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"c5ce5d74-0dc5-4576-849e-42fdfc0d6f3e","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1200022,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"9faa90e5-16d4-450d-b52b-868422b4650a","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1846868,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"1f2d7c40-7c8a-4090-991c-8997351d46a5","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1187744,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"ca0414a7-31b8-4c07-886b-26c38dab1748","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1458493,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"57415fab-5c0c-45aa-b607-41ed820ab86b","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1161984,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"39db4bab-8cf3-43c9-ab83-d61d5d7a2ef5","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2545062,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"b93f79a6-90be-478e-84a7-ff5c92735aaf","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1644077,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"0d93ec93-214d-4ae9-8060-18be81d9092a","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3542691,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d8eb973e-6c07-4f8c-b54c-7d6c225b0822","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2604607,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"136ee36a-7fd5-4333-9f7c-7f69a90f80e8","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1933627,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"31339d7d-c8b1-4db2-85eb-dcac4bb5096f","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1791365,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"09785ade-1082-44ec-830e-c05ed91020c6","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2741077,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"7e8df434-b180-4b3b-a80e-ce32df8e3a1b","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2034467,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"b08db87e-9c09-4665-b2ad-357faaa9abce","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1585788,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"5bcf0862-ba5d-4dc0-a87d-d6bb42009c0d","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1800182,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"c1d9a6b8-4780-49b2-9ae8-be9f8e2d72b6","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1366595,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"e9a82e7f-3cc6-47cf-890a-b45509464fd3","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2044830,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"5f3b8d7c-920e-4bfa-ae2a-fa43d7b13049","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1850135,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"08aa6aa9-c637-4ec4-b93b-a5088a456084","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1714556,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"7abbd8eb-0bf9-411c-95af-7de9f07e6415","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4746055,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"90a76b3a-c83b-4b22-8c35-1235bfbb66ea","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1207531,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"2415a6da-b2f7-453a-9d09-58d36a289ecd","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:31Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1404792,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"495e6003-ccaa-4707-86d0-29b0faf20db4","status":200,"time":"2026-11-26T00:09:31Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1691226,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"a1b1d80c-f430-42a8-bbea-8fa038c02eb2","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2204878,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"f1ed8095-57f1-4e98-bca2-8fd8340bc452","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1786279,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"949d34c5-10bd-46ed-9d6e-3d55c07636f8","status":200,"time":"2026-11-26T00:09:34Z"}
+{"component":"api","duration":3152993,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"7520330a-8493-4256-87d1-0200c858bf9e","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":4229994,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"9ee4605b-3a12-48c4-9bc9-fe3b76fc6827","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1235123,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"9c2a931b-d1e1-47c8-b4c6-646b71e11ec2","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3531105,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"d4b7a43f-3161-47ec-93a5-50569d9ae45e","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2313778,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"b158c127-01cc-41ec-9fdb-139bc2e91813","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2344963,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"c9aeb446-acd3-4fd0-af1a-6c7d70d626a1","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1614969,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"4c86a6e8-1522-4eab-b339-6e7cc5e22a63","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:34Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1263124,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"7c6a0edb-1610-48e5-9e45-1acf360cb9a9","status":200,"time":"2026-11-26T00:09:34Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1630762,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"91dfabce-57fd-413a-b25b-c8c24f77c5f9","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1981295,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"2a6fb35f-923b-4d7e-8c48-549d53121ac8","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":3129605,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"b1a88891-a87d-42af-a3e1-6cfb4b97ca14","status":200,"time":"2026-11-26T00:09:37Z"}
+{"component":"api","duration":4301676,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"1ecfc4c8-7400-40c3-b484-9fac5f40138e","status":200,"time":"2026-11-26T00:09:37Z"}
+{"component":"api","duration":3088713,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"5915049a-9412-4c72-aaff-bffc791d5842","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1712113,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"93512fe9-8b67-4491-97c3-825530cb6752","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1450768,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"318b5b04-2e8d-4e01-aa99-5807fe8780b3","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1653808,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"47b8cdee-2f58-49cf-ad28-4222908a0cca","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":2124749,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"00ba3fe4-3ed0-4dfb-afe7-21a5dbd64c41","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1696722,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"1289de39-5c3b-4cae-8588-da94fdbaa4cc","status":200,"time":"2026-11-26T00:09:37Z"}
+{"level":"info","msg":"Request received external host in X-Forwarded-Host or Host headers, but the values have not been added to GOTRUE_MAILER_EXTERNAL_HOSTS and will not be used. To suppress this message add the host, or sanitize the headers before the request reaches Auth.","time":"2026-11-26T00:09:37Z","x_forwarded_host":"127.0.0.1","x_forwarded_proto":"http"}
+{"component":"api","duration":1143295,"level":"info","method":"GET","msg":"request completed","path":"/user","referer":"http://127.0.0.1:3000","remote_addr":"172.18.0.1","request_id":"f165a5cd-0654-47ba-ac07-c7ea224a846e","status":200,"time":"2026-11-26T00:09:37Z"}
+===== supabase_realtime_event-village (filtré) =====
+----- supabase_realtime_event-village (autres lignes filtrées) -----
+2026-11-25T23:49:05.951676583Z 23:49:05.942 [warning] Failed to load OTP-trusted CAs: :error::function_clause, falling back to hardcoded authorities
+2026-11-25T23:49:06.634665153Z 23:49:06.634 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:49:06.638367603Z 23:49:06.634 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:49:07.064219769Z 23:49:07.062 [warning] Zero region nodes for us-east-1 using :nonode@nohost
+2026-11-25T23:49:07.069317845Z 23:49:07.068 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:49:07.133685612Z 23:49:07.130 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:49:08.717298506Z =WARNING REPORT==== 25-Nov-2026::23:49:08.716656 ===
+2026-11-25T23:49:08.717328586Z Failed to load OTP-trusted CAs: error:function_clause, falling back to hardcoded authorities
+2026-11-25T23:49:08.819550912Z 23:49:08.818 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:49:08.839739256Z 23:49:08.839 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:49:46.207220136Z 23:49:46.205 [error] :gen_statem #PID<0.3613.0> terminating
+2026-11-25T23:49:46.207233852Z ** (Postgrex.Error) FATAL 57P01 (admin_shutdown) terminating connection due to unexpected postmaster exit
+2026-11-25T23:49:46.207245313Z 23:49:46.206 [error] GenServer #PID<0.3609.0> terminating
+2026-11-25T23:49:46.207254326Z ** (stop) %Postgrex.Error{message: nil, postgres: %{code: :admin_shutdown, line: "235", message: "terminating connection due to unexpected postmaster exit", file: "be-secure.c", unknown: "FATAL", severity: "FATAL", pg_code: "57P01", routine: "secure_read"}, connection_id: 284, query: nil}
+2026-11-25T23:49:46.207256725Z Last message: {:EXIT, #PID<0.3608.0>, %Postgrex.Error{message: nil, postgres: %{code: :admin_shutdown, line: "235", message: "terminating connection due to unexpected postmaster exit", file: "be-secure.c", unknown: "FATAL", severity: "FATAL", pg_code: "57P01", routine: "secure_read"}, connection_id: 284, query: nil}}
+2026-11-25T23:49:46.209201620Z 23:49:46.208 [error] #PID<0.4031.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.210205659Z 23:49:46.208 [error] GenServer #PID<0.4028.0> terminating
+2026-11-25T23:49:46.210216556Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.210218441Z Last message: {:EXIT, #PID<0.4027.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.211844677Z 23:49:46.210 [error] #PID<0.4036.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.211858171Z 23:49:46.211 [error] GenServer #PID<0.4033.0> terminating
+2026-11-25T23:49:46.211860479Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.211862017Z Last message: {:EXIT, #PID<0.4032.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.213063303Z 23:49:46.211 [error] #PID<0.4041.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.213074214Z 23:49:46.212 [error] GenServer #PID<0.4038.0> terminating
+2026-11-25T23:49:46.213075723Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.213076913Z Last message: {:EXIT, #PID<0.4037.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.215935925Z 23:49:46.214 [error] #PID<0.4047.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.215948157Z 23:49:46.215 [error] GenServer #PID<0.4044.0> terminating
+2026-11-25T23:49:46.215950130Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.215958763Z Last message: {:EXIT, #PID<0.4043.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.217014272Z 23:49:46.216 [error] #PID<0.4052.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.217342556Z 23:49:46.216 [error] GenServer #PID<0.4049.0> terminating
+2026-11-25T23:49:46.217354988Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.217357100Z Last message: {:EXIT, #PID<0.4048.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.217961947Z 23:49:46.217 [error] #PID<0.4057.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.218290033Z 23:49:46.217 [error] GenServer #PID<0.4054.0> terminating
+2026-11-25T23:49:46.218300835Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.218302703Z Last message: {:EXIT, #PID<0.4053.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.221444163Z 23:49:46.218 [error] #PID<0.4062.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.221571762Z 23:49:46.219 [error] GenServer #PID<0.4059.0> terminating
+2026-11-25T23:49:46.221578098Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.221580172Z Last message: {:EXIT, #PID<0.4058.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.221582065Z 23:49:46.220 [error] #PID<0.4068.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.221593722Z 23:49:46.221 [error] GenServer #PID<0.4065.0> terminating
+2026-11-25T23:49:46.221595258Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.221596948Z Last message: {:EXIT, #PID<0.4064.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.223879132Z 23:49:46.223 [error] #PID<0.4073.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.225036999Z 23:49:46.224 [error] #PID<0.4078.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.225351072Z 23:49:46.224 [error] GenServer #PID<0.4075.0> terminating
+2026-11-25T23:49:46.225361867Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.225363897Z Last message: {:EXIT, #PID<0.4074.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.225987600Z 23:49:46.225 [error] GenServer #PID<0.4070.0> terminating
+2026-11-25T23:49:46.225996298Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.225998347Z Last message: {:EXIT, #PID<0.4069.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.227197677Z 23:49:46.226 [error] #PID<0.4083.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.227210151Z 23:49:46.226 [error] GenServer #PID<0.4080.0> terminating
+2026-11-25T23:49:46.227212164Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.227213846Z Last message: {:EXIT, #PID<0.4079.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.229604529Z 23:49:46.229 [error] #PID<0.4089.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.230248564Z 23:49:46.229 [error] GenServer #PID<0.4086.0> terminating
+2026-11-25T23:49:46.230260682Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.230262655Z Last message: {:EXIT, #PID<0.4085.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.232297737Z 23:49:46.231 [error] #PID<0.4094.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.232539144Z 23:49:46.231 [error] GenServer #PID<0.4091.0> terminating
+2026-11-25T23:49:46.232545829Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.232548031Z Last message: {:EXIT, #PID<0.4090.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.233602244Z 23:49:46.232 [error] #PID<0.4099.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.234022531Z 23:49:46.233 [error] GenServer #PID<0.4096.0> terminating
+2026-11-25T23:49:46.234030626Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.234032744Z Last message: {:EXIT, #PID<0.4095.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:46.236006092Z 23:49:46.234 [error] #PID<0.4104.0> (Postgrex.Notifications) failed to connect to Postgres: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:46.237211202Z 23:49:46.234 [error] GenServer #PID<0.4101.0> terminating
+2026-11-25T23:49:46.237224164Z ** (stop) %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}
+2026-11-25T23:49:46.237226438Z Last message: {:EXIT, #PID<0.4100.0>, %DBConnection.ConnectionError{message: "tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused", severity: :error, reason: :error}}
+2026-11-25T23:49:49.832356106Z 23:49:49.827 [error] Postgrex.Protocol (#PID<0.154.0> ("db_conn_2")) failed to connect: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:49.832478583Z 23:49:49.827 [error] Postgrex.Protocol (#PID<0.153.0> ("db_conn_1")) failed to connect: ** (DBConnection.ConnectionError) tcp connect (supabase_db_event-village:5432): connection refused - :econnrefused
+2026-11-25T23:49:53.292482986Z 23:49:53.285 [warning] Failed to load OTP-trusted CAs: :error::function_clause, falling back to hardcoded authorities
+2026-11-25T23:49:53.900317887Z 23:49:53.899 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:49:53.900714995Z 23:49:53.899 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:49:54.192413558Z 23:49:54.192 [warning] Zero region nodes for us-east-1 using :nonode@nohost
+2026-11-25T23:49:54.198232660Z 23:49:54.197 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:49:54.267935545Z 23:49:54.265 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:49:55.866783946Z =WARNING REPORT==== 25-Nov-2026::23:49:55.866256 ===
+2026-11-25T23:49:55.866810176Z Failed to load OTP-trusted CAs: error:function_clause, falling back to hardcoded authorities
+2026-11-25T23:49:55.966287073Z 23:49:55.965 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:49:55.982452031Z 23:49:55.981 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:50:07.188832341Z 23:50:07.184 [error] Elixir.Realtime.SignalHandler: :sigterm received
+2026-11-25T23:50:09.545709913Z 23:50:09.538 [warning] Failed to load OTP-trusted CAs: :error::function_clause, falling back to hardcoded authorities
+2026-11-25T23:50:10.136506202Z 23:50:10.135 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:50:10.136566626Z 23:50:10.135 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:50:10.414191865Z 23:50:10.413 [warning] Zero region nodes for us-east-1 using :nonode@nohost
+2026-11-25T23:50:10.417396954Z 23:50:10.417 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:50:10.444278937Z 23:50:10.444 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:50:12.819071328Z =WARNING REPORT==== 25-Nov-2026::23:50:12.818852 ===
+2026-11-25T23:50:12.819099696Z Failed to load OTP-trusted CAs: error:function_clause, falling back to hardcoded authorities
+2026-11-25T23:50:12.917986341Z 23:50:12.917 [warning] MFA {Realtime.PromEx.Plugins.TenantGlobal, :execute_global_connection_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:50:12.932135703Z 23:50:12.931 [warning] MFA {Realtime.PromEx.Plugins.Tenant, :execute_tenant_metrics, []} encountered an error but has not been detached: %ArgumentError{message: "errors were found at the given arguments:\n\n  * 1st argument: the table identifier does not refer to an existing ETS table\n"}
+2026-11-25T23:51:31.898081232Z 23:51:31.897 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:51:31.910250434Z 23:51:31.908 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:51:31.911849254Z 23:51:31.911 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:51:31.911900135Z 23:51:31.911 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:51:31.920232213Z 23:51:31.914 project=realtime-dev external_id=realtime-dev error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:51:31.920856355Z 23:51:31.920 error_code=DatabaseIpVersionIsIpv4 [warning] DatabaseIpVersionIsIpv4: Tenant database host supabase_db_event-village resolved to an IPv4 address
+2026-11-25T23:51:31.920947042Z   replication_slot_name: "supabase_realtime_messages_replication_slot_",
+2026-11-25T23:51:31.928681295Z 23:51:31.928 project=realtime-dev external_id=realtime-dev [info] Checking if replication slot supabase_realtime_messages_replication_slot_ exists
+2026-11-25T23:51:31.933991856Z 23:51:31.933 project=realtime-dev external_id=realtime-dev [info] Create replication slot supabase_realtime_messages_replication_slot_ using plugin pgoutput
+2026-11-25T23:51:31.939582591Z 23:51:31.938 project=realtime-dev external_id=realtime-dev [info] #PID<0.4076.0> Starting stream replication for slot supabase_realtime_messages_replication_slot_ using publication supabase_realtime_messages_publication and protocol version 2
+2026-11-25T23:51:32.018054456Z 23:51:32.017 [info] Starting Elixir.Realtime.RateCounter for: {:channel, :subscription_errors, "realtime-dev"}
+2026-11-25T23:56:33.473243610Z 23:56:33.470 [info] Starting Elixir.Realtime.RateCounter for: {:channel, :subscription_errors, "realtime-dev"}
+2026-11-26T00:01:34.676045022Z 00:01:34.675 [info] Starting Elixir.Realtime.RateCounter for: {:channel, :subscription_errors, "realtime-dev"}
+2026-11-26T00:06:37.148332222Z 00:06:37.147 [info] Starting Elixir.Realtime.RateCounter for: {:channel, :subscription_errors, "realtime-dev"}
+===== supabase_db_event-village (lecteur Realtime, filtré) =====
+2026-11-25T23:51:31.936271595Z 172.18.0.2 2026-11-25 23:51:31.936 UTC [437] supabase_admin@postgres LOG:  logical decoding found consistent point at 0/4183300
+2026-11-25T23:51:31.936281884Z 172.18.0.2 2026-11-25 23:51:31.936 UTC [437] supabase_admin@postgres DETAIL:  There are no running transactions.
+2026-11-25T23:51:31.936283473Z 172.18.0.2 2026-11-25 23:51:31.936 UTC [437] supabase_admin@postgres STATEMENT:  select
+2026-11-25T23:51:31.936284684Z 	        case when not exists (
+--
+2026-11-25T23:51:31.938101880Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres LOG:  logical decoding found consistent point at 0/4183338
+2026-11-25T23:51:31.938117924Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres DETAIL:  There are no running transactions.
+2026-11-25T23:51:31.938120199Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres STATEMENT:  CREATE_REPLICATION_SLOT supabase_realtime_messages_replication_slot_ TEMPORARY LOGICAL pgoutput NOEXPORT_SNAPSHOT
+2026-11-25T23:51:31.939489422Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres LOG:  starting logical decoding for slot "supabase_realtime_messages_replication_slot_"
+2026-11-25T23:51:31.939504048Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres DETAIL:  Streaming transactions committing after 0/4183370, reading WAL from 0/4183338.
+2026-11-25T23:51:31.939506597Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres STATEMENT:  START_REPLICATION SLOT supabase_realtime_messages_replication_slot_ LOGICAL 0/0 (proto_version '2', publication_names 'supabase_realtime_messages_publication', binary 'true')
+2026-11-25T23:51:31.939508751Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres LOG:  logical decoding found consistent point at 0/4183338
+2026-11-25T23:51:31.939517268Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres DETAIL:  There are no running transactions.
+2026-11-25T23:51:31.939519080Z 172.18.0.2 2026-11-25 23:51:31.938 UTC [443] supabase_admin@postgres STATEMENT:  START_REPLICATION SLOT supabase_realtime_messages_replication_slot_ LOGICAL 0/0 (proto_version '2', publication_names 'supabase_realtime_messages_publication', binary 'true')
+2026-11-25T23:54:51.022036778Z  2026-11-25 23:54:51.021 UTC [203] LOG:  checkpoint starting: time
+2026-11-25T23:57:21.076753701Z  2026-11-25 23:57:21.075 UTC [203] LOG:  checkpoint complete: wrote 3843 buffers (23.5%); 0 WAL file(s) added, 0 removed, 3 recycled; write=150.040 s, sync=0.009 s, total=150.054 s; sync files=1232, longest=0.003 s, average=0.001 s; distance=41186 kB, estimate=41186 kB; lsn=0/43F3618, redo lsn=0/4321B38
+2026-11-25T23:59:51.168517954Z  2026-11-25 23:59:51.168 UTC [203] LOG:  checkpoint starting: time
