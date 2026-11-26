@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import dynamic from 'next/dynamic';
 import { Minus, Plus, Scan } from 'lucide-react';
 import { IconButton } from '@/components/ui/IconButton';
+import { cn } from '@/components/ui/cn';
 import { formatFcfa } from '@/lib/format';
 import type { FloorPlanTable, FloorPlanZone } from '@/components/tables/plan/FloorPlan';
 import { loadFloorPlan } from '@/components/tables/plan/load';
@@ -50,7 +51,11 @@ export interface PlanViewProps {
     fill?: boolean;
 }
 
-interface Hover { id: string; left: number; top: number }
+interface Hover { id: string; left: number; top: number; below: boolean }
+
+/** Carte de survol : 16rem au plus, environ 5 rem de haut ; elle reste dans le cadre du plan (jamais sur le texte voisin). */
+const HOVER_HALF_W = 128;
+const HOVER_H = 88;
 
 export function PlanView({ tables, zones, types, selectedId, onSelect, justTaken, fill = false }: PlanViewProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -150,7 +155,11 @@ export function PlanView({ tables, zones, types, selectedId, onSelect, justTaken
         if (!el || !frame) { setHover(null); return; }
         const r = el.getBoundingClientRect();
         const f = frame.getBoundingClientRect();
-        setHover({ id: el.dataset.tableId ?? '', left: r.left - f.left + r.width / 2, top: r.top - f.top });
+        const half = Math.min(HOVER_HALF_W, f.width / 2);
+        const left = Math.min(Math.max(r.left - f.left + r.width / 2, half), f.width - half);
+        // Pas la place au-dessus de la table (première rangée) : la carte passe dessous
+        const below = r.top - f.top < HOVER_H + 8;
+        setHover({ id: el.dataset.tableId ?? '', left, top: below ? r.bottom - f.top + 8 : r.top - f.top - 8, below });
     };
 
     const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -184,6 +193,7 @@ export function PlanView({ tables, zones, types, selectedId, onSelect, justTaken
                     onKeyDown={onKey}
                     onPointerOver={(e) => { if (e.pointerType === 'mouse') showHover(e.target); }}
                     onPointerLeave={() => setHover(null)}
+                    onPointerDown={() => setHover(null)}
                     onFocus={(e) => showHover(e.target)}
                     onBlur={() => setHover(null)}
                     onScroll={() => setHover(null)}
@@ -204,8 +214,8 @@ export function PlanView({ tables, zones, types, selectedId, onSelect, justTaken
                 {hovered && hoveredType && (
                     <div
                         aria-hidden="true"
-                        className="pointer-events-none absolute z-30 w-max max-w-[16rem] -translate-x-1/2 -translate-y-full rounded-xl border border-border bg-popover px-3 py-2 text-sm text-foreground shadow-popover"
-                        style={{ left: hover!.left, top: hover!.top - 8 }}
+                        className={cn('pointer-events-none absolute z-30 w-max max-w-[16rem] -translate-x-1/2 rounded-xl border border-border bg-popover px-3 py-2 text-sm text-foreground shadow-popover', !hover!.below && '-translate-y-full')}
+                        style={{ left: hover!.left, top: hover!.top }}
                     >
                         <p className="font-semibold text-foreground-strong">Table {hovered.number} · {hoveredType.name}</p>
                         <p className="tabular-nums">{hoveredType.seats} places · {perPersonText(formatFcfa(hoveredType.pricePerPerson), hoveredType.pricePerPersonExact)}</p>
