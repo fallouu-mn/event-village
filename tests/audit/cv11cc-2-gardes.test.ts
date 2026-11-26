@@ -370,7 +370,12 @@ describe('G9. Refus lu par l’écran = code de l’écriture', () => {
         const sp = await newPartner('cv11cc-g9-fiche');
         const spEv = await newTablesEvent(sp, 'g9-fiche', { capacity: 80 });
         await service.from('partners').update({ status: 'SUSPENDU' }).eq('id', sp.partnerId);
-        await compare('fiche suspendue', sp, spEv.eventId);
+        try {
+            await compare('fiche suspendue', sp, spEv.eventId);
+        } finally {
+            const { error: back } = await service.from('partners').update({ status: 'VALIDE' }).eq('id', sp.partnerId);
+            assert.equal(back, null, back?.message);
+        }
 
         const staff = await newAdmin('cv11cc-g9', ['events.read', 'events.write']);
         await stepUpTestSession(staff.accessToken);
