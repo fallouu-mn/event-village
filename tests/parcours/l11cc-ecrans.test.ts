@@ -8,9 +8,10 @@
  *     événement : 404 ; sans session : 401 ; administration avec events.read : 200 (lecture, historique) ; sans : 403.
  *     GET /api/admin/events/[id]/tables : administration events.read seulement.
  *  B. Le refus d'écriture lu par l'écran (edit_refusal) est celui que rend l'écriture : en attente de validation, service
- *     fermé, événement suspendu.
- *  C. GET /api/events/[id]/tables/door : contrôleur affecté 200 (titulaire et invité en prénom et initiale) ; contrôleur
- *     d'un autre événement, autre organisatrice, cliente : 403.
+ *     fermé, événement suspendu (contre-vérification T4 : code ET texte, l11cc-cv-correctifs pour tous les états).
+ *  C. GET /api/events/[id]/tables/door : propriétaire 200 (titulaire et invité en prénom et initiale) ; contrôleur
+ *     affecté, contrôle pas encore ouvert (début dans 10 jours) : 409 CONTROL_CLOSED, aucune donnée (contre-vérification
+ *     T1 ; dans la plage : l11cc-cv-correctifs) ; contrôleur d'un autre événement, autre organisatrice, cliente : 403.
  *  D. GET …/tables/price : règle de la base (arrondi, exact) ; bornes ; une cliente : 403.
  *  E. POST …/tables/copy : copie des types, numéros et positions entre deux événements de la MÊME organisatrice ; refusée
  *     (404, rien écrit) avec l'événement d'une autre ; 409 sur un événement qui a déjà des tables.
@@ -201,14 +202,16 @@ describe('A. Lecture des tables pour les écrans', () => {
 });
 
 describe('B. Le refus lu par l’écran est celui de l’écriture', () => {
-    test('en attente de validation : WITHDRAW_TO_EDIT, « Retirez l’événement de la validation pour modifier ses tables. » ; l’ajout d’un type rend le même code', async () => {
+    test('en attente de validation : WITHDRAW_TO_EDIT, texte de l’écriture ; l’ajout d’un type rend le même code et le même texte', async () => {
         const pending = await newTablesEvent(owner, 'ecrans-attente', { capacity: 60, status: 'EN_ATTENTE' });
         const r = await report(owner, pending.eventId);
         assert.equal(r.status, 200, show(r));
-        assert.deepEqual(r.body.edit_refusal, { code: 'WITHDRAW_TO_EDIT', message: 'Retirez l’événement de la validation pour modifier ses tables.' });
+        // Contre-vérification 11c-c (T4) : le texte de l'écran est celui de l'écriture (avant : texte propre à l'écran)
+        assert.deepEqual(r.body.edit_refusal, { code: 'WITHDRAW_TO_EDIT', message: "L'événement est en cours de validation : retirez-le de la validation pour modifier sa billetterie." });
         const write = await createTableType(owner, pending.eventId, vipType(), 1);
         assert.notEqual(write.status, 201, show(write));
         assert.equal(write.body.code, 'WITHDRAW_TO_EDIT');
+        assert.equal(write.body.error, (r.body.edit_refusal as Row).message);
     });
 
     test('service fermé : SERVICE_UNAVAILABLE à la lecture comme à l’enregistrement des tables', async () => {
@@ -235,8 +238,13 @@ describe('B. Le refus lu par l’écran est celui de l’écriture', () => {
 });
 
 describe('C. Liste de la porte', () => {
-    test('contrôleur affecté : 200, « Awa D. » et son invitée « Mariama S. », 0/6 entrés ; autres comptes : 403', async () => {
-        const r = await doorList(controller, ev.eventId);
+    test('propriétaire : 200, « Awa D. » et son invitée « Mariama S. », 0/6 entrés ; contrôleur affecté hors de la plage : 409 sans donnée ; autres comptes : 403', async () => {
+        // Contre-vérification 11c-c (T1) : l'événement commence dans 10 jours, le contrôle n'est pas ouvert
+        const closed = await doorList(controller, ev.eventId);
+        assert.deepEqual([closed.status, closed.body.code], [409, 'CONTROL_CLOSED'], show(closed));
+        assert.match(String(closed.body.error), /^Le contrôle ouvre le /);
+        assert.equal('items' in closed.body, false, 'contrôle fermé : aucune donnée');
+        const r = await doorList(owner, ev.eventId);
         assert.equal(r.status, 200, show(r));
         const item = rows(r.body.items).find((x) => Number(x.table_number) === ev.tables[0].number);
         assert.ok(item, `table vendue dans la liste : ${show(r)}`);
