@@ -194,7 +194,7 @@ export function PlanView({ tables, zones, types, selectedId, onSelect, justTaken
                     onPointerOver={(e) => { if (e.pointerType === 'mouse') showHover(e.target); }}
                     onPointerLeave={() => setHover(null)}
                     onPointerDown={() => setHover(null)}
-                    onFocus={(e) => showHover(e.target)}
+                    onFocus={(e) => { if (e.target instanceof Element && e.target.matches(':focus-visible')) showHover(e.target); }}
                     onBlur={() => setHover(null)}
                     onScroll={() => setHover(null)}
                     className={fill ? 'h-full overflow-auto overscroll-contain rounded-2xl [touch-action:pan-x_pan-y]' : 'max-h-[70vh] overflow-auto overscroll-contain rounded-2xl [touch-action:pan-x_pan-y]'}
