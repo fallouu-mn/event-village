@@ -301,8 +301,12 @@ for (const theme of THEMES) {
                 }) });
             });
             await cpage.goto('/controller/scanner', { waitUntil: 'load' });
-            await expect(cpage.getByRole('heading', { name: /^commencer le contr[ôo]le$/i })).toBeVisible({ timeout: 30_000 });
-            await cpage.getByRole('button', { name: /^commencer le contr[ôo]le$/i }).click();
+            // Premier passage : écran de départ ; ensuite, le scanner retrouve le contrôle en cours (« Reprendre le contrôle »)
+            const start = cpage.getByRole('button', { name: /^commencer le contr[ôo]le$/i });
+            const resume = cpage.getByRole('button', { name: 'Reprendre le contrôle' });
+            await expect(start.or(resume)).toBeVisible({ timeout: 30_000 });
+            if (await resume.isVisible()) await resume.click();
+            else await start.click();
             await cpage.waitForFunction(() => Array.from(document.querySelectorAll('video')).some((v) => v.readyState >= 2), null, { timeout: 30_000 });
             await expect(cpage.getByRole('link', { name: 'Liste des tables' })).toHaveAttribute('href', `/controller/porte/${data.eventId}`);
             await cpage.evaluate((p) => {
