@@ -3,6 +3,7 @@ import { eventEndAt } from '@/lib/events/event-end';
 import { eventStartAt } from '@/lib/events/live-status';
 import { posterColorOrFallback } from '@/lib/events/poster-color';
 import { foldText } from '@/lib/text/fold';
+import { partnerPublicName } from '@/lib/partner/public-name';
 
 /**
  * Lot 9 (9.1, contrat 5.2) — sélection et format de carte du catalogue public, extraits de GET /api/events pour que
@@ -37,7 +38,7 @@ export const CATALOG_SELECT = `
     status,
     created_at,
     partner_id,
-    partners(company_name, commercial_name),
+    partners(commercial_name),
     ticket_categories(price, is_active, sale_online, sale_counter, total_quantity, sold_quantity, held_quantity, sale_start, sale_end)
 `;
 
@@ -56,7 +57,7 @@ export interface CatalogRow {
     /** Design 1d : couleur de l'affiche (migration 20261127000001), NULL sans calcul. */
     poster_color?: string | null;
     status: string;
-    partners: { company_name: string | null; commercial_name: string | null } | null;
+    partners: { commercial_name: string | null } | null;
     ticket_categories: CatalogCategoryRow[] | null;
 }
 
@@ -249,7 +250,7 @@ export function formatCatalogEvent(evt: CatalogRow, _ancienSeuil?: number): Cata
         id: evt.id,
         slug: evt.slug || evt.id,
         title: evt.title,
-        subtitle: evt.partners?.commercial_name || evt.partners?.company_name || 'Event Village',
+        subtitle: partnerPublicName(evt.partners),
         imageUrl: evt.image_url || null,
         posterColor: posterColorOrFallback(evt.poster_color),
         dateFormatted,

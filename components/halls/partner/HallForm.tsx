@@ -42,7 +42,7 @@ import { formatDateTime } from '@/lib/format';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { AMENITY_SUGGESTIONS, POLICY_LABELS } from '@/lib/halls/views';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, canonicalCity, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
-import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
+import { PLACE_PUBLIC_NOTICE, PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
 // Types seulement : la carte reste chargée à la demande
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { POLICY_KEYS, daysText, minutesText, percentText, putJson, type HallDefaults, type OwnHall, type PolicyKey } from './hall-api';
@@ -802,6 +802,7 @@ export function HallForm({ mode, hall, policyTexts, defaults }: HallFormProps) {
                             value={values.address}
                             onChange={(e) => set('address', e.target.value)}
                             placeholder="Rue, quartier, point de repère"
+                            hint={PLACE_PUBLIC_NOTICE}
                             error={errors.address}
                             autoComplete="street-address"
                             fieldClassName="sm:col-span-2"

@@ -40,6 +40,8 @@ export async function tableReservationFixture(opts: {
     const { data: venue, error: venueErr } = await db.from('venues').insert({
         partner_id: opts.partnerId, name: `TEST Restaurant ${randomUUID().slice(0, 8)}`, city: 'Dakar',
         deposit_per_person: opts.depositPerPerson ?? null,
+        // Lot Carte B3 (décision du client du 25/11) : position obligatoire pour la validation qui suit
+        latitude: 14.6937, longitude: -17.4720,
     }).select('id').single();
     assert.equal(venueErr, null, `établissement : ${venueErr?.message}`);
     // Établissement ouvert 24 h sur 24 et validé : un paiement repasse tous les contrôles (table_hold_refusal)

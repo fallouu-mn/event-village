@@ -25,7 +25,10 @@ whitelist(name) AS (
            ('controller_assignment_active'),
     -- Contre-vérification du lot 10b (T4) : 9e aide RLS, partner_listed (partenaire VALIDE, un booléen ; lecture publique
     -- des salles, établissements, zones et tables)
-           ('partner_listed')
+           ('partner_listed'),
+    -- Contre-vérification de la carte B3 (T1) : 10e aide RLS, listed_venue (établissement public, un booléen ; règles des
+    -- zones, tables, horaires et zones de livraison depuis la fermeture de la REST de venues)
+           ('listed_venue')
 ),
 checks(point, ok, detail) AS (
     -- 1A.1
@@ -72,8 +75,8 @@ checks(point, ok, detail) AS (
     SELECT '1A.3 aides RLS exécutables par anon et authenticated, STABLE, search_path fixé',
            (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist) AND anon_exec AND auth_exec AND provolatile IN ('s', 'i') AND config LIKE '%search_path=%')
              = (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist))
-           -- Contre-vérification du lot 10b (T4) : 9 aides (partner_listed)
-           AND (SELECT COUNT(DISTINCT proname) FROM fns WHERE proname IN (SELECT name FROM whitelist)) = 9,
+           -- Contre-vérification du lot 10b (T4) : 9 aides (partner_listed) ; de la carte B3 (T1) : 10 aides (listed_venue)
+           AND (SELECT COUNT(DISTINCT proname) FROM fns WHERE proname IN (SELECT name FROM whitelist)) = 10,
            (SELECT string_agg(proname || ':' || CASE WHEN anon_exec AND auth_exec THEN 'exec' ELSE 'NON-exec' END || ':' || provolatile::text, ', ') FROM fns WHERE proname IN (SELECT name FROM whitelist))
     UNION ALL
     SELECT '1A.3 RPC métier exécutables par service_role',

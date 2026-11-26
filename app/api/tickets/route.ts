@@ -5,6 +5,7 @@ import { eventStartAt } from '@/lib/events/live-status';
 import { isScanCategoryColor } from '@/lib/scan/scan-result';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { requireActiveSession } from '@/lib/auth/session';
+import { partnerPublicName } from '@/lib/partner/public-name';
 import { upcomingOnly } from '@/lib/tickets/periode';
 
 export const dynamic = 'force-dynamic';
@@ -79,7 +80,7 @@ export async function GET(req: NextRequest) {
                 created_at,
                 payment_id,
                 event_id,
-                events(id, title, location, city, start_date, start_time, end_date, end_time, image_url, partners(company_name, commercial_name)),
+                events(id, title, location, city, start_date, start_time, end_date, end_time, image_url, partners(commercial_name)),
                 category_id,
                 ticket_categories(id, name, price, scan_color)
             `)
@@ -220,7 +221,7 @@ export async function GET(req: NextRequest) {
                 eventId: t.event_id,
                 ticketNumber: t.ticket_number,
                 eventTitle: t.events?.title || 'Événement',
-                eventSubtitle: t.events?.partners?.commercial_name || t.events?.partners?.company_name || 'Organisateur',
+                eventSubtitle: partnerPublicName(t.events?.partners),
                 // Design 1b (point 8) : plus de photo de démonstration distante en repli (poids du premier affichage) : sans
                 // affiche, la carte montre un pictogramme.
                 eventImageUrl: t.events?.image_url || null,

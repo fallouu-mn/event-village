@@ -26,6 +26,8 @@ export interface PilotageOverview {
     can_edit: boolean;
     can_cancel: boolean;
     last_reason: LastReason | null;
+    /** Lot Carte B3 : position de l'événement présente (ajoutée par la route, hors de la RPC). */
+    has_position?: boolean;
     tickets: {
         sold: number;
         invitations: number;

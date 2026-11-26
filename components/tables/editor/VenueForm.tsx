@@ -29,7 +29,7 @@ import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { useHallDraft } from '@/components/halls/partner/useHallDraft';
 import { formatDateTime } from '@/lib/format';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, canonicalCity, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
-import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
+import { PLACE_PUBLIC_NOTICE, PLACE_POSITION_REQUIRED, PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { HoursEditor, defaultWeek, parseWeek, rowsFromWeek, validateWeek, weekFromRows, type WeekHours } from './HoursEditor';
 import { MAX_PHOTOS, PhotosEditor } from './PhotosEditor';
@@ -117,6 +117,8 @@ function validate(v: VenueValues, cityOther: boolean, isCreate: boolean): { erro
     const city = v.city.trim();
     if (!city) errors.city = cityOther ? 'Précisez la ville.' : 'Choisissez la ville.';
     else if (city.length < 2 || city.length > LIMITS.city) errors.city = 'De 2 à 120 caractères.';
+    // Lot Carte B3 (décision du client du 25/11) : position obligatoire, comme pour une salle et un événement
+    if (v.latitude === null || v.longitude === null) errors.position = PLACE_POSITION_REQUIRED;
     if (v.photos.length < 1) errors.photos = 'Ajoutez au moins une photo de l’établissement.';
     else if (v.photos.length > MAX_PHOTOS) errors.photos = `${MAX_PHOTOS} photos au plus.`;
     const hours = validateWeek(v.hours);
@@ -506,6 +508,7 @@ export function VenueForm({ mode, venue, defaults, onSaved }: VenueFormProps) {
                             value={values.address}
                             onChange={(e) => set('address', e.target.value)}
                             placeholder="Rue, quartier, point de repère"
+                            hint={PLACE_PUBLIC_NOTICE}
                             error={errors.address}
                             autoComplete="street-address"
                             fieldClassName="sm:col-span-2"
@@ -538,7 +541,9 @@ export function VenueForm({ mode, venue, defaults, onSaved }: VenueFormProps) {
                     </div>
                     <fieldset className="flex flex-col gap-3">
                         <legend className="mb-1 text-sm font-semibold text-foreground-strong">
-                            Position sur la carte <span className="font-normal text-muted-foreground">(conseillée)</span>
+                            Position sur la carte
+                            <span className="ml-0.5 text-danger-text" aria-hidden="true">*</span>
+                            <span className="sr-only"> (obligatoire)</span>
                         </legend>
                         <p className="text-sm text-muted-foreground">Placez le repère sur l’entrée : la carte s’affiche sur votre fiche.</p>
                         <MapPicker

@@ -88,7 +88,7 @@ describe('D1 — SMS aux administrateurs pour ce qui attend leur action', () => 
         const phone = randomSenegalPhone('77');
         const before = { sa: smsCount(superadmin), validator: smsCount(validator), reader: smsCount(reader) };
         const reg = await registerPartnerTwoStep({
-            companyName: company,
+            companyName: company, commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
             description: 'Organisateur fictif (lot 9 quinquies, D1).',
             address: '1 rue des Admins',
             city: 'Dakar',

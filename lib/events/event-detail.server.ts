@@ -8,6 +8,7 @@ import { lowStockThreshold } from '@/lib/events/low-stock.server';
 import { isEventId, isPublicEvent, type PublicEventStatus } from '@/lib/events/public-status';
 import { posterBlurOrNull, posterColorOrFallback } from '@/lib/events/poster-color';
 import { isScanCategoryColor } from '@/lib/scan/scan-result';
+import { partnerPublicName } from '@/lib/partner/public-name';
 import { formatSnPhone, toSenegaleseContactE164 } from '@/lib/validations/auth';
 import {
     POSTPONEMENT_MIN_MS,
@@ -119,7 +120,7 @@ export async function buildPublicEventSnapshot(eventId: string): Promise<PublicE
             practical_info,
             created_at,
             partner_id,
-            partners(id, company_name, commercial_name, logo_url),
+            partners(id, commercial_name, logo_url),
             ticket_categories(id, name, price, total_quantity, sold_quantity, held_quantity, description, is_active, sale_online, sale_counter, sale_start, sale_end, max_per_order, scan_color)
         `)
         .eq('id', eventId)
@@ -226,7 +227,7 @@ export async function buildPublicEventSnapshot(eventId: string): Promise<PublicE
     // Lot 9 ter (R96) : numéro de contact affiché « 77 123 45 67 » et lien tel: en E.164 ; une ancienne saisie libre
     // non reconnue est affichée telle quelle, sans lien E.164.
     const contactPhoneRaw = practicalInfo?.contactPhone || null;
-    const organizerName = partnerData?.commercial_name || partnerData?.company_name || 'Organisateur Officiel';
+    const organizerName = partnerPublicName(partnerData);
 
     return withClock({
         id: event.id,

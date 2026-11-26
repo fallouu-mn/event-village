@@ -904,7 +904,7 @@ const CATALOG = {
     }),
     EVENT_SUSPENDED_HOLDER: define('EVENT_SUSPENDED_HOLDER', {
         label: 'Suspension d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'EVENT_STATUS', link: eventPath,
+        inAppType: 'EVENT_STATUS', link: eventTicketsPath, // carte B3 (25/11) : « Mes billets », la fiche suspendue est neutre
         inApp: (d) => ({ title: 'Événement suspendu', content: `${q(text(d, 'title'))} est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.` }),
         sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.`,
         sample: { ...SAMPLE_EVENT },

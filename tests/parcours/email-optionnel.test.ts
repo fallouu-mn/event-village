@@ -75,7 +75,7 @@ describe('Email optionnel, SMS obligatoire', () => {
         const partnerPhone = randomSenegalPhone('78');
         // Lot 9 bis (T38, R53) : deux appels de la même route, code lu dans le faux SMS du numéro.
         const regPartner = await registerPartnerTwoStep({
-            companyName: 'Sans Email SARL', description: 'Partenaire fictif, canal email désactivé.', address: '1 rue Sans Email',
+            companyName: 'Sans Email SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */, description: 'Partenaire fictif, canal email désactivé.', address: '1 rue Sans Email',
             city: 'Dakar', activities: ['ORGANISATEUR'], firstName: 'Pape', lastName: 'Sansemail', phone: partnerPhone,
             email: randomEmail('partenaire-sans-email'), password: STRONG_PASSWORD, confirmPassword: STRONG_PASSWORD,
             ...(await uploadRegistrationDocuments()),

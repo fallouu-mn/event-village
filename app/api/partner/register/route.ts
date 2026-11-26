@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
                 email_pending: effectiveEmail,
                 partner: {
                     company_name: data.companyName.trim(),
-                    commercial_name: data.commercialName?.trim() || data.companyName.trim(),
+                    commercial_name: data.commercialName.trim(),
                     description: data.description?.trim() || null,
                     address: data.address?.trim() || null,
                     city: data.city?.trim() || 'Dakar',

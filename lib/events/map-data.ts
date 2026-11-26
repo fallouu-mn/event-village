@@ -2,6 +2,7 @@ import { isBuyableOnline, type CatalogCategoryRow } from '@/lib/events/catalog.s
 import { eventEndAt } from '@/lib/events/event-end';
 import { eventStartAt } from '@/lib/events/live-status';
 import { posterBlurOrNull, posterColorOrFallback } from '@/lib/events/poster-color';
+import { partnerPublicName } from '@/lib/partner/public-name';
 import { applyCatalogFilters, parseCatalogParams, type CatalogFilterState } from '@/lib/events/catalog-filters';
 import { SENEGAL_BOUNDS, MAP_MAX_RANGE_DAYS, MAP_RESULT_LIMIT, type MapHighlight, type MapZone, type PublicMapEvent } from '@/lib/events/map-shared';
 
@@ -40,7 +41,7 @@ export interface MapRow {
     longitude: number | string | null;
     poster_color: string | null;
     poster_blur: string | null;
-    partners: { company_name: string | null; commercial_name: string | null } | null;
+    partners: { commercial_name: string | null } | null;
     ticket_categories: CatalogCategoryRow[] | null;
 }
 
@@ -84,7 +85,7 @@ export function toMapEntry(row: MapRow, highlight: MapHighlight | null, now: num
         f: {
             title: row.title,
             venue: row.location || 'Dakar, Sénégal',
-            subtitle: row.partners?.commercial_name || row.partners?.company_name || 'Event Village',
+            subtitle: partnerPublicName(row.partners),
             city: (row.city || 'DAKAR').toUpperCase(),
             category: row.category || null,
         },

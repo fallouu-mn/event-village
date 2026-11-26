@@ -20,6 +20,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { cn } from '@/components/ui/cn';
 import { useServerData } from '@/components/partner/useServerData';
+import { MISSING_HALL_POSITION_TEXT } from '@/lib/places/place-texts';
 import { fcfaText, hallStatusView, POLICY_LABELS } from '@/lib/halls/views';
 import { formatInteger } from '@/lib/format';
 import { HallCalendar } from './HallCalendar';
@@ -191,6 +192,18 @@ export function HallSheetView({ hallId, policyTexts, saved, defaultPercent = nul
             )}
 
             {actions.banner}
+
+            {/* Lot Carte B3 (décision du client du 25/11) : salle sans position, absente de la carte */}
+            {(hall.latitude === null || hall.longitude === null) && !refused && (
+                <StatusBanner
+                    tone="warning"
+                    title={MISSING_HALL_POSITION_TEXT}
+                    action={<LinkButton href={`${base}/edit`} variant="secondary" size="sm" leftIcon={<MapPin size={16} />}>Placer sur la carte</LinkButton>}
+                    className="mb-4"
+                >
+                    Elle reste visible dans la liste des salles et par son lien.
+                </StatusBanner>
+            )}
 
             {refused ? (
                 <StatusBanner tone="danger" title="Salle refusée par l’équipe d’Event Village" className="mb-6">

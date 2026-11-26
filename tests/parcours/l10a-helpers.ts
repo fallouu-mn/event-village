@@ -41,7 +41,15 @@ export interface HallSpec {
     cancellation_policy?: 'SOUPLE' | 'MODEREE' | 'STRICTE';
     validate?: boolean;
     is_active?: boolean;
+    /**
+     * Lot Carte B3 (décision du client du 25/11 : position obligatoire pour valider) : position de la salle, Dakar par
+     * défaut ; null = sans position (elle ne peut alors pas être validée).
+     */
+    position?: { latitude: number; longitude: number } | null;
 }
+
+/** Position par défaut des salles et des établissements de test (Dakar, Plateau). */
+export const TEST_PLACE_POSITION = { latitude: 14.6928, longitude: -17.4467 } as const;
 
 /** Salle d'une partenaire VALIDE, validée par l'administration (sauf validate: false). */
 export async function newHall(partner: TestPartner, spec: HallSpec = {}): Promise<string> {
@@ -56,6 +64,8 @@ export async function newHall(partner: TestPartner, spec: HallSpec = {}): Promis
         cancellation_policy: spec.cancellation_policy ?? 'MODEREE',
         city: 'Dakar',
         is_active: spec.is_active ?? true,
+        latitude: spec.position === null ? null : (spec.position ?? TEST_PLACE_POSITION).latitude,
+        longitude: spec.position === null ? null : (spec.position ?? TEST_PLACE_POSITION).longitude,
     }).select('id, validation_status').single();
     assert.equal(error, null, `salle : ${error?.message}`);
     const hallId = String(data!.id);

@@ -111,6 +111,8 @@ export function refusalStatus(code: unknown): number {
         case 'INVALID_PLAN':
         case 'INVALID_FIELD':
         case 'VENUE_INCOMPLETE':
+        // Lot Carte B3 : position obligatoire (envoi en validation)
+        case 'POSITION_REQUIRED':
         case 'PREVIEW_REQUIRED':
             return 400;
         default:

@@ -1202,9 +1202,9 @@ export const SCREENS: readonly Screen[] = [
         },
     },
     {
-        id: 'evenement-suspendu', titre: 'Page publique — événement suspendu (bandeau, sans achat)', role: 'anonyme', needsIds: true,
+        id: 'evenement-suspendu', titre: 'Page publique — événement suspendu (page neutre, carte B3)', role: 'anonyme', needsIds: true,
         path: (i) => `/events/${ids(i).events.suspendu.id}`, expectStatus: 200,
-        ready: async ({ page }) => { await expect(page.getByText(/suspendu/i).first()).toBeVisible(); },
+        ready: async ({ page }) => { await expect(page.getByText(/n’est plus disponible/i).first()).toBeVisible(); },
     },
     {
         id: 'evenement-annule', titre: 'Page publique — événement annulé (avis public, remboursement)', role: 'anonyme', needsIds: true,

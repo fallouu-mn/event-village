@@ -14,7 +14,8 @@
  * Page ouverte même service fermé (réservations existantes) : aucune garde d'interrupteur.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarOff, LayoutGrid, Pencil, PencilLine, RefreshCw, Store, Wallet } from 'lucide-react';
+import { CalendarOff, LayoutGrid, MapPin, Pencil, PencilLine, RefreshCw, Store, Wallet } from 'lucide-react';
+import { MISSING_VENUE_POSITION_TEXT } from '@/lib/places/place-texts';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/EmptyState';
@@ -248,6 +249,18 @@ export function PlanningView({ venueId, initialDate }: { venueId: string; initia
                     </>
                 )}
             />
+
+            {/* Lot Carte B3 (décision du client du 25/11) : établissement sans position, absent de la carte */}
+            {(venue.latitude === null || venue.longitude === null) && !refused && (
+                <StatusBanner
+                    tone="warning"
+                    title={MISSING_VENUE_POSITION_TEXT}
+                    action={<LinkButton href={editBase} variant="secondary" size="sm" leftIcon={<MapPin size={16} />}>Placer sur la carte</LinkButton>}
+                    className="mb-4"
+                >
+                    Il reste visible dans la liste des restaurants et par son lien.
+                </StatusBanner>
+            )}
 
             {refused ? (
                 <StatusBanner tone="danger" title="Établissement refusé par l’équipe d’Event Village" className="mb-4">

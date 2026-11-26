@@ -26,6 +26,7 @@ import {
   type CheckoutQuote,
 } from '@/lib/payments/payment-client';
 import { formatDateTime, formatFcfa } from '@/lib/format';
+import { isUnavailableEventBody } from '@/lib/events/unavailable-event';
 import {
   fromPriceLabel,
   nextSaleBoundary,
@@ -233,6 +234,12 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
       return;
     }
     const body = await readJsonBody(res, 'événement/fiche');
+    // Carte B3 (décision du client du 25/11) : suspendu pendant la consultation → page neutre (relue par le serveur)
+    if (res.ok && isUnavailableEventBody(body)) {
+      setGone(true);
+      router.refresh();
+      return;
+    }
     const parsed = res.ok ? readPublicEventDetail(body) : null;
     if (!parsed) {
       console.error(`[événement] fiche illisible (HTTP ${res.status}) :`, body);
@@ -241,7 +248,7 @@ export function EventTicketing({ initial }: { initial: PublicEventDetail }) {
     }
     setEvent(parsed);
     setRefreshError(null);
-  }, [eventId]);
+  }, [eventId, router]);
 
   // Temps réel (contrats O1 et O3) : résumé public de l'événement et stock en tranches de ses catégories ; chaque signal
   // (et la connexion du canal) relit la fiche par le serveur.

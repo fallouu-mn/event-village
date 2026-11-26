@@ -126,6 +126,23 @@ const nextConfig = {
     if (!isServer && !dev) {
       config.output.chunkFilename = 'static/chunks/[name].[contenthash:8].js';
     }
+    // Lot Carte B3 (poids) : Button, cn et sa table des classes dans UN morceau partagé, chargé par toutes les pages (comme
+    // le morceau que webpack formait de lui-même jusqu'ici). Sans cette règle, le regroupement dépend du seuil de 20 000
+    // octets de webpack : la table des classes, calculée sur TOUTES les sources, a grossi de 221 octets avec les écrans du
+    // lot ; cn et la table ont alors formé seuls un morceau, et Button a été recopié dans chaque page (+366 à +1 144 octets
+    // gzip selon la route, sans aucun code nouveau au premier chargement).
+    if (!isServer && !dev && config.optimization?.splitChunks && typeof config.optimization.splitChunks === 'object') {
+      config.optimization.splitChunks.cacheGroups = {
+        ...(config.optimization.splitChunks.cacheGroups ?? {}),
+        evUiBase: {
+          name: 'ui-base',
+          test: /[\\/]components[\\/]ui[\\/](Button\.tsx|cn\.ts|cn-classes\.ts)$/,
+          chunks: 'all',
+          enforce: true,
+          priority: 45,
+        },
+      };
+    }
     // Lot poids (piste 3) : Next fournit `Buffer` à tout module du navigateur qui le cite (ProvidePlugin), ce qui fait entrer
     // son polyfill (next/dist/compiled/buffer, ~2 100 octets gzip) dans TOUTES les pages. Le seul module du navigateur qui le
     // cite est @supabase/storage-js (toBase64 : `typeof Buffer !== "undefined" ? Buffer… : btoa(…)`, métadonnées d'un

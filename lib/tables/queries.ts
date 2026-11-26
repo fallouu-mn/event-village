@@ -9,6 +9,7 @@
  */
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PublicError } from '@/lib/api/public-error';
+import { partnerPublicName } from '@/lib/partner/public-name';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { tableStateIsLive, tableStateView, venueStatusView, VENUE_KIND_VIEW, type Tone } from './views';
 
@@ -148,7 +149,7 @@ export async function publicVenue(id: string): Promise<PublicVenue | null> {
     if (!UUID_RE.test(id)) return null;
     const supabase = getServiceRoleClient();
     const { data, error } = await supabase.from('venues')
-        .select('id, kind, name, description, address, city, latitude, longitude, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, partners!inner(status, company_name, commercial_name)')
+        .select('id, kind, name, description, address, city, latitude, longitude, photos, slot_minutes, deposit_per_person, confirmation_mode, floor_plan_enabled, partners!inner(status, commercial_name)')
         .eq('id', id).eq('is_active', true).eq('validation_status', 'VALIDEE').eq('partners.status', 'VALIDE').maybeSingle();
     if (error) throw new Error(`établissement ${id} : ${error.message}`);
     if (!data) return null;
@@ -168,7 +169,7 @@ export async function publicVenue(id: string): Promise<PublicVenue | null> {
         id: String(v.id), name: String(v.name), kind: String(v.kind), kindLabel: VENUE_KIND_VIEW[String(v.kind)] ?? 'Établissement',
         description: str(v.description), address: str(v.address), city: str(v.city),
         latitude: v.latitude === null ? null : num(v.latitude), longitude: v.longitude === null ? null : num(v.longitude),
-        photos: strings(v.photos), partnerName: str(v.partners?.commercial_name) ?? str(v.partners?.company_name),
+        photos: strings(v.photos), partnerName: partnerPublicName(v.partners),
         hours: ((hours.data ?? []) as Row[]).map((h) => ({ weekday: num(h.weekday), opensAt: clock(h.opens_at), closesAt: clock(h.closes_at) })),
         zones: ((zones.data ?? []) as Row[]).map((z) => ({ id: String(z.id), name: String(z.name) })),
         minCapacity: caps.length ? Math.min(...caps.map((t) => num(t.min_capacity))) : 0,

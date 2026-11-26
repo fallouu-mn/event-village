@@ -30,7 +30,7 @@ export const RLS_HELPER_WHITELIST = [
     'controller_assignment_active',
     // Contre-vérification du lot 10b (T4 ; modification signalée au rapport) : 9e aide, partner_listed (partenaire VALIDE,
     // un booléen) pour la lecture publique des salles, établissements, zones et tables
-    'partner_listed',
+    'partner_listed', 'listed_venue', // carte B3 (T1, signalée au rapport) : 10e aide listed_venue, établissement public
 ] as const;
 
 interface FnRow {

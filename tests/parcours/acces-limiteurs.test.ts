@@ -139,7 +139,7 @@ const invite = (by: Buyer, eventId: string, phone: string) =>
 /** Inscription partenaire valide pour le schéma, mais avec des jetons de pièces inconnus : aucun compte, aucun SMS. */
 function registerBody(): Record<string, unknown> {
     return {
-        companyName: 'Limiteurs Test SARL',
+        companyName: 'Limiteurs Test SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
         description: 'Organisateur fictif pour les tests des limiteurs (lot 4).',
         address: '7 rue des Quotas',
         city: 'Dakar',

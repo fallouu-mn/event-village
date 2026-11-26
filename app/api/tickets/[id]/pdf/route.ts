@@ -3,6 +3,7 @@ import { apiFailure, PublicError } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsAdmin } from '@/lib/auth/session';
 import { formatDate, formatTime } from '@/lib/format';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { partnerPublicName } from '@/lib/partner/public-name';
 import { TicketPdfService } from '@/lib/tickets/ticket-pdf.service';
 
 export const dynamic = 'force-dynamic';
@@ -94,11 +95,11 @@ export async function GET(
         if (eventData.partner_id) {
             const { data: partnerData, error: partnerErr } = await supabase
                 .from('partners')
-                .select('company_name, commercial_name')
+                .select('commercial_name')
                 .eq('id', eventData.partner_id)
                 .maybeSingle();
             if (partnerErr) throw new Error(`lecture de l'organisateur ${eventData.partner_id} : ${partnerErr.message}`);
-            organizerName = (partnerData?.commercial_name || partnerData?.company_name || '').trim() || undefined;
+            organizerName = partnerPublicName(partnerData);
         }
 
         // 6. Préparation des données d'affichage (heure de Dakar)

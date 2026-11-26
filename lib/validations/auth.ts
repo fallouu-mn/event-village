@@ -216,7 +216,10 @@ export const PartnerActivityTypes = [
 export const RegisterPartnerFieldsSchema = z.object({
     // Données Entreprise
     companyName: z.string().min(2, 'La raison sociale est requise'),
-    commercialName: z.string().optional(),
+    // Carte B3 (décision du client du 25/11) : nom commercial obligatoire, seul nom montré au public (la raison sociale ne
+    // l'est jamais : lib/partner/public-name.ts)
+    commercialName: z.string().trim().min(2, 'Le nom commercial est requis : c’est le nom que voit le public.')
+        .max(150, 'Le nom commercial : 150 caractères au plus.'),
     description: z.string().min(10, 'Une brève description de votre activité est requise'),
     address: z.string().min(3, 'L\'adresse de l\'établissement est requise'),
     city: z.string().default('Dakar'),

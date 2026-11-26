@@ -23,7 +23,7 @@ import { useTablesReport } from '@/components/event-tables/useTablesReport';
 import { tablesTabVisible } from '@/components/event-tables/types';
 import { EVENT_CATEGORIES } from '@/lib/constants/event-categories';
 import { OTHER_CITY_VALUE, SENEGAL_CITIES, cityCenter, senegalCity } from '@/lib/events/senegal-cities';
-import { PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
+import { PLACE_PUBLIC_NOTICE, PLACE_SEARCH_UNAVAILABLE } from '@/lib/places/place-texts';
 // Types seulement (effacés à la compilation) : la carte reste chargée à la demande (next/dynamic)
 import type { PlaceSearchOutcome, PlaceSearchResult } from '@/components/ui/MapPicker';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
@@ -1798,6 +1798,8 @@ export function EventForm(props: EventFormProps) {
                         <fieldset className="flex flex-col gap-3">
                             <legend className="mb-1 text-base font-semibold text-foreground-strong">Position sur la carte</legend>
                             <p className="text-sm leading-snug text-muted-foreground">Obligatoire pour soumettre l’événement à la validation.</p>
+                            {/* Lot Carte B3 (décision du client du 25/11) : application entièrement publique */}
+                            <p className="text-sm leading-snug text-muted-foreground">{PLACE_PUBLIC_NOTICE}</p>
                             <MapPicker
                                 idPrefix={MAP_PREFIX}
                                 latitude={values.latitude}

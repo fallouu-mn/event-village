@@ -30,7 +30,7 @@ async function registerWithDocuments() {
     const docs = await uploadRegistrationDocuments();
     const email = randomEmail('kyc');
     const phone = randomSenegalPhone('77'); const reg = await registerPartnerTwoStep({
-        companyName: 'KYC Test SARL',
+        companyName: 'KYC Test SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
         description: 'Organisateur fictif pour les tests de pièces justificatives.',
         address: '5 rue des Pièces',
         city: 'Dakar',

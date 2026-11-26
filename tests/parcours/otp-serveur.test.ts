@@ -107,7 +107,7 @@ describe('Parcours OTP serveur', () => {
     test('inscription partenaire → otp_codes → code vérifié depuis une autre instance (appel 2 de la route, lot 9 bis R53)', async () => {
         const phone = randomSenegalPhone('78');
         const body = {
-            companyName: 'OTP Test SARL',
+            companyName: 'OTP Test SARL', commercialName: 'Enseigne de test' /* carte B3 : nom commercial obligatoire */,
             description: 'Organisateur fictif créé par la suite de tests OTP.',
             address: '3 rue des Codes',
             city: 'Dakar',

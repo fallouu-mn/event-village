@@ -68,6 +68,8 @@ describe('1. Création en une fois, envoi en validation, renvoi', () => {
         const name = `TEST l11b création ${randomBytes(3).toString('hex')}`;
         const res = await api('POST', 'partner/venues', { token: owner.accessToken, body: {
             kind: 'RESTAURANT', name, address: 'Route de Ngor', city: 'Dakar', confirmation_mode: 'AUTO', deposit_per_person: null,
+            // Lot Carte B3 (décision du client du 25/11, modification signalée au rapport) : position obligatoire à la création
+            latitude: 14.7461, longitude: -17.5133,
             photos: [photoOf(owner.partnerId)], hours: [{ weekday: 6, opens_at: '12:00', closes_at: '23:00' }],
             zones: [{ key: 'z1', name: 'Terrasse' }], tables: [{ number: '1', capacity: 4, zone_key: 'z1' }, { number: '2', capacity: 2 }],
         } });

@@ -137,6 +137,11 @@ async function editEvent(api: APIRequestContext, id: string, patch: Record<strin
 
 // ── « Autour de moi » ──────────────────────────────────────────────────────────────────────────────────────────────
 
+// Lot Carte B3 : la carte d'Explorer montre aussi les salles et les restaurants quand leurs services sont ouverts ; ces
+// tests tournent interrupteurs à leur valeur d'origine (groupe « autres » du verrou des services, comme les pages qui ne
+// sont pas des services), jamais pendant les tests des services
+test.beforeEach(async ({ servicesLock }) => { await servicesLock.enter('autres'); });
+
 test.describe('cvcb · « Autour de moi »', () => {
     test.use({ geolocation: POS, permissions: ['geolocation'] });
 

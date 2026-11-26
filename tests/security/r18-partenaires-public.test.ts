@@ -1,8 +1,8 @@
 /**
  * R18 — Lot 5, sécurité urgente A2 : anon, un client et un autre partenaire ne lisent ni le téléphone,
  * ni l'email, ni les chemins des pièces, ni aucune donnée administrative d'un partenaire VALIDE.
- * La lecture publique passe par la vue public_partners (id, company_name, logo_url, city, description,
- * status = VALIDE) ou par des privilèges de colonne (contrat A2, les deux formes sont admises).
+ * Lecture publique : vue public_partners (id, public_name, logo_url, city, description, status = VALIDE ; carte B3, T2 :
+ * nom commercial, jamais la raison sociale company_name ; modification signalée au rapport du lot Carte B3).
  *
  * Rouge avant correctif : supabase/migrations/0003_rls.sql:109-110, politique partners_read_public
  * USING (status = 'VALIDE' OR user_id = auth.uid() OR is_admin()), jamais modifiée : toutes les
@@ -25,7 +25,7 @@ import { anonClient, signInFixture, signUpAttacker } from './helpers';
 type Row = Record<string, unknown>;
 
 const ADMIN_COLUMNS = ['phone', 'email', 'id_card_url', 'business_doc_url', 'rejection_reason', 'suspended_reason', 'user_id'] as const;
-const PUBLIC_COLUMNS = ['id', 'company_name', 'logo_url', 'city', 'description', 'status'] as const;
+const PUBLIC_COLUMNS = ['id', 'public_name', 'logo_url', 'city', 'description', 'status'] as const;
 
 function assertPermissionDenied(error: PostgrestError, what: string): void {
     assert.ok(error.code === '42501' || /permission denied/i.test(error.message),
@@ -79,23 +79,19 @@ describe('R18 — données administratives des partenaires non lisibles publique
         await assertNoAdminData(b.client, 'partenaire B', String(data.id));
     });
 
-    test('garde-fou : la fiche publique du partenaire A (nom, ville) reste lisible par anon, sans colonne administrative', async () => {
+    // Décision du client du 25/11 (contre-vérification de la carte B3, T2 ; modification signalée au rapport du lot Carte
+    // B3) : la raison sociale n'est jamais publique ; la vue rend le nom commercial (public_name), plus company_name.
+    test('garde-fou : la fiche publique du partenaire A (nom commercial, ville) reste lisible par anon, sans raison sociale ni colonne administrative', async () => {
         const anon = anonClient();
-        const name = FIXTURE_PARTNERS.A.companyName;
-        const view = await anon.from('public_partners').select('*').eq('company_name', name);
-        let rows: Row[];
-        if (view.error) {
-            // Contrat A2 : la vue est l'une des deux formes admises ; sans vue, privilèges de colonne sur partners.
-            assert.ok(['PGRST205', '42P01'].includes(view.error.code), `vue public_partners : erreur inattendue ${view.error.code} ${view.error.message}`);
-            const direct = await anon.from('partners').select(PUBLIC_COLUMNS.join(', ')).eq('company_name', name);
-            assert.equal(direct.error, null, `lecture publique des colonnes publiques de partners : ${direct.error?.message}`);
-            rows = (direct.data ?? []) as unknown as Row[];
-        } else {
-            rows = (view.data ?? []) as Row[];
-            const exposed = rows.flatMap((r) => ADMIN_COLUMNS.filter((c) => c in r));
-            assert.deepEqual(exposed, [], `la vue public_partners expose des colonnes administratives : ${exposed.join(', ')}`);
-        }
+        const name = FIXTURE_PARTNERS.A.commercialName;
+        const view = await anon.from('public_partners').select('*').eq('public_name', name);
+        assert.equal(view.error, null, `vue public_partners : ${view.error?.code} ${view.error?.message}`);
+        const rows = (view.data ?? []) as Row[];
+        const exposed = rows.flatMap((r) => [...ADMIN_COLUMNS, 'company_name'].filter((c) => c in r));
+        assert.deepEqual(exposed, [], `la vue public_partners expose des colonnes administratives ou la raison sociale : ${exposed.join(', ')}`);
         assert.equal(rows.length, 1, `fiche publique du partenaire A lisible (trouvé ${rows.length})`);
-        assert.equal(rows[0].company_name, name, 'nom du partenaire A');
+        assert.equal(rows[0].public_name, name, 'nom commercial du partenaire A');
+        assert.deepEqual(Object.keys(rows[0]).sort(), [...PUBLIC_COLUMNS].sort(), 'colonnes de la vue public_partners');
+        assert.ok(!JSON.stringify(rows).includes(FIXTURE_PARTNERS.A.companyName), 'raison sociale du partenaire A rendue');
     });
 });

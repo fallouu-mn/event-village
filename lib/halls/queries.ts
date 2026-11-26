@@ -9,6 +9,7 @@
  */
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { PublicError } from '@/lib/api/public-error';
+import { partnerPublicName } from '@/lib/partner/public-name';
 import { pgIlikeContains } from '@/lib/security/postgrest-filter';
 import { cancellationText, type CancellationTerms } from './booking';
 import { bookingIsLive, bookingView, hallStatusView } from './views';
@@ -129,7 +130,7 @@ export async function publicHall(id: string): Promise<PublicHall | null> {
     const { data, error } = await supabase
         .from('halls')
         .select('id, name, description, capacity, price_per_day, price_per_hour, deposit_mode, deposit_value, cancellation_policy, '
-            + 'latitude, longitude, address, city, amenities, images, partners!inner(commercial_name, company_name, status)')
+            + 'latitude, longitude, address, city, amenities, images, partners!inner(commercial_name, status)')
         .eq('id', id)
         .eq('is_active', true)
         .eq('validation_status', 'VALIDEE')
@@ -164,7 +165,7 @@ export async function publicHall(id: string): Promise<PublicHall | null> {
         photoCount: photos.length,
         latitude: h.latitude === null || h.latitude === undefined ? null : Number(h.latitude),
         longitude: h.longitude === null || h.longitude === undefined ? null : Number(h.longitude),
-        partnerName: str(partner?.commercial_name) ?? str(partner?.company_name),
+        partnerName: partnerPublicName(partner),
         amenities: (Array.isArray(h.amenities) ? h.amenities : []).filter((a): a is string => typeof a === 'string').slice(0, 30),
         deposit: { mode, value: depositValue },
         depositText: mode === 'MONTANT_FIXE'
