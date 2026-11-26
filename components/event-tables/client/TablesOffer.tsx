@@ -150,11 +150,12 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
         setOffer(next);
         setPhase('ready');
         setLoadError(null);
-        const busy = stepRef.current !== 'choose';
+        // Paiement lancé ou confirmé : la table choisie est tenue par CE client (elle passe « prise » pour les autres)
+        const holding = stepRef.current === 'waiting' || stepRef.current === 'done';
         const { typeId: selType, tableId: selTable } = selRef.current;
         if (prev) {
             const before = new Map(prev.tables.map((t) => [t.id, t.state]));
-            const taken = next.tables.filter((t) => before.get(t.id) === 'LIBRE' && t.state === 'PRISE' && !(busy && t.id === selTable));
+            const taken = next.tables.filter((t) => before.get(t.id) === 'LIBRE' && t.state === 'PRISE' && !(holding && t.id === selTable));
             if (taken.length > 0) {
                 setJustTaken(taken.map((t) => t.id));
                 const mine = taken.find((t) => t.id === selTable);
@@ -168,10 +169,11 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
             }
         }
         // Sans plan : type devenu complet ou retiré pendant le choix
-        if (!busy && selType && !next.planEnabled) {
+        if (!holding && selType && !next.planEnabled) {
             const type = next.types.find((t) => t.id === selType);
             if (!type || type.remainingTables <= 0 || type.refusal) {
                 setTypeId(null);
+                if (stepRef.current === 'pay') setStep('choose');
                 say(type ? `Toutes les tables « ${type.name} » sont prises.` : 'Ce type de table n’est plus en vente.');
             }
         }
