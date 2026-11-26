@@ -19,7 +19,11 @@ export function PlanDialog({ title, subtitle, onClose, plan, panel }: {
     return (
         <Modal isOpen onClose={onClose} title={title} subtitle={subtitle} fullScreen closeOnOverlayClick={false}>
             <div className="grid h-full min-h-0 lg:grid-cols-[minmax(0,1fr)_26rem]">
-                <div className="h-full min-h-0 overflow-hidden p-3 pb-48 sm:p-4 sm:pb-48 lg:p-6">{plan}</div>
+                {/* Zone du plan qui défile (jamais coupée : run 702, légende coupée à 1 440 px) ; sur ordinateur, le plan est
+                    dimensionné pour tenir en hauteur (largeur ≤ 60 % de la hauteur de l'écran × 4/3) */}
+                <div className="h-full min-h-0 overflow-y-auto overscroll-contain p-3 pb-48 sm:p-4 sm:pb-48 lg:p-6">
+                    <div className="mx-auto w-full lg:max-w-[calc(60vh*4/3)]">{plan}</div>
+                </div>
                 {/* Téléphone : feuille du bas posée sur le plan (le plan reste touchable au-dessus) ; ordinateur : colonne */}
                 <section
                     aria-label="Votre table"

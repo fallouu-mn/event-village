@@ -598,10 +598,10 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
                     subtitle={event.title}
                     onClose={() => setPlanOpen(false)}
                     plan={(
-                        <div className="flex h-full min-h-0 flex-col gap-3">
+                        <div className="space-y-3">
                             {noticeChip}
                             {step === 'done' ? (
-                                <div className="flex flex-1 items-center justify-center text-primary-text" aria-hidden="true"><PartyPopper size={64} /></div>
+                                <div className="flex min-h-48 items-center justify-center text-primary-text" aria-hidden="true"><PartyPopper size={64} /></div>
                             ) : (
                                 <PlanView
                                     tables={offer.tables}
@@ -610,7 +610,6 @@ export function TablesOffer({ event, active }: { event: TablesEventInfo; active:
                                     selectedId={tableId}
                                     onSelect={chooseTable}
                                     justTaken={justTaken}
-                                    fill
                                 />
                             )}
                         </div>

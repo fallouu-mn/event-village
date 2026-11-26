@@ -453,7 +453,9 @@ export function FloorPlan({ tables, zones, mode, selectedId = null, onSelect, on
                                         ne le retrouve pas dans « Table 1, 4 places » (label-content-name-mismatch). Invisible dans un conteneur flex. */}
                                     {' '}
                                     {takenToChoose ? (
-                                        <small className="rounded bg-muted px-1 text-caption font-semibold">{labels?.PRISE?.legend ?? 'Prise'}</small>
+                                        // Mot « Prise » en contenu décoratif (::after) : le nom lu de la table le dit déjà (« …, prise ») ; écrit
+                                        // dans le texte, il ne figurait pas tel quel dans ce nom (axe label-content-name-mismatch, run 702)
+                                        <small data-mot={labels?.PRISE?.legend ?? 'Prise'} className="rounded bg-muted px-1 text-caption font-semibold after:content-[attr(data-mot)]" />
                                     ) : (
                                         <small className="inline-flex items-center gap-0.5 text-caption tabular-nums">
                                             <Users size={11} strokeWidth={2.5} />
