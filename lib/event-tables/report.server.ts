@@ -37,91 +37,29 @@ type Row = Record<string, unknown>;
 
 export interface CopyOutcome { status: number; body: Row }
 
-const asRows = (v: unknown): Row[] => (Array.isArray(v) ? v.filter((x): x is Row => !!x && typeof x === 'object') : []);
+/** Statut HTTP d'un refus de la copie : introuvable 404, saisie 400, tout autre refus de la base 409 (texte tel quel). */
+function copyRefusalStatus(code: string | undefined): number {
+    if (code === 'EVENT_NOT_FOUND') return 404;
+    if (code === 'INVALID_INPUT') return 400;
+    return 409;
+}
 
 /**
- * Copie des types et des tables (positions comprises) d'un événement précédent de la MÊME organisatrice vers un événement
- * qui n'a encore aucun type de table. Propriété des deux événements vérifiée en base (event_table_report : viewer OWNER) ;
- * chaque écriture passe ensuite par les fonctions habituelles (event_table_type_save, event_tables_save), qui revérifient
- * propriété, garde de la billetterie, jauge en places et interrupteur. Les zones d'accès ne sont pas copiées (elles sont
- * propres à chaque événement). Au moindre refus, les types déjà créés par cette copie sont retirés
- * (event_table_type_delete : aucun n'a pu être vendu entre-temps, ils ne sont pas encore en vente) et le refus est rendu tel quel.
+ * Copie des types et des tables (numéros, positions, formes) d'un événement précédent de la MÊME organisatrice vers un
+ * événement qui n'a encore aucun type de table. Contre-vérification 11c-c (T2, T3) : une seule fonction en base,
+ * public.event_table_copy, en une transaction, sous le verrou de l'événement cible (vérification de la cible vide sous
+ * ce verrou, propriété des deux événements, garde de la billetterie, jauge en places, interrupteur) ; au moindre refus,
+ * rien n'est écrit et aucun avis ne part. Deux copies simultanées : la seconde reçoit TABLES_NOT_EMPTY. La route ne fait
+ * que relayer la réponse.
  */
 export async function copyTablesFrom(params: { userId: string; eventId: string; fromEventId: unknown }): Promise<CopyOutcome> {
     const { userId, eventId } = params;
     if (!isUuid(params.fromEventId) || params.fromEventId === eventId) {
         return { status: 400, body: { success: false, error: 'Choisissez un autre de vos événements.', code: 'INVALID_INPUT' } };
     }
-    const fromEventId = params.fromEventId;
-    const target = await readTablesReport(eventId, userId);
-    const source = await readTablesReport(fromEventId, userId);
-    if (target.viewer !== 'OWNER' || source.viewer !== 'OWNER') {
-        return { status: 404, body: { success: false, error: 'Événement introuvable.', code: 'EVENT_NOT_FOUND' } };
+    const reply: DbReply = await callTables('event_table_copy', { event_id: eventId, actor_id: userId, from_event_id: params.fromEventId });
+    if (reply.ok !== true) {
+        return { status: copyRefusalStatus(reply.code), body: { success: false, error: reply.message ?? 'Copie refusée.', code: reply.code ?? 'REFUSED' } };
     }
-    if (asRows(target.types).length > 0) {
-        return { status: 409, body: { success: false, error: 'Cet événement a déjà des tables : la copie ne se fait que sur un événement sans table.', code: 'TABLES_NOT_EMPTY' } };
-    }
-    const refusal = target.edit_refusal as Row | null | undefined;
-    if (refusal && typeof refusal === 'object') {
-        return { status: 409, body: { success: false, error: String(refusal.message ?? 'Modification impossible.'), code: String(refusal.code ?? 'REFUSED') } };
-    }
-    const sourceTypes = asRows(source.types);
-    const sourceTables = asRows(source.tables);
-    if (sourceTypes.length === 0 || sourceTables.length === 0) {
-        return { status: 409, body: { success: false, error: 'Cet événement n’a aucune table à copier.', code: 'NOTHING_TO_COPY' } };
-    }
-
-    const created: string[] = [];
-    const typeMap = new Map<string, string>();
-    const rollback = async (): Promise<void> => {
-        for (const id of created.reverse()) {
-            const del = await callTables('event_table_type_delete', { event_id: eventId, actor_id: userId, type_id: id });
-            if (del.ok !== true) console.error(`[tables : copie] retrait du type ${id} impossible après un refus :`, JSON.stringify(del).slice(0, 300));
-        }
-    };
-    const refused = async (reply: DbReply): Promise<CopyOutcome> => {
-        await rollback();
-        return { status: 409, body: { success: false, error: reply.message ?? 'Copie refusée.', code: reply.code ?? 'REFUSED' } };
-    };
-
-    for (const t of sourceTypes) {
-        const count = sourceTables.filter((x) => x.type_id === t.id).length;
-        if (count < 1) continue;
-        const reply = await callTables('event_table_type_save', {
-            event_id: eventId, actor_id: userId, count,
-            type: {
-                name: t.name, seats: t.seats, price: t.price, included_text: t.included_text ?? null, onsite_note: t.onsite_note ?? null,
-                payment_mode: 'FULL', scan_color: t.scan_color ?? null, entry_instruction: t.entry_instruction ?? null,
-            },
-        });
-        if (reply.ok !== true) return refused(reply);
-        const newType = reply.type as Row | undefined;
-        if (!newType || typeof newType.id !== 'string') {
-            await rollback();
-            throw new Error(`event_table_type_save : type créé sans identifiant ${JSON.stringify(reply).slice(0, 300)}`);
-        }
-        created.push(newType.id);
-        typeMap.set(String(t.id), newType.id);
-    }
-
-    // Positions : les tables créées (numérotées sur les plus petits numéros libres) reprennent, type par type et dans
-    // l'ordre des numéros, le numéro, la position, la forme et la rotation des tables de l'événement d'origine.
-    const fresh = asRows((await readTablesReport(eventId, userId)).tables);
-    const tables: Row[] = [];
-    for (const [fromType, toType] of typeMap) {
-        const from = sourceTables.filter((x) => x.type_id === fromType).sort((a, b) => Number(a.number) - Number(b.number));
-        const to = fresh.filter((x) => x.type_id === toType).sort((a, b) => Number(a.number) - Number(b.number));
-        to.forEach((row, i) => {
-            const src = from[i];
-            tables.push({
-                id: row.id, type_id: toType, number: Number(src?.number ?? row.number), zone_id: null,
-                x: src?.x === null || src?.x === undefined ? null : Number(src.x),
-                y: src?.y === null || src?.y === undefined ? null : Number(src.y),
-                shape: (src?.shape as string | undefined) ?? 'RONDE', rotation: Number(src?.rotation ?? 0),
-            });
-        });
-    }
-    const saved = await callTables('event_tables_save', { event_id: eventId, actor_id: userId, plan_enabled: false, tables, zones: [] });
-    if (saved.ok !== true) return refused(saved);
-    return { status: 200, body: { success: true, types: created.length, tables: tables.length } };
+    return { status: 200, body: { success: true, types: Number(reply.types ?? 0), tables: Number(reply.tables ?? 0) } };
 }

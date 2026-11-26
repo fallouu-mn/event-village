@@ -100,6 +100,7 @@ export function AdminEventTables({ eventId }: { eventId: string }) {
                                 <li key={c.at} className="flex items-center gap-2 text-sm text-foreground">
                                     {i === 0 && <Badge variant="warning">Dernier</Badge>}
                                     <time dateTime={c.at} className="tabular-nums">{formatDateTime(c.at)}</time>
+                                    {c.label && <span className="min-w-0 break-words text-muted-foreground">{c.label}</span>}
                                 </li>
                             ))}
                         </ol>

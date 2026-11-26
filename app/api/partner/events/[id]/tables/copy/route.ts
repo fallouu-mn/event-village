@@ -8,9 +8,10 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/partner/events/[id]/tables/copy { from_event_id } — lot 11c-c : reprend les types et les tables (numéros,
- * positions, formes) d'un événement précédent de la même organisatrice, sur un événement encore sans table. Propriété
- * des DEUX événements vérifiée en base ; chaque écriture passe par les fonctions habituelles (garde, jauge en places,
- * interrupteur). Refus : texte de la base, tel quel.
+ * positions, formes, état de vente) d'un événement précédent de la même organisatrice, sur un événement encore sans
+ * table. Contre-vérification 11c-c (T2, T3) : une seule fonction en base (public.event_table_copy), une transaction, sous
+ * le verrou de l'événement cible ; propriété des DEUX événements, garde, jauge en places et interrupteur vérifiés en
+ * base ; tout ou rien. Refus : texte de la base, tel quel.
  */
 export async function POST(request: NextRequest, ctx: RouteParams<{ id: string }>) {
     const session = await requireActiveSession(request);
