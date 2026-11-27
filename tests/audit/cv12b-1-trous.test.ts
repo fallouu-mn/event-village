@@ -128,7 +128,7 @@ describe('T2 — fermeture exceptionnelle : la carte la retire, la base l’igno
         const product = await newProduct(partner, closedShop, { price: 1_500, name: 'Yassa cv12b' });
         const [closure] = await sql<{ id: string; starts_at: string; ends_at: string }>(`
             INSERT INTO public.venue_closures (venue_id, starts_at, ends_at, reason)
-            VALUES ($1, public.hall_dakar_now() - interval '1 hour', public.hall_dakar_now() + interval '26 hours', 'Deuil familial (cv12b)')
+            VALUES ($1, date_trunc('minute', public.hall_dakar_now()) - interval '1 hour', date_trunc('minute', public.hall_dakar_now()) + interval '26 hours', 'Deuil familial (cv12b)')
             RETURNING id, starts_at::text, ends_at::text`, [closedShop]);
         try {
             const menuRes = await reply(await menuGet(req(`/api/restaurants/${closedShop}/menu`, 'GET', null), { params: Promise.resolve({ id: closedShop }) }));

@@ -336,8 +336,8 @@ describe('G5 — code de remise', () => {
         const traces = await inspect(async (c) => (await c.query<Row>(`
             SELECT 'cloche' AS src, n.content AS txt FROM public.notifications n WHERE n.user_id = $1
             UNION ALL SELECT 'journal', a.metadata::text || coalesce(a.new_value::text, '') || coalesce(a.old_value::text, '')
-              FROM public.audit_logs a WHERE a.object_id = $2::uuid OR a.metadata->>'order_id' = $2
-            UNION ALL SELECT 'file', o.template_data::text FROM public.notification_outbox o WHERE o.template_data->>'order_id' = $2`, [client.userId, id])).rows);
+              FROM public.audit_logs a WHERE a.object_id = $2::uuid OR a.metadata->>'order_id' = $3::text
+            UNION ALL SELECT 'file', o.template_data::text FROM public.notification_outbox o WHERE o.template_data->>'order_id' = $3::text`, [client.userId, id, id])).rows);
         const leaks = traces.filter((t) => typeof t.txt === 'string' && t.txt.replace(number, '').match(new RegExp(`(^|\\D)${code}(\\D|$)`)));
         console.log(`[CV12B] G5. code ${code} : lignes private avant ${String(held.n)}, après annulation ${String(left.n)} ; lecture après : HTTP ${after.status} ${brief(after.body)} ; traces examinées ${traces.length}, contenant le code ${leaks.length} ${brief(leaks)}`);
         assert.equal(held.n, 1);
