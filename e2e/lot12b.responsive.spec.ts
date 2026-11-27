@@ -167,10 +167,11 @@ async function partnerStep(data: Seeded, orderId: string, action: string, extra:
     await rpcOk('order_partner_action', { actor_id: data.ownerId, order_id: orderId, action, ...extra });
 }
 
-async function completePayment(orderId: string): Promise<void> {
-    const tx = await waitFor('transaction du paiement de la commande', async () => {
-        const { data } = await serviceClient().from('payments').select('external_transaction_id').eq('order_id', orderId)
-            .order('created_at', { ascending: false }).limit(1).maybeSingle();
+async function completePayment(orderId: string, paymentId: string): Promise<void> {
+    const tx = await waitFor(`transaction du paiement ${paymentId} de la commande ${orderId}`, async () => {
+        const { data, error } = await serviceClient().from('payments').select('external_transaction_id, order_id, status').eq('id', paymentId).maybeSingle();
+        if (error) throw new Error(`[l12b] paiement ${paymentId} illisible : ${error.message}`);
+        if (data && data.order_id !== orderId) throw new Error(`[l12b] paiement ${paymentId} d’une autre commande (${String(data.order_id)})`);
         return data?.external_transaction_id ? String(data.external_transaction_id) : null;
     });
     const done = await fakeServices('/__test/samirpay/complete', { transactionId: tx });
@@ -271,8 +272,13 @@ for (const theme of THEMES) {
 
                     // 8. Paiement Wave : faux SamirPay et vrai webhook
                     await page.getByTestId('paiement-commande').locator('label', { hasText: 'Wave' }).click();
-                    await page.getByRole('button', { name: /^Payer .* avec Wave$/ }).click();
-                    await completePayment(orderId);
+                    const [payRes] = await Promise.all([
+                        page.waitForResponse((r) => r.url().endsWith('/api/payments/create') && r.request().method() === 'POST', { timeout: 30_000 }),
+                        page.getByRole('button', { name: /^Payer .* avec Wave$/ }).click(),
+                    ]);
+                    const payBody = await payRes.json().catch(() => null) as Record<string, unknown> | null;
+                    expect([200, 201], `paiement de la commande : HTTP ${payRes.status()} ${JSON.stringify(payBody)}`).toContain(payRes.status());
+                    await completePayment(orderId, String(payBody?.payment_id ?? ''));
                     await stepReached(page, orderId, 'RECUE');
                     await settle(page);
                     await checkLayout(page, w.width, w.phone, 'suivi : envoyée');
