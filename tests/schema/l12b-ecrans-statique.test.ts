@@ -90,6 +90,13 @@ describe('Lot 12b — écrans du client (contrôles sans base)', () => {
         assert.doesNotMatch(shell, /rest-terrou-bi/);
     });
 
+    test('4 bis. paiement depuis le suivi : jamais une part hors du schéma de la route (run 745 : « PREMIER » refusé)', () => {
+        const panel = code('components/orders/client/tracking/OrderPayPanel.tsx');
+        assert.doesNotMatch(panel, /part: 'PREMIER'\s*[,}]|operator, payerPhone, part,/);
+        assert.match(panel, /part === 'SOLDE' \? \{ part: 'SOLDE' \} : \{ expectedAmount: amount \}/);
+        assert.match(read('lib/validations/payment.ts'), /part: z\.enum\(\['ACOMPTE', 'SOLDE', 'INTEGRAL'\]\)\.optional\(\)/);
+    });
+
     test('5. modules partagés des écrans sans dépendance serveur', () => {
         for (const f of ['lib/orders/client-view.ts', 'lib/orders/menu-types.ts']) {
             assert.doesNotMatch(read(f), /from '(?:next\/server|@\/lib\/supabase\/server|@\/lib\/payments\/cashout\.service|node:)/, f);

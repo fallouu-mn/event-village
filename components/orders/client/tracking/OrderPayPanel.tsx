@@ -141,9 +141,11 @@ export function OrderPayPanel({ orderId, part, amount, onPriceChanged, onClose }
         if (!operator) { setOperatorMissing(true); return; }
         if (!payerPhone || rejected) { phoneRef.current?.focus(); return; }
         const body = {
-            targetType: 'ORDER', targetId: orderId, operator, payerPhone, part,
-            // Montant affiché envoyé pour comparaison seulement (première part) : le serveur refuse s'il ne correspond plus
-            ...(part === 'PREMIER' ? { expectedAmount: amount } : {}),
+            targetType: 'ORDER', targetId: orderId, operator, payerPhone,
+            // Solde : part « SOLDE » ; première part : aucune part (schéma de POST /api/payments/create : ACOMPTE, SOLDE ou
+            // INTEGRAL ; la route paie la première part quand ce n'est pas le solde). Montant affiché envoyé pour comparaison
+            // seulement (première part) : le serveur refuse s'il ne correspond plus
+            ...(part === 'SOLDE' ? { part: 'SOLDE' } : { expectedAmount: amount }),
         };
         const key = attempt.keyFor(JSON.stringify(body));
         setBusy(true);
