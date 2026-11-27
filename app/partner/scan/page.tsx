@@ -30,7 +30,7 @@
  * contrôle » (portes groupées par zone) ; `gateId` envoyé avec chaque scan et chaque vérification. La règle des zones est
  * appliquée par le serveur (sans porte choisie : « Aucune porte… », rien n'est validé).
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Banknote, Camera, ChevronLeft, Keyboard, Loader2, QrCode, ShieldAlert, Ticket } from 'lucide-react';
@@ -204,7 +204,9 @@ export default function PartnerScanPage() {
     }, [fetchEvents]);
 
     // ── Reprise de session : même événement et même mode, si l'événement est encore publié et à vous ──
-    useEffect(() => {
+    // Lot stabilité (même cause que le run 774 du scanner du contrôleur) : décidée avant l'affichage, l'écran de choix n'est
+    // plus peint une image avant la reprise
+    useLayoutEffect(() => {
         if (restoreDoneRef.current || loadingEvents || !accountId || eventsError) return;
         restoreDoneRef.current = true;
         const memory = readScanSession(SURFACE, accountId);

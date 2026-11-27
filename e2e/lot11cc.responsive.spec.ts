@@ -300,9 +300,11 @@ for (const theme of THEMES) {
             // Premier passage : écran de départ ; ensuite, le scanner retrouve le contrôle en cours (« Reprendre le contrôle »)
             const start = cpage.getByRole('button', { name: /^commencer le contr[ôo]le$/i });
             const resume = cpage.getByRole('button', { name: 'Reprendre le contrôle' });
-            await expect(start.or(resume)).toBeVisible({ timeout: 30_000 });
-            if (await resume.isVisible()) await resume.click();
-            else await start.click();
+            // Lot stabilité (run 774) : un seul clic sur le bouton présent AU MOMENT du clic (Playwright résout « l'un ou l'autre » à
+            // l'action), plus de choix fait sur un libellé lu avant ; l'écran ne montre plus « Commencer » avant la reprise
+            const startOrResume = start.or(resume);
+            await expect(startOrResume).toBeVisible({ timeout: 30_000 });
+            await startOrResume.click();
             await cpage.waitForFunction(() => Array.from(document.querySelectorAll('video')).some((v) => v.readyState >= 2), null, { timeout: 30_000 });
             await expect(cpage.getByRole('link', { name: 'Liste des tables' })).toHaveAttribute('href', `/controller/porte/${data.eventId}`);
             await cpage.evaluate((p) => {

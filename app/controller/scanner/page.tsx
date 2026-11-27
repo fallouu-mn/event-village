@@ -59,7 +59,7 @@
  * d'origine, zones où se présenter et porte de la première entrée ; un incident de porte (409 GATE_*) est un écran
  * technique, et GATE_CHANGED fait relire les affectations.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Calendar, Camera, Keyboard, Loader2, LogOut, Settings2, Users } from 'lucide-react';
@@ -605,7 +605,10 @@ export default function ControllerScannerPage() {
     }, [boundary, fetchAssignments]);
 
     // ── Reprise de session (A10) : événement et mode retenus, repris si l'événement est encore ouvert au contrôle ──
-    useEffect(() => {
+    // Lot stabilité (run 774, lot11cc) : décidée AVANT l'affichage (useLayoutEffect, même passage que la fin du chargement).
+    // Avec useEffect, l'écran « Commencer le contrôle » était peint une image avant la reprise : bouton qui clignote, qu'un
+    // contrôleur pouvait toucher (et que le test a touché pendant qu'il disparaissait).
+    useLayoutEffect(() => {
         if (restoreDoneRef.current || loading || !accountId) return;
         restoreDoneRef.current = true;
         const memory = readScanSession(SURFACE, accountId);
