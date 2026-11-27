@@ -10,7 +10,7 @@ passage).
 246 passés, **mesure mobile valide** (accueil 92, fiche 93, Mes billets 92, toucher 80 ms), budgets tenus ; deux rouges
 sans défaut du code : `recette-matrice` (deux références de lignes de `docs/recette-billetterie.md` décalées par les
 tests modifiés, recalées) et une capture intermittente de `carte-b3` (Explorer, sombre, 360 px ; verte aux runs 774, 776,
-777), toutes deux rejouées au run RUN_RELANCE. Migrations à appliquer : liste dans la section ci-dessous.
+777), toutes deux rejouées au run **780** (`dc248c877`) : **vert** (matrice, typage, lint, responsive 249 passés, 0 défaut, `carte-b3` vert). Migrations à appliquer : liste dans la section ci-dessous.
 
 **État du lot (26-27/11)** : run complet 752 vert sauf deux points ; `recette-matrice` corrigée (verte aux runs 755, 760 et 764) ; mesure
 mobile de la fiche à 89 aux runs 752 et 760, **94 pour main comme pour la branche sur la même machine** (run 763, mesure
@@ -165,7 +165,7 @@ Mesure valide à la première tentative, tous les seuils tenus.
 | 776 | `5cb50b8c9c` | rapide (10 suites, responsive, captures) | rouge | T2 rouge attendu (correctif du 12c pas encore dans main) ; bandeau de fermeture trouvé deux fois ; `lot11cc` refusé par le quota de connexion → `c90f040c55` ; main fusionné, carte alignée (`14d43a79ea`, `2b624f87a6`) |
 | 777 | `bc6d1dbee7` | rapide (46 suites, responsive, captures) | **vert** | 46/46 (T1, T2, T3 verts), responsive 249 passés, 0 défaut, 80 captures ; capture de la fermeture : badge « Ouvert maintenant » → `554dae61f4` |
 | 779 | `d59605b18f` | **complet** | rouge (2 points sans défaut du code) | 644/645 (`recette-matrice` : références de lignes), e2e 783, responsive 246 passés et `carte-b3` intermittent, 0 défaut, mesure valide 92/93/92, budgets tenus |
-| RUN_RELANCE | ce rapport | rapide (`recette-matrice`, responsive, captures) | RESULTAT_RELANCE | références recalées (`fonctions-privileges.test.ts:97`, `notif-modeles.test.ts:593`) ; responsive rejoué |
+| 780 | `dc248c877` | rapide (`recette-matrice`, responsive, captures) | **vert** | références recalées (`fonctions-privileges.test.ts:97`, `notif-modeles.test.ts:593`) ; responsive rejoué |
 
 Captures du run 779 (`ci-results`, `runs/779-46038324126/captures-responsive/`) : **80 captures du lot**, dont 16 nouvelles
 (`l12b-prix-change`, `l12b-mode-comptoir`, `l12b-solde-depuis-avis`, `l12b-fermeture` × 390 et 1 440 px × clair et
