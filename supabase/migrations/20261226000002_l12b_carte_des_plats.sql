@@ -25,7 +25,8 @@
 --     ajoutées à la liste blanche des aides (supabase/hotfix/2026-10-31-lot1a/03-verification.sql,
 --     tests/schema/fonctions-privileges.test.ts) :
 --       product_public(produit) : DISPONIBLE, d'un établissement listé (listed_venue), non retiré (archived_at vide) ;
---       product_owner_or_admin(produit) : la partenaire propriétaire du produit ou l'administration.
+--       product_owner_or_admin(produit) : la partenaire propriétaire du produit (conditions de is_partner_owner) ou
+--       l'administration.
 --     Contre-vérification du lot 12b (T1) : une règle ne lit jamais la ligne entière du produit (le 12c ne rend à anon
 --     et authenticated que certaines colonnes de products, 20261224000005:571-582 ; une sous-requête de règle est
 --     vérifiée avec les droits de l'appelant) ;
@@ -213,8 +214,14 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
+    -- Propriétaire : mêmes conditions que is_partner_owner (20261112000005_lot9quinquies_fiche_partenaire.sql), écrites
+    -- en clair (statut de la fiche et du compte lus ici : invariant q6 du lot 9 quater)
     SELECT public.is_admin()
-        OR EXISTS (SELECT 1 FROM public.products pr WHERE pr.id = p_product_id AND public.is_partner_owner(pr.partner_id));
+        OR EXISTS (SELECT 1 FROM public.products pr
+                     JOIN public.partners pa ON pa.id = pr.partner_id
+                     JOIN public.users u ON u.id = pa.user_id
+                    WHERE pr.id = p_product_id AND pa.user_id = auth.uid()
+                      AND pa.status::text IN ('VALIDE', 'SUSPENDU') AND u.status::text IN ('ACTIF', 'EN_ATTENTE'));
 $$;
 REVOKE ALL ON FUNCTION public.product_owner_or_admin(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.product_owner_or_admin(uuid) TO anon, authenticated, service_role;

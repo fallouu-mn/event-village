@@ -182,7 +182,8 @@ describe('Lot 12b — migrations', () => {
             assert.match(src.product_public, /archived_at IS NULL/);
             assert.match(src.product_public, /listed_venue\(pr\.venue_id\)/);
             assert.match(src.product_owner_or_admin, /is_admin\(\)/);
-            assert.match(src.product_owner_or_admin, /is_partner_owner\(pr\.partner_id\)/);
+            assert.match(src.product_owner_or_admin, /pa\.user_id = auth\.uid\(\)/);
+            assert.match(src.product_owner_or_admin, /pa\.status::text IN \('VALIDE', 'SUSPENDU'\) AND u\.status::text IN \('ACTIF', 'EN_ATTENTE'\)/, 'conditions de is_partner_owner');
         });
     });
 });
