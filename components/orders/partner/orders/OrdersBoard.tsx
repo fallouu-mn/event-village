@@ -386,7 +386,8 @@ export function OrdersBoard() {
                     : 'Hors ligne : l’écran se remet à jour au retour du réseau'}
                 icon={<MonitorSmartphone size={20} aria-hidden="true" />}
             >
-                <div className="h-full space-y-4 overflow-y-auto p-4 sm:p-6">
+                {/* Zone qui défile dans le corps de la fenêtre (corps sans défilement propre en plein écran) : run 746 */}
+                <div className="absolute inset-0 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         {wake === 'unavailable' ? (
                             <p className="text-base text-warning-text" role="status">
