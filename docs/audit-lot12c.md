@@ -343,3 +343,39 @@ sont du confort. Chaque ajout suit la règle de nuit des avis (`night_policy`) e
   second), test REST à la clé anon.
 - T3 et la limite de T1 (marques, photos) : décision du client à demander (revue des produits existants à l'ajout d'un
   mot, liste de marques).
+
+---
+
+## Corrections
+
+Correctifs sur `lot12c/partenaire` (rapport : `docs/lot12c-rapport.md`, section « Correctifs après contre-vérification »).
+Les trois suites de cette contre-vérification y sont reprises sans changer une assertion (5cf7daefcb), sauf une ligne de
+préparation de T3, changée sur décision (ci-dessous). **Toutes vertes au run complet 753** (eb0a6a25a2, branche à jour
+avec `origin/main`) et au run rapide 754 (b485b9e1c8).
+
+| Test | Trou | Correctif (commit) | Vert au run |
+|---|---|---|---|
+| `cv12c-1` T1a lettres séparées (« W.H.I.S.K.Y », « W H I S K Y », « C.H.I.C.H.A ») | T1 | lecture des lettres isolées recollées dans `private.order_review_words` (dffd6fe10a) | 743, 753 |
+| `cv12c-1` T1b accent décomposé, espace invisible, « і » cyrillique, pleine chasse | T1 | `private.order_text_fold` : NFKC, marques, invisibles, lettres cyrilliques et grecques (dffd6fe10a) | 743, 753 |
+| `cv12c-1` T2 texte changé entre l'affichage et « autoriser » | T2 | version lue exigée par la route, refusée par la base si périmée (`REVIEW_CHANGED`) ; nouvelle version à chaque modification d'un produit à vérifier (dffd6fe10a, 19694aaa70) | 743, 753 |
+| `cv12c-1` T3 mot ajouté, produit déjà en vente | T3 | revue des produits à chaque changement de la liste, un avis groupé (dffd6fe10a) | 743, 753 |
+| `cv12c-1` T4 lecture REST anon et autre partenaire | T4 | droits par colonne sur `products` (dffd6fe10a) | 743, 753 |
+| `cv12c-1` T5 catégorie « Bières et alcools » | T5 | nom de la catégorie compté, renommage qui revoit ses produits (dffd6fe10a) | 743, 753 |
+| `cv12c-1` T6 statut d'un produit archivé | T6 | produit archivé figé : garde, service, portions (dffd6fe10a ; défaut de lecture de `restore` corrigé en 655cd54609) | 743, 753 |
+| `cv12c-3` T3b instruction hors fonction qui revoit les produits | T3 | revue par la migration `20261224000005` (dffd6fe10a) | 743, 753 |
+| `cv12c-2` G1 à G8, `cv12c-3` S1 à S3 | — | restés verts (S1 : `order_daily_portions_set` recopiée une fois, lignes ajoutées seulement ; S3 : avis de commande ajoutés en GSM-7 d'un segment, les deux types du 12c toujours sans SMS) | 743, 753 |
+
+**Ligne de préparation changée (décision du 27/11)** — `tests/audit/cv12c-1-trous.test.ts`, T3, lignes 141, 146, 151,
+155 et 156 (dbfdbe38a9) : « Flag » est entré dans la liste par défaut (marques demandées par la consigne des
+correctifs) ; la précondition « vendable » de T3 devenait impossible.
+
+| | Avant | Après |
+|---|---|---|
+| nom du produit | « Flag spéciale 33 cl » | « Zorba spéciale 33 cl » |
+| mot ajouté à la liste | « flag » | « zorba » |
+
+Même scénario (un mot ajouté rend « à vérifier » un produit déjà en vente), même assertion (`q.ok !== true`).
+
+Points de la section 6 : T4 posé par ce lot (droits par colonne ; la règle de lignes `products_read` reste au 12b) ;
+revue des produits existants et liste de marques faites sur décision du client (consigne des correctifs). Les sept avis
+de la section 5.3 sont ajoutés (P1 à P7), textes dans le rapport.

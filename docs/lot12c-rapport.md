@@ -4,6 +4,11 @@ Branche `lot12c/partenaire` (worktree `event-village-lot12c`), partie de `main` 
 fusionnée en cours de lot. **Non fusionnée dans `main`, aucune migration appliquée** (consigne). Chemins relatifs au
 dépôt ; `M/` = `supabase/migrations/`.
 
+> **Correctifs après contre-vérification (27/11)** : section du même nom, en tête ci-dessous. Six trous de l'audit verts,
+> sept avis ajoutés, « Remettre en vente », mode comptoir, rappel sonore, rupture en un geste. **Run complet 753 vert sauf
+> trois règles du catalogue des avis, corrigées au run rapide 754** ; migration `20261224000005` ajoutée, les cinq
+> migrations du lot **non appliquées** ; pas de fusion.
+
 Résultat : **run complet 732** (branche à jour avec `main` 5b7f3399ca) : qualité, e2e, contrôle responsive (247 tests, 0
 défaut bloquant, écrans du lot contrôlés et capturés dans les deux thèmes), budgets (toutes les pages budgétées en légère
 baisse) et mesure mobile (94 / 91 / 92) verts ; tests 634/636, les deux rouges (contrôles statiques : appel de
@@ -13,16 +18,198 @@ pas recopiées (voir ci-dessous).
 
 ---
 
+## Correctifs après contre-vérification
+
+Consigne « Lot 12c — correctifs après contre-vérification, points ouverts et améliorations » ; audit
+`docs/audit-lot12c.md` (branche `lot12c/cv-rouges`, be86be41bc). Les suites rouges de l'audit sont reprises **sans
+changer une assertion** (5cf7daefcb), sauf une ligne de préparation de T3 changée sur décision (dbfdbe38a9, ci-dessous).
+Migrations `20261224000001` à `…04` **modifiées en place** (jamais appliquées), fonctions nouvelles dans
+**`20261224000005_l12c_cv_correctifs.sql`** ; les cinq restent **non appliquées**. Pas de fusion.
+
+Résultat : **run complet 753** (branche à jour avec `origin/main`) : qualité, e2e, responsive (0 défaut bloquant, 84
+captures du lot), budgets (+24 octets par page, aucun relevé) et mesure mobile (96 / 92 / 93) verts ; tests 635/638, les
+trois rouges (règles du catalogue des avis) corrigés au run rapide 754 (8/8). Les **six trous de l'audit sont verts** (`cv12c-1`
+T1 à T6, `cv12c-3` T3b), sans assertion changée.
+
+### Trous de l'audit
+
+| Trou | Correctif | Commit | Preuve (vert au run 753) |
+|---|---|---|---|
+| T1 (moyenne) mot de la liste contourné par l'écriture (forme décomposée, espace sans chasse, lettre cyrillique, pleine chasse) | une seule fonction de pliage en base, `private.order_text_fold` (NFKC puis accents retirés ; caractères invisibles et de contrôle retirés ; lettres cyrilliques et grecques qui ressemblent à des lettres latines ramenées à celles-ci ; œ, æ, ß, apostrophes) et une seule lecture des mots, `private.order_review_words` (mots tels quels, et lettres isolées recollées : « W.H.I.S.K.Y », « W H I S K Y »). Utilisées à l'enregistrement, pour les suppléments, la catégorie, la revue groupée et le **surlignage, servi par le serveur** (`order_review_marks_many` : plages du texte d'origine ; le pliage côté navigateur est supprimé). « vinaigrette », « gingembre », « G i n g e m b r e » restent non reconnus | dffd6fe10a | `cv12c-1` T1, T1b ; `l12c-cv-correctifs` A |
+| T2 (moyenne) décision de l'administration non liée à ce qu'elle a vu | la page envoie la version affichée (`reviewedAt` : date de la demande, ou date de la fiche d'un produit sans demande) ; la route l'exige (`REVIEW_VERSION_REQUIRED`) ; la base refuse une version périmée (`REVIEW_CHANGED`, « Ce produit a changé pendant votre lecture : relisez-le. ») et la page se recharge sur la fiche. Toute modification d'un produit encore « à vérifier » (nom, description, catégorie, photos, supplément ajouté ou renommé) lui donne une nouvelle version. Après une autorisation, les mots vus sont gardés (`review_cleared_words`) : un mot **nouveau** (nom, description, catégorie, supplément) remet « à vérifier » | dffd6fe10a, 19694aaa70 | `cv12c-1` T2 ; B |
+| T3 (faible) liste des mots non rétroactive | à **chaque** changement de la liste, et **une fois par la migration** (instruction hors fonction), revue des produits non archivés, non réglementés, non refusés, dont le texte (nom, description, catégorie, suppléments) contient un mot que l'administration n'a pas déjà autorisé : elle **pose seulement** « à vérifier ». **Un seul avis groupé** aux administrateurs `partners.validate` (`ADMIN_PRODUCTS_REVIEW_BATCH`, journal `PRODUCT_REVIEW_BACKFILL`) ; la page montre la dernière revue. Marques dans la liste par défaut (36 mots) : Gazelle, Flag, Castel, 33 Export, Heineken, Guinness, Desperados, Johnnie Walker, Jack Daniel's, Chivas, Smirnoff, Baileys, Martini, Ricard, Marlboro, Dunhill, Camel, Winston. Bouton **« Mettre à vérifier »** de l'administration sur n'importe quel produit en vente (`order_product_review_request`, droit `partners.validate`, motif envoyé à la partenaire et affiché dans la file) | dffd6fe10a, 19694aaa70 | `cv12c-1` T3 ; `cv12c-3` T3b ; C, D |
+| T4 (faible) lecture REST de l'état de vérification et de l'archivage | droits par colonne : `SELECT` de la table retiré à `anon` et `authenticated`, puis rendu colonne par colonne **sauf** `review_state`, `review_words`, `review_requested_at`, `review_note`, `review_cleared_words`, `archived_at` (bloc rejouable lu dans `information_schema`). Aucun écran ni code du navigateur ne lit `products` par la REST (contrôlé par E ; vérifié aussi sur `origin/lot12b/client` : seule `app/api/partner/stats`, côté serveur, lit `id, status`). La règle de lignes `products_read` reste au 12b | dffd6fe10a | `cv12c-1` T4 ; E |
+| T5 (faible) catégorie au nom d'un mot de la liste | le nom de la catégorie compte ; catégories créées et renommées par la base (`order_category_save`, `POST` et nouveau `PATCH /api/partner/products/categories/[id]`, bouton « Renommer » de « Ma carte ») ; renommer une catégorie avec un mot remet tous ses produits « à vérifier » (avis groupé, origine « catégorie ») ; doublon de nom refusé (`CATEGORY_EXISTS`) | dffd6fe10a, 19694aaa70 | `cv12c-1` T5 ; F |
+| T6 (faible) statut d'un produit archivé modifiable | produit archivé **figé** : statut, prix, suppléments, portions refusés (garde de la table, `ProductService.writeProduct`, `product_option_set`, `order_daily_portions_set` recopiée), seule « Remettre en vente » le rouvre | dffd6fe10a, 655cd54609 | `cv12c-1` T6 ; G |
+
+`cv12c-2` (G1 à G8) et `cv12c-3` (S1 à S3) restent verts.
+
+### Points ouverts et améliorations de la consigne
+
+| Point | Fait | Commit | Preuve |
+|---|---|---|---|
+| 7. Sept avis (P1 à P7 de l'audit) | voir « Avis ajoutés » ci-dessous | 90b5ae2097 | I ; `notif-modeles` (textes exacts), `cv12c-3` S3 |
+| 8. Remettre en vente un produit archivé | section « Produits archivés » de « Ma carte » (100 derniers), bouton « Remettre en vente » (`POST /api/partner/products/[id]/restore` → `order_product_save` `restore`) : le produit revient tel qu'il était, revu par la liste (les mots déjà autorisés ne sont pas repris) ; journal `PRODUCT_RESTORED` | dffd6fe10a, 19694aaa70 | G ; capture `catalogue` |
+| 9. Commandes à 1 440 px avec le menu | à partir de 1 280 px, colonnes d'au moins 18 rem côte à côte dans une zone qui défile **seule** à l'horizontale (jamais la page), numéro de commande sur une ligne (contrôlé à chaque largeur par le parcours e2e) ; le menu latéral n'est pas replié automatiquement (`AppLayout` interdit) | 19694aaa70 | e2e ; capture `commandes__1440` |
+| 10. Mode comptoir | bouton « Mode comptoir » : fenêtre plein écran native (`<dialog>`), sans menu, plein écran du navigateur demandé dans le geste, très grands boutons (64 px), **écran gardé allumé** (Wake Lock) ou message simple « Cet appareil peut se mettre en veille : réglez sa mise en veille sur « jamais » pendant le service. » ; sortie en un geste (« Quitter le mode comptoir », qui sort aussi du plein écran, ou Échap) | 19694aaa70, 519815214e | e2e (ouverture, contrôle responsive, sortie) ; capture `comptoir` |
+| 11. Rappel sonore à 5 et 2 minutes | deux notes descendantes (distinctes de l'arrivée d'une commande), vibration, message « Commande A1B2C3 : plus que 5 minutes pour répondre. » ; même interrupteur que le son ; une fois par commande et par seuil | 19694aaa70 | — (son : non testable en CI) |
+| 12. Rupture en un geste | « Ma journée » liste les plats du jour encore en vente avec un bouton « Plus de … » (`POST …/portions { soldOut: true }` : portions ramenées à ce qui est déjà vendu, en base sous verrou) ; annulation 6 secondes (les portions d'avant sont remises) | dffd6fe10a, 19694aaa70 | H ; capture `commandes` |
+
+### Avis ajoutés (point 7)
+
+Tous les canaux pour chaque destinataire ; SMS en GSM-7, **un segment au pire cas** (nom d'établissement de 100
+caractères avec guillemets, tiret long, accolades, symbole euro ; montant à 7 chiffres ; URL de 28 caractères) ; aucun
+mot technique ; chaque avis mène à l'objet. Règle de nuit (1 h – 7 h, `notification_types.night_policy`) : un avis qui
+concerne une commande en cours ou prévue dans l'heure part **tout de suite** (code bloqué et rappel de réponse compris) ;
+la décision sur un produit, le remboursement bloqué et la revue groupée sont **reportés** à la fin de la plage. Chaque
+rappel part une fois par commande (clé de l'avis).
+
+| N° | Type | Destinataire, moment | Canaux, nuit | Texte (cloche, téléphone, email) | SMS au pire cas (septets) |
+|---|---|---|---|---|---|
+| P1 | `ORDER_CODE_LOCKED` | client, au 5ᵉ essai faux du code (déclencheur sur `orders`, une fois par code) | 4, tout de suite | « Code de remise bloqué — Le code de remise de la commande CMD-261205-A1B2C3 a été mal saisi trop de fois : il ne fonctionne plus. Ouvrez la commande, demandez un nouveau code et donnez-le à la remise. » | « Event Village : code de remise de la commande CMD-261205-A1B2C3 bloqué après trop d'essais. Demandez un nouveau code dans l'application. » (136) |
+| P2 | `ORDER_RESPONSE_REMINDER` | partenaire, moins de 5 minutes avant la fin du délai de réponse (`order_reminders`) | 4, tout de suite | « Commande sans réponse — La commande … chez « … » attend votre réponse. Acceptez-la ou refusez-la avant 12:15 : sans réponse, elle est annulée et le client remboursé. » | « Event Village : commande CMD-261205-A1B2C3 toujours sans réponse. Acceptez-la ou refusez-la avant 12:15, sinon elle sera annulée. » (129) |
+| P3 | `ORDER_PREP_REMINDER` | partenaire, à l'heure prévue moins la préparation, commande acceptée plus d'une heure avant | 4, tout de suite | « Commande à préparer — La commande … chez « … » est prévue à 12:45 : lancez sa préparation maintenant. Livraison (zone …). » | « Event Village : commande CMD-261205-A1B2C3 prévue à 12:45 : lancez sa préparation maintenant. » (93) |
+| P4 | `ORDER_READY_COURIER` | livreur choisi, quand la livraison passe à « prête » (déclencheur sur `orders`) | 4, tout de suite | « Commande prête à livrer — La commande … est prête chez « … » (zone …) : passez la prendre. À la remise, demandez son code au client. » | « Event Village : commande CMD-261205-A1B2C3 à récupérer chez Chez Mame Diarra " Teranga... pour la livrer. Adresse dans l'application. » (133) |
+| P5 | `PRODUCT_DECISION_SMS` | partenaire, décision de l'administration (en plus de `PRODUCT_REVIEW_DECIDED`, qui reste sans SMS) | SMS, reporté | — | « Event Village : produit "…" non autorisé à la vente en ligne. Motif dans l'application. » / « … vérifié : il se commande en ligne. » / « … vérifié. Marqué réglementé par vous, il reste sans vente en ligne. » (126 au pire) |
+| P6 | `ADMIN_ORDER_REFUND_BLOCKED` | administrateurs `refunds.manage`, remboursement d'une commande bloqué, refusé ou incertain (déclencheur sur `cashouts` ; cloche, téléphone et email partent déjà) | SMS, reporté | — | « Event Village : remboursement de 9 875 000 F CFA de la commande CMD-261205-A1B2C3 bloqué. Reprenez-le depuis les finances. » ; « … refusé par l'opérateur. … » ; « … sans réponse de l'opérateur. Vérifiez-le avant toute reprise. » (≤ 141) |
+| P7 | `ORDER_SCHEDULED_REMINDER` | client, 1 heure avant une commande prévue un autre jour que sa transmission | 4, tout de suite | « Votre commande approche — Votre commande … chez « … » est prévue à 12:45. Gardez votre téléphone près de vous et votre code de remise prêt. » (retrait : « Pensez à votre code de remise pour la retirer. » ; sur place : « Présentez-vous à l'heure : elle vous sera servie sur place. ») | « Event Village : rappel, commande CMD-261205-A1B2C3 prévue à 12:45 chez Chez Mame Diarra " Teranga... Gardez votre téléphone près de vous. » (137) |
+| T3 | `ADMIN_PRODUCTS_REVIEW_BATCH` | administrateurs `partners.validate`, revue groupée | cloche, email ; reporté | « Produits à vérifier — 12 produits déjà en vente sont à vérifier : la liste des mots a changé. Ils ne se commandent plus en ligne tant que vous ne les avez pas autorisés ou refusés. » | — |
+| T3 | `PRODUCT_REVIEW_DECIDED` (branche ajoutée) | partenaire, bouton « Mettre à vérifier » | inchangé | « Produit en vérification — « … » est en vérification par Event Village : il ne se commande plus en ligne jusqu'à la décision. Motif : … Il reste affiché avec son prix sur votre carte. » | — |
+
+Liens : commande du client `/orders/<id>`, de la partenaire `/partner/orders/<id>`, du livreur `/courier/orders/<id>`
+(mêmes liens que les avis du 12a ; pages des lots 12b et 12d), produit `/partner/products/<id>`, administration
+`/admin/products` et `/admin/finance#versements-a-reprendre`. Les rappels P2, P3, P7 sont posés par
+`order_reminders`, appelée par la tâche des commandes (`/api/cron/orders`, toutes les 5 minutes) après `order_tick` ; un
+échec des rappels n'empêche pas le reste (journalisé).
+
+### Décisions et écarts
+
+- **Ligne de préparation d'un test d'audit changée (décision du 27/11)** : « Flag » entre dans la liste par défaut, la
+  précondition « vendable » de T3 devenait impossible. `tests/audit/cv12c-1-trous.test.ts`, lignes 141, 146, 151, 155
+  et 156 : **avant** « Flag spéciale 33 cl » / « flag », **après** « Zorba spéciale 33 cl » / « zorba » ; même scénario,
+  même assertion. T5 (« Flag 33 cl ») est inchangé : il est désormais repéré par son nom ; le cas de la catégorie seule
+  est prouvé par F.
+- La base accepte encore une décision **sans** version quand la fonction est appelée directement (rôle de service
+  seulement : tâches et tests du 12a) ; la seule route qui l'appelle exige la version.
+- P5 : `PRODUCT_REVIEW_DECIDED` garde ses trois canaux sans SMS (règle S3 de l'audit) ; le SMS part par un type à part.
+  P6 : `notif_cashouts_notify` n'est pas recopiée (règle S1 du 12a, et alerte R1 de la contre-vérification de la
+  finition 4) ; le SMS part d'un déclencheur à part sur `cashouts`. P1 et P4 : déclencheur à part sur `orders`, aucune
+  fonction d'étape du 12a recopiée.
+- `order_daily_portions_set` recopiée de `M/20261130000002_l12a_catalogue.sql:318-369`, **lignes ajoutées seulement**
+  (refus d'un produit archivé, rupture en un geste) ; déclarée dans `l12c-statique` S1.
+- Mode comptoir : une sortie du plein écran par le navigateur (Échap) laisse le mode ouvert (toujours sans menu) ;
+  « Quitter » ou un second Échap le ferment. Le lier à la sortie du plein écran le refermait dès l'ouverture dans le
+  navigateur des captures (run 743).
+- Son des commandes : permis au **clic** et non plus à l'appui. Au premier toucher, « Activer le son » disparaissait
+  entre l'appui et le relâchement, la rangée glissait et le geste n'atteignait pas le bouton visé (run 744 : « Mode
+  comptoir » jamais ouvert).
+- Limite qui reste : un produit dont **seule la photo** montre de l'alcool n'est repéré que par la case de la partenaire
+  ou par le bouton « Mettre à vérifier » (reconnaissance d'image hors périmètre ; noté dans `docs/apres-lancement.md`).
+
+### Tests existants modifiés (signalés)
+
+| Fichier | Avant | Après | Raison |
+|---|---|---|---|
+| `tests/audit/cv12c-1-trous.test.ts:141-156` (T3) | « Flag spéciale 33 cl », mot « flag » | « Zorba spéciale 33 cl », mot « zorba » | décision du 27/11 (ci-dessus) ; assertion inchangée |
+| `tests/parcours/l12c-catalogue.test.ts` A | mots trouvés de « Bière Gazelle 65 cl » : `['bière']` | `['bière', 'gazelle']` | marque dans la liste par défaut |
+| `tests/parcours/l12c-catalogue.test.ts` C | décisions sans version | `reviewedAt` envoyé (aide `version`) | T2 : version exigée par la route |
+| `tests/parcours/l12c-catalogue.test.ts` L | 4 migrations du lot | 5 | migration 20261224000005 |
+| `tests/parcours/l12c-statique.test.ts` S1 | 4 recopies | 5 (`order_daily_portions_set`, depuis `M/20261130000002`) | T6, point 12 |
+| `tests/parcours/notif-modeles.test.ts`, `notif-outbox.test.ts` (table G2, textes exacts G3) | — | 8 types ajoutés (lignes G2), 16 textes SMS exacts | avis ajoutés ; aucune assertion existante changée |
+| `docs/recette-billetterie.md` (ligne A29) | `notif-modeles.test.ts:582` | `:591` | lignes ajoutées avant le test cité |
+| `tests/parcours/email-regle-envoi.test.ts` (G.49, `G49_EXCLUDED`) | `PUSH_TEST`, `COUNTER_RECEIPT`, `ADMIN_REVIEW_SMS` | + `PRODUCT_DECISION_SMS`, `ADMIN_ORDER_REFUND_BLOCKED` | SMS qui doublent un avis qui a déjà son email (même raison qu'`ADMIN_REVIEW_SMS`, lot 9 quinquies) ; un email de plus serait un doublon |
+| `tests/schema/f5-liens-avis.test.ts` (`SANS_OBJET`) | — | + `ADMIN_ORDER_REFUND_BLOCKED` : file « Versements à reprendre » | même lien et même raison qu'`ADMIN_REFUND_TO_RETRY` (aucune fiche par versement) |
+
+### Suite ajoutée
+
+`tests/parcours/l12c-cv-correctifs.test.ts` (base locale, faux SamirPay ; liste et réglages remis à la fin de chaque
+test) : A mots déguisés (9 formes), non-repérés (5), marques (9), surlignage servi ; B version exigée, périmée
+refusée (supplément, nom), version à jour acceptée, mot nouveau après autorisation (supplément, description) ; C revue
+groupée par la liste (un avis groupé, aucun avis par produit, mots déjà autorisés non repris ; produit refusé non
+touché) ; D bouton « Mettre à vérifier » (droit, partenaire, motif, avis, double) ; E colonnes illisibles par anon,
+autre partenaire et partenaire elle-même, colonnes de la carte lisibles, aucun écran qui lit `products` par la REST ;
+F catégories ; G archivé figé (statut, prix, supplément, écriture directe, portions) et remise en vente ; H rupture en
+un geste et annulation ; I les 7 avis (une fois chacun), règle de nuit et canaux identiques à la base, SMS au pire cas.
+Parcours e2e du lot complété : mode comptoir (ouverture, contrôle responsive, capture, sortie), numéro de commande sur
+une ligne à chaque largeur, produits archivés, onglet « Mettre à vérifier ».
+
+### Runs de la contre-vérification
+
+| Run | Commit | Mode | Résultat |
+|---|---|---|---|
+| 743 | c2425e06e7 | rapide, 25 suites (audit 12c et 12a, lot, avis, design, statut des comptes, remboursements…) + responsive + captures | **23/25** : `cv12c-1`, `cv12c-2`, `cv12c-3` passent au **vert** ; rouges : `l12c-catalogue` G (produit archivé modifiable : `restore` absent lu NULL → **vrai défaut**, corrigé) et `l12c-cv-correctifs` (deux erreurs du test) ; spec e2e du lot : mode comptoir refermé dès l'ouverture |
+| 744 | 655cd54609 | rapide, 7 suites + responsive + captures | suites **7/7** ; spec e2e : « Mode comptoir » jamais atteint (son activé à l'appui, la rangée glissait) → corrigé |
+| 746 | 815d3d206c | rapide, 2 suites + responsive + captures | suites vertes ; mode comptoir : texte coupé à 390 px (corps de la fenêtre sans défilement) ; `carte-b3` (autre lot) : repère d'une salle non trouvé, vert aux runs 743, 744, 749, 751 et 753 |
+| 749 | 25934bfe9c | rapide, 1 suite + responsive + captures | même texte coupé (la fenêtre plein écran du système de design masque son débordement) → fenêtre native |
+| 751 | 519815214e | rapide, 1 suite + responsive + captures | **vert** : 0 défaut bloquant, spec du lot vert dans les deux thèmes, 84 captures |
+| **753** | **eb0a6a25a2** | **complet** (branche à jour avec `origin/main`) | qualité, e2e, responsive (0 défaut bloquant), budgets et mesure mobile **verts** ; tests **635/638**. Rouges, règles du catalogue des avis : `email-regle-envoi` (G.49 : tout avis indispensable déclare l'email), `f5-liens-avis` (lien vers l'objet exact) pour les deux types SMS qui doublent un avis, et `textes-sms-9bis` (« .... » dans le rappel client, déjà corrigé localement) |
+| 754 | b485b9e1c8 | rapide : les 3 suites rouges + `notif-modeles`, `notif-outbox`, `l12c-cv-correctifs`, `cv12c-3`, `cv12a-3` | **vert** : 8/8, typage et lint ; avec le run complet 753, plus aucune suite rouge |
+
+### Poids JavaScript et mesure mobile, avant et après
+
+Avant : run complet 732 (rapport du lot, 6e1ca5f9fb). Après : run complet 753 (eb0a6a25a2). **Aucun budget relevé.**
+
+| Route | Avant (732) | Après (753) | Écart | Budget | Marge |
+|---|---|---|---|---|---|
+| `/` | 215 534 | 215 558 | +24 | 226 342 | 10 784 |
+| `/events/[id]` | 224 474 | 224 498 | +24 | 233 316 | 8 818 |
+| `/tickets` | 240 911 | 240 935 | +24 | 250 417 | 9 482 |
+| `/controller/scanner` | 225 198 | 225 222 | +24 | 234 911 | 9 689 |
+| `/billet/hors-ligne` | 214 148 | 214 172 | +24 | 224 268 | 10 096 |
+| `/explore` | 225 887 | 225 911 | +24 | 235 712 | 9 801 |
+
+Aucune page budgétée n'importe de code du lot ; les 24 octets, identiques partout, sont la table des morceaux du
+chargeur commun (nouveaux morceaux des pages du lot), non vérifié octet par octet.
+
+Mesure mobile (Lighthouse, médiane de 5 passages, seuil 90, une seule tentative, mesure fiable) :
+
+| Page | Avant (732) | Après (753) | TBT médian avant → après |
+|---|---|---|---|
+| Accueil | 94 | 96 | 292 → 246 ms |
+| Fiche d'un événement | 91 | 92 | 342 → 296 ms |
+| Mes billets | 92 | 93 | 356 → 319 ms |
+
+### Captures
+
+Run 753 (et 751), `ci-results`, `runs/<n>/captures-responsive/l12c-<écran>__<largeur>__<thème>.jpg` : **14 écrans × 3
+largeurs × 2 thèmes = 84**, chacune après le contrôle responsive (0 défaut bloquant). Ajoutées : `comptoir` (mode
+comptoir) et `admin-signaler` (« Mettre à vérifier ») ; `catalogue` montre maintenant les produits archivés et
+`commandes` les plats du jour avec « Plus de … ». Relues à l'œil (runs 744, 751, 753) :
+
+- `commandes__1440` : les quatre colonnes, le menu ouvert, la quatrième entamée au bord droit : la zone des colonnes
+  défile seule à l'horizontale ; numéros complets sur une ligne (contrôlé à chaque largeur) ;
+- `comptoir` : colonnes larges en ordinateur, liste par étape en téléphone, grands boutons, message de mise en veille
+  (le navigateur de CI refuse le maintien de l'écran allumé) ;
+- **reste visible** : un liseré d'environ 22 px en haut du mode comptoir laisse voir l'en-tête de la page derrière, dans
+  les captures seulement à ce jour. L'ancrage explicite de la fenêtre (eb0a6a25a2) ne l'a pas fait disparaître : il
+  vient vraisemblablement du plein écran demandé au navigateur sans affichage de la CI ; à vérifier sur une vraie
+  tablette (aucune construction locale possible pour le confirmer).
+
+### Autres idées, par valeur
+
+1. **Pause des commandes en un geste** (« Plus de commandes pendant 30 min ») en plein rush : évite les annulations
+   sans réponse et les remboursements, sans fermer l'établissement dans les réglages.
+2. **Bon de cuisine imprimé** (ticket 58/80 mm) à l'acceptation, avec le numéro court en grand.
+3. **Écart entre deux versions** dans « Produits à vérifier » : après « Ce produit a changé pendant votre lecture »,
+   montrer ce qui a changé (nom, supplément, photo) plutôt que de tout relire.
+4. **Signalement par les clients** (« Signaler ce produit ») qui alimente la file : couvre la limite des photos.
+5. **Temps de préparation appris** : proposer à l'acceptation la durée médiane des dernières commandes de
+   l'établissement.
+6. **Écran de cuisine sans montants** (variante du mode comptoir) pour une tablette posée en cuisine.
+
+---
+
 ## À lire en premier
 
-### Migrations (4, intervalle 20261224…, à appliquer dans l'ordre, après celles de `main`)
+### Migrations (5, intervalle 20261224…, à appliquer dans l'ordre, après celles de `main`)
 
 | Fichier | Contenu |
 |---|---|
 | `M/20261224000001_l12c_verification.sql` | colonnes `products.review_state`, `review_words`, `review_requested_at`, `archived_at` et `order_delivery_zones.archived_at` ; réglage `orders.review_keywords` (18 mots par défaut) et `order_review_keywords_set` / `_valid` ; aides `private.order_text_fold`, `order_review_words`, `order_catalog_owner`, `order_product_review_notify` ; **recopies** de `product_regulated`, `products_order_guard`, `order_product_regulation_decide` ; nouvelles `order_product_save`, `order_product_remove` ; avis `ADMIN_PRODUCT_REVIEW`, `PRODUCT_REVIEW_DECIDED` |
 | `M/20261224000002_l12c_zones_supplements.sql` | `order_delivery_zone_set`, `order_delivery_zone_remove`, `order_delivery_zones_reorder`, `product_option_set`, `product_option_remove` (aucune recopie) |
 | `M/20261224000003_l12c_devis.sql` | **recopie** de `order_quote_compute` (produit archivé, produit « à vérifier ») |
-| `M/20261224000004_l12c_journee.sql` | `order_partner_day` (« Ma journée », lecture seule) |
+| `M/20261224000004_l12c_journee.sql` | `order_partner_day` (« Ma journée », lecture seule ; plats du jour en vente ajoutés aux correctifs) |
+| `M/20261224000005_l12c_cv_correctifs.sql` | correctifs de la contre-vérification : revue groupée, « Mettre à vérifier », catégories par la base, surlignage servi, recopie d'`order_daily_portions_set`, avis ajoutés et leurs déclencheurs, `order_reminders`, droits par colonne de `products`, revue des produits existants (instruction hors fonction) |
 
 - Sans `BEGIN` ni `COMMIT`, rejouables (rejouées dans une transaction annulée par `l12c-catalogue`, L) ; fonctions
   publiques au **rôle de service seulement**, aides `private` à **aucun** rôle de l'API (contrôlé par `l12c-statique` S3).
@@ -100,6 +287,10 @@ partenaire, fonctions en base, garde des fiches). Défauts et durcissements trai
   produits « à vérifier » comme non commandables : `product_regulated` les dit déjà réglementés, et le devis refuse avec
   `PRODUCT_UNDER_REVIEW` (« … est en cours de vérification par Event Village : il ne se commande pas encore en ligne. »).
 - Zones : `order_delivery_zones.archived_at` (zone retirée qui a servi) ; ne proposer que `is_active AND archived_at IS NULL`.
+- **Correctifs (T4)** : `anon` et `authenticated` ne lisent plus par la REST `products.review_state`, `review_words`,
+  `review_requested_at`, `review_note`, `review_cleared_words` ni `archived_at` (droits par colonne) ; un
+  `select('*')` sur `products` avec la clé publique ou le jeton d'un compte est désormais refusé. Lire ces colonnes côté
+  serveur (rôle de service), comme le fait déjà `app/api/restaurants/[id]/menu`.
 
 ---
 
