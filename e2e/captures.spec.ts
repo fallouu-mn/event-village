@@ -43,6 +43,7 @@ import type { PageGuard } from './support/network';
 import { SCREENS, type CaptureView, type Screen, type StubResponse } from './support/screens';
 import { keepHomeOutOfServicesWindow } from './support/services-switch';
 import { readTheme, themeProblem } from './support/theme-check';
+import { watchHydration } from './support/hydration';
 
 /** Abonné neuf du faux service push (clés P-256 réelles), pour l'état « activé » simulé. */
 async function fakePushSubscriber(): Promise<FakePushSubscriptionJson> {
@@ -205,6 +206,9 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
         test.skip(Boolean(screen.views) && !screen.views?.includes(view), `vue ${view} non capturée pour cet écran (${(screen.views ?? []).join(', ')})`);
         const file = `${screen.id}__${vue}__${theme.key}.png`;
         const started = Date.now();
+        // Lot stabilité (contrôle durable) : erreur d'hydratation de React nommée avec l'écran (déjà bloquante comme exception
+        // de page ; dite ici en clair, et aussi quand elle n'arrive que par la console)
+        const hydration = watchHydration(page);
         const record: CaptureRecord = {
             file, screen: screen.id, titre: screen.titre, vue, theme: theme.key, role,
             url: null, status: null, captured: false, blocking: [], warnings: [], axeDetails: [], notes: [], error: null, durationMs: 0,
@@ -337,6 +341,7 @@ function defineCapture(screen: Screen, theme: { key: ThemeKey }, role: CaptureRo
             }
             throw err;
         } finally {
+            record.blocking.push(...hydration.errors.map((h) => `erreur d'hydratation sur ${screen.id} (${vue}, ${theme.key}) : ${h}`));
             record.blocking.push(...guard.blockingIssues());
             record.warnings.push(...guard.nonBlockingIssues());
             record.durationMs = Date.now() - started;

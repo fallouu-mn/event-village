@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, type CaptureRole, type ThemeKey } from './support/fixtures';
+import { watchHydration } from './support/hydration';
 import { readDemoIds, E2E_OUTPUT_DIR, type DemoIds } from './support/demo-ids';
 import { fakeScanMode, installFakeCamera } from './support/fake-camera';
 import {
@@ -89,6 +90,10 @@ for (const theme of THEMES) {
                         record.url = p.path(demo);
                         guard.configure({ allowFailures: p.allowFailures ?? [], ignoreConsoleErrors: false });
                         if (p.fakeCamera) await context.addInitScript(installFakeCamera, { mode: fakeScanMode() });
+                        // Lot stabilité (contrôle durable) : erreur d'hydratation de React (n° 418, 423, 425, « did not match ») =
+                        // page en échec, avec son nom et la largeur (les autres erreurs de la page restent notées)
+                        const hydration = watchHydration(page);
+                        let hydrationSeen = 0;
                         for (const size of sizesFor(p, theme.key)) {
                             const at = size.paysage ? `${size.width}×${size.height} px (paysage)` : `${size.width} px`;
                             await page.setViewportSize({ width: size.width, height: size.height });
@@ -103,6 +108,8 @@ for (const theme of THEMES) {
                             // Finition 5 (point 1) : thème demandé vraiment affiché (classe dark et fond lus sur la page), bloquant
                             const themeIssue = themeProblem(await readTheme(page), theme.key, at);
                             if (themeIssue) blocking.push(themeIssue);
+                            for (const h of hydration.since(hydrationSeen)) blocking.push(`erreur d'hydratation sur ${p.id} à ${at} : ${h}`);
+                            hydrationSeen = hydration.mark();
                             let capture: string | null = null;
                             if (size.paysage || RESPONSIVE_CAPTURE_WIDTHS.includes(size.width)) {
                                 fs.mkdirSync(SHOTS, { recursive: true });
@@ -111,6 +118,10 @@ for (const theme of THEMES) {
                             }
                             record.sizes.push({ size: at, blocking, warnings: checks.warnings, capture });
                         }
+                        // Erreur d'hydratation arrivée après le relevé de la dernière largeur : rattachée à celle-ci
+                        const late = hydration.since(hydrationSeen);
+                        const last = record.sizes[record.sizes.length - 1];
+                        if (last) for (const h of late) last.blocking.push(`erreur d'hydratation sur ${p.id} (après le relevé de ${last.size}) : ${h}`);
                     } catch (err) {
                         record.error = err instanceof Error ? err.message.split('\n')[0] : String(err);
                         throw err;
