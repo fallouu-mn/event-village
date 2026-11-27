@@ -286,6 +286,12 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     ess('ENTRY_WELCOME', [I, S, M, P], 'CLIENT', 'B'),
     opt('ENTRY_THANKS', 'AFTER_EVENT', [I, S, M, P], 'CLIENT'),
     ess('PARTNER_REFUND_REQUESTS', [I, S, M, P], 'PARTNER', 'B'),
+    // Lot « Avis », phase 2 (2c, migration 20261230000002) : types nouveaux (ajout signalé au rapport)
+    ess('WITHDRAWAL_REQUESTED', [I, S, M, P], 'ANY', 'A'),
+    ess('PARTNER_RESUBMITTED_ACK', [I, P], 'PARTNER', 'B'),
+    ess('SHIFT_DISCREPANCY_VALIDATED', [I, P], 'CONTROLLER', 'B'),
+    ess('CONTROLLER_POST_CHANGED', [I, P], 'CONTROLLER', 'B'),
+    ess('ACCOUNT_WELCOME', [I, P], 'CLIENT', 'B'),
     sync('OTP_ADMIN_PHONE'),
     sync('ORDER_HANDOVER_CODE'), // lot 12a (ajout signalé)
 ];

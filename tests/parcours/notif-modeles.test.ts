@@ -202,7 +202,7 @@ function sync(type: string): ExpectedType {
 }
 
 const PE = '/partner/events/:event';
-const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ...lot9quinquiesExpected(), ...finition4Expected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types ; lot 9 quinquies (D1)
+const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ...lot9quinquiesExpected(), ...finition4Expected(), ...avisPhase2Expected(), // lot 9 bis (T51) : 26 types nouveaux (11.1), déclaration hissée en fin de fichier ; lot 9 ter (B.7 T-B1) : 4 types ; lot 9 quinquies (D1)
     ess('PURCHASE_CONFIRMED', [I, S, M, P], 'CLIENT', 'A', 'TICKET', ['/tickets/:event'], 'Achat confirmé'), // design 1b (point 8) : onglet qui montre le billet ; finition 5 : billets de l'événement (modification signalée)
     ess('FREE_TICKETS_CONFIRMED', [I, S, M, P], 'CLIENT', 'B', 'TICKET', ['/tickets/:event'], 'Billets confirmés'), // finition 5 : lien de l'objet exact (modification signalée)
     ess('COUNTER_RECEIPT', [S], 'ANY', 'A', null, null, null),
@@ -1077,6 +1077,11 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 `Event Village : 3 billets de Gala de la Teranga remboursés à la demande des acheteurs depuis 14:05 (-15 000 F CFA).`],
             ['PARTNER_REFUND_REQUESTS', {ticket_count: 1, amount: 5000}, [],
                 `Event Village : un billet de Gala de la Teranga est remboursé à la demande de son acheteur (-5 000 F CFA).`],
+            // Lot « Avis », phase 2 (ajouts signalés au rapport) : SMS nouveaux
+            ['WITHDRAWAL_REQUESTED', {}, [],
+                `Event Village : demande de retrait de 25 000 F CFA vers Wave enregistrée. Pas vous ? Ouvrez l'aide : ${U}/aide`],
+            ['WITHDRAWAL_REQUESTED', {method: 'BANK'}, ['operator'],
+                `Event Village : demande de retrait de 25 000 F CFA vers votre banque enregistrée. Pas vous ? Ouvrez l'aide : ${U}/aide`],
             ['TRANSFER_EXPIRED', {}, [],
                 `Event Village : votre billet Gala de la Teranga n'a pas été accepté à temps : il vous revient. ${U}/tickets`],
             ['TRANSFER_CLAIMED_SENDER', {}, [],
@@ -1553,6 +1558,21 @@ function finition4Expected(): ExpectedType[] {
         ess('ENTRY_WELCOME', [I, S, M, P], 'CLIENT', 'B', 'TICKET_SCANNED', ['/events/:event'], 'Bienvenue'),
         opt('ENTRY_THANKS', 'AFTER_EVENT', [I, S, M, P], 'CLIENT', 'THANKS', ['/events/:event'], 'Merci d’être venu'),
         ess('PARTNER_REFUND_REQUESTS', [I, S, M, P], 'PARTNER', 'B', 'REFUND_REQUESTED', [`${PE}?tab=ventes`], /^Remboursements? demandés?$/),
+    ];
+}
+
+/**
+ * Lot « Avis », phase 2 (règle du 27/11 : on ajoute ce qui manque, on n'enlève rien) : types nouveaux, ajout signalé au
+ * rapport docs/avis-phase2-rapport.md. Petites étapes : cloche et notification du téléphone seulement.
+ */
+function avisPhase2Expected(): ExpectedType[] {
+    return [
+        // 2c (migration 20261230000002)
+        ess('WITHDRAWAL_REQUESTED', [I, S, M, P], 'ANY', 'A', 'WITHDRAWAL_REQUESTED', ['/partner/finance/retraits/3a7d9e2b-6c1f-4b8a-9d5e-1f3b7c9a2e64'], 'Demande de retrait enregistrée'),
+        ess('PARTNER_RESUBMITTED_ACK', [I, P], 'PARTNER', 'B', 'KYC', ['/partner/dashboard'], 'Dossier envoyé'),
+        ess('SHIFT_DISCREPANCY_VALIDATED', [I, P], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Caisse validée'),
+        ess('CONTROLLER_POST_CHANGED', [I, P], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Votre poste a changé'),
+        ess('ACCOUNT_WELCOME', [I, P], 'CLIENT', 'B', 'WELCOME', ['/'], 'Bienvenue sur Event Village'),
     ];
 }
 

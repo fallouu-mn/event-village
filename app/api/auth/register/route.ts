@@ -221,6 +221,13 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // Lot « Avis », phase 2 (A10) : bienvenue (cloche et notification du téléphone), au mieux : un échec est journalisé
+        // et n'empêche pas l'inscription. Mise en file ici seulement : les comptes créés autrement n'en reçoivent pas.
+        const { error: welcomeErr } = await supabase.rpc('notif_enqueue', {
+            p: { type: 'ACCOUNT_WELCOME', key: `ACCOUNT_WELCOME:${userId}`, user_id: userId, data: {} },
+        });
+        if (welcomeErr) console.error(`[API /api/auth/register] bienvenue du compte ${userId} non mise en file :`, welcomeErr.message);
+
         if (referralCode) {
             try {
                 await linkReferral(userId, referralCode);

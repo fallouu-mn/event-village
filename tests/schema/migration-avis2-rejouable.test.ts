@@ -23,6 +23,7 @@ const LAST_OF_MAIN = '20261226000003_l12b_garde_prix.sql';
 /** Migrations du lot, dans l'ordre. */
 const FILES = [
     '20261230000001_avis_titulaires_table.sql',
+    '20261230000002_avis_nouveaux_simples.sql',
 ];
 
 /** Recopies du lot : fonction → dernière définition de main (fichier, première et dernière ligne) et migration du lot. */
@@ -36,6 +37,9 @@ const RECOPIES: Record<string, { from: string; lines: [number, number]; in: stri
 /** Fonctions nouvelles du lot. */
 const NEW_FUNCTIONS = [
     'private.event_table_holders', 'private.notif_holder_sms_count', 'private.notif_holder_status_sms_cap', 'private.notif_table_holders_status',
+    // 2c : déclencheurs nouveaux (aucune recopie)
+    'private.notif_withdrawal_requested', 'private.notif_withdrawal_ack_paid', 'private.notif_partner_resubmitted', 'private.notif_shift_validated',
+    'private.notif_controller_post_changed',
 ];
 
 /** Jamais redéfinies par le lot : livreurs (12d), recopies suivies par les audits (accord requis). */

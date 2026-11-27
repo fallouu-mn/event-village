@@ -230,6 +230,12 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     PRODUCT_DECISION_SMS: 'SMS : produit vérifié',
     ADMIN_ORDER_REFUND_BLOCKED: 'SMS : remboursement de commande à reprendre',
     ADMIN_PRODUCTS_REVIEW_BATCH: 'Produits déjà en vente à vérifier',
+    // Lot « Avis », phase 2 (2c)
+    WITHDRAWAL_REQUESTED: 'Demande de retrait enregistrée',
+    PARTNER_RESUBMITTED_ACK: 'Dossier complété envoyé',
+    SHIFT_DISCREPANCY_VALIDATED: 'Caisse validée',
+    CONTROLLER_POST_CHANGED: 'Poste du contrôleur modifié',
+    ACCOUNT_WELCOME: 'Bienvenue après l’inscription',
     ADMIN_PARTNER_REGISTERED: 'Nouvelle candidature partenaire',
     ADMIN_REFUND_TO_RETRY: 'Remboursement à reprendre',
     ADMIN_DUPLICATE_PAYMENT: 'Paiement en double remboursé',

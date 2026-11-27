@@ -361,6 +361,18 @@ export interface TemplateData {
     ENTRY_THANKS: EventData & { organizer: string };
     /** Demandes de remboursement des clients, groupées (15 min), sans nom ni numéro. */
     PARTNER_REFUND_REQUESTS: EventData & { ticket_count: number; amount: number; since: string };
+
+    // ── Lot « Avis », phase 2 (2c, migration 20261230000002) ──
+    /** A2 : retrait demandé ; `method` = MOBILE_MONEY | BANK (virement : sans opérateur ni versement rattaché). */
+    WITHDRAWAL_REQUESTED: { withdrawal_id: string; cashout_id?: string; amount: number; operator?: OperatorCode | string | null; account_kind?: AccountKind | string; method?: 'MOBILE_MONEY' | 'BANK' | string };
+    /** A5 : dossier complété envoyé (accusé à la partenaire). */
+    PARTNER_RESUBMITTED_ACK: { partner_id: string; company?: string | null };
+    /** A8 : écart de caisse validé ; by = PARTNER (l'organisatrice) | ADMIN. */
+    SHIFT_DISCREPANCY_VALIDATED: EventData & { shift_id: string; by?: 'PARTNER' | 'ADMIN' | string };
+    /** A9 : porte (gate_name, null = toutes) ou droit d'encaisser changés ; changes ⊂ [GATE, CASH]. */
+    CONTROLLER_POST_CHANGED: EventData & { assignment_id: string; gate_name?: string | null; can_accept_cash: boolean; changes: Array<'GATE' | 'CASH' | string> };
+    /** A10 : bienvenue après l'inscription, aucune donnée. */
+    ACCOUNT_WELCOME: Record<string, never>;
 }
 
 export type NotificationType = keyof TemplateData;

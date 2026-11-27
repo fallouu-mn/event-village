@@ -69,7 +69,10 @@ const CATALOG_TYPES = Object.keys(CATALOG).sort();
  * PRODUCT_REVIEW_DECIDED, et ADMIN_ORDER_REFUND_BLOCKED, SMS qui double ADMIN_REFUND_TO_RETRY et ADMIN_CASHOUT_UNCERTAIN,
  * qui ont déjà leur email.
  */
-const G49_EXCLUDED = new Set(['PUSH_TEST', 'COUNTER_RECEIPT', 'ADMIN_REVIEW_SMS', 'PRODUCT_DECISION_SMS', 'ADMIN_ORDER_REFUND_BLOCKED']);
+// Lot « Avis », phase 2 (ajout signalé au rapport) : petites étapes de la règle du 27/11, cloche et notification du téléphone
+// seulement (dossier complété envoyé, caisse validée, poste changé, bienvenue)
+const G49_EXCLUDED = new Set(['PUSH_TEST', 'COUNTER_RECEIPT', 'ADMIN_REVIEW_SMS', 'PRODUCT_DECISION_SMS', 'ADMIN_ORDER_REFUND_BLOCKED',
+    'PARTNER_RESUBMITTED_ACK', 'SHIFT_DISCREPANCY_VALIDATED', 'CONTROLLER_POST_CHANGED', 'ACCOUNT_WELCOME']);
 const CATEGORIES: CategorySpec[] = [{ name: 'Standard', price: 3_000, total: 40, maxPerOrder: 10 }];
 const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
 const TRANSFER_CANCEL_ROUTE = '../../app/api/tickets/transfers/[id]/cancel/route';

@@ -429,6 +429,9 @@ const withdrawalPath = (d: object): string => {
     const space = optText(d, 'account_kind') === 'PARRAINAGE' ? '/wallet' : '/partner/finance';
     return optText(d, 'cashout_id') ? `${space}/retraits/${ident(d, 'cashout_id')}` : space;
 };
+/** Avis phase 2 (A2) : destination d'un retrait demandé, jamais le code (virement : le compte bancaire). */
+const withdrawalTarget = (d: object): string => (optText(d, 'method') === 'BANK' ? 'votre compte bancaire' : operatorLabel(field(d, 'operator')));
+const withdrawalTargetSms = (d: object): string => (optText(d, 'method') === 'BANK' ? 'votre banque' : operatorLabel(field(d, 'operator')));
 /** Finition 5 : les billets du compte pour un événement (achat, invitation, rappel, annulation, remboursement) ; sans
  * événement dans les données (ligne ancienne), l'historique : un lien ne fait jamais échouer l'envoi d'un avis. */
 const eventTicketsPath = (d: object): string => (optText(d, 'event_id') ? `/tickets/${ident(d, 'event_id')}` : '/tickets?tab=historique');
@@ -3066,6 +3069,61 @@ const CATALOG = {
                 : `${SMS_PREFIX}un billet de ${smsVar(text(d, 'title'), 25)} est remboursé à la demande de son acheteur (-${smsAmount(num(d, 'amount'))}).`;
         },
         sample: { ...SAMPLE_EVENT, ticket_count: 3, amount: 15_000, since: '2026-11-14T14:05:00.000Z' },
+    }),
+
+    // ── Lot « Avis », phase 2 (2c) : avis nouveaux simples (migration 20261230000002) ──
+    // A2 : accusé d'une demande de retrait (sécurité : part la nuit ; SMS dû à 2 minutes, annulé si le retrait est déjà versé).
+    WITHDRAWAL_REQUESTED: define('WITHDRAWAL_REQUESTED', {
+        label: 'Demande de retrait enregistrée', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'ANY', suspendedPolicy: 'ALLOW', inAppType: 'WITHDRAWAL_REQUESTED',
+        link: withdrawalPath,
+        inApp: (d) => ({
+            title: 'Demande de retrait enregistrée',
+            content: `Votre demande de retrait de ${money(d, 'amount')} vers ${withdrawalTarget(d)} est enregistrée. Vous serez prévenu dès qu'elle sera versée. Si ce n'est pas vous, ouvrez la page Aide tout de suite.`,
+        }),
+        sms: (d, ctx) => `${SMS_PREFIX}demande de retrait de ${smsAmount(num(d, 'amount'))} vers ${withdrawalTargetSms(d)} enregistrée. Pas vous ? Ouvrez l'aide : ${appLink(ctx, '/aide')}`,
+        emailBlocks: () => ({ ctaLabel: 'Voir mon retrait' }),
+        sample: { ...SAMPLE_MONEY, withdrawal_id: SAMPLE_ID.transfer, method: 'MOBILE_MONEY' },
+    }),
+    // A5 : dossier complété après un refus, accusé à la partenaire (petite étape : cloche et notification).
+    PARTNER_RESUBMITTED_ACK: define('PARTNER_RESUBMITTED_ACK', {
+        label: 'Dossier complété envoyé', channels: ['IN_APP', 'PUSH'], audience: 'PARTNER', suspendedPolicy: 'BLOCK', inAppType: 'KYC', night: 'DEFER',
+        link: () => '/partner/dashboard',
+        inApp: () => ({ title: 'Dossier envoyé', content: 'Votre dossier complété est envoyé à l\'équipe Event Village. Vous recevrez la réponse ici et par SMS.' }),
+        sample: { partner_id: SAMPLE_ID.partner, company: 'Sabar Events' },
+    }),
+    // A8 : écart de caisse validé, avis au contrôleur (petite étape).
+    SHIFT_DISCREPANCY_VALIDATED: define('SHIFT_DISCREPANCY_VALIDATED', {
+        label: 'Caisse validée', channels: ['IN_APP', 'PUSH'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER', night: 'DEFER',
+        link: () => '/controller/scanner',
+        inApp: (d) => ({
+            title: 'Caisse validée',
+            content: `${optText(d, 'by') === 'ADMIN' ? 'L\'équipe Event Village' : 'L\'organisateur'} a validé votre caisse de ${q(text(d, 'title'))}.`,
+        }),
+        sample: { ...SAMPLE_EVENT, shift_id: SAMPLE_ID.shift, by: 'PARTNER' },
+    }),
+    // A9 : porte ou droit d'encaisser changé après l'affectation (petite étape, urgente à moins de 12 h du début).
+    CONTROLLER_POST_CHANGED: define('CONTROLLER_POST_CHANGED', {
+        label: 'Poste du contrôleur modifié', channels: ['IN_APP', 'PUSH'], audience: 'CONTROLLER', suspendedPolicy: 'BLOCK', inAppType: 'CONTROLLER', night: 'DEFER',
+        link: () => '/controller/scanner',
+        inApp: (d) => {
+            const changes = strings(d, 'changes');
+            const parts: string[] = [];
+            if (changes.includes('GATE')) {
+                const gate = optText(d, 'gate_name');
+                parts.push(gate ? `vous contrôlez maintenant la porte ${gate}` : 'vous pouvez contrôler à toutes les portes');
+            }
+            if (changes.includes('CASH')) parts.push(bool(d, 'can_accept_cash') ? 'vous pouvez maintenant encaisser en espèces' : 'vous ne pouvez plus encaisser en espèces');
+            if (parts.length === 0) throw new TemplateDataError('changes', 'ne contient ni GATE ni CASH');
+            return { title: 'Votre poste a changé', content: `Pour ${q(text(d, 'title'))} : ${parts.join(' ; ')}.` };
+        },
+        sample: { ...SAMPLE_EVENT, assignment_id: SAMPLE_ID.assignment, gate_name: 'Porte Nord', can_accept_cash: true, changes: ['GATE', 'CASH'] },
+    }),
+    // A10 : bienvenue après l'inscription (mise en file par la route d'inscription seulement ; petite étape).
+    ACCOUNT_WELCOME: define('ACCOUNT_WELCOME', {
+        label: 'Bienvenue après l’inscription', channels: ['IN_APP', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'WELCOME', night: 'DEFER',
+        link: () => '/',
+        inApp: () => ({ title: 'Bienvenue sur Event Village', content: 'Votre compte est prêt. Retrouvez vos billets, réservations et commandes ici.' }),
+        sample: {},
     }),
     OTP_LOGIN: defineSync('OTP_LOGIN', 'Code de connexion'),
     OTP_REGISTER: defineSync('OTP_REGISTER', 'Code d’inscription'),
