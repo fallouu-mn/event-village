@@ -192,6 +192,9 @@ for (const theme of THEMES) {
             const layers = page.locator(LAYERS);
             await expect(layers.getByRole('button', { name: /Salles/ })).toBeVisible({ timeout: 30_000 });
             await expect(layers.getByRole('button', { name: /Restaurants/ })).toHaveAttribute('aria-pressed', 'true');
+            // Lot stabilité (runs 746 et 779) : carte réellement créée (Leaflet chargé) avant « Aller à » ; un lieu choisi plus tôt
+            // est désormais gardé par la carte, mais le test vise l'état réel plutôt qu'un délai
+            await expect(page.locator(`${MAP}[data-ev-carte="prete"]`)).toBeVisible({ timeout: 30_000 });
 
             // Thiès : un événement (billet), deux salles (bâtiment)
             await page.getByLabel('Aller à').selectOption('thies');
@@ -231,6 +234,7 @@ for (const theme of THEMES) {
             await page.setViewportSize({ width: 1440, height: 900 });
             await page.goto('/explore?vue=carte', { waitUntil: 'load' });
             await expect(page.locator(LAYERS).getByRole('button', { name: /Salles/ })).toBeVisible({ timeout: 30_000 });
+            await expect(page.locator(`${MAP}[data-ev-carte="prete"]`)).toBeVisible({ timeout: 30_000 });
             await page.getByLabel('Aller à').selectOption('dakar');
             const place = page.locator('[id^="carte-vignette-p-"] a').first();
             await expect(place).toBeVisible({ timeout: 30_000 });

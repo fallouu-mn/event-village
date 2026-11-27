@@ -202,6 +202,12 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
     const [groupKeys, setGroupKeys] = useState<string[] | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [place, setPlace] = useState('');
+    /**
+     * Lot stabilité (runs 746 et 779, carte-b3) : lieu choisi dans « Aller à » avant que Leaflet soit chargé (la liste est
+     * utilisable tout de suite) ; appliqué dès que la carte existe, au lieu d'être perdu (la carte restait sur tout le Sénégal
+     * avec « Thiès » affiché dans la liste).
+     */
+    const pendingPlaceRef = useRef('');
     const seq = useRef(0);
 
     // 1. Carte créée une fois, à l'ouverture de la vue (Leaflet lit window : chargé dans le navigateur seulement)
@@ -252,6 +258,13 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
             mapRef.current = map;
             sync();
             setMoved(false);
+            // Lieu choisi pendant le chargement de la carte : appliqué maintenant (sans animation, la carte vient d'apparaître)
+            const pending = QUICK_PLACES.find((x) => x.id === pendingPlaceRef.current);
+            pendingPlaceRef.current = '';
+            if (pending && pending.id !== 'senegal') {
+                map.setView([pending.lat, pending.lng], pending.zoom, { animate: false });
+                setMoved(true);
+            }
             setReady(true);
         };
         loadLeafletWithCss()
@@ -336,6 +349,11 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
         setPlace(id);
         const p = QUICK_PLACES.find((x) => x.id === id);
         if (!p) return;
+        // Carte pas encore créée : le lieu est gardé et appliqué à sa création (build, plus haut)
+        if (!mapRef.current) {
+            pendingPlaceRef.current = p.id;
+            return;
+        }
         if (p.id === 'senegal') {
             mapRef.current?.fitBounds(SENEGAL_LATLNG, { animate: !reducedMotion() });
             setSearchZone(null);
@@ -570,6 +588,8 @@ export default function ExploreMap({ filtersQuery, onTilesFailed, refreshKey = 0
                         role="region"
                         aria-label={showLayers ? 'Carte des événements et des lieux' : 'Carte des événements'}
                         aria-describedby={descId}
+                        aria-busy={!ready || undefined}
+                        data-ev-carte={ready ? 'prete' : 'chargement'}
                         className="isolate h-[62vh] min-h-[20rem] w-full overflow-hidden rounded-xl border border-border bg-muted lg:h-[70vh]"
                     />
                     <p id={descId} className="sr-only">
