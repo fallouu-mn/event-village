@@ -1,0 +1,107 @@
+TAP version 13
+[CVF2B-PRE] 1. [{"setting":"pgrst.db_pre_request=securite.db_pre_request","secdef":true,"config":"search_path=\"\"","anon":true,"auth":true,"svc":true,"pkey":true}]
+# Subtest: 1. branchement de la pré-requête
+    # Subtest: réglage pgrst.db_pre_request sur authenticator ; fonction SECURITY DEFINER, search_path vide, hors du schéma exposé
+    ok 1 - réglage pgrst.db_pre_request sur authenticator ; fonction SECURITY DEFINER, search_path vide, hors du schéma exposé
+      ---
+      duration_ms: 36.059195
+      type: 'test'
+      ...
+    1..1
+ok 1 - 1. branchement de la pré-requête
+  ---
+  duration_ms: 36.770616
+  type: 'suite'
+  ...
+[CVF2B-PRE] 2. B fermée — table : 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."} ; RPC : 401 ; A : 200
+# Subtest: 2-3. API REST
+    # Subtest: 2. jeton valide servi ; session fermée refusée (table et RPC) ; l’autre session servie ; révocation totale ; rafraîchi servi
+    ok 1 - 2. jeton valide servi ; session fermée refusée (table et RPC) ; l’autre session servie ; révocation totale ; rafraîchi servi
+      ---
+      duration_ms: 417.338186
+      type: 'test'
+      ...
+[CVF2B-PRE] 3. sans jeton : 200 ; anon : 200 ; service : 200
+[CVF2B-PRE] 3. jeton authenticated sans session_id : 401 {"code":"SESSION_FERMEE","details":null,"hint":null,"message":"Votre session est fermée. Reconnectez-vous."}
+    # Subtest: 3. sans jeton, anon et rôle de service servis ; jeton authenticated sans session_id refusé
+    ok 2 - 3. sans jeton, anon et rôle de service servis ; jeton authenticated sans session_id refusé
+      ---
+      duration_ms: 1113.074106
+      type: 'test'
+      ...
+    1..2
+ok 2 - 2-3. API REST
+  ---
+  duration_ms: 1530.698001
+  type: 'suite'
+  ...
+[CVF2B-PRE] 4. plan (auth.sessions : 244 ligne(s)) :
+  Index Scan using sessions_pkey on sessions s  (cost=0.15..8.18 rows=1 width=4) (actual time=0.015..0.015 rows=1 loops=1)
+    Index Cond: (id = '6c06202f-7a01-42ac-8c66-028b3526e887'::uuid)
+    Filter: (((not_after IS NULL) OR (not_after > now())) AND ((user_id)::text = '644a8426-33a7-4531-8c48-79efa0f51925'::text))
+    Buffers: shared hit=2
+  Planning:
+    Buffers: shared hit=157
+  Planning Time: 0.344 ms
+  Execution Time: 0.029 ms
+[CVF2B-PRE] 4. coût : 17.5 µs par appel de securite.db_pre_request (10000 appels, 174.8 ms) ; témoin auth.jwt() seul : 6.2 µs ; part de la lecture de la session : 11.2 µs
+# Subtest: 4. coût de la pré-requête
+    # Subtest: plan de la lecture et mesure en boucle (10 000 appels)
+    ok 1 - plan de la lecture et mesure en boucle (10 000 appels)
+      ---
+      duration_ms: 486.208815
+      type: 'test'
+      ...
+    1..1
+ok 3 - 4. coût de la pré-requête
+  ---
+  duration_ms: 486.421256
+  type: 'suite'
+  ...
+[CVF2B-PRE] 5. après l'échéance : témoin reçu ; jeton court : 0 message(s) ; états du canal : SUBSCRIBED → system postgres_changes ok : Subscribed to PostgreSQL → CLOSED
+# Subtest: 5. temps réel : jeton échu
+    # Subtest: un abonnement postgres_changes à une table privée ne reçoit plus rien après l’échéance de son jeton (témoin du même compte qui reçoit)
+    ok 1 - un abonnement postgres_changes à une table privée ne reçoit plus rien après l’échéance de son jeton (témoin du même compte qui reçoit)
+      ---
+      duration_ms: 38474.902441
+      type: 'test'
+      ...
+    1..1
+ok 4 - 5. temps réel : jeton échu
+  ---
+  duration_ms: 38475.235434
+  type: 'suite'
+  ...
+[INVARIANT] cvf2b-correctif-pre-requete — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf2b-correctif-pre-requete — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf2b-correctif-pre-requete — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf2b-correctif-pre-requete — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf2b-correctif-pre-requete — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — (j)(k)(l) : 0 violation(s)
+[INVARIANT] cvf2b-correctif-pre-requete — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf2b-correctif-pre-requete — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf2b-correctif-pre-requete — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf2b-correctif-pre-requete — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf2b-correctif-pre-requete — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf2b-correctif-pre-requete — (j)(k)(l) : 0 violation(s)
+[INVARIANT-NOTIF] cvf2b-correctif-pre-requete — envoyeur : 0 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cvf2b-correctif-pre-requete — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cvf2b-correctif-pre-requete — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cvf2b-correctif-pre-requete — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cvf2b-correctif-pre-requete — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cvf2b-correctif-pre-requete — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cvf2b-correctif-pre-requete — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cvf2b-correctif-pre-requete — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cvf2b-correctif-pre-requete — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cvf2b-correctif-pre-requete — (f) : 0 violation(s)
+1..4
+# tests 5
+# suites 4
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 50533.635109
