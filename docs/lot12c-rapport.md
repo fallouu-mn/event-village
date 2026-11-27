@@ -18,6 +18,38 @@ pas recopiées (voir ci-dessous).
 
 ---
 
+## Ajout après la fusion : commande refusée pendant une fermeture exceptionnelle (27/11)
+
+Demande du 27/11, après la fusion dans `main` (85a1c85f57) et **avant toute application des migrations** : branche
+courte `lot12c/devis-fermeture`, partie de `main` 85a1c85f57.
+
+- **`M/20261224000003_l12c_devis.sql` modifiée en place** (jamais appliquée) : toujours **une seule définition** de
+  `order_quote_compute` dans le lot, lignes ajoutées seulement (contrôle S1 de `l12c-statique`) ; changement n° 3 de
+  l'en-tête. Quand une fermeture exceptionnelle en cours de l'établissement (`venue_closures`, lot 11b, non annulée)
+  touche la préparation, le devis répond `VENUE_CLOSED` : « Ce restaurant est fermé à ce moment-là. Choisissez une autre
+  heure. »
+  - « au plus tôt » : de maintenant à l'heure de remise (maintenant + préparation) ;
+  - heure choisie : de l'heure choisie moins la préparation jusqu'à l'heure choisie.
+- Contrôle placé **après** les horaires : une heure hors des horaires garde son message (`CLOSED_NOW`, `OUTSIDE_HOURS`).
+  `order_quote` et `order_create` appellent `order_quote_compute` : le devis et la création de la commande sont refusés
+  tous les deux.
+- Choix à valider : une heure choisie juste après la fin d'une fermeture est refusée si la préparation tombe encore dans
+  la fermeture (la cuisine est fermée). Pour ne tester que l'heure de remise, il suffit de remplacer, dans la condition,
+  `v_at - make_interval(mins => v_prep)` par `v_at`.
+- **Test ajouté** : section J de `tests/parcours/l12c-cv-correctifs.test.ts` (suite du lot). Établissement à part,
+  deux fermetures posées par le test (maintenant pendant 3 heures ; demain de 11:00 à 14:00). Elles refusent :
+  - « au plus tôt » et « demain midi », avec le code et le message exacts ;
+  - la création de la commande (`order_create`), sans aucune commande enregistrée.
+
+  « Après-demain midi » reste commandable. Une fois les fermetures annulées, tout redevient commandable. Les fermetures
+  sont supprimées à la fin du test.
+- Point ouvert, inchangé : une fermeture créée **après** une commande déjà enregistrée ne l'annule pas. La fermeture du
+  lot 11b annule les réservations de table, pas les commandes. À trancher pour un lot suivant.
+- Lot 12b : `order_quote_compute` n'est pas redéfinie sur `lot12b/client` (vérifié le 27/11). L'écran du client
+  affiche le message renvoyé par la base.
+
+---
+
 ## Correctifs après contre-vérification
 
 Consigne « Lot 12c — correctifs après contre-vérification, points ouverts et améliorations » ; audit
@@ -208,7 +240,7 @@ comptoir) et `admin-signaler` (« Mettre à vérifier ») ; `catalogue` montre m
 |---|---|
 | `M/20261224000001_l12c_verification.sql` | colonnes `products.review_state`, `review_words`, `review_requested_at`, `archived_at` et `order_delivery_zones.archived_at` ; réglage `orders.review_keywords` (18 mots par défaut) et `order_review_keywords_set` / `_valid` ; aides `private.order_text_fold`, `order_review_words`, `order_catalog_owner`, `order_product_review_notify` ; **recopies** de `product_regulated`, `products_order_guard`, `order_product_regulation_decide` ; nouvelles `order_product_save`, `order_product_remove` ; avis `ADMIN_PRODUCT_REVIEW`, `PRODUCT_REVIEW_DECIDED` |
 | `M/20261224000002_l12c_zones_supplements.sql` | `order_delivery_zone_set`, `order_delivery_zone_remove`, `order_delivery_zones_reorder`, `product_option_set`, `product_option_remove` (aucune recopie) |
-| `M/20261224000003_l12c_devis.sql` | **recopie** de `order_quote_compute` (produit archivé, produit « à vérifier ») |
+| `M/20261224000003_l12c_devis.sql` | **recopie** de `order_quote_compute` (produit archivé, produit « à vérifier », fermeture exceptionnelle : ajout du 27/11) |
 | `M/20261224000004_l12c_journee.sql` | `order_partner_day` (« Ma journée », lecture seule ; plats du jour en vente ajoutés aux correctifs) |
 | `M/20261224000005_l12c_cv_correctifs.sql` | correctifs de la contre-vérification : revue groupée, « Mettre à vérifier », catégories par la base, surlignage servi, recopie d'`order_daily_portions_set`, avis ajoutés et leurs déclencheurs, `order_reminders`, droits par colonne de `products`, revue des produits existants (instruction hors fonction) |
 

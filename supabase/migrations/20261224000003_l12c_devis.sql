@@ -6,7 +6,11 @@
 -- lieux du 26/11, § 3.4). Changements (lignes ajoutées seulement, aucune ligne retirée : test
 -- tests/parcours/l12c-statique.test.ts) :
 --  1. produit archivé (products.archived_at) : refusé comme un produit indisponible (PRODUCT_UNAVAILABLE) ;
---  2. produit « à vérifier » (products.review_state) : refusé (PRODUCT_UNDER_REVIEW), après la case « réglementé ».
+--  2. produit « à vérifier » (products.review_state) : refusé (PRODUCT_UNDER_REVIEW), après la case « réglementé » ;
+--  3. fermeture exceptionnelle de l'établissement (venue_closures, lot 11b ; ajout du 27/11, avant toute application) :
+--     commande refusée (VENUE_CLOSED, « Ce restaurant est fermé à ce moment-là. Choisissez une autre heure. ») quand
+--     une fermeture en cours touche la préparation : de maintenant à l'heure de remise pour « au plus tôt », de l'heure
+--     prévue moins la préparation à l'heure prévue pour une heure choisie (venue_closed_during).
 -- order_quote et order_create l'appellent : devis et création refusent donc les deux. Droits inchangés (CREATE OR
 -- REPLACE les garde ; REVOKE et GRANT répétés, idempotents). Rejouable.
 -- ============================================================================
@@ -259,6 +263,13 @@ BEGIN
         IF NOT public.venue_open_covers(v.id, tsrange(v_at, v_at + interval '1 minute', '[)')) THEN
             RETURN jsonb_build_object('ok', false, 'code', 'OUTSIDE_HOURS', 'message', 'L’établissement n’est pas ouvert à cette heure-là. Choisissez une autre heure.');
         END IF;
+    END IF;
+    -- Fermeture exceptionnelle (venue_closures, lot 11b) pendant la préparation, pour « au plus tôt » comme pour une
+    -- heure choisie : la cuisine est fermée, la commande ne peut pas être prête
+    IF public.venue_closed_during(v.id, tsrange(
+            CASE WHEN v_asap THEN date_trunc('minute', v_now) ELSE v_at - make_interval(mins => v_prep) END,
+            v_at + interval '1 minute', '[)')) THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'VENUE_CLOSED', 'message', 'Ce restaurant est fermé à ce moment-là. Choisissez une autre heure.');
     END IF;
     -- Plat du jour : pour aujourd'hui seulement ; il s'arrête seul à la fin du jour
     IF v_daily AND v_at::date <> v_today THEN
