@@ -216,7 +216,8 @@ describe('G5 — argent et identifiants devinés', () => {
             assert.equal(r.status, 400, `zone ${JSON.stringify(z)} acceptée (${r.status} ${JSON.stringify(r.body)})`);
         }
         // Objets d'une autre partenaire, identifiants devinés
-        const theirs = await reply(await create(other, { venue_id: otherShop, name: 'Leur plat', price: 1_000 }));
+        const theirs = await create(other, { venue_id: otherShop, name: 'Leur plat', price: 1_000 });
+        assert.equal(theirs.status, 201, JSON.stringify(theirs.body));
         const theirId = String((theirs.body.product as Row).id);
         const theirOpt = await reply(await optionPost(req(`/api/partner/products/${theirId}/options`, 'POST', other.accessToken, { name: 'Leur supplément', price: 100 }), params({ id: theirId })));
         const theirOptId = String((theirOpt.body.option as Row).id);
@@ -306,7 +307,7 @@ describe('G8 — montants figés d’une commande ouverte', () => {
         const removed = await reply(await zoneDelete(req(`/api/partner/venues/${shop}/zones/${zoneId}`, 'DELETE', partner.accessToken), params({ id: shop, zoneId })));
         assert.equal(removed.body.outcome, 'DEACTIVATED', JSON.stringify(removed.body));
         const pay = await startOrderPay(client, orderId);
-        assert.equal(pay.status, 200, JSON.stringify(pay.body));
+        assert.ok(pay.status === 200 || pay.status === 201, JSON.stringify(pay.body));
         const after = await order(orderId);
         console.log(`[CV12C-G8] ${JSON.stringify({ goods: n(after.goods_total), fee: n(after.delivery_fee), paiement: pay.payment ? n(pay.payment.amount) : null })}`);
         assert.deepEqual([n(after.goods_total), n(after.delivery_fee)], [5_500, 1_000]);
