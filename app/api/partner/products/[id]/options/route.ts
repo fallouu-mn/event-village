@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
+import { requireActiveSession } from '@/lib/auth/session';
 import { invalidBody, readJson } from '@/lib/orders/booking';
 import { partnerOrdersContext } from '@/lib/orders/partner-route';
 import { saveProductOption } from '@/lib/products/catalog.service';
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
-        const ctx = await partnerOrdersContext(request, 'POST /api/partner/products/[id]/options');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), 'POST /api/partner/products/[id]/options');
         if (ctx.response) return ctx.response;
         const { id } = await params;
         const body = await readJson(request);

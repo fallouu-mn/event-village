@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
+import { requireActiveSession } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { orderRefusal } from '@/lib/orders/booking';
 import { NO_STORE, partnerOrdersContext } from '@/lib/orders/partner-route';
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
     try {
-        const ctx = await partnerOrdersContext(request, '/api/partner/orders/day');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), '/api/partner/orders/day');
         if (ctx.response) return ctx.response;
         const venue = new URL(request.url).searchParams.get('venue');
         const { data, error } = await getServiceRoleClient().rpc('order_partner_day', { p: { actor_id: ctx.user.id, venue_id: venue || null } });

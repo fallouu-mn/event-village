@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
+import { requireActiveSession } from '@/lib/auth/session';
 import { NO_STORE, partnerOrdersContext } from '@/lib/orders/partner-route';
 import { readPartnerCatalog } from '@/lib/products/catalog.service';
 
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
     try {
-        const ctx = await partnerOrdersContext(request, '/api/partner/catalog');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), '/api/partner/catalog');
         if (ctx.response) return ctx.response;
         const catalog = await readPartnerCatalog(ctx.user.id);
         return NextResponse.json({ success: true, ...catalog }, { headers: NO_STORE });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
+import { requireActiveSession } from '@/lib/auth/session';
 import { invalidBody, readJson } from '@/lib/orders/booking';
 import { NO_STORE, partnerOrdersContext } from '@/lib/orders/partner-route';
 import { ProductService } from '@/lib/products/product.service';
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic';
 /** GET /api/partner/products/categories — lot 12c : catégories de la carte de la partenaire de la session. */
 export async function GET(request: NextRequest) {
     try {
-        const ctx = await partnerOrdersContext(request, '/api/partner/products/categories');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), '/api/partner/products/categories');
         if (ctx.response) return ctx.response;
         const categories = await ProductService.getPartnerCategories(ctx.user.id);
         return NextResponse.json({ success: true, categories: categories.map((c) => ({ id: c.id, name: c.name })) }, { headers: NO_STORE });
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
     try {
-        const ctx = await partnerOrdersContext(request, 'POST /api/partner/products/categories');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), 'POST /api/partner/products/categories');
         if (ctx.response) return ctx.response;
         const body = await readJson(request);
         if (!body) return invalidBody();

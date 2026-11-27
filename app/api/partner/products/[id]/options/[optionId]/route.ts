@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
+import { requireActiveSession } from '@/lib/auth/session';
 import { invalidBody, readJson } from '@/lib/orders/booking';
 import { partnerOrdersContext } from '@/lib/orders/partner-route';
 import { removeProductOption, saveProductOption } from '@/lib/products/catalog.service';
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; optionId: string }> }) {
     try {
-        const ctx = await partnerOrdersContext(request, 'PATCH /api/partner/products/[id]/options/[optionId]');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), 'PATCH /api/partner/products/[id]/options/[optionId]');
         if (ctx.response) return ctx.response;
         const { id, optionId } = await params;
         const body = await readJson(request);
@@ -27,7 +28,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 /** DELETE — retire un supplément (product_option_remove) ; les commandes passées gardent leur copie (nom et prix figés). */
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; optionId: string }> }) {
     try {
-        const ctx = await partnerOrdersContext(request, 'DELETE /api/partner/products/[id]/options/[optionId]');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), 'DELETE /api/partner/products/[id]/options/[optionId]');
         if (ctx.response) return ctx.response;
         const { optionId } = await params;
         await removeProductOption(ctx.user.id, optionId);

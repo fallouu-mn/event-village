@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
+import { requireActiveSession } from '@/lib/auth/session';
 import { invalidBody, readJson } from '@/lib/orders/booking';
 import { partnerOrdersContext } from '@/lib/orders/partner-route';
 import { removeDeliveryZone, saveDeliveryZone } from '@/lib/products/catalog.service';
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; zoneId: string }> }) {
     try {
-        const ctx = await partnerOrdersContext(request, 'PATCH /api/partner/venues/[id]/zones/[zoneId]');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), 'PATCH /api/partner/venues/[id]/zones/[zoneId]');
         if (ctx.response) return ctx.response;
         const { id, zoneId } = await params;
         const body = await readJson(request);
@@ -30,7 +31,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
  */
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; zoneId: string }> }) {
     try {
-        const ctx = await partnerOrdersContext(request, 'DELETE /api/partner/venues/[id]/zones/[zoneId]');
+        const ctx = await partnerOrdersContext(await requireActiveSession(request), 'DELETE /api/partner/venues/[id]/zones/[zoneId]');
         if (ctx.response) return ctx.response;
         const { zoneId } = await params;
         const r = await removeDeliveryZone(ctx.user.id, zoneId);

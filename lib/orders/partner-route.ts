@@ -5,12 +5,15 @@
  * requireActiveSession à toutes les routes /api/partner/* (lib/auth/partner-fiche-guard.ts) ; les fonctions en base
  * refusent aussi une fiche non VALIDE.
  */
-import { NextRequest, NextResponse } from 'next/server';
-import { requireActiveSession, serverIsPartner, type ServerUser } from '@/lib/auth/session';
+import { NextResponse } from 'next/server';
+import { serverIsPartner, type ActiveSessionResult, type ServerUser } from '@/lib/auth/session';
 import { guardFeature } from '@/lib/features/flags';
 
-export async function partnerOrdersContext(request: NextRequest, where: string): Promise<{ user: ServerUser; response?: undefined } | { user?: undefined; response: NextResponse }> {
-    const activeSession = await requireActiveSession(request);
+/**
+ * `activeSession` : résultat de requireActiveSession(request), appelé par la route elle-même (règle du lot 1B.6 :
+ * tests/parcours/statut-compte.test.ts exige l'appel dans chaque route /api/partner/*).
+ */
+export async function partnerOrdersContext(activeSession: ActiveSessionResult, where: string): Promise<{ user: ServerUser; response?: undefined } | { user?: undefined; response: NextResponse }> {
     if (activeSession.response) return { response: activeSession.response };
     const closed = await guardFeature('orders', where);
     if (closed) return { response: closed };
