@@ -1,0 +1,89 @@
+TAP version 13
+[verifyAdminAuth] accès refusé à /api/admin/events/3be7f430-0fc3-45a2-b5b1-3d71a6043001/cash-refunds/66db1e97-4e40-43ee-bee7-e030ec269dec : compte 6814da83-917e-42cb-aad2-8be0ebc8c056 au statut SUSPENDU
+[CVF3D-4a] events.write sans refunds.manage : HTTP 403 {"error":"Action non autorisée : votre compte n’a pas la permission « Gérer les remboursements ».","code":"PERMISSION_MISSING","permission":"refunds.manage"} ; compte suspendu : HTTP 403 {"error":"Votre compte n'est pas actif. Contactez le support : http://127.0.0.1:3000/aide","code":"ACCOUNT_NOT_ACTIVE"} ; marques : 0
+# Subtest: 4. qui marque, et avec quel motif
+    # Subtest: a. sans refunds.manage, ou compte suspendu : 403, rien d'écrit
+    ok 1 - a. sans refunds.manage, ou compte suspendu : 403, rien d'écrit
+      ---
+      duration_ms: 1423.041112
+      type: 'test'
+      ...
+[CVF3D-4b] 400 REASON_REQUIRED | 400 REASON_REQUIRED | 400 REASON_REQUIRED | 400 REASON_REQUIRED | 400 REASON_REQUIRED | 400 REASON_REQUIRED ; marques : 0
+    # Subtest: b. motif absent, blanc, trop court, trop long : 400, rien d'écrit
+    ok 2 - b. motif absent, blanc, trop court, trop long : 400, rien d'écrit
+      ---
+      duration_ms: 99.791675
+      type: 'test'
+      ...
+    1..2
+ok 1 - 4. qui marque, et avec quel motif
+  ---
+  duration_ms: 1523.730849
+  type: 'suite'
+  ...
+[CVF3D-4c] paiement d'un autre événement : HTTP 404 {"error":"Vente introuvable dans la liste des espèces à rembourser.","code":"PAYMENT_NOT_FOUND"} ; événement non annulé : HTTP 409 {"error":"La liste des espèces à rembourser n’existe que pour un événement annulé.","code":"EVENT_NOT_CANCELLED"} ; paiement inconnu : HTTP 404 {"error":"Vente introuvable dans la liste des espèces à rembourser.","code":"PAYMENT_NOT_FOUND"}
+# Subtest: 4. sur quoi
+    # Subtest: c. paiement d'un autre événement ; événement non annulé : refus, rien d'écrit
+    ok 1 - c. paiement d'un autre événement ; événement non annulé : refus, rien d'écrit
+      ---
+      duration_ms: 1166.087803
+      type: 'test'
+      ...
+[CVF3D-4d] organisatrice : HTTP 200 {"ok":true,"mark":{"note":"Rendu par l'organisatrice","payment_id":"2cb75c29-9d51-4d06-878b-d9945844946e","refunded_at":"2026-11-27T06:34:53.590496+00:00","refunded_by":"Moussa Organisateurcvfda","refunded_by_id":"fcca8900-8fc5-4c43-b147-119783373e35"}} ; admin ensuite : HTTP 200 {"ok":true,"code":"ALREADY_MARKED","message":"Cette vente est déjà marquée remboursée.","mark":{"note":"Rendu par l'organisatrice","payment_id":"2cb75c29-9d51-4d06-878b-d9945844946e","refunded_at":"2026-11-27T06:34:53.590496+00:00","refunded_by":"Moussa Organisateurcvfda","refunded_by_id":"fcca8900-8fc5-4c43-b147-119783373e35"}} ; marque avant/après : [{"payment_id":"2cb75c29-9d51-4d06-878b-d9945844946e","marked_by":"fcca8900-8fc5-4c43-b147-119783373e35","note":"Rendu par l'organisatrice","marked_at":"2026-11-27T06:34:53.590496+00:00"}] / [{"payment_id":"2cb75c29-9d51-4d06-878b-d9945844946e","marked_by":"fcca8900-8fc5-4c43-b147-119783373e35","note":"Rendu par l'organisatrice","marked_at":"2026-11-27T06:34:53.590496+00:00"}]
+[CVF3D-4d] premier admin : HTTP 200 {"ok":true,"mark":{"note":"Rendu au guichet par Awa","payment_id":"669b9b06-0dba-49a2-9379-68f2e98d7784","refunded_at":"2026-11-27T06:34:53.830668+00:00","refunded_by":"Ndeye Administratrice","refunded_by_id":"7ef3eed9-85fe-45c2-9f17-3fdd12565b4d"}} ; second admin : HTTP 200 {"ok":true,"code":"ALREADY_MARKED","message":"Cette vente est déjà marquée remboursée.","mark":{"note":"Rendu au guichet par Awa","payment_id":"669b9b06-0dba-49a2-9379-68f2e98d7784","refunded_at":"2026-11-27T06:34:53.830668+00:00","refunded_by":"Ndeye Administratrice","refunded_by_id":"7ef3eed9-85fe-45c2-9f17-3fdd12565b4d"}} ; marque : [{"payment_id":"669b9b06-0dba-49a2-9379-68f2e98d7784","marked_by":"7ef3eed9-85fe-45c2-9f17-3fdd12565b4d","note":"Rendu au guichet par Awa","marked_at":"2026-11-27T06:34:53.830668+00:00"}] ; journal admin : 1 ; avis : {"groups":1,"rows":4}
+    # Subtest: d. déjà marqué (par l'organisatrice, puis par un autre admin) : marque d'origine gardée, aucun second avis ni journal
+    ok 2 - d. déjà marqué (par l'organisatrice, puis par un autre admin) : marque d'origine gardée, aucun second avis ni journal
+      ---
+      duration_ms: 303.278827
+      type: 'test'
+      ...
+[CVF3D-4e] HTTP 200 {"ok":true,"mark":{"note":"Parallèle 1","payment_id":"5c8f5f8a-a0a2-43a0-9c5d-7cf1f11b0ad7","refunded_at":"2026-11-27T06:34:54.674695+00:00","refunded_by":"Ndeye Administratrice","refunded_by_id":"7ef3eed9-85fe-45c2-9f17-3fdd12565b4d"}} | HTTP 200 {"ok":true,"code":"ALREADY_MARKED","message":"Cette vente est déjà marquée remboursée.","mark":{"note":"Parallèle 1","payment_id":"5c8f5f8a-a0a2-43a0-9c5d-7cf1f11b0ad7","refunded_at":"2026-11-27T06:34:54.674695+00:00","refunded_by":"Ndeye Administratrice","refunded_by_id":"7ef3eed9-85fe-45c2-9f17-3fdd12565b4d"}} | HTTP 200 {"ok":true,"code":"ALREADY_MARKED","message":"Cette vente est déjà marquée remboursée.","mark":{"note":"Parallèle 1","payment_id":"5c8f5f8a-a0a2-43a0-9c5d-7cf1f11b0ad7","refunded_at":"2026-11-27T06:34:54.674695+00:00","refunded_by":"Ndeye Administratrice","refunded_by_id":"7ef3eed9-85fe-45c2-9f17-3fdd12565b4d"}} ; marques : 1 ; journal admin : 1 ; avis : {"groups":1,"rows":4}
+    # Subtest: e. trois marquages en parallèle (deux admins) : une seule marque, un journal, un avis
+    ok 3 - e. trois marquages en parallèle (deux admins) : une seule marque, un journal, un avis
+      ---
+      duration_ms: 817.192558
+      type: 'test'
+      ...
+[CVF3D-4f] champs en plus : HTTP 400 {"error":"Unrecognized keys: \"amount\", \"user_id\", \"buyer_id\", \"event_id\", \"payment_id\", \"status\"","code":"INVALID_INPUT"} (marques ensuite : 0) ; marquage : HTTP 200 {"ok":true,"mark":{"note":"Espèces rendues au guichet","payment_id":"45a661a5-13bc-4d4a-be07-3db56691268d","refunded_at":"2026-11-27T06:34:55.288283+00:00","refunded_by":"Ndeye Administratrice","refunded_by_id":"7ef3eed9-85fe-45c2-9f17-3fdd12565b4d"}} ; colonnes du paiement changées : aucune
+    # Subtest: f. montant et client inchangeables : champs en plus refusés ; ligne du paiement identique après le marquage
+    ok 4 - f. montant et client inchangeables : champs en plus refusés ; ligne du paiement identique après le marquage
+      ---
+      duration_ms: 605.353588
+      type: 'test'
+      ...
+    1..4
+ok 2 - 4. sur quoi
+  ---
+  duration_ms: 2892.341812
+  type: 'suite'
+  ...
+[INVARIANT] cvf3d-4-especes — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cvf3d-4-especes — purge des réservations échues : {"expired":0}
+[INVARIANT] cvf3d-4-especes — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cvf3d-4-especes — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cvf3d-4-especes — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cvf3d-4-especes — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cvf3d-4-especes — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cvf3d-4-especes — envoyeur : 243 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cvf3d-4-especes — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cvf3d-4-especes — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cvf3d-4-especes — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cvf3d-4-especes — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cvf3d-4-especes — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cvf3d-4-especes — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cvf3d-4-especes — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cvf3d-4-especes — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cvf3d-4-especes — (f) : 0 violation(s)
+[INVARIANT-FINITION3A] cvf3d-4-especes : 0 violation(s)
+[INVARIANT-FINITION3B] cvf3d-4-especes — (h1) : 0 violation(s)
+[INVARIANT-FINITION3D] cvf3d-4-especes — (i1) : 0 violation(s)
+1..2
+# tests 6
+# suites 2
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5452.404227
