@@ -1,23 +1,188 @@
 # Lot 12b — Commandes : écrans du client
 
-Branche `lot12b/client` (depuis main `5b7f3399ca`, lot 11c-b fusionné), worktree `event-village-lot12b`. **Non fusionnée ;
+Branche `lot12b/client` (depuis main `5b7f3399ca`, lot 11c-b fusionné ; puis main fusionné : lot 12c `85a1c85f57`, ajout
+« fermeture » du 12c `b52a9c255e`, documentation `2a65f5e55d`), worktree `event-village-lot12b`. **Non fusionnée ;
 aucune migration appliquée.** Service toujours fermé par `features.orders_enabled` (les tests l'ouvrent le temps de leur
 passage).
 
-**État** : run complet 752 vert sauf deux points ; `recette-matrice` corrigée (verte aux runs 755, 760 et 764) ; mesure
+**État des correctifs après contre-vérification (27/11)** : T1, T2 et T3 verts (runs 777 et 779) ; run complet **779**
+(`d59605b18f`, branche à jour avec main `2a65f5e55d`) : 644 suites sur 645, e2e 783 passés, responsive 0 défaut et
+246 passés, **mesure mobile valide** (accueil 92, fiche 93, Mes billets 92, toucher 80 ms), budgets tenus ; deux rouges
+sans défaut du code : `recette-matrice` (deux références de lignes de `docs/recette-billetterie.md` décalées par les
+tests modifiés, recalées) et une capture intermittente de `carte-b3` (Explorer, sombre, 360 px ; verte aux runs 774, 776,
+777), toutes deux rejouées au run RUN_RELANCE. Migrations à appliquer : liste dans la section ci-dessous.
+
+**État du lot (26-27/11)** : run complet 752 vert sauf deux points ; `recette-matrice` corrigée (verte aux runs 755, 760 et 764) ; mesure
 mobile de la fiche à 89 aux runs 752 et 760, **94 pour main comme pour la branche sur la même machine** (run 763, mesure
 A/B) ; mesure relancée au run 764 non concluante (machine hors plage). Point 7.
 
+## Correctifs après contre-vérification (27/11)
+
+Contre-vérification : `docs/audit-lot12b.md` (branche `lot12b/cv-rouges`, 591991e241), trois trous : T1 élevé à la fusion,
+T2 moyen, T3 faible ; aucun critique. Branche à jour avec `origin/main` (lot 12c `85a1c85f57` : fusion `f4736a30f4`, trois
+conflits attendus résolus en gardant les deux lots ; ajout « fermeture » du 12c `b52a9c255e` : fusion `14d43a79ea` ;
+documentation `2a65f5e55d` : fusion `d59605b18f`). Suites de l'audit reprises telles quelles (`bed373124b`), sans les
+cinq migrations du 12c recopiées (elles viennent de main, blobs identiques vérifiés).
+
+### À lire en premier (signalements)
+
+1. **Migrations renommées** (aucune n'est appliquée nulle part) : `20261222000001-003` → **`20261226000001-003`**, mêmes
+   contenus et même ordre, après celles du 12c. Le correctif T1, l'idée 9 et l'alignement sur le devis du 12c sont dans
+   `20261226000002` ; la clé liée dans `20261226000003`. Plus aucun `to_jsonb(ligne)` (les colonnes du 12c existent avant).
+2. **Liste blanche des aides modifiée** (comme la carte B3 pour `listed_venue`) :
+
+   | Fichier | Avant | Après |
+   |---|---|---|
+   | `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` | 10 aides, dernière `('listed_venue')` ; contrôle `= 10` | 12 aides : `+ ('product_public'), ('product_owner_or_admin')` ; contrôle `= 12` |
+   | `tests/schema/fonctions-privileges.test.ts` (`RLS_HELPER_WHITELIST`) | `… 'partner_listed', 'listed_venue'` | `… 'partner_listed', 'listed_venue', 'product_public', 'product_owner_or_admin'` |
+
+3. **Tests existants modifiés** (aucune assertion de `tests/audit/` ni `tests/audit-auth/` changée sans accord) :
+
+   | Test | Avant | Après | Raison |
+   |---|---|---|---|
+   | `tests/audit/cvf2b-6-deconnexion.test.ts:631` (**accord du 27/11**) | `what: 'opérateur et numéro de paiement, recherches récentes de l’appareil (localStorage)'` | `what: 'opérateur et numéro de paiement, recherches récentes, panier des commandes (plats, suppléments, notes) de l’appareil (localStorage)'` | description seule (compte et purge inchangés) ; exigée par `cv12b-3` T3 |
+   | `tests/audit/cv12b-3-statique.test.ts:111` et `:137` (**accord du 27/11**) | noms `20261222000001…003` | noms `20261226000001…003` | migrations renommées ; aucune assertion changée |
+   | `tests/schema/fonctions-privileges.test.ts` | 10 aides | 12 aides | point 2 |
+   | `tests/parcours/notif-modeles.test.ts:303-306` | liens `/orders/<id>` de ORDER_ACCEPTED et ORDER_READY | `…?payer=solde` (reste à payer) et `…?comptoir=1` (retrait) | idées 11 et 12 |
+   | `tests/parcours/l12c-statique.test.ts:30` (**fichier du 12c**) | migrations du 12c : `>= 20261224000001` et `< 20261228` | `< 20261226` | les migrations renommées du 12b tombaient dans l'intervalle du 12c (S2 lisait `order_issue_code` et `products_read` du 12b comme du 12c, run 773) |
+   | `e2e/lot12c.responsive.spec.ts` (**fichier du 12c**) | ouvre et remet `features.orders_enabled` lui-même | `openOrdersService` / `releaseOrdersService` (`e2e/support/orders-service.ts`), un nom par thème | point 7 de la consigne |
+   | `tests/schema/migration-lot12b-rejouable.test.ts`, `tests/schema/l12b-ecrans-statique.test.ts` (6 et nouveaux 8 à 13), `tests/parcours/l12b-produits-rest.test.ts` (C), `tests/parcours/l12b-commandes-client.test.ts` (A bis, E), `tests/helpers/design-files.ts`, `e2e/lot12b.responsive.spec.ts` | suites du lot | noms des migrations, règles par les aides (plus de `listed_venue` ni de `to_jsonb` dans les règles), contrôles ajoutés | correctifs et idées |
+
+4. **Constat sans correctif (point 4 de la consigne)** : `public.order_payable_refusal`
+   (`20261130000005_l12a_paiement.sql:27-55`, fonction du 12a) ne lit pas les fermetures exceptionnelles : une commande
+   **créée juste avant la pose d'une fermeture** reste payable (seuls établissement actif, validé, ouvert à la vente,
+   partenaire VALIDE et produits réglementés sont vérifiés). Le correctif du 12c refuse le **devis** et donc la création
+   pendant une fermeture, pas le paiement d'une commande déjà créée. Non recopiée (consigne) : à traiter par le lot qui
+   possède la fonction ; d'ici là, la partenaire refuse la commande si elle ferme.
+5. **Spec e2e d'un autre lot rouge au run 774 (sans lien avec le lot)** : `e2e/lot11cc.responsive.spec.ts:303-305` lit
+   « Commencer le contrôle » puis clique alors que la page vient de passer à « Reprendre le contrôle » (course du spec,
+   vue une fois, verte aux runs 777 et 779).
+
+### Trous et correctifs
+
+| Trou | Correctif | Commit | Preuve |
+|---|---|---|---|
+| **T1** (élevé à la fusion) : règles REST des suppléments et portions cassées par les droits par colonne du 12c | deux aides `SECURITY DEFINER`, `STABLE`, `search_path` fixé, modèle `listed_venue` : `product_public(produit)` (DISPONIBLE, établissement listé, non retiré) et `product_owner_or_admin(produit)` (conditions de `is_partner_owner` écrites en clair : invariant q6 du lot 9 quater, run 773) ; EXECUTE à anon, authenticated, service_role, retiré à PUBLIC ; `products_read`, `product_options_read`, `product_daily_portions_read` passent par elles, sans sous-requête ni ligne entière | `e43aa7664b`, `d5082cc898` | run 777 : `cv12b-1` T1 vert (« anon / client / propriétaire : products 1, product_options 1, product_daily_portions 1 ligne(s) », `policies_whole_row` 0) ; `l12b-produits-rest` 2/2 |
+| **T2** (moyen) : commande acceptée pendant une fermeture exceptionnelle | fonction du 12c (`order_quote_compute`) : correctif de l'autre session (`dfab43a69f`, dans main `b52a9c255e`, fusionné ici `14d43a79ea`) ; **carte alignée** sur ce devis (ci-dessous) | `14d43a79ea`, `2b624f87a6` | run 777 : `cv12b-1` T2 vert (« tout de suite » et 19:00 pendant la fermeture : HTTP 409 `VENUE_CLOSED` ; première fenêtre de la carte 18:26 pour une fermeture jusqu'à 17:56 et 30 min de préparation) |
+| **T3** (faible) : panier et notes gardés après une fin de session silencieuse | `DEVICE_ORDER_CART_PREFIX` dans la portée « paiement » de `clearDevicePrefs` (page chargée sans session, cvf2b 6.5), comme les demandes des tables et les prénoms des invités | `b7846278fa` | run 777 : `cv12b-3` T3 vert (« clés avant [panier, paiement] ; après [] ») |
+| Observation : clé d'idempotence d'un paiement | liée à sa commande : la même clé pour une autre commande (ou un achat de billets) → `IDEMPOTENCY_KEY_REUSED`, « Cette demande de paiement ne correspond pas à cette commande : rechargez la page et réessayez. » (409), jamais le paiement de l'autre | `f862d4db25` | run 777 : test E de `l12b-commandes-client` (« HTTP 409 … IDEMPOTENCY_KEY_REUSED ») |
+| Fusion e2e (audit § 4.2) | spec du 12c par le compteur partagé ; un nom par thème dans les deux specs (avec deux workers, le thème qui finit le premier refermait le service sous les pas de l'autre : défaut latent du spec 12b aussi) ; spec 12b **sans connexion par la route** (état rejoué du second client du seed : au run 776, le quota de 30 connexions par adresse et par heure du job responsive était dépassé et `lot11cc` refusé) | `8b036a06fb`, `c90f040c55` | run 777 : responsive 249 passés, 0 défaut bloquant |
+
+Vérifié sur la base réunie (`l12b-produits-rest`, partie C, et `cv12b-1` T1) : anon, client et propriétaire lisent
+produit, suppléments et portions d'un établissement listé **sans erreur** ; rien d'une partenaire suspendue, d'un
+établissement suspendu ou non listé, d'un produit sans établissement ni d'un produit retiré (sauf la propriétaire).
+
+### Carte alignée sur le devis du 12c (ajout du 27/11)
+
+Le 12c (`20261224000003`, dans main) refuse une commande dont la préparation tombe dans une fermeture exceptionnelle
+(`VENUE_CLOSED` : fermeture qui touche `[heure - préparation, heure + 1 min)`). À la minute près, une heure t est
+refusée quand `début ≤ t < fin + préparation`. `order_venue_menu` retire donc chaque fermeture des heures proposées
+jusqu'à sa fin **plus la préparation** ; « tout de suite » aux mêmes bornes que le devis (`2b624f87a6`). Le premier
+créneau proposé, et chaque heure de « Autre heure », sont acceptés par le devis. Preuve (run 777, `l12b-commandes-client`,
+A bis) :
+
+```
+[L12B-CV] fermeture jusqu’à 2026-11-28T18:00, préparation 30 min : première fenêtre ["2026-11-28T18:30","2026-12-04T15:58"], premiers créneaux ["2026-11-28T18:30","2026-11-28T18:45","2026-11-28T19:00","2026-11-28T19:15"], tout de suite false
+[L12B-CV] heures proposées essayées au devis : 55, refusées []
+```
+
+et 18 h 15 refusé par le devis (`VENUE_CLOSED`). L'en-tête de la carte dit « Fermé exceptionnellement » pendant une
+fermeture (la capture du run 777 montrait « Ouvert maintenant », d'après les seuls horaires : `554dae61f4`).
+
+### Idées faites (expérience du client)
+
+| Idée | Ce qui change | Où | Preuve |
+|---|---|---|---|
+| 8. Prix changé en un geste | au refus `ORDER_PRICE_CHANGED`, le devis affiché est gardé, le nouveau relu : ancien et nouveau prix ligne par ligne (frais compris) et un seul bouton « Commander à 4 095 F CFA » | `MenuView`, `CartPanel`, `priceChanges` (deux lectures comparées, aucun calcul) | statique 8 ; e2e capture `prix-change` |
+| 9. Fermeture annoncée | `order_venue_menu` rend `ordering.closed_until` (fermetures qui se suivent réunies) ; bandeau « Fermé exceptionnellement jusqu’au 28/11 à 18 h — commandez pour plus tard », premier créneau proposé (accepté par le devis) et retenu ; badge « Fermé exceptionnellement » | migration 02, `MenuView`, `MenuHeader` | statique 9 ; A bis (base) ; e2e `fermeture` |
+| 10. Heure estimée | « Prête vers 13 h 05 », « Livrée vers 13 h 25 », « Servie demain vers 20 h » : heure de la base (devis `scheduled_for`, commande `estimated_at`), dans le panier et dans Mes commandes | `etaLabel` (`lib/orders/client-view.ts`) | statique 10 ; A bis ; e2e `panier-devis`, `mes-commandes` |
+| 11. Montrer au comptoir | `CounterCode` (Modal plein écran) : 4 chiffres en très grand, écran gardé allumé (Wake Lock), retour automatique après 90 s, texte non sélectionnable, ni copie ni menu ; « Montrer au livreur » en livraison ; avis « commande prête » (retrait) → `/orders/<id>?comptoir=1` (jamais le code dans le lien) | `CounterCode`, `HandoverCode`, catalogue | statique 11 ; e2e `mode-comptoir` (le code n'est pas dans l'adresse) |
+| 12. Solde en un geste | avis « commande acceptée » avec un reste à payer → `/orders/<id>?payer=solde` : panneau du solde ouvert et amené à l'écran, montant relu en base | `OrderTracking`, page, catalogue | statique 12 ; e2e `solde-depuis-avis` |
+| 13. Visuels par catégorie | huit dessins locaux (`public/images/plats/` : plat, poisson, grillade, boisson, dessert, entrée, sandwich, petit-déjeuner), choisis par le serveur d'après la catégorie puis le nom (`lib/orders/dish-visual.ts`), servis dans une table à part `menu.visuals` (la fiche d'un plat garde exactement ses champs : audit `cv12b-2` G6, run 774) | `ProductVisual` | statique 13 ; e2e `carte`, `non-commandable` |
+
+### Autres idées (classées par valeur)
+
+1. **Commande groupée au bureau** : un lien de panier partagé (chacun ajoute ses plats, un seul paie, la base sépare les
+   lignes par personne) ; c'est l'usage le plus fréquent à midi.
+2. **Créneau garanti au retrait** : réserver un quart d'heure de retrait avec une capacité par créneau tenue par la base
+   (fin des files au comptoir aux heures de pointe).
+3. **Pourboire du livreur** à la remise, payé avec le solde, reversé en entier (ligne à part du grand livre).
+4. **Allergènes et piment** sur la fiche du plat (champs de la partenaire, filtres de la carte).
+
+### Migrations à appliquer après la fusion, dans l'ordre
+
+Aucune n'est appliquée. Le 12c d'abord (déjà dans main), puis le 12b :
+
+1. `supabase/migrations/20261224000001_l12c_verification.sql`
+2. `supabase/migrations/20261224000002_l12c_zones_supplements.sql`
+3. `supabase/migrations/20261224000003_l12c_devis.sql` (version de main `b52a9c255e`, avec `VENUE_CLOSED`)
+4. `supabase/migrations/20261224000004_l12c_journee.sql`
+5. `supabase/migrations/20261224000005_l12c_cv_correctifs.sql`
+6. `supabase/migrations/20261226000001_l12b_code_visible.sql`
+7. `supabase/migrations/20261226000002_l12b_carte_des_plats.sql`
+8. `supabase/migrations/20261226000003_l12b_garde_prix.sql`
+
+Puis `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` : tous les points OK (12 aides).
+
+### Poids JavaScript et mesure mobile (correctifs)
+
+**Aucun budget relevé.** Avant : run de main **775** (`b52a9c255e`, lots 12c et ajout « fermeture »). Après : run
+complet **779**. Octets gzip du premier chargement :
+
+| Route | Main (775) | Branche (779) | Écart | Fichiers | Budget |
+|---|---|---|---|---|---|
+| `/` (accueil) | 215 558 | 215 586 | +28 | 18 → 18 | 226 342 |
+| `/events/[id]` (fiche) | 224 498 | 224 521 | +23 | 17 → 17 | 233 316 |
+| `/tickets` (Mes billets) | 240 935 | 240 959 | +24 | 20 → 20 | 250 417 |
+| `/controller/scanner` | 225 222 | 225 250 | +28 | 16 → 16 | 234 911 |
+| `/billet/hors-ligne` | 214 172 | 214 200 | +28 | 15 → 15 | 224 268 |
+| `/explore` | 225 911 | 226 213 | +302 | 19 → 19 | 235 712 |
+
++23 à +28 o partout : le lien de la coquille et, depuis les correctifs, la clé du panier dans la purge sans session
+(`device-prefs-purge.ts`, chargé par chaque page avec `AuthProvider`). Explorer +302 o : section du panier des
+préférences de l'appareil (inchangé depuis le run 752). Les écrans des correctifs (carte, suivi, Mes commandes, mode
+comptoir) ne sont pas dans le premier chargement des pages budgétées ; les dessins des plats sont des fichiers SVG
+locaux (5 841 o en tout), pas du JavaScript.
+
+**Mesure mobile** (Lighthouse mobile, médiane de 5 passages, seuil 90 inchangé) :
+
+| Page | Main (775) | Branche (779) |
+|---|---|---|
+| Accueil | 95 [95 ; 95 ; 97 ; 95 ; 93] | 92 [90 ; 96 ; 92 ; 94 ; 91] |
+| Fiche « ce soir » | 94 [92 ; 96 ; 94 ; 94 ; 97] | 93 [93 ; 87 ; 95 ; 94 ; 89] |
+| Mes billets | 94 [90 ; 94 ; 94 ; 92 ; 97] | 92 [93 ; 92 ; 94 ; 84 ; 92] |
+| Toucher (le plus long) | 96 ms | 80 ms |
+
+Mesure valide à la première tentative, tous les seuils tenus.
+
+### Runs des correctifs
+
+| Run | Commit | Mode | Résultat | Cause et suite donnée |
+|---|---|---|---|---|
+| 772 | `4ee59f4137` | rapide (42 suites, base réunie) | rouge | typage : une chaîne coupée dans le journal de `l12b-produits-rest` → `ae96656b38` |
+| 773 | `ae96656b38` | rapide (42 suites) | rouge | invariant q6 du lot 9 quater (`product_owner_or_admin` ne lisait pas le statut du compte) ; `l12c-statique` S2 (borne de ses migrations) ; T2 rouge attendu → `d5082cc898` |
+| 774 | `8b51c75bd0` | rapide (46 suites, responsive, captures) | rouge | `cv12b-2` G6 (champ `visual` de trop dans la fiche d'un plat) ; requête de l'idée 9 (`uuid`) ; contrôle « prix changé » à 390 px ; `lot11cc` (course de son spec) → `699cf8fcd2` |
+| 776 | `5cb50b8c9c` | rapide (10 suites, responsive, captures) | rouge | T2 rouge attendu (correctif du 12c pas encore dans main) ; bandeau de fermeture trouvé deux fois ; `lot11cc` refusé par le quota de connexion → `c90f040c55` ; main fusionné, carte alignée (`14d43a79ea`, `2b624f87a6`) |
+| 777 | `bc6d1dbee7` | rapide (46 suites, responsive, captures) | **vert** | 46/46 (T1, T2, T3 verts), responsive 249 passés, 0 défaut, 80 captures ; capture de la fermeture : badge « Ouvert maintenant » → `554dae61f4` |
+| 779 | `d59605b18f` | **complet** | rouge (2 points sans défaut du code) | 644/645 (`recette-matrice` : références de lignes), e2e 783, responsive 246 passés et `carte-b3` intermittent, 0 défaut, mesure valide 92/93/92, budgets tenus |
+| RUN_RELANCE | ce rapport | rapide (`recette-matrice`, responsive, captures) | RESULTAT_RELANCE | références recalées (`fonctions-privileges.test.ts:97`, `notif-modeles.test.ts:593`) ; responsive rejoué |
+
+Captures du run 779 (`ci-results`, `runs/779-46038324126/captures-responsive/`) : **80 captures du lot**, dont 16 nouvelles
+(`l12b-prix-change`, `l12b-mode-comptoir`, `l12b-solde-depuis-avis`, `l12b-fermeture` × 390 et 1 440 px × clair et
+sombre) ; `l12b-carte` et `l12b-non-commandable` montrent les dessins des plats sans photo, `l12b-panier-devis`
+l'heure estimée.
+
 ## À lire en premier
 
-**Migrations** (intervalle `20261222…`, sans BEGIN ni COMMIT, rejouables : appliquées deux fois de plus dans une
+**Migrations** (intervalle `20261226…` : **renommées le 27/11**, d'abord `20261222000001-003`, pour passer après celles du
+12c ; voir « Correctifs après contre-vérification » ; sans BEGIN ni COMMIT, rejouables : appliquées deux fois de plus dans une
 transaction annulée par `tests/schema/migration-lot12b-rejouable.test.ts`) :
 
 | Fichier | Contenu |
 |---|---|
-| `20261222000001_l12b_code_visible.sql` | clé `private.order_code_enc_key` (32 octets tirés une fois) ; table `private.order_codes` (code chiffré `pgp_sym_encrypt` AES-256, empreinte au moment de l'émission) ; **seule recopie du lot** : `private.order_issue_code` depuis `20261130000006_l12a_etapes.sql:281-299` (aucune ligne perdue, contrôlé) ; déclencheur `private.order_codes_clear` (code effacé dès que `orders.code_hash` repasse à vide ou change) ; fonction nouvelle `order_code_reveal` |
-| `20261222000002_l12b_carte_des_plats.sql` | fonction nouvelle `order_venue_menu(établissement)` ; règles REST `products_read` (`0003_rls.sql:237-238`), `product_options_read` et `product_daily_portions_read` (`20261130000002:425-430`) limitées aux établissements listés |
-| `20261222000003_l12b_garde_prix.sql` | colonne `orders.client_request_key` (index unique par client) ; enveloppes `order_create_checked` et `order_payment_start` (aucune recopie de `order_create` ni `order_payment_create`) |
+| `20261226000001_l12b_code_visible.sql` | clé `private.order_code_enc_key` (32 octets tirés une fois) ; table `private.order_codes` (code chiffré `pgp_sym_encrypt` AES-256, empreinte au moment de l'émission) ; **seule recopie du lot** : `private.order_issue_code` depuis `20261130000006_l12a_etapes.sql:281-299` (aucune ligne perdue, contrôlé) ; déclencheur `private.order_codes_clear` (code effacé dès que `orders.code_hash` repasse à vide ou change) ; fonction nouvelle `order_code_reveal` |
+| `20261226000002_l12b_carte_des_plats.sql` | fonction nouvelle `order_venue_menu(établissement)` ; règles REST `products_read` (`0003_rls.sql:237-238`), `product_options_read` et `product_daily_portions_read` (`20261130000002:425-430`) limitées aux établissements listés |
+| `20261226000003_l12b_garde_prix.sql` | colonne `orders.client_request_key` (index unique par client) ; enveloppes `order_create_checked` et `order_payment_start` (aucune recopie de `order_create` ni `order_payment_create`) |
 
 Droits : les quatre fonctions publiques nouvelles au rôle de service seulement ; les aides et tables de `private` à aucun
 rôle de l'API (clé de service comprise) ; `supabase/hotfix/2026-10-31-lot1a/03-verification.sql` inchangé et vérifié par
@@ -48,7 +213,7 @@ du 12a suivies par `cv12a-3-statique` S1 (contrôlé).
    ```
 
    Quatre produits lus avec la clé anon au lieu d'un : ceux de l'établissement suspendu, de la partenaire suspendue et le
-   produit sans établissement en trop. Verte avec la migration `20261222000002` (runs du lot).
+   produit sans établissement en trop. Verte avec la migration `20261226000002` (runs du lot).
 2. **Route publique de la carte** : servait les produits d'une partenaire (aucun établissement) et une **photo d'un site
    extérieur** (Unsplash) pour chaque produit sans image ; remplacée par `order_venue_menu` (établissement listé et ouvert à
    la commande, aucun champ interne, aucune image extérieure) ; test A et test statique.
@@ -67,7 +232,9 @@ du 12a suivies par `cv12a-3-statique` S1 (contrôlé).
 
 6. **À vérifier après la fusion avec le 12c** : le 12c ferme la lecture REST des colonnes `review_state`, `review_words`,
    `review_requested_at` et `archived_at` (droits par colonne). La règle de lignes `products_read` du 12b lit
-   `to_jsonb(products.*) ->> 'archived_at'` ; d'après le fonctionnement de PostgreSQL, les droits par colonne ne
+   `to_jsonb(products.*) ->> 'archived_at'` (**réponse de la contre-vérification, T1 : faux pour les sous-requêtes des
+   règles des suppléments et des portions ; corrigé, voir « Correctifs après contre-vérification »**) ; d'après le
+   fonctionnement de PostgreSQL, les droits par colonne ne
    s'appliquent pas aux expressions d'une règle de lignes, mais rien ne l'a vérifié ici : relancer
    `tests/parcours/l12b-produits-rest.test.ts` et `l12b-commandes-client.test.ts` sur la base fusionnée. Les écrans du 12b
    ne lisent jamais les produits par la REST (contrôle 6 de `l12b-ecrans-statique`). Les produits retirés

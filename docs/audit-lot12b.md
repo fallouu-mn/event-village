@@ -351,3 +351,27 @@ Aucune assertion affaiblie.
   T3 peut suivre.
 - Les correctifs de T1 et T2 touchent des objets du 12c (règles après 20261224000005, `order_quote_compute`) : une
   migration nouvelle, datée après celles du 12c.
+
+---
+
+## Corrections
+
+Correctifs sur `lot12b/client` (rapport du lot, section « Correctifs après contre-vérification »). Suites de l'audit
+reprises telles quelles (`bed373124b`), sans les cinq migrations du 12c recopiées (elles viennent de main). Seules
+modifications, acceptées par l'utilisateur le 27/11 : `cv12b-3-statique.test.ts:111` et `:137`, noms des migrations
+(`20261222…` → `20261226…`, migrations renommées) ; `cvf2b-6-deconnexion.test.ts:631`, description de
+`lib/device/device-prefs.ts` (« panier des commandes »). **Aucune assertion changée.**
+
+| Test | État | Correctif | Run |
+|---|---|---|---|
+| `cv12b-1-trous` T1 — REST des produits, suppléments et portions avec les droits par colonne du 12c | **vert** (anon, client, propriétaire : 1 ligne chacun, aucune erreur ; `policies_whole_row` 0) | aides `product_public` et `product_owner_or_admin`, règles sans ligne entière (`e43aa7664b`, `d5082cc898`) | 777 (rapide) ; 779 (complet) |
+| `cv12b-1-trous` T2 — fermeture exceptionnelle | **vert** (« tout de suite » et heure pendant la fermeture : HTTP 409 `VENUE_CLOSED`) | devis du 12c (`b52a9c255e`, fusionné `14d43a79ea`) ; carte alignée (`2b624f87a6`) | 777 (rapide) ; 779 (complet) |
+| `cv12b-2-gardes` G1 à G6 | **verts** (G6 : la fiche d'un plat garde exactement ses champs ; le visuel des correctifs est servi à part, `699cf8fcd2`) | — | 777 (rapide) ; 779 (complet) |
+| `cv12b-3-statique` T3 — panier et purge sans session | **vert** (« clés avant [panier, paiement] ; après [] » ; `device-prefs.ts` classé avec le panier) | portée « paiement » de `clearDevicePrefs` (`b7846278fa`) | 777 (rapide) ; 779 (complet) |
+| `cv12b-3-statique` S1 à S4 | **verts** (S3 : 10 refus examinés, tous avec message) | — | 777 (rapide) ; 779 (complet) |
+| suites du lot `l12b-commandes-client`, `l12b-produits-rest`, `migration-lot12b-rejouable` | **vertes** sur la base réunie (`l12b-produits-rest` rouge à l'audit, verte) | idem T1 | 777 (rapide) ; 779 (complet) |
+
+Observation de l'audit (§ 4) : clé d'idempotence d'un paiement liée à sa commande (`f862d4db25`, refus
+`IDEMPOTENCY_KEY_REUSED`). Fusion e2e (§ 4.2) : spec du 12c par le compteur partagé (`8b036a06fb`). Constat ouvert hors
+du 12b : `order_payable_refusal` (12a) ne lit pas les fermetures (commande créée juste avant une fermeture encore
+payable), signalé au rapport du lot.
