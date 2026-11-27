@@ -1,0 +1,140 @@
+TAP version 13
+[CV11A] 3.1a : {"avant":"EN_ATTENTE_PAIEMENT","apres":"EXPIREE"}
+# Subtest: 3.1 Attente de paiement (15 min)
+    # Subtest: 1 min avant la fin : la tâche ne rend pas la table ; 1 min après : « Non payée à temps »
+    ok 1 - 1 min avant la fin : la tâche ne rend pas la table ; 1 min après : « Non payée à temps »
+      ---
+      duration_ms: 295.466098
+      type: 'test'
+      ...
+[CV11A] 3.1b : {"apresTache":"EXPIREE","final":"CONFIRMEE","paid":21000,"rendu":0}
+    # Subtest: paiement lancé à la dernière seconde, attente échue avant la confirmation, table encore libre : confirmée (rien de perdu)
+    ok 2 - paiement lancé à la dernière seconde, attente échue avant la confirmation, table encore libre : confirmée (rien de perdu)
+      ---
+      duration_ms: 317.791891
+      type: 'test'
+      ...
+    1..2
+ok 1 - 3.1 Attente de paiement (15 min)
+  ---
+  duration_ms: 929.088258
+  type: 'suite'
+  ...
+[CV11A] 3.2a : {"avant":"EN_ATTENTE_ACCEPTATION","accepte":"HTTP 200 {\"success\":true,\"state\":\"Confirmée\",\"refundAmount\":0}","tard":"HTTP 409 {\"error\":\"Le délai de réponse est passé : la demande est annulée et le client remboursé.\",\"code\":\"RESPONSE_TOO_LATE\"}","etatTard":"SANS_REPONSE","rendu":21000}
+# Subtest: 3.2 Réponse de l’établissement (2 h)
+    # Subtest: 1 min avant l’échéance : la tâche attend, l’établissement accepte ; 1 min après : accepter est trop tard, tout rendu
+    ok 1 - 1 min avant l’échéance : la tâche attend, l’établissement accepte ; 1 min après : accepter est trop tard, tout rendu
+      ---
+      duration_ms: 716.575553
+      type: 'test'
+      ...
+[CV11A] 3.2b : {"accept":"HTTP 409 {\"error\":\"Cette demande a déjà reçu une réponse.\",\"code\":\"NOT_PENDING\"}","state":"SANS_REPONSE","refunds":[21000]}
+    # Subtest: échéance dépassée : acceptation et tâche (×3) en même temps → un seul résultat, rendu une fois
+    ok 2 - échéance dépassée : acceptation et tâche (×3) en même temps → un seul résultat, rendu une fois
+      ---
+      duration_ms: 304.073335
+      type: 'test'
+      ...
+    1..2
+ok 2 - 3.2 Réponse de l’établissement (2 h)
+  ---
+  duration_ms: 1020.985706
+  type: 'suite'
+  ...
+[CV11A] 3.3a : {"2h03":{"http":200,"rendu":21000,"message":"Réservation annulée. Vous êtes remboursé de 21 000 F CFA sur votre compte de paiement."},"1h57":{"http":200,"rendu":0,"message":"Réservation annulée. L’acompte n’est pas remboursé : l’annulation arrive moins de 2 h avant l’heure."}}
+# Subtest: 3.3 Annulation par le client autour de 2 h
+    # Subtest: à 2 h 03 de l’heure : tout rendu ; à 1 h 57 : rien rendu (réservation confirmée)
+    ok 1 - à 2 h 03 de l’heure : tout rendu ; à 1 h 57 : rien rendu (réservation confirmée)
+      ---
+      duration_ms: 691.994794
+      type: 'test'
+      ...
+[CV11A] 3.3b : {"avant":"EN_ATTENTE_ACCEPTATION","http":200,"message":"Réservation annulée. Vous êtes remboursé de 21 000 F CFA sur votre compte de paiement.","state":"ANNULEE_CLIENT","paid":21000,"rendu":21000}
+    # Subtest: demande payée pas encore acceptée par l’établissement, annulée par le client à 1 h 30 de l’heure : acompte rendu
+    ok 2 - demande payée pas encore acceptée par l’établissement, annulée par le client à 1 h 30 de l’heure : acompte rendu
+      ---
+      duration_ms: 380.823803
+      type: 'test'
+      ...
+[CV11A] 3.3c : {"cancellation":"Réservation à moins de 2 h de l’heure : si vous annulez, l’acompte payé ne sera pas remboursé."}
+    # Subtest: réservation avec acompte prise à 1 h de l’heure : le client n’est pas assuré d’un remboursement impossible
+    ok 3 - réservation avec acompte prise à 1 h de l’heure : le client n’est pas assuré d’un remboursement impossible
+      ---
+      duration_ms: 226.30455
+      type: 'test'
+      ...
+    1..3
+ok 3 - 3.3 Annulation par le client autour de 2 h
+  ---
+  duration_ms: 1299.905067
+  type: 'suite'
+  ...
+[CV11A] 3.4 : {"a29":"CONFIRMEE","course":"HTTP 409 {\"error\":\"Seule une réservation confirmée peut être marquée ainsi.\",\"code\":\"NOT_CONFIRMED\"}","etat":"ABSENT","rendu":0}
+# Subtest: 3.4 Absence (30 min)
+    # Subtest: 29 min après l’heure : rien ; 31 min : « Absent » ; « Client arrivé » envoyé en même temps que la tâche : un seul état
+    ok 1 - 29 min après l’heure : rien ; 31 min : « Absent » ; « Client arrivé » envoyé en même temps que la tâche : un seul état
+      ---
+      duration_ms: 577.885269
+      type: 'test'
+      ...
+    1..1
+ok 4 - 3.4 Absence (30 min)
+  ---
+  duration_ms: 578.186441
+  type: 'suite'
+  ...
+[Cron Tables] 0 attente(s) échue(s), 0 demande(s) sans réponse, 0 absence(s), 0 rappel(s).
+[Cron Tables] 0 attente(s) échue(s), 0 demande(s) sans réponse, 0 absence(s), 0 rappel(s).
+[CV11A] 3.5 : {"errors":[],"states":["EXPIREE","SANS_REPONSE","ABSENT"],"refundsAsk":[21000],"refundsNoShow":0}
+[CV11A] 3.5b : {"none":401,"wrong":401,"serviceKey":401}
+# Subtest: 3.5 Tâche ev_tables rejouée ou en parallèle
+    # Subtest: attente échue, demande sans réponse, absence : 4 passages de la fonction + 2 de la route en même temps, puis 2 de plus
+    ok 1 - attente échue, demande sans réponse, absence : 4 passages de la fonction + 2 de la route en même temps, puis 2 de plus
+      ---
+      duration_ms: 837.966058
+      type: 'test'
+      ...
+    # Subtest: la route de la tâche refuse un appel sans secret ou avec un faux secret
+    ok 2 - la route de la tâche refuse un appel sans secret ou avec un faux secret
+      ---
+      duration_ms: 1.019734
+      type: 'test'
+      ...
+    1..2
+ok 5 - 3.5 Tâche ev_tables rejouée ou en parallèle
+  ---
+  duration_ms: 839.184001
+  type: 'suite'
+  ...
+[INVARIANT] cv11a-3-delais — avant purge (held = réservations ACTIVE) : 0 violation(s)
+[INVARIANT] cv11a-3-delais — purge des réservations échues : {"expired":0}
+[INVARIANT] cv11a-3-delais — après purge (held = réservations non échues) : 0 violation(s)
+[INVARIANT-FIN] cv11a-3-delais — (d)(e)(f) : 0 violation(s)
+[INVARIANT-ACCES] cv11a-3-delais — (g)(h)(i) : 0 violation(s)
+[INVARIANT-CYCLE] cv11a-3-delais — cron events_finish_overdue : 0 événement(s) passé(s) à TERMINE
+[INVARIANT-CYCLE] cv11a-3-delais — (j)(k)(l) : 0 violation(s)
+[notifications] Canal push désactivé : variables VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY et VAPID_SUBJECT absentes. Les notifications partent dans l'application et par SMS.
+[INVARIANT-NOTIF] cv11a-3-delais — envoyeur : 201 ligne(s) réservée(s), 0 reprise(s)
+[INVARIANT-NOTIF] cv11a-3-delais — (m)(n)(o) : 0 violation(s)
+[INVARIANT-TERRAIN] cv11a-3-delais — (p)(q) : 0 violation(s)
+[INVARIANT-RECETTE] cv11a-3-delais — (r)(s)(t) : 0 violation(s)
+[INVARIANT-LOT9] cv11a-3-delais — (t)(u)(v) : 0 violation(s)
+[INVARIANT-LOT9BIS] cv11a-3-delais — (w) : 0 violation(s)
+[INVARIANT-LOT9TER] cv11a-3-delais — (x) : 0 violation(s)
+[INVARIANT-LOT9QUATER] cv11a-3-delais — (q) : 0 violation(s)
+[INVARIANT-LOT9QUINQUIES] cv11a-3-delais — (p) : 0 violation(s)
+[INVARIANT-FINITION1] cv11a-3-delais — (f) : 0 violation(s)
+[INVARIANT-FINITION3A] cv11a-3-delais : 0 violation(s)
+[INVARIANT-FINITION3B] cv11a-3-delais — (h1) : 0 violation(s)
+[INVARIANT-FINITION3D] cv11a-3-delais — (i1) : 0 violation(s)
+[INVARIANT-LOT10A] cv11a-3-delais — (h1)(h2)(h3)(h4) : 0 violation(s)
+[INVARIANT-LOT11A] cv11a-3-delais — (t1)(t2)(t3)(t4)(t5)(t6) : 0 violation(s)
+1..5
+# tests 10
+# suites 5
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5835.874995
