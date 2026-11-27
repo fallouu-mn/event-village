@@ -13,6 +13,12 @@ export const dynamic = 'force-dynamic';
 /** Préfixes des réglages exposés par cette route (validation des valeurs : finance_setting_set). */
 // Lot 9 quinquies (B1) : + support.* (contact du support)
 const SETTING_KEYS_FILTER = 'key.like.finance.%,key.like.access.%,key.like.notif.%,key.like.features.%,key.like.support.%,key.like.halls.%,key.like.tables.%,key.like.orders.%,key.like.event_tables.%';
+/**
+ * Lot 12c : liste des mots qui mettent un produit « à vérifier » (une liste, pas un nombre) : lue et modifiée sur la page
+ * « Produits à vérifier » (GET /api/admin/products/review, PUT /api/admin/products/keywords → order_review_keywords_set),
+ * jamais ici (finance_setting_set ne la connaît pas : elle n'est pas recopiée, règle S1 de cv12a-3).
+ */
+const OWN_PAGE_KEYS = ['orders.review_keywords'];
 
 /**
  * Lot 3 — réglages financiers (clés finance.*), lot 4 — réglages du contrôle d'accès (clés access.*),
@@ -28,9 +34,10 @@ export async function GET(req: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
     const supabase = getServiceRoleClient();
     const [{ data: settings, error }, { data: history, error: histErr }, { data: defaults, error: defErr }, { data: tableDefaults, error: tdErr }] = await Promise.all([
-        supabase.from('platform_settings').select('key, value, description, updated_by, updated_at').or(SETTING_KEYS_FILTER).order('key'),
+        supabase.from('platform_settings').select('key, value, description, updated_by, updated_at').or(SETTING_KEYS_FILTER)
+            .not('key', 'in', `(${OWN_PAGE_KEYS.join(',')})`).order('key'),
         supabase.from('platform_settings_history').select('key, old_value, new_value, changed_by, reason, changed_at')
-            .or(SETTING_KEYS_FILTER).order('changed_at', { ascending: false }).limit(100),
+            .or(SETTING_KEYS_FILTER).not('key', 'in', `(${OWN_PAGE_KEYS.join(',')})`).order('changed_at', { ascending: false }).limit(100),
         // Finition 3b (E-35) : valeur d'origine de chaque réglage (premier état de l'historique)
         supabase.rpc('platform_settings_defaults'),
         // Lot 11c-a : valeurs d'origine des réglages event_tables.* (platform_settings_defaults n'est pas recopié)

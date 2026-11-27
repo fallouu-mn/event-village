@@ -252,3 +252,21 @@ d'où elle vient et pourquoi elle attend.
 | Glisser une zone « par-dessus » des tables pour leur donner cette zone d'un geste. | La zone d'une table se choisit dans « Liste et numéros » ; le rectangle sur le plan est un repère visuel. | Lot 11c-c |
 | Temps réel des tables en paiement sur le pilotage (sans rechargement). | Le pilotage relit au signal des catégories de l'événement (vente, attente, libération) ; une table qui passe « en paiement » s'affiche à ce signal ou au prochain rechargement. | Lot 11c-c |
 | Poids du scanner : +890 octets gzip par rapport à main (225 837 au lieu de 224 947, budget 234 911), dus au découpage des morceaux partagés par webpack (`40209.js` devient `42643.js` et `52946.js`) ; le code du badge lui-même ne le cause pas (le `page.js` du scanner diminue de 836 octets). | Il faut l'analyse module par module du lot poids (`EV_ANALYSE_POIDS=1`) pour trouver le module déplacé et le regrouper (règle `splitChunks`), avec un build par essai. | Lot 11c-c (runs 695 et 698) |
+
+## Commandes : écrans de la partenaire et vérification des produits (lot 12c)
+
+Faits au lot 12c (docs/lot12c-rapport.md) : catalogue avec établissement, suppléments, case « réglementé », plat du jour et
+portions ; produits « à vérifier » par mots-clés et page « Produits à vérifier » de l'administration ; zones de livraison en
+liste ; `/partner/orders` sans temps réel (relecture de la route serveur toutes les 5 s pendant que la page est visible) ;
+fiche d'une commande, saisie du code ; livreurs. Restent :
+
+| Sujet | Pourquoi plus tard | Origine |
+|---|---|---|
+| ~~Liste des mots changée : les produits déjà enregistrés ne sont pas revus.~~ Fait aux correctifs de la contre-vérification du lot 12c : chaque changement de la liste (et la migration, une fois) revoit les produits déjà en vente, un seul avis groupé à l'administration ; marques dans la liste par défaut ; bouton « Mettre à vérifier ». Reste : un produit dont seule la photo montre une boisson alcoolisée n'est repéré que par l'administration (bouton) ou la case de la partenaire. | Reconnaissance d'image hors périmètre. | Lot 12c (correctifs) |
+| ~~Le nom d'une catégorie n'est pas comparé à la liste des mots.~~ Fait aux correctifs de la contre-vérification du lot 12c : le nom de la catégorie compte, et la renommer avec un mot de la liste remet ses produits « à vérifier ». | — | Lot 12c (correctifs) |
+| ~~Produit archivé : aucun écran pour le revoir ni le remettre en vente.~~ Fait aux correctifs de la contre-vérification du lot 12c : section « Produits archivés » de « Ma carte », « Remettre en vente » (revu par la liste des mots) ; un produit archivé ne se modifie plus. | — | Lot 12c (correctifs) |
+| Purge des images des produits supprimés (jamais vendus) ou archivés dans le dossier `products/`. | Même sujet que la ligne 25 (images orphelines) ; une tâche de nettoyage commune à faire plus tard. | Lot 12c |
+| Une commande déjà passée dont le produit devient « à vérifier » (renommé avec un mot de la liste, supplément ajouté) est refusée à l'acceptation ou à la remise et le client remboursé (même règle que le produit devenu réglementé, lot 12a T2), sans faute retenue contre la partenaire. | Bloquer le renommage d'un produit qui a des commandes ouvertes serait plus strict ; à trancher si l'abus apparaît. | Lot 12c |
+| Fiche suspendue : l'écran d'un produit garde le formulaire, champs désactivés et sans bouton d'enregistrement (la base et la route refusent toute écriture). | Choix d'ergonomie à confirmer (fiche en lecture seule, sans formulaire). | Lot 12c |
+| Zones de livraison dessinées sur une carte ; QR de table pour la commande sur place. | Hors périmètre du lot (décisions du client : liste de quartiers, liste des tables au lancement). | Consigne du lot 12c |
+| Le choix « colonnes ou onglets » de l'écran des commandes se fait après le chargement (squelette d'abord) ; le glissement d'une carte d'une colonne à l'autre passe par la transition de vue du navigateur (fondu sinon). | Un seul rendu par carte (pas d'identifiants en double) ; à revoir si le client trouve le premier affichage lent. | Lot 12c |

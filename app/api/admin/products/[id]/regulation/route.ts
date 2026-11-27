@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic';
  * produit réglementé (case de la partenaire OU décision de l'administration) n'est jamais commandé, payé ni livré en
  * ligne ; « non réglementé » ne décoche pas la case de la partenaire.
  */
+// Contre-vérification du lot 12c (T2) : reviewedAt obligatoire (version affichée : date de la demande, sinon date de la fiche).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const auth = await verifyAdminAuth(req, { requiredPermission: 'partners.validate' });
     if (!auth.authorized) return auth.errorResponse!;
@@ -25,11 +26,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (!body || typeof body.regulated !== 'boolean') {
             return NextResponse.json({ success: false, error: 'Indiquez si le produit est réglementé ou non.', code: 'INVALID_DECISION' }, { status: 400 });
         }
+        // Contre-vérification du lot 12c (T2) : la page envoie la version du produit qu'elle affiche ; la base refuse une
+        // décision sur une version modifiée depuis (REVIEW_CHANGED) et la page se recharge.
+        if (typeof body.reviewedAt !== 'string' || Number.isNaN(Date.parse(body.reviewedAt))) {
+            return NextResponse.json({ success: false, error: 'Rechargez la page avant de décider.', code: 'REVIEW_VERSION_REQUIRED' }, { status: 400 });
+        }
         const { data, error } = await getServiceRoleClient().rpc('order_product_regulation_decide', {
-            p: { actor_id: auth.user!.id, product_id: id, regulated: body.regulated, reason: typeof body.reason === 'string' ? body.reason : '' },
+            p: {
+                actor_id: auth.user!.id, product_id: id, regulated: body.regulated, reason: typeof body.reason === 'string' ? body.reason : '',
+                reviewed_at: body.reviewedAt,
+            },
         });
         if (error) throw new Error(`order_product_regulation_decide : ${error.message}`);
         const r = data as Record<string, unknown>;
+        if (r?.code === 'REVIEW_CHANGED') {
+            return NextResponse.json({ success: false, error: String(r.message ?? 'Ce produit a changé pendant votre lecture : relisez-le.'), code: 'REVIEW_CHANGED' }, { status: 409 });
+        }
         if (r?.ok !== true) return orderRefusal(r, 'Vérification non enregistrée.');
         return NextResponse.json({
             success: true,

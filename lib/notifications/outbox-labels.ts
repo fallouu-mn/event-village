@@ -218,6 +218,18 @@ export const OUTBOX_TYPE_LABELS: Readonly<Record<string, string>> = {
     ORDER_COURIER_ASSIGNED: 'Livraison confiée',
     ORDER_COURIER_CANCELLED: 'Livraison annulée',
     ORDER_COURIER_INVITED: 'Invitation à livrer',
+    // Contre-vérification du lot 12c (point 7)
+    ORDER_CODE_LOCKED: 'Code de remise bloqué',
+    ORDER_RESPONSE_REMINDER: 'Commande sans réponse',
+    ORDER_PREP_REMINDER: 'Commande programmée à préparer',
+    ORDER_READY_COURIER: 'Commande prête à livrer',
+    ORDER_SCHEDULED_REMINDER: 'Commande programmée bientôt',
+    // Lot 12c : vérification des produits
+    ADMIN_PRODUCT_REVIEW: 'Produit à vérifier',
+    PRODUCT_REVIEW_DECIDED: 'Produit vérifié',
+    PRODUCT_DECISION_SMS: 'SMS : produit vérifié',
+    ADMIN_ORDER_REFUND_BLOCKED: 'SMS : remboursement de commande à reprendre',
+    ADMIN_PRODUCTS_REVIEW_BATCH: 'Produits déjà en vente à vérifier',
     ADMIN_PARTNER_REGISTERED: 'Nouvelle candidature partenaire',
     ADMIN_REFUND_TO_RETRY: 'Remboursement à reprendre',
     ADMIN_DUPLICATE_PAYMENT: 'Paiement en double remboursé',

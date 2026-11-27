@@ -211,3 +211,19 @@ export function saveOrderCart(venueId: string, value: object | null): boolean {
         return false; // stockage refusé : rien à retirer
     }
 }
+
+// ── Lot 12c : commandes ──────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Lot 12c : son et vibration à chaque nouvelle commande sur l'écran des commandes (« on », « off »), activés par défaut.
+ * Rangés avec les préférences de l'appareil (effacées à la déconnexion, audit cvf2b-6).
+ */
+export const ORDER_SOUND_KEY = `${DEVICE_PREFS_PREFIX}son-commandes`;
+
+export function readOrderSound(): boolean {
+    return readJson(ORDER_SOUND_KEY) !== 'off';
+}
+
+export function saveOrderSound(on: boolean): boolean {
+    return writeJson(ORDER_SOUND_KEY, on ? 'on' : 'off');
+}

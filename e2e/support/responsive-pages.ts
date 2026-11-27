@@ -403,6 +403,9 @@ const ADMINISTRATION: Array<Omit<ResponsivePage, 'groupe'>> = [
     // menus identiques à ceux des autres pages des tables)
     P({ id: 'adm-etablissements', titre: 'Établissements à valider', role: 'fumee-superadmin', services: true, needsIds: true, path: () => '/admin/venues', ready: adminVenuesReady }),
     P({ id: 'adm-etablissement', titre: 'Fiche d’un établissement en attente de validation', role: 'fumee-superadmin', services: true, needsIds: true, path: (i) => `/admin/venues/${venueOf(i, 'bar').id}`, ready: venueTitle('bar') }),
+    // Lot 12c : produits « à vérifier » (app/admin/products ne dépend pas de l'interrupteur des commandes ; file remplie
+    // contrôlée et capturée par e2e/lot12c.responsive.spec.ts)
+    P({ id: 'adm-produits', titre: 'Produits à vérifier', role: 'fumee-superadmin', path: () => '/admin/products', ready: (p) => titled(p, /^produits à vérifier$/i) }),
 ];
 
 const SCANNER: Array<Omit<ResponsivePage, 'groupe'>> = [
@@ -435,15 +438,22 @@ export const RESPONSIVE_EXCLUSIONS: Readonly<Record<string, string>> = {
     '/reset-password': 'lien de réinitialisation à usage unique (jeton)',
     '/vitrine-design': 'vitrine interne des composants (design 1a), hors parcours',
     '/partner/halls/reservations': 'salles : redirection vers « Mes salles » (les réservations se consultent dans le calendrier de chaque salle)',
-    '/partner/products': 'produits : service fermé, écrans du lot 10b',
-    '/partner/products/new': 'produits : service fermé, écrans du lot 10b',
-    '/partner/orders': 'commandes : service fermé, écrans du lot 10b',
     // Lot 12b : écrans du client derrière l'interrupteur des commandes, contrôlés (390 et 1 440 px, 0 défaut bloquant) et
     // capturés en clair et en sombre par e2e/lot12b.responsive.spec.ts, avec ses propres données (établissement, carte,
     // commandes à chaque étape), service ouvert le temps du spec
     '/orders': 'Mes commandes : contrôlées et capturées par e2e/lot12b.responsive.spec.ts (service des commandes ouvert le temps du spec)',
     '/orders/[id]': 'suivi d’une commande (paiement, compte à rebours, chaque étape, code, annulation) : contrôlé et capturé par e2e/lot12b.responsive.spec.ts',
     '/restaurants/[id]/menu': 'carte des plats, plat du jour, produit non commandable, panier et devis, heure, sur place : contrôlés et capturés par e2e/lot12b.responsive.spec.ts',
+    // Lot 12c : écrans de la partenaire derrière l'interrupteur des commandes, contrôlés (390, 768 et 1 440 px, 0 défaut
+    // bloquant) et capturés en clair et en sombre par e2e/lot12c.responsive.spec.ts, avec ses propres données (catalogue,
+    // produit en vérification, réglages, zones, commandes dans chaque étape, livreurs), service ouvert le temps du spec
+    '/partner/products': 'catalogue de la partenaire : contrôlé et capturé par e2e/lot12c.responsive.spec.ts (service des commandes ouvert le temps du spec)',
+    '/partner/products/new': 'nouveau produit : contrôlé et capturé par e2e/lot12c.responsive.spec.ts (service des commandes ouvert le temps du spec)',
+    '/partner/products/[id]': 'fiche d’un produit (et produit en vérification) : contrôlée et capturée par e2e/lot12c.responsive.spec.ts',
+    '/partner/products/vente': 'réglages de vente et zones de livraison : contrôlés et capturés par e2e/lot12c.responsive.spec.ts',
+    '/partner/orders': 'commandes de la partenaire (tablette, téléphone, ordinateur) : contrôlées et capturées par e2e/lot12c.responsive.spec.ts',
+    '/partner/orders/[id]': 'fiche d’une commande et saisie du code : contrôlées et capturées par e2e/lot12c.responsive.spec.ts',
+    '/partner/orders/livreurs': 'livreurs de la partenaire : contrôlés et capturés par e2e/lot12c.responsive.spec.ts',
     '/restaurants/[id]/tables': 'tables : redirection vers la fiche de l’établissement (/tables/<id>) ou la recherche (/tables), lot 11b',
     '/t/[code]': 'tables : lien court des SMS, redirection vers la réservation (client ou établissement), lot 11b',
 };

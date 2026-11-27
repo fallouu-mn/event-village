@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
  * POST /api/partner/products/[id]/portions { portions } — portions du plat du jour pour aujourd'hui (heure de Dakar), par
  * order_daily_portions_set (fonction en base : produit de la partenaire de la session, plat du jour, jamais sous ce qui
  * est déjà vendu, journal). Le plat s'arrête seul à la fin du jour (il ne se commande que pour aujourd'hui).
+ * { soldOut: true } (contre-vérification du lot 12c) : rupture en un geste, portions ramenées à ce qui est déjà vendu.
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -29,7 +30,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const body = await readJson(request);
         if (!body) return invalidBody();
         const { data, error } = await getServiceRoleClient().rpc('order_daily_portions_set', {
-            p: { actor_id: user.id, product_id: id, portions: typeof body.portions === 'number' || typeof body.portions === 'string' ? body.portions : null },
+            p: {
+                actor_id: user.id, product_id: id,
+                portions: typeof body.portions === 'number' || typeof body.portions === 'string' ? body.portions : null,
+                // Contre-vérification du lot 12c (point 12) : « Plus de … » en un geste depuis « Ma journée »
+                sold_out: body.soldOut === true,
+            },
         });
         if (error) throw new Error(`order_daily_portions_set : ${error.message}`);
         const r = data as Record<string, unknown>;
