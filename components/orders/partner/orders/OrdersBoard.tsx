@@ -15,7 +15,7 @@
  *  - point 9 : à partir de 1 280 px, colonnes d'au moins 18 rem côte à côte dans une zone qui défile proprement à
  *    l'horizontale si la place manque (menu latéral ouvert à 1 440 px) ; numéro de commande sur une ligne ;
  *  - point 10 : mode comptoir (plein écran, sans menu, très grands boutons, écran gardé allumé si le navigateur le
- *    permet, sinon un message simple ; sortie en un geste : bouton « Quitter », Échap ou sortie du plein écran) ;
+ *    permet, sinon un message simple ; sortie en un geste : bouton « Quitter » ou Échap) ;
  *  - point 11 : rappel sonore 5 et 2 minutes avant la fin du délai de réponse (même interrupteur que le son) ;
  *  - point 12 : « Plus de … » en un geste dans « Ma journée » (DaySummary).
  */
@@ -120,7 +120,6 @@ export function OrdersBoard() {
     const [busyId, setBusyId] = useState<string | null>(null);
     const [fresh, setFresh] = useState<Record<string, number>>({});
     const [counter, setCounter] = useState(false);
-    const counterFullscreen = useRef(false);
     const reminded = useRef<Set<string>>(new Set());
     const seen = useRef<Set<string> | null>(null);
     const columns = useRef<Map<string, BoardColumn | null>>(new Map());
@@ -195,7 +194,7 @@ export function OrdersBoard() {
         for (const message of due) toast.warning(message);
     }, [orders, now, remind, toast]);
 
-    // Mode comptoir : plein écran du navigateur dans le geste, sortie en un geste (bouton, Échap, sortie du plein écran)
+    // Mode comptoir : plein écran du navigateur dans le geste, sortie en un geste (bouton « Quitter » ou Échap)
     const wake = useWakeLock(counter);
     const enterCounter = useCallback(() => {
         setCounter(true);
@@ -206,25 +205,13 @@ export function OrdersBoard() {
     }, []);
     const leaveCounter = useCallback(() => {
         setCounter(false);
-        counterFullscreen.current = false;
         if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
             document.exitFullscreen().catch((err: unknown) => console.warn('[comptoir] sortie du plein écran :', err instanceof Error ? err.message : String(err)));
         }
     }, []);
-    useEffect(() => {
-        if (!counter) return undefined;
-        const onChange = () => {
-            if (document.fullscreenElement) {
-                counterFullscreen.current = true;
-            } else if (counterFullscreen.current) {
-                // Sortie du plein écran par le navigateur (Échap) : le mode comptoir se ferme aussi
-                counterFullscreen.current = false;
-                setCounter(false);
-            }
-        };
-        document.addEventListener('fullscreenchange', onChange);
-        return () => document.removeEventListener('fullscreenchange', onChange);
-    }, [counter]);
+    // La sortie du plein écran par le navigateur (Échap) laisse le mode comptoir ouvert (fenêtre plein écran sans menu) :
+    // « Quitter le mode comptoir » ou un second Échap le ferment (run 743 : un navigateur qui sort aussitôt du plein écran
+    // refermait le mode dès son ouverture)
 
     const byColumn = useMemo(() => {
         const m: Record<BoardColumn, PartnerOrder[]> = { RECUES: [], PREPARATION: [], PRETES: [], EN_ROUTE: [] };

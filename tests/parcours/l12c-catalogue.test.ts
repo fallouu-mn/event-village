@@ -536,7 +536,8 @@ describe('K. liste des mots', () => {
 describe('L. migration et droits', () => {
     test('migrations 20261224… rejouées : aucune erreur, réglage déjà changé gardé, droits inchangés', async () => {
         const files = readdirSync(join(process.cwd(), 'supabase', 'migrations')).filter((f) => f.startsWith('202612240')).sort();
-        assert.equal(files.length, 4, files.join(', '));
+        // Contre-vérification du lot 12c (modification signalée) : migration 20261224000005 ajoutée
+        assert.equal(files.length, 5, files.join(', '));
         const c = await openConcurrentClient({ applicationName: 'ev-test-l12c-rejeu', statementTimeoutMs: 120_000 });
         try {
             await c.query(`UPDATE public.platform_settings SET value = '{"value": ["mot-essai"]}' WHERE key = 'orders.review_keywords'`);

@@ -161,7 +161,7 @@ describe('A. mots déguisés et marques (T1)', () => {
         for (const [label, name] of flagged) got.push([label, (await create({ name })).review_state ?? null]);
         assert.deepEqual(got.filter(([, s]) => s !== 'A_VERIFIER'), [], `non repérés : ${JSON.stringify(got)}`);
 
-        const clean = ['Vinaigrette maison', 'Jus de gingembre', 'G i n g e m b r e frais', 'Thé à la menthe', 'Ginger beer sans alcool'];
+        const clean = ['Vinaigrette maison', 'Jus de gingembre', 'G i n g e m b r e frais', 'Thé à la menthe', 'Ginger beer maison'];
         const left: Array<[string, unknown]> = [];
         for (const name of clean) left.push([name, (await create({ name })).review_state ?? null]);
         // « Ginger beer » : « beer » n'est pas dans la liste par défaut (mot anglais) ; « ginger » ne commence pas par « gin » + fin de mot
@@ -390,7 +390,9 @@ describe('G. produit archivé figé (T6) et « Remettre en vente » (point 8)', 
     async function archivedProduct(name: string, extra: Row = {}): Promise<{ id: string; orderId: string }> {
         const id = String((await create({ name, price: 2_500, ...extra })).id);
         if (extra.is_daily_special) assert.equal((await setPortions(partner, id, 10)).ok, true);
-        const orderId = await placed(client, orderBody(shop, [{ productId: id, quantity: 1 }], { mode: 'SUR_PLACE', onsiteLabel: 'Comptoir', payment: 'DIFFERE' }));
+        // Plat du jour : payé en entier en ligne (commande en attente de paiement, close par beforeEach)
+        const orderId = await placed(client, orderBody(shop, [{ productId: id, quantity: 1 }],
+            extra.is_daily_special ? {} : { mode: 'SUR_PLACE', onsiteLabel: 'Comptoir', payment: 'DIFFERE' }));
         const arch = await reply(await productDelete(req(`/api/partner/products/${id}`, 'DELETE', partner.accessToken), params({ id })));
         assert.deepEqual([arch.status, arch.body.outcome], [200, 'ARCHIVED'], JSON.stringify(arch.body));
         return { id, orderId };

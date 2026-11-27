@@ -362,7 +362,7 @@ DECLARE
     v_day      date := public.hall_dakar_now()::date;
     pr         record;
     v_sold     integer;
-    v_sold_out boolean := jsonb_typeof(p->'sold_out') = 'boolean' AND (p->>'sold_out')::boolean;
+    v_sold_out boolean := COALESCE(jsonb_typeof(p->'sold_out') = 'boolean' AND (p->>'sold_out')::boolean, FALSE);
 BEGIN
     BEGIN
         v_portions := (p->>'portions')::int;

@@ -501,7 +501,7 @@ DECLARE
     v_words    text[];
     v_review   boolean := FALSE;
     v_bump     boolean := FALSE;
-    v_restore  boolean := jsonb_typeof(p->'restore') = 'boolean' AND (p->>'restore')::boolean;
+    v_restore  boolean := COALESCE(jsonb_typeof(p->'restore') = 'boolean' AND (p->>'restore')::boolean, FALSE);
 BEGIN
     v_owner := private.order_catalog_owner(v_actor);
     IF NOT (v_owner->>'ok')::boolean THEN
