@@ -110,5 +110,10 @@ describe('Lot 12b — écrans du client (contrôles sans base)', () => {
         const menu = read('supabase/migrations/20261222000002_l12b_carte_des_plats.sql');
         assert.ok((menu.match(/to_jsonb\((?:pr|products\.\*)\) ->> 'archived_at'\) IS NULL/g) ?? []).length >= 5);
         assert.match(code('lib/orders/cart-client.ts'), /export function reconcileLines/);
+        // Information du 12c : il ferme la lecture REST des colonnes review_state, review_words, review_requested_at et
+        // archived_at (droits par colonne) ; les écrans du 12b ne lisent jamais les produits par la REST (carte par la route
+        // du serveur, order_venue_menu)
+        const rest = SCREENS.filter((f) => /\.from\(\s*['"](?:products|product_options|product_daily_portions|product_categories)['"]/.test(code(f)));
+        assert.deepEqual(rest, [], 'lecture REST des produits dans un écran');
     });
 });
