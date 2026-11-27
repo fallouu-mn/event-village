@@ -126,3 +126,89 @@ describe('Lot 12b — écrans du client (contrôles sans base)', () => {
         assert.deepEqual(rest, [], 'lecture REST des produits dans un écran');
     });
 });
+
+// ── Correctifs après contre-vérification : idées 8 à 13 (expérience du client) ───────────────────────────────────────
+
+describe('Lot 12b, correctifs après contre-vérification — idées 8 à 13 (contrôles sans base)', () => {
+    const quoteOf = (unit: number, total: number, deliveryFee = 0) => ({
+        lines: [{ productId: 'p1', name: 'Yassa poulet', quantity: 2, unitPrice: unit, totalPrice: 0, options: [] }],
+        zoneName: null, itemsAmount: 0, deliveryFee, goodsTotal: 0, depositPercent: null, serviceFee: 290, total, toPayNow: total, balanceDue: 0,
+        scheduledFor: null, asap: true,
+    });
+
+    test('8. prix changé : ancien et nouveau prix ligne par ligne, tels que servis par les deux devis ; un bouton « Commander à <total> »', async () => {
+        const { priceChanges } = await import('../../lib/orders/cart-client');
+        const change = priceChanges(quoteOf(2_700, 5_800), quoteOf(2_900, 6_090, 500));
+        assert.deepEqual(change, {
+            lines: [{ name: 'Yassa poulet', quantity: 2, before: 2_700, after: 2_900 }, { name: 'Livraison', quantity: 1, before: 0, after: 500 }],
+            totalBefore: 5_800, totalAfter: 6_090,
+        });
+        const panel = code('components/orders/client/menu/CartPanel.tsx');
+        assert.match(panel, /`Commander à \$\{formatFcfa\(quote\.quote\.total\)\}`/, 'bouton au total du NOUVEAU devis');
+        assert.match(panel, /data-testid="prix-change"/);
+        const view = code('components/orders/client/menu/MenuView.tsx');
+        assert.match(view, /setChangedFrom\(shown\);/, 'devis affiché gardé pour la comparaison');
+        assert.match(view, /data\?\.code === 'ORDER_PRICE_CHANGED'/);
+    });
+
+    test('9. fermeture exceptionnelle annoncée sur la carte, premier créneau proposé (heure servie par la base)', async () => {
+        const { closureText } = await import('../../lib/orders/cart-client');
+        assert.equal(closureText('2026-11-28T18:00', '2026-11-27'), 'Fermé exceptionnellement jusqu’au 28/11 à 18 h — commandez pour plus tard');
+        assert.equal(closureText('2026-11-27T18:30', '2026-11-27'), 'Fermé exceptionnellement jusqu’à 18 h 30 — commandez pour plus tard');
+        const sql = read('supabase/migrations/20261226000002_l12b_carte_des_plats.sql');
+        assert.match(sql, /'closed_until', to_char\(v_closed_until, 'YYYY-MM-DD"T"HH24:MI'\)/);
+        assert.match(code('components/orders/client/menu/MenuView.tsx'), /closureText\(menu\.ordering\.closedUntil, today\)/);
+    });
+
+    test('10. heure estimée avant de payer et dans Mes commandes : « Prête vers 13 h 05 », « Livrée vers 13 h 25 » (heure de la base)', async () => {
+        const { etaLabel } = await import('../../lib/orders/client-view');
+        assert.equal(etaLabel('RETRAIT', '2026-11-27T13:05:00+00:00', '2026-11-27'), 'Prête vers 13 h 05');
+        assert.equal(etaLabel('LIVRAISON', '2026-11-27T13:25:00Z', '2026-11-27'), 'Livrée vers 13 h 25');
+        assert.equal(etaLabel('SUR_PLACE', '2026-11-28T20:00:00+00:00', '2026-11-27'), 'Servie demain vers 20 h');
+        assert.equal(etaLabel('RETRAIT', '2026-11-29T12:15:00Z', '2026-11-27'), 'Prête dimanche 29 novembre vers 12 h 15');
+        assert.equal(etaLabel('RETRAIT', null, '2026-11-27'), null);
+        assert.match(code('components/orders/client/menu/CartPanel.tsx'), /etaLabel\(mode, quote\.scheduledFor, today\)/, 'panier : heure du devis');
+        assert.match(code('app/orders/page.tsx'), /etaLabel\(order\.mode, order\.estimatedAt,/, 'Mes commandes : heure de la commande');
+    });
+
+    test('11. « Montrer au comptoir » : très grand, écran allumé, retour automatique, aucune copie ; lien de l’avis « commande prête »', () => {
+        const counter = code('components/orders/client/tracking/CounterCode.tsx');
+        assert.match(counter, /wakeLock/);
+        assert.match(counter, /\.release\(\)/, 'écran rendu à la fermeture');
+        assert.match(counter, /AUTO_RETURN_S = 90/);
+        assert.match(counter, /select-none/);
+        assert.match(counter, /onCopy=\{block\}/);
+        assert.doesNotMatch(counter, /clipboard|navigator\.share|localStorage|sessionStorage|router\.|searchParams|console\./, 'ni copie, ni stockage, ni adresse, ni console');
+        assert.match(read('lib/notifications/catalog.ts'), /text\(d, 'mode'\) === 'RETRAIT' \? `\$\{orderLink\(d\)\}\?comptoir=1` : orderLink\(d\)/);
+        assert.match(read('app/orders/[id]/page.tsx'), /if \(q\.comptoir === '1'\) return 'comptoir';/);
+        assert.match(code('components/orders/client/tracking/OrderTracking.tsx'), /counterOnLoad=\{intent === 'comptoir'\}/);
+    });
+
+    test('12. solde en un geste depuis l’avis « commande acceptée » : lien vers le panneau du solde, montant relu en base', () => {
+        assert.match(read('lib/notifications/catalog.ts'), /num\(d, 'balance_due'\) > 0 \? `\$\{orderLink\(d\)\}\?payer=solde` : orderLink\(d\)/);
+        const tracking = code('components/orders/client/tracking/OrderTracking.tsx');
+        assert.match(tracking, /intent !== 'solde'/);
+        assert.match(tracking, /setPayBalance\(true\)/);
+        // Le montant du panneau vient de la commande relue (order.amounts), jamais de l'adresse
+        assert.match(tracking, /part="SOLDE" amount=\{a\.balanceDue\}/);
+        assert.match(read('app/orders/[id]/page.tsx'), /if \(q\.payer === 'solde'\) return 'solde';/);
+    });
+
+    test('13. visuels dessinés par catégorie, fichiers locaux, choisis par le serveur', async () => {
+        const { DISH_VISUALS, dishVisual, dishVisualSrc } = await import('../../lib/orders/dish-visual');
+        assert.equal(dishVisual('Boissons', 'Bissap'), 'boisson');
+        assert.equal(dishVisual('Desserts', 'Thiakry'), 'dessert');
+        assert.equal(dishVisual('Plats', 'Thiéboudienne du jour'), 'poisson');
+        assert.equal(dishVisual('Grillades', 'Dibi'), 'grillade');
+        assert.equal(dishVisual(null, 'Mafé'), 'plat');
+        for (const v of DISH_VISUALS) {
+            const file = `public${dishVisualSrc(v)}`;
+            assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} absent`);
+            const svg = read(file);
+            assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+            assert.doesNotMatch(svg.replace('http://www.w3.org/2000/svg', ''), /<script|href=|url\(|https?:\/\//, `${file} : rien d’extérieur ni de script`);
+        }
+        assert.match(code('lib/orders/menu.server.ts'), /visual: dishVisual\(/);
+        assert.match(code('components/orders/client/menu/ProductVisual.tsx'), /dishVisualSrc\(visual\)/);
+    });
+});

@@ -38,6 +38,7 @@ import { GET as partnerOrderGet } from '../../app/api/partner/orders/[id]/route'
 import { GET as partnerOrdersGet } from '../../app/api/partner/orders/route';
 import { GET as courierOrdersGet } from '../../app/api/courier/orders/route';
 import { decideVenue, newTable } from './l11a-helpers';
+import { etaLabel } from '../../lib/orders/client-view';
 import {
     addCourier, codeOf, courierAct, dailySpecialWindowClosed, n, newBuyer, newDeliveryZone, newOption, newPartner, newProduct, newShop,
     openOrdersService, order, orderBody, partnerAct, payOrder, placed, platformSetting, releaseUnpaid, service, setPlatformSetting,
@@ -225,6 +226,45 @@ describe('A. Carte des plats publique', () => {
 });
 
 // B. REST des produits : tests/parcours/l12b-produits-rest.test.ts (suite à part, prouvée rouge sur main)
+
+describe('A bis. Correctifs après contre-vérification : fermeture annoncée, heure estimée servie par la base', () => {
+    test('idée 9 : la carte rend la fin de la fermeture en cours (fermetures qui se suivent réunies), plus rien une fois levée', async () => {
+        const closedShop = await newShop(partner);
+        await newProduct(partner, closedShop, { price: 1_500, name: 'Yassa l12b-cv' });
+        const rows = await sql<{ id: string; ends: string }>(`
+            WITH t AS (SELECT date_trunc('hour', public.hall_dakar_now()) AS h)
+            INSERT INTO public.venue_closures (venue_id, starts_at, ends_at, reason)
+            SELECT $1, t.h - interval '1 hour', t.h + interval '5 hours', 'Travaux (l12b-cv)' FROM t
+            UNION ALL
+            SELECT $1, t.h + interval '5 hours', t.h + interval '29 hours', 'Travaux, suite (l12b-cv)' FROM t
+            RETURNING id, to_char(ends_at, 'YYYY-MM-DD"T"HH24:MI') AS ends`, [closedShop]);
+        try {
+            const res = await menu(closedShop);
+            assert.equal(res.status, 200, res.text);
+            const ordering = (res.body.menu as Row).ordering as Row;
+            const last = rows.map((r) => r.ends).sort().at(-1);
+            console.log(`[L12B-CV] idée 9 : fermetures ${JSON.stringify(rows.map((r) => r.ends))} ; carte : closedUntil=${String(ordering.closedUntil)}, asapAvailable=${String(ordering.asapAvailable)}`);
+            assert.equal(ordering.closedUntil, last, 'fin de la fermeture, la suivante comprise');
+            assert.equal(ordering.asapAvailable, false);
+        } finally {
+            await sql('UPDATE public.venue_closures SET cancelled_at = now() WHERE id = ANY ($1::uuid[])', [rows.map((r) => r.id)]);
+        }
+        const after = await menu(closedShop);
+        assert.equal(((after.body.menu as Row).ordering as Row).closedUntil, null, 'fermeture levée : plus d’annonce');
+    });
+
+    test('idée 10 : le devis rend l’heure prévue (« tout de suite » : maintenant + préparation), mise en mots « Prête vers … »', async () => {
+        const p = await newProduct(partner, shop, { price: 2_000 });
+        const q = await quote(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
+        assert.equal(q.status, 200, q.text);
+        const at = (q.body.quote as Row).scheduledFor;
+        const prep = Number((q.body.quote as Row).prepMinutes);
+        const ahead = (Date.parse(String(at)) - Date.now()) / 60_000;
+        console.log(`[L12B-CV] idée 10 : heure prévue ${String(at)}, préparation ${prep} min, dans ${ahead.toFixed(1)} min ; ${String(etaLabel('RETRAIT', at, new Date().toISOString().slice(0, 10)))}`);
+        assert.ok(Number.isFinite(ahead) && ahead > prep - 2 && ahead < prep + 3, `heure prévue ≈ maintenant + ${prep} min`);
+        assert.match(String(etaLabel('RETRAIT', at, new Date().toISOString().slice(0, 10))), /^Prête (demain )?vers \d{1,2} h/);
+    });
+});
 
 // ── C. Code de remise visible ─────────────────────────────────────────────────────────────────────────────────────
 

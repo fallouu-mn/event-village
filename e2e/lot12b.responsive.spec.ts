@@ -163,6 +163,18 @@ let superadmin = '';
 
 test.beforeEach(async ({ servicesLock }) => { await servicesLock.enter('services'); });
 
+/** Prix d'un produit changé par la partenaire pendant que le client regarde son panier (garde « prix changé »). */
+async function setPrice(productId: string, price: number): Promise<void> {
+    const { error } = await serviceClient().from('products').update({ price }).eq('id', productId);
+    if (error) throw new Error(`[l12b] prix du produit ${productId} : ${error.message}`);
+}
+
+/** Heure de Dakar (UTC) au quart d'heure inférieur, décalée de `minutes`, au format des fermetures (« AAAA-MM-JJ HH:MM »). */
+function dakarQuarter(minutes: number): string {
+    const q = 15 * 60_000;
+    return new Date(Math.floor(Date.now() / q) * q + minutes * 60_000).toISOString().slice(0, 16).replace('T', ' ');
+}
+
 async function partnerStep(data: Seeded, orderId: string, action: string, extra: Record<string, unknown> = {}): Promise<void> {
     await rpcOk('order_partner_action', { actor_id: data.ownerId, order_id: orderId, action, ...extra });
 }
@@ -184,7 +196,7 @@ async function stepReached(page: Page, orderId: string, step: string): Promise<v
 }
 
 for (const theme of THEMES) {
-    test(`commandes du client · ${theme.key} : carte, panier, heure, sur place, paiement, suivi, code, annulation, Mes commandes (390 et 1 440 px)`, async ({ browser }, testInfo) => {
+    test(`commandes du client · ${theme.key} : carte, panier, heure, sur place, prix changé, paiement, suivi, code et mode comptoir, annulation, solde, Mes commandes, fermeture (390 et 1 440 px)`, async ({ browser }, testInfo) => {
         test.setTimeout(900_000);
         superadmin ||= await userIdByEmail(FIXTURE_USERS.SUPERADMIN.email);
         await openOrdersService(`${WHO} (${theme.key})`, superadmin); // un nom par thème : les deux thèmes peuvent tourner ensemble
@@ -239,6 +251,8 @@ for (const theme of THEMES) {
                     // Yassa 3 500 + piment 200 = 3 700 ; frais 5 % : 185 ; total 3 885 (devis de la base, lu à l'écran)
                     await expect(scope.getByRole('region', { name: 'Montant de la commande' })).toContainText(/3\s885/);
                     await settle(page);
+                    // Heure estimée servie par le devis (« Prête vers 13 h 05 ») : idée 10 des correctifs
+                    await expect(scope.getByTestId('heure-estimee-panier')).toContainText(/Prête (demain )?vers \d{1,2} h/);
                     await checkLayout(page, w.width, w.phone, 'panier et devis');
                     await shot(page, 'panier-devis', w.width, theme.key, !w.phone);
 
@@ -261,8 +275,23 @@ for (const theme of THEMES) {
                     await scope.getByRole('radio', { name: 'Tout payer' }).click();
                     const order = scope.getByRole('button', { name: 'Commander', exact: true });
                     await expect(order).toBeEnabled({ timeout: 20_000 });
-                    await order.click();
-                    await page.waitForURL(/\/orders\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+                    // Prix changé par la partenaire entre l'affichage et la commande (idée 8) : rien de créé, ancien et nouveau
+                    // prix ligne par ligne, un seul bouton « Commander à <nouveau total> » (3 700 + 200 + frais 195 = 4 095)
+                    await setPrice(data.products.yassa, 3_700);
+                    try {
+                        await order.click();
+                        const changed = scope.getByTestId('prix-change');
+                        await expect(changed).toBeVisible({ timeout: 20_000 });
+                        await expect(changed).toContainText(/Yassa poulet.*3\s700/);
+                        await expect(changed).toContainText(/Total.*4\s095/);
+                        await settle(page);
+                        await checkLayout(page, w.width, w.phone, 'prix changé');
+                        await shot(page, 'prix-change', w.width, theme.key, !w.phone);
+                        await scope.getByRole('button', { name: /^Commander à 4\s095\sF\sCFA$/ }).click();
+                        await page.waitForURL(/\/orders\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+                    } finally {
+                        await setPrice(data.products.yassa, 3_500);
+                    }
                     const orderId = page.url().split('/orders/')[1];
                     await expect(page.getByTestId('compte-a-rebours')).toContainText(/À payer dans \d+:\d{2}/, { timeout: 20_000 });
                     await expect(page.getByTestId('paiement-commande')).toBeVisible();
@@ -306,6 +335,18 @@ for (const theme of THEMES) {
                     await settle(page);
                     await checkLayout(page, w.width, w.phone, 'code de remise');
                     await shot(page, 'code', w.width, theme.key);
+                    // Lien de l'avis « commande prête » (?comptoir=1) : le code s'ouvre en très grand (idée 11), sans copie
+                    await page.goto(`/orders/${orderId}?comptoir=1`, { waitUntil: 'load' });
+                    const counter = page.getByTestId('mode-comptoir');
+                    await expect(counter).toBeVisible({ timeout: 30_000 });
+                    await expect(counter).toContainText(code.split('').join(''));
+                    await expect(counter).toHaveCSS('user-select', 'none');
+                    expect(page.url(), 'le code ne passe jamais par l’adresse').not.toContain(code);
+                    await settle(page);
+                    await checkLayout(page, w.width, w.phone, 'mode comptoir');
+                    await shot(page, 'mode-comptoir', w.width, theme.key, false);
+                    await counter.getByRole('button', { name: 'Fermer' }).click();
+                    await expect(counter).toHaveCount(0);
                     await partnerStep(data, orderId, 'REMETTRE', { code });
                     await stepReached(page, orderId, 'REMISE');
                     await expect(page.getByTestId('code-remise')).toHaveCount(0);
@@ -333,13 +374,49 @@ for (const theme of THEMES) {
                     await checkLayout(page, w.width, w.phone, 'commande annulée');
                     await shot(page, 'annulee', w.width, theme.key);
 
-                    // 11. Mes commandes
+                    // 10 bis. Commande payable à la remise, acceptée : lien de l'avis « commande acceptée » (?payer=solde), le
+                    // panneau du solde s'ouvre au montant relu en base (idée 12)
+                    const third = await context.request.post(`${APP_URL}/api/orders/create`, {
+                        headers: { 'Idempotency-Key': `l12b-${randomUUID()}` },
+                        data: { venueId: data.venueId, mode: 'RETRAIT', payment: 'DIFFERE', items: [{ productId: data.products.mafe, quantity: 1 }] },
+                    });
+                    const thirdBody = await third.json() as { order?: { id?: string } };
+                    expect(third.status(), `commande payable à la remise : ${JSON.stringify(thirdBody)}`).toBe(201);
+                    const accepted = String(thirdBody.order?.id);
+                    await partnerStep(data, accepted, 'ACCEPTER');
+                    await page.goto(`/orders/${accepted}?payer=solde`, { waitUntil: 'load' });
+                    const balance = page.getByTestId('solde');
+                    await expect(balance.getByTestId('paiement-solde')).toBeVisible({ timeout: 30_000 });
+                    await settle(page);
+                    await checkLayout(page, w.width, w.phone, 'solde depuis l’avis');
+                    await shot(page, 'solde-depuis-avis', w.width, theme.key);
+
+                    // 11. Mes commandes (heure estimée rappelée pour la commande en cours : idée 10)
                     await page.goto('/orders', { waitUntil: 'load' });
                     await expect(page.locator(`[data-commande="${orderId}"]`).first()).toBeVisible({ timeout: 30_000 });
+                    await expect(page.locator(`[data-commande="${accepted}"]`).getByTestId('heure-estimee-liste')).toContainText(/Prête (demain )?vers \d{1,2} h/);
                     await expect(page.getByRole('link', { name: /Commander à nouveau/ }).or(page.getByRole('button', { name: /Commander à nouveau/ })).first()).toBeVisible();
                     await settle(page);
                     await checkLayout(page, w.width, w.phone, 'Mes commandes');
                     await shot(page, 'mes-commandes', w.width, theme.key);
+                    const undo = await context.request.post(`${APP_URL}/api/orders/${accepted}/cancel`, { data: {} });
+                    expect(undo.status(), `annulation de la commande acceptée : ${await undo.text()}`).toBe(200);
+
+                    // 12. Fermeture exceptionnelle annoncée sur la carte (idée 9), premier créneau proposé ; levée ensuite
+                    const { data: closure, error: cErr } = await serviceClient().from('venue_closures')
+                        .insert({ venue_id: data.venueId, starts_at: dakarQuarter(-60), ends_at: `${dakarQuarter(24 * 60).slice(0, 10)} 18:00`, reason: 'Fermeture des captures (lot 12b)' })
+                        .select('id').single();
+                    if (cErr || !closure) throw new Error(`[l12b] fermeture : ${cErr?.message}`);
+                    try {
+                        await page.goto(`/restaurants/${data.venueId}/menu`, { waitUntil: 'load' });
+                        await expect(page.getByText(/^Fermé exceptionnellement jusqu’au \d{2}\/\d{2} à 18 h — commandez pour plus tard$/)).toBeVisible({ timeout: 30_000 });
+                        await expect(page.getByTestId('fermeture-exceptionnelle')).toContainText('Premier créneau proposé');
+                        await settle(page);
+                        await checkLayout(page, w.width, w.phone, 'fermeture exceptionnelle');
+                        await shot(page, 'fermeture', w.width, theme.key, false);
+                    } finally {
+                        await serviceClient().from('venue_closures').update({ cancelled_at: new Date().toISOString() }).eq('id', String(closure.id));
+                    }
                 }
             } finally {
                 await context.close();

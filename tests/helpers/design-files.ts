@@ -529,6 +529,8 @@ export const MIGRATED_DESIGN_FILES: string[] = [
     'components/orders/client/tracking/OrderTimeline.tsx',
     'components/orders/client/tracking/HandoverCode.tsx',
     'components/orders/client/tracking/OrderPayPanel.tsx',
+    // Lot 12b, correctifs après contre-vérification : mode « Montrer au comptoir »
+    'components/orders/client/tracking/CounterCode.tsx',
     // Lot 12c : catalogue et réglages de vente de la partenaire, page « Produits à vérifier » de l'administration
     'app/partner/products/page.tsx',
     'app/partner/products/new/page.tsx',
