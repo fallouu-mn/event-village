@@ -140,7 +140,7 @@ function CounterDialog({ open, onClose, subtitle, children }: { open: boolean; o
         <dialog
             ref={ref}
             aria-labelledby="comptoir-titre"
-            className="m-0 h-dvh max-h-none w-screen max-w-none overflow-y-auto overscroll-contain border-0 bg-background p-0 text-foreground backdrop:bg-scrim/60"
+            className="inset-0 m-0 h-dvh max-h-none w-screen max-w-none overflow-y-auto overscroll-contain border-0 bg-background p-0 text-foreground backdrop:bg-scrim/60"
         >
             {open && (
                 <>

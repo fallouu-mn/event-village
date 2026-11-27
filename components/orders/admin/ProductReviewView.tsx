@@ -196,7 +196,7 @@ export function ProductReviewView({ focusId }: { focusId: string | null }) {
         <div className="space-y-6">
             <PageHeader
                 title="Produits à vérifier"
-                description="Un produit dont le nom, la description ou un supplément contient un mot de la liste ne se vend pas en ligne tant que vous n’avez pas décidé. Les produits marqués « réglementé » par leur partenaire sont aussi listés."
+                description="Un produit dont le nom, la description, la catégorie ou un supplément contient un mot de la liste ne se vend pas en ligne tant que vous n’avez pas décidé. Les produits marqués « réglementé » par leur partenaire, ou mis à vérifier par l’administration, sont aussi listés."
             />
 
             {done && (
