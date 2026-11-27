@@ -12,7 +12,7 @@ import { OperatorLogo } from '@/components/payment/OperatorLogo';
 import { PhoneVerifyDialog } from '@/components/tickets/PhoneVerifyDialog';
 import { formatFcfa } from '@/lib/format';
 import { normalizePayerPhone } from '@/lib/payments/payer-phone';
-import { readPaymentPreference, savePaymentPreference } from '@/lib/device/device-prefs';
+import { loadPaymentPreference, storePaymentPreference } from '@/lib/orders/device-store';
 import {
     formatLocalPhone, isMobileDevice, isRecord, isUncertainOutcome, nonEmptyString, operatorLabel, paymentStatusPath,
     readJsonBody, readPaymentError, savePaymentHandoff, toSafeExternalUrl, useIdempotencyKey, type PaymentRequestError,
@@ -112,19 +112,23 @@ export function OrderPayPanel({ orderId, part, amount, onPriceChanged, onClose }
 
     // Paiement mémorisé (ajout du 26/11) : dernier paiement de ce téléphone, sinon numéro du profil ; jamais par-dessus une saisie
     useEffect(() => {
-        if (prefilled.current) return;
-        const device = readPaymentPreference();
-        if (device) {
-            prefilled.current = true;
-            setOperator((op) => op ?? device.operator);
-            setPhone(formatLocalPhone(device.phone));
-            return;
-        }
-        const fromProfile = normalizePayerPhone(profile?.phone);
-        if (fromProfile) {
-            prefilled.current = true;
-            setPhone(formatLocalPhone(fromProfile));
-        }
+        if (prefilled.current) return undefined;
+        let cancelled = false;
+        void loadPaymentPreference().then((device) => {
+            if (cancelled || prefilled.current) return;
+            if (device) {
+                prefilled.current = true;
+                setOperator((op) => op ?? device.operator);
+                setPhone((current) => current || formatLocalPhone(device.phone));
+                return;
+            }
+            const fromProfile = normalizePayerPhone(profile?.phone);
+            if (fromProfile) {
+                prefilled.current = true;
+                setPhone((current) => current || formatLocalPhone(fromProfile));
+            }
+        });
+        return () => { cancelled = true; };
     }, [profile?.phone]);
 
     const payerPhone = normalizePayerPhone(phone);
@@ -176,7 +180,7 @@ export function OrderPayPanel({ orderId, part, amount, onPriceChanged, onClose }
             setBusy(false);
             return;
         }
-        savePaymentPreference({ operator, phone: payerPhone });
+        void storePaymentPreference({ operator, phone: payerPhone });
         const deepLink = nonEmptyString(json.deep_link);
         const paymentUrl = nonEmptyString(json.payment_url);
         const qrCode = nonEmptyString(json.qr_code);

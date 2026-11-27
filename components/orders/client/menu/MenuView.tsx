@@ -9,7 +9,7 @@ import { cn } from '@/components/ui/cn';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { PhoneVerifyDialog } from '@/components/tickets/PhoneVerifyDialog';
 import { formatFcfa } from '@/lib/format';
-import { clearSavedCart, readSavedCart, saveSavedCart } from '@/lib/device/device-prefs';
+import { dropSavedCart, loadSavedCart, storeSavedCart } from '@/lib/orders/device-store';
 import { normalizePayerPhone } from '@/lib/payments/payer-phone';
 import { formatLocalPhone, isUncertainOutcome, useIdempotencyKey } from '@/lib/payments/payment-client';
 import type { MenuProduct, VenueMenu } from '@/lib/orders/menu-types';
@@ -101,8 +101,9 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     useEffect(() => {
         if (restored || authLoading) return;
         let cancelled = false;
-        const fromDevice = () => {
-            const saved = readSavedCart(venueId);
+        const fromDevice = async () => {
+            const saved = await loadSavedCart(venueId);
+            if (cancelled) return;
             if (saved) {
                 const r = reconcileLines(menu, saved.lines);
                 setLines(r.lines);
@@ -112,13 +113,13 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
             setRestored(true);
         };
         if (!reorderId || !UUID_RE.test(reorderId)) {
-            fromDevice();
-            return undefined;
+            void fromDevice();
+            return () => { cancelled = true; };
         }
         if (!isAuthenticated) {
             setReorderNote('Connectez-vous pour reprendre votre commande précédente.');
-            fromDevice();
-            return undefined;
+            void fromDevice();
+            return () => { cancelled = true; };
         }
         (async () => {
             try {
@@ -129,7 +130,7 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
                 const venue = order?.venue as { id?: unknown } | undefined;
                 if (!order || venue?.id !== venueId) {
                     setReorderNote('Cette commande ne peut pas être reprise ici.');
-                    fromDevice();
+                    await fromDevice();
                     return;
                 }
                 const items = (Array.isArray(order.items) ? order.items : []) as Array<Record<string, unknown>>;
@@ -151,7 +152,7 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
                 if (cancelled) return;
                 console.error('[commande] reprise impossible :', err instanceof Error ? err.message : String(err));
                 setReorderNote('Votre commande précédente n’a pas pu être reprise. Réessayez plus tard.');
-                fromDevice();
+                await fromDevice();
             }
         })();
         return () => {
@@ -162,7 +163,7 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     // Panier gardé sur l'appareil à chaque changement (sans prix)
     useEffect(() => {
         if (!restored) return;
-        saveSavedCart(venueId, { lines: lines.map(({ productId, quantity, optionIds, notes }) => ({ productId, quantity, optionIds, notes })), mode: checkout.mode });
+        void storeSavedCart(venueId, { lines: lines.map(({ productId, quantity, optionIds, notes }) => ({ productId, quantity, optionIds, notes })), mode: checkout.mode });
     }, [restored, lines, checkout.mode, venueId]);
 
     const body = useMemo(() => (lines.length > 0 ? orderBody(venueId, lines, checkout) : null), [venueId, lines, checkout]);
@@ -210,7 +211,7 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
         const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
         const order = data?.order as { id?: unknown } | undefined;
         if (res.ok && typeof order?.id === 'string') {
-            clearSavedCart(venueId);
+            await dropSavedCart(venueId);
             attempt.reset();
             router.push(`/orders/${order.id}`);
             return;

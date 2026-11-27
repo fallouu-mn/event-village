@@ -225,7 +225,7 @@ for (const theme of THEMES) {
                     await page.getByRole('button', { name: 'Voir Yassa poulet' }).click();
                     const sheet = page.getByRole('dialog', { name: 'Yassa poulet' });
                     await expect(sheet).toBeVisible();
-                    await sheet.getByText('Piment').click();
+                    await sheet.getByText('Piment', { exact: true }).click();
                     await settle(page);
                     await checkLayout(page, w.width, w.phone, 'fiche d’un plat');
                     await shot(page, 'fiche-plat', w.width, theme.key, false);

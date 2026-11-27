@@ -93,7 +93,10 @@ test.describe('carte B3 · validation, lieu public, suspension', () => {
 
             const places = await hallsOnMap(page.request);
             const shown = places.find((p) => p.id === id)!;
-            expect(Object.keys(shown).sort(), 'champs publics seulement').toEqual(['area', 'capacity', 'hours', 'id', 'lat', 'lng', 'name', 'photos', 'price', 'type']);
+            // Lot 12b (modification signalée au rapport) : champ public « orders » (établissement ouvert à la commande ; toujours
+            // faux pour une salle), ajouté à PUBLIC_PLACE_FIELDS
+            expect(Object.keys(shown).sort(), 'champs publics seulement').toEqual(['area', 'capacity', 'hours', 'id', 'lat', 'lng', 'name', 'orders', 'photos', 'price', 'type']);
+            expect(shown.orders, 'une salle ne prend pas de commande').toBe(false);
             expect({ lat: shown.lat, lng: shown.lng }, 'point exact (décision du 25/11)').toEqual(point);
 
             // Visiteur sans session (aucun cookie) : adresse, point et itinéraire publics ; rien de la partenaire
