@@ -118,8 +118,13 @@ before(async () => {
     }).select('id').single();
     assert.equal(tableErr, null, `table : ${tableErr?.message}`);
     tableId = table.id;
+    // Lot 12b (modification signalée au rapport) : la carte des plats est celle d'un ÉTABLISSEMENT ouvert à la commande ; le
+    // produit appartient à l'établissement, qui prend des commandes (réglages de vente du lot 12a)
+    const { data: sales, error: salesErr } = await service.rpc('order_venue_settings_set', { p: { actor_id: partner.userId, venue_id: venueId, orders_open: true } });
+    assert.equal(salesErr, null, `réglages de vente : ${salesErr?.message}`);
+    assert.equal((sales as { ok?: boolean }).ok, true, `réglages de vente : ${JSON.stringify(sales)}`);
     const { data: product, error: prodErr } = await service.from('products').insert({
-        partner_id: partner.partnerId, name: `TEST Plat interrupteur ${randomUUID().slice(0, 8)}`, price: 4_000, status: 'DISPONIBLE',
+        partner_id: partner.partnerId, venue_id: venueId, name: `TEST Plat interrupteur ${randomUUID().slice(0, 8)}`, price: 4_000, status: 'DISPONIBLE',
     }).select('id').single();
     assert.equal(prodErr, null, `produit : ${prodErr?.message}`);
     productId = product.id;
@@ -218,8 +223,9 @@ const PUBLIC_GETS: PublicGet[] = [
         params: () => ({ id: venueId }), flag: 'tables', expectId: () => tableId,
     },
     {
-        label: 'GET /api/restaurants/[id]/menu', mod: '../../app/api/restaurants/[id]/menu/route', path: () => `/api/restaurants/${partner.partnerId}/menu`,
-        params: () => ({ id: partner.partnerId }), flag: 'orders', expectId: () => productId,
+        // Lot 12b (modification signalée au rapport) : [id] est l'établissement (et non plus la partenaire)
+        label: 'GET /api/restaurants/[id]/menu', mod: '../../app/api/restaurants/[id]/menu/route', path: () => `/api/restaurants/${venueId}/menu`,
+        params: () => ({ id: venueId }), flag: 'orders', expectId: () => productId,
     },
     // Lot 11b (modification signalée au rapport) : recherche et fiche publiques des établissements
     { label: 'GET /api/tables', mod: '../../app/api/tables/route', path: () => `/api/tables?q=${encodeURIComponent(venueName)}`, flag: 'tables', expectId: () => venueId },

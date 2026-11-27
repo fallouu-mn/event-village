@@ -7,7 +7,9 @@
  *  - Recherche : 6 recherches récentes au plus, 60 caractères chacune, « Effacer » les retire.
  * Tout est effacé à la déconnexion (lib/device/device-prefs-purge.ts, AuthProvider).
  */
-import { DEVICE_INVITE_NAMES_KEY, DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX, DEVICE_TABLE_CHOICE_PREFIX, DEVICE_TABLE_NOTES_PREFIX } from './device-prefs-purge';
+import {
+    DEVICE_INVITE_NAMES_KEY, DEVICE_ORDER_CART_PREFIX, DEVICE_PAYMENT_KEY, DEVICE_PREFS_PREFIX, DEVICE_TABLE_CHOICE_PREFIX, DEVICE_TABLE_NOTES_PREFIX,
+} from './device-prefs-purge';
 
 export type DeviceOperator = 'WAVE' | 'ORANGE_MONEY';
 
@@ -192,6 +194,24 @@ export function takeTableChoice(eventId: string): TableChoice | null {
     if (typeof v.typeId !== 'string' || !UUID_RE.test(v.typeId)) return null;
     const tableId = typeof v.tableId === 'string' && UUID_RE.test(v.tableId) ? v.tableId : null;
     return { typeId: v.typeId, tableId };
+}
+
+// ── Lot 12b : panier par établissement, contrôlé par lib/orders/device-store.ts (lignes, jamais un prix) ──
+export const ORDER_CART_PREFIX = DEVICE_ORDER_CART_PREFIX; // effacé aussi sans session (CV 12b, T3)
+
+export function readOrderCart(venueId: string): unknown {
+    return UUID_RE.test(venueId) ? readJson(`${ORDER_CART_PREFIX}${venueId}`) : null;
+}
+
+export function saveOrderCart(venueId: string, value: object | null): boolean {
+    if (!UUID_RE.test(venueId)) return false;
+    if (value !== null) return writeJson(`${ORDER_CART_PREFIX}${venueId}`, value);
+    try {
+        storage()?.removeItem(`${ORDER_CART_PREFIX}${venueId}`);
+        return true;
+    } catch {
+        return false; // stockage refusé : rien à retirer
+    }
 }
 
 // ── Lot 12c : commandes ──────────────────────────────────────────────────────────────────────────────────────

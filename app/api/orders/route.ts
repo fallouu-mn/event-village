@@ -4,12 +4,16 @@ import { requireActiveSession } from '@/lib/auth/session';
 import { featureNotFound, featuresUnavailable, getFeatureFlags, type FeatureFlags } from '@/lib/features/flags';
 import { formatFcfa } from '@/lib/format';
 import { partnerPublicName } from '@/lib/partner/public-name';
+import { orderStateLabel } from '@/lib/orders/booking';
+import { orderListGroup } from '@/lib/orders/client-view';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/orders
  * Commandes de repas, réservations de salles et de tables du compte de la session.
+ * Lot 12b : commandes de repas lues sur l'état détaillé (order_state) avec un groupe pour l'écran : EN_COURS (à payer
+ * dans le délai, ou en cours), TERMINEE, NON_PAYEE (jamais payée à temps : rangée à part) ; lien vers /orders/<id>.
  * Lot 7 (7.3, D5) : le compte vient TOUJOURS de la session (requireActiveSession : Bearer ou cookies du
  * navigateur) ; un paramètre ?userId= est ignoré (faille IDOR corrigée). Interrupteurs (D55, D56) : session
  * d'abord, puis 404 quand les trois services sont fermés ; sinon seuls les services ouverts sont lus.
@@ -30,25 +34,34 @@ export async function GET(req: NextRequest) {
         const supabase = getServiceRoleClient();
         const effectiveUserId = session.user.id;
 
-        // 1. Commandes Repas / Traiteur
+        // 1. Commandes de repas (lot 12b) : état détaillé (order_state, seule source depuis le lot 12a), établissement,
+        //    montants figés ; plus les anciennes commandes de repas sans établissement (closes au lot 12a), sans lien.
+        //    Les commandes de billets payés à l'entrée (lot 4 : tickets.order_id) n'en sont pas.
         const { data: orders, error: ordersErr } = !flags.orders ? { data: [], error: null } : await supabase
             .from('orders')
             .select(`
                 id,
                 order_number,
-                total_amount,
-                paid_amount,
-                balance_amount,
-                delivery_mode,
+                order_state,
                 order_status,
-                payment_status,
+                delivery_mode,
+                payment_type,
+                goods_total,
+                total_amount,
+                paid_goods,
+                onsite_amount,
+                hold_expires_at,
+                scheduled_for,
+                estimated_at,
                 created_at,
-                partner_id,
-                partners(commercial_name),
-                order_items(id, product_name, quantity, total_price)
+                venue_id,
+                venues(name, photos),
+                order_items(quantity),
+                tickets(id)
             `)
             .eq('client_id', effectiveUserId)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(200);
 
         // 2. Réservations de Salles
         const { data: hallReservations, error: hallsErr } = !flags.halls ? { data: [], error: null } : await supabase
@@ -96,22 +109,39 @@ export async function GET(req: NextRequest) {
         const unifiedList: any[] = [];
 
         (orders || []).forEach((o: any) => {
+            // Commande de billets payés à l'entrée (lot 4) : jamais dans « Mes commandes »
+            if (!o.venue_id && Array.isArray(o.tickets) && o.tickets.length > 0) return;
             const date = new Date(o.created_at);
             const dateFormatted = date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
-            const total = Number(o.total_amount);
-
+            const items = (o.order_items || []).reduce((n: number, i: any) => n + (Number(i.quantity) || 0), 0);
+            const venue = Array.isArray(o.venues) ? o.venues[0] : o.venues;
+            const legacy = !o.venue_id;
+            const group = legacy ? 'TERMINEE' : orderListGroup(o.order_state, o.hold_expires_at);
+            const total = Number(legacy ? o.total_amount : o.goods_total);
             unifiedList.push({
                 id: o.id,
                 orderNumber: o.order_number,
                 type: 'FOOD_ORDER',
-                title: `Commande Traiteur — ${partnerPublicName(o.partners)} (${(o.order_items || []).length} article${(o.order_items || []).length > 1 ? 's' : ''})`,
-                itemCount: (o.order_items || []).length,
+                title: legacy ? 'Ancienne commande' : `Commande ${String(venue?.name ?? '')}`.trim(),
+                venueName: legacy ? null : venue?.name ?? null,
+                // Lot 12b (ajout du 26/11) : « Commander à nouveau » rouvre la carte de cet établissement
+                venueId: legacy ? null : o.venue_id,
+                image: legacy ? null : (Array.isArray(venue?.photos) && typeof venue.photos[0] === 'string' ? venue.photos[0] : null),
+                itemCount: items,
                 totalAmountFormatted: formatFcfa(total),
-                status: o.order_status,
-                paymentStatus: o.payment_status,
+                balanceDue: legacy ? 0 : Math.max(Number(o.goods_total) - Number(o.paid_goods) - Number(o.onsite_amount ?? 0), 0),
+                status: o.order_state ?? o.order_status,
+                statusLabel: legacy && !o.order_state ? 'Ancienne commande' : orderStateLabel(o.order_state, o.delivery_mode),
+                group,
+                mode: o.delivery_mode,
+                paymentStatus: null,
                 paymentMethod: 'SamirPay (Wave / OM)',
+                holdExpiresAt: group === 'EN_COURS' && o.order_state === 'EN_ATTENTE_PAIEMENT' ? o.hold_expires_at : null,
+                scheduledFor: o.scheduled_for ?? null,
+                estimatedAt: o.estimated_at ?? null,
                 dateFormatted,
-                detailsUrl: `/restaurants/${o.partner_id}/menu`,
+                // Lot 12b : suivi de la commande (une ancienne commande n'a pas de page)
+                detailsUrl: legacy ? null : `/orders/${o.id}`,
                 createdAt: o.created_at,
             });
         });
@@ -154,7 +184,8 @@ export async function GET(req: NextRequest) {
                 paymentStatus: t.payment_status,
                 paymentMethod: deposit > 0 ? 'SamirPay (Wave / OM)' : 'Sur place',
                 dateFormatted,
-                detailsUrl: `/restaurants/${t.partner_id}/tables`,
+                // Lot 12b : détail de la réservation (lot 11b) ; l'ancien lien menait à une fiche introuvable
+                detailsUrl: `/tables/reservations/${t.id}`,
                 createdAt: t.created_at,
             });
         });

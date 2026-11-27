@@ -1,6 +1,7 @@
 import { unstable_cache } from 'next/cache';
 import { PUBLIC_REVALIDATE_SECONDS } from '@/lib/events/catalog-cache.server';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { getFeatureFlags } from '@/lib/features/flags';
 import { searchHalls } from '@/lib/halls/queries';
 import { searchVenues } from '@/lib/tables/queries';
 import { PLACE_PHOTOS_MAX, PLACES_RESULT_LIMIT, type OpeningRange, type PlacesQuery, type PublicMapPlace } from '@/lib/lieux/carte-lieux';
@@ -21,7 +22,7 @@ import { PLACES_CACHE_TAG } from '@/lib/lieux/cache-lieux.server';
 type Row = Record<string, unknown>;
 
 const HALL_SELECT = 'id, name, city, capacity, price_per_day, images, latitude, longitude, partners!inner(status)';
-const VENUE_SELECT = 'id, name, city, deposit_per_person, photos, latitude, longitude, partners!inner(status), '
+const VENUE_SELECT = 'id, name, city, deposit_per_person, photos, latitude, longitude, orders_open, partners!inner(status), '
     + 'venue_opening_hours(weekday, opens_at, closes_at), restaurant_tables(capacity, is_active)';
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : []);
@@ -45,7 +46,7 @@ function hallEntry(h: Row): PublicMapPlace | null {
     return {
         id: String(h.id), type: 'salle', name: String(h.name), area: text(h.city), photos: strings(h.images).slice(0, PLACE_PHOTOS_MAX),
         price, capacity: Number.isFinite(Number(h.capacity)) ? Number(h.capacity) : null,
-        lat: pos.lat, lng: pos.lng, hours: null,
+        lat: pos.lat, lng: pos.lng, hours: null, orders: false,
     };
 }
 
@@ -63,6 +64,8 @@ function venueEntry(v: Row): PublicMapPlace | null {
         id: String(v.id), type: 'restaurant', name: String(v.name), area: text(v.city), photos: strings(v.photos).slice(0, PLACE_PHOTOS_MAX),
         price: deposit !== null && Number.isFinite(deposit) && deposit > 0 ? deposit : null, capacity: seats > 0 ? seats : null,
         lat: pos.lat, lng: pos.lng, hours,
+        // Lot 12b : vente en ligne ouverte par la partenaire (l'interrupteur du service est appliqué à la lecture, hors cache)
+        orders: v.orders_open === true,
     };
 }
 
@@ -93,11 +96,15 @@ export async function readPlaceEntries(): Promise<PublicMapPlace[]> {
     return out;
 }
 
-const cachedRead = unstable_cache(readPlaceEntries, ['lieux-publics', 'v1'], { revalidate: PUBLIC_REVALIDATE_SECONDS, tags: [PLACES_CACHE_TAG] });
+const cachedRead = unstable_cache(readPlaceEntries, ['lieux-publics', 'v2'], { revalidate: PUBLIC_REVALIDATE_SECONDS, tags: [PLACES_CACHE_TAG] });
 
-/** Lieux de la carte sous cache (60 s, étiquette `lieux-publics`). */
+/**
+ * Lieux de la carte sous cache (60 s, étiquette `lieux-publics`). Lot 12b : service des commandes fermé
+ * (features.orders_enabled, lu à chaque requête, hors cache) → aucun lien « Commander ».
+ */
 export async function cachedPlaceEntries(): Promise<PublicMapPlace[]> {
-    return cachedRead();
+    const [entries, flags] = await Promise.all([cachedRead(), getFeatureFlags()]);
+    return flags.orders ? entries : entries.map((p) => (p.orders ? { ...p, orders: false } : p));
 }
 
 /** Pages de la recherche lues au plus pour une disponibilité (48 lieux par page : PLACES_RESULT_LIMIT couvert). */

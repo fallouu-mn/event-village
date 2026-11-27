@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { cache } from 'react';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, CalendarOff, Clock, ExternalLink, Hourglass, MapPin, Navigation, ShieldCheck, Timer, Users, Wallet, Zap } from 'lucide-react';
+import { ArrowLeft, CalendarOff, Clock, ExternalLink, Hourglass, MapPin, Navigation, ShieldCheck, ShoppingBag, Timer, Users, Wallet, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { VenueMap } from '@/components/event-page/VenueMap';
@@ -11,6 +11,7 @@ import { BookingPanel } from '@/components/tables/client/BookingPanel';
 import { VenueGallery } from '@/components/tables/client/VenueGallery';
 import { capitalize, closureText, durationText, hoursRangeText, minutesText } from '@/components/tables/client/format';
 import { publicVenue, type PublicVenue } from '@/lib/tables/queries';
+import { venueTakesOrders } from '@/lib/orders/menu.server';
 import { WEEKDAYS, dakarToday, fcfaText } from '@/lib/tables/views';
 
 /**
@@ -40,6 +41,19 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
         title: `${venue.name} — Réserver une table — Event Village`,
         description: venue.description?.slice(0, 160) ?? `${venue.kindLabel} à ${venue.city ?? 'Dakar'} : choisissez votre heure et réservez votre table en ligne.`,
     };
+}
+
+/**
+ * Lot 12b : l'établissement prend-il des commandes en ligne ? (bouton « Commander », vers sa carte des plats). Une lecture
+ * impossible ne casse pas la fiche : pas de bouton, erreur journalisée.
+ */
+async function takesOrders(id: string): Promise<boolean> {
+    try {
+        return await venueTakesOrders(id);
+    } catch (err) {
+        console.error('[Tables] vente en ligne non lue :', err instanceof Error ? err.message : String(err));
+        return false;
+    }
 }
 
 function Section({ title, id, children }: { title: string; id: string; children: ReactNode }) {
@@ -87,6 +101,7 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
         );
     }
     if (!venue) notFound();
+    const orders = await takesOrders(venue.id);
 
     // Jour de Dakar (UTC+0) ; jour de la semaine ISO (1 = lundi)
     const today = dakarToday();
@@ -151,6 +166,19 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
                     <LinkButton href="#reserver" variant="primary" fullWidth className="lg:hidden">
                         Choisir mon heure et réserver
                     </LinkButton>
+
+                    {/* Lot 12b : commande en ligne (carte des plats de l'établissement), même sans réservation de table */}
+                    {orders && (
+                        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between" data-testid="commander-etablissement">
+                            <div className="min-w-0">
+                                <p className="text-base font-semibold text-foreground-strong">Envie de commander ?</p>
+                                <p className="text-sm text-muted-foreground">Voyez la carte et commandez en ligne : livraison, à emporter ou sur place selon l’établissement.</p>
+                            </div>
+                            <LinkButton href={`/restaurants/${venue.id}/menu`} variant="secondary" leftIcon={<ShoppingBag size={18} />} className="sm:flex-shrink-0">
+                                Commander
+                            </LinkButton>
+                        </div>
+                    )}
 
                     {venue.description && (
                         <Section title="À propos" id="etab-a-propos">

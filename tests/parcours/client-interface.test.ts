@@ -299,7 +299,9 @@ describe('7.3 — états d\'erreur et 404', () => {
 const GATED_NAV: Array<{ match: (href: string) => boolean; label: string; flag: RegExp }> = [
     { match: (h) => h === '/orders', label: 'Commandes (/orders)', flag: /halls|tables|orders|service|feature/i },
     { match: (h) => h === '/halls', label: 'Salles de fête (/halls)', flag: /halls/i },
-    { match: (h) => h.startsWith('/restaurants/'), label: 'Restaurants et tables (/restaurants/…)', flag: /tables/i },
+    // Lot 12b (modification signalée au rapport) : l'entrée mène à la recherche des établissements (/tables), et non plus
+    // à un établissement d'exemple (/restaurants/rest-terrou-bi/tables) ; même exigence : conditionnée par l'interrupteur
+    { match: (h) => h === '/tables' || h.startsWith('/restaurants/'), label: 'Restaurants et tables (/tables)', flag: /tables/i },
     { match: (h) => h === '/partner/products', label: 'Produits et menu (/partner/products)', flag: /orders/i },
     { match: (h) => h === '/partner/halls', label: 'Salles de fête (/partner/halls)', flag: /halls/i },
     { match: (h) => h === '/partner/tables', label: 'Tables (/partner/tables)', flag: /tables/i },

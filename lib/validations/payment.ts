@@ -25,6 +25,9 @@ export const CreatePaymentSchema = z.object({
     quantity: z.number().int().min(1).max(50).optional(),
     // Lot 10a : réservation de salle, part à payer (acompte, solde ou totalité) ; le montant est lu en base
     part: z.enum(['ACOMPTE', 'SOLDE', 'INTEGRAL']).optional(),
+    // Lot 12b : commande, montant AFFICHÉ par l'écran, pour comparaison seulement (le montant payé vient toujours de la
+    // base ; s'il diffère, aucun paiement n'est créé et le nouveau montant est rendu)
+    expectedAmount: z.number().int().nonnegative().max(100_000_000).optional(),
 });
 
 export type CreatePaymentInput = z.infer<typeof CreatePaymentSchema>;

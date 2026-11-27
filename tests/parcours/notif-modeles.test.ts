@@ -300,9 +300,11 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     ess('ADMIN_VENUE_SUBMITTED', [I, P, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/venues/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Établissement à valider', 'halls.validate'),
     // Lot 12a (migration 20261130000007, ajout signalé au rapport) : étapes d'une commande, 4 canaux à chaque étape ; chaque avis mène à la commande
     ess('ORDER_RECEIVED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande reçue'),
-    ess('ORDER_ACCEPTED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande acceptée'),
+    // Lot 12b, correctifs après contre-vérification (idée 12, modification signalée) : reste à payer → panneau du solde
+    ess('ORDER_ACCEPTED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59?payer=solde'], 'Commande acceptée'),
     ess('ORDER_PREPARING', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande en préparation'),
-    ess('ORDER_READY', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande prête'),
+    // Lot 12b, correctifs après contre-vérification (idée 11, modification signalée) : à retirer → mode comptoir
+    ess('ORDER_READY', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59?comptoir=1'], 'Commande prête'),
     ess('ORDER_ON_THE_WAY', [I, P, M], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande en route'),
     ess('ORDER_HANDED_OVER', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande livrée'),
     ess('ORDER_CANCELLED', [I, P, M, S], 'CLIENT', 'A', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande annulée'),

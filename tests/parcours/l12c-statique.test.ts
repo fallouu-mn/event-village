@@ -27,7 +27,9 @@ import { NOTIFICATION_CATALOG } from '../../lib/notifications/catalog';
 const ROOT = process.cwd();
 const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
 const FIRST_12C = '20261224000001';
-const lotFiles = (): string[] => readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql') && f >= FIRST_12C && f < '20261228').sort();
+// Lot 12b, correctifs après contre-vérification (modification signalée) : les migrations du 12b, renommées 20261226…
+// après celles du 12c, ne sont pas du 12c ; borne haute 20261226 (fichiers du 12c : 20261224000001 à 05)
+const lotFiles = (): string[] => readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql') && f >= FIRST_12C && f < '20261226').sort();
 
 function definitions(schema: string, name: string): Array<{ file: string; body: string }> {
     const out: Array<{ file: string; body: string }> = [];

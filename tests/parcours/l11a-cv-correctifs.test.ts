@@ -211,24 +211,32 @@ describe('T5 — l’acceptation refait les contrôles de l’établissement et 
 });
 
 describe('T6 — /api/restaurants/[id]/menu : identifiant exact seulement', () => {
-    test('identifiant d’une partenaire VALIDE : son menu ; son nom complet, un nom partiel ou « rest-<nom> » : 404, jamais un menu', async () => {
+    // Lot 12b (modification signalée au rapport) : la carte est celle d'un ÉTABLISSEMENT ouvert à la commande ([id] est
+    // l'établissement, comme /api/restaurants/[id]/tables) ; même exigence qu'avant : identifiant exact seulement, un nom,
+    // un nom partiel, « rest-<nom> » ou l'identifiant de la partenaire ne désignent jamais une carte (404)
+    test('identifiant d’un établissement listé et ouvert à la commande : sa carte ; son nom, un nom partiel, « rest-<nom> » ou l’identifiant de la partenaire : 404, jamais une carte', async () => {
         const named = await newPartner('l11a-cv-menu');
         const unique = `Chez L11a Cv Menu ${Date.now()}`;
         assert.equal((await service.from('partners').update({ commercial_name: unique }).eq('id', named.partnerId)).error, null);
-        const { error } = await service.from('products').insert({ partner_id: named.partnerId, name: 'TEST Yassa l11a cv', price: 3_000, status: 'DISPONIBLE' });
+        const venue = await newVenue(named);
+        assert.equal((await service.from('venues').update({ name: unique }).eq('id', venue)).error, null);
+        const { data: sales, error: salesErr } = await service.rpc('order_venue_settings_set', { p: { actor_id: named.userId, venue_id: venue, orders_open: true } });
+        assert.equal(salesErr, null, salesErr?.message);
+        assert.equal((sales as Row).ok, true, JSON.stringify(sales));
+        const { error } = await service.from('products').insert({ partner_id: named.partnerId, venue_id: venue, name: 'TEST Yassa l11a cv', price: 3_000, status: 'DISPONIBLE' });
         assert.equal(error, null, error?.message);
         const out = await withFeatureFlags({ orders: true }, async () => {
-            const byId = await routeId('GET', 'restaurants/[id]/menu', named.partnerId, null);
+            const byId = await routeId('GET', 'restaurants/[id]/menu', venue, null);
             const others: Row = {};
-            for (const id of [unique, `rest-${unique.toLowerCase().replace(/ /g, '-')}`, 'l11a', 'rest-e']) {
+            for (const id of [unique, `rest-${unique.toLowerCase().replace(/ /g, '-')}`, 'l11a', 'rest-e', named.partnerId]) {
                 const r = await routeId('GET', 'restaurants/[id]/menu', id, null);
                 others[id] = `${r.status} ${JSON.stringify(r.body).includes('TEST Yassa l11a cv') ? 'menu' : ''}`.trim();
             }
             return { byId, others };
         });
         assert.equal(out.byId.status, 200, JSON.stringify(out.byId.body));
-        assert.equal((out.byId.body as Row).partnerName, unique);
-        assert.ok(JSON.stringify(out.byId.body).includes('TEST Yassa l11a cv'), 'menu de la partenaire');
+        assert.equal(((out.byId.body as Row).menu as Row & { venue: Row }).venue.name, unique);
+        assert.ok(JSON.stringify(out.byId.body).includes('TEST Yassa l11a cv'), 'carte de l’établissement');
         for (const [id, s] of Object.entries(out.others)) assert.equal(s, '404', `« ${id} » : ${String(s)}`);
     });
 });

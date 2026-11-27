@@ -1833,7 +1833,8 @@ const CATALOG = {
     }),
     ORDER_ACCEPTED: define('ORDER_ACCEPTED', {
         label: 'Commande acceptée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
-        link: orderLink,
+        // Lot 12b (correctifs après contre-vérification, idée 12) : un reste à payer → le panneau du solde s'ouvre (montant relu en base)
+        link: (d) => (num(d, 'balance_due') > 0 ? `${orderLink(d)}?payer=solde` : orderLink(d)),
         inApp: (d) => {
             const eta = orderEta(d);
             const mode = text(d, 'mode');
@@ -1866,14 +1867,15 @@ const CATALOG = {
     }),
     ORDER_READY: define('ORDER_READY', {
         label: 'Commande prête', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
-        link: orderLink,
+        // Lot 12b (correctifs après contre-vérification, idée 11) : à retirer → le code s'ouvre en mode comptoir (jamais dans le lien)
+        link: (d) => (text(d, 'mode') === 'RETRAIT' ? `${orderLink(d)}?comptoir=1` : orderLink(d)),
         inApp: (d) => {
             const mode = text(d, 'mode');
             if (mode === 'RETRAIT') {
                 const balance = num(d, 'balance_due') > 0 ? ` Reste à payer sur place : ${money(d, 'balance_due')}.` : '';
                 return {
                     title: 'Commande prête',
-                    content: `Votre commande ${orderRef(d)} vous attend chez ${venueName(d)}. Donnez au comptoir le code reçu par SMS.${balance}`,
+                    content: `Votre commande ${orderRef(d)} vous attend chez ${venueName(d)}. Donnez au comptoir le code reçu par SMS, visible aussi dans votre commande.${balance}`,
                 };
             }
             if (mode === 'SUR_PLACE') {
@@ -1898,7 +1900,7 @@ const CATALOG = {
             const balance = num(d, 'balance_due') > 0 ? ` Reste à payer au livreur : ${money(d, 'balance_due')}.` : '';
             return {
                 title: 'Commande en route',
-                content: `Votre commande ${orderRef(d)} est en route${eta ? `, arrivée prévue vers ${eta}` : ''}. À son arrivée, donnez au livreur le code reçu par SMS.${balance}`,
+                content: `Votre commande ${orderRef(d)} est en route${eta ? `, arrivée prévue vers ${eta}` : ''}. À son arrivée, donnez au livreur le code reçu par SMS, visible aussi dans votre commande.${balance}`,
             };
         },
         sample: { ...ORDER_SAMPLE_DATA, state: 'EN_ROUTE', balance_due: 875_000 },
