@@ -1,0 +1,2772 @@
+[L12C-S1] aucune ligne perdue
+TAP version 13
+# Subtest: l12c — contrôles sans base
+    # Subtest: S1 — 5 recopies, une fois chacune dans le lot, sans ligne perdue (lignes élargies déclarées)
+    ok 1 - S1 — 5 recopies, une fois chacune dans le lot, sans ligne perdue (lignes élargies déclarées)
+      ---
+      duration_ms: 95.293858
+      type: 'test'
+      ...
+    # Subtest: S2 — réglages, code de remise, règle de lecture des produits et actions de la partenaire non recopiés
+    not ok 2 - S2 — réglages, code de remise, règle de lecture des produits et actions de la partenaire non recopiés
+      ---
+      duration_ms: 3.541214
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/l12c-statique.test.ts:2:4640'
+      failureType: 'testCodeFailure'
+      error: 'private.order_issue_code recopiée (lot 12b)'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual: |-
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12c, migration 01 : produits « à vérifier », archivage, enregistrement d'un produit par la base
+        -- ============================================================================
+        -- Décisions du client (26/11) : un produit dont le nom, la description ou un supplément contient un mot de la liste
+        -- (bière, vin, whisky, liqueur, cigarette, chicha…) est « à vérifier » : non vendable jusqu'à la décision de
+        -- l'administration, l'équipe est prévenue à chaque produit ; liste modifiable par Event Village ; un produit déjà vendu
+        -- est archivé, jamais supprimé (il disparaît de la carte et reste dans l'historique des commandes).
+        --  1. products : review_state ('A_VERIFIER' ou vide), review_words (mots trouvés), review_requested_at ; archived_at ;
+        --     order_delivery_zones.archived_at (zone retirée qui a servi à une commande : la clé étrangère l'empêche d'être
+        --     supprimée) ;
+        --  2. réglage orders.review_keywords (liste de mots, écrite par order_review_keywords_set : super-administrateur actif,
+        --     motif historisé par platform_settings_history). finance_setting_set, fin_setting_valid et
+        --     platform_settings_defaults ne sont PAS recopiés : la suite d'audit cv12a-3 (S1) n'admet qu'une recopie de ces
+        --     fonctions après main (même choix que le lot 11c-a, 20261201000001) ; platform_settings_defaults couvre déjà le
+        --     préfixe orders (20261130000001_l12a_reglages.sql:226) ;
+        --  3. private.order_text_fold (minuscules, sans accents) et private.order_review_words (mots de la liste trouvés en début
+        --     de mot, pluriel en s ou x admis : « vin », « vins », pas « vinaigrette ») ;
+        --  4. product_regulated : recopie de 20261130000002_l12a_catalogue.sql:86-94 ; changement : vrai aussi tant que le
+        --     produit est à vérifier (devis, ligne, paiement, acceptation et remise refusent donc sans autre changement) ;
+        --  5. products_order_guard : recopie de 20261130000002_l12a_catalogue.sql:96-139 ; changement : l'état « à vérifier »,
+        --     les mots trouvés et l'archivage ne s'écrivent que par les fonctions en base (drapeaux event_village.product_write
+        --     et event_village.product_regulation) ; une écriture directe ne peut ni les poser ni les effacer ;
+        --  6. order_product_regulation_decide : recopie de 20261130000002_l12a_catalogue.sql:373-415 ; changement : la décision
+        --     efface l'état « à vérifier » et prévient la partenaire (PRODUCT_REVIEW_DECIDED) ;
+        --  7. order_product_save(p) : création et modification d'un produit par sa partenaire (fiche VALIDE, compte actif),
+        --     établissement choisi à la création et jamais changé, catégorie de la partenaire, prix et stock entiers bornés,
+        --     case « réglementé » et sorte ; l'état « à vérifier » posé par la base dès qu'un mot de la liste apparaît (jamais
+        --     effacé par une modification) ; avis ADMIN_PRODUCT_REVIEW aux administrateurs (partners.validate) ;
+        --  8. order_product_remove(p) : produit jamais vendu supprimé ; produit vendu archivé (plus d'erreur de clé étrangère) ;
+        --  9. avis : ADMIN_PRODUCT_REVIEW (administration : cloche, email) et PRODUCT_REVIEW_DECIDED (partenaire : cloche,
+        --     notification du téléphone, email).
+        -- Correctifs de la contre-vérification (docs/audit-lot12c.md), faits EN PLACE (migration jamais appliquée) :
+        --  T1 une seule fonction de pliage (order_text_fold) : NFKC, accents retirés (NFD), caractères invisibles retirés,
+        --     lettres cyrilliques et grecques d'aspect latin ramenées au latin ; order_review_words cherche aussi dans le texte
+        --     où les lettres isolées sont recollées (« W.H.I.S.K.Y », « W H I S K Y ») ;
+        --  T2 décision liée à la version lue (reviewed_at) : refus REVIEW_CHANGED sinon ;
+        --  T3 marques courantes au Sénégal dans la liste par défaut ; un changement de la liste revoit les produits existants
+        --     (order_review_keywords_set → private.order_review_backfill, migration 20261224000005) ;
+        --  T5 nom de la catégorie compris dans le texte comparé ;
+        --  T6 produit archivé figé (garde), sauf remise en vente par order_product_save (restore).
+        -- Toutes les fonctions publiques au rôle de service seulement ; les aides private à aucun rôle de l'API.
+        -- Rejouable : ADD COLUMN IF NOT EXISTS, DROP … IF EXISTS puis ADD, CREATE OR REPLACE, ON CONFLICT.
+        -- ============================================================================
+        
+        -- ----------------------------------------------------------------------------
+        -- 1. Colonnes
+        -- ----------------------------------------------------------------------------
+        ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_state TEXT;
+        ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_words TEXT[];
+        ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_requested_at TIMESTAMPTZ;
+        ALTER TABLE public.products ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+        -- Contre-vérification (T3) : motif d'une mise « à vérifier » par l'administration ; mots déjà vus par une autorisation
+        -- (la revue des produits existants ne remet pas « à vérifier » un produit autorisé pour ces mots-là)
+        ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_note TEXT;
+        ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_cleared_words TEXT[];
+        ALTER TABLE public.products DROP CONSTRAINT IF EXISTS products_review_state_chk;
+        ALTER TABLE public.products ADD CONSTRAINT products_review_state_chk CHECK (
+            (review_state IS NULL AND review_words IS NULL) OR (review_state = 'A_VERIFIER' AND review_requested_at IS NOT NULL));
+        CREATE INDEX IF NOT EXISTS idx_products_review ON public.products(review_requested_at) WHERE review_state IS NOT NULL;
+        
+        COMMENT ON COLUMN public.products.review_state IS
+            'Lot 12c : « A_VERIFIER » tant que l''administration n''a pas décidé (nom, description ou supplément avec un mot de orders.review_keywords) ; produit non vendable en ligne. Écrit seulement par les fonctions en base.';
+        COMMENT ON COLUMN public.products.archived_at IS
+            'Lot 12c : produit archivé (retiré de la carte, gardé pour l''historique des commandes). Écrit seulement par order_product_remove.';
+        
+        ALTER TABLE public.order_delivery_zones ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+        COMMENT ON COLUMN public.order_delivery_zones.archived_at IS
+            'Lot 12c : zone retirée par la partenaire alors qu''une commande l''a utilisée (clé étrangère) : inactive et cachée.';
+        
+        -- ----------------------------------------------------------------------------
+        -- 2. Réglage des mots-clés
+        -- ----------------------------------------------------------------------------
+        INSERT INTO public.platform_settings (key, value, description) VALUES
+            ('orders.review_keywords',
+             '{"value": ["bière", "vin", "whisky", "liqueur", "cigarette", "chicha", "alcool", "rhum", "vodka", "gin", "champagne", "cognac", "tequila", "pastis", "cigare", "tabac", "narguilé", "shisha", "gazelle", "flag", "castel", "33 export", "heineken", "guinness", "desperados", "johnnie walker", "jack daniel''s", "chivas", "smirnoff", "baileys", "martini", "ricard", "marlboro", "dunhill", "camel", "winston"]}',
+             'Commandes : mots qui mettent un produit « à vérifier » (non vendable jusqu''à la décision de l''administration)')
+        ON CONFLICT (key) DO NOTHING;
+        
+        -- Texte comparé (contre-vérification T1 : SEULE fonction de pliage, utilisée par l'enregistrement, les suppléments, les
+        -- catégories, la revue et le surlignage de l'administration) : formes de compatibilité (NFKC : pleine chasse, ligatures),
+        -- accents retirés (NFD puis marques combinantes), caractères invisibles retirés (espaces de largeur nulle, marques de
+        -- sens, trait d'union conditionnel), caractères de contrôle remplacés par une espace, minuscules, lettres cyrilliques et
+        -- grecques d'aspect latin ramenées au latin, apostrophes droites.
+        CREATE OR REPLACE FUNCTION private.order_text_fold(p_text text)
+        RETURNS text
+        LANGUAGE sql
+        IMMUTABLE
+        SET search_path = public
+        AS $$
+            SELECT translate(
+                replace(replace(replace(replace(replace(
+                    lower(regexp_replace(regexp_replace(regexp_replace(
+                        normalize(normalize(COALESCE(p_text, ''), NFKC), NFD),
+                        '[\u0300-\u036f]', '', 'g'),
+                        '[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u206a-\u206f\ufeff]', '', 'g'),
+                        '[[:cntrl:]]', ' ', 'g')),
+                    'œ', 'oe'), 'æ', 'ae'), '’', ''''), 'ʼ', ''''), 'ß', 'ss'),
+                'аАвВеЕкКмМнНоОрРсСтТуУхХіІјЈѕЅԁһӏαΑβΒεΕζΖηΗιΙκΚμΜνΝοΟρΡτΤυΥχΧøØđĐłŁı',
+                'aabbeekkmmhhooppccttyyxxiijjssdhlaabbeezznhiikkumvnooppttuyxxooddlli');
+        $$;
+        
+        -- Liste valable : 1 à 100 mots distincts (une fois pliés), de 2 à 40 caractères : lettres, chiffres, espace, tiret,
+        -- apostrophe
+        CREATE OR REPLACE FUNCTION public.order_review_keywords_valid(v jsonb)
+        RETURNS boolean
+        LANGUAGE plpgsql
+        IMMUTABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            x       jsonb;
+            v_fold  text;
+            v_seen  text[] := ARRAY[]::text[];
+        BEGIN
+            IF v IS NULL OR jsonb_typeof(v) <> 'array' OR jsonb_array_length(v) NOT BETWEEN 1 AND 100 THEN
+                RETURN FALSE;
+            END IF;
+            FOR x IN SELECT * FROM jsonb_array_elements(v) LOOP
+                IF jsonb_typeof(x) <> 'string' THEN RETURN FALSE; END IF;
+                v_fold := btrim(private.order_text_fold(x #>> '{}'));
+                IF v_fold !~ '^[a-z0-9][a-z0-9 ''-]{0,38}[a-z0-9]$' OR v_fold = ANY (v_seen) THEN
+                    RETURN FALSE;
+                END IF;
+                v_seen := v_seen || v_fold;
+            END LOOP;
+            RETURN TRUE;
+        END;
+        $$;
+        
+        -- Mots de la liste trouvés dans un texte (orthographe de la liste, dans son ordre), ou vide. Deux lectures du texte
+        -- plié : mots tels quels (début de mot, pluriel en s ou x : « vin », « vins », pas « vinaigrette ») ; et lettres isolées
+        -- recollées (contre-vérification T1 : « W.H.I.S.K.Y », « W H I S K Y », « C-H-I-C-H-A » se lisent « whisky », « chicha »).
+        CREATE OR REPLACE FUNCTION private.order_review_words(p_text text)
+        RETURNS text[]
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_fold    text := private.order_text_fold(p_text);
+            v_spaced  text := ' ' || regexp_replace(v_fold, '[^a-z0-9''-]+', ' ', 'g') || ' ';
+            v_tokens  text[] := regexp_split_to_array(btrim(regexp_replace(v_fold, '[^a-z0-9]+', ' ', 'g')), ' ');
+            v_joined  text := ' ';
+            v_run     text := '';
+            t         text;
+            k         record;
+            v_key     text;
+            v_out     text[] := ARRAY[]::text[];
+        BEGIN
+            FOREACH t IN ARRAY COALESCE(v_tokens, ARRAY[]::text[]) LOOP
+                IF length(t) = 1 THEN
+                    v_run := v_run || t;
+                ELSE
+                    IF length(v_run) >= 2 THEN v_joined := v_joined || v_run || ' '; END IF;
+                    v_run := '';
+                END IF;
+            END LOOP;
+            IF length(v_run) >= 2 THEN v_joined := v_joined || v_run || ' '; END IF;
+            FOR k IN SELECT x.word, x.ord
+                       FROM public.platform_settings s
+                       CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(s.value->'value') = 'array' THEN s.value->'value' ELSE '[]'::jsonb END)
+                            WITH ORDINALITY AS x(word, ord)
+                      WHERE s.key = 'orders.review_keywords'
+                      ORDER BY x.ord LOOP
+                v_key := btrim(private.order_text_fold(k.word));
+                CONTINUE WHEN v_key !~ '^[a-z0-9][a-z0-9 ''-]*$';
+                IF v_spaced ~ ('[^a-z0-9]' || v_key || '(s|x)?[^a-z0-9]')
+                   OR v_joined ~ ('[^a-z0-9]' || regexp_replace(v_key, '[^a-z0-9]', '', 'g') || '(s|x)?[^a-z0-9]') THEN
+                    v_out := v_out || k.word;
+                END IF;
+            END LOOP;
+            RETURN v_out;
+        END;
+        $$;
+        
+        -- Mots de la liste dans tout le texte d'un produit : nom, description, catégorie et suppléments (contre-vérification T5)
+        CREATE OR REPLACE FUNCTION private.order_product_words(p_product_id uuid)
+        RETURNS text[]
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT COALESCE((SELECT private.order_review_words(concat_ws(' | ', pr.name, pr.description, c.name,
+                                (SELECT string_agg(o.name, ' | ' ORDER BY o.sort_order, o.id) FROM public.product_options o WHERE o.product_id = pr.id)))
+                               FROM public.products pr LEFT JOIN public.product_categories c ON c.id = pr.category_id
+                              WHERE pr.id = p_product_id), ARRAY[]::text[]);
+        $$;
+        
+        -- Liste des mots écrite par un super-administrateur actif (mêmes règles que finance_setting_set : UNKNOWN_KEY n'existe
+        -- pas ici, FORBIDDEN, INVALID_VALUE ; motif historisé par platform_settings_history)
+        CREATE OR REPLACE FUNCTION public.order_review_keywords_set(p_value jsonb, p_actor uuid, p_reason text)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v jsonb := p_value->'value';
+            v_flagged integer;
+        BEGIN
+            IF p_actor IS NULL OR NOT EXISTS (
+                SELECT 1 FROM public.user_roles r JOIN public.users u ON u.id = r.user_id
+                 WHERE r.user_id = p_actor AND r.role = 'SUPERADMIN' AND u.status = 'ACTIF'
+            ) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Seul un super-administrateur actif peut modifier la liste des mots.');
+            END IF;
+            IF NOT public.order_review_keywords_valid(v) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_VALUE',
+                    'message', 'Indiquez de 1 à 100 mots différents, de 2 à 40 lettres chacun (lettres, chiffres, espace, tiret ou apostrophe).');
+            END IF;
+            IF NULLIF(btrim(COALESCE(p_reason, '')), '') IS NULL OR length(btrim(p_reason)) < 3 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif du changement.');
+            END IF;
+            PERFORM set_config('finance.change_reason', left(btrim(p_reason), 300), true);
+            INSERT INTO public.platform_settings (key, value, updated_by, updated_at)
+            VALUES ('orders.review_keywords', jsonb_build_object('value', v), p_actor, now())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now();
+            -- Contre-vérification (T3) : produits déjà enregistrés revus avec la nouvelle liste (« à vérifier » posé, jamais
+            -- effacé ; un avis groupé à l'administration) — private.order_review_backfill, migration 20261224000005
+            v_flagged := private.order_review_backfill('LISTE', p_actor);
+            RETURN jsonb_build_object('ok', true, 'key', 'orders.review_keywords', 'value', v, 'flagged', v_flagged);
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 3. Produit réglementé (ou à vérifier)
+        -- ----------------------------------------------------------------------------
+        -- Recopie de 20261130000002_l12a_catalogue.sql:86-94 ; changement : vrai aussi tant que le produit est à vérifier.
+        CREATE OR REPLACE FUNCTION public.product_regulated(p_product_id uuid)
+        RETURNS boolean
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT COALESCE((SELECT pr.is_regulated OR COALESCE(pr.regulated_admin, FALSE) OR pr.review_state IS NOT NULL FROM public.products pr WHERE pr.id = p_product_id), TRUE);
+        $$;
+        
+        -- Recopie de 20261130000002_l12a_catalogue.sql:96-139 ; changement : état « à vérifier », mots trouvés et archivage
+        -- écrits seulement par les fonctions en base (bloc « Lot 12c » ajouté avant la case « réglementé »).
+        CREATE OR REPLACE FUNCTION public.products_order_guard()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_partner uuid;
+        BEGIN
+            -- Établissement de la même partenaire, jamais changé une fois posé (lignes de commande, recettes)
+            IF NEW.venue_id IS NOT NULL THEN
+                SELECT partner_id INTO v_partner FROM public.venues WHERE id = NEW.venue_id;
+                IF v_partner IS DISTINCT FROM NEW.partner_id THEN
+                    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Ce produit doit appartenir à un établissement de la même partenaire.';
+                END IF;
+            END IF;
+            IF TG_OP = 'UPDATE' THEN
+                IF NEW.partner_id IS DISTINCT FROM OLD.partner_id THEN
+                    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Un produit ne change pas de partenaire.';
+                END IF;
+                IF OLD.venue_id IS NOT NULL AND NEW.venue_id IS DISTINCT FROM OLD.venue_id THEN
+                    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Un produit ne change pas d''établissement.';
+                END IF;
+            END IF;
+            -- Décision de l'administration : seulement par order_product_regulation_decide
+            IF current_setting('event_village.product_regulation', true) IS DISTINCT FROM 'on' THEN
+                IF TG_OP = 'INSERT' THEN
+                    NEW.regulated_admin := NULL;
+                    NEW.regulated_checked_by := NULL;
+                    NEW.regulated_checked_at := NULL;
+                ELSIF NEW.regulated_admin IS DISTINCT FROM OLD.regulated_admin
+                      OR NEW.regulated_checked_by IS DISTINCT FROM OLD.regulated_checked_by
+                      OR NEW.regulated_checked_at IS DISTINCT FROM OLD.regulated_checked_at THEN
+                    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'La vérification d''un produit réglementé se fait seulement par l''administration.';
+                END IF;
+            END IF;
+            -- Contre-vérification (T6) : un produit archivé ne change plus (statut, prix, stock…), sauf par les fonctions en base
+            -- (remise en vente, décision de l'administration) et les fonctions de commande (stock rendu à une annulation)
+            IF TG_OP = 'UPDATE' AND OLD.archived_at IS NOT NULL
+               AND current_setting('event_village.product_write', true) IS DISTINCT FROM 'on'
+               AND current_setting('event_village.product_regulation', true) IS DISTINCT FROM 'on'
+               AND current_setting('event_village.order_flow', true) IS DISTINCT FROM 'on'
+               AND (to_jsonb(NEW) - 'updated_at') IS DISTINCT FROM (to_jsonb(OLD) - 'updated_at') THEN
+                RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Ce produit est archivé : il ne se modifie plus.';
+            END IF;
+            -- Lot 12c : « à vérifier » posé par order_product_save ou product_option_set, effacé par la décision de
+            -- l'administration ; archivage par order_product_remove. Aucune autre écriture ne les pose ni ne les efface.
+            IF current_setting('event_village.product_write', true) IS DISTINCT FROM 'on'
+               AND current_setting('event_village.product_regulation', true) IS DISTINCT FROM 'on' THEN
+                IF TG_OP = 'INSERT' THEN
+                    NEW.review_state := NULL;
+                    NEW.review_words := NULL;
+                    NEW.review_requested_at := NULL;
+                    NEW.review_note := NULL;
+                    NEW.review_cleared_words := NULL;
+                    NEW.archived_at := NULL;
+                ELSIF NEW.review_state IS DISTINCT FROM OLD.review_state
+                      OR NEW.review_words IS DISTINCT FROM OLD.review_words
+                      OR NEW.review_requested_at IS DISTINCT FROM OLD.review_requested_at
+                      OR NEW.review_note IS DISTINCT FROM OLD.review_note
+                      OR NEW.review_cleared_words IS DISTINCT FROM OLD.review_cleared_words
+                      OR NEW.archived_at IS DISTINCT FROM OLD.archived_at THEN
+                    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'La vérification et l''archivage d''un produit se font seulement par les fonctions en base.';
+                END IF;
+            END IF;
+            -- Une case « réglementé » cochée garde sa sorte ; décochée, la sorte est effacée
+            IF NOT NEW.is_regulated THEN
+                NEW.regulated_kind := NULL;
+            END IF;
+            RETURN NEW;
+        END;
+        $$;
+        REVOKE ALL ON FUNCTION public.products_order_guard() FROM PUBLIC, anon, authenticated;
+        
+        -- ----------------------------------------------------------------------------
+        -- 4. Décision de l'administration
+        -- ----------------------------------------------------------------------------
+        -- Recopie de 20261130000002_l12a_catalogue.sql:373-415 ; changements : l'état « à vérifier » est effacé par la décision
+        -- (autorisé = vendable si la case de la partenaire n'est pas cochée ; refusé = réglementé, affiché sans être vendu) ;
+        -- avis PRODUCT_REVIEW_DECIDED à la partenaire ; mots trouvés gardés au journal. Contre-vérification (T2) : la décision
+        -- porte sur la version lue (reviewed_at = date de la demande, ou date de la fiche d'un produit sans demande) : un produit
+        -- changé depuis est refusé (REVIEW_CHANGED) ; une autorisation garde les mots vus (review_cleared_words) ; SMS de la
+        -- décision à la partenaire (PRODUCT_DECISION_SMS, en plus de la cloche, du téléphone et de l'email).
+        CREATE OR REPLACE FUNCTION public.order_product_regulation_decide(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor   uuid := public.try_uuid(p->>'actor_id');
+            v_product uuid := public.try_uuid(p->>'product_id');
+            v_reason  text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'reason', ''), '[[:cntrl:]]', ' ', 'g')), 300), '');
+            v_value   boolean;
+            pr        record;
+            v_owner   uuid;
+            v_seen    timestamptz;
+            v_words   text[];
+        BEGIN
+            IF jsonb_typeof(p->'regulated') <> 'boolean' THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_DECISION', 'message', 'Indiquez si le produit est réglementé ou non.');
+            END IF;
+            v_value := (p->>'regulated')::boolean;
+            IF v_actor IS NULL OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF')
+               OR NOT (EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = v_actor AND ur.role::text = 'SUPERADMIN')
+                       OR public.has_admin_permission(v_actor, 'partners.validate')) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Vous n’avez pas le droit de vérifier les produits.');
+            END IF;
+            IF v_reason IS NULL OR length(v_reason) < 3 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif de la vérification.');
+            END IF;
+            SELECT * INTO pr FROM public.products WHERE id = v_product FOR UPDATE;
+            IF v_product IS NULL OR NOT FOUND THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Produit introuvable.');
+            END IF;
+            -- Contre-vérification (T2) : version lue par l'administration (la route l'exige ; la base la contrôle dès qu'elle est
+            -- donnée)
+            IF NULLIF(p->>'reviewed_at', '') IS NOT NULL THEN
+                BEGIN
+                    v_seen := (p->>'reviewed_at')::timestamptz;
+                EXCEPTION WHEN others THEN
+                    v_seen := NULL;
+                END;
+                IF v_seen IS NULL OR v_seen IS DISTINCT FROM COALESCE(pr.review_requested_at, pr.updated_at) THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'REVIEW_CHANGED', 'message', 'Ce produit a changé pendant votre lecture : relisez-le.');
+                END IF;
+            END IF;
+            v_words := private.order_product_words(pr.id);
+            PERFORM set_config('event_village.product_regulation', 'on', true);
+            UPDATE public.products
+               SET regulated_admin = v_value, regulated_checked_by = v_actor, regulated_checked_at = now(), updated_at = now(),
+                   review_note = NULL, review_cleared_words = CASE WHEN v_value THEN review_cleared_words ELSE v_words END,
+                   review_state = NULL, review_words = NULL, review_requested_at = NULL
+             WHERE id = pr.id;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+            VALUES (v_actor, CASE WHEN EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = v_actor AND ur.role::text = 'SUPERADMIN') THEN 'SUPERADMIN' ELSE 'ADMIN' END,
+                    'PRODUCT_REGULATION_DECIDED', 'products', pr.id,
+                    jsonb_build_object('regulated_admin', pr.regulated_admin), jsonb_build_object('regulated_admin', v_value),
+                    jsonb_build_object('reason', v_reason, 'partner_box', pr.is_regulated)
+                    || jsonb_strip_nulls(jsonb_build_object('review_words', to_jsonb(pr.review_words), 'product_name', pr.name)));
+            -- Lot 12c : la partenaire est prévenue (cloche, notification du téléphone, email), une fois par décision
+            SELECT pa.user_id INTO v_owner FROM public.partners pa WHERE pa.id = pr.partner_id;
+            IF v_owner IS NOT NULL THEN
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'PRODUCT_REVIEW_DECIDED',
+                    'key', 'PRODUCT_REVIEW_DECIDED:' || pr.id::text || ':' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'),
+                    'user_id', v_owner, 'actor_id', v_actor,
+                    'data', jsonb_strip_nulls(jsonb_build_object(
+                        'product_id', pr.id, 'product_name', pr.name, 'decision', CASE WHEN v_value THEN 'REFUSE' ELSE 'AUTORISE' END,
+                        'reason', v_reason, 'partner_box', pr.is_regulated))));
+                -- Contre-vérification (point 7, P5) : la même décision par SMS (type à part : l'avis ci-dessus n'a pas de SMS)
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'PRODUCT_DECISION_SMS',
+                    'key', 'PRODUCT_DECISION_SMS:' || pr.id::text || ':' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'),
+                    'user_id', v_owner, 'actor_id', v_actor,
+                    'data', jsonb_strip_nulls(jsonb_build_object(
+                        'product_id', pr.id, 'product_name', pr.name, 'decision', CASE WHEN v_value THEN 'REFUSE' ELSE 'AUTORISE' END,
+                        'partner_box', pr.is_regulated))));
+            END IF;
+            RETURN jsonb_build_object('ok', true, 'product_id', pr.id, 'regulated_admin', v_value,
+                                      'regulated', pr.is_regulated OR v_value);
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 5. Enregistrer un produit (partenaire)
+        -- ----------------------------------------------------------------------------
+        -- Partenaire du compte (fiche la plus ancienne, comme order_courier_invite), refus en français simple, ou NULL si tout
+        -- va bien : compte actif, fiche VALIDE (une fiche SUSPENDU est en lecture seule)
+        CREATE OR REPLACE FUNCTION private.order_catalog_owner(p_actor uuid)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            pa record;
+        BEGIN
+            SELECT id, status::text AS status INTO pa FROM public.partners WHERE user_id = p_actor ORDER BY created_at LIMIT 1;
+            IF p_actor IS NULL OR NOT FOUND OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = p_actor AND u.status::text = 'ACTIF') THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Réservé aux partenaires.');
+            END IF;
+            IF pa.status = 'SUSPENDU' THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_SUSPENDED', 'message', 'Votre fiche est suspendue : votre carte et vos réglages de vente sont en lecture seule.');
+            END IF;
+            IF pa.status <> 'VALIDE' THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_NOT_VALIDATED', 'message', 'Votre fiche doit être validée pour modifier votre carte.');
+            END IF;
+            RETURN jsonb_build_object('ok', true, 'partner_id', pa.id);
+        END;
+        $$;
+        
+        -- Avis « produit à vérifier » aux administrateurs qui ont partners.validate (une fois par demande)
+        CREATE OR REPLACE FUNCTION private.order_product_review_notify(p_product_id uuid)
+        RETURNS void
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            r record;
+        BEGIN
+            SELECT pr.id, pr.name, pr.review_words, pr.review_requested_at, v.name AS venue_name,
+                   COALESCE(pa.commercial_name, pa.company_name) AS company
+              INTO r
+              FROM public.products pr JOIN public.partners pa ON pa.id = pr.partner_id
+              LEFT JOIN public.venues v ON v.id = pr.venue_id
+             WHERE pr.id = p_product_id AND pr.review_state IS NOT NULL;
+            IF NOT FOUND THEN
+                RETURN;
+            END IF;
+            PERFORM public.notif_enqueue_admins(jsonb_build_object(
+                'type', 'ADMIN_PRODUCT_REVIEW',
+                'ref', r.id::text || ':' || to_char(r.review_requested_at, 'YYYYMMDDHH24MISSUS'),
+                'data', jsonb_strip_nulls(jsonb_build_object(
+                    'product_id', r.id, 'product_name', r.name, 'venue_name', r.venue_name, 'company', r.company,
+                    'words', to_jsonb(r.review_words)))));
+        END;
+        $$;
+        
+        -- p : actor_id, product_id (vide = création), fields { venue_id, category_id, name, description, price,
+        -- is_daily_special, daily_special_date, stock_quantity, is_stock_managed, images, is_regulated, regulated_kind }.
+        -- Seules les clés présentes changent à la modification. Rend { ok, product, review_requested } ou { ok:false, code, message }.
+        -- Contre-vérification : texte comparé = nom, description, nom de la catégorie et suppléments (T5) ; p.restore = true
+        -- remet en vente un produit archivé (point 8), revu par la liste des mots (mots déjà autorisés exceptés).
+        CREATE OR REPLACE FUNCTION public.order_product_save(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor    uuid := public.try_uuid(p->>'actor_id');
+            v_product  uuid := public.try_uuid(NULLIF(p->>'product_id', ''));
+            f          jsonb := COALESCE(p->'fields', '{}'::jsonb);
+            v_owner    jsonb;
+            v_partner  uuid;
+            pr         public.products%ROWTYPE;
+            v_new      public.products;
+            v_name     text;
+            v_desc     text;
+            v_price    numeric;
+            v_stock    integer;
+            v_images   text[];
+            v_venue    uuid;
+            v_category uuid;
+            v_reg      boolean;
+            v_kind     text;
+            v_daily    boolean;
+            v_day      date;
+            v_managed  boolean;
+            v_words    text[];
+            v_review   boolean := FALSE;
+            v_bump     boolean := FALSE;
+            v_restore  boolean := COALESCE(jsonb_typeof(p->'restore') = 'boolean' AND (p->>'restore')::boolean, FALSE);
+        BEGIN
+            v_owner := private.order_catalog_owner(v_actor);
+            IF NOT (v_owner->>'ok')::boolean THEN
+                RETURN v_owner;
+            END IF;
+            v_partner := (v_owner->>'partner_id')::uuid;
+            IF jsonb_typeof(f) <> 'object' THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Données du produit illisibles.');
+            END IF;
+            IF v_product IS NOT NULL OR NULLIF(p->>'product_id', '') IS NOT NULL THEN
+                SELECT * INTO pr FROM public.products WHERE id = v_product AND partner_id = v_partner FOR UPDATE;
+                IF v_product IS NULL OR NOT FOUND THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Ce produit n’existe pas ou n’est pas le vôtre.');
+                END IF;
+                IF pr.archived_at IS NOT NULL AND NOT v_restore THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_ARCHIVED', 'message', 'Ce produit est archivé : il ne se modifie plus.');
+                END IF;
+                IF v_restore AND pr.archived_at IS NULL THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_ARCHIVED', 'message', 'Ce produit est déjà sur votre carte.');
+                END IF;
+            ELSIF v_restore THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Ce produit n’existe pas ou n’est pas le vôtre.');
+            END IF;
+        
+            -- Valeurs (présentes dans la requête, sinon celles du produit ou celles par défaut)
+            BEGIN
+                v_name := CASE WHEN f ? 'name' THEN NULLIF(btrim(regexp_replace(COALESCE(f->>'name', ''), '[[:cntrl:]]', ' ', 'g')), '') ELSE pr.name END;
+                v_desc := CASE WHEN f ? 'description' THEN NULLIF(btrim(regexp_replace(COALESCE(f->>'description', ''), '[[:cntrl:]]', ' ', 'g')), '') ELSE pr.description END;
+                v_price := CASE WHEN f ? 'price' THEN (f->>'price')::numeric ELSE pr.price END;
+                v_stock := CASE WHEN f ? 'stock_quantity' AND jsonb_typeof(f->'stock_quantity') <> 'null' THEN (f->>'stock_quantity')::integer
+                                WHEN f ? 'stock_quantity' THEN NULL ELSE pr.stock_quantity END;
+                v_managed := CASE WHEN jsonb_typeof(f->'is_stock_managed') = 'boolean' THEN (f->>'is_stock_managed')::boolean ELSE COALESCE(pr.is_stock_managed, FALSE) END;
+                v_daily := CASE WHEN jsonb_typeof(f->'is_daily_special') = 'boolean' THEN (f->>'is_daily_special')::boolean ELSE COALESCE(pr.is_daily_special, FALSE) END;
+                v_day := CASE WHEN f ? 'daily_special_date' AND jsonb_typeof(f->'daily_special_date') <> 'null' THEN (f->>'daily_special_date')::date
+                              WHEN f ? 'daily_special_date' THEN NULL ELSE pr.daily_special_date END;
+                v_reg := CASE WHEN jsonb_typeof(f->'is_regulated') = 'boolean' THEN (f->>'is_regulated')::boolean ELSE COALESCE(pr.is_regulated, FALSE) END;
+                v_kind := CASE WHEN f ? 'regulated_kind' THEN NULLIF(upper(COALESCE(f->>'regulated_kind', '')), '') ELSE pr.regulated_kind END;
+                v_images := CASE WHEN jsonb_typeof(f->'images') = 'array' THEN ARRAY(SELECT jsonb_array_elements_text(f->'images'))
+                                 WHEN f ? 'images' THEN ARRAY[]::text[] ELSE COALESCE(pr.images, ARRAY[]::text[]) END;
+                v_category := CASE WHEN f ? 'category_id' THEN public.try_uuid(NULLIF(f->>'category_id', '')) ELSE pr.category_id END;
+                v_venue := CASE WHEN pr.id IS NOT NULL THEN pr.venue_id ELSE public.try_uuid(NULLIF(f->>'venue_id', '')) END;
+            EXCEPTION WHEN others THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Une valeur du produit n’est pas valable.');
+            END;
+            IF v_name IS NULL OR length(v_name) > 200 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Le nom du produit compte de 1 à 200 caractères.');
+            END IF;
+            IF v_desc IS NOT NULL AND length(v_desc) > 2000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'La description compte au plus 2 000 caractères.');
+            END IF;
+            IF v_price IS NULL OR v_price <> trunc(v_price) OR v_price < 0 OR v_price > 10000000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PRICE', 'message', 'Le prix est un nombre entier de F CFA, de 0 à 10 000 000.');
+            END IF;
+            IF v_stock IS NOT NULL AND (v_stock < 0 OR v_stock > 1000000) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', 'Le stock est un nombre entier de 0 à 1 000 000.');
+            END IF;
+            IF cardinality(v_images) > 10 OR EXISTS (SELECT 1 FROM unnest(v_images) x WHERE length(x) > 600 OR length(x) = 0) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_INPUT', 'message', '10 images au plus.');
+            END IF;
+            IF v_reg AND (v_kind IS NULL OR v_kind NOT IN ('ALCOOL', 'TABAC')) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'REGULATED_KIND_REQUIRED', 'message', 'Choisissez la sorte de produit réglementé : alcool ou tabac.');
+            END IF;
+            IF NOT v_reg THEN
+                v_kind := NULL;
+            END IF;
+            -- L'établissement se choisit à la création et ne change jamais
+            IF pr.id IS NOT NULL AND f ? 'venue_id' AND public.try_uuid(NULLIF(f->>'venue_id', '')) IS DISTINCT FROM pr.venue_id THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'VENUE_LOCKED', 'message', 'L’établissement d’un produit ne change pas : créez le produit dans l’autre établissement.');
+            END IF;
+            IF pr.id IS NULL AND NULLIF(f->>'venue_id', '') IS NOT NULL
+               AND (v_venue IS NULL OR NOT EXISTS (SELECT 1 FROM public.venues ve WHERE ve.id = v_venue AND ve.partner_id = v_partner)) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'VENUE_NOT_FOUND', 'message', 'Cet établissement n’existe pas ou n’est pas le vôtre.');
+            END IF;
+            IF v_category IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.product_categories c WHERE c.id = v_category AND c.partner_id = v_partner) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'CATEGORY_NOT_FOUND', 'message', 'Catégorie de produit introuvable.');
+            END IF;
+            IF f ? 'category_id' AND NULLIF(f->>'category_id', '') IS NOT NULL AND v_category IS NULL THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'CATEGORY_NOT_FOUND', 'message', 'Catégorie de produit introuvable.');
+            END IF;
+        
+            -- « À vérifier » : un mot de la liste dans le nom, la description, la catégorie ou un supplément, à la création ou quand
+            -- le nom, la description ou la catégorie changent (même après une autorisation : le texte a changé) ; jamais effacé
+            -- par une modification (seule la décision de l'administration l'efface). Remise en vente : revue, sauf les mots que
+            -- l'administration a déjà vus en autorisant le produit.
+            IF pr.id IS NULL OR v_restore OR v_name IS DISTINCT FROM pr.name OR v_desc IS DISTINCT FROM pr.description
+               OR v_category IS DISTINCT FROM pr.category_id THEN
+                v_words := private.order_review_words(concat_ws(' | ', v_name, v_desc,
+                               (SELECT c.name FROM public.product_categories c WHERE c.id = v_category),
+                               (SELECT string_agg(o.name, ' | ' ORDER BY o.sort_order, o.id) FROM public.product_options o WHERE o.product_id = pr.id)));
+                v_review := CASE WHEN v_restore
+                                 THEN EXISTS (SELECT 1 FROM unnest(v_words) w WHERE NOT (w = ANY (COALESCE(pr.review_cleared_words, ARRAY[]::text[]))))
+                                 ELSE cardinality(v_words) > 0 END;
+            END IF;
+            -- Contre-vérification (T2) : un produit encore « à vérifier » dont le texte, la catégorie ou les photos changent prend
+            -- une nouvelle version (date de la demande) : une décision prise sur la version affichée avant est refusée.
+            v_bump := pr.id IS NOT NULL AND pr.review_state = 'A_VERIFIER'
+                      AND (v_name IS DISTINCT FROM pr.name OR v_desc IS DISTINCT FROM pr.description
+                           OR v_category IS DISTINCT FROM pr.category_id OR v_images IS DISTINCT FROM COALESCE(pr.images, ARRAY[]::text[]));
+        
+            PERFORM set_config('event_village.product_write', 'on', true);
+            IF pr.id IS NULL THEN
+                INSERT INTO public.products (partner_id, venue_id, category_id, name, description, price, is_daily_special, daily_special_date,
+                                             stock_quantity, is_stock_managed, images, is_regulated, regulated_kind,
+                                             review_state, review_words, review_requested_at)
+                VALUES (v_partner, v_venue, v_category, v_name, v_desc, v_price, v_daily, v_day, v_stock, v_managed, v_images, v_reg, v_kind,
+                        CASE WHEN v_review THEN 'A_VERIFIER' END, CASE WHEN v_review THEN v_words END, CASE WHEN v_review THEN now() END)
+                RETURNING * INTO v_new;
+            ELSE
+                UPDATE public.products
+                   SET category_id = v_category, name = v_name, description = v_desc, price = v_price, is_daily_special = v_daily,
+                       daily_special_date = v_day, stock_quantity = v_stock, is_stock_managed = v_managed, images = v_images,
+                       is_regulated = v_reg, regulated_kind = v_kind,
+                       review_state = CASE WHEN v_review THEN 'A_VERIFIER' ELSE review_state END,
+                       review_words = CASE WHEN v_review THEN v_words ELSE review_words END,
+                       review_requested_at = CASE WHEN v_review OR v_bump THEN clock_timestamp() ELSE review_requested_at END,
+                       archived_at = CASE WHEN v_restore THEN NULL ELSE archived_at END,
+                       updated_at = now()
+                 WHERE id = pr.id
+                RETURNING * INTO v_new;
+            END IF;
+            PERFORM set_config('event_village.product_write', 'off', true);
+        
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+            VALUES (v_actor, 'PARTENAIRE', CASE WHEN pr.id IS NULL THEN 'PRODUCT_CREATED' WHEN v_restore THEN 'PRODUCT_RESTORED' ELSE 'PRODUCT_UPDATED' END, 'products', v_new.id,
+                    CASE WHEN pr.id IS NOT NULL THEN jsonb_build_object('name', pr.name, 'price', pr.price, 'is_regulated', pr.is_regulated) END,
+                    jsonb_build_object('name', v_new.name, 'price', v_new.price, 'is_regulated', v_new.is_regulated, 'venue_id', v_new.venue_id),
+                    jsonb_strip_nulls(jsonb_build_object('review_words', CASE WHEN v_review THEN to_jsonb(v_words) END)));
+            IF v_review THEN
+                PERFORM private.order_product_review_notify(v_new.id);
+            END IF;
+            RETURN jsonb_build_object('ok', true, 'product', to_jsonb(v_new), 'review_requested', v_review);
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 6. Retirer un produit : supprimé s'il n'a jamais été vendu, archivé sinon
+        -- ----------------------------------------------------------------------------
+        CREATE OR REPLACE FUNCTION public.order_product_remove(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor   uuid := public.try_uuid(p->>'actor_id');
+            v_product uuid := public.try_uuid(p->>'product_id');
+            v_owner   jsonb;
+            pr        record;
+        BEGIN
+            v_owner := private.order_catalog_owner(v_actor);
+            IF NOT (v_owner->>'ok')::boolean THEN
+                RETURN v_owner;
+            END IF;
+            SELECT * INTO pr FROM public.products WHERE id = v_product AND partner_id = (v_owner->>'partner_id')::uuid FOR UPDATE;
+            IF v_product IS NULL OR NOT FOUND THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Ce produit n’existe pas ou n’est pas le vôtre.');
+            END IF;
+            IF pr.archived_at IS NOT NULL THEN
+                RETURN jsonb_build_object('ok', true, 'product_id', pr.id, 'outcome', 'ARCHIVED', 'message', 'Ce produit est déjà archivé.');
+            END IF;
+            PERFORM set_config('event_village.product_write', 'on', true);
+            IF EXISTS (SELECT 1 FROM public.order_items i WHERE i.product_id = pr.id) THEN
+                UPDATE public.products SET archived_at = now(), updated_at = now() WHERE id = pr.id;
+                PERFORM set_config('event_village.product_write', 'off', true);
+                INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value)
+                VALUES (v_actor, 'PARTENAIRE', 'PRODUCT_ARCHIVED', 'products', pr.id, jsonb_build_object('name', pr.name, 'price', pr.price));
+                RETURN jsonb_build_object('ok', true, 'product_id', pr.id, 'outcome', 'ARCHIVED',
+                    'message', 'Produit archivé : il n’est plus sur votre carte et reste dans l’historique de vos commandes.');
+            END IF;
+            -- Jamais vendu : supprimé, avec ses suppléments et ses portions (la garde des portions laisse passer les fonctions)
+            PERFORM set_config('event_village.order_flow', 'on', true);
+            DELETE FROM public.products WHERE id = pr.id;
+            PERFORM set_config('event_village.order_flow', 'off', true);
+            PERFORM set_config('event_village.product_write', 'off', true);
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value)
+            VALUES (v_actor, 'PARTENAIRE', 'PRODUCT_DELETED', 'products', pr.id, jsonb_build_object('name', pr.name, 'price', pr.price));
+            RETURN jsonb_build_object('ok', true, 'product_id', pr.id, 'outcome', 'DELETED', 'message', 'Produit supprimé.');
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 7. Avis
+        -- ----------------------------------------------------------------------------
+        INSERT INTO public.notification_types (type, family, topic, channels, audience, suspended_policy, sync_only, admin_permission, night_policy) VALUES
+            ('ADMIN_PRODUCT_REVIEW',   'ESSENTIAL', NULL, ARRAY['IN_APP','EMAIL'],         'ADMIN',   'BLOCK', FALSE, 'partners.validate', 'DEFER'),
+            ('PRODUCT_REVIEW_DECIDED', 'ESSENTIAL', NULL, ARRAY['IN_APP','PUSH','EMAIL'],  'PARTNER', 'ALLOW', FALSE, NULL,                'DEFER')
+        ON CONFLICT (type) DO UPDATE SET
+            family = EXCLUDED.family, topic = EXCLUDED.topic, channels = EXCLUDED.channels, audience = EXCLUDED.audience,
+            suspended_policy = EXCLUDED.suspended_policy, sync_only = EXCLUDED.sync_only, admin_permission = EXCLUDED.admin_permission,
+            night_policy = EXCLUDED.night_policy;
+        
+        -- ----------------------------------------------------------------------------
+        -- 8. Droits
+        -- ----------------------------------------------------------------------------
+        REVOKE ALL ON FUNCTION private.order_text_fold(text) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_review_words(text) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_product_words(uuid) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_catalog_owner(uuid) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_product_review_notify(uuid) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION public.order_review_keywords_valid(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_review_keywords_set(jsonb, uuid, text) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.product_regulated(uuid) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_product_regulation_decide(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_product_save(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_product_remove(jsonb) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_review_keywords_valid(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_review_keywords_set(jsonb, uuid, text) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.product_regulated(uuid) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_product_regulation_decide(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_product_save(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_product_remove(jsonb) TO service_role;
+        
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12c, migration 02 : zones de livraison et suppléments, écrits par la partenaire
+        -- ============================================================================
+        -- État des lieux du 26/11 (§ 3.3) : aucune route ni fonction n'écrivait order_delivery_zones ni product_options (les
+        -- tests les écrivaient avec le rôle de service). Décisions du client (26/11) : zones en liste de quartiers (nom, frais,
+        -- minimum), ordre choisi par la partenaire.
+        --  1. order_delivery_zone_set(p) : création ou modification d'une zone d'un établissement de la partenaire (compte
+        --     actif, fiche VALIDE), nom de 2 à 80 caractères, frais entiers de 0 à 100 000 F CFA, minimum entier de 0 à
+        --     10 000 000 F CFA, 50 zones au plus par établissement ; le prix d'une commande déjà passée ne change jamais (frais
+        --     figés sur la commande) ;
+        --  2. order_delivery_zone_remove(p) : zone jamais utilisée supprimée ; zone d'une commande ouverte désactivée (elle ne
+        --     s'efface pas) ; zone d'une commande terminée archivée (inactive, cachée : la clé étrangère garde l'historique) ;
+        --  3. order_delivery_zones_reorder(p) : ordre des zones d'un établissement (glisser-déposer de l'écran) ;
+        --  4. product_option_set(p) / product_option_remove(p) : supplément d'un produit de la partenaire (nom de 1 à 80
+        --     caractères, prix entier de 0 à 1 000 000 F CFA, 20 au plus par produit) ; le prix figé des lignes de commande ne
+        --     change jamais (copie dans order_items.options) ; un nom de supplément avec un mot de orders.review_keywords met le
+        --     produit « à vérifier » (même règle que le nom du produit : un supplément « bière » ne contourne pas la vérification).
+        -- Toutes au rôle de service seulement. Rejouable : CREATE OR REPLACE, REVOKE et GRANT idempotents.
+        -- ============================================================================
+        
+        -- Établissement de la partenaire du compte, ou refus
+        CREATE OR REPLACE FUNCTION private.order_zone_venue(p_actor uuid, p_venue uuid)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_owner jsonb := private.order_catalog_owner(p_actor);
+        BEGIN
+            IF NOT (v_owner->>'ok')::boolean THEN
+                RETURN v_owner;
+            END IF;
+            IF p_venue IS NULL OR NOT EXISTS (SELECT 1 FROM public.venues ve WHERE ve.id = p_venue AND ve.partner_id = (v_owner->>'partner_id')::uuid) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'VENUE_NOT_FOUND', 'message', 'Cet établissement n’existe pas ou n’est pas le vôtre.');
+            END IF;
+            RETURN v_owner;
+        END;
+        $$;
+        
+        -- p : actor_id, venue_id, zone_id (vide = création), name, fee, min_order, is_active, sort_order
+        CREATE OR REPLACE FUNCTION public.order_delivery_zone_set(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor  uuid := public.try_uuid(p->>'actor_id');
+            v_venue  uuid := public.try_uuid(p->>'venue_id');
+            v_zone   uuid := public.try_uuid(NULLIF(p->>'zone_id', ''));
+            v_check  jsonb;
+            z        public.order_delivery_zones%ROWTYPE;
+            v_row    public.order_delivery_zones%ROWTYPE;
+            v_name   text;
+            v_fee    numeric;
+            v_min    numeric;
+            v_active boolean;
+            v_sort   integer;
+        BEGIN
+            v_check := private.order_zone_venue(v_actor, v_venue);
+            IF NOT (v_check->>'ok')::boolean THEN
+                RETURN v_check;
+            END IF;
+            IF v_zone IS NOT NULL OR NULLIF(p->>'zone_id', '') IS NOT NULL THEN
+                SELECT * INTO z FROM public.order_delivery_zones WHERE id = v_zone AND venue_id = v_venue AND archived_at IS NULL FOR UPDATE;
+                IF v_zone IS NULL OR NOT FOUND THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'ZONE_NOT_FOUND', 'message', 'Cette zone n’existe pas dans cet établissement.');
+                END IF;
+            END IF;
+            BEGIN
+                v_name := CASE WHEN p ? 'name' THEN NULLIF(btrim(regexp_replace(COALESCE(p->>'name', ''), '[[:cntrl:]]', ' ', 'g')), '') ELSE z.name END;
+                v_fee := CASE WHEN p ? 'fee' THEN (p->>'fee')::numeric ELSE COALESCE(z.fee, 0) END;
+                v_min := CASE WHEN p ? 'min_order' THEN (p->>'min_order')::numeric ELSE COALESCE(z.min_order, 0) END;
+                v_active := CASE WHEN jsonb_typeof(p->'is_active') = 'boolean' THEN (p->>'is_active')::boolean ELSE COALESCE(z.is_active, TRUE) END;
+                v_sort := CASE WHEN p ? 'sort_order' THEN (p->>'sort_order')::integer ELSE z.sort_order END;
+            EXCEPTION WHEN others THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ZONE', 'message', 'Une valeur de la zone n’est pas valable.');
+            END;
+            IF v_name IS NULL OR length(v_name) NOT BETWEEN 2 AND 80 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ZONE', 'message', 'Le nom de la zone compte de 2 à 80 caractères (par exemple « Almadies »).');
+            END IF;
+            IF v_fee IS NULL OR v_fee <> trunc(v_fee) OR v_fee < 0 OR v_fee > 100000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_FEE', 'message', 'Les frais de livraison sont un nombre entier de F CFA, de 0 à 100 000.');
+            END IF;
+            IF v_min IS NULL OR v_min <> trunc(v_min) OR v_min < 0 OR v_min > 10000000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_MINIMUM', 'message', 'Le minimum de commande est un nombre entier de F CFA, de 0 à 10 000 000.');
+            END IF;
+            IF v_sort IS NOT NULL AND v_sort NOT BETWEEN 0 AND 1000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ZONE', 'message', 'Une valeur de la zone n’est pas valable.');
+            END IF;
+            IF EXISTS (SELECT 1 FROM public.order_delivery_zones x WHERE x.venue_id = v_venue AND x.archived_at IS NULL
+                        AND lower(btrim(x.name)) = lower(v_name) AND x.id IS DISTINCT FROM z.id) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'ZONE_EXISTS', 'message', 'Une zone porte déjà ce nom dans cet établissement.');
+            END IF;
+            IF z.id IS NULL THEN
+                IF (SELECT count(*) FROM public.order_delivery_zones x WHERE x.venue_id = v_venue AND x.archived_at IS NULL) >= 50 THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_ZONES', 'message', '50 zones au plus par établissement.');
+                END IF;
+                INSERT INTO public.order_delivery_zones (venue_id, name, fee, min_order, is_active, sort_order)
+                VALUES (v_venue, v_name, v_fee, v_min, v_active,
+                        COALESCE(v_sort, (SELECT COALESCE(max(x.sort_order) + 1, 0) FROM public.order_delivery_zones x WHERE x.venue_id = v_venue AND x.archived_at IS NULL)))
+                RETURNING * INTO v_row;
+            ELSE
+                UPDATE public.order_delivery_zones
+                   SET name = v_name, fee = v_fee, min_order = v_min, is_active = v_active, sort_order = COALESCE(v_sort, sort_order), updated_at = now()
+                 WHERE id = z.id
+                RETURNING * INTO v_row;
+            END IF;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value)
+            VALUES (v_actor, 'PARTENAIRE', CASE WHEN z.id IS NULL THEN 'ORDER_ZONE_CREATED' ELSE 'ORDER_ZONE_UPDATED' END, 'order_delivery_zones', v_row.id,
+                    CASE WHEN z.id IS NOT NULL THEN jsonb_build_object('name', z.name, 'fee', z.fee, 'min_order', z.min_order, 'is_active', z.is_active) END,
+                    jsonb_build_object('name', v_row.name, 'fee', v_row.fee, 'min_order', v_row.min_order, 'is_active', v_row.is_active, 'venue_id', v_venue));
+            RETURN jsonb_build_object('ok', true, 'zone', jsonb_build_object(
+                'id', v_row.id, 'venue_id', v_row.venue_id, 'name', v_row.name, 'fee', v_row.fee, 'min_order', v_row.min_order,
+                'is_active', v_row.is_active, 'sort_order', v_row.sort_order));
+        END;
+        $$;
+        
+        -- p : actor_id, zone_id
+        CREATE OR REPLACE FUNCTION public.order_delivery_zone_remove(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor uuid := public.try_uuid(p->>'actor_id');
+            v_zone  uuid := public.try_uuid(p->>'zone_id');
+            v_owner jsonb;
+            z       record;
+        BEGIN
+            v_owner := private.order_catalog_owner(v_actor);
+            IF NOT (v_owner->>'ok')::boolean THEN
+                RETURN v_owner;
+            END IF;
+            SELECT x.* INTO z FROM public.order_delivery_zones x JOIN public.venues ve ON ve.id = x.venue_id
+             WHERE x.id = v_zone AND ve.partner_id = (v_owner->>'partner_id')::uuid AND x.archived_at IS NULL
+               FOR UPDATE OF x;
+            IF v_zone IS NULL OR NOT FOUND THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'ZONE_NOT_FOUND', 'message', 'Cette zone n’existe pas dans vos établissements.');
+            END IF;
+            -- Même verrou que les commandes de l'établissement : aucune commande ne la prend pendant qu'on la retire
+            PERFORM public.order_venue_lock(z.venue_id);
+            IF EXISTS (SELECT 1 FROM public.orders o WHERE o.zone_id = z.id AND o.closed_at IS NULL) THEN
+                UPDATE public.order_delivery_zones SET is_active = FALSE, updated_at = now() WHERE id = z.id;
+                INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value)
+                VALUES (v_actor, 'PARTENAIRE', 'ORDER_ZONE_DEACTIVATED', 'order_delivery_zones', z.id,
+                        jsonb_build_object('is_active', z.is_active), jsonb_build_object('is_active', false));
+                RETURN jsonb_build_object('ok', true, 'zone_id', z.id, 'outcome', 'DEACTIVATED',
+                    'message', 'Cette zone sert à une commande en cours : elle est désactivée (plus proposée aux clients) et pourra être retirée ensuite.');
+            END IF;
+            IF EXISTS (SELECT 1 FROM public.orders o WHERE o.zone_id = z.id) THEN
+                UPDATE public.order_delivery_zones SET is_active = FALSE, archived_at = now(), updated_at = now() WHERE id = z.id;
+                INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value)
+                VALUES (v_actor, 'PARTENAIRE', 'ORDER_ZONE_ARCHIVED', 'order_delivery_zones', z.id, jsonb_build_object('name', z.name, 'fee', z.fee));
+                RETURN jsonb_build_object('ok', true, 'zone_id', z.id, 'outcome', 'ARCHIVED', 'message', 'Zone retirée.');
+            END IF;
+            DELETE FROM public.order_delivery_zones WHERE id = z.id;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value)
+            VALUES (v_actor, 'PARTENAIRE', 'ORDER_ZONE_DELETED', 'order_delivery_zones', z.id, jsonb_build_object('name', z.name, 'fee', z.fee));
+            RETURN jsonb_build_object('ok', true, 'zone_id', z.id, 'outcome', 'DELETED', 'message', 'Zone retirée.');
+        END;
+        $$;
+        
+        -- p : actor_id, venue_id, zone_ids (toutes les zones visibles de l'établissement, dans le nouvel ordre)
+        CREATE OR REPLACE FUNCTION public.order_delivery_zones_reorder(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor uuid := public.try_uuid(p->>'actor_id');
+            v_venue uuid := public.try_uuid(p->>'venue_id');
+            v_check jsonb;
+            v_ids   uuid[];
+        BEGIN
+            v_check := private.order_zone_venue(v_actor, v_venue);
+            IF NOT (v_check->>'ok')::boolean THEN
+                RETURN v_check;
+            END IF;
+            BEGIN
+                v_ids := CASE WHEN jsonb_typeof(p->'zone_ids') = 'array' THEN ARRAY(SELECT (x)::uuid FROM jsonb_array_elements_text(p->'zone_ids') x) END;
+            EXCEPTION WHEN others THEN
+                v_ids := NULL;
+            END;
+            IF v_ids IS NULL OR cardinality(v_ids) <> (SELECT count(DISTINCT x) FROM unnest(v_ids) x)
+               OR cardinality(v_ids) <> (SELECT count(*) FROM public.order_delivery_zones z WHERE z.venue_id = v_venue AND z.archived_at IS NULL)
+               OR EXISTS (SELECT 1 FROM unnest(v_ids) x WHERE NOT EXISTS (
+                        SELECT 1 FROM public.order_delivery_zones z WHERE z.id = x AND z.venue_id = v_venue AND z.archived_at IS NULL)) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ORDER', 'message', 'L’ordre des zones n’est pas à jour : rechargez la page.');
+            END IF;
+            UPDATE public.order_delivery_zones z
+               SET sort_order = x.ord - 1, updated_at = now()
+              FROM unnest(v_ids) WITH ORDINALITY AS x(id, ord)
+             WHERE z.id = x.id AND z.sort_order IS DISTINCT FROM x.ord - 1;
+            RETURN jsonb_build_object('ok', true, 'venue_id', v_venue, 'zone_ids', to_jsonb(v_ids));
+        END;
+        $$;
+        
+        -- p : actor_id, product_id, option_id (vide = création), name, price, is_active, sort_order
+        CREATE OR REPLACE FUNCTION public.product_option_set(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor   uuid := public.try_uuid(p->>'actor_id');
+            v_product uuid := public.try_uuid(p->>'product_id');
+            v_option  uuid := public.try_uuid(NULLIF(p->>'option_id', ''));
+            v_owner   jsonb;
+            pr        record;
+            o         public.product_options%ROWTYPE;
+            v_row     public.product_options%ROWTYPE;
+            v_name    text;
+            v_price   numeric;
+            v_active  boolean;
+            v_sort    integer;
+            v_words   text[];
+            v_review  boolean := FALSE;
+        BEGIN
+            v_owner := private.order_catalog_owner(v_actor);
+            IF NOT (v_owner->>'ok')::boolean THEN
+                RETURN v_owner;
+            END IF;
+            SELECT * INTO pr FROM public.products WHERE id = v_product AND partner_id = (v_owner->>'partner_id')::uuid FOR UPDATE;
+            IF v_product IS NULL OR NOT FOUND THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Ce produit n’existe pas ou n’est pas le vôtre.');
+            END IF;
+            IF pr.archived_at IS NOT NULL THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_ARCHIVED', 'message', 'Ce produit est archivé : il ne se modifie plus.');
+            END IF;
+            IF v_option IS NOT NULL OR NULLIF(p->>'option_id', '') IS NOT NULL THEN
+                SELECT * INTO o FROM public.product_options WHERE id = v_option AND product_id = pr.id FOR UPDATE;
+                IF v_option IS NULL OR NOT FOUND THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'OPTION_NOT_FOUND', 'message', 'Ce supplément n’existe pas pour ce produit.');
+                END IF;
+            END IF;
+            BEGIN
+                v_name := CASE WHEN p ? 'name' THEN NULLIF(btrim(regexp_replace(COALESCE(p->>'name', ''), '[[:cntrl:]]', ' ', 'g')), '') ELSE o.name END;
+                v_price := CASE WHEN p ? 'price' THEN (p->>'price')::numeric ELSE COALESCE(o.price_delta, 0) END;
+                v_active := CASE WHEN jsonb_typeof(p->'is_active') = 'boolean' THEN (p->>'is_active')::boolean ELSE COALESCE(o.is_active, TRUE) END;
+                v_sort := CASE WHEN p ? 'sort_order' THEN (p->>'sort_order')::integer ELSE o.sort_order END;
+            EXCEPTION WHEN others THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_OPTION', 'message', 'Une valeur du supplément n’est pas valable.');
+            END;
+            IF v_name IS NULL OR length(v_name) > 80 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_OPTION', 'message', 'Le nom du supplément compte de 1 à 80 caractères.');
+            END IF;
+            IF v_price IS NULL OR v_price <> trunc(v_price) OR v_price < 0 OR v_price > 1000000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_OPTION_PRICE', 'message', 'Le prix du supplément est un nombre entier de F CFA, de 0 à 1 000 000.');
+            END IF;
+            IF v_sort IS NOT NULL AND v_sort NOT BETWEEN 0 AND 1000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_OPTION', 'message', 'Une valeur du supplément n’est pas valable.');
+            END IF;
+            IF o.id IS NULL AND (SELECT count(*) FROM public.product_options x WHERE x.product_id = pr.id) >= 20 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_OPTIONS', 'message', '20 suppléments au plus par produit.');
+            END IF;
+            IF o.id IS NULL THEN
+                INSERT INTO public.product_options (product_id, name, price_delta, is_active, sort_order)
+                VALUES (pr.id, v_name, v_price, v_active,
+                        COALESCE(v_sort, (SELECT COALESCE(max(x.sort_order) + 1, 0) FROM public.product_options x WHERE x.product_id = pr.id)))
+                RETURNING * INTO v_row;
+            ELSE
+                UPDATE public.product_options
+                   SET name = v_name, price_delta = v_price, is_active = v_active, sort_order = COALESCE(v_sort, sort_order), updated_at = now()
+                 WHERE id = o.id
+                RETURNING * INTO v_row;
+            END IF;
+            -- Un supplément au nom d'un mot de la liste met le produit « à vérifier » (jamais effacé ici). Contre-vérification :
+            -- même règle de pliage que le reste (order_review_words), sur le nom du supplément
+            IF o.id IS NULL OR v_name IS DISTINCT FROM o.name THEN
+                v_words := private.order_review_words(v_name);
+                v_review := cardinality(v_words) > 0;
+            END IF;
+            -- Contre-vérification (T2) : un supplément ajouté ou renommé sur un produit encore « à vérifier » lui donne une
+            -- nouvelle version (une décision prise sur la version affichée avant est refusée)
+            IF NOT v_review AND pr.review_state = 'A_VERIFIER' AND (o.id IS NULL OR v_name IS DISTINCT FROM o.name) THEN
+                v_review := TRUE;
+                v_words := ARRAY[]::text[];
+            END IF;
+            IF v_review THEN
+                PERFORM set_config('event_village.product_write', 'on', true);
+                UPDATE public.products
+                   SET review_state = 'A_VERIFIER',
+                       review_words = ARRAY(SELECT DISTINCT w FROM unnest(COALESCE(review_words, ARRAY[]::text[]) || v_words) w ORDER BY 1),
+                       review_requested_at = clock_timestamp(), updated_at = now()
+                 WHERE id = pr.id;
+                PERFORM set_config('event_village.product_write', 'off', true);
+            END IF;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
+            VALUES (v_actor, 'PARTENAIRE', CASE WHEN o.id IS NULL THEN 'PRODUCT_OPTION_CREATED' ELSE 'PRODUCT_OPTION_UPDATED' END, 'product_options', v_row.id,
+                    CASE WHEN o.id IS NOT NULL THEN jsonb_build_object('name', o.name, 'price_delta', o.price_delta, 'is_active', o.is_active) END,
+                    jsonb_build_object('name', v_row.name, 'price_delta', v_row.price_delta, 'is_active', v_row.is_active),
+                    jsonb_strip_nulls(jsonb_build_object('product_id', pr.id, 'review_words', CASE WHEN v_review THEN to_jsonb(v_words) END)));
+            IF v_review THEN
+                PERFORM private.order_product_review_notify(pr.id);
+            END IF;
+            RETURN jsonb_build_object('ok', true, 'review_requested', v_review, 'option', jsonb_build_object(
+                'id', v_row.id, 'product_id', v_row.product_id, 'name', v_row.name, 'price', v_row.price_delta,
+                'is_active', v_row.is_active, 'sort_order', v_row.sort_order));
+        END;
+        $$;
+        
+        -- p : actor_id, option_id ; la ligne de commande garde sa copie (nom et prix figés)
+        CREATE OR REPLACE FUNCTION public.product_option_remove(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor  uuid := public.try_uuid(p->>'actor_id');
+            v_option uuid := public.try_uuid(p->>'option_id');
+            v_owner  jsonb;
+            o        record;
+        BEGIN
+            v_owner := private.order_catalog_owner(v_actor);
+            IF NOT (v_owner->>'ok')::boolean THEN
+                RETURN v_owner;
+            END IF;
+            SELECT x.*, pr.archived_at AS product_archived INTO o
+              FROM public.product_options x JOIN public.products pr ON pr.id = x.product_id
+             WHERE x.id = v_option AND pr.partner_id = (v_owner->>'partner_id')::uuid
+               FOR UPDATE OF x;
+            IF v_option IS NULL OR NOT FOUND THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'OPTION_NOT_FOUND', 'message', 'Ce supplément n’existe pas pour vos produits.');
+            END IF;
+            IF o.product_archived IS NOT NULL THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_ARCHIVED', 'message', 'Ce produit est archivé : il ne se modifie plus.');
+            END IF;
+            DELETE FROM public.product_options WHERE id = o.id;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, metadata)
+            VALUES (v_actor, 'PARTENAIRE', 'PRODUCT_OPTION_DELETED', 'product_options', o.id,
+                    jsonb_build_object('name', o.name, 'price_delta', o.price_delta), jsonb_build_object('product_id', o.product_id));
+            RETURN jsonb_build_object('ok', true, 'option_id', o.id);
+        END;
+        $$;
+        
+        REVOKE ALL ON FUNCTION private.order_zone_venue(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION public.order_delivery_zone_set(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_delivery_zone_remove(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_delivery_zones_reorder(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.product_option_set(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.product_option_remove(jsonb) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_delivery_zone_set(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_delivery_zone_remove(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_delivery_zones_reorder(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.product_option_set(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.product_option_remove(jsonb) TO service_role;
+        
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12c, migration 03 : devis d'une commande (produits archivés et « à vérifier »)
+        -- ============================================================================
+        -- order_quote_compute : recopie de 20261130000004_l12a_devis_commande.sql:196-456 (dernière définition ; aucune autre
+        -- migration ne la redéfinit) ; il teste la case « réglementé » en ligne, sans passer par product_regulated (état des
+        -- lieux du 26/11, § 3.4). Changements (lignes ajoutées seulement, aucune ligne retirée : test
+        -- tests/parcours/l12c-statique.test.ts) :
+        --  1. produit archivé (products.archived_at) : refusé comme un produit indisponible (PRODUCT_UNAVAILABLE) ;
+        --  2. produit « à vérifier » (products.review_state) : refusé (PRODUCT_UNDER_REVIEW), après la case « réglementé ».
+        -- order_quote et order_create l'appellent : devis et création refusent donc les deux. Droits inchangés (CREATE OR
+        -- REPLACE les garde ; REVOKE et GRANT répétés, idempotents). Rejouable.
+        -- ============================================================================
+        
+        CREATE OR REPLACE FUNCTION public.order_quote_compute(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_venue_id uuid := public.try_uuid(p->>'venue_id');
+            v_mode     text := upper(COALESCE(p->>'mode', ''));
+            v_pay      text := upper(COALESCE(NULLIF(p->>'payment', ''), 'INTEGRAL'));
+            v          record;
+            z          record;
+            t          record;
+            it         jsonb;
+            pr         record;
+            op         record;
+            v_qty      integer;
+            v_opt_ids  uuid[];
+            v_opts     jsonb;
+            v_opt_sum  numeric;
+            v_unit     numeric;
+            v_lines    jsonb := '[]'::jsonb;
+            v_items    numeric := 0;
+            v_fee_zone numeric := 0;
+            v_goods    numeric;
+            v_pct      integer;
+            v_first    numeric;
+            v_rate     numeric := public.fin_setting_num('orders.service_fee_rate');
+            v_fee      numeric;
+            v_now      timestamp := public.hall_dakar_now();
+            v_prep     integer;
+            v_asap     boolean;
+            v_at       timestamp;
+            v_today    date := public.hall_dakar_now()::date;
+            v_daily    boolean := FALSE;
+            v_need     record;
+            v_left     integer;
+            v_address  text;
+            v_phone    text;
+            v_label    text;
+            v_table    uuid := public.try_uuid(NULLIF(p->>'onsite_table_id', ''));
+            v_zone     uuid := public.try_uuid(NULLIF(p->>'zone_id', ''));
+            v_zone_id  uuid;
+            v_zone_nm  text;
+        BEGIN
+            IF NOT public.fin_setting_bool('features.orders_enabled') THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'SERVICE_CLOSED', 'message', 'Les commandes ne sont pas encore ouvertes.');
+            END IF;
+            SELECT ve.*, pa.status::text AS partner_status, pa.user_id AS owner_id INTO v
+              FROM public.venues ve JOIN public.partners pa ON pa.id = ve.partner_id WHERE ve.id = v_venue_id;
+            IF v_venue_id IS NULL OR NOT FOUND THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'VENUE_NOT_FOUND', 'message', 'Cet établissement n’existe pas ou n’est plus proposé.');
+            END IF;
+            IF NOT v.is_active OR v.validation_status <> 'VALIDEE' OR v.partner_status <> 'VALIDE' OR NOT v.orders_open THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'VENUE_NOT_AVAILABLE', 'message', 'Cet établissement ne prend pas de commande pour le moment.');
+            END IF;
+            IF v_mode NOT IN ('LIVRAISON', 'RETRAIT', 'SUR_PLACE') OR NOT (v_mode = ANY (v.order_modes)) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'MODE_NOT_AVAILABLE', 'message', 'Ce mode de remise n’est pas proposé par cet établissement.');
+            END IF;
+            IF v_pay NOT IN ('INTEGRAL', 'ACOMPTE', 'DIFFERE') THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PAYMENT', 'message', 'Choisissez de payer tout, un acompte ou à la remise.');
+            END IF;
+            IF v_pay = 'ACOMPTE' AND NOT v.order_deposit_allowed THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'DEPOSIT_NOT_ALLOWED', 'message', 'Cet établissement ne propose pas l’acompte : payez la commande en entier.');
+            END IF;
+            IF v_pay = 'DIFFERE' AND NOT v.order_pay_on_handover THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PAY_ON_HANDOVER_NOT_ALLOWED', 'message', 'Cet établissement n’accepte pas le paiement à la remise : payez en ligne.');
+            END IF;
+        
+            -- Lignes : produits de cet établissement, disponibles, jamais réglementés ; prix et suppléments relus en base
+            IF jsonb_typeof(p->'items') <> 'array' OR jsonb_array_length(p->'items') < 1 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'EMPTY_CART', 'message', 'Votre panier est vide.');
+            END IF;
+            IF jsonb_array_length(p->'items') > 30 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'CART_TOO_BIG', 'message', '30 lignes au plus par commande.');
+            END IF;
+            FOR it IN SELECT * FROM jsonb_array_elements(p->'items') LOOP
+                BEGIN
+                    v_qty := (it->>'quantity')::int;
+                    v_opt_ids := CASE WHEN jsonb_typeof(it->'option_ids') = 'array'
+                                      THEN ARRAY(SELECT (x)::uuid FROM jsonb_array_elements_text(it->'option_ids') x) ELSE ARRAY[]::uuid[] END;
+                EXCEPTION WHEN others THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'INVALID_ITEM', 'message', 'Une ligne du panier n’est pas valable.');
+                END;
+                IF v_qty IS NULL OR v_qty < 1 OR v_qty > 99 OR (it->>'quantity') !~ '^[0-9]+$' THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'INVALID_QUANTITY', 'message', 'Choisissez une quantité entre 1 et 99.');
+                END IF;
+                SELECT * INTO pr FROM public.products WHERE id = public.try_uuid(it->>'product_id');
+                IF NOT FOUND OR pr.venue_id IS DISTINCT FROM v.id OR pr.partner_id <> v.partner_id THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Un produit du panier n’est pas proposé par cet établissement.');
+                END IF;
+                -- Lot 12c : produit archivé (retiré de la carte par la partenaire, gardé pour l'historique)
+                IF pr.archived_at IS NOT NULL THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_UNAVAILABLE', 'product_id', pr.id,
+                        'message', format('« %s » n’est plus disponible.', pr.name));
+                END IF;
+                -- Décision du client : un produit réglementé (alcool, tabac) n'est jamais commandé, payé ni livré en ligne
+                IF pr.is_regulated OR COALESCE(pr.regulated_admin, FALSE) THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'REGULATED_PRODUCT', 'product_id', pr.id,
+                        'message', format('« %s » est un produit réglementé : il ne se commande pas en ligne. Achetez-le sur place.', pr.name));
+                END IF;
+                -- Lot 12c : produit « à vérifier » (un mot de orders.review_keywords) : non vendable jusqu'à la décision de
+                -- l'administration (product_regulated le dit aussi pour le paiement, l'acceptation et la remise)
+                IF pr.review_state IS NOT NULL THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_UNDER_REVIEW', 'product_id', pr.id,
+                        'message', format('« %s » est en cours de vérification par Event Village : il ne se commande pas encore en ligne.', pr.name));
+                END IF;
+                IF pr.status::text <> 'DISPONIBLE' THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_UNAVAILABLE', 'product_id', pr.id,
+                        'message', format('« %s » n’est plus disponible.', pr.name));
+                END IF;
+                IF pr.price <> trunc(pr.price) THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_UNAVAILABLE', 'product_id', pr.id,
+                        'message', format('« %s » n’est plus disponible.', pr.name));
+                END IF;
+                IF (SELECT count(*) FROM unnest(v_opt_ids) x) <> (SELECT count(DISTINCT x) FROM unnest(v_opt_ids) x)
+                   OR (SELECT count(*) FROM unnest(v_opt_ids) x) > 10 THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'INVALID_OPTION', 'message', 'Un supplément choisi n’est pas valable.');
+                END IF;
+                v_opts := '[]'::jsonb;
+                v_opt_sum := 0;
+                FOR op IN SELECT o.* FROM public.product_options o WHERE o.id = ANY (v_opt_ids) ORDER BY o.sort_order, o.id LOOP
+                    IF op.product_id <> pr.id OR NOT op.is_active THEN
+                        RETURN jsonb_build_object('ok', false, 'code', 'INVALID_OPTION', 'message', 'Un supplément choisi n’est pas valable.');
+                    END IF;
+                    v_opts := v_opts || jsonb_build_object('id', op.id, 'name', op.name, 'price', op.price_delta);
+                    v_opt_sum := v_opt_sum + op.price_delta;
+                END LOOP;
+                IF jsonb_array_length(v_opts) <> COALESCE(array_length(v_opt_ids, 1), 0) THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'INVALID_OPTION', 'message', 'Un supplément choisi n’est pas valable.');
+                END IF;
+                v_unit := pr.price + v_opt_sum;
+                v_daily := v_daily OR pr.is_daily_special;
+                v_lines := v_lines || jsonb_build_object(
+                    'product_id', pr.id, 'name', pr.name, 'quantity', v_qty, 'base_price', pr.price, 'options', v_opts,
+                    'unit_price', v_unit, 'total_price', v_unit * v_qty, 'daily', pr.is_daily_special,
+                    'stock_managed', pr.is_stock_managed AND pr.stock_quantity IS NOT NULL,
+                    'notes', NULLIF(left(btrim(regexp_replace(COALESCE(it->>'notes', ''), '[[:cntrl:]]', ' ', 'g')), 200), ''));
+                v_items := v_items + v_unit * v_qty;
+            END LOOP;
+            IF v_items <= 0 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'NOTHING_TO_ORDER', 'message', 'Le montant de la commande doit être supérieur à 0.');
+            END IF;
+        
+            -- Stock et portions du jour (relus ici ; pris sous verrou par order_create)
+            FOR v_need IN SELECT (l->>'product_id')::uuid AS product_id, sum((l->>'quantity')::int)::int AS qty,
+                                 bool_or((l->>'daily')::boolean) AS daily, bool_or((l->>'stock_managed')::boolean) AS managed
+                            FROM jsonb_array_elements(v_lines) l GROUP BY 1 ORDER BY 1 LOOP
+                SELECT * INTO pr FROM public.products WHERE id = v_need.product_id;
+                -- Contre-vérification (T3) : 99 au plus par produit sur toute la commande (le même produit peut revenir sur
+                -- plusieurs lignes, avec d'autres suppléments)
+                IF v_need.qty > 99 THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'INVALID_QUANTITY', 'product_id', pr.id,
+                        'message', format('Au plus 99 « %s » par commande.', pr.name));
+                END IF;
+                IF v_need.managed AND pr.stock_quantity < v_need.qty THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'OUT_OF_STOCK', 'product_id', pr.id,
+                        'message', CASE WHEN pr.stock_quantity <= 0 THEN format('« %s » est épuisé.', pr.name)
+                                        ELSE format('Il reste %s « %s ».', pr.stock_quantity, pr.name) END);
+                END IF;
+                IF v_need.daily THEN
+                    SELECT portions - sold INTO v_left FROM public.product_daily_portions WHERE product_id = pr.id AND day = v_today;
+                    IF COALESCE(v_left, 0) < v_need.qty THEN
+                        RETURN jsonb_build_object('ok', false, 'code', 'NO_PORTIONS_LEFT', 'product_id', pr.id,
+                            'message', CASE WHEN COALESCE(v_left, 0) <= 0 THEN format('Plus de « %s » aujourd’hui.', pr.name)
+                                            ELSE format('Il reste %s portions de « %s » aujourd’hui.', v_left, pr.name) END);
+                    END IF;
+                END IF;
+            END LOOP;
+        
+            -- Plat du jour : toujours payé en entier (décision du client)
+            IF v_daily AND v_pay <> 'INTEGRAL' THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'DAILY_SPECIAL_FULL_PAYMENT', 'message', 'Le plat du jour se paie en entier, en ligne.');
+            END IF;
+        
+            -- Mode de remise
+            IF v_mode = 'LIVRAISON' THEN
+                SELECT * INTO z FROM public.order_delivery_zones WHERE id = v_zone AND venue_id = v.id AND is_active;
+                IF v_zone IS NULL OR NOT FOUND THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'ZONE_NOT_FOUND', 'message', 'Choisissez une zone de livraison de cet établissement.');
+                END IF;
+                IF v_items < z.min_order THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'BELOW_MINIMUM', 'minimum', z.min_order,
+                        'message', format('Le minimum de commande pour la zone « %s » est de %s F CFA.', z.name,
+                                          replace(to_char(z.min_order, 'FM999G999G999'), ',', ' ')));
+                END IF;
+                v_fee_zone := z.fee;
+                v_zone_id := z.id;
+                v_zone_nm := z.name;
+                v_address := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'address', ''), '[[:cntrl:]]', ' ', 'g')), 300), '');
+                IF v_address IS NULL OR length(v_address) < 5 THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'ADDRESS_REQUIRED', 'message', 'Indiquez l’adresse de livraison (quartier, rue, repère).');
+                END IF;
+            END IF;
+            v_phone := regexp_replace(COALESCE(p->>'phone', ''), '[^0-9+]', '', 'g');
+            IF v_phone ~ '^(\+221|00221|221)?7[0-9]{8}$' THEN
+                v_phone := '+221' || right(v_phone, 9);
+            ELSIF v_phone = '' THEN
+                v_phone := NULL;
+            ELSE
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PHONE', 'message', 'Indiquez un numéro de mobile sénégalais (9 chiffres).');
+            END IF;
+            IF v_mode = 'LIVRAISON' AND v_phone IS NULL THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PHONE_REQUIRED', 'message', 'Indiquez le numéro à appeler pour la livraison.');
+            END IF;
+            IF v_mode = 'SUR_PLACE' THEN
+                v_label := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'onsite_label', ''), '[[:cntrl:]]', ' ', 'g')), 40), '');
+                IF v_table IS NOT NULL THEN
+                    SELECT * INTO t FROM public.restaurant_tables WHERE id = v_table AND venue_id = v.id AND is_active;
+                    IF NOT FOUND THEN
+                        RETURN jsonb_build_object('ok', false, 'code', 'TABLE_NOT_FOUND', 'message', 'Cette table n’existe pas dans cet établissement.');
+                    END IF;
+                ELSIF v_label IS NULL THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'SPOT_REQUIRED', 'message', 'Indiquez votre table ou l’endroit où vous êtes.');
+                END IF;
+            ELSE
+                v_table := NULL;
+                v_label := NULL;
+            END IF;
+        
+            -- Heure : au plus tôt (ouvert pendant toute la préparation) ou créneau au quart d'heure, dans les horaires, 7 jours au plus
+            v_prep := COALESCE(v.order_prep_minutes, public.fin_setting_num('orders.prep_minutes_default')::int);
+            v_asap := NULLIF(p->>'scheduled_for', '') IS NULL;
+            IF v_asap THEN
+                v_at := date_trunc('minute', v_now) + make_interval(mins => v_prep + 1);
+                IF NOT public.venue_open_covers(v.id, tsrange(date_trunc('minute', v_now), v_at, '[)')) THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'CLOSED_NOW', 'message', 'L’établissement est fermé en ce moment : choisissez une heure dans ses horaires.');
+                END IF;
+            ELSE
+                BEGIN
+                    v_at := (p->>'scheduled_for')::timestamp;
+                EXCEPTION WHEN others THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'INVALID_TIME', 'message', 'L’heure choisie n’est pas valable.');
+                END;
+                IF EXTRACT(SECOND FROM v_at) <> 0 OR EXTRACT(MINUTE FROM v_at)::int % 15 <> 0 THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'INVALID_TIME', 'message', 'Choisissez une heure au quart d’heure près (par exemple 12:00, 12:15 ou 12:30).');
+                END IF;
+                IF v_at < v_now + make_interval(mins => v_prep) THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'TOO_SOON', 'message',
+                        format('La préparation prend %s minutes : choisissez une heure plus tardive, ou « au plus tôt ».', v_prep));
+                END IF;
+                IF v_at > v_now + interval '7 days' THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'TOO_FAR', 'message', 'Choisissez une heure dans les 7 jours à venir.');
+                END IF;
+                IF NOT public.venue_open_covers(v.id, tsrange(v_at, v_at + interval '1 minute', '[)')) THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'OUTSIDE_HOURS', 'message', 'L’établissement n’est pas ouvert à cette heure-là. Choisissez une autre heure.');
+                END IF;
+            END IF;
+            -- Plat du jour : pour aujourd'hui seulement ; il s'arrête seul à la fin du jour
+            IF v_daily AND v_at::date <> v_today THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'DAILY_SPECIAL_TODAY_ONLY', 'message', 'Le plat du jour se commande pour aujourd’hui seulement.');
+            END IF;
+        
+            -- Argent (F CFA entiers) : articles + frais de zone ; part payée en ligne au départ ; frais de service arrondis
+            -- au franc supérieur, sur ce qui est payé en ligne seulement
+            v_goods := v_items + v_fee_zone;
+            v_pct := CASE WHEN v_pay = 'ACOMPTE' THEN COALESCE(v.order_deposit_percent, public.fin_setting_num('orders.deposit_default_percent')::int) END;
+            v_first := CASE v_pay WHEN 'INTEGRAL' THEN v_goods WHEN 'ACOMPTE' THEN public.fin_round_up(v_goods * v_pct / 100.0) ELSE 0 END;
+            v_fee := public.fin_round_up(v_first * v_rate / 100);
+        
+            RETURN jsonb_build_object(
+                'ok', true, 'venue_id', v.id, 'venue_name', v.name, 'partner_id', v.partner_id, 'owner_id', v.owner_id,
+                'mode', v_mode, 'payment', v_pay, 'lines', v_lines, 'zone_id', v_zone_id, 'zone_name', v_zone_nm,
+                'address', v_address, 'phone', v_phone, 'onsite_table_id', v_table, 'onsite_label', v_label,
+                'asap', v_asap, 'scheduled_for', v_at AT TIME ZONE 'Africa/Dakar', 'prep_minutes', v_prep, 'daily', v_daily,
+                'items_amount', v_items, 'delivery_fee', v_fee_zone, 'goods_total', v_goods, 'deposit_percent', v_pct,
+                'first_goods', v_first, 'service_fee_rate', v_rate, 'first_fee', v_fee, 'to_pay_now', v_first + v_fee,
+                'balance_due', v_goods - v_first,
+                'notes', NULLIF(left(btrim(regexp_replace(COALESCE(p->>'notes', ''), '[[:cntrl:]]', ' ', 'g')), 300), ''));
+        END;
+        $$;
+        
+        REVOKE ALL ON FUNCTION public.order_quote_compute(jsonb) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_quote_compute(jsonb) TO service_role;
+        
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12c, migration 04 : « Ma journée » de la partenaire (écran des commandes)
+        -- ============================================================================
+        -- Aucun montant n'est calculé dans le navigateur (règle du lot) : la base compte, pour les établissements de la
+        -- partenaire du compte (ou un seul), le jour de Dakar (UTC toute l'année) :
+        --  - commandes reçues aujourd'hui (transmises : payées ou payables à la remise ; jamais une commande non payée) ;
+        --  - commandes ouvertes, dont celles à accepter ;
+        --  - commandes remises aujourd'hui et leur recette (total des articles et de la livraison, payé en ligne ou sur place) ;
+        --  - plats bientôt épuisés : plat du jour avec 5 portions ou moins aujourd'hui, produit suivi en stock avec 5 unités
+        --    ou moins (ni archivés, ni à vérifier).
+        -- Lecture seule, au rôle de service seulement ; la fiche SUSPENDU la lit aussi (lecture seule). Rejouable.
+        -- ============================================================================
+        
+        -- p : actor_id, venue_id (facultatif)
+        CREATE OR REPLACE FUNCTION public.order_partner_day(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor   uuid := public.try_uuid(p->>'actor_id');
+            v_venue   uuid := public.try_uuid(NULLIF(p->>'venue_id', ''));
+            v_partner uuid;
+            v_today   date := (now() AT TIME ZONE 'Africa/Dakar')::date;
+            v_counts  record;
+            v_low     jsonb;
+            v_specials jsonb;
+        BEGIN
+            SELECT pa.id INTO v_partner FROM public.partners pa WHERE pa.user_id = v_actor ORDER BY pa.created_at LIMIT 1;
+            IF v_actor IS NULL OR v_partner IS NULL OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF') THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Réservé aux partenaires.');
+            END IF;
+            IF NULLIF(p->>'venue_id', '') IS NOT NULL
+               AND (v_venue IS NULL OR NOT EXISTS (SELECT 1 FROM public.venues ve WHERE ve.id = v_venue AND ve.partner_id = v_partner)) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'VENUE_NOT_FOUND', 'message', 'Cet établissement n’existe pas ou n’est pas le vôtre.');
+            END IF;
+            SELECT count(*) FILTER (WHERE (o.received_at AT TIME ZONE 'Africa/Dakar')::date = v_today) AS received_today,
+                   count(*) FILTER (WHERE o.closed_at IS NULL) AS open_now,
+                   count(*) FILTER (WHERE o.order_state = 'RECUE') AS to_accept,
+                   count(*) FILTER (WHERE o.order_state = 'REMISE' AND (o.handed_over_at AT TIME ZONE 'Africa/Dakar')::date = v_today) AS handed_today,
+                   COALESCE(sum(o.goods_total) FILTER (WHERE o.order_state = 'REMISE' AND (o.handed_over_at AT TIME ZONE 'Africa/Dakar')::date = v_today), 0) AS revenue_today,
+                   COALESCE(sum(o.paid_goods) FILTER (WHERE o.order_state = 'REMISE' AND (o.handed_over_at AT TIME ZONE 'Africa/Dakar')::date = v_today), 0) AS paid_online_today,
+                   COALESCE(sum(o.onsite_amount) FILTER (WHERE o.order_state = 'REMISE' AND (o.handed_over_at AT TIME ZONE 'Africa/Dakar')::date = v_today), 0) AS onsite_today
+              INTO v_counts
+              FROM public.orders o
+             WHERE o.partner_id = v_partner AND o.venue_id IS NOT NULL AND o.received_at IS NOT NULL
+               AND (v_venue IS NULL OR o.venue_id = v_venue)
+               AND (o.closed_at IS NULL OR o.closed_at >= (v_today::timestamp AT TIME ZONE 'Africa/Dakar') - interval '1 day');
+            SELECT COALESCE(jsonb_agg(s.x ORDER BY (s.x->>'left')::int, s.x->>'name'), '[]'::jsonb) INTO v_low
+              FROM (
+                SELECT jsonb_build_object('product_id', pr.id, 'name', pr.name, 'venue_id', pr.venue_id, 'kind', 'PORTIONS',
+                                          'left', GREATEST(dp.portions - dp.sold, 0)) AS x
+                  FROM public.products pr JOIN public.product_daily_portions dp ON dp.product_id = pr.id AND dp.day = v_today
+                 WHERE pr.partner_id = v_partner AND pr.is_daily_special AND pr.archived_at IS NULL AND pr.review_state IS NULL
+                   AND (v_venue IS NULL OR pr.venue_id = v_venue) AND dp.portions > 0 AND dp.portions - dp.sold <= 5
+                UNION ALL
+                SELECT jsonb_build_object('product_id', pr.id, 'name', pr.name, 'venue_id', pr.venue_id, 'kind', 'STOCK',
+                                          'left', GREATEST(pr.stock_quantity, 0))
+                  FROM public.products pr
+                 WHERE pr.partner_id = v_partner AND pr.is_stock_managed AND pr.stock_quantity IS NOT NULL AND pr.archived_at IS NULL
+                   AND pr.review_state IS NULL AND (v_venue IS NULL OR pr.venue_id = v_venue) AND pr.stock_quantity <= 5
+                   AND pr.status::text IN ('DISPONIBLE', 'EPUISE')
+              ) s;
+            -- Contre-vérification du lot 12c (point 12) : plats du jour encore en vente aujourd'hui (« Plus de … » en un geste)
+            SELECT COALESCE(jsonb_agg(jsonb_build_object('product_id', pr.id, 'name', pr.name, 'venue_id', pr.venue_id,
+                                                         'portions', dp.portions, 'sold', dp.sold) ORDER BY pr.name, pr.id), '[]'::jsonb)
+              INTO v_specials
+              FROM public.products pr JOIN public.product_daily_portions dp ON dp.product_id = pr.id AND dp.day = v_today
+             WHERE pr.partner_id = v_partner AND pr.is_daily_special AND pr.archived_at IS NULL
+               AND (v_venue IS NULL OR pr.venue_id = v_venue) AND dp.portions > dp.sold;
+            RETURN jsonb_build_object('ok', true, 'day', v_today,
+                'received_today', v_counts.received_today, 'open_now', v_counts.open_now, 'to_accept', v_counts.to_accept,
+                'handed_today', v_counts.handed_today, 'revenue_today', v_counts.revenue_today,
+                'paid_online_today', v_counts.paid_online_today, 'onsite_today', v_counts.onsite_today, 'low', v_low,
+                'specials', v_specials);
+        END;
+        $$;
+        
+        REVOKE ALL ON FUNCTION public.order_partner_day(jsonb) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_partner_day(jsonb) TO service_role;
+        
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12c, migration 05 : correctifs de la contre-vérification (docs/audit-lot12c.md) et avis ajoutés
+        -- ============================================================================
+        -- Fonctions NOUVELLES (les fonctions déjà recopiées par le lot sont corrigées en place dans 20261224000001 à …04, jamais
+        -- appliquées : une seule définition par fonction dans le lot, règle S1).
+        --  T3 revue des produits existants : private.order_review_backfill_candidates (produits non archivés, ni réglementés
+        --     ni refusés, dont le texte — nom, description, catégorie, suppléments — contient un mot de la liste que
+        --     l'administration n'a pas déjà autorisé), private.order_review_backfill (appelée à chaque changement de la liste
+        --     par order_review_keywords_set), private.order_review_batch_done (un seul avis groupé à l'administration,
+        --     ADMIN_PRODUCTS_REVIEW_BATCH, et une ligne de journal PRODUCT_REVIEW_BACKFILL lue par la page) ; la migration revoit
+        --     une fois les produits déjà enregistrés (instruction plus bas). La revue ne fait que poser « à vérifier ».
+        --  T3 bouton de l'administration : order_product_review_request (droit partners.validate, motif) met n'importe quel
+        --     produit « à vérifier » (une marque qu'aucune liste ne reconnaît), avec avis à la partenaire.
+        --  T5 catégories : order_category_save (création et renommage par la base) ; un nom avec un mot de la liste met tous
+        --     les produits non archivés de la catégorie « à vérifier ».
+        --  T1 surlignage servi par le serveur : order_review_marks(texte) rend les plages des mots trouvés, calculées avec la
+        --     même fonction de pliage (private.order_text_fold) et les deux mêmes lectures que private.order_review_words.
+        --  T6 produit archivé : order_daily_portions_set (recopie, ci-dessous) refuse ses portions ; elle sert aussi la
+        --     rupture en un geste (sold_out : portions ramenées à ce qui est déjà vendu).
+        --  T4 lecture REST : SELECT des colonnes review_state, review_words, review_requested_at, review_note,
+        --     review_cleared_words, archived_at retiré à anon et authenticated (droits par colonne ; les autres colonnes restent
+        --     lisibles selon la règle de lignes products_read, propriété du lot 12b). Le propriétaire et l'administration lisent
+        --     ces colonnes par les routes serveur (rôle de service).
+        --  Avis ajoutés (point 7 de la consigne, P1 à P7 de l'audit) : ORDER_CODE_LOCKED (client, code bloqué après les essais),
+        --     ORDER_RESPONSE_REMINDER (partenaire, moins de 5 minutes pour répondre), ORDER_PREP_REMINDER (partenaire, commande
+        --     pour plus tard à lancer), ORDER_READY_COURIER (livreur, commande prête), PRODUCT_DECISION_SMS (partenaire, SMS de
+        --     la décision ; envoyé par order_product_regulation_decide), ADMIN_ORDER_REFUND_BLOCKED (administration
+        --     refunds.manage, SMS d'un remboursement de commande bloqué, échoué ou incertain), ORDER_SCHEDULED_REMINDER (client,
+        --     1 h avant une commande prévue un autre jour), ADMIN_PRODUCTS_REVIEW_BATCH (administration, revue groupée).
+        --     Déclencheurs : orders (code bloqué, commande prête), cashouts (remboursement bloqué) ; order_reminders (appelée par
+        --     /api/cron/orders après order_tick) pour P2, P3, P7. Aucune fonction d'envoi recopiée.
+        -- Sans BEGIN ni COMMIT ; rejouable : CREATE OR REPLACE, DROP TRIGGER IF EXISTS puis CREATE, ON CONFLICT, revue idempotente.
+        -- ============================================================================
+        
+        -- ----------------------------------------------------------------------------
+        -- 1. Revue des produits existants (T3)
+        -- ----------------------------------------------------------------------------
+        CREATE OR REPLACE FUNCTION private.order_review_backfill_candidates()
+        RETURNS TABLE (product_id uuid, words text[])
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT x.id, x.words
+              FROM (SELECT pr.id, pr.review_cleared_words, private.order_product_words(pr.id) AS words
+                      FROM public.products pr
+                     WHERE pr.archived_at IS NULL AND pr.review_state IS NULL
+                       AND NOT pr.is_regulated AND COALESCE(pr.regulated_admin, FALSE) = FALSE) x
+             WHERE EXISTS (SELECT 1 FROM unnest(x.words) w WHERE NOT (w = ANY (COALESCE(x.review_cleared_words, ARRAY[]::text[]))));
+        $$;
+        
+        -- Un seul avis groupé aux administrateurs (partners.validate) et une ligne de journal (lue par la page)
+        CREATE OR REPLACE FUNCTION private.order_review_batch_done(p_count integer, p_origin text, p_actor uuid)
+        RETURNS integer
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        BEGIN
+            IF COALESCE(p_count, 0) <= 0 THEN
+                RETURN 0;
+            END IF;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+            VALUES (p_actor, CASE WHEN p_actor IS NULL THEN 'SYSTEM' WHEN p_origin = 'CATEGORIE' THEN 'PARTENAIRE' ELSE 'SUPERADMIN' END,
+                    'PRODUCT_REVIEW_BACKFILL', 'products', NULL,
+                    jsonb_build_object('count', p_count, 'origin', p_origin));
+            PERFORM public.notif_enqueue_admins(jsonb_build_object(
+                'type', 'ADMIN_PRODUCTS_REVIEW_BATCH',
+                'ref', p_origin || ':' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'),
+                'data', jsonb_build_object('count', p_count, 'origin', p_origin)));
+            RETURN p_count;
+        END;
+        $$;
+        
+        CREATE OR REPLACE FUNCTION private.order_review_backfill(p_origin text, p_actor uuid)
+        RETURNS integer
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_n integer;
+        BEGIN
+            PERFORM set_config('event_village.product_write', 'on', true);
+            WITH flagged AS (
+                UPDATE public.products p
+                   SET review_state = 'A_VERIFIER', review_words = c.words, review_requested_at = now(), updated_at = now()
+                  FROM private.order_review_backfill_candidates() c
+                 WHERE p.id = c.product_id
+                RETURNING p.id)
+            SELECT count(*)::int INTO v_n FROM flagged;
+            PERFORM set_config('event_village.product_write', 'off', true);
+            RETURN private.order_review_batch_done(v_n, p_origin, p_actor);
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 2. Mettre un produit « à vérifier » (administration, T3)
+        -- ----------------------------------------------------------------------------
+        -- p : actor_id, product_id, reason
+        CREATE OR REPLACE FUNCTION public.order_product_review_request(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor   uuid := public.try_uuid(p->>'actor_id');
+            v_product uuid := public.try_uuid(p->>'product_id');
+            v_reason  text := NULLIF(left(btrim(regexp_replace(COALESCE(p->>'reason', ''), '[[:cntrl:]]', ' ', 'g')), 300), '');
+            pr        record;
+            v_owner   uuid;
+            v_words   text[];
+        BEGIN
+            IF v_actor IS NULL OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF')
+               OR NOT (EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = v_actor AND ur.role::text = 'SUPERADMIN')
+                       OR public.has_admin_permission(v_actor, 'partners.validate')) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'FORBIDDEN', 'message', 'Vous n’avez pas le droit de vérifier les produits.');
+            END IF;
+            IF v_reason IS NULL OR length(v_reason) < 3 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'REASON_REQUIRED', 'message', 'Indiquez le motif : il est envoyé à la partenaire.');
+            END IF;
+            SELECT * INTO pr FROM public.products WHERE id = v_product FOR UPDATE;
+            IF v_product IS NULL OR NOT FOUND OR pr.archived_at IS NOT NULL THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Produit introuvable.');
+            END IF;
+            IF pr.review_state IS NOT NULL THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'ALREADY_IN_REVIEW', 'message', 'Ce produit est déjà en vérification.');
+            END IF;
+            v_words := private.order_product_words(pr.id);
+            PERFORM set_config('event_village.product_write', 'on', true);
+            UPDATE public.products
+               SET review_state = 'A_VERIFIER', review_words = CASE WHEN cardinality(v_words) > 0 THEN v_words END,
+                   review_requested_at = now(), review_note = v_reason, updated_at = now()
+             WHERE id = pr.id;
+            PERFORM set_config('event_village.product_write', 'off', true);
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, metadata)
+            VALUES (v_actor, CASE WHEN EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = v_actor AND ur.role::text = 'SUPERADMIN') THEN 'SUPERADMIN' ELSE 'ADMIN' END,
+                    'PRODUCT_REVIEW_REQUESTED', 'products', pr.id, jsonb_build_object('reason', v_reason, 'product_name', pr.name));
+            SELECT pa.user_id INTO v_owner FROM public.partners pa WHERE pa.id = pr.partner_id;
+            IF v_owner IS NOT NULL THEN
+                PERFORM public.notif_enqueue(jsonb_build_object(
+                    'type', 'PRODUCT_REVIEW_DECIDED',
+                    'key', 'PRODUCT_REVIEW_DECIDED:' || pr.id::text || ':' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'),
+                    'user_id', v_owner, 'actor_id', v_actor,
+                    'data', jsonb_build_object('product_id', pr.id, 'product_name', pr.name, 'decision', 'A_VERIFIER', 'reason', v_reason)));
+            END IF;
+            RETURN jsonb_build_object('ok', true, 'product_id', pr.id, 'review_state', 'A_VERIFIER');
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 3. Catégories (T5)
+        -- ----------------------------------------------------------------------------
+        -- p : actor_id, category_id (vide = création), name. Rend { ok, category, flagged }.
+        CREATE OR REPLACE FUNCTION public.order_category_save(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor    uuid := public.try_uuid(p->>'actor_id');
+            v_category uuid := public.try_uuid(NULLIF(p->>'category_id', ''));
+            v_name     text := NULLIF(btrim(regexp_replace(regexp_replace(COALESCE(p->>'name', ''), '[[:cntrl:]]', ' ', 'g'), '\s+', ' ', 'g')), '');
+            v_owner    jsonb;
+            v_partner  uuid;
+            c          public.product_categories%ROWTYPE;
+            v_same     record;
+            v_row      record;
+            v_n        integer := 0;
+        BEGIN
+            v_owner := private.order_catalog_owner(v_actor);
+            IF NOT (v_owner->>'ok')::boolean THEN
+                RETURN v_owner;
+            END IF;
+            v_partner := (v_owner->>'partner_id')::uuid;
+            IF v_name IS NULL OR length(v_name) NOT BETWEEN 2 AND 60 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_CATEGORY', 'message', 'Le nom de la catégorie compte de 2 à 60 caractères.');
+            END IF;
+            IF v_category IS NOT NULL OR NULLIF(p->>'category_id', '') IS NOT NULL THEN
+                SELECT * INTO c FROM public.product_categories WHERE id = v_category AND partner_id = v_partner FOR UPDATE;
+                IF v_category IS NULL OR NOT FOUND THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'CATEGORY_NOT_FOUND', 'message', 'Catégorie de produit introuvable.');
+                END IF;
+            END IF;
+            SELECT id, name INTO v_same FROM public.product_categories
+             WHERE partner_id = v_partner AND lower(btrim(name)) = lower(v_name) AND id IS DISTINCT FROM v_category LIMIT 1;
+            IF FOUND THEN
+                IF v_category IS NULL THEN
+                    RETURN jsonb_build_object('ok', true, 'category', jsonb_build_object('id', v_same.id, 'name', v_same.name), 'existing', true, 'flagged', 0);
+                END IF;
+                RETURN jsonb_build_object('ok', false, 'code', 'CATEGORY_EXISTS', 'message', 'Une catégorie porte déjà ce nom.');
+            END IF;
+            IF v_category IS NULL THEN
+                IF (SELECT count(*) FROM public.product_categories WHERE partner_id = v_partner) >= 50 THEN
+                    RETURN jsonb_build_object('ok', false, 'code', 'TOO_MANY_CATEGORIES', 'message', '50 catégories au plus.');
+                END IF;
+                INSERT INTO public.product_categories (partner_id, name, sort_order)
+                VALUES (v_partner, v_name, (SELECT count(*) FROM public.product_categories WHERE partner_id = v_partner))
+                RETURNING id, name INTO v_row;
+            ELSE
+                UPDATE public.product_categories SET name = v_name, updated_at = now() WHERE id = c.id RETURNING id, name INTO v_row;
+                -- Renommage avec un mot de la liste : tous les produits non archivés de la catégorie passent « à vérifier »
+                IF v_name IS DISTINCT FROM c.name AND cardinality(private.order_review_words(v_name)) > 0 THEN
+                    PERFORM set_config('event_village.product_write', 'on', true);
+                    WITH flagged AS (
+                        UPDATE public.products pr
+                           SET review_state = 'A_VERIFIER', review_words = private.order_product_words(pr.id), review_requested_at = now(), updated_at = now()
+                         WHERE pr.category_id = c.id AND pr.archived_at IS NULL AND pr.review_state IS NULL
+                        RETURNING pr.id)
+                    SELECT count(*)::int INTO v_n FROM flagged;
+                    PERFORM set_config('event_village.product_write', 'off', true);
+                    PERFORM private.order_review_batch_done(v_n, 'CATEGORIE', NULL);
+                END IF;
+            END IF;
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value)
+            VALUES (v_actor, 'PARTENAIRE', CASE WHEN v_category IS NULL THEN 'PRODUCT_CATEGORY_CREATED' ELSE 'PRODUCT_CATEGORY_RENAMED' END,
+                    'product_categories', v_row.id, CASE WHEN v_category IS NOT NULL THEN jsonb_build_object('name', c.name) END,
+                    jsonb_build_object('name', v_row.name, 'flagged', v_n));
+            RETURN jsonb_build_object('ok', true, 'category', jsonb_build_object('id', v_row.id, 'name', v_row.name), 'flagged', v_n);
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 4. Surlignage servi par le serveur (T1)
+        -- ----------------------------------------------------------------------------
+        -- Plages [début, fin[ (en caractères du texte d'origine, à partir de 0) des mots de la liste trouvés, avec la même
+        -- fonction de pliage, caractère par caractère, et les deux mêmes lectures (mots ; lettres isolées recollées).
+        CREATE OR REPLACE FUNCTION public.order_review_marks(p_text text)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_chars  text[] := regexp_split_to_array(COALESCE(left(p_text, 4000), ''), '');
+            v_fold   text := '';
+            v_map    integer[] := ARRAY[]::integer[];
+            v_jtext  text := '';
+            v_jmap   integer[] := ARRAY[]::integer[];
+            v_runs   text := '';
+            v_runmap integer[] := ARRAY[]::integer[];
+            v_out    jsonb := '[]'::jsonb;
+            i        integer;
+            j        integer;
+            f        text;
+            k        record;
+            v_key    text;
+            v_pat    text;
+            v_pos    integer;
+            v_s      integer;
+            v_e      integer;
+            v_tok    text := '';
+            v_tokpos integer;
+        BEGIN
+            IF p_text IS NULL OR p_text = '' THEN
+                RETURN '[]'::jsonb;
+            END IF;
+            -- Texte plié caractère par caractère, avec la place de chaque caractère plié dans le texte d'origine
+            FOR i IN 1..COALESCE(array_length(v_chars, 1), 0) LOOP
+                f := regexp_replace(private.order_text_fold(v_chars[i]), '[^a-z0-9''-]', ' ', 'g');
+                FOR j IN 1..length(f) LOOP
+                    v_fold := v_fold || substr(f, j, 1);
+                    v_map := v_map || (i - 1);
+                END LOOP;
+            END LOOP;
+            -- Lettres isolées recollées : chaque suite d'au moins deux mots d'une seule lettre ou d'un seul chiffre
+            v_fold := v_fold || ' ';
+            v_map := v_map || COALESCE(v_map[array_length(v_map, 1)], 0);
+            FOR i IN 1..length(v_fold) LOOP
+                IF substr(v_fold, i, 1) ~ '[a-z0-9]' THEN
+                    IF v_tok = '' THEN v_tokpos := i; END IF;
+                    v_tok := v_tok || substr(v_fold, i, 1);
+                ELSE
+                    IF length(v_tok) = 1 THEN
+                        v_runs := v_runs || v_tok;
+                        v_runmap := v_runmap || v_map[v_tokpos];
+                    ELSIF v_tok <> '' THEN
+                        IF length(v_runs) >= 2 THEN
+                            v_jtext := v_jtext || ' ' || v_runs;
+                            v_jmap := v_jmap || (-1) || v_runmap;
+                        END IF;
+                        v_runs := '';
+                        v_runmap := ARRAY[]::integer[];
+                    END IF;
+                    v_tok := '';
+                END IF;
+            END LOOP;
+            IF length(v_runs) >= 2 THEN
+                v_jtext := v_jtext || ' ' || v_runs;
+                v_jmap := v_jmap || (-1) || v_runmap;
+            END IF;
+            v_jtext := v_jtext || ' ';
+            v_jmap := v_jmap || (-1);
+            FOR k IN SELECT x.word
+                       FROM public.platform_settings s
+                       CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(s.value->'value') = 'array' THEN s.value->'value' ELSE '[]'::jsonb END) AS x(word)
+                      WHERE s.key = 'orders.review_keywords' LOOP
+                v_key := btrim(private.order_text_fold(k.word));
+                CONTINUE WHEN v_key !~ '^[a-z0-9][a-z0-9 ''-]*$';
+                -- Mots tels quels
+                v_pat := '(^|[^a-z0-9])(' || v_key || '(s|x)?)($|[^a-z0-9])';
+                v_pos := 1;
+                LOOP
+                    v_s := regexp_instr(v_fold, v_pat, v_pos, 1, 0, '', 2);
+                    EXIT WHEN v_s = 0;
+                    v_e := regexp_instr(v_fold, v_pat, v_pos, 1, 1, '', 2);
+                    v_out := v_out || jsonb_build_array(jsonb_build_array(v_map[v_s], v_map[v_e - 1] + 1));
+                    v_pos := v_e;
+                END LOOP;
+                -- Lettres isolées recollées
+                v_pat := '(^|[^a-z0-9])(' || regexp_replace(v_key, '[^a-z0-9]', '', 'g') || '(s|x)?)($|[^a-z0-9])';
+                v_pos := 1;
+                LOOP
+                    v_s := regexp_instr(v_jtext, v_pat, v_pos, 1, 0, '', 2);
+                    EXIT WHEN v_s = 0;
+                    v_e := regexp_instr(v_jtext, v_pat, v_pos, 1, 1, '', 2);
+                    v_out := v_out || jsonb_build_array(jsonb_build_array(v_jmap[v_s], v_jmap[v_e - 1] + 1));
+                    v_pos := v_e;
+                END LOOP;
+            END LOOP;
+            RETURN v_out;
+        END;
+        $$;
+        
+        -- Plusieurs textes d'un coup (file de l'administration : un appel pour toute la page)
+        CREATE OR REPLACE FUNCTION public.order_review_marks_many(p_texts text[])
+        RETURNS jsonb
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT COALESCE(jsonb_agg(public.order_review_marks(t.v) ORDER BY t.n), '[]'::jsonb)
+              FROM unnest(COALESCE(p_texts[1:600], ARRAY[]::text[])) WITH ORDINALITY AS t(v, n);
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 5. Portions du plat du jour (T6, rupture en un geste)
+        -- ----------------------------------------------------------------------------
+        -- Recopie de 20261130000002_l12a_catalogue.sql:318-369 (dernière définition ; aucune autre migration ne la redéfinit) ;
+        -- changements (lignes ajoutées seulement) : produit archivé refusé (PRODUCT_ARCHIVED) ; p.sold_out = true ramène les
+        -- portions du jour à ce qui est déjà vendu (« Plus de … » depuis « Ma journée »).
+        CREATE OR REPLACE FUNCTION public.order_daily_portions_set(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_actor    uuid := public.try_uuid(p->>'actor_id');
+            v_product  uuid := public.try_uuid(p->>'product_id');
+            v_portions integer;
+            v_day      date := public.hall_dakar_now()::date;
+            pr         record;
+            v_sold     integer;
+            v_sold_out boolean := COALESCE(jsonb_typeof(p->'sold_out') = 'boolean' AND (p->>'sold_out')::boolean, FALSE);
+        BEGIN
+            BEGIN
+                v_portions := (p->>'portions')::int;
+            EXCEPTION WHEN others THEN
+                v_portions := NULL;
+            END;
+            -- Lot 12c : rupture en un geste (« Plus de … ») : portions ramenées à ce qui est déjà vendu (calculé sous le verrou)
+            IF v_sold_out THEN
+                v_portions := 0;
+            END IF;
+            IF v_portions IS NULL OR v_portions NOT BETWEEN 0 AND 10000 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_PORTIONS', 'message', 'Indiquez un nombre de portions entre 0 et 10 000.');
+            END IF;
+            SELECT pd.*, pa.user_id AS owner_id, pa.status::text AS partner_status INTO pr
+              FROM public.products pd JOIN public.partners pa ON pa.id = pd.partner_id WHERE pd.id = v_product;
+            IF v_product IS NULL OR NOT FOUND OR v_actor IS NULL OR pr.owner_id <> v_actor
+               OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_actor AND u.status::text = 'ACTIF') THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Ce produit n’existe pas ou n’est pas le vôtre.');
+            END IF;
+            IF pr.partner_status <> 'VALIDE' THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PARTNER_NOT_VALIDATED', 'message', 'Votre fiche doit être validée pour modifier la vente.');
+            END IF;
+            IF NOT pr.is_daily_special THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'NOT_DAILY_SPECIAL', 'message', 'Ce produit n’est pas un plat du jour.');
+            END IF;
+            -- Lot 12c (contre-vérification T6) : un produit archivé ne change plus
+            IF pr.archived_at IS NOT NULL THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_ARCHIVED', 'message', 'Ce produit est archivé : il ne se modifie plus.');
+            END IF;
+            -- Même verrou que la vente d'une portion
+            PERFORM pg_advisory_xact_lock(hashtextextended('order_portions:' || v_product::text || ':' || v_day::text, 0));
+            SELECT sold INTO v_sold FROM public.product_daily_portions WHERE product_id = v_product AND day = v_day;
+            IF v_sold_out THEN
+                v_portions := COALESCE(v_sold, 0);
+            END IF;
+            IF COALESCE(v_sold, 0) > v_portions THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'BELOW_SOLD',
+                    'message', format('%s portions sont déjà vendues aujourd’hui : indiquez au moins %s.', v_sold, v_sold));
+            END IF;
+            PERFORM set_config('event_village.order_flow', 'on', true);
+            INSERT INTO public.product_daily_portions (product_id, day, portions, sold)
+            VALUES (v_product, v_day, v_portions, 0)
+            ON CONFLICT (product_id, day) DO UPDATE SET portions = EXCLUDED.portions, updated_at = now();
+            INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, new_value)
+            VALUES (v_actor, 'PARTENAIRE', 'PRODUCT_DAILY_PORTIONS_SET', 'products', v_product,
+                    jsonb_build_object('day', v_day, 'portions', v_portions, 'sold', COALESCE(v_sold, 0)));
+            RETURN jsonb_build_object('ok', true, 'product_id', v_product, 'day', v_day, 'portions', v_portions, 'sold', COALESCE(v_sold, 0));
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 6. Avis ajoutés (point 7) : types, déclencheurs, rappels
+        -- ----------------------------------------------------------------------------
+        -- Règle de nuit (finition 4, notification_types.night_policy) : SEND = tout de suite, la nuit aussi ; DEFER = SMS et push
+        -- préparés la nuit reportés à la fin de la plage. Code bloqué, délai de réponse, préparation, commande prête et rappel
+        -- d'une commande prévue concernent une commande en cours ou à venir dans l'heure : tout de suite. Décision sur un
+        -- produit, remboursement bloqué, revue groupée : reportés.
+        INSERT INTO public.notification_types (type, family, topic, channels, audience, suspended_policy, sync_only, admin_permission, night_policy) VALUES
+            ('ORDER_CODE_LOCKED',           'ESSENTIAL', NULL, ARRAY['IN_APP','PUSH','EMAIL','SMS'], 'CLIENT',  'BLOCK', FALSE, NULL,                'SEND'),
+            ('ORDER_RESPONSE_REMINDER',     'ESSENTIAL', NULL, ARRAY['IN_APP','PUSH','EMAIL','SMS'], 'PARTNER', 'BLOCK', FALSE, NULL,                'SEND'),
+            ('ORDER_PREP_REMINDER',         'ESSENTIAL', NULL, ARRAY['IN_APP','PUSH','EMAIL','SMS'], 'PARTNER', 'BLOCK', FALSE, NULL,                'SEND'),
+            ('ORDER_READY_COURIER',         'ESSENTIAL', NULL, ARRAY['IN_APP','PUSH','EMAIL','SMS'], 'CLIENT',  'BLOCK', FALSE, NULL,                'SEND'),
+            ('ORDER_SCHEDULED_REMINDER',    'ESSENTIAL', NULL, ARRAY['IN_APP','PUSH','EMAIL','SMS'], 'CLIENT',  'BLOCK', FALSE, NULL,                'SEND'),
+            ('PRODUCT_DECISION_SMS',        'ESSENTIAL', NULL, ARRAY['SMS'],                         'PARTNER', 'ALLOW', FALSE, NULL,                'DEFER'),
+            ('ADMIN_ORDER_REFUND_BLOCKED',  'ESSENTIAL', NULL, ARRAY['SMS'],                         'ADMIN',   'BLOCK', FALSE, 'refunds.manage',    'DEFER'),
+            ('ADMIN_PRODUCTS_REVIEW_BATCH', 'ESSENTIAL', NULL, ARRAY['IN_APP','EMAIL'],              'ADMIN',   'BLOCK', FALSE, 'partners.validate', 'DEFER')
+        ON CONFLICT (type) DO UPDATE SET
+            family = EXCLUDED.family, topic = EXCLUDED.topic, channels = EXCLUDED.channels, audience = EXCLUDED.audience,
+            suspended_policy = EXCLUDED.suspended_policy, sync_only = EXCLUDED.sync_only, admin_permission = EXCLUDED.admin_permission,
+            night_policy = EXCLUDED.night_policy;
+        
+        -- P1 code bloqué (client) et P4 commande prête (livreur) : déclencheur sur la commande (aucune fonction d'étape recopiée)
+        CREATE OR REPLACE FUNCTION private.order_extra_notify()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_max integer := public.fin_setting_num('orders.code_max_attempts')::int;
+        BEGIN
+            IF NEW.venue_id IS NULL OR NEW.order_state IS NULL THEN
+                RETURN NULL;
+            END IF;
+            IF NEW.code_attempts >= v_max AND OLD.code_attempts < v_max AND NEW.code_hash IS NOT NULL THEN
+                PERFORM public.order_notify('ORDER_CODE_LOCKED', NEW.id, 'CLIENT', '{}'::jsonb,
+                                            to_char(COALESCE(NEW.code_issued_at, now()), 'YYYYMMDDHH24MISSUS'));
+            END IF;
+            IF NEW.order_state = 'PRETE' AND OLD.order_state IS DISTINCT FROM 'PRETE' AND NEW.delivery_mode::text = 'LIVRAISON'
+               AND NEW.courier_user_id IS NOT NULL THEN
+                PERFORM public.order_notify('ORDER_READY_COURIER', NEW.id, 'COURIER', '{}'::jsonb, NEW.courier_user_id::text);
+            END IF;
+            RETURN NULL;
+        END;
+        $$;
+        DROP TRIGGER IF EXISTS trg_orders_extra_notify ON public.orders;
+        CREATE TRIGGER trg_orders_extra_notify
+            AFTER UPDATE OF code_attempts, order_state ON public.orders
+            FOR EACH ROW EXECUTE FUNCTION private.order_extra_notify();
+        
+        -- P6 remboursement d'une commande bloqué, échoué ou incertain : SMS aux administrateurs refunds.manage (la cloche, le
+        -- téléphone et l'email partent déjà par ADMIN_REFUND_TO_RETRY et ADMIN_CASHOUT_UNCERTAIN)
+        CREATE OR REPLACE FUNCTION private.order_refund_blocked_notify()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_number text;
+            v_state  text;
+        BEGIN
+            IF NEW.kind <> 'REFUND' OR NEW.payment_id IS NULL THEN
+                RETURN NULL;
+            END IF;
+            v_state := CASE
+                WHEN NEW.status = 'ECHOUE' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'ECHOUE') THEN 'ECHOUE'
+                WHEN NEW.status = 'INCERTAIN' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'INCERTAIN') THEN 'INCERTAIN'
+                WHEN NEW.status = 'A_ENVOYER' AND NEW.blocked_reason IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.blocked_reason IS NULL) THEN 'BLOQUE'
+            END;
+            IF v_state IS NULL THEN
+                RETURN NULL;
+            END IF;
+            SELECT o.order_number INTO v_number
+              FROM public.payments p JOIN public.orders o ON o.id = p.order_id
+             WHERE p.id = NEW.payment_id AND o.venue_id IS NOT NULL;
+            IF v_number IS NULL THEN
+                RETURN NULL;
+            END IF;
+            PERFORM public.notif_enqueue_admins(jsonb_build_object(
+                'type', 'ADMIN_ORDER_REFUND_BLOCKED',
+                'ref', NEW.id::text || ':' || COALESCE(NEW.attempt_count, 0)::text || ':' || v_state,
+                'data', jsonb_build_object('cashout_id', NEW.id, 'amount', NEW.amount, 'order_number', v_number, 'cashout_status', v_state)));
+            RETURN NULL;
+        END;
+        $$;
+        DROP TRIGGER IF EXISTS trg_cashouts_order_refund_blocked ON public.cashouts;
+        CREATE TRIGGER trg_cashouts_order_refund_blocked
+            AFTER INSERT OR UPDATE OF status, blocked_reason ON public.cashouts
+            FOR EACH ROW EXECUTE FUNCTION private.order_refund_blocked_notify();
+        
+        -- P2, P3, P7 : rappels (appelée par /api/cron/orders après order_tick ; idempotente : un avis par commande et par rappel)
+        -- p : now (facultatif, tests)
+        CREATE OR REPLACE FUNCTION public.order_reminders(p jsonb DEFAULT '{}'::jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_now  timestamptz := COALESCE(public.try_timestamptz(p->>'now'), now());
+            r      record;
+            v_resp integer := 0;
+            v_prep integer := 0;
+            v_soon integer := 0;
+        BEGIN
+            -- P2 : commande reçue, moins de 5 minutes pour répondre (partenaire)
+            FOR r IN SELECT o.id FROM public.orders o
+                      WHERE o.venue_id IS NOT NULL AND o.order_state = 'RECUE'
+                        AND o.response_due_at > v_now AND o.response_due_at <= v_now + interval '5 minutes' LOOP
+                v_resp := v_resp + public.order_notify('ORDER_RESPONSE_REMINDER', r.id, 'OWNER', '{}'::jsonb, 'reponse');
+            END LOOP;
+            -- P3 : commande pour plus tard, acceptée plus d'une heure avant l'heure prévue : lancer la préparation (partenaire)
+            FOR r IN SELECT o.id FROM public.orders o
+                      WHERE o.venue_id IS NOT NULL AND o.order_state = 'ACCEPTEE' AND NOT o.asap
+                        AND o.scheduled_for > v_now
+                        AND o.scheduled_for - make_interval(mins => COALESCE(o.prep_minutes, 30)) <= v_now
+                        AND o.scheduled_for >= o.accepted_at + interval '1 hour' LOOP
+                v_prep := v_prep + public.order_notify('ORDER_PREP_REMINDER', r.id, 'OWNER', '{}'::jsonb, 'preparation');
+            END LOOP;
+            -- P7 : commande prévue un autre jour que sa transmission, 1 heure avant (client)
+            FOR r IN SELECT o.id FROM public.orders o
+                      WHERE o.venue_id IS NOT NULL AND NOT o.asap AND o.closed_at IS NULL AND o.received_at IS NOT NULL
+                        AND o.order_state IN ('RECUE', 'ACCEPTEE', 'EN_PREPARATION', 'PRETE')
+                        AND (o.scheduled_for AT TIME ZONE 'Africa/Dakar')::date <> (o.received_at AT TIME ZONE 'Africa/Dakar')::date
+                        AND o.scheduled_for > v_now AND o.scheduled_for <= v_now + interval '1 hour' LOOP
+                v_soon := v_soon + public.order_notify('ORDER_SCHEDULED_REMINDER', r.id, 'CLIENT', '{}'::jsonb, 'une-heure');
+            END LOOP;
+            RETURN jsonb_build_object('ok', true, 'response_reminders', v_resp, 'prep_reminders', v_prep, 'scheduled_reminders', v_soon);
+        END;
+        $$;
+        
+        -- Date lue dans un texte, ou NULL (paramètre « now » des tests)
+        CREATE OR REPLACE FUNCTION public.try_timestamptz(p_value text)
+        RETURNS timestamptz
+        LANGUAGE plpgsql
+        IMMUTABLE
+        SET search_path = public
+        AS $$
+        BEGIN
+            RETURN NULLIF(p_value, '')::timestamptz;
+        EXCEPTION WHEN others THEN
+            RETURN NULL;
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 7. Lecture REST des produits (T4) : droits par colonne
+        -- ----------------------------------------------------------------------------
+        -- Un droit SELECT sur la table l'emporte sur un retrait par colonne : le droit de table est retiré, puis rendu colonne par
+        -- colonne, sauf les colonnes de la vérification et de l'archivage. La règle de lignes products_read (lot 12b) ne change
+        -- pas. Une colonne ajoutée plus tard à products n'est pas lisible par la REST tant qu'un lot ne la donne pas.
+        DO $$
+        DECLARE
+            v_cols text;
+        BEGIN
+            SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position) INTO v_cols
+              FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'products'
+               AND column_name NOT IN ('review_state', 'review_words', 'review_requested_at', 'review_note', 'review_cleared_words', 'archived_at');
+            EXECUTE 'REVOKE SELECT ON public.products FROM anon, authenticated';
+            EXECUTE format('GRANT SELECT (%s) ON public.products TO anon, authenticated', v_cols);
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 8. Droits
+        -- ----------------------------------------------------------------------------
+        REVOKE ALL ON FUNCTION private.order_review_backfill_candidates() FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_review_batch_done(integer, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_review_backfill(text, uuid) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_extra_notify() FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_refund_blocked_notify() FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION public.order_product_review_request(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_category_save(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_review_marks(text) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_review_marks_many(text[]) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_daily_portions_set(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_reminders(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.try_timestamptz(text) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_product_review_request(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_category_save(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_review_marks(text) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_review_marks_many(text[]) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_daily_portions_set(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_reminders(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.try_timestamptz(text) TO service_role;
+        
+        -- ----------------------------------------------------------------------------
+        -- 9. Revue, une fois, des produits déjà enregistrés (T3) : « à vérifier » posé sur les produits non archivés, ni
+        --    réglementés ni refusés, dont le texte contient un mot de la liste ; un avis groupé à l'administration. Rejouable
+        --    (un produit déjà « à vérifier » n'est pas repris).
+        -- ----------------------------------------------------------------------------
+        SELECT set_config('event_village.product_write', 'on', true);
+        WITH flagged AS (
+            UPDATE public.products p
+               SET review_state = 'A_VERIFIER', review_words = c.words, review_requested_at = now(), updated_at = now()
+              FROM private.order_review_backfill_candidates() c
+             WHERE p.id = c.product_id
+            RETURNING p.id)
+        SELECT private.order_review_batch_done((SELECT count(*)::int FROM flagged), 'MIGRATION', NULL);
+        SELECT set_config('event_village.product_write', 'off', true);
+        
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12b, migration 01 : code de remise visible dans l'application, pour le client seul
+        -- ============================================================================
+        -- Décision 1 du client (21/11, docs/lot12a-rapport.md § 12) : « Au lot 12b, le client verra aussi son code dans
+        -- l'application, sur sa commande, compte connecté seulement : code gardé chiffré dans private, jamais lisible par la
+        -- partenaire ni le livreur, jamais en file, push ni email. »
+        -- Avant ce lot, seule l'empreinte HMAC du code est gardée (orders.code_hash, private.order_issue_code,
+        -- 20261130000006_l12a_etapes.sql:281-299) : le code n'existe en clair que dans la réponse de la fonction à la route,
+        -- qui l'envoie par SMS et l'efface.
+        --  1. clé de chiffrement private.order_code_enc_key (32 octets tirés une fois, distincte de la clé de l'empreinte),
+        --     lisible seulement par les fonctions en base (aucun rôle de l'API, pas même le rôle de service) ;
+        --  2. table private.order_codes (commande, code chiffré, empreinte au moment de l'émission, heure) : aucun droit pour un
+        --     rôle de l'API ; le schéma private n'est pas exposé ;
+        --  3. private.order_issue_code : SEULE recopie du lot, depuis sa dernière définition
+        --     (20261130000006_l12a_etapes.sql:281-299, aucune redéfinition depuis) ; ajout : le code tiré est aussi écrit chiffré
+        --     dans private.order_codes (une ligne par commande, remplacée à chaque nouveau code) ;
+        --  4. déclencheur private.order_codes_clear (après mise à jour de orders.code_hash) : code effacé dès que l'empreinte
+        --     repasse à vide (remise : 20261130000006:419 ; fin de la commande : 20261130000006:160) ou change sans nouvelle
+        --     émission ; aucune fonction existante n'est recopiée pour l'effacement ;
+        --  5. order_code_reveal(p) : lecture du code par le client connecté de la commande (compte actif), commande ouverte et
+        --     en attente de remise (prête à retirer, en route), code émis et toujours valable (empreinte vérifiée) ; jamais pour
+        --     la partenaire, le livreur ni l'administration ; aucune trace du code dans le journal.
+        -- Rejouable : CREATE … IF NOT EXISTS, clé tirée une seule fois (ON CONFLICT DO NOTHING), CREATE OR REPLACE,
+        -- DROP TRIGGER IF EXISTS puis CREATE, REVOKE et GRANT idempotents. Aucun BEGIN ni COMMIT.
+        -- ============================================================================
+        
+        -- ----------------------------------------------------------------------------
+        -- 1. Clé de chiffrement du code
+        -- ----------------------------------------------------------------------------
+        CREATE SCHEMA IF NOT EXISTS private;
+        REVOKE ALL ON SCHEMA private FROM PUBLIC;
+        REVOKE ALL ON SCHEMA private FROM anon, authenticated, service_role;
+        
+        CREATE TABLE IF NOT EXISTS private.order_code_enc_key (
+            singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+            secret BYTEA NOT NULL CHECK (octet_length(secret) >= 32),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        REVOKE ALL ON TABLE private.order_code_enc_key FROM PUBLIC, anon, authenticated, service_role;
+        INSERT INTO private.order_code_enc_key (singleton, secret) VALUES (TRUE, extensions.gen_random_bytes(32))
+        ON CONFLICT (singleton) DO NOTHING;
+        
+        -- ----------------------------------------------------------------------------
+        -- 2. Codes chiffrés (une ligne par commande, tant que le code vaut)
+        -- ----------------------------------------------------------------------------
+        CREATE TABLE IF NOT EXISTS private.order_codes (
+            order_id UUID PRIMARY KEY REFERENCES public.orders(id) ON DELETE CASCADE,
+            code_enc BYTEA NOT NULL,
+            code_hash TEXT NOT NULL CHECK (code_hash ~ '^[0-9a-f]{64}$'),
+            issued_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        REVOKE ALL ON TABLE private.order_codes FROM PUBLIC, anon, authenticated, service_role;
+        COMMENT ON TABLE private.order_codes IS
+            'Lot 12b : code de remise chiffré (pgp_sym_encrypt, clé private.order_code_enc_key), lu seulement par order_code_reveal pour le client de la commande ; effacé quand orders.code_hash repasse à vide ou change.';
+        
+        -- Chiffrement et déchiffrement : la clé n'est lue que par ces deux aides
+        CREATE OR REPLACE FUNCTION private.order_code_encrypt(p_code text)
+        RETURNS bytea
+        LANGUAGE sql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT extensions.pgp_sym_encrypt(p_code, encode(k.secret, 'hex'), 'cipher-algo=aes256')
+              FROM private.order_code_enc_key k WHERE k.singleton;
+        $$;
+        
+        CREATE OR REPLACE FUNCTION private.order_code_decrypt(p_enc bytea)
+        RETURNS text
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT extensions.pgp_sym_decrypt(p_enc, encode(k.secret, 'hex'))
+              FROM private.order_code_enc_key k WHERE k.singleton;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 3. Émission d'un code : recopie de 20261130000006_l12a_etapes.sql:281-299 (dernière définition) ; ajout : le code
+        --    est aussi écrit chiffré dans private.order_codes
+        -- ----------------------------------------------------------------------------
+        -- Nouveau code à 4 chiffres (tirage cryptographique) ; seule son empreinte est gardée ; essais remis à zéro
+        CREATE OR REPLACE FUNCTION private.order_issue_code(p_order_id uuid)
+        RETURNS text
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            b      bytea := extensions.gen_random_bytes(4);
+            v_code text;
+            v_hash text;
+        BEGIN
+            v_code := lpad((((get_byte(b, 0)::bigint << 24) | (get_byte(b, 1) << 16) | (get_byte(b, 2) << 8) | get_byte(b, 3)) % 10000)::text, 4, '0');
+            PERFORM set_config('event_village.order_flow', 'on', true);
+            UPDATE public.orders
+               SET code_hash = private.order_code_hash(id, v_code), code_issued_at = now(), code_attempts = 0, updated_at = now()
+             WHERE id = p_order_id;
+            SELECT code_hash INTO v_hash FROM public.orders WHERE id = p_order_id;
+            -- Lot 12b : code visible par le client dans sa commande (décision 1 du 21/11), gardé chiffré ; l'ancien est remplacé
+            IF v_hash IS NOT NULL THEN
+                INSERT INTO private.order_codes (order_id, code_enc, code_hash, issued_at)
+                VALUES (p_order_id, private.order_code_encrypt(v_code), v_hash, now())
+                ON CONFLICT (order_id) DO UPDATE SET code_enc = EXCLUDED.code_enc, code_hash = EXCLUDED.code_hash, issued_at = EXCLUDED.issued_at;
+            END IF;
+            RETURN v_code;
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 4. Effacement : dès que l'empreinte de la commande repasse à vide (remise, fin) ou ne correspond plus au code gardé
+        -- ----------------------------------------------------------------------------
+        CREATE OR REPLACE FUNCTION private.order_codes_clear()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        BEGIN
+            DELETE FROM private.order_codes c
+             WHERE c.order_id = NEW.id AND (NEW.code_hash IS NULL OR c.code_hash IS DISTINCT FROM NEW.code_hash);
+            RETURN NULL;
+        END;
+        $$;
+        
+        DROP TRIGGER IF EXISTS trg_z_order_codes_clear ON public.orders;
+        CREATE TRIGGER trg_z_order_codes_clear
+            AFTER UPDATE OF code_hash ON public.orders
+            FOR EACH ROW
+            WHEN (NEW.code_hash IS DISTINCT FROM OLD.code_hash)
+            EXECUTE FUNCTION private.order_codes_clear();
+        
+        -- ----------------------------------------------------------------------------
+        -- 5. Lecture du code par le client de la commande
+        -- ----------------------------------------------------------------------------
+        -- p : order_id, client_id (compte de la session, jamais lu dans la requête). Rend { ok, code, issued_at, locked,
+        -- resends_left } ou { ok: false, code, message } ; une commande d'un autre compte répond « introuvable ».
+        CREATE OR REPLACE FUNCTION public.order_code_reveal(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_order_id uuid := public.try_uuid(p->>'order_id');
+            v_client   uuid := public.try_uuid(p->>'client_id');
+            o          record;
+            c          record;
+            v_code     text;
+        BEGIN
+            IF v_order_id IS NULL OR v_client IS NULL
+               OR NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = v_client AND u.status::text = 'ACTIF') THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'ORDER_NOT_FOUND', 'message', 'Commande introuvable.');
+            END IF;
+            SELECT id, client_id, venue_id, order_state, delivery_mode::text AS mode, code_hash, code_attempts, code_resends, closed_at
+              INTO o FROM public.orders WHERE id = v_order_id;
+            IF NOT FOUND OR o.venue_id IS NULL OR o.client_id <> v_client THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'ORDER_NOT_FOUND', 'message', 'Commande introuvable.');
+            END IF;
+            -- Commande ouverte et en attente de remise : prête à retirer, ou en route
+            IF o.closed_at IS NOT NULL OR o.code_hash IS NULL
+               OR NOT ((o.mode = 'RETRAIT' AND o.order_state = 'PRETE') OR (o.mode = 'LIVRAISON' AND o.order_state = 'EN_ROUTE')) THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'NO_CODE_YET',
+                    'message', 'Le code apparaît quand la commande est prête à retirer ou en route.');
+            END IF;
+            SELECT code_enc, code_hash, issued_at INTO c FROM private.order_codes WHERE order_id = o.id;
+            IF NOT FOUND OR c.code_hash IS DISTINCT FROM o.code_hash THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'CODE_NOT_AVAILABLE',
+                    'message', 'Ce code n’est plus affichable : demandez un nouveau code, il s’affichera ici.');
+            END IF;
+            v_code := private.order_code_decrypt(c.code_enc);
+            -- Défense en profondeur : jamais un code qui ne correspond plus à l'empreinte de la commande
+            IF v_code IS NULL OR v_code !~ '^[0-9]{4}$' OR private.order_code_hash(o.id, v_code) IS DISTINCT FROM o.code_hash THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'CODE_NOT_AVAILABLE',
+                    'message', 'Ce code n’est plus affichable : demandez un nouveau code, il s’affichera ici.');
+            END IF;
+            RETURN jsonb_build_object('ok', true, 'code', v_code, 'issued_at', c.issued_at,
+                'locked', o.code_attempts >= public.fin_setting_num('orders.code_max_attempts')::int,
+                'resends_left', GREATEST(public.fin_setting_num('orders.code_resend_max')::int - o.code_resends, 0));
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 6. Droits : aides privées à aucun rôle de l'API ; lecture du code au rôle de service seulement (route serveur)
+        -- ----------------------------------------------------------------------------
+        REVOKE ALL ON FUNCTION private.order_code_encrypt(text) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_code_decrypt(bytea) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_issue_code(uuid) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION private.order_codes_clear() FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION public.order_code_reveal(jsonb) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_code_reveal(jsonb) TO service_role;
+        
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12b, migration 02 : carte des plats publique d'un établissement, lecture REST des produits
+        -- ============================================================================
+        -- Relevé de l'existant (docs/lot12-etat-des-lieux.md § 2.3, revérifié dans le code le 26/11) :
+        --  - GET /api/restaurants/[id]/menu lisait les produits d'une PARTENAIRE (aucun établissement, aucun supplément, aucune
+        --    portion, aucune zone, aucun horaire) et remplaçait l'image absente par une photo d'un site extérieur ;
+        --  - la règle REST products_read (0003_rls.sql:237-238, jamais redéfinie) laisse lire, avec la clé anon, tout produit
+        --    DISPONIBLE, même d'une partenaire suspendue ou d'un établissement non validé, retiré ou sans établissement ;
+        --    product_options_read et product_daily_portions_read (20261130000002_l12a_catalogue.sql:425-430) suivent la règle
+        --    de lecture du produit.
+        --  1. order_venue_menu(établissement) : fonction NOUVELLE, réservée au rôle de service (route publique du serveur) ;
+        --     rien si le service est fermé, l'établissement inactif, non validé, fermé à la commande ou d'une partenaire non
+        --     VALIDE. Rend : l'établissement (nom, sorte, ville, adresse, description, photos), la vente (modes, acompte proposé
+        --     en pourcentage, paiement à la remise, préparation, frais de service), les horaires de la semaine, les fenêtres où
+        --     une heure peut être choisie (7 jours, horaires moins les fermetures, après la préparation), « tout de suite »
+        --     possible ou non, les zones de livraison (frais, minimum), les tables pour une commande sur place, les catégories et
+        --     les produits (photo de la fiche ou rien, prix, suppléments actifs, disponibilité, plat du jour et portions
+        --     restantes, réglementé ou en vérification : affiché avec son prix, jamais commandable). Aucun champ interne : ni
+        --     stock exact, ni décision de l'administration, ni mots trouvés par la vérification.
+        --     Produits retirés par le lot 12c (products.archived_at, zones order_delivery_zones.archived_at) et produits « à
+        --     vérifier » (products.review_state) : colonnes lues directement (migration renommée après celles du 12c,
+        --     20261224000001-005, où elles sont créées) ; « non commandable » suit product_regulated (lecture seule).
+        --  2. Deux aides des règles de lecture (SECURITY DEFINER, search_path fixé, un booléen ; modèle : listed_venue de
+        --     20261210000001_cb3_lieux_publics.sql:53-64), exécutables par anon, authenticated et service_role, retirées à PUBLIC,
+        --     ajoutées à la liste blanche des aides (supabase/hotfix/2026-10-31-lot1a/03-verification.sql,
+        --     tests/schema/fonctions-privileges.test.ts) :
+        --       product_public(produit) : DISPONIBLE, d'un établissement listé (listed_venue), non retiré (archived_at vide) ;
+        --       product_owner_or_admin(produit) : la partenaire propriétaire du produit ou l'administration.
+        --     Contre-vérification du lot 12b (T1) : une règle ne lit jamais la ligne entière du produit (le 12c ne rend à anon
+        --     et authenticated que certaines colonnes de products, 20261224000005:571-582 ; une sous-requête de règle est
+        --     vérifiée avec les droits de l'appelant) ;
+        --  3. products_read : product_public, plus la partenaire propriétaire et l'administration (règle d'origine
+        --     0003_rls.sql:237-238) ; product_options_read (supplément actif pour le public) et product_daily_portions_read :
+        --     mêmes conditions par les deux aides, sans sous-requête sur products.
+        -- Rejouable : CREATE OR REPLACE, DROP POLICY IF EXISTS puis CREATE, REVOKE et GRANT idempotents. Aucun BEGIN ni COMMIT.
+        -- ============================================================================
+        
+        -- ----------------------------------------------------------------------------
+        -- 1. Carte des plats publique
+        -- ----------------------------------------------------------------------------
+        CREATE OR REPLACE FUNCTION public.order_venue_menu(p_venue_id uuid)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v          record;
+            v_now      timestamp := date_trunc('minute', public.hall_dakar_now());
+            v_today    date := public.hall_dakar_now()::date;
+            v_prep     integer;
+            v_windows  jsonb;
+            v_asap     boolean;
+            v_hours    jsonb;
+            v_products jsonb;
+            v_cats     jsonb;
+            v_zones    jsonb;
+            v_spots    jsonb;
+        BEGIN
+            IF p_venue_id IS NULL OR NOT public.fin_setting_bool('features.orders_enabled') THEN
+                RETURN NULL;
+            END IF;
+            SELECT ve.* INTO v
+              FROM public.venues ve JOIN public.partners pa ON pa.id = ve.partner_id
+             WHERE ve.id = p_venue_id AND ve.is_active AND ve.validation_status = 'VALIDEE' AND pa.status::text = 'VALIDE' AND ve.orders_open;
+            IF NOT FOUND THEN
+                RETURN NULL;
+            END IF;
+            v_prep := COALESCE(v.order_prep_minutes, public.fin_setting_num('orders.prep_minutes_default')::int);
+        
+            -- Horaires de la semaine (jour ISO, ouverture, fermeture « HH:MI », 24:00 possible)
+            SELECT COALESCE(jsonb_agg(jsonb_build_array(h.weekday, to_char(h.opens_at, 'HH24:MI'),
+                                                        CASE WHEN h.closes_at = time '00:00' THEN '24:00' ELSE to_char(h.closes_at, 'HH24:MI') END)
+                                      ORDER BY h.weekday, h.opens_at), '[]'::jsonb)
+              INTO v_hours
+              FROM public.venue_opening_hours h WHERE h.venue_id = v.id;
+        
+            -- Fenêtres où une heure peut être choisie : horaires des 7 jours, moins les fermetures, de maintenant + préparation
+            -- à 7 jours (même borne que order_quote_compute ; la base refait tous les contrôles au devis)
+            SELECT COALESCE(jsonb_agg(jsonb_build_array(to_char(lower(r), 'YYYY-MM-DD"T"HH24:MI'), to_char(upper(r), 'YYYY-MM-DD"T"HH24:MI'))
+                                      ORDER BY lower(r)), '[]'::jsonb)
+              INTO v_windows
+              FROM unnest((
+                    (SELECT range_agg(public.venue_range(g.day::date, h.opens_at, h.closes_at))
+                       FROM generate_series((v_today - 1)::timestamp, (v_today + 7)::timestamp, interval '1 day') AS g(day)
+                       JOIN public.venue_opening_hours h ON h.venue_id = v.id AND h.weekday = EXTRACT(ISODOW FROM g.day))
+                    - COALESCE((SELECT range_agg(c.period) FROM public.venue_closures c
+                                 WHERE c.venue_id = v.id AND c.cancelled_at IS NULL AND c.ends_at > v_now), '{}'::tsmultirange))
+                   * tsmultirange(tsrange(v_now + make_interval(mins => v_prep), v_now + interval '7 days', '[)'))) AS r;
+        
+            -- « Tout de suite » : ouvert pendant toute la préparation (règle de order_quote_compute) et aucune fermeture
+            v_asap := public.venue_open_covers(v.id, tsrange(v_now, v_now + make_interval(mins => v_prep + 1), '[)'))
+                      AND NOT public.venue_closed_during(v.id, tsrange(v_now, v_now + make_interval(mins => v_prep + 1), '[)'));
+        
+            -- Produits de l'établissement (retirés exclus) : disponibilité calculée, jamais le stock exact
+            SELECT COALESCE(jsonb_agg(x.item ORDER BY x.daily DESC, x.cat_order, x.cat_name, x.name, x.id), '[]'::jsonb)
+              INTO v_products
+              FROM (
+                SELECT pr.id, pr.name, pr.is_daily_special AS daily,
+                       COALESCE(cat.sort_order, 2147483647) AS cat_order, COALESCE(cat.name, '') AS cat_name,
+                       jsonb_build_object(
+                           'id', pr.id,
+                           'name', pr.name,
+                           'description', NULLIF(btrim(COALESCE(pr.description, '')), ''),
+                           'price', pr.price,
+                           'image', CASE WHEN cardinality(pr.images) > 0 AND NULLIF(btrim(pr.images[1]), '') IS NOT NULL THEN pr.images[1] END,
+                           'category_id', cat.id,
+                           'availability', CASE
+                               WHEN pr.status::text <> 'DISPONIBLE' THEN pr.status::text
+                               WHEN pr.is_stock_managed AND pr.stock_quantity IS NOT NULL AND pr.stock_quantity <= 0 THEN 'EPUISE'
+                               WHEN pr.is_daily_special AND COALESCE(dp.portions - dp.sold, 0) <= 0 THEN 'EPUISE'
+                               ELSE 'DISPONIBLE' END,
+                           'regulated', pr.is_regulated OR COALESCE(pr.regulated_admin, FALSE),
+                           'in_review', pr.review_state IS NOT NULL,
+                           'orderable', pr.status::text = 'DISPONIBLE' AND pr.price = trunc(pr.price)
+                               AND NOT public.product_regulated(pr.id)
+                               AND NOT (pr.is_stock_managed AND pr.stock_quantity IS NOT NULL AND pr.stock_quantity <= 0)
+                               AND NOT (pr.is_daily_special AND COALESCE(dp.portions - dp.sold, 0) <= 0),
+                           'daily', pr.is_daily_special,
+                           'portions_left', CASE WHEN pr.is_daily_special THEN GREATEST(COALESCE(dp.portions - dp.sold, 0), 0) END,
+                           'portions_total', CASE WHEN pr.is_daily_special THEN COALESCE(dp.portions, 0) END,
+                           'options', (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', o.id, 'name', o.name, 'price', o.price_delta)
+                                                                 ORDER BY o.sort_order, o.name, o.id), '[]'::jsonb)
+                                         FROM public.product_options o WHERE o.product_id = pr.id AND o.is_active)
+                       ) AS item
+                  FROM public.products pr
+                  LEFT JOIN public.product_categories cat ON cat.id = pr.category_id AND cat.is_active AND cat.partner_id = pr.partner_id
+                  LEFT JOIN public.product_daily_portions dp ON dp.product_id = pr.id AND dp.day = v_today
+                 WHERE pr.venue_id = v.id AND pr.partner_id = v.partner_id
+                   AND pr.archived_at IS NULL
+              ) x;
+        
+            -- Catégories qui ont au moins un produit dans la carte
+            SELECT COALESCE(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name) ORDER BY c.sort_order, c.name, c.id), '[]'::jsonb)
+              INTO v_cats
+              FROM public.product_categories c
+             WHERE c.is_active AND c.partner_id = v.partner_id
+               AND EXISTS (SELECT 1 FROM public.products pr WHERE pr.category_id = c.id AND pr.venue_id = v.id AND pr.archived_at IS NULL);
+        
+            -- Zones de livraison actives (non retirées), si la livraison est proposée
+            SELECT COALESCE(jsonb_agg(jsonb_build_object('id', z.id, 'name', z.name, 'fee', z.fee, 'min_order', z.min_order)
+                                      ORDER BY z.sort_order, z.name, z.id), '[]'::jsonb)
+              INTO v_zones
+              FROM public.order_delivery_zones z
+             WHERE z.venue_id = v.id AND z.is_active AND z.archived_at IS NULL AND 'LIVRAISON' = ANY (v.order_modes);
+        
+            -- Tables actives, si la commande sur place est proposée (liste ; QR de table plus tard)
+            SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'label', t.table_number, 'zone', rz.name)
+                                      ORDER BY rz.name NULLS FIRST, length(t.table_number), t.table_number, t.id), '[]'::jsonb)
+              INTO v_spots
+              FROM public.restaurant_tables t
+              LEFT JOIN public.restaurant_zones rz ON rz.id = t.zone_id
+             WHERE t.venue_id = v.id AND t.is_active AND 'SUR_PLACE' = ANY (v.order_modes);
+        
+            RETURN jsonb_build_object(
+                'venue', jsonb_build_object('id', v.id, 'name', v.name, 'kind', v.kind, 'city', v.city, 'address', v.address,
+                                            'description', NULLIF(btrim(COALESCE(v.description, '')), ''), 'photos', to_jsonb(COALESCE(v.photos, ARRAY[]::text[]))),
+                'ordering', jsonb_build_object(
+                    'modes', to_jsonb(v.order_modes),
+                    'deposit_percent', CASE WHEN v.order_deposit_allowed
+                                            THEN COALESCE(v.order_deposit_percent, public.fin_setting_num('orders.deposit_default_percent')::int) END,
+                    'pay_on_handover', v.order_pay_on_handover,
+                    'prep_minutes', v_prep,
+                    'service_fee_rate', public.fin_setting_num('orders.service_fee_rate'),
+                    'asap_available', v_asap,
+                    'now', to_char(v_now, 'YYYY-MM-DD"T"HH24:MI'),
+                    'windows', v_windows),
+                'hours', v_hours,
+                'zones', v_zones,
+                'spots', v_spots,
+                'categories', v_cats,
+                'products', v_products);
+        END;
+        $$;
+        
+        REVOKE ALL ON FUNCTION public.order_venue_menu(uuid) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_venue_menu(uuid) TO service_role;
+        
+        -- ----------------------------------------------------------------------------
+        -- 2. Aides des règles de lecture des produits (booléen seul, droits du propriétaire ; modèle : listed_venue)
+        -- ----------------------------------------------------------------------------
+        CREATE OR REPLACE FUNCTION public.product_public(p_product_id uuid)
+        RETURNS boolean
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT EXISTS (SELECT 1 FROM public.products pr
+                           WHERE pr.id = p_product_id AND pr.status = 'DISPONIBLE' AND pr.venue_id IS NOT NULL
+                             AND pr.archived_at IS NULL AND public.listed_venue(pr.venue_id));
+        $$;
+        REVOKE ALL ON FUNCTION public.product_public(uuid) FROM PUBLIC;
+        GRANT EXECUTE ON FUNCTION public.product_public(uuid) TO anon, authenticated, service_role;
+        
+        CREATE OR REPLACE FUNCTION public.product_owner_or_admin(p_product_id uuid)
+        RETURNS boolean
+        LANGUAGE sql
+        STABLE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+            SELECT public.is_admin()
+                OR EXISTS (SELECT 1 FROM public.products pr WHERE pr.id = p_product_id AND public.is_partner_owner(pr.partner_id));
+        $$;
+        REVOKE ALL ON FUNCTION public.product_owner_or_admin(uuid) FROM PUBLIC;
+        GRANT EXECUTE ON FUNCTION public.product_owner_or_admin(uuid) TO anon, authenticated, service_role;
+        
+        -- ----------------------------------------------------------------------------
+        -- 3. Lecture REST des produits : établissement listé seulement (plus la propriétaire et l'administration)
+        -- ----------------------------------------------------------------------------
+        -- products_read (dernière définition : 0003_rls.sql:237-238) ; changement : un produit n'est public que s'il est
+        -- DISPONIBLE, d'un établissement listé (actif, validé, partenaire VALIDE) et non retiré (product_public)
+        DROP POLICY IF EXISTS "products_read" ON public.products;
+        CREATE POLICY "products_read" ON public.products
+            FOR SELECT USING (public.product_public(id) OR public.is_partner_owner(partner_id) OR public.is_admin());
+        
+        -- product_options_read (dernière définition : 20261130000002_l12a_catalogue.sql:425-427) ; changement : supplément actif
+        -- d'un produit public, ou propriétaire / administration, sans sous-requête sur products
+        DROP POLICY IF EXISTS "product_options_read" ON public.product_options;
+        CREATE POLICY "product_options_read" ON public.product_options
+            FOR SELECT USING ((is_active AND public.product_public(product_id)) OR public.product_owner_or_admin(product_id));
+        
+        -- product_daily_portions_read (dernière définition : 20261130000002_l12a_catalogue.sql:428-430) ; changement : portions
+        -- d'un produit public, ou propriétaire / administration, sans sous-requête sur products
+        DROP POLICY IF EXISTS "product_daily_portions_read" ON public.product_daily_portions;
+        CREATE POLICY "product_daily_portions_read" ON public.product_daily_portions
+            FOR SELECT USING (public.product_public(product_id) OR public.product_owner_or_admin(product_id));
+        
+        -- ============================================================================
+        -- EVENT VILLAGE — LOT 12b, migration 03 : prix changé, double clic et rejeu (commande et paiement)
+        -- ============================================================================
+        -- Même règle que les tables d'un événement (contre-vérification du lot 11c-b, lib/event-tables/event-tables.server.ts
+        -- :140-153, :211-216, :254-262) : l'écran envoie le total qu'il affiche ; si la base calcule un autre montant, rien n'est
+        -- créé et le client voit le nouveau prix. Ici la comparaison est faite DANS la transaction de la base (aucune course
+        -- possible entre la comparaison et la création, aucune commande ni aucun paiement créé puis annulé).
+        --  1. orders.client_request_key : clé d'idempotence de la demande du client (8 à 128 caractères), unique par client ;
+        --     posée seulement par order_create_checked ;
+        --  2. order_create_checked(p) : enveloppe de order_create (aucune recopie) : verrous de l'établissement puis du client
+        --     (même ordre que order_create : aucun interblocage), demande déjà reçue avec la même clé → la même commande
+        --     (duplicate) ; sinon order_create dans un sous-bloc : si le total (expected_total) ou le montant à payer maintenant
+        --     (expected_to_pay) affichés ne correspondent plus au devis de la base, le sous-bloc est annulé (commande, lignes,
+        --     stock et portions rendus) et le refus ORDER_PRICE_CHANGED rend les nouveaux montants ;
+        --  3. order_payment_start(p) : enveloppe de order_payment_create (aucune recopie) : clé d'idempotence du paiement
+        --     (payments.client_idempotency_key, index unique existant uq_payments_client_idempotency) → même paiement
+        --     (duplicate) ; montant affiché (expected_amount) différent du montant de la base → sous-bloc annulé, aucun paiement
+        --     créé, refus ORDER_PRICE_CHANGED avec le nouveau montant. Contre-vérification du lot 12b (observation) : la clé est
+        --     liée à sa commande : la même clé envoyée pour une autre commande (ou déjà prise par un paiement de billets) est
+        --     refusée (IDEMPOTENCY_KEY_REUSED, message simple), jamais confondue avec le paiement d'une autre commande.
+        -- Toutes réservées au rôle de service (routes serveur). Rejouable : ADD COLUMN IF NOT EXISTS, index IF NOT EXISTS,
+        -- CREATE OR REPLACE, REVOKE et GRANT idempotents. Aucun BEGIN ni COMMIT.
+        -- ============================================================================
+        
+        -- ----------------------------------------------------------------------------
+        -- 1. Clé d'idempotence d'une commande
+        -- ----------------------------------------------------------------------------
+        ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS client_request_key TEXT;
+        ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_client_request_key_chk;
+        ALTER TABLE public.orders ADD CONSTRAINT orders_client_request_key_chk CHECK (
+            client_request_key IS NULL OR char_length(client_request_key) BETWEEN 8 AND 128);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_client_request_key
+            ON public.orders (client_id, client_request_key) WHERE client_request_key IS NOT NULL;
+        COMMENT ON COLUMN public.orders.client_request_key IS
+            'Lot 12b : clé d''idempotence de la demande de commande (en-tête Idempotency-Key), unique par client : un double clic ou un rejeu rend la même commande.';
+        
+        -- Montant affiché lu dans la demande : nombre entier positif, sinon NULL (aucune comparaison)
+        CREATE OR REPLACE FUNCTION private.order_expected_amount(p_value jsonb)
+        RETURNS numeric
+        LANGUAGE sql
+        IMMUTABLE
+        SET search_path = public
+        AS $$
+            SELECT CASE WHEN jsonb_typeof(p_value) = 'number' AND (p_value #>> '{}')::numeric >= 0
+                             AND (p_value #>> '{}')::numeric <= 100000000 AND (p_value #>> '{}')::numeric = trunc((p_value #>> '{}')::numeric)
+                        THEN (p_value #>> '{}')::numeric END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 2. Créer une commande au prix affiché
+        -- ----------------------------------------------------------------------------
+        CREATE OR REPLACE FUNCTION public.order_create_checked(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_client   uuid := public.try_uuid(p->>'client_id');
+            v_venue_id uuid := public.try_uuid(p->>'venue_id');
+            v_key      text := NULLIF(btrim(COALESCE(p->>'client_request_key', '')), '');
+            v_total    numeric := private.order_expected_amount(p->'expected_total');
+            v_now      numeric := private.order_expected_amount(p->'expected_to_pay');
+            v_existing uuid;
+            r          jsonb;
+            v_seen     jsonb;
+        BEGIN
+            IF v_key IS NOT NULL AND char_length(v_key) NOT BETWEEN 8 AND 128 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_REQUEST_KEY', 'message', 'Demande illisible : rechargez la page et réessayez.');
+            END IF;
+            -- Mêmes verrous, dans le même ordre, que order_create (verrous de transaction, repris sans attente par order_create)
+            IF v_venue_id IS NOT NULL AND v_client IS NOT NULL THEN
+                PERFORM public.order_venue_lock(v_venue_id);
+                PERFORM public.order_client_lock(v_client);
+            END IF;
+            IF v_key IS NOT NULL AND v_client IS NOT NULL THEN
+                SELECT id INTO v_existing FROM public.orders WHERE client_id = v_client AND client_request_key = v_key;
+                IF FOUND THEN
+                    RETURN jsonb_build_object('ok', true, 'duplicate', true, 'order_id', v_existing);
+                END IF;
+            END IF;
+            BEGIN
+                r := public.order_create(p);
+                IF (r->>'ok')::boolean THEN
+                    IF (v_total IS NOT NULL AND (r->>'goods_total')::numeric + (r->>'first_fee')::numeric <> v_total)
+                       OR (v_now IS NOT NULL AND (r->>'to_pay_now')::numeric <> v_now) THEN
+                        v_seen := jsonb_build_object('total', (r->>'goods_total')::numeric + (r->>'first_fee')::numeric,
+                                                     'to_pay_now', (r->>'to_pay_now')::numeric, 'goods_total', (r->>'goods_total')::numeric);
+                        RAISE EXCEPTION USING ERRCODE = 'OR412', MESSAGE = 'ORDER_PRICE_CHANGED';
+                    END IF;
+                    IF v_key IS NOT NULL THEN
+                        PERFORM set_config('event_village.order_flow', 'on', true);
+                        UPDATE public.orders SET client_request_key = v_key WHERE id = (r->>'order_id')::uuid;
+                    END IF;
+                END IF;
+            EXCEPTION WHEN SQLSTATE 'OR412' THEN
+                -- Sous-bloc annulé : ni commande, ni lignes, ni stock ou portions pris, ni journal, ni avis
+                RETURN jsonb_build_object('ok', false, 'code', 'ORDER_PRICE_CHANGED',
+                    'message', 'Le prix de votre commande a changé. Vérifiez avant de payer.') || v_seen;
+            END;
+            RETURN r;
+        END;
+        $$;
+        
+        -- ----------------------------------------------------------------------------
+        -- 3. Lancer le paiement d'une commande au montant affiché
+        -- ----------------------------------------------------------------------------
+        CREATE OR REPLACE FUNCTION public.order_payment_start(p jsonb)
+        RETURNS jsonb
+        LANGUAGE plpgsql
+        VOLATILE
+        SECURITY DEFINER
+        SET search_path = public
+        AS $$
+        DECLARE
+            v_client   uuid := public.try_uuid(p->>'client_id');
+            v_order    uuid := public.try_uuid(p->>'order_id');
+            v_key      text := NULLIF(btrim(COALESCE(p->>'client_idempotency_key', '')), '');
+            v_expected numeric := private.order_expected_amount(p->'expected_amount');
+            v_existing uuid;
+            v_existing_order uuid;
+            v_amount   numeric;
+            r          jsonb;
+        BEGIN
+            IF v_key IS NOT NULL AND char_length(v_key) NOT BETWEEN 8 AND 128 THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'INVALID_REQUEST_KEY', 'message', 'Demande illisible : rechargez la page et réessayez.');
+            END IF;
+            IF v_key IS NOT NULL AND v_client IS NOT NULL THEN
+                PERFORM pg_advisory_xact_lock(hashtextextended('order_payment_key:' || v_client::text || ':' || v_key, 0));
+                SELECT id, order_id INTO v_existing, v_existing_order FROM public.payments WHERE client_id = v_client AND client_idempotency_key = v_key;
+                IF FOUND THEN
+                    -- Clé liée à sa commande : jamais le paiement d'une autre commande (ni d'un achat de billets)
+                    IF v_existing_order IS DISTINCT FROM v_order THEN
+                        RETURN jsonb_build_object('ok', false, 'code', 'IDEMPOTENCY_KEY_REUSED',
+                            'message', 'Cette demande de paiement ne correspond pas à cette commande : rechargez la page et réessayez.');
+                    END IF;
+                    RETURN jsonb_build_object('ok', true, 'duplicate', true, 'payment_id', v_existing);
+                END IF;
+            END IF;
+            BEGIN
+                r := public.order_payment_create(p);
+                IF (r->>'ok')::boolean THEN
+                    IF v_expected IS NOT NULL AND (r->>'amount')::numeric <> v_expected THEN
+                        v_amount := (r->>'amount')::numeric;
+                        RAISE EXCEPTION USING ERRCODE = 'OR412', MESSAGE = 'ORDER_PRICE_CHANGED';
+                    END IF;
+                    IF v_key IS NOT NULL THEN
+                        UPDATE public.payments SET client_idempotency_key = v_key WHERE id = (r->>'payment_id')::uuid;
+                    END IF;
+                END IF;
+            EXCEPTION WHEN SQLSTATE 'OR412' THEN
+                -- Sous-bloc annulé : aucun paiement, aucun journal
+                RETURN jsonb_build_object('ok', false, 'code', 'ORDER_PRICE_CHANGED', 'amount', v_amount,
+                    'message', 'Le montant à payer a changé. Vérifiez avant de payer.');
+            END;
+            RETURN r;
+        END;
+        $$;
+        
+        REVOKE ALL ON FUNCTION private.order_expected_amount(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+        REVOKE ALL ON FUNCTION public.order_create_checked(jsonb) FROM PUBLIC, anon, authenticated;
+        REVOKE ALL ON FUNCTION public.order_payment_start(jsonb) FROM PUBLIC, anon, authenticated;
+        GRANT EXECUTE ON FUNCTION public.order_create_checked(jsonb) TO service_role;
+        GRANT EXECUTE ON FUNCTION public.order_payment_start(jsonb) TO service_role;
+        
+      operator: 'doesNotMatch'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/l12c-statique.test.ts:101:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1442:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: S3 — sans BEGIN ni COMMIT ; fonctions publiques au rôle de service seulement, aides private à aucun rôle de l’API
+    not ok 3 - S3 — sans BEGIN ni COMMIT ; fonctions publiques au rôle de service seulement, aides private à aucun rôle de l’API
+      ---
+      duration_ms: 3.854196
+      type: 'test'
+      location: '/home/runner/work/event-village/event-village/tests/parcours/l12c-statique.test.ts:2:5538'
+      failureType: 'testCodeFailure'
+      error: |-
+        Expected values to be strictly deep-equal:
+        + actual - expected
+        
+        + [
+        +   '20261226000002_l12b_carte_des_plats.sql : public.product_public sans REVOKE complet',
+        +   '20261226000002_l12b_carte_des_plats.sql : public.product_public non donnée au rôle de service',
+        +   '20261226000002_l12b_carte_des_plats.sql : public.product_public donnée à anon ou authenticated',
+        +   '20261226000002_l12b_carte_des_plats.sql : public.product_owner_or_admin sans REVOKE complet',
+        +   '20261226000002_l12b_carte_des_plats.sql : public.product_owner_or_admin non donnée au rôle de service',
+        +   '20261226000002_l12b_carte_des_plats.sql : public.product_owner_or_admin donnée à anon ou authenticated'
+        + ]
+        - []
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+        0: '20261226000002_l12b_carte_des_plats.sql : public.product_public sans REVOKE complet'
+        1: '20261226000002_l12b_carte_des_plats.sql : public.product_public non donnée au rôle de service'
+        2: '20261226000002_l12b_carte_des_plats.sql : public.product_public donnée à anon ou authenticated'
+        3: '20261226000002_l12b_carte_des_plats.sql : public.product_owner_or_admin sans REVOKE complet'
+        4: '20261226000002_l12b_carte_des_plats.sql : public.product_owner_or_admin non donnée au rôle de service'
+        5: '20261226000002_l12b_carte_des_plats.sql : public.product_owner_or_admin donnée à anon ou authenticated'
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (/home/runner/work/event-village/event-village/tests/parcours/l12c-statique.test.ts:127:16)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+        Test.postRun (node:internal/test_runner/test:1173:19)
+        Test.run (node:internal/test_runner/test:1101:12)
+        async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: S4 — aucune écriture directe de products dans le code applicatif, sauf le statut
+    ok 4 - S4 — aucune écriture directe de products dans le code applicatif, sauf le statut
+      ---
+      duration_ms: 27.291591
+      type: 'test'
+      ...
+    # Subtest: S5 — chaque écriture ajoutée est refusée à une fiche SUSPENDU par la garde de la fiche
+    ok 5 - S5 — chaque écriture ajoutée est refusée à une fiche SUSPENDU par la garde de la fiche
+      ---
+      duration_ms: 0.516538
+      type: 'test'
+      ...
+    # Subtest: S6 — avis ADMIN_PRODUCT_REVIEW et PRODUCT_REVIEW_DECIDED : catalogue identique à la base
+    ok 6 - S6 — avis ADMIN_PRODUCT_REVIEW et PRODUCT_REVIEW_DECIDED : catalogue identique à la base
+      ---
+      duration_ms: 0.576098
+      type: 'test'
+      ...
+    1..6
+not ok 1 - l12c — contrôles sans base
+  ---
+  duration_ms: 132.018629
+  type: 'suite'
+  location: '/home/runner/work/event-village/event-village/tests/parcours/l12c-statique.test.ts:2:3312'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 6
+# suites 1
+# pass 4
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 171.282955
