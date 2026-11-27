@@ -146,7 +146,8 @@ describe('2b.2 — suspension, reprise : avis au titulaire sans billet, plafond 
         for (const r of reactivated) assert.equal(r.template_data.booking_id, bookingId, `booking_id (${r.channel})`);
         const reaApp = renderNotification('EVENT_REACTIVATED_HOLDER', 'IN_APP', reactivated.find((r) => r.channel === 'IN_APP')!.template_data, CTX);
         assert.equal(reaApp.channel === 'IN_APP' && reaApp.actionUrl, `/tickets?tab=tables#table-${bookingId}`);
-        await dispatchAt(at, { ids: reactivated.filter((r) => r.channel === 'SMS').map((r) => r.id) });
+        // Heure recalculée après la reprise : la ligne de la reprise est due maintenant (créée après la première heure)
+        await dispatchAt(await nowOutsideNight(), { ids: reactivated.filter((r) => r.channel === 'SMS').map((r) => r.id) });
         const sentSms = await outboxRows({ eventId: ev.eventId, userId: holder.userId, channel: 'SMS', status: 'SENT' });
         assert.equal(sentSms.length, 2, `deux SMS d'avis partis : ${describeRows(sentSms)}`);
 
