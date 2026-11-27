@@ -6,8 +6,9 @@
  * démonstration « organisateur3 » (ses événements servent aux specs cvcb et 11c-c, aucun établissement), validé, ouvert
  * 24 h sur 24, qui prend des commandes (livraison, retrait, sur place, acompte de 30 %, paiement à la remise) ; une zone
  * de livraison ; deux tables ; une carte : plat du jour avec 20 portions, plats avec photo et suppléments, boisson,
- * produit réglementé (affiché avec son prix, non commandable), dessert épuisé. Un client neuf, connecté UNE seule fois
- * (cookies repris ensuite : la route de connexion admet 30 essais par adresse IP et par heure, partagés dans le job).
+ * produit réglementé (affiché avec son prix, non commandable), dessert épuisé. Client : le second client du seed de
+ * test, état de connexion rejoué (aucune connexion par la route : 30 essais par adresse IP et par heure, partagés dans
+ * le job ; run 776).
  *
  * Pour chaque thème (clair, sombre) et chaque largeur (390 et 1 440 px), le client fait le vrai parcours à l'écran : carte
  * des plats, plat du jour, produit non commandable, fiche d'un plat, panier et devis de la base, commande sur place (choix
@@ -27,11 +28,11 @@ import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
 import { test, expect, projectContextOptions, type ThemeKey } from './support/fixtures';
 import { E2E_OUTPUT_DIR, readDemoIds } from './support/demo-ids';
-import { createClientAccount, partnerPosterOf, rpcOk, serviceClient, userIdByEmail, type ControllerAccount } from './support/service';
+import { partnerPosterOf, rpcOk, serviceClient, userIdByEmail } from './support/service';
 import { fakeServices } from './support/parcours';
 import { runResponsiveChecks } from './support/responsive-checks';
 import { openOrdersService, releaseOrdersService } from './support/orders-service';
-import { TEST_PASSWORD } from './support/accounts';
+import { requireStorageState } from './support/accounts';
 import { APP_URL } from './support/env';
 import { FIXTURE_USERS } from '../tests/helpers/fixture-data';
 
@@ -49,7 +50,6 @@ interface Seeded {
     venueName: string;
     ownerId: string;
     products: { daily: string; yassa: string; mafe: string; beer: string; dessert: string };
-    client: ControllerAccount;
 }
 
 async function settle(page: Page): Promise<void> {
@@ -69,8 +69,8 @@ async function checkLayout(page: Page, width: number, phone: boolean, label: str
     expect(r.blocking, `${label} : défauts bloquants\n${r.blocking.join('\n')}`).toEqual([]);
 }
 
-async function themedContext(browser: Browser, testInfo: TestInfo, scheme: 'light' | 'dark'): Promise<BrowserContext> {
-    const context = await browser.newContext({ ...projectContextOptions(testInfo), colorScheme: scheme });
+async function themedContext(browser: Browser, testInfo: TestInfo, scheme: 'light' | 'dark', storageState?: string): Promise<BrowserContext> {
+    const context = await browser.newContext({ ...projectContextOptions(testInfo), colorScheme: scheme, ...(storageState ? { storageState } : {}) });
     await context.addInitScript((value: string) => {
         try { window.localStorage.setItem('ev-theme', value); } catch { /* document opaque */ }
         document.cookie = `ev-theme=${value}; path=/`;
@@ -78,17 +78,13 @@ async function themedContext(browser: Browser, testInfo: TestInfo, scheme: 'ligh
     return context;
 }
 
-/** Une seule connexion du client pour tout le spec (quota de la route de connexion par adresse IP). */
-let savedCookies: Awaited<ReturnType<BrowserContext['cookies']>> | null = null;
-async function loginOnce(context: BrowserContext, identifier: string): Promise<void> {
-    if (savedCookies) {
-        await context.addCookies(savedCookies);
-        return;
-    }
-    const res = await context.request.post(`${APP_URL}/api/auth/login`, { data: { identifier, password: TEST_PASSWORD } });
-    expect(res.status(), `connexion de ${identifier} : ${await res.text()}`).toBe(200);
-    savedCookies = await context.cookies();
-}
+/**
+ * Client des commandes : le second client du seed de test (« fumee-client-bis »), dont l'état de connexion est produit
+ * par la phase de connexion du job (e2e/auth.setup.ts) et rejoué ici. Aucune connexion par la route (quota de 30 par
+ * adresse IP et par heure : run 776, le job responsive des lots 12b et 12c réunis le dépassait). Aucun autre spec du job
+ * responsive n'utilise ce compte.
+ */
+const CLIENT_ROLE = 'fumee-client-bis' as const;
 
 async function waitFor<T>(label: string, read: () => Promise<T | null>, timeoutMs = 30_000): Promise<T> {
     const t0 = Date.now();
@@ -154,8 +150,7 @@ async function seed(superadmin: string): Promise<Seeded> {
     await insertProduct(partnerId, venueId, { name: 'Bissap', price: 1_000, category_id: categories.Boissons });
     const beer = await insertProduct(partnerId, venueId, { name: 'Gazelle', price: 1_200, category_id: categories.Boissons, is_regulated: true, regulated_kind: 'ALCOOL' });
     const dessert = await insertProduct(partnerId, venueId, { name: 'Thiakry', price: 1_500, category_id: categories.Desserts, is_stock_managed: true, stock_quantity: 0 });
-    const client = await createClientAccount(`l12b-${STAMP}`);
-    return { venueId, venueName, ownerId: owner.userId, products: { daily, yassa, mafe, beer, dessert }, client };
+    return { venueId, venueName, ownerId: owner.userId, products: { daily, yassa, mafe, beer, dessert } };
 }
 
 let seeded: Seeded | null = null;
@@ -203,9 +198,8 @@ for (const theme of THEMES) {
         try {
             seeded ??= await seed(superadmin);
             const data = seeded;
-            const context = await themedContext(browser, testInfo, theme.scheme);
+            const context = await themedContext(browser, testInfo, theme.scheme, requireStorageState(CLIENT_ROLE));
             try {
-                await loginOnce(context, data.client.email);
                 const page = await context.newPage();
                 context.on('page', (p) => { if (p !== page) void p.close(); }); // page de l'opérateur (faux SamirPay)
                 for (const w of WIDTHS) {
@@ -418,8 +412,10 @@ for (const theme of THEMES) {
                     if (cErr || !closure) throw new Error(`[l12b] fermeture : ${cErr?.message}`);
                     try {
                         await page.goto(`/restaurants/${data.venueId}/menu`, { waitUntil: 'load' });
-                        await expect(page.getByText(/^Fermé exceptionnellement jusqu’au \d{2}\/\d{2} à 18 h — commandez pour plus tard$/)).toBeVisible({ timeout: 30_000 });
-                        await expect(page.getByTestId('fermeture-exceptionnelle')).toContainText('Premier créneau proposé');
+                        await expect(page.getByText(/^Fermé exceptionnellement jusqu’au \d{2}\/\d{2} à 18 h — commandez pour plus tard$/).first()).toBeVisible({ timeout: 30_000 });
+                        // Carte alignée sur le devis du 12c : premier créneau = fin de la fermeture + préparation (25 min) → 18 h 25 ;
+                        // au quart d'heure : 18 h 30
+                        await expect(page.getByTestId('fermeture-exceptionnelle').first()).toContainText('Premier créneau proposé : Demain à 18 h 30');
                         await settle(page);
                         await checkLayout(page, w.width, w.phone, 'fermeture exceptionnelle');
                         await shot(page, 'fermeture', w.width, theme.key, false);
