@@ -187,7 +187,7 @@ for (const theme of THEMES) {
     test(`commandes du client · ${theme.key} : carte, panier, heure, sur place, paiement, suivi, code, annulation, Mes commandes (390 et 1 440 px)`, async ({ browser }, testInfo) => {
         test.setTimeout(900_000);
         superadmin ||= await userIdByEmail(FIXTURE_USERS.SUPERADMIN.email);
-        await openOrdersService(WHO, superadmin);
+        await openOrdersService(`${WHO} (${theme.key})`, superadmin); // un nom par thème : les deux thèmes peuvent tourner ensemble
         try {
             seeded ??= await seed(superadmin);
             const data = seeded;
@@ -345,7 +345,7 @@ for (const theme of THEMES) {
                 await context.close();
             }
         } finally {
-            await releaseOrdersService(WHO, superadmin);
+            await releaseOrdersService(`${WHO} (${theme.key})`, superadmin);
         }
     });
 }

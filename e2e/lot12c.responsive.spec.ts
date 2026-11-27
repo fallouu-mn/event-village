@@ -14,7 +14,9 @@
  *
  * Interrupteur features.orders_enabled : ouvert au début de chaque test et remis à sa valeur d'origine à la fin, sous le
  * verrou des services (groupe « services » : aucun test du groupe « autres » ne tourne pendant ce temps,
- * e2e/support/services-switch.ts).
+ * e2e/support/services-switch.ts). Fusion avec le lot 12b : par le compteur partagé e2e/support/orders-service.ts
+ * (openOrdersService / releaseOrdersService), comme e2e/lot12b.responsive.spec.ts qui tourne dans le même groupe : le
+ * dernier spec qui se retire remet l'état d'origine, jamais un spec qui referme le service sous les pas de l'autre.
  *
  * Pour chaque thème (clair, sombre) et chaque largeur (390, 768 et 1 440 px) : contrôle responsive (0 défaut bloquant) et
  * capture. Captures : .e2e-captures/captures-responsive/l12c-<écran>__<largeur>__<thème>.jpg (publiées sur ci-results).
@@ -28,6 +30,7 @@ import { E2E_OUTPUT_DIR, readDemoIds } from './support/demo-ids';
 import { createClientAccount, rpcOk, serviceClient, userIdByEmail, type ControllerAccount } from './support/service';
 import { runResponsiveChecks } from './support/responsive-checks';
 import { requireStorageState, TEST_PASSWORD } from './support/accounts';
+import { openOrdersService, releaseOrdersService } from './support/orders-service';
 import { APP_URL } from './support/env';
 import { FIXTURE_USERS } from '../tests/helpers/fixture-data';
 
@@ -95,10 +98,8 @@ async function title(page: Page, name: string | RegExp): Promise<void> {
     await expect(heading.first()).toBeVisible({ timeout: 30_000 });
 }
 
-async function setOrdersService(open: boolean, actor: string): Promise<void> {
-    const { data, error } = await serviceClient().rpc('finance_setting_set', { p_key: 'features.orders_enabled', p_value: { value: open }, p_actor: actor, p_reason: 'Captures du lot 12c' });
-    if (error || (data as { ok?: boolean } | null)?.ok !== true) throw new Error(`[l12c] interrupteur des commandes : ${error?.message ?? JSON.stringify(data)}`);
-}
+/** Inscription au compteur partagé du service des commandes (lot 12b : e2e/support/orders-service.ts). */
+const WHO = 'lot12c';
 
 /** Heure de Dakar (UTC) au quart d'heure, `hours` heures plus tard, au format attendu par la base. */
 function laterSlot(hours: number): string {
@@ -204,9 +205,7 @@ for (const theme of THEMES) {
     test(`commandes · ${theme.key} : catalogue, réglages, zones, commandes, code, livreurs, administration (390, 768 et 1 440 px)`, async ({ browser }, testInfo) => {
         test.setTimeout(900_000);
         superadmin ||= await userIdByEmail(FIXTURE_USERS.SUPERADMIN.email);
-        const { data: flag } = await serviceClient().from('platform_settings').select('value').eq('key', 'features.orders_enabled').maybeSingle();
-        const previous = (flag?.value as { value?: boolean } | null)?.value === true;
-        await setOrdersService(true, superadmin);
+        await openOrdersService(`${WHO} (${theme.key})`, superadmin); // un nom par thème : les deux thèmes peuvent tourner ensemble
         try {
             seeded ??= await seed(superadmin);
             const data = seeded;
@@ -349,7 +348,7 @@ for (const theme of THEMES) {
             }
             await adm.close();
         } finally {
-            await setOrdersService(previous, superadmin);
+            await releaseOrdersService(`${WHO} (${theme.key})`, superadmin);
         }
     });
 }
