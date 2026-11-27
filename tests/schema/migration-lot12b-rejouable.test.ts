@@ -1,13 +1,17 @@
 /**
- * Lot 12b — les trois migrations du lot (20261222000001-003) se rejouent sans erreur : appliquées deux fois de plus dans
+ * Lot 12b — les trois migrations du lot (20261226000001-003, renommées après celles du lot 12c, 20261224000001-005, avant
+ * la fusion : elles ne sont appliquées nulle part) se rejouent sans erreur : appliquées deux fois de plus dans
  * une transaction annulée, dans l'ordre ; aucun BEGIN ni COMMIT.
  * Recopie : UNE seule fonction existante est recopiée dans tout le lot, private.order_issue_code, depuis sa DERNIÈRE
  * définition (20261130000006_l12a_etapes.sql:281-299, citée en tête de migration) : chaque ligne de cette définition se
  * retrouve dans la recopie (aucune ligne remplacée, ajouts seuls). Aucune autre fonction existante n'est redéfinie par
  * le lot, en particulier celles que recopie le lot 12c (order_quote_compute, product_regulated, products_order_guard,
  * order_product_regulation_decide) et les 9 recopies du lot 12a suivies par tests/audit/cv12a-3-statique.test.ts (S1).
- * Droits : fonctions publiques nouvelles au rôle de service seulement ; aides du schéma private et tables private à aucun
- * rôle de l'API (clé de service comprise).
+ * Droits : fonctions publiques nouvelles au rôle de service seulement, sauf les deux aides des règles de lecture des
+ * produits (contre-vérification T1 : product_public, product_owner_or_admin), exécutables par anon, authenticated et
+ * service_role, retirées à PUBLIC, STABLE, search_path fixé ; aides du schéma private et tables private à aucun rôle de
+ * l'API (clé de service comprise). Règles de lecture des produits : jamais la ligne entière du produit (droits par
+ * colonne du lot 12c).
  */
 import '../helpers/env';
 import { describe, test } from 'node:test';
@@ -17,8 +21,8 @@ import path from 'node:path';
 import { inRolledBackTransaction } from '../helpers/db';
 
 const DIR = path.resolve(process.cwd(), 'supabase/migrations');
-const FILES = ['20261222000001_l12b_code_visible.sql', '20261222000002_l12b_carte_des_plats.sql', '20261222000003_l12b_garde_prix.sql'];
-const FIRST = '20261222000001';
+const FILES = ['20261226000001_l12b_code_visible.sql', '20261226000002_l12b_carte_des_plats.sql', '20261226000003_l12b_garde_prix.sql'];
+const FIRST = '20261226000001';
 
 /** Seule recopie du lot. */
 const RECOPIED = 'private.order_issue_code';
@@ -26,8 +30,11 @@ const RECOPIED = 'private.order_issue_code';
 const NEW_FUNCTIONS = [
     'private.order_code_encrypt', 'private.order_code_decrypt', 'private.order_codes_clear', 'public.order_code_reveal',
     'public.order_venue_menu', 'private.order_expected_amount', 'public.order_create_checked', 'public.order_payment_start',
+    'public.product_public', 'public.product_owner_or_admin',
 ];
-const NEW_PUBLIC = NEW_FUNCTIONS.filter((f) => f.startsWith('public.')).map((f) => f.slice('public.'.length));
+/** Aides des règles de lecture des produits (contre-vérification T1) : liste blanche des aides RLS. */
+const RLS_HELPERS = ['product_public', 'product_owner_or_admin'];
+const NEW_PUBLIC = NEW_FUNCTIONS.filter((f) => f.startsWith('public.')).map((f) => f.slice('public.'.length)).filter((f) => !RLS_HELPERS.includes(f));
 const NEW_PRIVATE = [...NEW_FUNCTIONS.filter((f) => f.startsWith('private.')).map((f) => f.slice('private.'.length)), 'order_issue_code'];
 /** Fonctions que le lot ne doit jamais redéfinir (12c, 12a S1, cœur des commandes). */
 const UNTOUCHED = [
@@ -61,12 +68,13 @@ function definitions(name: string, files: readonly string[]): Array<{ file: stri
 }
 
 describe('Lot 12b — migrations', () => {
-    test('présentes, dans l’ordre, après les migrations de main (11c-c : 20261215000002)', () => {
+    test('présentes, dans l’ordre, après les migrations de main (12c : 20261224000005)', () => {
         const all = fs.readdirSync(DIR).filter((f) => /^\d{14}_.+\.sql$/.test(f)).sort();
         for (const f of FILES) assert.ok(all.includes(f), `migration absente : supabase/migrations/${f}`);
-        const lot = all.filter((f) => f.startsWith('20261222'));
-        assert.deepEqual(lot, FILES, 'intervalle 20261222… : les trois migrations du lot seulement');
-        assert.ok(all.filter((f) => f < FIRST).includes('20261215000002_l11cc_cv_correctifs.sql'));
+        const lot = all.filter((f) => f.startsWith('20261226'));
+        assert.deepEqual(lot, FILES, 'intervalle 20261226… : les trois migrations du lot seulement');
+        assert.deepEqual(all.filter((f) => f.startsWith('20261222')), [], 'anciens noms (20261222…) retirés');
+        assert.ok(all.filter((f) => f < FIRST).includes('20261224000005_l12c_cv_correctifs.sql'), 'après les migrations du 12c');
     });
 
     test('sans BEGIN ni COMMIT, appliquées deux fois de plus sans erreur', async () => {
@@ -131,6 +139,18 @@ describe('Lot 12b — migrations', () => {
                         has_table_privilege('service_role', t, 'SELECT') AS svc
                    FROM unnest(ARRAY['private.order_codes', 'private.order_code_enc_key']) AS t`);
             for (const r of tables) assert.deepEqual([r.t, r.anon, r.auth, r.svc], [r.t, false, false, false]);
+            const { rows: helpers } = await c.query<{ proname: string; anon: boolean; auth: boolean; svc: boolean; pub: boolean; secdef: boolean; vol: string; config: string }>(
+                `SELECT p.proname, has_function_privilege('anon', p.oid, 'EXECUTE') AS anon, has_function_privilege('authenticated', p.oid, 'EXECUTE') AS auth,
+                        has_function_privilege('service_role', p.oid, 'EXECUTE') AS svc, p.prosecdef AS secdef, p.provolatile::text AS vol,
+                        COALESCE(array_to_string(p.proconfig, ' '), '') AS config,
+                        EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a WHERE a.grantee = 0) AS pub
+                   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public' AND p.proname = ANY ($1) ORDER BY p.proname`, [RLS_HELPERS]);
+            assert.deepEqual(helpers.map((r) => r.proname).sort(), [...RLS_HELPERS].sort());
+            for (const r of helpers) {
+                assert.deepEqual([r.proname, r.anon, r.auth, r.svc, r.pub, r.secdef, r.vol], [r.proname, true, true, true, false, true, 's']);
+                assert.match(r.config, /search_path=public/, `${r.proname} : search_path fixé`);
+            }
             const { rows: schema } = await c.query<{ anon: boolean; auth: boolean; svc: boolean }>(
                 `SELECT has_schema_privilege('anon', 'private', 'USAGE') AS anon, has_schema_privilege('authenticated', 'private', 'USAGE') AS auth,
                         has_schema_privilege('service_role', 'private', 'USAGE') AS svc`);
@@ -138,17 +158,31 @@ describe('Lot 12b — migrations', () => {
         });
     });
 
-    test('règles de lecture des produits : établissement listé (listed_venue), propriétaire, administration', async () => {
+    test('règles de lecture des produits : produit public (établissement listé, non retiré), propriétaire, administration ; jamais la ligne entière', async () => {
         await inRolledBackTransaction(async (c) => {
             const { rows } = await c.query<{ tablename: string; policyname: string; qual: string }>(
                 `SELECT tablename, policyname, qual FROM pg_policies
                   WHERE schemaname = 'public' AND policyname IN ('products_read', 'product_options_read', 'product_daily_portions_read') ORDER BY policyname`);
             assert.equal(rows.length, 3);
             for (const r of rows) {
-                assert.match(r.qual, /listed_venue/, `${r.policyname} : établissement listé`);
-                assert.match(r.qual, /is_partner_owner/, `${r.policyname} : propriétaire`);
-                assert.match(r.qual, /is_admin\(\)/, `${r.policyname} : administration`);
+                assert.match(r.qual, /product_public\(/, `${r.policyname} : produit public`);
+                assert.doesNotMatch(r.qual, /to_jsonb|SELECT|products\.\*/i, `${r.policyname} : ni ligne entière, ni sous-requête`);
+                if (r.policyname === 'products_read') {
+                    assert.match(r.qual, /is_partner_owner/, `${r.policyname} : propriétaire`);
+                    assert.match(r.qual, /is_admin\(\)/, `${r.policyname} : administration`);
+                } else {
+                    assert.match(r.qual, /product_owner_or_admin\(/, `${r.policyname} : propriétaire ou administration`);
+                }
             }
+            const { rows: bodies } = await c.query<{ proname: string; src: string }>(
+                `SELECT p.proname, p.prosrc AS src FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                  WHERE n.nspname = 'public' AND p.proname IN ('product_public', 'product_owner_or_admin') ORDER BY p.proname`);
+            const src = Object.fromEntries(bodies.map((b) => [b.proname, b.src]));
+            assert.match(src.product_public, /status = 'DISPONIBLE'/);
+            assert.match(src.product_public, /archived_at IS NULL/);
+            assert.match(src.product_public, /listed_venue\(pr\.venue_id\)/);
+            assert.match(src.product_owner_or_admin, /is_admin\(\)/);
+            assert.match(src.product_owner_or_admin, /is_partner_owner\(pr\.partner_id\)/);
         });
     });
 });

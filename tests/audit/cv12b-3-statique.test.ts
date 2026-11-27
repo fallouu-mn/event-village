@@ -108,7 +108,7 @@ describe('S1-S4 — garde-fous sans base', () => {
     });
 
     test('S3. chaque refus des fonctions du 12b porte un message ; l’écran montre le message, jamais le code', () => {
-        const files = ['20261222000001_l12b_code_visible.sql', '20261222000002_l12b_carte_des_plats.sql', '20261222000003_l12b_garde_prix.sql'];
+        const files = ['20261226000001_l12b_code_visible.sql', '20261226000002_l12b_carte_des_plats.sql', '20261226000003_l12b_garde_prix.sql'];
         const missing: string[] = [];
         let refusals = 0;
         for (const f of files) {
@@ -134,7 +134,7 @@ describe('S1-S4 — garde-fous sans base', () => {
             return m![1];
         };
         const a = body(read('supabase/migrations/20261130000006_l12a_etapes.sql'));
-        const b = body(read('supabase/migrations/20261222000001_l12b_code_visible.sql'));
+        const b = body(read('supabase/migrations/20261226000001_l12b_code_visible.sql'));
         const norm = (s: string) => s.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('--'));
         const added = norm(b).filter((l) => !norm(a).includes(l));
         const lost = norm(a).filter((l) => !norm(b).includes(l));

@@ -28,7 +28,11 @@ whitelist(name) AS (
            ('partner_listed'),
     -- Contre-vérification de la carte B3 (T1) : 10e aide RLS, listed_venue (établissement public, un booléen ; règles des
     -- zones, tables, horaires et zones de livraison depuis la fermeture de la REST de venues)
-           ('listed_venue')
+           ('listed_venue'),
+    -- Contre-vérification du lot 12b (T1) : 11e et 12e aides RLS, product_public (produit disponible d'un établissement
+    -- listé, non retiré) et product_owner_or_admin (propriétaire ou administration) ; règles de lecture des produits, des
+    -- suppléments et des portions sans lire la ligne entière du produit (droits par colonne du lot 12c)
+           ('product_public'), ('product_owner_or_admin')
 ),
 checks(point, ok, detail) AS (
     -- 1A.1
@@ -75,8 +79,9 @@ checks(point, ok, detail) AS (
     SELECT '1A.3 aides RLS exécutables par anon et authenticated, STABLE, search_path fixé',
            (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist) AND anon_exec AND auth_exec AND provolatile IN ('s', 'i') AND config LIKE '%search_path=%')
              = (SELECT COUNT(*) FROM fns WHERE proname IN (SELECT name FROM whitelist))
-           -- Contre-vérification du lot 10b (T4) : 9 aides (partner_listed) ; de la carte B3 (T1) : 10 aides (listed_venue)
-           AND (SELECT COUNT(DISTINCT proname) FROM fns WHERE proname IN (SELECT name FROM whitelist)) = 10,
+           -- Contre-vérification du lot 10b (T4) : 9 aides (partner_listed) ; de la carte B3 (T1) : 10 aides (listed_venue) ;
+           -- du lot 12b (T1) : 12 aides (product_public, product_owner_or_admin)
+           AND (SELECT COUNT(DISTINCT proname) FROM fns WHERE proname IN (SELECT name FROM whitelist)) = 12,
            (SELECT string_agg(proname || ':' || CASE WHEN anon_exec AND auth_exec THEN 'exec' ELSE 'NON-exec' END || ':' || provolatile::text, ', ') FROM fns WHERE proname IN (SELECT name FROM whitelist))
     UNION ALL
     SELECT '1A.3 RPC métier exécutables par service_role',
