@@ -81,6 +81,9 @@ du 12a suivies par `cv12a-3-statique` S1 (contrôlé).
    (détail dans « Poids JavaScript et mesure mobile »). Trois essais faits : je m'arrête. **Décision attendue** : relancer
    la mesure (job perf du run 760), ou me demander de chercher plus loin la cause (comparaison de main et de la branche
    sur la même machine, par une branche de mesure). Ne pas fusionner avant.
+   **Décision du 27/11 : chercher la cause.** Mesure A/B sur la même machine (run 763) : **fiche à 94 des deux côtés**
+   (TBT 254 ms main, 269 ms branche ; mêmes 23 scripts chargés, mêmes temps par fichier) ; aucune cause dans le lot,
+   aucun correctif. Mesure seule relancée (run MESURE_RELANCE).
 
 **Tests existants modifiés** (aucune suite d'audit `tests/audit/` ni `tests/audit-auth/` modifiée) :
 
@@ -211,6 +214,32 @@ mobile. Je n'ai trouvé aucun mécanisme par lequel le lot alourdit la fiche, ma
 est répété sur trois runs : **je ne peux pas l'écarter**. Trois essais faits sur ce blocage (752, 755, 760) : arrêt,
 décision à prendre (voir « À lire en premier », point 7).
 
+**Mesure A/B sur la même machine (décision du 27/11, run 763, vert).** Branche jetable `lot12b/mesure-ab` (`4aae949c5d`,
+jamais fusionnée) : son job de mesure construit la branche (`06780285fd`) et main (`5b7f3399ca`, lot 11c-b fusionné en
+`774e19a34a` puis documentation) dans le même job, même `.env.test`, même commande de build, puis démarre les deux
+contre la même base (main sur le port 3001). `scripts/e2e/perf-ab.mjs` (même mécanique Lighthouse que la mesure
+officielle : préréglage mobile, relais HTTP/2, hôtes externes bloqués) mesure la fiche « ce soir » 5 tours ; à chaque
+tour, une calibration de la machine, puis main, puis la branche, au même ralentissement (indice 1 902 à 1 693, ×3,81 à
+×3,39). Sorties : `ci-results`, `runs/763-45986607226/perf/` (`ab.txt`, `ab-fiche.tsv`, `ab-scripts.tsv`,
+`ab-profil.txt`…).
+
+| Fiche, même machine | Main (`5b7f3399ca`) | Branche (`06780285fd`) | Écart |
+|---|---|---|---|
+| Score Lighthouse | **94** [88 ; 94 ; 95 ; 94 ; 96] | **94** [94 ; 94 ; 94 ; 94 ; 93] | 0 |
+| TBT | 254 ms [405 ; 254 ; 251 ; 278 ; 190] | 269 ms [269 ; 256 ; 262 ; 273 ; 306] | +15 ms |
+| LCP | 2 118 ms [2 439 ; 2 118 ; 1 818 ; 1 824 ; 2 118] | 2 113 ms [2 113 ; 2 121 ; 2 115 ; 1 813 ; 1 816] | −5 ms |
+| FCP | 981 ms | 922 ms | −59 ms |
+| CLS | 0,000 | 0,000 | 0 |
+| JS transféré | 238 887 o | 238 927 o | +40 o |
+| Scripts exécutés / longues tâches | 5 / 5 | 5 / 6 | — |
+
+Profils processeur de la fiche (5 par côté, en alternance, ×4, 4G simulée) : mêmes 23 scripts chargés des deux côtés
+(aucun seulement d'un côté) ; temps par fichier égaux à quelques millisecondes près (moteur de React 195,3 / 194,9 ms ;
+chargeur de webpack 173,7 / 161,7 ms ; morceau commun 70,5 / 67,5 ms ; mise en page commune 10,4 / 13,0 ms ;
+`ui-base` 12,3 / 10,7 ms). **Conclusion : sur la même machine, la fiche de la branche et celle de main sont identiques**
+(même note, même code exécuté) ; les 89 des runs 752 et 760 et les 95 de main aux runs 724 et 728 viennent des machines
+de la CI, différentes d'un run à l'autre. Comme le prévoit la décision : mesure seule relancée (run MESURE_RELANCE).
+
 ## Captures
 
 Run complet **752**, branche `ci-results`, dossier `runs/752-45948214851/captures-responsive/` : **64 captures du lot**
@@ -257,6 +286,7 @@ mêmes largeurs).
 | 750 | `871ff3acc9` | rapide (écrans, responsive, captures) | **vert** | parcours entier à 390 et 1 440 px |
 | 752 | `6be47e3c2a` | **complet** | rouge | 635/636 suites (seule `recette-matrice` : deux références de lignes de `docs/recette-billetterie.md` périmées par le lot) ; e2e 783 passés ; responsive 0 défaut ; budgets OK ; mesure : fiche 89 |
 | 755 | `e19e67a57e` | rapide (`recette-matrice` + mesure) | rouge (mesure faussée) | références recalées (`interrupteurs.test.ts:405`, `MenuView.tsx:307`), aucune assertion modifiée : typecheck, lint et `recette-matrice` OK ; mesure **faussée, à relancer** : machine de la CI hors de la plage du téléphone de référence aux 3 tentatives (indice 3 312 à 3 645, plage 1 000 à 3 000), aucune conclusion sur les seuils |
+| 763 | `4aae949c5d` (`lot12b/mesure-ab`, jetable) | mesure A/B (main et branche, même job) | **vert** | fiche main 94, branche 94 ; TBT 254 / 269 ms ; mêmes 23 scripts ; aucun écart imputable au lot |
 | 760 | `1aa357304b` | rapide (`recette-matrice` + mesure) | rouge (mesure hors seuil) | matrice OK ; mesure valide : accueil 91, **fiche 89**, Mes billets 90, toucher 88 ms ; 3e essai sur ce blocage, arrêt |
 
 ## Essais pour un non-développeur
