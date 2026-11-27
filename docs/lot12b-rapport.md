@@ -4,8 +4,9 @@ Branche `lot12b/client` (depuis main `5b7f3399ca`, lot 11c-b fusionné), worktre
 aucune migration appliquée.** Service toujours fermé par `features.orders_enabled` (les tests l'ouvrent le temps de leur
 passage).
 
-**État** : run complet 752 vert sauf deux points ; `recette-matrice` corrigée (runs 755 et 760 verts) ; **mesure mobile de
-la fiche à 89 (seuil 90) aux runs 752 et 760, décision attendue** (point 7).
+**État** : run complet 752 vert sauf deux points ; `recette-matrice` corrigée (verte aux runs 755, 760 et 764) ; mesure
+mobile de la fiche à 89 aux runs 752 et 760, **94 pour main comme pour la branche sur la même machine** (run 763, mesure
+A/B) ; mesure relancée au run 764 non concluante (machine hors plage). Point 7.
 
 ## À lire en premier
 
@@ -83,7 +84,9 @@ du 12a suivies par `cv12a-3-statique` S1 (contrôlé).
    sur la même machine, par une branche de mesure). Ne pas fusionner avant.
    **Décision du 27/11 : chercher la cause.** Mesure A/B sur la même machine (run 763) : **fiche à 94 des deux côtés**
    (TBT 254 ms main, 269 ms branche ; mêmes 23 scripts chargés, mêmes temps par fichier) ; aucune cause dans le lot,
-   aucun correctif. Mesure seule relancée (run MESURE_RELANCE).
+   aucun correctif. Mesure seule relancée au run 764 : **non concluante** (machine de la CI hors de la plage aux
+   3 tentatives, les trois pages baissent ensemble ; toucher non mesuré). Arrêt sur ces chiffres ; la prochaine mesure
+   valide (job perf relancé ou run complet) reste à faire avant la fusion.
 
 **Tests existants modifiés** (aucune suite d'audit `tests/audit/` ni `tests/audit-auth/` modifiée) :
 
@@ -238,7 +241,11 @@ Profils processeur de la fiche (5 par côté, en alternance, ×4, 4G simulée) :
 chargeur de webpack 173,7 / 161,7 ms ; morceau commun 70,5 / 67,5 ms ; mise en page commune 10,4 / 13,0 ms ;
 `ui-base` 12,3 / 10,7 ms). **Conclusion : sur la même machine, la fiche de la branche et celle de main sont identiques**
 (même note, même code exécuté) ; les 89 des runs 752 et 760 et les 95 de main aux runs 724 et 728 viennent des machines
-de la CI, différentes d'un run à l'autre. Comme le prévoit la décision : mesure seule relancée (run MESURE_RELANCE).
+de la CI, différentes d'un run à l'autre. Comme le prévoit la décision : mesure seule relancée, run **764** (`5d392ba9d5`) : **non concluant**, les 15 tours de ses
+3 tentatives sont faussés (machine de la CI trop rapide, indice 3 107 à 3 709 pour une plage de 1 000 à 3 000, ralentissement
+×6,21 à ×7,42) ; les trois pages baissent ensemble (accueil 89 [89 ; 91 ; 91 ; 89 ; 89], fiche 87 [87 ; 87 ; 91 ; 85 ; 86],
+Mes billets 87 [86 ; 88 ; 90 ; 86 ; 87]) et le toucher n'a pas été mesuré faute de temps après les reprises. Le run sort
+« hors seuil » au lieu de « faussée, à relancer » parce que le toucher manque. Arrêt sur ces chiffres (décision).
 
 ## Captures
 
@@ -286,6 +293,7 @@ mêmes largeurs).
 | 750 | `871ff3acc9` | rapide (écrans, responsive, captures) | **vert** | parcours entier à 390 et 1 440 px |
 | 752 | `6be47e3c2a` | **complet** | rouge | 635/636 suites (seule `recette-matrice` : deux références de lignes de `docs/recette-billetterie.md` périmées par le lot) ; e2e 783 passés ; responsive 0 défaut ; budgets OK ; mesure : fiche 89 |
 | 755 | `e19e67a57e` | rapide (`recette-matrice` + mesure) | rouge (mesure faussée) | références recalées (`interrupteurs.test.ts:405`, `MenuView.tsx:307`), aucune assertion modifiée : typecheck, lint et `recette-matrice` OK ; mesure **faussée, à relancer** : machine de la CI hors de la plage du téléphone de référence aux 3 tentatives (indice 3 312 à 3 645, plage 1 000 à 3 000), aucune conclusion sur les seuils |
+| 764 | `5d392ba9d5` | rapide (`recette-matrice` + mesure) | rouge (non concluant) | matrice OK ; 15 tours faussés sur 15 (indice 3 107 à 3 709) : accueil 89, fiche 87, Mes billets 87, toucher non mesuré |
 | 763 | `4aae949c5d` (`lot12b/mesure-ab`, jetable) | mesure A/B (main et branche, même job) | **vert** | fiche main 94, branche 94 ; TBT 254 / 269 ms ; mêmes 23 scripts ; aucun écart imputable au lot |
 | 760 | `1aa357304b` | rapide (`recette-matrice` + mesure) | rouge (mesure hors seuil) | matrice OK ; mesure valide : accueil 91, **fiche 89**, Mes billets 90, toucher 88 ms ; 3e essai sur ce blocage, arrêt |
 
