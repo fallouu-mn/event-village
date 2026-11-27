@@ -29,7 +29,7 @@ function option(r: Row): MenuOption {
     return { id: String(r.id), name: String(r.name ?? ''), price: num(r.price) };
 }
 
-function product(r: Row, categories: Map<string, string>): MenuProduct {
+function product(r: Row): MenuProduct {
     const availability = AVAILABILITY.includes(r.availability as ProductAvailability) ? (r.availability as ProductAvailability) : 'INDISPONIBLE';
     return {
         id: String(r.id),
@@ -37,7 +37,6 @@ function product(r: Row, categories: Map<string, string>): MenuProduct {
         description: str(r.description),
         price: num(r.price),
         image: str(r.image),
-        visual: dishVisual(categories.get(String(r.category_id ?? '')) ?? null, str(r.name)),
         categoryId: str(r.category_id),
         availability,
         regulated: r.regulated === true,
@@ -87,7 +86,8 @@ export function venueMenuFrom(data: unknown): VenueMenu | null {
         zones: rows(d.zones).map((z): MenuZone => ({ id: String(z.id), name: String(z.name ?? ''), fee: num(z.fee), minOrder: num(z.min_order) })),
         spots: rows(d.spots).map((s): MenuSpot => ({ id: String(s.id), label: String(s.label ?? ''), zone: str(s.zone) })),
         categories: rows(d.categories).map((c) => ({ id: String(c.id), name: String(c.name ?? '') })),
-        products: rows(d.products).map((r) => product(r, categoryNames)),
+        products: rows(d.products).map(product),
+        visuals: Object.fromEntries(rows(d.products).map((r) => [String(r.id), dishVisual(categoryNames.get(String(r.category_id ?? '')) ?? null, str(r.name))])),
     };
 }
 

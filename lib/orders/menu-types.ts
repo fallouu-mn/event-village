@@ -25,8 +25,6 @@ export interface MenuProduct {
     price: number;
     /** Photo de la fiche du produit, ou null (jamais une photo de remplacement venue d'un site extérieur). */
     image: string | null;
-    /** Visuel dessiné (fichier local) d'un plat sans photo, choisi par le serveur d'après sa catégorie. */
-    visual: DishVisual;
     categoryId: string | null;
     availability: ProductAvailability;
     /** Produit réglementé (alcool, tabac) : affiché avec son prix, jamais commandable en ligne. */
@@ -91,6 +89,11 @@ export interface VenueMenu {
     spots: MenuSpot[];
     categories: Array<{ id: string; name: string }>;
     products: MenuProduct[];
+    /**
+     * Visuel dessiné (fichier local) de chaque plat, choisi par le serveur d'après sa catégorie puis son nom (correctifs
+     * après contre-vérification, idée 13) ; table à part : la fiche d'un plat garde exactement ses champs (audit cv12b-2 G6).
+     */
+    visuals: Record<string, DishVisual>;
 }
 
 export const ORDER_MODE_LABELS: Readonly<Record<OrderMode, string>> = {

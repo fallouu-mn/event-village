@@ -234,9 +234,9 @@ describe('A bis. Correctifs après contre-vérification : fermeture annoncée, h
         const rows = await sql<{ id: string; ends: string }>(`
             WITH t AS (SELECT date_trunc('hour', public.hall_dakar_now()) AS h)
             INSERT INTO public.venue_closures (venue_id, starts_at, ends_at, reason)
-            SELECT $1, t.h - interval '1 hour', t.h + interval '5 hours', 'Travaux (l12b-cv)' FROM t
+            SELECT $1::uuid, t.h - interval '1 hour', t.h + interval '5 hours', 'Travaux (l12b-cv)' FROM t
             UNION ALL
-            SELECT $1, t.h + interval '5 hours', t.h + interval '29 hours', 'Travaux, suite (l12b-cv)' FROM t
+            SELECT $1::uuid, t.h + interval '5 hours', t.h + interval '29 hours', 'Travaux, suite (l12b-cv)' FROM t
             RETURNING id, to_char(ends_at, 'YYYY-MM-DD"T"HH24:MI') AS ends`, [closedShop]);
         try {
             const res = await menu(closedShop);

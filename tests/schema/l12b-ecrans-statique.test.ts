@@ -208,7 +208,9 @@ describe('Lot 12b, correctifs après contre-vérification — idées 8 à 13 (co
             assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
             assert.doesNotMatch(svg.replace('http://www.w3.org/2000/svg', ''), /<script|href=|url\(|https?:\/\//, `${file} : rien d’extérieur ni de script`);
         }
-        assert.match(code('lib/orders/menu.server.ts'), /visual: dishVisual\(/);
+        assert.match(code('lib/orders/menu.server.ts'), /visuals: Object\.fromEntries\(rows\(d\.products\)\.map\(\(r\) => \[String\(r\.id\), dishVisual\(/);
         assert.match(code('components/orders/client/menu/ProductVisual.tsx'), /dishVisualSrc\(visual\)/);
+        // La fiche d'un plat garde exactement ses champs (audit cv12b-2 G6) : le visuel est servi à part (menu.visuals)
+        assert.doesNotMatch(read('lib/orders/menu-types.ts').slice(0, read('lib/orders/menu-types.ts').indexOf('export interface MenuZone')), /\bvisual:/);
     });
 });

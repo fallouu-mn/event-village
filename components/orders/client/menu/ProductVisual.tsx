@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import Image from 'next/image';
 import { cn } from '@/components/ui/cn';
 import { isProjectStorageImage } from '@/lib/events/event-image';
@@ -9,14 +9,18 @@ import { dishVisualSrc, type DishVisual } from '@/lib/orders/dish-visual';
  * catégorie (fichier local public/images/plats/, choisi par le serveur : correctifs après contre-vérification, idée 13),
  * sur un fond des jetons (jamais une image venue d'un site extérieur). La place est réservée par le parent (aucun saut).
  */
-export function ProductVisual({ image, name, visual, sizes, priority = false, className }: {
+/** Visuels des plats de la carte (menu.visuals), posés par MenuView. */
+export const DishVisualsContext = createContext<Record<string, DishVisual>>({});
+
+export function ProductVisual({ image, name, productId, sizes, priority = false, className }: {
     image: string | null;
     name: string;
-    visual: DishVisual;
+    productId: string;
     sizes: string;
     priority?: boolean;
     className?: string;
 }) {
+    const visual = useContext(DishVisualsContext)[productId] ?? 'plat';
     if (isProjectStorageImage(image)) {
         return (
             <span className={cn('relative block overflow-hidden bg-muted', className)}>

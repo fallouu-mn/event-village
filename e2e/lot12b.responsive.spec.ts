@@ -284,8 +284,17 @@ for (const theme of THEMES) {
                         await expect(changed).toBeVisible({ timeout: 20_000 });
                         await expect(changed).toContainText(/Yassa poulet.*3\s700/);
                         await expect(changed).toContainText(/Total.*4\s095/);
+                        // Contrôle la feuille revenue en haut (run 774 : l'annonce fait défiler la feuille, et le contrôle lisait
+                        // les puces de l'heure passées sous le titre opaque de la feuille) ; capture l'annonce à l'écran
+                        await scope.evaluate((root) => {
+                            for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
+                                if (el.scrollHeight > el.clientHeight + 1 && ['auto', 'scroll'].includes(getComputedStyle(el).overflowY)) el.scrollTop = 0;
+                            }
+                        });
                         await settle(page);
                         await checkLayout(page, w.width, w.phone, 'prix changé');
+                        await changed.scrollIntoViewIfNeeded();
+                        await settle(page);
                         await shot(page, 'prix-change', w.width, theme.key, !w.phone);
                         await scope.getByRole('button', { name: /^Commander à 4\s095\sF\sCFA$/ }).click();
                         await page.waitForURL(/\/orders\/[0-9a-f-]{36}$/, { timeout: 30_000 });

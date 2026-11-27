@@ -24,6 +24,7 @@ import { DailyBanner } from './DailyBanner';
 import { MenuHeader } from './MenuHeader';
 import { ProductCard } from './ProductCard';
 import { ProductSheet } from './ProductSheet';
+import { DishVisualsContext } from './ProductVisual';
 import type { TimeChip } from './TimePicker';
 
 /**
@@ -286,6 +287,7 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     const shownTotal = quote.status === 'ready' ? quote.quote.total : null;
 
     return (
+        <DishVisualsContext.Provider value={menu.visuals}>
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-8 xl:grid-cols-[minmax(0,1fr)_26rem]">
             <div className={cn('min-w-0 space-y-6', count > 0 && 'pb-24 lg:pb-0')}>
                 <MenuHeader menu={menu} />
@@ -385,5 +387,6 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
                 />
             )}
         </div>
+        </DishVisualsContext.Provider>
     );
 }
