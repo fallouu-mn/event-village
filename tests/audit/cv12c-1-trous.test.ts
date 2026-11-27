@@ -138,22 +138,22 @@ describe('T2 — décision liée à ce que l’administration a vu', () => {
 });
 
 describe('T3 — liste des mots et produits déjà en vente', () => {
-    test('un mot ajouté (« flag ») : le produit « Flag spéciale 33 cl » déjà en vente devient à vérifier', async () => {
+    test('un mot ajouté (« zorba ») : le produit « Zorba spéciale 33 cl » déjà en vente devient à vérifier', async () => {
         const superadmin = await superadminId();
         const { data: before } = await service.from('platform_settings').select('value').eq('key', 'orders.review_keywords').single();
         const original = (before!.value as { value: string[] }).value;
         try {
-            const p = await createProduct({ venue_id: shop, name: 'Flag spéciale 33 cl', price: 1_000 });
+            const p = await createProduct({ venue_id: shop, name: 'Zorba spéciale 33 cl', price: 1_000 });
             const id = String(p.id);
             assert.equal((await quote(id)).ok, true, 'précondition : vendable');
             const sa = await newAdmin('cv12c-super', [], { role: 'SUPERADMIN' });
             const put = await reply(await keywordsPut(req('/api/admin/products/keywords', 'PUT', sa.accessToken,
-                { keywords: [...original, 'flag'], reason: 'Marque de bière ajoutée (contre-vérification 12c)' })));
+                { keywords: [...original, 'zorba'], reason: 'Marque de bière ajoutée (contre-vérification 12c)' })));
             assert.equal(put.status, 200, JSON.stringify(put.body));
             const after = await product(id);
             const q = await quote(id);
-            console.log(`[CV12C-T3] après ajout de « flag » : ${JSON.stringify({ review_state: after.review_state, devis: q.ok === true ? 'VENDABLE' : q.code })}`);
-            assert.notEqual(q.ok, true, '« Flag spéciale 33 cl » toujours vendable en ligne après l’ajout du mot « flag »');
+            console.log(`[CV12C-T3] après ajout de « zorba » : ${JSON.stringify({ review_state: after.review_state, devis: q.ok === true ? 'VENDABLE' : q.code })}`);
+            assert.notEqual(q.ok, true, '« Zorba spéciale 33 cl » toujours vendable en ligne après l’ajout du mot « zorba »');
         } finally {
             const { error } = await service.rpc('order_review_keywords_set', { p_value: { value: original }, p_actor: superadmin, p_reason: 'Fin de la contre-vérification 12c' });
             assert.equal(error, null, error?.message);
