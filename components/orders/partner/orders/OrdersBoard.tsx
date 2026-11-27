@@ -11,11 +11,19 @@
  *  - Nouvelle commande : son et vibration (useOrderSound, après un premier toucher), animation d'arrivée et halo.
  *  - « Ma journée » : GET /api/partner/orders/day, relu toutes les 30 s.
  *  - Actions rapides par PATCH /api/partner/orders/[id] ; le refus du serveur est affiché tel quel.
+ * Contre-vérification du lot 12c :
+ *  - point 9 : à partir de 1 280 px, colonnes d'au moins 18 rem côte à côte dans une zone qui défile proprement à
+ *    l'horizontale si la place manque (menu latéral ouvert à 1 440 px) ; numéro de commande sur une ligne ;
+ *  - point 10 : mode comptoir (plein écran, sans menu, très grands boutons, écran gardé allumé si le navigateur le
+ *    permet, sinon un message simple ; sortie en un geste : bouton « Quitter », Échap ou sortie du plein écran) ;
+ *  - point 11 : rappel sonore 5 et 2 minutes avant la fin du délai de réponse (même interrupteur que le son) ;
+ *  - point 12 : « Plus de … » en un geste dans « Ma journée » (DaySummary).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { BellRing, Bike, ClipboardList, Volume2, VolumeX, WifiOff } from 'lucide-react';
+import { BellRing, Bike, ClipboardList, LogOut, MonitorSmartphone, Volume2, VolumeX, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { IconButton } from '@/components/ui/IconButton';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -44,6 +52,53 @@ type ViewTab = 'en-cours' | 'terminees';
 
 type ViewTransitionDocument = Document & { startViewTransition?: (cb: () => void) => unknown };
 
+/** Rappels sonores avant la fin du délai de réponse, en minutes (du plus proche au plus lointain). */
+const REMINDERS_MIN = [2, 5] as const;
+
+interface WakeLockSentinelLike { release: () => Promise<void> }
+type WakeLockNavigator = Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> } };
+type WakeState = 'pending' | 'on' | 'unavailable';
+
+/** Mode comptoir : écran gardé allumé tant que le mode est ouvert (repris au retour sur la page), si le navigateur le permet. */
+function useWakeLock(active: boolean): WakeState {
+    const [state, setState] = useState<WakeState>('pending');
+    useEffect(() => {
+        if (!active) return undefined;
+        let sentinel: WakeLockSentinelLike | null = null;
+        let alive = true;
+        const lock = async () => {
+            const api = (navigator as WakeLockNavigator).wakeLock;
+            if (!api) {
+                setState('unavailable');
+                return;
+            }
+            if (document.visibilityState !== 'visible') return;
+            try {
+                const s = await api.request('screen');
+                if (alive) {
+                    sentinel = s;
+                    setState('on');
+                } else {
+                    void s.release().catch(() => undefined);
+                }
+            } catch (err) {
+                console.warn('[comptoir] écran non gardé allumé :', err instanceof Error ? err.message : String(err));
+                if (alive) setState('unavailable');
+            }
+        };
+        const onVisible = () => { if (document.visibilityState === 'visible') void lock(); };
+        void lock();
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            alive = false;
+            document.removeEventListener('visibilitychange', onVisible);
+            if (sentinel) void sentinel.release().catch(() => undefined);
+            setState('pending');
+        };
+    }, [active]);
+    return state;
+}
+
 /** Tablette et ordinateur (768 px et plus) : colonnes ; téléphone : onglets. Une seule disposition rendue à la fois. */
 function useWideScreen(): boolean | null {
     const [wide, setWide] = useState<boolean | null>(null);
@@ -64,6 +119,9 @@ export function OrdersBoard() {
     const [column, setColumn] = useState<BoardColumn>('RECUES');
     const [busyId, setBusyId] = useState<string | null>(null);
     const [fresh, setFresh] = useState<Record<string, number>>({});
+    const [counter, setCounter] = useState(false);
+    const counterFullscreen = useRef(false);
+    const reminded = useRef<Set<string>>(new Set());
     const seen = useRef<Set<string> | null>(null);
     const columns = useRef<Map<string, BoardColumn | null>>(new Map());
     const wide = useWideScreen();
@@ -118,6 +176,56 @@ export function OrdersBoard() {
         return () => clearTimeout(t);
     }, [fresh]);
 
+    // Rappel 5 et 2 minutes avant la fin du délai de réponse : un son par relecture, un message par commande et par seuil
+    const { remind } = sound;
+    useEffect(() => {
+        const due: string[] = [];
+        for (const o of orders) {
+            if (o.state !== 'RECUE' || !o.response_due_at) continue;
+            const left = Date.parse(o.response_due_at) - now;
+            if (Number.isNaN(left) || left <= 0) continue;
+            const step = REMINDERS_MIN.find((m) => left <= m * 60_000);
+            if (step === undefined || reminded.current.has(`${o.id}:${step}`)) continue;
+            // Un seuil passé vaut aussi pour les seuils plus lointains (pas de rappel « 5 minutes » après celui de 2)
+            for (const m of REMINDERS_MIN) if (m >= step) reminded.current.add(`${o.id}:${m}`);
+            due.push(`Commande ${shortOrderNumber(o.order_number)} : plus que ${step} minutes pour répondre.`);
+        }
+        if (due.length === 0) return;
+        remind();
+        for (const message of due) toast.warning(message);
+    }, [orders, now, remind, toast]);
+
+    // Mode comptoir : plein écran du navigateur dans le geste, sortie en un geste (bouton, Échap, sortie du plein écran)
+    const wake = useWakeLock(counter);
+    const enterCounter = useCallback(() => {
+        setCounter(true);
+        const el = document.documentElement;
+        if (typeof el.requestFullscreen === 'function' && !document.fullscreenElement) {
+            el.requestFullscreen().catch((err: unknown) => console.warn('[comptoir] plein écran refusé :', err instanceof Error ? err.message : String(err)));
+        }
+    }, []);
+    const leaveCounter = useCallback(() => {
+        setCounter(false);
+        counterFullscreen.current = false;
+        if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+            document.exitFullscreen().catch((err: unknown) => console.warn('[comptoir] sortie du plein écran :', err instanceof Error ? err.message : String(err)));
+        }
+    }, []);
+    useEffect(() => {
+        if (!counter) return undefined;
+        const onChange = () => {
+            if (document.fullscreenElement) {
+                counterFullscreen.current = true;
+            } else if (counterFullscreen.current) {
+                // Sortie du plein écran par le navigateur (Échap) : le mode comptoir se ferme aussi
+                counterFullscreen.current = false;
+                setCounter(false);
+            }
+        };
+        document.addEventListener('fullscreenchange', onChange);
+        return () => document.removeEventListener('fullscreenchange', onChange);
+    }, [counter]);
+
     const byColumn = useMemo(() => {
         const m: Record<BoardColumn, PartnerOrder[]> = { RECUES: [], PREPARATION: [], PRETES: [], EN_ROUTE: [] };
         for (const o of orders) {
@@ -145,15 +253,40 @@ export function OrdersBoard() {
 
     const counts = Object.fromEntries(BOARD_COLUMNS.map((c) => [c.id, byColumn[c.id].length])) as Record<BoardColumn, number>;
 
-    const renderColumn = (c: (typeof BOARD_COLUMNS)[number]) => (
+    const renderColumn = (c: (typeof BOARD_COLUMNS)[number], large = false) => (
         <div className="space-y-3">
             {byColumn[c.id].length === 0 ? (
                 <p className="rounded-2xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">{c.empty}</p>
             ) : (
                 byColumn[c.id].map((o) => (
-                    <OrderCard key={o.id} order={o} now={now} fresh={o.id in fresh} busy={busyId === o.id} readOnly={false} onQuick={quick} />
+                    <OrderCard key={o.id} order={o} now={now} fresh={o.id in fresh} busy={busyId === o.id} readOnly={false} onQuick={quick} large={large} />
                 ))
             )}
+        </div>
+    );
+
+    // Colonnes par étape : 2 sur tablette ; à partir de 1 280 px (et en mode comptoir), côte à côte, 18 rem au moins
+    // chacune, dans une zone qui défile à l'horizontale quand la place manque (jamais la page entière)
+    const renderBoard = (large: boolean) => (
+        <div
+            role="region"
+            aria-label="Commandes par étape"
+            tabIndex={0}
+            className="-mx-1 overflow-x-auto rounded-2xl px-1 pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+            <div className={cn('grid gap-4', large
+                ? 'auto-cols-[minmax(18rem,1fr)] grid-flow-col'
+                : 'grid-cols-2 xl:auto-cols-[minmax(18rem,1fr)] xl:grid-flow-col xl:grid-cols-none')}>
+                {BOARD_COLUMNS.map((c) => (
+                    <section key={c.id} aria-labelledby={`colonne-${large ? 'comptoir-' : ''}${c.id}`} className="min-w-0 rounded-2xl bg-muted/60 p-3">
+                        <h2 id={`colonne-${large ? 'comptoir-' : ''}${c.id}`} className={cn('mb-3 flex items-center justify-between gap-2 px-1 font-bold text-foreground-strong', large ? 'text-xl' : 'text-base')}>
+                            {c.label}
+                            <span className="rounded-full bg-card px-2.5 py-0.5 text-sm font-bold tabular-nums text-foreground-strong">{counts[c.id]}</span>
+                        </h2>
+                        {renderColumn(c, large)}
+                    </section>
+                ))}
+            </div>
         </div>
     );
 
@@ -178,6 +311,7 @@ export function OrdersBoard() {
                         >
                             {sound.enabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
                         </IconButton>
+                        <Button variant="secondary" leftIcon={<MonitorSmartphone size={18} aria-hidden="true" />} onClick={enterCounter}>Mode comptoir</Button>
                         <LinkButton href="/partner/orders/livreurs" variant="secondary" leftIcon={<Bike size={18} />}>Livreurs</LinkButton>
                     </>
                 }
@@ -199,7 +333,7 @@ export function OrdersBoard() {
                 </StatusBanner>
             )}
 
-            <DaySummary day={day.data?.day ?? null} loading={day.loading} />
+            <DaySummary day={day.data?.day ?? null} loading={day.loading} readOnly={day.data?.partnerStatus === 'SUSPENDU'} onChanged={day.reload} />
 
             {open.error && open.data && (
                 <StatusBanner tone="warning" title="Mise à jour impossible pour le moment">{errorMessage(open.error)}</StatusBanner>
@@ -250,20 +384,59 @@ export function OrdersBoard() {
                         </div>
                     ) : (
                         /* Tablette et ordinateur : colonnes par étape */
-                        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-                            {BOARD_COLUMNS.map((c) => (
-                                <section key={c.id} aria-labelledby={`colonne-${c.id}`} className="min-w-0 rounded-2xl bg-muted/60 p-3">
-                                    <h2 id={`colonne-${c.id}`} className="mb-3 flex items-center justify-between gap-2 px-1 text-base font-bold text-foreground-strong">
-                                        {c.label}
-                                        <span className="rounded-full bg-card px-2.5 py-0.5 text-sm font-bold tabular-nums text-foreground-strong">{counts[c.id]}</span>
-                                    </h2>
-                                    {renderColumn(c)}
-                                </section>
-                            ))}
-                        </div>
+                        renderBoard(false)
                     )
                 )}
             </TabPanel>
+
+            <Modal
+                isOpen={counter}
+                onClose={leaveCounter}
+                fullScreen
+                title="Mode comptoir"
+                subtitle={open.online
+                    ? (open.updatedAt ? `Mis à jour à ${formatTime(open.updatedAt)}${sound.enabled ? '' : ' · son coupé'}` : 'Chargement des commandes…')
+                    : 'Hors ligne : l’écran se remet à jour au retour du réseau'}
+                icon={<MonitorSmartphone size={20} aria-hidden="true" />}
+            >
+                <div className="h-full space-y-4 overflow-y-auto p-4 sm:p-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        {wake === 'unavailable' ? (
+                            <p className="text-base text-warning-text" role="status">
+                                Cet appareil peut se mettre en veille : réglez sa mise en veille sur « jamais » pendant le service.
+                            </p>
+                        ) : (
+                            <p className="text-base text-muted-foreground" role="status">
+                                {wake === 'on' ? 'L’écran reste allumé tant que ce mode est ouvert.' : 'Les nouvelles commandes sonnent et s’affichent ici.'}
+                            </p>
+                        )}
+                        <Button variant="secondary" size="lg" className="min-h-16 px-8 text-lg" leftIcon={<LogOut size={22} aria-hidden="true" />} onClick={leaveCounter}>
+                            Quitter le mode comptoir
+                        </Button>
+                    </div>
+                    {orders.length === 0 ? (
+                        <EmptyState
+                            illustrated
+                            icon={<ClipboardList size={28} />}
+                            title="Aucune commande en cours"
+                            description="La prochaine commande sonnera et apparaîtra ici."
+                        />
+                    ) : !wide ? (
+                        <div className="space-y-6">
+                            {BOARD_COLUMNS.filter((c) => counts[c.id] > 0).map((c) => (
+                                <section key={c.id} aria-labelledby={`comptoir-${c.id}`}>
+                                    <h2 id={`comptoir-${c.id}`} className="mb-3 text-xl font-bold text-foreground-strong">
+                                        {c.label} <span className="tabular-nums text-muted-foreground">({counts[c.id]})</span>
+                                    </h2>
+                                    {renderColumn(c, true)}
+                                </section>
+                            ))}
+                        </div>
+                    ) : (
+                        renderBoard(true)
+                    )}
+                </div>
+            </Modal>
 
             <TabPanel idPrefix="commandes-vue" tabIdValue="terminees" className={view === 'terminees' ? '' : 'hidden'}>
                 {view !== 'terminees' ? null : closed.loading && !closed.data ? (

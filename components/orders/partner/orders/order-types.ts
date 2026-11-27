@@ -69,6 +69,8 @@ export interface DayReply {
         paidOnlineToday: number;
         onsiteToday: number;
         low: Array<{ productId: string; name: string; venueId: string | null; kind: 'STOCK' | 'PORTIONS'; left: number }>;
+        /** Contre-vérification du lot 12c : plats du jour encore en vente aujourd'hui. */
+        specials: Array<{ productId: string; name: string; venueId: string | null; portions: number; sold: number }>;
     };
 }
 

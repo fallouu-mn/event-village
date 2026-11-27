@@ -5,16 +5,20 @@
  * jauge de portions, grille de cartes (photo, prix en grand, pastilles d'état), filtres par catégorie, disponibilité en un
  * geste, retrait (supprimé s'il n'a jamais été vendu, archivé sinon). Tout est lu sur GET /api/partner/catalog ; aucun
  * montant n'est calculé ici. Fiche suspendue : lecture seule (aucun bouton d'écriture).
+ * Contre-vérification du lot 12c : produits archivés « Remettre en vente » (revus par la liste des mots), motif d'une
+ * mise « à vérifier » par l'administration, renommage de la catégorie choisie (un nom avec un mot de la liste met ses
+ * produits « à vérifier »).
  */
 import React, { useMemo, useState } from 'react';
-import { Clock, Plus, Settings2, Trash2, UtensilsCrossed } from 'lucide-react';
+import { Archive, Clock, Pencil, Plus, RotateCcw, Settings2, Trash2, UtensilsCrossed } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState, ErrorState } from '@/components/ui/EmptyState';
 import { FilterChip } from '@/components/ui/FilterChip';
 import { IconButton } from '@/components/ui/IconButton';
 import { LinkButton } from '@/components/ui/LinkButton';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Select } from '@/components/ui/Field';
+import { Select, TextInput } from '@/components/ui/Field';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -38,6 +42,8 @@ export function CatalogView({ initialVenue }: { initialVenue: string | null }) {
     const [category, setCategory] = useState<string>('');
     const [removing, setRemoving] = useState<CatalogProduct | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
+    const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+    const [renameError, setRenameError] = useState<string | null>(null);
 
     const readOnly = data?.partnerStatus === 'SUSPENDU';
     const venueChoices = useMemo(() => {
@@ -58,6 +64,10 @@ export function CatalogView({ initialVenue }: { initialVenue: string | null }) {
     const specials = shown.filter((p) => p.isDailySpecial);
     const others = shown.filter((p) => !p.isDailySpecial);
     const reviewCount = inVenue.filter((p) => p.underReview).length;
+    const archived = (data?.archived ?? []).filter((a) => (venueId === NO_VENUE
+        ? !a.venueId || !data?.venues.some((v) => v.id === a.venueId)
+        : a.venueId === venueId));
+    const currentCategory = categories.find((c) => c.id === category) ?? null;
     const newHref = venue ? `/partner/products/new?etablissement=${venue.id}` : '/partner/products/new';
 
     async function changeStatus(p: CatalogProduct, next: string) {
@@ -69,6 +79,43 @@ export function CatalogView({ initialVenue }: { initialVenue: string | null }) {
             await reload();
         } catch (err) {
             toast.error(errorMessage(err, 'Disponibilité non enregistrée. Réessayez.'));
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    async function restore(id: string, name: string) {
+        setBusy(id);
+        try {
+            const r = await sendJson<{ message?: string }>(`/api/partner/products/${id}/restore`, 'POST');
+            toast.success(`« ${name} » : ${(r.message ?? 'Produit remis sur votre carte.').replace(/^Produit r/, 'r')}`);
+            await reload();
+        } catch (err) {
+            toast.error(errorMessage(err, 'Produit non remis en vente. Réessayez.'));
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    async function rename() {
+        if (!renaming) return;
+        const clean = renaming.name.trim().replace(/\s+/g, ' ');
+        if (clean.length < 2 || clean.length > 60) {
+            setRenameError('Le nom de la catégorie compte de 2 à 60 caractères.');
+            return;
+        }
+        setBusy(renaming.id);
+        setRenameError(null);
+        try {
+            const r = await sendJson<{ flagged?: number }>(`/api/partner/products/categories/${renaming.id}`, 'PATCH', { name: clean });
+            const n = r.flagged ?? 0;
+            toast.success(n > 0
+                ? `Catégorie renommée : ${n > 1 ? `${formatInteger(n)} produits sont` : 'un produit est'} en vérification par Event Village.`
+                : `Catégorie renommée « ${clean} ».`);
+            setRenaming(null);
+            await reload();
+        } catch (err) {
+            setRenameError(errorMessage(err, 'Catégorie non renommée. Réessayez.'));
         } finally {
             setBusy(null);
         }
@@ -185,9 +232,36 @@ export function CatalogView({ initialVenue }: { initialVenue: string | null }) {
                         <div role="group" aria-label="Catégorie" className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
                             <FilterChip pressed={category === ''} onClick={() => setCategory('')}>Toutes</FilterChip>
                             {categories.map((c) => (
-                                <FilterChip key={c.id} pressed={category === c.id} onClick={() => setCategory(c.id)}>{c.name}</FilterChip>
+                                <FilterChip key={c.id} pressed={category === c.id} onClick={() => { setCategory(c.id); setRenaming(null); }}>{c.name}</FilterChip>
                             ))}
+                            {currentCategory && !readOnly && !renaming && (
+                                <Button variant="ghost" size="sm" leftIcon={<Pencil size={16} aria-hidden="true" />}
+                                    onClick={() => { setRenameError(null); setRenaming({ id: currentCategory.id, name: currentCategory.name }); }}>
+                                    Renommer
+                                </Button>
+                            )}
                         </div>
+                    )}
+                    {renaming && (
+                        <form
+                            className="mt-3 flex flex-wrap items-end gap-2"
+                            noValidate
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                void rename();
+                            }}
+                        >
+                            <TextInput
+                                label="Nouveau nom de la catégorie"
+                                maxLength={60}
+                                value={renaming.name}
+                                fieldClassName="min-w-0 flex-1 basis-56"
+                                error={renameError ?? undefined}
+                                onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                            />
+                            <Button type="submit" variant="primary" isLoading={busy === renaming.id}>Enregistrer</Button>
+                            <Button type="button" variant="ghost" onClick={() => setRenaming(null)} disabled={busy === renaming.id}>Annuler</Button>
+                        </form>
                     )}
 
                     {inVenue.length === 0 ? (
@@ -231,6 +305,35 @@ export function CatalogView({ initialVenue }: { initialVenue: string | null }) {
                                 <p className="mt-6 text-sm text-muted-foreground">Aucun produit dans cette catégorie.</p>
                             )}
                         </>
+                    )}
+
+                    {archived.length > 0 && (
+                        <section aria-labelledby="archives" className="mt-8">
+                            <h2 id="archives" className="mb-1 flex items-center gap-2 text-lg font-semibold text-foreground-strong">
+                                <Archive size={18} aria-hidden="true" />
+                                Produits archivés <span className="tabular-nums text-muted-foreground">({formatInteger(archived.length)})</span>
+                            </h2>
+                            <p className="mb-3 text-sm text-muted-foreground">
+                                Retirés de votre carte après avoir été vendus. Remis en vente, ils reviennent tels qu’ils étaient ; Event Village les revoit si leur nom contient un mot à vérifier.
+                            </p>
+                            <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+                                {archived.map((a) => (
+                                    <li key={a.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                                        <div className="min-w-0">
+                                            <p className="break-words font-medium text-foreground-strong">{a.name}</p>
+                                            <p className="text-sm text-muted-foreground tabular-nums">{formatFcfa(a.price)}</p>
+                                        </div>
+                                        {!readOnly && venueId !== NO_VENUE && (
+                                            <Button variant="secondary" size="sm" leftIcon={<RotateCcw size={16} aria-hidden="true" />}
+                                                isLoading={busy === a.id} disabled={busy !== null && busy !== a.id}
+                                                onClick={() => void restore(a.id, a.name)}>
+                                                Remettre en vente
+                                            </Button>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
                     )}
                 </>
             )}
@@ -285,7 +388,11 @@ function ReviewNote({ product }: { product: CatalogProduct }) {
     return (
         <p className="flex items-start gap-1.5 rounded-lg bg-info-soft px-3 py-2 text-sm leading-snug text-info-text">
             <Clock size={16} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-            <span>{reviewReason(product.reviewWords)}</span>
+            <span>
+                {product.reviewNote
+                    ? `Event Village vérifie ce produit avant la vente en ligne. Motif : ${product.reviewNote}`
+                    : reviewReason(product.reviewWords)}
+            </span>
         </p>
     );
 }

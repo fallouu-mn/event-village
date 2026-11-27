@@ -9,6 +9,8 @@
  *    que ce toucher n'a pas eu lieu, l'écran montre « Activer le son ».
  *  - Vibration (navigator.vibrate) en plus, si le téléphone la propose.
  *  - Rien quand l'onglet est caché : la commande reste surlignée au retour.
+ *  - Contre-vérification du lot 12c (point 11) : rappel sonore 5 et 2 minutes avant la fin du délai de réponse (remind),
+ *    même interrupteur que le son des nouvelles commandes, son différent (deux notes descendantes).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readOrderSound, saveOrderSound } from '@/lib/device/device-prefs';
@@ -29,6 +31,8 @@ export interface OrderSound {
     unlock: () => void;
     /** Son et vibration d'une nouvelle commande (une fois par relecture). */
     ring: () => void;
+    /** Rappel avant la fin du délai de réponse (5 et 2 minutes). */
+    remind: () => void;
 }
 
 export function useOrderSound(): OrderSound {
@@ -98,6 +102,37 @@ export function useOrderSound(): OrderSound {
         });
     }, []);
 
+    const tones = useCallback((notes: ReadonlyArray<readonly [number, number]>) => {
+        const ac = ctx.current;
+        if (!ac || ac.state !== 'running') return;
+        const t0 = ac.currentTime;
+        notes.forEach(([freq, at]) => {
+            const osc = ac.createOscillator();
+            const gain = ac.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.0001, t0 + at);
+            gain.gain.exponentialRampToValueAtTime(0.25, t0 + at + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.32);
+            osc.connect(gain).connect(ac.destination);
+            osc.start(t0 + at);
+            osc.stop(t0 + at + 0.34);
+        });
+    }, []);
+
+    const remind = useCallback(() => {
+        if (!enabled || document.visibilityState !== 'visible') return;
+        // Deux notes descendantes, deux fois : distinct de l'arrivée d'une commande
+        tones([[1047, 0], [698, 0.22], [1047, 0.6], [698, 0.82]]);
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+            try {
+                navigator.vibrate([400, 150, 400]);
+            } catch (err) {
+                console.error('[commandes] vibration refusée', err);
+            }
+        }
+    }, [enabled, tones]);
+
     const ring = useCallback(() => {
         if (!enabled || document.visibilityState !== 'visible') return;
         chime();
@@ -110,5 +145,5 @@ export function useOrderSound(): OrderSound {
         }
     }, [enabled, chime]);
 
-    return { enabled, setEnabled, ready, unlock, ring };
+    return { enabled, setEnabled, ready, unlock, ring, remind };
 }

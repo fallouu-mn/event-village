@@ -54,6 +54,7 @@ export function OrderCard({
     busy,
     readOnly,
     onQuick,
+    large = false,
 }: {
     order: PartnerOrder;
     now: number;
@@ -61,6 +62,8 @@ export function OrderCard({
     busy: boolean;
     readOnly: boolean;
     onQuick: (order: PartnerOrder, action: QuickAction) => void;
+    /** Contre-vérification du lot 12c (mode comptoir) : très grands boutons. */
+    large?: boolean;
 }) {
     const ModeIcon = MODE_ICONS[order.mode] ?? ShoppingBag;
     const { shown, more } = linesSummary(order);
@@ -82,10 +85,10 @@ export function OrderCard({
             )}
             <header className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                    <h3 id={`commande-${order.id}`} className="text-2xl font-extrabold tabular-nums tracking-tight text-foreground-strong">
+                    <h3 id={`commande-${order.id}`} className="whitespace-nowrap text-2xl font-extrabold tabular-nums tracking-tight text-foreground-strong">
                         <span className="sr-only">Commande </span>{shortOrderNumber(order.order_number)}
                     </h3>
-                    <p className="text-sm tabular-nums text-muted-foreground" aria-hidden="true">{order.order_number}</p>
+                    <p className="whitespace-nowrap text-sm tabular-nums text-muted-foreground" aria-hidden="true">{order.order_number}</p>
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
                         <span className="inline-flex items-center gap-1 font-semibold text-foreground">
                             <ModeIcon size={16} aria-hidden="true" />
@@ -140,6 +143,7 @@ export function OrderCard({
                         variant="primary"
                         size="lg"
                         fullWidth
+                        className={large ? 'min-h-16' : undefined}
                         isLoading={busy}
                         onClick={() => onQuick(order, quick.action)}
                     >
@@ -151,6 +155,7 @@ export function OrderCard({
                     variant="secondary"
                     size="lg"
                     fullWidth
+                    className={large ? 'min-h-16' : undefined}
                     rightIcon={<ChevronRight size={18} />}
                     aria-label={`Ouvrir la commande ${order.order_number}`}
                 >
