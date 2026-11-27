@@ -15,7 +15,9 @@
 --  3. order_payment_start(p) : enveloppe de order_payment_create (aucune recopie) : clé d'idempotence du paiement
 --     (payments.client_idempotency_key, index unique existant uq_payments_client_idempotency) → même paiement
 --     (duplicate) ; montant affiché (expected_amount) différent du montant de la base → sous-bloc annulé, aucun paiement
---     créé, refus ORDER_PRICE_CHANGED avec le nouveau montant.
+--     créé, refus ORDER_PRICE_CHANGED avec le nouveau montant. Contre-vérification du lot 12b (observation) : la clé est
+--     liée à sa commande : la même clé envoyée pour une autre commande (ou déjà prise par un paiement de billets) est
+--     refusée (IDEMPOTENCY_KEY_REUSED, message simple), jamais confondue avec le paiement d'une autre commande.
 -- Toutes réservées au rôle de service (routes serveur). Rejouable : ADD COLUMN IF NOT EXISTS, index IF NOT EXISTS,
 -- CREATE OR REPLACE, REVOKE et GRANT idempotents. Aucun BEGIN ni COMMIT.
 -- ============================================================================
@@ -113,9 +115,11 @@ SET search_path = public
 AS $$
 DECLARE
     v_client   uuid := public.try_uuid(p->>'client_id');
+    v_order    uuid := public.try_uuid(p->>'order_id');
     v_key      text := NULLIF(btrim(COALESCE(p->>'client_idempotency_key', '')), '');
     v_expected numeric := private.order_expected_amount(p->'expected_amount');
     v_existing uuid;
+    v_existing_order uuid;
     v_amount   numeric;
     r          jsonb;
 BEGIN
@@ -124,8 +128,13 @@ BEGIN
     END IF;
     IF v_key IS NOT NULL AND v_client IS NOT NULL THEN
         PERFORM pg_advisory_xact_lock(hashtextextended('order_payment_key:' || v_client::text || ':' || v_key, 0));
-        SELECT id INTO v_existing FROM public.payments WHERE client_id = v_client AND client_idempotency_key = v_key;
+        SELECT id, order_id INTO v_existing, v_existing_order FROM public.payments WHERE client_id = v_client AND client_idempotency_key = v_key;
         IF FOUND THEN
+            -- Clé liée à sa commande : jamais le paiement d'une autre commande (ni d'un achat de billets)
+            IF v_existing_order IS DISTINCT FROM v_order THEN
+                RETURN jsonb_build_object('ok', false, 'code', 'IDEMPOTENCY_KEY_REUSED',
+                    'message', 'Cette demande de paiement ne correspond pas à cette commande : rechargez la page et réessayez.');
+            END IF;
             RETURN jsonb_build_object('ok', true, 'duplicate', true, 'payment_id', v_existing);
         END IF;
     END IF;

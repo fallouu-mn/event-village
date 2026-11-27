@@ -395,6 +395,32 @@ describe('E. Paiement de la commande', () => {
         assert.equal((await paymentsOf(id)).length, 1);
     });
 
+    test('clé liée à sa commande (contre-vérification) : la même clé pour une autre commande est refusée, rien de créé pour elle', async () => {
+        await releaseUnpaid(client.userId);
+        const p = await newProduct(partner, shop, { price: 1_000 });
+        const first = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
+        const second = await placed(client, orderBody(shop, [{ productId: p, quantity: 1 }]));
+        const key = `l12b-lie-${randomUUID()}`;
+        const pay = async (orderId: string) => {
+            const { POST } = await import('../../app/api/payments/create/route');
+            return reply(await POST(req('/api/payments/create', 'POST', client.accessToken,
+                { targetType: 'ORDER', targetId: orderId, operator: 'WAVE', payerPhone: client.phone9, expectedAmount: 1_050 }, { 'idempotency-key': key })));
+        };
+        const a = await pay(first);
+        assert.equal(a.status, 201, a.text);
+        const b = await pay(second);
+        console.log(`[L12B] clé de paiement réutilisée pour une autre commande : HTTP ${b.status} ${b.text}`);
+        assert.equal(b.status, 409, b.text);
+        assert.equal(b.body.code, 'IDEMPOTENCY_KEY_REUSED');
+        assert.equal(b.body.error, 'Cette demande de paiement ne correspond pas à cette commande : rechargez la page et réessayez.');
+        assert.equal(b.body.payment_id, undefined, 'jamais le paiement de l’autre commande');
+        assert.deepEqual(await paymentsOf(second), [], 'aucun paiement pour la seconde commande');
+        const again = await pay(first);
+        assert.ok(again.status === 200 || again.status === 201, again.text);
+        assert.equal(again.body.payment_id ?? again.body.id, a.body.payment_id ?? a.body.id, 'même commande, même clé : même paiement');
+        await releaseUnpaid(client.userId);
+    });
+
     test('acompte de 30 % puis solde : 10 000 → acompte 3 000 + 150 ; solde 7 000 + 350 ; vrai webhook ; plus rien à payer', async () => {
         const p = await newProduct(partner, shop, { price: 10_000 });
         const body = orderBody(shop, [{ productId: p, quantity: 1 }], { payment: 'ACOMPTE' });
