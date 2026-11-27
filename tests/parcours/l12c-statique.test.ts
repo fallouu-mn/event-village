@@ -45,7 +45,9 @@ function definitions(schema: string, name: string): Array<{ file: string; body: 
 }
 const lines = (body: string): string[] => body.split(/\r?\n/).map((l) => l.replace(/--.*$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
 
-const RECOPIED = ['product_regulated', 'products_order_guard', 'order_product_regulation_decide', 'order_quote_compute'] as const;
+// Contre-vérification du lot 12c : order_daily_portions_set recopiée (produit archivé refusé, rupture en un geste), lignes
+// ajoutées seulement
+const RECOPIED = ['product_regulated', 'products_order_guard', 'order_product_regulation_decide', 'order_quote_compute', 'order_daily_portions_set'] as const;
 
 /** Lignes de la dernière définition élargies par le lot : ligne d'origine → lignes qui la remplacent (même sens, plus). */
 const REPLACED: Record<string, Record<string, string[]>> = {
@@ -64,7 +66,7 @@ const REPLACED: Record<string, Record<string, string[]>> = {
 };
 
 describe('l12c — contrôles sans base', () => {
-    test('S1 — 4 recopies, une fois chacune dans le lot, sans ligne perdue (lignes élargies déclarées)', () => {
+    test('S1 — 5 recopies, une fois chacune dans le lot, sans ligne perdue (lignes élargies déclarées)', () => {
         const report: string[] = [];
         for (const name of RECOPIED) {
             const defs = definitions('public', name);

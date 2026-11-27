@@ -319,6 +319,15 @@ const EXPECTED: ExpectedType[] = [...lot9bisExpected(), ...lot9terExpected(), ..
     // Lot 12c (migration 20261224000001, ajout signalé au rapport) : produit « à vérifier » (administration) et décision (partenaire)
     ess('ADMIN_PRODUCT_REVIEW', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products?produit=a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Produit à vérifier', 'partners.validate'),
     ess('PRODUCT_REVIEW_DECIDED', [I, P, M], 'PARTNER', 'A', 'ORDER', ['/partner/products/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], /^Produit (autorisé à la vente|vérifié|non vendu en ligne)$/),
+    // Contre-vérification du lot 12c (migration 20261224000005, ajout signalé au rapport) : avis ajoutés (point 7) et revue groupée
+    ess('ORDER_CODE_LOCKED', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Code de remise bloqué'),
+    ess('ORDER_RESPONSE_REMINDER', [I, P, M, S], 'PARTNER', 'B', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande sans réponse'),
+    ess('ORDER_PREP_REMINDER', [I, P, M, S], 'PARTNER', 'B', 'ORDER', ['/partner/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande à préparer'),
+    ess('ORDER_READY_COURIER', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/courier/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Commande prête à livrer'),
+    ess('ORDER_SCHEDULED_REMINDER', [I, P, M, S], 'CLIENT', 'B', 'ORDER', ['/orders/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], 'Votre commande approche'),
+    ess('PRODUCT_DECISION_SMS', [S], 'PARTNER', 'A', null, ['/partner/products/a3c5e7b9-1d2f-4a6c-8e4b-5f7a9c1e3d59'], null),
+    ess('ADMIN_ORDER_REFUND_BLOCKED', [S], 'ADMIN', 'B', null, ['/admin/finance#versements-a-reprendre'], null, 'refunds.manage'),
+    ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M], 'ADMIN', 'B', 'ADMIN_REVIEW', ['/admin/products'], 'Produits à vérifier', 'partners.validate'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B', 'PROMOTION', [PE], /^Mise en avant (acceptée|refusée)$/), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Nouvelle affectation'), // G.49 (11.3, minimum)
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B', 'CONTROLLER', ['/controller/scanner'], 'Affectation retirée'), // G.49 (11.3, minimum)
@@ -1164,6 +1173,33 @@ describe('6.3 Catalogue : SMS (contrat F2, G3)', () => {
                 "Event Village : commande CMD-261205-A1B2 à livrer pour Chez Fatou, zone Ngor. Adresse dans l'application."],
             ["ORDER_COURIER_CANCELLED", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000}, [],
                 "Event Village : livraison de la commande CMD-261205-A1B2 annulée ou confiée à un autre livreur : ne la livrez pas."],
+            // Contre-vérification du lot 12c (point 7, ajout signalé au rapport) : avis ajoutés
+            ["ORDER_CODE_LOCKED", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000}, [],
+                "Event Village : code de remise de la commande CMD-261205-A1B2 bloqué après trop d'essais. Demandez un nouveau code dans l'application."],
+            ["ORDER_RESPONSE_REMINDER", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000}, [],
+                "Event Village : commande CMD-261205-A1B2 toujours sans réponse. Acceptez-la ou refusez-la avant 12:15, sinon elle sera annulée."],
+            ["ORDER_PREP_REMINDER", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000}, [],
+                "Event Village : commande CMD-261205-A1B2 prévue à 12:45 : lancez sa préparation maintenant."],
+            ["ORDER_READY_COURIER", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000}, [],
+                "Event Village : commande CMD-261205-A1B2 à récupérer chez Chez Fatou pour la livrer. Adresse dans l'application."],
+            ["ORDER_SCHEDULED_REMINDER", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "mode": "LIVRAISON"}, [],
+                "Event Village : rappel, commande CMD-261205-A1B2 prévue à 12:45 chez Chez Fatou. Gardez votre téléphone près de vous."],
+            ["ORDER_SCHEDULED_REMINDER", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "mode": "RETRAIT"}, [],
+                "Event Village : rappel, commande CMD-261205-A1B2 prévue à 12:45 chez Chez Fatou. Pensez à votre code de remise."],
+            ["ORDER_SCHEDULED_REMINDER", {"venue_name": "Chez Fatou", "order_number": "CMD-261205-A1B2", "zone_name": "Ngor", "items_count": 2, "goods_total": 5000, "mode": "SUR_PLACE"}, [],
+                "Event Village : rappel, commande CMD-261205-A1B2 prévue à 12:45 chez Chez Fatou. Elle vous sera servie sur place."],
+            ["PRODUCT_DECISION_SMS", {"product_name": "Bissap et bière", "decision": "AUTORISE", "partner_box": false}, [],
+                "Event Village : produit \"Bissap et bière\" vérifié : il se commande en ligne."],
+            ["PRODUCT_DECISION_SMS", {"product_name": "Bissap et bière", "decision": "AUTORISE", "partner_box": true}, [],
+                "Event Village : produit \"Bissap et bière\" vérifié. Marqué réglementé par vous, il reste sans vente en ligne."],
+            ["PRODUCT_DECISION_SMS", {"product_name": "Bissap et bière", "decision": "REFUSE"}, [],
+                "Event Village : produit \"Bissap et bière\" non autorisé à la vente en ligne. Motif dans l'application."],
+            ["ADMIN_ORDER_REFUND_BLOCKED", {"amount": 5250, "order_number": "CMD-261205-A1B2", "cashout_status": "BLOQUE"}, [],
+                "Event Village : remboursement de 5 250 F CFA de la commande CMD-261205-A1B2 bloqué. Reprenez-le depuis les finances."],
+            ["ADMIN_ORDER_REFUND_BLOCKED", {"amount": 5250, "order_number": "CMD-261205-A1B2", "cashout_status": "ECHOUE"}, [],
+                "Event Village : remboursement de 5 250 F CFA de la commande CMD-261205-A1B2 refusé par l'opérateur. Reprenez-le depuis les finances."],
+            ["ADMIN_ORDER_REFUND_BLOCKED", {"amount": 5250, "order_number": "CMD-261205-A1B2", "cashout_status": "INCERTAIN"}, [],
+                "Event Village : remboursement de 5 250 F CFA de la commande CMD-261205-A1B2 sans réponse de l'opérateur. Vérifiez-le avant toute reprise."],
         ];
         const covered = new Set(cases.map((c) => c[0]));
         // Lot 9 bis (T51) : un type nouveau est couvert par son texte fixe du contrat (LOT9BIS_SMS_PATTERNS, test dédié en fin de fichier).

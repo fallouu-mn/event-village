@@ -109,6 +109,12 @@ async function quote(body: Row): Promise<Row> {
 async function createProduct(owner: Buyer, body: Row): Promise<Reply> {
     return reply(await productsPost(req('/api/partner/products', 'POST', owner.accessToken, body)));
 }
+/** Contre-vérification du lot 12c (T2, modification signalée) : version affichée d'un produit, exigée par la décision. */
+async function version(id: string): Promise<string> {
+    const p = await product(id);
+    return String(p.review_requested_at ?? p.updated_at);
+}
+
 async function product(id: string): Promise<Row> {
     const { data, error } = await service.from('products').select('*').eq('id', id).maybeSingle();
     assert.equal(error, null, error?.message);
@@ -132,7 +138,8 @@ describe('A. « à vérifier » posé par la base', () => {
         const r = await createProduct(partner, { venue_id: shop, name: 'Bière Gazelle 65 cl', price: 1_500 });
         assert.equal(r.status, 201, JSON.stringify(r.body));
         const p = r.body.product as Row;
-        assert.deepEqual([p.review_state, p.review_words], ['A_VERIFIER', ['bière']]);
+        // Contre-vérification du lot 12c (modification signalée) : « gazelle » est dans la liste par défaut (marques)
+        assert.deepEqual([p.review_state, p.review_words], ['A_VERIFIER', ['bière', 'gazelle']]);
         const { data: box } = await service.from('notification_outbox').select('type, channel')
             .eq('recipient_user_id', reviewer.userId).eq('type', 'ADMIN_PRODUCT_REVIEW').eq('template_data->>product_id', String(p.id));
         assert.deepEqual((box ?? []).map((b) => String(b.channel)).sort(), ['EMAIL', 'IN_APP'], 'administrateur partners.validate prévenu (cloche, email)');
@@ -207,12 +214,12 @@ describe('C. décision de l’administration', () => {
         const nobody = await newAdmin('l12c-sans-droit', ['events.read']);
         const forbidden = await reply(await regulationPost(req(`/api/admin/products/${id}/regulation`, 'POST', nobody.accessToken, { regulated: false, reason: 'Sans alcool' }), params({ id })));
         assert.equal(forbidden.status, 403, JSON.stringify(forbidden.body));
-        const noReason = await reply(await regulationPost(req(`/api/admin/products/${id}/regulation`, 'POST', reviewer.accessToken, { regulated: false, reason: '' }), params({ id })));
+        const noReason = await reply(await regulationPost(req(`/api/admin/products/${id}/regulation`, 'POST', reviewer.accessToken, { regulated: false, reason: '', reviewedAt: await version(id) }), params({ id })));
         assert.deepEqual([noReason.status, noReason.body.code], [400, 'REASON_REQUIRED']);
         const queue = await reply(await reviewGet(req('/api/admin/products/review', 'GET', reviewer.accessToken)));
         assert.equal(queue.status, 200, JSON.stringify(queue.body));
         assert.ok((queue.body.queue as Row[]).some((x) => x.id === id && (x.words as string[]).includes('bière')), 'produit dans la file, mots trouvés');
-        const ok = await reply(await regulationPost(req(`/api/admin/products/${id}/regulation`, 'POST', reviewer.accessToken, { regulated: false, reason: 'Boisson sans alcool vérifiée' }), params({ id })));
+        const ok = await reply(await regulationPost(req(`/api/admin/products/${id}/regulation`, 'POST', reviewer.accessToken, { regulated: false, reason: 'Boisson sans alcool vérifiée', reviewedAt: await version(id) }), params({ id })));
         assert.equal(ok.status, 200, JSON.stringify(ok.body));
         const p = await product(id);
         assert.deepEqual([p.review_state, p.review_words, p.regulated_admin], [null, null, false]);
@@ -225,7 +232,7 @@ describe('C. décision de l’administration', () => {
         assert.ok((history.body.history as Row[]).some((h) => h.productId === id && h.decision === 'AUTORISE'), 'décision dans l’historique');
 
         const beer = String(((await createProduct(partner, { venue_id: shop, name: 'Bière blonde', price: 1_500 })).body.product as Row).id);
-        const refused = await reply(await regulationPost(req(`/api/admin/products/${beer}/regulation`, 'POST', reviewer.accessToken, { regulated: true, reason: 'Boisson alcoolisée' }), params({ id: beer })));
+        const refused = await reply(await regulationPost(req(`/api/admin/products/${beer}/regulation`, 'POST', reviewer.accessToken, { regulated: true, reason: 'Boisson alcoolisée', reviewedAt: await version(beer) }), params({ id: beer })));
         assert.equal(refused.status, 200);
         const q = await quote(orderBody(shop, [{ productId: beer, quantity: 1 }]));
         assert.equal(q.code, 'REGULATED_PRODUCT', 'refusé à la vente : réglementé, jamais vendu');

@@ -151,6 +151,8 @@ async function seed(superadmin: string): Promise<Seeded> {
     const thiakry = await save({ name: 'Thiakry', description: 'Couscous de mil au lait caillé.', price: 1_500, category_id: cat('Desserts'), is_stock_managed: true, stock_quantity: 4 });
     await save({ name: 'Whisky 12 ans', price: 15_000, category_id: cat('Boissons'), is_regulated: true, regulated_kind: 'ALCOOL' });
     const biere = await save({ name: 'Bière Gazelle 65 cl', description: 'Bière blonde locale, servie fraîche.', price: 1_500, category_id: cat('Boissons') });
+    // Contre-vérification du lot 12c (point 8) : un produit vendu puis archivé, pour « Remettre en vente »
+    const pastels = await save({ name: 'Pastels au thon', description: 'Six chaussons frits, sauce tomate pimentée.', price: 2_000, category_id: cat('Plats') });
     await rpcOk('product_option_set', { actor_id: owner.userId, product_id: yassa, name: 'Frites', price: 500 });
     await rpcOk('product_option_set', { actor_id: owner.userId, product_id: yassa, name: 'Sauce piment', price: 0 });
     await rpcOk('order_daily_portions_set', { actor_id: owner.userId, product_id: thieb, portions: 50 });
@@ -164,7 +166,7 @@ async function seed(superadmin: string): Promise<Seeded> {
 
     // Commandes payables à la remise (au plus 3 non payées par client : trois clientes)
     const clients: ControllerAccount[] = [];
-    for (const k of ['a', 'b', 'c']) clients.push(await createClientAccount(`l12c-${k}-${STAMP}`));
+    for (const k of ['a', 'b', 'c', 'd']) clients.push(await createClientAccount(`l12c-${k}-${STAMP}`));
     const place = async (client: ControllerAccount, body: Record<string, unknown>): Promise<{ id: string; number: string }> => {
         const r = await rpcOk('order_create', { client_id: client.userId, venue_id: venueId, payment: 'DIFFERE', ...body });
         return { id: String(r.order_id), number: String(r.order_number) };
@@ -185,6 +187,10 @@ async function seed(superadmin: string): Promise<Seeded> {
     await act(route.id, { action: 'ACCEPTER' }, { action: 'PRETE' }, { action: 'EN_ROUTE', minutes: 20 });
     const remise = await place(clients[2], { mode: 'SUR_PLACE', onsite_label: 'Comptoir', items: [line(bissap, 3)] });
     await act(remise.id, { action: 'ACCEPTER' }, { action: 'PRETE' }, { action: 'REMETTRE', balance_received: true });
+    const vendu = await place(clients[3], { mode: 'SUR_PLACE', onsite_label: 'Table 2', items: [line(pastels, 1)] });
+    await act(vendu.id, { action: 'ACCEPTER' }, { action: 'PRETE' }, { action: 'REMETTRE', balance_received: true });
+    const removed = await rpcOk('order_product_remove', { actor_id: owner.userId, product_id: pastels });
+    if (removed.outcome !== 'ARCHIVED') throw new Error(`[l12c] produit vendu non archivé : ${JSON.stringify(removed)}`);
 
     return { venueId, venueName, products: { yassa, biere }, orders: { recue, prete } };
 }
@@ -226,7 +232,24 @@ for (const theme of THEMES) {
                 await expect(page.locator(`[aria-label="Ouvrir la commande ${data.orders.recue.number}"] >> visible=true`).first(), 'commande reçue au tableau').toBeVisible({ timeout: 30_000 });
                 await settle(page);
                 await checkLayout(page, w.width, w.phone, 'commandes');
+                // Contre-vérification du lot 12c (point 9) : numéro de commande sur une seule ligne, à toutes les largeurs
+                const wrapped = await page.locator('article h3 >> visible=true').evaluateAll((els) => els
+                    .filter((el) => el.getBoundingClientRect().height > parseFloat(getComputedStyle(el).lineHeight) * 1.5)
+                    .map((el) => el.textContent ?? ''));
+                expect(wrapped, `numéros de commande sur deux lignes (${w.width} px)`).toEqual([]);
                 await shot(page, 'commandes', w.width, theme.key);
+
+                // Contre-vérification du lot 12c (point 10) : mode comptoir, plein écran sans menu, sortie en un geste
+                await page.getByRole('button', { name: 'Mode comptoir' }).click();
+                const counter = page.getByRole('dialog', { name: 'Mode comptoir' });
+                await expect(counter).toBeVisible({ timeout: 10_000 });
+                await expect(counter.getByRole('button', { name: 'Quitter le mode comptoir' })).toBeVisible();
+                await expect(counter.locator(`[aria-label="Ouvrir la commande ${data.orders.recue.number}"] >> visible=true`).first()).toBeVisible({ timeout: 30_000 });
+                await settle(page);
+                await checkLayout(page, w.width, w.phone, 'mode comptoir');
+                await shot(page, 'comptoir', w.width, theme.key, false);
+                await counter.getByRole('button', { name: 'Quitter le mode comptoir' }).click();
+                await expect(counter).toBeHidden({ timeout: 10_000 });
 
                 // Fiche d'une commande reçue : compte à rebours et « Accepter »
                 await page.goto(`/partner/orders/${data.orders.recue.id}`, { waitUntil: 'load' });
@@ -256,6 +279,8 @@ for (const theme of THEMES) {
                 await page.goto(`/partner/products?etablissement=${data.venueId}`, { waitUntil: 'load' });
                 await title(page, 'Ma carte');
                 await expect(page.getByText('Yassa poulet', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+                await expect(page.getByRole('heading', { name: /^Produits archivés/ })).toBeVisible();
+                await expect(page.getByRole('button', { name: 'Remettre en vente' }).first()).toBeVisible();
                 await settle(page);
                 await checkLayout(page, w.width, w.phone, 'catalogue');
                 await shot(page, 'catalogue', w.width, theme.key);
@@ -312,6 +337,15 @@ for (const theme of THEMES) {
                 await settle(apage);
                 await checkLayout(apage, w.width, w.phone, 'produits à vérifier');
                 await shot(apage, 'admin-produits', w.width, theme.key);
+
+                // Contre-vérification du lot 12c (T3) : « Mettre à vérifier » un produit qu'aucun mot ne repère
+                await apage.getByRole('tab', { name: 'Mettre à vérifier' }).click();
+                await apage.getByRole('searchbox', { name: 'Nom du produit' }).fill('Yassa poulet');
+                await apage.getByRole('button', { name: 'Chercher' }).click();
+                await expect(apage.getByRole('list', { name: 'Produits trouvés' }).getByText('Yassa poulet', { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+                await settle(apage);
+                await checkLayout(apage, w.width, w.phone, 'mettre à vérifier');
+                await shot(apage, 'admin-signaler', w.width, theme.key, false);
             }
             await adm.close();
         } finally {

@@ -186,6 +186,15 @@ const EXPECTED_REGISTRY: RegistryRow[] = [
     // Lot 12c (migration 20261224000001, ajout signalé au rapport) : vérification des produits
     ess('ADMIN_PRODUCT_REVIEW', [I, M], 'ADMIN', 'B', 'partners.validate'),
     ess('PRODUCT_REVIEW_DECIDED', [I, P, M], 'PARTNER', 'A'),
+    // Contre-vérification du lot 12c (migration 20261224000005, ajout signalé au rapport) : avis ajoutés (point 7) et revue groupée
+    ess('ORDER_CODE_LOCKED', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_RESPONSE_REMINDER', [I, P, M, S], 'PARTNER', 'B'),
+    ess('ORDER_PREP_REMINDER', [I, P, M, S], 'PARTNER', 'B'),
+    ess('ORDER_READY_COURIER', [I, P, M, S], 'CLIENT', 'B'),
+    ess('ORDER_SCHEDULED_REMINDER', [I, P, M, S], 'CLIENT', 'B'),
+    ess('PRODUCT_DECISION_SMS', [S], 'PARTNER', 'A'),
+    ess('ADMIN_ORDER_REFUND_BLOCKED', [S], 'ADMIN', 'B', 'refunds.manage'),
+    ess('ADMIN_PRODUCTS_REVIEW_BATCH', [I, M], 'ADMIN', 'B', 'partners.validate'),
     ess('PROMOTION_DECIDED', [I, M, P, S], 'PARTNER', 'B'), // G.49
     ess('CONTROLLER_ASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
     ess('CONTROLLER_UNASSIGNED', [I, P, S, M], 'CONTROLLER', 'B'), // G.49
