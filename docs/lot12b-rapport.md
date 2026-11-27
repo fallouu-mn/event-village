@@ -4,6 +4,9 @@ Branche `lot12b/client` (depuis main `5b7f3399ca`, lot 11c-b fusionné), worktre
 aucune migration appliquée.** Service toujours fermé par `features.orders_enabled` (les tests l'ouvrent le temps de leur
 passage).
 
+**État** : run complet 752 vert sauf deux points ; `recette-matrice` corrigée (runs 755 et 760 verts) ; **mesure mobile de
+la fiche à 89 (seuil 90) aux runs 752 et 760, décision attendue** (point 7).
+
 ## À lire en premier
 
 **Migrations** (intervalle `20261222…`, sans BEGIN ni COMMIT, rejouables : appliquées deux fois de plus dans une
@@ -70,6 +73,14 @@ du 12a suivies par `cv12a-3-statique` S1 (contrôlé).
    (`archived_at`) et « à vérifier » (`review_state`) sont lus sans dépendre de l'existence des colonnes ; le refus
    `PRODUCT_UNDER_REVIEW` du devis du 12c reçoit la phrase « Ce produit est en cours de vérification et ne peut pas être
    commandé pour l'instant. »
+
+7. **Run complet pas entièrement vert : mesure mobile de la fiche à 89 (seuil 90) aux runs 752 et 760.** Tout le reste
+   du run complet 752 est vert sauf `recette-matrice` (deux références de lignes, corrigées et vertes au run 755 et 760) :
+   635 suites sur 636, e2e 783 passés, responsive 0 défaut, 64 captures, budgets tenus (aucun relevé). La fiche n'est
+   pas touchée par le lot (+39 o, comme l'accueil) mais son temps de blocage est plus haut que sur main sur trois runs
+   (détail dans « Poids JavaScript et mesure mobile »). Trois essais faits : je m'arrête. **Décision attendue** : relancer
+   la mesure (job perf du run 760), ou me demander de chercher plus loin la cause (comparaison de main et de la branche
+   sur la même machine, par une branche de mesure). Ne pas fusionner avant.
 
 **Tests existants modifiés** (aucune suite d'audit `tests/audit/` ni `tests/audit-auth/` modifiée) :
 
@@ -179,17 +190,26 @@ gzip du premier chargement, budgets inchangés :
 
 **Mesure mobile** (Lighthouse mobile, médiane de 5 passages, seuil 90 inchangé) :
 
-| Page | Avant (724) | Après (752) | Après, mesure refaite (RUN_SUIVANT) |
+| Page | Avant (724) | Après (752) | Après, mesure refaite (760) |
 |---|---|---|---|
-| Accueil | 92 [92 ; 92 ; 89 ; 96 ; 90] | 93 [89 ; 93 ; 93 ; 93 ; 92] | MESURE_755_ACCUEIL |
-| Fiche « ce soir » | 95 [95 ; 95 ; 93 ; 93 ; 95] | **89** [86 ; 88 ; 89 ; 94 ; 91] | MESURE_755_FICHE |
-| Mes billets | 92 [92 ; 96 ; 93 ; 90 ; 92] | 92 [91 ; 92 ; 94 ; 91 ; 93] | MESURE_755_BILLETS |
-| Toucher (le plus long) | 80 ms | 80 ms | MESURE_755_TOUCHER |
+| Accueil | 92 [92 ; 92 ; 89 ; 96 ; 90] | 93 [89 ; 93 ; 93 ; 93 ; 92] | 91 [91 ; 91 ; 93 ; 91 ; 92] |
+| Fiche « ce soir » | 95 [95 ; 95 ; 93 ; 93 ; 95] | **89** [86 ; 88 ; 89 ; 94 ; 91] | **89** [88 ; 91 ; 89 ; 86 ; 95] |
+| Mes billets | 92 [92 ; 96 ; 93 ; 90 ; 92] | 92 [91 ; 92 ; 94 ; 91 ; 93] | 90 [87 ; 92 ; 90 ; 91 ; 90] |
+| Toucher (le plus long) | 80 ms | 80 ms | 88 ms |
 
 La fiche n'est pas touchée par le lot (+39 o, comme l'accueil) ; son affichage principal est identique (2,11 s avant et
 après) et sa note varie d'un run à l'autre sur le même code (branche : 91, 92, 93 aux runs 731, 733, 737 ; main : 90 au
 run 720, 95 au run 724). Selon la règle en vigueur (un point de moins sur une page non touchée : on relance la mesure,
-rien d'autre), la mesure a été refaite sans aucune modification de code : au run 755 elle est « faussée, à relancer » (machine de la CI trop rapide aux trois tentatives, voir Runs), puis relancée au run RUN_SUIVANT.
+rien d'autre), la mesure a été refaite sans aucune modification de code : au run 755 elle est « faussée, à relancer » (machine de la CI trop rapide aux trois tentatives, voir Runs), puis relancée au run 760 (mesure valide, machine dans la plage) : **fiche encore à 89**.
+
+Ce que montrent les relevés de la fiche (temps de blocage, TBT, médiane Lighthouse) : main 224 et 250 ms (runs 728,
+724) ; lot 12b 315, 400 et 434 ms (737, 752, 760) ; lot 12c 296 ms (753). Le profil processeur de la fiche
+(`perf/profil-fiche.txt`) charge les **mêmes fichiers** sur la branche que sur les branches 11c et 12c (aucun morceau
+nouveau), dans des proportions comparables (moteur de React, chargeur de webpack, morceau commun) ; le lien
+« Restaurants et tables » de la coquille est dans le menu de bureau (`hidden lg:flex`), donc ni affiché ni préchargé sur
+mobile. Je n'ai trouvé aucun mécanisme par lequel le lot alourdit la fiche, mais l'écart de temps de blocage avec main
+est répété sur trois runs : **je ne peux pas l'écarter**. Trois essais faits sur ce blocage (752, 755, 760) : arrêt,
+décision à prendre (voir « À lire en premier », point 7).
 
 ## Captures
 
@@ -237,7 +257,7 @@ mêmes largeurs).
 | 750 | `871ff3acc9` | rapide (écrans, responsive, captures) | **vert** | parcours entier à 390 et 1 440 px |
 | 752 | `6be47e3c2a` | **complet** | rouge | 635/636 suites (seule `recette-matrice` : deux références de lignes de `docs/recette-billetterie.md` périmées par le lot) ; e2e 783 passés ; responsive 0 défaut ; budgets OK ; mesure : fiche 89 |
 | 755 | `e19e67a57e` | rapide (`recette-matrice` + mesure) | rouge (mesure faussée) | références recalées (`interrupteurs.test.ts:405`, `MenuView.tsx:307`), aucune assertion modifiée : typecheck, lint et `recette-matrice` OK ; mesure **faussée, à relancer** : machine de la CI hors de la plage du téléphone de référence aux 3 tentatives (indice 3 312 à 3 645, plage 1 000 à 3 000), aucune conclusion sur les seuils |
-| RUN_SUIVANT | ce rapport | rapide (`recette-matrice` + mesure) | RESULTAT_SUIVANT | mesure relancée sans modification de code |
+| 760 | `1aa357304b` | rapide (`recette-matrice` + mesure) | rouge (mesure hors seuil) | matrice OK ; mesure valide : accueil 91, **fiche 89**, Mes billets 90, toucher 88 ms ; 3e essai sur ce blocage, arrêt |
 
 ## Essais pour un non-développeur
 
