@@ -93,4 +93,17 @@ describe('Lot 12b — écrans du client (contrôles sans base)', () => {
         const server = SCREENS.filter((f) => /'use client'/.test(read(f)) && /from '@\/lib\/orders\/(?:booking|menu\.server|order-payment\.service)'/.test(read(f)));
         assert.deepEqual(server, []);
     });
+
+    test('6. produit « à vérifier » (lot 12c, PRODUCT_UNDER_REVIEW) : phrase simple au devis et à la commande ; archivés exclus de la carte', () => {
+        const cart = code('lib/orders/cart-client.ts');
+        assert.match(cart, /code === 'PRODUCT_UNDER_REVIEW'\) return UNDER_REVIEW_TEXT/);
+        assert.match(read('lib/orders/cart-client.ts'), /'Ce produit est en cours de vérification et ne peut pas être commandé pour l’instant\.'/);
+        assert.match(cart, /message: refusalText\(code, d\.error\)/, 'devis');
+        assert.match(code('components/orders/client/menu/MenuView.tsx'), /setSubmitError\(refusalText\(data\?\.code, data\?\.error\)\)/, 'commande');
+        // Produits retirés (products.archived_at, lot 12c) : exclus de la carte publique et de la lecture REST, sans
+        // dépendre de l'existence de la colonne ; le panier et « Commander à nouveau » se recalent sur la carte
+        const menu = read('supabase/migrations/20261222000002_l12b_carte_des_plats.sql');
+        assert.ok((menu.match(/to_jsonb\((?:pr|products\.\*)\) ->> 'archived_at'\) IS NULL/g) ?? []).length >= 5);
+        assert.match(code('lib/orders/cart-client.ts'), /export function reconcileLines/);
+    });
 });

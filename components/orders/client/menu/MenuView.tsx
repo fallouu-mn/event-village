@@ -14,7 +14,7 @@ import { normalizePayerPhone } from '@/lib/payments/payer-phone';
 import { formatLocalPhone, isUncertainOutcome, useIdempotencyKey } from '@/lib/payments/payment-client';
 import type { MenuProduct, VenueMenu } from '@/lib/orders/menu-types';
 import {
-    addLine, itemCount, makeLine, orderBody, reconcileLines, setLineQuantity, timeChoices, useOrderQuote,
+    addLine, itemCount, makeLine, orderBody, reconcileLines, refusalText, setLineQuantity, timeChoices, useOrderQuote,
     type CartLine, type Checkout,
 } from '@/lib/orders/cart-client';
 import { CartPanel, type CartStep } from './CartPanel';
@@ -227,7 +227,7 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
             return;
         }
         if (data?.code === 'ORDER_PRICE_CHANGED') reload();
-        setSubmitError(typeof data?.error === 'string' ? data.error : 'La commande n’a pas pu être envoyée. Réessayez.');
+        setSubmitError(refusalText(data?.code, data?.error));
     }, [busy, quote, body, isAuthenticated, router, loginHref, attempt, venueId, reload]);
     const submitRef = useRef(submit);
     useEffect(() => {

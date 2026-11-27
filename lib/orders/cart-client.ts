@@ -291,7 +291,8 @@ export function useOrderQuote(body: Record<string, unknown> | null, enabled: boo
             }
             const d = (data ?? {}) as Record<string, unknown>;
             if (!res.ok && typeof d.error === 'string') {
-                setState({ status: 'refused', message: d.error, code: typeof d.code === 'string' ? d.code : null, productId: typeof d.product_id === 'string' ? d.product_id : null });
+                const code = typeof d.code === 'string' ? d.code : null;
+                setState({ status: 'refused', message: refusalText(code, d.error), code, productId: typeof d.product_id === 'string' ? d.product_id : null });
                 return;
             }
             setState({ status: 'error', message: 'Le total ne peut pas être calculé pour le moment. Réessayez.' });
@@ -328,4 +329,14 @@ export function todayHours(menu: VenueMenu): { text: string | null; open: boolea
         return b > a ? minutes >= a && minutes < b : minutes >= a;
     }) || menu.hours.some((r) => r[0] === yesterday && toMin(r[2]) < toMin(r[1]) && minutes < toMin(r[2]));
     return { text, open };
+}
+
+/**
+ * Refus du serveur affiché au client : la phrase du serveur telle quelle, sauf un produit « à vérifier » (lot 12c :
+ * code PRODUCT_UNDER_REVIEW, rendu par le devis et la commande en refus générique) qui reçoit sa phrase simple.
+ */
+export const UNDER_REVIEW_TEXT = 'Ce produit est en cours de vérification et ne peut pas être commandé pour l’instant.';
+export function refusalText(code: unknown, serverText: unknown): string {
+    if (code === 'PRODUCT_UNDER_REVIEW') return UNDER_REVIEW_TEXT;
+    return typeof serverText === 'string' && serverText.trim() ? serverText : 'La commande n’a pas pu être envoyée. Réessayez.';
 }
