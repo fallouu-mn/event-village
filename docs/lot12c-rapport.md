@@ -116,7 +116,7 @@ Liens : commande du client `/orders/<id>`, de la partenaire `/partner/orders/<id
 | `tests/parcours/l12c-catalogue.test.ts` L | 4 migrations du lot | 5 | migration 20261224000005 |
 | `tests/parcours/l12c-statique.test.ts` S1 | 4 recopies | 5 (`order_daily_portions_set`, depuis `M/20261130000002`) | T6, point 12 |
 | `tests/parcours/notif-modeles.test.ts`, `notif-outbox.test.ts` (table G2, textes exacts G3) | — | 8 types ajoutés (lignes G2), 16 textes SMS exacts | avis ajoutés ; aucune assertion existante changée |
-| `docs/recette-billetterie.md` (ligne A29) | `notif-modeles.test.ts:582` | `:591` | lignes ajoutées avant le test cité |
+| `docs/recette-billetterie.md` (lignes citées) | `notif-modeles.test.ts:582` ; `email-regle-envoi.test.ts:118`, `:312`, `:533` | `:591` ; `:121`, `:315`, `:536` | lignes ajoutées avant les tests cités (`recette-matrice` vert en local et au run 757) |
 | `tests/parcours/email-regle-envoi.test.ts` (G.49, `G49_EXCLUDED`) | `PUSH_TEST`, `COUNTER_RECEIPT`, `ADMIN_REVIEW_SMS` | + `PRODUCT_DECISION_SMS`, `ADMIN_ORDER_REFUND_BLOCKED` | SMS qui doublent un avis qui a déjà son email (même raison qu'`ADMIN_REVIEW_SMS`, lot 9 quinquies) ; un email de plus serait un doublon |
 | `tests/schema/f5-liens-avis.test.ts` (`SANS_OBJET`) | — | + `ADMIN_ORDER_REFUND_BLOCKED` : file « Versements à reprendre » | même lien et même raison qu'`ADMIN_REFUND_TO_RETRY` (aucune fiche par versement) |
 
