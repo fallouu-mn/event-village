@@ -235,6 +235,18 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                         </StatusBanner>
                     )}
 
+                    {/* Code de remise en premier quand la remise est attendue : c'est ce que le client montre au comptoir ou au
+                        livreur (au-dessus de la ligne de flottaison du téléphone) */}
+                    {showCode && (
+                        <HandoverCode
+                            orderId={o.id}
+                            active={showCode}
+                            resendsLeft={o.code?.resendsLeft ?? 0}
+                            version={`${o.state}:${o.code?.resendsLeft ?? 0}`}
+                            onResent={() => void load()}
+                        />
+                    )}
+
                     {!awaitingPayment && o.state !== 'EXPIREE' && (
                         <section aria-labelledby="suivi-titre" className="rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6">
                             <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
@@ -246,16 +258,6 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                             )}
                             <OrderTimeline mode={o.mode} steps={o.steps} closed={!open} />
                         </section>
-                    )}
-
-                    {showCode && (
-                        <HandoverCode
-                            orderId={o.id}
-                            active={showCode}
-                            resendsLeft={o.code?.resendsLeft ?? 0}
-                            version={`${o.state}:${o.code?.resendsLeft ?? 0}`}
-                            onResent={() => void load()}
-                        />
                     )}
 
                     {balanceOnline && (
