@@ -837,36 +837,50 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # Lot 12b, branche de mesure jetable (lot12b/mesure-ab, jamais fusionnée) : main construit dans le MÊME job, même
+      # .env.test, mêmes dépendances (package-lock identique), même commande de build
+      - name: "A/B : construire main dans /tmp/ev-main (même job, même environnement)"
+        id: build-main
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          git worktree add --detach /tmp/ev-main FETCH_HEAD
+          cd /tmp/ev-main
+          echo "main mesuré : $(git log -1 --format='%H %s')" | tee /tmp/build-main.log
+          cp "$GITHUB_WORKSPACE/.env.test" .env.test
+          npm ci 2>&1 | tail -n 5 | tee -a /tmp/build-main.log
+          node scripts/verify.mjs --etapes build 2>&1 | tee -a /tmp/build-main.log
+
       - *e2e-seed
       - *e2e-start
 
-      - name: "Perf : connexion des rôles de démonstration (EV_E2E_PHASES=connexion)"
-        id: connexion-perf
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
-        timeout-minutes: 10
-        env:
-          EV_E2E_PHASES: connexion
+      - name: "A/B : démarrer main sur le port 3001 (même base, mêmes faux services)"
+        id: start-main
+        if: ${{ !cancelled() && steps.build-main.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
         run: |
-          . /tmp/etape.sh connexion
-          set -o pipefail
-          npm run e2e 2>&1 | tee /tmp/e2e.log
+          set -euo pipefail
+          cd /tmp/ev-main
+          sed -e 's#^NEXT_PUBLIC_APP_URL=.*#NEXT_PUBLIC_APP_URL=http://localhost:3001#' -e 's#^E2E_APP_PORT=.*#E2E_APP_PORT=3001#' "$GITHUB_WORKSPACE/.env.e2e" > .env.e2e
+          nohup node scripts/e2e/start-app.mjs > /tmp/next-start-main.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3001/login; then echo "main prêt après $((i * 2)) s"; exit 0; fi
+            sleep 2
+          done
+          tail -n 60 /tmp/next-start-main.log
+          exit 1
 
-      - name: "Perf : performance mobile mesurée (mode rapide, ligne ci-perf ; mêmes seuils)"
+      - name: "A/B : fiche en alternance main / branche, 5 passages chacun, puis profils (scripts/e2e/perf-ab.mjs)"
         id: perf-mobile-rapide
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
-        timeout-minutes: 15
+        if: ${{ !cancelled() && steps.start-main.outcome == 'success' }}
+        timeout-minutes: 30
+        env:
+          AB_MAIN: http://localhost:3001
+          AB_BRANCHE: http://localhost:3000
         run: |
           . /tmp/etape.sh perf-mobile
           set -o pipefail
-          node scripts/e2e/perf-mobile.mjs 2>&1 | tee /tmp/perf-mobile.log
-
-      # Diagnostic seulement (aucun verdict) : profil processeur fonction par fonction des trois pages mesurées
-      - name: "Perf : profil processeur des pages mesurées (diagnostic, scripts/e2e/perf-profil.mjs)"
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.e2e-start.outcome == 'success' }}
-        timeout-minutes: 10
-        run: |
-          . /tmp/etape.sh perf-profil
-          node scripts/e2e/perf-profil.mjs 2>&1 | tee -a /tmp/perf-mobile.log
+          node scripts/e2e/perf-ab.mjs 2>&1 | tee /tmp/perf-mobile.log
 
       - *diagnostic
       - *annotations
@@ -876,6 +890,7 @@ jobs:
         run: |
           mkdir -p /tmp/sortie
           W="$GITHUB_WORKSPACE"
+          for f in build-main next-start-main; do if [ -f "/tmp/$f.log" ]; then cp "/tmp/$f.log" "/tmp/sortie/$f.log"; fi; done
           if [ -f "$W/.verify/js-budget.tsv" ]; then cp "$W/.verify/js-budget.tsv" /tmp/sortie/js-budget.tsv; fi
           if [ -d "$W/.e2e-captures/perf" ]; then
             mkdir -p /tmp/sortie/perf
