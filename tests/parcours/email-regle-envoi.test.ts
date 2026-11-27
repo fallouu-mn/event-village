@@ -65,8 +65,11 @@ const CATALOG_TYPES = Object.keys(CATALOG).sort();
  * Exclusions de la règle G.49 (contrat 5.49, 11.3) : essai d'un appareil ; reçu au guichet (numéro saisi, aucun compte).
  * Lot 9 quinquies (D1, modification signalée au rapport) : ADMIN_REVIEW_SMS, SMS regroupé qui double les avis
  * ADMIN_PARTNER_REGISTERED, ADMIN_PARTNER_RESUBMITTED et ADMIN_EVENT_SUBMITTED, qui ont déjà leur email.
+ * Contre-vérification du lot 12c (point 7, modification signalée au rapport) : PRODUCT_DECISION_SMS, SMS qui double
+ * PRODUCT_REVIEW_DECIDED, et ADMIN_ORDER_REFUND_BLOCKED, SMS qui double ADMIN_REFUND_TO_RETRY et ADMIN_CASHOUT_UNCERTAIN,
+ * qui ont déjà leur email.
  */
-const G49_EXCLUDED = new Set(['PUSH_TEST', 'COUNTER_RECEIPT', 'ADMIN_REVIEW_SMS']);
+const G49_EXCLUDED = new Set(['PUSH_TEST', 'COUNTER_RECEIPT', 'ADMIN_REVIEW_SMS', 'PRODUCT_DECISION_SMS', 'ADMIN_ORDER_REFUND_BLOCKED']);
 const CATEGORIES: CategorySpec[] = [{ name: 'Standard', price: 3_000, total: 40, maxPerOrder: 10 }];
 const TRANSFER_ROUTE = '../../app/api/tickets/[id]/transfer/route';
 const TRANSFER_CANCEL_ROUTE = '../../app/api/tickets/transfers/[id]/cancel/route';

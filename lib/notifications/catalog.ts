@@ -2128,7 +2128,8 @@ const CATALOG = {
         sms: (d) => {
             const mode = text(d, 'mode');
             const hint = mode === 'LIVRAISON' ? 'Gardez votre téléphone près de vous.' : mode === 'RETRAIT' ? 'Pensez à votre code de remise.' : 'Elle vous sera servie sur place.';
-            return `${SMS_PREFIX}rappel, commande ${orderRef(d)} prévue à ${smsTime(iso(d, 'scheduled_for'))} chez ${smsVar(text(d, 'venue_name'), 30)}. ${hint}`;
+            // endWithPeriod : un nom coupé (« ... ») ne prend pas de point de plus
+            return `${SMS_PREFIX}${endWithPeriod(`rappel, commande ${orderRef(d)} prévue à ${smsTime(iso(d, 'scheduled_for'))} chez ${smsVar(text(d, 'venue_name'), 30)}`)} ${hint}`;
         },
         sample: { ...ORDER_SAMPLE_DATA, state: 'ACCEPTEE' },
     }),
