@@ -48,6 +48,8 @@ export interface CatalogProduct {
     underReview: boolean;
     reviewWords: string[];
     reviewRequestedAt: string | null;
+    /** Contre-vérification du lot 12c : motif d'une mise « à vérifier » par l'administration (bouton « Mettre à vérifier »). */
+    reviewNote: string | null;
     portionsToday: { portions: number; sold: number } | null;
     options: CatalogOption[];
     updatedAt: string;
@@ -57,6 +59,8 @@ export interface CatalogReply {
     venues: CatalogVenue[];
     categories: Array<{ id: string; name: string }>;
     products: CatalogProduct[];
+    /** Contre-vérification du lot 12c (point 8) : produits archivés, à remettre en vente (les 100 derniers). */
+    archived: Array<{ id: string; venueId: string | null; name: string; price: number; archivedAt: string }>;
     defaults: { depositPercent: number; prepMinutes: number };
 }
 
@@ -96,6 +100,7 @@ function toProduct(p: Row, options: Row[], portions: Row | undefined): CatalogPr
         underReview: p.review_state === 'A_VERIFIER',
         reviewWords: Array.isArray(p.review_words) ? (p.review_words as string[]) : [],
         reviewRequestedAt: (p.review_requested_at as string | null) ?? null,
+        reviewNote: (p.review_note as string | null) ?? null,
         portionsToday: portions ? { portions: num(portions.portions), sold: num(portions.sold) } : null,
         options: options.map(toOption).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
         updatedAt: String(p.updated_at),
@@ -114,15 +119,17 @@ async function partnerOf(userId: string): Promise<{ id: string; status: string |
 export async function readPartnerCatalog(userId: string): Promise<CatalogReply> {
     const supabase = getServiceRoleClient();
     const partner = await partnerOf(userId);
-    const [venuesRes, categoriesRes, productsRes, settingsRes] = await Promise.all([
+    const [venuesRes, categoriesRes, productsRes, settingsRes, archivedRes] = await Promise.all([
         supabase.from('venues')
             .select('id, name, kind, city, photos, validation_status, is_active, orders_open, order_modes, order_deposit_allowed, order_deposit_percent, order_pay_on_handover, order_prep_minutes, created_at')
             .eq('partner_id', partner.id).order('created_at'),
         supabase.from('product_categories').select('id, name, sort_order').eq('partner_id', partner.id).order('sort_order').order('name'),
         supabase.from('products').select('*').eq('partner_id', partner.id).is('archived_at', null).order('created_at', { ascending: false }).limit(500),
         supabase.from('platform_settings').select('key, value').in('key', ['orders.deposit_default_percent', 'orders.prep_minutes_default']),
+        supabase.from('products').select('id, venue_id, name, price, archived_at').eq('partner_id', partner.id).not('archived_at', 'is', null)
+            .order('archived_at', { ascending: false }).limit(100),
     ]);
-    for (const [label, res] of [['établissements', venuesRes], ['catégories', categoriesRes], ['produits', productsRes], ['réglages', settingsRes]] as const) {
+    for (const [label, res] of [['établissements', venuesRes], ['catégories', categoriesRes], ['produits', productsRes], ['réglages', settingsRes], ['archivés', archivedRes]] as const) {
         if (res.error) throw new Error(`catalogue (${label}) : ${res.error.message}`);
     }
     const venues = (venuesRes.data ?? []) as Row[];
@@ -180,6 +187,9 @@ export async function readPartnerCatalog(userId: string): Promise<CatalogReply> 
         })),
         categories: ((categoriesRes.data ?? []) as Row[]).map((c) => ({ id: String(c.id), name: String(c.name) })),
         products: products.map((p) => toProduct(p, options.get(String(p.id)) ?? [], portions.get(String(p.id)))),
+        archived: ((archivedRes.data ?? []) as Row[]).map((a) => ({
+            id: String(a.id), venueId: (a.venue_id as string | null) ?? null, name: String(a.name), price: num(a.price), archivedAt: String(a.archived_at),
+        })),
         defaults: { depositPercent: setting('orders.deposit_default_percent', 30), prepMinutes: setting('orders.prep_minutes_default', 30) },
     };
 }
@@ -253,4 +263,15 @@ export async function saveProductOption(userId: string, productId: string, optio
 export async function removeProductOption(userId: string, optionId: string): Promise<void> {
     if (!UUID_RE.test(optionId)) throw new PublicError('Ce supplément n’existe pas pour vos produits.', 'OPTION_NOT_FOUND', 404);
     await callCatalog('product_option_remove', { actor_id: userId, option_id: optionId }, 'Supplément non retiré.');
+}
+
+/**
+ * Contre-vérification du lot 12c (T5) : catégorie créée ou renommée par order_category_save ; un nom avec un mot de la
+ * liste met les produits de la catégorie « à vérifier » (`flagged` : combien).
+ */
+export async function saveCategory(userId: string, categoryId: string | null, name: unknown): Promise<{ category: { id: string; name: string }; flagged: number; existing: boolean }> {
+    if (categoryId !== null && !UUID_RE.test(categoryId)) throw new PublicError('Catégorie de produit introuvable.', 'CATEGORY_NOT_FOUND', 404);
+    const r = await callCatalog('order_category_save', { actor_id: userId, category_id: categoryId, name: text(name) }, 'Catégorie non enregistrée.');
+    const c = (r.category ?? {}) as Row;
+    return { category: { id: String(c.id), name: String(c.name) }, flagged: Number(r.flagged ?? 0), existing: r.existing === true };
 }

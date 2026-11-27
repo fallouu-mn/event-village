@@ -274,17 +274,24 @@ BEGIN
          WHERE id = o.id
         RETURNING * INTO v_row;
     END IF;
-    -- Un supplément au nom d'un mot de la liste met le produit « à vérifier » (jamais effacé ici)
+    -- Un supplément au nom d'un mot de la liste met le produit « à vérifier » (jamais effacé ici). Contre-vérification :
+    -- même règle de pliage que le reste (order_review_words), sur le nom du supplément
     IF o.id IS NULL OR v_name IS DISTINCT FROM o.name THEN
         v_words := private.order_review_words(v_name);
         v_review := cardinality(v_words) > 0;
+    END IF;
+    -- Contre-vérification (T2) : un supplément ajouté ou renommé sur un produit encore « à vérifier » lui donne une
+    -- nouvelle version (une décision prise sur la version affichée avant est refusée)
+    IF NOT v_review AND pr.review_state = 'A_VERIFIER' AND (o.id IS NULL OR v_name IS DISTINCT FROM o.name) THEN
+        v_review := TRUE;
+        v_words := ARRAY[]::text[];
     END IF;
     IF v_review THEN
         PERFORM set_config('event_village.product_write', 'on', true);
         UPDATE public.products
            SET review_state = 'A_VERIFIER',
                review_words = ARRAY(SELECT DISTINCT w FROM unnest(COALESCE(review_words, ARRAY[]::text[]) || v_words) w ORDER BY 1),
-               review_requested_at = now(), updated_at = now()
+               review_requested_at = clock_timestamp(), updated_at = now()
          WHERE id = pr.id;
         PERFORM set_config('event_village.product_write', 'off', true);
     END IF;

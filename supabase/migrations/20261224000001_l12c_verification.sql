@@ -29,6 +29,15 @@
 --  8. order_product_remove(p) : produit jamais vendu supprimé ; produit vendu archivé (plus d'erreur de clé étrangère) ;
 --  9. avis : ADMIN_PRODUCT_REVIEW (administration : cloche, email) et PRODUCT_REVIEW_DECIDED (partenaire : cloche,
 --     notification du téléphone, email).
+-- Correctifs de la contre-vérification (docs/audit-lot12c.md), faits EN PLACE (migration jamais appliquée) :
+--  T1 une seule fonction de pliage (order_text_fold) : NFKC, accents retirés (NFD), caractères invisibles retirés,
+--     lettres cyrilliques et grecques d'aspect latin ramenées au latin ; order_review_words cherche aussi dans le texte
+--     où les lettres isolées sont recollées (« W.H.I.S.K.Y », « W H I S K Y ») ;
+--  T2 décision liée à la version lue (reviewed_at) : refus REVIEW_CHANGED sinon ;
+--  T3 marques courantes au Sénégal dans la liste par défaut ; un changement de la liste revoit les produits existants
+--     (order_review_keywords_set → private.order_review_backfill, migration 20261224000005) ;
+--  T5 nom de la catégorie compris dans le texte comparé ;
+--  T6 produit archivé figé (garde), sauf remise en vente par order_product_save (restore).
 -- Toutes les fonctions publiques au rôle de service seulement ; les aides private à aucun rôle de l'API.
 -- Rejouable : ADD COLUMN IF NOT EXISTS, DROP … IF EXISTS puis ADD, CREATE OR REPLACE, ON CONFLICT.
 -- ============================================================================
@@ -40,6 +49,10 @@ ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_state TEXT;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_words TEXT[];
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_requested_at TIMESTAMPTZ;
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+-- Contre-vérification (T3) : motif d'une mise « à vérifier » par l'administration ; mots déjà vus par une autorisation
+-- (la revue des produits existants ne remet pas « à vérifier » un produit autorisé pour ces mots-là)
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS review_cleared_words TEXT[];
 ALTER TABLE public.products DROP CONSTRAINT IF EXISTS products_review_state_chk;
 ALTER TABLE public.products ADD CONSTRAINT products_review_state_chk CHECK (
     (review_state IS NULL AND review_words IS NULL) OR (review_state = 'A_VERIFIER' AND review_requested_at IS NOT NULL));
@@ -59,11 +72,15 @@ COMMENT ON COLUMN public.order_delivery_zones.archived_at IS
 -- ----------------------------------------------------------------------------
 INSERT INTO public.platform_settings (key, value, description) VALUES
     ('orders.review_keywords',
-     '{"value": ["bière", "vin", "whisky", "liqueur", "cigarette", "chicha", "alcool", "rhum", "vodka", "gin", "champagne", "cognac", "tequila", "pastis", "cigare", "tabac", "narguilé", "shisha"]}',
+     '{"value": ["bière", "vin", "whisky", "liqueur", "cigarette", "chicha", "alcool", "rhum", "vodka", "gin", "champagne", "cognac", "tequila", "pastis", "cigare", "tabac", "narguilé", "shisha", "gazelle", "flag", "castel", "33 export", "heineken", "guinness", "desperados", "johnnie walker", "jack daniel''s", "chivas", "smirnoff", "baileys", "martini", "ricard", "marlboro", "dunhill", "camel", "winston"]}',
      'Commandes : mots qui mettent un produit « à vérifier » (non vendable jusqu''à la décision de l''administration)')
 ON CONFLICT (key) DO NOTHING;
 
--- Texte comparé : minuscules, sans accents, apostrophes droites
+-- Texte comparé (contre-vérification T1 : SEULE fonction de pliage, utilisée par l'enregistrement, les suppléments, les
+-- catégories, la revue et le surlignage de l'administration) : formes de compatibilité (NFKC : pleine chasse, ligatures),
+-- accents retirés (NFD puis marques combinantes), caractères invisibles retirés (espaces de largeur nulle, marques de
+-- sens, trait d'union conditionnel), caractères de contrôle remplacés par une espace, minuscules, lettres cyrilliques et
+-- grecques d'aspect latin ramenées au latin, apostrophes droites.
 CREATE OR REPLACE FUNCTION private.order_text_fold(p_text text)
 RETURNS text
 LANGUAGE sql
@@ -71,9 +88,15 @@ IMMUTABLE
 SET search_path = public
 AS $$
     SELECT translate(
-        replace(replace(replace(replace(lower(COALESCE(p_text, '')), 'œ', 'oe'), 'æ', 'ae'), '’', ''''), 'ß', 'ss'),
-        'àáâãäåāçćčèéêëēěìíîïīñńòóôõöøōùúûüūýÿž',
-        'aaaaaaaccceeeeeeiiiiinnooooooouuuuuyyz');
+        replace(replace(replace(replace(replace(
+            lower(regexp_replace(regexp_replace(regexp_replace(
+                normalize(normalize(COALESCE(p_text, ''), NFKC), NFD),
+                '[\u0300-\u036f]', '', 'g'),
+                '[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u206a-\u206f\ufeff]', '', 'g'),
+                '[[:cntrl:]]', ' ', 'g')),
+            'œ', 'oe'), 'æ', 'ae'), '’', ''''), 'ʼ', ''''), 'ß', 'ss'),
+        'аАвВеЕкКмМнНоОрРсСтТуУхХіІјЈѕЅԁһӏαΑβΒεΕζΖηΗιΙκΚμΜνΝοΟρΡτΤυΥχΧøØđĐłŁı',
+        'aabbeekkmmhhooppccttyyxxiijjssdhlaabbeezznhiikkumvnooppttuyxxooddlli');
 $$;
 
 -- Liste valable : 1 à 100 mots distincts (une fois pliés), de 2 à 40 caractères : lettres, chiffres, espace, tiret,
@@ -105,22 +128,65 @@ BEGIN
 END;
 $$;
 
--- Mots de la liste trouvés dans un texte (orthographe de la liste, dans son ordre), ou vide
+-- Mots de la liste trouvés dans un texte (orthographe de la liste, dans son ordre), ou vide. Deux lectures du texte
+-- plié : mots tels quels (début de mot, pluriel en s ou x : « vin », « vins », pas « vinaigrette ») ; et lettres isolées
+-- recollées (contre-vérification T1 : « W.H.I.S.K.Y », « W H I S K Y », « C-H-I-C-H-A » se lisent « whisky », « chicha »).
 CREATE OR REPLACE FUNCTION private.order_review_words(p_text text)
+RETURNS text[]
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_fold    text := private.order_text_fold(p_text);
+    v_spaced  text := ' ' || regexp_replace(v_fold, '[^a-z0-9''-]+', ' ', 'g') || ' ';
+    v_tokens  text[] := regexp_split_to_array(btrim(regexp_replace(v_fold, '[^a-z0-9]+', ' ', 'g')), ' ');
+    v_joined  text := ' ';
+    v_run     text := '';
+    t         text;
+    k         record;
+    v_key     text;
+    v_out     text[] := ARRAY[]::text[];
+BEGIN
+    FOREACH t IN ARRAY COALESCE(v_tokens, ARRAY[]::text[]) LOOP
+        IF length(t) = 1 THEN
+            v_run := v_run || t;
+        ELSE
+            IF length(v_run) >= 2 THEN v_joined := v_joined || v_run || ' '; END IF;
+            v_run := '';
+        END IF;
+    END LOOP;
+    IF length(v_run) >= 2 THEN v_joined := v_joined || v_run || ' '; END IF;
+    FOR k IN SELECT x.word, x.ord
+               FROM public.platform_settings s
+               CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(s.value->'value') = 'array' THEN s.value->'value' ELSE '[]'::jsonb END)
+                    WITH ORDINALITY AS x(word, ord)
+              WHERE s.key = 'orders.review_keywords'
+              ORDER BY x.ord LOOP
+        v_key := btrim(private.order_text_fold(k.word));
+        CONTINUE WHEN v_key !~ '^[a-z0-9][a-z0-9 ''-]*$';
+        IF v_spaced ~ ('[^a-z0-9]' || v_key || '(s|x)?[^a-z0-9]')
+           OR v_joined ~ ('[^a-z0-9]' || regexp_replace(v_key, '[^a-z0-9]', '', 'g') || '(s|x)?[^a-z0-9]') THEN
+            v_out := v_out || k.word;
+        END IF;
+    END LOOP;
+    RETURN v_out;
+END;
+$$;
+
+-- Mots de la liste dans tout le texte d'un produit : nom, description, catégorie et suppléments (contre-vérification T5)
+CREATE OR REPLACE FUNCTION private.order_product_words(p_product_id uuid)
 RETURNS text[]
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT COALESCE(array_agg(k.word ORDER BY k.ord), ARRAY[]::text[])
-      FROM public.platform_settings s
-      CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(s.value->'value') = 'array' THEN s.value->'value' ELSE '[]'::jsonb END)
-           WITH ORDINALITY AS k(word, ord)
-     WHERE s.key = 'orders.review_keywords'
-       AND btrim(private.order_text_fold(k.word)) ~ '^[a-z0-9][a-z0-9 ''-]*$'
-       AND ' ' || regexp_replace(private.order_text_fold(p_text), '[^a-z0-9''-]+', ' ', 'g') || ' '
-           ~ ('[^a-z0-9]' || btrim(private.order_text_fold(k.word)) || '(s|x)?[^a-z0-9]');
+    SELECT COALESCE((SELECT private.order_review_words(concat_ws(' | ', pr.name, pr.description, c.name,
+                        (SELECT string_agg(o.name, ' | ' ORDER BY o.sort_order, o.id) FROM public.product_options o WHERE o.product_id = pr.id)))
+                       FROM public.products pr LEFT JOIN public.product_categories c ON c.id = pr.category_id
+                      WHERE pr.id = p_product_id), ARRAY[]::text[]);
 $$;
 
 -- Liste des mots écrite par un super-administrateur actif (mêmes règles que finance_setting_set : UNKNOWN_KEY n'existe
@@ -134,6 +200,7 @@ SET search_path = public
 AS $$
 DECLARE
     v jsonb := p_value->'value';
+    v_flagged integer;
 BEGIN
     IF p_actor IS NULL OR NOT EXISTS (
         SELECT 1 FROM public.user_roles r JOIN public.users u ON u.id = r.user_id
@@ -152,7 +219,10 @@ BEGIN
     INSERT INTO public.platform_settings (key, value, updated_by, updated_at)
     VALUES ('orders.review_keywords', jsonb_build_object('value', v), p_actor, now())
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now();
-    RETURN jsonb_build_object('ok', true, 'key', 'orders.review_keywords', 'value', v);
+    -- Contre-vérification (T3) : produits déjà enregistrés revus avec la nouvelle liste (« à vérifier » posé, jamais
+    -- effacé ; un avis groupé à l'administration) — private.order_review_backfill, migration 20261224000005
+    v_flagged := private.order_review_backfill('LISTE', p_actor);
+    RETURN jsonb_build_object('ok', true, 'key', 'orders.review_keywords', 'value', v, 'flagged', v_flagged);
 END;
 $$;
 
@@ -209,6 +279,15 @@ BEGIN
             RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'La vérification d''un produit réglementé se fait seulement par l''administration.';
         END IF;
     END IF;
+    -- Contre-vérification (T6) : un produit archivé ne change plus (statut, prix, stock…), sauf par les fonctions en base
+    -- (remise en vente, décision de l'administration) et les fonctions de commande (stock rendu à une annulation)
+    IF TG_OP = 'UPDATE' AND OLD.archived_at IS NOT NULL
+       AND current_setting('event_village.product_write', true) IS DISTINCT FROM 'on'
+       AND current_setting('event_village.product_regulation', true) IS DISTINCT FROM 'on'
+       AND current_setting('event_village.order_flow', true) IS DISTINCT FROM 'on'
+       AND (to_jsonb(NEW) - 'updated_at') IS DISTINCT FROM (to_jsonb(OLD) - 'updated_at') THEN
+        RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Ce produit est archivé : il ne se modifie plus.';
+    END IF;
     -- Lot 12c : « à vérifier » posé par order_product_save ou product_option_set, effacé par la décision de
     -- l'administration ; archivage par order_product_remove. Aucune autre écriture ne les pose ni ne les efface.
     IF current_setting('event_village.product_write', true) IS DISTINCT FROM 'on'
@@ -217,10 +296,14 @@ BEGIN
             NEW.review_state := NULL;
             NEW.review_words := NULL;
             NEW.review_requested_at := NULL;
+            NEW.review_note := NULL;
+            NEW.review_cleared_words := NULL;
             NEW.archived_at := NULL;
         ELSIF NEW.review_state IS DISTINCT FROM OLD.review_state
               OR NEW.review_words IS DISTINCT FROM OLD.review_words
               OR NEW.review_requested_at IS DISTINCT FROM OLD.review_requested_at
+              OR NEW.review_note IS DISTINCT FROM OLD.review_note
+              OR NEW.review_cleared_words IS DISTINCT FROM OLD.review_cleared_words
               OR NEW.archived_at IS DISTINCT FROM OLD.archived_at THEN
             RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'La vérification et l''archivage d''un produit se font seulement par les fonctions en base.';
         END IF;
@@ -239,7 +322,10 @@ REVOKE ALL ON FUNCTION public.products_order_guard() FROM PUBLIC, anon, authenti
 -- ----------------------------------------------------------------------------
 -- Recopie de 20261130000002_l12a_catalogue.sql:373-415 ; changements : l'état « à vérifier » est effacé par la décision
 -- (autorisé = vendable si la case de la partenaire n'est pas cochée ; refusé = réglementé, affiché sans être vendu) ;
--- avis PRODUCT_REVIEW_DECIDED à la partenaire ; mots trouvés gardés au journal.
+-- avis PRODUCT_REVIEW_DECIDED à la partenaire ; mots trouvés gardés au journal. Contre-vérification (T2) : la décision
+-- porte sur la version lue (reviewed_at = date de la demande, ou date de la fiche d'un produit sans demande) : un produit
+-- changé depuis est refusé (REVIEW_CHANGED) ; une autorisation garde les mots vus (review_cleared_words) ; SMS de la
+-- décision à la partenaire (PRODUCT_DECISION_SMS, en plus de la cloche, du téléphone et de l'email).
 CREATE OR REPLACE FUNCTION public.order_product_regulation_decide(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -254,6 +340,8 @@ DECLARE
     v_value   boolean;
     pr        record;
     v_owner   uuid;
+    v_seen    timestamptz;
+    v_words   text[];
 BEGIN
     IF jsonb_typeof(p->'regulated') <> 'boolean' THEN
         RETURN jsonb_build_object('ok', false, 'code', 'INVALID_DECISION', 'message', 'Indiquez si le produit est réglementé ou non.');
@@ -271,9 +359,23 @@ BEGIN
     IF v_product IS NULL OR NOT FOUND THEN
         RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Produit introuvable.');
     END IF;
+    -- Contre-vérification (T2) : version lue par l'administration (la route l'exige ; la base la contrôle dès qu'elle est
+    -- donnée)
+    IF NULLIF(p->>'reviewed_at', '') IS NOT NULL THEN
+        BEGIN
+            v_seen := (p->>'reviewed_at')::timestamptz;
+        EXCEPTION WHEN others THEN
+            v_seen := NULL;
+        END;
+        IF v_seen IS NULL OR v_seen IS DISTINCT FROM COALESCE(pr.review_requested_at, pr.updated_at) THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'REVIEW_CHANGED', 'message', 'Ce produit a changé pendant votre lecture : relisez-le.');
+        END IF;
+    END IF;
+    v_words := private.order_product_words(pr.id);
     PERFORM set_config('event_village.product_regulation', 'on', true);
     UPDATE public.products
        SET regulated_admin = v_value, regulated_checked_by = v_actor, regulated_checked_at = now(), updated_at = now(),
+           review_note = NULL, review_cleared_words = CASE WHEN v_value THEN review_cleared_words ELSE v_words END,
            review_state = NULL, review_words = NULL, review_requested_at = NULL
      WHERE id = pr.id;
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
@@ -292,6 +394,14 @@ BEGIN
             'data', jsonb_strip_nulls(jsonb_build_object(
                 'product_id', pr.id, 'product_name', pr.name, 'decision', CASE WHEN v_value THEN 'REFUSE' ELSE 'AUTORISE' END,
                 'reason', v_reason, 'partner_box', pr.is_regulated))));
+        -- Contre-vérification (point 7, P5) : la même décision par SMS (type à part : l'avis ci-dessus n'a pas de SMS)
+        PERFORM public.notif_enqueue(jsonb_build_object(
+            'type', 'PRODUCT_DECISION_SMS',
+            'key', 'PRODUCT_DECISION_SMS:' || pr.id::text || ':' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS'),
+            'user_id', v_owner, 'actor_id', v_actor,
+            'data', jsonb_strip_nulls(jsonb_build_object(
+                'product_id', pr.id, 'product_name', pr.name, 'decision', CASE WHEN v_value THEN 'REFUSE' ELSE 'AUTORISE' END,
+                'partner_box', pr.is_regulated))));
     END IF;
     RETURN jsonb_build_object('ok', true, 'product_id', pr.id, 'regulated_admin', v_value,
                               'regulated', pr.is_regulated OR v_value);
@@ -359,6 +469,8 @@ $$;
 -- p : actor_id, product_id (vide = création), fields { venue_id, category_id, name, description, price,
 -- is_daily_special, daily_special_date, stock_quantity, is_stock_managed, images, is_regulated, regulated_kind }.
 -- Seules les clés présentes changent à la modification. Rend { ok, product, review_requested } ou { ok:false, code, message }.
+-- Contre-vérification : texte comparé = nom, description, nom de la catégorie et suppléments (T5) ; p.restore = true
+-- remet en vente un produit archivé (point 8), revu par la liste des mots (mots déjà autorisés exceptés).
 CREATE OR REPLACE FUNCTION public.order_product_save(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -388,6 +500,8 @@ DECLARE
     v_managed  boolean;
     v_words    text[];
     v_review   boolean := FALSE;
+    v_bump     boolean := FALSE;
+    v_restore  boolean := jsonb_typeof(p->'restore') = 'boolean' AND (p->>'restore')::boolean;
 BEGIN
     v_owner := private.order_catalog_owner(v_actor);
     IF NOT (v_owner->>'ok')::boolean THEN
@@ -402,9 +516,14 @@ BEGIN
         IF v_product IS NULL OR NOT FOUND THEN
             RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Ce produit n’existe pas ou n’est pas le vôtre.');
         END IF;
-        IF pr.archived_at IS NOT NULL THEN
+        IF pr.archived_at IS NOT NULL AND NOT v_restore THEN
             RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_ARCHIVED', 'message', 'Ce produit est archivé : il ne se modifie plus.');
         END IF;
+        IF v_restore AND pr.archived_at IS NULL THEN
+            RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_ARCHIVED', 'message', 'Ce produit est déjà sur votre carte.');
+        END IF;
+    ELSIF v_restore THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'Ce produit n’existe pas ou n’est pas le vôtre.');
     END IF;
 
     -- Valeurs (présentes dans la requête, sinon celles du produit ou celles par défaut)
@@ -463,12 +582,24 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'code', 'CATEGORY_NOT_FOUND', 'message', 'Catégorie de produit introuvable.');
     END IF;
 
-    -- « À vérifier » : un mot de la liste dans le nom ou la description, à la création ou quand ils changent ; jamais
-    -- effacé par une modification (seule la décision de l'administration l'efface)
-    IF pr.id IS NULL OR v_name IS DISTINCT FROM pr.name OR v_desc IS DISTINCT FROM pr.description THEN
-        v_words := private.order_review_words(v_name || ' ' || COALESCE(v_desc, ''));
-        v_review := cardinality(v_words) > 0;
+    -- « À vérifier » : un mot de la liste dans le nom, la description, la catégorie ou un supplément, à la création ou quand
+    -- le nom, la description ou la catégorie changent (même après une autorisation : le texte a changé) ; jamais effacé
+    -- par une modification (seule la décision de l'administration l'efface). Remise en vente : revue, sauf les mots que
+    -- l'administration a déjà vus en autorisant le produit.
+    IF pr.id IS NULL OR v_restore OR v_name IS DISTINCT FROM pr.name OR v_desc IS DISTINCT FROM pr.description
+       OR v_category IS DISTINCT FROM pr.category_id THEN
+        v_words := private.order_review_words(concat_ws(' | ', v_name, v_desc,
+                       (SELECT c.name FROM public.product_categories c WHERE c.id = v_category),
+                       (SELECT string_agg(o.name, ' | ' ORDER BY o.sort_order, o.id) FROM public.product_options o WHERE o.product_id = pr.id)));
+        v_review := CASE WHEN v_restore
+                         THEN EXISTS (SELECT 1 FROM unnest(v_words) w WHERE NOT (w = ANY (COALESCE(pr.review_cleared_words, ARRAY[]::text[]))))
+                         ELSE cardinality(v_words) > 0 END;
     END IF;
+    -- Contre-vérification (T2) : un produit encore « à vérifier » dont le texte, la catégorie ou les photos changent prend
+    -- une nouvelle version (date de la demande) : une décision prise sur la version affichée avant est refusée.
+    v_bump := pr.id IS NOT NULL AND pr.review_state = 'A_VERIFIER'
+              AND (v_name IS DISTINCT FROM pr.name OR v_desc IS DISTINCT FROM pr.description
+                   OR v_category IS DISTINCT FROM pr.category_id OR v_images IS DISTINCT FROM COALESCE(pr.images, ARRAY[]::text[]));
 
     PERFORM set_config('event_village.product_write', 'on', true);
     IF pr.id IS NULL THEN
@@ -485,7 +616,8 @@ BEGIN
                is_regulated = v_reg, regulated_kind = v_kind,
                review_state = CASE WHEN v_review THEN 'A_VERIFIER' ELSE review_state END,
                review_words = CASE WHEN v_review THEN v_words ELSE review_words END,
-               review_requested_at = CASE WHEN v_review THEN now() ELSE review_requested_at END,
+               review_requested_at = CASE WHEN v_review OR v_bump THEN clock_timestamp() ELSE review_requested_at END,
+               archived_at = CASE WHEN v_restore THEN NULL ELSE archived_at END,
                updated_at = now()
          WHERE id = pr.id
         RETURNING * INTO v_new;
@@ -493,7 +625,7 @@ BEGIN
     PERFORM set_config('event_village.product_write', 'off', true);
 
     INSERT INTO public.audit_logs (user_id, user_role, action, object_type, object_id, old_value, new_value, metadata)
-    VALUES (v_actor, 'PARTENAIRE', CASE WHEN pr.id IS NULL THEN 'PRODUCT_CREATED' ELSE 'PRODUCT_UPDATED' END, 'products', v_new.id,
+    VALUES (v_actor, 'PARTENAIRE', CASE WHEN pr.id IS NULL THEN 'PRODUCT_CREATED' WHEN v_restore THEN 'PRODUCT_RESTORED' ELSE 'PRODUCT_UPDATED' END, 'products', v_new.id,
             CASE WHEN pr.id IS NOT NULL THEN jsonb_build_object('name', pr.name, 'price', pr.price, 'is_regulated', pr.is_regulated) END,
             jsonb_build_object('name', v_new.name, 'price', v_new.price, 'is_regulated', v_new.is_regulated, 'venue_id', v_new.venue_id),
             jsonb_strip_nulls(jsonb_build_object('review_words', CASE WHEN v_review THEN to_jsonb(v_words) END)));
@@ -567,6 +699,7 @@ ON CONFLICT (type) DO UPDATE SET
 -- ----------------------------------------------------------------------------
 REVOKE ALL ON FUNCTION private.order_text_fold(text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.order_review_words(text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.order_product_words(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.order_catalog_owner(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.order_product_review_notify(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.order_review_keywords_valid(jsonb) FROM PUBLIC, anon, authenticated;

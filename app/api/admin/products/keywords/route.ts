@@ -34,7 +34,14 @@ export async function PUT(req: NextRequest) {
                 ? NextResponse.json({ success: false, error: r.message, code: r.code }, { status: 400 })
                 : orderRefusal(r, 'Liste non enregistrée.');
         }
-        return NextResponse.json({ success: true, keywords: r.value });
+        // Contre-vérification du lot 12c (T3) : chaque changement de la liste revoit les produits déjà enregistrés
+        const flagged = Number(r.flagged ?? 0);
+        return NextResponse.json({
+            success: true, keywords: r.value, flagged,
+            message: flagged > 0
+                ? `Liste enregistrée : ${flagged} produit${flagged > 1 ? 's' : ''} déjà en vente ${flagged > 1 ? 'sont' : 'est'} à vérifier.`
+                : 'Liste enregistrée : aucun produit en vente à revoir.',
+        });
     } catch (err: unknown) {
         return apiFailure('PUT /api/admin/products/keywords', err, { message: 'Liste non enregistrée. Réessayez.', code: 'KEYWORDS_SAVE_FAILED' });
     }

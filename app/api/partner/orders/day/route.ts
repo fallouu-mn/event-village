@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
         const r = (data ?? {}) as Record<string, unknown>;
         if (r.ok !== true) return orderRefusal(r, 'Journée momentanément indisponible.');
         const low = Array.isArray(r.low) ? (r.low as Array<Record<string, unknown>>) : [];
+        const specials = Array.isArray(r.specials) ? (r.specials as Array<Record<string, unknown>>) : [];
         // Lot 12c : état de la fiche, pour le bandeau de lecture seule d'une fiche suspendue (les actions sont refusées en base)
         const { data: fiche, error: ficheErr } = await getServiceRoleClient().from('partners').select('status').eq('user_id', ctx.user.id)
             .order('created_at').limit(1).maybeSingle();
@@ -39,6 +40,8 @@ export async function GET(request: NextRequest) {
                 paidOnlineToday: Number(r.paid_online_today),
                 onsiteToday: Number(r.onsite_today),
                 low: low.map((x) => ({ productId: String(x.product_id), name: String(x.name), venueId: x.venue_id ?? null, kind: x.kind === 'STOCK' ? 'STOCK' : 'PORTIONS', left: Number(x.left) })),
+                // Contre-vérification du lot 12c (point 12) : plats du jour encore en vente (« Plus de … »)
+                specials: specials.map((x) => ({ productId: String(x.product_id), name: String(x.name), venueId: x.venue_id ?? null, portions: Number(x.portions), sold: Number(x.sold) })),
             },
         }, { headers: NO_STORE });
     } catch (error: unknown) {

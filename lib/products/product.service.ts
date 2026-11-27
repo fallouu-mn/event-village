@@ -237,12 +237,35 @@ export class ProductService {
             .update({ ...fields, updated_at: new Date().toISOString() })
             .eq('id', productId)
             .eq('partner_id', partnerId)
+            // Contre-vérification du lot 12c (T6) : un produit archivé ne change plus (la base le refuse aussi)
+            .is('archived_at', null)
             .select()
             .maybeSingle();
 
         if (error) throw new Error(error.message);
-        if (!data) throw new PublicError('Produit introuvable.', 'PRODUCT_NOT_FOUND', 404);
+        if (!data) {
+            const { data: archived, error: readErr } = await supabase.from('products').select('id')
+                .eq('id', productId).eq('partner_id', partnerId).not('archived_at', 'is', null).maybeSingle();
+            if (readErr) throw new Error(`produit ${productId} illisible : ${readErr.message}`);
+            if (archived) throw new PublicError('Ce produit est archivé : il ne se modifie plus.', 'PRODUCT_ARCHIVED', 409);
+            throw new PublicError('Produit introuvable.', 'PRODUCT_NOT_FOUND', 404);
+        }
         return data as Product;
+    }
+
+    /**
+     * Contre-vérification du lot 12c (point 8) : « Remettre en vente » un produit archivé, par order_product_save (restore) :
+     * il revient sur la carte et il est revu par la liste des mots (sauf les mots déjà autorisés par l'administration).
+     */
+    static async restoreProduct(productId: string, partnerUserId: string): Promise<Product> {
+        if (!UUID_RE.test(productId)) throw new PublicError('Produit introuvable.', 'PRODUCT_NOT_FOUND', 404);
+        const { data, error } = await getServiceRoleClient().rpc('order_product_save', {
+            p: { actor_id: partnerUserId, product_id: productId, restore: true, fields: {} },
+        });
+        if (error) throw new Error(`order_product_save : ${error.message}`);
+        const r = (data ?? {}) as Record<string, unknown>;
+        if (r.ok !== true) throw catalogRefusal(r, 'Produit non remis en vente.');
+        return r.product as Product;
     }
 
     /**
@@ -303,7 +326,8 @@ function parseProductFields(input: unknown, mode: 'create' | 'update'): Record<s
     if (!parsed.success) {
         const unknownKey = parsed.error.issues.find((i) => i.code === 'unrecognized_keys') as { keys?: string[] } | undefined;
         if (unknownKey?.keys?.length) {
-            throw new PublicError(`Ce champ ne se modifie pas ici : ${unknownKey.keys.join(', ')}.`, 'FIELD_NOT_EDITABLE', 400);
+            // Contre-vérification du lot 12c (point « mots techniques ») : aucun nom de champ dans le texte
+            throw new PublicError('Ce champ ne se modifie pas ici.', 'FIELD_NOT_EDITABLE', 400);
         }
         throw new PublicError(parsed.error.issues[0]?.message ?? 'Données du produit invalides.', 'INVALID_INPUT', 400);
     }
@@ -319,6 +343,7 @@ export function catalogRefusal(r: Record<string, unknown>, fallback: string): Pu
     const status = code.endsWith('_NOT_FOUND') ? 404
         : code === 'FORBIDDEN' || code === 'PARTNER_SUSPENDED' || code === 'PARTNER_NOT_VALIDATED' ? 403
             : code.startsWith('TOO_MANY') ? 429
-                : code === 'PRODUCT_ARCHIVED' || code === 'ZONE_EXISTS' || code === 'INVALID_ORDER' ? 409 : 400;
+                : code === 'PRODUCT_ARCHIVED' || code === 'PRODUCT_NOT_ARCHIVED' || code === 'ZONE_EXISTS' || code === 'INVALID_ORDER'
+                    || code === 'CATEGORY_EXISTS' ? 409 : 400;
     return new PublicError(typeof r.message === 'string' && r.message ? r.message : fallback, code, status);
 }

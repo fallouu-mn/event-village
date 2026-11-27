@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
         const { status } = body;
 
         if (!status) {
-            return NextResponse.json({ error: 'Le champ status est requis.' }, { status: 400 });
+            return NextResponse.json({ error: 'Choisissez une disponibilité.', code: 'INVALID_STATUS' }, { status: 400 });
         }
 
         const product = await ProductService.setProductStatus(params.id, user.id, status);
