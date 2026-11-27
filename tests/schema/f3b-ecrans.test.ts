@@ -115,7 +115,9 @@ describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »',
             [['notifications.read'], ['/admin/notifications']],
             [['settings.read'], ['/admin/finance-settings']],
             [['access.operate'], ['/scan']],
-            [['statistics.read', 'partners.read', 'partners.validate'], []],
+            // Lot 12c (modification signalée au rapport) : « Produits à vérifier » (/admin/products) avec partners.validate
+            [['statistics.read', 'partners.read'], []],
+            [['partners.validate'], ['/admin/products']],
             // Lot 10b (point 4) : file de validation des salles (test modifié, signalé)
             [['halls.validate'], ['/admin/halls']],
         ];
@@ -130,7 +132,8 @@ describe('2. E-34 — menu et barre du bas selon les droits ; « Mes droits »',
     test('SUPERADMIN : tout, journal d’audit compris, sans « Mes droits » ni « Tarification »', async () => {
         const nav = await navFor([], true);
         // Lot 10b (point 4) : « Salles à valider » (/admin/halls) après « Catalogues et services » (test modifié, signalé)
-        assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/users', '/admin/services', '/admin/halls', '/admin/finance', '/admin/referral',
+        // Lot 12c : « Produits à vérifier » (/admin/products) après « Salles à valider » (test modifié, signalé)
+        assert.deepEqual(hrefs(nav), ['/admin/events', '/admin/users', '/admin/services', '/admin/halls', '/admin/products', '/admin/finance', '/admin/referral',
             '/admin/communications', '/admin/a-la-une', '/admin/finance-settings', '/admin/audit', '/admin/notifications', '/scan', '/admin/securite']);
         assert.deepEqual(nav.mobile.map((i) => i.href), ['/admin/dashboard', '/admin/events', '/admin/users', '/admin/finance', '/admin/audit']);
         assert.ok(!JSON.stringify(nav).includes('/admin/pricing'), '« Tarification » encore au menu');

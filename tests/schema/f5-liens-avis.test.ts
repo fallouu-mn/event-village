@@ -50,6 +50,8 @@ const SANS_OBJET: Record<string, string> = {
     ADMIN_REFUND_TO_RETRY: 'file « Versements à reprendre » des finances (aucune fiche par versement ; après-lancement)',
     ADMIN_DUPLICATE_PAYMENT: 'file « Remboursements à verser » (aucune fiche par paiement ; après-lancement)',
     ADMIN_CASHOUT_UNCERTAIN: 'file « Versements à reprendre » (aucune fiche par versement ; après-lancement)',
+    // Contre-vérification du lot 12c (point 7, modification signalée au rapport) : SMS du remboursement d'une commande
+    ADMIN_ORDER_REFUND_BLOCKED: 'file « Versements à reprendre » (aucune fiche par versement ; après-lancement)',
     ADMIN_WITHDRAWAL_REJECTED: 'file « Dû aux partenaires » (aucune fiche par retrait ; après-lancement)',
     ADMIN_FINANCE_DEBT: 'file « Créances » (aucune fiche par créance ; après-lancement)',
     ADMIN_CASHOUT_TO_RESUME: 'file « Versements à reprendre » (aucune fiche par versement ; après-lancement)',

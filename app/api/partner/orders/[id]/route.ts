@@ -3,7 +3,7 @@ import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { getServiceRoleClient } from '@/lib/supabase/server';
 import { guardFeature } from '@/lib/features/flags';
-import { UUID_RE, deliverHandoverCode, invalidBody, orderNotFound, orderRefusal, orderResponse, orderStateLabel, readJson, sendOrderRefunds } from '@/lib/orders/booking';
+import { UUID_RE, deliverHandoverCode, invalidBody, orderNotFound, orderRefusal, orderStateLabel, partnerOrderView, readJson, sendOrderRefunds } from '@/lib/orders/booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +27,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const { data, error } = await getServiceRoleClient().rpc('order_view', { p: { order_id: id, actor_id: user.id, as: 'PARTNER' } });
         if (error) throw new Error(`order_view : ${error.message}`);
         if (!data) return orderNotFound();
-        return NextResponse.json({ success: true, order: orderResponse(data as Record<string, unknown>) }, { headers: { 'Cache-Control': 'no-store' } });
+        // Lot 12c : coordonnées du client seulement pendant la commande ouverte (partnerOrderView)
+        return NextResponse.json({ success: true, order: partnerOrderView(data as Record<string, unknown>) }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error: unknown) {
         return apiFailure('GET /api/partner/orders/[id]', error, { message: 'Commande momentanément indisponible.', code: 'ORDER_UNAVAILABLE', status: 500 });
     }
@@ -81,7 +82,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         await sendOrderRefunds(r.cashout_ids);
         return NextResponse.json({
             success: true,
-            order: { id, state: r.order_state ?? null, stateLabel: r.order_state ? orderStateLabel(r.order_state) : null, estimatedAt: r.estimated_at ?? null },
+            order: {
+                id, state: r.order_state ?? null, stateLabel: r.order_state ? orderStateLabel(r.order_state) : null, estimatedAt: r.estimated_at ?? null,
+                // Lot 12c : solde reçu sur place à la remise (noté, jamais compté comme encaissé par Event Village)
+                onsiteAmount: r.onsite_amount ?? null,
+            },
         });
     } catch (error: unknown) {
         return apiFailure('PATCH /api/partner/orders/[id]', error, { message: 'Commande non enregistrée. Réessayez.', code: 'ORDER_SAVE_FAILED', status: 500 });

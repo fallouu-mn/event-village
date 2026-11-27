@@ -4020,7 +4020,7 @@ Colonnes : V visiteur, C client, P partenaire validé, R contrôleur seul, A ADM
 | Adresse | Ce que montre la page | Retour | Test, essai |
 |---|---|---|---|
 | `/partner` | Rien : renvoi à `/partner/dashboard`. `app/partner/page.tsx:4` | | |
-| `/partner/dashboard` | Surtitre « Espace organisateur », indicateurs « Ventes en ligne », « Net partenaire », « Billets vendus », « Disponible au retrait », événements, activité, « Export comptable ». Bandeaux d'état du compte. `app/partner/dashboard/page.tsx:232`, :319-343 | menu | `tests/parcours/partenaire-lot7.test.ts:750`. Essai 41 |
+| `/partner/dashboard` | Surtitre « Espace organisateur », indicateurs « Ventes en ligne », « Net partenaire », « Billets vendus », « Disponible au retrait », événements, activité, « Export comptable ». Bandeaux d'état du compte. `app/partner/dashboard/page.tsx:232`, :319-343 | menu | `tests/parcours/partenaire-lot7.test.ts:751`. Essai 41 |
 | `/partner/events` | « Mes événements », indicateurs, onglets par statut, « Créer un événement ». `app/partner/events/page.tsx:188`, :193, :218-221 | menu | Essais 12, 13. Guide 8.1, 8.2 |
 | `/partner/events/new`, `/partner/events/{id}/edit` | « Créer un événement » ou « Modifier l’événement », quatre étapes. `components/events/EventForm.tsx:1008-652` | « Retour à mes événements » | `tests/parcours/edition-formulaire.test.ts:381`. Essais 11, 14|
 | `/partner/events/{id}` | Pilotage, onglets « Aperçu », « Ventes », « Invitations », « Entrées », « Équipe », « Caisse », « Clôture ». `app/partner/events/[id]/page.tsx:46-53` | « Mes événements » | `tests/parcours/pilotage-apercu-ventes.test.ts:76`. Essais 15, 39, 40, 41, 44, 46, 59, 62. Guide 8.8 bis, 8.10, 8.11 |

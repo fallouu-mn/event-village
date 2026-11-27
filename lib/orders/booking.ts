@@ -223,3 +223,25 @@ export function invalidBody(): NextResponse {
 export function orderNotFound(): NextResponse {
     return NextResponse.json({ success: false, error: 'Commande introuvable.', code: 'ORDER_NOT_FOUND' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
 }
+
+// ── Lot 12c (ajouts) ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** États d'une commande terminée (plus aucune action possible). */
+export const ORDER_CLOSED_STATES: ReadonlySet<string> = new Set([
+    'REMISE', 'NON_RETIREE', 'EXPIREE', 'REFUSEE', 'SANS_REPONSE', 'ANNULEE_CLIENT', 'ANNULEE_PARTENAIRE', 'ANNULEE_EV',
+]);
+
+/**
+ * Lot 12c : vue d'une commande pour la partenaire — l'adresse, le téléphone et les consignes du client ne sont servis que
+ * pendant la commande ouverte (décision du client du 26/11 : « coordonnées seulement pendant la commande ouverte ») ;
+ * la base les masque ensuite tout à fait au bout de orders.contact_retention_days (7 jours après la remise).
+ * `contactHidden` dit à l'écran pourquoi elles manquent.
+ */
+export function partnerOrderView(view: Record<string, unknown>): Record<string, unknown> {
+    const steps = (view.steps ?? {}) as Record<string, unknown>;
+    const closed = ORDER_CLOSED_STATES.has(String(view.state)) || typeof steps.closed_at === 'string';
+    if (!closed) return orderResponse(view);
+    const rest = { ...view };
+    delete rest.contact;
+    return { ...orderResponse(rest), contactHidden: true };
+}

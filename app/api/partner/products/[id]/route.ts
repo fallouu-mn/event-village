@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { apiFailure } from '@/lib/api/public-error';
 import { requireActiveSession, serverIsPartner } from '@/lib/auth/session';
 import { ProductService } from '@/lib/products/product.service';
+import { readPartnerProduct } from '@/lib/products/catalog.service';
 import { guardFeature } from '@/lib/features/flags';
 
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -17,8 +18,10 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 401 });
         }
 
-        const product = await ProductService.getProductById(params.id, user.id);
-        return NextResponse.json({ success: true, product });
+        // Lot 12c : produit avec ses suppléments, ses portions du jour, sa case « réglementé » et son état « à vérifier »
+        // (un produit archivé ou d'une autre partenaire : 404)
+        const product = await readPartnerProduct(user.id, params.id);
+        return NextResponse.json({ success: true, product }, { headers: { 'Cache-Control': 'no-store' } });
     } catch (error: unknown) {
         return apiFailure('GET /api/partner/products/[id]', error, { message: 'Produit momentanément indisponible.', code: 'PRODUCT_UNAVAILABLE', status: 500 });
     }
@@ -59,8 +62,9 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
             return NextResponse.json({ error: 'Accès non autorisé.' }, { status: 403 });
         }
 
-        await ProductService.deleteProduct(params.id, user.id);
-        return NextResponse.json({ success: true });
+        // Lot 12c : produit jamais vendu supprimé, produit vendu archivé (avant : erreur 500 de clé étrangère)
+        const removed = await ProductService.deleteProduct(params.id, user.id);
+        return NextResponse.json({ success: true, outcome: removed.outcome, message: removed.message });
     } catch (error: unknown) {
         return apiFailure('DELETE /api/partner/products/[id]', error, { message: 'Produit non supprimé. Réessayez.', code: 'PRODUCT_DELETE_FAILED', status: 400 });
     }
