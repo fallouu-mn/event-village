@@ -1,8 +1,15 @@
 # Lot 12c — Commandes : écrans de la partenaire et vérification des produits
 
-Branche `lot12c/partenaire` (worktree `event-village-lot12c`), partie de `main` 953914229a, `main` 774e19a34a (lot 11c-b)
-fusionnée en cours de lot. **Non fusionnée dans `main`, aucune migration appliquée** (consigne). Chemins relatifs au
-dépôt ; `M/` = `supabase/migrations/`.
+> **Fusionné dans `main` (85a1c85f57), run complet de main 766 vert.** Run complet de la branche avant la fusion : 762,
+> entièrement vert (638/638 suites, e2e 842, responsive 0 défaut, budgets OK, mesure 93 / 93 / 91). Ajout du 27/11
+> (commande refusée pendant une fermeture exceptionnelle) fusionné ensuite (b52a9c255e, branche `lot12c/devis-fermeture`,
+> run 771 vert) ; **run complet de main 775 vert** à la 2e tentative (638/638, e2e 842, responsive 0 défaut, budgets OK,
+> mesure 95 / 94 / 94). 1re tentative et run 767 : un seul e2e rouge chacun, erreur d'hydratation intermittente (fiche
+> en cours, Explorer), sans lien avec le lot (aucun écran touché par l'ajout). Migrations `20261224000001` à `…05`
+> **non appliquées** : à appliquer sur event-village-dev, dans l'ordre, après ce run vert.
+
+Branche `lot12c/partenaire` (worktree `event-village-lot12c`, retiré après la fusion), partie de `main` 953914229a,
+`main` 774e19a34a (lot 11c-b) fusionnée en cours de lot. Chemins relatifs au dépôt ; `M/` = `supabase/migrations/`.
 
 > **Correctifs après contre-vérification (27/11)** : section du même nom, en tête ci-dessous. Six trous de l'audit verts,
 > sept avis ajoutés, « Remettre en vente », mode comptoir, rappel sonore, rupture en un geste. **Run complet 753 vert sauf
