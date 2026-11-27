@@ -61,14 +61,17 @@ export function useOrderSound(): OrderSound {
         });
     }, []);
 
-    // Premier toucher ou première touche du clavier : le son devient permis (contexte repris dans le geste lui-même)
+    // Premier toucher ou première touche du clavier : le son devient permis (contexte repris dans le geste lui-même).
+    // Contre-vérification du lot 12c (run 744) : au « click », après l'action du bouton touché, et non à l'appui : le
+    // bouton « Activer le son » disparaissait entre l'appui et le relâchement, la rangée glissait et le geste n'atteignait
+    // pas le bouton visé (« Mode comptoir »).
     useEffect(() => {
         if (ready) return undefined;
         const onGesture = () => unlock();
-        window.addEventListener('pointerdown', onGesture);
+        window.addEventListener('click', onGesture);
         window.addEventListener('keydown', onGesture);
         return () => {
-            window.removeEventListener('pointerdown', onGesture);
+            window.removeEventListener('click', onGesture);
             window.removeEventListener('keydown', onGesture);
         };
     }, [ready, unlock]);
