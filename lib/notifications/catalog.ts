@@ -907,14 +907,16 @@ const CATALOG = {
     }),
     EVENT_SUSPENDED_HOLDER: define('EVENT_SUSPENDED_HOLDER', {
         label: 'Suspension d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'EVENT_STATUS', link: eventTicketsPath, // carte B3 (25/11) : « Mes billets », la fiche suspendue est neutre
+        // Avis phase 2 (2b, A1) : titulaire d'une table sans billet → « Ma table » (myTablePath retombe sur « Mes billets » sinon)
+        inAppType: 'EVENT_STATUS', link: myTablePath, // carte B3 (25/11) : « Mes billets », la fiche suspendue est neutre
         inApp: (d) => ({ title: 'Événement suspendu', content: `${q(text(d, 'title'))} est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.` }),
         sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} est suspendu pour le moment. Vos billets restent valables, vous serez prévenu de la suite.`,
         sample: { ...SAMPLE_EVENT },
     }),
     EVENT_REACTIVATED_HOLDER: define('EVENT_REACTIVATED_HOLDER', {
         label: 'Reprise d’un événement (porteurs)', family: 'OPTIONAL', topic: 'EVENT_UPDATES', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
-        inAppType: 'EVENT_STATUS', link: eventPath,
+        // Avis phase 2 (2b, A1) : titulaire d'une table sans billet → « Ma table »
+        inAppType: 'EVENT_STATUS', link: (d) => (optText(d, 'booking_id') ? myTablePath(d) : eventPath(d)),
         inApp: (d) => ({ title: 'Événement de nouveau en ligne', content: `${q(text(d, 'title'))} reprend comme prévu. Vos billets restent valables.` }),
         sms: (d) => `${SMS_PREFIX}${smsVar(text(d, 'title'), 30)} reprend comme prévu. Vos billets restent valables.`,
         sample: { ...SAMPLE_EVENT },
@@ -924,7 +926,8 @@ const CATALOG = {
         label: 'Changement d’un événement', channels: ['IN_APP', 'PUSH', 'SMS', 'EMAIL'], audience: 'CLIENT', suspendedPolicy: 'BLOCK',
         // Contre-vérification du lot 11c-b (T2) : report qui ouvre le remboursement → les billets du compte pour cet
         // événement (/tickets/<événement>, où sont « Me faire rembourser » et, pour le titulaire d'une table, « Ma table »)
-        inAppType: 'EVENT_CHANGE', link: (d) => (refundOpen(d) ? eventTicketsPath(d) : eventPath(d)),
+        // Avis phase 2 (2b, A1) : titulaire d'une table sans billet (booking_id) → « Ma table »
+        inAppType: 'EVENT_CHANGE', link: (d) => (optText(d, 'booking_id') ? myTablePath(d) : refundOpen(d) ? eventTicketsPath(d) : eventPath(d)),
         inApp: eventChangedInApp,
         sms: eventChangedSms,
         sample: { ...SAMPLE_EVENT, changed_fields: ['start_date', 'start_time'], new_start_at: '2026-11-21T21:00:00.000Z' },
@@ -2505,7 +2508,7 @@ const CATALOG = {
     // N6 (R3, X10) : porteurs d'un événement suspendu puis clos par l'administration, sans motif.
     EVENT_CLOSED_HOLDER: define('EVENT_CLOSED_HOLDER', {
         label: 'Clôture d’un événement suspendu (porteurs)', channels: ['IN_APP', 'SMS', 'EMAIL', 'PUSH'], audience: 'CLIENT', suspendedPolicy: 'ALLOW', inAppType: 'EVENT_STATUS',
-        link: eventTicketsPath,
+        link: myTablePath, // avis phase 2 (2b, A1) : « Ma table » pour le titulaire d'une table sans billet, sinon « Mes billets »
         inApp: (d) => ({
             title: 'Événement clos',
             content: `${q(text(d, 'title'))} est clos par l'équipe Event Village après sa suspension. Il n'est pas annulé : aucun remboursement automatique.`,

@@ -118,8 +118,9 @@ export interface TemplateData {
      * réclamée ou transfert révoqué).
      */
     EVENT_CANCELLED: EventData & { public_notice?: string | null; refund_mode: 'AUTO' | 'ORGANIZER' | 'NONE' | 'TRANSFERRED'; recipient_kind?: 'PHONE' | string };
-    EVENT_SUSPENDED_HOLDER: EventData;
-    EVENT_REACTIVATED_HOLDER: EventData;
+    /** Avis phase 2 (2b, A1) : `booking_id` = table active du titulaire qui n'a plus de billet (lien « Ma table »). */
+    EVENT_SUSPENDED_HOLDER: EventData & { booking_id?: string };
+    EVENT_REACTIVATED_HOLDER: EventData & { booking_id?: string };
     /**
      * Lot 9 bis (11.2 M1) : `refund_open` = report de plus de 24 h qui ouvre le remboursement (R32) ; `address_cleared` =
      * adresse retirée (R80, `new_address` absent dans ce cas).
@@ -127,6 +128,8 @@ export interface TemplateData {
     EVENT_CHANGED: EventData & {
         changed_fields: string[]; new_start_at?: string; new_end_at?: string; new_location?: string; new_address?: string; new_city?: string; old_title?: string;
         refund_open?: boolean; address_cleared?: boolean;
+        /** Avis phase 2 (2b, A1) : table active du titulaire qui n'a plus de billet (lien « Ma table »). */
+        booking_id?: string;
     };
     REMINDER_J1: EventData & { sms_policy?: string };
     REMINDER_H3: EventData & { sms_policy?: string };
@@ -283,7 +286,7 @@ export interface TemplateData {
     };
     PAYMENT_REFUND_STARTED: OptionalEventData & { payment_id: string; amount: number; operator?: OperatorCode | string | null; duplicate_of?: string | null; withheld?: number | null; refund_amount?: number | null };
     ADMIN_PARTNER_RESUBMITTED: { partner_id: string; company: string };
-    EVENT_CLOSED_HOLDER: EventData;
+    EVENT_CLOSED_HOLDER: EventData & { booking_id?: string };
     EVENT_CLOSED_BY_ADMIN: EventData & { reason: string };
     SHIFT_OPEN_AT_END: EventData & { open_shifts: number };
     TRANSFER_REVOKED: EventData & { transfer_id?: string; ticket_id?: string };
