@@ -6,6 +6,8 @@
  * la base ; le panier affiche toujours le devis de la base (POST /api/orders/quote), relu à chaque changement.
  */
 
+import type { DishVisual } from './dish-visual';
+
 export type OrderMode = 'LIVRAISON' | 'RETRAIT' | 'SUR_PLACE';
 export type OrderPaymentChoice = 'INTEGRAL' | 'ACOMPTE' | 'DIFFERE';
 export type ProductAvailability = 'DISPONIBLE' | 'INDISPONIBLE' | 'EPUISE' | 'SUSPENDU';
@@ -23,6 +25,8 @@ export interface MenuProduct {
     price: number;
     /** Photo de la fiche du produit, ou null (jamais une photo de remplacement venue d'un site extérieur). */
     image: string | null;
+    /** Visuel dessiné (fichier local) d'un plat sans photo, choisi par le serveur d'après sa catégorie. */
+    visual: DishVisual;
     categoryId: string | null;
     availability: ProductAvailability;
     /** Produit réglementé (alcool, tabac) : affiché avec son prix, jamais commandable en ligne. */
@@ -76,6 +80,8 @@ export interface VenueMenu {
         prepMinutes: number;
         serviceFeeRate: number;
         asapAvailable: boolean;
+        /** Fin de la fermeture exceptionnelle en cours (heure de Dakar, « AAAA-MM-JJTHH:MM »), ou null. */
+        closedUntil: string | null;
         /** Heure de Dakar au moment de la lecture (« AAAA-MM-JJTHH:MM »). */
         now: string;
         windows: MenuWindow[];

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ArrowLeft, Loader2, LogIn, Minus, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock, Loader2, LogIn, Minus, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { LinkButton } from '@/components/ui/LinkButton';
@@ -10,7 +10,8 @@ import { Select, Textarea, TextInput } from '@/components/ui/Field';
 import { cn } from '@/components/ui/cn';
 import { formatFcfa } from '@/lib/format';
 import { ORDER_MODE_LABELS, type MenuProduct, type OrderMode, type OrderPaymentChoice, type VenueMenu } from '@/lib/orders/menu-types';
-import { COMMENT_MAX, INCOMPLETE_CODES, type CartLine, type Checkout, type QuoteState, type TimeChoices } from '@/lib/orders/cart-client';
+import { COMMENT_MAX, INCOMPLETE_CODES, type CartLine, type Checkout, type PriceChange, type QuoteState, type TimeChoices } from '@/lib/orders/cart-client';
+import { etaLabel } from '@/lib/orders/client-view';
 import { EmptyCart } from './EmptyCart';
 import { TimePicker, chipClass, type TimeChip } from './TimePicker';
 
@@ -31,8 +32,11 @@ function Row({ label, value, strong = false, muted = false }: { label: string; v
     );
 }
 
-/** Montants du devis de la base (rien n'est calculé ici) ; total qui s'anime quand il change. */
-function Amounts({ state, loginHref, onRetry }: { state: QuoteState; loginHref: string; onRetry: () => void }) {
+/**
+ * Montants du devis de la base (rien n'est calculé ici) ; total qui s'anime quand il change ; heure estimée servie par le
+ * devis (« Prête vers 13 h 05 », correctifs après contre-vérification, idée 10).
+ */
+function Amounts({ state, loginHref, onRetry, mode, today }: { state: QuoteState; loginHref: string; onRetry: () => void; mode: OrderMode | null; today: string }) {
     if (state.status === 'signin') {
         return (
             <div className="space-y-3 rounded-2xl border border-dashed border-border bg-muted p-4">
@@ -61,8 +65,16 @@ function Amounts({ state, loginHref, onRetry }: { state: QuoteState; loginHref: 
         );
     }
     const loading = state.status === 'loading';
+    const eta = etaLabel(mode, quote.scheduledFor, today);
     return (
         <dl className={cn('space-y-1.5 transition-opacity duration-fast', loading && 'opacity-60')} aria-busy={loading}>
+            {eta && (
+                <div className="mb-2 flex items-center gap-2 rounded-xl bg-muted px-3 py-2 text-base font-semibold text-foreground-strong" data-testid="heure-estimee-panier">
+                    <Clock size={18} className="flex-shrink-0 text-primary-text" aria-hidden="true" />
+                    <dt className="sr-only">Heure estimée</dt>
+                    <dd>{eta}</dd>
+                </div>
+            )}
             <Row label="Sous-total" value={quote.itemsAmount} />
             {quote.deliveryFee > 0 && <Row label={quote.zoneName ? `Livraison · ${quote.zoneName}` : 'Livraison'} value={quote.deliveryFee} />}
             {quote.serviceFee > 0 && <Row label="Frais de service" value={quote.serviceFee} muted />}
@@ -95,6 +107,10 @@ export interface CartPanelProps {
     loginHref: string;
     busy: boolean;
     submitError: string | null;
+    /** Prix changé entre l'affichage et la commande : ancien et nouveau prix servis par les deux devis (idée 8). */
+    priceChange?: PriceChange | null;
+    /** La base a dit « le prix a changé » et le nouveau devis est en cours de lecture. */
+    priceChangePending?: boolean;
     highlightProductId: string | null;
     onQuantity: (key: string, quantity: number) => void;
     onStep: (step: CartStep) => void;
@@ -268,11 +284,43 @@ export function CartPanel(props: CartPanelProps) {
             )}
 
             <section aria-label="Montant de la commande" className="space-y-3 rounded-2xl border border-border bg-card p-4">
-                <Amounts state={quote} loginHref={props.loginHref} onRetry={props.onRetryQuote} />
+                <Amounts state={quote} loginHref={props.loginHref} onRetry={props.onRetryQuote} mode={checkout.mode} today={menu.ordering.now.slice(0, 10)} />
             </section>
 
             {props.submitError && (
                 <StatusBanner tone="danger" announce="alert" title="Commande non envoyée">{props.submitError}</StatusBanner>
+            )}
+            {props.priceChangePending && (
+                <StatusBanner tone="warning" announce="alert" title="Le prix a changé">Le nouveau prix s’affiche dans un instant : rien n’a été commandé.</StatusBanner>
+            )}
+            {props.priceChange && (
+                <StatusBanner tone="warning" announce="alert" title="Le prix a changé" className="ev-fade-in">
+                    <div data-testid="prix-change">
+                        <p>Rien n’a été commandé. Voici les nouveaux prix :</p>
+                        <ul className="mt-2 space-y-1">
+                            {props.priceChange.lines.map((l, i) => (
+                                <li key={`${l.name}-${i}`} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                                    <span className="font-semibold">{l.quantity > 1 ? `${l.name} × ${l.quantity}` : l.name}</span>
+                                    <span className="tabular-nums">
+                                        <span className="line-through opacity-70">{formatFcfa(l.before)}</span>
+                                        <span aria-hidden="true">{' → '}</span>
+                                        <span className="sr-only">{' devient '}</span>
+                                        <span className="font-bold">{formatFcfa(l.after)}</span>
+                                    </span>
+                                </li>
+                            ))}
+                            <li className="flex flex-wrap items-baseline justify-between gap-x-3 border-t border-current/20 pt-1">
+                                <span className="font-semibold">Total</span>
+                                <span className="tabular-nums">
+                                    <span className="line-through opacity-70">{formatFcfa(props.priceChange.totalBefore)}</span>
+                                    <span aria-hidden="true">{' → '}</span>
+                                    <span className="sr-only">{' devient '}</span>
+                                    <span className="font-bold">{formatFcfa(props.priceChange.totalAfter)}</span>
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+                </StatusBanner>
             )}
 
             {step === 'cart' ? (
@@ -281,7 +329,7 @@ export function CartPanel(props: CartPanelProps) {
                 </Button>
             ) : (
                 <Button variant="gradient" fullWidth onClick={props.onSubmit} disabled={!canOrder} isLoading={props.busy}>
-                    {props.busy ? 'Envoi de la commande…' : 'Commander'}
+                    {props.busy ? 'Envoi de la commande…' : props.priceChange && quote.status === 'ready' ? <span className="tabular-nums">{`Commander à ${formatFcfa(quote.quote.total)}`}</span> : 'Commander'}
                 </Button>
             )}
             {step === 'checkout' && (

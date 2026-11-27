@@ -48,13 +48,18 @@ function whenText(o: OrderView): string {
     return isToday(at) ? `Prévue vers ${hourText(at)}` : `Prévue le ${formatDate(at)} vers ${hourText(at)}`;
 }
 
-export function OrderTracking({ orderId }: { orderId: string }) {
+/** Arrivée par un avis (correctifs après contre-vérification) : « commande prête » → mode comptoir ; « acceptée » → solde. */
+export type TrackingIntent = 'comptoir' | 'solde' | null;
+
+export function OrderTracking({ orderId, intent = null }: { orderId: string; intent?: TrackingIntent }) {
     const { isAuthenticated, isLoading: authLoading } = useAuth();
     const [order, setOrder] = useState<OrderView | null>(null);
     const [missing, setMissing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [payBalance, setPayBalance] = useState(false);
+    const intentDone = useRef(false);
+    const balanceRef = useRef<HTMLElement>(null);
     const [confirmCancel, setConfirmCancel] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [cancelError, setCancelError] = useState<string | null>(null);
@@ -145,6 +150,17 @@ export function OrderTracking({ orderId }: { orderId: string }) {
             setCancelling(false);
         }
     };
+
+    // Arrivée par l'avis « commande acceptée » avec un reste à payer : le panneau du solde s'ouvre et vient à l'écran (une
+    // fois) ; le montant est celui de la commande relue en base, jamais celui du lien
+    useEffect(() => {
+        if (intent !== 'solde' || intentDone.current || !order) return;
+        const online = ['ACCEPTEE', 'EN_PREPARATION', 'PRETE', 'EN_ROUTE'].includes(order.state) && order.amounts.balanceDue > 0 && order.amounts.onsiteAmount === null;
+        intentDone.current = true;
+        if (!online) return;
+        setPayBalance(true);
+        window.requestAnimationFrame(() => balanceRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    }, [intent, order]);
 
     if (!authLoading && !isAuthenticated) {
         return (
@@ -244,6 +260,9 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                             resendsLeft={o.code?.resendsLeft ?? 0}
                             version={`${o.state}:${o.code?.resendsLeft ?? 0}`}
                             onResent={() => void load()}
+                            venueName={o.venueName}
+                            counterOnLoad={intent === 'comptoir'}
+                            forCourier={o.mode === 'LIVRAISON'}
                         />
                     )}
 
@@ -261,7 +280,7 @@ export function OrderTracking({ orderId }: { orderId: string }) {
                     )}
 
                     {balanceOnline && (
-                        <section aria-labelledby="solde-titre" className="space-y-3 rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6">
+                        <section ref={balanceRef} aria-labelledby="solde-titre" className="scroll-mt-24 space-y-3 rounded-3xl border border-border bg-card p-5 shadow-sm sm:p-6" data-testid="solde">
                             <h2 id="solde-titre" className="flex items-center gap-2 text-lg font-bold text-foreground-strong">
                                 <Wallet size={20} className="text-primary-text" aria-hidden="true" />
                                 Reste à payer

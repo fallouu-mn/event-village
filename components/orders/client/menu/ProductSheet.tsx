@@ -73,7 +73,7 @@ export function ProductSheet({ product, onClose, onAdd }: {
             )}
         >
             <div className="space-y-5">
-                <ProductVisual image={product.image} name={product.name} sizes="(min-width: 640px) 32rem, 100vw" className="aspect-[16/10] w-full rounded-2xl" />
+                <ProductVisual image={product.image} name={product.name} visual={product.visual} sizes="(min-width: 640px) 32rem, 100vw" className="aspect-[16/10] w-full rounded-2xl" />
                 <div className="space-y-2">
                     <p className="text-2xl font-extrabold tabular-nums text-foreground-strong">{formatFcfa(product.price)}</p>
                     {product.daily && <p className="text-sm font-semibold text-primary-text">{`Plat du jour · ${portionsText(product)}`}</p>}

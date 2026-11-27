@@ -1,16 +1,18 @@
 import React from 'react';
 import Image from 'next/image';
-import { UtensilsCrossed } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { isProjectStorageImage } from '@/lib/events/event-image';
+import { dishVisualSrc, type DishVisual } from '@/lib/orders/dish-visual';
 
 /**
- * Lot 12b — photo d'un plat : seulement une photo du stockage du projet (next/image) ; sinon un visuel dessiné ici, sur
- * les jetons (jamais une image venue d'un site extérieur). La place est réservée par le parent (aucun saut).
+ * Lot 12b — photo d'un plat : seulement une photo du stockage du projet (next/image) ; sinon un visuel dessiné par
+ * catégorie (fichier local public/images/plats/, choisi par le serveur : correctifs après contre-vérification, idée 13),
+ * sur un fond des jetons (jamais une image venue d'un site extérieur). La place est réservée par le parent (aucun saut).
  */
-export function ProductVisual({ image, name, sizes, priority = false, className }: {
+export function ProductVisual({ image, name, visual, sizes, priority = false, className }: {
     image: string | null;
     name: string;
+    visual: DishVisual;
     sizes: string;
     priority?: boolean;
     className?: string;
@@ -30,7 +32,8 @@ export function ProductVisual({ image, name, sizes, priority = false, className 
         >
             <span aria-hidden="true" className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-card opacity-40" />
             <span aria-hidden="true" className="absolute -bottom-8 -left-4 h-20 w-20 rounded-full bg-card opacity-30" />
-            <UtensilsCrossed aria-hidden="true" size={32} strokeWidth={1.5} className="relative" />
+            {/* eslint-disable-next-line @next/next/no-img-element -- dessin local (SVG), aucune optimisation utile */}
+            <img src={dishVisualSrc(visual)} alt="" aria-hidden="true" loading={priority ? 'eager' : 'lazy'} decoding="async" className="relative h-full max-h-40 w-full object-contain p-2" />
         </span>
     );
 }

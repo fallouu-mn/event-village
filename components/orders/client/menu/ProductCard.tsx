@@ -38,6 +38,7 @@ export function ProductCard({ product, inCart, onOpen }: { product: MenuProduct;
                     <ProductVisual
                         image={product.image}
                         name={product.name}
+                        visual={product.visual}
                         sizes="(min-width: 1280px) 22vw, (min-width: 640px) 45vw, 100vw"
                         className={cn('aspect-[4/3] w-full transition-transform duration-slow motion-safe:group-hover:scale-[1.02]', blocked && 'opacity-60')}
                     />

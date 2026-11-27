@@ -1833,7 +1833,8 @@ const CATALOG = {
     }),
     ORDER_ACCEPTED: define('ORDER_ACCEPTED', {
         label: 'Commande acceptée', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
-        link: orderLink,
+        // Lot 12b (correctifs après contre-vérification, idée 12) : un reste à payer → le panneau du solde s'ouvre (montant relu en base)
+        link: (d) => (num(d, 'balance_due') > 0 ? `${orderLink(d)}?payer=solde` : orderLink(d)),
         inApp: (d) => {
             const eta = orderEta(d);
             const mode = text(d, 'mode');
@@ -1866,7 +1867,8 @@ const CATALOG = {
     }),
     ORDER_READY: define('ORDER_READY', {
         label: 'Commande prête', channels: ['IN_APP', 'PUSH', 'EMAIL', 'SMS'], audience: 'CLIENT', suspendedPolicy: 'BLOCK', inAppType: 'ORDER',
-        link: orderLink,
+        // Lot 12b (correctifs après contre-vérification, idée 11) : à retirer → le code s'ouvre en mode comptoir (jamais dans le lien)
+        link: (d) => (text(d, 'mode') === 'RETRAIT' ? `${orderLink(d)}?comptoir=1` : orderLink(d)),
         inApp: (d) => {
             const mode = text(d, 'mode');
             if (mode === 'RETRAIT') {

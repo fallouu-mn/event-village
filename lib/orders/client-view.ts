@@ -103,3 +103,33 @@ export function clientTimeline(mode: unknown, steps: Record<string, unknown> | n
 export function codeExpected(state: unknown, mode: unknown): boolean {
     return (mode === 'RETRAIT' && state === 'PRETE') || (mode === 'LIVRAISON' && state === 'EN_ROUTE');
 }
+
+// ── Heure estimée (correctifs après contre-vérification, idée 10) ───────────────────────────────────────────────────
+
+const ETA_WORD: Readonly<Record<string, string>> = { RETRAIT: 'Prête', LIVRAISON: 'Livrée', SUR_PLACE: 'Servie' };
+const ETA_DAY = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+/** Heure de Dakar (UTC toute l'année) d'un horodatage de la base : « AAAA-MM-JJTHH:MM », ou null si illisible. */
+export function dakarSlot(iso: unknown): string | null {
+    if (typeof iso !== 'string' || iso.trim() === '') return null;
+    const ms = Date.parse(/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`);
+    return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 16) : null;
+}
+
+/**
+ * « Prête vers 13 h 05 », « Livrée demain vers 13 h 25 », « Servie samedi 28 novembre vers 20 h » : heure calculée par
+ * la base (devis : scheduled_for ; commande : estimated_at), mise en mots ici, jamais calculée. `today` : jour de Dakar
+ * (« AAAA-MM-JJ »). null si l'heure ou le mode manque.
+ */
+export function etaLabel(mode: unknown, at: unknown, today: string): string | null {
+    const slot = dakarSlot(at);
+    const word = typeof mode === 'string' ? ETA_WORD[mode] : undefined;
+    if (!slot || !word) return null;
+    const h = Number(slot.slice(11, 13));
+    const m = slot.slice(14, 16);
+    const clock = m === '00' ? `${h} h` : `${h} h ${m}`;
+    const day = slot.slice(0, 10);
+    const dayMs = Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`);
+    const dayText = day === today ? '' : dayMs === 86_400_000 ? ' demain' : ` ${ETA_DAY.format(new Date(`${day}T12:00:00Z`))}`;
+    return `${word}${dayText} vers ${clock}`;
+}

@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShoppingBag } from 'lucide-react';
+import { CalendarClock, ShoppingBag } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBanner } from '@/components/ui/StatusBanner';
 import { cn } from '@/components/ui/cn';
@@ -14,8 +15,8 @@ import { normalizePayerPhone } from '@/lib/payments/payer-phone';
 import { formatLocalPhone, isUncertainOutcome, useIdempotencyKey } from '@/lib/payments/payment-client';
 import type { MenuProduct, VenueMenu } from '@/lib/orders/menu-types';
 import {
-    addLine, itemCount, makeLine, orderBody, reconcileLines, refusalText, setLineQuantity, timeChoices, useOrderQuote,
-    type CartLine, type Checkout,
+    addLine, closureText, itemCount, makeLine, orderBody, priceChanges, reconcileLines, refusalText, setLineQuantity, slotLabel, timeChoices,
+    useOrderQuote, type CartLine, type Checkout, type OrderQuote,
 } from '@/lib/orders/cart-client';
 import { CartPanel, type CartStep } from './CartPanel';
 import { CategoryTabs, type MenuSection } from './CategoryTabs';
@@ -35,7 +36,10 @@ import type { TimeChip } from './TimePicker';
  *  - Panier gardé sur l'appareil (préférences de l'appareil, sans prix, effacées à la déconnexion) ; « Commander à
  *    nouveau » (?reprendre=<commande>) : plats et suppléments encore disponibles repris, les autres signalés.
  *  - « Commander » : commande créée au prix affiché (clé d'idempotence, total et montant à payer comparés en base), puis
- *    le suivi /orders/<id>, où se fait le paiement.
+ *    le suivi /orders/<id>, où se fait le paiement. Prix changé entre-temps (correctifs après contre-vérification,
+ *    idée 8) : ancien et nouveau prix ligne par ligne, lus dans les deux devis de la base, et un seul bouton
+ *    « Commander à <nouveau total> ».
+ *  - Fermeture exceptionnelle en cours (idée 9) : annoncée en tête de la carte, avec le premier créneau proposé.
  */
 
 const NETWORK = 'Le serveur est injoignable. Vérifiez votre connexion puis réessayez : votre commande ne sera pas envoyée deux fois.';
@@ -66,6 +70,8 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
         return list;
     }, [menu.categories, menu.products]);
     const choices = useMemo(() => timeChoices(menu), [menu]);
+    const today = menu.ordering.now.slice(0, 10);
+    const firstSlot = choices.slots[0] ?? null;
 
     const [lines, setLines] = useState<CartLine[]>([]);
     const [restored, setRestored] = useState(false);
@@ -82,6 +88,8 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     });
     const [busy, setBusy] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    /** Devis affiché quand la base a répondu « le prix a changé » (comparé au nouveau devis, ligne par ligne). */
+    const [changedFrom, setChangedFrom] = useState<OrderQuote | null>(null);
     const [verifyRetry, setVerifyRetry] = useState<(() => void) | null>(null);
     const [flash, setFlash] = useState<{ id: number; text: string; moved: boolean } | null>(null);
     const [bump, setBump] = useState(0);
@@ -170,6 +178,11 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     const body = useMemo(() => (lines.length > 0 ? orderBody(venueId, lines, checkout) : null), [venueId, lines, checkout]);
     const { state: quote, reload } = useOrderQuote(body, lines.length > 0 && !authLoading, isAuthenticated);
     const highlight = quote.status === 'refused' ? quote.productId : null;
+    // Toute modification du panier ou des choix efface l'annonce du prix changé (le devis affiché redevient la référence)
+    useEffect(() => {
+        setChangedFrom(null);
+    }, [body]);
+    const priceChange = changedFrom && quote.status === 'ready' ? priceChanges(changedFrom, quote.quote) : null;
 
     const onAdd = useCallback((p: MenuProduct, quantity: number, optionIds: string[], notes: string) => {
         setLines((cur) => addLine(cur, makeLine(p.id, quantity, optionIds, notes)));
@@ -194,7 +207,8 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
             return;
         }
         // Total et montant à payer AFFICHÉS, renvoyés tels quels : la base refuse s'ils ne correspondent plus
-        const payload = { ...body, expectedTotal: quote.quote.total, expectedToPay: quote.quote.toPayNow };
+        const shown = quote.quote;
+        const payload = { ...body, expectedTotal: shown.total, expectedToPay: shown.toPayNow };
         const key = attempt.keyFor(JSON.stringify(payload));
         setBusy(true);
         setSubmitError(null);
@@ -227,7 +241,13 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
             setVerifyRetry(() => () => { void submitRef.current(); });
             return;
         }
-        if (data?.code === 'ORDER_PRICE_CHANGED') reload();
+        if (data?.code === 'ORDER_PRICE_CHANGED') {
+            // Le nouveau devis est relu ; le panier montre l'ancien et le nouveau prix, et « Commander à <nouveau total> »
+            setChangedFrom(shown);
+            setSubmitError(null);
+            reload();
+            return;
+        }
         setSubmitError(refusalText(data?.code, data?.error));
     }, [busy, quote, body, isAuthenticated, router, loginHref, attempt, venueId, reload]);
     const submitRef = useRef(submit);
@@ -251,6 +271,8 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
             loginHref={loginHref}
             busy={busy}
             submitError={submitError}
+            priceChange={priceChange}
+            priceChangePending={changedFrom !== null && priceChange === null}
             highlightProductId={highlight}
             onQuantity={(key, q) => setLines((cur) => setLineQuantity(cur, key, q))}
             onStep={setStep}
@@ -267,6 +289,22 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-8 xl:grid-cols-[minmax(0,1fr)_26rem]">
             <div className={cn('min-w-0 space-y-6', count > 0 && 'pb-24 lg:pb-0')}>
                 <MenuHeader menu={menu} />
+                {menu.ordering.closedUntil && (
+                    <StatusBanner
+                        tone="warning"
+                        icon={<CalendarClock size={20} />}
+                        title={closureText(menu.ordering.closedUntil, today)}
+                        action={firstSlot && checkout.scheduledFor !== firstSlot ? (
+                            <Button variant="secondary" size="sm" onClick={() => onTime('other', firstSlot)}>Choisir ce créneau</Button>
+                        ) : undefined}
+                    >
+                        <p data-testid="fermeture-exceptionnelle">
+                            {firstSlot
+                                ? `Premier créneau proposé : ${slotLabel(firstSlot, today)}.${checkout.scheduledFor === firstSlot ? ' Il est retenu pour votre commande.' : ''}`
+                                : 'Aucun créneau dans les 7 prochains jours : revenez un peu plus tard.'}
+                        </p>
+                    </StatusBanner>
+                )}
                 {reorderNote && <StatusBanner tone="info" title="Commander à nouveau">{reorderNote}</StatusBanner>}
                 {dropped.length > 0 && (
                     <StatusBanner tone="warning" title="Certains plats ne sont plus disponibles">{droppedText(dropped)}</StatusBanner>

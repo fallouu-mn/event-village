@@ -190,6 +190,35 @@ export interface OrderQuote {
     asap: boolean;
 }
 
+/**
+ * Prix changé entre l'affichage et la commande (correctifs après contre-vérification, idée 8) : ancien et nouveau prix
+ * ligne par ligne, tels que servis par les deux devis de la base (aucun calcul : deux lectures comparées). Lignes
+ * appariées dans l'ordre du panier (même produit) ; frais de livraison changés compris.
+ */
+export interface PriceChange {
+    lines: Array<{ name: string; quantity: number; before: number; after: number }>;
+    totalBefore: number;
+    totalAfter: number;
+}
+
+export function priceChanges(before: OrderQuote, after: OrderQuote): PriceChange {
+    const lines: PriceChange['lines'] = [];
+    after.lines.forEach((l, i) => {
+        const b = before.lines[i];
+        if (b && b.productId === l.productId && b.unitPrice !== l.unitPrice) lines.push({ name: l.name, quantity: l.quantity, before: b.unitPrice, after: l.unitPrice });
+    });
+    if (before.deliveryFee !== after.deliveryFee) lines.push({ name: 'Livraison', quantity: 1, before: before.deliveryFee, after: after.deliveryFee });
+    if (before.serviceFee !== after.serviceFee) lines.push({ name: 'Frais de service', quantity: 1, before: before.serviceFee, after: after.serviceFee });
+    return { lines, totalBefore: before.total, totalAfter: after.total };
+}
+
+/** « Fermé exceptionnellement jusqu'au 28/11 à 18 h — commandez pour plus tard » (idée 9 ; heure servie par la base). */
+export function closureText(closedUntil: string, today: string): string {
+    const day = closedUntil.slice(0, 10);
+    const when = day === today ? `jusqu’à ${clockLabel(closedUntil)}` : `jusqu’au ${day.slice(8, 10)}/${day.slice(5, 7)} à ${clockLabel(closedUntil)}`;
+    return `Fermé exceptionnellement ${when} — commandez pour plus tard`;
+}
+
 export type QuoteState =
     | { status: 'idle' }
     | { status: 'loading'; previous: OrderQuote | null }

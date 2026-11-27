@@ -25,7 +25,7 @@ import { Tabs, TabPanel, type TabItem } from '@/components/ui/Tabs';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useFeatureFlags, type ClientFeatureFlags } from '@/lib/features/client';
 import { formatFcfa, formatTime } from '@/lib/format';
-import { stateTone, type OrderListGroup } from '@/lib/orders/client-view';
+import { etaLabel, stateTone, type OrderListGroup } from '@/lib/orders/client-view';
 import { isRecord, nonEmptyString, readJsonBody, serverErrorMessage } from '@/lib/payments/payment-client';
 
 type OrderKind = 'TABLE_RESERVATION' | 'HALL_RESERVATION' | 'FOOD_ORDER';
@@ -47,6 +47,9 @@ interface OrderRow {
   venueId: string | null;
   balanceDue: number;
   holdExpiresAt: string | null;
+  /** Correctifs après contre-vérification (idée 10) : mode et heure estimée servis par la base, rappelés ici. */
+  mode: string | null;
+  estimatedAt: string | null;
 }
 
 const KIND_TABS: Array<{ id: OrderKind; label: string; feature: keyof ClientFeatureFlags }> = [
@@ -107,6 +110,8 @@ function readOrders(body: unknown): OrderRow[] | null {
       venueId: nonEmptyString(raw.venueId),
       balanceDue: Number.isFinite(balance) ? balance : 0,
       holdExpiresAt: nonEmptyString(raw.holdExpiresAt),
+      mode: nonEmptyString(raw.mode),
+      estimatedAt: nonEmptyString(raw.estimatedAt) ?? nonEmptyString(raw.scheduledFor),
     }];
   });
 }
@@ -279,6 +284,8 @@ function OrderList({ rows }: { rows: OrderRow[] }) {
         const meta = statusMeta(order);
         const food = order.type === 'FOOD_ORDER';
         const reorder = food && order.group === 'TERMINEE' && order.venueId;
+        // Heure estimée par la base (« Prête vers 13 h 05 ») : commande en cours et déjà envoyée au restaurant
+        const eta = food && order.group === 'EN_COURS' && !order.holdExpiresAt ? etaLabel(order.mode, order.estimatedAt, new Date().toISOString().slice(0, 10)) : null;
         return (
           <li
             key={order.id}
@@ -312,6 +319,12 @@ function OrderList({ rows }: { rows: OrderRow[] }) {
                     <span className="flex items-center gap-1 font-semibold text-warning-text">
                       <Clock size={16} aria-hidden="true" />
                       <span className="tabular-nums">{`À payer avant ${formatTime(order.holdExpiresAt)}`}</span>
+                    </span>
+                  )}
+                  {eta && (
+                    <span className="flex items-center gap-1 font-semibold text-foreground" data-testid="heure-estimee-liste">
+                      <Clock size={16} aria-hidden="true" />
+                      <span className="tabular-nums">{eta}</span>
                     </span>
                   )}
                   {food && order.group === 'EN_COURS' && order.balanceDue > 0 && !order.holdExpiresAt && (

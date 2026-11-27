@@ -32,6 +32,8 @@
 --  3. products_read : product_public, plus la partenaire propriétaire et l'administration (règle d'origine
 --     0003_rls.sql:237-238) ; product_options_read (supplément actif pour le public) et product_daily_portions_read :
 --     mêmes conditions par les deux aides, sans sous-requête sur products.
+--  4. Correctifs après contre-vérification (idée 9) : la carte rend la fin de la fermeture exceptionnelle en cours
+--     (ordering.closed_until, « AAAA-MM-JJTHH:MI », heure de Dakar ; NULL sans fermeture), pour l'annoncer.
 -- Rejouable : CREATE OR REPLACE, DROP POLICY IF EXISTS puis CREATE, REVOKE et GRANT idempotents. Aucun BEGIN ni COMMIT.
 -- ============================================================================
 
@@ -52,6 +54,7 @@ DECLARE
     v_prep     integer;
     v_windows  jsonb;
     v_asap     boolean;
+    v_closed_until timestamp;
     v_hours    jsonb;
     v_products jsonb;
     v_cats     jsonb;
@@ -92,6 +95,14 @@ BEGIN
     -- « Tout de suite » : ouvert pendant toute la préparation (règle de order_quote_compute) et aucune fermeture
     v_asap := public.venue_open_covers(v.id, tsrange(v_now, v_now + make_interval(mins => v_prep + 1), '[)'))
               AND NOT public.venue_closed_during(v.id, tsrange(v_now, v_now + make_interval(mins => v_prep + 1), '[)'));
+
+    -- Fermeture exceptionnelle en cours (correctifs après contre-vérification, idée 9) : jusqu'à quand, fermetures qui se
+    -- suivent réunies ; la carte l'annonce et propose le premier créneau (première fenêtre ci-dessus)
+    SELECT upper(r) INTO v_closed_until
+      FROM unnest(COALESCE((SELECT range_agg(c.period) FROM public.venue_closures c
+                             WHERE c.venue_id = v.id AND c.cancelled_at IS NULL AND c.ends_at > v_now), '{}'::tsmultirange)) AS r
+     WHERE r @> v_now
+     LIMIT 1;
 
     -- Produits de l'établissement (retirés exclus) : disponibilité calculée, jamais le stock exact
     SELECT COALESCE(jsonb_agg(x.item ORDER BY x.daily DESC, x.cat_order, x.cat_name, x.name, x.id), '[]'::jsonb)
@@ -164,6 +175,7 @@ BEGIN
             'prep_minutes', v_prep,
             'service_fee_rate', public.fin_setting_num('orders.service_fee_rate'),
             'asap_available', v_asap,
+            'closed_until', to_char(v_closed_until, 'YYYY-MM-DD"T"HH24:MI'),
             'now', to_char(v_now, 'YYYY-MM-DD"T"HH24:MI'),
             'windows', v_windows),
         'hours', v_hours,

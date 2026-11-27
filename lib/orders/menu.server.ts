@@ -1,5 +1,6 @@
 import { getFeatureFlags } from '@/lib/features/flags';
 import { getServiceRoleClient } from '@/lib/supabase/server';
+import { dishVisual } from './dish-visual';
 import type {
     MenuHours, MenuOption, MenuProduct, MenuSpot, MenuWindow, MenuZone, OrderMode, ProductAvailability, VenueMenu,
 } from './menu-types';
@@ -28,7 +29,7 @@ function option(r: Row): MenuOption {
     return { id: String(r.id), name: String(r.name ?? ''), price: num(r.price) };
 }
 
-function product(r: Row): MenuProduct {
+function product(r: Row, categories: Map<string, string>): MenuProduct {
     const availability = AVAILABILITY.includes(r.availability as ProductAvailability) ? (r.availability as ProductAvailability) : 'INDISPONIBLE';
     return {
         id: String(r.id),
@@ -36,6 +37,7 @@ function product(r: Row): MenuProduct {
         description: str(r.description),
         price: num(r.price),
         image: str(r.image),
+        visual: dishVisual(categories.get(String(r.category_id ?? '')) ?? null, str(r.name)),
         categoryId: str(r.category_id),
         availability,
         regulated: r.regulated === true,
@@ -55,6 +57,7 @@ export function venueMenuFrom(data: unknown): VenueMenu | null {
     const venue = (d.venue ?? {}) as Row;
     const ordering = (d.ordering ?? {}) as Row;
     if (typeof venue.id !== 'string') return null;
+    const categoryNames = new Map(rows(d.categories).map((c) => [String(c.id), String(c.name ?? '')]));
     return {
         venue: {
             id: venue.id,
@@ -72,6 +75,7 @@ export function venueMenuFrom(data: unknown): VenueMenu | null {
             prepMinutes: num(ordering.prep_minutes),
             serviceFeeRate: num(ordering.service_fee_rate),
             asapAvailable: ordering.asap_available === true,
+            closedUntil: typeof ordering.closed_until === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(ordering.closed_until) ? ordering.closed_until : null,
             now: String(ordering.now ?? ''),
             windows: (Array.isArray(ordering.windows) ? ordering.windows : [])
                 .filter((w): w is [string, string] => Array.isArray(w) && typeof w[0] === 'string' && typeof w[1] === 'string')
@@ -83,7 +87,7 @@ export function venueMenuFrom(data: unknown): VenueMenu | null {
         zones: rows(d.zones).map((z): MenuZone => ({ id: String(z.id), name: String(z.name ?? ''), fee: num(z.fee), minOrder: num(z.min_order) })),
         spots: rows(d.spots).map((s): MenuSpot => ({ id: String(s.id), label: String(s.label ?? ''), zone: str(s.zone) })),
         categories: rows(d.categories).map((c) => ({ id: String(c.id), name: String(c.name ?? '') })),
-        products: rows(d.products).map(product),
+        products: rows(d.products).map((r) => product(r, categoryNames)),
     };
 }
 

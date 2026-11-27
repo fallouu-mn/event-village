@@ -39,7 +39,7 @@ export function DailyBanner({ products, onOpen }: { products: MenuProduct[]; onO
                             className="ev-press group flex w-full items-stretch overflow-hidden rounded-2xl border border-border bg-gradient-to-r from-primary-soft to-card text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             aria-label={`Plat du jour : ${p.name}, ${portionsText(p)}`}
                         >
-                            <ProductVisual image={p.image} name={p.name} sizes="(min-width: 768px) 200px, 40vw" priority className="w-2/5 min-h-36 flex-shrink-0 sm:w-48" />
+                            <ProductVisual image={p.image} name={p.name} visual={p.visual} sizes="(min-width: 768px) 200px, 40vw" priority className="w-2/5 min-h-36 flex-shrink-0 sm:w-48" />
                             <span className="flex min-w-0 flex-1 flex-col gap-2 p-4">
                                 <span className="text-sm font-semibold text-primary-text">Aujourd’hui seulement</span>
                                 <span className="text-xl font-extrabold leading-snug text-foreground-strong">{p.name}</span>
