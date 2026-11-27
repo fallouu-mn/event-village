@@ -77,6 +77,11 @@ describe('Lot 12b — écrans du client (contrôles sans base)', () => {
         assert.ok(section.length > 200, 'section du panier absente');
         const body = section.replace(/^\s*\/\/.*$/gm, '');
         assert.doesNotMatch(body, /\b(price|total|amount|address|phone|code)\b/i);
+        // Mise en forme du panier (lib/orders/device-store.ts) : seuls les champs des lignes et le mode sont écrits
+        const store = code('lib/orders/device-store.ts');
+        assert.doesNotMatch(store.slice(0, store.indexOf('export async function loadPaymentPreference')), /\b(price|total|amount|address|phone|code)\b/i);
+        assert.match(store, /return \{ productId: l\.productId, quantity: q, optionIds, notes \};/);
+        assert.doesNotMatch(store, /\b(localStorage|sessionStorage)\b/, 'aucune écriture directe');
     });
 
     test('4. coquille : « Restaurants et tables » mène à /tables', () => {

@@ -76,7 +76,8 @@ export function MenuView({ menu, reorderId }: { menu: VenueMenu; reorderId: stri
     const [step, setStep] = useState<CartStep>('cart');
     const [timeChip, setTimeChip] = useState<TimeChip | null>(choices.asap ? 'asap' : null);
     const [checkout, setCheckout] = useState<Checkout>({
-        mode: menu.ordering.modes[0] ?? null, payment: 'INTEGRAL', zoneId: null, address: '', phone: '', spotId: null, spotLabel: '',
+        // À emporter par défaut quand l'établissement le propose (aucune zone ni adresse à saisir : total tout de suite)
+        mode: menu.ordering.modes.includes('RETRAIT') ? 'RETRAIT' : (menu.ordering.modes[0] ?? null), payment: 'INTEGRAL', zoneId: null, address: '', phone: '', spotId: null, spotLabel: '',
         scheduledFor: choices.asap ? null : choices.slots[0] ?? null, comment: '',
     });
     const [busy, setBusy] = useState(false);

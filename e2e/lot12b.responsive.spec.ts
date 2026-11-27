@@ -232,7 +232,7 @@ for (const theme of THEMES) {
                     await sheet.getByRole('button', { name: 'Ajouter 1 Yassa poulet au panier' }).click();
                     await expect(sheet).toBeHidden();
 
-                    // 5. Panier et devis de la base
+                    // 5. Panier et devis de la base (« À emporter » par défaut : aucune zone à choisir)
                     if (w.phone) await page.getByRole('button', { name: 'Voir le panier, 1 article' }).click();
                     await expect(scope.getByRole('region', { name: 'Montant de la commande' }).getByText('Total')).toBeVisible({ timeout: 20_000 });
                     // Yassa 3 500 + piment 200 = 3 700 ; frais 5 % : 185 ; total 3 885 (devis de la base, lu à l'écran)
