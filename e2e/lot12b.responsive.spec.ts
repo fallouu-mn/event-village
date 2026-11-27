@@ -271,7 +271,8 @@ for (const theme of THEMES) {
                     await shot(page, 'paiement', w.width, theme.key);
 
                     // 8. Paiement Wave : faux SamirPay et vrai webhook
-                    await page.getByTestId('paiement-commande').locator('label', { hasText: 'Wave' }).click();
+                    // Opérateur mémorisé dès le 2ᵉ parcours (« Numéro Wave du payeur ») : la carte de l'opérateur est visée exactement
+                    await page.getByTestId('paiement-commande').locator('label', { hasText: /^Wave$/ }).click();
                     const [payRes] = await Promise.all([
                         page.waitForResponse((r) => r.url().endsWith('/api/payments/create') && r.request().method() === 'POST', { timeout: 30_000 }),
                         page.getByRole('button', { name: /^Payer .* avec Wave$/ }).click(),
