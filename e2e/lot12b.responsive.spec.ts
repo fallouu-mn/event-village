@@ -249,7 +249,7 @@ for (const theme of THEMES) {
                     await checkLayout(page, w.width, w.phone, 'sur place');
                     await shot(page, 'sur-place', w.width, theme.key, !w.phone);
                     await scope.getByRole('radio', { name: 'Autre heure' }).click();
-                    await expect(scope.getByLabel('Heure')).toBeVisible();
+                    await expect(scope.getByLabel('Heure', { exact: true })).toBeVisible();
                     await settle(page);
                     await checkLayout(page, w.width, w.phone, 'choix de l’heure');
                     await shot(page, 'choix-heure', w.width, theme.key, !w.phone);
@@ -316,7 +316,7 @@ for (const theme of THEMES) {
                     const second = String(madeBody.order?.id);
                     await page.goto(`/orders/${second}`, { waitUntil: 'load' });
                     await page.getByRole('button', { name: 'Annuler la commande' }).click();
-                    await expect(page.getByRole('dialog', { name: 'Annuler la commande ?' })).toBeVisible();
+                    await expect(page.getByRole('alertdialog', { name: 'Annuler la commande ?' })).toBeVisible();
                     await settle(page);
                     await checkLayout(page, w.width, w.phone, 'annulation');
                     await shot(page, 'annulation', w.width, theme.key, false);
